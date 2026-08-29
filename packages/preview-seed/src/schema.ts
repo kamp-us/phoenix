@@ -5,7 +5,7 @@
  * adds no cycle even though this package already prod-depends on `@kampus/web`.
  */
 import {definitionRecord, postRecord, termRecord} from "@kampus/db-schema";
-import {sqliteTable, text} from "drizzle-orm/sqlite-core";
+import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
 
 export {definitionRecord, postRecord, termRecord};
 
@@ -29,5 +29,67 @@ export const postSearch = sqliteTable("post_search", {
 	norm: text("norm").notNull(),
 });
 
-export const seedSchema = {termRecord, definitionRecord, postRecord, termSearch, postSearch};
+/**
+ * The auth slice the test-account provisioner writes — a narrow local copy of
+ * `apps/web/worker/db/drizzle/schema.ts`, the way `@kampus/founder-seed` keeps one: the
+ * worker's schema module is not an exported subpath, and pulling the worker graph into a
+ * `packages/` CLI is the anti-pattern `@kampus/admin-grant` avoids the same way.
+ *
+ * `session.token` is the value better-auth signs into the session cookie, so a row written
+ * here is exactly what an authenticated capture presents (see `test-account.ts`).
+ */
+const timestamp = (name: string) => integer(name, {mode: "timestamp"});
+
+export const user = sqliteTable("user", {
+	id: text("id").primaryKey(),
+	name: text("name"),
+	email: text("email").notNull(),
+	type: text("type", {enum: ["human", "bot", "system"]})
+		.notNull()
+		.default("human"),
+	role: text("role", {enum: ["member", "moderator"]})
+		.notNull()
+		.default("member"),
+	tier: text("tier", {enum: ["çaylak", "yazar"]})
+		.notNull()
+		.default("çaylak"),
+	emailVerified: integer("email_verified", {mode: "boolean"}),
+	username: text("username").unique(),
+	createdAt: timestamp("created_at"),
+	updatedAt: timestamp("updated_at"),
+});
+
+export const session = sqliteTable("session", {
+	id: text("id").primaryKey(),
+	userId: text("user_id").notNull(),
+	expiresAt: timestamp("expires_at").notNull(),
+	token: text("token").unique(),
+	createdAt: timestamp("created_at"),
+	updatedAt: timestamp("updated_at"),
+});
+
+/** Added by migration `0010_relation_tuple`; moderation authority lives here, not on `user.role` (ADR 0107 §4). */
+export const relationTuple = sqliteTable(
+	"relation_tuple",
+	{
+		subject: text("subject").notNull(),
+		relation: text("relation").notNull(),
+		object: text("object").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.subject, t.relation, t.object]}),
+		index("relation_tuple_object").on(t.object, t.relation),
+	],
+);
+
+export const seedSchema = {
+	termRecord,
+	definitionRecord,
+	postRecord,
+	termSearch,
+	postSearch,
+	user,
+	session,
+	relationTuple,
+};
 export type SeedSchema = typeof seedSchema;

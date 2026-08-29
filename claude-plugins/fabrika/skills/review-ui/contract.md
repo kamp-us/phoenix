@@ -168,7 +168,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `7` | zero scope: the target is **proven** absent (404), or the PR is closed — a deliberate, declared widening of the base seat (existence-only) to closed-target, because a closed PR is provably not reviewable scope, matching the sibling `review` group's use |
 | `8` | a write was attempted and its outcome could not be proven — UNKNOWN |
 | `9` | the write landed but the read-back does not match |
-| `10` | a semantic refusal on a value or body: a supplied value off its closed vocabulary (a bad `--polarity`, `--carrier advisory` with FAIL, a non-kebab `--out`, a reserved `:state` suffix), or a `note` body whose first line parses as a verdict carrier |
+| `10` | a semantic refusal on a value or body: a supplied value off its closed vocabulary (a bad `--polarity`, `--carrier advisory` with FAIL, a non-kebab `--out`, a `:state` outside the realized set), or a `note` body whose first line parses as a verdict carrier |
 | `11` | a required read or execution failed — no outcome is proven: the PR, its head, the preview probe, the harness, a capture's validity, or (at post time) the upload target's state. The same deliberate widening the `ui` group states: an execution that never became answerable leaves the run UNKNOWN exactly as a failed read does |
 | `12` | refused, proven: the artifact is not the PR's current tree — the live head moved past `--sha` at post time, or the preview's deployed head is not the live head at render time |
 | `13` | proven: at least one surface threw an uncaught page error during render — the render is red |
@@ -202,6 +202,12 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
+- **`:auth` surfaces need two environment values**, both unset by default: `PREVIEW_TEST_SESSION_TOKEN`
+  (the session token `preview-seed test-account` wrote onto the preview D1) and `BETTER_AUTH_SECRET`
+  (the preview worker's, so the cookie signature verifies). With neither or one set, an `:auth`
+  request refuses `11` rather than substituting the anonymous render; with no `:auth` surface asked
+  for, every surface renders anonymously as before. Setting both is necessary and not sufficient —
+  whether the cookie authenticated is the per-shot session proof's answer, also an `11`.
 
 **The preview-deploy convention.** The repo announces each PR's preview as a sticky PR comment
 carrying the anchor `<!-- preview-deploy:<app> -->`, whose body names, per app: the deployed URL
@@ -230,15 +236,29 @@ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/
 |---|---|---|---|---|
 | `--pr` | integer | yes | — | the pull request whose preview is judged |
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under `<OS temp>/fabrika-review-ui/<pr>-<head8>/<set>/` |
-| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a bare route (`/pano`); zero operands is `1` — no tool guesses surfaces from a diff |
+| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/pano`), or a route plus a realized state (`/pano:auth`); zero operands is `1` — no tool guesses surfaces from a diff |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve |
 | `--repo` | string | no | resolved | the repository |
 
-A `:state` suffix on a surface id is **reserved and refused on `10`**, the same deferral as the
-`ui` group: realizing a named state needs its own convention, and refusing now keeps the grammar
-extensible. v1 demanded `:focus-visible` captures with no mechanism to prove the state was
-actually realized — a state that silently rendered unfocused PASSed its prohibition forever;
-this grammar refuses to pretend until a consumer builds the proof.
+A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
+refused on `10` otherwise. The realized set is `auth` and nothing else (#7051): an `:auth` surface
+renders with the moderator-tier test account's better-auth session cookie seeded into the capture
+context. The account is provisioned direct-D1 by `preview-seed test-account`, never by a worker
+route.
+
+Seeding a cookie is not the same as being signed in, so the shot proves it rather than assuming it.
+From the same browser context, before the shot is classified, the verb reads the preview's own
+`/api/auth/get-session` and requires a user back; anything else — a bare `null`, a non-200, an
+unreadable body — refuses the surface on `11` and records no capture. This is what makes the pixels a
+signed-in yazar+moderator's: a cookie that did not authenticate renders the visitor's page, and that
+page is a perfectly valid PNG no byte check can tell from the real one.
+
+The refusal on every other token is the same fence v1 stated, kept for the same reason: v1 demanded
+`:focus-visible` captures with no mechanism to prove the state was realized, and a state that
+silently rendered unfocused PASSed its prohibition forever. Parsing a state is not rendering one —
+a token with no mechanism shoots the default pixels under a variant's name, which is coverage
+claimed and not held. The sibling `ui` group renders in-tree with no preview and no session, so it
+still refuses every `:state`.
 
 **Output** — machine. One JSON object on full success only:
 
@@ -281,8 +301,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case, or a `--surface` carries the reserved `:state` suffix |
-| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; or a capture's validity could not be determined |
+| `10` | `--out` not kebab-case, or a `--surface` names a `:state` outside the realized set (`auth`) |
+| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; an `:auth` surface was requested while `PREVIEW_TEST_SESSION_TOKEN` / `BETTER_AUTH_SECRET` is unset; or an `:auth` surface's session proof did not come back signed in |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -295,7 +315,9 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|---|
 | `review-ui render: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
-| `review-ui render: --surface "<id>" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.` | 10 | refusal |
+| `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth; render the bare route.` | 10 | refusal |
+| `review-ui render: an :auth surface was requested but its credentials are incomplete (unset: <names>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
+| `review-ui render: surface "<id>" did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `review-ui render: cannot read <what> for #<n>: <reason> — the render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: the preview comment names apps <list> — pass --app to pick one.` | 11 | refusal |

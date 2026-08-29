@@ -13,10 +13,17 @@
  * unenumerated — the "judged nothing, found nothing wrong" shape (#3925) in a different disguise.
  */
 import {Effect} from "effect";
+import {SESSION_PROBE_PATH} from "../capture/auth.ts";
 import {captureShots} from "../capture/capture.ts";
 import {isRenderCrash} from "../capture/page-errors.ts";
-import {buildCapturePlan, DEFAULT_VIEWPORT, parseSurfaceSpec} from "../capture/plan.ts";
+import {
+	buildCapturePlan,
+	DEFAULT_VIEWPORT,
+	joinPreviewUrl,
+	parseSurfaceSpec,
+} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
+import {provesSession} from "../capture/states.ts";
 import {capAndCount} from "../evidence.ts";
 import {PAGE_ERROR_CAP, sha256Hex} from "./manifest.ts";
 import type {RenderLeg, SurfaceRender} from "./render-verb.ts";
@@ -59,9 +66,15 @@ export const makeCaptureRenderLeg =
 				return {_tag: "Failed", reason: plan} satisfies SurfaceRender;
 			}
 
-			const captured = yield* capture(plan, request.outDir).pipe(
-				Effect.catch((error) => Effect.succeed(error.message)),
-			);
+			// A seeded session is asked to prove itself, because pixels cannot: a cookie that does not
+			// authenticate renders the visitor's page, and that is a valid PNG under the `:auth` name.
+			const probing = provesSession(plan[0]?.surface.state ?? null);
+			const captured = yield* capture(plan, request.outDir, {
+				cookies: request.cookies,
+				...(probing
+					? {sessionProbeUrl: joinPreviewUrl(request.previewUrl, SESSION_PROBE_PATH)}
+					: {}),
+			}).pipe(Effect.catch((error) => Effect.succeed(error.message)));
 			if (typeof captured === "string") {
 				return captured.startsWith(NAVIGATION_FAILURE_PREFIX)
 					? ({_tag: "Unreachable", reason: captured} satisfies SurfaceRender)
@@ -76,6 +89,22 @@ export const makeCaptureRenderLeg =
 			}
 			if (shot.status !== undefined && shot.status >= UNREACHABLE_FLOOR) {
 				return {_tag: "Unreachable", reason: `status ${shot.status}`} satisfies SurfaceRender;
+			}
+			// Classified before the bytes: an anonymous shot under a signed-in name is a valid PNG of
+			// the wrong page, so validating it first would answer a question nobody asked.
+			if (probing) {
+				const proof = shot.sessionProof;
+				if (proof === undefined || proof._tag !== "SignedIn") {
+					return {
+						_tag: "Unauthenticated",
+						reason:
+							proof === undefined
+								? "the capture returned no session proof"
+								: proof._tag === "Anonymous"
+									? "the preview answered the seeded cookie as a visitor"
+									: proof.reason,
+					} satisfies SurfaceRender;
+				}
 			}
 			const crash = shot.pageErrors.find(isRenderCrash);
 			if (crash !== undefined) {

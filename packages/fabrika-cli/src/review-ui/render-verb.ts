@@ -10,9 +10,20 @@
  *
  * The renderer is an injected seam ({@link RenderLeg}) so every refusal below is testable without a
  * browser; `render-leg.ts` is the one that drives the capture machinery.
+ *
+ * A surface may name a state (`/pano:auth`), but only one this repo can actually put on screen —
+ * the vocabulary and its mechanism live in `capture/states.ts`. Anything else is refused rather
+ * than shot, because a state nothing renders captures the default pixels under a variant's name,
+ * which is coverage claimed and not held (#7051). An `:auth` surface is refused twice over: on `11`
+ * before a browser launches when the credentials are incomplete, and on `11` again when the shot's
+ * own session proof does not come back signed in — a cookie that failed to authenticate produces a
+ * perfectly valid PNG of the visitor's page, which no byte check can tell from the real thing.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readIdentity, sessionCookies} from "../capture/auth.ts";
+import type {CaptureCookie} from "../capture/capture.ts";
+import {isRealizedState, provesSession, REALIZED_STATES, stateOf} from "../capture/states.ts";
 import {writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
@@ -40,21 +51,25 @@ const VERB = "review-ui render";
 
 /** What one surface's render is asked for: the preview it hangs off, and where its PNG belongs. */
 export interface SurfaceRenderRequest {
-	/** The surface id — a bare route, since `:state` is refused upstream. */
+	/** The surface id — `<route>` or `<route>:<state>`. */
 	readonly surface: string;
 	readonly previewUrl: string;
 	readonly outDir: string;
+	/** Seeded into the capture context before navigation. Empty ⇒ the anonymous render. */
+	readonly cookies: readonly CaptureCookie[];
 }
 
 /**
- * One surface's proven outcome. Four arms, never three: an execution that never became answerable
- * (`Failed`) is UNKNOWN and must not read as a surface that rendered badly.
+ * One surface's proven outcome. An execution that never became answerable (`Failed`) is UNKNOWN and
+ * must not read as a surface that rendered badly; `Unauthenticated` is UNKNOWN for the same reason,
+ * one layer up — the page rendered fine, it is just not the page that was asked for.
  */
 export type SurfaceRender =
 	| {readonly _tag: "Rendered"; readonly entry: CaptureEntry}
 	| {readonly _tag: "Unreachable"; readonly reason: string}
 	| {readonly _tag: "Crashed"; readonly firstError: string}
 	| {readonly _tag: "Invalid"; readonly detail: string}
+	| {readonly _tag: "Unauthenticated"; readonly reason: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
 export type RenderLeg = (request: SurfaceRenderRequest) => Effect.Effect<SurfaceRender>;
@@ -109,6 +124,8 @@ const outcomeLine = (surface: string, render: SurfaceRender): string => {
 			return `${VERB}: surface "${surface}" threw during render: ${render.firstError} — the render is red; a broken page is not composition to judge.`;
 		case "Invalid":
 			return `${VERB}: surface "${surface}" captured invalid bytes (${render.detail}) — a capture nobody can open is not evidence (#3925's class).`;
+		case "Unauthenticated":
+			return `${VERB}: surface "${surface}" did not render signed in (${render.reason}) — the authenticated render is UNKNOWN, never the anonymous one.`;
 		case "Failed":
 			return `${VERB}: surface "${surface}" could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
 	}
@@ -138,11 +155,16 @@ export const runRender = (
 				`${VERB}: --out "${options.out}" is not a kebab-case set name.`,
 			);
 		}
-		const stateful = options.surfaces.find((surface) => surface.includes(":"));
-		if (stateful !== undefined) {
+		// A state is admitted only when something puts it on screen. Parsing one and shooting the
+		// default pixels under a variant's name is coverage claimed and not held (#7051).
+		const unrealized = options.surfaces.find((surface) => {
+			const state = stateOf(surface);
+			return state !== null && !isRealizedState(state);
+		});
+		if (unrealized !== undefined) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --surface "${stateful}" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.`,
+				`${VERB}: --surface "${unrealized}" names a :state nothing renders — the realized states are ${REALIZED_STATES.join(", ")}; render the bare route.`,
 			);
 		}
 
@@ -198,10 +220,36 @@ export const runRender = (
 			);
 		}
 
+		// An `:auth` surface rendered without credentials would come back as the visitor's page under
+		// the signed-in name — the "unseen ground reading as clean" this whole axis exists to stop —
+		// so an incomplete pair is UNKNOWN here, before a browser launches.
+		const wantsAuth = options.surfaces.some((surface) => provesSession(stateOf(surface)));
+		const identity = readIdentity(options.env);
+		if (wantsAuth && identity._tag === "Missing") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: an :auth surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}) — the authenticated render is UNKNOWN, never the anonymous one.`,
+				[scanned],
+			);
+		}
+		const authCookies: readonly CaptureCookie[] =
+			identity._tag === "Identity"
+				? sessionCookies(announced.url, identity.token, identity.secret)
+				: [];
+
 		const setDir = setDirectory(options.tmpRoot, pr, head, options.out);
 		const renders: SurfaceRender[] = [];
 		for (const surface of options.surfaces) {
-			renders.push(yield* options.render({surface, previewUrl: announced.url, outDir: setDir}));
+			renders.push(
+				yield* options.render({
+					surface,
+					previewUrl: announced.url,
+					outDir: setDir,
+					// Only the `:auth` variant carries the session; a bare route stays the visitor's
+					// render, so the two are genuinely different pixels rather than one shot twice.
+					cookies: provesSession(stateOf(surface)) ? authCookies : [],
+				}),
+			);
 		}
 		const enumerated = [
 			scanned,
@@ -213,6 +261,16 @@ export const runRender = (
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot read a capture's validity for #${pr}: ${failed.reason} — the render is UNKNOWN.`,
+				enumerated,
+			);
+		}
+		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
+		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
+		const anonymous = renders.findIndex((render) => render._tag === "Unauthenticated");
+		if (anonymous !== -1) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				outcomeLine(options.surfaces[anonymous] as string, renders[anonymous] as SurfaceRender),
 				enumerated,
 			);
 		}
