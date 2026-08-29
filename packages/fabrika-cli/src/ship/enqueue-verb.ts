@@ -11,17 +11,20 @@
  * After the arm, `auto_merge: null` is **expected** — the queue consumes the intent — and is never
  * read as a jam. The jam discriminator is the arm's own error response, quoted verbatim on `8`.
  *
- * **Mergeability is asserted BEFORE the arm, and an indefinite read refuses.** Probed live on this
- * repo: GitHub *accepts* the arm on a conflicted PR under a queue-governed base and parks the intent
- * on it — no platform-side refusal — so nothing but this precondition stands between a `dirty` PR
- * and a parked intent reported as a healthy `enqueued`. `mergeable` is computed lazily, so `null` is
- * routine and is **not an answer**: it is polled, and a still-indefinite value is UNKNOWN and
- * refuses. A read that could not produce a definite answer must never resolve to one.
+ * **Mergeability is asserted BEFORE the arm, and both an indefinite and a definitely-false read
+ * refuse.** Probed live on this repo: GitHub *accepts* the arm on a conflicted PR under a
+ * queue-governed base and parks the intent on it — no platform-side refusal — so nothing but this
+ * precondition stands between a `dirty` PR and a parked intent reported as a healthy `enqueued`.
+ * `mergeable` is computed lazily, so `null` is routine and is **not an answer**: it is polled, and a
+ * still-indefinite value is UNKNOWN and refuses on `11`. A read that could not produce a definite
+ * answer must never resolve to one. A definite `mergeable: false` refuses on `16` instead of arming:
+ * the conflict is already proven by the read the verb just performed, and arming on it spends an
+ * enqueue round plus one of the lane's retries to rediscover it at reconcile (#6902).
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {PRECONDITION_UNKNOWN, STALE_HEAD, WRITE_UNKNOWN} from "./codes.ts";
+import {PRECONDITION_UNKNOWN, PROVEN_NOT_IN_STATE, STALE_HEAD, WRITE_UNKNOWN} from "./codes.ts";
 import {armAutoMerge, pullTimeline} from "./github.ts";
 import {readDefiniteMergeability} from "./mergeability.ts";
 import {queueStateOf} from "./queue.ts";
@@ -80,8 +83,14 @@ export const runEnqueue = (
 				`${VERB}: #${pr}'s mergeable_state is still indefinite after ${mergeability.polls} polls — mergeability is UNKNOWN, never green; nothing was armed.`,
 			);
 		}
+		if (!mergeability.value.mergeable) {
+			return refuse(
+				PROVEN_NOT_IN_STATE,
+				`${VERB}: #${pr} is not mergeable (mergeable_state: ${mergeability.value.state}) — a definite read; nothing was armed.`,
+			);
+		}
 		diagnostics.push(
-			`${VERB}: mergeable_state is ${mergeability.value.state} (mergeable: ${String(mergeability.value.mergeable)}) — a definite read; arming.`,
+			`${VERB}: mergeable_state is ${mergeability.value.state} (mergeable: true) — a definite read; arming.`,
 		);
 
 		const armed = yield* armAutoMerge(repo, pr);
