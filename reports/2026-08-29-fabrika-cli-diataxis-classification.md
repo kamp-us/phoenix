@@ -16,7 +16,7 @@ and argument-free → reference; else → explanation.
 
 | Surface | Unit classified | Count |
 |---|---|---|
-| `packages/fabrika-cli/README.md` | preamble + every `##` / `###` section | 1 + 37 |
+| `packages/fabrika-cli/README.md` | preamble + every `##` / `###` section | 1 + 38 |
 | `packages/fabrika-cli/src/capture/README.md` | preamble + every `##` / `###` section | 1 + 12 |
 | `packages/fabrika-cli/src/*/command.ts` | the registered groups' description strings | 30 groups, 266 `withShortDescription` / `withDescription` pairs |
 
@@ -68,9 +68,9 @@ Table C.
 | `## The capture machinery` | reference — what the subpath is and what it exports | explanation | "Three consequences worth knowing before you install it" | [ADR 0183](../.decisions/0183-golden-screen-storage-depo-git-pointer.md) and [ADR 0201](../.decisions/0201-pipeline-tenant-phoenix-first.md), cited inline |
 | `## Development` | explanation — it exists to make a contributor understand the architecture (pure verb cores, injected platform services, the two named raw boundaries) | how-to + reference | the three-command fenced block; the no-build-step paragraph | [ADR 0238](../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md) and [ADR 0271](../.decisions/0271-one-compiler-effect-patched-tsc.md) cited inline; nothing holds the pure-verb-core rule, which is `.patterns/`-shaped material |
 
-**Table A totals:** 38 units. 4 single-mode (`graduate`, `ledger`, `plan`, `review-ui`), 34 mixed.
-Host mode is reference in 37 of 38; `## Development` is the one explanation host. The intruding mode
-is explanation in 33 of the 34 mixes; how-to intrudes in 6 (`Install`, `guard`, `lane`,
+**Table A totals:** 39 units. 4 single-mode (`graduate`, `ledger`, `plan`, `review-ui`), 35 mixed.
+Host mode is reference in 37 of 39; `## Development` is the one explanation host. The intruding mode
+is explanation in 34 of the 35 mixes; how-to intrudes in 6 (`Install`, `guard`, `lane`,
 `The spend ledger`, `wire`, `Development`). `Quickstart` is the one how-to host, and it too is mixed.
 
 ## Table B — `packages/fabrika-cli/src/capture/README.md`
@@ -91,8 +91,8 @@ is explanation in 33 of the 34 mixes; how-to intrudes in 6 (`Install`, `guard`, 
 | `## CLI` | how-to — one worked invocation to a real result | reference | the stdout shape and the `$GITHUB_TOKEN` handling note | no decision holds this |
 | `## Tests` | how-to — the command to run | explanation | why there is no integration tier | no decision holds this |
 
-**Table B totals:** 13 units. 3 single-mode, 10 mixed. Hosts split 5 reference / 4 explanation /
-4 how-to — a page-level mix on top of the per-section one, which is the sharpest structural finding
+**Table B totals:** 13 units. 2 single-mode, 11 mixed. Hosts split 5 reference / 5 explanation /
+3 how-to — a page-level mix on top of the per-section one, which is the sharpest structural finding
 on this surface: the file interleaves reference, why-pages and runnable recipes at one heading level.
 
 **A second finding on this file, stated because it changes what any cure can assume:** the fenced
@@ -185,11 +185,11 @@ A gap is a reader job no surface in scope serves, or a registered thing the READ
    count is off.** The issue names 34 README sections and lists `## Install` + 2 subsections,
    `## Quickstart`, `## The interface every verb meets` + `### The shared exit table`, 29 group
    sections, `## The capture machinery` and `## Development` — that list is 37 items, not 34, and it
-   omits `### The spend ledger`. The live file carries 37 `##` / `###` headings. Table A classifies
-   all 37 plus the preamble.
+   omits `### The spend ledger`. The live file carries 38 `##` / `###` headings: the 37 enumerated
+   plus the one omitted. Table A classifies all 38 plus the preamble.
 6. **The `capture` subpath has no exit-code or CLI-contract surface**, because it is a library
-   subpath rather than a verb group — but its README still documents four
-   `node packages/design-capture/src/bin.ts` invocations for a bin that was deleted
+   subpath rather than a verb group — but its README still documents five
+   `node packages/design-capture/src/bin.ts` invocations, across four sections, for a bin that was deleted
    ([#6346](https://github.com/kamp-us/phoenix/issues/6346)). A reader looking up "how do I bless a
    golden" gets an argv that runs nothing.
 
@@ -201,9 +201,9 @@ A gap is a reader job no surface in scope serves, or a registered thing the READ
 | `src/*/command.ts` files | 30 |
 | Groups with a README section | 29 (`campaign` absent) |
 | Groups in Table C | 30 |
-| README `##` / `###` headings | 37 (+ preamble = 38 units) |
+| README `##` / `###` headings | 38 (+ preamble = 39 units) |
 | `capture/README.md` headings | 12 (+ preamble = 13 units) |
 | Description pairs classified | 266 |
-| Units classified in total | 38 + 13 + 30 = 81 |
-| Single-mode units | 7 (4 in Table A, 3 in Table B, 0 in Table C) |
-| Mixed units | 74 |
+| Units classified in total | 39 + 13 + 30 = 82 |
+| Single-mode units | 6 (4 in Table A, 2 in Table B, 0 in Table C) |
+| Mixed units | 76 |
