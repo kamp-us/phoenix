@@ -50,6 +50,7 @@ test("real Tuval server loads, isolates, reports, and unloads package canvas con
 		"../fixtures/duplicate-frontend",
 		"../fixtures/frontend-version",
 		"../fixtures/frontend-failure",
+		"../fixtures/render-throw",
 		"../fixtures/invalid-contract",
 		"../fixtures/missing-asset",
 	];
@@ -72,6 +73,18 @@ test("real Tuval server loads, isolates, reports, and unloads package canvas con
 		await expect(isolated).toContainText("invalid-contract");
 		await expect(isolated).toContainText("missing-asset");
 		await expect(page.locator(".react-flow")).toBeVisible();
+		await expect(
+			page.getByRole("status").filter({
+				hasText: "fixture-render-throw paketi: Katkı throw.node çizilirken durduruldu",
+			}),
+		).toHaveAttribute("data-package", "fixture-render-throw");
+		await expect(
+			page.getByRole("status").filter({
+				hasText: "fixture-render-throw paketi: Katkı throw.panel çizilirken durduruldu",
+			}),
+		).toHaveAttribute("data-package", "fixture-render-throw");
+		await page.getByRole("button", {name: "Yakınlaştır"}).click();
+		await expect(page.getByRole("button", {name: "Oturumları yenile"})).toBeEnabled();
 		const successScreenshot = testInfo.outputPath("package-contribution-success-and-isolation.png");
 		await page.screenshot({path: successScreenshot, fullPage: true});
 		await testInfo.attach("package-contribution-success-and-isolation", {
@@ -84,6 +97,7 @@ test("real Tuval server loads, isolates, reports, and unloads package canvas con
 		server = await start(port, []);
 		await page.getByRole("button", {name: "Oturumları yenile"}).click();
 		await expect(custom).toHaveCount(0);
+		await expect(page.locator('[data-package="fixture-render-throw"]')).toHaveCount(0);
 		await expect(page.getByRole("status").filter({hasText: "fixture-plain-pi"})).toContainText(
 			"kaldırıldı",
 		);

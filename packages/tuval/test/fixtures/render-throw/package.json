@@ -1,0 +1,32 @@
+{
+	"name": "fixture-render-throw",
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./extension.js"
+		]
+	},
+	"tuval": {
+		"contractVersion": 1,
+		"frontend": {
+			"nodes": [
+				{
+					"key": "throw.node",
+					"asset": "./node.js"
+				}
+			],
+			"edges": [
+				{
+					"key": "throw.edge",
+					"asset": "./edge.js"
+				}
+			],
+			"panels": [
+				{
+					"key": "throw.panel",
+					"asset": "./panel.js"
+				}
+			]
+		}
+	}
+}

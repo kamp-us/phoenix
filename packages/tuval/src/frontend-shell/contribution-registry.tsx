@@ -398,8 +398,19 @@ interface ContributionBoundaryProps {
 	readonly onFailure: (failure: ContributionDiagnostic) => void;
 }
 
-class ContributionBoundary extends Component<ContributionBoundaryProps, {failed: boolean}> {
-	override state = {failed: false};
+interface ContributionBoundaryState {
+	readonly entry: RegisteredContribution;
+	readonly failed: boolean;
+}
+
+class ContributionBoundary extends Component<ContributionBoundaryProps, ContributionBoundaryState> {
+	override state = {entry: this.props.entry, failed: false};
+	static getDerivedStateFromProps(
+		props: ContributionBoundaryProps,
+		state: ContributionBoundaryState,
+	): ContributionBoundaryState | null {
+		return props.entry === state.entry ? null : {entry: props.entry, failed: false};
+	}
 	static getDerivedStateFromError() {
 		return {failed: true};
 	}
@@ -410,20 +421,26 @@ class ContributionBoundary extends Component<ContributionBoundaryProps, {failed:
 	}
 	override render() {
 		return this.state.failed ? (
-			<span role="status">{browserMessage("render-failed", this.props.entry.key)}</span>
+			<span role="status" data-package={this.props.entry.packageName}>
+				{this.props.entry.packageName} paketi:{" "}
+				{browserMessage("render-failed", this.props.entry.key)}
+			</span>
 		) : (
 			this.props.children
 		);
 	}
 }
 
-const renderNodeEntry = (entry: RegisteredContribution, props: ContributionNodeProps) =>
-	entry.render(props, {createElement});
+const ContributionRender = ({
+	entry,
+	props,
+}: {
+	readonly entry: RegisteredContribution;
+	readonly props: ContributionRenderProps;
+}) => entry.render(props, {createElement});
 
-const renderEdgeEntry = (entry: RegisteredContribution, props: ContributionEdgeProps) =>
-	entry.render(props, {createElement});
-
-const renderPanelEntry = (entry: RegisteredContribution) => entry.render({}, {createElement});
+const entryLifecycleKey = (entry: RegisteredContribution): string =>
+	`${entry.packageName}:${entry.kind}:${entry.key}:${entry.asset}`;
 
 export const contributionNodeTypes = (
 	registry: ContributionRegistry,
@@ -435,8 +452,8 @@ export const contributionNodeTypes = (
 			(props: ContributionNodeProps) => (
 				<div className="package-node" data-package={entry.packageName}>
 					<span className="package-attribution">{entry.packageName}</span>
-					<ContributionBoundary entry={entry} onFailure={onFailure}>
-						{renderNodeEntry(entry, props)}
+					<ContributionBoundary key={entryLifecycleKey(entry)} entry={entry} onFailure={onFailure}>
+						<ContributionRender entry={entry} props={props} />
 					</ContributionBoundary>
 				</div>
 			),
@@ -451,8 +468,8 @@ export const contributionEdgeTypes = (
 		[...registry.edges].map(([key, entry]) => [
 			key,
 			(props: ContributionEdgeProps) => (
-				<ContributionBoundary entry={entry} onFailure={onFailure}>
-					{renderEdgeEntry(entry, props)}
+				<ContributionBoundary key={entryLifecycleKey(entry)} entry={entry} onFailure={onFailure}>
+					<ContributionRender entry={entry} props={props} />
 				</ContributionBoundary>
 			),
 		]),
@@ -474,8 +491,8 @@ export const ContributionPanels = ({
 					key={`${entry.packageName}:${entry.key}`}
 				>
 					<span className="package-attribution">{entry.packageName}</span>
-					<ContributionBoundary entry={entry} onFailure={onFailure}>
-						{renderPanelEntry(entry)}
+					<ContributionBoundary key={entryLifecycleKey(entry)} entry={entry} onFailure={onFailure}>
+						<ContributionRender entry={entry} props={{}} />
 					</ContributionBoundary>
 				</div>
 			))}
