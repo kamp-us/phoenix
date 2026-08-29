@@ -50,7 +50,7 @@ enforces the property it gated.)
 
 | Workflow | Why |
 |---|---|
-| `gitleaks` | Scans `merge-base..HEAD`, the PR's net-new commits. A `main` run re-scans the triaged #2325 history baseline and reds every time. |
+| `gitleaks` | Scans the files `git diff base...HEAD` reports as added or edited, read at HEAD (ADR 0338). A `main` run has no such diff and falls back to the whole tree, reding on the triaged #2325 baseline every time. |
 | `leak-guard` | Scans `git diff base...HEAD`, the change under review. A `main` run would re-scan history instead. |
 | `run-evidence` | Not a gate — a per-PR-head evidence producer whose consumers key on the PR head SHA. |
 | `unresolved-threads-guard` | Reads a PR's review threads; a `push` carries no PR number. |
