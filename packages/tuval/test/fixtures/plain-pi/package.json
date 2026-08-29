@@ -1,0 +1,26 @@
+{
+	"name": "fixture-plain-pi",
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./extension.js"
+		]
+	},
+	"tuval": {
+		"contractVersion": 1,
+		"backend": [
+			{
+				"module": "./backend.js",
+				"export": "makeLayer"
+			}
+		],
+		"frontend": {
+			"nodes": [
+				{
+					"key": "fixture.node",
+					"asset": "./asset.txt"
+				}
+			]
+		}
+	}
+}

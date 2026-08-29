@@ -1,0 +1,20 @@
+{
+	"name": "precedence-high",
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./extension.js"
+		]
+	},
+	"tuval": {
+		"contractVersion": 1,
+		"frontend": {
+			"panels": [
+				{
+					"key": "shared.panel",
+					"asset": "./asset.txt"
+				}
+			]
+		}
+	}
+}
