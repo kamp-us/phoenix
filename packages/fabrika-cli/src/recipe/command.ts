@@ -104,6 +104,6 @@ export const recipeCommand = Command.make("recipe").pipe(
 	Command.withSubcommands([unpark, rerun, route]),
 	Command.withShortDescription("Apply one standing driver recipe as a deterministic verb."),
 	Command.withDescription(
-		"Apply one standing driver recipe: a fixed sequence with a checkable outcome and no judgment in it, versioned once instead of retyped nightly. Each verb relays a decision another verb already owns and proves every mutation with a read-back (ADR 0228; epic #5840)",
+		"Apply one standing driver recipe: a fixed sequence with a checkable outcome and no judgment in it, versioned once instead of retyped nightly. Each verb relays a decision another verb already owns and proves every mutation with a read-back (ADR 0228)",
 	),
 );
