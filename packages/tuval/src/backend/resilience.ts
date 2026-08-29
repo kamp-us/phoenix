@@ -3,6 +3,7 @@ import type {SettingsManager} from "@earendil-works/pi-coding-agent";
 import {Context, Crypto, Effect, FileSystem, Path, Result, Schema, type Scope} from "effect";
 import type {DiscoveryOutcome} from "../shared/discovery.js";
 import {ExtensionUISnapshot} from "../shared/extension-ui.js";
+import {ThinkingLevel} from "../shared/live-session.js";
 import {
 	emptyWorkspaceState,
 	type ResilienceDiagnostic,
@@ -80,12 +81,9 @@ export const makeOperationalWorkspaceSettings = (
 	};
 };
 
-const PiThinkingLevel = Schema.Literals(["off", "minimal", "low", "medium", "high", "xhigh"]);
-type PiThinkingLevel = (typeof PiThinkingLevel)["Type"];
-
-const decodePiThinkingLevel = (value: string | undefined): PiThinkingLevel | undefined => {
+const decodePiThinkingLevel = (value: string | undefined): ThinkingLevel | undefined => {
 	if (value === undefined) return undefined;
-	const decoded = Schema.decodeUnknownOption(PiThinkingLevel)(value);
+	const decoded = Schema.decodeUnknownOption(ThinkingLevel)(value);
 	if (decoded._tag === "None") throw new Error("Persisted workspace thinking level is unsupported");
 	return decoded.value;
 };
@@ -584,6 +582,7 @@ export interface RestorationDependencies {
 	readonly discover: () => Effect.Effect<DiscoveryOutcome, unknown>;
 	readonly restoreLineage: () => Effect.Effect<unknown, unknown>;
 	readonly restoreSelection: (sessionId: string) => Effect.Effect<boolean, unknown>;
+	readonly clearSelectionIntent?: () => Effect.Effect<void, never>;
 	readonly restoreSettings: (settings: WorkspaceSettings) => Effect.Effect<void, unknown>;
 	readonly readSettings?: () => Effect.Effect<WorkspaceSettings, unknown>;
 	readonly availablePackageRegistrations: ReadonlyArray<string>;
@@ -593,6 +592,12 @@ export interface RestorationDependencies {
 	readonly restorePackageRegistrations: (
 		packages: ReadonlyArray<string>,
 	) => Effect.Effect<void, unknown>;
+	readonly commitPackageRegistrations?: (
+		packages: ReadonlyArray<string>,
+	) => Effect.Effect<void, unknown>;
+	readonly rollbackPackageRegistrations?: (
+		packages: ReadonlyArray<string>,
+	) => Effect.Effect<void, never>;
 	readonly restoreExtensionUI: (
 		snapshots: ReadonlyArray<ExtensionUISnapshot>,
 	) => Effect.Effect<void, unknown>;
@@ -612,7 +617,9 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 
 	const loaded = yield* Effect.result(dependencies.store.load());
 	const persisted = Result.isSuccess(loaded) ? loaded.success.document : emptyWorkspaceState();
-	if (Result.isSuccess(loaded)) diagnostics.push(...loaded.success.diagnostics);
+	if (Result.isSuccess(loaded)) {
+		diagnostics.push(...loaded.success.diagnostics.map(resilienceDiagnostic));
+	}
 	if (Result.isFailure(loaded)) {
 		diagnostics.push(
 			resilienceDiagnostic({
@@ -626,12 +633,14 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 
 	const discovery = yield* Effect.result(dependencies.discover());
 	let discoveredSessionIds = new Set<string>();
+	let discoveryComplete = false;
 	let discoveryDegraded = Result.isFailure(discovery);
 	if (Result.isSuccess(discovery)) {
 		const outcome = discovery.success;
 		if (outcome._tag === "ready" || outcome._tag === "partial-source") {
 			discoveredSessionIds = new Set(outcome.sessions.map((session) => session.piSessionId));
 		}
+		discoveryComplete = outcome._tag === "ready" || outcome._tag === "empty";
 		if (outcome._tag === "partial-source") {
 			discoveryDegraded = true;
 			for (const problem of outcome.problems) {
@@ -692,17 +701,23 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 			selectedSessionId = persisted.selectedSessionId;
 		} else {
 			selectionDegraded = true;
+			const selectionProvenMissing =
+				discoveryComplete && !discoveredSessionIds.has(persisted.selectedSessionId);
+			if (selectionProvenMissing) {
+				yield* dependencies.clearSelectionIntent?.() ?? Effect.void;
+			}
 			diagnostics.push(
 				resilienceDiagnostic({
-					category: discoveredSessionIds.has(persisted.selectedSessionId)
-						? "protocol"
-						: "persistence",
-					code: discoveredSessionIds.has(persisted.selectedSessionId)
-						? "selected-lease-unavailable"
-						: "selected-session-unavailable",
-					message: "The selected session could not provide a fresh exclusive lease",
-					action:
-						"The stale lease was dropped; select another session or retry when pi is available",
+					category: selectionProvenMissing ? "persistence" : "protocol",
+					code: selectionProvenMissing
+						? "selected-session-unavailable"
+						: "selected-lease-unavailable",
+					message: selectionProvenMissing
+						? "The persisted selected session no longer exists"
+						: "The selected session could not provide a fresh exclusive lease",
+					action: selectionProvenMissing
+						? "The unavailable selection was cleared; select a retained session"
+						: "The stale lease was dropped; retry when pi is available or select another session",
 					sessionId: persisted.selectedSessionId,
 				}),
 			);
@@ -777,8 +792,16 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 			}),
 		);
 	}
-	const packages = yield* Effect.result(dependencies.restorePackageRegistrations(restoredPackages));
+	const packages = yield* Effect.result(
+		dependencies
+			.restorePackageRegistrations(restoredPackages)
+			.pipe(
+				Effect.andThen(dependencies.commitPackageRegistrations?.(restoredPackages) ?? Effect.void),
+			),
+	);
+	const committedPackages = Result.isSuccess(packages) ? restoredPackages : [];
 	if (Result.isFailure(packages)) {
+		yield* dependencies.rollbackPackageRegistrations?.(restoredPackages) ?? Effect.void;
 		diagnostics.push(
 			resilienceDiagnostic({
 				category: "package",
@@ -791,23 +814,27 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 	mark("package-registrations", missingPackages.length > 0 || Result.isFailure(packages));
 
 	const restoredExtensionUI = persisted.extensionUI.filter((snapshot) =>
-		restoredPackages.includes(snapshot.scope.packageName),
+		committedPackages.includes(snapshot.scope.packageName),
 	);
-	const unavailableExtensionPackages = [
-		...new Set(
-			persisted.extensionUI
-				.filter((snapshot) => !restoredPackages.includes(snapshot.scope.packageName))
-				.map((snapshot) => snapshot.scope.packageName),
-		),
-	].sort();
-	for (const packageName of unavailableExtensionPackages) {
+	const unavailableExtensionScopes = persisted.extensionUI
+		.filter((snapshot) => !committedPackages.includes(snapshot.scope.packageName))
+		.map(({scope}) => scope)
+		.filter(
+			(scope, index, scopes) =>
+				scopes.findIndex(
+					(candidate) =>
+						candidate.packageName === scope.packageName && candidate.sessionId === scope.sessionId,
+				) === index,
+		);
+	for (const scope of unavailableExtensionScopes) {
 		diagnostics.push(
 			resilienceDiagnostic({
 				category: "ui-bridge",
 				code: "extension-ui-package-unavailable",
 				message: "Persisted extension UI state belonged to an unavailable package",
 				action: "Reinstall the package to recreate its current extension UI state",
-				packageName,
+				packageName: scope.packageName,
+				sessionId: scope.sessionId,
 			}),
 		);
 	}
@@ -824,14 +851,14 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 	}
 	mark(
 		"extension-ui-current",
-		unavailableExtensionPackages.length > 0 || Result.isFailure(extensionUI),
+		unavailableExtensionScopes.length > 0 || Result.isFailure(extensionUI),
 	);
 
 	return {
 		stages,
 		selectedSessionId,
 		settings: restoredSettings,
-		packageRegistrations: restoredPackages,
+		packageRegistrations: committedPackages,
 		extensionUI: restoredExtensionUI,
 		diagnostics,
 	} satisfies RestorationSnapshot;

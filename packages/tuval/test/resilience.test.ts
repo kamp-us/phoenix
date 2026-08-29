@@ -1,3 +1,4 @@
+import {SettingsManager} from "@earendil-works/pi-coding-agent";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, FileSystem, Path} from "effect";
@@ -8,6 +9,7 @@ import {connectLiveSessionWithBackoff} from "../src/backend/live-session.js";
 import {
 	makeFileWorkspaceStateStore,
 	makeMemoryWorkspaceStateStore,
+	makePiOperationalWorkspaceSettings,
 	redactDiagnosticText,
 	resilienceDiagnostic,
 	restoreWorkspace,
@@ -134,12 +136,15 @@ describe("Tuval resilience and restoration", () => {
 					extensionUI: [
 						...persisted.extensionUI,
 						{
-							scope: {packageName: unavailablePackage, sessionId: "removed-session"},
+							scope: {packageName: unavailablePackage, sessionId: "removed session token=private"},
 							statuses: [{key: "secret", text: "must-not-replay"}],
 							widgets: [],
 						},
 						{
-							scope: {packageName: "installed-unregistered", sessionId: "removed-session"},
+							scope: {
+								packageName: "installed-unregistered",
+								sessionId: "removed session token=private",
+							},
 							statuses: [{key: "stale", text: "must-not-replay"}],
 							widgets: [],
 						},
@@ -163,8 +168,164 @@ describe("Tuval resilience and restoration", () => {
 					code === "extension-ui-package-unavailable" && packageName?.startsWith("sha256:"),
 			);
 			assert.isDefined(diagnostic);
+			assert.match(diagnostic?.sessionId ?? "", /^sha256:/);
+			assert.notInclude(JSON.stringify(diagnostic), "removed session token=private");
 			assert.notInclude(JSON.stringify(diagnostic), "private");
 			assert.notInclude(JSON.stringify(diagnostic), unavailablePackage);
+		}),
+	);
+
+	it.effect("clears only a selection proven missing by complete discovery", () =>
+		Effect.gen(function* () {
+			let attempts = 0;
+			let cleared = false;
+			const restored = yield* restoreWorkspace({
+				store: makeMemoryWorkspaceStateStore({...persisted, selectedSessionId: "missing-session"}),
+				discover: () => Effect.succeed(discovered),
+				restoreLineage: () => Effect.void,
+				restoreSelection: () =>
+					Effect.sync(() => {
+						attempts += 1;
+						return false;
+					}),
+				clearSelectionIntent: () =>
+					Effect.sync(() => {
+						cleared = true;
+					}),
+				restoreSettings: () => Effect.void,
+				availablePackageRegistrations: ["available-package"],
+				restorePackageRegistrations: () => Effect.void,
+				restoreExtensionUI: () => Effect.void,
+			});
+			assert.strictEqual(attempts, 1);
+			assert.isTrue(cleared);
+			assert.isNull(restored.selectedSessionId);
+			assert.deepInclude(
+				restored.diagnostics.find(({code}) => code === "selected-session-unavailable"),
+				{category: "persistence", code: "selected-session-unavailable"},
+			);
+		}),
+	);
+
+	it.effect("retains selection intent when discovery cannot prove the session missing", () =>
+		Effect.gen(function* () {
+			let restoredIntent: string | undefined;
+			const restored = yield* restoreWorkspace({
+				store: makeMemoryWorkspaceStateStore({...persisted, selectedSessionId: "offline-session"}),
+				discover: () =>
+					Effect.succeed({_tag: "transport" as const, message: "offline", retryable: true}),
+				restoreLineage: () => Effect.void,
+				restoreSelection: (sessionId) =>
+					Effect.sync(() => {
+						restoredIntent = sessionId;
+						return false;
+					}),
+				restoreSettings: () => Effect.void,
+				availablePackageRegistrations: ["available-package"],
+				restorePackageRegistrations: () => Effect.void,
+				restoreExtensionUI: () => Effect.void,
+			});
+			assert.strictEqual(restoredIntent, "offline-session");
+			assert.isNull(restored.selectedSessionId);
+			assert.isTrue(restored.diagnostics.some(({code}) => code === "selected-lease-unavailable"));
+		}),
+	);
+
+	it.effect("rolls back prepared packages when registration restoration fails", () =>
+		Effect.gen(function* () {
+			let active = false;
+			let replayed: ReadonlyArray<(typeof persisted.extensionUI)[number]> = persisted.extensionUI;
+			const restored = yield* restoreWorkspace({
+				store: makeMemoryWorkspaceStateStore({
+					...persisted,
+					packageRegistrations: ["available-package"],
+				}),
+				discover: () => Effect.succeed(discovered),
+				restoreLineage: () => Effect.void,
+				restoreSelection: () => Effect.succeed(true),
+				restoreSettings: () => Effect.void,
+				availablePackageRegistrations: ["available-package"],
+				preparePackageRegistrations: (packages) =>
+					Effect.sync(() => {
+						active = true;
+						return packages;
+					}),
+				restorePackageRegistrations: () => Effect.fail("registration persistence refused"),
+				rollbackPackageRegistrations: () =>
+					Effect.sync(() => {
+						active = false;
+					}),
+				restoreExtensionUI: (snapshots) =>
+					Effect.sync(() => {
+						replayed = snapshots;
+					}),
+			});
+			assert.isFalse(active);
+			assert.deepStrictEqual(restored.packageRegistrations, []);
+			assert.deepStrictEqual(restored.extensionUI, []);
+			assert.deepStrictEqual(replayed, []);
+			assert.isTrue(
+				restored.diagnostics.some(({code}) => code === "package-registration-restore-failed"),
+			);
+		}),
+	);
+
+	it.effect("round-trips Pi max thinking and rejects invalid values before mutation", () =>
+		Effect.gen(function* () {
+			const manager = SettingsManager.inMemory(
+				{theme: "light", defaultThinkingLevel: "high"},
+				{projectTrusted: true},
+			);
+			const settings = makePiOperationalWorkspaceSettings(manager);
+			yield* settings.restore({theme: "dark", defaultThinkingLevel: "max"});
+			assert.deepInclude(yield* settings.read(), {
+				theme: "dark",
+				defaultThinkingLevel: "max",
+			});
+			const invalid = yield* Effect.result(
+				settings.restore({theme: "must-not-apply", defaultThinkingLevel: "impossible"}),
+			);
+			assert.strictEqual(invalid._tag, "Failure");
+			assert.deepInclude(yield* settings.read(), {
+				theme: "dark",
+				defaultThinkingLevel: "max",
+			});
+		}),
+	);
+
+	it.effect("sanitizes diagnostics supplied by a store before publication", () =>
+		Effect.gen(function* () {
+			const restored = yield* restoreWorkspace({
+				store: {
+					load: () =>
+						Effect.succeed({
+							source: "persisted" as const,
+							document: emptyWorkspaceState(),
+							diagnostics: [
+								{
+									category: "package" as const,
+									code: "package-registration-unavailable" as const,
+									message: 'prompt="raw secret" at /Users/alice/state.json',
+									action: "token=private",
+									packageName: "package token=private",
+								},
+							],
+						}),
+					save: () => Effect.succeed({_tag: "durable" as const}),
+				},
+				discover: () => Effect.succeed({_tag: "empty" as const, sessions: []}),
+				restoreLineage: () => Effect.void,
+				restoreSelection: () => Effect.succeed(false),
+				restoreSettings: () => Effect.void,
+				availablePackageRegistrations: [],
+				restorePackageRegistrations: () => Effect.void,
+				restoreExtensionUI: () => Effect.void,
+			});
+			const envelope = JSON.stringify(restored.diagnostics);
+			assert.notInclude(envelope, "raw secret");
+			assert.notInclude(envelope, "alice");
+			assert.notInclude(envelope, "private");
+			assert.match(restored.diagnostics[0]?.packageName ?? "", /^sha256:/);
 		}),
 	);
 

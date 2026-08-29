@@ -40,6 +40,7 @@ export interface LiveSessionService {
 	readonly current: () => Effect.Effect<LiveSessionView | null>;
 	readonly selectionIntent: () => Effect.Effect<string | null>;
 	readonly restoreSelectionIntent: (sessionId: string) => Effect.Effect<AttachLiveSessionOutcome>;
+	readonly clearSelectionIntent?: () => Effect.Effect<void>;
 	readonly attach: (
 		sessionId: string,
 		checkpoint?: LiveSelectionCheckpoint,
@@ -351,6 +352,10 @@ class ReconnectingLiveSession implements LiveSessionService {
 		this.#selectedSessionId = sessionId;
 		return this.#service.attach(sessionId);
 	};
+	readonly clearSelectionIntent = () => {
+		this.#selectedSessionId = undefined;
+		return this.#service.release().pipe(Effect.asVoid);
+	};
 	readonly attach = (sessionId: string, checkpoint?: LiveSelectionCheckpoint) =>
 		this.#service.attach(sessionId, checkpoint).pipe(
 			Effect.tap((outcome) =>
@@ -506,6 +511,9 @@ export const makeDurableLiveSession = (
 		current: service.current,
 		selectionIntent: service.selectionIntent,
 		restoreSelectionIntent: service.restoreSelectionIntent,
+		...(service.clearSelectionIntent === undefined
+			? {}
+			: {clearSelectionIntent: service.clearSelectionIntent}),
 		attach: (sessionId) => service.attach(sessionId, durableCheckpoint),
 		prompt: service.prompt,
 		create: (request) => service.create(request, durableCheckpoint),

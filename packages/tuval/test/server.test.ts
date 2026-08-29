@@ -590,6 +590,80 @@ describe("Tuval local server", () => {
 			}),
 		);
 
+		it.effect("rolls back catalog and replay when registration persistence fails", () =>
+			Effect.gen(function* () {
+				const {root, asset} = yield* fixture();
+				const contribution = yield* contributionPackage(root);
+				const packageName = "server-contribution-fixture";
+				const store = makeMemoryWorkspaceStateStore({
+					version: 1,
+					selectedSessionId: null,
+					settings: {},
+					packageRegistrations: [packageName],
+					extensionUI: [
+						{
+							scope: {packageName, sessionId: "registration-failure-session"},
+							statuses: [{key: "stale", text: "must-not-replay"}],
+							widgets: [],
+						},
+					],
+				});
+				const server = yield* startTuval({
+					staticAsset: asset,
+					packageContributions: contribution.options,
+					workspaceStateStore: store,
+					operationalPackageRegistrations: {
+						available: [packageName],
+						read: () => Effect.succeed([packageName]),
+						restore: () => Effect.fail("registration persistence refused"),
+					},
+					openBrowser: () => Effect.void,
+				});
+				const catalog = (yield* tryPromise(() =>
+					fetch(`${server.url}/api/contributions`).then((response) => response.json()),
+				)) as {frontend: unknown[]};
+				assert.deepStrictEqual(catalog.frontend, []);
+				assert.deepStrictEqual(store.current().packageRegistrations, []);
+				assert.deepStrictEqual(store.current().extensionUI, []);
+				const resilience = (yield* tryPromise(() =>
+					fetch(`${server.url}/api/resilience`).then((response) => response.json()),
+				)) as {diagnostics: Array<{code: string}>; packageRegistrations: string[]};
+				assert.deepStrictEqual(resilience.packageRegistrations, []);
+				assert.isTrue(
+					resilience.diagnostics.some(({code}) => code === "package-registration-restore-failed"),
+				);
+			}),
+		);
+
+		it.effect("clears proven-missing selection intent durably", () =>
+			Effect.gen(function* () {
+				const {asset} = yield* fixture();
+				const unavailable: ByteTransportFactory = () => Promise.reject(new Error("offline"));
+				const missingStore = makeMemoryWorkspaceStateStore({
+					version: 1,
+					selectedSessionId: "proven-missing-session",
+					settings: {},
+					packageRegistrations: [],
+					extensionUI: [],
+				});
+				const missing = yield* startTuval({
+					staticAsset: asset,
+					protocolTransport: makeDiscoveryTransport([]),
+					liveSessionTransport: unavailable,
+					reconnect: {retries: 0, rearmDelayMs: 10_000},
+					workspaceStateStore: missingStore,
+					openBrowser: () => Effect.void,
+				});
+				assert.isNull(missingStore.current().selectedSessionId);
+				const missingResilience = (yield* tryPromise(() =>
+					fetch(`${missing.url}/api/resilience`).then((response) => response.json()),
+				)) as {diagnostics: Array<{code: string}>};
+				assert.isTrue(
+					missingResilience.diagnostics.some(({code}) => code === "selected-session-unavailable"),
+				);
+			}),
+		);
+
 		it.effect("commits registrations and replay state only for activated backend packages", () =>
 			Effect.gen(function* () {
 				const {root, asset} = yield* fixture();

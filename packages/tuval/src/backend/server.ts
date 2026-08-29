@@ -8,7 +8,7 @@ import {
 	type LivePublisher,
 	type LiveTopicPublisher,
 } from "@kampus/fate-effect";
-import {Effect, Fiber, FileSystem, Layer, Queue, Schema, Stream} from "effect";
+import {Effect, Exit, Fiber, FileSystem, Layer, Queue, Schema, Scope, Stream} from "effect";
 import * as Semaphore from "effect/Semaphore";
 import type {ExtensionUISnapshot} from "../shared/extension-ui.js";
 import type {RestorationSnapshot, WorkspaceStateDocument} from "../shared/resilience.js";
@@ -29,6 +29,7 @@ import {
 	makeUnavailableLiveSession,
 } from "./live-session.js";
 import {
+	type ActivatedPackageContributions,
 	activatePackageContributions,
 	emitContributionCatalog,
 	type LoadPackageContributionsOptions,
@@ -375,38 +376,52 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 		assetFiles: new Map(),
 	};
 	let backendContributionDiagnostics: TuvalContributionCatalog["diagnostics"] = [];
-	const preparePackageRegistrations = (requestedPackages: ReadonlyArray<string>) => {
-		const requested = new Set(requestedPackages);
-		const frontend = contributions.frontend.filter(({packageName}) => requested.has(packageName));
-		const assets = new Set(frontend.map(({asset}) => asset));
-		return activatePackageContributions(
-			{
-				...contributions,
-				backend: contributions.backend.filter(({packageName}) => requested.has(packageName)),
-				frontend,
-				assetFiles: new Map([...contributions.assetFiles].filter(([asset]) => assets.has(asset))),
-			},
-			packageExtensionUIBridge,
-		).pipe(
-			Effect.tap((activated) =>
-				Effect.gen(function* () {
-					activeContributions = activated.catalog;
-					backendContributionDiagnostics = activated.diagnostics;
-					if (activated.failedPackageNames.size > 0) {
-						const snapshots = yield* rawExtensionUI.snapshots();
-						const failedPackageNames: ReadonlySet<string> = activated.failedPackageNames;
-						yield* rawExtensionUI.restore(
-							snapshots.filter(({scope}) => !failedPackageNames.has(scope.packageName)),
-						);
-					}
-				}),
-			),
-			Effect.map((activated) => {
-				const failedPackageNames: ReadonlySet<string> = activated.failedPackageNames;
-				return requestedPackages.filter((packageName) => !failedPackageNames.has(packageName));
-			}),
-		);
-	};
+	let activeContributionScope: Scope.Closeable | undefined;
+	let preparedActivation:
+		| {
+				readonly scope: Scope.Closeable;
+				readonly activated: ActivatedPackageContributions;
+		  }
+		| undefined;
+	const preparePackageRegistrations = (requestedPackages: ReadonlyArray<string>) =>
+		Effect.gen(function* () {
+			const requested = new Set(requestedPackages);
+			const frontend = contributions.frontend.filter(({packageName}) => requested.has(packageName));
+			const assets = new Set(frontend.map(({asset}) => asset));
+			const scope = yield* Scope.make();
+			const activated = yield* activatePackageContributions(
+				{
+					...contributions,
+					backend: contributions.backend.filter(({packageName}) => requested.has(packageName)),
+					frontend,
+					assetFiles: new Map([...contributions.assetFiles].filter(([asset]) => assets.has(asset))),
+				},
+				packageExtensionUIBridge,
+			).pipe(
+				Effect.provideService(Scope.Scope, scope),
+				Effect.onError(() => Scope.close(scope, Exit.void)),
+			);
+			preparedActivation = {scope, activated};
+			const failedPackageNames: ReadonlySet<string> = activated.failedPackageNames;
+			return requestedPackages.filter((packageName) => !failedPackageNames.has(packageName));
+		});
+	const commitPackageRegistrations = () =>
+		Effect.sync(() => {
+			if (preparedActivation === undefined) return;
+			activeContributions = preparedActivation.activated.catalog;
+			backendContributionDiagnostics = preparedActivation.activated.diagnostics;
+			activeContributionScope = preparedActivation.scope;
+			preparedActivation = undefined;
+		});
+	const rollbackPackageRegistrations = Effect.fn("TuvalServer.rollbackPackageRegistrations")(
+		function* () {
+			if (preparedActivation !== undefined) {
+				yield* Scope.close(preparedActivation.scope, Exit.void);
+				preparedActivation = undefined;
+			}
+			activeContributions = {...contributions, backend: [], frontend: [], assetFiles: new Map()};
+		},
+	);
 	const operationalSettings =
 		options.operationalWorkspaceSettings ?? makeOperationalWorkspaceSettings();
 	const operationalRegistrations =
@@ -434,14 +449,23 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 			rawLiveSession
 				.restoreSelectionIntent(sessionId)
 				.pipe(Effect.map((outcome) => outcome._tag === "attached")),
+		clearSelectionIntent: () =>
+			rawLiveSession.clearSelectionIntent?.() ?? rawLiveSession.release().pipe(Effect.asVoid),
 		restoreSettings: operationalSettings.restore,
 		readSettings: operationalSettings.read,
 		availablePackageRegistrations: operationalRegistrations.available,
 		preparePackageRegistrations,
 		restorePackageRegistrations: operationalRegistrations.restore,
+		commitPackageRegistrations,
+		rollbackPackageRegistrations,
 		restoreExtensionUI: rawExtensionUI.restore,
 	});
-	const activeNames = new Set(yield* operationalRegistrations.read());
+	const activeNames = new Set(restored.packageRegistrations);
+	yield* Effect.addFinalizer(() =>
+		activeContributionScope === undefined
+			? Effect.void
+			: Scope.close(activeContributionScope, Exit.void),
+	);
 	let packageDiagnostics: Array<ReturnType<typeof resilienceDiagnostic>> = [];
 	const transportDiagnostics = (yield* rawLiveSession.eventsAfter(0)).flatMap((event) =>
 		event._tag === "diagnostic" && event.diagnostic !== undefined ? [event.diagnostic] : [],
@@ -455,7 +479,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 			...transportDiagnostics,
 			...packageDiagnostics,
 			...persistenceDiagnostics,
-		],
+		].map(resilienceDiagnostic),
 	});
 	let liveSession: LiveSessionService = rawLiveSession;
 	const persistenceSemaphore = yield* Semaphore.make(1);
@@ -488,7 +512,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 									? rawExtensionUI.snapshots()
 									: Effect.succeed(candidateExtensionUI),
 								operationalSettings.read(),
-								operationalRegistrations.read(),
+								Effect.succeed([...activeNames]),
 							],
 							{concurrency: 1},
 						);
@@ -502,7 +526,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 					};
 					const warning = yield* workspaceStateStore.save(document);
 					if (warning._tag === "committed-with-warning") {
-						persistenceDiagnostics.push(warning.diagnostic);
+						persistenceDiagnostics.push(resilienceDiagnostic(warning.diagnostic));
 					}
 					yield* Effect.sync(commitExtensionUI);
 					return true;
