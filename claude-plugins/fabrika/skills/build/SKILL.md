@@ -578,8 +578,14 @@ tiebreak to your own prior claim and refuses on `15`.
 `--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` the claim
 step refuses on `31`, so the entry can never be run past the fence. `--resume-lane` **re-keys** the
 branch the prior lane built on to this claim's nonce instead of cutting a second one — two branches
-carrying one child's commits is the range `lane prove` calls underivable, and that refusal cannot be
-cleared from inside a worktree. It refuses on `7` when no branch in this clone's refs was cut for the
+carrying one child's commits is the range `lane prove` calls underivable. **A clone already in that
+state has one move, and it is yours to take**: `fabrika build retire-branch <n>` renames the
+superseded branches out of `build/` — never deletes them — so one carrying branch is left and the
+range locates (ADR [0324](../../../../.decisions/0324-retire-superseded-lane-branch.md)). It picks
+the survivor off the board, so it refuses on `34` rather than guess when no authorized claim marker
+carries a candidate's lane nonce, and on `33` when a worktree still holds a branch it would rename,
+naming `fabrika build retire` as the act that clears that hold.
+`--resume-lane` refuses on `7` when no branch in this clone's refs was cut for the
 number — refs are shared across every worktree, so that means the branch is gone, not that you are
 standing in the wrong tree — and on `11` when another worktree still holds the branch, which it
 proves **before** re-keying: `git branch -m` does not refuse there, it renames the branch out from

@@ -195,7 +195,7 @@ export const runBranch = (
 			if (rest.length > 0) {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: ${candidates.join(", ")} were all cut for #${issue} — which one this lane resumes is not derivable here; retire the superseded branches, then re-run.`,
+					`${VERB}: ${candidates.join(", ")} were all cut for #${issue} — which one this lane resumes is not derivable here; retire the superseded branches with "fabrika build retire-branch ${issue}", which renames them out of build/ without deleting anything (ADR 0324), then re-run.`,
 					held.notes,
 				);
 			}

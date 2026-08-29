@@ -38,6 +38,7 @@ import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {runReap} from "./reap-verb.ts";
 import {runResumeChild} from "./resume-child-verb.ts";
+import {runRetireBranch} from "./retire-branch-verb.ts";
 import {runRetire} from "./retire-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
@@ -286,6 +287,19 @@ const retire = leafCommand(
 	Command.withShortDescription("Take back the checkout an orphaned build worktree is holding."),
 	Command.withDescription(
 		'Retire the working trees of this clone that hold #<n>\'s lane branch, so a repair lane refused at "build branch --resume-lane" can stand where it needs to (ADR 0323). Two licenses, both written positive board states and never an inference from a tree that looks idle: the ticket is TERMINAL (a closed issue, a merged PR), or an authorized ADR 0295 build-adopt marker on #<n> names the session whose claim carries that branch\'s lane nonce. DIRTINESS IS NOT A REFUSAL — an agent routinely leaves a worktree dirty after its ticket merged — and it costs nobody their only copy either: ADR 0321\'s salvage runs first, committing whatever the tree holds uncommitted onto its own branch, and only then is the tree removed WITHOUT --force, which that ADR bans on every path. A removal that still refuses (a locked tree does, however clean) is reported as an incident to file, never overridden. The removal takes the tree, never the branch. It first prunes registrations whose directory is already gone, never removes the tree the run is standing in, and reads every removal back off a second worktree list. A worktree-isolated caller may run it — the harness rule that refuses a typed cross-worktree git does not bind a verb\'s own child process. Prints {"answer":"retired"|"held"|"none","number":n,"retired":[…],"held":[…]}. Exits 7 (#<n> proven absent), 8 (the salvage or the removal failed — UNKNOWN), 9 (git reported a removal and the registration survives), 11 (a precondition read failed), 33 (a tree still holds the branch and the board licenses no release). Example: fabrika build retire 6567',
+	),
+);
+
+const retireBranch = leafCommand(
+	"retire-branch",
+	{number: issueArg, repo: repoFlag},
+	Effect.fn(function* ({number, repo}) {
+		yield* emit(yield* runRetireBranch({number, repo: Option.getOrNull(repo), env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription("Retire an epic child's superseded lane branches out of build/."),
+	Command.withDescription(
+		'Clear the two-branch deadlock on epic child #<n> by RENAMING each superseded lane branch out of the build/ namespace into retired/ (ADR 0324). NO PATH OF THIS VERB DELETES A BRANCH: after the rename every commit is still there and still reachable by the new name, so a mistaken retirement costs a rename back rather than the work — which matters because a child opens no PR (ADR 0285) and its branch is the only copy. WHICH BRANCH IS SUPERSEDED IS PROVEN, NEVER GUESSED: the survivor is the candidate whose lane nonce an AUTHORIZED claim marker on #<n> carries, and where no marker attests one — or where several do — nothing is renamed and the verb refuses. Before any rename it proves no working tree of this clone holds a branch it is about to move: `git branch -m` does not refuse a held branch, it renames and silently retargets that tree\'s HEAD. Fewer than two branches is not a deadlock — zero is a refusal, one answers "none". Every rename is read back off a second local-branch read. A worktree-isolated lane may run it against a branch it never cut; refs are shared across every worktree of a clone. Prints {"answer":"retired"|"none","number":n,"survivor":"<branch>","retired":[{"from":…,"to":…}]}. Exits 7 (no branch in this clone was cut for #<n>), 8 (git refused a rename — UNKNOWN), 9 (git reported a rename and the read-back disagrees), 11 (a precondition read failed), 33 (a working tree holds a branch to be renamed — clear it with fabrika build retire <n>), 34 (the board attests no single survivor). Example: fabrika build retire-branch 6296',
 	),
 );
 
@@ -780,6 +794,7 @@ export const buildCommand = Command.make("build").pipe(
 		release,
 		adopt,
 		retire,
+		retireBranch,
 		reap,
 		issue,
 		branch,
