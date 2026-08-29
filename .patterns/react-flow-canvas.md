@@ -1,8 +1,8 @@
 # React Flow canvas
 
-Prospective shape for Tuval's root session canvas after its React 19 migration. It applies when
-`packages/tuval/src/frontend-shell/app.ts` becomes the React root; it does not make React Flow the
-owner of session, relationship, transcript, prompt, or chat-pane state.
+Current shape for Tuval's React 19 root session canvas. The root lives at
+`packages/tuval/src/frontend-shell/app.tsx`; React Flow does not own session, relationship,
+transcript, prompt, or chat-pane state.
 
 > Derived from `@xyflow/react@12.11.5` — re-verify on pin bump.
 
@@ -35,10 +35,11 @@ practice because it gives the same graph two state owners.
 ```tsx
 import {
 	Background,
-	Controls,
+	Panel,
 	Handle,
 	Position,
 	ReactFlow,
+	useReactFlow,
 	applyEdgeChanges,
 	applyNodeChanges,
 	type Edge,
@@ -49,7 +50,9 @@ import {
 	type OnEdgesChange,
 	type OnNodesChange,
 } from "@xyflow/react";
+import {Scan, ZoomIn, ZoomOut} from "lucide-react";
 import {useCallback, useEffect, useState} from "react";
+import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import "@xyflow/react/dist/style.css";
 
 type SessionCanvasNode = Node<SessionNodeData, "session">;
@@ -65,6 +68,23 @@ function SessionNodeCard({data}: NodeProps<SessionCanvasNode>) {
 			<SessionSummary session={data} />
 			<Handle id="relation-out" type="source" position={Position.Right} isConnectable={false} />
 		</article>
+	);
+}
+
+function CanvasControls() {
+	const {fitView, zoomIn, zoomOut} = useReactFlow();
+	return (
+		<Panel className="canvas-controls" position="top-left" aria-label="Tuval görünüm denetimleri">
+			<Button type="button" variant="secondary" icon={<ZoomIn size={16} />} onClick={() => void zoomIn()}>
+				Yakınlaştır
+			</Button>
+			<Button type="button" variant="secondary" icon={<ZoomOut size={16} />} onClick={() => void zoomOut()}>
+				Uzaklaştır
+			</Button>
+			<Button type="button" variant="secondary" icon={<Scan size={16} />} onClick={() => void fitView()}>
+				Tümünü göster
+			</Button>
+		</Panel>
 	);
 }
 
@@ -101,7 +121,7 @@ function TuvalCanvas({sessions, relationships}: TuvalCanvasProps) {
 			fitView
 		>
 			<Background />
-			<Controls />
+			<CanvasControls />
 		</ReactFlow>
 	);
 }
@@ -170,8 +190,10 @@ must pass both `viewport` and `onViewportChange`, following the upstream control
 never pass a viewport without relaying user pan/zoom changes back.
 
 The canvas parent must have non-zero dimensions: React Flow's root wrapper is `width: 100%` and
-`height: 100%`. Render `Background` and `Controls` as children so they read the same internal
-transform; `Background` derives its scale and offset directly from that transform.
+`height: 100%`. Render `Background` and the `Panel`-based shared-Button controls as children so they
+read the same internal transform; `Background` derives its scale and offset directly from that
+transform. Do not use React Flow's stock `Controls`: Tuval's labeled Lucide actions keep one shared
+button, focus, and target-size contract.
 
 ## Test contracts
 
@@ -193,12 +215,13 @@ assert both the node transform and viewport transform remain unchanged while the
 updates. This is the integration proof that `fitView` stayed initial and reconciliation did not
 steal the user's position.
 
-## Prospective scope
+## Scope
 
-This pattern begins with child
-[#7165](https://github.com/kamp-us/phoenix/issues/7165#issuecomment-5449854114). There is no current
-React Flow call site in phoenix. It governs Tuval's graph canvas and its adapter tests, not ordinary
-lists, the slide-in Composer chat pane, or `apps/web` screens that have no graph interaction.
+This pattern is implemented by child
+[#7165](https://github.com/kamp-us/phoenix/issues/7165#issuecomment-5449854114) at
+`packages/tuval/src/frontend-shell/session-canvas.tsx`. It governs Tuval's graph canvas and adapter
+tests, not ordinary lists, the slide-in Composer chat pane, or `apps/web` screens that have no graph
+interaction.
 
 ## Binding decision
 
