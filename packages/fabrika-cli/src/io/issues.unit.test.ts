@@ -17,6 +17,7 @@ import {
 	createComment,
 	createIssue,
 	deleteComment,
+	getCommentRecord,
 	getIssue,
 	issueTimeline,
 	listComments,
@@ -561,6 +562,48 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 		expect(http.calls[0]).toBe(
 			"DELETE https://api.github.com/repos/kamp-us/phoenix/issues/comments/5170139674",
 		);
+	});
+
+	it("getCommentRecord reads the whole record off a well-formed comment", async () => {
+		const http = scripted([
+			[
+				/comments\/7/,
+				{
+					status: 200,
+					body: {
+						id: 7,
+						user: {login: "usirin"},
+						body: "ruling text",
+						created_at: "2026-08-23T00:00:00Z",
+						updated_at: "2026-08-23T01:00:00Z",
+					},
+				},
+			],
+		]);
+		const result = await against(getCommentRecord("kamp-us/phoenix", 7), http);
+		expect(result).toEqual({
+			_tag: "Ok",
+			value: {
+				id: 7,
+				author: "usirin",
+				createdAt: "2026-08-23T00:00:00Z",
+				updatedAt: "2026-08-23T01:00:00Z",
+				body: "ruling text",
+			},
+		});
+	});
+
+	it("getCommentRecord refuses a 200 whose author login is unreadable — a blank author would downstream as a proven AUTHOR_UNDECLARED (#6983)", async () => {
+		for (const user of [undefined, {}, {login: 9}]) {
+			const http = scripted([
+				[/comments\/8/, {status: 200, body: {id: 8, user, body: "mystery bytes"}}],
+			]);
+			const result = await against(getCommentRecord("kamp-us/phoenix", 8), http);
+			expect(result._tag).toBe("Failure");
+			if (result._tag === "Failure") {
+				expect(result.reason).toContain("no readable author login");
+			}
+		}
 	});
 
 	it("patchIssueBody and deleteComment surface the failure rather than swallowing it", async () => {
