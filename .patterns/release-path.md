@@ -244,9 +244,19 @@ second package's tag along with it.
 
 That flag also fixes the head branch names: with it `true` the merge plugin never runs
 (`if (!this.separatePullRequests)` in the action's bundle), and every branch is
-`release-please--branches--main--components--<component>`. The aggregate
-`release-please--branches--main` does not exist. Anything that has to find a Release PR —
-the `#5946` body repair and the `#5718` checks kick both do — derives those names from the
-config rather than hardcoding one, because `gh pr list --head` answers empty for a branch
-that does not exist and an empty answer is indistinguishable from "no release is due"
-(#7068).
+`release-please--branches--main--components--<component>`. release-please no longer
+*produces* the aggregate `release-please--branches--main`. Anything that has to find a
+Release PR — the `#5946` body repair and the `#5718` checks kick both do — derives those
+names from the config rather than hardcoding one, because `gh pr list --head` answers empty
+for a branch nothing grooms and an empty answer is indistinguishable from "no release is
+due" (#7068).
+
+**The aggregate branch that already existed is not removed by the flip, and it is
+dangerous.** release-please matches an existing Release PR by head branch name, so once it
+stops computing the aggregate name it neither grooms nor closes the branch — it is simply
+abandoned, still open, still merge-armed, and no longer covered by either guard above. Its
+checks freeze at whatever they last read, which is stale-but-green reading exactly like
+ready: merging it cuts tags for every package off a frozen commit range. **Closing that PR
+is part of landing the flip, and it is a human act no diff can perform.** If you find an
+open `chore: release main` on `release-please--branches--main`, it is that orphan — close
+it, and take the release from the per-component PRs instead.

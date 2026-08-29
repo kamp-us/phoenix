@@ -96,20 +96,37 @@ jobs:
       - name: Derive the Release PR branch names from the release-please config
         id: release-branches
         env:
-          TARGET_BRANCH: ${{ github.ref_name }}
+          # release-please is given no `target-branch` input, so it resolves its target to the
+          # repository's DEFAULT branch, not to the ref that happened to trigger this run. The
+          # two agree under `on: push: branches: [main]`, but only this one is right by
+          # construction.
+          TARGET_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -uo pipefail
 
           config=release-please-config.json
 
-          if [ "$(jq -r '."separate-pull-requests" // false' "$config")" != "true" ]; then
-            echo "::error::$config no longer sets separate-pull-requests: true, so the per-component branch grammar this step renders is wrong. Update this step with the flag."
+          # release-please resolves the flag PER PATH (`pathConfig.separatePullRequests ??
+          # defaultConfig.separatePullRequests`), so a package-level `false` collapses that one
+          # package onto the aggregate branch while the top-level key still reads `true`.
+          # `has` rather than `//`: jq's `//` treats a literal `false` as absent, so the
+          # override this assertion exists to catch is the one `//` would fall back past.
+          collapsing=$(jq -r '
+            (if has("separate-pull-requests") then ."separate-pull-requests" else false end) as $default
+            | .packages | to_entries[]
+            | select((if .value | has("separate-pull-requests") then .value["separate-pull-requests"] else $default end) != true)
+            | .key' "$config")
+          if [ -n "$collapsing" ]; then
+            echo "::error::these package roots do not resolve separate-pull-requests to true, so their release collapses onto the aggregate branch this workflow no longer names: $(echo "$collapsing" | tr '\n' ' ')"
             exit 1
           fi
 
-          uncomponented=$(jq -r '.packages | to_entries[] | select(.value.component == null) | .key' "$config")
+          # An empty-string component is not a missing one to release-please: `this.component ||
+          # default` treats it as falsy and falls back to the default component, so the real PR
+          # lands on a branch this step never renders.
+          uncomponented=$(jq -r '.packages | to_entries[] | select((.value.component // "") == "") | .key' "$config")
           if [ -n "$uncomponented" ]; then
-            echo "::error::these package roots declare no component, so their Release PR branch cannot be named here: $(echo "$uncomponented" | tr '\n' ' ')"
+            echo "::error::these package roots declare no usable component, so their Release PR branch cannot be named here: $(echo "$uncomponented" | tr '\n' ' ')"
             exit 1
           fi
 
