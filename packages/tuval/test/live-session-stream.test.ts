@@ -8,7 +8,7 @@ import {
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Stream} from "effect";
-import type {LiveSessionService} from "../src/backend/live-session.js";
+import {type LiveSessionService, makeUnavailableLiveSession} from "../src/backend/live-session.js";
 import {startTuval} from "../src/backend/server.js";
 import type {LiveSessionEvent} from "../src/shared/live-session.js";
 import {tryPromise} from "./test-effect.js";
@@ -21,6 +21,7 @@ const event: LiveSessionEvent = {
 };
 
 const liveSession: LiveSessionService = {
+	...makeUnavailableLiveSession(),
 	current: () => Effect.succeed(null),
 	attach: (sessionId) =>
 		Effect.succeed({_tag: "refused", sessionId, code: "disconnected", reason: "not used"}),
