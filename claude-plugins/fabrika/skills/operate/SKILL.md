@@ -585,7 +585,10 @@ The remedy the refusal names is the class relay, and it is the reviewer's to mak
 **An epic child is the one lane where that deferral is not routed at all — it is the child's shape.**
 A child opens no PR (ADR 0285) and no verb of this CLI posts `review-ui` at range scope, so its
 `PASS` out of `review` always hands the namespace on, whatever classes stand and whatever leaf the
-machine names next. There is nothing to relay and nothing for you to decide: requiring it held every
+machine names next. **The deferral** is the thing you neither relay nor decide — the class relay is
+untouched, so keep passing `--class` on a child's `lane report` exactly as you would anywhere else:
+it lands the `classes` field on the event line, and dropping it drops that record for nothing.
+Requiring the namespace held every
 ui-bearing child at exit `23` with no cell and no verb that could ever free it, which is what cost
 epic #6767's tracer C its whole lane
 ([#7041](https://github.com/kamp-us/phoenix/issues/7041)). The creditor is the tail, and the bar

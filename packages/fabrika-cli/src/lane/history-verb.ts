@@ -1,6 +1,8 @@
 /**
  * `lane history` — the append-only log, verbatim: `{task, event, at}` per recorded event, plus the
- * optional `pr`/`comment` refs a shell-recorded event carries as its evidence.
+ * optional fields an event carries — the `pr`/`comment` refs a shell-recorded event names as its
+ * evidence, the `round` a `CLEARED` clears, the `classes` standing at the event, and the `deferred`
+ * namespaces a proof handed to a later cell (ADR 0340).
  *
  * The log IS the history; `from`/`to` are reconstructible by folding, never stored. A fresh lane
  * answers `[]` — no events yet is a well-formed empty history, not a fault.

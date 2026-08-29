@@ -376,9 +376,10 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		const out = await run(laneAt("review"), seams, "PASS", ["ui"]);
 
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
-			{namespace: "review-code", state: "pass", commentId: 1},
-		]);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({
+			namespaces: [{namespace: "review-code", state: "pass", commentId: 1}],
+			deferred: ["review-ui"],
+		});
 		expect(out.stderr.join("\n")).toContain(
 			"review-ui on #4318 is owed by the cell this event routes into",
 		);
@@ -480,6 +481,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
 			{namespace: "review-code", state: "pass", commentId: 1},
 		]);
+		expect(JSON.parse(out.stdout).evidence.deferred).toEqual([]);
 	});
 
 	it("proves a ui lane whose review-ui is filled by a head-bound routed-elsewhere record", async () => {
