@@ -552,15 +552,25 @@ surface's convention lives in
 |---|---|
 | `hook check` | whether the envelope on stdin is one fabrika can act on |
 | `hook codes` | the exit taxonomy every verb in the group allocates from |
+| `hook worktree-create` | the absolute path of the provisioned worktree the envelope named |
 
 **Exit codes.** `3` stdin held nothing · `12` bytes arrived and are provably not an envelope ·
 `13` fd 0 could not be read · `14` a readable envelope arrived and is not the event this verb
 judges. Three failure codes rather than one, so an unread pipe cannot pass for a bad payload.
+`worktree-create` adds four proven refusals of its own: `15` the envelope names no creatable
+worktree · `16` the base could not be fetched · `17` `git worktree add` failed · `18` the tree was
+created and arrived dep-less.
 
-- **The required fields are captured, not assumed.** They are the keys present in both real
-  envelopes committed at `src/hook/__fixtures__/`, with their capture method and harness version
-  beside them (ADR 0180). The golden test runs the argv it reads out of the committed `hooks.json`,
-  so a green test cannot be exercising a verb the surface does not declare.
+- **The required fields are captured, not assumed.** They are the keys present in every real
+  envelope committed at `src/hook/__fixtures__/`, with each capture's method and harness version
+  beside it (ADR 0180). The golden test runs the argv it reads out of the committed declarations, so
+  a green test cannot be exercising a verb no surface declares.
+- **`hook worktree-create` is the one verb that writes.** It creates the `isolation: worktree` tree
+  and prints the path the harness adopts, so every failure arm refuses and a refusal blocks the
+  spawn — including the last one, which reds when `git worktree add` succeeded and
+  `node_modules/.pnpm` is still absent. It is declared in phoenix's own `.claude/settings.json` and
+  deliberately **not** in the plugin's `hooks.json`, because a plugin-declared provider preempts git
+  worktree creation in every adopting repo (ADR 0337).
 - **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
   `PreToolUse` — is retired, decision and declaration both (ADR
   [0331](../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human

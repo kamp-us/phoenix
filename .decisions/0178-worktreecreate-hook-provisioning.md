@@ -1,7 +1,7 @@
 ---
 id: 0178
 title: A WorktreeCreate Hook Provisions isolation:worktree, Giving the Deps Install a 600s Budget Instead of Racing the Default-Path Timeout
-status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md)
+status: superseded by [0303](0303-retire-kampus-pipeline-plugin.md), mechanism restored by [0337](0337-worktree-provisioning-rehomed-onto-repo-settings.md)
 superseded_by: 0303
 date: 2026-07-12
 tags: [pipeline, worktree, tooling, harness]
@@ -142,3 +142,23 @@ Two follow-ons close the loop this ADR opened:
    remote tip, never local `main` — which is why this is preferred over any "sync/fast-forward local
    main" approach (there is no local ref to clobber). The `--detach` rationale above is unchanged;
    only the base commit-ish moves from the stale cached ref to the fresh `FETCH_HEAD`.
+
+## Amendment (2026-08-28, #7220) — the mechanism is restored, in a different home
+
+`superseded_by: 0303` still reads right for the **script**: `create-worktree.sh` is deleted and no
+path under `claude-plugins/kampus-pipeline/` survives. What it read wrong is the *decision*. ADR
+[0303](0303-retire-kampus-pipeline-plugin.md) retired this hook as collateral of deleting a plugin,
+not as a call to stop provisioning worktrees, and for the months between that deletion and this
+amendment **nothing provisioned a harness worktree at all** — every `isolation: worktree` shell
+arrived dep-less and paid an install before its first verb, or failed on it (#7220).
+
+ADR [0337](0337-worktree-provisioning-rehomed-onto-repo-settings.md) restores what this ADR decided:
+the `WorktreeCreate` trigger, the 600s budget, the `--detach` base, the #3621 fresh-base fetch, and
+ADR [0109](0109-worktree-deps-provision-not-share.md)'s install reused rather than reimplemented.
+Three things did not come back, and each for a reason 0337 states: the trigger is a `fabrika` verb
+rather than a shell script, its home is this repo's `.claude/settings.json` rather than a plugin's
+`hooks.json` (a plugin-declared provider preempts git in every adopting repo), and the owner stamp is
+dropped because its only consumer left with `packages/pipeline-cli/`.
+
+Read this file for the *why* — the race, the fail-closed polarity, the `--detach` rationale, the
+documented-vs-undocumented split — all of which 0337 rests on. Read 0337 for what is live.

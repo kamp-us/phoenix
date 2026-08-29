@@ -15,7 +15,13 @@ Both rules are checked as **data**, not by eye: [`../../../packages/fabrika-cli/
 
 ### The declared hooks, and how they are proven
 
-One hook is declared today.
+One hook is declared **on this surface** today. This repo declares a second on its own, in
+[`.claude/settings.json`](../../../.claude/settings.json) — `fabrika hook worktree-create` on
+`WorktreeCreate` — for the reason [below](#worktreecreate--a-provider-hook-left-undeclared): that
+event is safe where the toolchain is guaranteed and unsafe where it is not, so it lives where the
+guarantee holds and never here. Both documents are read by the same
+[`declaration.ts`](../../../packages/fabrika-cli/src/hook/declaration.ts) and judged against the same
+two rules; what differs is which events each may carry.
 
 `fabrika hook check` on `SessionStart` is this surface's proof — it reads the envelope the harness writes to a hook's stdin and answers whether it is one fabrika can act on ([`../../../packages/fabrika-cli/src/hook/check-verb.ts`](../../../packages/fabrika-cli/src/hook/check-verb.ts)).
 
@@ -69,7 +75,9 @@ That failure mode is not survivable, and the reason is sharper than "it would be
 WorktreeCreate hook failed: hook is configured but did not run (workspace not trusted, disableAllHooks set, or matcher mismatch)
 ```
 
-A machine with no fabrika install would therefore lose `--worktree` entirely, which is the inverse of ADR [0250](../../../.decisions/0250-fabrika-hook-cannot-run-fails-open.md). Left undeclared.
+A machine with no fabrika install would therefore lose `--worktree` entirely, which is the inverse of ADR [0250](../../../.decisions/0250-fabrika-hook-cannot-run-fails-open.md). **Left undeclared on this surface, and that refusal is unchanged.**
+
+> **The event is now declared elsewhere, and the distinction is the whole reason it could be (ADR [0337](../../../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md), #7220).** Everything above binds a *plugin* declaration, which travels to every adopting repo — that is what makes the no-fail-open exposure unbounded. phoenix's own [`.claude/settings.json`](../../../.claude/settings.json) travels nowhere, and a phoenix checkout without fabrika is already broken, so the same event carries a bounded cost there: it declares `fabrika hook worktree-create` with a 600s timeout, which provisions the worktree ADR [0109](../../../.decisions/0109-worktree-deps-provision-not-share.md)'s install would otherwise leave dep-less. rule 5 binds that command exactly as it binds one here, and [`declaration.ts`](../../../packages/fabrika-cli/src/hook/declaration.ts) reads both documents — so the golden test asserts, per document, that no `Worktree*` event ever appears on **this** surface. That assertion is the refusal above, with teeth.
 
 #### `WorktreeRemove` — the teardown counterpart, also a provider, left undeclared
 
