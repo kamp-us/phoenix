@@ -1359,71 +1359,61 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	const uiRanged = (...comments: ReadonlyArray<{id: number; body: string}>) =>
 		fakeSeams([...locating(), [RAW, okOut(UI_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
-	it("refuses a child PASS whose range raises the ui class and carries no review-ui verdict", async () => {
+	/**
+	 * The deadlock #7041 closed, and the other seam of the one #6664 closed for a single lane. No
+	 * cell of a child's region routes to `review:ui` and no verb of this CLI posts `review-ui` at
+	 * range scope, so requiring it of a ui-bearing child asked for a verdict nothing could ever
+	 * write — epic #6767's tracer C sat at exit 23 until a human integrated it by hand. The bar is
+	 * not dropped: it moves to the tail, whose one PR carries these same rendered files.
+	 */
+	it("proves a ui child's PASS with no review-ui verdict at child scope at all", async () => {
 		const seams = uiRanged({id: 1, body: rangeMarker("PASS", UI_DIGEST)});
 
 		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({
+			namespaces: [{namespace: "review-code", state: "pass", commentId: 1}],
+			deferred: ["review-ui"],
+		});
 		expect(out.stderr.join("\n")).toContain("derives review-code, review-ui");
-		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+		expect(out.stderr.join("\n")).toContain("review-ui is owed by epic #4300's tail");
 	});
 
-	it("proves that same ui child once the review-ui range verdict is on the issue", async () => {
-		const seams = uiRanged(
-			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
-			{
-				id: 2,
-				body: rangeMarker(
-					"PASS",
-					UI_DIGEST,
-					EPIC_BASE.slice(0, 7),
-					CHILD_TIP.slice(0, 7),
-					"review-ui",
-				),
-			},
-		);
+	/**
+	 * The deferral is the child's shape, not a fallback for a missing record, so a `review-ui`
+	 * comment at child scope changes nothing either way — including one bound to a tip the branch has
+	 * moved past, which under the old bar refused the whole PASS.
+	 */
+	it("reads no review-ui record at child scope, current or stale, because it is the tail's", async () => {
+		for (const at of [CHILD_TIP, EPIC_BASE]) {
+			const seams = uiRanged(
+				{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
+				{
+					id: 2,
+					body: `routed-elsewhere: review-ui @ ${at} — nothing this range touches renders differently`,
+				},
+			);
+
+			const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
+
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+				{namespace: "review-code", state: "pass", commentId: 1},
+			]);
+			expect(out.stderr.join("\n")).not.toContain("is routed rather than judged");
+		}
+	});
+
+	/** Criterion 3 of #7041: a child whose range renders nothing derives no `review-ui` to subtract. */
+	it("defers nothing on a child whose range raises no ui class", async () => {
+		const seams = proving({id: 1, body: rangeMarker("PASS", CHILD_DIGEST)});
 
 		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(0);
-		expect(
-			JSON.parse(out.stdout).evidence.namespaces.map((row: {namespace: string}) => row.namespace),
-		).toEqual(["review-code", "review-ui"]);
-	});
-
-	it("proves that same ui child when a routed-elsewhere record at the range tip fills review-ui", async () => {
-		const seams = uiRanged(
-			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
-			{
-				id: 2,
-				body: `routed-elsewhere: review-ui @ ${CHILD_TIP} — nothing this range touches renders differently`,
-			},
-		);
-
-		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
-			{namespace: "review-code", state: "pass", commentId: 1},
-			{namespace: "review-ui", state: "routed", commentId: 2},
-		]);
-		expect(out.stderr.join("\n")).toContain("is routed rather than judged");
-	});
-
-	it("refuses that ui child when the route was attested at a tip the branch has moved past", async () => {
-		const seams = uiRanged(
-			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
-			{
-				id: 2,
-				body: `routed-elsewhere: review-ui @ ${EPIC_BASE} — nothing this range touches renders differently`,
-			},
-		);
-
-		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
-
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
+		expect(JSON.parse(out.stdout).evidence.deferred).toEqual([]);
+		expect(out.stderr.join("\n")).not.toContain("is owed by epic");
 	});
 
 	it("leaves a child PASS UNKNOWN when the range's own content cannot be read", async () => {

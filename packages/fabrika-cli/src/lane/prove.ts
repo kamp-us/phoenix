@@ -52,6 +52,10 @@ export const REVIEW_STATE = "review";
  * now proves what it owes: `review` the namespaces it can reach **when this arm is the one it is
  * taking**, `review:ui` all of them. A lane that is not taking it holds the whole set at `review`,
  * so the deferral can never outlive the routing that earns it (ADR 0320).
+ *
+ * An epic child is the one role this state name does not reach at all — its region has no such cell
+ * to route to and no verb can post the namespace at its scope, so its deferral is unconditional and
+ * its creditor is the tail. {@link claimOf} carries that reading.
  */
 export const REVIEW_UI_STATE = "review:ui";
 
@@ -105,7 +109,12 @@ export type Claim =
 	 */
 	| {readonly _tag: "ParkUncontradicted"}
 	| {readonly _tag: "RangeCommits"; readonly epic: number}
-	| {readonly _tag: "RangeVerdict"; readonly epic: number}
+	/**
+	 * `defers` is {@link Claim}'s one subtraction asked of a range instead of a head, and on this arm
+	 * it is constant rather than routed — see {@link claimOf} for why a child's scope can hold no
+	 * routed namespace's verdict at all.
+	 */
+	| {readonly _tag: "RangeVerdict"; readonly epic: number; readonly defers: ReadonlyArray<string>}
 	| {readonly _tag: "None"; readonly why: string};
 
 /**
@@ -115,9 +124,20 @@ export type Claim =
  * that decides whether the plain `review` cell may defer. It defers exactly when the event routes
  * into {@link REVIEW_UI_STATE}, so the subtraction and the routing are one fact rather than two:
  * a machine with no such arm (a `chore` workflow), or a `PASS` whose class flag never raised `ui`
- * and so walks straight to `ship`, defers nothing and stands on the whole derived set. A child's
- * `PASS` defers nothing either, and for the same reason read structurally: its regions carry no
- * `review:ui` cell at all.
+ * and so walks straight to `ship`, defers nothing and stands on the whole derived set.
+ *
+ * **A child's `PASS` defers the routed set unconditionally, and `next` decides nothing there.** A
+ * child opens no PR (ADR 0285) and every verb that may post a {@link ROUTED_NAMESPACES} verdict
+ * resolves live PR state, so that namespace is unpostable at child scope by construction — the same
+ * closed circle #6664 closed for the single lane, met at the other seam: requiring it of a child
+ * demanded a verdict no cell of that child's region and no verb of this CLI could ever produce, and
+ * every ui-bearing child deadlocked at exit 23 with no legal exit (#7041). The cell that owes it is
+ * the epic's tail, and the bar moves there rather than down: one epic run is one branch and one PR
+ * (ADR 0285), so every rendered file a child's range added is in the tail PR's own diff, where the
+ * tail's `PASS` derives it, defers nothing and stands on the whole set at a head a preview exists
+ * for. A child whose range renders nothing never derives the namespace at all, so the subtraction
+ * takes nothing off its bar and its proof is byte-for-byte what it was. See ADR 0340 for why this
+ * one deferral is a constant where ADR 0320 rules every other one derived from the machine.
  */
 export const claimOf = (
 	event: string,
@@ -130,7 +150,7 @@ export const claimOf = (
 		return child ? {_tag: "RangeCommits", epic: role.epic} : {_tag: "OpenPull"};
 	}
 	if (event === "PASS" && leaf === REVIEW_STATE) {
-		if (child) return {_tag: "RangeVerdict", epic: role.epic};
+		if (child) return {_tag: "RangeVerdict", epic: role.epic, defers: ROUTED_NAMESPACES};
 		return {
 			_tag: "HeadVerdicts",
 			defers: next === REVIEW_UI_STATE ? ROUTED_NAMESPACES : [],

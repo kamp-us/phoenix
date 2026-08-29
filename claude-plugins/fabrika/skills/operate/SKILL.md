@@ -582,6 +582,22 @@ owe the whole set at `review` and refuse there exactly as before
 (ADR [0320](../../../../.decisions/0320-the-review-bar-splits-across-two-cells-and-the-machine-decides.md)).
 The remedy the refusal names is the class relay, and it is the reviewer's to make.
 
+**An epic child is the one lane where that deferral is not routed at all — it is the child's shape.**
+A child opens no PR (ADR 0285) and no verb of this CLI posts `review-ui` at range scope, so its
+`PASS` out of `review` always hands the namespace on, whatever classes stand and whatever leaf the
+machine names next. There is nothing to relay and nothing for you to decide: requiring it held every
+ui-bearing child at exit `23` with no cell and no verb that could ever free it, which is what cost
+epic #6767's tracer C its whole lane
+([#7041](https://github.com/kamp-us/phoenix/issues/7041)). The creditor is the tail, and the bar
+does not drop on the way: one epic run is one branch and one PR, so every rendered file a child's
+range added is in the tail PR's own diff, where the tail's `PASS` derives `review-ui`, defers
+nothing, and refuses until a whole-set verdict binds at a head a preview exists for. The event line
+says so — `lane report` records `deferred` on the `PASS` it appends, and `lane history` reads it
+back, so which cell still owes the rendered verdict is a fact in the ledger rather than a
+reconstruction. A child whose range renders nothing derives `review-ui` nowhere, carries no
+`deferred` field, and proves exactly as it always did (ADR
+[0340](../../../../.decisions/0340-an-epic-childs-review-ui-is-the-tails-by-construction.md)).
+
 `lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
 of `review`, and a reviewer's park out of either review cell — and answers `not-required` at exit
 `0` for every other one, so it is run on every event and never skipped as an optimisation. The park

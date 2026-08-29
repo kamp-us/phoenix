@@ -30,6 +30,11 @@ import {
  * `round` and `classes` are not evidence — they are the two payloads the fold reads. A `CLEARED`
  * line without a `round` names no round to clear (ADR 0312), and `classes` is what a `class:<name>`
  * guard routes on (ADR 0317).
+ *
+ * `deferred` is the fourth kind: not evidence and not a payload the fold reads, but the disclosure
+ * that this `PASS` was proven over a set short the namespaces named — the routed `review-ui` an
+ * epic child hands to its epic's tail (#7041). Without it a deferred `PASS` and a whole-set one are
+ * the same line, and nothing in the ledger says a rendered verdict is still owed anywhere.
  */
 export interface LogEntry {
 	readonly task: string;
@@ -40,6 +45,7 @@ export interface LogEntry {
 	readonly cause?: string;
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
+	readonly deferred?: ReadonlyArray<string>;
 }
 
 export type ParseLogResult =
@@ -69,6 +75,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			cause?: unknown;
 			round?: unknown;
 			classes?: unknown;
+			deferred?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -108,6 +115,16 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a \`classes\` field that is not a list of names`);
 			continue;
 		}
+		if (
+			record.deferred !== undefined &&
+			!(
+				Array.isArray(record.deferred) &&
+				record.deferred.every((name) => typeof name === "string" && name !== "")
+			)
+		) {
+			defects.push(`line ${index + 1} carries a \`deferred\` field that is not a list of names`);
+			continue;
+		}
 		entries.push({
 			task: record.task,
 			event: record.event,
@@ -117,6 +134,9 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.cause === undefined ? {} : {cause: record.cause}),
 			...(record.round === undefined ? {} : {round: record.round as number}),
 			...(record.classes === undefined ? {} : {classes: record.classes as ReadonlyArray<string>}),
+			...(record.deferred === undefined
+				? {}
+				: {deferred: record.deferred as ReadonlyArray<string>}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};

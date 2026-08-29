@@ -22,6 +22,10 @@
  * their remedies are opposite: nothing there, not finished yet, says the other thing, several
  * candidates. The four are the artifact-independent vocabulary, so the range arms allocate no new
  * seat — what a caller must do about "the artifact is not there" does not change with its kind.
+ *
+ * Both verdict arms answer with the namespaces they subtracted from this cell's bar
+ * ({@link ProofOutcome}), because the caller records that on the event line: which cell still owes
+ * the rendered verdict is not re-derivable from a bare `PASS` (#7041).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -105,6 +109,20 @@ const unreadable = (what: string, reason: string): VerbOutcome =>
 		`${VERB}: cannot read ${what}: ${reason} — whether the event is proven is UNKNOWN, never proven and never refused.`,
 	);
 
+/**
+ * A proof, plus the namespaces it subtracted from this cell's bar and handed to a later one.
+ *
+ * `deferred` rides the outcome rather than only the stdout JSON because `lane report` records it on
+ * the event line: a `PASS` proven over a set short one namespace is a different fact from a `PASS`
+ * proven over the whole one, and a ledger that cannot tell them apart cannot say later which cell
+ * still owes the rendered verdict (#7041). It is what was *actually* subtracted — the claim's
+ * candidate set intersected with what the diff or the range derives — so it is empty on every event
+ * whose bar was whole, and the field is absent from the log line there.
+ */
+export interface ProofOutcome extends VerbOutcome {
+	readonly deferred: ReadonlyArray<string>;
+}
+
 const seat = (proof: Exclude<Proof, {_tag: "Proven"}>, diagnostics: ReadonlyArray<string>) => {
 	const code = {
 		Absent: PROOF_ABSENT,
@@ -118,7 +136,19 @@ const seat = (proof: Exclude<Proof, {_tag: "Proven"}>, diagnostics: ReadonlyArra
 export const runProve = (
 	options: ProveOptions,
 ): Effect.Effect<
-	VerbOutcome,
+	ProofOutcome,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> => Effect.map(prove(options), (outcome) => ({...outcome, deferred: outcome.deferred ?? []}));
+
+/**
+ * The proof itself. Only the two verdict arms can subtract anything, so they are the only returns
+ * that carry `deferred`; {@link runProve} normalises the absent field to the empty list once.
+ */
+const prove = (
+	options: ProveOptions,
+): Effect.Effect<
+	VerbOutcome & {readonly deferred?: ReadonlyArray<string>},
 	never,
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > =>
@@ -207,7 +237,15 @@ export const runProve = (
 		}
 
 		if (claim._tag === "RangeVerdict") {
-			return yield* proveRangeVerdicts(repo, claim.epic, issue, taskId, event, governed.roots);
+			return yield* proveRangeVerdicts(
+				repo,
+				claim.epic,
+				issue,
+				taskId,
+				event,
+				governed.roots,
+				claim.defers,
+			);
 		}
 
 		const traced = yield* traceOpenPull(repo, issue);
@@ -608,7 +646,7 @@ const readNamespaceRows = (
 			`${VERB}: #${pr} at ${head} derives ${required.join(", ")}; read ${commented.value.length} comment(s).`,
 		);
 
-		return {_tag: "Rows" as const, head, rows, notes};
+		return {_tag: "Rows" as const, head, rows, deferred, notes};
 	});
 
 /** What a head-scoped verdict read produced, before either bar is asked of it. */
@@ -617,6 +655,8 @@ type HeadRead =
 			readonly _tag: "Rows";
 			readonly head: string;
 			readonly rows: ReadonlyArray<NamespaceRow>;
+			/** What this diff derived and this cell did not have to prove — {@link ProofOutcome}. */
+			readonly deferred: ReadonlyArray<string>;
 			readonly notes: ReadonlyArray<string>;
 	  }
 	| {readonly _tag: "Unread"; readonly what: string; readonly reason: string}
@@ -631,27 +671,38 @@ const proveVerdicts = (
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<ProofOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, defers);
-		if (read._tag === "Unread") return unreadable(read.what, read.reason);
-		if (read._tag === "Gone") return seat({_tag: "Absent", what: read.what}, diagnostics);
+		if (read._tag === "Unread") return {...unreadable(read.what, read.reason), deferred: []};
+		if (read._tag === "Gone") {
+			return {...seat({_tag: "Absent", what: read.what}, diagnostics), deferred: []};
+		}
 		const proof = foldNamespaces(read.rows, `#${pr}`);
-		if (proof._tag !== "Proven") return seat(proof, read.notes);
-		return answer(
-			JSON.stringify(
-				{
-					proof: "proven",
-					event,
-					task: taskId,
-					issue,
-					evidence: {kind: "head-verdicts", pr, head: read.head, namespaces: read.rows},
-				},
-				null,
-				2,
+		if (proof._tag !== "Proven") return {...seat(proof, read.notes), deferred: []};
+		return {
+			...answer(
+				JSON.stringify(
+					{
+						proof: "proven",
+						event,
+						task: taskId,
+						issue,
+						evidence: {
+							kind: "head-verdicts",
+							pr,
+							head: read.head,
+							namespaces: read.rows,
+							deferred: read.deferred,
+						},
+					},
+					null,
+					2,
+				),
+				read.notes,
 			),
-			read.notes,
-		);
+			deferred: read.deferred,
+		};
 	});
 
 /**
@@ -770,7 +821,15 @@ type RangeClaim =
  * The child arm of the `PASS` claim: a range-bound verdict on the child issue that still binds.
  *
  * The required namespaces are derived from the range's own changed paths through the same
- * `ship scope` pair the PR arm uses, so a child's bar is the tail's bar asked of a different scope.
+ * `ship scope` pair the PR arm uses, minus `defers` — the one subtraction, taken exactly as the PR
+ * arm takes it, and here always the routed set: a child opens no PR (ADR 0285) and no verb can post
+ * a `review-ui` verdict at range scope, so requiring it held every ui-bearing child at exit 23 with
+ * no cell and no verb that could ever free it (#7041). Which cell then owes it is not bookkeeping —
+ * one epic run is one branch and one PR, so the tail PR's own diff carries every rendered file the
+ * child's range added, and the tail's `PASS` derives, requires and proves it at a head a preview
+ * exists for. A child whose range renders nothing derives the namespace nowhere, so the subtraction
+ * is a no-op on its bar and on its notes. See ADR 0340.
+ *
  * What binds is content and only content (ADR 0276): the two
  * SHAs a range marker names stop being history the moment the range merges into the epic branch, so
  * `bindRange` compares the digest the reviewer recorded against the digest this range carries now —
@@ -793,21 +852,24 @@ const proveRangeVerdicts = (
 	taskId: string,
 	event: string,
 	roots: ReadonlyArray<string>,
-): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	defers: ReadonlyArray<string>,
+): Effect.Effect<ProofOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const read = yield* located(epic, issue);
-		if (read._tag === "Refused") return read.outcome;
+		if (read._tag === "Refused") return {...read.outcome, deferred: []};
 		const range = `${read.range.base}..${read.range.tip}`;
 
 		const content = yield* rangeContentAt({base: read.range.base, tip: read.range.tip});
 		if (content._tag === "Failure") {
-			return unreadable(`the content ${range} changes`, content.reason);
+			return {...unreadable(`the content ${range} changes`, content.reason), deferred: []};
 		}
-		const required = shipNamespacesOf(partitionWithUi(content.value.paths, roots));
+		const derived = shipNamespacesOf(partitionWithUi(content.value.paths, roots));
+		const deferred = derived.filter((namespace) => defers.includes(namespace));
+		const required = derived.filter((namespace) => !defers.includes(namespace));
 
 		const commented = yield* listComments(repo, issue);
 		if (commented._tag === "Failure") {
-			return unreadable(`the comments on #${issue}`, commented.reason);
+			return {...unreadable(`the comments on #${issue}`, commented.reason), deferred: []};
 		}
 
 		// Newest write stamp wins per namespace — the ordering the PR arm folds on, for the reason it
@@ -877,7 +939,11 @@ const proveRangeVerdicts = (
 		const rows: ReadonlyArray<NamespaceRow> = judgeVerdicts(required, inForce);
 		const notes = [
 			...read.notes,
-			`${VERB}: ${range} changes ${content.value.paths.length} path(s) at content ${content.value.digest} and derives ${required.join(", ")}; read ${commented.value.length} comment(s) on #${issue}.`,
+			`${VERB}: ${range} changes ${content.value.paths.length} path(s) at content ${content.value.digest} and derives ${derived.join(", ")}; read ${commented.value.length} comment(s) on #${issue}.`,
+			...deferred.map(
+				(namespace) =>
+					`${VERB}: ${namespace} is owed by epic #${epic}'s tail, not by this child — a child opens no PR (ADR 0285) and no verb posts ${namespace} at range scope, so the tail PR carrying this range proves it at a head a preview exists for (#7041).`,
+			),
 			...claims.map((claim) =>
 				claim._tag === "Verdict"
 					? `${VERB}: ${claim.namespace} claims ${claim.polarity} over range ${claim.range} bound to content ${claim.content}.`
@@ -890,26 +956,30 @@ const proveRangeVerdicts = (
 		];
 
 		const proof = foldNamespaces(rows, `${range} (content ${content.value.digest})`);
-		if (proof._tag !== "Proven") return seat(proof, notes);
-		return answer(
-			JSON.stringify(
-				{
-					proof: "proven",
-					event,
-					task: taskId,
-					issue,
-					evidence: {
-						kind: "range-verdicts",
-						epic,
-						branch: read.range.branch,
-						range: {base: read.range.base, tip: read.range.tip},
-						content: content.value.digest,
-						namespaces: rows,
+		if (proof._tag !== "Proven") return {...seat(proof, notes), deferred: []};
+		return {
+			...answer(
+				JSON.stringify(
+					{
+						proof: "proven",
+						event,
+						task: taskId,
+						issue,
+						evidence: {
+							kind: "range-verdicts",
+							epic,
+							branch: read.range.branch,
+							range: {base: read.range.base, tip: read.range.tip},
+							content: content.value.digest,
+							namespaces: rows,
+							deferred,
+						},
 					},
-				},
-				null,
-				2,
+					null,
+					2,
+				),
+				notes,
 			),
-			notes,
-		);
+			deferred,
+		};
 	});

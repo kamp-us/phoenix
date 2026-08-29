@@ -678,6 +678,30 @@ describe("nextLeaf — the arm an event would take, asked before it is recorded 
 	});
 });
 
+/**
+ * `lane history` prints what `parseLog` returns, so a field the parser drops is a disclosure nobody
+ * can read back — which is the whole job of `deferred` (#7041).
+ */
+describe("the deferral a proven PASS carries (#7041)", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.PASS","at":"t"${fields}}\n`;
+
+	it("carries the deferred namespaces back off the line, and refuses a shape that is not a list", () => {
+		expect(parseLog(line(`,"deferred":["review-ui"]`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.PASS", at: "t", deferred: ["review-ui"]}],
+		});
+		expect(parseLog(line(`,"deferred":"review-ui"`))).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line(`,"deferred":[""]`))).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("leaves a line that deferred nothing without the field", () => {
+		expect(parseLog(line(""))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.PASS", at: "t"}],
+		});
+	});
+});
+
 describe("the park cause a BLOCKED carries (#6480)", () => {
 	const caused = (task: string, event: string, cause: string): LogEntry => ({
 		...entry(task, event),

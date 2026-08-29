@@ -6,7 +6,11 @@
  * event, and the append rides `transition`'s exact path — validate against the folded state FIRST,
  * append only what the machine accepts, refuse everything else with the log left byte-identical.
  * The optional `--pr`/`--comment` refs land on the event line itself, so an event names its
- * evidence at the moment the shell knows the URL (#5712).
+ * evidence at the moment the shell knows the URL (#5712). One more field lands there and it is the
+ * prover's rather than the caller's: `deferred`, relayed off the proof's own answer and never
+ * recomposed here, says this `PASS` was proven over a set short the namespaces named — the routed
+ * `review-ui` an epic child hands to its epic's tail, which nothing else in the ledger records
+ * (#7041).
  *
  * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
  * operator into the shell must not move the bar: between the machine's acceptance and the append
@@ -31,7 +35,7 @@ import {
 	TOKEN_UNRECOGNISED,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
-import type {ProveOptions} from "./prove-verb.ts";
+import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {causeForEvent, classesForEvent, eventForToken} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
@@ -61,7 +65,7 @@ export interface ReportOptions extends LaneRef {
 
 export const runReport = <R>(
 	options: ReportOptions,
-	prove: (options: ProveOptions) => Effect.Effect<VerbOutcome, never, R>,
+	prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>,
 ): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
@@ -157,6 +161,7 @@ export const runReport = <R>(
 					...(options.pr === null ? {} : {pr: options.pr}),
 					...(options.comment === null ? {} : {comment: options.comment}),
 					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 				};
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
 				if (Result.isFailure(wrote)) {
@@ -176,6 +181,7 @@ export const runReport = <R>(
 							...(options.pr === null ? {} : {pr: options.pr}),
 							...(options.comment === null ? {} : {comment: options.comment}),
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
 						},
 						null,
 						2,

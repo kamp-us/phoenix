@@ -78,12 +78,41 @@ describe("claimOf", () => {
 
 	it("claims a range for a child, which never opens a PR to claim", () => {
 		expect(claimOf("DONE", "build", CHILD)).toEqual({_tag: "RangeCommits", epic: 5800});
-		expect(claimOf("PASS", "review", CHILD)).toEqual({_tag: "RangeVerdict", epic: 5800});
+		expect(claimOf("PASS", "review", CHILD)).toEqual({
+			_tag: "RangeVerdict",
+			epic: 5800,
+			defers: ["review-ui"],
+		});
 	});
 
-	/** A child's regions carry no `review:ui` cell, so its range-scoped set has nowhere to defer to. */
+	/**
+	 * A child's deferral is not routed and `next` cannot switch it off: no cell of a child's region
+	 * and no verb of this CLI can produce a `review-ui` verdict at range scope, so requiring one held
+	 * every ui-bearing child at exit 23 forever (#7041). The creditor is the tail, whose one PR
+	 * carries the child's rendered files by construction (ADR 0285).
+	 */
+	it("defers the routed namespace on a child's PASS whatever the machine's next leaf is", () => {
+		for (const next of ["integrate", "review:ui", null]) {
+			expect(claimOf("PASS", "review", CHILD, next)).toEqual({
+				_tag: "RangeVerdict",
+				epic: 5800,
+				defers: ["review-ui"],
+			});
+		}
+	});
+
+	/** A child's regions carry no `review:ui` cell, so no event is ever recorded out of one. */
 	it("claims nothing for a child out of `review:ui`, a cell its regions do not have", () => {
 		expect(claimOf("PASS", "review:ui", CHILD)._tag).toBe("None");
+	});
+
+	/**
+	 * The other half of the child's deferral: the cell it hands `review-ui` to has to still owe it.
+	 * The epic tail's `review` routes to `ship` and to no ui cell, so its `PASS` defers nothing and
+	 * stands on the whole set its one PR derives — which is where the child's rendered files are.
+	 */
+	it("leaves the tail owing the whole set, so a child's deferral lands on a cell that pays it", () => {
+		expect(claimOf("PASS", "review", TAIL, "ship")).toEqual({_tag: "HeadVerdicts", defers: []});
 	});
 
 	/**

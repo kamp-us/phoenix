@@ -35,14 +35,17 @@ const LOG_AT: Readonly<Record<"build" | "review" | "ship", string>> = {
  * answers what the test wants read. `proof: "not-required"` is the shape `lane prove` answers with
  * at exit 0 for an event that claims no artifact.
  */
-const fakeProver = (outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"}))) => {
+const fakeProver = (
+	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
+	deferred: ReadonlyArray<string> = [],
+) => {
 	const asked: ProveOptions[] = [];
 	return {
 		asked,
 		prove: (options: ProveOptions) =>
 			Effect.sync(() => {
 				asked.push(options);
-				return outcome;
+				return {...outcome, deferred};
 			}),
 	};
 };
@@ -316,6 +319,37 @@ describe("lane report — the park cause a BLOCKED carries (#6480)", () => {
 		expect(out.code).toBe(CAUSE_UNRECOGNISED);
 		expect(prover.asked).toEqual([]);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * A `PASS` proven over a set short one namespace is a different fact from one proven over the whole
+ * set, and only the event line can carry the difference — an epic child hands `review-ui` to its
+ * epic's tail, and a bare `PASS` says nothing about the verdict still owed there (#7041).
+ */
+describe("lane report — the deferral a proven PASS discloses", () => {
+	it("records what the prover deferred on the event line and on stdout", async () => {
+		const fs = laneAt(LOG_AT.review);
+		const prover = fakeProver(answer(JSON.stringify({proof: "proven"})), ["review-ui"]);
+
+		const out = await run(fs, "PASS", {prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.PASS",
+			deferred: ["review-ui"],
+		});
+		expect(JSON.parse(out.stdout).deferred).toEqual(["review-ui"]);
+	});
+
+	it("leaves an event that deferred nothing exactly the line it always was", async () => {
+		const fs = laneAt(LOG_AT.review);
+
+		const out = await run(fs, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "deferred")).toBe(false);
+		expect(Object.hasOwn(JSON.parse(out.stdout), "deferred")).toBe(false);
 	});
 });
 
