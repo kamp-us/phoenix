@@ -525,7 +525,7 @@ read completed and its scope is provably incomplete · `14` proven not in the st
 on · `15` the run's logs are proven expired or purged · `16` the rerun provably landed and its
 durable marker could not be written. `4` is a deliberate gap.
 
-Five behaviours are worth knowing:
+Six behaviours are worth knowing:
 
 - **Every classification is an exit-`0` answer**, `red` and `wedged` and `not-open` included. A
   non-zero exit means the verb could not produce an answer at all.
