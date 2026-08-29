@@ -1174,30 +1174,38 @@ export class PiLiveSessionState implements LiveSessionState {
 			const onAbort = () => cancellation.abort();
 			if (signal?.aborted) onAbort();
 			else signal?.addEventListener("abort", onAbort, {once: true});
-			try {
-				this.#pendingPrompts += 1;
-				this.#publishSession(attachment);
-				const operation = attachment.lease.prompt(request.text, cancellation.signal).then(
-					() => ({_tag: "acknowledged" as const}),
-					(error: unknown) => ({_tag: "error" as const, error}),
-				);
-				const winner = await Promise.race([
-					operation,
-					deadline.elapsed.then(() => ({_tag: "timeout" as const})),
-				]);
-				if (winner._tag === "timeout") {
-					onAbandoned();
-					cancellation.abort();
-					outcome = {
-						_tag: "refused",
-						correlationId: request.correlationId,
-						code: "protocol",
-						reason: `Pi did not acknowledge prompt within ${this.#acknowledgementTimeoutMs}ms`,
-					};
-				} else if (winner._tag === "error") {
-					if (signal?.aborted) onAbandoned();
-					throw winner.error;
-				} else {
+			const result = await (async (): Promise<
+				| {readonly _tag: "acknowledged"}
+				| {readonly _tag: "refused"; readonly outcome: PromptLiveSessionOutcome}
+			> => {
+				try {
+					this.#pendingPrompts += 1;
+					this.#publishSession(attachment);
+					const operation = attachment.lease.prompt(request.text, cancellation.signal).then(
+						() => ({_tag: "acknowledged" as const}),
+						(error: unknown) => ({_tag: "error" as const, error}),
+					);
+					const winner = await Promise.race([
+						operation,
+						deadline.elapsed.then(() => ({_tag: "timeout" as const})),
+					]);
+					if (winner._tag === "timeout") {
+						onAbandoned();
+						cancellation.abort();
+						return {
+							_tag: "refused",
+							outcome: {
+								_tag: "refused",
+								correlationId: request.correlationId,
+								code: "protocol",
+								reason: `Pi did not acknowledge prompt within ${this.#acknowledgementTimeoutMs}ms`,
+							},
+						};
+					}
+					if (winner._tag === "error") {
+						if (signal?.aborted) onAbandoned();
+						throw winner.error;
+					}
 					this.#reconcileAttachment(attachment);
 					if (this.#attachment !== attachment) {
 						throw new PiSessionOwnershipError(
@@ -1215,25 +1223,32 @@ export class PiLiveSessionState implements LiveSessionState {
 								"The attached pi session disconnected before the prompt was acknowledged",
 						);
 					}
-					outcome = {
-						_tag: "acknowledged",
-						correlationId: request.correlationId,
-						session: this.#attachedViewOf(attachment, this.#sequence),
+					return {_tag: "acknowledged"};
+				} catch (error) {
+					return {
+						_tag: "refused",
+						outcome: {
+							_tag: "refused",
+							correlationId: request.correlationId,
+							code: promptRefusalCode(error),
+							reason: messageOf(error),
+						},
 					};
+				} finally {
+					deadline.cancel();
+					signal?.removeEventListener("abort", onAbort);
+					this.#pendingPrompts -= 1;
+					if (this.#attachment === attachment) this.#publishSession(attachment);
 				}
-			} catch (error) {
-				outcome = {
-					_tag: "refused",
-					correlationId: request.correlationId,
-					code: promptRefusalCode(error),
-					reason: messageOf(error),
-				};
-			} finally {
-				deadline.cancel();
-				signal?.removeEventListener("abort", onAbort);
-				this.#pendingPrompts -= 1;
-				if (this.#attachment === attachment) this.#publishSession(attachment);
-			}
+			})();
+			outcome =
+				result._tag === "acknowledged"
+					? {
+							_tag: "acknowledged",
+							correlationId: request.correlationId,
+							session: this.#attachedViewOf(attachment, this.#sequence),
+						}
+					: result.outcome;
 		}
 		this.#publishPrompt(outcome);
 		return outcome;

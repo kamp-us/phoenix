@@ -534,7 +534,7 @@ describe("PiLiveSession", () => {
 		}),
 	);
 
-	it.effect("correlates prompts and streams progress before protocol acknowledgement", () =>
+	it.effect("settles prompt projections before acknowledgement can win event order", () =>
 		Effect.gen(function* () {
 			const initial = snapshot("session-prompt", 1);
 			const protocol = new SyntheticPiProtocol(initial);
@@ -549,6 +549,8 @@ describe("PiLiveSession", () => {
 				.pipe(Effect.forkChild);
 			yield* Effect.yieldNow;
 			assert.isUndefined(pending.pollUnsafe());
+			assert.isFalse((yield* service.current())?.controls?.create ?? true);
+			assert.isFalse((yield* service.current())?.controls?.open ?? true);
 
 			protocol.emit({
 				type: "session_progress",
@@ -569,11 +571,25 @@ describe("PiLiveSession", () => {
 			const promptOutcome = yield* Fiber.join(pending);
 			assert.strictEqual(promptOutcome._tag, "acknowledged");
 			assert.strictEqual(promptOutcome.correlationId, "prompt-1");
-			const promptEvent = (yield* service.eventsAfter()).find((event) => event._tag === "prompt");
+			const events = yield* service.eventsAfter(afterSequence);
+			const promptEvent = events.find((event) => event._tag === "prompt");
+			const restoredEvent = events.findLast((event) => event._tag === "session");
 			assert.strictEqual(promptEvent?._tag, "prompt");
-			if (promptEvent?._tag !== "prompt") return;
-			assert.strictEqual(promptEvent.outcome._tag, "acknowledged");
-			assert.strictEqual(promptEvent.outcome.correlationId, "prompt-1");
+			assert.strictEqual(restoredEvent?._tag, "session");
+			if (
+				promptOutcome._tag !== "acknowledged" ||
+				promptEvent?._tag !== "prompt" ||
+				promptEvent.outcome._tag !== "acknowledged" ||
+				restoredEvent?._tag !== "session"
+			) {
+				return;
+			}
+			assert.isTrue(restoredEvent.session.controls?.create ?? false);
+			assert.isTrue(restoredEvent.session.controls?.open ?? false);
+			assert.deepEqual(promptOutcome.session, restoredEvent.session);
+			assert.deepEqual(promptEvent.outcome.session, restoredEvent.session);
+			assert.isAbove(promptEvent.sequence, restoredEvent.sequence);
+			assert.strictEqual(promptEvent.outcome.session.lastEventSequence, restoredEvent.sequence);
 
 			const refused = yield* service
 				.prompt({correlationId: "prompt-2", text: "blocked"})
