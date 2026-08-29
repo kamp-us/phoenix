@@ -15,10 +15,13 @@
  * ([`lane/report.ts`](../lane/report.ts)'s closed set, #6480). The leaf alone was never enough for
  * `blocked`, which thirteen distinct shell terminals fold into: it says a park happened and not why,
  * so every `blocked` was novel by construction and no row for one could be written at all.
+ *
+ * The pairing binds one direction: every row keys on a real cause, and a cause is free to stand with
+ * no row here (ADR 0339). This table is priced at a proving read; naming a park is not.
  */
 
 /** The clearance read a recipe relays. One constructor per read, so a new recipe cannot be prose. */
-export type Clearance = "cp-approval" | "branch-free" | "campaign-active";
+export type Clearance = "cp-approval" | "branch-free" | "campaign-active" | "spawn-clear";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -49,7 +52,7 @@ export interface ParkRecipe {
 }
 
 /**
- * The parks with a fixed fix today: one keyed by its leaf, two by their cause.
+ * The parks with a fixed fix today: one keyed by its leaf, three by their cause.
  *
  * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table (ADR 0175), relayed
  * rather than re-derived — the §CP cardinality question has exactly one answer in this package and a
@@ -66,6 +69,14 @@ export interface ParkRecipe {
  * clear exactly when that cell reads `active` at the trunk. It names no remedy because resuming a
  * campaign is a human's judgment recorded through `campaign state` — a recipe that "removed" this
  * cause would be granting the dispatch it is only allowed to observe.
+ *
+ * `blocked` + `spawn-dead` is #6770, and it is the one row whose clearance reads the lane rather than
+ * the cause itself: no verb can spawn an agent to find out whether the provider is back, so the
+ * operator's next dispatch is that test and this row proves only that the dispatch can happen — no
+ * claim of the dead shell's is standing, and no working tree still holds its lane branch. Both are
+ * the residue ADR 0321 makes the driver's to clear, so a park whose obligations were discharged
+ * clears on the first pass and one whose stranded claim needs a `build adopt` holds at exit 13,
+ * which is where ADR 0295 puts it.
  */
 export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 	{
@@ -88,6 +99,14 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "campaign-active",
 		remedy: null,
 		waitingOn: "the campaign homing this lane's milestone to read active again",
+	},
+	{
+		park: "blocked",
+		cause: "spawn-dead",
+		clearance: "spawn-clear",
+		remedy: "fabrika build retire",
+		waitingOn:
+			"the dead shell's claim and working tree to be gone so the brief can be dispatched again",
 	},
 ];
 

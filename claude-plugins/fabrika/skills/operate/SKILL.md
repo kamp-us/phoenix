@@ -504,6 +504,17 @@ this order:
   type, so it does not bind the verb's own child process — which is why this obligation is no longer
   the primary checkout's alone.
 
+**Name that park `spawn-dead`.** A shell its provider killed before it recorded a terminal — a
+session limit, a transport drop, a `network_error` on every completion — is one park class with one
+token, whichever role the shell was playing, so `--cause spawn-dead` rides the `BLOCKED` you
+originate. Its recipe row then clears the park once the two obligations above are discharged: it
+reads that no claim stands on the issue and no working tree holds its lane branch, which is the whole
+of what would refuse the same brief being dispatched again. It never reads whether the provider is
+back — your next dispatch is that test, and a still-down provider re-parks the lane
+([#6770](https://github.com/kamp-us/phoenix/issues/6770), ADR
+[0339](../../../../.decisions/0339-park-cause-may-stand-alone.md)). A claim you could not release
+holds the park at exit `13` instead, which is the succession below.
+
 **A claim stranded by a gone session is releasable, once you say so on the board.** `build release`
 refuses it on `15` — proven-foreign — until an adopt marker names that session as dead and this one
 as its successor: `fabrika build adopt <n> --session <its session id> --reason "<why>"`, then
@@ -751,11 +762,14 @@ block is generic — [#5820](https://github.com/kamp-us/phoenix/issues/5820) tra
 runs. The vocabulary is closed and lives in code
 ([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
 `lane transition --help` prints it, and a token outside it is exit `35` with the log unappended, so
-there is no cause to compose and none to guess. The cause is the whole difference between a park a
-verb can clear and one that costs a person: `recipe unpark` keys its recipe table on it, and a
-`BLOCKED` carrying none is Novel by construction (#6480). Omitting one is still legal and still
-correct for a park nobody wrote a recipe for — what is never correct is reaching for a token because
-it is nearby rather than because it is what happened.
+there is no cause to compose and none to guess. `recipe unpark` keys its recipe table on it, and a
+`BLOCKED` carrying none is Novel by construction (#6480). **Name one whenever the set holds your
+park, even where no recipe covers it** — the two tables are decoupled (ADR
+[0339](../../../../.decisions/0339-park-cause-may-stand-alone.md)), so a named-but-unrecipe'd cause
+still costs a person, but the refusal says which park this is and your park comment carries a class a
+future recipe row can key on. Omitting one is right only where the set holds nothing that fits — and
+what is never right is reaching for a token because it is nearby rather than because it is what
+happened.
 
 **So try `recipe unpark` before you post a park comment**, whenever the fold reads `blocked` or
 `human:*`:

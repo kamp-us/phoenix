@@ -1,7 +1,7 @@
 ---
 id: 0302
 title: Only a registered recipe proven by a re-fold clears a lane park without a human
-status: accepted
+status: amended-in-part by [0339](0339-park-cause-may-stand-alone.md)
 date: 2026-08-19
 tags: [fabrika, lane, pipeline, recipes, agents]
 ---
@@ -64,6 +64,12 @@ is that a park names one blocked state with one enumerated cause and one read th
 gone, while a FAIL is a verdict about content with no such read. Widening this needs a table row and
 a proving read, not an analogy.
 
+**That sentence governs `KNOWN_PARKS`, not the cause vocabulary** — ADR
+[0339](0339-park-cause-may-stand-alone.md) settled the ambiguity it left. Naming a new park cause in
+`PARK_CAUSES` owes no row and no proving read; it buys a refusal that says which park this is, and
+nothing else. Only an autonomous *clear* is priced at a row plus its read, and that price is
+unchanged.
+
 The novel side is a machine cell, not a message.
 [`packages/fabrika-cli/src/lane/templates/chore.workflow.json`](../packages/fabrika-cli/src/lane/templates/chore.workflow.json)
 routes every `PARK_SWEEP.BLOCKED` to `human:novel-park`, and only a `PARK_SWEEP.UNBLOCKED` leaves it.
@@ -94,6 +100,10 @@ re-derived.
 The cost is that a bare `blocked` can never clear autonomously, however obvious its cause looks in a
 comment. That is the honest position — the ledger records the event, not the cause — and the remedy
 is a park state that names its cause, not a smarter reader.
+
+That remedy is the half ADR [0339](0339-park-cause-may-stand-alone.md) unblocked: naming the cause is
+cheap and always available, so a park that no recipe covers still says which park it is. The row
+count above is the 2026-08-19 state and has since grown.
 
 ## Records
 

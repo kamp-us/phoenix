@@ -80,10 +80,11 @@ describe("the closed park-cause set --cause advertises", () => {
 		expect(flagHelp(leafNamed("transition"))).toContain(token);
 	});
 
-	it("offers campaign-paused beside the two tokens that predate it", () => {
+	it("offers spawn-dead beside the three tokens that predate it", () => {
 		expect([...PARK_CAUSE_TOKENS]).toEqual([
 			"campaign-paused",
 			"head-behind-base",
+			"spawn-dead",
 			"worktree-holds-branch",
 		]);
 	});

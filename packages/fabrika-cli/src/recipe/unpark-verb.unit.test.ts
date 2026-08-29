@@ -35,6 +35,7 @@ import {
 	PARKED_AT_CP,
 	PARKED_BLOCKED,
 	PARKED_ON_CAMPAIGN,
+	PARKED_ON_SPAWN,
 	PARKED_ON_WORKTREE,
 	parkedBlockedOn,
 	WORKFLOW,
@@ -295,6 +296,104 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 
 		expect(out.code).toBe(PARK_NOVEL);
 		expect(out.stderr.join("\n")).toMatch(/some-cause-nobody-wrote-a-row-for/);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a spawn-dead park clears once the dead shell's residue is gone (#6770)", () => {
+	const claimComment = (author: string, token: string): HttpReply => ({
+		status: 200,
+		body: JSON.stringify([
+			{
+				id: 1,
+				user: {login: author},
+				created_at: "2026-08-29T00:00:00Z",
+				body: `build-claim: ${token} · 2026-08-29T00:00:00.000Z`,
+			},
+		]),
+	});
+	const PERMISSION = /collaborators\/\S+\/permission/;
+
+	it("clears on the claim read alone in a clone that cut no branch — a dead reviewer's park", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[[BRANCHES, branchList("main")]],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "spawn-clear",
+			mechanism: `spawn-clear:#${LANE} unclaimed, no lane branch`,
+			current: "build",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("clears once no claim stands and no working tree holds the lane branch", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH, "main")],
+				[TREES, worktreeList({path: "/repo", branch: "main"})],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toBe(
+			`spawn-clear:#${LANE} unclaimed, ${LANE_BRANCH} free`,
+		);
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// ADR 0295: a claim leaves through a written release or an adopt succession, never through this
+	// verb inferring the claimant gone — so the residue read holds rather than clears.
+	it("is PARK_HOLDS while the dead shell's claim still stands, naming the token", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[
+					LANE_COMMENTS,
+					claimComment("usirin", "build:dead-session:9f2cab41-1111-4222-8333-444455556666"),
+				],
+				[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+			],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/build:dead-session:9f2cab41/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the claim read fails — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, httpError(500)],
+			],
+		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(fs.written.size).toBe(0);
 	});
 });

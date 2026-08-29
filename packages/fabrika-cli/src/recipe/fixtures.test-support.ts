@@ -59,6 +59,9 @@ export const PARKED_ON_WORKTREE = parkedBlockedOn("worktree-holds-branch");
 /** The #7217 park: BLOCKED because the campaign homing the lane's milestone read `paused`. */
 export const PARKED_ON_CAMPAIGN = parkedBlockedOn("campaign-paused");
 
+/** The #6770 park: BLOCKED because the provider killed the shell before it reported a terminal. */
+export const PARKED_ON_SPAWN = parkedBlockedOn("spawn-dead");
+
 /** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
 export const LANE_MILESTONE = 49;
 
