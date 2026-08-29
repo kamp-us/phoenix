@@ -73,6 +73,11 @@ type PaneSelection =
 
 type PaneUpdate = PaneState | ((current: PaneState) => PaneState);
 
+type SelectionHydration =
+	| {readonly _tag: "awaiting-graph"}
+	| {readonly _tag: "applying-restored-selection"; readonly identity: string}
+	| {readonly _tag: "active"};
+
 interface StreamCursor {
 	readonly sessionId: string;
 	readonly generation: number;
@@ -244,12 +249,14 @@ const lineageProblemLabel = (problem: LineageProblem): string => {
 
 const focusCanvasNode = (identity: string): void => {
 	requestAnimationFrame(() => {
-		for (const element of document.querySelectorAll<HTMLElement>(".react-flow__node")) {
-			if (element.dataset.id === identity) {
-				element.focus();
-				break;
+		requestAnimationFrame(() => {
+			for (const element of document.querySelectorAll<HTMLElement>(".react-flow__node")) {
+				if (element.dataset.id === identity) {
+					element.focus();
+					break;
+				}
 			}
-		}
+		});
 	});
 };
 
@@ -275,6 +282,7 @@ export function TuvalApp() {
 	const discoveryInFlight = useRef(false);
 	const selectionGeneration = useRef(0);
 	const restorationAttempted = useRef(false);
+	const selectionHydration = useRef<SelectionHydration>({_tag: "awaiting-graph"});
 	const ignoreSelectionChange = useRef(false);
 	const selectedRef = useRef<DiscoveredSession | null>(null);
 	const streamCursor = useRef<StreamCursor | null>(null);
@@ -495,7 +503,6 @@ export function TuvalApp() {
 		) {
 			return;
 		}
-		restorationAttempted.current = true;
 		const restoredSessionId = restoration.selectedSessionId;
 		const unavailableDiagnostic = restoration.diagnostics.find(
 			({code}) =>
@@ -505,15 +512,19 @@ export function TuvalApp() {
 		);
 		const available = sessionsOf(outcome);
 		if (restoredSessionId === null) {
+			const fallback =
+				unavailableDiagnostic === undefined
+					? undefined
+					: available.find(({piSessionId}) => piSessionId !== unavailableDiagnostic.sessionId);
+			if (fallback !== undefined && !nodes.some(({id}) => id === fallback.identity)) return;
+			restorationAttempted.current = true;
+			selectionHydration.current = {_tag: "active"};
 			if (unavailableDiagnostic !== undefined) {
 				setSelectionRestoration({
 					_tag: "unavailable",
 					sessionId: unavailableDiagnostic.sessionId ?? null,
 					reason: unavailableDiagnostic.message,
 				});
-				const fallback = available.find(
-					({piSessionId}) => piSessionId !== unavailableDiagnostic.sessionId,
-				);
 				if (fallback === undefined) {
 					requestAnimationFrame(() => document.querySelector<HTMLElement>("#canvas")?.focus());
 				} else {
@@ -524,12 +535,15 @@ export function TuvalApp() {
 		}
 		const restoredSession = available.find(({piSessionId}) => piSessionId === restoredSessionId);
 		if (restoredSession === undefined) {
+			const fallback = available.at(0);
+			if (fallback !== undefined && !nodes.some(({id}) => id === fallback.identity)) return;
+			restorationAttempted.current = true;
+			selectionHydration.current = {_tag: "active"};
 			setSelectionRestoration({
 				_tag: "unavailable",
 				sessionId: restoredSessionId,
 				reason: "Kalıcı seçim artık kullanılabilir oturumlar arasında değil.",
 			});
-			const fallback = available.at(0);
 			if (fallback === undefined) {
 				requestAnimationFrame(() => document.querySelector<HTMLElement>("#canvas")?.focus());
 			} else {
@@ -537,9 +551,15 @@ export function TuvalApp() {
 			}
 			return;
 		}
+		if (!nodes.some(({id}) => id === restoredSession.identity)) return;
+		restorationAttempted.current = true;
+		selectionHydration.current = {
+			_tag: "applying-restored-selection",
+			identity: restoredSession.identity,
+		};
 		setSelectionRestoration({_tag: "restored", sessionId: restoredSessionId});
 		openSession(restoredSession);
-	}, [lineage, openSession, outcome, restoration]);
+	}, [lineage, nodes, openSession, outcome, restoration]);
 
 	useEffect(() => {
 		if (selected === null) return;
@@ -1049,6 +1069,15 @@ export function TuvalApp() {
 								if (ignoreSelectionChange.current) return;
 								const session =
 									lineageSession === null ? null : discoveredSessionFrom(lineageSession);
+								const hydration = selectionHydration.current;
+								if (hydration._tag === "awaiting-graph") {
+									if (session === null) return;
+									restorationAttempted.current = true;
+									selectionHydration.current = {_tag: "active"};
+								} else if (hydration._tag === "applying-restored-selection") {
+									if (session?.identity !== hydration.identity) return;
+									selectionHydration.current = {_tag: "active"};
+								}
 								const current = selectedRef.current;
 								if (session?.identity === current?.identity) return;
 								setSelectionRestoration({_tag: "idle"});

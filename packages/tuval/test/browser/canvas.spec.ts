@@ -434,6 +434,77 @@ test("the existing tuval process renders the React Flow pan and zoom canvas", as
 	expect(errors).toEqual([]);
 });
 
+test("early restoration selection survives React Flow's initializing null selection exactly once", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const parent = session("hydrate-parent", "/work/hydrate-parent");
+	const child = session("hydrate-child", "/work/hydrate-child", "hydrate-parent");
+	let releaseRestoration = () => {};
+	const restorationRead = new Promise<void>((resolve) => {
+		releaseRestoration = resolve;
+	});
+	let attachCalls = 0;
+	let releaseCalls = 0;
+	await page.route("**/api/resilience", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				stages: [
+					"discovery",
+					"lineage",
+					"selection",
+					"settings",
+					"package-registrations",
+					"extension-ui-current",
+				].map((stage) => ({stage, status: "restored"})),
+				selectedSessionId: child.piSessionId,
+				settings: {nodeDetailLevel: "full"},
+				packageRegistrations: [],
+				extensionUI: [],
+				diagnostics: [],
+			}),
+		});
+		releaseRestoration();
+	});
+	await page.route("**/fate", async (route) => {
+		const operation = route.request().postDataJSON()?.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await restorationRead;
+			await fulfill(route, id, {_tag: "ready", sessions: [parent, child]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([parent, child]));
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			attachCalls += 1;
+			await fulfill(route, id, {_tag: "attached", session: liveSession(child.piSessionId)});
+			return;
+		}
+		if (operation?.name === "liveSession.release") releaseCalls += 1;
+		await fulfill(route, id, {_tag: "released", sessionId: child.piSessionId});
+	});
+
+	await page.goto(tuvalUrl);
+	const childNode = page.locator(`[data-id="${child.identity}"]`);
+	await expect(childNode.locator(".session-node")).toHaveAttribute("data-selected", "true");
+	await expect(page.locator("#chat-title")).toHaveText("hydrate-child");
+	await expect(page.getByText("hydrate-child mevcut konuşma", {exact: true})).toHaveCount(1);
+	await expect.poll(() => attachCalls).toBe(1);
+	expect(releaseCalls).toBe(0);
+	await childNode.focus();
+	await expect(childNode).toBeFocused();
+	await expect(page.locator("#chat-title")).toHaveText("hydrate-child");
+	expect(attachCalls).toBe(1);
+	expect(releaseCalls).toBe(0);
+	expect(errors).toEqual([]);
+});
+
 test("React Flow renders and operates the complete keyboard relationship contract", async ({
 	page,
 }) => {

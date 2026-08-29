@@ -3,7 +3,7 @@ import {mkdir, mkdtemp, readFile, rm, unlink, writeFile} from "node:fs/promises"
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
-import {expect, type Page, type Route, test} from "@playwright/test";
+import {expect, type Page, test} from "@playwright/test";
 
 const harness = fileURLToPath(new URL("./daily-driver-server.mjs", import.meta.url));
 
@@ -91,18 +91,6 @@ const writeSession = async (
 
 const attachErrors = (page: Page, errors: Array<string>) => {
 	page.on("pageerror", (error) => errors.push(error.message));
-};
-
-const holdRestoration = async (page: Page) => {
-	let release = () => {};
-	const gate = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	await page.route("**/api/resilience", async (route: Route) => {
-		await gate;
-		await route.continue();
-	});
-	return release;
 };
 
 const selectNode = async (page: Page, identity: string) => {
@@ -256,13 +244,9 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		contexts.push(coldContext);
 		const coldPage = await coldContext.newPage();
 		attachErrors(coldPage, errors);
-		const releaseColdRestoration = await holdRestoration(coldPage);
 		await coldPage.goto(server.url);
 		await expect(coldPage.locator('[data-id="pi:daily-parent"]')).toBeVisible();
 		await expect(coldPage.locator('[data-id="pi:daily-child"]')).toBeVisible();
-		await selectNode(coldPage, "pi:daily-child");
-		await expect(coldPage.locator("#chat-title")).toHaveText("daily-child");
-		releaseColdRestoration();
 		await expect(coldPage.locator('[data-id="fork:pi:daily-child"]')).toHaveCount(1);
 		await expect(coldPage.locator('.session-node[data-detail-level="full"]')).toHaveCount(2);
 		expect(await coldPage.locator("html").getAttribute("data-density")).toBe("compact");
@@ -298,10 +282,8 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		contexts.push(degradedContext);
 		const degradedPage = await degradedContext.newPage();
 		attachErrors(degradedPage, errors);
-		const releaseDegradedRestoration = await holdRestoration(degradedPage);
 		await degradedPage.goto(server.url);
 		await expect(degradedPage.locator('[data-id="pi:daily-parent"]')).toBeVisible();
-		releaseDegradedRestoration();
 		await expect(degradedPage.getByRole("heading", {name: "Geri yükleme durumu"})).toBeVisible();
 		await expect(
 			degradedPage.getByText("Önceki sohbet kullanılamıyor", {exact: true}),
