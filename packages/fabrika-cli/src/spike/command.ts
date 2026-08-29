@@ -157,7 +157,7 @@ const capture = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the decision on stdin with the run table, then close."),
 	Command.withDescription(
-		'Post the decision read from STDIN plus the log\'s own run table, read it back, and close the spike. Prints {"spike":n,"nonce":"…","commentId":id,"runs":k,"evidenceDigest":"…","state":"closed","discardedStdin":bool}. Exits 3 (stdin held nothing), 4 (the manifest or the log does not parse), 5/6 (leak), 7 (the spike is absent, or closed with nothing to supersede), 8/9 (the post or the close was unproven, the read-back differs), 10 (off-grammar --nonce), 11 (a precondition read failed — nothing was posted), 12 (no workspace), 14 (zero recorded runs — a decision here would be a self-report), 18 (the manifest names another spike), 19 (the author holds below write). Example: fabrika spike capture 9310 --nonce 7f3a9c21 < decision.md',
+		'Post the decision read from STDIN plus the log\'s own run table, read it back, and close the spike. Prints {"spike":n,"nonce":"…","commentId":id,"runs":k,"evidenceDigest":"…","state":"closed","discardedStdin":bool}. Exits 3 (stdin held nothing), 4 (the manifest or the log does not parse), 5/6 (leak), 7 (the spike is absent, or closed with nothing to supersede), 8/9 (the post or the close was unproven, the read-back differs), 10 (off-grammar --nonce), 11 (a precondition read failed — nothing was posted), 12 (no workspace), 14 (zero recorded runs — no evidence to decide over), 18 (the manifest names another spike), 19 (the author holds below write). Example: fabrika spike capture 9310 --nonce 7f3a9c21 < decision.md',
 	),
 );
 
@@ -206,7 +206,7 @@ const status = leafCommand(
 ).pipe(
 	Command.withShortDescription("One run's spike state, workspace and evidence count."),
 	Command.withDescription(
-		'One run\'s spike state, workspace presence and evidence count — near-total, because its consumer is a session resuming cold. An absent workspace is a FACT at exit 0. Prints {"nonce":"…","workspace":"present|absent","spike":n,"kind":"…","question":"…","spikeState":"open|closed|null","captured":bool,"runs":k,"lastCommandExit":n,"evidenceDigest":"…","treeMatched":bool}. Exits 4 (the manifest or the log exists and does not parse), 10 (off-grammar --nonce), 11 (the spike state, its comments or the tree state could not be read). Example: fabrika spike status --nonce 7f3a9c21',
+		'One run\'s spike state, workspace presence and evidence count — near-total: an absent workspace is a FACT at exit 0. Prints {"nonce":"…","workspace":"present|absent","spike":n,"kind":"…","question":"…","spikeState":"open|closed|null","captured":bool,"runs":k,"lastCommandExit":n,"evidenceDigest":"…","treeMatched":bool}. Exits 4 (the manifest or the log exists and does not parse), 10 (off-grammar --nonce), 11 (the spike state, its comments or the tree state could not be read). Example: fabrika spike status --nonce 7f3a9c21',
 	),
 );
 

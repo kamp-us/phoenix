@@ -52,7 +52,7 @@ const law = leafCommand(
 ).pipe(
 	Command.withShortDescription("The typed prohibition registry, in file order."),
 	Command.withDescription(
-		'The typed prohibition registry, schema-validated whole-file, rows in file order. Prints {"lawSource":"registry","rows":[…]}; there is no empty answer, because a law file that names no law is malformed rather than minimal. Exits 4 (the registry exists but violates the schema — missing/extra field, duplicate id, off-enum value, zero rows, unparseable JSON; the whole file is refused), 11 (the registry could not be read — the law is UNKNOWN, never "untyped"), 12 (proven: no design manifest), 13 (proven: manifest present, no registry — the law is untyped and the manifest\'s prose is the source). Example: fabrika ui law',
+		'The typed prohibition registry, schema-validated whole-file, rows in file order. Prints {"lawSource":"registry","rows":[…]}; there is no empty answer — zero rows is a schema violation. Exits 4 (the registry exists but violates the schema — missing/extra field, duplicate id, off-enum value, zero rows, unparseable JSON; the whole file is refused), 11 (the registry could not be read — the law is UNKNOWN, never "untyped"), 12 (proven: no design manifest), 13 (proven: manifest present, no registry — the law is untyped and the manifest\'s prose is the source). Example: fabrika ui law',
 	),
 );
 
