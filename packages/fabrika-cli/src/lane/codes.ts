@@ -349,3 +349,14 @@ export const ASSEMBLY_RED = 44;
  * sits with the codes the driver records nothing for (#7244). The remedy is the seat, not the range.
  */
 export const ASSEMBLY_DIRTY = 45;
+
+/**
+ * The machine a lane would run is not the machine its issue's board state calls for — the boot half
+ * of #7024, where an epic booted before it had a plan came up on the single-task coder template and
+ * nothing downstream said the lane was wrong.
+ *
+ * Its own seat rather than {@link LANE_EXISTS} or {@link TOPOLOGY_ABSENT}: nothing is in the way and
+ * no topology was read, so both of those send the reader to the wrong remedy. The remedy here is a
+ * different verb — `lane emit` for an issue with children, `lane open` for one without.
+ */
+export const SHAPE_MISMATCH = 46;

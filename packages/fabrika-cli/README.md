@@ -596,7 +596,7 @@ snapshot. Lane state is local and never committed.
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
 | `lane print` | the compiled topology: phases, terminals, and each state's legal events |
-| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology |
+| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run |
 | `lane brief` | the spawn prompt for one task's current leaf state |
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
 | `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch to `ORIG_HEAD` and pushes nothing |

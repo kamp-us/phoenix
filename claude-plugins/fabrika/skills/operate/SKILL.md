@@ -117,10 +117,10 @@ node <fabrika> lane emit $lane_key
 ```
 
 `lane emit` generates an epic lane — one region per child, phase-sequenced — from the epic body's
-topology block. Its absent-topology refusal is the deterministic "this is not an epic" answer, and
-that refusal-first order is what keeps the boot type-blind: no label is read anywhere. On that
-refusal — and straight away on a `chore:<name>` key, which names no epic body to read a topology
-out of — boot from the committed template instead:
+topology block. Its absent-topology refusal at `15` says only that no topology was read: an epic
+nobody has planned and a plain issue both land there, which is why `lane open` behind it does the
+telling apart rather than this step. On that refusal — and straight away on a `chore:<name>` key,
+which names no epic body to read a topology out of — boot from the committed template instead:
 
 ```bash
 node <fabrika> lane open $lane_key
@@ -128,8 +128,29 @@ node <fabrika> lane open $lane_key
 
 `lane open` places the template the key selects — the coder workflow for an issue number, the chore
 workflow for `chore:<name>` — so a chore drive needs no document written by hand. Its
-already-exists refusal is tolerated as resume, not treated as an error. Both verbs
-are specified on [#5688](https://github.com/kamp-us/phoenix/issues/5688) — until that lands they
+already-exists refusal is tolerated as resume, not treated as an error.
+
+**Exit `46` out of `lane open` is not a fallback that failed — it says the issue is an epic, so this
+one-task template is the wrong machine for it.** An issue key makes `lane open` read that issue's
+type and its sub-issue links first, and either one makes it an epic, so it refuses before writing
+([#7024](https://github.com/kamp-us/phoenix/issues/7024)). Both are asked for because an epic looks
+different before and after planning, and the pre-plan window is the one the wrong-template lane was
+booted in: a planned epic carries children, an unplanned one carries none and is known only by its
+`type:epic` label.
+
+**The refusal line says which case you are on, and they route differently.** No children means no
+plan, so nothing here is bootable — end `STOPPED` naming the code, and the epic goes to `plan-epic`.
+Children but a `15` out of `lane emit` means the plan is there and its `## Dependencies` block is
+missing or unparseable, which is `plan-epic`'s too — same `STOPPED`, different repair. Either way you
+never fall through to the template.
+
+A lane already booted on the coder template before this refusal existed is not repaired in place: a
+lane on disk is never re-emitted over (ADR
+[0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)'s 2026-08-20 amendment),
+so `lane emit` answers `14` and names the two steps — retire the lane directory, then re-run it.
+`lane migrate --check` is what finds those lanes; see its `46` below.
+
+Both verbs are specified on [#5688](https://github.com/kamp-us/phoenix/issues/5688) — until that lands they
 exist only as its spec; once it does they join `status`/`transition`/`history`/`print` in
 `packages/fabrika-cli/src/lane/`, and each verb's `--help` is its interface. Any other exit is a stop, not a fallback: `4` is a record read in full and not
 the shape, `11` is a lane that could not be read — opposite remedies, neither yours to guess. End
@@ -426,6 +447,13 @@ node <fabrika> lane migrate           # migrate the ones the swap provably does 
 It writes only where the lane's own event log folds to the same state through both machines. Exit
 `37` names the lanes it would have moved and leaves them alone — that is a human's call, not a
 re-run's.
+
+The sweep also judges each issue-keyed lane's machine against its issue's type and sub-issue links,
+because staleness was the only wrongness it could see and a coder-template lane booted on an epic
+grafts cleanly and read `current` (#7024). Exit `46` names the lanes running a machine their issue
+does not call for; each is skipped, never written, and an epic's is rebuilt in two steps — retire the
+lane directory, then `lane emit <n>`. Every judged row carries `shape` — `matches`, `mismatched` with
+a reason, or `unknown` with one — and `unknown` is a board read that failed, never a lane that passed.
 
 **A chore state routes to a verb, not to a shell**, and the routing is a verb's answer too:
 
