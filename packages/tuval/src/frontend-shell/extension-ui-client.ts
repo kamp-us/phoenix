@@ -63,8 +63,48 @@ const ExtensionUIResponseOutcomeSchema = Schema.Union([
 	}),
 ]);
 
+type AcceptedSettlement = Extract<ExtensionUIResponseOutcome, {_tag: "accepted" | "duplicate"}>;
+type SettlementRefusalReason = "stale-id" | "unknown" | "method-mismatch";
+
+export class ExtensionUISettlementRefusal extends Error {
+	readonly _tag = "ExtensionUISettlementRefusal";
+	readonly reason: SettlementRefusalReason;
+	readonly expectedId: string;
+	readonly outcome: ExtensionUIResponseOutcome;
+
+	constructor(
+		reason: SettlementRefusalReason,
+		expectedId: string,
+		outcome: ExtensionUIResponseOutcome,
+	) {
+		super(
+			reason === "stale-id"
+				? `Extension UI yanıtı ${expectedId} yerine ${outcome.id} isteğine ait; görünür istek açık tutuldu.`
+				: `Extension UI ${expectedId} isteğini ${outcome._tag} sonucu ile reddetti; görünür istek açık tutuldu.`,
+		);
+		this.name = "ExtensionUISettlementRefusal";
+		this.reason = reason;
+		this.expectedId = expectedId;
+		this.outcome = outcome;
+	}
+}
+
 export const decodeExtensionUIEvent = (value: unknown): ExtensionUIEvent | undefined =>
 	Option.getOrUndefined(Schema.decodeUnknownOption(ExtensionUIEventSchema)(value));
+
+export const bindExtensionUIOutcome = (expectedId: string, value: unknown): AcceptedSettlement => {
+	const outcome = Option.getOrUndefined(
+		Schema.decodeUnknownOption(ExtensionUIResponseOutcomeSchema)(value),
+	);
+	if (outcome === undefined) throw new Error("Extension UI yanıt sonucu okunamadı");
+	if (outcome.id !== expectedId) {
+		throw new ExtensionUISettlementRefusal("stale-id", expectedId, outcome);
+	}
+	if (outcome._tag === "unknown" || outcome._tag === "method-mismatch") {
+		throw new ExtensionUISettlementRefusal(outcome._tag, expectedId, outcome);
+	}
+	return outcome;
+};
 
 interface FateOperation {
 	readonly id: string;
@@ -94,17 +134,9 @@ const runFate = async (operation: FateOperation): Promise<unknown> => {
 	return result.data;
 };
 
-const decodeOutcome = (value: unknown): ExtensionUIResponseOutcome => {
-	const outcome = Option.getOrUndefined(
-		Schema.decodeUnknownOption(ExtensionUIResponseOutcomeSchema)(value),
-	);
-	if (outcome === undefined) throw new Error("Extension UI yanıt sonucu okunamadı");
-	return outcome;
-};
-
 export interface ExtensionUIBrowserClient {
-	readonly respond: (request: ExtensionUIResponseRequest) => Promise<ExtensionUIResponseOutcome>;
-	readonly cancel: (request: ExtensionUICancelRequest) => Promise<ExtensionUIResponseOutcome>;
+	readonly respond: (request: ExtensionUIResponseRequest) => Promise<AcceptedSettlement>;
+	readonly cancel: (request: ExtensionUICancelRequest) => Promise<AcceptedSettlement>;
 	readonly subscribe: (handlers: {
 		readonly open: () => void;
 		readonly event: (event: ExtensionUIEvent) => void;
@@ -115,7 +147,8 @@ export interface ExtensionUIBrowserClient {
 
 export const extensionUIBrowserClient: ExtensionUIBrowserClient = {
 	respond: async (input) =>
-		decodeOutcome(
+		bindExtensionUIOutcome(
+			input.response.id,
 			await runFate({
 				id: `extension-ui-respond-${input.response.id}`,
 				kind: "mutation",
@@ -124,7 +157,8 @@ export const extensionUIBrowserClient: ExtensionUIBrowserClient = {
 			}),
 		),
 	cancel: async (input) =>
-		decodeOutcome(
+		bindExtensionUIOutcome(
+			input.id,
 			await runFate({
 				id: `extension-ui-cancel-${input.id}`,
 				kind: "mutation",

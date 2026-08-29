@@ -4,26 +4,20 @@ import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/reac
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {ExtensionUIBridge} from "../../src/frontend-shell/extension-ui-bridge.js";
 import type {ExtensionUIBrowserClient} from "../../src/frontend-shell/extension-ui-client.js";
-import type {
-	ExtensionUIEvent,
-	ExtensionUIRequest,
-	ExtensionUIResponseOutcome,
-} from "../../src/shared/extension-ui.js";
+import type {ExtensionUIEvent, ExtensionUIRequest} from "../../src/shared/extension-ui.js";
 
 const scope = {packageName: "fixture-extension", sessionId: "session-one"} as const;
 
 class FakeClient implements ExtensionUIBrowserClient {
 	handlers?: Parameters<ExtensionUIBrowserClient["subscribe"]>[0];
-	readonly respond = vi.fn(
-		async (
-			_request: Parameters<ExtensionUIBrowserClient["respond"]>[0],
-		): Promise<ExtensionUIResponseOutcome> => ({_tag: "accepted", id: "accepted"}),
-	);
-	readonly cancel = vi.fn(
-		async (
-			_request: Parameters<ExtensionUIBrowserClient["cancel"]>[0],
-		): Promise<ExtensionUIResponseOutcome> => ({_tag: "accepted", id: "accepted"}),
-	);
+	readonly respond = vi.fn(async (request: Parameters<ExtensionUIBrowserClient["respond"]>[0]) => ({
+		_tag: "accepted" as const,
+		id: request.response.id,
+	}));
+	readonly cancel = vi.fn(async (request: Parameters<ExtensionUIBrowserClient["cancel"]>[0]) => ({
+		_tag: "accepted" as const,
+		id: request.id,
+	}));
 	readonly subscribe = vi.fn((handlers: Parameters<ExtensionUIBrowserClient["subscribe"]>[0]) => {
 		this.handlers = handlers;
 		return vi.fn();
@@ -114,12 +108,15 @@ describe("ExtensionUIBridge", () => {
 
 		client.emit(events.input);
 		const input = await screen.findByRole("textbox", {name: "Yanıt"});
-		fireEvent.change(input, {target: {value: "yazılı yanıt"}});
+		expect((screen.getByRole("button", {name: "Gönder"}) as HTMLButtonElement).disabled).toBe(
+			false,
+		);
+		fireEvent.submit(input.closest("form")!);
 		fireEvent.submit(input.closest("form")!);
 		await waitFor(() => expect(client.respond).toHaveBeenCalledTimes(3));
 		expect(client.respond.mock.calls[2]?.[0].response).toMatchObject({
 			id: "input-one",
-			value: "yazılı yanıt",
+			value: "",
 		});
 
 		client.emit(events.editor);
@@ -130,9 +127,12 @@ describe("ExtensionUIBridge", () => {
 		expect(client.cancel).toHaveBeenCalledWith({scope, id: "editor-one"});
 	});
 
-	it("renders notify/current/degradation by package-session key and clears only unloaded scope", async () => {
+	it("isolates same-key current state across packages and renders stable widget placement", async () => {
 		const client = new FakeClient();
+		const peerScope = {packageName: "peer-extension", sessionId: "session-one"} as const;
+		const siblingScope = {packageName: scope.packageName, sessionId: "session-two"} as const;
 		render(<ExtensionUIBridge client={client} />);
+		client.handlers?.open();
 		client.handlers?.open();
 		client.emit({
 			_tag: "notify",
@@ -164,8 +164,33 @@ describe("ExtensionUIBridge", () => {
 			replay: false,
 		});
 		client.emit({
-			_tag: "degradation",
+			_tag: "status",
 			sequence: 4,
+			scope: peerScope,
+			key: "phase",
+			text: "eş paket anahtarı",
+			replay: false,
+		});
+		client.emit({
+			_tag: "status",
+			sequence: 5,
+			scope: siblingScope,
+			key: "phase",
+			text: "eş oturum anahtarı",
+			replay: false,
+		});
+		client.emit({
+			_tag: "widget",
+			sequence: 6,
+			scope: peerScope,
+			key: "plan",
+			lines: ["alt satır"],
+			placement: "belowEditor",
+			replay: false,
+		});
+		client.emit({
+			_tag: "degradation",
+			sequence: 7,
 			scope,
 			id: "title",
 			method: "setTitle",
@@ -173,7 +198,7 @@ describe("ExtensionUIBridge", () => {
 		});
 		client.emit({
 			_tag: "degradation",
-			sequence: 5,
+			sequence: 8,
 			scope,
 			id: "editor-text",
 			method: "set_editor_text",
@@ -183,19 +208,58 @@ describe("ExtensionUIBridge", () => {
 		expect(await screen.findByText("Bilgi hazır")).toBeTruthy();
 		expect(screen.getByText("çalışıyor")).toBeTruthy();
 		expect(screen.getByText("iki")).toBeTruthy();
+		expect(screen.getByText("eş paket anahtarı")).toBeTruthy();
+		expect(screen.getByText("eş oturum anahtarı")).toBeTruthy();
+		const above = screen.getByRole("region", {name: "Editörün üstündeki paket widget'ları"});
+		const below = screen.getByRole("region", {name: "Editörün altındaki paket widget'ları"});
+		expect(above.textContent).toContain("bir");
+		expect(below.textContent).toContain("alt satır");
+		expect(above.compareDocumentPosition(below) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 		expect(screen.getByRole("alert").textContent).toContain("setTitle");
 		expect(screen.getByText(/set_editor_text işleme alınmak üzere ertelendi/)).toBeTruthy();
 		expect(screen.getAllByText("fixture-extension · session-one").length).toBeGreaterThan(0);
 
-		client.emit({_tag: "unloaded", sequence: 6, scope});
+		client.emit({_tag: "unloaded", sequence: 9, scope});
 		await waitFor(() => expect(screen.queryByText("çalışıyor")).toBeNull());
 		expect(screen.queryByText("iki")).toBeNull();
+		expect(screen.getByText("eş paket anahtarı")).toBeTruthy();
+		expect(screen.getByText("eş oturum anahtarı")).toBeTruthy();
+		expect(screen.getByText("alt satır")).toBeTruthy();
 		expect(screen.getByText(/Paket oturumu kaldırıldı/)).toBeTruthy();
 	});
 
-	it("drops unresolved dialogs on disconnect and reconnect replays only keyed current state", async () => {
+	it("replaces mounted reconnect state, clears notices, and never reopens resolved dialogs", async () => {
 		const client = new FakeClient();
 		render(<ExtensionUIBridge client={client} />);
+		client.handlers?.open();
+		client.emit({
+			_tag: "status",
+			sequence: 1,
+			scope,
+			key: "stale",
+			text: "silinmesi gereken durum",
+			replay: false,
+		});
+		client.emit({
+			_tag: "widget",
+			sequence: 2,
+			scope,
+			key: "stale",
+			lines: ["silinmesi gereken widget"],
+			placement: "aboveEditor",
+			replay: false,
+		});
+		client.emit({
+			_tag: "notify",
+			sequence: 3,
+			scope,
+			request: {
+				type: "extension_ui_request",
+				id: "ephemeral",
+				method: "notify",
+				message: "yeniden oynatılmayan bildirim",
+			},
+		});
 		client.emit(events.confirm);
 		expect(await screen.findByRole("dialog")).toBeTruthy();
 		client.handlers?.disconnect();
@@ -209,19 +273,14 @@ describe("ExtensionUIBridge", () => {
 			sequence: 7,
 			scope,
 			key: "phase",
-			text: "geri yüklendi",
-			replay: true,
-		});
-		client.emit({
-			_tag: "status",
-			sequence: 8,
-			scope,
-			key: "phase",
 			text: "son değer",
 			replay: true,
 		});
 		expect(await screen.findByText("son değer")).toBeTruthy();
-		expect(screen.queryByText("geri yüklendi")).toBeNull();
+		expect(screen.queryByText("silinmesi gereken durum")).toBeNull();
+		expect(screen.queryByText("silinmesi gereken widget")).toBeNull();
+		expect(screen.queryByText("yeniden oynatılmayan bildirim")).toBeNull();
 		expect(screen.queryByRole("dialog")).toBeNull();
+		expect(client.respond).not.toHaveBeenCalled();
 	});
 });

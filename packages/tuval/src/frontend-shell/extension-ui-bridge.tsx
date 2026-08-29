@@ -199,6 +199,7 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 				? (dialog.request.prefill ?? "")
 				: "",
 	);
+	const [editorReady, setEditorReady] = useState(dialog.request.method !== "editor");
 	const editor = useComposerEditor();
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const restoreFocus = useRef<HTMLElement | null>(null);
@@ -218,6 +219,8 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 	useEffect(() => {
 		if (dialog.request.method !== "editor" || editor === null) return;
 		editor.setContent(dialog.request.prefill ?? "");
+		setValue(editor.getMarkdown());
+		setEditorReady(true);
 		const sync = () => setValue(editor.getMarkdown());
 		editor.editor.on("update", sync);
 		editor.editor.setOptions({
@@ -230,8 +233,16 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 		};
 	}, [dialog.request, editor]);
 
+	const valueIsValid =
+		dialog.request.method === "select"
+			? dialog.request.options.includes(value)
+			: dialog.request.method === "editor"
+				? editorReady
+				: true;
+
 	const submit = (event: FormEvent<HTMLFormElement>): void => {
 		event.preventDefault();
+		if (!valueIsValid) return;
 		if (dialog.request.method === "confirm") {
 			void settle({type: "extension_ui_response", id: dialog.request.id, confirmed: true});
 		} else {
@@ -336,13 +347,7 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 									Reddet
 								</Button>
 							) : null}
-							<Button
-								type="submit"
-								variant="primary"
-								disabled={
-									dialog.settling || (dialog.request.method !== "confirm" && value.length === 0)
-								}
-							>
+							<Button type="submit" variant="primary" disabled={dialog.settling || !valueIsValid}>
 								{dialog.settling
 									? "Gönderiliyor"
 									: dialog.request.method === "confirm"
@@ -360,20 +365,44 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 	);
 };
 
+const Widget = ({widget}: {readonly widget: WidgetView}) => (
+	<div className="extension-ui__widget">
+		<ScopeAttribution scope={widget.scope} />
+		<strong>{widget.key}</strong>
+		{widget.lines.map((line, index) => (
+			<p key={`${index}:${line}`}>{line}</p>
+		))}
+	</div>
+);
+
 export function ExtensionUIBridge({
 	client = extensionUIBrowserClient,
 }: {
 	readonly client?: ExtensionUIBrowserClient;
 }) {
 	const [state, setState] = useState<BridgeState>(initialState);
+	const submitted = useRef(new Set<string>());
 	const active = state.dialogs.at(0);
-	const statuses = useMemo(() => [...state.statuses.values()], [state.statuses]);
-	const widgets = useMemo(() => [...state.widgets.values()], [state.widgets]);
+	const currentOrder = (left: StatusView | WidgetView, right: StatusView | WidgetView) =>
+		extensionUIScopeKey(left.scope).localeCompare(extensionUIScopeKey(right.scope)) ||
+		left.key.localeCompare(right.key);
+	const statuses = useMemo(() => [...state.statuses.values()].sort(currentOrder), [state.statuses]);
+	const widgets = useMemo(() => [...state.widgets.values()].sort(currentOrder), [state.widgets]);
+	const aboveWidgets = widgets.filter(({placement}) => placement === "aboveEditor");
+	const belowWidgets = widgets.filter(({placement}) => placement === "belowEditor");
 
 	useEffect(
 		() =>
 			client.subscribe({
-				open: () => setState((current) => ({...current, connection: "connected"})),
+				open: () =>
+					setState((current) => ({
+						...current,
+						connection: "connected",
+						dialogs: [],
+						notices: [],
+						statuses: new Map(),
+						widgets: new Map(),
+					})),
 				event: (event) => setState((current) => reduceExtensionUIEvent(current, event)),
 				disconnect: () =>
 					setState((current) =>
@@ -402,6 +431,8 @@ export function ExtensionUIBridge({
 	);
 
 	const settle = async (dialog: PendingDialog, response?: ExtensionUIResponse): Promise<void> => {
+		if (submitted.current.has(dialog.key)) return;
+		submitted.current.add(dialog.key);
 		setState((current) => ({
 			...current,
 			dialogs: current.dialogs.map((candidate) =>
@@ -425,6 +456,7 @@ export function ExtensionUIBridge({
 				),
 			);
 		} catch (error) {
+			submitted.current.delete(dialog.key);
 			setState((current) =>
 				appendNotice(
 					{
@@ -457,22 +489,41 @@ export function ExtensionUIBridge({
 			</div>
 			{statuses.length === 0 && widgets.length === 0 ? null : (
 				<Card as="section" className="extension-ui__current" aria-label="Güncel paket durumu">
-					{statuses.map((status) => (
-						<p key={stateKey(status.scope, status.key)}>
-							<ScopeAttribution scope={status.scope} />
-							<strong>{status.key}</strong>
-							<span>{status.text}</span>
-						</p>
-					))}
-					{widgets.map((widget) => (
-						<section key={stateKey(widget.scope, widget.key)} data-placement={widget.placement}>
-							<ScopeAttribution scope={widget.scope} />
-							<strong>{widget.key}</strong>
-							{widget.lines.map((line, index) => (
-								<p key={`${index}:${line}`}>{line}</p>
+					{aboveWidgets.length === 0 ? null : (
+						<section
+							className="extension-ui__widget-zone"
+							data-placement="aboveEditor"
+							aria-label="Editörün üstündeki paket widget'ları"
+						>
+							<h3>Editörün üstü</h3>
+							{aboveWidgets.map((widget) => (
+								<Widget key={stateKey(widget.scope, widget.key)} widget={widget} />
 							))}
 						</section>
-					))}
+					)}
+					{statuses.length === 0 ? null : (
+						<section className="extension-ui__status-zone" aria-label="Paket durumları">
+							{statuses.map((status) => (
+								<p key={stateKey(status.scope, status.key)}>
+									<ScopeAttribution scope={status.scope} />
+									<strong>{status.key}</strong>
+									<span>{status.text}</span>
+								</p>
+							))}
+						</section>
+					)}
+					{belowWidgets.length === 0 ? null : (
+						<section
+							className="extension-ui__widget-zone"
+							data-placement="belowEditor"
+							aria-label="Editörün altındaki paket widget'ları"
+						>
+							<h3>Editörün altı</h3>
+							{belowWidgets.map((widget) => (
+								<Widget key={stateKey(widget.scope, widget.key)} widget={widget} />
+							))}
+						</section>
+					)}
 				</Card>
 			)}
 			<div className="extension-ui__notices" aria-live="polite">

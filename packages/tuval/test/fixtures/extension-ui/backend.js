@@ -1,3 +1,4 @@
+import {existsSync} from "node:fs";
 import {Effect, Layer} from "effect";
 import {PackageExtensionUI} from "../../../dist/backend/extension-ui.js";
 
@@ -14,7 +15,11 @@ export const makeLayer = () =>
 			const ui = yield* PackageExtensionUI;
 			yield* Effect.forkChild(
 				Effect.gen(function* () {
-					yield* Effect.sleep("250 millis");
+					const handshake = process.env.TUVAL_EXTENSION_UI_HANDSHAKE;
+					if (handshake === undefined) return;
+					while (!(yield* Effect.sync(() => existsSync(handshake)))) {
+						yield* Effect.sleep("20 millis");
+					}
 					yield* ui.dispatch(
 						"session-main",
 						request("notify", "notify", {message: "Fixture bildirimi", notifyType: "info"}),
@@ -67,8 +72,10 @@ export const makeLayer = () =>
 						"session-main",
 						request("editor", "editor", {title: "Fixture editörü", prefill: "başlangıç"}),
 					);
-					yield* Effect.sleep("250 millis");
-					yield* ui.unload("session-other");
+					yield* ui.dispatch(
+						"session-main",
+						request("cancel", "input", {title: "Fixture iptali", placeholder: "iptal"}),
+					);
 				}),
 			);
 		}),

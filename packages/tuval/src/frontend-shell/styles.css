@@ -65,7 +65,7 @@
 	--topbar-height: 72px;
 	--node-width: 296px;
 	--pane-width: min(456px, calc(100vw - var(--space-8)));
-	--problem-panel-width: var(--problem-panel-width);
+	--problem-panel-width: min(360px, calc(100vw - var(--space-8)));
 	--state-width: min(480px, calc(100vw - var(--space-8)));
 	--t-body: 14px / 1.5;
 	--t-body-sm: 13px / 1.45;
@@ -1010,6 +1010,7 @@ kbd {
 	:root {
 		--topbar-height: 112px;
 		--pane-width: calc(100vw - var(--space-4));
+		--problem-panel-width: calc(100vw - var(--space-4));
 	}
 
 	.tuval-shell {
@@ -1228,14 +1229,34 @@ kbd {
 	overflow: auto;
 }
 
-.extension-ui__current > p,
 .extension-ui__current > section,
+.extension-ui__status-zone > p,
+.extension-ui__widget,
 .extension-ui__notices > section {
 	display: grid;
 	gap: var(--space-1);
 	margin: 0;
 	padding: var(--space-2);
 	border-left: 2px solid var(--border-strong);
+}
+
+.extension-ui__widget-zone {
+	display: grid;
+	gap: var(--space-1);
+}
+
+.extension-ui__widget-zone[data-placement="aboveEditor"] {
+	border-left-color: var(--accent);
+}
+
+.extension-ui__widget-zone[data-placement="belowEditor"] {
+	border-left-color: var(--warning);
+}
+
+.extension-ui__widget-zone h3 {
+	margin: 0;
+	color: var(--text-muted);
+	font: 650 var(--t-meta);
 }
 
 .extension-ui__current p,
