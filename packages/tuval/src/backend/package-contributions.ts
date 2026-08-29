@@ -75,6 +75,7 @@ export interface TuvalContributionCatalog {
 	readonly contractVersion: 1;
 	readonly backend: ReadonlyArray<BackendContribution>;
 	readonly frontend: ReadonlyArray<FrontendContribution>;
+	readonly assetFiles: ReadonlyMap<string, string>;
 	readonly diagnostics: ReadonlyArray<ContributionDiagnostic>;
 }
 
@@ -126,6 +127,8 @@ const manifestFrontend = (manifest: TuvalManifest) => [
 	...(manifest.frontend?.panels ?? []).map((entry) => ({kind: "panel" as const, entry})),
 ];
 
+const contributionAssetUrl = (index: number) => `/api/contribution-assets/v1-${index}.js`;
+
 export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function* (
 	options: LoadPackageContributionsOptions = {},
 ) {
@@ -147,6 +150,7 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 	});
 	const backend: Array<BackendContribution> = [];
 	const frontend: Array<FrontendContribution> = [];
+	const assetFiles = new Map<string, string>();
 	const diagnostics: Array<ContributionDiagnostic> = [];
 	const keys = new Set<string>();
 
@@ -183,6 +187,7 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 			continue;
 		}
 		const packageFrontend: Array<FrontendContribution> = [];
+		const packageAssetFiles = new Map<string, string>();
 		const packageKeys = new Set<string>();
 		let invalid: string | undefined;
 		for (const {kind, entry} of manifestFrontend(manifest.value)) {
@@ -200,8 +205,10 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 				invalid = `${kind} asset ${entry.asset} is missing or outside the package`;
 				break;
 			}
+			const assetUrl = contributionAssetUrl(frontend.length + packageFrontend.length);
 			packageKeys.add(key);
-			packageFrontend.push({kind, key: entry.key, asset: asset as string, packageName, source});
+			packageAssetFiles.set(assetUrl, asset);
+			packageFrontend.push({kind, key: entry.key, asset: assetUrl, packageName, source});
 		}
 		if (invalid !== undefined) {
 			reject(packageName, invalid);
@@ -255,10 +262,17 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 			continue;
 		}
 		for (const key of packageKeys) keys.add(key);
+		for (const [assetUrl, assetFile] of packageAssetFiles) assetFiles.set(assetUrl, assetFile);
 		frontend.push(...packageFrontend);
 		backend.push(...packageBackend);
 	}
-	return {contractVersion: 1, backend, frontend, diagnostics} satisfies TuvalContributionCatalog;
+	return {
+		contractVersion: 1,
+		backend,
+		frontend,
+		assetFiles,
+		diagnostics,
+	} satisfies TuvalContributionCatalog;
 });
 
 export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")(function* (
@@ -280,12 +294,11 @@ export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")
 
 export const emitContributionCatalog = (catalog: TuvalContributionCatalog) => ({
 	contractVersion: catalog.contractVersion,
-	frontend: catalog.frontend.map(({kind, key, asset, packageName, source}) => ({
+	frontend: catalog.frontend.map(({kind, key, asset, packageName}) => ({
 		kind,
 		key,
 		asset,
 		packageName,
-		source,
 	})),
-	diagnostics: catalog.diagnostics,
+	diagnostics: catalog.diagnostics.map(({packageName, message}) => ({packageName, message})),
 });

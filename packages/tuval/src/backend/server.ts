@@ -20,6 +20,7 @@ import {
 import {
 	buildPackageBackendLayers,
 	emitContributionCatalog,
+	type LoadPackageContributionsOptions,
 	loadPackageContributions,
 	type TuvalContributionCatalog,
 } from "./package-contributions.js";
@@ -39,6 +40,7 @@ export interface StartTuvalOptions extends PiDiscoveryOptions {
 	readonly lineage?: LineageIndexOptions;
 	readonly openBrowser?: (url: string) => Effect.Effect<void, unknown>;
 	readonly staticAsset?: string;
+	readonly packageContributions?: LoadPackageContributionsOptions;
 	readonly log?: (line: string) => void;
 	readonly liveSession?: LiveSessionService;
 	readonly liveSessionTransport?: ByteTransportFactory;
@@ -214,6 +216,25 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 		response.end(JSON.stringify(emitContributionCatalog(contributions)));
 		return;
 	}
+	if (request.method === "GET" && url.pathname.startsWith("/api/contribution-assets/")) {
+		const assetFile = contributions.assetFiles.get(url.pathname);
+		if (assetFile === undefined) {
+			response.statusCode = 404;
+			response.end("Contribution asset unavailable");
+			return;
+		}
+		const asset = yield* fs.readFile(assetFile).pipe(Effect.option);
+		if (asset._tag === "None") {
+			response.statusCode = 404;
+			response.end("Contribution asset unavailable");
+			return;
+		}
+		response.setHeader("content-type", "text/javascript; charset=utf-8");
+		response.setHeader("cache-control", "no-cache");
+		response.setHeader("x-content-type-options", "nosniff");
+		response.end(asset.value);
+		return;
+	}
 	if (request.method === "POST" && url.pathname === "/fate") {
 		const webRequest = yield* toWebRequest(request, origin);
 		const webResponse = yield* FateInterpreter.handleRequest(webRequest, fateContext);
@@ -251,7 +272,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 	options: StartTuvalOptions = {},
 ) {
 	const fs = yield* FileSystem.FileSystem;
-	const contributions = yield* loadPackageContributions().pipe(
+	const contributions = yield* loadPackageContributions(options.packageContributions).pipe(
 		Effect.mapError(
 			(error) =>
 				new StartupFailure({

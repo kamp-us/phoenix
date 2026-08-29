@@ -20,6 +20,7 @@ then opens that URL in the default browser unless browser opening is disabled.
 | --- | --- |
 | `GET /health` | Report server readiness |
 | `GET /api/contributions` | Emit the validated headless frontend contribution catalog |
+| `GET /api/contribution-assets/<opaque-id>.js` | Serve one catalog-authorized JavaScript asset |
 | `GET /` | Serve the static shell |
 | `POST /fate` | Run Effect-native discovery, lineage, and live-session queries or mutations |
 | `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
@@ -143,9 +144,12 @@ manifest beside its ordinary `pi` manifest:
 
 Backend exports are zero-argument factories returning Effect Layers. Tuval builds them during server
 startup and fails startup when layer construction fails. Frontend assets are checked but never
-imported by the backend. Invalid contracts, duplicate or shadowed keys, paths outside a package, and
-missing assets reject that package while valid packages remain in the catalog. Pi's resolved order
-sets precedence. Tuval itself declares its built-in package capability through this same manifest.
+imported by the backend. The browser catalog exposes opaque same-origin JavaScript URLs rather than
+local file paths. Each URL resolves only through the validated startup catalog's exact file map;
+unknown, traversal-shaped, unloaded, and no-longer-readable entries return a path-free 404. Invalid
+contracts, duplicate or shadowed keys, paths outside a package, and missing assets reject that package
+while valid packages remain in the catalog. Pi's resolved order sets precedence. Tuval itself declares
+its built-in package capability through this same manifest.
 
 ## Commands
 

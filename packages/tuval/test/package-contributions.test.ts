@@ -113,7 +113,7 @@ describe("pi-native Tuval package contributions", () => {
 		}),
 	);
 
-	it.effect("emits a typed catalog without importing frontend assets", () =>
+	it.effect("emits portable same-origin asset URLs without importing frontend assets", () =>
 		Effect.gen(function* () {
 			const catalog = yield* load(fixture("plain-pi"));
 			const emitted = emitContributionCatalog(catalog);
@@ -122,7 +122,12 @@ describe("pi-native Tuval package contributions", () => {
 				emitted.frontend.map(({kind, key}) => ({kind, key})),
 				[{kind: "node", key: "fixture.node"}],
 			);
-			assert.match(emitted.frontend[0]?.asset ?? "", /asset\.txt$/);
+			const asset = emitted.frontend[0]?.asset ?? "";
+			assert.match(asset, /^\/api\/contribution-assets\/v1-\d+\.js$/);
+			assert.isFalse(JSON.stringify(emitted).includes(fixtures));
+			assert.strictEqual(catalog.assetFiles.get(asset), fixture("plain-pi/asset.txt"));
+			const reloaded = emitContributionCatalog(yield* load(fixture("plain-pi")));
+			assert.strictEqual(reloaded.frontend[0]?.asset, asset);
 		}),
 	);
 
