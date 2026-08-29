@@ -58,8 +58,9 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 export const PARK_NOVEL = 12;
 
 /**
- * The park matched a known recipe and the recipe's clearing condition is not met yet — the §CP
- * approval this park waits on is still outstanding. Its own seat rather than {@link PARK_NOVEL}
+ * The park matched a known recipe and the recipe's clearing condition is not met yet — the approval
+ * is outstanding, a tree still holds the branch, the campaign still reads paused. Its own seat rather
+ * than {@link PARK_NOVEL}
  * because the remedy differs: wait for the named signal and re-run, do not route a human at the
  * recipe.
  */

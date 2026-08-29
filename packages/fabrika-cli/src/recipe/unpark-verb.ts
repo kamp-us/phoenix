@@ -23,12 +23,17 @@ import {WORKTREE_HELD} from "../build/codes.ts";
 import {worktreeCheckouts} from "../build/git.ts";
 import {childLaneBranches} from "../build/lane.ts";
 import {runRetire} from "../build/retire-verb.ts";
-import {localBranches} from "../io/git.ts";
+import {placedRows, selects} from "../campaign/table.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {readRoadmapFile} from "../config/paths.ts";
+import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
+import {getIssue} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {nominateOpenPulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
+import {BASE_REF} from "../ledger/ground.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -55,6 +60,8 @@ export interface UnparkOptions {
 	/** The task the park sits on; `null` resolves only on a single-task active phase. */
 	readonly task: string | null;
 	readonly repo: string | null;
+	/** The checkout whose `.fabrika.jsonc` declares where the campaigns table lives. */
+	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 }
 
@@ -146,12 +153,14 @@ const clear = (
 	options: UnparkOptions,
 	task: string,
 	recipe: ParkRecipe,
-): Effect.Effect<Clearance, never, ChildProcessSpawner.ChildProcessSpawner> => {
+): Effect.Effect<Clearance, never, Deps> => {
 	switch (recipe.clearance) {
 		case "cp-approval":
 			return clearCpApproval(options, task, recipe);
 		case "branch-free":
 			return clearBranchFree(options, task, recipe);
+		case "campaign-active":
+			return clearCampaignActive(options, task, recipe);
 	}
 };
 
@@ -386,4 +395,105 @@ const clearBranchFree = (
 					? `branch-free:${candidates.join(",")}`
 					: `branch-free:${candidates.join(",")} (retired ${retired} working tree(s))`,
 		};
+	});
+
+/**
+ * Read whether the #7217 park's cause is gone: the campaign homing this lane's milestone reads
+ * `active` again.
+ *
+ * Two reads that both already exist, composed rather than re-derived — the lane issue's `milestone`
+ * off `../io/issues.ts`, and the `## Campaigns` row off `../campaign/table.ts`, which is the fence's
+ * own parse and so cannot disagree with the permission `build claim` enforces (ADR 0304). The row is
+ * read at {@link BASE_REF} rather than in the working tree because a resume lands on the trunk and a
+ * lane clone can be arbitrarily stale; the fetch is what makes that read current.
+ *
+ * Every arm below leaves the park standing, and each names which one it hit: a campaign that cannot
+ * be read is UNKNOWN, an unhomed lane and an unpinned milestone are targets this verb cannot read,
+ * and `paused` or `done` is the park still holding. None of them may resume a campaign — that stays
+ * `campaign state`'s, behind a human's citation.
+ */
+const clearCampaignActive = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, Deps> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+		const unknown = (what: string, reason: string): Clearance =>
+			no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${what}: ${reason} — whether the campaign still reads paused is UNKNOWN, never cleared.`,
+				),
+			);
+
+		const number = issueOf(options.lane, task);
+		if (number === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so the lane's milestone cannot be resolved.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+
+		const found = yield* getIssue(resolved.repo, number);
+		if (found._tag === "Unknown") return unknown(`issue #${number}`, found.reason);
+		if (found._tag === "Absent") {
+			return no(refuse(TARGET_ABSENT, `${VERB}: issue #${number} is proven absent.`));
+		}
+		const milestone = found.value.milestone;
+		if (milestone === null) {
+			return no(
+				refuse(
+					TARGET_ABSENT,
+					`${VERB}: issue #${number} is homed on no milestone, and "${recipe.park}" waits on ${recipe.waitingOn} — there is no campaign row to read.`,
+				),
+			);
+		}
+
+		const declared = yield* readRoadmapFile(options.cwd);
+		if (declared._tag === "Refused") {
+			return unknown(CONFIG_PATH, declared.reason.replace(/\.$/, ""));
+		}
+		const roadmap = declared.value;
+
+		const trunk = yield* fetchAndResolve(BASE_REF);
+		if (trunk._tag === "Failure") return unknown(BASE_REF, trunk.reason);
+		const text = yield* readFileAt(trunk.value, roadmap);
+		if (text._tag === "Failure") return unknown(`${roadmap} at ${BASE_REF}`, text.reason);
+
+		const placed = placedRows(text.value);
+		if (placed._tag === "Malformed") {
+			return unknown(`the ## Campaigns table in ${roadmap} at ${BASE_REF}`, placed.reason);
+		}
+		const scope = scannedLine(
+			VERB,
+			placed.rows.length,
+			"campaign row",
+			`${roadmap} at ${BASE_REF}`,
+		);
+		const row = placed.rows.find((candidate) => selects(candidate, `#${milestone}`))?.row;
+		if (row === undefined) {
+			return no(
+				refuse(
+					TARGET_ABSENT,
+					`${VERB}: no ## Campaigns row in ${roadmap} pins milestone #${milestone}, which homes #${number}, and "${recipe.park}" waits on ${recipe.waitingOn} — there is no permission cell to read.`,
+					[scope],
+				),
+			);
+		}
+		if (row.state !== "active") {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — "${row.name}" #${milestone} reads ${row.state}; nothing was written.`,
+					[scope],
+				),
+			);
+		}
+
+		return {_tag: "Cleared", mechanism: `campaign-active:#${milestone}`};
 	});
