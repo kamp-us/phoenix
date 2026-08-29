@@ -56,6 +56,14 @@
 		{ "command": ["pnpm", "lint:worktree"] }
 	],
 
+	// The install that reconciles a tree with the lockfile it carries. `fabrika lane integrate` runs
+	// it in the epic run's assembly worktree after a clean child merge and before the validators
+	// above, so they compile against the merged lockfile rather than the install the worktree was
+	// placed with (#7188). `--frozen-lockfile` is pnpm's fail-closed flag: an install that cannot
+	// honor the merged lockfile refuses instead of rewriting it, and the integration reads that as
+	// a FAIL.
+	"dependencyReconciler": { "command": ["pnpm", "install", "--frozen-lockfile"] },
+
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check
 	// --surface workflows` runs each one over a workflows-touching diff, on top of `actionlint` when
 	// the tree has one (#5991), and `reads` names the exact workflow files that command opens — the

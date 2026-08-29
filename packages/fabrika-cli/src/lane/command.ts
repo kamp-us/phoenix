@@ -22,6 +22,7 @@ import {CLASS_UNRECOGNISED} from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
 import {deriveRepoRoot, onGround, repoGroundRefusal} from "./ground.ts";
 import {runHistory} from "./history-verb.ts";
+import {runIntegrate} from "./integrate-verb.ts";
 import {defaultRoot, type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
@@ -426,6 +427,44 @@ const assembly = leafCommand(
 	),
 );
 
+const integrate = leafCommand(
+	"integrate",
+	{
+		epic: Argument.integer("epic").pipe(
+			Argument.withDescription("the epic issue whose run owns the assembly branch"),
+		),
+		child: Flag.string("child").pipe(
+			Flag.withDescription(
+				"the child's branch to land, taken off `lane prove`'s PASS evidence (`evidence.branch`)",
+			),
+		),
+		root: rootFlag,
+	},
+	Effect.fn(function* ({epic, child, root}) {
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika lane integrate",
+			root,
+			DEFAULT_LANES_ROOT,
+		);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
+		yield* emit(
+			yield* onGround("integrate", [resolvedRoot], process.cwd(), () =>
+				runIntegrate({epic, child, root: resolvedRoot, lane: String(epic)}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Merge one reviewed child into an epic run's assembly and prove it holds.",
+	),
+	Command.withDescription(
+		"Merge one reviewed child's branch into the epic run's assembly worktree — `epic/<n>` at the path `lane assembly` placed, both derived from the epic number and never taken from the caller — and prove the merged tree holds together before the branch keeps it. The order is the verb: `git merge --no-ff`, then the repo's declared `dependencyReconciler` (in phoenix `pnpm install --frozen-lockfile`) run IN that worktree so the install reads the lockfile the merge just brought, then the repo's declared `codeValidators` over the merged tree. Reconciling after the merge is the whole point: an assembly worktree placed before a child existed still holds the pre-merge install, so a child that adds a workspace package failed `pnpm typecheck --force` with a missing type definition on a tree whose code was fine, and spent a lane retry on stale worktree state (#7188). Every refusal below the merge resets the assembly branch to ORIG_HEAD and reads its head back, so a recorded FAIL names a branch that never carried the bad merge; nothing is ever pushed here — that is `lane push`, and recording the DONE is the driver's. On exit 0 the last stdout line is always `INTEGRATE-VERDICT: MERGED` and the line above it the merged head. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there — emit the run's machine first), 8 (a restore or a head read-back did not land — UNKNOWN, so nothing may be recorded), 11 (the working trees, the branches, the head, `.fabrika.jsonc` or a validator could not be read, or the repo declares no `codeValidators` — UNKNOWN, never green), 22 (no branch by that name — take it off `lane prove`'s evidence), 33 (`epic/<n>` is checked out in the main working tree), 41 (no working tree holds `epic/<n>` — place it with `lane assembly`), 42 (the child conflicts; the merge was aborted and nothing was installed), 43 (the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file), 44 (the merged tree failed a code validator — the semantic collision), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root). Example: fabrika lane integrate 7140 --child build/7162-tuval-bootstrap-5558c9a2",
+	),
+);
+
 const pushLane = leafCommand(
 	"push",
 	{
@@ -749,6 +788,7 @@ export const laneCommand = Command.make("lane").pipe(
 		emitLane,
 		brief,
 		assembly,
+		integrate,
 		pushLane,
 		stale,
 		migrate,

@@ -14,6 +14,7 @@ import {ciKey} from "./keys/ci.ts";
 import {codeValidatorsKey} from "./keys/code-validators.ts";
 import {containmentVocabularyKey} from "./keys/containment-vocabulary.ts";
 import {unreadableCodeownersKey} from "./keys/control-plane.ts";
+import {dependencyReconcilerKey} from "./keys/dependency-reconciler.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {cycleDocKey, decisionsDirKey, designHarnessKey, roadmapFileKey} from "./keys/paths.ts";
@@ -30,6 +31,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(containmentVocabularyKey),
 	register(cycleDocKey),
 	register(decisionsDirKey),
+	register(dependencyReconcilerKey),
 	register(designHarnessKey),
 	register(docLeakExemptKey),
 	register(governedRootsKey),

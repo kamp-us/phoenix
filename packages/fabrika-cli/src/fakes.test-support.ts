@@ -199,6 +199,15 @@ export interface FakeShell {
 	 * file-free carrying path would be untestable at this seam (#5484).
 	 */
 	readonly inputs: ReadonlyArray<string>;
+	/**
+	 * The directory each spawn was given, aligned with {@link FakeShell.calls}; `null` when it
+	 * inherited the process's own.
+	 *
+	 * Without it, a command run in another tree is indistinguishable from the same command run here
+	 * — the argv is identical either way — so "the install ran in the assembly worktree" would be a
+	 * claim no test could hold (#7188).
+	 */
+	readonly cwds: ReadonlyArray<string | null>;
 }
 
 /** The bytes a command's `stdin` option carries, decoded; `""` for a mode string or no option. */
@@ -237,6 +246,7 @@ export const fakeShell = (
 ): FakeShell => {
 	const calls: string[] = [];
 	const inputs: string[] = [];
+	const cwds: Array<string | null> = [];
 	const layer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
 		ChildProcessSpawner.make(
 			Effect.fnUntraced(function* (command) {
@@ -246,6 +256,9 @@ export const fakeShell = (
 					cmd._tag === "StandardCommand" ? [cmd.command, ...cmd.args].join(" ") : "<piped>";
 				calls.push(line);
 				log.push(line);
+				cwds.push(
+					(cmd._tag === "StandardCommand" ? cmd.options.cwd : undefined) ?? (null as string | null),
+				);
 				inputs.push(
 					yield* pipedInput(cmd._tag === "StandardCommand" ? cmd.options.stdin : undefined),
 				);
@@ -275,7 +288,7 @@ export const fakeShell = (
 			}),
 		),
 	);
-	return {layer, calls, inputs};
+	return {layer, calls, inputs, cwds};
 };
 
 /**
