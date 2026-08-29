@@ -17,6 +17,12 @@ import {
 	makeUnavailableLiveSession,
 	PiLiveSession,
 } from "./live-session.js";
+import {
+	buildPackageBackendLayers,
+	emitContributionCatalog,
+	loadPackageContributions,
+	type TuvalContributionCatalog,
+} from "./package-contributions.js";
 import {PiDiscoveryLive, type PiDiscoveryOptions} from "./pi-discovery.js";
 
 export const TUVAL_HOST = "127.0.0.1";
@@ -195,11 +201,17 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 	origin: string,
 	staticAsset: string,
 	fs: typeof FileSystem.FileSystem.Service,
+	contributions: TuvalContributionCatalog,
 ) {
 	const url = new URL(request.url ?? "/", origin);
 	if (request.method === "GET" && url.pathname === "/health") {
 		response.setHeader("content-type", "application/json; charset=utf-8");
 		response.end(JSON.stringify({status: "ready", url: origin, pid: process.pid}));
+		return;
+	}
+	if (request.method === "GET" && url.pathname === "/api/contributions") {
+		response.setHeader("content-type", "application/json; charset=utf-8");
+		response.end(JSON.stringify(emitContributionCatalog(contributions)));
 		return;
 	}
 	if (request.method === "POST" && url.pathname === "/fate") {
@@ -239,6 +251,21 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 	options: StartTuvalOptions = {},
 ) {
 	const fs = yield* FileSystem.FileSystem;
+	const contributions = yield* loadPackageContributions().pipe(
+		Effect.mapError(
+			(error) =>
+				new StartupFailure({
+					message: "Tuval could not discover pi package contributions",
+					cause: error,
+				}),
+		),
+	);
+	yield* buildPackageBackendLayers(contributions).pipe(
+		Effect.mapError(
+			(error) =>
+				new StartupFailure({message: "Tuval package backend failed during startup", cause: error}),
+		),
+	);
 	const liveSession =
 		options.liveSession ??
 		(options.liveSessionTransport === undefined
@@ -289,7 +316,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 				Effect.flatMap(({request, response}) =>
 					Effect.forkChild(
 						Effect.raceFirst(
-							handleRequest(request, response, origin, staticAsset, fs).pipe(
+							handleRequest(request, response, origin, staticAsset, fs, contributions).pipe(
 								Effect.catch((error) => Effect.sync(() => writeFailure(response, error))),
 								Effect.provideContext(appContext),
 							),

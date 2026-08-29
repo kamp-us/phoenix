@@ -7,7 +7,7 @@ Tuval is a localhost-only workspace for discovering and opening installed
 
 | Path | Responsibility |
 | --- | --- |
-| `src/backend/` | Loopback HTTP server, pi discovery, durable lineage indexing, and PiClient live-session leases |
+| `src/backend/` | Loopback HTTP server, pi package contributions, discovery, lineage indexing, and PiClient live-session leases |
 | `src/frontend-shell/` | Static placeholder served by the backend |
 | `src/shared/` | Frontend-independent discovery, lineage, and live-session schemas |
 
@@ -19,6 +19,7 @@ then opens that URL in the default browser unless browser opening is disabled.
 | Interface | Purpose |
 | --- | --- |
 | `GET /health` | Report server readiness |
+| `GET /api/contributions` | Emit the validated headless frontend contribution catalog |
 | `GET /` | Serve the static shell |
 | `POST /fate` | Run Effect-native discovery, lineage, and live-session queries or mutations |
 | `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
@@ -118,6 +119,33 @@ levels. Ownership, unsupported capability or value, unavailable phase, timeout, 
 protocol failures return correlated refusals carrying the last observed projection. A malformed
 protocol event produces a diagnostic and a disconnected snapshot while retaining the last validated
 transcript.
+
+## Pi package contributions
+
+Tuval discovers only packages resolved by pi's `SettingsManager` and `DefaultPackageManager`; it has
+no separate install or enable list. An enabled pi package can add an optional version-1 `tuval`
+manifest beside its ordinary `pi` manifest:
+
+```json
+{
+  "pi": {"extensions": ["./extension.js"]},
+  "tuval": {
+    "contractVersion": 1,
+    "backend": [{"module": "./backend.js", "export": "makeLayer"}],
+    "frontend": {
+      "nodes": [{"key": "example.node", "asset": "./node.js"}],
+      "edges": [{"key": "example.edge", "asset": "./edge.js"}],
+      "panels": [{"key": "example.panel", "asset": "./panel.js"}]
+    }
+  }
+}
+```
+
+Backend exports are zero-argument factories returning Effect Layers. Tuval builds them during server
+startup and fails startup when layer construction fails. Frontend assets are checked but never
+imported by the backend. Invalid contracts, duplicate or shadowed keys, paths outside a package, and
+missing assets reject that package while valid packages remain in the catalog. Pi's resolved order
+sets precedence. Tuval itself declares its built-in package capability through this same manifest.
 
 ## Commands
 

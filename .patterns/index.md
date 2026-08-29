@@ -66,6 +66,12 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 | [fate-async-react.md](./fate-async-react.md) | The "feels instant" defaults on fate + React 19 concurrency: the stable `<Suspense>` boundary, `useTransition`/`isPending`, height-matched skeletons (no CLS), and why `defer` can't reach nested connections | Building a screen's loading/pending path — before a spinner, a hard-swapping fallback, or a `defer` on a nested connection (#2161) |
 | [fate-page-queries.md](./fate-page-queries.md) | The page-composition law: one root query per page (Relay-style), nested connections composed inline; a second query needs justification; `defer` blocked pending [#2188](https://github.com/kamp-us/phoenix/issues/2188); live subscribes are post-paint | Composing a page's data — how many fate requests, where a nested connection rides, or whether to add a second query |
 
+## Index — Tuval workspace
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [pi-native-tuval-packages.md](./pi-native-tuval-packages.md) | Pi-owned package resolution with optional versioned Tuval backend and headless frontend contributions | Adding a Tuval contribution kind, package capability, or package-loading behavior |
+
 ## Index — UI / components layer
 
 The frontend's component layer (above the fate client data layer). phoenix's UI primitives are

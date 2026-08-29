@@ -1,0 +1,12 @@
+{
+	"name": "invalid-contract",
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./extension.js"
+		]
+	},
+	"tuval": {
+		"contractVersion": 2
+	}
+}
