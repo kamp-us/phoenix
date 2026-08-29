@@ -1,0 +1,27 @@
+diff --git a/dist/client.d.ts b/dist/client.d.ts
+index b228250ed431353a1d2eee0fb634c3d4d21b8612..d58752d9810addc59db883f8b953ddb389a8464d 100644
+--- a/dist/client.d.ts
++++ b/dist/client.d.ts
+@@ -18,6 +18,7 @@ export declare class PiClient {
+     listSessions(): Promise<readonly SessionMetadata[]>;
+     createSession(options?: CreateSessionOptions): Promise<PiSessionHandle>;
+     attachSession(sessionId: string): Promise<PiSessionHandle>;
++    tombstoneSessionAcquisition(sessionId: string): void;
+     acquireSession(sessionId: string, options: AcquireSessionOptions): Promise<PiSessionHandle>;
+     dispose(): Promise<void>;
+     [Symbol.asyncDispose](): Promise<void>;
+diff --git a/dist/client.js b/dist/client.js
+index 11fe04e8e9db062abbfb66b49c1ff60182216dbe..4d077c99beabfa8e8a377a8aea0cda3978b99142 100644
+--- a/dist/client.js
++++ b/dist/client.js
+@@ -91,6 +91,10 @@ export class PiClient {
+     async attachSession(sessionId) {
+         return this.acquireSession(sessionId, { mode: "shared" });
+     }
++    tombstoneSessionAcquisition(sessionId) {
++        this.#sessionAttachments.delete(sessionId);
++        this.#invalidateSessionLeases(sessionId);
++    }
+     async acquireSession(sessionId, options) {
+         this.#assertNotDisposed();
+         const token = this.#reserveSessionLease(sessionId, options.mode);

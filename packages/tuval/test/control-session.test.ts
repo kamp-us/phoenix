@@ -84,6 +84,10 @@ class SyntheticControlProtocol {
 		this.#deliver({type: "event", event: {type: "session_snapshot", snapshot: next}});
 	}
 
+	heldCount(command: string): number {
+		return this.#held.filter((message) => message.request.command === command).length;
+	}
+
 	acknowledgeHeld(command: string, occurrence = 0): void {
 		const matching = this.#held
 			.map((message, index) => ({message, index}))
@@ -512,7 +516,7 @@ describe("PiLiveSession acknowledged controls", () => {
 	);
 
 	it.effect(
-		"retries timed-out create and open correlations with inert prior acknowledgements",
+		"retries timed-out correlations while prior acknowledgement cleanup never settles",
 		() =>
 			Effect.gen(function* () {
 				const modelMetadata = model("small", ["off", "low"]);
@@ -601,23 +605,21 @@ describe("PiLiveSession acknowledged controls", () => {
 				yield* Effect.yieldNow;
 				assert.strictEqual(
 					openProtocol.commands.filter((command) => command === "attach").length,
-					openAttachCount + 1,
-				);
-				openProtocol.acknowledgeHeld("attach");
-				yield* Effect.yieldNow;
-				yield* Effect.yieldNow;
-				assert.strictEqual(
-					openProtocol.commands.filter((command) => command === "attach").length,
 					openAttachCount + 2,
 				);
 				assert.strictEqual(openCheckpoints, 0);
-				openProtocol.acknowledgeHeld("attach");
+				openProtocol.acknowledgeHeld("attach", 1);
 				assert.deepInclude(yield* Fiber.join(retriedOpen), {
 					_tag: "acknowledged",
 					command: "open",
 				});
 				assert.strictEqual(openCheckpoints, 1);
 				assert.strictEqual((yield* openService.current())?.sessionId, second.id);
+				openProtocol.behavior.set("detach", "hold");
+				openProtocol.acknowledgeHeld("attach");
+				yield* Effect.yieldNow;
+				yield* Effect.yieldNow;
+				assert.strictEqual(openProtocol.heldCount("detach"), 1);
 				assert.strictEqual(
 					(yield* openService.eventsAfter()).filter(
 						(event) =>
@@ -627,6 +629,7 @@ describe("PiLiveSession acknowledged controls", () => {
 					).length,
 					1,
 				);
+				openProtocol.behavior.set("detach", "acknowledge");
 			}),
 	);
 
@@ -655,7 +658,10 @@ describe("PiLiveSession acknowledged controls", () => {
 					return true;
 				})
 				.pipe(Effect.forkChild);
-			yield* Effect.tryPromise({try: () => checkpointStarted, catch: (cause) => cause});
+			yield* Effect.tryPromise({
+				try: () => checkpointStarted,
+				catch: () => new DeadlineWaitError({message: "Replacement checkpoint did not start"}),
+			});
 			assert.throws(() => deadlines.elapse(), "No active acknowledgement deadline");
 			releaseCheckpoint();
 			const outcome = yield* Fiber.join(pending);
@@ -687,7 +693,8 @@ describe("PiLiveSession acknowledged controls", () => {
 				.pipe(Effect.forkChild);
 			yield* Effect.tryPromise({
 				try: () => deadlines.waitForActive(),
-				catch: (cause) => cause,
+				catch: () =>
+					new DeadlineWaitError({message: "Interrupted acknowledgement deadline did not activate"}),
 			});
 			yield* Fiber.interrupt(interrupted);
 			yield* Effect.yieldNow;

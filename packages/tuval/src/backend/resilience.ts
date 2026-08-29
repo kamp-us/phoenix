@@ -80,7 +80,16 @@ export const makeOperationalWorkspaceSettings = (
 	};
 };
 
-const thinkingLevels = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const PiThinkingLevel = Schema.Literals(["off", "minimal", "low", "medium", "high", "xhigh"]);
+type PiThinkingLevel = (typeof PiThinkingLevel)["Type"];
+
+const decodePiThinkingLevel = (value: string | undefined): PiThinkingLevel | undefined => {
+	if (value === undefined) return undefined;
+	const decoded = Schema.decodeUnknownOption(PiThinkingLevel)(value);
+	if (decoded._tag === "None") throw new Error("Persisted workspace thinking level is unsupported");
+	return decoded.value;
+};
+
 const piWorkspaceSettingKeys = new Set([
 	"theme",
 	"defaultProvider",
@@ -111,6 +120,7 @@ export const makePiOperationalWorkspaceSettings = (
 	restore: (settings) =>
 		Effect.tryPromise({
 			try: async () => {
+				const thinkingLevel = decodePiThinkingLevel(settings.defaultThinkingLevel);
 				const unsupportedKey = Object.keys(settings).find(
 					(key) => !piWorkspaceSettingKeys.has(key),
 				);
@@ -118,8 +128,6 @@ export const makePiOperationalWorkspaceSettings = (
 					throw new Error(`Unsupported persisted workspace setting: ${unsupportedKey}`);
 				}
 				if (
-					(settings.defaultThinkingLevel !== undefined &&
-						!thinkingLevels.has(settings.defaultThinkingLevel)) ||
 					(settings.steeringMode !== undefined &&
 						settings.steeringMode !== "all" &&
 						settings.steeringMode !== "one-at-a-time") ||
@@ -134,14 +142,7 @@ export const makePiOperationalWorkspaceSettings = (
 					manager.setDefaultProvider(settings.defaultProvider);
 				}
 				if (settings.defaultModel !== undefined) manager.setDefaultModel(settings.defaultModel);
-				if (
-					settings.defaultThinkingLevel !== undefined &&
-					thinkingLevels.has(settings.defaultThinkingLevel)
-				) {
-					manager.setDefaultThinkingLevel(
-						settings.defaultThinkingLevel as Parameters<typeof manager.setDefaultThinkingLevel>[0],
-					);
-				}
+				if (thinkingLevel !== undefined) manager.setDefaultThinkingLevel(thinkingLevel);
 				if (settings.steeringMode === "all" || settings.steeringMode === "one-at-a-time") {
 					manager.setSteeringMode(settings.steeringMode);
 				}

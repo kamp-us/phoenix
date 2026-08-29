@@ -11,6 +11,7 @@ import {
 	redactDiagnosticText,
 	resilienceDiagnostic,
 	restoreWorkspace,
+	WorkspaceSettingsRestoreError,
 	WorkspaceStateStoreError,
 	workspaceStateDirectorySyncResult,
 } from "../src/backend/resilience.js";
@@ -58,7 +59,14 @@ describe("Tuval resilience and restoration", () => {
 						Effect.sync(() => void calls.push("discovery")).pipe(Effect.as(discovered)),
 					restoreLineage: () =>
 						Effect.sync(() => void calls.push("lineage")).pipe(
-							Effect.andThen(Effect.fail(new Error("failed at /Users/alice/.pi/lineage.json"))),
+							Effect.andThen(
+								Effect.fail(
+									new WorkspaceStateStoreError({
+										operation: "load",
+										message: "failed at /Users/alice/.pi/lineage.json",
+									}),
+								),
+							),
 						),
 					restoreSelection: (sessionId) =>
 						Effect.sync(() => {
@@ -236,7 +244,13 @@ describe("Tuval resilience and restoration", () => {
 				discover: () => Effect.succeed(discovered),
 				restoreLineage: () => Effect.void,
 				restoreSelection: () => Effect.succeed(true),
-				restoreSettings: () => Effect.fail(new Error("unsupported settings")),
+				restoreSettings: () =>
+					Effect.fail(
+						new WorkspaceSettingsRestoreError({
+							code: "restore-failed",
+							message: "unsupported settings",
+						}),
+					),
 				readSettings: () => Effect.succeed({theme: "system"}),
 				availablePackageRegistrations: ["available-package"],
 				restorePackageRegistrations: () => Effect.void,
@@ -406,7 +420,13 @@ describe("Tuval resilience and restoration", () => {
 				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-sync-warning-"});
 				const statePath = path.join(root, "workspace-state.json");
 				const store = yield* makeFileWorkspaceStateStore(statePath, {
-					syncDirectory: () => Effect.fail(new Error("directory sync refused")),
+					syncDirectory: () =>
+						Effect.fail(
+							new WorkspaceStateStoreError({
+								operation: "save",
+								message: "directory sync refused",
+							}),
+						),
 				});
 				const result = yield* store.save(persisted);
 				assert.strictEqual(result._tag, "committed-with-warning");

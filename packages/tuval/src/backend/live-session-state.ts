@@ -71,8 +71,16 @@ type ControlRequest =
 
 interface CorrelatedControl {
 	readonly fingerprint: string;
+	readonly attemptGeneration: number;
 	readonly result: Promise<ControlLiveSessionOutcome>;
 	settled: boolean;
+	retryable: boolean;
+}
+
+interface ControlAttempt {
+	readonly generation: number;
+	readonly isCurrent: () => boolean;
+	readonly tombstone: () => void;
 }
 
 export interface AcknowledgementDeadline {
@@ -100,7 +108,11 @@ interface PendingAttachment {
 class ReplacementInterrupted extends Error {}
 
 type ReplacementAcknowledgement =
-	| {readonly _tag: "acknowledged"; readonly lease: PiSessionHandle}
+	| {
+			readonly _tag: "acknowledged";
+			readonly attemptGeneration: number;
+			readonly lease: PiSessionHandle;
+	  }
 	| {readonly _tag: "refused"; readonly outcome: ControlLiveSessionOutcome};
 
 export interface LiveSessionState {
@@ -317,7 +329,6 @@ export class PiLiveSessionState implements LiveSessionState {
 	readonly #events: Array<LiveSessionEvent> = [];
 	readonly #prompts = new Map<string, CorrelatedPrompt>();
 	readonly #controls = new Map<string, CorrelatedControl>();
-	readonly #openAttemptBarriers = new Map<string, Promise<void>>();
 	readonly #unsubscribeConnection: Unsubscribe;
 	readonly #unsubscribeEvents: Unsubscribe;
 	readonly #unsubscribeServer: Unsubscribe;
@@ -328,6 +339,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	#pendingAttachment: PendingAttachment | undefined;
 	#sequence = 0;
 	#generation = 0;
+	#controlAttemptGeneration = 0;
 	#promptGeneration: number | undefined;
 	#pendingPrompts = 0;
 	#pendingReplacement: object | undefined;
@@ -565,18 +577,20 @@ export class PiLiveSessionState implements LiveSessionState {
 		const fingerprint = JSON.stringify(request);
 		const existing = this.#controls.get(request.correlationId);
 		if (existing !== undefined) {
-			if (existing.fingerprint === fingerprint) return existing.result;
-			return Promise.resolve(
-				this.#publishControl(
-					this.#controlRefusal(
-						request,
-						"protocol",
-						"Correlation id was already used for a different control request",
+			if (existing.fingerprint !== fingerprint) {
+				return Promise.resolve(
+					this.#publishControl(
+						this.#controlRefusal(
+							request,
+							"protocol",
+							"Correlation id was already used for a different control request",
+						),
 					),
-				),
-			);
+				);
+			}
+			if (!existing.retryable) return existing.result;
 		}
-		if (!this.#makeControlRoom()) {
+		if (existing === undefined && !this.#makeControlRoom()) {
 			return Promise.resolve(
 				this.#publishControl(
 					this.#controlRefusal(
@@ -588,24 +602,21 @@ export class PiLiveSessionState implements LiveSessionState {
 			);
 		}
 		let correlated: CorrelatedControl;
-		const cancelCorrelation = () => {
-			if (this.#controls.get(request.correlationId) === correlated) {
-				this.#controls.delete(request.correlationId);
-			}
-		};
-		const result = this.#runControl(request, checkpoint, signal, cancelCorrelation).then(
-			(outcome) => {
-				if (
-					(request.command === "create" || request.command === "open") &&
-					outcome._tag === "refused" &&
-					outcome.code === "timeout"
-				) {
-					cancelCorrelation();
-				}
-				return this.#publishControl(outcome);
+		const attemptGeneration = ++this.#controlAttemptGeneration;
+		const attempt: ControlAttempt = {
+			generation: attemptGeneration,
+			isCurrent: () =>
+				this.#controls.get(request.correlationId) === correlated && !correlated.retryable,
+			tombstone: () => {
+				if (this.#controls.get(request.correlationId) !== correlated) return;
+				correlated.retryable = true;
+				correlated.settled = true;
 			},
+		};
+		const result = this.#runControl(request, checkpoint, signal, attempt).then((outcome) =>
+			this.#publishControl(outcome),
 		);
-		correlated = {fingerprint, result, settled: false};
+		correlated = {fingerprint, attemptGeneration, result, settled: false, retryable: false};
 		this.#controls.set(request.correlationId, correlated);
 		void result.then(
 			() => {
@@ -621,8 +632,8 @@ export class PiLiveSessionState implements LiveSessionState {
 	#runControl(
 		request: ControlRequest,
 		checkpoint: LiveSelectionCheckpoint,
-		signal?: AbortSignal,
-		cancelCorrelation: () => void = () => {},
+		signal: AbortSignal | undefined,
+		attempt: ControlAttempt,
 	): Promise<ControlLiveSessionOutcome> {
 		switch (request.command) {
 			case "create":
@@ -635,18 +646,15 @@ export class PiLiveSessionState implements LiveSessionState {
 							...(request.name === undefined ? {} : {name: request.name}),
 						}),
 					signal,
-					cancelCorrelation,
+					attempt,
 				);
 			case "open":
 				return this.#runReplacement(
 					request,
 					checkpoint,
-					async () => {
-						await this.#openAttemptBarriers.get(request.sessionId);
-						return this.#client.acquireSession(request.sessionId, {mode: "exclusive"});
-					},
+					() => this.#client.acquireSession(request.sessionId, {mode: "exclusive"}),
 					signal,
-					cancelCorrelation,
+					attempt,
 				);
 			case "steer":
 				return this.#runSessionControl(request, (lease) => lease.steer(request.text));
@@ -666,7 +674,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		checkpoint: LiveSelectionCheckpoint,
 		acquire: () => Promise<PiSessionHandle>,
 		signal: AbortSignal | undefined,
-		cancelCorrelation: () => void,
+		attempt: ControlAttempt,
 	): Promise<ControlLiveSessionOutcome> {
 		const previous = this.#attachment;
 		if (this.#pendingReplacement || this.#pendingIdleControl || this.#pendingPrompts > 0) {
@@ -692,7 +700,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			if (attachment !== undefined) this.#publishSession(attachment);
 		};
 		const interruptReplacement = () => {
-			cancelCorrelation();
+			attempt.tombstone();
 			finishReplacement();
 		};
 		try {
@@ -712,6 +720,7 @@ export class PiLiveSessionState implements LiveSessionState {
 						acquire(),
 						signal,
 						interruptReplacement,
+						attempt,
 					);
 				} finally {
 					if (pending !== undefined && this.#pendingAttachment === pending) {
@@ -720,6 +729,10 @@ export class PiLiveSessionState implements LiveSessionState {
 				}
 				if (acknowledgement._tag === "refused") return acknowledgement;
 				const {lease} = acknowledgement;
+				if (acknowledgement.attemptGeneration !== attempt.generation || !attempt.isCurrent()) {
+					this.#disposeSupersededAcquisition(Promise.resolve(lease));
+					throw new ReplacementInterrupted("Replacement acknowledgement was superseded");
+				}
 				const snapshot = lease.snapshot;
 				if (snapshot === undefined) {
 					await lease.dispose().catch(() => undefined);
@@ -767,14 +780,15 @@ export class PiLiveSessionState implements LiveSessionState {
 		request: Extract<ControlRequest, {command: "create" | "open"}>,
 		acquisition: Promise<PiSessionHandle>,
 		signal: AbortSignal | undefined,
-		cancelCorrelation: () => void,
+		interruptReplacement: () => void,
+		attempt: ControlAttempt,
 	): Promise<ReplacementAcknowledgement> {
 		const deadline = this.#makeAcknowledgementDeadline(this.#acknowledgementTimeoutMs);
 		let removeAbortListener = () => {};
 		const interrupted = new Promise<{readonly _tag: "interrupted"}>((resolve) => {
 			if (signal === undefined) return;
 			const onAbort = () => {
-				cancelCorrelation();
+				interruptReplacement();
 				resolve({_tag: "interrupted"});
 			};
 			if (signal.aborted) onAbort();
@@ -784,7 +798,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			}
 		});
 		const observed = acquisition.then(
-			(lease) => ({_tag: "acknowledged" as const, lease}),
+			(lease) => ({_tag: "acknowledged" as const, attemptGeneration: attempt.generation, lease}),
 			(error: unknown) => ({_tag: "error" as const, error}),
 		);
 		const winner = await Promise.race([
@@ -796,22 +810,14 @@ export class PiLiveSessionState implements LiveSessionState {
 		removeAbortListener();
 		if (winner._tag === "acknowledged") return winner;
 		if (winner._tag === "error") throw winner.error;
-		const disposal = acquisition.then(
-			(lease) => lease.dispose().catch(() => undefined),
-			() => undefined,
-		);
+		attempt.tombstone();
 		if (request.command === "open") {
-			this.#openAttemptBarriers.set(request.sessionId, disposal);
-			void disposal.finally(() => {
-				if (this.#openAttemptBarriers.get(request.sessionId) === disposal) {
-					this.#openAttemptBarriers.delete(request.sessionId);
-				}
-			});
+			this.#client.tombstoneSessionAcquisition(request.sessionId);
 		}
+		this.#disposeSupersededAcquisition(acquisition);
 		if (winner._tag === "interrupted") {
 			throw new ReplacementInterrupted(`Interrupted before ${request.command} acknowledgement`);
 		}
-		cancelCorrelation();
 		return {
 			_tag: "refused",
 			outcome: this.#controlRefusal(
@@ -820,6 +826,22 @@ export class PiLiveSessionState implements LiveSessionState {
 				`Pi did not acknowledge ${request.command} within ${this.#acknowledgementTimeoutMs}ms`,
 			),
 		};
+	}
+
+	#disposeSupersededAcquisition(acquisition: Promise<PiSessionHandle>): void {
+		void acquisition.then(
+			(lease) => {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				const bounded = new Promise<void>((resolve) => {
+					timer = setTimeout(resolve, this.#acknowledgementTimeoutMs);
+					timer.unref();
+				});
+				void Promise.race([lease.dispose().catch(() => undefined), bounded]).finally(() => {
+					if (timer !== undefined) clearTimeout(timer);
+				});
+			},
+			() => undefined,
+		);
 	}
 
 	async #runSessionControl(

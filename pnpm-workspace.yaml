@@ -172,6 +172,8 @@ onlyBuiltDependencies:
 #    which nothing else in the repo declares any. Behavior-pinned by
 #    packages/fabrika-cli/src/excess-operand.cli.test.ts. Retire when effect honours it.
 patchedDependencies:
+  # Lets a timed-out exclusive acquisition be tombstoned before a same-session retry (#7175).
+  '@earendil-works/pi-client@0.84.3': patches/@earendil-works__pi-client@0.84.3.patch
   '@nkzw/fate@1.3.1': patches/@nkzw__fate@1.3.1.patch
   alchemy@2.0.0-beta.59: patches/alchemy@2.0.0-beta.59.patch
   effect@4.0.0-beta.92: patches/effect@4.0.0-beta.92.patch
