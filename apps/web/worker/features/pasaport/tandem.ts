@@ -8,12 +8,13 @@
  * "the yazar never holds a promote capability" true (`.glossary/TERMS.md`).
  */
 import {Effect} from "effect";
-import {notifyPromotion} from "../bildirim/rite-emitters.ts";
+import {notifyBacklogRelease, notifyPromotion} from "../bildirim/rite-emitters.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {VOUCH_PROMOTION_KARMA_BAR} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {publishPromotion} from "./promote-live.ts";
+import {sweptEntryCount} from "./sandbox-sweep.ts";
 
 /** `promoted` is `true` only when THIS call's flip fired, never for an already-yazar. */
 export const resolveTandem = Effect.fn("pasaport.resolveTandem")(function* (candidateId: string) {
@@ -26,10 +27,11 @@ export const resolveTandem = Effect.fn("pasaport.resolveTandem")(function* (cand
 
 	const pasaport = yield* Pasaport;
 	const {promoted, sweep} = yield* pasaport.promoteToYazar({userId: candidateId});
-	// Both keyed on `promoted`, so an idempotent re-fire notifies and publishes nothing.
-	// Both are infallible, so neither can fail this committed tier flip.
+	// All keyed on `promoted`, so an idempotent re-fire notifies and publishes nothing.
+	// All are infallible, so none can fail this committed tier flip.
 	if (promoted) {
 		yield* notifyPromotion({userId: candidateId});
+		yield* notifyBacklogRelease({userId: candidateId, releasedCount: sweptEntryCount(sweep)});
 		yield* publishPromotion(candidateId, sweep);
 	}
 	return {promoted};
