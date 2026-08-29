@@ -17,6 +17,7 @@ import type {
 	ModelRef,
 	ThinkingLevel,
 } from "../shared/live-session.js";
+import type {RestorationSnapshot} from "../shared/resilience.js";
 import {
 	reconcileLineageEdges,
 	reconcileSessionNodes,
@@ -46,6 +47,8 @@ import {
 	readStoredNodeDetailLevel,
 	writeStoredNodeDetailLevel,
 } from "./node-detail.js";
+import {readRestorationSnapshot} from "./resilience-client.js";
+import {RestorationStatus, type SelectionRestoration} from "./restoration-status.js";
 import {SessionCanvas} from "./session-canvas.js";
 import {SessionLaunchControls} from "./session-launch-controls.js";
 import "@manti-ui/styles/index.css";
@@ -257,6 +260,11 @@ export function TuvalApp() {
 	const [outcome, setOutcome] = useState<DiscoveryOutcome | null>(null);
 	const [lineage, setLineage] = useState<LineageProjection | null>(null);
 	const [lineageFailure, setLineageFailure] = useState<string | null>(null);
+	const [restoration, setRestoration] = useState<RestorationSnapshot | null>(null);
+	const [restorationFailure, setRestorationFailure] = useState<string | null>(null);
+	const [selectionRestoration, setSelectionRestoration] = useState<SelectionRestoration>({
+		_tag: "idle",
+	});
 	const [nodes, setNodes] = useState<ReadonlyArray<SessionCanvasNode>>([]);
 	const [edges, setEdges] = useState<ReadonlyArray<SessionRelationshipEdge>>([]);
 	const [paneSelection, setPaneSelection] = useState<PaneSelection>({_tag: "closed"});
@@ -264,6 +272,7 @@ export function TuvalApp() {
 	const discoveryGeneration = useRef(0);
 	const discoveryInFlight = useRef(false);
 	const selectionGeneration = useRef(0);
+	const restorationAttempted = useRef(false);
 	const ignoreSelectionChange = useRef(false);
 	const selectedRef = useRef<DiscoveredSession | null>(null);
 	const streamCursor = useRef<StreamCursor | null>(null);
@@ -311,6 +320,39 @@ export function TuvalApp() {
 		setDetailLevelState(next);
 	};
 
+	const openSession = useCallback((session: DiscoveredSession): void => {
+		const current = selectedRef.current;
+		if (session.identity === current?.identity) return;
+		const generation = selectionGeneration.current + 1;
+		selectionGeneration.current = generation;
+		selectedRef.current = session;
+		streamCursor.current = null;
+		setPaneSelection({_tag: "open", selected: session, generation, pane: pendingPane()});
+		setNodes((currentNodes) =>
+			currentNodes.map((node) => ({...node, selected: node.id === session.identity})),
+		);
+	}, []);
+
+	useEffect(() => {
+		let active = true;
+		void readRestorationSnapshot().then(
+			(snapshot) => {
+				if (!active) return;
+				setRestoration(snapshot);
+				setRestorationFailure(null);
+			},
+			(error: unknown) => {
+				if (!active) return;
+				setRestorationFailure(
+					error instanceof Error ? error.message : "Geri yükleme özeti okunamadı.",
+				);
+			},
+		);
+		return () => {
+			active = false;
+		};
+	}, []);
+
 	const applyDiscovery = useCallback(
 		async (next: DiscoveryOutcome, generation: number): Promise<void> => {
 			if (generation !== discoveryGeneration.current) return;
@@ -351,6 +393,11 @@ export function TuvalApp() {
 			streamCursor.current = null;
 			setNodes((current) => current.map((node) => ({...node, selected: false})));
 			setPaneSelection({_tag: "closed"});
+			setSelectionRestoration({
+				_tag: "unavailable",
+				sessionId: target.piSessionId,
+				reason: "Önceki oturum artık keşif sonucunda bulunmuyor.",
+			});
 			setOutcome(next);
 			requestAnimationFrame(() => {
 				document.querySelector<HTMLElement>("#canvas")?.focus();
@@ -411,11 +458,45 @@ export function TuvalApp() {
 	useEffect(() => void discover(), [discover]);
 
 	useEffect(() => {
+		if (
+			restorationAttempted.current ||
+			restoration === null ||
+			outcome === null ||
+			lineage === null
+		) {
+			return;
+		}
+		restorationAttempted.current = true;
+		const restoredSessionId = restoration.selectedSessionId;
+		if (restoredSessionId === null) return;
+		const available = sessionsOf(outcome);
+		const restoredSession = available.find(({piSessionId}) => piSessionId === restoredSessionId);
+		if (restoredSession === undefined) {
+			setSelectionRestoration({
+				_tag: "unavailable",
+				sessionId: restoredSessionId,
+				reason: "Kalıcı seçim artık kullanılabilir oturumlar arasında değil.",
+			});
+			const fallback = available.at(0);
+			if (fallback === undefined) {
+				requestAnimationFrame(() => document.querySelector<HTMLElement>("#canvas")?.focus());
+			} else {
+				focusCanvasNode(fallback.identity);
+			}
+			return;
+		}
+		setSelectionRestoration({_tag: "restored", sessionId: restoredSessionId});
+		openSession(restoredSession);
+	}, [lineage, openSession, outcome, restoration]);
+
+	useEffect(() => {
 		if (selected === null) return;
 		const targetGeneration = selectionGeneration.current;
 		let active = true;
 		let eventSource: EventSource | undefined;
 		let lastSequence = 0;
+		let reconnecting = false;
+		let reconnectAttempts = 0;
 		const setCurrentPane = (update: PaneUpdate): void =>
 			updatePaneForSelection(selected.identity, targetGeneration, update);
 		const advanceCursor = (sequence: number, revision?: number): void => {
@@ -440,6 +521,14 @@ export function TuvalApp() {
 						session: null,
 						message: attached.reason,
 					});
+					setSelectionRestoration({
+						_tag: "unavailable",
+						sessionId: selected.piSessionId,
+						reason:
+							attached.code === "lease-refused"
+								? "Kalıcı oturum başka bir çalışma alanında açık."
+								: attached.reason,
+					});
 					return;
 				}
 				lastSequence = attached.session.lastEventSequence;
@@ -453,11 +542,21 @@ export function TuvalApp() {
 				eventSource = new EventSource(`/fate/live?afterSequence=${lastSequence}`);
 				eventSource.onopen = () => {
 					if (!active) return;
+					const recovered = reconnecting;
+					reconnecting = false;
+					reconnectAttempts = 0;
 					setCurrentPane((current) =>
 						current.session?._tag === "attached"
-							? {connection: "attached", session: current.session}
+							? {
+									connection: "attached",
+									session: current.session,
+									...(recovered
+										? {message: "Canlı bağlantı yenilendi; çalışma alanı doğrulandı."}
+										: {}),
+								}
 							: current,
 					);
+					if (recovered) void discover();
 				};
 				eventSource.onmessage = (message) => {
 					if (!active) return;
@@ -542,10 +641,12 @@ export function TuvalApp() {
 				};
 				eventSource.onerror = () => {
 					if (!active) return;
+					reconnecting = true;
+					reconnectAttempts = Math.min(3, reconnectAttempts + 1);
 					setCurrentPane((current) => ({
 						...current,
-						connection: "disconnected",
-						message: "Canlı olay bağlantısı kesildi; yeniden bağlanma bekleniyor.",
+						connection: "reconnecting",
+						message: `Canlı bağlantı yenileniyor · ${reconnectAttempts}/3. Son doğrulanmış görünüm korunuyor.`,
 					}));
 				};
 			})
@@ -566,7 +667,7 @@ export function TuvalApp() {
 				streamCursor.current = null;
 			}
 		};
-	}, [selected, updatePaneForSelection]);
+	}, [discover, selected, updatePaneForSelection]);
 
 	const onNodesChange = useCallback<OnNodesChange<SessionCanvasNode>>(
 		(changes) => setNodes((current) => applyNodeChanges(changes, [...current])),
@@ -586,6 +687,7 @@ export function TuvalApp() {
 		streamCursor.current = null;
 		setNodes((current) => current.map((node) => ({...node, selected: false})));
 		setPaneSelection({_tag: "closed"});
+		setSelectionRestoration({_tag: "idle"});
 		void releaseLiveSession().catch(() => undefined);
 		requestAnimationFrame(() => {
 			ignoreSelectionChange.current = false;
@@ -869,23 +971,31 @@ export function TuvalApp() {
 									lineageSession === null ? null : discoveredSessionFrom(lineageSession);
 								const current = selectedRef.current;
 								if (session?.identity === current?.identity) return;
-								if (session === null && current !== null) {
-									void releaseLiveSession().catch(() => undefined);
+								setSelectionRestoration({_tag: "idle"});
+								if (session === null) {
+									if (current !== null) void releaseLiveSession().catch(() => undefined);
+									selectionGeneration.current += 1;
+									selectedRef.current = null;
+									streamCursor.current = null;
+									setPaneSelection({_tag: "closed"});
+								} else {
+									openSession(session);
 								}
-								const generation = selectionGeneration.current + 1;
-								selectionGeneration.current = generation;
-								selectedRef.current = session;
-								streamCursor.current = null;
-								setPaneSelection(
-									session === null
-										? {_tag: "closed"}
-										: {_tag: "open", selected: session, generation, pane: pendingPane()},
-								);
 							}}
 						/>
 					</div>
 
 					<ContributionStatus state={contributions} />
+
+					<RestorationStatus
+						snapshot={restoration}
+						failure={restorationFailure}
+						selection={selectionRestoration}
+						onUseFirstSession={() => {
+							const fallback = sessionsOf(outcome).at(0);
+							if (fallback !== undefined) openSession(fallback);
+						}}
+					/>
 
 					<SessionLaunchControls
 						createAvailable={
@@ -1009,7 +1119,7 @@ export function TuvalApp() {
 					/>
 				)}
 			</main>
-			<ExtensionUIBridge />
+			<ExtensionUIBridge initialSnapshots={restoration?.extensionUI ?? []} />
 		</div>
 	);
 }

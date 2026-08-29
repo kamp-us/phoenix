@@ -42,6 +42,7 @@ export const writeStoredNodeDetailLevel = (
 export type NodeAttachmentConnection =
 	| "pending"
 	| "attached"
+	| "reconnecting"
 	| "refused"
 	| "disconnected"
 	| "malformed";
@@ -102,6 +103,15 @@ const metadataTimestamp = (updatedAt: number): string =>
 
 export const nodeStatus = (node: LineageNode, attachment: NodeAttachment | null): NodeStatus => {
 	const liveSession = attachment?.session;
+	if (attachment?.connection === "reconnecting") {
+		return {
+			kind: "pending",
+			source: liveSession === null ? "metadata" : "live",
+			sourceLabel: liveSession === null ? "Metadata" : "Canlı bağlantı yok",
+			label: "Bağlantı kesildi",
+			detail: "Canlı bağlantı yenilenirken kayıtlı görünüm korunuyor.",
+		};
+	}
 	if (
 		liveSession !== null &&
 		liveSession !== undefined &&

@@ -15,7 +15,13 @@ import type {
 } from "../shared/live-session.js";
 import {sessionTitle} from "./canvas-adapter.js";
 
-export type PaneConnection = "pending" | "attached" | "refused" | "disconnected" | "malformed";
+export type PaneConnection =
+	| "pending"
+	| "attached"
+	| "reconnecting"
+	| "refused"
+	| "disconnected"
+	| "malformed";
 
 export interface SendResult {
 	readonly ok: boolean;
@@ -111,6 +117,13 @@ const connectionCopy = (
 ): {readonly tone: string; readonly title: string; readonly detail: string} => {
 	if (connection === "pending") {
 		return {tone: "loading", title: "Bağlanıyor", detail: "Oturum sahipliği doğrulanıyor."};
+	}
+	if (connection === "reconnecting") {
+		return {
+			tone: "danger",
+			title: "Bağlantı kesildi · yeniden bağlanıyor",
+			detail: message ?? "Son doğrulanmış konuşma korunurken bağlantı yenileniyor.",
+		};
 	}
 	if (connection === "refused") {
 		return {

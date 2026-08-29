@@ -62,9 +62,9 @@ const writeSession = async (directory: string, id: string, cwd: string): Promise
 };
 
 const startProcess = async (sessionRoot: string): Promise<{child: ChildProcess; url: string}> => {
-	const bin = fileURLToPath(new URL("../../dist/backend/bin.js", import.meta.url));
-	const child = spawn(process.execPath, [bin, "--no-open"], {
-		env: {...process.env, PI_CODING_AGENT_SESSION_DIR: sessionRoot},
+	const bin = fileURLToPath(new URL("./tuval-server.mjs", import.meta.url));
+	const child = spawn(process.execPath, [bin, "0"], {
+		env: {...process.env, TUVAL_SESSION_ROOT: sessionRoot},
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	const url = await new Promise<string>((resolve, reject) => {
@@ -384,7 +384,7 @@ test.afterAll(async () => {
 test("the existing tuval process renders the React Flow pan and zoom canvas", async ({page}) => {
 	const errors = pageErrors(page);
 	await page.goto(tuvalUrl);
-	const nodes = page.locator(".react-flow__node");
+	const nodes = page.locator('[data-id="pi:session-alpha"], [data-id="pi:session-beta"]');
 	await expect(nodes).toHaveCount(2);
 	await expect(page.locator("#status-label")).toHaveText("Bağlı");
 	await expect(page.locator("aside")).toHaveCount(0);
@@ -428,6 +428,7 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	const child = session("flow-child", "/work/child", "flow-root");
 	await routeOutcome(page, () => ({_tag: "ready", sessions: [root, child]}));
 	await page.goto(tuvalUrl);
+	await expect(page.getByText("Çalışma alanı geri yüklendi")).toBeVisible();
 
 	const rootNode = page.locator('[data-id="pi:flow-root"]');
 	const childNode = page.locator('[data-id="pi:flow-child"]');

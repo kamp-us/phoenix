@@ -12,19 +12,24 @@ export const makeLayer = () =>
 	Layer.effectDiscard(
 		Effect.gen(function* () {
 			const ui = yield* PackageExtensionUI;
-			yield* ui.dispatch(
-				"session-peer",
-				request("peer-status", "setStatus", {
-					statusKey: "phase",
-					statusText: "eş paket durumu",
-				}),
-			);
-			yield* ui.dispatch(
-				"session-peer",
-				request("peer-widget", "setWidget", {
-					widgetKey: "plan",
-					widgetLines: ["peer below"],
-					widgetPlacement: "belowEditor",
+			yield* Effect.forkChild(
+				Effect.gen(function* () {
+					yield* Effect.sleep("50 millis");
+					yield* ui.dispatch(
+						"session-peer",
+						request("peer-status", "setStatus", {
+							statusKey: "phase",
+							statusText: "eş paket durumu",
+						}),
+					);
+					yield* ui.dispatch(
+						"session-peer",
+						request("peer-widget", "setWidget", {
+							widgetKey: "plan",
+							widgetLines: ["peer below"],
+							widgetPlacement: "belowEditor",
+						}),
+					);
 				}),
 			);
 		}),

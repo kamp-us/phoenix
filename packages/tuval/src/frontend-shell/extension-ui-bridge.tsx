@@ -8,6 +8,7 @@ import type {
 	ExtensionUIRequest,
 	ExtensionUIResponse,
 	ExtensionUIScope,
+	ExtensionUISnapshot,
 } from "../shared/extension-ui.js";
 import {type ExtensionUIBrowserClient, extensionUIBrowserClient} from "./extension-ui-client.js";
 
@@ -377,8 +378,10 @@ const Widget = ({widget}: {readonly widget: WidgetView}) => (
 
 export function ExtensionUIBridge({
 	client = extensionUIBrowserClient,
+	initialSnapshots = [],
 }: {
 	readonly client?: ExtensionUIBrowserClient;
+	readonly initialSnapshots?: ReadonlyArray<ExtensionUISnapshot>;
 }) {
 	const [state, setState] = useState<BridgeState>(initialState);
 	const submitted = useRef(new Set<string>());
@@ -390,6 +393,23 @@ export function ExtensionUIBridge({
 	const widgets = useMemo(() => [...state.widgets.values()].sort(currentOrder), [state.widgets]);
 	const aboveWidgets = widgets.filter(({placement}) => placement === "aboveEditor");
 	const belowWidgets = widgets.filter(({placement}) => placement === "belowEditor");
+
+	useEffect(() => {
+		if (initialSnapshots.length === 0) return;
+		setState((current) => {
+			const statuses = new Map(current.statuses);
+			const widgets = new Map(current.widgets);
+			for (const snapshot of initialSnapshots) {
+				for (const status of snapshot.statuses) {
+					statuses.set(stateKey(snapshot.scope, status.key), {...status, scope: snapshot.scope});
+				}
+				for (const widget of snapshot.widgets) {
+					widgets.set(stateKey(snapshot.scope, widget.key), {...widget, scope: snapshot.scope});
+				}
+			}
+			return {...current, statuses, widgets};
+		});
+	}, [initialSnapshots]);
 
 	useEffect(
 		() =>
