@@ -81,14 +81,17 @@ Every input is validated before merge, so retained finite values cannot hide a n
 Accepted stores use total code-unit ordering for records and source files, finite forward time
 intervals, an acyclic graph, and one spawn origin strictly before each continuity observation by
 `(observedAt, runId)`. One run cannot be both origin and continuity. Load, merge, and atomic rename
-run under a same-host process-shared filesystem lock. Complete owner metadata becomes visible in one
-directory rename. A contender recovers an owner only when Node's signal-zero probe proves that exact
-same-host pid absent; live, remote, malformed, and unknown owners are never stolen. Recovery
-atomically quarantines the dead generation, while release atomically moves and removes only its own
-token-matched generation. Because a live process cannot lose its lock, the writer's token fence
-immediately before rename remains valid through the committed-store rename. Failed writes and
-renames remove temporary files without replacing the committed store. Reused run ids with changed
-sessions, timestamps, or parent facts are refused, while unresolved parents remain diagnostic-only.
+run under a same-host process-shared filesystem lock. The lock directory is acquired with a
+non-recursive directory create, so a visible generation is never replaced; owner metadata is written
+before protected work. A contender recovers an owner only when Node's signal-zero probe proves that
+exact same-host pid absent. Live, remote, ownerless, malformed, and unknown generations remain held
+until an operator resolves them. Recovery atomically quarantines the dead generation. Release moves
+and removes only its own token-matched generation; an owner-read, quarantine, or cleanup failure
+fails the refresh and retains the generation for diagnosis. Because a live process cannot lose its
+lock, the writer's token fence immediately before rename remains valid through the committed-store
+rename. Failed writes and renames remove temporary files without replacing the committed store.
+Reused run ids with changed sessions, timestamps, or parent facts are refused, while unresolved
+parents remain diagnostic-only.
 
 ## Live-session contract
 

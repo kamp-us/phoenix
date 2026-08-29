@@ -1942,44 +1942,29 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
-		it.effect("publishes complete owner metadata before the lock becomes visible", () =>
+		it.effect("treats an ownerless visible lock as uncertain on Darwin's real filesystem", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
-				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-publish-"});
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-ownerless-"});
 				const storePath = path.join(root, "lineage.json");
 				const lockPath = `${storePath}.lock`;
-				const publicationPaused = yield* Deferred.make<void>();
-				const resumePublication = yield* Deferred.make<void>();
-				let pauseFirst = true;
-				const delayedPublication = FileSystem.FileSystem.of({
-					...fs,
-					rename: (from, to) =>
-						pauseFirst && from.includes(".preparing-") && to === lockPath
-							? Effect.sync(() => {
-									pauseFirst = false;
-								}).pipe(
-									Effect.andThen(Deferred.succeed(publicationPaused, undefined)),
-									Effect.andThen(Deferred.await(resumePublication)),
-									Effect.andThen(fs.rename(from, to)),
-								)
-							: fs.rename(from, to),
-				});
-				const order: Array<string> = [];
-				const first = yield* withLineageStoreFileLock(
-					storePath,
-					() => Effect.sync(() => order.push("first")),
-					{poll: Effect.yieldNow},
-				).pipe(Effect.provideService(FileSystem.FileSystem, delayedPublication), Effect.forkChild);
-				yield* Deferred.await(publicationPaused);
-				assert.isFalse(yield* fs.exists(lockPath));
-				yield* withLineageStoreFileLock(storePath, () => Effect.sync(() => order.push("second")), {
-					poll: Effect.yieldNow,
-				});
-				yield* Deferred.succeed(resumePublication, undefined);
-				yield* Fiber.join(first);
-				assert.deepEqual(order, ["second", "first"]);
-				assert.isFalse(yield* fs.exists(lockPath));
+				yield* fs.makeDirectory(lockPath);
+				let entered = false;
+				const result = yield* Effect.result(
+					withLineageStoreFileLock(
+						storePath,
+						() =>
+							Effect.sync(() => {
+								entered = true;
+							}),
+						{poll: Effect.yieldNow, waitMs: 0},
+					),
+				);
+				assert.isTrue(Result.isFailure(result));
+				assert.isFalse(entered);
+				assert.isTrue(yield* fs.exists(lockPath));
+				assert.isFalse(yield* fs.exists(path.join(lockPath, "owner.json")));
 			}),
 		);
 
@@ -2024,7 +2009,7 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
-		it.effect("recovers a proven-dead owner and serializes competing recoverers", () =>
+		it.effect("recovers a proven-dead owner without replacing a visible generation", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
 				const path = yield* Path.Path;
@@ -2036,41 +2021,73 @@ describe("Tuval lineage index", () => {
 					path.join(lockPath, "owner.json"),
 					JSON.stringify({version: 1, token: "dead-token", host: "test-host", pid: 101}),
 				);
-				let active = 0;
-				let maximum = 0;
-				let entries = 0;
-				const firstEntered = yield* Deferred.make<void>();
-				const releaseFirst = yield* Deferred.make<void>();
-				const processFor = (pid: number) =>
-					LineageLockProcess.of({
-						identity: {host: "test-host", pid},
-						status: (ownerPid) => Effect.succeed(ownerPid === 101 ? "dead" : "alive"),
-					});
-				const caller = (pid: number) =>
-					withLineageStoreFileLock(
-						storePath,
-						() =>
-							Effect.gen(function* () {
-								active += 1;
-								entries += 1;
-								maximum = Math.max(maximum, active);
-								if (entries === 1) {
-									yield* Deferred.succeed(firstEntered, undefined);
-									yield* Deferred.await(releaseFirst);
-								}
-							}).pipe(Effect.ensuring(Effect.sync(() => (active -= 1)))),
-						{poll: Effect.yieldNow},
-					).pipe(Effect.provideService(LineageLockProcess, processFor(pid)));
-				const fibers = yield* Effect.all([caller(201), caller(202)], {
-					concurrency: "unbounded",
-				}).pipe(Effect.forkChild);
-				yield* Deferred.await(firstEntered);
-				yield* Effect.yieldNow;
-				assert.strictEqual(maximum, 1);
-				yield* Deferred.succeed(releaseFirst, undefined);
-				yield* Fiber.join(fibers);
-				assert.strictEqual(maximum, 1);
+				let entered = false;
+				yield* withLineageStoreFileLock(
+					storePath,
+					() =>
+						Effect.sync(() => {
+							entered = true;
+						}),
+					{poll: Effect.yieldNow, waitMs: 100},
+				).pipe(
+					Effect.provideService(
+						LineageLockProcess,
+						LineageLockProcess.of({
+							identity: {host: "test-host", pid: 201},
+							status: (ownerPid) => Effect.succeed(ownerPid === 101 ? "dead" : "alive"),
+						}),
+					),
+				);
+				assert.isTrue(entered);
 				assert.isFalse(yield* fs.exists(lockPath));
+			}),
+		);
+
+		it.effect("surfaces dead-owner quarantine failure and retains the generation", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({
+					prefix: "tuval-lineage-lock-quarantine-failure-",
+				});
+				const storePath = path.join(root, "lineage.json");
+				const lockPath = `${storePath}.lock`;
+				yield* fs.makeDirectory(lockPath);
+				yield* fs.writeFileString(
+					path.join(lockPath, "owner.json"),
+					JSON.stringify({version: 1, token: "dead-token", host: "test-host", pid: 101}),
+				);
+				const failure = PlatformError.systemError({
+					_tag: "PermissionDenied",
+					module: "FileSystem",
+					method: "rename",
+					pathOrDescriptor: lockPath,
+				});
+				const failingQuarantine = FileSystem.FileSystem.of({
+					...fs,
+					rename: (from, to) =>
+						from === lockPath && to.includes(".dead-") ? Effect.fail(failure) : fs.rename(from, to),
+				});
+				const result = yield* Effect.result(
+					withLineageStoreFileLock(storePath, () => Effect.void, {
+						poll: Effect.yieldNow,
+						waitMs: 0,
+					}).pipe(
+						Effect.provideService(FileSystem.FileSystem, failingQuarantine),
+						Effect.provideService(
+							LineageLockProcess,
+							LineageLockProcess.of({
+								identity: {host: "test-host", pid: 202},
+								status: () => Effect.succeed("dead" as const),
+							}),
+						),
+					),
+				);
+				assert.isTrue(Result.isFailure(result));
+				if (Result.isFailure(result)) {
+					assert.strictEqual(result.failure._tag, "tuval/LineageStoreReadError");
+				}
+				assert.isTrue(yield* fs.exists(lockPath));
 			}),
 		);
 
@@ -2148,11 +2165,91 @@ describe("Tuval lineage index", () => {
 				).pipe(Effect.provideService(LineageLockProcess, successorProcess), Effect.forkChild);
 				yield* Deferred.await(enteredNew);
 				yield* Deferred.succeed(releaseOld, undefined);
-				yield* Fiber.join(old);
+				const oldExit = yield* Fiber.await(old);
+				assert.strictEqual(oldExit._tag, "Failure");
 				assert.isTrue(yield* fs.exists(lockPath));
 				yield* Deferred.succeed(releaseNew, undefined);
 				yield* Fiber.join(successor);
 				assert.isFalse(yield* fs.exists(lockPath));
+			}),
+		);
+
+		it.effect("surfaces release-rename failure and leaves the owned lock for diagnosis", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({
+					prefix: "tuval-lineage-lock-release-failure-",
+				});
+				const storePath = path.join(root, "lineage.json");
+				const lockPath = `${storePath}.lock`;
+				const releaseFailure = PlatformError.systemError({
+					_tag: "PermissionDenied",
+					module: "FileSystem",
+					method: "rename",
+					pathOrDescriptor: lockPath,
+				});
+				const failingRelease = FileSystem.FileSystem.of({
+					...fs,
+					rename: (from, to) =>
+						from === lockPath && to.includes(".release-")
+							? Effect.fail(releaseFailure)
+							: fs.rename(from, to),
+				});
+				const result = yield* Effect.result(
+					withLineageStoreFileLock(storePath, () => Effect.succeed("committed")).pipe(
+						Effect.provideService(FileSystem.FileSystem, failingRelease),
+					),
+				);
+				assert.isTrue(Result.isFailure(result));
+				if (Result.isFailure(result)) {
+					assert.strictEqual(result.failure._tag, "tuval/LineageStoreReadError");
+				}
+				assert.isTrue(yield* fs.exists(lockPath));
+				const next = yield* Effect.result(
+					withLineageStoreFileLock(storePath, () => Effect.void, {
+						poll: Effect.yieldNow,
+						waitMs: 0,
+					}),
+				);
+				assert.isTrue(Result.isFailure(next));
+			}),
+		);
+
+		it.effect("surfaces release owner-read failure and retains the lock for diagnosis", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({
+					prefix: "tuval-lineage-lock-owner-read-failure-",
+				});
+				const storePath = path.join(root, "lineage.json");
+				const lockPath = `${storePath}.lock`;
+				const ownerPath = path.join(lockPath, "owner.json");
+				let ownerReads = 0;
+				const ownerReadFailure = PlatformError.systemError({
+					_tag: "PermissionDenied",
+					module: "FileSystem",
+					method: "readFileString",
+					pathOrDescriptor: ownerPath,
+				});
+				const failingReleaseRead = FileSystem.FileSystem.of({
+					...fs,
+					readFileString: (target, options) =>
+						target === ownerPath && ++ownerReads === 2
+							? Effect.fail(ownerReadFailure)
+							: fs.readFileString(target, options),
+				});
+				const result = yield* Effect.result(
+					withLineageStoreFileLock(storePath, (fence) => fence, {
+						poll: Effect.yieldNow,
+					}).pipe(Effect.provideService(FileSystem.FileSystem, failingReleaseRead)),
+				);
+				assert.isTrue(Result.isFailure(result));
+				if (Result.isFailure(result)) {
+					assert.strictEqual(result.failure._tag, "tuval/LineageStoreReadError");
+				}
+				assert.isTrue(yield* fs.exists(lockPath));
 			}),
 		);
 

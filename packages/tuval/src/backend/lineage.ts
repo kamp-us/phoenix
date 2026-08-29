@@ -1140,10 +1140,16 @@ const sameStoreLockOwner = (left: StoreLockOwner, right: StoreLockOwner): boolea
 	left.host === right.host &&
 	left.pid === right.pid;
 
+const lockError = (path: string, error: unknown): LineageStoreReadError =>
+	new LineageStoreReadError({path, message: messageOf(error)});
+
 const readStoreLockOwner = Effect.fn("LineageStore.readLockOwner")(function* (ownerPath: string) {
 	const fs = yield* FileSystem.FileSystem;
 	const read = yield* Effect.result(fs.readFileString(ownerPath));
-	if (Result.isFailure(read)) return undefined;
+	if (Result.isFailure(read)) {
+		if (read.failure.reason._tag === "NotFound") return undefined;
+		return yield* lockError(ownerPath, read.failure);
+	}
 	const parsed = Result.try({
 		try: () => JSON.parse(read.success) as unknown,
 		catch: () => undefined,
@@ -1170,28 +1176,21 @@ const ownerCanBeRecovered = Effect.fn("LineageStore.ownerCanBeRecovered")(functi
 	return (yield* processService.status(owner.pid)) === "dead";
 });
 
-const cleanupDeadLockSiblings = Effect.fn("LineageStore.cleanupDeadLockSiblings")(function* (
+const hasStoreFileLockSibling = Effect.fn("LineageStore.hasFileLockSibling")(function* (
 	lockPath: string,
 ) {
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
 	const directory = path.dirname(lockPath);
-	const listed = yield* Effect.result(fs.readDirectory(directory));
-	if (Result.isFailure(listed)) return;
+	const listed = yield* fs
+		.readDirectory(directory)
+		.pipe(Effect.mapError((error) => lockError(directory, error)));
 	const prefixes = [
 		`${path.basename(lockPath)}.preparing-`,
 		`${path.basename(lockPath)}.dead-`,
 		`${path.basename(lockPath)}.release-`,
 	];
-	for (const entry of listed.success.filter((candidate) =>
-		prefixes.some((prefix) => candidate.startsWith(prefix)),
-	)) {
-		const sibling = path.join(directory, entry);
-		const owner = yield* readStoreLockOwner(path.join(sibling, "owner.json"));
-		if (owner !== undefined && (yield* ownerCanBeRecovered(owner))) {
-			yield* fs.remove(sibling, {recursive: true}).pipe(Effect.ignore);
-		}
-	}
+	return listed.some((entry) => prefixes.some((prefix) => entry.startsWith(prefix)));
 });
 
 const publishStoreFileLock = Effect.fn("LineageStore.publishFileLock")(function* (
@@ -1207,32 +1206,19 @@ const publishStoreFileLock = Effect.fn("LineageStore.publishFileLock")(function*
 		host: processService.identity.host,
 		pid: processService.identity.pid,
 	};
-	const preparingPath = lockSibling(path, lockPath, "preparing", owner.token);
-	const preparingOwner = path.join(preparingPath, "owner.json");
-	const prepared = yield* Effect.result(
-		fs
-			.makeDirectory(preparingPath, {recursive: false})
-			.pipe(Effect.andThen(fs.writeFileString(preparingOwner, JSON.stringify(owner)))),
-	);
-	if (Result.isFailure(prepared)) {
-		yield* fs.remove(preparingPath, {recursive: true}).pipe(Effect.ignore);
-		return undefined;
+	const created = yield* Effect.result(fs.makeDirectory(lockPath, {recursive: false}));
+	if (Result.isFailure(created)) {
+		const exists = yield* fs
+			.exists(lockPath)
+			.pipe(Effect.mapError((error) => lockError(lockPath, error)));
+		if (exists) return undefined;
+		return yield* lockError(lockPath, created.failure);
 	}
-	const published = yield* Effect.result(fs.rename(preparingPath, lockPath));
-	if (Result.isFailure(published)) {
-		yield* fs.remove(preparingPath, {recursive: true}).pipe(Effect.ignore);
-		return undefined;
-	}
-	return {lockPath, ownerPath: path.join(lockPath, "owner.json"), owner} satisfies StoreFileLock;
-});
-
-const restoreQuarantinedOwner = Effect.fn("LineageStore.restoreQuarantinedOwner")(function* (
-	quarantinePath: string,
-	lockPath: string,
-) {
-	const fs = yield* FileSystem.FileSystem;
-	if (yield* fs.exists(lockPath)) return false;
-	return Result.isSuccess(yield* Effect.result(fs.rename(quarantinePath, lockPath)));
+	const ownerPath = path.join(lockPath, "owner.json");
+	yield* fs
+		.writeFileString(ownerPath, JSON.stringify(owner))
+		.pipe(Effect.mapError((error) => lockError(ownerPath, error)));
+	return {lockPath, ownerPath, owner} satisfies StoreFileLock;
 });
 
 const quarantineDeadStoreFileLock = Effect.fn("LineageStore.quarantineDeadFileLock")(function* (
@@ -1243,19 +1229,23 @@ const quarantineDeadStoreFileLock = Effect.fn("LineageStore.quarantineDeadFileLo
 	const path = yield* Path.Path;
 	const crypto = yield* Crypto.Crypto;
 	const quarantinePath = lockSibling(path, lockPath, "dead", yield* crypto.randomUUIDv4);
-	const moved = yield* Effect.result(fs.rename(lockPath, quarantinePath));
-	if (Result.isFailure(moved)) return false;
+	yield* fs
+		.rename(lockPath, quarantinePath)
+		.pipe(Effect.mapError((error) => lockError(lockPath, error)));
 	const actual = yield* readStoreLockOwner(path.join(quarantinePath, "owner.json"));
 	if (
 		actual === undefined ||
 		!sameStoreLockOwner(actual, expected) ||
 		!(yield* ownerCanBeRecovered(actual))
 	) {
-		yield* restoreQuarantinedOwner(quarantinePath, lockPath);
-		return false;
+		return yield* new LineageStoreReadError({
+			path: quarantinePath,
+			message: "Lineage store lock recovery could not prove owner death",
+		});
 	}
-	yield* fs.remove(quarantinePath, {recursive: true}).pipe(Effect.ignore);
-	return true;
+	yield* fs
+		.remove(quarantinePath, {recursive: true})
+		.pipe(Effect.mapError((error) => lockError(quarantinePath, error)));
 });
 
 const acquireStoreFileLock = Effect.fn("LineageStore.acquireFileLock")(function* (
@@ -1269,20 +1259,18 @@ const acquireStoreFileLock = Effect.fn("LineageStore.acquireFileLock")(function*
 	const poll = options?.poll ?? Effect.sleep(`${STORE_LOCK_POLL_MS} millis`);
 	yield* fs
 		.makeDirectory(path.dirname(storePath), {recursive: true})
-		.pipe(
-			Effect.mapError(
-				(error) => new LineageStoreReadError({path: lockPath, message: messageOf(error)}),
-			),
-		);
+		.pipe(Effect.mapError((error) => lockError(lockPath, error)));
 	const deadline = Date.now() + (options?.waitMs ?? STORE_LOCK_WAIT_MS);
 	while (true) {
-		yield* cleanupDeadLockSiblings(lockPath);
-		const published = yield* publishStoreFileLock(lockPath);
-		if (published !== undefined) return published;
-		const owner = yield* readStoreLockOwner(ownerPath);
-		if (owner !== undefined && (yield* ownerCanBeRecovered(owner))) {
-			yield* quarantineDeadStoreFileLock(lockPath, owner);
-			continue;
+		const siblingHeld = yield* hasStoreFileLockSibling(lockPath);
+		if (!siblingHeld) {
+			const published = yield* publishStoreFileLock(lockPath);
+			if (published !== undefined) return published;
+			const owner = yield* readStoreLockOwner(ownerPath);
+			if (owner !== undefined && (yield* ownerCanBeRecovered(owner))) {
+				yield* quarantineDeadStoreFileLock(lockPath, owner);
+				continue;
+			}
 		}
 		if (Date.now() >= deadline) {
 			return yield* new LineageStoreReadError({
@@ -1310,16 +1298,26 @@ const releaseStoreFileLock = Effect.fn("LineageStore.releaseFileLock")(function*
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
 	const current = yield* readStoreLockOwner(lock.ownerPath);
-	if (current === undefined || !sameStoreLockOwner(current, lock.owner)) return;
+	if (current === undefined || !sameStoreLockOwner(current, lock.owner)) {
+		return yield* new LineageStoreReadError({
+			path: lock.lockPath,
+			message: "Lineage store lock ownership could not be proven for release",
+		});
+	}
 	const quarantinePath = lockSibling(path, lock.lockPath, "release", lock.owner.token);
-	const moved = yield* Effect.result(fs.rename(lock.lockPath, quarantinePath));
-	if (Result.isFailure(moved)) return;
+	yield* fs
+		.rename(lock.lockPath, quarantinePath)
+		.pipe(Effect.mapError((error) => lockError(lock.lockPath, error)));
 	const claimed = yield* readStoreLockOwner(path.join(quarantinePath, "owner.json"));
 	if (claimed === undefined || !sameStoreLockOwner(claimed, lock.owner)) {
-		yield* restoreQuarantinedOwner(quarantinePath, lock.lockPath);
-		return;
+		return yield* new LineageStoreReadError({
+			path: quarantinePath,
+			message: "Lineage store lock ownership could not be proven after release quarantine",
+		});
 	}
-	yield* fs.remove(quarantinePath, {recursive: true}).pipe(Effect.ignore);
+	yield* fs
+		.remove(quarantinePath, {recursive: true})
+		.pipe(Effect.mapError((error) => lockError(quarantinePath, error)));
 });
 
 export const withLineageStoreFileLock = <A, E, R>(
