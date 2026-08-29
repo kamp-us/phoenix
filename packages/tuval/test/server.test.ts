@@ -329,14 +329,23 @@ describe("Tuval local server", () => {
 				});
 				const response = yield* tryPromise(() => fetch(`${server.url}/api/contributions`));
 				const catalog = (yield* tryPromise(() => response.json())) as {
-					diagnostics: Array<{packageName: string; message: string}>;
+					diagnostics: Array<{packageName: string; reason: string; message: string}>;
 				};
 				assert.deepStrictEqual(
-					catalog.diagnostics.map(({message}) => message),
+					catalog.diagnostics.map(({reason, message}) => ({reason, message})),
 					[
-						"package.json is unreadable",
-						"package.json is not valid JSON",
-						"package.json has no valid package name",
+						{
+							reason: "package-manifest-unreadable",
+							message: "Package manifest is unreadable",
+						},
+						{
+							reason: "package-manifest-invalid-json",
+							message: "Package manifest is not valid JSON",
+						},
+						{
+							reason: "package-name-invalid",
+							message: "Package manifest has no valid public package identity",
+						},
 					],
 				);
 				for (const diagnostic of catalog.diagnostics) {
@@ -353,7 +362,7 @@ describe("Tuval local server", () => {
 				);
 				const reloaded = (yield* tryPromise(() =>
 					fetch(`${server.url}/api/contributions`).then((value) => value.json()),
-				)) as {diagnostics: Array<{packageName: string; message: string}>};
+				)) as {diagnostics: Array<{packageName: string; reason: string; message: string}>};
 				assert.deepStrictEqual(reloaded.diagnostics, catalog.diagnostics);
 			}),
 		);
