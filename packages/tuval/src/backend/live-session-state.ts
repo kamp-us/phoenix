@@ -121,7 +121,10 @@ export interface LiveSessionState {
 		sessionId: string,
 		checkpoint?: LiveSelectionCheckpoint,
 	) => Promise<AttachLiveSessionOutcome>;
-	readonly prompt: (request: PromptLiveSessionRequest) => Promise<PromptLiveSessionOutcome>;
+	readonly prompt: (
+		request: PromptLiveSessionRequest,
+		signal?: AbortSignal,
+	) => Promise<PromptLiveSessionOutcome>;
 	readonly create: (
 		request: CreateLiveSessionRequest,
 		checkpoint?: LiveSelectionCheckpoint,
@@ -413,9 +416,12 @@ export class PiLiveSessionState implements LiveSessionState {
 		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
 	): Promise<AttachLiveSessionOutcome> => this.#attach(sessionId, checkpoint);
 
-	prompt = (request: PromptLiveSessionRequest): Promise<PromptLiveSessionOutcome> => {
+	prompt = (
+		request: PromptLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<PromptLiveSessionOutcome> => {
 		const generation = this.#attachment?.generation;
-		if (generation === undefined) return this.#runPrompt(request);
+		if (generation === undefined) return this.#runPrompt(request, signal);
 		this.#scopePromptsTo(generation);
 		const existing = this.#prompts.get(request.correlationId);
 		if (existing !== undefined) {
@@ -431,8 +437,14 @@ export class PiLiveSessionState implements LiveSessionState {
 				"Too many prompts are awaiting acknowledgement",
 			);
 		}
-		const result = this.#runPrompt(request);
-		const correlated: CorrelatedPrompt = {text: request.text, result, settled: false};
+		let correlated: CorrelatedPrompt;
+		const abandon = () => {
+			if (this.#prompts.get(request.correlationId) === correlated) {
+				this.#prompts.delete(request.correlationId);
+			}
+		};
+		const result = this.#runPrompt(request, signal, abandon);
+		correlated = {text: request.text, result, settled: false};
 		this.#prompts.set(request.correlationId, correlated);
 		void result.then(
 			() => {
@@ -1135,7 +1147,11 @@ export class PiLiveSessionState implements LiveSessionState {
 		return attachment;
 	}
 
-	async #runPrompt(request: PromptLiveSessionRequest): Promise<PromptLiveSessionOutcome> {
+	async #runPrompt(
+		request: PromptLiveSessionRequest,
+		signal?: AbortSignal,
+		onAbandoned: () => void = () => {},
+	): Promise<PromptLiveSessionOutcome> {
 		const attachment = this.#attachment;
 		let outcome: PromptLiveSessionOutcome;
 		if (attachment === undefined) {
@@ -1153,37 +1169,58 @@ export class PiLiveSessionState implements LiveSessionState {
 				reason: attachment.disconnectedReason,
 			};
 		} else {
+			const cancellation = new AbortController();
+			const deadline = this.#makeAcknowledgementDeadline(this.#acknowledgementTimeoutMs);
+			const onAbort = () => cancellation.abort();
+			if (signal?.aborted) onAbort();
+			else signal?.addEventListener("abort", onAbort, {once: true});
 			try {
 				this.#pendingPrompts += 1;
 				this.#publishSession(attachment);
-				try {
-					await attachment.lease.prompt(request.text);
-				} finally {
-					this.#pendingPrompts -= 1;
-					if (this.#attachment === attachment) this.#publishSession(attachment);
+				const operation = attachment.lease.prompt(request.text, cancellation.signal).then(
+					() => ({_tag: "acknowledged" as const}),
+					(error: unknown) => ({_tag: "error" as const, error}),
+				);
+				const winner = await Promise.race([
+					operation,
+					deadline.elapsed.then(() => ({_tag: "timeout" as const})),
+				]);
+				if (winner._tag === "timeout") {
+					onAbandoned();
+					cancellation.abort();
+					outcome = {
+						_tag: "refused",
+						correlationId: request.correlationId,
+						code: "protocol",
+						reason: `Pi did not acknowledge prompt within ${this.#acknowledgementTimeoutMs}ms`,
+					};
+				} else if (winner._tag === "error") {
+					if (signal?.aborted) onAbandoned();
+					throw winner.error;
+				} else {
+					this.#reconcileAttachment(attachment);
+					if (this.#attachment !== attachment) {
+						throw new PiSessionOwnershipError(
+							attachment.snapshot.id,
+							"The selected session changed before the prompt was acknowledged",
+						);
+					}
+					if (
+						attachment.disconnectedReason !== undefined ||
+						attachment.leaseReleased ||
+						!attachment.lease.active
+					) {
+						throw new PiDisconnectedError(
+							attachment.disconnectedReason ??
+								"The attached pi session disconnected before the prompt was acknowledged",
+						);
+					}
+					outcome = {
+						_tag: "acknowledged",
+						correlationId: request.correlationId,
+						session: this.#attachedViewOf(attachment, this.#sequence),
+					};
 				}
-				this.#reconcileAttachment(attachment);
-				if (this.#attachment !== attachment) {
-					throw new PiSessionOwnershipError(
-						attachment.snapshot.id,
-						"The selected session changed before the prompt was acknowledged",
-					);
-				}
-				if (
-					attachment.disconnectedReason !== undefined ||
-					attachment.leaseReleased ||
-					!attachment.lease.active
-				) {
-					throw new PiDisconnectedError(
-						attachment.disconnectedReason ??
-							"The attached pi session disconnected before the prompt was acknowledged",
-					);
-				}
-				outcome = {
-					_tag: "acknowledged",
-					correlationId: request.correlationId,
-					session: this.#attachedViewOf(attachment, this.#sequence),
-				};
 			} catch (error) {
 				outcome = {
 					_tag: "refused",
@@ -1191,6 +1228,11 @@ export class PiLiveSessionState implements LiveSessionState {
 					code: promptRefusalCode(error),
 					reason: messageOf(error),
 				};
+			} finally {
+				deadline.cancel();
+				signal?.removeEventListener("abort", onAbort);
+				this.#pendingPrompts -= 1;
+				if (this.#attachment === attachment) this.#publishSession(attachment);
 			}
 		}
 		this.#publishPrompt(outcome);

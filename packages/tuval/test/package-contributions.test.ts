@@ -141,7 +141,10 @@ describe("pi-native Tuval package contributions", () => {
 			const asset = emitted.frontend[0]?.asset ?? "";
 			assert.match(asset, /^\/api\/contribution-assets\/v1-\d+\.js$/);
 			assert.isFalse(JSON.stringify(emitted).includes(fixtures));
-			assert.strictEqual(catalog.assetFiles.get(asset), fixture("plain-pi/asset.js"));
+			assert.include(
+				new TextDecoder().decode(catalog.assetFiles.get(asset)),
+				"fixture-package-node",
+			);
 			const reloaded = emitContributionCatalog(yield* load(fixture("plain-pi")));
 			assert.strictEqual(reloaded.frontend[0]?.asset, asset);
 		}),
@@ -338,8 +341,8 @@ describe("pi-native Tuval package contributions", () => {
 				);
 				const assetUrl = catalog.frontend[0]?.asset ?? "";
 				assert.strictEqual(
-					catalog.assetFiles.get(assetUrl),
-					yield* fs.realPath(path.join(packageRoots[0] ?? "", "target.js")),
+					new TextDecoder().decode(catalog.assetFiles.get(assetUrl)),
+					"export const same = true;",
 				);
 				assert.deepStrictEqual(
 					catalog.diagnostics.map(({packageName, reason}) => ({packageName, reason})),

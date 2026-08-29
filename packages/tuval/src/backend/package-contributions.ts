@@ -1,3 +1,5 @@
+import {constants as fsConstants} from "node:fs";
+import {open} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
 import {
 	DefaultPackageManager,
@@ -118,7 +120,7 @@ export interface TuvalContributionCatalog {
 	readonly contractVersion: 1;
 	readonly backend: ReadonlyArray<BackendContribution>;
 	readonly frontend: ReadonlyArray<FrontendContribution>;
-	readonly assetFiles: ReadonlyMap<string, string>;
+	readonly assetFiles: ReadonlyMap<string, Uint8Array>;
 	readonly diagnostics: ReadonlyArray<ContributionDiagnostic>;
 }
 
@@ -175,6 +177,36 @@ const canonicalFileInside = Effect.fn("TuvalPackages.canonicalFileInside")(funct
 	const info = yield* fs.stat(candidate);
 	return info.type === "File" ? candidate : undefined;
 });
+
+const CONTRIBUTION_ASSET_LIMIT = 4 * 1024 * 1024;
+
+class ContributionAssetReadError extends Schema.TaggedErrorClass<ContributionAssetReadError>()(
+	"tuval/ContributionAssetReadError",
+	{cause: Schema.Defect()},
+) {}
+
+const readAuthorizedAsset = Effect.fn("TuvalPackages.readAuthorizedAsset")((assetPath: string) =>
+	Effect.tryPromise({
+		try: async () => {
+			const handle = await open(assetPath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+			try {
+				const info = await handle.stat();
+				if (!info.isFile() || info.size > CONTRIBUTION_ASSET_LIMIT) return undefined;
+				const bytes = new Uint8Array(CONTRIBUTION_ASSET_LIMIT + 1);
+				let offset = 0;
+				while (offset < bytes.length) {
+					const {bytesRead} = await handle.read(bytes, offset, bytes.length - offset, offset);
+					if (bytesRead === 0) break;
+					offset += bytesRead;
+				}
+				return offset > CONTRIBUTION_ASSET_LIMIT ? undefined : bytes.slice(0, offset);
+			} finally {
+				await handle.close();
+			}
+		},
+		catch: (cause) => new ContributionAssetReadError({cause}),
+	}),
+);
 
 const manifestFrontend = (manifest: TuvalManifest) => [
 	...(manifest.frontend?.nodes ?? []).map((entry) => ({kind: "node" as const, entry})),
@@ -241,7 +273,7 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 	);
 	const backend: Array<BackendContribution> = [];
 	const frontend: Array<FrontendContribution> = [];
-	const assetFiles = new Map<string, string>();
+	const assetFiles = new Map<string, Uint8Array>();
 	const diagnostics: Array<ContributionDiagnostic> = [];
 	const keys = new Set<string>();
 	if (Result.isFailure(resolved)) {
@@ -303,7 +335,7 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 			continue;
 		}
 		const packageFrontend: Array<FrontendContribution> = [];
-		const packageAssetFiles = new Map<string, string>();
+		const packageAssetFiles = new Map<string, Uint8Array>();
 		const packageKeys = new Set<string>();
 		let invalid: ContributionRejection | undefined;
 		for (const {kind, entry} of manifestFrontend(manifest.value)) {
@@ -324,9 +356,14 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 				invalid = {reason: "asset-unavailable", ...context};
 				break;
 			}
+			const authorizedBytes = yield* readAuthorizedAsset(asset.value).pipe(Effect.option);
+			if (authorizedBytes._tag === "None" || authorizedBytes.value === undefined) {
+				invalid = {reason: "asset-unavailable", ...context};
+				break;
+			}
 			const assetUrl = contributionAssetUrl(frontend.length + packageFrontend.length);
 			packageKeys.add(key);
-			packageAssetFiles.set(assetUrl, asset.value);
+			packageAssetFiles.set(assetUrl, authorizedBytes.value);
 			packageFrontend.push({kind, key: entry.key, asset: assetUrl, packageName, source});
 		}
 		if (invalid !== undefined) {

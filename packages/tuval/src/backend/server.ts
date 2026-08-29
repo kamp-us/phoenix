@@ -252,20 +252,8 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 		return;
 	}
 	if (request.method === "GET" && url.pathname.startsWith("/api/contribution-assets/")) {
-		const assetFile = contributions.assetFiles.get(url.pathname);
-		if (assetFile === undefined) {
-			response.statusCode = 404;
-			response.end("Contribution asset unavailable");
-			return;
-		}
-		const currentAsset = yield* fs.realPath(assetFile).pipe(Effect.option);
-		if (currentAsset._tag === "None" || currentAsset.value !== assetFile) {
-			response.statusCode = 404;
-			response.end("Contribution asset unavailable");
-			return;
-		}
-		const asset = yield* fs.readFile(currentAsset.value).pipe(Effect.option);
-		if (asset._tag === "None") {
+		const asset = contributions.assetFiles.get(url.pathname);
+		if (asset === undefined) {
 			response.statusCode = 404;
 			response.end("Contribution asset unavailable");
 			return;
@@ -273,7 +261,7 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 		response.setHeader("content-type", "text/javascript; charset=utf-8");
 		response.setHeader("cache-control", "no-cache");
 		response.setHeader("x-content-type-options", "nosniff");
-		response.end(asset.value);
+		response.end(asset);
 		return;
 	}
 	if (request.method === "POST" && url.pathname === "/fate") {

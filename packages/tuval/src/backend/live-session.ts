@@ -138,7 +138,7 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 	),
 	prompt: Effect.fn("LiveSession.prompt")((request) =>
 		Effect.tryPromise({
-			try: () => state.prompt(request),
+			try: (signal) => state.prompt(request, signal),
 			catch: (cause) => new LiveSessionAdapterError({cause}),
 		}).pipe(
 			Effect.catch(() =>

@@ -199,8 +199,37 @@ describe("live-session server transport", () => {
 				assert.isTrue(promptResult.results[0]?.ok ?? false);
 				assert.strictEqual(promptResult.results[0]?.data._tag, "acknowledged");
 				assert.strictEqual(promptResult.results[0]?.data.correlationId, "prompt-product");
-				const chunk = yield* tryPromise(() => streamed.body!.getReader().read());
-				assert.include(new TextDecoder().decode(chunk.value), '"streamed"');
+				const delivered = yield* tryPromise(async () => {
+					const reader = streamed.body!.getReader();
+					const decoder = new TextDecoder();
+					let buffered = "";
+					while (true) {
+						const chunk = await reader.read();
+						if (chunk.done) return undefined;
+						buffered += decoder.decode(chunk.value, {stream: true});
+						const frames = buffered.split("\n\n");
+						buffered = frames.pop() ?? "";
+						for (const frame of frames) {
+							const data = frame
+								.split("\n")
+								.find((line) => line.startsWith("data: "))
+								?.slice(6);
+							if (data === undefined) continue;
+							const event = JSON.parse(data) as {
+								_tag?: string;
+								session?: {transcript?: Array<{id?: string}>};
+							};
+							if (
+								event._tag === "session" &&
+								event.session?.transcript?.some((entry) => entry.id === "streamed")
+							) {
+								return event;
+							}
+						}
+					}
+				});
+				assert.isDefined(delivered);
+				assert.strictEqual(delivered?._tag, "session");
 			}),
 		);
 	});
