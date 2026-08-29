@@ -88,7 +88,7 @@ const tree = leafCommand(
 		repair: Flag.integer("repair").pipe(
 			Flag.optional,
 			Flag.withDescription(
-				"the repair PR whose claim and resumed branch must uniquely serve --issue",
+				"the repair PR whose claim, resumed branch, and linkage set must contain --issue",
 			),
 		),
 		repo: repoFlag,
@@ -109,7 +109,7 @@ const tree = leafCommand(
 		"Prove clean ground and the complete fresh or repair lane relationship.",
 	),
 	Command.withDescription(
-		'Prove the ground: optionally clean; with --issue, prove the checked-out branch, winning claim, and served issue as one relationship. Add --repair <pr> on a resumed repair branch: the branch must name that PR, carry that PR claim\'s nonce, and the live PR must uniquely serve --issue. Armed success prints {"answer":"proven","root":"<absolute>","branch":"<name>","claim":{"number":<issue-or-pr>,"nonce":"<nonce>"},"servedIssue":{"number":<issue>,"kind":"issue|fixes|part-of"}}. An unarmed success prints only the absolute root. Reads and NEVER repairs. Exits 4 (repair linkage malformed or not unique), 7 (repair PR or served issue absent/closed), 10 (--repair without --issue), 11 (ground, claim, PR, or served issue unreadable — UNKNOWN), 13 (dirty at --require-clean), 14 (wrong branch, nonce, PR, or served issue), 15 (claim foreign). Example: fabrika build tree --issue 7181 --repair 7182',
+		'Prove the ground: optionally clean; with --issue, prove the checked-out branch, winning claim, and served issue as one relationship. Add --repair <pr> on a resumed repair branch: the branch must name that PR, carry that PR claim\'s nonce, and the live PR\'s served-issue linkage set must contain --issue. Armed success prints {"answer":"proven","root":"<absolute>","branch":"<name>","claim":{"number":<issue-or-pr>,"nonce":"<nonce>"},"servedIssue":{"number":<issue>,"kind":"issue|fixes|part-of"}}. An unarmed success prints only the absolute root. Reads and NEVER repairs. Exits 4 (repair linkage absent), 7 (repair PR or served issue absent/closed), 10 (--repair without --issue), 11 (ground, claim, PR, or served issue unreadable — UNKNOWN), 13 (dirty at --require-clean), 14 (wrong branch, nonce, PR, or served issue), 15 (claim foreign). Example: fabrika build tree --issue 7181 --repair 7182',
 	),
 );
 

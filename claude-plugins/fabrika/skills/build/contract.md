@@ -370,15 +370,16 @@ fabrika build tree [--require-clean] [--issue <n> [--repair <pr>]]
 |---|---|---|---|---|
 | `--require-clean` | boolean | no | `false` | additionally refuse a tree with any uncommitted change — the lane-open posture |
 | `--issue` | integer | no | — | additionally prove the checked-out branch serves this issue — the pre-mutation posture |
-| `--repair` | integer | no | — | with `--issue`, prove this repair PR's claim, resumed branch and unique served-issue linkage as one relationship |
+| `--repair` | integer | no | — | with `--issue`, prove this repair PR's claim, resumed branch and membership of the requested issue in its served-issue linkage set |
 
 **Output** — machine. With neither `--issue` nor `--repair`, one line containing the tree root's
 absolute path. With `--issue`, one JSON object:
 `{"answer":"proven","root":"<absolute>","branch":"<name>","claim":{"number":<issue-or-pr>,"nonce":"<nonce>"},"servedIssue":{"number":<issue>,"kind":"issue|fixes|part-of"}}`.
 A fresh proof puts the issue number in both `claim.number` and `servedIssue.number`, with kind
-`issue`. A repair proof puts the PR in `claim.number`, the issue in `servedIssue.number`, and the
-live PR body's unique winning reference kind in `servedIssue.kind`. This is the whole successful
-repair answer; the skill consumes this object, never a scope line or incidental diagnostic.
+`issue`. A repair proof puts the PR in `claim.number`, the explicitly requested issue in
+`servedIssue.number`, and the live PR body's winning reference kind in `servedIssue.kind`. This is
+the whole successful repair answer; the skill consumes this object, never a scope line or incidental
+diagnostic.
 
 This verb **reads and never repairs**: it creates nothing, cleans nothing, removes nothing. It also
 asserts nothing about *where* the tree is — that is the operator's call, not fabrika's (#5386).
@@ -390,10 +391,10 @@ The assertions:
 2. **Fresh lane** (`--issue`, without `--repair`) — the checked-out create branch names that issue
    and carries that issue's winning claim nonce. A non-lane, wrong-number, or nonce mismatch is `14`.
 3. **Repair lane** (`--issue <n> --repair <pr>`) — one fail-closed flow proves all subjects: the
-   checked-out resume branch names `<pr>`; its nonce owns `<pr>`'s winning claim; the live, open PR
-   names exactly one issue through the same closing-keyword/`Part of` grammar review reads; that issue
-   is `<n>`, is live and readable, and is an issue rather than another pull request. The PR is never passed as the issue operand, the issue is never
-   queried for the repair claim, and no branch number is guessed into a served issue.
+   checked-out resume branch names `<pr>`; its nonce owns `<pr>`'s winning claim; the live, open PR's
+   complete closing-keyword/`Part of` set contains `<n>`; and `<n>` is live, readable, and an issue
+   rather than another pull request. The PR is never passed as the issue operand, the issue is never
+   queried for the repair claim, and reference order never selects a different served issue.
 
 **The branch's own nonce is the identity the claim is read under** — the question is whether the
 winning marker belongs to THIS lane, not to this session (#6037). A sibling lane of the same session
@@ -403,8 +404,8 @@ is `14`; only another session's claim is `15`. No stamp file exists to check.
 
 | Code | Trigger |
 |---|---|
-| `4` | the PR body names zero or several served issues — no unique repair subject |
-| `7` | the repair PR or its uniquely linked served issue is proven absent or closed |
+| `4` | the PR body names no served issue — the requested repair subject is not linked |
+| `7` | the repair PR or explicitly requested served issue is proven absent or closed |
 | `10` | `--repair` was given without its required `--issue` operand |
 | `11` | the tree root, claim state, repair PR, or linked served issue could not be read — UNKNOWN |
 | `13` | proven: uncommitted changes present at a `--require-clean` open |
@@ -425,14 +426,14 @@ is `14`; only another session's claim is `15`. No stamp file exists to check.
 | `build tree: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
 | `build tree: cannot read repair PR #<pr>: <reason> — its served issue is UNKNOWN; nothing is proven.` | 11 | refusal |
 | `build tree: PR #<pr> is proven absent or closed.` | 7 | refusal |
-| `build tree: repair PR #<pr> names <count> served issues through <kind>; exactly one is required, so the repair subject is not uniquely readable.` | 4 | refusal |
-| `build tree: repair PR #<pr> serves issue #<actual>, not requested issue #<n> — wrong lane.` | 14 | refusal |
+| `build tree: repair PR #<pr> names no served issues through <kind>, so requested issue #<n> is not proven.` | 4 | refusal |
+| `build tree: repair PR #<pr> does not serve requested issue #<n> through <kind>; it serves #<actual>[, #<actual>...] instead — wrong lane.` | 14 | refusal |
 | `build tree: cannot read issue #<n>, which repair PR #<pr> serves: <reason> — the repair subject is UNKNOWN; nothing is proven.` | 11 | refusal |
 | `build tree: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `build tree: repair PR #<pr> links #<n>, but that record is itself a pull request, not the served issue — wrong lane.` | 14 | refusal |
 
 **Scope** — not a judging verb: it reads this process's git state, one claim, and in repair the live
-PR plus its one served issue.
+PR plus the explicitly requested issue in its served-issue set.
 
 **Examples**
 
@@ -445,6 +446,9 @@ $ fabrika build tree --require-clean
 $ fabrika build tree --issue 4312
 {"answer":"proven","root":"/private/var/<redacted>/lanes/build-4312","branch":"build/4312-editor-focus-loss-c1a4d6f8","claim":{"number":4312,"nonce":"c1a4d6f8"},"servedIssue":{"number":4312,"kind":"issue"}}
 ```
+
+For a PR body that closes both `#7162` and `#7181`, either reference may appear first; the explicit
+issue operand selects the repair subject:
 
 ```
 $ fabrika build tree --issue 7181 --repair 7182
@@ -466,6 +470,8 @@ $ echo $?
   mutation: a pass is a fact about this invocation and nothing later.
 - #7183 — a repair branch carries a PR claim nonce while its contract belongs to a distinct issue;
   the repair proof binds both subjects instead of weakening either one.
+- #7309 — a one-PR epic closes the epic and its landed children; the explicit issue operand selects
+  the repair subject by membership rather than reference order or singularity.
 - 2026-08-13 ruling on #5386 — fabrika holds no worktree opinion; `12` is retired and this verb
   asserts nothing about where the tree sits.
 
@@ -1004,8 +1010,9 @@ The repair skill consumes exactly one such line as a cross-check against the PR 
 operands retained from its two Ground URLs. An absent, malformed, repeated, or mismatched line stops
 the lane before mutation; it is never a source from which to guess a missing operand. The line proves
 the admission subject, while `build tree --issue <issue> --repair <pr>` re-reads the live PR with the
-plural linkage parser and refuses zero or several served issues on `4`. These are consecutive proofs,
-not substitutes: neither the scalar diagnostic nor the Ground URLs weaken the unique live relationship.
+plural linkage parser and requires that the complete set contain the explicit issue operand. These are
+consecutive proofs, not substitutes: neither the scalar diagnostic nor the Ground URLs weaken the
+live relationship.
 
 - `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>", "purpose":
   "build"}` — plus `"override": {"lane": "<lane>", "reason": "<reason>"}` when the win came through

@@ -48,14 +48,14 @@ describe("build skill repair identifiers (#7162 / PR #7180)", () => {
 		assert.notMatch(rendered, /fabrika build pr \d+/);
 	});
 
-	it("consumes the documented claim subject and still requires the unique proof", () => {
+	it("consumes the documented claim subject and still requires the live membership proof", () => {
 		assert.include(contract, "build claim: subject: PR #<pr> serves #<issue> (fixes|part-of)");
 		assert.include(mainRepair, "Consume it as a cross-check against the two Ground operands");
 		for (const defect of ["absent", "malformed", "repeated"]) {
 			assert.include(mainRepair, defect);
 		}
-		assert.include(contract, "refuses zero or several served issues on `4`");
-		assert.include(mainRepair, "the live PR uniquely serves the issue");
-		assert.include(mainRepair, "Exit `4` means the unique linkage is malformed");
+		assert.include(contract, "complete set contain the explicit issue operand");
+		assert.include(mainRepair, "served-issue set contains the explicitly");
+		assert.include(mainRepair, "Exit `4` means the linkage is absent");
 	});
 });
