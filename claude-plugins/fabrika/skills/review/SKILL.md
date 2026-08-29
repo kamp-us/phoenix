@@ -164,6 +164,14 @@ reporting on its own trigger. Treat that `16` as a blocked read, not a verdict �
 runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
 be read`, naming the `16`, rather than grading around it.
 
+**"At the head" names how those runs are keyed, not the tree they judged.** A `pull_request`
+workflow builds `refs/pull/<n>/merge` — this head merged into base — and labels every run it
+produces with the head SHA, so the read is at-head by key and merge-ref by content. That gap is why
+a red here can be real while the head blob is clean, and why disproving one takes a reproduction
+against that ref rather than a look at the head. The full statement, its citation and the worked
+example live in [`build`'s Repair section](../build/SKILL.md#repair); do not re-derive them, and
+never grade a red as the gate misreading its own SHA.
+
 **A queued aggregator is waited out by the verb, never by you on a timer.** You are normally spawned
 minutes after the push, so a `pending` is the ordinary read, not a pathology — and the wait it opens
 is exactly the gap

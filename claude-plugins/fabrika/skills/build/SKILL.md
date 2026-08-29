@@ -471,6 +471,31 @@ UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. T
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.
 
+**A CI red is produced from the merge ref, not from your head — reproduce it there before you call
+it false.** A `pull_request`-triggered workflow runs with `GITHUB_REF` set to `refs/pull/<n>/merge`
+and `GITHUB_SHA` set to that merge commit — the prospective merge of your head into the base — so a
+plain `actions/checkout` builds the *merged* tree while every check run it produces is labelled with
+the head SHA
+([GitHub, "Events that trigger workflows", `pull_request`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)).
+A job that pins `ref:` to the head sha is the exception and reads what its name says. So a failure
+you cannot reproduce at the head is **not thereby a false finding**: fetch the merge ref, reproduce
+it there, and only a failure absent from *that* tree is one to report.
+
+```bash
+git fetch origin refs/pull/<n>/merge && git checkout FETCH_HEAD
+```
+
+That ref is recomputed as base moves, so the tree you fetch is the merge of your head with base
+*now* — the same tree CI used only if nothing landed since, and absent entirely while the PR is
+conflicted. Neither case makes the red false; both mean you have not reproduced it yet.
+
+The shape that puts you here carries no textual conflict to warn you: a branch renames a symbol
+while main adds call sites on the old name, git merges both sides clean, and the merged file defines
+the new name and calls the old one. It is invisible in the head blob and invisible in the diff, and
+it exists only in the merge ref. Epic #6629's PR #6690 spent a whole repair round filing that
+correct FAIL as a gate misreading its own SHA
+([#6794](https://github.com/kamp-us/phoenix/issues/6794)).
+
 **A founder can clear one more round, and you read that through the same field.** The clearance is
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
 so `capReached: false` beside a `clearances` row *is* the granted round and you simply build it. What
