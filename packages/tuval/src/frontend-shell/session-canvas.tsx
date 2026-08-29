@@ -73,7 +73,13 @@ export function SessionNodeCard({data, selected}: NodeProps<SessionCanvasNode>) 
 			<Handle id="relation-in" type="target" position={Position.Left} isConnectable={false} />
 			<header className="session-node__header">
 				<strong className="session-node__title">{data.title}</strong>
-				<span className="session-node__status" data-status={status.kind}>
+				<span
+					className="session-node__status"
+					data-status={status.kind}
+					role="status"
+					aria-live="polite"
+					aria-atomic="true"
+				>
 					{statusIcon(status.kind)}
 					{status.label}
 				</span>

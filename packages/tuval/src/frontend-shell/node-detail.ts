@@ -103,9 +103,11 @@ const metadataTimestamp = (updatedAt: number): string =>
 export const nodeStatus = (node: LineageNode, attachment: NodeAttachment | null): NodeStatus => {
 	const liveSession = attachment?.session;
 	if (
-		attachment?.connection === "disconnected" ||
-		liveSession?._tag === "disconnected" ||
-		liveSession?.completion === "disconnected"
+		liveSession !== null &&
+		liveSession !== undefined &&
+		(attachment?.connection === "disconnected" ||
+			liveSession._tag === "disconnected" ||
+			liveSession.completion === "disconnected")
 	) {
 		return {
 			kind: "disconnected",

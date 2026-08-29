@@ -388,6 +388,10 @@ test("the existing tuval process renders the React Flow pan and zoom canvas", as
 	await expect(nodes).toHaveCount(2);
 	await expect(page.locator("#status-label")).toHaveText("Bağlı");
 	await expect(page.locator("aside")).toHaveCount(0);
+	const firstNodeStatus = nodes.first().getByRole("status");
+	await expect(firstNodeStatus).toHaveText(/Kayıtlı görünüm/);
+	await expect(firstNodeStatus).toHaveAttribute("aria-live", "polite");
+	await expect(firstNodeStatus).toHaveAttribute("aria-atomic", "true");
 
 	const pane = page.locator(".react-flow__pane");
 	const viewport = page.locator(".react-flow__viewport");
@@ -410,6 +414,9 @@ test("the existing tuval process renders the React Flow pan and zoom canvas", as
 	await page.keyboard.press("Enter");
 	await expect(page.locator("aside")).toHaveCount(1);
 	await expect(page.getByRole("alert")).toContainText("Bağlantı kesildi");
+	await expect(firstNodeStatus).toHaveText(/Kayıtlı görünüm/);
+	await expect(firstNodeStatus).not.toContainText("Bağlantı kesildi");
+	await expect(nodes.first()).not.toContainText("Son canlı görünüm korunuyor");
 	expect(errors).toEqual([]);
 });
 
@@ -918,9 +925,14 @@ test("all four persisted detail levels preserve the live React Flow interaction 
 	}
 
 	await page.locator(".detail-setting").getByText("Canlı", {exact: true}).click();
+	const stalledNode = page.locator(`[data-id="${stalled.identity}"]`);
+	const stalledStatus = stalledNode.getByRole("status");
+	await expect(stalledStatus).toHaveText(/Kayıtlı görünüm/);
 	await selectNode(page, stalled.identity);
-	await expect(page.locator(`[data-id="${stalled.identity}"]`)).toContainText("Protokol canlı");
-	await expect(page.locator(`[data-id="${stalled.identity}"]`)).toContainText("Takıldı");
+	await expect(stalledNode).toContainText("Protokol canlı");
+	await expect(stalledStatus).toHaveText(/Takıldı/);
+	await expect(stalledStatus).toHaveAttribute("aria-live", "polite");
+	await expect(stalledStatus).toHaveAttribute("aria-atomic", "true");
 	await expect(page.locator("#chat-title")).toHaveText("detail-stalled");
 	await page.locator(".chat-pane").evaluate(async (element) => {
 		await Promise.all(element.getAnimations().map((animation) => animation.finished));

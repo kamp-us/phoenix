@@ -3,6 +3,7 @@
 import {cleanup, render, waitFor} from "@testing-library/react";
 import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from "vitest";
 import {toLineageEdges, toSessionNodes} from "../../src/frontend-shell/canvas-adapter.js";
+import type {NodeAttachment} from "../../src/frontend-shell/node-detail.js";
 import {SessionCanvas} from "../../src/frontend-shell/session-canvas.js";
 import type {LineageProjection} from "../../src/shared/lineage.js";
 import type {AttachedLiveSession, DisconnectedLiveSession} from "../../src/shared/live-session.js";
@@ -201,6 +202,52 @@ describe("SessionCanvas", () => {
 		}
 	});
 
+	it("announces meaningful node status changes through a polite atomic status", async () => {
+		const attached: AttachedLiveSession = {
+			_tag: "attached",
+			sessionId: "root",
+			revision: 7,
+			phase: "retry",
+			model: {provider: "anthropic", id: "claude-sonnet"},
+			thinkingLevel: "high",
+			completion: "running",
+			transcript: [],
+			lastEventSequence: 12,
+			connection: "connected",
+			ownership: "exclusive",
+		};
+		const canvas = (attachments?: ReadonlyMap<string, NodeAttachment>) => (
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={toSessionNodes(projection, {
+						detailLevel: "live",
+						...(attachments === undefined ? {} : {attachments}),
+					})}
+					edges={toLineageEdges(projection)}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+				/>
+			</div>
+		);
+		const view = render(canvas());
+		await waitFor(() =>
+			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3),
+		);
+		const status = view.container.querySelector<HTMLElement>(
+			'[data-id="pi:root"] .session-node__status',
+		);
+		expect(status?.getAttribute("role")).toBe("status");
+		expect(status?.getAttribute("aria-live")).toBe("polite");
+		expect(status?.getAttribute("aria-atomic")).toBe("true");
+		expect(status?.textContent).toContain("Kayıtlı görünüm");
+
+		view.rerender(
+			canvas(new Map([[node("root").id, {connection: "attached", session: attached}]])),
+		);
+		await waitFor(() => expect(status?.textContent).toContain("Takıldı"));
+	});
+
 	it("labels disconnected and unknown unattached state without claiming protocol-live data", async () => {
 		const disconnected: DisconnectedLiveSession = {
 			_tag: "disconnected",
@@ -231,6 +278,7 @@ describe("SessionCanvas", () => {
 					nodes={toSessionNodes(unknownProjection, {
 						detailLevel: "full",
 						attachments: new Map([
+							[node("spawned").id, {connection: "disconnected", session: null}],
 							[node("forked").id, {connection: "disconnected", session: disconnected}],
 						]),
 					})}
@@ -244,6 +292,10 @@ describe("SessionCanvas", () => {
 		await waitFor(() =>
 			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3),
 		);
+		const refusedCard = view.container.querySelector<HTMLElement>('[data-id="pi:spawned"]');
+		expect(refusedCard?.textContent).toContain("Kayıtlı görünüm");
+		expect(refusedCard?.textContent).toContain("Canlı bağlantı kurulmadı");
+		expect(refusedCard?.textContent).not.toContain("Son canlı görünüm korunuyor");
 		const disconnectedCard = view.container.querySelector<HTMLElement>('[data-id="pi:forked"]');
 		expect(disconnectedCard?.textContent).toContain("Bağlantı kesildi");
 		expect(disconnectedCard?.textContent).not.toContain("Protokol canlı");
