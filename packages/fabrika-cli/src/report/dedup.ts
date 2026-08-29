@@ -9,12 +9,40 @@
  * tokenizes to nothing was never compared; a query that tokenizes to one generic term is AND-joined
  * into a match on everything or nothing, and neither carries information about *this* observation.
  * Reporting either as `none` is the degenerate-silence trap this token exists to close.
+ *
+ * **Two token lists, not one.** {@link tokenize} produces the ranking list, capped at
+ * {@link MAX_TOKENS}; {@link searchTokens} narrows it to the {@link SEARCH_TOKENS} prefix the
+ * AND-joined search query gets. The floor above is evaluated against the ranking list, so narrowing
+ * for search never pushes a usable query into `indeterminate`.
  */
 
 /** Beneath this many surviving tokens a run carries no information about the query. */
 export const TOKEN_FLOOR = 2;
-/** GitHub AND-joins search terms, so an over-long query matches nothing. */
+/** How many tokens ranking may score against — more tokens make {@link scoreTitle} sharper. */
 export const MAX_TOKENS = 12;
+/**
+ * How many of those tokens reach the AND-joined search query.
+ *
+ * Ranking and search pull opposite ways: `scoreTitle` counts how many query tokens a title carries,
+ * so more is sharper, while GitHub AND-joins the free-text terms, so every added token narrows the
+ * result set. One list served both jobs until #7213, and at twelve AND-joined terms the search half
+ * returned zero rows on essentially every real call — a `none` resting on one source.
+ *
+ * Four is measured, not guessed. Replaying #7213's reported query against `kamp-us/phoenix` on
+ * 2026-08-28: 3 tokens → 17 hits, 4 → 5 hits with the missed issue #7051 ranked first, 5 → 1 hit
+ * and #7051 gone. The collapse lands between 4 and 5, so 4 is the widest slice that still
+ * discriminates.
+ */
+export const SEARCH_TOKENS = 4;
+
+/**
+ * The prefix of a ranking token list that is sent to the AND-joined search query.
+ *
+ * `tokenize` keeps first-seen order, so the slice is the caller's own leading keywords — the ones a
+ * filer writes first and the ones most likely to name the observation.
+ */
+export const searchTokens = (tokens: ReadonlyArray<string>): ReadonlyArray<string> =>
+	tokens.slice(0, SEARCH_TOKENS);
 export const DEFAULT_LIMIT = 20;
 /** What a shared prefix must reach to count as a match. */
 const PREFIX = 5;

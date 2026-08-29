@@ -43,6 +43,13 @@ const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options>
 
 const labelsOk = [LABELS, labelSet("status:needs-triage", "type:bug", "p0")] as const;
 
+/** #7213's reported query, whose twelve AND-joined terms matched nothing. */
+const LONG_QUERY =
+	"review render seed authenticated notification rows state suffix reserved unimplemented exit capture";
+
+const searchQuery = (requests: ReadonlyArray<string>): string =>
+	decodeURIComponent(requests.find((call) => SEARCH.test(call)) ?? "");
+
 describe("runDedup", () => {
 	it("exits 0 with a ranked candidates list", async () => {
 		const out = await run([
@@ -159,6 +166,73 @@ describe("runDedup", () => {
 		expect(payload.searchCount).toBe(0);
 		expect(payload.tokens).toContain("retry");
 		expect(out.stderr.join("")).not.toContain('"outcome"');
+	});
+
+	it("sends ONLY the leading slice to the AND-joined search query (#7213)", async () => {
+		const seams = fakeSeams([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]]);
+		await Effect.runPromise(Effect.provide(runDedup({...options, query: LONG_QUERY}), seams.layer));
+		const sent = searchQuery(seams.requests);
+		expect(sent).toContain("is:open review render seed authenticated");
+		expect(sent).not.toContain("notification");
+	});
+
+	it("still ranks against the FULL token list, so narrowing does not blunt scoring", async () => {
+		const out = await run(
+			[labelsOk, [QUEUE, issueRows([4312, LONG_QUERY])], [SEARCH, searchHits()]],
+			{query: LONG_QUERY},
+		);
+		expect(out.stdout).toContain("4312\tqueue\t12\t");
+	});
+
+	it("retrieves a search row an over-long AND-join would have lost", async () => {
+		// Scripted to answer only the NARROWED query: a twelve-term send falls through to the
+		// unscripted 500 and refuses, so the row can only be reached by the slice.
+		const narrowOnly = /search\/issues\?q=[^"]*authenticated(?!.*notification)/;
+		const out = await run(
+			[
+				labelsOk,
+				[QUEUE, issueRows()],
+				[
+					narrowOnly,
+					searchHits([7051, "review-ui default-state captures leave interaction states unjudged"]),
+				],
+			],
+			{query: LONG_QUERY},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe("candidates");
+		expect(out.stdout).toContain("7051\tsearch\t");
+	});
+
+	it("names the tokens actually SENT to search on the scope line when they differ", async () => {
+		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]], {
+			query: LONG_QUERY,
+		});
+		expect(out.stderr[0]).toContain("sent to search: review, render, seed, authenticated");
+	});
+
+	it("says nothing about a narrowed send when the whole list went to search", async () => {
+		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]], {
+			query: "retry helper abort reason",
+		});
+		expect(out.stderr[0]).not.toContain("sent to search");
+	});
+
+	it("--json carries the two lists apart", async () => {
+		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]], {
+			query: LONG_QUERY,
+			json: true,
+		});
+		const payload = JSON.parse(out.stdout);
+		expect(payload.tokens).toHaveLength(12);
+		expect(payload.searchTokens).toEqual(["review", "render", "seed", "authenticated"]);
+	});
+
+	it("evaluates the indeterminate floor against the RANKING list, never the narrowed slice", async () => {
+		const out = await run([labelsOk, [QUEUE, issueRows()], [SEARCH, searchHits()]], {
+			query: LONG_QUERY,
+		});
+		expect(out.stdout.split("\n")[0]).toBe("none");
 	});
 
 	it("says on stderr when the cap truncated the list", async () => {
