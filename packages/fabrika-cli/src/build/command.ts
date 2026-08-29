@@ -37,6 +37,7 @@ import {runPick} from "./pick-verb.ts";
 import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
 import {runReap} from "./reap-verb.ts";
+import {runResumeChild} from "./resume-child-verb.ts";
 import {runRetire} from "./retire-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
@@ -348,6 +349,40 @@ const branch = leafCommand(
 	Command.withShortDescription("Cut or resume the lane's branch off a freshly fetched base."),
 	Command.withDescription(
 		"Cut (or resume) the lane's nonce branch off a FRESHLY FETCHED base, never a stale local ref. Prints the checked-out branch name: build/<number>-<slug>-<nonce> in create mode, build/pr-<pr>-<nonce> in resume mode, where <nonce> is the first 8 hex of --token's UUID — the token THIS lane holds, proven against the live claim before the name is composed, so a lane cannot cut a branch on a nonce that holds nothing (#6037). The branch name IS the lane record — there is no stamp file. --resume-lane is resume mode for an epic child, which opens no PR (ADR 0285): it finds the one local branch this grammar says was cut for <number>, RE-KEYS it to this claim's nonce and checks it out, so the child's commits carry forward and exactly one branch keeps naming it — cutting a second is the underivable range lane prove refuses on (#6386). It fetches nothing, takes no --slug, and re-keys nothing when the name already matches. Exits 1 (--token is not a claim token of this session), 7 (--resume's PR is proven absent, closed or merged, or --resume-lane found no local branch cut for <number>), 10 (--slug is not kebab-case, exceeds 5 words, or is flag-shaped, or --resume-lane was combined with --resume or --slug), 11 (the fetch failed, the tree root or claim state could not be read, or --resume-lane found several candidate branches or could not re-key the one it found — the prior lane's worktree is likely still on it, which only an operator can release), 15 (proven: the claim is held by another lane). Example: fabrika build branch 4312 --slug editor-focus-loss --token build:s-9f2e:c1a4d6f8-…",
+	),
+);
+
+const resumeChild = leafCommand(
+	"resume-child",
+	{
+		number: Argument.integer("number").pipe(
+			Argument.withDescription("the epic child whose standing-FAIL repair lane this opens"),
+		),
+		token: tokenFlag.pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the repair claim this lane already holds, when it is re-running — the claim step then answers off the standing marker and writes nothing; omit it on a first entry, but NOT on a re-run, where a tokenless claim mints a second marker and refuses on 15",
+			),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({number, token, repo}) {
+		yield* emit(
+			yield* runResumeChild({
+				issue: number,
+				token: Option.getOrNull(token),
+				repo: Option.getOrNull(repo),
+				cwd: process.cwd(),
+				env: process.env,
+				uuid: randomUUID(),
+				at: new Date().toISOString(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Open an epic child's standing-FAIL repair lane in one operation."),
+	Command.withDescription(
+		'Open the repair lane of an epic child carrying a standing FAIL, running the five ordered steps as one operation so their order is not a builder\'s to preserve (#7187): "build claim <n> --resume" (which refuses on 31 unless a gate holds a standing FAIL over the child), "build confirm", the UNARMED "build tree --require-clean" over the generic checkout, "build branch <n> --resume-lane" — the one mutation, which re-keys the single prior build/<n>-<slug>-<nonce> branch to this claim\'s nonce and checks it out — and finally the ARMED "build tree --issue <n>". Each step is the verb itself, so its refusal keeps its own exit code and its own words, and no step after a refusal runs; the branch is re-keyed only once the claim and cleanliness steps have passed. Prints {"answer":"resumed","issue":n,"token":"…","branch":"build/<n>-<slug>-<nonce>","root":"<absolute>","claim":{"number":n,"nonce":"…"}}. On any stop past the claim it prints the won token and the exact continuation, "fabrika build resume-child <n> --token <token>"; that is the whole way to continue the same lane, and a re-run WITHOUT --token mints a second claim, loses the earliest-wins tiebreak to this lane\'s own prior one and refuses on 15. Exits are the stopping step\'s: 7 (the child is absent or closed, or no local branch was cut for it), 10 (a composed usage refusal), 11 (a read is UNKNOWN, several prior branches exist, or another worktree holds the branch — an operator\'s act to release), 13 (the generic checkout is dirty), 14 (the armed proof reads the wrong lane), 15 (the claim is foreign), 20/21/30/32 (the admission test), 31 (the child holds no standing FAIL, so there is nothing to repair). Example: fabrika build resume-child 7162',
 	),
 );
 
@@ -729,6 +764,7 @@ export const buildCommand = Command.make("build").pipe(
 		reap,
 		issue,
 		branch,
+		resumeChild,
 		scratch,
 		commit,
 		check,

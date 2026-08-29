@@ -406,8 +406,8 @@ nothing (#6084).
 
 **Name the cause when your `STOPPED` has one.** `--cause <token>` rides a `STOPPED` and nothing
 else, because only a park has a cause to be gone. The one token that names a stop of yours is
-`worktree-holds-branch`, and it belongs on the `STOPPED` you take when
-`build branch --resume-lane` refuses at exit `11` — another worktree still holds the lane branch:
+`worktree-holds-branch`, and it belongs on the `STOPPED` you take when `build resume-child` stops at
+its `resume-lane` step on exit `11` — another worktree still holds the lane branch:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token STOPPED --cause worktree-holds-branch
@@ -517,27 +517,38 @@ re-implements work a reviewer already graded — which cost two whole lanes on e
 of them produced two divergent implementations of a single criterion (#6386). Only the way out
 differs by polarity, and the refusal line says which one you are on.
 
-On a standing `FAIL` there is a repair to take, and the route the refusal names is the whole repair:
+On a standing `FAIL` there is a repair to take, and **one verb is the whole entry** — do not assemble
+it out of the pieces:
 
 ```bash
-fabrika build claim $issue_or_pr_number --resume
+fabrika build resume-child $issue_or_pr_number
 fabrika build verdicts --issue $issue_or_pr_number
-fabrika build confirm $issue_or_pr_number --token <claim-token>
-fabrika build tree --require-clean
-fabrika build branch $issue_or_pr_number --resume-lane --token <claim-token>
-fabrika build tree --issue $issue_or_pr_number
 ```
 
-That order separates the generic isolated checkout from the lane branch it does not stand on yet.
-`confirm` proves the repair claim before the branch mutation, and `tree --require-clean` proves the
-generic checkout without arming lane identity. Only `--resume-lane` may re-key and check out the
-prior branch. After it succeeds, the armed `tree --issue` proof checks the child number, the current
-repair-claim nonce, and live claim ownership. Re-run that armed proof before every later git
-mutation; never move it ahead of `--resume-lane`, and never weaken wrong-lane exit `14` to admit a
-generic harness branch.
+`resume-child` runs the five ordered steps itself: the `--resume` claim, `confirm`, the **unarmed**
+`tree --require-clean` over the generic isolated checkout, `branch --resume-lane` — the one mutation,
+which re-keys the prior child branch to this claim's nonce and checks it out — and finally the
+**armed** `tree --issue`, which checks the child number, the repair-claim nonce and live claim
+ownership on the branch you are now standing on. Its answer carries the `token` every later verb of
+this lane takes as `--token` and the `branch` it left you on. Then `verdicts --issue` is your own
+read: it prints the findings this round is for, and it changes nothing.
 
-`--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` it
-refuses on `31` too, so the flag can never be typed past the fence. `--resume-lane` **re-keys** the
+**The order is the tool's now, not yours** (#7187). A resumed builder read this same section when it
+stated the order in prose, ran the armed proof before the checkout anyway, refused its own generic
+branch on exit `14` and parked the whole epic without changing a file. So do not type the steps
+individually to "check" one of them, and never move the armed proof ahead of the checkout: there is
+nothing left here for an ordering choice to get wrong. A refusal from `resume-child` is the stopping
+step's own — it names which step stopped, keeps that verb's code and words, and runs nothing after
+it, so read the code off the exit-status table
+(`fabrika wire doc-section --heading "build resume-child" < <skill-base>/contract.md`) and route on
+that. On any stop
+past the claim, the repair claim stands, and the stop line prints the token it stands under: continue
+that same lane with `fabrika build resume-child <n> --token <token>`. **The token is not optional on a
+re-run** — a bare `resume-child <n>` over a held claim mints a second one, loses the earliest-wins
+tiebreak to your own prior claim and refuses on `15`.
+
+`--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` the claim
+step refuses on `31`, so the entry can never be run past the fence. `--resume-lane` **re-keys** the
 branch the prior lane built on to this claim's nonce instead of cutting a second one — two branches
 carrying one child's commits is the range `lane prove` calls underivable, and that refusal cannot be
 cleared from inside a worktree. It refuses on `7` when no branch in this clone's refs was cut for the
