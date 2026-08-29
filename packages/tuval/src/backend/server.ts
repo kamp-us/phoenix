@@ -10,6 +10,7 @@ import {
 } from "@kampus/fate-effect";
 import {Effect, Fiber, FileSystem, Layer, Queue, Schema, Stream} from "effect";
 import {TuvalFateServerLive} from "./fate.js";
+import {LineageIndexLive, type LineageIndexOptions} from "./lineage.js";
 import {
 	LiveSession,
 	type LiveSessionService,
@@ -29,6 +30,7 @@ export class StartupFailure extends Schema.TaggedErrorClass<StartupFailure>()(
 
 export interface StartTuvalOptions extends PiDiscoveryOptions {
 	readonly port?: number;
+	readonly lineage?: LineageIndexOptions;
 	readonly openBrowser?: (url: string) => Effect.Effect<void, unknown>;
 	readonly staticAsset?: string;
 	readonly log?: (line: string) => void;
@@ -252,8 +254,23 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 				));
 	yield* Effect.addFinalizer(() => liveSession.dispose().pipe(Effect.ignore));
 
-	const serviceLayers = Layer.merge(
-		PiDiscoveryLive(options),
+	const discoveryOptions = {
+		...options,
+		...(options.protocolTransport !== undefined || options.liveSessionTransport === undefined
+			? {}
+			: {protocolTransport: options.liveSessionTransport}),
+	};
+	const discoveryLayer = PiDiscoveryLive(discoveryOptions);
+	const lineageOptions = {
+		...options.lineage,
+		...(options.lineage?.sessionRoots !== undefined || options.sessionRoots === undefined
+			? {}
+			: {sessionRoots: options.sessionRoots}),
+	};
+	const lineageLayer = LineageIndexLive(lineageOptions).pipe(Layer.provide(discoveryLayer));
+	const serviceLayers = Layer.mergeAll(
+		discoveryLayer,
+		lineageLayer,
 		Layer.succeed(LiveSession, liveSession),
 	);
 	const fateLayer = TuvalFateServerLive.pipe(Layer.provide(serviceLayers));

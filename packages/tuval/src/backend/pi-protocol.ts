@@ -110,27 +110,30 @@ export const makeDiscoveryTransport =
 		};
 	};
 
+export const listSessionsFromTransport = Effect.fn("PiProtocol.listSessionsFromTransport")(
+	function* (transportFactory: ByteTransportFactory) {
+		return yield* Effect.acquireUseRelease(
+			Effect.tryPromise({
+				try: () => PiClient.connect({transportFactory}),
+				catch: (cause) => new PiProtocolError({cause}),
+			}),
+			(client) =>
+				Effect.tryPromise({
+					try: () => client.listSessions(),
+					catch: (cause) => new PiProtocolError({cause}),
+				}),
+			(client) =>
+				Effect.tryPromise({
+					try: () => client.dispose(),
+					catch: (cause) => new PiProtocolError({cause}),
+				}).pipe(Effect.ignore),
+		);
+	},
+);
+
 export const listSessionsThroughProtocol = Effect.fn("PiProtocol.listSessions")(function* (
 	sessions: ReadonlyArray<SessionMetadata>,
 	options?: ProtocolTransportOptions,
 ) {
-	return yield* Effect.acquireUseRelease(
-		Effect.tryPromise({
-			try: () =>
-				PiClient.connect({
-					transportFactory: makeDiscoveryTransport(sessions, options),
-				}),
-			catch: (cause) => new PiProtocolError({cause}),
-		}),
-		(client) =>
-			Effect.tryPromise({
-				try: () => client.listSessions(),
-				catch: (cause) => new PiProtocolError({cause}),
-			}),
-		(client) =>
-			Effect.tryPromise({
-				try: () => client.dispose(),
-				catch: (cause) => new PiProtocolError({cause}),
-			}).pipe(Effect.ignore),
-	);
+	return yield* listSessionsFromTransport(makeDiscoveryTransport(sessions, options));
 });

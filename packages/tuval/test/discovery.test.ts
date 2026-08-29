@@ -3,8 +3,9 @@ import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, FileSystem, Path} from "effect";
 import * as Schema from "effect/Schema";
-import {discoverPiSessions} from "../src/backend/pi-discovery.js";
-import {defaultSessionRoots} from "../src/backend/pi-home.js";
+import {discoverPiSessionMetadata, discoverPiSessions} from "../src/backend/pi-discovery.js";
+import {defaultSessionRoots, sessionIdFromFilename} from "../src/backend/pi-home.js";
+import {makeDiscoveryTransport} from "../src/backend/pi-protocol.js";
 import {DiscoveryOutcome} from "../src/shared/discovery.js";
 
 const decodeOutcome = Schema.decodeUnknownSync(DiscoveryOutcome);
@@ -60,6 +61,34 @@ describe("pi home discovery", () => {
 				}),
 		);
 
+		it.effect("distinguishes protocol metadata availability, absence, and failure", () =>
+			Effect.gen(function* () {
+				const authoritative = [
+					{
+						id: "child",
+						createdAt: 2,
+						parentSessionId: "protocol-parent",
+						cwd: "/tmp/project",
+					},
+				];
+				assert.deepEqual(yield* discoverPiSessionMetadata(), {_tag: "not-configured"});
+				assert.deepEqual(
+					yield* discoverPiSessionMetadata({
+						protocolTransport: makeDiscoveryTransport(authoritative),
+					}),
+					{_tag: "available", sessions: authoritative},
+				);
+				assert.deepEqual(
+					yield* discoverPiSessionMetadata({
+						protocolTransport: makeDiscoveryTransport([], {
+							failWith: new Error("metadata transport unavailable"),
+						}),
+					}),
+					{_tag: "failed", message: "metadata transport unavailable"},
+				);
+			}),
+		);
+
 		it.effect("falls back to the OS home when pi directory variables are absent", () =>
 			Effect.gen(function* () {
 				const path = yield* Path.Path;
@@ -96,5 +125,19 @@ describe("pi home discovery", () => {
 				});
 			}),
 		);
+	});
+
+	it("derives standard identity from the final filename on POSIX and Windows paths", () => {
+		assert.strictEqual(
+			sessionIdFromFilename("/tmp/parent_with_underscore/2026-08-27T12-00-00-000Z_child.jsonl"),
+			"child",
+		);
+		assert.strictEqual(
+			sessionIdFromFilename(
+				"C:\\Users\\parent_with_underscore\\2026-08-27T12-00-00-000Z_child.jsonl",
+			),
+			"child",
+		);
+		assert.isUndefined(sessionIdFromFilename("C:\\Users\\parent_with_underscore\\session.jsonl"));
 	});
 });

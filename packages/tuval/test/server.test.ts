@@ -6,13 +6,16 @@ import {
 	ClientMessageDecoder,
 	encodeServerMessage,
 	PROTOCOL_VERSION,
+	type SessionMetadata,
 	type SessionSnapshot,
 } from "@earendil-works/pi-protocol";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Exit, Fiber, FileSystem, Path} from "effect";
 import * as Latch from "effect/Latch";
+import {makeDiscoveryTransport} from "../src/backend/pi-protocol.js";
 import {startTuval, TUVAL_HOST} from "../src/backend/server.js";
+import {sessionIdentity} from "../src/shared/discovery.js";
 import {TestFailure, tryPromise} from "./test-effect.js";
 
 const fixture = Effect.fn("test.fixture")(function* () {
@@ -185,6 +188,50 @@ describe("Tuval local server", () => {
 				assert.deepEqual(fate, {
 					version: 1,
 					results: [{id: "discovery", ok: true, data: {_tag: "empty", sessions: []}}],
+				});
+			}),
+		);
+
+		it.effect("uses configured live-protocol session metadata as authoritative lineage", () =>
+			Effect.gen(function* () {
+				const {root, asset} = yield* fixture();
+				const path = yield* Path.Path;
+				const sessions: ReadonlyArray<SessionMetadata> = [
+					{id: "protocol-parent", createdAt: 1, cwd: "/tmp/parent"},
+					{
+						id: "protocol-child",
+						createdAt: 2,
+						parentSessionId: "protocol-parent",
+						cwd: "/tmp/child",
+					},
+				];
+				const server = yield* startTuval({
+					staticAsset: asset,
+					sessionRoots: [path.join(root, "missing-sessions")],
+					lineage: {
+						runRoots: [path.join(root, "missing-runs")],
+						storePath: path.join(root, "lineage.json"),
+					},
+					liveSessionTransport: makeDiscoveryTransport(sessions),
+					openBrowser: () => Effect.void,
+				});
+				const response = (yield* tryPromise(() =>
+					fetch(`${server.url}/fate`, {
+						method: "POST",
+						headers: {"content-type": "application/json"},
+						body: JSON.stringify({
+							version: 1,
+							operations: [{id: "lineage", kind: "query", name: "lineage", select: []}],
+						}),
+					}).then((value) => value.json()),
+				)) as {
+					results: Array<{data?: {graph?: {edges?: Array<Record<string, unknown>>}}}>;
+				};
+				assert.deepInclude(response.results[0]?.data?.graph?.edges?.[0], {
+					kind: "fork",
+					parent: sessionIdentity("protocol-parent"),
+					child: sessionIdentity("protocol-child"),
+					source: "protocol",
 				});
 			}),
 		);

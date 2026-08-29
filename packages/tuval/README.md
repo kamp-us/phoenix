@@ -7,9 +7,9 @@ Tuval is a localhost-only workspace for discovering and opening installed
 
 | Path | Responsibility |
 | --- | --- |
-| `src/backend/` | Loopback HTTP server, pi discovery, and PiClient live-session leases |
+| `src/backend/` | Loopback HTTP server, pi discovery, durable lineage indexing, and PiClient live-session leases |
 | `src/frontend-shell/` | Static placeholder served by the backend |
-| `src/shared/` | Frontend-independent discovery and live-session schemas |
+| `src/shared/` | Frontend-independent discovery, lineage, and live-session schemas |
 
 ## Runtime interface
 
@@ -20,7 +20,7 @@ then opens that URL in the default browser unless browser opening is disabled.
 | --- | --- |
 | `GET /health` | Report server readiness |
 | `GET /` | Serve the static shell |
-| `POST /fate` | Run Effect-native discovery and live-session queries or mutations |
+| `POST /fate` | Run Effect-native discovery, lineage, and live-session queries or mutations |
 | `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
 | `--port <port>` | Bind a fixed port instead of selecting an available port |
 | `--no-open` | Start without opening a browser |
@@ -28,7 +28,10 @@ then opens that URL in the default browser unless browser opening is disabled.
 
 Live attachment requires a pi server Unix socket supplied through `--pi-socket`. Session discovery
 reads `PI_CODING_AGENT_SESSION_DIR` when set. Otherwise it reads the `sessions` directory beneath
-`PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`.
+`PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`. Lineage reads pi-subagents lifecycle
+artifacts from the sibling `async-subagent-runs` and `nested-subagent-runs` directories beneath
+`PI_SUBAGENTS_TEMP_ROOT` when set. Otherwise it uses pi-subagents' scoped temp root: uid first, then
+username, home directory, and finally the shared scope when no user identity is available.
 
 ## Discovery contract
 
@@ -46,6 +49,54 @@ outcomes.
 
 Filesystem and framed-CBOR access sit behind the `PiDiscovery` Effect service. A malformed session
 entry is reported as a source problem without discarding sessions that were read successfully.
+
+## Lineage contract
+
+The package exports the schema-backed graph types from `tuval/lineage`. The `lineage` fate query
+projects session nodes, `spawn` and `fork` edges, resume-continuity observations, and isolated source
+problems. `LineageIndex` scans the same configured session roots as discovery and joins complete
+run/session pairs from both pi-subagents lifecycle directories to retained session headers. Standard
+Pi session files own identity through the timestamped final filename segment on POSIX and Windows.
+A generic nested `run-0/session.jsonl` is admitted only when a complete lifecycle observation owns
+that exact path; an unmatched generic file is diagnosed instead of guessed. A sole step session may
+complete a top-level run identity; multiple steps without run ids remain unpaired.
+Completed workflow return values are opaque and never interpreted as lineage. Each malformed run
+entry is reported independently without discarding complete siblings in the same status. With
+`--pi-socket`, fork parents prefer the server's durable `SessionMetadata.parentSessionId`; when a
+successful metadata read has no parent, lineage reads only the child's bounded first header line.
+A failed metadata read remains a `protocol-unavailable` problem even when that fallback succeeds.
+An unresolved protocol or run parent is reported and does not become a spawn or continuity
+observation; a parentless observation before the first spawn-eligible run is likewise
+diagnostic-only.
+
+The normalized version-2 store lives under `~/.pi/agent/tuval/lineage.json` by default. This
+unshipped format has no migration path: version 1 and unknown versions are refused. Every direct
+run with a resolved session identity is conflict-checked and persisted before parent resolution,
+alongside wrapper and retained ownership. Direct, wrapper, and observation records retain both the
+authoritative parent-reference kind/value and the observed timestamp even when that parent cannot
+resolve. A run-valued observation parent must name retained ownership for the same resolved parent
+session, so lookup and parent-fact comparison survive lifecycle-source deletion.
+
+Every input is validated before merge, so retained finite values cannot hide a non-finite update.
+Accepted stores use total code-unit ordering for records and source files, finite forward time
+intervals, an acyclic graph, and one spawn origin strictly before each continuity observation by
+`(observedAt, runId)`. One run cannot be both origin and continuity. Load, merge, and atomic rename
+run under a same-host process-shared filesystem lock. The lock directory is acquired with a
+non-recursive directory create, so a visible generation is never replaced; owner metadata is written
+before protected work. An `AlreadyExists` observation remains contention even when the prior owner
+releases before inspection, so acquisition retries within its wait budget. A contender recovers an
+owner only when Node's signal-zero probe proves that exact same-host pid absent. Live, remote,
+ownerless, malformed, and unknown generations remain held until an operator resolves them. Recovery
+atomically quarantines the dead generation. Release moves and removes only its own token-matched
+generation. The store-file rename is the commit point: an ownership or fence failure
+before it returns a typed Effect error and leaves the committed bytes unchanged. A release cleanup
+failure after it cannot imply rollback; the query returns the committed graph with a serializable
+`lock-cleanup-failed` problem, logs the failure, and retains the uncertain generation for operator
+diagnosis. Because a live process cannot lose its lock, the writer's token fence immediately before
+rename remains valid through commit. Failed writes and renames remove temporary files without
+replacing the committed store.
+Reused run ids with changed sessions, timestamps, or parent facts are refused, while unresolved
+parents remain diagnostic-only.
 
 ## Live-session contract
 
