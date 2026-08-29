@@ -1,4 +1,5 @@
 {
-	"packages/fabrika-cli": "0.5.0",
-	"packages/fabrika-opencode": "0.1.0"
+	"packages/fabrika-cli": "0.6.0",
+	"packages/fabrika-opencode": "0.2.0",
+	"packages/fabrika-pi": "1.0.0"
 }
