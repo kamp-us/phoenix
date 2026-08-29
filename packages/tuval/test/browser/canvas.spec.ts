@@ -5,6 +5,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {expect, type Page, type Route, test} from "@playwright/test";
 import type {DiscoveredSession, DiscoveryOutcome} from "../../src/shared/discovery.js";
+import type {LineageProjection} from "../../src/shared/lineage.js";
 import type {AttachedLiveSession} from "../../src/shared/live-session.js";
 
 let processRoot = "";
@@ -111,11 +112,51 @@ const fulfill = (route: Route, id: string, data: unknown) =>
 		body: JSON.stringify(fateEnvelope(id, data)),
 	});
 
+const lineageProjection = (sessions: ReadonlyArray<DiscoveredSession>): LineageProjection => {
+	const unique = [...new Map(sessions.map((value) => [value.identity, value])).values()];
+	return {
+		graph: {
+			version: 2,
+			nodes: unique.map((value) => ({
+				id: value.identity,
+				piSessionId: value.piSessionId,
+				createdAt: value.createdAt,
+				updatedAt: value.updatedAt,
+				cwd: value.cwd,
+				sourceFiles: [value.sourceFile],
+			})),
+			edges: unique.flatMap((value) => {
+				if (value.parentSessionId === undefined) return [];
+				const parent = unique.find((candidate) => candidate.piSessionId === value.parentSessionId);
+				return parent === undefined
+					? []
+					: [
+							{
+								id: `fork:${value.identity}`,
+								kind: "fork" as const,
+								parent: parent.identity,
+								child: value.identity,
+								source: "protocol" as const,
+							},
+						];
+			}),
+			continuity: [],
+			ownership: [],
+		},
+		problems: [],
+	};
+};
+
+const sessionsFrom = (outcome: DiscoveryOutcome): ReadonlyArray<DiscoveredSession> =>
+	outcome._tag === "ready" || outcome._tag === "partial-source" ? outcome.sessions : [];
+
 const routeOutcome = async (
 	page: Page,
 	outcome: () => DiscoveryOutcome,
 	delay = 0,
+	lineage?: () => LineageProjection,
 ): Promise<void> => {
+	let latest: DiscoveryOutcome | undefined;
 	await page.route("**/fate", async (route) => {
 		const body = route.request().postDataJSON() as {
 			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
@@ -124,7 +165,16 @@ const routeOutcome = async (
 		const id = typeof operation?.id === "string" ? operation.id : "unknown";
 		if (operation?.name === "discovery") {
 			if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-			await fulfill(route, id, outcome());
+			latest = outcome();
+			await fulfill(route, id, latest);
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(
+				route,
+				id,
+				lineage?.() ?? lineageProjection(latest === undefined ? [] : sessionsFrom(latest)),
+			);
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
@@ -259,12 +309,12 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 
 	const rootNode = page.locator('[data-id="pi:flow-root"]');
 	const childNode = page.locator('[data-id="pi:flow-child"]');
-	const edge = page.locator('[data-id="relationship:pi:flow-root:pi:flow-child"]');
+	const edge = page.locator('[data-id="fork:pi:flow-child"]');
 	await expect(rootNode).toHaveAttribute("aria-label", "root oturumu, flow-root");
 	await expect(childNode).toHaveAttribute("aria-label", "child oturumu, flow-child");
 	await expect(edge).toHaveAttribute(
 		"aria-label",
-		"flow-root oturumundan flow-child oturumuna ilişki",
+		"flow-root oturumundan flow-child oturumuna dallanma ilişkisi, kaynak protocol",
 	);
 	await expect(rootNode).toHaveAttribute("tabindex", "0");
 	await expect(edge).toHaveAttribute("tabindex", "0");
@@ -284,7 +334,9 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	}
 	expect(tabLabels).toContain("root oturumu, flow-root");
 	expect(tabLabels).toContain("child oturumu, flow-child");
-	expect(tabLabels).toContain("flow-root oturumundan flow-child oturumuna ilişki");
+	expect(tabLabels).toContain(
+		"flow-root oturumundan flow-child oturumuna dallanma ilişkisi, kaynak protocol",
+	);
 
 	await rootNode.focus();
 	await page.keyboard.press("Enter");
@@ -299,6 +351,155 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	await page.keyboard.press("ArrowRight");
 	await expect(childNode).not.toHaveAttribute("style", beforeMove ?? "");
 	await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+	expect(errors).toEqual([]);
+});
+
+test("typed lineage stays readable and durable across dense problems and a conflicting refresh", async ({
+	page,
+}, testInfo) => {
+	const errors = pageErrors(page);
+	const root = session("lineage-root", "/work/root");
+	const children = Array.from({length: 12}, (_, index) =>
+		session(`lineage-child-${index + 1}`, `/work/child-${index + 1}`),
+	);
+	const sessions = [root, ...children];
+	const base = lineageProjection(sessions);
+	const projection: LineageProjection = {
+		...base,
+		graph: {
+			...base.graph,
+			edges: children.map((child, index) =>
+				index % 2 === 0
+					? {
+							id: `spawn:dense-${index + 1}`,
+							kind: "spawn" as const,
+							parent: root.identity,
+							child: child.identity,
+							runId: `dense-${index + 1}`,
+							observedAt: index + 1,
+						}
+					: {
+							id: `fork:${child.identity}`,
+							kind: "fork" as const,
+							parent: root.identity,
+							child: child.identity,
+							source: "protocol" as const,
+						},
+			),
+			continuity: [
+				{
+					id: "resume:dense-resume",
+					runId: "dense-resume",
+					session: children[0]?.identity ?? root.identity,
+					parent: root.identity,
+					observedAt: 100,
+				},
+			],
+		},
+		problems: [
+			{code: "unresolved-session", source: "run:unjoined", message: "parent is not joined"},
+			{code: "malformed-run", source: "run:broken", message: "status entry is malformed"},
+			{code: "retention-loss", source: "run:expired", message: "source artifact expired"},
+			{
+				code: "protocol-unavailable",
+				source: "pi-protocol",
+				message: "metadata transport unavailable",
+			},
+		],
+	};
+	let lineageCalls = 0;
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			lineageCalls += 1;
+			if (lineageCalls === 1) {
+				await fulfill(route, id, projection);
+			} else {
+				await route.fulfill({
+					status: 200,
+					contentType: "application/json",
+					body: JSON.stringify({
+						version: 1,
+						results: [{id, ok: false, error: {message: "conflicting lineage record"}}],
+					}),
+				});
+			}
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			const input = operation.input as {readonly sessionId: string};
+			await fulfill(route, id, {
+				_tag: "refused",
+				sessionId: input.sessionId,
+				code: "disconnected",
+				reason: "test live transport is unavailable",
+			});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: null});
+	});
+	await page.goto(tuvalUrl);
+
+	await expect(page.locator(".react-flow__node")).toHaveCount(13);
+	await expect(page.locator(".react-flow__edge")).toHaveCount(12);
+	await expect(page.locator('.canvas-legend [data-kind="spawn"]')).toContainText(
+		"Oluşturma · düz ok",
+	);
+	await expect(page.locator('.canvas-legend [data-kind="fork"]')).toContainText(
+		"Dallanma · kesik çizgi",
+	);
+	await expect(page.locator(".relationship-edge--spawn").first()).toHaveAttribute(
+		"marker-end",
+		/.+/,
+	);
+	const forkDash = await page
+		.locator(".relationship-edge--fork")
+		.first()
+		.evaluate((element) => getComputedStyle(element).strokeDasharray);
+	expect(forkDash).not.toBe("none");
+	await expect(page.locator(`[data-id="${children[0]?.identity}"]`)).toHaveAttribute(
+		"aria-label",
+		/1 devam kaydı/,
+	);
+	await expect(page.getByText("1 devam")).toBeVisible();
+	await expect(page.locator('[data-id^="resume:"]')).toHaveCount(0);
+	await expect(page.getByText("Birleşmemiş oturum")).toBeVisible();
+	await expect(page.getByText("Bozuk kayıt")).toBeVisible();
+	await expect(page.getByText("Kaynağı artık yok")).toBeVisible();
+	const capturePath = testInfo.outputPath("lineage-canvas.png");
+	await page.screenshot({path: capturePath, fullPage: true});
+	await testInfo.attach("lineage-canvas", {path: capturePath, contentType: "image/png"});
+
+	const viewport = page.locator(".react-flow__viewport");
+	const pane = page.locator(".react-flow__pane");
+	const beforePan = await viewport.getAttribute("style");
+	const paneBounds = await pane.boundingBox();
+	if (paneBounds === null) throw new Error("dense lineage pane did not render");
+	await page.mouse.move(paneBounds.x + 40, paneBounds.y + 300);
+	await page.mouse.down();
+	await page.mouse.move(paneBounds.x + 96, paneBounds.y + 332);
+	await page.mouse.up();
+	await expect(viewport).not.toHaveAttribute("style", beforePan ?? "");
+	const beforeZoom = await viewport.getAttribute("style");
+	await page.getByRole("button", {name: "Yakınlaştır"}).click();
+	await expect(viewport).not.toHaveAttribute("style", beforeZoom ?? "");
+	const edge = page.locator('[data-id="spawn:dense-1"]');
+	await edge.focus();
+	await page.keyboard.press("Enter");
+	await expect(edge).toHaveClass(/selected/);
+
+	await page.getByRole("button", {name: "Oturumları yenile"}).click();
+	await expect(page.getByText("Çakışan veya okunamayan bağ verisi")).toBeVisible();
+	await expect(page.locator(".react-flow__node")).toHaveCount(13);
+	await expect(page.locator(".react-flow__edge")).toHaveCount(12);
 	expect(errors).toEqual([]);
 });
 
@@ -524,6 +725,16 @@ for (const refreshCase of clearingRefreshCases) {
 				);
 				return;
 			}
+			if (operation?.name === "lineage") {
+				await fulfill(
+					route,
+					id,
+					lineageProjection(
+						discoveryCalls === 1 ? [selectedSession, survivor] : sessionsFrom(refreshCase.outcome),
+					),
+				);
+				return;
+			}
 			if (operation?.name === "liveSession.attach") {
 				await fulfill(route, id, {_tag: "attached", session: liveSession("refresh-selected")});
 				return;
@@ -592,6 +803,16 @@ test("discovery remains serialized through a stateful release and its live event
 			discoveryResponses += 1;
 			return;
 		}
+		if (operation?.name === "lineage") {
+			const sessions =
+				discoveryCalls === 2
+					? []
+					: discoveryCalls === 1
+						? [selectedSession]
+						: [selectedSession, newerSession];
+			await fulfill(route, id, lineageProjection(sessions));
+			return;
+		}
 		if (operation?.name === "liveSession.attach") {
 			const input = operation.input as {readonly sessionId: string};
 			attachment = input.sessionId;
@@ -658,6 +879,10 @@ test("Composer keeps its keyboard focus ring visible while the editor scrolls", 
 		const id = typeof operation?.id === "string" ? operation.id : "unknown";
 		if (operation?.name === "discovery") {
 			await fulfill(route, id, {_tag: "ready", sessions: [selectedSession]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([selectedSession]));
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
@@ -760,6 +985,10 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 			if (discoveryCalls === 2) await refreshGate;
 			await fulfill(route, id, {_tag: "ready", sessions: [alpha, beta]});
 			discoveryResponses += 1;
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([alpha, beta]));
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
@@ -896,6 +1125,10 @@ test("an original prompt completion cannot corrupt a newly attached pane after a
 			await fulfill(route, id, {_tag: "ready", sessions: [alpha, beta]});
 			return;
 		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([alpha, beta]));
+			return;
+		}
 		if (operation?.name === "liveSession.attach") {
 			const input = operation.input as {readonly sessionId: string};
 			if (input.sessionId === "prompt-alpha") alphaAttachments += 1;
@@ -967,6 +1200,10 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 		const id = typeof operation?.id === "string" ? operation.id : "unknown";
 		if (operation?.name === "discovery") {
 			await fulfill(route, id, {_tag: "ready", sessions: [alpha, beta]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([alpha, beta]));
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {

@@ -4,14 +4,15 @@ import {
 	type OnEdgesChange,
 	type OnNodesChange,
 } from "@xyflow/react";
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
 import {createRoot} from "react-dom/client";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
-import {Surface} from "../../../../apps/web/src/components/ui/Card.js";
+import {Card, Surface} from "../../../../apps/web/src/components/ui/Card.js";
 import type {DiscoveredSession, DiscoveryOutcome, DiscoveryProblem} from "../shared/discovery.js";
+import type {LineageNode, LineageProblem, LineageProjection} from "../shared/lineage.js";
 import type {LiveSessionView} from "../shared/live-session.js";
 import {
-	reconcileRelationshipEdges,
+	reconcileLineageEdges,
 	reconcileSessionNodes,
 	type SessionCanvasNode,
 	type SessionRelationshipEdge,
@@ -22,6 +23,7 @@ import {
 	decodeLiveEvent,
 	discoverSessions,
 	promptLiveSession,
+	readLineage,
 	releaseLiveSession,
 } from "./fate-client.js";
 import {SessionCanvas} from "./session-canvas.js";
@@ -159,6 +161,25 @@ const sessionsOf = (outcome: DiscoveryOutcome | null): ReadonlyArray<DiscoveredS
 	return [];
 };
 
+const discoveredSessionFrom = (node: LineageNode): DiscoveredSession => ({
+	identity: node.id,
+	piSessionId: node.piSessionId,
+	createdAt: node.createdAt,
+	updatedAt: node.updatedAt,
+	cwd: node.cwd,
+	sourceFile: node.sourceFiles.at(0) ?? "",
+});
+
+const lineageProblemLabel = (problem: LineageProblem): string => {
+	if (problem.code === "malformed-run" || problem.code === "malformed-session") {
+		return "Bozuk kayıt";
+	}
+	if (problem.code === "unresolved-session") return "Birleşmemiş oturum";
+	if (problem.code === "retention-loss") return "Kaynağı artık yok";
+	if (problem.code === "protocol-unavailable") return "Protokol kullanılamıyor";
+	return "Depo temizliği gerekli";
+};
+
 const focusCanvasNode = (identity: string): void => {
 	requestAnimationFrame(() => {
 		for (const element of document.querySelectorAll<HTMLElement>(".react-flow__node")) {
@@ -172,6 +193,8 @@ const focusCanvasNode = (identity: string): void => {
 
 export function TuvalApp() {
 	const [outcome, setOutcome] = useState<DiscoveryOutcome | null>(null);
+	const [lineage, setLineage] = useState<LineageProjection | null>(null);
+	const [lineageFailure, setLineageFailure] = useState<string | null>(null);
 	const [nodes, setNodes] = useState<ReadonlyArray<SessionCanvasNode>>([]);
 	const [edges, setEdges] = useState<ReadonlyArray<SessionRelationshipEdge>>([]);
 	const [paneSelection, setPaneSelection] = useState<PaneSelection>({_tag: "closed"});
@@ -184,7 +207,7 @@ export function TuvalApp() {
 	const streamCursor = useRef<StreamCursor | null>(null);
 	const selected = paneSelection._tag === "open" ? paneSelection.selected : null;
 	const view = discoveryView(outcome);
-	const sessions = useMemo(() => sessionsOf(outcome), [outcome]);
+	const lineageProblems = lineage?.problems ?? [];
 
 	const updatePaneForSelection = useCallback(
 		(identity: string, generation: number, update: PaneUpdate): void => {
@@ -204,14 +227,15 @@ export function TuvalApp() {
 	);
 
 	useEffect(() => {
+		if (lineage === null) return;
 		setNodes((current) =>
-			reconcileSessionNodes(current, sessions).map((node) => ({
+			reconcileSessionNodes(current, lineage).map((node) => ({
 				...node,
 				selected: node.id === selected?.identity,
 			})),
 		);
-		setEdges((current) => reconcileRelationshipEdges(current, sessions));
-	}, [selected, sessions]);
+		setEdges((current) => reconcileLineageEdges(current, lineage));
+	}, [lineage, selected]);
 
 	const applyDiscovery = useCallback(
 		async (next: DiscoveryOutcome, generation: number): Promise<void> => {
@@ -251,10 +275,10 @@ export function TuvalApp() {
 			selectionGeneration.current += 1;
 			selectedRef.current = null;
 			streamCursor.current = null;
+			setNodes((current) => current.map((node) => ({...node, selected: false})));
 			setPaneSelection({_tag: "closed"});
 			setOutcome(next);
 			requestAnimationFrame(() => {
-				ignoreSelectionChange.current = false;
 				document.querySelector<HTMLElement>("#canvas")?.focus();
 			});
 		},
@@ -266,17 +290,42 @@ export function TuvalApp() {
 		discoveryInFlight.current = true;
 		setDiscovering(true);
 		const generation = ++discoveryGeneration.current;
+		const discoveryResult = await discoverSessions().then(
+			(value) => ({status: "fulfilled", value}) as const,
+			(reason: unknown) => ({status: "rejected", reason}) as const,
+		);
+		const lineageResult = await readLineage().then(
+			(value) => ({status: "fulfilled", value}) as const,
+			(reason: unknown) => ({status: "rejected", reason}) as const,
+		);
 		try {
-			await applyDiscovery(await discoverSessions(), generation);
-		} catch (error) {
 			await applyDiscovery(
-				{
-					_tag: "transport",
-					message: error instanceof Error ? error.message : String(error),
-					retryable: true,
-				},
+				discoveryResult.status === "fulfilled"
+					? discoveryResult.value
+					: {
+							_tag: "transport",
+							message:
+								discoveryResult.reason instanceof Error
+									? discoveryResult.reason.message
+									: String(discoveryResult.reason),
+							retryable: true,
+						},
 				generation,
 			);
+			if (generation !== discoveryGeneration.current) return;
+			if (lineageResult.status === "fulfilled") {
+				setLineage(lineageResult.value);
+				setLineageFailure(null);
+			} else {
+				setLineageFailure(
+					lineageResult.reason instanceof Error
+						? lineageResult.reason.message
+						: String(lineageResult.reason),
+				);
+			}
+			requestAnimationFrame(() => {
+				ignoreSelectionChange.current = false;
+			});
 		} finally {
 			discoveryInFlight.current = false;
 			setDiscovering(false);
@@ -543,8 +592,10 @@ export function TuvalApp() {
 							edges={edges}
 							onNodesChange={onNodesChange}
 							onEdgesChange={onEdgesChange}
-							onSelect={(session) => {
+							onSelect={(lineageSession) => {
 								if (ignoreSelectionChange.current) return;
+								const session =
+									lineageSession === null ? null : discoveredSessionFrom(lineageSession);
 								const current = selectedRef.current;
 								if (session?.identity === current?.identity) return;
 								if (session === null && current !== null) {
@@ -562,6 +613,28 @@ export function TuvalApp() {
 							}}
 						/>
 					</div>
+
+					{lineageFailure === null && lineageProblems.length === 0 ? null : (
+						<Card as="section" className="lineage-problems" role="status" aria-live="polite">
+							<p className="lineage-problems__eyebrow">Oturum bağları</p>
+							<h2>Bilinen geçmiş korunuyor</h2>
+							<p>Yeni bağların bazıları katılamadı; kayıtlı oturumlar tuvalde kalır.</p>
+							<ul>
+								{lineageFailure === null ? null : (
+									<li>
+										<strong>Çakışan veya okunamayan bağ verisi</strong>
+										<span>{lineageFailure}</span>
+									</li>
+								)}
+								{lineageProblems.map((problem, index) => (
+									<li key={`${problem.code}:${problem.source}:${index}`}>
+										<strong>{lineageProblemLabel(problem)}</strong>
+										<span>{problem.message}</span>
+									</li>
+								))}
+							</ul>
+						</Card>
+					)}
 
 					{view.state === undefined ? null : (
 						<Surface

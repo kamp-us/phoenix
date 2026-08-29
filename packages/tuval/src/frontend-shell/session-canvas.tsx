@@ -3,7 +3,7 @@ import {
 	BaseEdge,
 	type EdgeProps,
 	type EdgeTypes,
-	getBezierPath,
+	getSmoothStepPath,
 	Handle,
 	type NodeProps,
 	type NodeTypes,
@@ -14,11 +14,17 @@ import {
 	ReactFlow,
 	useReactFlow,
 } from "@xyflow/react";
-import {Scan, ZoomIn, ZoomOut} from "lucide-react";
+import {RotateCcw, Scan, ZoomIn, ZoomOut} from "lucide-react";
+import {Badge} from "../../../../apps/web/src/components/ui/Badge.js";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card} from "../../../../apps/web/src/components/ui/Card.js";
-import type {DiscoveredSession} from "../shared/discovery.js";
+import type {LineageNode} from "../shared/lineage.js";
 import type {SessionCanvasNode, SessionRelationshipEdge} from "./canvas-adapter.js";
+
+const incomingLabel = (kinds: SessionCanvasNode["data"]["incomingKinds"]): string => {
+	if (kinds.length === 0) return "Kök oturum";
+	return kinds.map((kind) => (kind === "spawn" ? "Oluşturma" : "Dallanma")).join(" + ");
+};
 
 export function SessionNodeCard({data, selected}: NodeProps<SessionCanvasNode>) {
 	return (
@@ -28,9 +34,15 @@ export function SessionNodeCard({data, selected}: NodeProps<SessionCanvasNode>) 
 			<strong className="session-node__title">{data.title}</strong>
 			<span className="session-node__id">{data.session.piSessionId}</span>
 			<span className="session-node__path">{data.session.cwd}</span>
-			<span className="session-node__relation">
-				{data.session.parentSessionId === undefined ? "Kök oturum" : "Alt oturum"}
-			</span>
+			<div className="session-node__facts">
+				<Badge>{incomingLabel(data.incomingKinds)}</Badge>
+				{data.continuity.length === 0 ? null : (
+					<Badge>
+						<RotateCcw size={12} aria-hidden="true" />
+						{data.continuity.length} devam
+					</Badge>
+				)}
+			</div>
 			<Handle id="relation-out" type="source" position={Position.Right} isConnectable={false} />
 		</Card>
 	);
@@ -44,16 +56,32 @@ export function RelationshipEdgeView({
 	targetY,
 	sourcePosition,
 	targetPosition,
+	markerEnd,
+	data,
+	selected,
 }: EdgeProps<SessionRelationshipEdge>) {
-	const [path] = getBezierPath({
+	const [path] = getSmoothStepPath({
 		sourceX,
 		sourceY,
 		targetX,
 		targetY,
 		sourcePosition,
 		targetPosition,
+		borderRadius: 12,
 	});
-	return <BaseEdge id={id} path={path} className="relationship-edge" />;
+	const kind = data?.kind ?? "spawn";
+	return (
+		<BaseEdge
+			id={id}
+			path={path}
+			{...(markerEnd === undefined ? {} : {markerEnd})}
+			style={{
+				stroke: selected ? "var(--accent)" : "var(--text-muted)",
+				strokeWidth: selected ? 3 : 2,
+			}}
+			className={`relationship-edge relationship-edge--${kind}`}
+		/>
+	);
 }
 
 const nodeTypes = {session: SessionNodeCard} satisfies NodeTypes;
@@ -82,6 +110,22 @@ export const ariaLabelConfig = {
 	"minimap.ariaLabel": "Oturum haritası",
 	"handle.ariaLabel": "Oturum ilişkisi bağlantısı",
 };
+
+function CanvasLegend() {
+	return (
+		<Panel position="bottom-left">
+			<Card as="section" className="canvas-legend" aria-label="Oturum bağı göstergesi">
+				<strong>Bağ türleri</strong>
+				<span data-kind="spawn">
+					<i aria-hidden="true" /> Oluşturma · düz ok
+				</span>
+				<span data-kind="fork">
+					<i aria-hidden="true" /> Dallanma · kesik çizgi
+				</span>
+			</Card>
+		</Panel>
+	);
+}
 
 function CanvasControls() {
 	const {fitView, zoomIn, zoomOut} = useReactFlow();
@@ -120,7 +164,7 @@ export interface SessionCanvasProps {
 	readonly edges: ReadonlyArray<SessionRelationshipEdge>;
 	readonly onNodesChange: OnNodesChange<SessionCanvasNode>;
 	readonly onEdgesChange: OnEdgesChange<SessionRelationshipEdge>;
-	readonly onSelect: (session: DiscoveredSession | null) => void;
+	readonly onSelect: (session: LineageNode | null) => void;
 }
 
 export function SessionCanvas({
@@ -146,13 +190,15 @@ export function SessionCanvas({
 			nodesConnectable={false}
 			deleteKeyCode={null}
 			fitView
-			minZoom={0.55}
+			fitViewOptions={{padding: 0.2, maxZoom: 1}}
+			minZoom={0.35}
 			maxZoom={1.8}
 			colorMode="dark"
 			proOptions={{hideAttribution: true}}
 		>
 			<Background color="var(--border-faint)" gap={24} size={1} />
 			<CanvasControls />
+			<CanvasLegend />
 		</ReactFlow>
 	);
 }

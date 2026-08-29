@@ -337,16 +337,22 @@ button:disabled {
 	white-space: nowrap;
 }
 
-.session-node__relation {
+.session-node__facts {
 	grid-column: 1 / -1;
-	width: fit-content;
-	padding: var(--space-1) var(--space-2);
-	border: 1px solid var(--border-faint);
-	border-radius: var(--radius-pill);
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+
+.session-node__facts [data-scope="badge"] {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
 	color: var(--text-muted);
-	font: 650 var(--t-micro);
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
+}
+
+.session-node__facts svg {
+	stroke: currentcolor;
 }
 
 .react-flow__handle {
@@ -361,8 +367,13 @@ button:disabled {
 	stroke-width: 2;
 }
 
+.react-flow__edge-path.relationship-edge--fork {
+	stroke-dasharray: var(--space-2) var(--space-1);
+}
+
 .react-flow__edge.selected .relationship-edge {
 	stroke: var(--accent);
+	stroke-width: 3;
 }
 
 .canvas-controls {
@@ -373,6 +384,88 @@ button:disabled {
 
 .canvas-controls svg {
 	stroke: currentcolor;
+}
+
+.canvas-legend {
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-4);
+	color: var(--text-secondary);
+	font: var(--t-meta);
+}
+
+.canvas-legend strong {
+	color: var(--text-primary);
+}
+
+.canvas-legend span {
+	display: grid;
+	grid-template-columns: var(--space-6) auto;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.canvas-legend i {
+	display: block;
+	border-top: 2px solid var(--border-strong);
+}
+
+.canvas-legend [data-kind="fork"] i {
+	border-top-style: dashed;
+}
+
+.lineage-problems {
+	position: absolute;
+	z-index: 6;
+	top: var(--space-4);
+	right: var(--space-4);
+	display: grid;
+	gap: var(--space-2);
+	width: min(360px, calc(100vw - var(--space-8)));
+	max-height: min(280px, calc(100vh - var(--topbar-height) - var(--space-8)));
+	overflow: auto;
+}
+
+.lineage-problems__eyebrow,
+.lineage-problems h2,
+.lineage-problems p {
+	margin: 0;
+}
+
+.lineage-problems__eyebrow {
+	color: var(--accent);
+	font: 700 var(--t-meta);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.lineage-problems h2 {
+	font: 700 var(--t-h-feed);
+}
+
+.lineage-problems p,
+.lineage-problems li span {
+	color: var(--text-muted);
+	font: var(--t-meta);
+}
+
+.lineage-problems ul {
+	display: grid;
+	gap: var(--space-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.lineage-problems li {
+	display: grid;
+	gap: var(--space-1);
+	padding-top: var(--space-2);
+	border-top: 1px solid var(--border-faint);
+}
+
+.lineage-problems li strong {
+	font: 650 var(--t-meta);
 }
 
 .state-panel {

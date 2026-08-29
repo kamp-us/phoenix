@@ -3,6 +3,7 @@ import {describe, it} from "@effect/vitest";
 import {
 	bindAttachOutcome,
 	bindPromptOutcome,
+	decodeLineageProjection,
 	decodeLiveEvent,
 } from "../../src/frontend-shell/fate-client.js";
 import type {AttachedLiveSession} from "../../src/shared/live-session.js";
@@ -65,6 +66,35 @@ describe("Tuval live event decoder", () => {
 					input: null,
 				}),
 			),
+			undefined,
+		);
+	});
+});
+
+describe("Tuval lineage decoder", () => {
+	it("consumes the shared typed projection and refuses malformed graph arms", () => {
+		const projection = {
+			graph: {
+				version: 2,
+				nodes: [
+					{
+						id: "pi:root",
+						piSessionId: "root",
+						createdAt: 1,
+						updatedAt: 2,
+						cwd: "/work/root",
+						sourceFiles: ["/fixtures/root.jsonl"],
+					},
+				],
+				edges: [],
+				continuity: [],
+				ownership: [],
+			},
+			problems: [],
+		};
+		assert.notEqual(decodeLineageProjection(projection), undefined);
+		assert.equal(
+			decodeLineageProjection({...projection, graph: {...projection.graph, version: 3}}),
 			undefined,
 		);
 	});
