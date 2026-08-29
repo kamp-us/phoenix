@@ -2,6 +2,7 @@ import {strict as assert} from "node:assert";
 import {describe, it} from "@effect/vitest";
 import {
 	bindAttachOutcome,
+	bindControlOutcome,
 	bindPromptOutcome,
 	decodeLineageProjection,
 	decodeLiveEvent,
@@ -136,5 +137,50 @@ describe("Tuval fate request identity", () => {
 		assert.equal(outcome._tag, "refused");
 		assert.equal(outcome.correlationId, "request-1");
 		if (outcome._tag === "refused") assert.equal(outcome.code, "protocol");
+	});
+
+	it("binds an acknowledged control to command, correlation, and expected session", () => {
+		const outcome = bindControlOutcome(
+			"set-model",
+			"control-1",
+			{
+				_tag: "acknowledged",
+				command: "set-model",
+				correlationId: "control-1",
+				value: {provider: "anthropic", id: "claude-sonnet"},
+				session: attachedSession("beta"),
+			},
+			"alpha",
+		);
+
+		assert.equal(outcome._tag, "refused");
+		assert.equal(outcome.command, "set-model");
+		assert.equal(outcome.correlationId, "control-1");
+		if (outcome._tag === "refused") {
+			assert.equal(outcome.code, "protocol");
+			assert.equal(outcome.session, null);
+		}
+	});
+
+	it("drops a mismatched refusal snapshot instead of replacing truthful shown state", () => {
+		const outcome = bindControlOutcome(
+			"steer",
+			"control-2",
+			{
+				_tag: "refused",
+				command: "steer",
+				correlationId: "control-2",
+				code: "disconnected",
+				reason: "Bağlantı kesildi",
+				session: attachedSession("beta"),
+			},
+			"alpha",
+		);
+
+		assert.equal(outcome._tag, "refused");
+		if (outcome._tag === "refused") {
+			assert.equal(outcome.code, "protocol");
+			assert.equal(outcome.session, null);
+		}
 	});
 });

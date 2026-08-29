@@ -4,14 +4,19 @@ import {
 	type LineageProjection,
 	LineageProjection as LineageProjectionSchema,
 } from "../shared/lineage.js";
-import type {
-	AttachedLiveSession,
-	AttachLiveSessionOutcome,
-	LiveSessionEvent,
-	LiveSessionView,
-	LiveTranscriptEntry,
-	PromptLiveSessionOutcome,
-	TranscriptContent,
+import {
+	type AttachedLiveSession,
+	type AttachLiveSessionOutcome,
+	type ControlLiveSessionOutcome,
+	ControlLiveSessionOutcome as ControlLiveSessionOutcomeSchema,
+	type LiveSessionControlCommand,
+	type LiveSessionEvent,
+	type LiveSessionView,
+	type LiveTranscriptEntry,
+	type ModelRef,
+	type PromptLiveSessionOutcome,
+	type ThinkingLevel,
+	type TranscriptContent,
 } from "../shared/live-session.js";
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -217,6 +222,31 @@ export const bindPromptOutcome = (
 			};
 };
 
+export const decodeControlOutcome = (value: unknown): ControlLiveSessionOutcome | undefined =>
+	Option.getOrUndefined(Schema.decodeUnknownOption(ControlLiveSessionOutcomeSchema)(value));
+
+export const bindControlOutcome = (
+	command: LiveSessionControlCommand,
+	correlationId: string,
+	outcome: ControlLiveSessionOutcome,
+	expectedSessionId?: string,
+): ControlLiveSessionOutcome => {
+	const matchesSession =
+		expectedSessionId === undefined ||
+		outcome.session === null ||
+		outcome.session.sessionId === expectedSessionId;
+	return outcome.command === command && outcome.correlationId === correlationId && matchesSession
+		? outcome
+		: {
+				_tag: "refused",
+				command,
+				correlationId,
+				code: "protocol",
+				reason: "Denetim yanıtı istek kimliği ve oturumla eşleşmedi.",
+				session: null,
+			};
+};
+
 export const decodeLiveEvent = (value: unknown): LiveSessionEvent | undefined => {
 	if (!isRecord(value) || typeof value._tag !== "string" || typeof value.sequence !== "number") {
 		return undefined;
@@ -228,6 +258,10 @@ export const decodeLiveEvent = (value: unknown): LiveSessionEvent | undefined =>
 	if (value._tag === "prompt") {
 		const outcome = decodePromptOutcome(value.outcome);
 		return outcome === undefined ? undefined : {_tag: "prompt", sequence: value.sequence, outcome};
+	}
+	if (value._tag === "control") {
+		const outcome = decodeControlOutcome(value.outcome);
+		return outcome === undefined ? undefined : {_tag: "control", sequence: value.sequence, outcome};
 	}
 	if (value._tag === "released" && typeof value.sessionId === "string") {
 		return {_tag: "released", sequence: value.sequence, sessionId: value.sessionId};
@@ -318,6 +352,45 @@ export const promptLiveSession = async (
 	if (outcome === undefined) throw new Error("Gönderim yanıtı okunamadı");
 	return bindPromptOutcome(sessionId, correlationId, outcome);
 };
+
+const controlLiveSession = async (
+	command: LiveSessionControlCommand,
+	name: string,
+	input: Readonly<Record<string, unknown>>,
+	expectedSessionId?: string,
+): Promise<ControlLiveSessionOutcome> => {
+	const correlationId = String(input.correlationId ?? "");
+	const outcome = decodeControlOutcome(await runFate({id: command, kind: "mutation", name, input}));
+	if (outcome === undefined) throw new Error("Denetim yanıtı okunamadı");
+	return bindControlOutcome(command, correlationId, outcome, expectedSessionId);
+};
+
+export const createLiveSession = (correlationId: string, cwd: string) =>
+	controlLiveSession("create", "liveSession.create", {correlationId, cwd});
+
+export const openLiveSession = (correlationId: string, sessionId: string) =>
+	controlLiveSession("open", "liveSession.open", {correlationId, sessionId}, sessionId);
+
+export const steerLiveSession = (sessionId: string, correlationId: string, text: string) =>
+	controlLiveSession("steer", "liveSession.steer", {correlationId, text}, sessionId);
+
+export const abortLiveSession = (sessionId: string, correlationId: string) =>
+	controlLiveSession("abort", "liveSession.abort", {correlationId}, sessionId);
+
+export const setModelLiveSession = (sessionId: string, correlationId: string, model: ModelRef) =>
+	controlLiveSession("set-model", "liveSession.setModel", {correlationId, model}, sessionId);
+
+export const setThinkingLiveSession = (
+	sessionId: string,
+	correlationId: string,
+	thinkingLevel: ThinkingLevel,
+) =>
+	controlLiveSession(
+		"set-thinking",
+		"liveSession.setThinking",
+		{correlationId, thinkingLevel},
+		sessionId,
+	);
 
 export const releaseLiveSession = async (): Promise<void> => {
 	await runFate({id: "release", kind: "mutation", name: "liveSession.release", input: {}});

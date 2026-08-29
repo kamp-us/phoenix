@@ -1770,3 +1770,236 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 	await expect(page.getByRole("alert")).toContainText("İleti gönderilemedi");
 	expect(errors).toEqual([]);
 });
+
+test("the cockpit reconciles all six controls without optimistic state", async ({
+	page,
+}, testInfo) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const alpha = session("control-alpha", "/work/control-alpha");
+	const controls = {
+		create: true,
+		open: true,
+		steer: true,
+		abort: true,
+		setModel: true,
+		setThinking: true,
+		models: [
+			{
+				model: {provider: "anthropic", id: "claude-sonnet"},
+				name: "Claude Sonnet",
+				supportedThinkingLevels: ["medium", "high"],
+			},
+			{
+				model: {provider: "openai", id: "gpt-5"},
+				name: "GPT-5",
+				supportedThinkingLevels: ["low", "high"],
+			},
+		],
+		thinkingLevels: ["low", "medium", "high"],
+	} as const;
+	const controlled = (overrides: Partial<AttachedLiveSession> = {}): AttachedLiveSession => ({
+		...liveSession("control-alpha"),
+		controls,
+		...overrides,
+	});
+	const requested: Array<string> = [];
+
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		const name = typeof operation?.name === "string" ? operation.name : "unknown";
+		const input = (operation?.input ?? {}) as Readonly<Record<string, unknown>>;
+		if (name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions: [alpha]});
+			return;
+		}
+		if (name === "lineage") {
+			await fulfill(route, id, lineageProjection([alpha]));
+			return;
+		}
+		if (name === "liveSession.attach") {
+			await fulfill(route, id, {
+				_tag: "attached",
+				session: controlled({sessionId: String(input.sessionId)}),
+			});
+			return;
+		}
+		requested.push(name);
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		if (name === "liveSession.create") {
+			await fulfill(route, id, {
+				_tag: "acknowledged",
+				command: "create",
+				correlationId: input.correlationId,
+				session: controlled({sessionId: "created-control"}),
+			});
+			return;
+		}
+		if (name === "liveSession.open") {
+			await fulfill(route, id, {
+				_tag: "acknowledged",
+				command: "open",
+				correlationId: input.correlationId,
+				session: controlled({sessionId: String(input.sessionId)}),
+			});
+			return;
+		}
+		if (name === "liveSession.setModel") {
+			await fulfill(route, id, {
+				_tag: "refused",
+				command: "set-model",
+				correlationId: input.correlationId,
+				code: "unsupported-value",
+				reason: "Bu model sözleşmede desteklenmiyor.",
+				session: controlled(),
+			});
+			return;
+		}
+		if (name === "liveSession.setThinking") {
+			await fulfill(route, id, {
+				_tag: "acknowledged",
+				command: "set-thinking",
+				correlationId: input.correlationId,
+				value: "medium",
+				session: controlled({revision: 2, thinkingLevel: "medium"}),
+			});
+			return;
+		}
+		if (name === "liveSession.steer") {
+			await fulfill(route, id, {
+				_tag: "acknowledged",
+				command: "steer",
+				correlationId: input.correlationId,
+				session: controlled({
+					revision: 3,
+					transcript: [
+						...controlled().transcript,
+						{
+							id: "steered",
+							role: "user",
+							content: [{type: "text", text: String(input.text)}],
+							timestamp: 2,
+							status: "complete",
+						},
+					],
+				}),
+			});
+			return;
+		}
+		if (name === "liveSession.abort") {
+			await fulfill(route, id, {
+				_tag: "refused",
+				command: "abort",
+				correlationId: input.correlationId,
+				code: "timeout",
+				reason: "Pi zamanında yanıt vermedi.",
+				session: controlled({revision: 3}),
+			});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: null});
+	});
+
+	await page.goto(tuvalUrl);
+	const cwd = page.getByRole("textbox", {name: "Çalışma dizini"});
+	await cwd.fill("/work/created");
+	await page.getByRole("button", {name: "Yeni oturum"}).click();
+	await expect(page.getByText("Oluşturma onayı bekleniyor.")).toBeVisible();
+	await expect(cwd).toHaveValue("/work/created");
+	const createdNode = page.locator('[data-id="pi:created-control"] .session-node');
+	await expect(createdNode).toBeVisible();
+	await expect(createdNode).toHaveAttribute("data-selected", "true");
+	await expect(page.locator(".chat-pane__path")).toHaveText("/work/created");
+	await expect(cwd).toBeFocused();
+
+	const sessionId = page.getByRole("textbox", {name: "Oturum kimliği"});
+	await sessionId.fill("opened-control");
+	await page.getByRole("button", {name: "Oturumu aç"}).click();
+	await expect(page.getByText("Açma onayı bekleniyor.")).toBeVisible();
+	const openedNode = page.locator('[data-id="pi:opened-control"] .session-node');
+	await expect(openedNode).toBeVisible();
+	await expect(openedNode).toHaveAttribute("data-selected", "true");
+	await expect(page.locator(".chat-pane__path")).toHaveText("Oturum opened-control");
+	await expect(sessionId).toBeFocused();
+
+	await selectNode(page, "pi:control-alpha");
+	const model = page.getByRole("combobox", {name: "Model"});
+	await expect(model).toHaveValue("anthropic/claude-sonnet");
+	await model.focus();
+	await model.selectOption("openai/gpt-5");
+	await expect(page.getByText("Model değiştirme onayı bekleniyor.")).toBeVisible();
+	await expect(model).toHaveValue("anthropic/claude-sonnet");
+	await expect(page.getByRole("alert")).toContainText("unsupported-value");
+	await expect(model).toHaveValue("anthropic/claude-sonnet");
+	await expect(model).toBeFocused();
+
+	const thinking = page.getByRole("combobox", {name: "Düşünme düzeyi"});
+	await thinking.focus();
+	await thinking.selectOption("medium");
+	await expect(page.getByText("Düşünme düzeyi değiştirme onayı bekleniyor.")).toBeVisible();
+	await expect(thinking).toHaveValue("high");
+	await expect(thinking).toHaveValue("medium");
+	await expect(thinking).toBeFocused();
+
+	const editor = page.getByRole("textbox", {name: "İstem"});
+	await editor.fill("Yeni rotayı izle");
+	const steer = page.getByRole("button", {name: "Yönlendir"});
+	await steer.focus();
+	await steer.press("Enter");
+	await expect(page.getByText("Yönlendirme onayı bekleniyor.")).toBeVisible();
+	await expect(editor).toHaveText("Yeni rotayı izle");
+	await expect(page.getByText("Yönlendirme pi tarafından onaylandı.")).toBeVisible();
+	await expect(editor).toBeEmpty();
+	await expect(editor).toBeFocused();
+	await expect(page.getByText("Yeni rotayı izle")).toBeVisible();
+
+	const abort = page.getByRole("button", {name: "Durdur"});
+	await abort.focus();
+	await abort.press("Space");
+	await expect(page.getByText("Durdurma onayı bekleniyor.")).toBeVisible();
+	await expect(page.getByText(/Durdurma başarısız \(timeout\)/)).toBeVisible();
+	await expect(abort).toBeFocused();
+	await expect(page.locator(".session-phase strong", {hasText: "Hazır"})).toBeVisible();
+
+	for (const width of [800, 721]) {
+		await page.setViewportSize({width, height: 900});
+		for (const field of [cwd, sessionId]) {
+			const box = await field.boundingBox();
+			expect(box).not.toBeNull();
+			expect(box?.width ?? 0).toBeGreaterThanOrEqual(36);
+		}
+		const responsivePath = testInfo.outputPath(`cockpit-responsive-${width}.png`);
+		await page.screenshot({path: responsivePath, fullPage: true});
+		await testInfo.attach(`cockpit-responsive-${width}`, {
+			path: responsivePath,
+			contentType: "image/png",
+		});
+	}
+
+	await page.setViewportSize({width: 390, height: 844});
+	const topbarBox = await page.locator(".topbar").boundingBox();
+	const chatBox = await page.locator(".chat-pane").boundingBox();
+	expect(topbarBox).not.toBeNull();
+	expect(chatBox).not.toBeNull();
+	expect(chatBox?.y ?? 0).toBeGreaterThanOrEqual((topbarBox?.y ?? 0) + (topbarBox?.height ?? 0));
+	const mobilePath = testInfo.outputPath("cockpit-responsive-390.png");
+	await page.screenshot({path: mobilePath, fullPage: true});
+	await testInfo.attach("cockpit-responsive-390", {path: mobilePath, contentType: "image/png"});
+
+	expect(requested).toEqual([
+		"liveSession.create",
+		"liveSession.open",
+		"liveSession.setModel",
+		"liveSession.setThinking",
+		"liveSession.steer",
+		"liveSession.abort",
+	]);
+	const screenshotPath = testInfo.outputPath("cockpit-six-controls.png");
+	await page.screenshot({path: screenshotPath, fullPage: true});
+	await testInfo.attach("cockpit-six-controls", {path: screenshotPath, contentType: "image/png"});
+	expect(errors).toEqual([]);
+});
