@@ -8,17 +8,21 @@ import {
 import {Effect, Layer, Schema, Stream} from "effect";
 import {TuvalFateServerLive} from "../src/backend/fate.js";
 import {LineageIndex} from "../src/backend/lineage.js";
-import {LiveSession, type LiveSessionService} from "../src/backend/live-session.js";
+import {
+	LiveSession,
+	type LiveSessionService,
+	makeUnavailableLiveSession,
+} from "../src/backend/live-session.js";
 import {PiDiscovery} from "../src/backend/pi-discovery.js";
 import {sessionIdentity} from "../src/shared/discovery.js";
 import {
 	LineageProjection,
 	type LineageProjection as LineageProjectionType,
 } from "../src/shared/lineage.js";
-import type {LiveSessionView} from "../src/shared/live-session.js";
+import type {AttachedLiveSession} from "../src/shared/live-session.js";
 import {tryPromise} from "./test-effect.js";
 
-const session: LiveSessionView = {
+const session: AttachedLiveSession = {
 	_tag: "attached",
 	sessionId: "session-one",
 	revision: 1,
@@ -30,6 +34,16 @@ const session: LiveSessionView = {
 	lastEventSequence: 1,
 	connection: "connected",
 	ownership: "exclusive",
+	controls: {
+		create: true,
+		open: true,
+		steer: false,
+		abort: false,
+		setModel: false,
+		setThinking: false,
+		models: [],
+		thinkingLevels: [],
+	},
 };
 
 const request = (operations: ReadonlyArray<Record<string, unknown>>) =>
@@ -94,8 +108,9 @@ describe("live-session fate-effect contract", () => {
 	it.effect("exposes attach, current state, correlated prompt, and release", () =>
 		Effect.gen(function* () {
 			const calls: Array<string> = [];
-			let current: LiveSessionView | null = null;
+			let current: AttachedLiveSession | null = null;
 			const live: LiveSessionService = {
+				...makeUnavailableLiveSession(),
 				current: () => Effect.succeed(current),
 				attach: (sessionId) =>
 					Effect.sync(() => {
@@ -163,6 +178,130 @@ describe("live-session fate-effect contract", () => {
 				},
 			]);
 			assert.deepEqual(calls, ["attach:session-one", "prompt:prompt-1:hello", "release"]);
+		}),
+	);
+
+	it.effect("routes all six acknowledged control mutations without a frontend surface", () =>
+		Effect.gen(function* () {
+			const calls: Array<string> = [];
+			const live: LiveSessionService = {
+				...makeUnavailableLiveSession(),
+				create: ({correlationId}) =>
+					Effect.sync(() => {
+						calls.push("create");
+						return {
+							_tag: "acknowledged" as const,
+							command: "create" as const,
+							correlationId,
+							session,
+						};
+					}),
+				open: ({correlationId}) =>
+					Effect.sync(() => {
+						calls.push("open");
+						return {
+							_tag: "acknowledged" as const,
+							command: "open" as const,
+							correlationId,
+							session,
+						};
+					}),
+				steer: ({correlationId}) =>
+					Effect.sync(() => {
+						calls.push("steer");
+						return {
+							_tag: "acknowledged" as const,
+							command: "steer" as const,
+							correlationId,
+							session,
+						};
+					}),
+				abort: ({correlationId}) =>
+					Effect.sync(() => {
+						calls.push("abort");
+						return {
+							_tag: "acknowledged" as const,
+							command: "abort" as const,
+							correlationId,
+							session,
+						};
+					}),
+				setModel: ({correlationId}) =>
+					Effect.sync(() => {
+						calls.push("set-model");
+						return {
+							_tag: "acknowledged" as const,
+							command: "set-model" as const,
+							correlationId,
+							session,
+							value: session.model,
+						};
+					}),
+				setThinking: ({correlationId}) =>
+					Effect.sync(() => {
+						calls.push("set-thinking");
+						return {
+							_tag: "acknowledged" as const,
+							command: "set-thinking" as const,
+							correlationId,
+							session,
+							value: session.thinkingLevel,
+						};
+					}),
+			};
+			const response = yield* handle(live, [
+				{
+					id: "create",
+					kind: "mutation",
+					name: "liveSession.create",
+					input: {correlationId: "create-1", cwd: "/tmp/tuval"},
+					select: [],
+				},
+				{
+					id: "open",
+					kind: "mutation",
+					name: "liveSession.open",
+					input: {correlationId: "open-1", sessionId: session.sessionId},
+					select: [],
+				},
+				{
+					id: "steer",
+					kind: "mutation",
+					name: "liveSession.steer",
+					input: {correlationId: "steer-1", text: "redirect"},
+					select: [],
+				},
+				{
+					id: "abort",
+					kind: "mutation",
+					name: "liveSession.abort",
+					input: {correlationId: "abort-1"},
+					select: [],
+				},
+				{
+					id: "model",
+					kind: "mutation",
+					name: "liveSession.setModel",
+					input: {correlationId: "model-1", model: session.model},
+					select: [],
+				},
+				{
+					id: "thinking",
+					kind: "mutation",
+					name: "liveSession.setThinking",
+					input: {correlationId: "thinking-1", thinkingLevel: session.thinkingLevel},
+					select: [],
+				},
+			]);
+			const body = (yield* resultOf(response)) as {
+				results: Array<{ok: boolean; data: {correlationId?: string}}>;
+			};
+			assert.isTrue(body.results.every((result) => result.ok));
+			assert.deepEqual(
+				body.results.map((result) => result.data.correlationId),
+				["create-1", "open-1", "steer-1", "abort-1", "model-1", "thinking-1"],
+			);
+			assert.deepEqual(calls, ["create", "open", "steer", "abort", "set-model", "set-thinking"]);
 		}),
 	);
 
@@ -237,6 +376,7 @@ describe("live-session fate-effect contract", () => {
 				],
 			};
 			const live: LiveSessionService = {
+				...makeUnavailableLiveSession(),
 				current: () => Effect.succeed(null),
 				attach: (sessionId) =>
 					Effect.succeed({_tag: "refused", sessionId, code: "protocol", reason: "unused"}),
@@ -262,6 +402,7 @@ describe("live-session fate-effect contract", () => {
 		Effect.gen(function* () {
 			let called = false;
 			const live: LiveSessionService = {
+				...makeUnavailableLiveSession(),
 				current: () => Effect.succeed(null),
 				attach: () =>
 					Effect.sync(() => {

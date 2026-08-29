@@ -3,30 +3,43 @@ import {
 	PiClient,
 	PiDisconnectedError,
 	PiServerError,
+	PiSessionDetachedError,
 	type PiSessionHandle,
 	PiSessionOwnershipError,
 	type Unsubscribe,
 } from "@earendil-works/pi-client";
 import type {
 	JsonValue,
+	ModelMetadata,
+	ModelRef,
 	ServerEvent,
 	SessionSnapshot,
 	TranscriptItem,
 	TranscriptProgress,
 } from "@earendil-works/pi-protocol";
 import type {
+	AbortLiveSessionRequest,
 	AttachedLiveSession,
 	AttachLiveSessionOutcome,
+	ControlLiveSessionOutcome,
+	CreateLiveSessionRequest,
+	LiveSessionControls,
 	LiveSessionEvent,
 	LiveSessionView,
 	LiveTranscriptEntry,
+	OpenLiveSessionRequest,
 	PromptLiveSessionOutcome,
 	PromptLiveSessionRequest,
 	ReleaseLiveSessionOutcome,
+	SetModelLiveSessionRequest,
+	SetThinkingLiveSessionRequest,
+	SteerLiveSessionRequest,
 } from "../shared/live-session.js";
 
 const EVENT_HISTORY_LIMIT = 500;
 const CORRELATED_PROMPT_LIMIT = 100;
+const CORRELATED_CONTROL_LIMIT = 100;
+const ACKNOWLEDGEMENT_TIMEOUT_MS = 10_000;
 
 type Listener = (event: LiveSessionEvent) => void;
 
@@ -47,6 +60,30 @@ interface CorrelatedPrompt {
 	settled: boolean;
 }
 
+type ControlRequest =
+	| ({readonly command: "create"} & CreateLiveSessionRequest)
+	| ({readonly command: "open"} & OpenLiveSessionRequest)
+	| ({readonly command: "steer"} & SteerLiveSessionRequest)
+	| ({readonly command: "abort"} & AbortLiveSessionRequest)
+	| ({readonly command: "set-model"} & SetModelLiveSessionRequest)
+	| ({readonly command: "set-thinking"} & SetThinkingLiveSessionRequest);
+
+interface CorrelatedControl {
+	readonly fingerprint: string;
+	readonly result: Promise<ControlLiveSessionOutcome>;
+	settled: boolean;
+}
+
+export interface AcknowledgementDeadline {
+	readonly elapsed: Promise<void>;
+	readonly cancel: () => void;
+}
+
+export interface LiveSessionStateOptions {
+	readonly acknowledgementTimeoutMs?: number;
+	readonly makeAcknowledgementDeadline?: (timeoutMs: number) => AcknowledgementDeadline;
+}
+
 interface PendingAttachment {
 	readonly sessionId: string;
 	readonly eventsAfterSnapshot: Array<ServerEvent>;
@@ -56,6 +93,14 @@ export interface LiveSessionState {
 	readonly current: () => LiveSessionView | null;
 	readonly attach: (sessionId: string) => Promise<AttachLiveSessionOutcome>;
 	readonly prompt: (request: PromptLiveSessionRequest) => Promise<PromptLiveSessionOutcome>;
+	readonly create: (request: CreateLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
+	readonly open: (request: OpenLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
+	readonly steer: (request: SteerLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
+	readonly abort: (request: AbortLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
+	readonly setModel: (request: SetModelLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
+	readonly setThinking: (
+		request: SetThinkingLiveSessionRequest,
+	) => Promise<ControlLiveSessionOutcome>;
 	readonly release: () => Promise<ReleaseLiveSessionOutcome>;
 	readonly eventsAfter: (sequence?: number) => ReadonlyArray<LiveSessionEvent>;
 	readonly subscribe: (listener: Listener) => Unsubscribe;
@@ -169,7 +214,9 @@ const refusalCode = (
 	error: unknown,
 ): "lease-refused" | "disconnected" | "not-found" | "protocol" => {
 	if (error instanceof PiDisconnectedError) return "disconnected";
-	if (error instanceof PiSessionOwnershipError) return "lease-refused";
+	if (error instanceof PiSessionOwnershipError || error instanceof PiSessionDetachedError) {
+		return "lease-refused";
+	}
 	if (error instanceof PiServerError) {
 		if (error.code === "session_locked" || error.code === "busy") return "lease-refused";
 		if (error.code === "not_found") return "not-found";
@@ -186,6 +233,37 @@ const promptRefusalCode = (error: unknown): "lease-refused" | "disconnected" | "
 const messageOf = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
+const makeAcknowledgementDeadline = (timeoutMs: number): AcknowledgementDeadline => {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const elapsed = new Promise<void>((resolve) => {
+		timer = setTimeout(resolve, timeoutMs);
+		timer.unref();
+	});
+	return {
+		elapsed,
+		cancel: () => {
+			if (timer !== undefined) clearTimeout(timer);
+		},
+	};
+};
+
+const sameModel = (left: ModelRef, right: ModelRef): boolean =>
+	left.provider === right.provider && left.id === right.id;
+
+const controlErrorCode = (
+	error: unknown,
+): "ownership-refused" | "unsupported-capability" | "disconnected" | "protocol" => {
+	if (error instanceof PiDisconnectedError) return "disconnected";
+	if (error instanceof PiSessionOwnershipError || error instanceof PiSessionDetachedError) {
+		return "ownership-refused";
+	}
+	if (error instanceof PiServerError) {
+		if (error.code === "session_locked" || error.code === "busy") return "ownership-refused";
+		if (error.code === "not_implemented") return "unsupported-capability";
+	}
+	return "protocol";
+};
+
 const eventSessionId = (event: ServerEvent): string | undefined => {
 	if (event.type === "session_snapshot") return event.snapshot.id;
 	if (event.type === "session_progress" || event.type === "session_removed") return event.sessionId;
@@ -197,18 +275,28 @@ export class PiLiveSessionState implements LiveSessionState {
 	readonly #listeners = new Set<Listener>();
 	readonly #events: Array<LiveSessionEvent> = [];
 	readonly #prompts = new Map<string, CorrelatedPrompt>();
+	readonly #controls = new Map<string, CorrelatedControl>();
 	readonly #unsubscribeConnection: Unsubscribe;
 	readonly #unsubscribeEvents: Unsubscribe;
+	readonly #unsubscribeServer: Unsubscribe;
+	readonly #acknowledgementTimeoutMs: number;
+	readonly #makeAcknowledgementDeadline: (timeoutMs: number) => AcknowledgementDeadline;
 	#attachment: Attachment | undefined;
 	#pendingAttachment: PendingAttachment | undefined;
 	#sequence = 0;
 	#generation = 0;
 	#promptGeneration: number | undefined;
+	#pendingPrompts = 0;
+	#pendingReplacement = false;
+	#pendingIdleControl = false;
 	#lifecycle: Promise<void> = Promise.resolve();
 	#disposed = false;
 
-	private constructor(client: PiClient) {
+	private constructor(client: PiClient, options: LiveSessionStateOptions) {
 		this.#client = client;
+		this.#acknowledgementTimeoutMs = options.acknowledgementTimeoutMs ?? ACKNOWLEDGEMENT_TIMEOUT_MS;
+		this.#makeAcknowledgementDeadline =
+			options.makeAcknowledgementDeadline ?? makeAcknowledgementDeadline;
 		this.#unsubscribeConnection = client.onConnectionStateChange((change) => {
 			if (change.state !== "disconnected") return;
 			const attachment = this.#attachment;
@@ -217,6 +305,10 @@ export class PiLiveSessionState implements LiveSessionState {
 			this.#publishDiagnostic(attachment.disconnectedReason, attachment.snapshot.id);
 			this.#publishSession(attachment);
 			void this.#serialize(() => this.#releaseLease(attachment));
+		});
+		this.#unsubscribeServer = client.subscribe(() => {
+			const attachment = this.#attachment;
+			if (attachment !== undefined) this.#publishSession(attachment);
 		});
 		this.#unsubscribeEvents = client.onEvent((event) => {
 			const attachment = this.#attachment;
@@ -232,8 +324,11 @@ export class PiLiveSessionState implements LiveSessionState {
 		});
 	}
 
-	static async connect(transportFactory: ByteTransportFactory): Promise<PiLiveSessionState> {
-		return new PiLiveSessionState(await PiClient.connect({transportFactory}));
+	static async connect(
+		transportFactory: ByteTransportFactory,
+		options: LiveSessionStateOptions = {},
+	): Promise<PiLiveSessionState> {
+		return new PiLiveSessionState(await PiClient.connect({transportFactory}), options);
 	}
 
 	current = (): LiveSessionView | null => {
@@ -275,6 +370,24 @@ export class PiLiveSessionState implements LiveSessionState {
 		return result;
 	};
 
+	create = (request: CreateLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "create", ...request});
+
+	open = (request: OpenLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "open", ...request});
+
+	steer = (request: SteerLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "steer", ...request});
+
+	abort = (request: AbortLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "abort", ...request});
+
+	setModel = (request: SetModelLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "set-model", ...request});
+
+	setThinking = (request: SetThinkingLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "set-thinking", ...request});
+
 	release = (): Promise<ReleaseLiveSessionOutcome> =>
 		this.#serialize(async () => {
 			const sessionId = this.#attachment?.snapshot.id ?? null;
@@ -295,6 +408,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		this.#disposed = true;
 		await this.#releaseAttachment();
 		this.#unsubscribeConnection();
+		this.#unsubscribeServer();
 		this.#unsubscribeEvents();
 		this.#listeners.clear();
 		await this.#client.dispose();
@@ -361,6 +475,375 @@ export class PiLiveSessionState implements LiveSessionState {
 		});
 	}
 
+	#correlateControl(request: ControlRequest): Promise<ControlLiveSessionOutcome> {
+		const fingerprint = JSON.stringify(request);
+		const existing = this.#controls.get(request.correlationId);
+		if (existing !== undefined) {
+			if (existing.fingerprint === fingerprint) return existing.result;
+			return Promise.resolve(
+				this.#publishControl(
+					this.#controlRefusal(
+						request,
+						"protocol",
+						"Correlation id was already used for a different control request",
+					),
+				),
+			);
+		}
+		if (!this.#makeControlRoom()) {
+			return Promise.resolve(
+				this.#publishControl(
+					this.#controlRefusal(
+						request,
+						"protocol",
+						"Too many control requests are awaiting acknowledgement",
+					),
+				),
+			);
+		}
+		const result = this.#runControl(request).then((outcome) => this.#publishControl(outcome));
+		const correlated: CorrelatedControl = {fingerprint, result, settled: false};
+		this.#controls.set(request.correlationId, correlated);
+		void result.then(
+			() => {
+				correlated.settled = true;
+			},
+			() => {
+				correlated.settled = true;
+			},
+		);
+		return result;
+	}
+
+	#runControl(request: ControlRequest): Promise<ControlLiveSessionOutcome> {
+		switch (request.command) {
+			case "create":
+				return this.#runReplacement(request, () =>
+					this.#client.createSession({
+						...(request.cwd === undefined ? {} : {cwd: request.cwd}),
+						...(request.name === undefined ? {} : {name: request.name}),
+					}),
+				);
+			case "open":
+				return this.#runReplacement(request, () =>
+					this.#client.acquireSession(request.sessionId, {mode: "exclusive"}),
+				);
+			case "steer":
+				return this.#runSessionControl(request, (lease) => lease.steer(request.text));
+			case "abort":
+				return this.#runSessionControl(request, (lease) => lease.abort());
+			case "set-model":
+				return this.#runSessionControl(request, (lease) => lease.setModel(request.model));
+			case "set-thinking":
+				return this.#runSessionControl(request, (lease) =>
+					lease.setThinking(request.thinkingLevel),
+				);
+		}
+	}
+
+	async #runReplacement(
+		request: Extract<ControlRequest, {command: "create" | "open"}>,
+		acquire: () => Promise<PiSessionHandle>,
+	): Promise<ControlLiveSessionOutcome> {
+		const previous = this.#attachment;
+		if (this.#pendingReplacement || this.#pendingIdleControl || this.#pendingPrompts > 0) {
+			return this.#controlRefusal(request, "unavailable", "Another session operation is pending");
+		}
+		if (previous !== undefined) {
+			const controls = this.#controlsOf(previous);
+			if (!(request.command === "create" ? controls.create : controls.open)) {
+				return this.#controlRefusal(
+					request,
+					previous.disconnectedReason === undefined ? "unavailable" : "disconnected",
+					`Cannot ${request.command} while the observed session phase is ${previous.snapshot.phase}`,
+				);
+			}
+		}
+		this.#pendingReplacement = true;
+		if (previous !== undefined) this.#publishSession(previous);
+		const operation = this.#serialize(async () => {
+			if (this.#disposed || !this.#client.connected) {
+				throw new PiDisconnectedError("PiClient is disconnected");
+			}
+			const pending: PendingAttachment | undefined =
+				request.command === "open"
+					? {sessionId: request.sessionId, eventsAfterSnapshot: []}
+					: undefined;
+			if (pending !== undefined) this.#pendingAttachment = pending;
+			let lease: PiSessionHandle;
+			try {
+				lease = await acquire();
+			} finally {
+				if (pending !== undefined && this.#pendingAttachment === pending) {
+					this.#pendingAttachment = undefined;
+				}
+			}
+			const snapshot = lease.snapshot;
+			if (snapshot === undefined) {
+				await lease.dispose().catch(() => undefined);
+				throw new PiServerError({
+					code: "invalid_request",
+					message: "PiClient acknowledged a session without a snapshot",
+				});
+			}
+			if (this.#attachment !== previous) {
+				await lease.dispose().catch(() => undefined);
+				throw new PiSessionOwnershipError(
+					snapshot.id,
+					"The selected session changed before the request was acknowledged",
+				);
+			}
+			if (previous !== undefined) await this.#releaseAttachment();
+			const attachment = this.#bindLease(lease, snapshot);
+			if (pending !== undefined) {
+				for (const event of pending.eventsAfterSnapshot) {
+					this.#acceptEvent(attachment.generation, event);
+				}
+			}
+			this.#publishSession(attachment);
+			return attachment;
+		})
+			.then((attachment) => {
+				this.#pendingReplacement = false;
+				this.#publishSession(attachment);
+				return this.#acknowledged(request, attachment);
+			})
+			.finally(() => {
+				if (!this.#pendingReplacement) return;
+				this.#pendingReplacement = false;
+				const attachment = this.#attachment;
+				if (attachment !== undefined) this.#publishSession(attachment);
+			});
+		return this.#awaitAcknowledgement(request, operation);
+	}
+
+	async #runSessionControl(
+		request: Exclude<ControlRequest, {command: "create" | "open"}>,
+		execute: (lease: PiSessionHandle) => Promise<SessionSnapshot>,
+	): Promise<ControlLiveSessionOutcome> {
+		const attachment = this.#attachment;
+		if (attachment === undefined) {
+			return this.#controlRefusal(
+				request,
+				"ownership-refused",
+				"No exclusive session lease is held",
+			);
+		}
+		if (attachment.disconnectedReason !== undefined || !this.#client.connected) {
+			return this.#controlRefusal(
+				request,
+				"disconnected",
+				attachment.disconnectedReason ?? "PiClient is disconnected",
+			);
+		}
+		if (attachment.leaseReleased || !attachment.lease.active) {
+			return this.#controlRefusal(
+				request,
+				"ownership-refused",
+				"The exclusive session lease is no longer active",
+			);
+		}
+		if (this.#pendingReplacement) {
+			return this.#controlRefusal(request, "unavailable", "A session replacement is pending");
+		}
+		const controls = this.#controlsOf(attachment);
+		const available =
+			request.command === "steer"
+				? controls.steer
+				: request.command === "abort"
+					? controls.abort
+					: request.command === "set-model"
+						? controls.setModel
+						: controls.setThinking;
+		if (!available) {
+			const unsupported =
+				(request.command === "set-model" && controls.models.length === 0) ||
+				(request.command === "set-thinking" && controls.thinkingLevels.length === 0);
+			return this.#controlRefusal(
+				request,
+				unsupported ? "unsupported-capability" : "unavailable",
+				`The observed session cannot ${request.command} during ${attachment.snapshot.phase}`,
+			);
+		}
+		if (
+			request.command === "set-model" &&
+			!controls.models.some((candidate) => sameModel(candidate.model, request.model))
+		) {
+			return this.#controlRefusal(
+				request,
+				"unsupported-value",
+				`Model ${request.model.provider}/${request.model.id} is not an authenticated pi capability`,
+			);
+		}
+		if (
+			request.command === "set-thinking" &&
+			!controls.thinkingLevels.includes(request.thinkingLevel)
+		) {
+			return this.#controlRefusal(
+				request,
+				"unsupported-value",
+				`Thinking level ${request.thinkingLevel} is not supported by the observed model`,
+			);
+		}
+		const idleControl = request.command === "set-model" || request.command === "set-thinking";
+		if (idleControl) {
+			if (this.#pendingIdleControl || this.#pendingPrompts > 0) {
+				return this.#controlRefusal(request, "unavailable", "Another session operation is pending");
+			}
+			this.#pendingIdleControl = true;
+			this.#publishSession(attachment);
+		}
+		const operation = execute(attachment.lease)
+			.then(() => this.#reconcileAttachment(attachment))
+			.then((reconciled) => {
+				if (idleControl) this.#pendingIdleControl = false;
+				if (this.#attachment === reconciled) this.#publishSession(reconciled);
+				return this.#acknowledged(request, reconciled);
+			})
+			.finally(() => {
+				if (!idleControl || !this.#pendingIdleControl) return;
+				this.#pendingIdleControl = false;
+				if (this.#attachment === attachment) this.#publishSession(attachment);
+			});
+		return this.#awaitAcknowledgement(request, operation);
+	}
+
+	async #awaitAcknowledgement(
+		request: ControlRequest,
+		operation: Promise<ControlLiveSessionOutcome>,
+	): Promise<ControlLiveSessionOutcome> {
+		const deadline = this.#makeAcknowledgementDeadline(this.#acknowledgementTimeoutMs);
+		const observed = operation.then(
+			(outcome) => ({_tag: "outcome" as const, outcome}),
+			(error: unknown) => ({_tag: "error" as const, error}),
+		);
+		const winner = await Promise.race([
+			observed,
+			deadline.elapsed.then(() => ({_tag: "timeout" as const})),
+		]);
+		if (winner._tag === "timeout") {
+			return this.#controlRefusal(
+				request,
+				"timeout",
+				`Pi did not acknowledge ${request.command} within ${this.#acknowledgementTimeoutMs}ms`,
+			);
+		}
+		deadline.cancel();
+		if (winner._tag === "outcome") return winner.outcome;
+		return this.#controlRefusal(
+			request,
+			controlErrorCode(winner.error),
+			messageOf(winner.error),
+			winner.error instanceof PiServerError ? winner.error.code : undefined,
+		);
+	}
+
+	#acknowledged(
+		request: ControlRequest,
+		attachment: Attachment,
+	): Extract<ControlLiveSessionOutcome, {_tag: "acknowledged"}> {
+		const session = this.#attachedViewOf(attachment, this.#sequence);
+		if (request.command === "set-model") {
+			return {
+				_tag: "acknowledged",
+				command: request.command,
+				correlationId: request.correlationId,
+				session,
+				value: session.model,
+			};
+		}
+		if (request.command === "set-thinking") {
+			return {
+				_tag: "acknowledged",
+				command: request.command,
+				correlationId: request.correlationId,
+				session,
+				value: session.thinkingLevel,
+			};
+		}
+		return {
+			_tag: "acknowledged",
+			command: request.command,
+			correlationId: request.correlationId,
+			session,
+		};
+	}
+
+	#controlRefusal(
+		request: ControlRequest,
+		code: Extract<ControlLiveSessionOutcome, {_tag: "refused"}>["code"],
+		reason: string,
+		protocolCode?: string,
+	): Extract<ControlLiveSessionOutcome, {_tag: "refused"}> {
+		return {
+			_tag: "refused",
+			command: request.command,
+			correlationId: request.correlationId,
+			code,
+			reason,
+			...(protocolCode === undefined ? {} : {protocolCode}),
+			session: this.current(),
+		};
+	}
+
+	#publishControl(outcome: ControlLiveSessionOutcome): ControlLiveSessionOutcome {
+		this.#publish({_tag: "control", sequence: this.#nextSequence(), outcome});
+		return outcome;
+	}
+
+	#makeControlRoom(): boolean {
+		if (this.#controls.size < CORRELATED_CONTROL_LIMIT) return true;
+		for (const [correlationId, control] of this.#controls) {
+			if (!control.settled) continue;
+			this.#controls.delete(correlationId);
+			return true;
+		}
+		return false;
+	}
+
+	#bindLease(lease: PiSessionHandle, snapshot: SessionSnapshot): Attachment {
+		const generation = ++this.#generation;
+		const attachment: Attachment = {
+			lease,
+			generation,
+			snapshot,
+			transcript: snapshot.transcript.map(entryOf),
+			toolCallBuffers: new Map(),
+			unsubscribes: [],
+			leaseReleased: false,
+		};
+		const unsubscribes = [lease.subscribe((next) => this.#acceptSnapshot(generation, next))];
+		const bound = {...attachment, unsubscribes};
+		this.#attachment = bound;
+		return bound;
+	}
+
+	#reconcileAttachment(attachment: Attachment): Attachment {
+		if (this.#attachment !== attachment) {
+			throw new PiSessionOwnershipError(
+				attachment.snapshot.id,
+				"The selected session changed before the request was acknowledged",
+			);
+		}
+		if (attachment.disconnectedReason !== undefined || !this.#client.connected) {
+			throw new PiDisconnectedError(
+				attachment.disconnectedReason ?? "PiClient disconnected before acknowledgement",
+			);
+		}
+		if (attachment.leaseReleased || !attachment.lease.active) {
+			throw new PiSessionOwnershipError(
+				attachment.snapshot.id,
+				"The exclusive session lease ended before acknowledgement",
+			);
+		}
+		const snapshot = attachment.lease.snapshot;
+		if (snapshot === undefined) {
+			throw new PiSessionDetachedError(attachment.snapshot.id);
+		}
+		if (snapshot !== attachment.snapshot) this.#acceptSnapshot(attachment.generation, snapshot);
+		return attachment;
+	}
+
 	async #runPrompt(request: PromptLiveSessionRequest): Promise<PromptLiveSessionOutcome> {
 		const attachment = this.#attachment;
 		let outcome: PromptLiveSessionOutcome;
@@ -380,7 +863,15 @@ export class PiLiveSessionState implements LiveSessionState {
 			};
 		} else {
 			try {
-				await attachment.lease.prompt(request.text);
+				this.#pendingPrompts += 1;
+				this.#publishSession(attachment);
+				try {
+					await attachment.lease.prompt(request.text);
+				} finally {
+					this.#pendingPrompts -= 1;
+					if (this.#attachment === attachment) this.#publishSession(attachment);
+				}
+				this.#reconcileAttachment(attachment);
 				if (this.#attachment !== attachment) {
 					throw new PiSessionOwnershipError(
 						attachment.snapshot.id,
@@ -526,6 +1017,41 @@ export class PiLiveSessionState implements LiveSessionState {
 		});
 	}
 
+	#controlsOf(attachment: Attachment): LiveSessionControls {
+		const models = (this.#client.snapshot?.models ?? [])
+			.filter((candidate: ModelMetadata) => candidate.authenticated)
+			.map((candidate: ModelMetadata) => ({
+				model: {provider: candidate.provider, id: candidate.id},
+				name: candidate.name,
+				supportedThinkingLevels: [...candidate.supportedThinkingLevels],
+			}));
+		const selected = models.find((candidate) =>
+			sameModel(candidate.model, attachment.snapshot.model),
+		);
+		const thinkingLevels = selected?.supportedThinkingLevels ?? [];
+		const owned =
+			attachment.disconnectedReason === undefined &&
+			this.#client.connected &&
+			!attachment.leaseReleased &&
+			attachment.lease.active;
+		const idleAvailable =
+			owned &&
+			attachment.snapshot.phase === "idle" &&
+			!this.#pendingReplacement &&
+			!this.#pendingIdleControl &&
+			this.#pendingPrompts === 0;
+		return {
+			create: idleAvailable,
+			open: idleAvailable,
+			steer: owned && !this.#pendingReplacement && attachment.snapshot.phase === "turn",
+			abort: owned && !this.#pendingReplacement && attachment.snapshot.phase !== "idle",
+			setModel: idleAvailable && models.length > 0,
+			setThinking: idleAvailable && thinkingLevels.length > 0,
+			models,
+			thinkingLevels: [...thinkingLevels],
+		};
+	}
+
 	#attachedViewOf(attachment: Attachment, sequence: number): AttachedLiveSession {
 		return {
 			_tag: "attached",
@@ -549,6 +1075,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			),
 			transcript: [...attachment.transcript],
 			lastEventSequence: sequence,
+			controls: this.#controlsOf(attachment),
 		};
 	}
 

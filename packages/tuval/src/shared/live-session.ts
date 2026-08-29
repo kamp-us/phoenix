@@ -66,6 +66,25 @@ export const LiveSessionCompletion = Schema.Literals([
 ]);
 export type LiveSessionCompletion = (typeof LiveSessionCompletion)["Type"];
 
+export const ModelCapability = Schema.Struct({
+	model: ModelRef,
+	name: Schema.String,
+	supportedThinkingLevels: Schema.Array(ThinkingLevel),
+});
+export type ModelCapability = (typeof ModelCapability)["Type"];
+
+export const LiveSessionControls = Schema.Struct({
+	create: Schema.Boolean,
+	open: Schema.Boolean,
+	steer: Schema.Boolean,
+	abort: Schema.Boolean,
+	setModel: Schema.Boolean,
+	setThinking: Schema.Boolean,
+	models: Schema.Array(ModelCapability),
+	thinkingLevels: Schema.Array(ThinkingLevel),
+});
+export type LiveSessionControls = (typeof LiveSessionControls)["Type"];
+
 const LiveSessionBase = {
 	sessionId: Schema.String,
 	revision: Schema.Number,
@@ -75,6 +94,7 @@ const LiveSessionBase = {
 	completion: LiveSessionCompletion,
 	transcript: Schema.Array(LiveTranscriptEntry),
 	lastEventSequence: Schema.Number,
+	controls: Schema.optionalKey(LiveSessionControls),
 };
 
 export const AttachedLiveSession = Schema.Struct({
@@ -138,6 +158,91 @@ export const ReleaseLiveSessionOutcome = Schema.Struct({
 });
 export type ReleaseLiveSessionOutcome = (typeof ReleaseLiveSessionOutcome)["Type"];
 
+export const CreateLiveSessionRequest = Schema.Struct({
+	correlationId: Schema.String,
+	cwd: Schema.optionalKey(Schema.String),
+	name: Schema.optionalKey(Schema.String),
+});
+export type CreateLiveSessionRequest = (typeof CreateLiveSessionRequest)["Type"];
+
+export const OpenLiveSessionRequest = Schema.Struct({
+	correlationId: Schema.String,
+	sessionId: Schema.String,
+});
+export type OpenLiveSessionRequest = (typeof OpenLiveSessionRequest)["Type"];
+
+export const SteerLiveSessionRequest = Schema.Struct({
+	correlationId: Schema.String,
+	text: Schema.String,
+});
+export type SteerLiveSessionRequest = (typeof SteerLiveSessionRequest)["Type"];
+
+export const AbortLiveSessionRequest = Schema.Struct({correlationId: Schema.String});
+export type AbortLiveSessionRequest = (typeof AbortLiveSessionRequest)["Type"];
+
+export const SetModelLiveSessionRequest = Schema.Struct({
+	correlationId: Schema.String,
+	model: ModelRef,
+});
+export type SetModelLiveSessionRequest = (typeof SetModelLiveSessionRequest)["Type"];
+
+export const SetThinkingLiveSessionRequest = Schema.Struct({
+	correlationId: Schema.String,
+	thinkingLevel: ThinkingLevel,
+});
+export type SetThinkingLiveSessionRequest = (typeof SetThinkingLiveSessionRequest)["Type"];
+
+export const LiveSessionControlCommand = Schema.Literals([
+	"create",
+	"open",
+	"steer",
+	"abort",
+	"set-model",
+	"set-thinking",
+]);
+export type LiveSessionControlCommand = (typeof LiveSessionControlCommand)["Type"];
+
+const ControlAcknowledgementBase = {
+	_tag: Schema.Literal("acknowledged"),
+	correlationId: Schema.String,
+	session: AttachedLiveSession,
+};
+
+export const ControlLiveSessionOutcome = Schema.Union([
+	Schema.Struct({
+		...ControlAcknowledgementBase,
+		command: Schema.Literals(["create", "open", "steer", "abort"]),
+	}),
+	Schema.Struct({
+		...ControlAcknowledgementBase,
+		command: Schema.Literal("set-model"),
+		value: ModelRef,
+	}),
+	Schema.Struct({
+		...ControlAcknowledgementBase,
+		command: Schema.Literal("set-thinking"),
+		value: ThinkingLevel,
+	}),
+	Schema.Struct({
+		_tag: Schema.Literal("refused"),
+		command: LiveSessionControlCommand,
+		correlationId: Schema.String,
+		code: Schema.Literals([
+			"ownership-refused",
+			"unsupported-capability",
+			"unsupported-value",
+			"unavailable",
+			"timeout",
+			"disconnected",
+			"protocol",
+		]),
+		reason: Schema.String,
+		protocolCode: Schema.optionalKey(Schema.String),
+		session: Schema.NullOr(LiveSessionView),
+	}),
+]);
+export type ControlLiveSessionOutcome = (typeof ControlLiveSessionOutcome)["Type"];
+
 export const LiveSessionEvent = Schema.Union([
 	Schema.Struct({
 		_tag: Schema.Literal("session"),
@@ -148,6 +253,11 @@ export const LiveSessionEvent = Schema.Union([
 		_tag: Schema.Literal("prompt"),
 		sequence: Schema.Number,
 		outcome: PromptLiveSessionOutcome,
+	}),
+	Schema.Struct({
+		_tag: Schema.Literal("control"),
+		sequence: Schema.Number,
+		outcome: ControlLiveSessionOutcome,
 	}),
 	Schema.Struct({
 		_tag: Schema.Literal("released"),

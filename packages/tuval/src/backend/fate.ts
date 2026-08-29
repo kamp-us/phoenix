@@ -1,6 +1,15 @@
 import {Fate, FateServer} from "@kampus/fate-effect";
 import {Effect, Schema} from "effect";
-import {AttachLiveSessionRequest, PromptLiveSessionRequest} from "../shared/live-session.js";
+import {
+	AbortLiveSessionRequest,
+	AttachLiveSessionRequest,
+	CreateLiveSessionRequest,
+	OpenLiveSessionRequest,
+	PromptLiveSessionRequest,
+	SetModelLiveSessionRequest,
+	SetThinkingLiveSessionRequest,
+	SteerLiveSessionRequest,
+} from "../shared/live-session.js";
 import {LineageIndex} from "./lineage.js";
 import {LiveSession} from "./live-session.js";
 import {PiDiscovery} from "./pi-discovery.js";
@@ -30,6 +39,48 @@ export const tuvalFateConfig = FateServer.config({
 		),
 	},
 	mutations: {
+		"liveSession.create": Fate.mutation(
+			{input: CreateLiveSessionRequest, type: "TuvalControlOutcome"},
+			Effect.fn("liveSession.create")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.create(input);
+			}),
+		),
+		"liveSession.open": Fate.mutation(
+			{input: OpenLiveSessionRequest, type: "TuvalControlOutcome"},
+			Effect.fn("liveSession.open")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.open(input);
+			}),
+		),
+		"liveSession.steer": Fate.mutation(
+			{input: SteerLiveSessionRequest, type: "TuvalControlOutcome"},
+			Effect.fn("liveSession.steer")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.steer(input);
+			}),
+		),
+		"liveSession.abort": Fate.mutation(
+			{input: AbortLiveSessionRequest, type: "TuvalControlOutcome"},
+			Effect.fn("liveSession.abort")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.abort(input);
+			}),
+		),
+		"liveSession.setModel": Fate.mutation(
+			{input: SetModelLiveSessionRequest, type: "TuvalControlOutcome"},
+			Effect.fn("liveSession.setModel")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.setModel(input);
+			}),
+		),
+		"liveSession.setThinking": Fate.mutation(
+			{input: SetThinkingLiveSessionRequest, type: "TuvalControlOutcome"},
+			Effect.fn("liveSession.setThinking")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.setThinking(input);
+			}),
+		),
 		"liveSession.attach": Fate.mutation(
 			{input: AttachLiveSessionRequest, type: "TuvalLiveSession"},
 			Effect.fn("liveSession.attach")(function* ({input}) {

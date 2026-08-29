@@ -102,15 +102,20 @@ parents remain diagnostic-only.
 
 The package exports the schema-backed live-session wire types from `tuval/live-session`.
 `@kampus/fate-effect` exposes the `liveSession.current` query plus `liveSession.attach`,
-`liveSession.prompt`, and `liveSession.release` mutations. `GET /fate/live` streams the service's
-ordered events directly, starting after the optional sequence cursor; clients do not poll a query.
-Attachments hold one exclusive PiClient lease at a time. Replacing or disconnecting a session
-releases its subscription and lease before more work can use it.
+`liveSession.prompt`, `liveSession.create`, `liveSession.open`, `liveSession.steer`,
+`liveSession.abort`, `liveSession.setModel`, `liveSession.setThinking`, and `liveSession.release`
+mutations. `GET /fate/live` streams the service's ordered events directly, starting after the
+optional sequence cursor; clients do not poll a query. Attachments hold one exclusive PiClient lease
+at a time. Replacing or disconnecting a session releases its subscription and lease before more work
+can use it.
 
 Transcript snapshots are reduced with ordered Pi protocol progress events by item identity, so an
-item present at the attach boundary is updated rather than duplicated. Prompt mutations require a
-caller-supplied correlation id and return `acknowledged` only after PiClient resolves the matching
-protocol result; ownership, disconnect, and protocol failures return explicit refusals. A malformed
+item present at the attach boundary is updated rather than duplicated. Prompt and control mutations
+require caller-supplied correlation ids and return `acknowledged` only after PiClient resolves the
+matching protocol result. Control projections derive phase and lease availability from the observed
+snapshot and expose only authenticated pi models plus the selected model's supported thinking
+levels. Ownership, unsupported capability or value, unavailable phase, timeout, disconnect, and
+protocol failures return correlated refusals carrying the last observed projection. A malformed
 protocol event produces a diagnostic and a disconnected snapshot while retaining the last validated
 transcript.
 
