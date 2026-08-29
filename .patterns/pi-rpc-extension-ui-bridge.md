@@ -53,7 +53,17 @@ resolved dialog, or prior update history. Disconnect settles pending dialogs but
 current state. Unload settles pending dialogs and removes that scope's current state and duplicate
 markers.
 
-The implementation is [`backend/extension-ui.ts`](../packages/tuval/src/backend/extension-ui.ts).
-Protocol coverage lives in
-[`extension-ui.test.ts`](../packages/tuval/test/extension-ui.test.ts) and
-[`extension-ui-protocol.test.ts`](../packages/tuval/test/extension-ui-protocol.test.ts).
+Process restoration persists that current projection by package name plus session id, never by an
+extension path. The binding is portable because pi's installed 0.84.3 source makes the boundary
+explicit: `pi-client/README.md` says the application supplies a fresh transport and calls
+`reconnect()` itself; `pi-client/dist/client.js` invalidates leases on disconnect; and
+`pi-coding-agent/docs/extensions.md` distinguishes durable custom entries from imperative UI
+surfaces. Tuval therefore reacquires selected-session intent, binds one fresh lease subscription,
+and restores package-scoped current status/widgets. It does not persist or replay transport leases,
+prompts, controls, notifications, dialog requests/responses, or machine-local package paths.
+
+The implementation is [`backend/extension-ui.ts`](../packages/tuval/src/backend/extension-ui.ts)
+and [`backend/resilience.ts`](../packages/tuval/src/backend/resilience.ts). Protocol coverage lives in
+[`extension-ui.test.ts`](../packages/tuval/test/extension-ui.test.ts),
+[`extension-ui-protocol.test.ts`](../packages/tuval/test/extension-ui-protocol.test.ts), and
+[`resilience.test.ts`](../packages/tuval/test/resilience.test.ts).

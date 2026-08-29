@@ -1,7 +1,11 @@
 import type {RpcExtensionUIRequest} from "@earendil-works/pi-coding-agent";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, Queue} from "effect";
-import {type ExtensionUIScheduler, makeExtensionUI} from "../src/backend/extension-ui.js";
+import {
+	type ExtensionUIScheduler,
+	makeDurableExtensionUI,
+	makeExtensionUI,
+} from "../src/backend/extension-ui.js";
 import {
 	type ExtensionUIEvent,
 	type ExtensionUIScope,
@@ -159,6 +163,73 @@ describe("RPC extension UI bridge", () => {
 			unsubscribe();
 		});
 	});
+
+	it.effect(
+		"publishes retained status/widget state only after its durable checkpoint succeeds",
+		() =>
+			Effect.gen(function* () {
+				const raw = makeExtensionUI();
+				const bridge = makeDurableExtensionUI(raw, () => Effect.succeed(false));
+				const events: Array<ExtensionUIEvent> = [];
+				const unsubscribe = yield* bridge.subscribe((event) => events.push(event));
+
+				const status = yield* bridge.dispatch(
+					scope,
+					request({
+						type: "extension_ui_request",
+						id: "status-not-durable",
+						method: "setStatus",
+						statusKey: "build",
+						statusText: "running",
+					}),
+				);
+				const widget = yield* bridge.dispatch(
+					scope,
+					request({
+						type: "extension_ui_request",
+						id: "widget-not-durable",
+						method: "setWidget",
+						widgetKey: "plan",
+						widgetLines: ["one"],
+					}),
+				);
+
+				assert.strictEqual(status._tag, "unavailable");
+				assert.strictEqual(widget._tag, "unavailable");
+				assert.deepStrictEqual(events, []);
+				assert.deepStrictEqual(yield* bridge.snapshots(), []);
+				unsubscribe();
+			}),
+	);
+
+	it.effect("refuses unload without cancelling or hiding state when persistence fails", () =>
+		Effect.gen(function* () {
+			const raw = makeExtensionUI();
+			yield* raw.dispatch(
+				scope,
+				request({
+					type: "extension_ui_request",
+					id: "durable-status",
+					method: "setStatus",
+					statusKey: "build",
+					statusText: "running",
+				}),
+			);
+			const bridge = makeDurableExtensionUI(raw, () => Effect.succeed(false));
+			const events: Array<ExtensionUIEvent> = [];
+			const unsubscribe = yield* bridge.subscribe((event) => events.push(event));
+			events.length = 0;
+
+			const outcome = yield* bridge.unload(scope);
+
+			assert.strictEqual(outcome._tag, "refused");
+			assert.deepStrictEqual(events, []);
+			assert.deepStrictEqual(yield* bridge.snapshots(), [
+				{scope, statuses: [{key: "build", text: "running"}], widgets: []},
+			]);
+			unsubscribe();
+		}),
+	);
 
 	it.effect("scopes ephemeral notification and replayable current status/widget state", () =>
 		Effect.gen(function* () {

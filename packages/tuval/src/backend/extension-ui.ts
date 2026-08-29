@@ -1,5 +1,5 @@
 import type {RpcExtensionUIRequest} from "@earendil-works/pi-coding-agent";
-import {Context, Effect} from "effect";
+import {Context, Effect, Semaphore} from "effect";
 import type {
 	ExtensionUICancelRequest,
 	ExtensionUIDispatchOutcome,
@@ -10,6 +10,7 @@ import type {
 	ExtensionUIResponseRequest,
 	ExtensionUIScope,
 	ExtensionUISnapshot,
+	ExtensionUIUnloadOutcome,
 } from "../shared/extension-ui.js";
 import {extensionUIMethods} from "../shared/extension-ui.js";
 
@@ -49,16 +50,26 @@ interface PendingRequest {
 	cancelTimer: () => void;
 }
 
+type ExtensionUICheckpoint = (
+	candidate: ReadonlyArray<ExtensionUISnapshot>,
+	commit: () => void,
+) => Effect.Effect<boolean>;
+
 export interface ExtensionUIService {
 	readonly dispatch: (
 		scope: ExtensionUIScope,
 		request: RpcExtensionUIRequest,
+		checkpoint?: ExtensionUICheckpoint,
 	) => Effect.Effect<ExtensionUIDispatchOutcome>;
 	readonly respond: (
 		request: ExtensionUIResponseRequest,
 	) => Effect.Effect<ExtensionUIResponseOutcome>;
 	readonly cancel: (request: ExtensionUICancelRequest) => Effect.Effect<ExtensionUIResponseOutcome>;
-	readonly unload: (scope: ExtensionUIScope) => Effect.Effect<void>;
+	readonly unload: (
+		scope: ExtensionUIScope,
+		checkpoint?: ExtensionUICheckpoint,
+	) => Effect.Effect<ExtensionUIUnloadOutcome>;
+	readonly restore: (snapshots: ReadonlyArray<ExtensionUISnapshot>) => Effect.Effect<void>;
 	readonly snapshots: () => Effect.Effect<ReadonlyArray<ExtensionUISnapshot>>;
 	readonly subscribe: (listener: (event: ExtensionUIEvent) => void) => Effect.Effect<() => void>;
 	readonly disconnect: () => Effect.Effect<void>;
@@ -74,7 +85,7 @@ export interface PackageExtensionUIService {
 		sessionId: string,
 		request: RpcExtensionUIRequest,
 	) => Effect.Effect<ExtensionUIDispatchOutcome>;
-	readonly unload: (sessionId: string) => Effect.Effect<void>;
+	readonly unload: (sessionId: string) => Effect.Effect<ExtensionUIUnloadOutcome>;
 }
 
 export class PackageExtensionUI extends Context.Service<
@@ -104,8 +115,14 @@ const cancelledResponse = (id: string): ExtensionUIResponse => ({
 
 export const makeExtensionUI = (
 	scheduler: ExtensionUIScheduler = liveScheduler,
+	checkpoint: ExtensionUICheckpoint = (_candidate, commit) =>
+		Effect.sync(() => {
+			commit();
+			return true;
+		}),
 ): ExtensionUIService => {
 	const states = new Map<string, ScopedState>();
+	const retainedOperations = Semaphore.makeUnsafe(1);
 	const pending = new Map<string, PendingRequest>();
 	const settled = new Set<string>();
 	const listeners = new Set<(event: ExtensionUIEvent) => void>();
@@ -174,8 +191,48 @@ export const makeExtensionUI = (
 			}))
 			.filter(({statuses, widgets}) => statuses.length > 0 || widgets.length > 0)
 			.sort((left, right) => scopeKey(left.scope).localeCompare(scopeKey(right.scope)));
+	const retainedCandidate = (
+		scope: ExtensionUIScope,
+		request: Extract<ExtensionUIRequest, {method: "setStatus" | "setWidget"}>,
+	): ReadonlyArray<ExtensionUISnapshot> => {
+		const snapshots = snapshotValues();
+		const current = snapshots.find((snapshot) => sameScope(snapshot.scope, scope));
+		const statuses = new Map(current?.statuses.map(({key, text}) => [key, text]));
+		const widgets = new Map(
+			current?.widgets.map(({key, lines, placement}) => [key, {lines, placement}]),
+		);
+		if (request.method === "setStatus") {
+			if (request.statusText === undefined) statuses.delete(request.statusKey);
+			else statuses.set(request.statusKey, request.statusText);
+		} else {
+			if (request.widgetLines === undefined) widgets.delete(request.widgetKey);
+			else {
+				widgets.set(request.widgetKey, {
+					lines: [...request.widgetLines],
+					placement: request.widgetPlacement ?? "aboveEditor",
+				});
+			}
+		}
+		const candidate: ExtensionUISnapshot = {
+			scope: {...scope},
+			statuses: [...statuses]
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, text]) => ({key, text})),
+			widgets: [...widgets]
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, widget]) => ({key, ...widget})),
+		};
+		return [
+			...snapshots.filter((snapshot) => !sameScope(snapshot.scope, scope)),
+			...(candidate.statuses.length === 0 && candidate.widgets.length === 0 ? [] : [candidate]),
+		].sort((left, right) => scopeKey(left.scope).localeCompare(scopeKey(right.scope)));
+	};
 
-	const dispatch = (scope: ExtensionUIScope, rawRequest: RpcExtensionUIRequest) => {
+	const dispatch = (
+		scope: ExtensionUIScope,
+		rawRequest: RpcExtensionUIRequest,
+		operationCheckpoint: ExtensionUICheckpoint = checkpoint,
+	) => {
 		const request = rawRequest as ExtensionUIRequest;
 		const classification = extensionUIMethods[request.method];
 		if (classification.support === "unavailable") {
@@ -243,42 +300,56 @@ export const makeExtensionUI = (
 				return Effect.sync(() => settle(entry, "cancelled"));
 			});
 		}
-		return Effect.sync(() => {
-			switch (request.method) {
-				case "notify":
-					publish({_tag: "notify", scope, request});
-					break;
-				case "setStatus": {
+		if (request.method === "notify") {
+			return Effect.sync(() => {
+				publish({_tag: "notify", scope, request});
+				return {_tag: "accepted", method: request.method} as const;
+			});
+		}
+		if (request.method !== "setStatus" && request.method !== "setWidget") {
+			return Effect.die(new Error(`Unhandled extension UI method ${request.method}`));
+		}
+		return retainedOperations.withPermit(
+			Effect.gen(function* () {
+				const candidate = retainedCandidate(scope, request);
+				const commit = () => {
 					const state = stateFor(scope);
-					if (request.statusText === undefined) state.statuses.delete(request.statusKey);
-					else state.statuses.set(request.statusKey, request.statusText);
-					publish({
-						_tag: "status",
-						scope,
-						key: request.statusKey,
-						...(request.statusText === undefined ? {} : {text: request.statusText}),
-						replay: false,
-					});
-					break;
+					if (request.method === "setStatus") {
+						if (request.statusText === undefined) state.statuses.delete(request.statusKey);
+						else state.statuses.set(request.statusKey, request.statusText);
+						publish({
+							_tag: "status",
+							scope,
+							key: request.statusKey,
+							...(request.statusText === undefined ? {} : {text: request.statusText}),
+							replay: false,
+						});
+					} else {
+						const placement = request.widgetPlacement ?? "aboveEditor";
+						if (request.widgetLines === undefined) state.widgets.delete(request.widgetKey);
+						else {
+							state.widgets.set(request.widgetKey, {lines: [...request.widgetLines], placement});
+						}
+						publish({
+							_tag: "widget",
+							scope,
+							key: request.widgetKey,
+							...(request.widgetLines === undefined ? {} : {lines: request.widgetLines}),
+							placement,
+							replay: false,
+						});
+					}
+				};
+				if (!(yield* operationCheckpoint(candidate, commit))) {
+					return {
+						_tag: "unavailable",
+						method: request.method,
+						reason: "Current extension UI state could not be persisted",
+					} as const;
 				}
-				case "setWidget": {
-					const state = stateFor(scope);
-					const placement = request.widgetPlacement ?? "aboveEditor";
-					if (request.widgetLines === undefined) state.widgets.delete(request.widgetKey);
-					else state.widgets.set(request.widgetKey, {lines: [...request.widgetLines], placement});
-					publish({
-						_tag: "widget",
-						scope,
-						key: request.widgetKey,
-						...(request.widgetLines === undefined ? {} : {lines: request.widgetLines}),
-						placement,
-						replay: false,
-					});
-					break;
-				}
-			}
-			return {_tag: "accepted", method: request.method} as ExtensionUIDispatchOutcome;
-		});
+				return {_tag: "accepted", method: request.method} as const;
+			}),
+		);
 	};
 
 	return {
@@ -306,14 +377,54 @@ export const makeExtensionUI = (
 				return {_tag: "accepted", id: request.id} as const;
 			}),
 		),
-		unload: Effect.fn("ExtensionUI.unload")((scope) =>
+		unload: Effect.fn("ExtensionUI.unload")((scope, operationCheckpoint = checkpoint) =>
+			retainedOperations.withPermit(
+				Effect.gen(function* () {
+					const candidate = snapshotValues().filter(
+						(snapshot) => !sameScope(snapshot.scope, scope),
+					);
+					const commit = () => {
+						cancelScope(scope, "unloaded");
+						states.delete(scopeKey(scope));
+						for (const key of [...settled]) {
+							if (key.startsWith(`${scopeKey(scope)}:`)) settled.delete(key);
+						}
+						publish({_tag: "unloaded", scope});
+					};
+					if (!(yield* operationCheckpoint(candidate, commit))) {
+						return {
+							_tag: "refused",
+							scope,
+							reason: "Extension unload could not be persisted",
+						} as const;
+					}
+					return {_tag: "unloaded", scope} as const;
+				}),
+			),
+		),
+		restore: Effect.fn("ExtensionUI.restore")((snapshots) =>
 			Effect.sync(() => {
-				cancelScope(scope, "unloaded");
-				states.delete(scopeKey(scope));
-				for (const key of [...settled]) {
-					if (key.startsWith(`${scopeKey(scope)}:`)) settled.delete(key);
+				// Only retained current state is accepted here. Pending blocking requests, notifications,
+				// responses and settled ids intentionally have no persistence representation.
+				states.clear();
+				for (const snapshot of [...snapshots].sort((left, right) =>
+					scopeKey(left.scope).localeCompare(scopeKey(right.scope)),
+				)) {
+					const state = stateFor(snapshot.scope);
+					for (const status of [...snapshot.statuses].sort((left, right) =>
+						left.key.localeCompare(right.key),
+					)) {
+						state.statuses.set(status.key, status.text);
+					}
+					for (const widget of [...snapshot.widgets].sort((left, right) =>
+						left.key.localeCompare(right.key),
+					)) {
+						state.widgets.set(widget.key, {
+							lines: [...widget.lines],
+							placement: widget.placement,
+						});
+					}
 				}
-				publish({_tag: "unloaded", scope});
 			}),
 		),
 		snapshots: Effect.fn("ExtensionUI.snapshots")(() => Effect.sync(snapshotValues)),
@@ -361,6 +472,20 @@ export const makeExtensionUI = (
 		),
 	};
 };
+
+export const makeDurableExtensionUI = (
+	service: ExtensionUIService,
+	checkpoint: ExtensionUICheckpoint,
+): ExtensionUIService => ({
+	dispatch: (scope, request) => service.dispatch(scope, request, checkpoint),
+	respond: service.respond,
+	cancel: service.cancel,
+	unload: (scope) => service.unload(scope, checkpoint),
+	restore: service.restore,
+	snapshots: service.snapshots,
+	subscribe: service.subscribe,
+	disconnect: service.disconnect,
+});
 
 export const packageExtensionUI = (
 	packageName: string,

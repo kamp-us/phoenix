@@ -1,0 +1,327 @@
+diff --git a/dist/client.d.ts b/dist/client.d.ts
+index b228250..173ed6d 100644
+--- a/dist/client.d.ts
++++ b/dist/client.d.ts
+@@ -8,6 +8,7 @@ export declare class PiClient {
+     get connectionState(): ConnectionState;
+     get connected(): boolean;
+     get snapshot(): ServerSnapshot | undefined;
++    get pendingRequestCount(): number;
+     static connect(options: PiClientOptions): Promise<PiClient>;
+     connect(): Promise<ServerSnapshot>;
+     reconnect(): Promise<ServerSnapshot>;
+@@ -16,8 +17,8 @@ export declare class PiClient {
+     onEvent(listener: (event: ServerEvent) => void): Unsubscribe;
+     onConnectionStateChange(listener: (change: ConnectionStateChange) => void): Unsubscribe;
+     listSessions(): Promise<readonly SessionMetadata[]>;
+-    createSession(options?: CreateSessionOptions): Promise<PiSessionHandle>;
+-    attachSession(sessionId: string): Promise<PiSessionHandle>;
++    createSession(options?: CreateSessionOptions, signal?: AbortSignal): Promise<PiSessionHandle>;
++    attachSession(sessionId: string, signal?: AbortSignal): Promise<PiSessionHandle>;
+     acquireSession(sessionId: string, options: AcquireSessionOptions): Promise<PiSessionHandle>;
+     dispose(): Promise<void>;
+     [Symbol.asyncDispose](): Promise<void>;
+diff --git a/dist/client.js b/dist/client.js
+index 11fe04e..7a84611 100644
+--- a/dist/client.js
++++ b/dist/client.js
+@@ -1,6 +1,6 @@
+ import { encodeClientMessage, ProtocolValidationError, } from "@earendil-works/pi-protocol";
+ import { Connection } from "./connection.js";
+-import { PiClientDisposedError, PiDisconnectedError, PiServerError, PiSessionDetachedError, PiSessionOwnershipError, toError, } from "./errors.js";
++import { PiClientDisposedError, PiDisconnectedError, PiRequestCancelledError, PiServerError, PiSessionDetachedError, PiSessionOwnershipError, toError, } from "./errors.js";
+ import { createPromiseResolvers } from "./promise.js";
+ import { SessionHandle, } from "./session-handle.js";
+ import { ClientState } from "./state.js";
+@@ -18,6 +18,7 @@ export class PiClient {
+     #sessionReconciliations = new Map();
+     #connectionStateListeners = new Set();
+     #requestSequence = 0;
++    #cancelledRequestIds = new Set();
+     #disposed = false;
+     #disposePromise;
+     constructor(options) {
+@@ -43,6 +44,9 @@ export class PiClient {
+     get snapshot() {
+         return this.#state.snapshot;
+     }
++    get pendingRequestCount() {
++        return this.#pendingRequests.size;
++    }
+     static async connect(options) {
+         const client = new PiClient(options);
+         try {
+@@ -83,13 +87,13 @@ export class PiClient {
+     async listSessions() {
+         return (await this.#request({ command: "list" })).sessions;
+     }
+-    async createSession(options = {}) {
+-        const result = await this.#request({ command: "create", ...options });
++    async createSession(options = {}, signal) {
++        const result = await this.#request({ command: "create", ...options }, signal);
+         const token = this.#reserveSessionLease(result.session.id, "exclusive");
+         return this.#createSessionLease(result.session.id, token);
+     }
+-    async attachSession(sessionId) {
+-        return this.acquireSession(sessionId, { mode: "shared" });
++    async attachSession(sessionId, signal) {
++        return this.acquireSession(sessionId, { mode: "shared", signal });
+     }
+     async acquireSession(sessionId, options) {
+         this.#assertNotDisposed();
+@@ -104,7 +108,7 @@ export class PiClient {
+             if (reconciled || !this.#state.isSessionAttached(sessionId)) {
+                 let attachment = this.#sessionAttachments.get(sessionId);
+                 if (!attachment) {
+-                    attachment = this.#attachSession(sessionId);
++                    attachment = this.#attachSession(sessionId, options.signal);
+                     this.#sessionAttachments.set(sessionId, attachment);
+                 }
+                 try {
+@@ -122,10 +126,10 @@ export class PiClient {
+             throw error;
+         }
+     }
+-    async #attachSession(sessionId) {
++    async #attachSession(sessionId, signal) {
+         const previous = this.#state.forgetSessionSnapshot(sessionId);
+         try {
+-            await this.#request({ command: "attach", sessionId });
++            await this.#request({ command: "attach", sessionId }, signal);
+         }
+         catch (error) {
+             if (previous)
+@@ -133,14 +137,38 @@ export class PiClient {
+             throw error;
+         }
+     }
+-    #request(command) {
++    #request(command, signal) {
+         if (this.#disposed)
+             return Promise.reject(new PiClientDisposedError());
+         if (!this.connected)
+             return Promise.reject(new PiDisconnectedError());
+-        const id = `request-${++this.#requestSequence}`;
++        if (signal?.aborted)
++            return Promise.reject(new PiRequestCancelledError());
++        const requestSequence = ++this.#requestSequence;
++        const id = `request-${requestSequence}`;
+         const { promise, resolve, reject } = createPromiseResolvers();
+-        this.#pendingRequests.set(id, { command, resolve, reject });
++        const pending = { command, resolve, reject, unregisterAbort: () => { } };
++        this.#pendingRequests.set(id, pending);
++        if (signal) {
++            const onAbort = () => {
++                const cancelled = this.#takePendingRequest(id);
++                if (!cancelled)
++                    return;
++                this.#cancelledRequestIds.add(id);
++                if (this.#cancelledRequestIds.size > 1024) {
++                    const oldest = this.#cancelledRequestIds.values().next().value;
++                    if (oldest !== undefined)
++                        this.#cancelledRequestIds.delete(oldest);
++                }
++                cancelled.reject(new PiRequestCancelledError());
++            };
++            signal.addEventListener("abort", onAbort, { once: true });
++            pending.unregisterAbort = () => signal.removeEventListener("abort", onAbort);
++            if (signal.aborted)
++                onAbort();
++        }
++        if (!this.#pendingRequests.has(id))
++            return promise;
+         let frame;
+         try {
+             frame = encodeClientMessage({ type: "request", id, request: command }, { maxFrameLength: this.#connection.maxFrameLength });
+@@ -237,9 +265,9 @@ export class PiClient {
+             },
+             detach: () => release(false),
+             dispose: () => release(true),
+-            request: (command) => {
++            request: (command, signal) => {
+                 assertActive();
+-                return this.#request(command);
++                return this.#request(command, signal);
+             },
+         };
+         return new SessionHandle(sessionId, callbacks);
+@@ -253,6 +281,8 @@ export class PiClient {
+         }
+         const pending = this.#takePendingRequest(message.id);
+         if (!pending) {
++            if (this.#cancelledRequestIds.delete(message.id))
++                return;
+             this.#connection.fail(new ProtocolValidationError("Response has no matching request"));
+             return;
+         }
+@@ -279,15 +309,19 @@ export class PiClient {
+     }
+     #takePendingRequest(id) {
+         const request = this.#pendingRequests.get(id);
+-        if (request)
++        if (request) {
+             this.#pendingRequests.delete(id);
++            request.unregisterAbort();
++        }
+         return request;
+     }
+     #rejectPendingRequests(error) {
+         const requests = [...this.#pendingRequests.values()];
+         this.#pendingRequests.clear();
+-        for (const request of requests)
++        for (const request of requests) {
++            request.unregisterAbort();
+             request.reject(error);
++        }
+     }
+     dispose() {
+         if (this.#disposePromise)
+diff --git a/dist/errors.d.ts b/dist/errors.d.ts
+index 72e2651..897e321 100644
+--- a/dist/errors.d.ts
++++ b/dist/errors.d.ts
+@@ -10,6 +10,9 @@ export declare class PiDisconnectedError extends Error {
+ export declare class PiClientDisposedError extends Error {
+     constructor();
+ }
++export declare class PiRequestCancelledError extends Error {
++    constructor();
++}
+ export declare class PiSessionOwnershipError extends Error {
+     readonly sessionId: string;
+     constructor(sessionId: string, message: string);
+diff --git a/dist/errors.js b/dist/errors.js
+index 3a351b6..e0b5ad2 100644
+--- a/dist/errors.js
++++ b/dist/errors.js
+@@ -20,6 +20,12 @@ export class PiClientDisposedError extends Error {
+         this.name = "PiClientDisposedError";
+     }
+ }
++export class PiRequestCancelledError extends Error {
++    constructor() {
++        super("Pi client request was cancelled");
++        this.name = "PiRequestCancelledError";
++    }
++}
+ export class PiSessionOwnershipError extends Error {
+     sessionId;
+     constructor(sessionId, message) {
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 00b0f07..c55fe88 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,5 +1,5 @@
+ export { PiClient } from "./client.ts";
+-export { PiClientDisposedError, PiDisconnectedError, PiServerError, PiSessionDetachedError, PiSessionOwnershipError, } from "./errors.ts";
++export { PiClientDisposedError, PiDisconnectedError, PiRequestCancelledError, PiServerError, PiSessionDetachedError, PiSessionOwnershipError, } from "./errors.ts";
+ export type { AcquireSessionOptions, PiSessionHandle, SessionLease, SessionLeaseMode } from "./session-handle.ts";
+ export type { ByteTransport, ByteTransportFactory, ByteTransportHandlers } from "./transport.ts";
+ export type { ConnectionState, ConnectionStateChange, CreateSessionOptions, ListenerErrorHandler, PiClientOptions, Unsubscribe, } from "./types.ts";
+diff --git a/dist/index.js b/dist/index.js
+index 010ef02..bd3ad93 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1,3 +1,3 @@
+ export { PiClient } from "./client.js";
+-export { PiClientDisposedError, PiDisconnectedError, PiServerError, PiSessionDetachedError, PiSessionOwnershipError, } from "./errors.js";
++export { PiClientDisposedError, PiDisconnectedError, PiRequestCancelledError, PiServerError, PiSessionDetachedError, PiSessionOwnershipError, } from "./errors.js";
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/dist/session-handle.d.ts b/dist/session-handle.d.ts
+index 38f3c5e..3424a1e 100644
+--- a/dist/session-handle.d.ts
++++ b/dist/session-handle.d.ts
+@@ -6,6 +6,7 @@ type SessionCommand = Extract<Command, {
+ export type SessionLeaseMode = "shared" | "exclusive";
+ export interface AcquireSessionOptions {
+     mode: SessionLeaseMode;
++    signal?: AbortSignal;
+ }
+ export interface SessionLease extends AsyncDisposable {
+     readonly id: string;
+@@ -16,11 +17,11 @@ export interface SessionLease extends AsyncDisposable {
+     onEvent(listener: (event: ServerEvent) => void): Unsubscribe;
+     detach(): Promise<void>;
+     dispose(): Promise<void>;
+-    prompt(text: string): Promise<SessionSnapshot>;
+-    steer(text: string): Promise<SessionSnapshot>;
+-    abort(): Promise<SessionSnapshot>;
+-    setModel(model: ModelRef): Promise<SessionSnapshot>;
+-    setThinking(thinkingLevel: ThinkingLevel): Promise<SessionSnapshot>;
++    prompt(text: string, signal?: AbortSignal): Promise<SessionSnapshot>;
++    steer(text: string, signal?: AbortSignal): Promise<SessionSnapshot>;
++    abort(signal?: AbortSignal): Promise<SessionSnapshot>;
++    setModel(model: ModelRef, signal?: AbortSignal): Promise<SessionSnapshot>;
++    setThinking(thinkingLevel: ThinkingLevel, signal?: AbortSignal): Promise<SessionSnapshot>;
+ }
+ export type PiSessionHandle = SessionLease;
+ export interface SessionHandleCallbacks {
+@@ -30,7 +31,7 @@ export interface SessionHandleCallbacks {
+     onEvent(listener: (event: ServerEvent) => void): Unsubscribe;
+     detach(): Promise<void>;
+     dispose(): Promise<void>;
+-    request<const TCommand extends SessionCommand>(command: TCommand): Promise<ResultForCommand<TCommand>>;
++    request<const TCommand extends SessionCommand>(command: TCommand, signal?: AbortSignal): Promise<ResultForCommand<TCommand>>;
+ }
+ export declare class SessionHandle implements SessionLease {
+     #private;
+@@ -44,11 +45,11 @@ export declare class SessionHandle implements SessionLease {
+     detach(): Promise<void>;
+     dispose(): Promise<void>;
+     [Symbol.asyncDispose](): Promise<void>;
+-    prompt(text: string): Promise<SessionSnapshot>;
+-    steer(text: string): Promise<SessionSnapshot>;
+-    abort(): Promise<SessionSnapshot>;
+-    setModel(model: ModelRef): Promise<SessionSnapshot>;
+-    setThinking(thinkingLevel: ThinkingLevel): Promise<SessionSnapshot>;
++    prompt(text: string, signal?: AbortSignal): Promise<SessionSnapshot>;
++    steer(text: string, signal?: AbortSignal): Promise<SessionSnapshot>;
++    abort(signal?: AbortSignal): Promise<SessionSnapshot>;
++    setModel(model: ModelRef, signal?: AbortSignal): Promise<SessionSnapshot>;
++    setThinking(thinkingLevel: ThinkingLevel, signal?: AbortSignal): Promise<SessionSnapshot>;
+ }
+ export {};
+ //# sourceMappingURL=session-handle.d.ts.map
+\ No newline at end of file
+diff --git a/dist/session-handle.js b/dist/session-handle.js
+index ef933b6..ef87e4f 100644
+--- a/dist/session-handle.js
++++ b/dist/session-handle.js
+@@ -29,23 +29,23 @@ export class SessionHandle {
+     [Symbol.asyncDispose]() {
+         return this.dispose();
+     }
+-    async prompt(text) {
+-        return (await this.#request({ command: "prompt", sessionId: this.id, text })).session;
++    async prompt(text, signal) {
++        return (await this.#request({ command: "prompt", sessionId: this.id, text }, signal)).session;
+     }
+-    async steer(text) {
+-        return (await this.#request({ command: "steer", sessionId: this.id, text })).session;
++    async steer(text, signal) {
++        return (await this.#request({ command: "steer", sessionId: this.id, text }, signal)).session;
+     }
+-    async abort() {
+-        return (await this.#request({ command: "abort", sessionId: this.id })).session;
++    async abort(signal) {
++        return (await this.#request({ command: "abort", sessionId: this.id }, signal)).session;
+     }
+-    async setModel(model) {
+-        return (await this.#request({ command: "set_model", sessionId: this.id, model })).session;
++    async setModel(model, signal) {
++        return (await this.#request({ command: "set_model", sessionId: this.id, model }, signal)).session;
+     }
+-    async setThinking(thinkingLevel) {
+-        return (await this.#request({ command: "set_thinking", sessionId: this.id, thinkingLevel })).session;
++    async setThinking(thinkingLevel, signal) {
++        return (await this.#request({ command: "set_thinking", sessionId: this.id, thinkingLevel }, signal)).session;
+     }
+-    #request(command) {
+-        return this.#callbacks.request(command);
++    #request(command, signal) {
++        return this.#callbacks.request(command, signal);
+     }
+ }
+ //# sourceMappingURL=session-handle.js.map
+\ No newline at end of file

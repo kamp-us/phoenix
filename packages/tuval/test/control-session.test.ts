@@ -1,4 +1,11 @@
-import type {ByteTransportFactory, ByteTransportHandlers} from "@earendil-works/pi-client";
+// @patch-pin: @earendil-works/pi-client@0.84.3
+
+import {
+	type ByteTransportFactory,
+	type ByteTransportHandlers,
+	PiClient,
+	PiRequestCancelledError,
+} from "@earendil-works/pi-client";
 import {
 	type ClientMessage,
 	ClientMessageDecoder,
@@ -51,6 +58,7 @@ const snapshot = (
 });
 
 type Behavior = "acknowledge" | "hold" | "disconnect" | "protocol-error";
+type RequestMessage = Extract<ClientMessage, {readonly type: "request"}>;
 
 class SyntheticControlProtocol {
 	readonly commands: Array<string> = [];
@@ -59,6 +67,7 @@ class SyntheticControlProtocol {
 	readonly behavior = new Map<string, Behavior>();
 	readonly models: ReadonlyArray<ModelMetadata>;
 	#handlers: ByteTransportHandlers | undefined;
+	readonly #held: Array<RequestMessage> = [];
 	#createCount = 0;
 
 	constructor(models: ReadonlyArray<ModelMetadata>, ...sessions: ReadonlyArray<SessionSnapshot>) {
@@ -80,6 +89,29 @@ class SyntheticControlProtocol {
 	emitSnapshot(next: SessionSnapshot): void {
 		this.sessions.set(next.id, next);
 		this.#deliver({type: "event", event: {type: "session_snapshot", snapshot: next}});
+	}
+
+	respondUnknown(id: string): void {
+		this.#deliver({
+			type: "response",
+			id,
+			ok: false,
+			error: {code: "invalid_request", message: "unknown synthetic request"},
+		});
+	}
+
+	heldCount(command: string): number {
+		return this.#held.filter((message) => message.request.command === command).length;
+	}
+
+	acknowledgeHeld(command: string, occurrence = 0): void {
+		const matching = this.#held
+			.map((message, index) => ({message, index}))
+			.filter(({message}) => message.request.command === command);
+		const held = matching[occurrence];
+		if (held === undefined) throw new Error(`No held ${command} request at ${occurrence}`);
+		this.#held.splice(held.index, 1);
+		this.#acknowledge(held.message);
 	}
 
 	#receive(message: ClientMessage): void {
@@ -106,7 +138,10 @@ class SyntheticControlProtocol {
 		const command = message.request;
 		this.commands.push(command.command);
 		const behavior = this.behavior.get(command.command) ?? "acknowledge";
-		if (behavior === "hold") return;
+		if (behavior === "hold") {
+			this.#held.push(message);
+			return;
+		}
 		if (behavior === "disconnect") {
 			this.#handlers?.onClose();
 			return;
@@ -120,6 +155,11 @@ class SyntheticControlProtocol {
 			});
 			return;
 		}
+		this.#acknowledge(message);
+	}
+
+	#acknowledge(message: RequestMessage): void {
+		const command = message.request;
 		if (command.command === "create") {
 			const id = `created-${++this.#createCount}`;
 			const next = snapshot(id);
@@ -238,6 +278,7 @@ class SyntheticControlProtocol {
 
 class ManualDeadlines {
 	readonly #pending: Array<{active: boolean; resolve: () => void}> = [];
+	readonly #activationWaiters: Array<() => void> = [];
 
 	readonly make = (): AcknowledgementDeadline => {
 		let resolve = () => {};
@@ -247,6 +288,7 @@ class ManualDeadlines {
 			pending.resolve = complete;
 		});
 		this.#pending.push(pending);
+		for (const activate of this.#activationWaiters.splice(0)) activate();
 		return {
 			elapsed,
 			cancel: () => {
@@ -254,6 +296,11 @@ class ManualDeadlines {
 			},
 		};
 	};
+
+	waitForActive(): Promise<void> {
+		if (this.#pending.some((candidate) => candidate.active)) return Promise.resolve();
+		return new Promise((resolve) => this.#activationWaiters.push(resolve));
+	}
 
 	elapse(): void {
 		const pending = this.#pending.find((candidate) => candidate.active);
@@ -263,6 +310,22 @@ class ManualDeadlines {
 	}
 }
 
+class DeadlineWaitError extends Schema.TaggedErrorClass<DeadlineWaitError>()(
+	"tuval/test/DeadlineWaitError",
+	{message: Schema.String},
+) {}
+
+class PiClientTestError extends Schema.TaggedErrorClass<PiClientTestError>()(
+	"tuval/test/PiClientTestError",
+	{cause: Schema.Defect()},
+) {}
+
+const waitForActiveDeadline = (deadlines: ManualDeadlines) =>
+	Effect.tryPromise({
+		try: () => deadlines.waitForActive(),
+		catch: () => new DeadlineWaitError({message: "Acknowledgement deadline did not activate"}),
+	});
+
 const connect = (
 	protocol: SyntheticControlProtocol,
 	options: Parameters<typeof PiLiveSession.connect>[1] = {},
@@ -270,6 +333,115 @@ const connect = (
 	Effect.acquireRelease(PiLiveSession.connect(protocol.factory, options), (service) =>
 		service.dispose().pipe(Effect.ignore),
 	);
+
+const connectClient = (protocol: SyntheticControlProtocol) =>
+	Effect.acquireRelease(
+		Effect.tryPromise({
+			try: () => PiClient.connect({transportFactory: protocol.factory}),
+			catch: () => new DeadlineWaitError({message: "PiClient did not connect"}),
+		}),
+		(client) =>
+			Effect.tryPromise({
+				try: () => client.dispose(),
+				catch: (cause) => new PiClientTestError({cause}),
+			}).pipe(Effect.ignore),
+	);
+
+const cancelled = (acquisition: Promise<unknown>) =>
+	Effect.flip(
+		Effect.tryPromise({
+			try: () => acquisition,
+			catch: (cause) => new PiClientTestError({cause}),
+		}),
+	);
+
+describe("patched PiClient request cancellation", () => {
+	it.effect("makes old attach acknowledgements inert before, during, and after a fresh retry", () =>
+		Effect.gen(function* () {
+			for (const timing of ["before", "during", "after"] as const) {
+				const target = snapshot(`cancel-${timing}`);
+				const protocol = new SyntheticControlProtocol([model("small", ["off"])], target);
+				protocol.behavior.set("attach", "hold");
+				const client = yield* connectClient(protocol);
+
+				const oldCancellation = new AbortController();
+				const old = client.acquireSession(target.id, {
+					mode: "exclusive",
+					signal: oldCancellation.signal,
+				});
+				yield* Effect.yieldNow;
+				assert.strictEqual(client.pendingRequestCount, 1);
+				oldCancellation.abort();
+				assert.instanceOf((yield* cancelled(old)).cause, PiRequestCancelledError);
+				assert.strictEqual(client.pendingRequestCount, 0);
+				if (timing === "before") protocol.acknowledgeHeld("attach");
+
+				const fresh = client.acquireSession(target.id, {mode: "exclusive"});
+				yield* Effect.yieldNow;
+				if (timing === "during") protocol.acknowledgeHeld("attach");
+				protocol.acknowledgeHeld("attach", timing === "after" ? 1 : 0);
+				const freshLease = yield* Effect.tryPromise({
+					try: () => fresh,
+					catch: (cause) => new PiClientTestError({cause}),
+				});
+				if (timing === "after") protocol.acknowledgeHeld("attach");
+				yield* Effect.yieldNow;
+
+				assert.isTrue(freshLease.active);
+				assert.strictEqual(client.pendingRequestCount, 0);
+				assert.strictEqual(protocol.heldCount("detach"), 0);
+				assert.notInclude(protocol.commands, "detach");
+			}
+		}),
+	);
+
+	it.effect("rejects an unrelated older response instead of swallowing it as cancelled", () =>
+		Effect.gen(function* () {
+			const target = snapshot("cancel-exact-id");
+			const protocol = new SyntheticControlProtocol([model("small", ["off"])], target);
+			protocol.behavior.set("attach", "hold");
+			const client = yield* connectClient(protocol);
+			const controller = new AbortController();
+			const acquisition = client.acquireSession(target.id, {
+				mode: "exclusive",
+				signal: controller.signal,
+			});
+			yield* Effect.yieldNow;
+			controller.abort();
+			assert.instanceOf((yield* cancelled(acquisition)).cause, PiRequestCancelledError);
+			protocol.respondUnknown("request-0");
+			yield* Effect.yieldNow;
+			assert.isFalse(client.connected);
+			assert.strictEqual(client.pendingRequestCount, 0);
+		}),
+	);
+
+	it.effect("keeps the pending registry at zero across repeated never-settling cancellations", () =>
+		Effect.gen(function* () {
+			const target = snapshot("cancel-repeated");
+			const protocol = new SyntheticControlProtocol([model("small", ["off"])], target);
+			protocol.behavior.set("attach", "hold");
+			const client = yield* connectClient(protocol);
+
+			for (let index = 0; index < 32; index += 1) {
+				const controller = new AbortController();
+				const acquisition = client.acquireSession(target.id, {
+					mode: "exclusive",
+					signal: controller.signal,
+				});
+				yield* Effect.yieldNow;
+				controller.abort();
+				assert.instanceOf((yield* cancelled(acquisition)).cause, PiRequestCancelledError);
+				assert.strictEqual(client.pendingRequestCount, 0);
+			}
+			while (protocol.heldCount("attach") > 0) protocol.acknowledgeHeld("attach");
+			yield* Effect.yieldNow;
+			assert.strictEqual(client.pendingRequestCount, 0);
+			assert.notInclude(protocol.commands, "detach");
+			assert.isTrue(client.connected);
+		}),
+	);
+});
 
 describe("PiLiveSession acknowledged controls", () => {
 	it.effect(
@@ -470,7 +642,265 @@ describe("PiLiveSession acknowledged controls", () => {
 				});
 				if (timedOut._tag !== "refused") return;
 				assert.deepEqual(timedOut.session?.model, existing.model);
+				protocol.acknowledgeHeld("set_model");
+				yield* Effect.yieldNow;
+				yield* Effect.yieldNow;
+				assert.deepEqual((yield* service.current())?.model, existing.model);
+				assert.lengthOf(
+					(yield* service.eventsAfter()).filter(
+						(event) =>
+							event._tag === "control" &&
+							event.outcome.correlationId === "model-timeout" &&
+							event.outcome._tag === "acknowledged",
+					),
+					0,
+				);
+				assert.deepInclude(
+					yield* service.setThinking({
+						correlationId: "after-model-timeout",
+						thinkingLevel: "low",
+					}),
+					{_tag: "acknowledged"},
+				);
 			}),
+	);
+
+	it.effect(
+		"retries timed-out correlations while prior acknowledgement cleanup never settles",
+		() =>
+			Effect.gen(function* () {
+				const modelMetadata = model("small", ["off", "low"]);
+				const first = snapshot("timeout-first");
+				const second = snapshot("timeout-second");
+
+				const createDeadlines = new ManualDeadlines();
+				const createProtocol = new SyntheticControlProtocol([modelMetadata], first);
+				const createService = yield* connect(createProtocol, {
+					makeAcknowledgementDeadline: createDeadlines.make,
+				});
+				yield* createService.attach(first.id);
+				createProtocol.behavior.set("create", "hold");
+				const timedOutCreate = yield* createService
+					.create({correlationId: "retry-create"})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(createDeadlines);
+				createDeadlines.elapse();
+				assert.deepInclude(yield* Fiber.join(timedOutCreate), {
+					_tag: "refused",
+					command: "create",
+					code: "timeout",
+				});
+				let createCheckpoints = 0;
+				const retriedCreate = yield* createService
+					.create({correlationId: "retry-create"}, async (_sessionId, commit) => {
+						createCheckpoints += 1;
+						commit();
+						return true;
+					})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(createDeadlines);
+				assert.strictEqual(
+					createProtocol.commands.filter((command) => command === "create").length,
+					2,
+				);
+				createProtocol.acknowledgeHeld("create", 1);
+				const createOutcome = yield* Fiber.join(retriedCreate);
+				assert.deepInclude(createOutcome, {_tag: "acknowledged", command: "create"});
+				assert.strictEqual(createCheckpoints, 1);
+				assert.strictEqual((yield* createService.current())?.sessionId, "created-1");
+				createProtocol.acknowledgeHeld("create");
+				yield* Effect.yieldNow;
+				yield* Effect.yieldNow;
+				assert.strictEqual(createCheckpoints, 1);
+				assert.strictEqual((yield* createService.current())?.sessionId, "created-1");
+				assert.strictEqual(
+					(yield* createService.eventsAfter()).filter(
+						(event) =>
+							event._tag === "control" &&
+							event.outcome._tag === "acknowledged" &&
+							event.outcome.correlationId === "retry-create",
+					).length,
+					1,
+				);
+
+				const openDeadlines = new ManualDeadlines();
+				const openProtocol = new SyntheticControlProtocol([modelMetadata], first, second);
+				const openService = yield* connect(openProtocol, {
+					makeAcknowledgementDeadline: openDeadlines.make,
+				});
+				yield* openService.attach(first.id);
+				const openAttachCount = openProtocol.commands.filter(
+					(command) => command === "attach",
+				).length;
+				openProtocol.behavior.set("attach", "hold");
+				const timedOutOpen = yield* openService
+					.open({correlationId: "retry-open", sessionId: second.id})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(openDeadlines);
+				openDeadlines.elapse();
+				assert.deepInclude(yield* Fiber.join(timedOutOpen), {
+					_tag: "refused",
+					command: "open",
+					code: "timeout",
+				});
+				let openCheckpoints = 0;
+				const retriedOpen = yield* openService
+					.open({correlationId: "retry-open", sessionId: second.id}, async (_sessionId, commit) => {
+						openCheckpoints += 1;
+						commit();
+						return true;
+					})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(openDeadlines);
+				yield* Effect.yieldNow;
+				assert.strictEqual(
+					openProtocol.commands.filter((command) => command === "attach").length,
+					openAttachCount + 2,
+				);
+				assert.strictEqual(openCheckpoints, 0);
+				openProtocol.acknowledgeHeld("attach", 1);
+				assert.deepInclude(yield* Fiber.join(retriedOpen), {
+					_tag: "acknowledged",
+					command: "open",
+				});
+				assert.strictEqual(openCheckpoints, 1);
+				assert.strictEqual((yield* openService.current())?.sessionId, second.id);
+				const detachCount = openProtocol.commands.filter((command) => command === "detach").length;
+				openProtocol.acknowledgeHeld("attach");
+				yield* Effect.yieldNow;
+				yield* Effect.yieldNow;
+				assert.strictEqual(
+					openProtocol.commands.filter((command) => command === "detach").length,
+					detachCount,
+				);
+				assert.deepInclude(
+					yield* openService.setThinking({
+						correlationId: "fresh-open-remains-attached",
+						thinkingLevel: "low",
+					}),
+					{_tag: "acknowledged", command: "set-thinking"},
+				);
+				assert.strictEqual(
+					(yield* openService.eventsAfter()).filter(
+						(event) =>
+							event._tag === "control" &&
+							event.outcome._tag === "acknowledged" &&
+							event.outcome.correlationId === "retry-open",
+					).length,
+					1,
+				);
+			}),
+	);
+
+	it.effect("settles every fiber across repeated never-acknowledged replacement timeouts", () =>
+		Effect.gen(function* () {
+			const deadlines = new ManualDeadlines();
+			const first = snapshot("repeated-timeout-first");
+			const protocol = new SyntheticControlProtocol([model("small", ["off"])], first);
+			const service = yield* connect(protocol, {makeAcknowledgementDeadline: deadlines.make});
+			yield* service.attach(first.id);
+			protocol.behavior.set("create", "hold");
+			const detachCount = protocol.commands.filter((command) => command === "detach").length;
+
+			for (let index = 0; index < 16; index += 1) {
+				const fiber = yield* service
+					.create({correlationId: "repeated-timeout"})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(deadlines);
+				deadlines.elapse();
+				assert.deepInclude(yield* Fiber.join(fiber), {_tag: "refused", code: "timeout"});
+				assert.isDefined(fiber.pollUnsafe());
+			}
+			while (protocol.heldCount("create") > 0) protocol.acknowledgeHeld("create");
+			yield* Effect.yieldNow;
+			yield* Effect.yieldNow;
+			assert.strictEqual((yield* service.current())?.sessionId, first.id);
+			assert.strictEqual(
+				protocol.commands.filter((command) => command === "detach").length,
+				detachCount,
+			);
+		}),
+	);
+
+	it.effect("leaves the deadline before a slow replacement checkpoint", () =>
+		Effect.gen(function* () {
+			const deadlines = new ManualDeadlines();
+			const first = snapshot("slow-checkpoint-first");
+			const protocol = new SyntheticControlProtocol([model("small", ["off", "low"])], first);
+			const service = yield* connect(protocol, {makeAcknowledgementDeadline: deadlines.make});
+			yield* service.attach(first.id);
+			let startCheckpoint = () => {};
+			const checkpointStarted = new Promise<void>((resolve) => {
+				startCheckpoint = resolve;
+			});
+			let releaseCheckpoint = () => {};
+			const checkpointGate = new Promise<void>((resolve) => {
+				releaseCheckpoint = resolve;
+			});
+			let durableSelection = first.id;
+			const pending = yield* service
+				.create({correlationId: "slow-checkpoint"}, async (sessionId, commit) => {
+					startCheckpoint();
+					await checkpointGate;
+					durableSelection = sessionId ?? first.id;
+					commit();
+					return true;
+				})
+				.pipe(Effect.forkChild);
+			yield* Effect.tryPromise({
+				try: () => checkpointStarted,
+				catch: () => new DeadlineWaitError({message: "Replacement checkpoint did not start"}),
+			});
+			assert.throws(() => deadlines.elapse(), "No active acknowledgement deadline");
+			releaseCheckpoint();
+			const outcome = yield* Fiber.join(pending);
+			assert.deepInclude(outcome, {_tag: "acknowledged", command: "create"});
+			if (outcome._tag !== "acknowledged") return;
+			assert.strictEqual(outcome.session.sessionId, durableSelection);
+			assert.strictEqual((yield* service.current())?.sessionId, durableSelection);
+			assert.include(
+				(yield* service.eventsAfter()).map((event) =>
+					event._tag === "control"
+						? `${event.outcome._tag}:${event.outcome.correlationId}`
+						: event._tag,
+				),
+				"acknowledged:slow-checkpoint",
+			);
+		}),
+	);
+
+	it.effect("cancels an interrupted replacement correlation before a late acknowledgement", () =>
+		Effect.gen(function* () {
+			const deadlines = new ManualDeadlines();
+			const first = snapshot("interrupted-first");
+			const protocol = new SyntheticControlProtocol([model("small", ["off", "low"])], first);
+			const service = yield* connect(protocol, {makeAcknowledgementDeadline: deadlines.make});
+			yield* service.attach(first.id);
+			protocol.behavior.set("create", "hold");
+			const interrupted = yield* service
+				.create({correlationId: "interrupt-create"})
+				.pipe(Effect.forkChild);
+			yield* Effect.tryPromise({
+				try: () => deadlines.waitForActive(),
+				catch: () =>
+					new DeadlineWaitError({message: "Interrupted acknowledgement deadline did not activate"}),
+			});
+			yield* Fiber.interrupt(interrupted);
+			yield* Effect.yieldNow;
+			assert.throws(() => deadlines.elapse(), "No active acknowledgement deadline");
+			protocol.behavior.set("create", "acknowledge");
+			const retried = yield* service.create({correlationId: "interrupt-create"});
+			assert.deepInclude(retried, {_tag: "acknowledged", command: "create"});
+			if (retried._tag !== "acknowledged") return;
+			protocol.acknowledgeHeld("create");
+			yield* Effect.yieldNow;
+			yield* Effect.yieldNow;
+			assert.strictEqual((yield* service.current())?.sessionId, retried.session.sessionId);
+			assert.lengthOf(
+				protocol.commands.filter((command) => command === "create"),
+				2,
+			);
+		}),
 	);
 
 	it.effect(

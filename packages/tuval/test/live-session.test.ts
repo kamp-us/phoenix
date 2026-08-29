@@ -12,7 +12,12 @@ import {
 } from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, Schema, Stream} from "effect";
-import {PiLiveSession} from "../src/backend/live-session.js";
+import * as TestClock from "effect/testing/TestClock";
+import {
+	makeDurableLiveSession,
+	makeResilientPiLiveSession,
+	PiLiveSession,
+} from "../src/backend/live-session.js";
 import {
 	AttachLiveSessionOutcome,
 	LiveSessionEvent,
@@ -248,6 +253,17 @@ class SyntheticPiProtocol {
 			});
 			return;
 		}
+		if (command.command === "create") {
+			const created = snapshot("created-by-checkpoint", 1);
+			this.snapshots.set(created.id, created);
+			this.#deliver({
+				type: "response",
+				id: message.id,
+				ok: true,
+				result: {command: "create", session: created},
+			});
+			return;
+		}
 		if (command.command === "prompt") {
 			this.pendingPrompts.set(command.text, {
 				id: message.id,
@@ -364,6 +380,111 @@ describe("PiLiveSession", () => {
 			}),
 	);
 
+	it.effect("keeps release invisible and attached when its checkpoint is refused", () =>
+		Effect.gen(function* () {
+			const initial = snapshot("release-persistence", 1);
+			const protocol = new SyntheticPiProtocol(initial);
+			const raw = yield* connect(protocol);
+			assert.strictEqual((yield* raw.attach(initial.id))._tag, "attached");
+			let checkpoints = 0;
+			const durable = makeDurableLiveSession(raw, (_candidateSessionId, _commit) =>
+				Effect.sync(() => {
+					checkpoints += 1;
+					return false;
+				}),
+			);
+
+			const outcome = yield* durable.release();
+
+			assert.deepInclude(outcome, {
+				_tag: "failed",
+				sessionId: initial.id,
+				code: "persistence",
+			});
+			assert.strictEqual(checkpoints, 1);
+			assert.deepStrictEqual(protocol.detached, []);
+			assert.deepInclude(yield* durable.current(), {sessionId: initial.id});
+		}),
+	);
+
+	it.effect("keeps attach, create, and open invisible when each checkpoint is refused", () =>
+		Effect.gen(function* () {
+			const first = snapshot("checkpoint-first", 1);
+			const second = snapshot("checkpoint-second", 1);
+			const refused = (_candidateSessionId: string | null, _commit: () => void) =>
+				Effect.succeed(false);
+
+			const attachProtocol = new SyntheticPiProtocol(first);
+			const attach = makeDurableLiveSession(yield* connect(attachProtocol), refused);
+			assert.deepInclude(yield* attach.attach(first.id), {
+				_tag: "refused",
+				code: "persistence",
+			});
+			assert.isNull(yield* attach.current());
+			assert.deepStrictEqual(attachProtocol.detached, [first.id]);
+
+			const createProtocol = new SyntheticPiProtocol(first);
+			const createRaw = yield* connect(createProtocol);
+			yield* createRaw.attach(first.id);
+			const create = makeDurableLiveSession(createRaw, refused);
+			assert.deepInclude(yield* create.create({correlationId: "checkpoint-create"}), {
+				_tag: "refused",
+				command: "create",
+				code: "persistence",
+			});
+			assert.strictEqual((yield* create.current())?.sessionId, first.id);
+			assert.include(createProtocol.commands, "create");
+
+			const openProtocol = new SyntheticPiProtocol(first, second);
+			const openRaw = yield* connect(openProtocol);
+			yield* openRaw.attach(first.id);
+			const open = makeDurableLiveSession(openRaw, refused);
+			assert.deepInclude(
+				yield* open.open({correlationId: "checkpoint-open", sessionId: second.id}),
+				{_tag: "refused", command: "open", code: "persistence"},
+			);
+			assert.strictEqual((yield* open.current())?.sessionId, first.id);
+			assert.deepStrictEqual(openProtocol.detached, [second.id]);
+		}),
+	);
+
+	it.effect("publishes successful selection commits only from inside the durable checkpoint", () =>
+		Effect.gen(function* () {
+			const first = snapshot("checkpoint-order-first", 1);
+			const second = snapshot("checkpoint-order-second", 1);
+			const protocol = new SyntheticPiProtocol(first, second);
+			const raw = yield* connect(protocol);
+			yield* raw.attach(first.id);
+			const observations: Array<{
+				candidate: string | null;
+				before: string | null;
+				after: string | null;
+			}> = [];
+			const durable = makeDurableLiveSession(raw, (candidate, commit) =>
+				Effect.gen(function* () {
+					const before = (yield* raw.current())?.sessionId ?? null;
+					commit();
+					const after = (yield* raw.current())?.sessionId ?? null;
+					observations.push({candidate, before, after});
+					return true;
+				}),
+			);
+
+			assert.strictEqual((yield* durable.attach(second.id))._tag, "attached");
+			assert.deepStrictEqual(observations[0], {
+				candidate: second.id,
+				before: first.id,
+				after: second.id,
+			});
+			assert.strictEqual((yield* durable.release())._tag, "released");
+			assert.deepStrictEqual(observations[1], {
+				candidate: null,
+				before: second.id,
+				after: null,
+			});
+		}),
+	);
+
 	it.effect("lets a newer attach-boundary snapshot supersede earlier buffered progress", () =>
 		Effect.gen(function* () {
 			const initial = snapshot("snapshot-order", 1);
@@ -463,6 +584,39 @@ describe("PiLiveSession", () => {
 				correlationId: "prompt-2",
 				code: "lease-refused",
 			});
+		}),
+	);
+
+	it.effect("replays only current session state to a fresh subscriber, never prompt outcomes", () =>
+		Effect.gen(function* () {
+			const initial = snapshot("fresh-subscriber", 1);
+			const protocol = new SyntheticPiProtocol(initial);
+			const service = yield* connect(protocol);
+			yield* service.attach(initial.id);
+			const pending = yield* service
+				.prompt({correlationId: "private-correlation", text: "private prompt"})
+				.pipe(Effect.forkChild);
+			yield* Effect.yieldNow;
+			protocol.acknowledgePrompt("private prompt", snapshot(initial.id, 2));
+			yield* Fiber.join(pending);
+
+			const replay = Array.from(yield* service.events().pipe(Stream.take(1), Stream.runCollect));
+			assert.lengthOf(replay, 1);
+			assert.strictEqual(replay[0]?._tag, "session");
+			assert.notInclude(JSON.stringify(replay), "private-correlation");
+			assert.notInclude(JSON.stringify(replay), "private prompt");
+			const history = yield* service.eventsAfter(0);
+			const resumed = Array.from(
+				yield* service.events(0).pipe(Stream.take(history.length), Stream.runCollect),
+			);
+			assert.isTrue(resumed.some((event) => event._tag === "prompt"));
+			yield* service.release();
+			const afterRelease = yield* service
+				.events()
+				.pipe(Stream.take(1), Stream.runCollect, Effect.forkChild);
+			yield* Effect.yieldNow;
+			assert.isUndefined(afterRelease.pollUnsafe());
+			yield* Fiber.interrupt(afterRelease);
 		}),
 	);
 
@@ -569,7 +723,7 @@ describe("PiLiveSession", () => {
 				yield* service.attach(first.id);
 				yield* service.attach(second.id);
 
-				assert.deepEqual(protocol.commands, ["attach", "detach", "attach"]);
+				assert.deepEqual(protocol.commands, ["attach", "attach", "detach"]);
 				assert.deepEqual(protocol.detached, [first.id]);
 				protocol.emit({
 					type: "session_progress",
@@ -584,6 +738,141 @@ describe("PiLiveSession", () => {
 				assert.deepEqual(protocol.detached, [first.id, second.id]);
 				assert.isNull(yield* service.current());
 			}),
+	);
+
+	it.effect(
+		"reconnects with a fresh lease without replaying acknowledged prompts or controls",
+		() =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const initial = snapshot("reconnect-selection", 1);
+					const protocol = new SyntheticPiProtocol(initial);
+					const subscriptions: Array<string> = [];
+					const service = yield* makeResilientPiLiveSession(protocol.factory, {
+						retries: 0,
+						baseDelayMs: 1,
+						maxDelayMs: 1,
+						onSessionSubscriptionBound: (sessionId) => subscriptions.push(sessionId),
+					});
+					yield* service.attach(initial.id);
+					const prompt = yield* service
+						.prompt({correlationId: "before-reconnect", text: "exactly once"})
+						.pipe(Effect.forkChild);
+					yield* Effect.yieldNow;
+					protocol.acknowledgePrompt("exactly once", snapshot(initial.id, 2));
+					assert.strictEqual((yield* Fiber.join(prompt))._tag, "acknowledged");
+
+					protocol.disconnect();
+					for (let attempt = 0; attempt < 20; attempt += 1) {
+						if (protocol.commands.filter((command) => command === "attach").length === 2) {
+							break;
+						}
+						yield* Effect.yieldNow;
+					}
+
+					assert.lengthOf(
+						protocol.commands.filter((command) => command === "attach"),
+						2,
+					);
+					assert.lengthOf(
+						protocol.commands.filter((command) => command === "prompt"),
+						1,
+					);
+					assert.deepStrictEqual(subscriptions, [initial.id, initial.id]);
+					assert.deepInclude(yield* service.current(), {
+						_tag: "attached",
+						sessionId: initial.id,
+					});
+				}),
+			),
+	);
+
+	it.effect(
+		"rearms after an exhausted reconnect cycle and subscribes exactly once on recovery",
+		() =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const initial = snapshot("delayed-recovery", 1);
+					const protocol = new SyntheticPiProtocol(initial);
+					let connections = 0;
+					const factory: ByteTransportFactory = (handlers) => {
+						connections += 1;
+						if (connections === 2 || connections === 3) {
+							return Promise.reject(new Error("transport delayed"));
+						}
+						return protocol.factory(handlers);
+					};
+					const subscriptions: Array<string> = [];
+					const service = yield* makeResilientPiLiveSession(factory, {
+						retries: 0,
+						baseDelayMs: 1,
+						maxDelayMs: 1,
+						rearmDelayMs: 2,
+						onSessionSubscriptionBound: (sessionId) => subscriptions.push(sessionId),
+					});
+					yield* service.attach(initial.id);
+					protocol.disconnect();
+					for (let attempt = 0; attempt < 100 && connections < 4; attempt += 1) {
+						yield* TestClock.adjust("2 millis");
+					}
+					assert.strictEqual(connections, 4);
+					assert.deepStrictEqual(subscriptions, [initial.id, initial.id]);
+					assert.lengthOf(
+						protocol.commands.filter((command) => command === "attach"),
+						2,
+					);
+					assert.deepInclude(yield* service.current(), {
+						_tag: "attached",
+						sessionId: initial.id,
+					});
+				}),
+			),
+	);
+
+	it.effect("does not replay stale state when reconnect selection is unavailable", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const initial = snapshot("stale-reconnect-selection", 1);
+				const first = new SyntheticPiProtocol(initial);
+				const second = new SyntheticPiProtocol(initial);
+				const third = new SyntheticPiProtocol(snapshot(initial.id, 2));
+				second.locked.add(initial.id);
+				let connections = 0;
+				const factory: ByteTransportFactory = (handlers) => {
+					connections += 1;
+					return (connections === 1 ? first : connections === 2 ? second : third).factory(handlers);
+				};
+				const service = yield* makeResilientPiLiveSession(factory, {retries: 0});
+				yield* service.attach(initial.id);
+				first.disconnect();
+				for (let attempt = 0; attempt < 20; attempt += 1) yield* Effect.yieldNow;
+				assert.strictEqual(connections, 2);
+				assert.isNull(yield* service.current());
+				assert.strictEqual(yield* service.selectionIntent(), initial.id);
+				const fresh = yield* service
+					.events()
+					.pipe(Stream.take(1), Stream.runCollect, Effect.forkChild);
+				yield* Effect.yieldNow;
+				assert.isUndefined(fresh.pollUnsafe());
+				yield* Fiber.interrupt(fresh);
+				second.disconnect();
+				let restored = yield* service.current();
+				for (let attempt = 0; attempt < 50; attempt += 1) {
+					yield* Effect.yieldNow;
+					restored = yield* service.current();
+					if (restored?.sessionId === initial.id) break;
+				}
+				assert.strictEqual(connections, 3);
+				assert.deepInclude(restored, {
+					_tag: "attached",
+					sessionId: initial.id,
+					revision: 2,
+				});
+				assert.strictEqual(yield* service.selectionIntent(), initial.id);
+				assert.deepInclude(yield* service.release(), {_tag: "released"});
+				assert.isNull(yield* service.selectionIntent());
+			}),
+		),
 	);
 
 	it.effect("reports lease refusal and protocol-sourced disconnected state", () =>

@@ -35,7 +35,8 @@
 	"exports": {
 		"./discovery": "./dist/shared/discovery.js",
 		"./lineage": "./dist/shared/lineage.js",
-		"./live-session": "./dist/shared/live-session.js"
+		"./live-session": "./dist/shared/live-session.js",
+		"./resilience": "./dist/shared/resilience.js"
 	},
 	"files": [
 		"dist"

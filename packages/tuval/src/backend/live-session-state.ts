@@ -35,6 +35,7 @@ import type {
 	SetThinkingLiveSessionRequest,
 	SteerLiveSessionRequest,
 } from "../shared/live-session.js";
+import {resilienceDiagnostic} from "./resilience.js";
 
 const EVENT_HISTORY_LIMIT = 500;
 const CORRELATED_PROMPT_LIMIT = 100;
@@ -46,7 +47,7 @@ type Listener = (event: LiveSessionEvent) => void;
 interface Attachment {
 	readonly lease: PiSessionHandle;
 	readonly generation: number;
-	readonly unsubscribes: ReadonlyArray<Unsubscribe>;
+	readonly unsubscribes: Array<Unsubscribe>;
 	snapshot: SessionSnapshot;
 	transcript: Array<LiveTranscriptEntry>;
 	readonly toolCallBuffers: Map<string, string>;
@@ -70,8 +71,16 @@ type ControlRequest =
 
 interface CorrelatedControl {
 	readonly fingerprint: string;
+	readonly attemptGeneration: number;
 	readonly result: Promise<ControlLiveSessionOutcome>;
 	settled: boolean;
+	retryable: boolean;
+}
+
+interface ControlAttempt {
+	readonly generation: number;
+	readonly isCurrent: () => boolean;
+	readonly tombstone: () => void;
 }
 
 export interface AcknowledgementDeadline {
@@ -79,9 +88,16 @@ export interface AcknowledgementDeadline {
 	readonly cancel: () => void;
 }
 
+export type LiveSelectionCheckpoint = (
+	candidateSessionId: string | null,
+	commit: () => void,
+) => Promise<boolean>;
+
 export interface LiveSessionStateOptions {
 	readonly acknowledgementTimeoutMs?: number;
 	readonly makeAcknowledgementDeadline?: (timeoutMs: number) => AcknowledgementDeadline;
+	readonly onDisconnected?: () => void;
+	readonly onSessionSubscriptionBound?: (sessionId: string) => void;
 }
 
 interface PendingAttachment {
@@ -89,19 +105,50 @@ interface PendingAttachment {
 	readonly eventsAfterSnapshot: Array<ServerEvent>;
 }
 
+class ReplacementInterrupted extends Error {}
+
+type ReplacementAcknowledgement =
+	| {
+			readonly _tag: "acknowledged";
+			readonly attemptGeneration: number;
+			readonly lease: PiSessionHandle;
+	  }
+	| {readonly _tag: "refused"; readonly outcome: ControlLiveSessionOutcome};
+
 export interface LiveSessionState {
 	readonly current: () => LiveSessionView | null;
-	readonly attach: (sessionId: string) => Promise<AttachLiveSessionOutcome>;
+	readonly attach: (
+		sessionId: string,
+		checkpoint?: LiveSelectionCheckpoint,
+	) => Promise<AttachLiveSessionOutcome>;
 	readonly prompt: (request: PromptLiveSessionRequest) => Promise<PromptLiveSessionOutcome>;
-	readonly create: (request: CreateLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
-	readonly open: (request: OpenLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
-	readonly steer: (request: SteerLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
-	readonly abort: (request: AbortLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
-	readonly setModel: (request: SetModelLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
+	readonly create: (
+		request: CreateLiveSessionRequest,
+		checkpoint?: LiveSelectionCheckpoint,
+		signal?: AbortSignal,
+	) => Promise<ControlLiveSessionOutcome>;
+	readonly open: (
+		request: OpenLiveSessionRequest,
+		checkpoint?: LiveSelectionCheckpoint,
+		signal?: AbortSignal,
+	) => Promise<ControlLiveSessionOutcome>;
+	readonly steer: (
+		request: SteerLiveSessionRequest,
+		signal?: AbortSignal,
+	) => Promise<ControlLiveSessionOutcome>;
+	readonly abort: (
+		request: AbortLiveSessionRequest,
+		signal?: AbortSignal,
+	) => Promise<ControlLiveSessionOutcome>;
+	readonly setModel: (
+		request: SetModelLiveSessionRequest,
+		signal?: AbortSignal,
+	) => Promise<ControlLiveSessionOutcome>;
 	readonly setThinking: (
 		request: SetThinkingLiveSessionRequest,
+		signal?: AbortSignal,
 	) => Promise<ControlLiveSessionOutcome>;
-	readonly release: () => Promise<ReleaseLiveSessionOutcome>;
+	readonly release: (checkpoint?: LiveSelectionCheckpoint) => Promise<ReleaseLiveSessionOutcome>;
 	readonly eventsAfter: (sequence?: number) => ReadonlyArray<LiveSessionEvent>;
 	readonly subscribe: (listener: Listener) => Unsubscribe;
 	readonly dispose: () => Promise<void>;
@@ -210,9 +257,24 @@ const reduceProgress = (
 	return undefined;
 };
 
+class SelectionCheckpointRefused extends Error {
+	readonly command: "attach" | "create" | "open";
+
+	constructor(command: "attach" | "create" | "open") {
+		super(`Pi acknowledged ${command}, but the durable selection checkpoint was refused`);
+		this.command = command;
+	}
+}
+
+const immediateCheckpoint: LiveSelectionCheckpoint = async (_candidateSessionId, commit) => {
+	commit();
+	return true;
+};
+
 const refusalCode = (
 	error: unknown,
-): "lease-refused" | "disconnected" | "not-found" | "protocol" => {
+): "lease-refused" | "disconnected" | "not-found" | "persistence" | "protocol" => {
+	if (error instanceof SelectionCheckpointRefused) return "persistence";
 	if (error instanceof PiDisconnectedError) return "disconnected";
 	if (error instanceof PiSessionOwnershipError || error instanceof PiSessionDetachedError) {
 		return "lease-refused";
@@ -252,7 +314,8 @@ const sameModel = (left: ModelRef, right: ModelRef): boolean =>
 
 const controlErrorCode = (
 	error: unknown,
-): "ownership-refused" | "unsupported-capability" | "disconnected" | "protocol" => {
+): "ownership-refused" | "unsupported-capability" | "disconnected" | "persistence" | "protocol" => {
+	if (error instanceof SelectionCheckpointRefused) return "persistence";
 	if (error instanceof PiDisconnectedError) return "disconnected";
 	if (error instanceof PiSessionOwnershipError || error instanceof PiSessionDetachedError) {
 		return "ownership-refused";
@@ -281,28 +344,37 @@ export class PiLiveSessionState implements LiveSessionState {
 	readonly #unsubscribeServer: Unsubscribe;
 	readonly #acknowledgementTimeoutMs: number;
 	readonly #makeAcknowledgementDeadline: (timeoutMs: number) => AcknowledgementDeadline;
+	readonly #options: LiveSessionStateOptions;
 	#attachment: Attachment | undefined;
 	#pendingAttachment: PendingAttachment | undefined;
 	#sequence = 0;
 	#generation = 0;
+	#controlAttemptGeneration = 0;
 	#promptGeneration: number | undefined;
 	#pendingPrompts = 0;
-	#pendingReplacement = false;
+	#pendingReplacement: object | undefined;
 	#pendingIdleControl = false;
 	#lifecycle: Promise<void> = Promise.resolve();
 	#disposed = false;
 
 	private constructor(client: PiClient, options: LiveSessionStateOptions) {
 		this.#client = client;
+		this.#options = options;
 		this.#acknowledgementTimeoutMs = options.acknowledgementTimeoutMs ?? ACKNOWLEDGEMENT_TIMEOUT_MS;
 		this.#makeAcknowledgementDeadline =
 			options.makeAcknowledgementDeadline ?? makeAcknowledgementDeadline;
 		this.#unsubscribeConnection = client.onConnectionStateChange((change) => {
 			if (change.state !== "disconnected") return;
+			options.onDisconnected?.();
 			const attachment = this.#attachment;
 			if (attachment === undefined || attachment.disconnectedReason !== undefined) return;
 			attachment.disconnectedReason = change.error?.message ?? "PiClient disconnected";
-			this.#publishDiagnostic(attachment.disconnectedReason, attachment.snapshot.id);
+			this.#publishDiagnostic(
+				change.error === undefined
+					? "Pi live transport disconnected"
+					: "Pi live protocol input was invalid and the transport disconnected",
+				attachment.snapshot.id,
+			);
 			this.#publishSession(attachment);
 			void this.#serialize(() => this.#releaseLease(attachment));
 		});
@@ -336,7 +408,10 @@ export class PiLiveSessionState implements LiveSessionState {
 		return attachment === undefined ? null : this.#viewOf(attachment, this.#sequence);
 	};
 
-	attach = (sessionId: string): Promise<AttachLiveSessionOutcome> => this.#attach(sessionId);
+	attach = (
+		sessionId: string,
+		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
+	): Promise<AttachLiveSessionOutcome> => this.#attach(sessionId, checkpoint);
 
 	prompt = (request: PromptLiveSessionRequest): Promise<PromptLiveSessionOutcome> => {
 		const generation = this.#attachment?.generation;
@@ -370,28 +445,69 @@ export class PiLiveSessionState implements LiveSessionState {
 		return result;
 	};
 
-	create = (request: CreateLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "create", ...request});
+	create = (
+		request: CreateLiveSessionRequest,
+		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "create", ...request}, checkpoint, signal);
 
-	open = (request: OpenLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "open", ...request});
+	open = (
+		request: OpenLiveSessionRequest,
+		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "open", ...request}, checkpoint, signal);
 
-	steer = (request: SteerLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "steer", ...request});
+	steer = (
+		request: SteerLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "steer", ...request}, immediateCheckpoint, signal);
 
-	abort = (request: AbortLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "abort", ...request});
+	abort = (
+		request: AbortLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "abort", ...request}, immediateCheckpoint, signal);
 
-	setModel = (request: SetModelLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "set-model", ...request});
+	setModel = (
+		request: SetModelLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "set-model", ...request}, immediateCheckpoint, signal);
 
-	setThinking = (request: SetThinkingLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "set-thinking", ...request});
+	setThinking = (
+		request: SetThinkingLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "set-thinking", ...request}, immediateCheckpoint, signal);
 
-	release = (): Promise<ReleaseLiveSessionOutcome> =>
+	release = (
+		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
+	): Promise<ReleaseLiveSessionOutcome> =>
 		this.#serialize(async () => {
-			const sessionId = this.#attachment?.snapshot.id ?? null;
-			await this.#releaseAttachment();
+			const attachment = this.#attachment;
+			const sessionId = attachment?.snapshot.id ?? null;
+			if (attachment === undefined) return {_tag: "released", sessionId};
+			const committed = await checkpoint(null, () => {
+				this.#clearPrompts();
+				if (this.#attachment === attachment) this.#attachment = undefined;
+				this.#publish({
+					_tag: "released",
+					sequence: this.#nextSequence(),
+					sessionId: attachment.snapshot.id,
+				});
+			});
+			if (!committed) {
+				return {
+					_tag: "failed",
+					sessionId,
+					code: "persistence",
+					reason: "Release was not committed because its durable checkpoint was refused",
+				};
+			}
+			await this.#releaseLease(attachment);
 			return {_tag: "released", sessionId};
 		});
 
@@ -414,7 +530,10 @@ export class PiLiveSessionState implements LiveSessionState {
 		await this.#client.dispose();
 	};
 
-	async #attach(sessionId: string): Promise<AttachLiveSessionOutcome> {
+	async #attach(
+		sessionId: string,
+		checkpoint: LiveSelectionCheckpoint,
+	): Promise<AttachLiveSessionOutcome> {
 		return this.#serialize(async () => {
 			if (this.#disposed) {
 				return {
@@ -424,13 +543,10 @@ export class PiLiveSessionState implements LiveSessionState {
 					reason: "Tuval live-session service is disposed",
 				};
 			}
-			if (
-				this.#attachment?.snapshot.id === sessionId &&
-				this.#attachment.disconnectedReason === undefined
-			) {
-				return {_tag: "attached", session: this.#attachedViewOf(this.#attachment, this.#sequence)};
+			const previous = this.#attachment;
+			if (previous?.snapshot.id === sessionId && previous.disconnectedReason === undefined) {
+				return {_tag: "attached", session: this.#attachedViewOf(previous, this.#sequence)};
 			}
-			await this.#releaseAttachment();
 			const pending: PendingAttachment = {sessionId, eventsAfterSnapshot: []};
 			this.#pendingAttachment = pending;
 			let lease: PiSessionHandle;
@@ -456,41 +572,47 @@ export class PiLiveSessionState implements LiveSessionState {
 					reason: "PiClient attached without a session snapshot",
 				};
 			}
-			const generation = ++this.#generation;
-			const attachment: Attachment = {
-				lease,
-				generation,
-				snapshot,
-				transcript: snapshot.transcript.map(entryOf),
-				toolCallBuffers: new Map(),
-				unsubscribes: [],
-				leaseReleased: false,
-			};
-			const unsubscribes = [lease.subscribe((next) => this.#acceptSnapshot(generation, next))];
-			this.#attachment = {...attachment, unsubscribes};
-			if (this.#pendingAttachment === pending) this.#pendingAttachment = undefined;
-			for (const event of pending.eventsAfterSnapshot) this.#acceptEvent(generation, event);
-			this.#publishSession(this.#attachment);
-			return {_tag: "attached", session: this.#attachedViewOf(this.#attachment, this.#sequence)};
+			const candidate = this.#candidateAttachment(lease, snapshot);
+			const committed = await checkpoint(sessionId, () =>
+				this.#commitAttachment(candidate, pending),
+			);
+			if (!committed) {
+				if (this.#pendingAttachment === pending) this.#pendingAttachment = undefined;
+				await lease.dispose().catch(() => undefined);
+				return {
+					_tag: "refused",
+					sessionId,
+					code: "persistence",
+					reason: "Pi acknowledged attach, but the durable selection checkpoint was refused",
+				};
+			}
+			if (previous !== undefined && previous !== candidate) await this.#releaseLease(previous);
+			return {_tag: "attached", session: this.#attachedViewOf(candidate, this.#sequence)};
 		});
 	}
 
-	#correlateControl(request: ControlRequest): Promise<ControlLiveSessionOutcome> {
+	#correlateControl(
+		request: ControlRequest,
+		checkpoint: LiveSelectionCheckpoint,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> {
 		const fingerprint = JSON.stringify(request);
 		const existing = this.#controls.get(request.correlationId);
 		if (existing !== undefined) {
-			if (existing.fingerprint === fingerprint) return existing.result;
-			return Promise.resolve(
-				this.#publishControl(
-					this.#controlRefusal(
-						request,
-						"protocol",
-						"Correlation id was already used for a different control request",
+			if (existing.fingerprint !== fingerprint) {
+				return Promise.resolve(
+					this.#publishControl(
+						this.#controlRefusal(
+							request,
+							"protocol",
+							"Correlation id was already used for a different control request",
+						),
 					),
-				),
-			);
+				);
+			}
+			if (!existing.retryable) return existing.result;
 		}
-		if (!this.#makeControlRoom()) {
+		if (existing === undefined && !this.#makeControlRoom()) {
 			return Promise.resolve(
 				this.#publishControl(
 					this.#controlRefusal(
@@ -501,8 +623,22 @@ export class PiLiveSessionState implements LiveSessionState {
 				),
 			);
 		}
-		const result = this.#runControl(request).then((outcome) => this.#publishControl(outcome));
-		const correlated: CorrelatedControl = {fingerprint, result, settled: false};
+		let correlated: CorrelatedControl;
+		const attemptGeneration = ++this.#controlAttemptGeneration;
+		const attempt: ControlAttempt = {
+			generation: attemptGeneration,
+			isCurrent: () =>
+				this.#controls.get(request.correlationId) === correlated && !correlated.retryable,
+			tombstone: () => {
+				if (this.#controls.get(request.correlationId) !== correlated) return;
+				correlated.retryable = true;
+				correlated.settled = true;
+			},
+		};
+		const result = this.#runControl(request, checkpoint, signal, attempt).then((outcome) =>
+			this.#publishControl(outcome),
+		);
+		correlated = {fingerprint, attemptGeneration, result, settled: false, retryable: false};
 		this.#controls.set(request.correlationId, correlated);
 		void result.then(
 			() => {
@@ -515,35 +651,73 @@ export class PiLiveSessionState implements LiveSessionState {
 		return result;
 	}
 
-	#runControl(request: ControlRequest): Promise<ControlLiveSessionOutcome> {
+	#runControl(
+		request: ControlRequest,
+		checkpoint: LiveSelectionCheckpoint,
+		signal: AbortSignal | undefined,
+		attempt: ControlAttempt,
+	): Promise<ControlLiveSessionOutcome> {
 		switch (request.command) {
 			case "create":
-				return this.#runReplacement(request, () =>
-					this.#client.createSession({
-						...(request.cwd === undefined ? {} : {cwd: request.cwd}),
-						...(request.name === undefined ? {} : {name: request.name}),
-					}),
+				return this.#runReplacement(
+					request,
+					checkpoint,
+					(acquisitionSignal) =>
+						this.#client.createSession(
+							{
+								...(request.cwd === undefined ? {} : {cwd: request.cwd}),
+								...(request.name === undefined ? {} : {name: request.name}),
+							},
+							acquisitionSignal,
+						),
+					signal,
+					attempt,
 				);
 			case "open":
-				return this.#runReplacement(request, () =>
-					this.#client.acquireSession(request.sessionId, {mode: "exclusive"}),
+				return this.#runReplacement(
+					request,
+					checkpoint,
+					(acquisitionSignal) =>
+						this.#client.acquireSession(request.sessionId, {
+							mode: "exclusive",
+							signal: acquisitionSignal,
+						}),
+					signal,
+					attempt,
 				);
 			case "steer":
-				return this.#runSessionControl(request, (lease) => lease.steer(request.text));
+				return this.#runSessionControl(
+					request,
+					(lease, operationSignal) => lease.steer(request.text, operationSignal),
+					signal,
+				);
 			case "abort":
-				return this.#runSessionControl(request, (lease) => lease.abort());
+				return this.#runSessionControl(
+					request,
+					(lease, operationSignal) => lease.abort(operationSignal),
+					signal,
+				);
 			case "set-model":
-				return this.#runSessionControl(request, (lease) => lease.setModel(request.model));
+				return this.#runSessionControl(
+					request,
+					(lease, operationSignal) => lease.setModel(request.model, operationSignal),
+					signal,
+				);
 			case "set-thinking":
-				return this.#runSessionControl(request, (lease) =>
-					lease.setThinking(request.thinkingLevel),
+				return this.#runSessionControl(
+					request,
+					(lease, operationSignal) => lease.setThinking(request.thinkingLevel, operationSignal),
+					signal,
 				);
 		}
 	}
 
 	async #runReplacement(
 		request: Extract<ControlRequest, {command: "create" | "open"}>,
-		acquire: () => Promise<PiSessionHandle>,
+		checkpoint: LiveSelectionCheckpoint,
+		acquire: (signal: AbortSignal) => Promise<PiSessionHandle>,
+		signal: AbortSignal | undefined,
+		attempt: ControlAttempt,
 	): Promise<ControlLiveSessionOutcome> {
 		const previous = this.#attachment;
 		if (this.#pendingReplacement || this.#pendingIdleControl || this.#pendingPrompts > 0) {
@@ -559,67 +733,165 @@ export class PiLiveSessionState implements LiveSessionState {
 				);
 			}
 		}
-		this.#pendingReplacement = true;
+		const replacementToken = {};
+		this.#pendingReplacement = replacementToken;
 		if (previous !== undefined) this.#publishSession(previous);
-		const operation = this.#serialize(async () => {
-			if (this.#disposed || !this.#client.connected) {
-				throw new PiDisconnectedError("PiClient is disconnected");
-			}
-			const pending: PendingAttachment | undefined =
-				request.command === "open"
-					? {sessionId: request.sessionId, eventsAfterSnapshot: []}
-					: undefined;
-			if (pending !== undefined) this.#pendingAttachment = pending;
-			let lease: PiSessionHandle;
-			try {
-				lease = await acquire();
-			} finally {
-				if (pending !== undefined && this.#pendingAttachment === pending) {
-					this.#pendingAttachment = undefined;
+		const finishReplacement = () => {
+			if (this.#pendingReplacement !== replacementToken) return;
+			this.#pendingReplacement = undefined;
+			const attachment = this.#attachment;
+			if (attachment !== undefined) this.#publishSession(attachment);
+		};
+		const interruptReplacement = () => {
+			attempt.tombstone();
+			finishReplacement();
+		};
+		try {
+			const replacement = await this.#serialize(async () => {
+				if (this.#disposed || !this.#client.connected) {
+					throw new PiDisconnectedError("PiClient is disconnected");
 				}
-			}
-			const snapshot = lease.snapshot;
-			if (snapshot === undefined) {
-				await lease.dispose().catch(() => undefined);
-				throw new PiServerError({
-					code: "invalid_request",
-					message: "PiClient acknowledged a session without a snapshot",
-				});
-			}
-			if (this.#attachment !== previous) {
-				await lease.dispose().catch(() => undefined);
-				throw new PiSessionOwnershipError(
-					snapshot.id,
-					"The selected session changed before the request was acknowledged",
+				const pending: PendingAttachment | undefined =
+					request.command === "open"
+						? {sessionId: request.sessionId, eventsAfterSnapshot: []}
+						: undefined;
+				if (pending !== undefined) this.#pendingAttachment = pending;
+				let acknowledgement: ReplacementAcknowledgement;
+				const acquisitionCancellation = new AbortController();
+				try {
+					acknowledgement = await this.#awaitReplacementAcknowledgement(
+						request,
+						acquire(acquisitionCancellation.signal),
+						acquisitionCancellation,
+						signal,
+						interruptReplacement,
+						attempt,
+					);
+				} finally {
+					if (pending !== undefined && this.#pendingAttachment === pending) {
+						this.#pendingAttachment = undefined;
+					}
+				}
+				if (acknowledgement._tag === "refused") return acknowledgement;
+				const {lease} = acknowledgement;
+				if (acknowledgement.attemptGeneration !== attempt.generation || !attempt.isCurrent()) {
+					this.#disposeSupersededAcquisition(Promise.resolve(lease));
+					throw new ReplacementInterrupted("Replacement acknowledgement was superseded");
+				}
+				const snapshot = lease.snapshot;
+				if (snapshot === undefined) {
+					await lease.dispose().catch(() => undefined);
+					throw new PiServerError({
+						code: "invalid_request",
+						message: "PiClient acknowledged a session without a snapshot",
+					});
+				}
+				if (this.#attachment !== previous) {
+					await lease.dispose().catch(() => undefined);
+					throw new PiSessionOwnershipError(
+						snapshot.id,
+						"The selected session changed before the request was acknowledged",
+					);
+				}
+				const attachment = this.#candidateAttachment(lease, snapshot);
+				const committed = await checkpoint(snapshot.id, () =>
+					this.#commitAttachment(attachment, pending),
 				);
-			}
-			if (previous !== undefined) await this.#releaseAttachment();
-			const attachment = this.#bindLease(lease, snapshot);
-			if (pending !== undefined) {
-				for (const event of pending.eventsAfterSnapshot) {
-					this.#acceptEvent(attachment.generation, event);
+				if (!committed) {
+					await lease.dispose().catch(() => undefined);
+					throw new SelectionCheckpointRefused(request.command);
 				}
-			}
-			this.#publishSession(attachment);
-			return attachment;
-		})
-			.then((attachment) => {
-				this.#pendingReplacement = false;
-				this.#publishSession(attachment);
-				return this.#acknowledged(request, attachment);
-			})
-			.finally(() => {
-				if (!this.#pendingReplacement) return;
-				this.#pendingReplacement = false;
-				const attachment = this.#attachment;
-				if (attachment !== undefined) this.#publishSession(attachment);
+				if (previous !== undefined) await this.#releaseLease(previous);
+				return {_tag: "committed" as const, attachment};
 			});
-		return this.#awaitAcknowledgement(request, operation);
+			finishReplacement();
+			if (replacement._tag === "refused") return replacement.outcome;
+			this.#publishSession(replacement.attachment);
+			return this.#acknowledged(request, replacement.attachment);
+		} catch (error) {
+			if (error instanceof ReplacementInterrupted) throw error;
+			return this.#controlRefusal(
+				request,
+				controlErrorCode(error),
+				messageOf(error),
+				error instanceof PiServerError ? error.code : undefined,
+			);
+		} finally {
+			finishReplacement();
+		}
+	}
+
+	async #awaitReplacementAcknowledgement(
+		request: Extract<ControlRequest, {command: "create" | "open"}>,
+		acquisition: Promise<PiSessionHandle>,
+		acquisitionCancellation: AbortController,
+		signal: AbortSignal | undefined,
+		interruptReplacement: () => void,
+		attempt: ControlAttempt,
+	): Promise<ReplacementAcknowledgement> {
+		const deadline = this.#makeAcknowledgementDeadline(this.#acknowledgementTimeoutMs);
+		let removeAbortListener = () => {};
+		const interrupted = new Promise<{readonly _tag: "interrupted"}>((resolve) => {
+			if (signal === undefined) return;
+			const onAbort = () => {
+				interruptReplacement();
+				resolve({_tag: "interrupted"});
+				acquisitionCancellation.abort();
+			};
+			if (signal.aborted) onAbort();
+			else {
+				signal.addEventListener("abort", onAbort, {once: true});
+				removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+			}
+		});
+		const observed = acquisition.then(
+			(lease) => ({_tag: "acknowledged" as const, attemptGeneration: attempt.generation, lease}),
+			(error: unknown) => ({_tag: "error" as const, error}),
+		);
+		const winner = await Promise.race([
+			observed,
+			deadline.elapsed.then(() => ({_tag: "timeout" as const})),
+			interrupted,
+		]);
+		deadline.cancel();
+		removeAbortListener();
+		if (winner._tag === "acknowledged") return winner;
+		if (winner._tag === "error") throw winner.error;
+		attempt.tombstone();
+		acquisitionCancellation.abort();
+		if (winner._tag === "interrupted") {
+			throw new ReplacementInterrupted(`Interrupted before ${request.command} acknowledgement`);
+		}
+		return {
+			_tag: "refused",
+			outcome: this.#controlRefusal(
+				request,
+				"timeout",
+				`Pi did not acknowledge ${request.command} within ${this.#acknowledgementTimeoutMs}ms`,
+			),
+		};
+	}
+
+	#disposeSupersededAcquisition(acquisition: Promise<PiSessionHandle>): void {
+		void acquisition.then(
+			(lease) => {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				const bounded = new Promise<void>((resolve) => {
+					timer = setTimeout(resolve, this.#acknowledgementTimeoutMs);
+					timer.unref();
+				});
+				void Promise.race([lease.dispose().catch(() => undefined), bounded]).finally(() => {
+					if (timer !== undefined) clearTimeout(timer);
+				});
+			},
+			() => undefined,
+		);
 	}
 
 	async #runSessionControl(
 		request: Exclude<ControlRequest, {command: "create" | "open"}>,
-		execute: (lease: PiSessionHandle) => Promise<SessionSnapshot>,
+		execute: (lease: PiSessionHandle, signal: AbortSignal) => Promise<SessionSnapshot>,
+		signal: AbortSignal | undefined,
 	): Promise<ControlLiveSessionOutcome> {
 		const attachment = this.#attachment;
 		if (attachment === undefined) {
@@ -693,7 +965,11 @@ export class PiLiveSessionState implements LiveSessionState {
 			this.#pendingIdleControl = true;
 			this.#publishSession(attachment);
 		}
-		const operation = execute(attachment.lease)
+		const operationCancellation = new AbortController();
+		const onAbort = () => operationCancellation.abort();
+		if (signal?.aborted) onAbort();
+		else signal?.addEventListener("abort", onAbort, {once: true});
+		const operation = execute(attachment.lease, operationCancellation.signal)
 			.then(() => this.#reconcileAttachment(attachment))
 			.then((reconciled) => {
 				if (idleControl) this.#pendingIdleControl = false;
@@ -701,16 +977,18 @@ export class PiLiveSessionState implements LiveSessionState {
 				return this.#acknowledged(request, reconciled);
 			})
 			.finally(() => {
+				signal?.removeEventListener("abort", onAbort);
 				if (!idleControl || !this.#pendingIdleControl) return;
 				this.#pendingIdleControl = false;
 				if (this.#attachment === attachment) this.#publishSession(attachment);
 			});
-		return this.#awaitAcknowledgement(request, operation);
+		return this.#awaitAcknowledgement(request, operation, operationCancellation);
 	}
 
 	async #awaitAcknowledgement(
 		request: ControlRequest,
 		operation: Promise<ControlLiveSessionOutcome>,
+		operationCancellation: AbortController,
 	): Promise<ControlLiveSessionOutcome> {
 		const deadline = this.#makeAcknowledgementDeadline(this.#acknowledgementTimeoutMs);
 		const observed = operation.then(
@@ -721,14 +999,15 @@ export class PiLiveSessionState implements LiveSessionState {
 			observed,
 			deadline.elapsed.then(() => ({_tag: "timeout" as const})),
 		]);
+		deadline.cancel();
 		if (winner._tag === "timeout") {
+			operationCancellation.abort();
 			return this.#controlRefusal(
 				request,
 				"timeout",
 				`Pi did not acknowledge ${request.command} within ${this.#acknowledgementTimeoutMs}ms`,
 			);
 		}
-		deadline.cancel();
 		if (winner._tag === "outcome") return winner.outcome;
 		return this.#controlRefusal(
 			request,
@@ -801,21 +1080,33 @@ export class PiLiveSessionState implements LiveSessionState {
 		return false;
 	}
 
-	#bindLease(lease: PiSessionHandle, snapshot: SessionSnapshot): Attachment {
-		const generation = ++this.#generation;
-		const attachment: Attachment = {
+	#candidateAttachment(lease: PiSessionHandle, snapshot: SessionSnapshot): Attachment {
+		return {
 			lease,
-			generation,
+			generation: ++this.#generation,
 			snapshot,
 			transcript: snapshot.transcript.map(entryOf),
 			toolCallBuffers: new Map(),
 			unsubscribes: [],
 			leaseReleased: false,
 		};
-		const unsubscribes = [lease.subscribe((next) => this.#acceptSnapshot(generation, next))];
-		const bound = {...attachment, unsubscribes};
-		this.#attachment = bound;
-		return bound;
+	}
+
+	#commitAttachment(attachment: Attachment, pending?: PendingAttachment): void {
+		const unsubscribe = attachment.lease.subscribe((next) =>
+			this.#acceptSnapshot(attachment.generation, next),
+		);
+		attachment.unsubscribes.push(unsubscribe);
+		this.#clearPrompts();
+		this.#attachment = attachment;
+		this.#options.onSessionSubscriptionBound?.(attachment.snapshot.id);
+		if (pending !== undefined && this.#pendingAttachment === pending) {
+			this.#pendingAttachment = undefined;
+		}
+		for (const event of pending?.eventsAfterSnapshot ?? []) {
+			this.#acceptEvent(attachment.generation, event);
+		}
+		this.#publishSession(attachment);
 	}
 
 	#reconcileAttachment(attachment: Attachment): Attachment {
@@ -982,9 +1273,9 @@ export class PiLiveSessionState implements LiveSessionState {
 				this.#publishSession(attachment);
 				void this.#serialize(() => this.#releaseLease(attachment));
 			}
-		} catch (error) {
+		} catch {
 			this.#publishDiagnostic(
-				`Malformed live event was ignored: ${messageOf(error)}`,
+				"Malformed live event was ignored after protocol validation failed",
 				attachment.snapshot.id,
 			);
 		}
@@ -994,12 +1285,9 @@ export class PiLiveSessionState implements LiveSessionState {
 		if (attachment.leaseReleased) return;
 		attachment.leaseReleased = true;
 		for (const unsubscribe of attachment.unsubscribes) unsubscribe();
-		await attachment.lease.dispose().catch((error) => {
+		await attachment.lease.dispose().catch(() => {
 			if (attachment.disconnectedReason === undefined) {
-				this.#publishDiagnostic(
-					`PiClient lease cleanup failed: ${messageOf(error)}`,
-					attachment.snapshot.id,
-				);
+				this.#publishDiagnostic("PiClient lease cleanup failed", attachment.snapshot.id);
 			}
 		});
 	}
@@ -1098,7 +1386,20 @@ export class PiLiveSessionState implements LiveSessionState {
 	}
 
 	#publishDiagnostic(message: string, sessionId: string | null): void {
-		this.#publish({_tag: "diagnostic", sequence: this.#nextSequence(), sessionId, message});
+		const diagnostic = resilienceDiagnostic({
+			category: "protocol",
+			code: "live-session-protocol-degraded",
+			message,
+			action: "Refresh live session truth or select another retained session",
+			...(sessionId === null ? {} : {sessionId}),
+		});
+		this.#publish({
+			_tag: "diagnostic",
+			sequence: this.#nextSequence(),
+			sessionId: diagnostic.sessionId ?? null,
+			message: diagnostic.message,
+			diagnostic,
+		});
 	}
 
 	#nextSequence(): number {

@@ -6,7 +6,7 @@ import {
 	type PathMetadata,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import {Effect, FileSystem, Layer, Path, Schema} from "effect";
+import {Effect, Exit, FileSystem, Layer, Path, Result, Schema, Scope} from "effect";
 import {
 	type ExtensionUIService,
 	makeExtensionUI,
@@ -78,6 +78,7 @@ export interface BackendContribution {
 }
 
 type PackageDiagnosticReason =
+	| "package-resolution-failed"
 	| "package-root-unavailable"
 	| "package-manifest-unreadable"
 	| "package-manifest-invalid-json"
@@ -85,7 +86,8 @@ type PackageDiagnosticReason =
 	| "manifest-invalid"
 	| "backend-module-unavailable"
 	| "backend-export-not-factory"
-	| "backend-export-not-layer";
+	| "backend-export-not-layer"
+	| "backend-layer-build-failed";
 
 type KeyDiagnosticReason = "duplicate-key" | "shadowed-key" | "asset-unavailable";
 export type ContributionDiagnosticReason = PackageDiagnosticReason | KeyDiagnosticReason;
@@ -187,6 +189,8 @@ const fallbackPackageIdentity = (metadata: PathMetadata, index: number) =>
 
 const diagnosticMessage = (rejection: ContributionRejection): string => {
 	switch (rejection.reason) {
+		case "package-resolution-failed":
+			return "Pi package resolution failed; package contributions are unavailable";
 		case "package-root-unavailable":
 			return "Package root is unavailable";
 		case "package-manifest-unreadable":
@@ -209,6 +213,8 @@ const diagnosticMessage = (rejection: ContributionRejection): string => {
 			return "Backend contribution export is not a factory";
 		case "backend-export-not-layer":
 			return "Backend contribution factory did not return an Effect Layer";
+		case "backend-layer-build-failed":
+			return "Backend contribution Layer could not be activated";
 	}
 };
 
@@ -222,22 +228,38 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const packageManager =
 		options.packageManager ?? new DefaultPackageManager({cwd, agentDir, settingsManager});
-	const resolved = yield* Effect.tryPromise({
-		try: () => packageManager.resolve(),
-		catch: (cause) =>
-			new ContributionStartupFailure({
-				packageName: PublicPackageIdentity.make("pi"),
-				message: "Pi package resolution failed",
-				cause,
-			}),
-	});
+	const resolved = yield* Effect.result(
+		Effect.tryPromise({
+			try: () => packageManager.resolve(),
+			catch: (cause) =>
+				new ContributionStartupFailure({
+					packageName: PublicPackageIdentity.make("pi"),
+					message: "Pi package resolution failed",
+					cause,
+				}),
+		}),
+	);
 	const backend: Array<BackendContribution> = [];
 	const frontend: Array<FrontendContribution> = [];
 	const assetFiles = new Map<string, string>();
 	const diagnostics: Array<ContributionDiagnostic> = [];
 	const keys = new Set<string>();
+	if (Result.isFailure(resolved)) {
+		diagnostics.push({
+			packageName: PublicPackageIdentity.make("pi"),
+			reason: "package-resolution-failed",
+			message: diagnosticMessage({reason: "package-resolution-failed"}),
+		});
+		return {
+			contractVersion: 1,
+			backend,
+			frontend,
+			assetFiles,
+			diagnostics,
+		} satisfies TuvalContributionCatalog;
+	}
 
-	for (const [index, root] of packageRoots(resolved.extensions).entries()) {
+	for (const [index, root] of packageRoots(resolved.success.extensions).entries()) {
 		const packageJsonPath = path.join(root.baseDir, "package.json");
 		const source = root.metadata.source;
 		let packageIdentity = fallbackPackageIdentity(root.metadata, index);
@@ -332,8 +354,12 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 						message: "Backend contribution module failed to load",
 						cause,
 					}),
-			});
-			const factory = loaded[entry.export];
+			}).pipe(Effect.option);
+			if (loaded._tag === "None") {
+				invalid = {reason: "backend-module-unavailable"};
+				break;
+			}
+			const factory = loaded.value[entry.export];
 			if (typeof factory !== "function") {
 				invalid = {reason: "backend-export-not-factory"};
 				break;
@@ -346,8 +372,12 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 						message: "Backend contribution factory failed",
 						cause,
 					}),
-			});
-			const decodedLayer = Schema.decodeUnknownOption(BackendLayer)(layer);
+			}).pipe(Effect.option);
+			if (layer._tag === "None") {
+				invalid = {reason: "backend-export-not-layer"};
+				break;
+			}
+			const decodedLayer = Schema.decodeUnknownOption(BackendLayer)(layer.value);
 			if (decodedLayer._tag === "None") {
 				invalid = {reason: "backend-export-not-layer"};
 				break;
@@ -378,28 +408,66 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 	} satisfies TuvalContributionCatalog;
 });
 
-export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")(function* (
+export interface ActivatedPackageContributions {
+	readonly catalog: TuvalContributionCatalog;
+	readonly diagnostics: ReadonlyArray<ContributionDiagnostic>;
+	readonly failedPackageNames: ReadonlySet<PublicPackageIdentity>;
+}
+
+export const activatePackageContributions = Effect.fn("TuvalPackages.activate")(function* (
 	catalog: TuvalContributionCatalog,
 	extensionUI?: ExtensionUIService,
 ) {
 	const bridge = extensionUI ?? makeExtensionUI();
-	for (const contribution of catalog.backend) {
-		const layer = contribution.layer.pipe(
-			Layer.provide(
-				Layer.succeed(PackageExtensionUI, packageExtensionUI(contribution.packageName, bridge)),
-			),
-		);
-		yield* Layer.build(layer).pipe(
-			Effect.mapError(
-				(cause) =>
-					new ContributionStartupFailure({
-						packageName: contribution.packageName,
-						message: "Backend contribution layer failed to build",
-						cause,
-					}),
-			),
-		);
+	const parentScope = yield* Effect.scope;
+	const diagnostics: Array<ContributionDiagnostic> = [];
+	const failedPackageNames = new Set<PublicPackageIdentity>();
+	const packageNames = [...new Set(catalog.backend.map(({packageName}) => packageName))];
+	for (const packageName of packageNames) {
+		const packageScope = yield* Scope.fork(parentScope);
+		const layers = catalog.backend
+			.filter((contribution) => contribution.packageName === packageName)
+			.map((contribution) =>
+				contribution.layer.pipe(
+					Layer.provide(Layer.succeed(PackageExtensionUI, packageExtensionUI(packageName, bridge))),
+				),
+			);
+		let activationFailure: Exit.Failure<unknown, unknown> | undefined;
+		for (const layer of layers) {
+			const activated = yield* Effect.exit(Layer.buildWithScope(layer, packageScope));
+			if (Exit.isFailure(activated)) {
+				activationFailure = activated;
+				break;
+			}
+		}
+		if (activationFailure === undefined) continue;
+		yield* Scope.close(packageScope, activationFailure);
+		failedPackageNames.add(packageName);
+		diagnostics.push({
+			packageName,
+			reason: "backend-layer-build-failed",
+			message: diagnosticMessage({reason: "backend-layer-build-failed"}),
+		});
 	}
+	const frontend = catalog.frontend.filter(({packageName}) => !failedPackageNames.has(packageName));
+	const assetUrls = new Set(frontend.map(({asset}) => asset));
+	return {
+		catalog: {
+			...catalog,
+			backend: catalog.backend.filter(({packageName}) => !failedPackageNames.has(packageName)),
+			frontend,
+			assetFiles: new Map([...catalog.assetFiles].filter(([asset]) => assetUrls.has(asset))),
+		},
+		diagnostics,
+		failedPackageNames,
+	} satisfies ActivatedPackageContributions;
+});
+
+export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")(function* (
+	catalog: TuvalContributionCatalog,
+	extensionUI?: ExtensionUIService,
+) {
+	return (yield* activatePackageContributions(catalog, extensionUI)).diagnostics;
 });
 
 export const emitContributionCatalog = (catalog: TuvalContributionCatalog) => ({
