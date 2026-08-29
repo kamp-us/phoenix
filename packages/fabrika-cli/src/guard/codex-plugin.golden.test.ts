@@ -52,6 +52,35 @@ describe("the Codex fabrika adapter", () => {
 		}
 	});
 
+	it("keeps the human-only front door outside the discovered skill tree", () => {
+		const discovered = new URL(
+			"../../../../codex-plugins/fabrika/skills/front-door/",
+			import.meta.url,
+		);
+		const reference = new URL(
+			"../../../../codex-plugins/fabrika/references/front-door/",
+			import.meta.url,
+		);
+		const canonical = new URL(
+			"../../../../claude-plugins/fabrika/skills/front-door/",
+			import.meta.url,
+		);
+
+		expect(() => files(discovered)).toThrow();
+		expect(files(reference)).toEqual(files(canonical));
+		for (const file of files(canonical)) {
+			expect(readFileSync(new URL(file, reference))).toEqual(
+				readFileSync(new URL(file, canonical)),
+			);
+		}
+		expect(
+			readFileSync(
+				new URL("../../../../codex-plugins/fabrika/skills/adr/SKILL.md", import.meta.url),
+				"utf8",
+			),
+		).toContain("[front-door](../../references/front-door/SKILL.md)");
+	});
+
 	it("publishes that same plugin through the repo marketplace", () => {
 		expect(marketplace.plugins).toContainEqual({
 			name: "fabrika",

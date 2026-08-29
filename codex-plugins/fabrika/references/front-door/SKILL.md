@@ -1,7 +1,7 @@
 ---
 name: front-door
-description: "The operating front door — type /fabrika in a cold session for the factory's live state, the skill menu, and new-repo onboarding. Invoke when the user requests the fabrika front door."
-disable-model-invocation: false
+description: "The operating front door — type /fabrika in a cold session for the factory's live state, the skill menu, and new-repo onboarding. Human-typed only; the model cannot fire this."
+disable-model-invocation: true
 ---
 
 # front-door

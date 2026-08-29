@@ -17,12 +17,15 @@ const REPO_ROOT = resolve(PLUGIN_ROOT, "../..");
 const SOURCE_ROOT = join(REPO_ROOT, "claude-plugins", "fabrika", "skills");
 const PLUGIN_SOURCE = join(REPO_ROOT, "claude-plugins", "fabrika");
 const DEST_ROOT = join(PLUGIN_ROOT, "skills");
+const REFERENCE_ROOT = join(PLUGIN_ROOT, "references");
+const FRONT_DOOR = "front-door";
 const WORKFLOW_SKILLS = ["report", "triage", "build", "review", "ship"];
 const SKILLS = readdirSync(SOURCE_ROOT)
-	.filter((skill) => existsSync(join(SOURCE_ROOT, skill, "SKILL.md")))
+	.filter((skill) => skill !== FRONT_DOOR && existsSync(join(SOURCE_ROOT, skill, "SKILL.md")))
 	.sort();
 
 rmSync(DEST_ROOT, {recursive: true, force: true});
+rmSync(REFERENCE_ROOT, {recursive: true, force: true});
 for (const entry of ["agents", "docs", "guide", ".claude-plugin", "hooks.json"]) {
 	rmSync(join(PLUGIN_ROOT, entry), {recursive: true, force: true});
 }
@@ -36,14 +39,18 @@ for (const skill of SKILLS) {
 	cpSync(source, join(DEST_ROOT, skill), {recursive: true});
 }
 
-const frontDoor = join(DEST_ROOT, "front-door", "SKILL.md");
-const adaptedFrontDoor = readFileSync(frontDoor, "utf8")
-	.replace("disable-model-invocation: true", "disable-model-invocation: false")
-	.replace(
-		"Human-typed only; the model cannot fire this.",
-		"Invoke when the user requests the fabrika front door.",
-	);
-writeFileSync(frontDoor, adaptedFrontDoor);
+cpSync(join(SOURCE_ROOT, FRONT_DOOR), join(REFERENCE_ROOT, FRONT_DOOR), {recursive: true});
+
+const adrSkill = join(DEST_ROOT, "adr", "SKILL.md");
+const adrSource = readFileSync(adrSkill, "utf8");
+const canonicalFrontDoorLink = "[front-door](../front-door/SKILL.md)";
+if (!adrSource.includes(canonicalFrontDoorLink)) {
+	throw new Error("sync-bundle: canonical ADR skill no longer has the expected front-door link");
+}
+writeFileSync(
+	adrSkill,
+	adrSource.replace(canonicalFrontDoorLink, "[front-door](../../references/front-door/SKILL.md)"),
+);
 
 for (const entry of ["agents", "docs", "guide", ".claude-plugin", "hooks.json"]) {
 	cpSync(join(PLUGIN_SOURCE, entry), join(PLUGIN_ROOT, entry), {recursive: true});

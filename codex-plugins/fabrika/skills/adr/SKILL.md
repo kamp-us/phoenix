@@ -31,7 +31,7 @@ on disk mints the same number from two lanes at once.
 adopting fabrika has no records on day one, and that is a fact the verb reports, not a read it
 failed. Only a directory it could not read at all refuses (exit 11). If the directory does not exist
 yet, create it and re-run; a repo with no decision directory at all is a setup question for
-[front-door](../front-door/SKILL.md).
+[front-door](../../references/front-door/SKILL.md).
 
 **Where the corpus lives is the repo's, not this skill's.** `.fabrika.jsonc`'s `decisionsDir` names
 it and defaults to `.decisions`; `--dir` overrides it for one run. A repo that writes `null` there

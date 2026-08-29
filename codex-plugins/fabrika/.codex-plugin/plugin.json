@@ -1,6 +1,6 @@
 {
 	"name": "fabrika",
-	"version": "0.1.0+codex.20260829224116",
+	"version": "0.1.0+codex.20260829230948",
 	"description": "The kamp.us agent pipeline: report, triage, build, review, and ship through guarded CLI verbs.",
 	"author": {
 		"name": "kamp-us",
