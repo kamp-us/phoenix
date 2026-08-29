@@ -418,7 +418,9 @@ export function ChatPane({
 											const text = composerText();
 											if (text.length === 0) return;
 											void runControl("steer", () => onSteer(text)).then((outcome) => {
-												if (outcome?._tag === "acknowledged") composer?.setContent("");
+												if (outcome?._tag !== "acknowledged") return;
+												composer?.setContent("");
+												requestAnimationFrame(() => composer?.editor.commands.focus("end"));
 											});
 										}}
 									>

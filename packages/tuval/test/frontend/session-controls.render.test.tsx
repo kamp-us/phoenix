@@ -213,6 +213,7 @@ describe("Tuval session controls", () => {
 		expect(model.value).toBe("anthropic/claude-sonnet");
 		expect(thinking.value).toBe("high");
 
+		model.focus();
 		fireEvent.change(model, {target: {value: "openai/gpt-5"}});
 		expect(onSetModel).toHaveBeenCalledWith({provider: "openai", id: "gpt-5"});
 		expect(model.value).toBe("anthropic/claude-sonnet");
@@ -220,24 +221,34 @@ describe("Tuval session controls", () => {
 		modelGate.resolve(refused("set-model", "unsupported-value", "Model desteklenmiyor"));
 		await screen.findByText(/Model değiştirme başarısız \(unsupported-value\)/);
 		expect(model.value).toBe("anthropic/claude-sonnet");
+		await waitFor(() => expect(document.activeElement).toBe(model));
 
+		thinking.focus();
 		fireEvent.change(thinking, {target: {value: "medium"}});
 		expect(onSetThinking).toHaveBeenCalledWith("medium");
 		expect(thinking.value).toBe("high");
 		thinkingGate.resolve(refused("set-thinking", "protocol", "Yanıt eşleşmedi"));
 		await screen.findByText(/Düşünme düzeyi değiştirme başarısız \(protocol\)/);
 		expect(thinking.value).toBe("high");
+		await waitFor(() => expect(document.activeElement).toBe(thinking));
 	});
 
-	it("keeps the distinct steer action unavailable until Composer owns non-empty text", async () => {
+	it("invokes disconnected steer, preserves Composer text, and restores focus", async () => {
 		const onSteer = vi.fn(async () => refused("steer", "disconnected", "Bağlantı kesildi"));
 		render(pane({onSteer}));
 		const editor = await screen.findByRole("textbox", {name: "İstem"});
 		const steer = screen.getByRole("button", {name: "Yönlendir"}) as HTMLButtonElement;
 		expect(steer.disabled).toBe(true);
 		expect(editor.getAttribute("contenteditable")).toBe("true");
-		expect(screen.getByRole("button", {name: "Gönder"})).not.toBe(steer);
-		expect(onSteer).not.toHaveBeenCalled();
+		editor.textContent = "Yeni rotayı izle";
+		fireEvent.input(editor);
+		await waitFor(() => expect(steer.disabled).toBe(false));
+		steer.focus();
+		fireEvent.click(steer);
+		await screen.findByText(/Yönlendirme başarısız \(disconnected\): Bağlantı kesildi/);
+		expect(onSteer).toHaveBeenCalledWith("Yeni rotayı izle");
+		expect(editor.textContent).toContain("Yeni rotayı izle");
+		await waitFor(() => expect(document.activeElement).toBe(steer));
 	});
 
 	it("keeps abort pending until acknowledgement and reports thrown protocol failures", async () => {

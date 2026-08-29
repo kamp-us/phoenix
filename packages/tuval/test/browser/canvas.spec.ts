@@ -1822,7 +1822,10 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 			return;
 		}
 		if (name === "liveSession.attach") {
-			await fulfill(route, id, {_tag: "attached", session: controlled()});
+			await fulfill(route, id, {
+				_tag: "attached",
+				session: controlled({sessionId: String(input.sessionId)}),
+			});
 			return;
 		}
 		requested.push(name);
@@ -1907,44 +1910,85 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 	await page.getByRole("button", {name: "Yeni oturum"}).click();
 	await expect(page.getByText("Oluşturma onayı bekleniyor.")).toBeVisible();
 	await expect(cwd).toHaveValue("/work/created");
-	await expect(page.locator('[data-id="pi:created-control"]')).toBeVisible();
+	const createdNode = page.locator('[data-id="pi:created-control"] .session-node');
+	await expect(createdNode).toBeVisible();
+	await expect(createdNode).toHaveAttribute("data-selected", "true");
+	await expect(page.locator(".chat-pane__path")).toHaveText("/work/created");
 	await expect(cwd).toBeFocused();
 
 	const sessionId = page.getByRole("textbox", {name: "Oturum kimliği"});
 	await sessionId.fill("opened-control");
 	await page.getByRole("button", {name: "Oturumu aç"}).click();
 	await expect(page.getByText("Açma onayı bekleniyor.")).toBeVisible();
-	await expect(page.locator('[data-id="pi:opened-control"]')).toBeVisible();
+	const openedNode = page.locator('[data-id="pi:opened-control"] .session-node');
+	await expect(openedNode).toBeVisible();
+	await expect(openedNode).toHaveAttribute("data-selected", "true");
+	await expect(page.locator(".chat-pane__path")).toHaveText("Oturum opened-control");
 	await expect(sessionId).toBeFocused();
 
 	await selectNode(page, "pi:control-alpha");
 	const model = page.getByRole("combobox", {name: "Model"});
 	await expect(model).toHaveValue("anthropic/claude-sonnet");
+	await model.focus();
 	await model.selectOption("openai/gpt-5");
 	await expect(page.getByText("Model değiştirme onayı bekleniyor.")).toBeVisible();
 	await expect(model).toHaveValue("anthropic/claude-sonnet");
 	await expect(page.getByRole("alert")).toContainText("unsupported-value");
 	await expect(model).toHaveValue("anthropic/claude-sonnet");
+	await expect(model).toBeFocused();
 
 	const thinking = page.getByRole("combobox", {name: "Düşünme düzeyi"});
+	await thinking.focus();
 	await thinking.selectOption("medium");
 	await expect(page.getByText("Düşünme düzeyi değiştirme onayı bekleniyor.")).toBeVisible();
 	await expect(thinking).toHaveValue("high");
 	await expect(thinking).toHaveValue("medium");
+	await expect(thinking).toBeFocused();
 
 	const editor = page.getByRole("textbox", {name: "İstem"});
 	await editor.fill("Yeni rotayı izle");
-	await page.getByRole("button", {name: "Yönlendir"}).click();
+	const steer = page.getByRole("button", {name: "Yönlendir"});
+	await steer.focus();
+	await steer.press("Enter");
 	await expect(page.getByText("Yönlendirme onayı bekleniyor.")).toBeVisible();
 	await expect(editor).toHaveText("Yeni rotayı izle");
 	await expect(page.getByText("Yönlendirme pi tarafından onaylandı.")).toBeVisible();
 	await expect(editor).toBeEmpty();
+	await expect(editor).toBeFocused();
 	await expect(page.getByText("Yeni rotayı izle")).toBeVisible();
 
-	await page.getByRole("button", {name: "Durdur"}).click();
+	const abort = page.getByRole("button", {name: "Durdur"});
+	await abort.focus();
+	await abort.press("Space");
 	await expect(page.getByText("Durdurma onayı bekleniyor.")).toBeVisible();
 	await expect(page.getByText(/Durdurma başarısız \(timeout\)/)).toBeVisible();
+	await expect(abort).toBeFocused();
 	await expect(page.locator(".session-phase strong", {hasText: "Hazır"})).toBeVisible();
+
+	for (const width of [800, 721]) {
+		await page.setViewportSize({width, height: 900});
+		for (const field of [cwd, sessionId]) {
+			const box = await field.boundingBox();
+			expect(box).not.toBeNull();
+			expect(box?.width ?? 0).toBeGreaterThanOrEqual(36);
+		}
+		const responsivePath = testInfo.outputPath(`cockpit-responsive-${width}.png`);
+		await page.screenshot({path: responsivePath, fullPage: true});
+		await testInfo.attach(`cockpit-responsive-${width}`, {
+			path: responsivePath,
+			contentType: "image/png",
+		});
+	}
+
+	await page.setViewportSize({width: 390, height: 844});
+	const topbarBox = await page.locator(".topbar").boundingBox();
+	const chatBox = await page.locator(".chat-pane").boundingBox();
+	expect(topbarBox).not.toBeNull();
+	expect(chatBox).not.toBeNull();
+	expect(chatBox?.y ?? 0).toBeGreaterThanOrEqual((topbarBox?.y ?? 0) + (topbarBox?.height ?? 0));
+	const mobilePath = testInfo.outputPath("cockpit-responsive-390.png");
+	await page.screenshot({path: mobilePath, fullPage: true});
+	await testInfo.attach("cockpit-responsive-390", {path: mobilePath, contentType: "image/png"});
 
 	expect(requested).toEqual([
 		"liveSession.create",

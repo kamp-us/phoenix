@@ -591,23 +591,44 @@ export function TuvalApp() {
 	};
 
 	const acceptReplacement = (
-		outcome: ControlLiveSessionOutcome,
+		controlOutcome: ControlLiveSessionOutcome,
 		cwdHint: string,
 	): ControlLiveSessionOutcome => {
-		if (outcome._tag !== "acknowledged") return outcome;
+		if (controlOutcome._tag !== "acknowledged") return controlOutcome;
 		const now = Date.now();
 		const discovered: DiscoveredSession = {
-			identity: `pi:${outcome.session.sessionId}` as DiscoveredSession["identity"],
-			piSessionId: outcome.session.sessionId,
+			identity: `pi:${controlOutcome.session.sessionId}` as DiscoveredSession["identity"],
+			piSessionId: controlOutcome.session.sessionId,
 			createdAt: now,
 			updatedAt: now,
 			cwd: cwdHint,
 			sourceFile: "",
 		};
+		const prior = sessionsOf(outcome).find(
+			(session) => session.piSessionId === discovered.piSessionId,
+		);
+		const stable = prior === undefined ? discovered : {...discovered, ...prior};
+		const generation = selectionGeneration.current + 1;
+		ignoreSelectionChange.current = true;
+		selectionGeneration.current = generation;
+		selectedRef.current = stable;
+		streamCursor.current = {
+			sessionId: stable.piSessionId,
+			generation,
+			sequence: controlOutcome.session.lastEventSequence,
+			revision: controlOutcome.session.revision,
+		};
+		setPaneSelection({
+			_tag: "open",
+			selected: stable,
+			generation,
+			pane: {connection: "attached", session: controlOutcome.session},
+		});
+		setNodes((current) =>
+			current.map((node) => ({...node, selected: node.id === stable.identity})),
+		);
 		setOutcome((current) => {
 			const sessions = sessionsOf(current);
-			const prior = sessions.find((session) => session.piSessionId === discovered.piSessionId);
-			const stable = prior === undefined ? discovered : {...discovered, ...prior};
 			const next = [
 				...sessions.filter((session) => session.piSessionId !== stable.piSessionId),
 				stable,
@@ -617,8 +638,8 @@ export function TuvalApp() {
 				: {_tag: "ready", sessions: next};
 		});
 		setLineage((current) => {
-			if (current === null) return knownSessionsProjection([discovered]);
-			if (current.graph.nodes.some((node) => node.piSessionId === discovered.piSessionId)) {
+			if (current === null) return knownSessionsProjection([stable]);
+			if (current.graph.nodes.some((node) => node.piSessionId === stable.piSessionId)) {
 				return current;
 			}
 			return {
@@ -628,23 +649,27 @@ export function TuvalApp() {
 					nodes: [
 						...current.graph.nodes,
 						{
-							id: discovered.identity,
-							piSessionId: discovered.piSessionId,
-							createdAt: discovered.createdAt,
-							updatedAt: discovered.updatedAt,
-							cwd: discovered.cwd,
-							sourceFiles: [],
+							id: stable.identity,
+							piSessionId: stable.piSessionId,
+							createdAt: stable.createdAt,
+							updatedAt: stable.updatedAt,
+							cwd: stable.cwd,
+							sourceFiles: stable.sourceFile === "" ? [] : [stable.sourceFile],
 						},
 					],
 				},
 			};
 		});
-		requestAnimationFrame(() => focusCanvasNode(discovered.identity));
-		return outcome;
+		requestAnimationFrame(() => {
+			requestAnimationFrame(() => {
+				ignoreSelectionChange.current = false;
+			});
+		});
+		return controlOutcome;
 	};
 
 	const runSelectedControl = async (
-		request: (correlationId: string) => Promise<ControlLiveSessionOutcome>,
+		request: (correlationId: string, sessionId: string) => Promise<ControlLiveSessionOutcome>,
 	): Promise<ControlLiveSessionOutcome> => {
 		const target = selectedRef.current;
 		const targetGeneration = selectionGeneration.current;
@@ -658,7 +683,7 @@ export function TuvalApp() {
 				session: null,
 			};
 		}
-		const outcome = await request(crypto.randomUUID());
+		const outcome = await request(crypto.randomUUID(), target.piSessionId);
 		if (
 			targetGeneration !== selectionGeneration.current ||
 			selectedRef.current?.identity !== target.identity
@@ -940,14 +965,24 @@ export function TuvalApp() {
 						onClose={closePane}
 						onSend={sendPrompt}
 						onSteer={(text) =>
-							runSelectedControl((correlationId) => steerLiveSession(correlationId, text))
+							runSelectedControl((correlationId, sessionId) =>
+								steerLiveSession(sessionId, correlationId, text),
+							)
 						}
-						onAbort={() => runSelectedControl((correlationId) => abortLiveSession(correlationId))}
+						onAbort={() =>
+							runSelectedControl((correlationId, sessionId) =>
+								abortLiveSession(sessionId, correlationId),
+							)
+						}
 						onSetModel={(model: ModelRef) =>
-							runSelectedControl((correlationId) => setModelLiveSession(correlationId, model))
+							runSelectedControl((correlationId, sessionId) =>
+								setModelLiveSession(sessionId, correlationId, model),
+							)
 						}
 						onSetThinking={(level: ThinkingLevel) =>
-							runSelectedControl((correlationId) => setThinkingLiveSession(correlationId, level))
+							runSelectedControl((correlationId, sessionId) =>
+								setThinkingLiveSession(sessionId, correlationId, level),
+							)
 						}
 					/>
 				)}

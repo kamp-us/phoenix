@@ -520,7 +520,7 @@ button:disabled {
 
 .session-launch__form {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto;
+	grid-template-columns: minmax(var(--control-min), 1fr) auto;
 	align-items: end;
 	gap: var(--space-2);
 }
@@ -995,10 +995,25 @@ kbd {
 	}
 }
 
+@media (min-width: 721px) and (max-width: 800px) {
+	.session-launch {
+		grid-template-columns: minmax(0, 1fr);
+		width: min(var(--node-width), calc(100vw - var(--pane-width) - var(--space-8)));
+	}
+
+	.session-launch__eyebrow {
+		grid-column: 1;
+	}
+}
+
 @media (max-width: 720px) {
 	:root {
 		--topbar-height: 112px;
 		--pane-width: calc(100vw - var(--space-4));
+	}
+
+	.tuval-shell {
+		grid-template-rows: auto minmax(0, 1fr);
 	}
 
 	.topbar {
