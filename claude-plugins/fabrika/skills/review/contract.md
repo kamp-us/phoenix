@@ -1221,7 +1221,7 @@ call.
 
 ```
 $ fabrika review scratch 4321 --slug diff --lane 4287 --sha 03135b91
-/var/folders/kx/T/fabrika-review/s-9f2e/4321-8c1d4a90f27b/diff
+/var/folders/kx/T/fabrika-review/s-9f2e/4321-8c9e018c5568/diff
 
 $ fabrika review scratch 4321 --slug diff --lane "" --sha 03135b91
 review scratch: --lane is blank — this run names no lane, so the only namespace left is the
