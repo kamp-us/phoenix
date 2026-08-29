@@ -89,6 +89,16 @@ prepended to the inherited `PATH` (never a per-machine volta/fnm shim — 0109's
 only remote-tracking refs, never the primary's local `main`, so the #2143/#2144 corruption class is
 not reintroduced. `<base>` is read from `refs/remotes/origin/HEAD` and falls back to `main`.
 
+That fetch needs credentials, and the child inherits nothing it is not handed, so the allowlist
+carries the ssh-agent channel (`SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GIT_SSH`, `GIT_SSH_COMMAND`)
+alongside what the install needs. phoenix's `origin` is SSH-only — `url.git@github.com:.insteadof`
+rewrites every HTTPS remote — so an omitted socket is not a slower path, it is no path. Forwarding it
+is only half: the child has no tty and no askpass, so an ssh that decides to prompt blocks until the
+540s child timeout and every spawn becomes a nine-minute refusal. `GIT_TERMINAL_PROMPT=0` and ssh
+`BatchMode=yes` make the same miss fail in seconds, at exit `16` with the reason on stderr. A lone
+`GIT_SSH` wrapper is left as-is, since git prefers `GIT_SSH_COMMAND` and synthesising one would
+silently outrank the operator's choice.
+
 **5. Every failure arm refuses, and a refusal blocks the spawn.** Including the last one, which is
 what makes the guarantee more than a hope: **`git worktree add` succeeding proves nothing about the
 install**, so the verb checks `node_modules/.pnpm` in the new tree and exits `18` if it is absent. A

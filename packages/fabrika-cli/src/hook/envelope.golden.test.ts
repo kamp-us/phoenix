@@ -104,8 +104,17 @@ describe("this repo's own hook declaration", {timeout: SUBPROCESS_TEST_TIMEOUT_M
 		expect(violations(repoSurface)).toEqual([]);
 	});
 
-	it("carries the WorktreeCreate provider and nothing else", () => {
-		expect([...new Set(repoSurface.map((hook) => hook.event))].sort()).toEqual(["WorktreeCreate"]);
+	/**
+	 * Asserted by containment, not exhaustively: a later unrelated repo hook is the repo's call to
+	 * make, and reddening this package's suite over one would say nothing about fabrika. The teeth
+	 * are the `Worktree*` bound — exactly one provisioning provider, here and nowhere else.
+	 */
+	it("carries the WorktreeCreate provider, and no second Worktree event beside it", () => {
+		const events = repoSurface.map((hook) => hook.event);
+		expect(events).toContain("WorktreeCreate");
+		expect([...new Set(events.filter((event) => event.startsWith("Worktree")))]).toEqual([
+			"WorktreeCreate",
+		]);
 	});
 
 	/**

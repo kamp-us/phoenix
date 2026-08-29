@@ -101,20 +101,61 @@ export const toolchainPath = (inherited: string | undefined, home: string | unde
 	return ordered.join(":");
 };
 
+/** What `bootstrap-deps` needs: the pnpm/corepack store under `HOME`, and a stable locale. */
+const INSTALL_KEYS: ReadonlyArray<string> = [
+	"HOME",
+	"LANG",
+	"LC_ALL",
+	"TMPDIR",
+	"COREPACK_HOME",
+	"XDG_CACHE_HOME",
+];
+
+/**
+ * What `git fetch origin` needs. phoenix's `origin` is SSH-only — `url.git@github.com:.insteadof`
+ * rewrites every HTTPS remote — so with no agent socket the fetch has no credential path at all.
+ */
+const CREDENTIAL_KEYS: ReadonlyArray<string> = [
+	"SSH_AUTH_SOCK",
+	"SSH_AGENT_PID",
+	"GIT_SSH",
+	"GIT_SSH_COMMAND",
+];
+
+/**
+ * The ssh command, forced non-interactive.
+ *
+ * A hook child has no tty and inherits no `SSH_ASKPASS`/`DISPLAY`, so an ssh that decides to ask for
+ * a passphrase cannot be answered — it just blocks until the 540s child timeout, turning every spawn
+ * into a nine-minute refusal. `BatchMode=yes` makes that same miss fail at once.
+ */
+const nonInteractiveSsh = (inherited: string | undefined): string => {
+	const command = inherited === undefined || inherited.trim() === "" ? "ssh" : inherited.trim();
+	return /batchmode/i.test(command) ? command : `${command} -o BatchMode=yes`;
+};
+
 /**
  * The environment the two git children run under.
  *
  * Nothing is inherited implicitly (`execRecord` sets `extendEnv: false`), so what is not here does
- * not reach `bootstrap-deps`. `HOME` carries the pnpm/corepack store — an install without it
- * re-downloads the world or fails outright — and `PATH` is the composed one above.
+ * not reach the children. Two jobs are served: the install's store and locale, and the fetch's
+ * credentials — which are forwarded *and* pinned non-interactive, so a credential miss refuses at
+ * `BASE_FETCH_FAILED` in seconds rather than hanging out the child timeout (ADR 0337).
  */
 export const childEnv = (
 	source: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> => {
 	const env: Record<string, string> = {PATH: toolchainPath(source.PATH, source.HOME)};
-	for (const key of ["HOME", "LANG", "LC_ALL", "TMPDIR", "COREPACK_HOME", "XDG_CACHE_HOME"]) {
+	for (const key of [...INSTALL_KEYS, ...CREDENTIAL_KEYS]) {
 		const value = source[key];
 		if (value !== undefined && value !== "") env[key] = value;
+	}
+
+	env.GIT_TERMINAL_PROMPT = "0";
+	// An operator's `GIT_SSH` wrapper is the transport git would pick; injecting a `GIT_SSH_COMMAND`
+	// beside it would silently outrank it, so that one case is left exactly as it was inherited.
+	if (env.GIT_SSH === undefined || env.GIT_SSH_COMMAND !== undefined) {
+		env.GIT_SSH_COMMAND = nonInteractiveSsh(env.GIT_SSH_COMMAND);
 	}
 	return env;
 };

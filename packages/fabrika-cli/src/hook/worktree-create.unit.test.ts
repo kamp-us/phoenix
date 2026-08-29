@@ -81,10 +81,46 @@ describe("the environment the git child runs under", () => {
 	it("passes through nothing the list does not name — the child inherits no ambient environment", () => {
 		expect(
 			Object.keys(childEnv({PATH: "/usr/bin", NODE_OPTIONS: "--x", GH_TOKEN: "t"})).sort(),
-		).toEqual(["PATH"]);
+		).toEqual(["GIT_SSH_COMMAND", "GIT_TERMINAL_PROMPT", "PATH"]);
 	});
 
 	it("drops an empty value rather than handing the child a blank HOME", () => {
 		expect(childEnv({PATH: "/usr/bin", HOME: ""})).not.toHaveProperty("HOME");
+	});
+
+	/**
+	 * phoenix's `origin` is SSH-only, so a fetch with no agent socket has no credential path at all —
+	 * and the hook is the only way any worktree gets created once it is declared.
+	 */
+	it("forwards the ssh-agent channel, so the fetch against an SSH-only origin can authenticate", () => {
+		expect(
+			childEnv({PATH: "/usr/bin", SSH_AUTH_SOCK: "/tmp/agent.7", SSH_AGENT_PID: "812"}),
+		).toMatchObject({SSH_AUTH_SOCK: "/tmp/agent.7", SSH_AGENT_PID: "812"});
+	});
+
+	it("refuses to prompt: a credential miss fails at once instead of hanging out the child timeout", () => {
+		expect(childEnv({PATH: "/usr/bin"})).toMatchObject({
+			GIT_TERMINAL_PROMPT: "0",
+			GIT_SSH_COMMAND: "ssh -o BatchMode=yes",
+		});
+	});
+
+	it("keeps an inherited GIT_SSH_COMMAND and adds BatchMode to it rather than replacing it", () => {
+		expect(
+			childEnv({PATH: "/usr/bin", GIT_SSH_COMMAND: "ssh -i /keys/deploy"}).GIT_SSH_COMMAND,
+		).toBe("ssh -i /keys/deploy -o BatchMode=yes");
+	});
+
+	it("adds no second BatchMode when the inherited command already sets one, in any case", () => {
+		expect(
+			childEnv({PATH: "/usr/bin", GIT_SSH_COMMAND: "ssh -o batchmode=YES"}).GIT_SSH_COMMAND,
+		).toBe("ssh -o batchmode=YES");
+	});
+
+	/** git prefers `GIT_SSH_COMMAND`, so synthesising one would silently outrank the operator's wrapper. */
+	it("leaves a lone GIT_SSH wrapper as the transport instead of overriding it", () => {
+		const env = childEnv({PATH: "/usr/bin", GIT_SSH: "/opt/bin/ssh-wrapper"});
+		expect(env.GIT_SSH).toBe("/opt/bin/ssh-wrapper");
+		expect(env).not.toHaveProperty("GIT_SSH_COMMAND");
 	});
 });
