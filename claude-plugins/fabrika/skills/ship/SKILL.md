@@ -224,10 +224,12 @@ fabrika ship reconcile $pr_number
 ```
 
 `enqueue` is the only step that arms an intent, and it never passes a merge-method flag — the
-queue owns the method (a `--squash` no-ops the enqueue silently). It asserts a **definite**
-`mergeable_state` before it arms and refuses `11` if the value stays indefinite: GitHub happily
-arms a conflicted PR, so an unknown read is never green. That refusal is not a stall — it means
-mergeability is unknown, so stop and say so; nothing was armed. `reconcile`'s terminals are
+queue owns the method (a `--squash` no-ops the enqueue silently). It asserts a **definite and
+mergeable** `mergeable_state` before it arms: `11` if the value stays indefinite, `16` if the read
+definitely says not mergeable. GitHub happily arms a conflicted PR and parks the intent, so neither
+an unknown read nor a proven conflict is green. Neither refusal is a stall and nothing was armed —
+on `11` say mergeability is unknown, on `16` route to repair; the PR needs a rebase before any of
+this runs again. `reconcile`'s terminals are
 the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`, note, route to
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts.
 `unresolved` → report it in those words with the horizon; still-queued at the horizon is

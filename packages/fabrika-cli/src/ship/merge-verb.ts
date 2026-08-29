@@ -123,9 +123,9 @@ export const runMerge = (
 				diagnostics,
 			);
 		}
-		// Unlike the queue arm, which leaves a definite `dirty` to the platform, the direct merge acts
-		// on it here: the endpoint would reject the call and that rejection is indistinguishable from a
-		// write whose outcome nobody knows.
+		// Both landing verbs refuse a definite not-mergeable read here (#6902): the endpoint would
+		// reject this call with a rejection indistinguishable from a write whose outcome nobody knows,
+		// and the queue arm would be accepted and then parked.
 		if (!mergeability.value.mergeable) {
 			return refuse(
 				PROVEN_NOT_IN_STATE,

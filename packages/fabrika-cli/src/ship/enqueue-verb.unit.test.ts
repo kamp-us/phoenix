@@ -1,7 +1,13 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
-import {PRECONDITION_UNKNOWN, STALE_HEAD, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {
+	PRECONDITION_UNKNOWN,
+	PROVEN_NOT_IN_STATE,
+	STALE_HEAD,
+	WRITE_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
 import {runEnqueue} from "./enqueue-verb.ts";
 import {ENV, HEAD, OTHER_HEAD, type PullShape, pull} from "./fixtures.test-support.ts";
 import {ADDED} from "./queue.ts";
@@ -133,18 +139,18 @@ describe("runEnqueue", () => {
 		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
 	}, 20_000);
 
-	it("arms on a definite mergeable_state, whatever that state says", async () => {
+	it("refuses on 16 when a definite read says dirty — the arm would park (#6902)", async () => {
 		const scripted = both([
 			livePull(),
 			[MERGEABILITY, mergeability({mergeable: false, mergeableState: "dirty"})],
-			[GRAPHQL, ARMED],
-			[TIMELINE, timeline()],
 		]);
 		const out = await scripted.outcome;
-		expect(out.code).toBe(0);
-		expect(scripted.seams.bodies.some((body) => body.includes("enablePullRequestAutoMerge"))).toBe(
-			true,
+		expect(out.code).toBe(PROVEN_NOT_IN_STATE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			"ship enqueue: #4321 is not mergeable (mergeable_state: dirty) — a definite read; nothing was armed.",
 		);
+		expect(scripted.seams.requests.some((line) => /graphql/.test(line))).toBe(false);
 	});
 
 	it("refuses on 11 when the mergeability read itself fails — nothing was armed", async () => {
