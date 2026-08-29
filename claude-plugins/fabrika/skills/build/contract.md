@@ -879,9 +879,9 @@ any marker is posted**, `claim` puts `<number>` through the
 module `build pick` filters on, every axis, never a second derivation. In repair, `<number>` is a PR,
 and the test judges the issue that PR serves rather than the PR's own empty home. The repair skill
 passes that retained subject as `--issue`; the verb requires membership in the PR body's complete
-winning linkage set before admission, so an epic-first and epic-last body select the same issue. A PR
-naming no readable issue is `refused: no-served-issue` at `20`. A `refused: out-of-scope` is
-`20` and a
+winning linkage set before admission, so an epic-first and epic-last body select the same issue. An
+empty linkage set fails that explicit membership check at `14`, before admission. A `refused:
+out-of-scope` is `20` and a
 `refused: audience-not-agent` is `21`, a `refused: no-acceptance-criteria` is `32`, each named on
 stderr; an unreadable declaration or home is `11` and a malformed declaration is `4`, and neither
 ever proceeds. Nothing is written on any refusal: the issue carries no marker, so a refused claim
