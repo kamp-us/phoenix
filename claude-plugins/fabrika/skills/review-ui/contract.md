@@ -204,9 +204,10 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   capture sets only, so the attach path has one validated producer.
 - **`:auth` surfaces need two environment values**, both unset by default: `PREVIEW_TEST_SESSION_TOKEN`
   (the session token `preview-seed test-account` wrote onto the preview D1) and `BETTER_AUTH_SECRET`
-  (the preview worker's, so the cookie signature verifies). Absent both, every surface renders
-  anonymously as before; with exactly one set, an `:auth` request refuses `11` rather than
-  substituting the anonymous render.
+  (the preview worker's, so the cookie signature verifies). With neither or one set, an `:auth`
+  request refuses `11` rather than substituting the anonymous render; with no `:auth` surface asked
+  for, every surface renders anonymously as before. Setting both is necessary and not sufficient —
+  whether the cookie authenticated is the per-shot session proof's answer, also an `11`.
 
 **The preview-deploy convention.** The repo announces each PR's preview as a sticky PR comment
 carrying the anchor `<!-- preview-deploy:<app> -->`, whose body names, per app: the deployed URL
@@ -242,8 +243,15 @@ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
 refused on `10` otherwise. The realized set is `auth` and nothing else (#7051): an `:auth` surface
 renders with the moderator-tier test account's better-auth session cookie seeded into the capture
-context, so the pixels are a signed-in yazar+moderator's rather than a visitor's. The account is
-provisioned direct-D1 by `preview-seed test-account`, never by a worker route.
+context. The account is provisioned direct-D1 by `preview-seed test-account`, never by a worker
+route.
+
+Seeding a cookie is not the same as being signed in, so the shot proves it rather than assuming it.
+From the same browser context, before the shot is classified, the verb reads the preview's own
+`/api/auth/get-session` and requires a user back; anything else — a bare `null`, a non-200, an
+unreadable body — refuses the surface on `11` and records no capture. This is what makes the pixels a
+signed-in yazar+moderator's: a cookie that did not authenticate renders the visitor's page, and that
+page is a perfectly valid PNG no byte check can tell from the real one.
 
 The refusal on every other token is the same fence v1 stated, kept for the same reason: v1 demanded
 `:focus-visible` captures with no mechanism to prove the state was realized, and a state that
@@ -294,7 +302,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case, or a `--surface` names a `:state` outside the realized set (`auth`) |
-| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; or an `:auth` surface was requested while `PREVIEW_TEST_SESSION_TOKEN` / `BETTER_AUTH_SECRET` is unset |
+| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; an `:auth` surface was requested while `PREVIEW_TEST_SESSION_TOKEN` / `BETTER_AUTH_SECRET` is unset; or an `:auth` surface's session proof did not come back signed in |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -308,7 +316,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
 | `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth; render the bare route.` | 10 | refusal |
-| `review-ui render: an :auth surface was requested but <NAME> is unset — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
+| `review-ui render: an :auth surface was requested but its credentials are incomplete (unset: <names>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
+| `review-ui render: surface "<id>" did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
 | `review-ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `review-ui render: cannot read <what> for #<n>: <reason> — the render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: the preview comment names apps <list> — pass --app to pick one.` | 11 | refusal |

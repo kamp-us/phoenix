@@ -6,24 +6,28 @@
  * `capture.ts` drives Playwright over the plan this produces.
  *
  * One record per surface (the contract #2246 codes against), NOT a viewport
- * cross-product: a surface is a route + an optional state variant
- * (`empty`, `focus-visible`, …), captured at a single viewport.
+ * cross-product: a surface is a route + an optional state variant, captured at a
+ * single viewport.
+ *
+ * The grammar here parses ANY state token; which ones a capture can actually put
+ * on screen is `states.ts`'s closed list (`auth` today), and `review-ui render`
+ * refuses the rest on `10`. Parsing a state is not rendering one.
  */
 
 /** A changed UI surface to shoot: a route + an optional state variant. */
 export interface Surface {
-	/** The raw `--surface` token (`/sozluk` or `/sozluk:empty`) — a stable id. */
+	/** The raw `--surface` token (`/sozluk` or `/sozluk:auth`) — a stable id. */
 	readonly surface: string;
 	/** The route/path on the preview deploy, e.g. `/sozluk`. */
 	readonly route: string;
-	/** The state variant (`empty`, `focus-visible`, …) or `null` for the default render. */
+	/** The state variant this token names, or `null` for the default render. */
 	readonly state: string | null;
 }
 
 /**
  * Parse a `--surface "<route>[:state]"` token into a {@link Surface}. The first
  * colon splits route from state (a route is a URL path and carries no colon), so
- * `/sozluk:empty` → route `/sozluk`, state `empty`; `/sozluk` → state `null`.
+ * `/sozluk:auth` → route `/sozluk`, state `auth`; `/sozluk` → state `null`.
  */
 export const parseSurfaceSpec = (token: string): Surface => {
 	if (token.length === 0) {

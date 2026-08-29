@@ -45,26 +45,62 @@ export const sessionCookies = (
 };
 
 /**
- * The credentials an authenticated capture needs. Both or neither: a token with no secret cannot be
- * signed, and a secret with no token names no session, so the pair is the only representable state.
+ * The credentials an authenticated capture needs, or the names of whichever are unset. Both or
+ * neither: a token with no secret cannot be signed, and a secret with no token names no session, so
+ * a complete pair is the only arm that renders signed in — one unset name and two are the same
+ * refusal, differing only in what they list.
  */
-export interface CaptureIdentity {
-	readonly token: string;
-	readonly secret: string;
-}
+export type IdentityRead =
+	| {readonly _tag: "Identity"; readonly token: string; readonly secret: string}
+	| {readonly _tag: "Missing"; readonly names: readonly string[]};
 
-/**
- * Read the identity from the environment. Returns `null` when neither is set (the anonymous
- * capture, which is the default) and the name of the missing half when exactly one is — a half-set
- * pair is a misconfiguration that would otherwise render anonymously and read as a clean default.
- */
-export const readIdentity = (
-	env: Readonly<Record<string, string | undefined>>,
-): CaptureIdentity | null | {readonly missing: string} => {
+export const readIdentity = (env: Readonly<Record<string, string | undefined>>): IdentityRead => {
 	const token = env.PREVIEW_TEST_SESSION_TOKEN ?? "";
 	const secret = env.BETTER_AUTH_SECRET ?? "";
-	if (token.length === 0 && secret.length === 0) return null;
-	if (token.length === 0) return {missing: "PREVIEW_TEST_SESSION_TOKEN"};
-	if (secret.length === 0) return {missing: "BETTER_AUTH_SECRET"};
-	return {token, secret};
+	const names = [
+		...(token.length === 0 ? ["PREVIEW_TEST_SESSION_TOKEN"] : []),
+		...(secret.length === 0 ? ["BETTER_AUTH_SECRET"] : []),
+	];
+	return names.length === 0 ? {_tag: "Identity", token, secret} : {_tag: "Missing", names};
+};
+
+/**
+ * The preview endpoint that answers whether the seeded cookie actually authenticates.
+ *
+ * better-auth's `/get-session` (`dist/api/routes/session.mjs` at the `1.6.23` pin) reads the signed
+ * session cookie and returns a bare JSON `null` when it does not resolve to a session, or an object
+ * carrying `session` + `user` when it does — so the answer is decidable from the body alone, without
+ * reading a pixel. Mounted at `/api/auth/*` by `apps/web/worker/features/pasaport/route.ts`.
+ */
+export const SESSION_PROBE_PATH = "/api/auth/get-session";
+
+/**
+ * Whether a capture context is signed in, decided from the probe's own answer.
+ *
+ * Three arms, not two: a probe that could not be read is UNKNOWN and must not collapse into
+ * "anonymous", because both would refuse but only one of them is a fact about the session.
+ */
+export type SessionProof =
+	| {readonly _tag: "SignedIn"; readonly userId: string}
+	| {readonly _tag: "Anonymous"}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+export const readSessionProof = (status: number, body: string): SessionProof => {
+	if (status !== 200) return {_tag: "Unreadable", reason: `probe answered ${status}`};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(body);
+	} catch {
+		return {_tag: "Unreadable", reason: "probe body is not JSON"};
+	}
+	if (parsed === null) return {_tag: "Anonymous"};
+	if (typeof parsed !== "object") {
+		return {_tag: "Unreadable", reason: "probe body is not a session object"};
+	}
+	const user = (parsed as {user?: unknown}).user;
+	if (user === null || user === undefined) return {_tag: "Anonymous"};
+	const id = (user as {id?: unknown}).id;
+	return typeof id === "string" && id.length > 0
+		? {_tag: "SignedIn", userId: id}
+		: {_tag: "Unreadable", reason: "probe named a user with no id"};
 };

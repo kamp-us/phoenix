@@ -9,6 +9,7 @@ import {webcrypto} from "node:crypto";
 import {describe, expect, it} from "vitest";
 import {
 	readIdentity,
+	readSessionProof,
 	SECURE_COOKIE_PREFIX,
 	SESSION_COOKIE_BASENAME,
 	sessionCookies,
@@ -16,7 +17,7 @@ import {
 } from "./auth.ts";
 
 const SECRET = "a-preview-better-auth-secret";
-const TOKEN = "sO7mQ2wV5xR9tY1uI3oP6aS8dF0gH4jK";
+const TOKEN = "t".repeat(32);
 const PREVIEW = "https://phoenix-pr-42.kampusinfra.workers.dev";
 
 const verify = async (signed: string): Promise<boolean> => {
@@ -70,23 +71,64 @@ describe("sessionCookies", () => {
 });
 
 describe("readIdentity", () => {
-	it("reads no identity as the anonymous default", () => {
-		expect(readIdentity({})).toBeNull();
+	it("names both unset halves rather than reading as a complete anonymous default", () => {
+		expect(readIdentity({})).toEqual({
+			_tag: "Missing",
+			names: ["PREVIEW_TEST_SESSION_TOKEN", "BETTER_AUTH_SECRET"],
+		});
 	});
 
-	it("names the missing half rather than falling back to anonymous", () => {
+	it("names the one missing half", () => {
 		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN})).toEqual({
-			missing: "BETTER_AUTH_SECRET",
+			_tag: "Missing",
+			names: ["BETTER_AUTH_SECRET"],
 		});
 		expect(readIdentity({BETTER_AUTH_SECRET: SECRET})).toEqual({
-			missing: "PREVIEW_TEST_SESSION_TOKEN",
+			_tag: "Missing",
+			names: ["PREVIEW_TEST_SESSION_TOKEN"],
 		});
 	});
 
 	it("reads a complete pair", () => {
 		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN, BETTER_AUTH_SECRET: SECRET})).toEqual({
+			_tag: "Identity",
 			token: TOKEN,
 			secret: SECRET,
+		});
+	});
+});
+
+/**
+ * The probe's answers are better-auth's own, read at the `1.6.23` pin: `/get-session` returns a bare
+ * JSON `null` when the signed cookie does not resolve to a session, and `{session, user}` when it
+ * does. A body that is neither is UNKNOWN and must not read as anonymous — that collapse is the
+ * whole defect this proof exists to close.
+ */
+describe("readSessionProof", () => {
+	it("reads better-auth's null answer as anonymous", () => {
+		expect(readSessionProof(200, "null")).toEqual({_tag: "Anonymous"});
+	});
+
+	it("reads a session payload as signed in, naming the user", () => {
+		expect(readSessionProof(200, JSON.stringify({session: {id: "s1"}, user: {id: "u1"}}))).toEqual({
+			_tag: "SignedIn",
+			userId: "u1",
+		});
+	});
+
+	it("reads a non-200 as unreadable, never as anonymous", () => {
+		expect(readSessionProof(404, "null")._tag).toBe("Unreadable");
+		expect(readSessionProof(500, "")._tag).toBe("Unreadable");
+	});
+
+	it("reads an unparseable or user-less body as unreadable", () => {
+		expect(readSessionProof(200, "<!doctype html>")._tag).toBe("Unreadable");
+		expect(readSessionProof(200, JSON.stringify({user: {}}))._tag).toBe("Unreadable");
+	});
+
+	it("reads an explicitly null user as anonymous", () => {
+		expect(readSessionProof(200, JSON.stringify({session: null, user: null}))).toEqual({
+			_tag: "Anonymous",
 		});
 	});
 });

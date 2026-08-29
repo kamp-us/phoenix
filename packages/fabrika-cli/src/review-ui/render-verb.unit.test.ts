@@ -179,6 +179,47 @@ describe("runRender", () => {
 		expect(seen.get("/pano:auth")).toBe(2);
 	});
 
+	// The credential check only proves the pair was SET. Whether the cookie actually authenticated is
+	// the shot's own answer, and a shot that came back a visitor's is UNKNOWN — never a red surface,
+	// because the page rendered fine, and never a Rendered entry under the `:auth` id (#7051).
+	it("refuses an :auth shot that did not render signed in on 11, recording no capture", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/pano:auth"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: legOf({
+				"/pano:auth": {
+					_tag: "Unauthenticated",
+					reason: "the preview answered the seeded cookie as a visitor",
+				},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toMatch(/did not render signed in/);
+	});
+
+	// Routed ahead of the proven-red codes: a fine PNG of the wrong page is not a defect in the PR.
+	it("routes an unauthenticated surface as UNKNOWN even beside a crashed one", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/a:auth", "/b"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: legOf({
+				"/a:auth": {_tag: "Unauthenticated", reason: "probe answered 500"},
+				"/b": {_tag: "Crashed", firstError: "TypeError: x is null"},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
 	it("refuses a closed PR on 7 — a closed PR is provably not reviewable scope", async () => {
 		const {outcome} = await run([
 			[PULL, pull("closed")],

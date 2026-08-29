@@ -10,7 +10,14 @@
  * nothing, so the refusal is grounded in the database itself: a preview/stage D1 is deployed
  * empty and this package's content fixtures denormalize their author, so a throwaway carries no
  * human `user` row at all. One that carries somebody else's account is somebody's real world and
- * is refused before any write.
+ * is refused before any write. The check is emptiness, not throwaway-ness — the README's
+ * "guard boundary" section states its exact reach, and the operator still owns `--database-id`.
+ *
+ * No `account` row is written, and that is deliberate rather than an omission: better-auth
+ * resolves a session through `internalAdapter.findSession` (`dist/db/internal-adapter.mjs` at the
+ * `1.6.23` pin), which reads `session` by `token` with `join: {user: true}` and touches no
+ * `account` table. A session + its user is the whole of what a signed-in request needs; `account`
+ * carries credentials for signing IN, which this path skips by construction.
  */
 import {key, platform} from "@kampus/authz";
 import {and, eq, ne} from "drizzle-orm";

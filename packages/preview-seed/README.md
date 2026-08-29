@@ -77,9 +77,12 @@ authority (ADR 0107 §4; `user.role` is vestigial and written only so a coarse
 read agrees). Re-running it upserts the same rows, so the token can be rotated by
 re-running with a new one.
 
-`review-ui render --surface /pano:auth` then signs that same token with
-`$BETTER_AUTH_SECRET` and seeds it as the better-auth session cookie, so the
-capture browser is the signed-in moderator.
+`review-ui render --surface /pano:auth` then signs that same token with the
+preview worker's `$BETTER_AUTH_SECRET` and seeds it as the better-auth session
+cookie. Before it records the shot it asks the preview's own
+`/api/auth/get-session` from that same browser context and requires a user back,
+so a token that is wrong, expired or missing from this D1 refuses the render as
+UNKNOWN instead of filing the visitor's pixels under the `:auth` name.
 
 ### The guard boundary — load-bearing
 
@@ -94,9 +97,17 @@ it.** A caller-asserted "this is a preview" proves nothing, so the verb reads th
 target instead: a preview/stage D1 deploys empty and this package's content
 fixtures denormalize their author, so a throwaway carries **no human `user` row at
 all**. Finding one that is not the test identity, the verb refuses and writes
-nothing — that database is somebody's real world. Point it at a freshly deployed
-preview D1 instead; there is no override flag, and adding one would be adding the
-hole back.
+nothing — that database is somebody's real world.
+
+Say the reach exactly, because the argument against an override flag rests on it.
+The check is *no human `user` row other than the test identity*. It catches any
+database anyone has ever signed into, which is every real one in practice. It does
+**not** catch an empty database that is not a throwaway — a fresh apex deploy
+before the first sign-up, a wiped stage, a mistyped `--database-id` that resolves
+to a real-but-unpopulated D1 all pass it. The operator still owns which
+`--database-id` they pass. What the fence removes is the failure that actually
+happens: pointing at a live database and minting a moderator in it. There is no
+override flag, and adding one would be adding back the hole the check closes.
 
 **The token is a live moderator credential.** It is read only from
 `$PREVIEW_TEST_SESSION_TOKEN` (never a flag, so it stays out of process listings),

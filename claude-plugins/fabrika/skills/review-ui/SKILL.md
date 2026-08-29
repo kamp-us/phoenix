@@ -98,9 +98,21 @@ fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface 
 `auth` is the one realized today: `--surface /pano:auth` renders the same route as the moderator-tier
 test account instead of a visitor, so a delta that only exists signed in is judged rather than
 missed. Anything else after the colon is refused on `10` — a state nothing renders would shoot the
-default pixels under a variant's name. `:auth` needs `PREVIEW_TEST_SESSION_TOKEN` and
-`BETTER_AUTH_SECRET` in the environment; with either unset the verb refuses `11` rather than handing
-you an anonymous shot that reads as the signed-in one.
+default pixels under a variant's name.
+
+Two environment values make `:auth` work, and both come from somewhere specific:
+`PREVIEW_TEST_SESSION_TOKEN` is the token an operator passed to
+`node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>`, which is what puts
+the account and its session row on this PR's preview D1; `BETTER_AUTH_SECRET` is the **preview
+worker's** secret, not your local one, because it is the worker that verifies the cookie's signature.
+Neither is yours to mint — if you do not have them, you have not been handed the account, and
+`review-ui note` is the honest route.
+
+**You never have to judge whether the shot came back signed in.** The verb hits the preview's own
+session endpoint from the same browser context before it records anything, and refuses `11` when the
+answer is not a user — an unset credential, a wrong or expired token, an account absent from this
+preview's D1 all land there. So a `:auth` capture in a manifest is a proven signed-in render, and a
+missing one is a refusal you read, never a silent anonymous shot.
 
 The verb captures the PR's **preview deployment** at the inspected head — never a checkout, never
 the PR's code run on your machine. Every surface returns a proven outcome — captured, crashed
