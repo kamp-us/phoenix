@@ -294,22 +294,35 @@ describe("runTree", () => {
 		expect(out.stderr.at(-1)).toContain("does not carry claim");
 	});
 
-	it("refuses a PR serving another issue on 14", async () => {
-		const out = await run(repairProof("Fixes #7162\n\n## Deviations\nNone.\n"), {
+	it.each([
+		["epic first", "Fixes #7181\nFixes #7162\n\n## Deviations\nNone.\n"],
+		["epic last", "Fixes #7162\nFixes #7181\n\n## Deviations\nNone.\n"],
+	])("proves the explicitly requested issue when it is %s in a multi-linkage body", async (_name, body) => {
+		const out = await run(repairProof(body), {issue: 7181, repair: 7182});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).servedIssue).toEqual({number: 7181, kind: "fixes"});
+	});
+
+	it("refuses a served-issue set that does not contain the requested issue on 14", async () => {
+		const out = await run(repairProof("Fixes #7162\nFixes #7163\n\n## Deviations\nNone.\n"), {
 			issue: 7181,
 			repair: 7182,
 		});
 		expect(out.code).toBe(WRONG_LANE);
-		expect(out.stderr.at(-1)).toContain("serves issue #7162, not requested issue #7181");
+		expect(out.stderr.at(-1)).toContain(
+			"does not serve requested issue #7181 through fixes; it serves #7162, #7163 instead",
+		);
 	});
 
-	it.each([
-		["no linkage", "Summary only\n\n## Deviations\nNone.\n", 0],
-		["ambiguous linkage", "Fixes #7181\nFixes #7162\n\n## Deviations\nNone.\n", 2],
-	])("refuses %s on 4", async (_name, body, count) => {
-		const out = await run(repairProof(body), {issue: 7181, repair: 7182});
+	it("refuses a body with no served-issue linkage on 4", async () => {
+		const out = await run(repairProof("Summary only\n\n## Deviations\nNone.\n"), {
+			issue: 7181,
+			repair: 7182,
+		});
 		expect(out.code).toBe(BAD_SECTIONS);
-		expect(out.stderr.at(-1)).toContain(`names ${count} served issues`);
+		expect(out.stderr.at(-1)).toContain(
+			"names no served issues through none, so requested issue #7181 is not proven",
+		);
 	});
 
 	it("refuses unreadable PR claim state on 11", async () => {

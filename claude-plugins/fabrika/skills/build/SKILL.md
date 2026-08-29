@@ -441,7 +441,7 @@ PR number as the issue, never claim the issue as a substitute, and never guess f
 Claim the PR's number first — repair mutates a shared lane exactly like a build does:
 
 ```bash
-fabrika build claim <repair-pr>
+fabrika build claim <repair-pr> --issue <served-issue>
 fabrika build verdicts --pr <repair-pr>
 ```
 
@@ -453,8 +453,10 @@ build claim: subject: PR #<repair-pr> serves #<served-issue> (fixes|part-of) —
 
 Consume it as a cross-check against the two Ground operands already retained. If the line is absent,
 malformed, repeated, or names any other PR or issue, stop `STOPPED` before mutation; never guess an
-operand from a partial answer. The line proves which subject the claim admitted, not that the live PR
-body has one unique linkage — the two-subject `build tree` proof below still owns that stronger fact.
+operand from a partial answer. The `--issue` operand makes admission select the retained served issue
+from the live linkage set, independent of reference order. The line proves which subject the claim
+admitted; the two-subject
+`build tree` proof below re-proves that membership after the branch is resumed.
 
 **Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
 An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim admits it
@@ -486,9 +488,10 @@ fabrika build tree --issue <served-issue> --repair <repair-pr>
 
 Proceed only on the documented JSON answer whose `claim.number` is `<repair-pr>` and whose
 `servedIssue.number` is `<served-issue>`; this is one verb proving that the resumed branch names the
-PR, carries that PR claim's nonce, and the live PR uniquely serves the issue. Do not parse any
-incidental diagnostic. Exit `4` means the unique linkage is malformed, `7` means the PR or issue is
-absent/closed, `10` means the repair PR lacked its issue operand, `11` means a claim/linkage read is
+PR, carries that PR claim's nonce, and the live PR's served-issue set contains the explicitly
+requested issue. Do not parse any incidental diagnostic. Exit `4` means the linkage is absent, `7`
+means the PR or issue is absent/closed, `10` means the repair PR lacked its issue operand, `11` means
+a claim/linkage read is
 UNKNOWN, `14` means the branch, nonce, PR, or issue relationship is wrong, and `15` means the PR
 claim is foreign: stop on every one before
 mutation, naming the code. Re-run this same two-subject proof before each later git mutation.

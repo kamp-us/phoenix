@@ -32,7 +32,7 @@ import {Effect, type FileSystem, type Path, Result} from "effect";
 import {CONFIG_PATH} from "../config/document.ts";
 import {readRoadmapFile} from "../config/paths.ts";
 import {exists, type ReadFailed, readFile} from "../io/fs.ts";
-import {issueRefOf} from "../review/classes.ts";
+import {issueRefsOf} from "../review/classes.ts";
 import {READY_FOR_AGENT, READY_FOR_PREFIX} from "../triage/audience.ts";
 import {EPIC_TYPE_LABEL} from "../triage/facets.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
@@ -250,20 +250,26 @@ export interface SubjectFacts {
  * label, so a fence reading the PR's own record refused **every** repair claim while any focus was
  * declared (#5562). A PR's lane serves a ticket, and that ticket's home is the campaign membership
  * the fence is actually asking about — so the PR resolves to it, through the same body reference
- * `review scope` reads (`issueRefOf`), never a second parser.
+ * `review scope` reads (`issueRefsOf`), never a second parser. A repair caller may retain the served
+ * issue explicitly; selecting that member here keeps admission independent of body order while an
+ * ordinary PR claim retains the scalar first-reference behavior.
  */
 export type ScopeSubject =
 	| {readonly _tag: "Own"}
 	| {readonly _tag: "Served"; readonly number: number; readonly kind: "fixes" | "part-of"}
-	/** A PR whose body names no issue at all — there is nothing to resolve to. */
+	/** A PR whose body names no issue at all, or not the explicitly requested one. */
 	| {readonly _tag: "Unserved"};
 
-export const scopeSubjectOf = (target: SubjectFacts): ScopeSubject => {
+export const scopeSubjectOf = (
+	target: SubjectFacts,
+	requestedIssue: number | null = null,
+): ScopeSubject => {
 	if (!target.isPullRequest) return {_tag: "Own"};
-	const ref = issueRefOf(target.body);
-	return ref.kind === "none" || ref.number === null
+	const refs = issueRefsOf(target.body);
+	const number = requestedIssue ?? refs.numbers[0] ?? null;
+	return number === null || refs.kind === "none" || !refs.numbers.includes(number)
 		? {_tag: "Unserved"}
-		: {_tag: "Served", number: ref.number, kind: ref.kind};
+		: {_tag: "Served", number, kind: refs.kind};
 };
 
 /** An issue's home: its open milestone's number as a string, or its standing lane. */

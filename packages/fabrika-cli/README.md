@@ -194,10 +194,10 @@ Contract: [`skills/build/contract.md`](../../claude-plugins/fabrika/skills/build
 
 | Verb | Answers |
 |---|---|
-| `build tree` | whether the ground is clean and the complete fresh issue or repair PR→issue lane relationship is proven |
+| `build tree` | whether the ground is clean and the complete fresh issue or repair PR→explicit issue-in-linkage-set relationship is proven |
 | `build pick` | the ranked candidate pool, with every excluded issue under the axis that refused it |
 | `build eligible` | whether one issue's dependency gate is open |
-| `build claim` / `confirm` / `release` / `adopt` | the lane's claim on an issue: race it, re-prove it, retract it, or take a dead session's |
+| `build claim` / `confirm` / `release` / `adopt` | the lane's claim on an issue: race it, explicitly select a repair PR's served issue, re-prove it, retract it, or take a dead session's |
 | `build claimants` | who holds an issue's claim, read by a caller holding none — no token, no write, no clearance |
 | `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0 |
 | `build branch` / `scratch` | the lane's branch off a fresh base, and its scratch directory |
