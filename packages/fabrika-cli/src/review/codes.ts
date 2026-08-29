@@ -1,5 +1,5 @@
 /**
- * The one exit table all eight `review` verbs allocate from, so a code means one thing across this
+ * The one exit table all nine `review` verbs allocate from, so a code means one thing across this
  * group whichever verb produced it.
  *
  * **The overlap with `report` and `triage` is re-exported, never re-typed.** Where this group's

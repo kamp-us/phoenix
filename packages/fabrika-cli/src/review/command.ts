@@ -9,6 +9,7 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  */
+import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
@@ -22,6 +23,7 @@ import {runDeviations} from "./deviations-verb.ts";
 import {runDiff} from "./diff-verb.ts";
 import {runPost} from "./post-verb.ts";
 import {runScope} from "./scope-verb.ts";
+import {runScratch} from "./scratch-verb.ts";
 import {runVerdicts} from "./verdicts-verb.ts";
 
 /**
@@ -300,6 +302,36 @@ const appendCriterion = leafCommand(
 	),
 );
 
+const scratch = leafCommand(
+	"scratch",
+	{
+		pr: Argument.integer("pr").pipe(
+			Argument.withDescription("the pull request this lane is reviewing"),
+		),
+		slug: Flag.string("slug").pipe(
+			Flag.withDescription("the file's leaf name: kebab-case, no path separators"),
+		),
+		lane: Flag.string("lane").pipe(
+			Flag.withDescription(
+				"the lane key from this reviewer's spawn brief — what tells two reviewers of ONE session apart",
+			),
+		),
+		sha: Flag.string("sha").pipe(
+			Flag.withDescription(
+				"the head `review scope` bound (7–40 hex) — what tells two review ROUNDS of one lane apart",
+			),
+		),
+	},
+	Effect.fn(function* ({pr, slug, lane, sha}) {
+		yield* emit(yield* runScratch({pr, slug, lane, sha, env: process.env, tmpRoot: tmpdir()}));
+	}),
+).pipe(
+	Command.withShortDescription("The per-lane scratch path a reviewer's staged files go under."),
+	Command.withDescription(
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>, one absolute path on stdout, the directory created if absent. The nonce is twelve hex of sha256(--lane, --sha), because this group ships no claim verb to take one from: --lane is what keys the namespace per LANE rather than per session, so two reviewers of one session cannot clobber each other's fixed-name files, and --sha is what keys it per ROUND, so round 2 cannot read round 1's staged diff under the same name. Both are required — a default for either returns a path shared with whatever that axis separates. The printed path is machine-local and must never reach a posted artifact; `review post` and `review append-criterion` red on it at 5. Exits 1 (the directory could not be created, --lane is blank, the positional is not a PR number, or no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment), 10 (--slug carries a path separator or is not kebab-case, or --sha is not a head SHA). Example: fabrika review scratch 4321 --slug diff --lane 4287 --sha 03135b91",
+	),
+);
+
 export const reviewCommand = Command.make("review").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -311,9 +343,10 @@ export const reviewCommand = Command.make("review").pipe(
 		deviations,
 		post,
 		appendCriterion,
+		scratch,
 	]),
 	Command.withShortDescription("Read what a text review needs off one pull request."),
 	Command.withDescription(
-		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
+		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — allocate the per-lane scratch path its staged reads go under, and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
 	),
 );

@@ -834,6 +834,7 @@ back. Contract:
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
 | `review post` | the single sanctioned verdict emit — compose, bind, one comment per namespace, read back |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
+| `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13`
 the read completed and its scope is provably incomplete · `14` the invoking token is below `write`,
@@ -852,6 +853,11 @@ append-only fence. `4` is a deliberate gap.
 - **Every guard is demonstrated failing.**
   [`src/review/mutation.unit.test.ts`](./src/review/mutation.unit.test.ts) plants a counterexample
   per guard, breaks exactly that guard, and asserts the verb returns the specific wrong answer.
+- **`scratch`'s nonce is derived, not claimed.** This group ships no claim verb, so there is no
+  token to key on: the nonce is twelve hex of `sha256(--lane, --sha)` — `--lane` separating two
+  reviewers of one session, `--sha` separating two rounds of one lane. Both are required, and a
+  blank `--lane` refuses rather than degrading to the session-wide directory two reviewers share
+  (#7246).
 
 ## The `review-ui` group
 
