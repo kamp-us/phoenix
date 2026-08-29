@@ -40,6 +40,48 @@ export const worktreePathFor = (repoRoot: string, name: string): string =>
 	`${repoRoot}/.claude/worktrees/${name}`;
 
 /**
+ * Where this spawn's fetched base lands — a ref **no sibling spawn can write**.
+ *
+ * `FETCH_HEAD` is one file in the shared `.git` dir and every parallel spawn fetches against the same
+ * clone, so one spawn reads it while a sibling's fetch has it truncated and the read returns nothing.
+ * Measured on git 2.40.1 in this repo's `worktree-base.git.test.ts` fixture: 12 of 320 concurrent
+ * fetch-then-resolve pairs lost the base that way (#6081). Serializing the pair would fix it too, but
+ * a per-spawn name removes the shared write instead of taking turns at it.
+ *
+ * The slug is folded to `[A-Za-z0-9-]` so it cannot carry a `..` or a `.lock` suffix into a refname,
+ * and the nonce — not the slug — is what makes the name unique: two slugs that differ only in
+ * punctuation fold together, which would put the shared write straight back.
+ */
+export const baseRefFor = (name: string, nonce: string): string =>
+	`refs/fabrika/worktree-base/${name.replace(/[^A-Za-z0-9]+/g, "-")}-${nonce}`;
+
+/** The fully-qualified source is deliberate: an unqualified `main` also matches a tag named `main`. */
+export const fetchBaseArgs = (base: string, baseRef: string): ReadonlyArray<string> => [
+	"fetch",
+	"--quiet",
+	"origin",
+	`+refs/heads/${base}:${baseRef}`,
+];
+
+export const resolveBaseArgs = (baseRef: string): ReadonlyArray<string> => [
+	"rev-parse",
+	"--verify",
+	"--quiet",
+	`${baseRef}^{commit}`,
+];
+
+export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
+	"update-ref",
+	"-d",
+	baseRef,
+];
+
+/** 40 hex for sha1, 64 for sha256 — anything else is not an object id this verb may branch from. */
+const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+
+export const isCommitId = (candidate: string): boolean => COMMIT_ID.test(candidate);
+
+/**
  * Turn a captured `WorktreeCreate` payload into the plan, or say why there is none.
  *
  * Every arm is fail-closed on purpose: the verb's caller is the harness, a refusal there blocks the

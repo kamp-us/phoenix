@@ -19,6 +19,7 @@
  * last arm is the one that makes the guarantee real — `git worktree add` succeeding proves nothing
  * about the install, so the deps are checked as an artifact before any path is emitted.
  */
+import {randomUUID} from "node:crypto";
 import {Effect, FileSystem} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type ChildOutcome, execRecord} from "../io/exec.ts";
@@ -35,7 +36,16 @@ import {
 	WRONG_EVENT,
 } from "./codes.ts";
 import {classifyEnvelope, type EnvelopeRead} from "./envelope.ts";
-import {childEnv, planWorktree, type WorktreePlan} from "./worktree-create.ts";
+import {
+	baseRefFor,
+	childEnv,
+	dropBaseRefArgs,
+	fetchBaseArgs,
+	isCommitId,
+	planWorktree,
+	resolveBaseArgs,
+	type WorktreePlan,
+} from "./worktree-create.ts";
 
 const VERB = "fabrika hook worktree-create";
 const EVENT = "WorktreeCreate";
@@ -115,18 +125,26 @@ const baseBranch = (
  * The fetch is not a courtesy. The primary checkout's `origin/main` only advances on an explicit
  * fetch and nothing fetches per spawn, so branching off the cached tip bases a lane on state missing
  * a sibling lane's just-merged commit — two lanes then both go green in isolation and collide at
- * ship time, or one silently reverts the other (#3620/#3678). `FETCH_HEAD` is exactly what the fetch
- * just wrote, so freshness does not depend on any remote-tracking refspec, and the fetch never moves
- * the primary's local `main`.
+ * ship time, or one silently reverts the other (#3620/#3678). So the base is what *this* fetch just
+ * wrote, never a remote-tracking ref somebody else's fetch maintains, and the fetch still never
+ * moves the primary's local `main`.
+ *
+ * What it is not is `FETCH_HEAD`. That name is shared by every spawn of this clone, so the base
+ * travelled through a file a sibling's fetch could truncate mid-read, and the loser's spawn died on
+ * `fatal: invalid reference: FETCH_HEAD` (#6081). It lands in a per-spawn ref instead, is resolved to
+ * a commit id, and the ref is dropped before the slow `git worktree add` — so nothing this verb
+ * branches from has a name another process can write.
  */
 const provision = (
 	plan: WorktreePlan,
 	env: Record<string, string>,
+	nonce: string,
 ): Effect.Effect<VerbOutcome, never, Requirements> =>
 	Effect.gen(function* () {
 		const base = yield* baseBranch(plan.repoRoot, env);
+		const baseRef = baseRefFor(plan.name, nonce);
 
-		const fetched = yield* git(["fetch", "--quiet", "origin", base], plan.repoRoot, env);
+		const fetched = yield* git(fetchBaseArgs(base, baseRef), plan.repoRoot, env);
 		if (!succeeded(fetched)) {
 			return refuse(
 				BASE_FETCH_FAILED,
@@ -134,17 +152,30 @@ const provision = (
 			);
 		}
 
+		const resolved = yield* git(resolveBaseArgs(baseRef), plan.repoRoot, env);
+		const baseCommit =
+			resolved._tag === "Ran" ? new TextDecoder().decode(resolved.stdout).trim() : "";
+		// Dropped whatever the resolve said, and before the refusal below, so a spawn that fails here
+		// leaves no ref behind; `git worktree add` needs only the id, which is already in hand.
+		yield* git(dropBaseRefArgs(baseRef), plan.repoRoot, env);
+		if (!succeeded(resolved) || !isCommitId(baseCommit)) {
+			return refuse(
+				BASE_FETCH_FAILED,
+				`${VERB}: fetched origin/${base} and ${baseRef} named no commit — refusing to branch from a base this verb cannot prove: ${describe(resolved)}`,
+			);
+		}
+
 		// `--detach`: a linked worktree cannot check out a local branch the primary already holds, and
 		// every lane re-branches at its own preflight anyway, so this base HEAD is throwaway.
 		const added = yield* git(
-			["worktree", "add", "--detach", plan.worktreePath, "FETCH_HEAD"],
+			["worktree", "add", "--detach", plan.worktreePath, baseCommit],
 			plan.repoRoot,
 			env,
 		);
 		if (!succeeded(added)) {
 			return refuse(
 				WORKTREE_ADD_FAILED,
-				`${VERB}: git worktree add --detach ${plan.worktreePath} FETCH_HEAD failed: ${describe(added)}`,
+				`${VERB}: git worktree add --detach ${plan.worktreePath} ${baseCommit} failed: ${describe(added)}`,
 			);
 		}
 
@@ -199,7 +230,8 @@ export const runWorktreeCreate = ({
 		const scope = `${VERB}: ${dryRun ? "would provision" : "provisioning"} ${planned.plan.worktreePath}`;
 		if (dryRun) return answer(planned.plan.worktreePath, [scope]);
 
-		return yield* provision(planned.plan, childEnv(env)).pipe(
+		const nonce = randomUUID().replaceAll("-", "").slice(0, 12);
+		return yield* provision(planned.plan, childEnv(env), nonce).pipe(
 			Effect.map((outcome) => ({...outcome, stderr: [scope, ...outcome.stderr]})),
 		);
 	});

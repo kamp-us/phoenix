@@ -89,6 +89,16 @@ prepended to the inherited `PATH` (never a per-machine volta/fnm shim — 0109's
 only remote-tracking refs, never the primary's local `main`, so the #2143/#2144 corruption class is
 not reintroduced. `<base>` is read from `refs/remotes/origin/HEAD` and falls back to `main`.
 
+> **Amendment, 2026-08-29 ([#6081](https://github.com/kamp-us/phoenix/issues/6081)).** The
+> guarantee stands and the mechanism moved: `FETCH_HEAD` is one file in the shared `.git` dir, so
+> under parallel spawns a sibling's fetch truncates it while this one reads it and the loser's spawn
+> dies on `fatal: invalid reference: FETCH_HEAD` — 12 losses in 320 concurrent fetch-then-resolve
+> pairs, measured on git 2.40.1. The fetch now lands in a per-spawn ref
+> (`refs/fabrika/worktree-base/<slug>-<nonce>`), which is resolved to a commit id and deleted before
+> `git worktree add --detach <path> <commit-id>` runs. Freshness is unchanged and stricter: the base
+> is still exactly what this fetch wrote, and with an explicit refspec the fetch no longer updates
+> `refs/remotes/origin/*` either, so it now moves nothing any other process reads.
+
 That fetch needs credentials, and the child inherits nothing it is not handed, so the allowlist
 carries the ssh-agent channel (`SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `GIT_SSH`, `GIT_SSH_COMMAND`)
 alongside what the install needs. phoenix's `origin` is SSH-only — `url.git@github.com:.insteadof`
