@@ -276,6 +276,7 @@ export function TuvalApp() {
 	const [nodes, setNodes] = useState<ReadonlyArray<SessionCanvasNode>>([]);
 	const [edges, setEdges] = useState<ReadonlyArray<SessionRelationshipEdge>>([]);
 	const [paneSelection, setPaneSelection] = useState<PaneSelection>({_tag: "closed"});
+	const [mobileLayer, setMobileLayer] = useState<"canvas" | "chat" | "extensions">("canvas");
 	const [discovering, setDiscovering] = useState(false);
 	const [streamCycle, setStreamCycle] = useState(0);
 	const discoveryGeneration = useRef(0);
@@ -355,6 +356,7 @@ export function TuvalApp() {
 		streamCursor.current = null;
 		reconnectState.current = {identity: session.identity, attempts: 0, recovering: false};
 		setPaneSelection({_tag: "open", selected: session, generation, pane: pendingPane()});
+		setMobileLayer("chat");
 		setNodes((currentNodes) =>
 			currentNodes.map((node) => ({...node, selected: node.id === session.identity})),
 		);
@@ -367,6 +369,7 @@ export function TuvalApp() {
 		streamCursor.current = null;
 		setNodes((current) => current.map((node) => ({...node, selected: false})));
 		setPaneSelection({_tag: "closed"});
+		setMobileLayer("canvas");
 		requestAnimationFrame(() => document.querySelector<HTMLElement>("#canvas")?.focus());
 	}, []);
 
@@ -430,6 +433,7 @@ export function TuvalApp() {
 			streamCursor.current = null;
 			setNodes((current) => current.map((node) => ({...node, selected: false})));
 			setPaneSelection({_tag: "closed"});
+			setMobileLayer("canvas");
 			setSelectionRestoration({
 				_tag: "unavailable",
 				sessionId: target.piSessionId,
@@ -787,6 +791,7 @@ export function TuvalApp() {
 		streamCursor.current = null;
 		setNodes((current) => current.map((node) => ({...node, selected: false})));
 		setPaneSelection({_tag: "closed"});
+		setMobileLayer("canvas");
 		setSelectionRestoration({_tag: "idle"});
 		void releaseLiveSession().catch(() => undefined);
 		requestAnimationFrame(() => {
@@ -798,7 +803,15 @@ export function TuvalApp() {
 	useEffect(() => {
 		if (selected === null) return;
 		const onEscape = (event: KeyboardEvent): void => {
-			if (event.key === "Escape") setTimeout(closePane, 0);
+			if (event.key !== "Escape") return;
+			const workspace = document.querySelector<HTMLElement>(".workspace");
+			if (
+				window.matchMedia("(max-width: 720px)").matches &&
+				workspace?.dataset.mobileLayer !== "canvas"
+			) {
+				return;
+			}
+			setTimeout(closePane, 0);
 		};
 		document.addEventListener("keydown", onEscape, {capture: true});
 		return () => document.removeEventListener("keydown", onEscape, {capture: true});
@@ -1047,9 +1060,77 @@ export function TuvalApp() {
 				</Button>
 			</header>
 
-			<main className="workspace" aria-label="Tuval oturum çalışma alanı">
+			<main
+				className="workspace"
+				aria-label="Tuval oturum çalışma alanı"
+				data-mobile-layer={mobileLayer}
+				onKeyDown={(event) => {
+					if (event.defaultPrevented) return;
+					if (event.key === "Escape" && mobileLayer !== "canvas") {
+						event.preventDefault();
+						setMobileLayer("canvas");
+						requestAnimationFrame(() =>
+							document.querySelector<HTMLElement>("#mobile-layer-canvas")?.focus(),
+						);
+						return;
+					}
+					if (
+						event.key !== "Tab" ||
+						mobileLayer === "canvas" ||
+						!window.matchMedia("(max-width: 720px)").matches
+					) {
+						return;
+					}
+					const focusable = [
+						...event.currentTarget.querySelectorAll<HTMLElement>(
+							`.mobile-workspace-nav button:not(:disabled), [data-mobile-panel="${mobileLayer}"] button:not(:disabled), [data-mobile-panel="${mobileLayer}"] input:not(:disabled), [data-mobile-panel="${mobileLayer}"] select:not(:disabled), [data-mobile-panel="${mobileLayer}"] [contenteditable="true"]`,
+						),
+					].filter((element) => element.getClientRects().length > 0);
+					const first = focusable[0];
+					const last = focusable.at(-1);
+					if (first === undefined || last === undefined) return;
+					if (event.shiftKey && document.activeElement === first) {
+						event.preventDefault();
+						last.focus();
+					} else if (!event.shiftKey && document.activeElement === last) {
+						event.preventDefault();
+						first.focus();
+					}
+				}}
+			>
+				<nav className="mobile-workspace-nav" aria-label="Mobil çalışma alanı katmanları">
+					<Button
+						id="mobile-layer-canvas"
+						type="button"
+						variant={mobileLayer === "canvas" ? "primary" : "secondary"}
+						aria-pressed={mobileLayer === "canvas"}
+						onClick={() => setMobileLayer("canvas")}
+					>
+						Tuval
+					</Button>
+					<Button
+						id="mobile-layer-chat"
+						type="button"
+						variant={mobileLayer === "chat" ? "primary" : "secondary"}
+						aria-pressed={mobileLayer === "chat"}
+						disabled={paneSelection._tag === "closed"}
+						onClick={() => setMobileLayer("chat")}
+					>
+						Sohbet
+					</Button>
+					<Button
+						id="mobile-layer-extensions"
+						type="button"
+						variant={mobileLayer === "extensions" ? "primary" : "secondary"}
+						aria-pressed={mobileLayer === "extensions"}
+						onClick={() => setMobileLayer("extensions")}
+					>
+						Extension UI
+					</Button>
+				</nav>
 				<section
 					id="canvas"
+					data-mobile-panel="canvas"
 					className="canvas"
 					data-has-lineage-problems={
 						lineageFailure !== null || lineageProblems.length > 0 ? "true" : "false"
@@ -1237,8 +1318,8 @@ export function TuvalApp() {
 						}
 					/>
 				)}
+				<ExtensionUIBridge initialSnapshots={restoration?.extensionUI ?? []} />
 			</main>
-			<ExtensionUIBridge initialSnapshots={restoration?.extensionUI ?? []} />
 		</div>
 	);
 }

@@ -511,7 +511,11 @@ export function ExtensionUIBridge({
 	};
 
 	return (
-		<section className="extension-ui" aria-label="Paket extension UI">
+		<section
+			className="extension-ui"
+			data-mobile-panel="extensions"
+			aria-label="Paket extension UI"
+		>
 			<div
 				className="extension-ui__connection"
 				data-state={state.connection}

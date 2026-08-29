@@ -264,9 +264,112 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		await expect(coldPage.getByText("peer below", {exact: true})).toHaveCount(1);
 
 		await coldPage.setViewportSize({width: 390, height: 844});
-		const mobile = testInfo.outputPath("daily-driver-cold-mobile.png");
-		await coldPage.screenshot({path: mobile, fullPage: true});
-		await testInfo.attach("daily-driver-cold-mobile", {path: mobile, contentType: "image/png"});
+		const mobileNavigation = coldPage.getByRole("navigation", {
+			name: "Mobil çalışma alanı katmanları",
+		});
+		await expect(mobileNavigation).toBeVisible();
+		await expect(coldPage.locator(".chat-pane")).toBeVisible();
+		await expect(coldPage.locator("#canvas")).toBeHidden();
+		await expect(coldPage.locator(".extension-ui")).toBeHidden();
+		const chatBox = await coldPage.locator(".chat-pane").boundingBox();
+		expect(chatBox).not.toBeNull();
+		expect(chatBox?.x).toBeGreaterThanOrEqual(0);
+		expect((chatBox?.x ?? 0) + (chatBox?.width ?? 0)).toBeLessThanOrEqual(390);
+		expect((chatBox?.y ?? 0) + (chatBox?.height ?? 0)).toBeLessThanOrEqual(844);
+		await expect(coldPage.getByRole("textbox", {name: "İstem"})).toBeVisible();
+		expect(
+			await coldPage
+				.locator(".transcript")
+				.evaluate((element) => getComputedStyle(element).overflowY),
+		).toBe("auto");
+
+		await coldPage.locator("#mobile-layer-canvas").focus();
+		await coldPage.keyboard.press("Shift+Tab");
+		expect(
+			await coldPage.evaluate(
+				() => document.activeElement?.closest('[data-mobile-panel="chat"]') !== null,
+			),
+		).toBe(true);
+		await coldPage.keyboard.press("Escape");
+		await expect(coldPage.locator("#mobile-layer-canvas")).toBeFocused();
+		await expect(coldPage.locator("#canvas")).toBeVisible();
+		await expect(coldPage.locator(".chat-pane")).toBeHidden();
+		await expect(coldPage.getByRole("button", {name: "Sohbet", exact: true})).toBeEnabled();
+		await expect(coldPage.locator('[data-id="pi:daily-child"] .session-node')).toHaveAttribute(
+			"data-selected",
+			"true",
+		);
+		await expect(coldPage.getByRole("button", {name: "Yakınlaştır"})).toBeEnabled();
+		const controlsBox = await coldPage.locator(".canvas-controls").boundingBox();
+		const packagePanelBox = await coldPage.locator(".package-panels").boundingBox();
+		const contributionBox = await coldPage.locator(".contribution-status").boundingBox();
+		const canvasStageBox = await coldPage.locator(".canvas-stage").boundingBox();
+		const canvasLegendBox = await coldPage.locator(".canvas-legend").boundingBox();
+		expect(controlsBox).not.toBeNull();
+		expect(packagePanelBox).not.toBeNull();
+		expect(contributionBox).not.toBeNull();
+		expect(canvasStageBox).not.toBeNull();
+		expect(canvasLegendBox).not.toBeNull();
+		expect((controlsBox?.y ?? 0) + (controlsBox?.height ?? 0)).toBeLessThanOrEqual(
+			packagePanelBox?.y ?? 0,
+		);
+		expect((packagePanelBox?.y ?? 0) + (packagePanelBox?.height ?? 0)).toBeLessThanOrEqual(
+			canvasLegendBox?.y ?? 0,
+		);
+		expect((contributionBox?.y ?? 0) + (contributionBox?.height ?? 0)).toBeLessThanOrEqual(
+			canvasStageBox?.y ?? 0,
+		);
+		for (const control of await coldPage.locator(".canvas-controls button").all()) {
+			const box = await control.boundingBox();
+			expect(box?.height).toBeGreaterThanOrEqual(36);
+			expect(box?.width).toBeGreaterThanOrEqual(36);
+		}
+
+		const mobileCanvas = testInfo.outputPath("daily-driver-cold-mobile-canvas.png");
+		await coldPage.screenshot({path: mobileCanvas});
+		await testInfo.attach("daily-driver-cold-mobile-canvas", {
+			path: mobileCanvas,
+			contentType: "image/png",
+		});
+
+		await coldPage.getByRole("button", {name: "Extension UI", exact: true}).click();
+		await expect(coldPage.locator(".extension-ui")).toBeVisible();
+		await expect(coldPage.locator("#canvas")).toBeHidden();
+		await expect(coldPage.locator(".chat-pane")).toBeHidden();
+		await expect(coldPage.getByText("eş paket durumu", {exact: true})).toBeVisible();
+		await expect(coldPage.getByText("peer below", {exact: true})).toBeVisible();
+		await expect(
+			coldPage.getByText("fixture-extension-ui-peer · session-peer").first(),
+		).toBeVisible();
+		expect(
+			await coldPage
+				.locator(".extension-ui")
+				.evaluate((element) => getComputedStyle(element).overflowY),
+		).toBe("auto");
+
+		const mobileExtension = testInfo.outputPath("daily-driver-cold-mobile-extension.png");
+		await coldPage.screenshot({path: mobileExtension});
+		await testInfo.attach("daily-driver-cold-mobile-extension", {
+			path: mobileExtension,
+			contentType: "image/png",
+		});
+
+		await coldPage.getByRole("button", {name: "Sohbet", exact: true}).click();
+		const mobileChatPane = coldPage.locator(".chat-pane");
+		await expect(mobileChatPane).toBeVisible();
+		await expect(coldPage.getByRole("textbox", {name: "İstem"})).toBeVisible();
+		await mobileChatPane.evaluate(async (element) => {
+			await Promise.all(element.getAnimations().map((animation) => animation.finished));
+		});
+		const mobileChat = testInfo.outputPath("daily-driver-cold-mobile-chat.png");
+		await coldPage.screenshot({path: mobileChat});
+		await testInfo.attach("daily-driver-cold-mobile-chat", {
+			path: mobileChat,
+			contentType: "image/png",
+		});
+		await coldPage.getByRole("button", {name: "Tuval", exact: true}).click();
+		await expect(coldPage.locator("#canvas")).toBeVisible();
+		await expect(coldPage.locator(".chat-pane")).toBeHidden();
 
 		await stopServer(server.child);
 		const persistedWorkspace = JSON.parse(await readFile(workspaceStatePath, "utf8"));

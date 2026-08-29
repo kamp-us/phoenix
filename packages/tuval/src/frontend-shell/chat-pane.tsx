@@ -321,6 +321,7 @@ export function ChatPane({
 		<Surface
 			as="aside"
 			className="chat-pane"
+			data-mobile-panel="chat"
 			aria-labelledby="chat-title"
 			data-connection={connection}
 			tone="default"
