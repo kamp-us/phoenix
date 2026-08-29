@@ -101,7 +101,7 @@ node packages/fabrika-cli/src/bin.ts --version
      Silence this with FABRIKA_GLOBAL_WARNING_DISABLED=1.
    ```
 
-3. When running the global there is what you want, silence the warning for that invocation:
+3. When running the global is what you want, silence the warning for that invocation:
 
    ```bash
    FABRIKA_GLOBAL_WARNING_DISABLED=1 fabrika status board
