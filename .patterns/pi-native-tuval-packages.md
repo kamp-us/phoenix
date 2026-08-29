@@ -28,16 +28,17 @@ pi source, or filesystem values.
 
 For every package with a Tuval manifest, the backend canonicalizes its root with Effect
 `FileSystem.realPath`. It resolves each frontend asset and backend module through the same real-path
-operation, checks with `FileSystem.stat` that the canonical candidate is a file, and uses
-`Path.relative` to require it beneath the canonical root. Thus an in-package symlink to an
-in-package file is accepted, an in-package symlink to an outside file is rejected, and the catalog
-stores only the accepted canonical exact path. Frontend assets are not imported by the backend.
-The emitted browser catalog replaces each validated file with an opaque same-origin
-`/api/contribution-assets/v1-<n>.js` URL. The startup catalog retains the only exact URL-to-canonical-
-file map, and the HTTP route never decodes or joins client input into a filesystem path. Unknown URLs
-and request-time read failures return a path-free 404. Valid responses use a JavaScript content type,
-disable cache reuse without revalidation, and set `X-Content-Type-Options: nosniff` for dynamic
-import. The current implementation is
+operation, checks that the canonical candidate is a file beneath the canonical root, then opens each
+frontend asset with no-follow semantics. Thus an in-package symlink to an in-package file is accepted,
+while an outside symlink, directory, oversized asset, or swap to a symlink fails closed. Frontend
+assets are not imported by the backend: at startup, at most 4 MiB of each accepted asset is read into
+the validated catalog snapshot.
+
+The emitted browser catalog replaces each asset with an opaque same-origin
+`/api/contribution-assets/v1-<n>.js` URL. The startup catalog retains the only exact URL-to-immutable-
+bytes map, and the HTTP route never decodes client input into a filesystem path or reopens a package
+file. Unknown URLs return a path-free 404. Valid responses use a JavaScript content type, disable
+cache reuse without revalidation, and set `X-Content-Type-Options: nosniff` for dynamic import. The current implementation is
 [`package-contributions.ts`](../packages/tuval/src/backend/package-contributions.ts), with the
 compatibility and fail-closed cases pinned by
 [`package-contributions.test.ts`](../packages/tuval/test/package-contributions.test.ts) and

@@ -8,7 +8,7 @@ Tuval is a localhost-only workspace for discovering and opening installed
 | Path | Responsibility |
 | --- | --- |
 | `src/backend/` | Loopback HTTP server, pi package contributions, discovery, lineage indexing, and PiClient live-session leases |
-| `src/frontend-shell/` | Static placeholder served by the backend |
+| `src/frontend-shell/` | React 19 cockpit, React Flow canvas, chat, extensions, and restoration UI |
 | `src/shared/` | Frontend-independent discovery, lineage, and live-session schemas |
 
 ## Runtime interface
@@ -21,7 +21,7 @@ then opens that URL in the default browser unless browser opening is disabled.
 | `GET /health` | Report server readiness |
 | `GET /api/contributions` | Emit the validated headless frontend contribution catalog |
 | `GET /api/contribution-assets/<opaque-id>.js` | Serve one catalog-authorized JavaScript asset |
-| `GET /` | Serve the static shell |
+| `GET /` | Serve the React cockpit |
 | `POST /fate` | Run Effect-native discovery, lineage, and live-session queries or mutations |
 | `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
 | `--port <port>` | Bind a fixed port instead of selecting an available port |
@@ -82,21 +82,20 @@ session, so lookup and parent-fact comparison survive lifecycle-source deletion.
 Every input is validated before merge, so retained finite values cannot hide a non-finite update.
 Accepted stores use total code-unit ordering for records and source files, finite forward time
 intervals, an acyclic graph, and one spawn origin strictly before each continuity observation by
-`(observedAt, runId)`. One run cannot be both origin and continuity. Load, merge, and atomic rename
-run under a same-host process-shared filesystem lock. The lock directory is acquired with a
-non-recursive directory create, so a visible generation is never replaced; owner metadata is written
-before protected work. An `AlreadyExists` observation remains contention even when the prior owner
-releases before inspection, so acquisition retries within its wait budget. A contender recovers an
-owner only when Node's signal-zero probe proves that exact same-host pid absent. Live, remote,
-ownerless, malformed, and unknown generations remain held until an operator resolves them. Recovery
-atomically quarantines the dead generation. Release moves and removes only its own token-matched
-generation. The store-file rename is the commit point: an ownership or fence failure
-before it returns a typed Effect error and leaves the committed bytes unchanged. A release cleanup
-failure after it cannot imply rollback; the query returns the committed graph with a serializable
-`lock-cleanup-failed` problem, logs the failure, and retains the uncertain generation for operator
-diagnosis. Because a live process cannot lose its lock, the writer's token fence immediately before
-rename remains valid through commit. Failed writes and renames remove temporary files without
-replacing the committed store.
+`(observedAt, runId)`. One run cannot be both origin and continuity. Load, merge, and atomic rename run under a same-host process-shared filesystem file lock. A writer
+first writes and syncs a token-bearing owner generation, then publishes it atomically at the lock path
+with a hard link; readers can never observe an ownerless active lock. Contention retries within a
+bounded wait. A contender recovers an active or abandoned generation only when the owner metadata is
+valid, names the generation token, and Node's signal-zero probe proves that exact same-host pid dead.
+Live, remote, malformed, and uncertain owners remain held. Acquisition and release sweep proven-dead
+`.preparing-*`, `.dead-*`, and `.release-*` generations idempotently; release quarantines and removes
+only its own token-matched lock.
+
+The store-file rename is the commit point. Before rename, Tuval syncs the temporary file and fences
+lock ownership; failure leaves committed bytes unchanged. After rename, it syncs the parent directory.
+A parent-sync or release-cleanup failure cannot imply rollback: the query returns the committed graph
+with a serializable warning/problem and retains uncertain evidence for diagnosis. Failed pre-commit
+writes and renames remove temporary files without replacing the committed store.
 Reused run ids with changed sessions, timestamps, or parent facts are refused, while unresolved
 parents remain diagnostic-only.
 
@@ -166,16 +165,16 @@ forms are rejected, and nameless-package fallbacks pass through that same schema
 contain a closed reason code plus only validated package identities and contribution keys; manifest
 paths, module/export values, pi source metadata, and filesystem paths are never included.
 
-Frontend assets are never imported by the backend. At startup, Tuval obtains the package root and each
-candidate's canonical path through Effect `FileSystem.realPath`, requires `FileSystem.stat` to report a
-file, and accepts it only when `Path.relative` keeps that canonical file beneath the canonical package
-root. A symlink to a file in the same package is accepted and the canonical target is stored; a
-symlink outside the package and a directory are rejected. The browser catalog exposes opaque
-same-origin JavaScript URLs. Each URL resolves only through the startup catalog's exact
-URL-to-canonical-file map; unknown URLs and files that cannot be read at request time return a
-path-free 404. Invalid contracts, duplicate or shadowed keys, unavailable canonical files, and invalid
-backend exports reject that package while valid packages remain in the catalog. Pi's resolved order
-sets precedence. Tuval itself declares its built-in package capability through this same manifest.
+Frontend assets are never imported or reopened by the backend after startup. Tuval canonicalizes the
+package root and candidate through Effect `FileSystem.realPath`, requires the candidate to be a file
+beneath that root, then opens it with no-follow semantics and reads at most 4 MiB into the validated
+catalog snapshot. A same-package symlink is accepted through its canonical target; an outside symlink,
+directory, oversized asset, or swap to a symlink fails closed. The browser catalog exposes opaque
+same-origin JavaScript URLs backed only by those immutable startup bytes, so a request never derives a
+path or races a later filesystem replacement. Unknown URLs return a path-free 404. Invalid contracts,
+duplicate or shadowed keys, unavailable assets, and invalid backend exports reject that package while
+valid packages remain in the catalog. Pi's resolved order sets precedence. Tuval itself declares its
+built-in package capability through this same manifest.
 
 ## Commands
 
@@ -183,6 +182,6 @@ sets precedence. Tuval itself declares its built-in package capability through t
 | --- | --- |
 | `pnpm --filter tuval build` | Build the executable and copy static files |
 | `pnpm --filter tuval typecheck` | Check TypeScript types |
-| `pnpm --filter tuval test` | Build and run unit and integration tests |
+| `pnpm --filter tuval test` | Build and run Tuval unit tests (Vitest and local Playwright) |
 
 See [DEVELOPMENT.md](./DEVELOPMENT.md) for local workflows.
