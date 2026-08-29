@@ -127,6 +127,22 @@ describe("lane open", () => {
 		expect(out.stderr.join("\n")).toContain("plan the epic first");
 	});
 
+	it("refuses a `type:epic` issue that has no children yet — #7024's pre-plan window", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({
+				...OPTIONS,
+				expectation: reads({_tag: "Read", expectation: {_tag: "Epic", children: 0}}),
+			}),
+		);
+
+		expect(out.code).toBe(SHAPE_MISMATCH);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("plan the epic first");
+		expect(out.stderr.join("\n")).toContain("no sub-issue links");
+	});
+
 	it("refuses an unreadable child list — UNKNOWN, never a boot", async () => {
 		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
 		const out = await run(

@@ -5,10 +5,16 @@
  * that refuses instead of overwriting: an existing lane dir is a loud {@link LANE_EXISTS}, because
  * resuming needs no boot and a silent overwrite would corrupt a live fold.
  *
- * The coder template has one task, so an issue carrying sub-issue links has no machine here at all —
- * booting one anyway is #7024's wrong-template lane, which reads healthy to every later diagnostic.
- * So an issue-keyed boot asks the board what the issue is *before* it writes, and refuses an epic
- * with {@link SHAPE_MISMATCH}. A chore lane drives no issue and is never asked.
+ * The coder template has one task, so an epic has no machine here at all — booting one anyway is
+ * #7024's wrong-template lane, which reads healthy to every later diagnostic. So an issue-keyed boot
+ * asks the board what the issue is *before* it writes, and refuses an epic with
+ * {@link SHAPE_MISMATCH}. A chore lane drives no issue and is never asked.
+ *
+ * **Both halves of "epic" are asked for, and the unplanned half is the one the incident needed.** An
+ * epic that has not been planned carries no sub-issue links, so a refusal keyed on children alone
+ * could not fire in the pre-plan window #7024 was filed from; the `type:epic` label is what covers
+ * it. The refusal says which case it is, because their remedies differ: plan the epic, or emit its
+ * machine.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {readFile} from "../io/fs.ts";
@@ -53,9 +59,12 @@ export const runOpen = <R = never>(
 				);
 			}
 			if (read.expectation._tag === "Epic") {
+				const {children} = read.expectation;
 				return refuse(
 					SHAPE_MISMATCH,
-					`${VERB}: #${issue} carries ${read.expectation.children} sub-issue link(s), and this template has one task — boot it with \`fabrika lane emit ${issue}\`, which reads the epic's \`## Dependencies\` topology; plan the epic first if it has none. Nothing was written.`,
+					children === 0
+						? `${VERB}: #${issue} is typed \`type:epic\` and carries no sub-issue links, so it has no plan yet and this template's one task cannot represent it — plan the epic first, then boot it with \`fabrika lane emit ${issue}\`. Nothing was written.`
+						: `${VERB}: #${issue} carries ${children} sub-issue link(s), and this template has one task — boot it with \`fabrika lane emit ${issue}\`, which reads the epic's \`## Dependencies\` topology; plan the epic first if it has none. Nothing was written.`,
 				);
 			}
 		}

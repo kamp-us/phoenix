@@ -19,6 +19,10 @@
  * issue-keyed lane is also judged against the board's answer for its issue ([`shape.ts`](shape.ts)),
  * and a proven mismatch is its own verdict ahead of every migration one. The reader is passed in, so
  * a caller that hands none still gets the wholly offline sweep.
+ *
+ * The judgement never widens what this verb writes: a mismatched lane is skipped, and the read can
+ * only turn a write into a skip. That is what keeps ADR 0313's guarantee for this verb intact — it
+ * writes only where the swap is provably inert.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
 import {exists, readDir, readFile, writeFile} from "../io/fs.ts";
@@ -303,7 +307,7 @@ export const runMigrate = <R = never>(
 		if (unsafe.length === 0) {
 			return refuse(
 				SHAPE_MISMATCH,
-				`${VERB}: ${mismatched.length} lane(s) run a machine their issue's board state does not call for, and none of those was written: ${mismatched.map((row) => row.key).join(", ")}. Re-emit an epic's lane with \`fabrika lane emit <n>\`; a lane whose issue has no children is opened with \`fabrika lane open <n>\`.`,
+				`${VERB}: ${mismatched.length} lane(s) run a machine their issue's board state does not call for, and none of those was written: ${mismatched.map((row) => row.key).join(", ")}. An epic's lane is rebuilt in two steps — retire its directory, then \`fabrika lane emit <n>\` (a lane on disk is never re-emitted over: ADR 0313, amendment 2026-08-20). A lane whose issue is not an epic is opened with \`fabrika lane open <n>\`.`,
 				stderr,
 			);
 		}

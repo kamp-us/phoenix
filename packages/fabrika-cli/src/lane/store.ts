@@ -13,7 +13,7 @@
  * well-formed fresh lane, not a fault.
  */
 import {Effect, type FileSystem, Path, Result} from "effect";
-import {exists, readFile, removeAll, writeFile} from "../io/fs.ts";
+import {exists, readFile, writeFile} from "../io/fs.ts";
 import {type LogEntry, parseLog} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 
@@ -120,38 +120,4 @@ export const placeMachine = (
 			return {_tag: "Unwritten", path: workflow, reason: wrote.failure.reason} as const;
 		}
 		return {_tag: "Placed", dir, workflow} as const;
-	});
-
-export type Replacement =
-	| {readonly _tag: "Replaced"; readonly dir: string; readonly workflow: string}
-	| {readonly _tag: "Unwritten"; readonly path: string; readonly reason: string};
-
-/**
- * Overwrite an existing lane's machine and drop its log — the narrow escape from {@link placeMachine}
- * that #7024's wrong-template lane needs, since the manual remedy it left was `rm -rf` on the whole
- * directory anyway.
- *
- * **The caller owes the proof, and only `lane emit` makes it**: that the document being overwritten
- * was booted rather than generated, and that every line in the log names a task the incoming machine
- * does not have. Under that proof the log cannot replay through the new machine and is not history
- * the new machine could carry — which is why it goes rather than being left to fail every later fold.
- */
-export const replaceMachine = (
-	ref: LaneRef,
-	text: string,
-): Effect.Effect<Replacement, never, FileSystem.FileSystem | Path.Path> =>
-	Effect.gen(function* () {
-		const path = yield* Path.Path;
-		const dir = path.join(ref.root, ref.lane);
-		const logPath = path.join(dir, "events.jsonl");
-		const removed = yield* Effect.result(removeAll(logPath));
-		if (Result.isFailure(removed)) {
-			return {_tag: "Unwritten", path: logPath, reason: removed.failure.reason} as const;
-		}
-		const workflow = path.join(dir, "workflow.json");
-		const wrote = yield* Effect.result(writeFile(workflow, text));
-		if (Result.isFailure(wrote)) {
-			return {_tag: "Unwritten", path: workflow, reason: wrote.failure.reason} as const;
-		}
-		return {_tag: "Replaced", dir, workflow} as const;
 	});

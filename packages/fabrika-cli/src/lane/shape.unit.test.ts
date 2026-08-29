@@ -34,6 +34,22 @@ describe("judgeShape", () => {
 		expect(verdict.reason).toContain('"coder"');
 	});
 
+	it("names the mismatch when an epic with no children yet runs a booted template", () => {
+		const verdict = judgeShape(
+			5979,
+			{_tag: "Booted", template: "coder"},
+			{
+				_tag: "Epic",
+				children: 0,
+			},
+		);
+
+		expect(verdict._tag).toBe("Mismatched");
+		if (verdict._tag !== "Mismatched") return;
+		expect(verdict.reason).toContain("no plan");
+		expect(verdict.reason).not.toContain("0 sub-issue link(s)");
+	});
+
 	it("matches an epic running the machine emitted for it", () => {
 		expect(judgeShape(5979, {_tag: "Generated", epic: 5979}, {_tag: "Epic", children: 6})).toEqual({
 			_tag: "Matches",

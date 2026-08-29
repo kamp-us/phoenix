@@ -13,7 +13,14 @@
  * that fetches the second lives in [`expectation.ts`](expectation.ts).
  */
 
-/** What the board says the lane's issue needs. An epic is an issue carrying sub-issue links. */
+/**
+ * What the board says the lane's issue needs.
+ *
+ * An epic is an issue the board types `type:epic` **or** one carrying sub-issue links: the label is
+ * what a pre-plan epic has, the children are what a planned one has, and #7024's lane was booted in
+ * the window where only the first was true. `children` is the link count, so `0` is exactly that
+ * pre-plan case.
+ */
 export type Expectation =
 	| {readonly _tag: "Epic"; readonly children: number}
 	| {readonly _tag: "Single"};
@@ -55,7 +62,10 @@ export const judgeShape = (
 		if (origin._tag === "Booted") {
 			return {
 				_tag: "Mismatched",
-				reason: `#${issue} carries ${expectation.children} sub-issue link(s), and this lane runs the booted "${origin.template}" machine, which has no child regions to drive them`,
+				reason:
+					expectation.children === 0
+						? `#${issue} is typed \`type:epic\` and carries no sub-issue links yet, so it has no plan, and this lane runs the booted "${origin.template}" machine, whose one task cannot represent an epic`
+						: `#${issue} carries ${expectation.children} sub-issue link(s), and this lane runs the booted "${origin.template}" machine, which has no child regions to drive them`,
 			};
 		}
 		return origin.epic === issue
@@ -69,6 +79,6 @@ export const judgeShape = (
 		? {_tag: "Matches"}
 		: {
 				_tag: "Mismatched",
-				reason: `#${issue} carries no sub-issue links, and this lane runs the epic machine emitted for #${origin.epic}`,
+				reason: `#${issue} is not an epic — no \`type:epic\` label and no sub-issue links — and this lane runs the epic machine emitted for #${origin.epic}`,
 			};
 };
