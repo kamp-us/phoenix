@@ -111,6 +111,24 @@ run-level refusal and what makes a capture valid are the verb's section
 `--heading "review-ui note"`). The two render paths this needs are
 `--heading "Required environment — the two render paths"`.
 
+**A surface that renders cleanly is not yet a judged surface.** The verb captures as an anonymous
+visitor with every flag at its default, and under ADR
+[0083](../../../../.decisions/0083-agents-deploy-humans-release.md)'s dark-ship norm that is exactly
+who never sees the feature. So a flag-gated route serving its own 404, a signed-in view serving the
+auth wall, and a feed row correctly showing no new marker all come back `captured` — a clean
+capture of the state the PR did not add. The verb reports none of them as unreachable, so the
+disclosure fork above never fires and the run reads as coverage it does not have (#6541, on PR
+#6434: six surfaces captured, four of the PR's compositions never painted).
+
+Derive the states the PR adds from the diff, and check each one against what actually painted.
+**Every state that did not paint is named in your verdict**, with why — flag off, signed out,
+seeded data absent. Name them and judge what did paint; a verdict that stays silent about them
+claims a judgment nobody made. When nothing the PR adds painted, that is CANT-SEE, on the same
+terms as an every-surface-unreachable render. ADR
+[0336](../../../../.decisions/0336-review-ui-renders-flag-gated-states.md) records why this is a
+disclosure rule today and what retires it: a flag-override plus seeded-session path on `review-ui
+render`, after which the gate reaches these states instead of naming them.
+
 **Two eyes, one record:** when this session's tool surface carries the `claude-in-chrome` tools you
 may additionally inspect the preview live — navigate, probe states, look closer. Detection is tool
 presence, nothing else; absent Chrome you use the captures silently. Chrome pixels never substitute
@@ -166,7 +184,7 @@ are simply no row. `surface` refusing on `11` is UNKNOWN coverage, never a clean
 
 ```bash
 fabrika review-ui post $pr_number --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged <<'EOF'
-…per-row table with pixel evidence, coverage table (rendered / unreachable+disclosed), advisories…
+…per-row table with pixel evidence, coverage table (judged / unreachable+disclosed / captured-but-not-the-PR's-state, each with why), advisories…
 EOF
 ```
 
