@@ -66,7 +66,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | Verb | Purpose | Split test |
 |---|---|---|
 | `build tree` | prove the ground: optionally clean, optionally this lane's | two git-derivable assertions — no judgment; *what to do on a refusal* (stop, report) stays in the skill |
-| `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing — no judgment; the *choice* among candidates stays in the skill |
+| `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing, plus the same `blocked_by` gate `build claim` runs — no judgment; the *choice* among candidates stays in the skill |
 | `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the issue's native `blocked_by` edges, those blockers' states, and the commits `epic/<parent>` adds over the trunk in this tree |
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
 | `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
@@ -548,15 +548,28 @@ The filter, fail-closed on every axis:
   `plan` or `gate` claim targets an epic, whose criteria arrive per child from the plan ledger
   ([#6025](https://github.com/kamp-us/phoenix/issues/6025)), and a repair claim names a PR whose
   branch cannot repair an issue body. The matching refusal at the stamp is `triage apply`'s `16`.
-- **no open `blocked_by` edge**, read off GitHub's native graph and nothing else (ADR 0301) through
-  the same `packages/fabrika-cli/src/build/blockedness.ts` reader `build eligible` uses. A candidate
-  with any blocker still open is excluded with reason `blocked`, and one whose edge list could not
-  be read is excluded with reason `unreadable` and the failure named on stderr — a candidate whose
-  blockedness is UNKNOWN is never offered. This axis runs **last**, because it is the only one that
-  costs a network call: the admission test and the criteria block are both answered off facts the
-  listing already returned, so a candidate they exclude is never paid for here. It replaces the
-  retired `status:blocked` label, which this filter only ever dropped as a side effect of the
-  one-`status:`-label rule above, printing no reason at all.
+- **no open, undischarged `blocked_by` edge**, read off GitHub's native graph and nothing else (ADR
+  0301) through the same `packages/fabrika-cli/src/build/discharge.ts` gate `build claim` uses, over
+  the same `blockedness.ts` reader `build eligible` reads. A candidate with any blocker still open
+  and not carried by the parent epic's assembly branch is excluded with reason `blocked`, and one
+  whose edge list — or whose parent — could not be read is excluded with reason `unreadable` and the
+  failure named on stderr; a candidate whose blockedness is UNKNOWN is never offered. This axis runs
+  **last**, because it is the only one that costs a network call: the admission test and the criteria
+  block are both answered off facts the listing already returned, so a candidate they exclude is
+  never paid for here — and the discharge inside is lazier still, resolving no parent and reading no
+  branch for a candidate the graph already reads clear. It replaces the retired `status:blocked`
+  label, which this filter only ever dropped as a side effect of the one-`status:`-label rule above,
+  printing no reason at all.
+
+  **The pool answers the same discharge question the claim seam does** ([#7223](https://github.com/kamp-us/phoenix/issues/7223)).
+  It used to read the pre-discharge gate, so one edge got three answers: `build eligible` said
+  eligible, `build claim` admitted, and the pool counted the child `blocked`. What that cost was a
+  wrong pool — a buildable epic child reading as unavailable to anyone, human or driver, browsing for
+  work. The derivation is shared rather than copied, so the three cannot drift apart again. Discharge
+  moves an answer only toward admitting: an unreadable assembly branch, an unnameable trunk and a
+  parentless candidate each leave every edge exactly as the board read it and still exclude. What
+  the branch read added is named on stderr, so an admission on discharge evidence is auditable rather
+  than merely plausible.
 - open, and not a pull request.
 
 **Every bucket read paginates, and a failed bucket read fails the verb.** v1's candidate pool
@@ -585,7 +598,8 @@ verdict — the pool still answers on `0`. Those two codes are the claim seam's.
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST, judged
-against the active campaigns. The scope line on stderr names the per-bucket counts scanned **and the
+against the active campaigns; plus, for each candidate the graph reads blocked, that issue's parent
+and the commits `epic/<parent>` adds over the trunk in this tree. The scope line on stderr names the per-bucket counts scanned **and the
 table's state** — `campaigns: 1 active — fabrika fast follows (#46)`, `campaigns: 2 active — fabrika fast follows (#46), fabrika everywhere (#47)`, or `campaigns: none active — scope fence inert` —
 so an empty pool is auditable and a fence that is off is visible as off rather than inferred.
 
@@ -604,6 +618,17 @@ fence is inert, and both the answer and the scope line say so — the same #4290
 $ fabrika build pick
 build pick: scanned p0=0 p1=3 p2=41 · campaigns: none active — scope fence inert
 {"pool":[{"number":4290,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":{},"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"none"}}
+```
+
+An epic child whose blocker is still open on the board but whose work already landed on the run's
+assembly branch is in the pool, and the branch read that put it there is on stderr:
+
+```
+$ fabrika build pick
+build pick: scanned p0 0, p1 1, p2 0 in kamp-us/phoenix; 1 candidate(s) survived the filter, 0 excluded — 0 by the admission test, 0 for no acceptance-criteria block, 0 on the blocked_by graph.
+build pick: campaigns: 1 active — Epic lanes (#49).
+build pick: origin/main..epic/6767 adds a commit naming #7029 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).
+{"pool":[{"number":7030,"title":"The second tracer","priority":"p1","type":"chore","home":"49"}],"excluded":{},"scanned":{"p0":0,"p1":1,"p2":0},"campaigns":{"state":"active","milestones":["49"]}}
 ```
 
 ```

@@ -15,11 +15,13 @@
  *   `build issue <n>` built a no-AC issue this pool would have refused (#6554).
  * - **Any assignee excludes.** Assignment is the one attribute that keeps a human's live document out
  *   of an agent's pool (#4764, #4693).
- * - **A candidate with an open `blocked_by` edge excludes**, on the same channel, read off the
- *   native graph and nothing else (ADR 0301). It runs last because it is the only axis that costs a
- *   network call, and an unreadable graph excludes the candidate with its reason on stderr — the
- *   whole pool is not refused for one edge list, but a candidate whose blockedness is UNKNOWN is
- *   never offered.
+ * - **A candidate with an open, undischarged `blocked_by` edge excludes**, on the same channel, read
+ *   off the native graph and nothing else (ADR 0301) minus what the parent epic's assembly branch
+ *   already carries — one derivation in [`./discharge.ts`](./discharge.ts), shared with the claim
+ *   seam so the pool and the claim cannot state different facts about one edge (#7223). It runs last
+ *   because it is the only axis that costs a network call, and an unreadable graph excludes the
+ *   candidate with its reason on stderr — the whole pool is not refused for one edge list, but a
+ *   candidate whose blockedness is UNKNOWN is never offered.
  *
  * **Either every bucket was read in full, or the answer is `11`.** v1's pool printed nothing for a
  * failed bucket and kept going, so a `gh` 5xx on the p0 bucket read as "no p0s"
@@ -37,8 +39,8 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {reasonHistogram} from "../evidence.ts";
 import {TRIAGED} from "../labels.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {readBlockedGate} from "./blockedness.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {readDischargedGate} from "./discharge.ts";
 import {type CandidateIssue, listLabelled} from "./github.ts";
 import {
 	admissionOf,
@@ -76,7 +78,8 @@ interface PoolEntry {
 }
 
 /**
- * The word for a candidate the native `blocked_by` graph says must not start yet (ADR 0301).
+ * The word for a candidate the native `blocked_by` graph says must not start yet, once the parent
+ * epic's assembly branch has been subtracted from it (ADR 0301's 2026-08-29 amendment).
  *
  * It is not an admission axis and does not live in `./scope-admission.ts`: that module is pure and
  * total over facts already on an issue, while this one costs a paged network read per candidate. It
@@ -164,6 +167,7 @@ export const runPick = (
 		const excluded: ExclusionEntry[] = [];
 		const blockedEdges: string[] = [];
 		const unreadableEdges: string[] = [];
+		const branchNotes: string[] = [];
 		for (const bucket of BUCKETS) {
 			const listed = yield* listLabelled(options.env, resolved.repo, [TRIAGED, bucket]);
 			if (listed._tag === "Failure") {
@@ -182,9 +186,17 @@ export const runPick = (
 				}
 				// Last of the two, because it is the only one that costs a network call: every admission
 				// axis is answered off facts already in hand, so a candidate they refuse is never paid
-				// for here. An unreadable graph excludes with its reason stated rather than refusing the
+				// for here. The discharge read inside is lazier still: a candidate the graph already reads
+				// clear resolves no parent and reads no branch. An unreadable graph excludes with its reason
+				// stated rather than refusing the
 				// whole pool (ADR 0301) — the candidate is dropped, never kept.
-				const gate = yield* readBlockedGate(resolved.repo, issue.number);
+				const {gate, notes} = yield* readDischargedGate(
+					VERB,
+					options.env,
+					resolved.repo,
+					issue.number,
+				);
+				branchNotes.push(...notes);
 				if (gate._tag === "Unknown") {
 					unreadableEdges.push(
 						`${VERB}: cannot read the blocked_by edges of #${issue.number}: ${gate.reason} — excluded, because blockedness UNKNOWN is never "not blocked".`,
@@ -225,6 +237,7 @@ export const runPick = (
 				dispatchScopeLine(VERB, dispatch),
 				...blockedEdges,
 				...unreadableEdges,
+				...branchNotes,
 			],
 		);
 	});
