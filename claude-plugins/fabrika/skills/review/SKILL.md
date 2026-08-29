@@ -122,8 +122,7 @@ the verdict it was heading for would have carried the right head over the wrong 
 nothing downstream can detect (#7246).
 
 ```bash
-staged=$(fabrika review scratch $pr_number --slug diff --lane <lane> --sha 03135b91)
-fabrika review diff $pr_number --sha 03135b91 > "$staged"
+fabrika review scratch $pr_number --slug diff --lane <lane> --sha 03135b91
 ```
 
 `<lane>` is the lane key your spawn brief's `## Task` section carries, and `--sha` is step 1's head:
@@ -131,6 +130,14 @@ the first separates you from the other reviewers of this session, the second fro
 round. The verb prints one absolute path, creates its directory, and **refuses rather than handing
 back the session-wide directory** when either is missing. A run whose caller named no lane cannot
 stage: read the diff in place instead, and never substitute a name of your own.
+
+Then read that path off the verb and redirect the diff into it, typing the path out literally —
+`fabrika review diff $pr_number --sha 03135b91 > <the path it printed>`. **Never capture the
+allocation into a shell variable and never redirect through one.** Command substitution and a
+variable the verifier cannot resolve are each on their own enough for a worktree-isolated shell to
+refuse the line, so a fence built that way does not run for the reviewer it is written for (ADR
+[0235](../../../../.decisions/0235-fences-carry-zero-expansions.md)). A redirect whose target is the
+literal path carries no expansion and runs.
 
 The path is machine-local, so it never appears in what you post — `review post` and
 `review append-criterion` red on it at `5`.
