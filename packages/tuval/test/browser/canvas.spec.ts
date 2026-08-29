@@ -512,8 +512,30 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	const root = session("flow-root", "/work/root");
 	const child = session("flow-child", "/work/child", "flow-root");
 	await routeOutcome(page, () => ({_tag: "ready", sessions: [root, child]}));
+	await page.route("**/api/resilience", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				stages: [
+					"discovery",
+					"lineage",
+					"selection",
+					"settings",
+					"package-registrations",
+					"extension-ui-current",
+				].map((stage) => ({stage, status: "restored"})),
+				selectedSessionId: null,
+				settings: {nodeDetailLevel: "meta"},
+				packageRegistrations: [],
+				extensionUI: [],
+				diagnostics: [],
+			}),
+		});
+	});
 	await page.goto(tuvalUrl);
 	await expect(page.getByText("Çalışma alanı geri yüklendi")).toBeVisible();
+	await expect(page.locator(".contribution-status")).toHaveAttribute("aria-busy", "false");
 
 	const rootNode = page.locator('[data-id="pi:flow-root"]');
 	const childNode = page.locator('[data-id="pi:flow-child"]');
@@ -550,6 +572,7 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	);
 
 	await rootNode.focus();
+	await expect(rootNode).toBeFocused();
 	await page.keyboard.press("Enter");
 	await expect(page.locator("aside")).toHaveCount(1);
 	await expect(page.getByRole("alert")).toContainText("Bağlantı kesildi");
@@ -558,6 +581,7 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	await expect(rootNode).not.toHaveClass(/selected/);
 
 	await childNode.focus();
+	await expect(childNode).toBeFocused();
 	await page.keyboard.press("Enter");
 	const beforeMove = await childNode.getAttribute("style");
 	await page.keyboard.press("ArrowRight");

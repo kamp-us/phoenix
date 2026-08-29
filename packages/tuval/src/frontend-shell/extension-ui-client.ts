@@ -6,6 +6,7 @@ import {
 	type ExtensionUIResponseOutcome,
 	type ExtensionUIResponseRequest,
 	ExtensionUIScope,
+	ExtensionUISnapshot,
 } from "../shared/extension-ui.js";
 
 const Placement = Schema.Literals(["aboveEditor", "belowEditor"]);
@@ -108,16 +109,16 @@ export const bindExtensionUIOutcome = (expectedId: string, value: unknown): Acce
 
 interface FateOperation {
 	readonly id: string;
-	readonly kind: "mutation";
+	readonly kind: "query" | "mutation";
 	readonly name: string;
-	readonly input: unknown;
+	readonly input?: unknown;
 }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null;
 
-const runFate = async (operation: FateOperation): Promise<unknown> => {
-	const response = await fetch("/fate", {
+const runFate = async (operation: FateOperation, endpoint = "/fate"): Promise<unknown> => {
+	const response = await fetch(endpoint, {
 		method: "POST",
 		headers: {"content-type": "application/json"},
 		body: JSON.stringify({version: 1, operations: [{...operation, select: []}]}),
@@ -128,10 +129,24 @@ const runFate = async (operation: FateOperation): Promise<unknown> => {
 	const result = body.results.find(
 		(candidate) => isRecord(candidate) && candidate.id === operation.id,
 	);
-	if (!isRecord(result) || result.ok !== true || !isRecord(result.data)) {
-		throw new Error("Extension UI işlemi reddedildi");
-	}
+	if (!isRecord(result) || result.ok !== true) throw new Error("Extension UI işlemi reddedildi");
 	return result.data;
+};
+
+const readCurrentSnapshots = async (): Promise<ReadonlyArray<ExtensionUISnapshot>> => {
+	const value = await runFate(
+		{
+			id: `extension-ui-current-${crypto.randomUUID()}`,
+			kind: "query",
+			name: "extensionUi.current",
+		},
+		"/fate?extension-ui-current=1",
+	);
+	const snapshots = Option.getOrUndefined(
+		Schema.decodeUnknownOption(Schema.Array(ExtensionUISnapshot))(value),
+	);
+	if (snapshots === undefined) throw new Error("Extension UI güncel görünümü okunamadı");
+	return snapshots;
 };
 
 export interface ExtensionUIBrowserClient {
@@ -139,6 +154,7 @@ export interface ExtensionUIBrowserClient {
 	readonly cancel: (request: ExtensionUICancelRequest) => Promise<AcceptedSettlement>;
 	readonly subscribe: (handlers: {
 		readonly open: () => void;
+		readonly snapshot: (snapshots: ReadonlyArray<ExtensionUISnapshot>) => void;
 		readonly event: (event: ExtensionUIEvent) => void;
 		readonly disconnect: () => void;
 		readonly malformed: () => void;
@@ -168,8 +184,36 @@ export const extensionUIBrowserClient: ExtensionUIBrowserClient = {
 		),
 	subscribe: (handlers) => {
 		const source = new EventSource("/fate/extension-ui/live");
-		source.onopen = handlers.open;
-		source.onerror = handlers.disconnect;
+		let generation = 0;
+		let active = true;
+		let awaitingSnapshot = false;
+		let queuedEvents: Array<ExtensionUIEvent> = [];
+		source.onopen = () => {
+			const currentGeneration = ++generation;
+			awaitingSnapshot = true;
+			queuedEvents = [];
+			handlers.open();
+			void readCurrentSnapshots()
+				.then((snapshots) => {
+					if (!active || currentGeneration !== generation) return;
+					handlers.snapshot(snapshots);
+					awaitingSnapshot = false;
+					for (const event of queuedEvents) handlers.event(event);
+					queuedEvents = [];
+				})
+				.catch(() => {
+					if (!active || currentGeneration !== generation) return;
+					awaitingSnapshot = false;
+					for (const event of queuedEvents) handlers.event(event);
+					queuedEvents = [];
+				});
+		};
+		source.onerror = () => {
+			generation += 1;
+			awaitingSnapshot = false;
+			queuedEvents = [];
+			handlers.disconnect();
+		};
 		source.onmessage = (message) => {
 			let raw: unknown;
 			// biome-ignore lint/plugin: EventSource delivers JSON text before the typed Schema boundary.
@@ -181,8 +225,13 @@ export const extensionUIBrowserClient: ExtensionUIBrowserClient = {
 			}
 			const event = decodeExtensionUIEvent(raw);
 			if (event === undefined) handlers.malformed();
+			else if (awaitingSnapshot) queuedEvents.push(event);
 			else handlers.event(event);
 		};
-		return () => source.close();
+		return () => {
+			active = false;
+			generation += 1;
+			source.close();
+		};
 	},
 };

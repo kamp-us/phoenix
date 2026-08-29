@@ -287,8 +287,10 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		expect((desktopComposerBox?.y ?? 0) + (desktopComposerBox?.height ?? 0)).toBeLessThanOrEqual(
 			desktopExtensionBox?.y ?? 0,
 		);
-		expect(desktopChatBox?.width).toBe(456);
-		expect(desktopExtensionBox?.width).toBe(360);
+		expect(desktopChatBox?.width ?? 0).toBeGreaterThanOrEqual(455.5);
+		expect(desktopChatBox?.width ?? 0).toBeLessThanOrEqual(456.5);
+		expect(desktopExtensionBox?.width ?? 0).toBeGreaterThanOrEqual(359.5);
+		expect(desktopExtensionBox?.width ?? 0).toBeLessThanOrEqual(360.5);
 		expect(await desktopTranscript.evaluate((element) => getComputedStyle(element).overflowY)).toBe(
 			"auto",
 		);

@@ -254,11 +254,13 @@ export class ContributionRegistry {
 	readonly panels: ReadonlyMap<string, RegisteredContribution>;
 	readonly diagnostics: ReadonlyArray<ContributionDiagnostic>;
 	readonly packages: ReadonlySet<string>;
+	readonly revision: number;
 
 	private constructor(
 		entries: ReadonlyArray<RegisteredContribution>,
 		diagnostics: ReadonlyArray<ContributionDiagnostic>,
 		packages: ReadonlySet<string>,
+		revision: number,
 	) {
 		this.nodes = new Map(
 			entries.filter(({kind}) => kind === "node").map((entry) => [entry.key, entry]),
@@ -271,10 +273,11 @@ export class ContributionRegistry {
 		);
 		this.diagnostics = diagnostics;
 		this.packages = packages;
+		this.revision = revision;
 	}
 
 	static empty(): ContributionRegistry {
-		return new ContributionRegistry([], [], new Set());
+		return new ContributionRegistry([], [], new Set(), 0);
 	}
 
 	static failed(
@@ -288,6 +291,7 @@ export class ContributionRegistry {
 				...[...previous.packages].map((name) => diagnostic(name, "unloaded")),
 			],
 			new Set(),
+			previous.revision + 1,
 		);
 	}
 
@@ -371,7 +375,7 @@ export class ContributionRegistry {
 			for (const entry of loaded) seen.add(`${entry.kind}:${entry.key}`);
 			entries.push(...loaded);
 		}
-		return new ContributionRegistry(entries, diagnostics, packageNames);
+		return new ContributionRegistry(entries, diagnostics, packageNames, previous.revision + 1);
 	}
 
 	withDiagnostic(failure: ContributionDiagnostic): ContributionRegistry {
@@ -384,7 +388,12 @@ export class ContributionRegistry {
 			)
 		)
 			return this;
-		return new ContributionRegistry(this.loaded, [...this.diagnostics, failure], this.packages);
+		return new ContributionRegistry(
+			this.loaded,
+			[...this.diagnostics, failure],
+			this.packages,
+			this.revision,
+		);
 	}
 
 	get loaded(): ReadonlyArray<RegisteredContribution> {

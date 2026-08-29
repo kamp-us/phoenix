@@ -75,6 +75,23 @@ const appendNotice = (state: BridgeState, notice: Notice): BridgeState => ({
 	notices: [...state.notices.filter(({key}) => key !== notice.key), notice].slice(-8),
 });
 
+const applyAuthoritativeSnapshots = (
+	state: BridgeState,
+	snapshots: ReadonlyArray<ExtensionUISnapshot>,
+): BridgeState => {
+	const statuses = new Map<string, StatusView>();
+	const widgets = new Map<string, WidgetView>();
+	for (const snapshot of snapshots) {
+		for (const status of snapshot.statuses) {
+			statuses.set(stateKey(snapshot.scope, status.key), {...status, scope: snapshot.scope});
+		}
+		for (const widget of snapshot.widgets) {
+			widgets.set(stateKey(snapshot.scope, widget.key), {...widget, scope: snapshot.scope});
+		}
+	}
+	return {...state, statuses, widgets};
+};
+
 export const reduceExtensionUIEvent = (
 	state: BridgeState,
 	event: ExtensionUIEvent,
@@ -204,6 +221,9 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 	const editor = useComposerEditor();
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const restoreFocus = useRef<HTMLElement | null>(null);
+	const editorWasEdited = useRef(false);
+	const settleRef = useRef(settle);
+	settleRef.current = settle;
 
 	useEffect(() => {
 		restoreFocus.current =
@@ -218,12 +238,28 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 	}, []);
 
 	useEffect(() => {
+		const cancelOnEscape = (event: KeyboardEvent): void => {
+			if (event.key !== "Escape") return;
+			event.preventDefault();
+			event.stopPropagation();
+			void settleRef.current();
+		};
+		window.addEventListener("keydown", cancelOnEscape, {capture: true});
+		return () => window.removeEventListener("keydown", cancelOnEscape, {capture: true});
+	}, []);
+
+	useEffect(() => {
 		if (dialog.request.method !== "editor" || editor === null) return;
 		editor.setContent(dialog.request.prefill ?? "");
+		editorWasEdited.current = false;
 		setValue(editor.getMarkdown());
 		setEditorReady(true);
 		const sync = () => setValue(editor.getMarkdown());
+		const markEdited = () => {
+			editorWasEdited.current = true;
+		};
 		editor.editor.on("update", sync);
+		editor.editor.view.dom.addEventListener("input", markEdited);
 		editor.editor.setOptions({
 			editorProps: {
 				attributes: {role: "textbox", "aria-label": dialog.request.title, "aria-multiline": "true"},
@@ -231,6 +267,7 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 		});
 		return () => {
 			editor.editor.off("update", sync);
+			editor.editor.view.dom.removeEventListener("input", markEdited);
 		};
 	}, [dialog.request, editor]);
 
@@ -247,16 +284,21 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 		if (dialog.request.method === "confirm") {
 			void settle({type: "extension_ui_response", id: dialog.request.id, confirmed: true});
 		} else {
-			void settle({type: "extension_ui_response", id: dialog.request.id, value});
+			const submittedValue =
+				dialog.request.method === "editor" && editor !== null
+					? editorWasEdited.current && editor.editor.view.dom.textContent === ""
+						? ""
+						: editor.getMarkdown()
+					: value;
+			void settle({
+				type: "extension_ui_response",
+				id: dialog.request.id,
+				value: submittedValue,
+			});
 		}
 	};
 
 	const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-		if (event.key === "Escape") {
-			event.preventDefault();
-			void settle();
-			return;
-		}
 		if (event.key !== "Tab") return;
 		const focusable = [
 			...(dialogRef.current?.querySelectorAll<HTMLElement>(
@@ -385,7 +427,6 @@ export function ExtensionUIBridge({
 }) {
 	const [state, setState] = useState<BridgeState>(initialState);
 	const submitted = useRef(new Set<string>());
-	const awaitingAuthoritativeReplay = useRef(false);
 	const active = state.dialogs.at(0);
 	const currentOrder = (left: StatusView | WidgetView, right: StatusView | WidgetView) =>
 		extensionUIScopeKey(left.scope).localeCompare(extensionUIScopeKey(right.scope)) ||
@@ -397,46 +438,22 @@ export function ExtensionUIBridge({
 
 	useEffect(() => {
 		if (initialSnapshots.length === 0) return;
-		setState((current) => {
-			const statuses = new Map(current.statuses);
-			const widgets = new Map(current.widgets);
-			for (const snapshot of initialSnapshots) {
-				for (const status of snapshot.statuses) {
-					statuses.set(stateKey(snapshot.scope, status.key), {...status, scope: snapshot.scope});
-				}
-				for (const widget of snapshot.widgets) {
-					widgets.set(stateKey(snapshot.scope, widget.key), {...widget, scope: snapshot.scope});
-				}
-			}
-			return {...current, statuses, widgets};
-		});
+		setState((current) => applyAuthoritativeSnapshots(current, initialSnapshots));
 	}, [initialSnapshots]);
 
 	useEffect(
 		() =>
 			client.subscribe({
-				open: () => {
-					awaitingAuthoritativeReplay.current = true;
+				open: () =>
 					setState((current) => ({
 						...current,
 						connection: "connected",
 						dialogs: [],
 						notices: [],
-					}));
-				},
-				event: (event) =>
-					setState((current) => {
-						const startsReplay =
-							awaitingAuthoritativeReplay.current &&
-							(event._tag === "status" || event._tag === "widget") &&
-							event.replay;
-						if (!startsReplay) return reduceExtensionUIEvent(current, event);
-						awaitingAuthoritativeReplay.current = false;
-						return reduceExtensionUIEvent(
-							{...current, statuses: new Map(), widgets: new Map()},
-							event,
-						);
-					}),
+					})),
+				snapshot: (snapshots) =>
+					setState((current) => applyAuthoritativeSnapshots(current, snapshots)),
+				event: (event) => setState((current) => reduceExtensionUIEvent(current, event)),
 				disconnect: () =>
 					setState((current) =>
 						appendNotice(

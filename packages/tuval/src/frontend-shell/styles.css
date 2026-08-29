@@ -421,6 +421,14 @@ button:disabled {
 	margin-right: auto;
 }
 
+.session-node[data-detail-level="full"] .session-node__metadata,
+.session-node[data-detail-level="full"] .session-node__live,
+.session-node[data-detail-level="full"] .session-node__runtime,
+.session-node[data-detail-level="full"] .session-node__history-label,
+.session-node[data-detail-level="full"] .session-node__history [data-scope="badge"] {
+	font: var(--t-meta);
+}
+
 .react-flow__handle {
 	width: var(--space-2);
 	height: var(--space-2);
@@ -1694,9 +1702,11 @@ kbd {
 	.extension-ui {
 		position: relative;
 		inset: auto;
+		align-self: start;
 		align-content: start;
 		width: auto;
-		height: 100%;
+		height: auto;
+		max-height: 100%;
 		padding: var(--space-2) max(var(--space-2), env(safe-area-inset-right))
 			max(var(--space-2), env(safe-area-inset-bottom))
 			max(var(--space-2), env(safe-area-inset-left));

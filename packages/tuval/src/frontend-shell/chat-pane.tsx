@@ -192,6 +192,7 @@ export function ChatPane({
 		readonly text: string;
 	} | null>(null);
 	const transcriptEnd = useRef<HTMLDivElement>(null);
+	const composerOwner = useRef(selected.identity);
 	const composer = useComposerEditor();
 	const connectionStatus = connectionCopy(connection, message);
 	const attachedSession =
@@ -212,24 +213,34 @@ export function ChatPane({
 					selectedModel.supportedThinkingLevels.includes(level),
 				) ?? []);
 	const canSend = attached && !sending && pendingControl === null;
-	const composerText = (): string => composerValue.trim();
+	const composerText = (): string =>
+		composerOwner.current === selected.identity ? composerValue.trim() : "";
 
 	useEffect(() => {
 		setSending(false);
 		setPendingControl(null);
 		setControlStatus(null);
 		setSendStatus(null);
-	}, [selected.identity]);
+		if (composerOwner.current !== selected.identity) {
+			composerOwner.current = selected.identity;
+			setComposerValue("");
+			composer?.setContent("");
+		}
+	}, [composer, selected.identity]);
 
 	useEffect(() => {
 		if (composer === null) return;
-		const syncComposerValue = () => setComposerValue(composer.getMarkdown());
+		const identity = selected.identity;
+		const syncComposerValue = () => {
+			composerOwner.current = identity;
+			setComposerValue(composer.getMarkdown());
+		};
 		composer.editor.on("update", syncComposerValue);
 		syncComposerValue();
 		return () => {
 			composer.editor.off("update", syncComposerValue);
 		};
-	}, [composer]);
+	}, [composer, selected.identity]);
 
 	useEffect(() => {
 		composer?.editor.setOptions({
@@ -251,12 +262,13 @@ export function ChatPane({
 		event.preventDefault();
 		const text = composerText();
 		if (!canSend || text.length === 0) return;
+		const submittedIdentity = selected.identity;
 		setSending(true);
 		setSendStatus({tone: "loading", text: "Gönderiliyor; onay bekleniyor."});
 		try {
 			const result = await onSend(text);
 			if (result.ok) {
-				composer?.setContent("");
+				if (composerOwner.current === submittedIdentity) composer?.setContent("");
 				setSendStatus({tone: "ready", text: result.message});
 			} else {
 				setSendStatus({tone: "danger", text: result.message});

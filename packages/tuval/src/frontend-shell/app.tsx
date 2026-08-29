@@ -796,14 +796,20 @@ export function TuvalApp() {
 		void releaseLiveSession().catch(() => undefined);
 		requestAnimationFrame(() => {
 			ignoreSelectionChange.current = false;
-			focusCanvasNode(identity);
+			if (document.activeElement === document.body) focusCanvasNode(identity);
 		});
 	};
 
 	useEffect(() => {
 		if (selected === null) return;
 		const onEscape = (event: KeyboardEvent): void => {
-			if (event.key !== "Escape") return;
+			if (
+				event.key !== "Escape" ||
+				document.querySelector('[role="dialog"]') !== null ||
+				(event.target instanceof HTMLElement && event.target.closest(".react-flow__node") !== null)
+			) {
+				return;
+			}
 			const workspace = document.querySelector<HTMLElement>(".workspace");
 			if (
 				window.matchMedia("(max-width: 720px)").matches &&

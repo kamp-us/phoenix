@@ -15,8 +15,11 @@ export function useContributions(): ContributionState {
 	const [registry, setRegistry] = useState(() => ContributionRegistry.empty());
 	const [loading, setLoading] = useState(true);
 	const registryRef = useRef(registry);
+	const reloadGeneration = useRef(0);
 	registryRef.current = registry;
 	const reload = useCallback(async () => {
+		const generation = reloadGeneration.current + 1;
+		reloadGeneration.current = generation;
 		setLoading(true);
 		try {
 			const response = await fetch("/api/contributions", {
@@ -28,15 +31,19 @@ export function useContributions(): ContributionState {
 				!response.ok ||
 				!/^application\/json(?:;|$)/i.test(response.headers.get("content-type") ?? "")
 			) {
-				setRegistry(ContributionRegistry.failed("catalog-unavailable", registryRef.current));
+				if (generation === reloadGeneration.current) {
+					setRegistry(ContributionRegistry.failed("catalog-unavailable", registryRef.current));
+				}
 				return;
 			}
 			const next = await ContributionRegistry.load(await response.json(), registryRef.current);
-			setRegistry(next);
+			if (generation === reloadGeneration.current) setRegistry(next);
 		} catch {
-			setRegistry(ContributionRegistry.failed("catalog-unavailable", registryRef.current));
+			if (generation === reloadGeneration.current) {
+				setRegistry(ContributionRegistry.failed("catalog-unavailable", registryRef.current));
+			}
 		} finally {
-			setLoading(false);
+			if (generation === reloadGeneration.current) setLoading(false);
 		}
 	}, []);
 	useEffect(() => void reload(), [reload]);
