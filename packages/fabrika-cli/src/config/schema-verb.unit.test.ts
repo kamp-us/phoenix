@@ -49,7 +49,7 @@ describe("reconcile", () => {
 	it("agrees when the committed file matches the assembled schema", () => {
 		const {outcome} = run({write: false, read: {_tag: "Text", text: committed}});
 		expect(outcome.code).toBe(0);
-		expect(outcome.stdout).toContain("schema\tagrees\t16");
+		expect(outcome.stdout).toContain("schema\tagrees\t17");
 	});
 
 	it("agrees whatever the committed file's whitespace, comparing content not bytes", () => {
@@ -87,7 +87,7 @@ describe("write", () => {
 	it("renders the file from the registry and reports written", () => {
 		const {outcome, saves} = run({write: true, read: {_tag: "Absent"}});
 		expect(outcome.code).toBe(0);
-		expect(outcome.stdout).toContain("schema\twritten\t16");
+		expect(outcome.stdout).toContain("schema\twritten\t17");
 		expect(saves).toHaveLength(1);
 		expect(saves[0]).toBe(committed);
 	});

@@ -18,6 +18,7 @@ import {Notification} from "./Notification.ts";
 export const DIVAN_VOTE_KIND: NotificationKind = "divan-vote";
 export const KEFIL_KIND: NotificationKind = "kefil";
 export const PROMOTION_KIND: NotificationKind = "terfi";
+export const BACKLOG_RELEASE_KIND: NotificationKind = "backlog-release";
 
 // Self-suppression: `null` when the recipient IS the actor.
 export const riteRecipient = (recipientId: string, actorId: string): string | null =>
@@ -82,3 +83,20 @@ export const notifyPromotion = (input: {userId: string}) =>
 			actorId: null,
 		});
 	}).pipe(swallow(PROMOTION_KIND));
+
+// The terfi sweep's what-went-public moment (#7061): a system emit like the promotion,
+// so no self-suppression and `actorId` null. `count` carries the swept-entry count and 0
+// rides too — the client's zero arm (R1.1 on #7049) needs a row to render.
+export const notifyBacklogRelease = (input: {userId: string; releasedCount: number}) =>
+	Effect.gen(function* () {
+		if (!(yield* bildirimOn)) return;
+		const bildirim = yield* Notification;
+		yield* bildirim.record({
+			recipientId: input.userId,
+			kind: BACKLOG_RELEASE_KIND,
+			targetKind: "user",
+			targetId: input.userId,
+			actorId: null,
+			count: input.releasedCount,
+		});
+	}).pipe(swallow(BACKLOG_RELEASE_KIND));

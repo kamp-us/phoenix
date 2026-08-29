@@ -221,7 +221,7 @@ authority.
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `enqueue`, `merge`, `nudge` |
 | `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page | `scope`, `cp-approval`, `gate`, `checks`, `evidence`, `threads`, `nudge`, `release`, `reconcile`, `floor` |
 | `14`, `15` | *(deliberate gaps — `review`'s ACL and append-only seats; no verb here performs either)* | — |
-| `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `merge`, `nudge` |
+| `16` | refused: the target is **proven not in the state this write acts on** — nothing was mutated | `resolve`, `enqueue`, `merge`, `nudge` |
 | `17` | refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**; a human re-opens before anything else happens | `nudge` |
 | `18` | refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound PASS — `absent`, `stale` or `fail`. The one red that means *a human owes this PR a verdict*, kept off `16` so a CI job can tell it from "the floor could not be resolved" | `floor` |
 | `19` | refused: the repository permits **no merge method at all** — squash, merge-commit and rebase are all disabled, so nothing can land directly. Its own seat rather than a fold into `16`, because the two route opposite ways: `16` sends the run to `ship enqueue`, `19` ends it at a human with repository-settings access (#6018) | `merge` |
@@ -1111,6 +1111,21 @@ that one counts latest-per-context check-run rows). These are the zero-checkset
 discriminators (`no-runs` requires workflows ≥ 1 and runs = 0 at this head: Actions exist
 and none fired — the dropped-trigger state `ship nudge` re-derives).
 
+**A `green` is served only over bytes a gate of this repo's own inspected** (#6915). Where the
+rollup would be `green`, the head's workflow runs are read against the active inventory through
+`src/review/gate-coverage.ts` — the same module `review ci` refuses on, so the two gates cannot
+drift a second copy of the rule. A workflow the repo checks in is addressed by its file path
+(`.github/workflows/…`); one the platform provides on the repo's behalf is addressed
+`dynamic/<provider>/<name>`, and that prefix is the whole discriminator: no expected job names, and
+never `review ci`'s informational *name* denylist, which answers a different question. A head where
+the repo declares at least one workflow of its own and **none** of them produced a run refuses on
+`20` — `ship` is the merge authority, so "no gate inspected these bytes" must not read as "every
+gate passed". Otherwise the coverage is stated on the notes channel: `ship checks: <k> of <m>
+workflow(s) <repo> authors produced a run at <sha>.`, or, for a repo that authors no workflow at
+all, `ship checks: <repo> authors no workflow of its own — …`. The floor sits on `green` alone: a
+`red` head already routes to `heal-ci` by name, and a `pending` head is one this group waits on
+rather than lands.
+
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`** (#6298). A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
 first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole
@@ -1152,6 +1167,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks" |
+| `20` | every check at the head passed and **no workflow the repo authors produced a run there** — no gate inspected these bytes, so `green` is UNKNOWN, never merged (#6915) |
 
 **Errors**
 
@@ -1165,6 +1181,9 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
+| `ship checks: none of the <m> workflow(s) <repo> authors produced a run at <sha> — the <k> check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).` | 20 | refusal |
+| `ship checks: <k> of <m> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
 count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
@@ -1197,6 +1216,13 @@ $ fabrika ship checks 4323 --sha 7c04ef19   # a repo declaring "ci": {"noProduce
 checks	7c04ef19	no-producer
 run	0
 facts	workflows:0	runs:0
+```
+
+```
+$ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only CodeQL's own workflow ran
+ship checks: none of the 12 workflow(s) kamp-us/phoenix authors produced a run at 5b1c0d72 — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).
+$ echo $?
+20
 ```
 
 ```
@@ -1585,7 +1611,7 @@ conflicts with the queue and no-ops the enqueue silently at exit 0. The verb re-
 live head first and refuses `12` on drift — the enqueue is the one action every gate's
 `--sha` was protecting; arming at a moved head ships a tree nobody verified.
 
-**A definite `mergeable_state` is asserted BEFORE the arm** ([ruled on
+**A definite, mergeable `mergeable_state` is asserted BEFORE the arm** ([ruled on
 #5067](https://github.com/kamp-us/phoenix/issues/5067#issuecomment-5233191264)). The precondition
 sits here and not in the post-arm confirm step, which already owns a different question (whether
 the intent parked) and where an assertion would arrive after the write it was meant to prevent.
@@ -1600,9 +1626,14 @@ other**: `mergeable` is computed lazily by GitHub, so a `null` / `unknown` read 
 *still* indefinite the answer is UNKNOWN and the verb refuses `11` with nothing armed. A gate that
 read the indefinite value as green would be worse than no gate — a read that could not produce a
 definite answer must never resolve to one. A read that *fails* is likewise `11`, never a pass.
-What the verb does **not** do is judge the definite value: a definite `dirty` is an answer, and the
-arm proceeds to its own error discrimination on `8`. Definiteness is the precondition; the
-platform's verdict on mergeability is not this verb's to overrule.
+
+**A definite `mergeable: false` refuses `16`, and does not arm** (#6902). The premise this overturns
+is that a definite `dirty` is an answer the arm may proceed on and leave to the platform's own error
+discrimination on `8`. The platform issues no such error: it accepts the arm and parks the intent,
+so the lane learns at `ship reconcile` what the read three lines earlier already proved, having spent
+an enqueue round and one of its two retries to get there (PR #6894, lane 6374, 2026-08-20 PT). The
+refusal costs nothing a re-read cannot recover and is the same line `ship merge` draws on the same
+shared read.
 
 After the arm,
 the verb reads the PR back: `auto_merge: null` **post-enqueue is expected** (the queue
@@ -1617,6 +1648,7 @@ response, quoted verbatim on `8`.
 | `8` | the arm request, or its confirming post-arm read-back, failed — the error quoted; whether an intent is parked is UNKNOWN, so the caller runs `ship disarm --site refuse` before stopping |
 | `11` | the live head could not be read, the mergeability could not be read, or the mergeability was still indefinite after the polls — nothing was armed |
 | `12` | the live head moved past `--sha` — every verdict upstream bound a tree that is gone; re-enter at step 1 |
+| `16` | the PR is **provably not mergeable** — a definite `mergeable: false` read; nothing was armed and no enqueue round was spent |
 
 **Errors**
 
@@ -1627,7 +1659,8 @@ response, quoted verbatim on `8`.
 | `ship enqueue: cannot read #<n>'s live head: <reason> — nothing was armed.` | 11 | refusal |
 | `ship enqueue: cannot read #<n>'s mergeability: <reason> — nothing was armed.` | 11 | refusal |
 | `ship enqueue: #<n>'s mergeable_state is still indefinite after <k> polls — mergeability is UNKNOWN, never green; nothing was armed.` | 11 | refusal |
-| `ship enqueue: mergeable_state is <state> (mergeable: <true|false>) — a definite read; arming.` | 0 | notice |
+| `ship enqueue: #<n> is not mergeable (mergeable_state: <state>) — a definite read; nothing was armed.` | 16 | refusal |
+| `ship enqueue: mergeable_state is <state> (mergeable: true) — a definite read; arming.` | 0 | notice |
 | `ship enqueue: the confirming timeline read never reached a terminal page — the entry is unproven, so this answers settling.` | 0 | notice |
 | `ship enqueue: the live head is <live>, gates ran at <sha> — refusing to arm a tree nobody verified.` | 12 | refusal |
 | `ship enqueue: the arm failed: "<error>" — whether an intent is parked is UNKNOWN; disarm before stopping.` | 8 | refusal |
@@ -1654,6 +1687,8 @@ enqueued	03135b91	queued
 - ADR 0198 — this is the only verb that arms; every other path is a disarm site.
 - #5067 clause 8 / #5144 — the pre-arm mergeability precondition and its probe: the arm is not
   refused by the platform on a conflicted PR, so the gate is load-bearing rather than redundant.
+- #6902 — the measured cost of arming on a definite `dirty` anyway (PR #6894): a parked intent, an
+  enqueue round, and one of lane 6374's two retries. The `16` refusal is that evidence applied.
 
 ---
 
@@ -1704,10 +1739,10 @@ access.
 
 **A definite `mergeable_state` is asserted before the write**, on the same poll policy
 `ship enqueue` uses and out of the same shared read — indefinite is re-read up to 3 times, 2 seconds
-apart, and a still-indefinite value is UNKNOWN and refuses `11`. Unlike the arm, this verb also acts
-on the definite value: a definite `mergeable: false` refuses `16` rather than sending a call the
-endpoint will reject with a 405 that is indistinguishable, from the outside, from a write whose
-outcome nobody knows.
+apart, and a still-indefinite value is UNKNOWN and refuses `11`. A definite `mergeable: false`
+refuses `16`, the same line the arm draws (#6902), rather than sending a call the endpoint will
+reject with a 405 that is indistinguishable, from the outside, from a write whose outcome nobody
+knows.
 
 **The landing is proven, not claimed.** The write hands the platform the **full** live head as its
 `sha` parameter, so the platform rejects it if the head moved — a second drift guard under the

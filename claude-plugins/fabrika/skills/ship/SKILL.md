@@ -151,6 +151,10 @@ otherwise; after the nudge, re-enter this step once. `no-producer` → this repo
 declared `ci.noProducer: "degrade"` for itself: disarm, note that the head carries no CI evidence,
 stop. It is not `pending` and no nudge reaches it — nothing will ever start. `budget-exhausted` → disarm, note,
 stop. `head-moved` → start over at step 1; every answer so far was about a tree that is gone.
+Exit `20` prints no rollup at all: every check at the head passed and no workflow this repo authors
+produced a run there, so nothing gated the bytes you would merge. Disarm, note that the head carries
+no gate coverage, stop — it is a dropped trigger a human owns, not a `green` with a caveat and not a
+`no-runs` a nudge reaches (#6915).
 **You never re-run, re-trigger, or locally reproduce a check** — CI's verdict is CI's. Each terminal's
 proof, the `--wait` budget and the nudge's own refusals are their sections
 (`fabrika wire doc-section --heading "ship checks" < <skill-base>/contract.md`, then
@@ -224,10 +228,12 @@ fabrika ship reconcile $pr_number
 ```
 
 `enqueue` is the only step that arms an intent, and it never passes a merge-method flag — the
-queue owns the method (a `--squash` no-ops the enqueue silently). It asserts a **definite**
-`mergeable_state` before it arms and refuses `11` if the value stays indefinite: GitHub happily
-arms a conflicted PR, so an unknown read is never green. That refusal is not a stall — it means
-mergeability is unknown, so stop and say so; nothing was armed. `reconcile`'s terminals are
+queue owns the method (a `--squash` no-ops the enqueue silently). It asserts a **definite and
+mergeable** `mergeable_state` before it arms: `11` if the value stays indefinite, `16` if the read
+definitely says not mergeable. GitHub happily arms a conflicted PR and parks the intent, so neither
+an unknown read nor a proven conflict is green. Neither refusal is a stall and nothing was armed —
+on `11` say mergeability is unknown, on `16` route to repair; the PR needs a rebase before any of
+this runs again. `reconcile`'s terminals are
 the run's terminals: `landed` → step 8. `ejected` → `disarm --site ejected`, note, route to
 repair; re-entry is rebase → re-review → fresh gate pass, never a re-enqueue on old verdicts.
 `unresolved` → report it in those words with the horizon; still-queued at the horizon is

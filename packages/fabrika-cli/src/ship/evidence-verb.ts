@@ -26,6 +26,7 @@ import {
 	listRunArtifacts,
 	listRunsAtHead,
 	makeScratchDirectory,
+	type WorkflowRun,
 	workflowExists,
 } from "./github.ts";
 import {
@@ -74,6 +75,29 @@ export const withinFreshnessWindow = (completedAt: string | null, nowMs: number)
 	const finished = Date.parse(completedAt);
 	if (Number.isNaN(finished)) return false;
 	return nowMs - finished <= FRESH_COMPLETION_SECONDS * 1000;
+};
+
+/**
+ * GitHub's conclusion for a run it created but will not start without a human approval. A run
+ * parked this way reports `status: "completed"`, so it is not `pending`, and it publishes nothing.
+ */
+const PARKED_CONCLUSION = "action_required";
+
+/**
+ * Pick the producer run when a head carries several.
+ *
+ * A Release PR's head carries two after #6759: the `pull_request` run GitHub parks on the bot's
+ * branch, and the dispatched one that actually runs. A first match decides that on GitHub's
+ * undocumented return order for `runs?head_sha=`, and losing the tie reads `absent` at a head whose
+ * bundle exists — the exact symptom #6759 kills. So a parked run never wins over one that is not
+ * parked. It is still returned when it is all there is, so the `lookup` line names the run behind
+ * the `absent` rather than nothing.
+ */
+export const selectProducerRun = (runs: ReadonlyArray<WorkflowRun>): WorkflowRun | undefined => {
+	const candidates = runs.filter((candidate) => candidate.name.includes(ARTIFACT_NAME));
+	return (
+		candidates.find((candidate) => candidate.conclusion !== PARKED_CONCLUSION) ?? candidates[0]
+	);
 };
 
 export interface ManifestCheck {
@@ -204,8 +228,13 @@ export const runEvidence = (
 				diagnostics,
 			);
 		}
-		const run = listed.value.runs.find((candidate) => candidate.name.includes(ARTIFACT_NAME));
+		const run = selectProducerRun(listed.value.runs);
 		if (run === undefined) return emit("absent", null, null, null, []);
+		if (run.conclusion === PARKED_CONCLUSION) {
+			diagnostics.push(
+				`${VERB}: every ${ARTIFACT_NAME} run at ${bound} is parked at ${PARKED_CONCLUSION} — GitHub created run ${run.id} but never started it, so nothing was published.`,
+			);
+		}
 		if (run.status !== "completed") return emit("pending", run.id, null, run.status, []);
 
 		const artifacts = yield* listRunArtifacts(repo, run.id);

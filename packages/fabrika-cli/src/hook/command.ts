@@ -10,19 +10,11 @@
  */
 import {Effect} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {emit as emitOutcome} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emitOutcome = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),

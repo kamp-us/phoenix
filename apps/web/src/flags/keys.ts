@@ -137,6 +137,13 @@ export const PHOENIX_CAYLAK_VISIBILITY = "phoenix-caylak-visibility";
  */
 export const PHOENIX_FUNNEL_COHORT = "phoenix-funnel-cohort";
 
+/**
+ * The single seam for the welcome arrival (#7043, epic #4304) — the post-auth redirect
+ * intercept AND the `/hosgeldin` welcome surface reuse this one key, so one flip releases
+ * the whole slice. Default-off, ADR 0083.
+ */
+export const PHOENIX_WELCOME = "phoenix-welcome";
+
 /** A declared flag paired with its default variation — the row the flags console lists (#2742). */
 export interface FlagDeclaration {
 	readonly key: string;
@@ -164,4 +171,5 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: MEMBER_MUTE, defaultValue: false},
 	{key: PHOENIX_CAYLAK_VISIBILITY, defaultValue: false},
 	{key: PHOENIX_FUNNEL_COHORT, defaultValue: false},
+	{key: PHOENIX_WELCOME, defaultValue: false},
 ];

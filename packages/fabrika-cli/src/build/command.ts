@@ -16,11 +16,12 @@ import {randomUUID} from "node:crypto";
 import {tmpdir} from "node:os";
 import {Effect, type FileSystem, Option, Result} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
-import {refuse, type VerbOutcome} from "../verb.ts";
+import {refuse} from "../verb.ts";
 import {runBranch} from "./branch-verb.ts";
 import {runCheck} from "./check-verb.ts";
 import {runAdopt, runClaim, runConfirm, runRelease} from "./claim-verb.ts";
@@ -35,6 +36,7 @@ import {runNote} from "./note-verb.ts";
 import {runPick} from "./pick-verb.ts";
 import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
+import {runReap} from "./reap-verb.ts";
 import {runRetire} from "./retire-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
@@ -48,14 +50,6 @@ import {
 import {runScratch} from "./scratch-verb.ts";
 import {runTree} from "./tree-verb.ts";
 import {runChildVerdicts, runVerdicts} from "./verdicts-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
@@ -219,7 +213,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Race the claim marker on an issue and win it or name the winner."),
 	Command.withDescription(
-		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<session-id>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. The type axis binds a build claim against an ISSUE only, so ${DECISION_TYPE_LABEL} and ${EPIC_TYPE_LABEL} refuse before any marker is written; --cites ${CITATION_GRAMMAR} opens it on a decision whose choice a founder already recorded on that issue, and the URL must name this repository and the issue being judged. It is not an override: it says the refusal does not apply, and it is never accepted for an epic. The criteria axis binds a fresh build claim against an ISSUE only: a body with no readable \`### Acceptance criteria\` block refuses on 32 before any marker, absent or malformed, and it is not overridable — the repair belongs on the issue (triage enrich, triage repair-criteria), not on a branch (#6554). Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used and "cites" when a ruling was cited. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); no session id is set (FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION), a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. After the admission test, and only against an ISSUE, a blockedness gate reads the native blocked_by graph (ADR 0301): a number with any blocker still open refuses on 16 naming every one of them, and an edge list that could not be read is 11 — never "not blocked". It is not overridable, because the remedy is waiting rather than an edit. Then, on a fresh build-purpose claim only, a prior-build gate reads the number's range-scoped verdict comments — where an epic child's review lands, since a child opens no PR (ADR 0285/0276): a child carrying ANY standing verdict refuses on 31, naming each namespace, polarity, range and comment id — a FAIL points at "--resume", a PASS-only child points at the epic driver's fold and never at --resume (#6715) — and --resume on a child holding no standing FAIL refuses on 31 too. Unreadable comments are 11, never "no prior build", and neither direction is overridable — --override admits a scope refusal, and this is not one. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), 16 (proven blocked), 31 (the claim's mode and the child's standing verdict disagree), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
+		`Race the earliest AUTHORIZED claim marker on an issue: post this session's token (build:<session-id>:<uuid>), re-read, and win or name the winner. Authorization is the author's repository permission (ADR 0055) — marker text confers nothing. The admission test runs FIRST, before any marker is written, so a refused claim leaves no trace to retract. --purpose says why this lane claims (${CLAIM_PURPOSES.join(" | ")}, default ${DEFAULT_CLAIM_PURPOSE}): the audience axis (${READY_FOR_AGENT}) binds a build claim only, because an epic earns that label AFTER it is planned and gated (#5175); the scope axis binds every purpose, and an off-enum --purpose refuses on 10 rather than falling back. --override "<reason>" admits a proven refusal and REQUIRES --override-lane "<lane>"; both are recorded on the marker, and an UNKNOWN admission is never overridable. The type axis binds a build claim against an ISSUE only, so ${DECISION_TYPE_LABEL} and ${EPIC_TYPE_LABEL} refuse before any marker is written; --cites ${CITATION_GRAMMAR} opens it on a decision whose choice a founder already recorded on that issue, and the URL must name this repository and the issue being judged. It is not an override: it says the refusal does not apply, and it is never accepted for an epic. The criteria axis binds a fresh build claim against an ISSUE only: a body with no readable \`### Acceptance criteria\` block refuses on 32 before any marker, absent or malformed, and it is not overridable — the repair belongs on the issue (triage enrich, triage repair-criteria), not on a branch (#6554). Prints {"answer":"won","number":n,"token":"…","purpose":"…"}, plus "override":{"lane","reason"} when one was used and "cites" when a ruling was cited. --token makes the re-claim idempotent per LANE: handed the token this lane already holds, a number that lane already owns answers won with that same marker and writes nothing (#5782), while a same-session marker under another nonce is a sibling lane and races normally. A lost race retracts this run's own marker and exits 15, never 0 — including when the winner is another lane of THIS session, since ownership turns on the whole token and never the session id (#6037); no session id is set (FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION), a --token that is not a claim token of this session, an empty --override reason, an --override with no lane, or an --override-lane with no override, is 1. After the admission test, and only against an ISSUE, a blockedness gate reads the native blocked_by graph (ADR 0301): a number with any blocker still open refuses on 16 naming every one of them, and an edge list that could not be read is 11 — never "not blocked". An open blocker whose work already landed on the parent epic's assembly branch is discharged off the same derivation build eligible answers from (ADR 0285, #7035), so the two seams cannot disagree about one edge; an unreadable branch, an unnameable trunk and a standalone issue all leave every edge as the board read it, and a parent that could not be read is 11. It is not overridable, because the remedy is waiting rather than an edit. Then, on a fresh build-purpose claim only, a prior-build gate reads the number's range-scoped verdict comments — where an epic child's review lands, since a child opens no PR (ADR 0285/0276): a child carrying ANY standing verdict refuses on 31, naming each namespace, polarity, range and comment id — a FAIL points at "--resume", a PASS-only child points at the epic driver's fold and never at --resume (#6715) — and --resume on a child holding no standing FAIL refuses on 31 too. Unreadable comments are 11, never "no prior build", and neither direction is overridable — --override admits a scope refusal, and this is not one. Exits 7 (issue proven absent or closed), 8 (the marker write failed — UNKNOWN; run confirm), 9 (the marker landed but does not read back), 10 (--purpose is off-enum), 15 (proven lost), 16 (proven blocked), 31 (the claim's mode and the child's standing verdict disagree), and from the admission test: ${admissionExits}. Example: fabrika build claim 4312 --purpose gate`,
 	),
 );
 
@@ -272,6 +266,25 @@ const retire = leafCommand(
 	Command.withShortDescription("Take back the checkout an orphaned build worktree is holding."),
 	Command.withDescription(
 		'Retire the working trees of this clone that hold #<n>\'s lane branch, so a repair lane refused at "build branch --resume-lane" can stand where it needs to (ADR 0323). Two licenses, both written positive board states and never an inference from a tree that looks idle: the ticket is TERMINAL (a closed issue, a merged PR), or an authorized ADR 0295 build-adopt marker on #<n> names the session whose claim carries that branch\'s lane nonce. DIRTINESS IS NOT A REFUSAL — an agent routinely leaves a worktree dirty after its ticket merged — and it costs nobody their only copy either: ADR 0321\'s salvage runs first, committing whatever the tree holds uncommitted onto its own branch, and only then is the tree removed WITHOUT --force, which that ADR bans on every path. A removal that still refuses (a locked tree does, however clean) is reported as an incident to file, never overridden. The removal takes the tree, never the branch. It first prunes registrations whose directory is already gone, never removes the tree the run is standing in, and reads every removal back off a second worktree list. A worktree-isolated caller may run it — the harness rule that refuses a typed cross-worktree git does not bind a verb\'s own child process. Prints {"answer":"retired"|"held"|"none","number":n,"retired":[…],"held":[…]}. Exits 7 (#<n> proven absent), 8 (the salvage or the removal failed — UNKNOWN), 9 (git reported a removal and the registration survives), 11 (a precondition read failed), 33 (a tree still holds the branch and the board licenses no release). Example: fabrika build retire 6567',
+	),
+);
+
+const reap = leafCommand(
+	"reap",
+	{
+		execute: Flag.boolean("execute").pipe(
+			Flag.withDescription(
+				"actually remove the trees classified REMOVE (default: false — print the classification and mutate nothing)",
+			),
+		),
+	},
+	Effect.fn(function* ({execute}) {
+		yield* emit(yield* runReap({execute}));
+	}),
+).pipe(
+	Command.withShortDescription("Reclaim the finished agent worktrees this clone never removed."),
+	Command.withDescription(
+		'Sweep the registrations under .claude/worktrees/agent-* and classify each KEEP or REMOVE. REMOVE needs THREE positive proofs together: the tree holds nothing uncommitted, it carries no lock, and its HEAD is already on the trunk — reachable from origin/HEAD, or landed there as a squash (ADR 0048), matched by comparing the patch id of what the HEAD adds against the trunk\'s own patches over exactly those paths. The subject is the HEAD COMMIT, not a branch: the harness detaches the trees it registers, so a branch-keyed rule would judge almost none of them. EVERYTHING ELSE IS KEEP, per tree — dirty, locked, prunable, unlanded, and every read that failed — so one unreadable directory costs its own row and not the sweep. THE DEFAULT RUN MUTATES NOTHING: it prints the per-tree classification with its reason and stops; --execute is what removes. Each removal runs plain `git worktree remove` and NEVER --force, which ADR 0321 bans on every path; a removal git refuses leaves the tree registered and is reported, and every removal is read back off a second worktree list. The removal takes the tree, never the branch. Both halves of the report — what went and what was deliberately kept — are on stderr on every path, so a survivor is visible without re-running. Prints {"answer":"planned"|"reaped"|"none","executed":bool,"trunk":"origin/main","scanned":n,"removable"|"removed":[…],"kept":[…]}. Exits 8 (git refused a removal — the tree stays), 9 (git reported a removal and the registration survives, or the read-back failed), 11 (this run\'s own root, the registrations, or the trunk could not be read — nothing was removed). Example: fabrika build reap --execute',
 	),
 );
 
@@ -713,6 +726,7 @@ export const buildCommand = Command.make("build").pipe(
 		release,
 		adopt,
 		retire,
+		reap,
 		issue,
 		branch,
 		scratch,

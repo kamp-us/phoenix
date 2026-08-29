@@ -37,6 +37,10 @@ export const NO_SANDBOX_SWEEP: SandboxSweep = {
 	definitionIds: [],
 };
 
+/** How many sandboxed entries the sweep made public — the backlog-release moment's count (#7061). */
+export const sweptEntryCount = (sweep: SandboxSweep): number =>
+	sweep.postIds.length + sweep.commentIds.length + sweep.definitionIds.length;
+
 /**
  * Lives beside the shape so a field added above cannot leave the publisher's early
  * return reading half of it.

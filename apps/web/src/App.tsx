@@ -22,6 +22,7 @@ import {Topbar} from "./components/layout/Topbar";
 import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
 import {EmailDeliveryNoticeMount} from "./components/membrane/EmailDeliveryNoticeMount";
 import {actorLabel} from "./components/moderation/actor-identity";
+import {hasSeenWelcome, welcomeStorage} from "./components/onboarding/welcomeSeen";
 import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
@@ -33,7 +34,7 @@ import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {readBootUser} from "./flags/boot";
 import {EdgeShellBootMarker} from "./flags/EdgeShellBoot";
-import {MECMUA_PUBLIC_READ, PHOENIX_BILDIRIM} from "./flags/keys";
+import {MECMUA_PUBLIC_READ, PHOENIX_BILDIRIM, PHOENIX_WELCOME} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {AtolyeExhibitPage} from "./lab/atolye/AtolyeExhibitPage";
 import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
@@ -65,6 +66,8 @@ import {useUsernameResolutionPending} from "./pages/signupUsernameGate";
 import {UsernameBootstrap} from "./pages/UsernameBootstrap";
 import {UserProfilePage} from "./pages/UserProfilePage";
 import {useProfileStats} from "./pages/useProfileStats";
+import {WelcomePage} from "./pages/WelcomePage";
+import {postAuthDestination, WELCOME_PATH} from "./pages/welcomeGating";
 
 type TopbarChips = {
 	userProps: {user: {name: string; username: string | null}} | undefined;
@@ -250,6 +253,9 @@ function LayoutContent() {
 	const divanCount = useDivanPendingCount(showDivan);
 	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
 	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data, me?.id ?? null);
+	// The welcome arrival's seam (#7043): one flag releases both this intercept and the
+	// /hosgeldin surface.
+	const {value: welcomeOn, loading: welcomeLoading} = useFlag(PHOENIX_WELCOME, false);
 	// #1888: hold the off-/auth redirect while a chosen-username signup is still
 	// resolving. `signUp.email` establishes the session before the separate
 	// `setUsername` lands; without this hold the redirect unmounts AuthPage and
@@ -261,10 +267,28 @@ function LayoutContent() {
 		if (!session.data) return;
 		if (location.pathname !== "/auth") return;
 		if (usernamePending) return;
+		// `PHOENIX_WELCOME` is not a boot member (ADR 0179), so it starts `{value:false,
+		// loading:true}` and resolves async. Without this hold a session that settles first
+		// navigates on the not-yet-loaded `false`, unmounting /auth before the enabled value
+		// lands — and a brand-new account never reaches /hosgeldin with the flag ON.
+		if (welcomeLoading) return;
 		const params = new URLSearchParams(location.search);
 		const target = safeReturnTo(params.get("returnTo"));
-		navigate(target, {replace: true});
-	}, [session.data, location.pathname, location.search, navigate, usernamePending]);
+		// The welcome intercept (#7043, epic #4304): flag on + never welcomed ⇒ the first
+		// post-auth navigation detours through /hosgeldin carrying the original target as
+		// its returnTo. Flag off ⇒ byte-for-byte today's redirect (see `postAuthDestination`).
+		const welcomeSeen = welcomeOn ? hasSeenWelcome(welcomeStorage(), session.data.user.id) : false;
+		const destination = postAuthDestination(welcomeOn, welcomeSeen, target);
+		navigate(destination.to, {replace: true});
+	}, [
+		session.data,
+		location.pathname,
+		location.search,
+		navigate,
+		usernamePending,
+		welcomeOn,
+		welcomeLoading,
+	]);
 
 	const sessionUser = session.data?.user;
 	const username = me?.username ?? null;
@@ -409,6 +433,9 @@ export function App() {
 						</Route>
 						<Route path="/search" element={<SearchPage />} />
 						<Route path="/auth" element={<AuthPage />} />
+						{/* The welcome moment (#7043) — dark behind phoenix-welcome; the page owns
+						    its own visibility per `.patterns/flag-dark-page-gate.md`. */}
+						<Route path={WELCOME_PATH} element={<WelcomePage />} />
 						<Route path="/funnel" element={<FunnelPage />} />
 						<Route path="/bildirimler" element={<BildirimlerPage />} />
 						{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,

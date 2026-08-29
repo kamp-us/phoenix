@@ -11,9 +11,9 @@
  */
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runChecks} from "./checks-verb.ts";
 import {runCpApproval} from "./cp-approval-verb.ts";
 import {runDisarm} from "./disarm-verb.ts";
@@ -30,14 +30,6 @@ import {runRelease} from "./release-verb.ts";
 import {runResolve} from "./resolve-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runThreads} from "./threads-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,
@@ -239,7 +231,7 @@ const checks = leafCommand(
 ).pipe(
 	Command.withShortDescription("Roll up the head CI, latest run per context."),
 	Command.withDescription(
-		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs|no-producer>`, then `run\\t<count>` — the latest-per-context runs read, gating and informational both — then the collapsed tally of those runs, one `check\\t<status>/<gating|informational>\\t<count>` line per class, count-descending with ties broken on the class, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. The runs a terminal reads by name are named on stderr instead: the wedged run, and the failing gating runs to route to heal-ci (informational failures are excluded — they gate nothing). A repo with zero workflows is `no-producer`, never `pending`: no CI at all and CI that has not reported yet are different facts. That case refuses unless `.fabrika.jsonc` declares `ci.noProducer: \"degrade\"`. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows and the informational carve-out is ADR 0061's denylist; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's (#3999). Exits 7 (PR or --sha proven absent, or zero workflows under the default — ADR 0092), 11 (the check-run read, the workflow read or `.fabrika.jsonc` failed — CI state is UNKNOWN, never green), 13 (entries received < declared). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
+		"Roll up the head CI from REST check-runs, latest-per-context. First stdout line is `checks\\t<sha>\\t<green|red|pending|wedged|no-runs|no-producer>`, then `run\\t<count>` — the latest-per-context runs read, gating and informational both — then the collapsed tally of those runs, one `check\\t<status>/<gating|informational>\\t<count>` line per class, count-descending with ties broken on the class, and `facts\\tworkflows:<n>\\truns:<n>` — the zero-checkset discriminators. The runs a terminal reads by name are named on stderr instead: the wedged run, and the failing gating runs to route to heal-ci (informational failures are excluded — they gate nothing). A repo with zero workflows is `no-producer`, never `pending`: no CI at all and CI that has not reported yet are different facts. That case refuses unless `.fabrika.jsonc` declares `ci.noProducer: \"degrade\"`. A `green` is served only over bytes a gate of this repo's own inspected: where the rollup would be green the head's workflow runs are read against the active inventory through the same `review ci` coverage module, repo-authored `.github/workflows/…` paths told from the platform's `dynamic/<provider>/<name>` ones, and a head where the repo declares workflows and none of them ran refuses on 20 rather than printing the word this group merges on (#6915); otherwise the coverage rides the notes channel. With --wait a `settle\\t<settled|budget-exhausted|head-moved>` line leads the emission. The rollup is fail-closed on the ambiguous rows and the informational carve-out is ADR 0061's denylist; a wedge is diagnosed and named, and the cancel-and-rerun lever stays an operator's (#3999). Exits 7 (PR or --sha proven absent, or zero workflows under the default — ADR 0092), 11 (the check-run read, the workflow read or `.fabrika.jsonc` failed — CI state is UNKNOWN, never green), 13 (entries received < declared), 20 (every check passed and no workflow the repo authors produced a run at this head — no gate inspected these bytes). Example: fabrika ship checks 4321 --sha 03135b91 --wait",
 	),
 );
 
@@ -309,7 +301,7 @@ const enqueue = leafCommand(
 ).pipe(
 	Command.withShortDescription("Arm the merge queue at a pinned head and prove it landed."),
 	Command.withDescription(
-		"Arm the merge queue's auto-merge at a pinned head and prove the arm landed. Prints `enqueued\\t<sha>\\t<queued|settling>` — `settling` is the normal race, not a failure. There is NO merge-method flag by construction: the queue owns the method, and a method flag alongside the arm silently no-ops the enqueue at exit 0. `auto_merge: null` post-enqueue is expected and is never read as a jam. Before the arm, a DEFINITE `mergeable_state` is asserted: `mergeable` is computed lazily so an indefinite value is polled, and if it is still indefinite it is UNKNOWN and refuses — GitHub accepts the arm on a conflicted PR under a queue-governed base, so nothing else stands between `dirty` and a parked intent. Exits 7 (PR proven absent, closed or already merged), 8 (the arm or its confirming read-back failed — whether an intent is parked is UNKNOWN, so run `fabrika ship disarm --site refuse` before stopping), 11 (the live head or the mergeability could not be read, or mergeability stayed indefinite — nothing was armed), 12 (the live head moved past --sha — refusing to arm a tree nobody verified). Example: fabrika ship enqueue 4321 --sha 03135b91",
+		"Arm the merge queue's auto-merge at a pinned head and prove the arm landed. Prints `enqueued\\t<sha>\\t<queued|settling>` — `settling` is the normal race, not a failure. There is NO merge-method flag by construction: the queue owns the method, and a method flag alongside the arm silently no-ops the enqueue at exit 0. `auto_merge: null` post-enqueue is expected and is never read as a jam. Before the arm, a DEFINITE and TRUE `mergeable` is asserted: `mergeable` is computed lazily so an indefinite value is polled, and if it is still indefinite it is UNKNOWN and refuses on 11; a definite `mergeable: false` refuses on 16. GitHub accepts the arm on a conflicted PR under a queue-governed base and parks the intent, so nothing else stands between `dirty` and an enqueue round spent to rediscover the conflict at reconcile (#6902). Exits 7 (PR proven absent, closed or already merged), 8 (the arm or its confirming read-back failed — whether an intent is parked is UNKNOWN, so run `fabrika ship disarm --site refuse` before stopping), 11 (the live head or the mergeability could not be read, or mergeability stayed indefinite — nothing was armed), 12 (the live head moved past --sha — refusing to arm a tree nobody verified), 16 (the PR is provably not mergeable — nothing was armed). Example: fabrika ship enqueue 4321 --sha 03135b91",
 	),
 );
 

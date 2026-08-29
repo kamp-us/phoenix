@@ -13,7 +13,9 @@
  * blocked", and the whole derivation lives in [`./blockedness.ts`](./blockedness.ts), the one reader
  * over that one source.
  *
- * **A blocker is discharged by a closed issue OR by a landed commit** (`./landed.ts`, #6063). Under
+ * **A blocker is discharged by a closed issue OR by a landed commit** (`./discharge.ts`, #6063).
+ * That derivation is shared with the claim seam, which once carried none and refused an edge this
+ * verb had already discharged (#7035). Under
  * ADR 0285 an epic run's children stay open until the single tail PR merges, so inside a run the
  * closed-state proxy answers "is the issue closed" where the gate means "did the work land" — and
  * reading only the first makes every later-phase child unbuildable until the epic it blocks has
@@ -33,36 +35,11 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {readBlockedness} from "./blockedness.ts";
 import {BLOCKED, PRECONDITION_UNKNOWN} from "./codes.ts";
+import {assemblyNotes, dischargeLanded} from "./discharge.ts";
 import {getParent} from "./github.ts";
-import {type Assembly, readAssembly} from "./landed.ts";
 import {openIssue, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "build eligible";
-
-/** One edge the board did not discharge, and the blocker it names. */
-interface Edge {
-	readonly number: number;
-	readonly text: string;
-}
-
-/** What the assembly-branch read added to the answer, said on stderr so the upgrade is auditable. */
-const assemblyNotes = (
-	assembly: Assembly | null,
-	discharged: ReadonlyArray<Edge>,
-): ReadonlyArray<string> => {
-	if (assembly === null) return [];
-	if (assembly._tag === "Unreadable") {
-		return [
-			`${VERB}: cannot read ${assembly.branch} in this tree: ${assembly.reason} — no edge is counted discharged off it, and every edge keeps the state the board gave it.`,
-		];
-	}
-	const range = `${assembly.baseRef}..${assembly.branch}`;
-	return discharged.length === 0
-		? [`${VERB}: ${range} adds ${assembly.commits} commit(s), none naming an undischarged blocker.`]
-		: [
-				`${VERB}: ${range} adds a commit naming ${discharged.map((edge) => `#${edge.number}`).join(", ")} — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).`,
-			];
-};
 
 export interface EligibleOptions {
 	readonly number: number;
@@ -115,32 +92,19 @@ export const runEligible = (
 			"blocked_by edge",
 			epic === null ? "standalone" : `parent #${epic}`,
 		);
-		const open: ReadonlyArray<Edge> = blockedness.open.map((n) => ({
-			number: n,
-			text: `#${n}`,
-		}));
-		const unread: ReadonlyArray<Edge> = blockedness.unread.map((row) => ({
-			number: row.number,
-			text: `${VERB}: cannot read blocker #${row.number}: ${row.reason} — its state is UNKNOWN, never counted closed.`,
-		}));
-
-		// The branch is read only when an edge is still undischarged, and only when there is an epic
-		// whose assembly branch could carry it — a standalone issue's blockers land nowhere derivable.
-		const undischarged = open.length + unread.length > 0;
-		const assembly =
-			undischarged && epic !== null ? yield* readAssembly(options.env, repo, epic) : null;
-		const landed = assembly?._tag === "Read" ? assembly.landed : new Set<number>();
-		const carries = (edge: Edge) => landed.has(edge.number);
-		const stillOpen = open.filter((edge) => !carries(edge));
-		const stillUnread = unread.filter((edge) => !carries(edge));
-		const branchNotes = assemblyNotes(assembly, [...open, ...unread].filter(carries));
+		const discharge = yield* dischargeLanded(options.env, repo, epic, blockedness);
+		const {open: stillOpen, unread: stillUnread} = discharge.remaining;
+		const branchNotes = assemblyNotes(VERB, discharge);
 
 		const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
-		const detail = stillUnread.map((edge) => edge.text);
+		const detail = stillUnread.map(
+			(row) =>
+				`${VERB}: cannot read blocker #${row.number}: ${row.reason} — its state is UNKNOWN, never counted closed.`,
+		);
 		if (stillOpen.length > 0) {
 			return refuse(
 				BLOCKED,
-				`${VERB}: blocked by ${plural(stillOpen.length, "open blocked_by edge")}: ${stillOpen.map((edge) => edge.text).join(", ")}.`,
+				`${VERB}: blocked by ${plural(stillOpen.length, "open blocked_by edge")}: ${stillOpen.map((blocker) => `#${blocker}`).join(", ")}.`,
 				[scope, ...branchNotes, ...detail],
 			);
 		}

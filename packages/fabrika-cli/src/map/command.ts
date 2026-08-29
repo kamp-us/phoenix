@@ -23,9 +23,9 @@
 import {randomBytes} from "node:crypto";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {KINDS} from "./body.ts";
 import {runDescope} from "./descope-verb.ts";
 import {runFinding} from "./finding-verb.ts";
@@ -36,14 +36,6 @@ import {runOpen} from "./open-verb.ts";
 import {runRead} from "./read-verb.ts";
 import {runRecord} from "./record-verb.ts";
 import {runTicket} from "./ticket-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,

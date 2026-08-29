@@ -8,19 +8,11 @@
  */
 import {Effect} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {DEFAULT_SPEND_LEDGER_PATH} from "./ledger.ts";
 import {runRead} from "./read-verb.ts";
 import {runRollup} from "./rollup-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const read = leafCommand(
 	"read",

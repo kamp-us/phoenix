@@ -206,6 +206,14 @@ Contract: [`skills/build/contract.md`](../../claude-plugins/fabrika/skills/build
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
 | `build verdicts` | the latest gate verdict per namespace at a PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |
+| `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute` |
+
+`build reap` is the bulk counterpart to `build retire`. `retire` targets the trees holding ONE
+number's lane branch and needs a board statement to release them; `reap` sweeps the whole agent
+population, which usually holds no lane branch at all (the harness detaches those trees), and asks
+git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the trunk — reachable
+from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
+every read that failed, is KEEP.
 
 **Exit codes.** The shared table, plus: `13` uncommitted changes at a `--require-clean` open ·
 `14` the checked-out branch is not this lane's · `15` this session does not hold the claim ·
@@ -576,6 +584,7 @@ snapshot. Lane state is local and never committed.
 | `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology |
 | `lane brief` | the spawn prompt for one task's current leaf state |
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
+| `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch to `ORIG_HEAD` and pushes nothing |
 | `lane stale` | which lanes have gone quiet with something owed on them — offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
 | `lane claim` / `release` | who is driving this lane |
 
@@ -590,7 +599,13 @@ be resolved · `20` several open PRs claim the task's issue · `21` the lane key
 tree is not on the run's assembly branch · `29` the push would not fast-forward · `30` the push ran
 and the ref did not move · `31` this session does not hold the driver's claim · `32` the terminal
 token is no shell's · `33` an assembly git write was aimed at the main working tree · `34` the
-assembly branch tracks another ref and clearing that upstream did not take.
+assembly branch tracks another ref and clearing that upstream did not take · `35` the `--cause` is
+outside the closed park-cause set · `36` the `UNBLOCKED` would restore a state with no budget left
+· `37` a booted lane's machine cannot be replaced by the template without moving the lane · `38`
+the `--class` is outside the review classes · `39` the cwd is not in a repository · `40` another
+writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
+branch · `42` the child conflicts and the merge was aborted · `43` the merged lockfile does not
+install, or the install changed a tracked file · `44` the merged tree failed a code validator.
 
 To open a lane, copy a template in and speak the operator's six events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED`:
@@ -869,11 +884,11 @@ record it. Contract:
 | `ship cp-approval` | the ADR 0175 cardinality discharge — `discharge` / `stop` / `n/a`, from head-bound signals only |
 | `ship gate` | the verdict conjunction over every required namespace |
 | `ship floor` | whether a governance-root diff carries its head-bound `governance` verdict |
-| `ship checks` | the head CI rollup, with the running-vs-wedged split and the zero-checkset facts |
+| `ship checks` | the head CI rollup, with the running-vs-wedged split, the zero-checkset facts, and the gate-coverage floor under `green` |
 | `ship evidence` | the SHA-bound run-evidence bundle as `present` / `pending` / `failed` / `absent` / `unknown`, with the manifest's checks collapsed to a status tally |
 | `ship threads` | every unresolved review thread, both pagination layers count-proved |
 | `ship resolve` | the sanctioned thread-resolution write, refusing any thread not positively bot-classed |
-| `ship enqueue` | the queue arm at a pinned head, method-flag-free by construction, proven landed |
+| `ship enqueue` | the queue arm at a pinned head, method-flag-free by construction, proven landed, refusing a provably not-mergeable PR before the arm |
 | `ship merge` | the landing on a base no merge queue governs, proof read back |
 | `ship reconcile` | the bounded post-enqueue watch — `landed` / `ejected` / `unresolved` / `parked` |
 | `ship disarm` | the four-site merge-intent lifecycle (ADR 0198), read-back-verified |

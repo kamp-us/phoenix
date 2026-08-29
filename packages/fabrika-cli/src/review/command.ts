@@ -11,10 +11,10 @@
  */
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {CAP_ROUND} from "../retry-budget.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runAppendCriterion} from "./append-criterion-verb.ts";
 import {runCi} from "./ci-verb.ts";
 import {runCriteria} from "./criteria-verb.ts";
@@ -23,14 +23,6 @@ import {runDiff} from "./diff-verb.ts";
 import {runPost} from "./post-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runVerdicts} from "./verdicts-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 /**
  * The two flags every verb in this group shares, declared once here.

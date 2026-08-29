@@ -60,6 +60,7 @@ import {
 	userAdminFlag,
 	userBanFlag,
 	userRoleAssignFlag,
+	welcomeFlag,
 } from "./worker/features/flagship/resources.ts";
 import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
@@ -145,6 +146,10 @@ export default Alchemy.Stack(
 		// rollup-record list and the client section gate behind, so the cohort DISPLAY can be
 		// enabled independently of the always-on capture until a human release.
 		yield* funnelCohortFlag(flagship.appId);
+		// The welcome-arrival dark-ship flag, default-off (#7043, epic #4304) — the single
+		// seam the post-auth redirect intercept in App.tsx and the /hosgeldin welcome surface
+		// gate behind, so the new-user arrival ships dark until a human release.
+		yield* welcomeFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

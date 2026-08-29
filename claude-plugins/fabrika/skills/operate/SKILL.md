@@ -251,21 +251,42 @@ it by the path `lane assembly` just printed — never by switching the tree you 
 
 ```bash
 node <fabrika> lane assembly $lane_key
-git -C <the path it printed> merge --no-ff <evidence.branch>
+node <fabrika> lane integrate <epic> --child <evidence.branch>
 ```
 
-`--no-ff` because each landing should be one commit a reader can name; a fast-forward would leave
-two children's ranges indistinguishable in the history the epic reviewer reads. A conflict is the
-`FAIL` that re-enters `build` under the retry budget — that route is why a cross-child collision
-resolves inside this run instead of at a merge queue. A clean merge is only half the answer: the
-**semantic** collision is two ranges that each passed alone and do not hold together, and it reads
-as the merged tree failing the repo's own checks — the same commands every child's `build check
---surface code` ran in its worktree, now run once over the assembly, in the assembly worktree. Non-zero there is the same `FAIL`.
+The verb is the merge and its whole verdict, so there is no hand-rolled `git merge` here: it merges
+`--no-ff` — each landing is one commit a reader can name, where a fast-forward would leave two
+children's ranges indistinguishable in the history the epic reviewer reads — and then judges the
+merged tree with the same commands every child's `build check --surface code` ran in its own
+worktree, run once over the assembly. Exit `0` prints the merged head with
+`INTEGRATE-VERDICT: MERGED` under it. Which event each exit is, is single-homed in
+[§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s `integrate` row and nowhere else —
+read it there rather than from this paragraph. Only `42`, `43` and `44` are the `FAIL` that re-enters
+`build` under the retry budget, which is why a cross-child collision resolves inside this run instead
+of at a merge queue.
 
-**The assembly branch moves only on a `DONE`.** On either `FAIL`, put it back where it was, in the
-same tree the merge happened in — `git -C <assembly path> merge --abort` on a conflict,
-`git -C <assembly path> reset --hard ORIG_HEAD` on a clean merge the checks refused
-— so the recorded `FAIL` names a branch that never carried the bad merge. The repair builder is
+**Between the merge and those checks it reconciles the merged tree's dependencies**, running the
+repo's declared `dependencyReconciler` — in phoenix `pnpm install --frozen-lockfile` — in the
+assembly worktree. That step is not housekeeping: the worktree was placed before the child existed,
+so a child adding a workspace package leaves the tree installed against the pre-merge lockfile, and
+child #7162 failed `pnpm typecheck --force` with a missing type definition on a tree whose code was
+fine, spending a lane retry on stale worktree state
+([#7188](https://github.com/kamp-us/phoenix/issues/7188)). It stays fail-closed at both ends: an
+install that cannot honour the merged lockfile is exit `43` and a `FAIL`, and so is one that
+*rewrites* it, because an assembly branch never carries an install's own repair.
+
+Read which `FAIL` you have off the exit code, because they take different repairs: `42` the child
+conflicts and nothing was installed, `43` the merged lockfile does not install or the install
+changed a tracked file, `44` the merged tree failed a validator — the semantic collision, two ranges
+that each passed alone and do not hold together. Those three are the whole `FAIL` set: they are the
+only exits that judge the merged tree, and every other one says something about the lane record, the
+worktrees or this checkout, which is never the child's to repair.
+
+**The assembly branch moves only on a `DONE`, and the verb is what keeps it there.** Every refusal
+below the merge resets the branch through `ORIG_HEAD` in the tree the merge happened in and reads
+its head back before answering, and a conflict is aborted the same way — so the recorded `FAIL`
+names a branch that never carried the bad merge, and an exit `8` means that restore did not take and
+nothing may be recorded against the tree at all. The repair builder is
 then the machine's own route out of `build`, and `lane brief` hands it both ranges: the child's
 issue, and the assembly branch, which by now carries every sibling that landed before it. Nothing
 reaches `landed` except back through `review`, because the resolution changes the content the
@@ -583,9 +604,29 @@ entered `build` — the artifact the builder's terminal names, read off the issu
 the report. An epic child's `BUILT-NO-PR` is the other proven `DONE` without a PR, and its artifact
 is the range's own commits — a child opens no PR to prove one against (#6019).
 
-**An `integrate` has no spawn to report**, so its row is the merge's own exit folded by the two
-rules step 2 named: a clean merge whose post-merge checks pass is `DONE`; a conflict, or a red
-check, is `FAIL`. `lane prove` answers `not-required` for both — a `DONE` out of `integrate` claims
+**An `integrate` has no spawn to report**, so its row is `lane integrate`'s own exit, and this table
+is the one home for that mapping — the verb exits twelve ways and every one is here, so there is no
+code left over for a catch-all to guess at:
+
+| Exit | What it says | Record |
+| --- | --- | --- |
+| `0` | the merged tree holds — the last stdout line is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head | `DONE` |
+| `42` | the child conflicts; the merge was aborted | `FAIL` |
+| `43` | the merged lockfile does not install, the reconciler could not be run, or it changed a tracked file | `FAIL` |
+| `44` | the merged tree failed a code validator | `FAIL` |
+| `4` · `7` · `8` · `11` · `22` · `33` · `39` · `41` | the lane record, the branch you passed, the worktrees or this checkout — never the merged tree | record **nothing** — end `STOPPED` naming the code |
+
+The bottom row is the whole reason this table is closed. Only `42`/`43`/`44` judge the child's
+content, so only those three may spend its retry budget; a `41` (no tree holds `epic/<n>`, placed
+with `lane assembly`), a `33` (the main checkout is standing on that branch) or a `22` (a `--child`
+branch that is not this repo's, so not the one `lane prove` printed) is the driver's own state, and
+recording a `FAIL` for it sends a child that is fine back through `build` — the exact harm
+[#7188](https://github.com/kamp-us/phoenix/issues/7188) exists to stop. `4` keeps the ruling
+[§1](#1--claim-the-lane-then-boot-or-resume) already gave it — a record read in full and not the
+shape, whose remedy is not `11`'s and not yours to guess — and `7` says no lane is there at all,
+which is a ledger to emit, not a child to send back.
+
+`lane prove` answers `not-required` for both recorded events — a `DONE` out of `integrate` claims
 no artifact a read could falsify — so it is still run and still gates the record.
 
 **Still binding** is one rule read against whichever artifact the subject has: on a PR, a verdict at

@@ -241,10 +241,15 @@ export type ExecStatus =
 export const execStatus = (
 	file: string,
 	args: ReadonlyArray<string>,
+	/** Where to run it; omitted, the child inherits this process's directory. */
+	cwd?: string,
 ): Effect.Effect<ExecStatus, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.scoped(
 		Effect.gen(function* () {
-			const handle = yield* ChildProcess.make(file, [...args]);
+			const handle =
+				cwd === undefined
+					? yield* ChildProcess.make(file, [...args])
+					: yield* ChildProcess.make(file, [...args], {cwd});
 			const [stdout, stderr, exitCode] = yield* Effect.all(
 				[collect(handle.stdout), collect(handle.stderr), handle.exitCode],
 				{concurrency: "unbounded"},

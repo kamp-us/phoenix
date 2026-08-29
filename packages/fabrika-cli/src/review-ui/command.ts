@@ -16,9 +16,10 @@ import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {designHarnessOr} from "../config/paths.ts";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import {refuse, type VerbOutcome} from "../verb.ts";
+import {refuse} from "../verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runNote} from "./note-verb.ts";
 import {runPost} from "./post-verb.ts";
@@ -26,14 +27,6 @@ import {captureRenderLeg} from "./render-leg.ts";
 import {runRender} from "./render-verb.ts";
 import {runRoute} from "./route-verb.ts";
 import {githubAttachmentUploadLeg} from "./upload-leg.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,

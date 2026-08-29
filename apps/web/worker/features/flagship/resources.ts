@@ -23,6 +23,7 @@ import {
 	PHOENIX_USER_ADMIN,
 	PHOENIX_USER_BAN,
 	PHOENIX_USER_ROLE_ASSIGN,
+	PHOENIX_WELCOME,
 	PROFILE_CANVAS,
 } from "../../../src/flags/keys.ts";
 
@@ -307,3 +308,28 @@ export const FUNNEL_COHORT_FLAG = {
 /** A plain boolean kill-switch, no targeting rules — see `caylakVisibilityFlag`. */
 export const funnelCohortFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_funnel_cohort", {appId, ...FUNNEL_COHORT_FLAG});
+
+/**
+ * The welcome-arrival dark-ship flag config (#7043, epic #4304). The SINGLE seam the whole
+ * slice gates behind: the post-auth redirect intercept in `App.tsx` and the `/hosgeldin`
+ * welcome surface. Default-OFF so the arrival ships dark — with it off the post-signup
+ * redirect behaves byte-for-byte as before; flipping it on is the human release act
+ * (ADR 0083).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           onboarding (the new-user arrival surface)
+ *   - originating:     #7043 (epic: new-user onboarding, #4304)
+ *   - removal trigger: once the welcome moment is on at 100% and stable for one release,
+ *                      retire the flag and inline the intercept.
+ */
+export const WELCOME_FLAG = {
+	key: PHOENIX_WELCOME,
+	description:
+		"welcome arrival — post-auth intercept + /hosgeldin surface dark-ship (#7043, epic #4304). owner: onboarding. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/** A plain boolean kill-switch, no targeting rules — see `caylakVisibilityFlag`. */
+export const welcomeFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_welcome", {appId, ...WELCOME_FLAG});

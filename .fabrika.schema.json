@@ -177,6 +177,27 @@
 			"minLength": 1,
 			"pattern": "^(?!/)(?!\\.\\.).+"
 		},
+		"dependencyReconciler": {
+			"type": [
+				"object",
+				"null"
+			],
+			"description": "The repo's command that installs what its lockfile pins — `lane integrate` runs it in the assembly worktree after a clean child merge, before the code validators. Absent or null runs no install.",
+			"properties": {
+				"command": {
+					"type": "array",
+					"description": "The argv to spawn — e.g. [\"pnpm\", \"install\", \"--frozen-lockfile\"].",
+					"items": {
+						"type": "string"
+					},
+					"minItems": 1
+				}
+			},
+			"required": [
+				"command"
+			],
+			"additionalProperties": false
+		},
 		"designHarness": {
 			"type": "string",
 			"description": "The design-harness file declaring the dev server `ui render` renders at, repo-relative.",

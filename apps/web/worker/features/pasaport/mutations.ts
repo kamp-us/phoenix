@@ -12,7 +12,7 @@ import {
 	PHOENIX_USER_ROLE_ASSIGN,
 } from "../../../src/flags/keys.ts";
 import {UserId} from "../../lib/ids.ts";
-import {notifyKefil, notifyPromotion} from "../bildirim/rite-emitters.ts";
+import {notifyBacklogRelease, notifyKefil, notifyPromotion} from "../bildirim/rite-emitters.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
@@ -35,6 +35,7 @@ import {CandidateId} from "./ids.ts";
 import {pasaportLive} from "./live.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {publishPromotion} from "./promote-live.ts";
+import {sweptEntryCount} from "./sandbox-sweep.ts";
 import {
 	toAccountDeletionReceipt,
 	toBanState,
@@ -393,11 +394,12 @@ const promoteGated = Effect.fn("user.promoteGated")(function* (input: typeof Pro
 	yield* Moderate;
 	const pasaport = yield* Pasaport;
 	const {promoted, sweep} = yield* pasaport.promoteToYazar({userId: input.userId});
-	// Both keyed on `promoted`, so an already-yazar no-op notifies and publishes nothing.
-	// Both are infallible (failures swallowed inside the emitter/publisher), so neither
+	// All keyed on `promoted`, so an already-yazar no-op notifies and publishes nothing.
+	// All are infallible (failures swallowed inside the emitter/publisher), so none
 	// can fail the committed flip.
 	if (promoted) {
 		yield* notifyPromotion({userId: input.userId});
+		yield* notifyBacklogRelease({userId: input.userId, releasedCount: sweptEntryCount(sweep)});
 		yield* publishPromotion(input.userId, sweep);
 	}
 	return toPromotionReceipt({userId: input.userId, promoted, vouchRecorded: false});

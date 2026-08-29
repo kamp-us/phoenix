@@ -16,9 +16,9 @@
  */
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runClassify} from "./classify-verb.ts";
 import {runDiagnose} from "./diagnose-verb.ts";
 import {runLogs} from "./logs-verb.ts";
@@ -27,14 +27,6 @@ import {runRerun} from "./rerun-verb.ts";
 import {SIGNATURE_IDS} from "./signatures.ts";
 import {runSurface} from "./surface-verb.ts";
 import {runSweep} from "./sweep-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const repoFlag = Flag.string("repo").pipe(
 	Flag.optional,

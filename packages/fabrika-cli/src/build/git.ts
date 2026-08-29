@@ -122,6 +122,75 @@ export const worktreeCheckouts: Shell<Attempt<ReadonlyArray<WorktreeCheckout>>> 
 	},
 );
 
+/** One registration of `git worktree list`, read whole rather than folded to a branch. */
+export interface WorktreeRegistration {
+	readonly path: string;
+	/** The commit it stands on, or `""` when the record named none (a bare repo). */
+	readonly head: string;
+	/** The branch it holds, or `null` when its HEAD is detached. */
+	readonly branch: string | null;
+	/** git's own lock reason, `""` when locked without one, `null` when unlocked. */
+	readonly locked: string | null;
+	/** Set when git already considers the record stale — its working directory is gone. */
+	readonly prunable: boolean;
+}
+
+/**
+ * Every registration of this clone, with the four facts a bulk sweep judges on.
+ *
+ * {@link worktreeCheckouts} answers a narrower question — who holds a branch — and drops the
+ * detached majority on the floor. The harness detaches the trees it registers, so a reclaimer built
+ * on that reader would be blind to most of what it exists to reclaim.
+ */
+export const worktreeRegistrations: Shell<Attempt<ReadonlyArray<WorktreeRegistration>>> =
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["worktree", "list", "--porcelain"]);
+		if (!r.ok) return fail(r.reason);
+		const records: Array<WorktreeRegistration> = [];
+		let open: {path: string; head: string; branch: string | null; locked: string | null} | null =
+			null;
+		let prunable = false;
+		const close = () => {
+			if (open !== null) records.push({...open, prunable});
+			open = null;
+			prunable = false;
+		};
+		for (const line of r.stdout.split("\n")) {
+			if (line.startsWith("worktree ")) {
+				close();
+				open = {path: line.slice("worktree ".length).trim(), head: "", branch: null, locked: null};
+			} else if (open === null) continue;
+			else if (line.startsWith("HEAD ")) open.head = line.slice("HEAD ".length).trim();
+			else if (line.startsWith("branch refs/heads/")) {
+				open.branch = line.slice("branch refs/heads/".length).trim();
+			} else if (line === "locked" || line.startsWith("locked ")) {
+				open.locked = line.slice("locked".length).trim();
+			} else if (line === "prunable" || line.startsWith("prunable ")) prunable = true;
+		}
+		close();
+		return ok(records);
+	});
+
+/**
+ * How many paths another worktree has uncommitted, read **without touching its index**.
+ *
+ * `--no-optional-locks` is the whole difference from {@link worktreeDirtyPaths}: an ordinary
+ * `git status` refreshes that tree's index as a side effect, and a dry run that says it mutates
+ * nothing may not write into a tree it is only reporting on.
+ */
+export const worktreeStatusPaths = (path: string): Shell<Attempt<number>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", [
+			"-C",
+			path,
+			"--no-optional-locks",
+			"status",
+			"--porcelain",
+		]);
+		if (!r.ok) return fail(r.reason);
+		return ok(r.stdout.split("\n").filter((line) => line.trim() !== "").length);
+	});
+
 /**
  * Drop the registrations whose working directory is gone — git's own definition of a stale record.
  *
