@@ -1,5 +1,7 @@
 # Derives each publishable package's next version from conventional commits and parks
-# the answer in a standing Release PR (ADR 0239). Merging that PR is the human release
+# the answer in that package's own standing Release PR (ADR 0239) — `separate-pull-requests`
+# is `true`, so there is one Release PR per configured package and no aggregate one.
+# Merging a Release PR is the human release
 # act: it tags `<component>-v<version>` and the tag creates the GitHub Release. Publishing
 # is always `publish.yml`, and it has two entrances (ADR 0292): the `release: published`
 # event on a human-cut release, and this workflow's dispatch on a bot-cut one — because a
@@ -54,7 +56,7 @@ permissions:
   actions: write
   checks: read
 
-# Never cancel in flight: a cancelled run can leave the standing Release PR groomed
+# Never cancel in flight: a cancelled run can leave a standing Release PR groomed
 # against a stale commit range.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -62,7 +64,7 @@ concurrency:
 
 jobs:
   release-please:
-    name: derive versions and groom the standing Release PR
+    name: derive versions and groom each package's standing Release PR
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -76,49 +78,123 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # The Release PR head branches, derived ONCE here and consumed by the two steps that
+      # have to find those PRs. Derived rather than hardcoded because a wrong constant is
+      # silent: both consumers look their PR up with `gh pr list --head`, which answers
+      # empty for a branch that does not exist, and an empty answer is indistinguishable
+      # from "no release is due" — so a stale name leaves both steps green while covering
+      # nothing (#7068).
+      #
+      # The grammar is read off the bundle `googleapis/release-please-action@v5.0.0` ships
+      # (`dist/index.js`): `if (!this.separatePullRequests)` gates the merge plugin, so with
+      # the flag `true` nothing is ever collapsed onto an aggregate branch, and each
+      # strategy takes `BranchName.ofComponentTargetBranch(...)` whenever its
+      # `getBranchComponent()` (`this.component || <default>`) is truthy, which renders
+      # `release-please--branches--<target>--components--<component>`. Both preconditions
+      # are asserted below rather than assumed, so a config change that invalidates the
+      # grammar reds this run instead of quietly emptying its consumers.
+      - name: Derive the Release PR branch names from the release-please config
+        id: release-branches
+        env:
+          # release-please is given no `target-branch` input, so it resolves its target to the
+          # repository's DEFAULT branch, not to the ref that happened to trigger this run. The
+          # two agree under `on: push: branches: [main]`, but only this one is right by
+          # construction.
+          TARGET_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -uo pipefail
+
+          config=release-please-config.json
+
+          # release-please resolves the flag PER PATH (`pathConfig.separatePullRequests ??
+          # defaultConfig.separatePullRequests`), so a package-level `false` collapses that one
+          # package onto the aggregate branch while the top-level key still reads `true`.
+          # `has` rather than `//`: jq's `//` treats a literal `false` as absent, so the
+          # override this assertion exists to catch is the one `//` would fall back past.
+          collapsing=$(jq -r '
+            (if has("separate-pull-requests") then ."separate-pull-requests" else false end) as $default
+            | .packages | to_entries[]
+            | select((if .value | has("separate-pull-requests") then .value["separate-pull-requests"] else $default end) != true)
+            | .key' "$config")
+          if [ -n "$collapsing" ]; then
+            echo "::error::these package roots do not resolve separate-pull-requests to true, so their release collapses onto the aggregate branch this workflow no longer names: $(echo "$collapsing" | tr '\n' ' ')"
+            exit 1
+          fi
+
+          # An empty-string component is not a missing one to release-please: `this.component ||
+          # default` treats it as falsy and falls back to the default component, so the real PR
+          # lands on a branch this step never renders.
+          uncomponented=$(jq -r '.packages | to_entries[] | select((.value.component // "") == "") | .key' "$config")
+          if [ -n "$uncomponented" ]; then
+            echo "::error::these package roots declare no usable component, so their Release PR branch cannot be named here: $(echo "$uncomponented" | tr '\n' ' ')"
+            exit 1
+          fi
+
+          branches=$(jq -r --arg target "$TARGET_BRANCH" \
+            '.packages | to_entries[] | "release-please--branches--\($target)--components--\(.value.component)"' "$config")
+          if [ -z "$branches" ]; then
+            echo "::error::$config configures no package, so this workflow would groom nothing."
+            exit 1
+          fi
+
+          {
+            echo 'branches<<RELEASE_BRANCHES_EOF'
+            echo "$branches"
+            echo 'RELEASE_BRANCHES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Release PR branches this run covers:"
+          echo "$branches"
+
       # #5946. release-please copies each commit subject verbatim into the Release PR
       # body, then on the NEXT run reads that body back through an HTML parser — one
       # subject's literal `<details>` gave it an element with no `<summary>` and every
       # run died on `summary.match(...)` for 20 hours. Repairing the body by hand does
       # not hold: the next green run rebuilds it from the same subject. So the repair
       # runs before every read, and the tool prints nothing when there is nothing to fix.
-      - name: Repair the standing Release PR body before release-please reads it
+      # Every configured package gets its own Release PR, so every one of them is read
+      # back and every one of them owes the repair.
+      - name: Repair the standing Release PR bodies before release-please reads them
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_BRANCH: release-please--branches--main
+          RELEASE_BRANCHES: ${{ steps.release-branches.outputs.branches }}
         run: |
           set -uo pipefail
 
-          number=$(gh pr list --state open --head "$RELEASE_BRANCH" --json number --jq '.[0].number // empty')
-          if [ -z "$number" ]; then
-            echo "No open Release PR on $RELEASE_BRANCH — nothing to repair."
-            exit 0
-          fi
+          # Process substitution and not `printf | while`: a piped loop runs in a subshell
+          # where the `exit 1`s below would abort nothing.
+          while IFS= read -r branch; do
+            [ -n "$branch" ] || continue
 
-          # `--jq .body` alone prints the literal `null` for a bodyless PR, which passes
-          # the emptiness test below and reaches the sanitizer.
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
-          if [ ! -s "$RUNNER_TEMP/body.md" ]; then
-            echo "::warning::Release PR #$number carries no body to repair."
-            exit 0
-          fi
+            number=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')
+            if [ -z "$number" ]; then
+              echo "No open Release PR on $branch — nothing to repair."
+              continue
+            fi
 
-          node packages/fabrika-cli/src/bin.ts ci pr-body \
-            < "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/repaired.md"
-          status=$?
-          if [ "$status" -ne 0 ]; then
-            echo "::error::ci pr-body exited $status — refusing to guess at the body."
-            exit "$status"
-          fi
+            # `--jq .body` alone prints the literal `null` for a bodyless PR, which passes
+            # the emptiness test below and reaches the sanitizer.
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
+            if [ ! -s "$RUNNER_TEMP/body.md" ]; then
+              echo "::warning::Release PR #$number carries no body to repair."
+              continue
+            fi
 
-          if [ ! -s "$RUNNER_TEMP/repaired.md" ]; then
-            echo "Release PR #$number already parses — no write."
-            exit 0
-          fi
+            if ! node packages/fabrika-cli/src/bin.ts ci pr-body \
+              < "$RUNNER_TEMP/body.md" > "$RUNNER_TEMP/repaired.md"; then
+              echo "::error::ci pr-body failed on Release PR #$number — refusing to guess at the body."
+              exit 1
+            fi
 
-          jq -Rs '{body: .}' < "$RUNNER_TEMP/repaired.md" \
-            | gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$number" --input -
-          echo "::notice::Repaired Release PR #$number's body so release-please can parse it back."
+            if [ ! -s "$RUNNER_TEMP/repaired.md" ]; then
+              echo "Release PR #$number already parses — no write."
+              continue
+            fi
+
+            jq -Rs '{body: .}' < "$RUNNER_TEMP/repaired.md" \
+              | gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$number" --input -
+            echo "::notice::Repaired Release PR #$number's body so release-please can parse it back."
+          done < <(echo "$RELEASE_BRANCHES")
 
       - uses: googleapis/release-please-action@v5.0.0
         id: release
@@ -186,8 +262,8 @@ jobs:
             echo "::notice::dispatched publish.yml at $tag."
           done
 
-      # Half two of #5718. The Release PR is the one PR in this repo whose checks nobody
-      # re-reads before merging, and until now it carried whatever the last human
+      # Half two of #5718. A Release PR is the one kind of PR in this repo whose checks
+      # nobody re-reads before merging, and until now it carried whatever the last human
       # close/reopen happened to leave there — stale-but-green reads exactly like ready.
       #
       # `!cancelled()` and not the implicit `success()`: a failed publish dispatch above, or
@@ -209,56 +285,61 @@ jobs:
       # refuses the release cut while every dashboard reads green — the same stale-green this
       # step exists to end, arriving one gate later. A parked run reports no check run at all,
       # which is exactly what makes the probe below dispatch rather than skip.
-      - name: Kick the standing Release PR's checks and evidence producer at its current head
+      - name: Kick each standing Release PR's checks and evidence producer at its current head
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_BRANCH: release-please--branches--main
+          RELEASE_BRANCHES: ${{ steps.release-branches.outputs.branches }}
         run: |
           # See the publish-dispatch step above for why `-e` is spelled out. Every read
           # whose failure this step wants to HANDLE rather than abort on sits in an `if`
           # condition, which is the only construct errexit exempts.
           set -euo pipefail
 
-          number=$(gh pr list --state open --head "$RELEASE_BRANCH" --json number --jq '.[0].number // empty')
-          if [ -z "$number" ]; then
-            echo "No open Release PR on $RELEASE_BRANCH — nothing to kick."
-            exit 0
-          fi
+          while IFS= read -r branch; do
+            [ -n "$branch" ] || continue
 
-          if ! head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.head.sha') || [ -z "$head" ]; then
-            echo "::error::could not read Release PR #$number's head SHA — refusing to dispatch at a head this run cannot name."
-            exit 1
-          fi
-
-          if ! reported=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/check-runs" --paginate --jq '.check_runs[].name'); then
-            echo "::warning::the check-run lookup for $head failed — dispatching every mapped workflow, because a missed dispatch is the stale-green this step exists to end."
-            reported=""
-          fi
-
-          # A literal list and not a here-doc: a here-doc's terminator has to sit at column 0,
-          # which no indented step body can give it, and a `printf | while` puts the loop in
-          # a subshell where the `exit 1`s below would abort nothing.
-          for entry in "ci.yml=ci-required" "leak-guard.yml=scan changed files for leaks" "run-evidence.yml=produce run-evidence bundle"; do
-            file="${entry%%=*}"
-            check="${entry#*=}"
-
-            if ! grep -qE '^[[:space:]]*workflow_dispatch:' ".github/workflows/$file"; then
-              echo "::error::.github/workflows/$file carries no workflow_dispatch trigger, so '$check' can never run on the Release PR."
-              exit 1
-            fi
-
-            if printf '%s\n' "$reported" | grep -Fxq "$check"; then
-              echo "'$check' already reported at $head — no dispatch."
+            number=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')
+            if [ -z "$number" ]; then
+              echo "No open Release PR on $branch — nothing to kick."
               continue
             fi
 
-            if ! gh workflow run "$file" --ref "$RELEASE_BRANCH"; then
-              echo "::error::dispatching $file at $RELEASE_BRANCH failed — Release PR #$number would keep reading stale-green."
+            if ! head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.head.sha') || [ -z "$head" ]; then
+              echo "::error::could not read Release PR #$number's head SHA — refusing to dispatch at a head this run cannot name."
               exit 1
             fi
-            echo "::notice::'$check' was missing at Release PR #$number's head $head — dispatched $file."
-          done
+
+            if ! reported=$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/check-runs" --paginate --jq '.check_runs[].name'); then
+              echo "::warning::the check-run lookup for $head failed — dispatching every mapped workflow, because a missed dispatch is the stale-green this step exists to end."
+              reported=""
+            fi
+
+            # A literal list and not a here-doc: a here-doc's terminator has to sit at column 0,
+            # which no indented step body can give it. It stays a single list read by both the
+            # trigger assertion and the dispatch, so a check can never be asserted in one place
+            # and dispatched from another.
+            for entry in "ci.yml=ci-required" "leak-guard.yml=scan changed files for leaks" "run-evidence.yml=produce run-evidence bundle"; do
+              file="${entry%%=*}"
+              check="${entry#*=}"
+
+              if ! grep -qE '^[[:space:]]*workflow_dispatch:' ".github/workflows/$file"; then
+                echo "::error::.github/workflows/$file carries no workflow_dispatch trigger, so '$check' can never run on a Release PR."
+                exit 1
+              fi
+
+              if printf '%s\n' "$reported" | grep -Fxq "$check"; then
+                echo "'$check' already reported at $head — no dispatch."
+                continue
+              fi
+
+              if ! gh workflow run "$file" --ref "$branch"; then
+                echo "::error::dispatching $file at $branch failed — Release PR #$number would keep reading stale-green."
+                exit 1
+              fi
+              echo "::notice::'$check' was missing at Release PR #$number's head $head — dispatched $file."
+            done
+          done < <(echo "$RELEASE_BRANCHES")
 
       # The one gate in this file, keyed on the PER-PATH outputs. `releases_created`
       # appears nowhere.
@@ -337,7 +418,7 @@ jobs:
             echo "Failing run: $RUN_URL"
             echo
             echo "Release automation is down while this is red: no version derivation, no changelog"
-            echo "grooming on the standing Release PR, and nothing to merge, so no package can ship."
+            echo "grooming on any standing Release PR, and nothing to merge, so no package can ship."
           } > "$RUNNER_TEMP/alarm.md"
 
           candidates=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 50 \
