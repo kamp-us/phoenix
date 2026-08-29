@@ -68,6 +68,7 @@ const options = {
 	pr: 4321,
 	out: "judged",
 	surfaces: ["/pano"],
+	flags: [] as readonly string[],
 	app: null,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -218,6 +219,89 @@ describe("runRender", () => {
 			}),
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
+	// The operand's own refusals, decided before a browser launches. Both are `10`: an operand
+	// nothing can force and an operand the preview would silently drop are the same defect — the
+	// default state shot under the forced name (#7218).
+	it("refuses a malformed --flag operand on 10, naming the token and why", async () => {
+		const {outcome} = await run(happy(), {surfaces: ["/pano:auth"], flags: ["phoenix-welcome"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain("no = separating the key from its value");
+		expect((await run(happy(), {surfaces: ["/pano:auth"], flags: ["a=true"]})).outcome.code).toBe(
+			OFF_VOCABULARY,
+		);
+	});
+
+	it("refuses --flag beside an anonymous surface on 10 — the preview would drop the cookie", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano:auth", "/hosgeldin"],
+			flags: ["phoenix-welcome=on"],
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain('anonymous surface "/hosgeldin"');
+	});
+
+	it("composes the override with the seeded session — one signed-in, flag-on shot", async () => {
+		const seen = new Map<string, {cookies: number; forced: Record<string, boolean>}>();
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth"],
+			flags: ["phoenix-welcome=on"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: (request) => {
+				seen.set(request.surface, {
+					cookies: request.cookies.length,
+					forced: request.forcedFlags,
+				});
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		// Two session cookies (prefixed and bare) plus the one override cookie.
+		expect(seen.get("/hosgeldin:auth")).toEqual({
+			cookies: 3,
+			forced: {"phoenix-welcome": true},
+		});
+	});
+
+	it("forces nothing when no --flag is passed, so the default run is untouched", async () => {
+		const seen: Array<Record<string, boolean>> = [];
+		const {outcome} = await run(happy(), {
+			render: (request) => {
+				seen.push(request.forcedFlags);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([{}]);
+	});
+
+	// A fine PNG of the flag-off page is not a defect in the PR, so it routes UNKNOWN beside a red one.
+	it("refuses an inert override on 11, recording no capture", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth", "/b:auth"],
+			flags: ["phoenix-welcome=on"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: legOf({
+				"/hosgeldin:auth": {
+					_tag: "OverrideInert",
+					reason: "the preview evaluated phoenix-welcome at the default",
+				},
+				"/b:auth": {_tag: "Crashed", firstError: "TypeError: x is null"},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toMatch(/did not render with its forced flags/);
 	});
 
 	it("refuses a closed PR on 7 — a closed PR is provably not reviewable scope", async () => {

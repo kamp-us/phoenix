@@ -1,13 +1,20 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type CapturedSurface, CaptureError} from "../capture/capture.ts";
+import {NO_FORCED_FLAGS} from "../capture/flag-override.ts";
 import {PAGE_ERROR_CAP} from "./manifest.ts";
 import {type CaptureShots, makeCaptureRenderLeg} from "./render-leg.ts";
 import type {SurfaceRender} from "./render-verb.ts";
 
 const PREVIEW = "https://pr-4321-web.example.test";
 
-const request = {surface: "/pano", previewUrl: PREVIEW, outDir: "/tmp/shots", cookies: []};
+const request = {
+	surface: "/pano",
+	previewUrl: PREVIEW,
+	outDir: "/tmp/shots",
+	cookies: [],
+	forcedFlags: NO_FORCED_FLAGS,
+};
 
 const failing =
 	(message: string): CaptureShots =>
@@ -151,5 +158,68 @@ describe("captureRenderLeg — the :auth session proof", () => {
 			runAuth(authShot({sessionProof: {_tag: "Unreadable", reason: "probe answered 502"}})),
 		).toEqual({_tag: "Unauthenticated", reason: "probe answered 502"});
 		expect(runAuth(authShot({}))._tag).toBe("Unauthenticated");
+	});
+});
+
+/**
+ * One layer over the session proof and for the same reason: a preview that dropped the override
+ * cookie renders the flag-off page, and that page is a valid PNG under the flag-on name (#7218).
+ */
+describe("captureRenderLeg — the forced-flag proof", () => {
+	const FORCED = {"phoenix-welcome": true};
+	const forcedRequest = {...authRequest, forcedFlags: FORCED};
+	const runForced = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(forcedRequest));
+	const signedIn = {_tag: "SignedIn", userId: "u1"} as const;
+
+	it("asks the preview's own evaluation seam, and asks nothing when no flag is forced", () => {
+		const asked: Array<unknown> = [];
+		const spy: CaptureShots = (_plan, _outDir, options) => {
+			asked.push(options?.flagProbe);
+			return authShot({sessionProof: signedIn, overrideProof: {_tag: "Forced"}})([], "", {});
+		};
+		runForced(spy);
+		runAuth(spy);
+		expect(asked[0]).toEqual({url: `${PREVIEW}/api/flags/evaluate`, flags: FORCED});
+		expect(asked[1]).toBeUndefined();
+	});
+
+	it("records the shot only when every forced key came back forced", () => {
+		expect(
+			runForced(authShot({sessionProof: signedIn, overrideProof: {_tag: "Forced"}}))._tag,
+		).toBe("Rendered");
+	});
+
+	it("refuses a default-state render under the forced name, naming the inert keys", () => {
+		expect(
+			runForced(
+				authShot({
+					sessionProof: signedIn,
+					overrideProof: {_tag: "Inert", keys: ["phoenix-welcome"]},
+				}),
+			),
+		).toEqual({
+			_tag: "OverrideInert",
+			reason: "the preview evaluated phoenix-welcome at the default",
+		});
+	});
+
+	it("refuses an unreadable probe and an absent one — neither is a proof", () => {
+		expect(
+			runForced(
+				authShot({
+					sessionProof: signedIn,
+					overrideProof: {_tag: "Unreadable", reason: "probe answered 502"},
+				}),
+			),
+		).toEqual({_tag: "OverrideInert", reason: "probe answered 502"});
+		expect(runForced(authShot({sessionProof: signedIn}))._tag).toBe("OverrideInert");
+	});
+
+	it("keeps the session refusal ahead of the override one — a visitor's page proves no flag", () => {
+		expect(
+			runForced(authShot({sessionProof: {_tag: "Anonymous"}, overrideProof: {_tag: "Forced"}}))
+				._tag,
+		).toBe("Unauthenticated");
 	});
 });

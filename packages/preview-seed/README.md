@@ -84,6 +84,27 @@ cookie. Before it records the shot it asks the preview's own
 so a token that is wrong, expired or missing from this D1 refuses the render as
 UNKNOWN instead of filing the visitor's pixels under the `:auth` name.
 
+### Forcing a dark-shipped flag needs one more grant
+
+`review-ui render --flag <key>=on` forces a flag for the capture (issue #7218, ADR
+0336) through the worker's `phoenix_flag_overrides` cookie, and a deployed stage
+honors that cookie only for a request whose actor holds **platform admin** —
+`moderates` is a different relation. This account is provisioned with moderation
+authority and nothing more, deliberately: an ordinary `:auth` capture should show
+a plain yazar+moderator's view, not an admin's affordances.
+
+So the admin grant is a separate, opt-in step on the same throwaway preview D1,
+minted offline through the sanctioned path (ADR 0107 §4):
+
+```bash
+node packages/admin-grant/src/bin.ts grant \
+  --user-id preview-test-moderator --database-id <preview-d1-uuid>
+```
+
+The same guard boundary applies and is not relaxed by anything here: the target is
+a throwaway preview, `override-authz.ts` is untouched, and no worker route mints
+either the account or the grant.
+
 ### The guard boundary — load-bearing
 
 **Direct-D1, never a runtime route.** Same rule as `run` above and for the same
