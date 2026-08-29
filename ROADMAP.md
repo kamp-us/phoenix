@@ -44,7 +44,7 @@ flowchart TD
 		camp_fabrika_kampus_pipeline_v2["fabrika — kampus-pipeline v2"]:::done
 		camp_switching_to_fabrika["switching to fabrika"]:::done
 		camp_fabrika_fast_follows["fabrika fast follows"]:::done
-		camp_fabrika_everywhere["fabrika everywhere"]:::active
+		camp_fabrika_everywhere["fabrika everywhere"]:::done
 		camp_ge_it_product_push["Geçit product push"]:::active
 		camp_lane_integrity["Lane integrity"]:::active
 		camp_epic_lanes["Epic lanes"]:::active
@@ -107,7 +107,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | fabrika — kampus-pipeline v2 | #44 | done |
 | switching to fabrika | #45 | done |
 | fabrika fast follows | #46 | done |
-| fabrika everywhere | #47 | active |
+| fabrika everywhere | #47 | done |
 | Geçit product push | #24 | active |
 | Lane integrity | #48 | active |
 | Epic lanes | #49 | active |
