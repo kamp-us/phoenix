@@ -144,10 +144,11 @@ export const eventForToken = (raw: string): TokenResolution => {
  * recipe would have to interpret, and interpreting a report is the failure class this module
  * deletes. Each entry's value is what the cause means, in the clause a refusal can quote.
  *
- * A cause pairs with a `KNOWN_PARKS` row wherever a remedy verb exists to clear it. Where none does,
- * the cause still earns its row alone: `classifyPark` then answers `Novel` **naming this cause**
- * instead of the bare "recorded the event and not why", which is the difference between a gap
- * somebody can write a row for and a structural dead end (`recipe/parks.ts`).
+ * A cause is seated on its own account, and a `KNOWN_PARKS` row is never its precondition (ADR 0339).
+ * Where no row covers it, `classifyPark` answers `Novel` **naming this cause** instead of the bare
+ * "recorded the event and not why", which is the difference between a gap somebody can write a row
+ * for and a structural dead end (`recipe/parks.ts`). The row is what buys an autonomous clear, and
+ * that still costs ADR 0302's proving read.
  */
 export const PARK_CAUSES = {
 	/**
@@ -177,6 +178,18 @@ export const PARK_CAUSES = {
 	 */
 	"campaign-paused":
 		"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
+	/**
+	 * The #6770 shape: the shell driving this lane's stage was killed by its provider before it
+	 * recorded a terminal — a session limit, a transport drop, a `network_error` on every completion.
+	 * Nothing about the ticket or the artifact is wrong, and the remedy is to dispatch the same brief
+	 * again.
+	 *
+	 * Its `KNOWN_PARKS` row reads the residue the dead shell left rather than the provider's health,
+	 * because no verb can spawn an agent to test the latter: the operator's next dispatch is that
+	 * test (ADR 0339).
+	 */
+	"spawn-dead":
+		"the shell driving this lane's stage was killed by its provider before it recorded a terminal",
 } as const;
 
 export type ParkCause = keyof typeof PARK_CAUSES;

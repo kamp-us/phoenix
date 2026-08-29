@@ -19,6 +19,7 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readClaimants} from "../build/claim.ts";
 import {WORKTREE_HELD} from "../build/codes.ts";
 import {worktreeCheckouts} from "../build/git.ts";
 import {childLaneBranches} from "../build/lane.ts";
@@ -161,6 +162,8 @@ const clear = (
 			return clearBranchFree(options, task, recipe);
 		case "campaign-active":
 			return clearCampaignActive(options, task, recipe);
+		case "spawn-clear":
+			return clearSpawnClear(options, task, recipe);
 	}
 };
 
@@ -341,12 +344,51 @@ const clearBranchFree = (
 			);
 		}
 
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, []);
+		if (freed._tag === "Refused") return no(freed.outcome);
+
+		return {
+			_tag: "Cleared",
+			mechanism:
+				freed.retired === 0
+					? `branch-free:${candidates.join(",")}`
+					: `branch-free:${candidates.join(",")} (retired ${freed.retired} working tree(s))`,
+		};
+	});
+
+type TreeRead =
+	| {readonly _tag: "Freed"; readonly retired: number}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * Whether any working tree of this clone still holds one of `candidates`, after the recipe's own
+ * remedy verb has had its turn at them.
+ *
+ * Shared by the two rows that turn on the read — `branch-free`, whose whole cause it is, and
+ * `spawn-clear`, for which it is the second half. Every listed tree counts as a hold, a prunable
+ * record included: a checkout is blocked on a stale registration too, so reading one as free would
+ * clear a park still standing.
+ *
+ * `scanned` carries the reads the caller already performed, so a refusal from here reports the whole
+ * scope the caller covered rather than the tree half alone.
+ */
+const treesFreedOf = (
+	options: UnparkOptions,
+	issue: number,
+	recipe: ParkRecipe,
+	candidates: ReadonlyArray<string>,
+	scanned: ReadonlyArray<string>,
+): Effect.Effect<TreeRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): TreeRead => ({_tag: "Refused", outcome});
+
 		const checkouts = yield* worktreeCheckouts;
 		if (checkouts._tag === "Failure") {
 			return no(
 				refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read which working tree holds ${candidates.join(", ")}: ${checkouts.reason} — the park's cause is UNKNOWN, never cleared.`,
+					scanned,
 				),
 			);
 		}
@@ -366,7 +408,7 @@ const clearBranchFree = (
 					refuse(
 						PRECONDITION_UNKNOWN,
 						`${VERB}: cannot re-read which working tree holds ${candidates.join(", ")} after the retirement: ${after.reason} — the park's cause is UNKNOWN, never cleared.`,
-						[scope],
+						[...scanned, scope],
 					),
 				);
 			}
@@ -382,18 +424,110 @@ const clearBranchFree = (
 						.map((checkout) => `${checkout.branch} is checked out in ${checkout.path}`)
 						.join("; ")}; nothing was written.`,
 					retired === 0
-						? [scope]
-						: [scope, `${VERB}: ${retired} working tree(s) were retired, and these still hold.`],
+						? [...scanned, scope]
+						: [
+								...scanned,
+								scope,
+								`${VERB}: ${retired} working tree(s) were retired, and these still hold.`,
+							],
 				),
 			);
 		}
 
+		return {_tag: "Freed", retired};
+	});
+
+/**
+ * Read whether the #6770 park's cause is gone: the shell the provider killed left nothing behind
+ * that would refuse the same brief being dispatched again.
+ *
+ * It proves a dispatch is possible, never that the provider is back — no verb can spawn an agent, so
+ * the operator's next dispatch is that test and a still-down provider re-parks the lane (ADR 0339).
+ * The two halves are the residue ADR 0321 makes the driver's to clear: a build claim the dead shell
+ * stranded, which is a hold until `build release` or a `build adopt` succession retracts it (ADR
+ * 0295 — this verb evicts nothing from absence), and a working tree still holding its lane branch,
+ * which the row's `build retire` remedy takes back where the board licenses it.
+ *
+ * A lane carrying no branch for the issue clears on the claim read alone, and that holds for all
+ * three shell roles rather than only the two that cut nothing. A dead reviewer or shipper never cut
+ * a branch, so "no branch here" is their ordinary case rather than `branch-free`'s wrong clone. A
+ * dead builder did cut one, and never pushed it (ADR 0285) — but it was cut in a worktree of this
+ * clone, whose branch refs live in the shared common git dir, so {@link localBranches} lists it here
+ * (`.patterns/worktree-agent-constraints.md`; the same sharing `build branch --resume-lane` reads a
+ * missing branch as gone rather than elsewhere on). That containment holds only while the unpark runs
+ * in the clone that spawned the shell — which is the clone the lane ledger lives in, and nothing
+ * enforces it: run this from another clone and a dead builder's zero reads as free, where
+ * `branch-free`'s same zero refuses at `TARGET_ABSENT`.
+ */
+const clearSpawnClear = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so the dead shell's residue cannot be resolved.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+
+		const claimants = yield* readClaimants(resolved.repo, issue);
+		if (claimants._tag === "Unknown") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read who claims #${issue}: ${claimants.reason} — whether the dead shell stranded a claim is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		const claimed = scannedLine(
+			VERB,
+			claimants.claimants.length,
+			"build claim marker",
+			`#${issue}`,
+		);
+		if (claimants.holder !== null) {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${claimants.holder.token} still claims #${issue}; release it, or run the ADR 0295 succession, then unpark again. Nothing was written.`,
+					[claimed],
+				),
+			);
+		}
+
+		const branches = yield* localBranches;
+		if (branches._tag === "Failure") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read this clone's local branches: ${branches.reason} — whether a working tree still holds #${issue}'s lane branch is UNKNOWN, never cleared.`,
+					[claimed],
+				),
+			);
+		}
+		const candidates = childLaneBranches(issue, branches.value);
+		if (candidates.length === 0) {
+			return {_tag: "Cleared", mechanism: `spawn-clear:#${issue} unclaimed, no lane branch`};
+		}
+
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, [claimed]);
+		if (freed._tag === "Refused") return no(freed.outcome);
+
 		return {
 			_tag: "Cleared",
 			mechanism:
-				retired === 0
-					? `branch-free:${candidates.join(",")}`
-					: `branch-free:${candidates.join(",")} (retired ${retired} working tree(s))`,
+				freed.retired === 0
+					? `spawn-clear:#${issue} unclaimed, ${candidates.join(",")} free`
+					: `spawn-clear:#${issue} unclaimed, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
 		};
 	});
 

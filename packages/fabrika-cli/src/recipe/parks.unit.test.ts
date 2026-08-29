@@ -22,6 +22,15 @@ describe("the park table", () => {
 		expect(named.length).toBeGreaterThan(0);
 		for (const cause of named) expect(Object.hasOwn(PARK_CAUSES, cause)).toBe(true);
 	});
+
+	// ADR 0339: the pairing binds one direction only. Every row keys on a real cause (above), and a
+	// cause may stand with no row — it then names the park instead of clearing it.
+	it("lets a cause stand with no row, so the two tables need not be the same size", () => {
+		const covered = new Set(KNOWN_PARKS.flatMap((row) => (row.cause === null ? [] : [row.cause])));
+		const rowless = Object.keys(PARK_CAUSES).filter((cause) => !covered.has(cause));
+
+		expect(rowless).toContain("head-behind-base");
+	});
 });
 
 describe("classifyPark", () => {
@@ -46,6 +55,15 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("campaign-active");
 		// No verb may resume a campaign on a lane's behalf, so this row names no remedy to run first.
 		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
+	it("is Known for a BLOCKED whose cause is the spawn-dead shape (#6770)", () => {
+		const parked = classifyPark("blocked", "spawn-dead");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("spawn-clear");
+		// The dead shell's worktree is residue a verb may take back, so this row names its remedy.
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBe("fabrika build retire");
 	});
 
 	it("is Novel for a bare BLOCKED, and says the ledger records no cause", () => {
