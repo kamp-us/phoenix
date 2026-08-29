@@ -206,6 +206,14 @@ Contract: [`skills/build/contract.md`](../../claude-plugins/fabrika/skills/build
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
 | `build verdicts` | the latest gate verdict per namespace at a PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |
+| `build reap` | which finished `.claude/worktrees/agent-*` trees are provably safe to remove — a dry run unless `--execute` |
+
+`build reap` is the bulk counterpart to `build retire`. `retire` targets the trees holding ONE
+number's lane branch and needs a board statement to release them; `reap` sweeps the whole agent
+population, which usually holds no lane branch at all (the harness detaches those trees), and asks
+git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the trunk — reachable
+from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
+every read that failed, is KEEP.
 
 **Exit codes.** The shared table, plus: `13` uncommitted changes at a `--require-clean` open ·
 `14` the checked-out branch is not this lane's · `15` this session does not hold the claim ·

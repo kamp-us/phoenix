@@ -36,6 +36,7 @@ import {runNote} from "./note-verb.ts";
 import {runPick} from "./pick-verb.ts";
 import {runPr, runPrBody} from "./pr-verb.ts";
 import {runPush} from "./push-verb.ts";
+import {runReap} from "./reap-verb.ts";
 import {runRetire} from "./retire-verb.ts";
 import {
 	ADMISSION_EXIT_CODES,
@@ -265,6 +266,25 @@ const retire = leafCommand(
 	Command.withShortDescription("Take back the checkout an orphaned build worktree is holding."),
 	Command.withDescription(
 		'Retire the working trees of this clone that hold #<n>\'s lane branch, so a repair lane refused at "build branch --resume-lane" can stand where it needs to (ADR 0323). Two licenses, both written positive board states and never an inference from a tree that looks idle: the ticket is TERMINAL (a closed issue, a merged PR), or an authorized ADR 0295 build-adopt marker on #<n> names the session whose claim carries that branch\'s lane nonce. DIRTINESS IS NOT A REFUSAL — an agent routinely leaves a worktree dirty after its ticket merged — and it costs nobody their only copy either: ADR 0321\'s salvage runs first, committing whatever the tree holds uncommitted onto its own branch, and only then is the tree removed WITHOUT --force, which that ADR bans on every path. A removal that still refuses (a locked tree does, however clean) is reported as an incident to file, never overridden. The removal takes the tree, never the branch. It first prunes registrations whose directory is already gone, never removes the tree the run is standing in, and reads every removal back off a second worktree list. A worktree-isolated caller may run it — the harness rule that refuses a typed cross-worktree git does not bind a verb\'s own child process. Prints {"answer":"retired"|"held"|"none","number":n,"retired":[…],"held":[…]}. Exits 7 (#<n> proven absent), 8 (the salvage or the removal failed — UNKNOWN), 9 (git reported a removal and the registration survives), 11 (a precondition read failed), 33 (a tree still holds the branch and the board licenses no release). Example: fabrika build retire 6567',
+	),
+);
+
+const reap = leafCommand(
+	"reap",
+	{
+		execute: Flag.boolean("execute").pipe(
+			Flag.withDescription(
+				"actually remove the trees classified REMOVE (default: false — print the classification and mutate nothing)",
+			),
+		),
+	},
+	Effect.fn(function* ({execute}) {
+		yield* emit(yield* runReap({execute}));
+	}),
+).pipe(
+	Command.withShortDescription("Reclaim the finished agent worktrees this clone never removed."),
+	Command.withDescription(
+		'Sweep the registrations under .claude/worktrees/agent-* and classify each KEEP or REMOVE. REMOVE needs THREE positive proofs together: the tree holds nothing uncommitted, it carries no lock, and its HEAD is already on the trunk — reachable from origin/HEAD, or landed there as a squash (ADR 0048), matched by comparing the patch id of what the HEAD adds against the trunk\'s own patches over exactly those paths. The subject is the HEAD COMMIT, not a branch: the harness detaches the trees it registers, so a branch-keyed rule would judge almost none of them. EVERYTHING ELSE IS KEEP, per tree — dirty, locked, prunable, unlanded, and every read that failed — so one unreadable directory costs its own row and not the sweep. THE DEFAULT RUN MUTATES NOTHING: it prints the per-tree classification with its reason and stops; --execute is what removes. Each removal runs plain `git worktree remove` and NEVER --force, which ADR 0321 bans on every path; a removal git refuses leaves the tree registered and is reported, and every removal is read back off a second worktree list. The removal takes the tree, never the branch. Both halves of the report — what went and what was deliberately kept — are on stderr on every path, so a survivor is visible without re-running. Prints {"answer":"planned"|"reaped"|"none","executed":bool,"trunk":"origin/main","scanned":n,"removable"|"removed":[…],"kept":[…]}. Exits 8 (git refused a removal — the tree stays), 9 (git reported a removal and the registration survives, or the read-back failed), 11 (this run\'s own root, the registrations, or the trunk could not be read — nothing was removed). Example: fabrika build reap --execute',
 	),
 );
 
@@ -706,6 +726,7 @@ export const buildCommand = Command.make("build").pipe(
 		release,
 		adopt,
 		retire,
+		reap,
 		issue,
 		branch,
 		scratch,
