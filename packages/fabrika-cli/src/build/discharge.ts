@@ -5,7 +5,8 @@
  * reads the epic run's own commits; this module is the one place the second is allowed to move the
  * first. Under ADR 0285 a child's issue stays open until the single tail PR merges, so inside a run
  * in flight "the blocker is closed" answers a different question from "the blocker's work landed",
- * and only the second is the one a dependency gate means (#6063).
+ * and only the second is the one a dependency gate means (#6063). ADR 0301's 2026-08-29 amendment is
+ * what authorizes that narrowing at both seams.
  *
  * It exists because `build eligible` and the claim seam once each carried their own answer: eligible
  * discharged a landed edge and claim refused it on 16, so every sequential epic tracer after the

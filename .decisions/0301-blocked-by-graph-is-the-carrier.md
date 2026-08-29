@@ -151,3 +151,40 @@ the wiring.
 no vocabulary impact
 
 > Amendment 2026-08-19: that gap is closed at head. The shared reader is `packages/fabrika-cli/src/build/blockedness.ts` (`readBlockedGate`), `build claim` refuses a blocked number (`claim-verb.ts`), `build pick` excludes one (`pick-verb.ts`), and the `status:blocked` label no longer exists on the repo.
+
+> Amendment 2026-08-29 — **an edge also clears when the blocker's work lands on the epic run's
+> assembly branch, and that discharge binds the claim seam.** The "Present, any blocker open" bullet
+> under "The read fails closed" is narrowed to "Present, any blocker open **and undischarged**".
+> Nothing else in this record moves: the graph is still the one carrier, `status:blocked` stays
+> retired, and the claim seam still refuses a blocked number on `16`. Filed against
+> [#7035](https://github.com/kamp-us/phoenix/issues/7035).
+>
+> **Why the closed-state read is the wrong proxy inside a run.** This record was written where "the
+> blocker closed" and "the blocker's work landed" are one event: a blocking PR carries `Fixes #N`,
+> its merge closes `#N`, and the next read answers unblocked with no second act — which is the whole
+> basis of "unblocking is derived; nobody performs it" above. ADR
+> [0285](0285-epic-machine-ends-in-review.md) breaks that identity for an epic child. An epic run
+> opens **no PR per child** — every child's range lands on one shared assembly branch and the run
+> ends in a single tail PR — so no closing keyword exists to close a child when its work lands, and
+> the child's close is a separate act later in the run. Between those two moments the work is on the
+> branch and the issue is open, and a gate reading only the closed state answers "still blocked"
+> about work the next child is already building on.
+>
+> That is not hypothetical. Epic #6767's sequential tracers deadlocked twice in one night — `build
+> eligible` said go and `build claim` refused `16` on the same edge — and each park was cleared by a
+> human deleting the `blocked_by` record by hand, which destroys the one carrier this record
+> establishes. The narrow reading did not preserve the invariant; it spent it.
+>
+> **What discharges, and what does not.** An open blocker is discharged when the assembly branch
+> `epic/<parent>` adds a commit over the trunk naming it (`issueRefsIn`), per 0285. Discharge moves
+> an answer only toward admitting: an unreadable branch, an unnameable trunk, and a standalone issue
+> (no parent, so no derivable branch) each leave every edge exactly as the board read it and still
+> refuse on `16`. A parent that could not be read is `11`, never an admission on evidence nobody
+> read.
+>
+> **It authorizes both seams.** `build eligible` shipped this discharge under
+> [#6063](https://github.com/kamp-us/phoenix/issues/6063) with no record; this amendment covers it
+> there as well as at the claim seam. The derivation lives once, in
+> `packages/fabrika-cli/src/build/discharge.ts`, so the two cannot drift again. `build pick` is the
+> one seam still reading the undischarged gate, tracked as
+> [#7223](https://github.com/kamp-us/phoenix/issues/7223).
