@@ -251,12 +251,13 @@ names from the config rather than hardcoding one, because `gh pr list --head` an
 for a branch nothing grooms and an empty answer is indistinguishable from "no release is
 due" (#7068).
 
-**The aggregate branch that already existed is not removed by the flip, and it is
-dangerous.** release-please matches an existing Release PR by head branch name, so once it
-stops computing the aggregate name it neither grooms nor closes the branch — it is simply
-abandoned, still open, still merge-armed, and no longer covered by either guard above. Its
+**The aggregate branch that already existed is not removed by the flip, and it must not be
+merged.** release-please matches an existing Release PR by head branch name, so once it
+stops computing the aggregate name it neither grooms nor acts on the branch — it is simply
+left behind, still open, still merge-armed, and no longer covered by either guard above. Its
 checks freeze at whatever they last read, which is stale-but-green reading exactly like
-ready: merging it cuts tags for every package off a frozen commit range. **Closing that PR
-is part of landing the flip, and it is a human act no diff can perform.** If you find an
-open `chore: release main` on `release-please--branches--main`, it is that orphan — close
-it, and take the release from the per-component PRs instead.
+ready: merging it cuts tags for every package off a frozen commit range, and npm versions
+are immutable (constraint 1), so that is not recoverable. **So if you find an open
+`chore: release main` on `release-please--branches--main`, leave it alone and take the
+release from the per-component PRs instead.** It is superseded, not stranded: release-please
+regenerates its content as the per-component Release PRs on the next push to `main`.

@@ -214,9 +214,10 @@ their own cadence.
 > **Do not merge an open `chore: release main`.** That is the retired aggregate PR on
 > `release-please--branches--main`, left over from when this repo bundled every package into
 > one release. release-please no longer produces or grooms that branch, so such a PR is
-> orphaned: its commit range is frozen, its body is no longer repaired, and its checks are
+> superseded: its commit range is frozen, its body is no longer repaired, and its checks are
 > stale-but-green — which reads exactly like ready. Merging it would cut tags for every
-> package off that frozen range. Close it instead; the per-component PRs above supersede it.
+> package off that frozen range, and npm versions are immutable, so that is not recoverable.
+> Leave it alone — release-please supersedes it with the per-component PRs above.
 
 **Before you merge one, check:**
 
