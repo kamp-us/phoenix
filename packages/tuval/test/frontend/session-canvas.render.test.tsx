@@ -3,8 +3,10 @@
 import {cleanup, render, waitFor} from "@testing-library/react";
 import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from "vitest";
 import {toLineageEdges, toSessionNodes} from "../../src/frontend-shell/canvas-adapter.js";
+import type {NodeAttachment} from "../../src/frontend-shell/node-detail.js";
 import {SessionCanvas} from "../../src/frontend-shell/session-canvas.js";
 import type {LineageProjection} from "../../src/shared/lineage.js";
+import type {AttachedLiveSession, DisconnectedLiveSession} from "../../src/shared/live-session.js";
 
 const node = (id: string) => ({
 	id: `pi:${id}` as LineageProjection["graph"]["nodes"][number]["id"],
@@ -148,11 +150,233 @@ describe("SessionCanvas", () => {
 		});
 	});
 
+	it("renders exactly the contract fields ruled for each detail level", async () => {
+		const attached: AttachedLiveSession = {
+			_tag: "attached",
+			sessionId: "spawned",
+			revision: 7,
+			phase: "retry",
+			model: {provider: "anthropic", id: "claude-sonnet"},
+			thinkingLevel: "high",
+			completion: "running",
+			transcript: [],
+			lastEventSequence: 12,
+			connection: "connected",
+			ownership: "exclusive",
+		};
+		const fieldsByLevel = {
+			bare: ["spawned", "Takıldı"],
+			meta: ["spawned", "/work/spawned", "Metadata"],
+			live: ["Protokol canlı", "Takıldı", "Yeniden deniyor"],
+			full: ["Kalıcı geçmiş", "1 devam", "claude-sonnet", "yüksek"],
+		} as const;
+		const accessibleNameByLevel = {
+			bare: "spawned oturumu, Takıldı",
+			meta: "spawned oturumu, spawned, Takıldı",
+			live: "spawned oturumu, spawned, Takıldı, Protokol canlı, Yeniden deniyor",
+			full: "spawned oturumu, spawned, Takıldı, Protokol canlı, Yeniden deniyor, 1 devam kaydı",
+		} as const;
+		for (const level of ["bare", "meta", "live", "full"] as const) {
+			const view = render(
+				<div style={{width: 800, height: 600}}>
+					<SessionCanvas
+						nodes={toSessionNodes(projection, {
+							detailLevel: level,
+							attachments: new Map([
+								[node("spawned").id, {connection: "attached", session: attached}],
+							]),
+						})}
+						edges={toLineageEdges(projection)}
+						onNodesChange={vi.fn()}
+						onEdgesChange={vi.fn()}
+						onSelect={vi.fn()}
+					/>
+				</div>,
+			);
+			await waitFor(() =>
+				expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3),
+			);
+			const card = view.container.querySelector<HTMLElement>('[data-id="pi:spawned"]');
+			for (const expected of fieldsByLevel[level]) expect(card?.textContent).toContain(expected);
+			expect(card?.getAttribute("aria-label")).toBe(accessibleNameByLevel[level]);
+			if (level === "bare") {
+				expect(card?.textContent).not.toContain("/work/spawned");
+				expect(card?.textContent).not.toContain("Kalıcı geçmiş");
+			}
+			if (level !== "full") expect(card?.textContent).not.toContain("claude-sonnet");
+			expect(card?.querySelector("textarea, [contenteditable], pre")).toBeNull();
+			view.unmount();
+		}
+	});
+
+	it("announces meaningful node status changes through a polite atomic status", async () => {
+		const attached: AttachedLiveSession = {
+			_tag: "attached",
+			sessionId: "root",
+			revision: 7,
+			phase: "retry",
+			model: {provider: "anthropic", id: "claude-sonnet"},
+			thinkingLevel: "high",
+			completion: "running",
+			transcript: [],
+			lastEventSequence: 12,
+			connection: "connected",
+			ownership: "exclusive",
+		};
+		const canvas = (attachments?: ReadonlyMap<string, NodeAttachment>) => (
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={toSessionNodes(projection, {
+						detailLevel: "live",
+						...(attachments === undefined ? {} : {attachments}),
+					})}
+					edges={toLineageEdges(projection)}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+				/>
+			</div>
+		);
+		const view = render(canvas());
+		await waitFor(() =>
+			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3),
+		);
+		const nodeElement = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
+		const status = nodeElement?.querySelector<HTMLElement>(".session-node__status");
+		expect(status?.getAttribute("role")).toBe("status");
+		expect(status?.getAttribute("aria-live")).toBe("polite");
+		expect(status?.getAttribute("aria-atomic")).toBe("true");
+		expect(status?.textContent).toContain("Kayıtlı görünüm");
+		expect(nodeElement?.getAttribute("aria-label")).toBe(
+			"root oturumu, root, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı",
+		);
+
+		view.rerender(
+			canvas(new Map([[node("root").id, {connection: "attached", session: attached}]])),
+		);
+		await waitFor(() => expect(status?.textContent).toContain("Takıldı"));
+		await waitFor(() =>
+			expect(nodeElement?.getAttribute("aria-label")).toBe(
+				"root oturumu, root, Takıldı, Protokol canlı, Yeniden deniyor",
+			),
+		);
+	});
+
+	it("labels disconnected and unknown unattached state without claiming protocol-live data", async () => {
+		const disconnected: DisconnectedLiveSession = {
+			_tag: "disconnected",
+			sessionId: "forked",
+			revision: 4,
+			phase: "idle",
+			model: {provider: "anthropic", id: "claude-haiku"},
+			thinkingLevel: "medium",
+			completion: "disconnected",
+			transcript: [],
+			lastEventSequence: 8,
+			connection: "disconnected",
+			ownership: "none",
+			reason: "socket closed",
+		};
+		const unknownProjection: LineageProjection = {
+			...projection,
+			graph: {
+				...projection.graph,
+				nodes: projection.graph.nodes.map((entry) =>
+					entry.id === node("root").id ? {...entry, sourceFiles: []} : entry,
+				),
+			},
+		};
+		const view = render(
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={toSessionNodes(unknownProjection, {
+						detailLevel: "full",
+						attachments: new Map([
+							[node("spawned").id, {connection: "disconnected", session: null}],
+							[node("forked").id, {connection: "disconnected", session: disconnected}],
+						]),
+					})}
+					edges={toLineageEdges(unknownProjection)}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+				/>
+			</div>,
+		);
+		await waitFor(() =>
+			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3),
+		);
+		const refusedCard = view.container.querySelector<HTMLElement>('[data-id="pi:spawned"]');
+		expect(refusedCard?.textContent).toContain("Kayıtlı görünüm");
+		expect(refusedCard?.getAttribute("aria-label")).toBe(
+			"spawned oturumu, spawned, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı, 1 devam kaydı",
+		);
+		expect(refusedCard?.textContent).toContain("Canlı bağlantı kurulmadı");
+		expect(refusedCard?.textContent).not.toContain("Son canlı görünüm korunuyor");
+		const disconnectedCard = view.container.querySelector<HTMLElement>('[data-id="pi:forked"]');
+		expect(disconnectedCard?.textContent).toContain("Bağlantı kesildi");
+		expect(disconnectedCard?.getAttribute("aria-label")).toBe(
+			"forked oturumu, forked, Bağlantı kesildi, Canlı bağlantı yok, socket closed",
+		);
+		expect(disconnectedCard?.textContent).not.toContain("Protokol canlı");
+		const unknownCard = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
+		expect(unknownCard?.textContent).toContain("Tazelik bilinmiyor");
+		expect(unknownCard?.getAttribute("aria-label")).toBe(
+			"root oturumu, root, Tazelik bilinmiyor, Metadata, Okunabilir bir oturum kaynağı yok.",
+		);
+		expect(unknownCard?.textContent).toContain("Geçmişe katılmadı");
+		expect(unknownCard?.textContent).not.toContain("Protokol canlı");
+	});
+
+	it("renders failed and completed live states with text and drawn icons", async () => {
+		const live = (sessionId: string, completion: "complete" | "error"): AttachedLiveSession => ({
+			_tag: "attached",
+			sessionId,
+			revision: 2,
+			phase: "idle",
+			model: {provider: "anthropic", id: "claude-sonnet"},
+			thinkingLevel: "medium",
+			completion,
+			transcript: [],
+			lastEventSequence: 3,
+			connection: "connected",
+			ownership: "exclusive",
+		});
+		const view = render(
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={toSessionNodes(projection, {
+						detailLevel: "live",
+						attachments: new Map([
+							[node("root").id, {connection: "attached", session: live("root", "complete")}],
+							[node("spawned").id, {connection: "attached", session: live("spawned", "error")}],
+						]),
+					})}
+					edges={toLineageEdges(projection)}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+				/>
+			</div>,
+		);
+		await waitFor(() =>
+			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3),
+		);
+		const completed = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
+		const failed = view.container.querySelector<HTMLElement>('[data-id="pi:spawned"]');
+		expect(completed?.textContent).toContain("Tamamlandı");
+		expect(
+			completed?.querySelector('.session-node__status[data-status="completed"] svg'),
+		).not.toBeNull();
+		expect(failed?.textContent).toContain("Başarısız");
+		expect(failed?.querySelector('.session-node__status[data-status="failed"] svg')).not.toBeNull();
+	});
+
 	it("renders named typed edges, resume continuity, and matching relationship handles", async () => {
 		const view = render(
 			<div style={{width: 800, height: 600}}>
 				<SessionCanvas
-					nodes={toSessionNodes(projection)}
+					nodes={toSessionNodes(projection, {detailLevel: "full"})}
 					edges={toLineageEdges(projection)}
 					onNodesChange={vi.fn()}
 					onEdgesChange={vi.fn()}
@@ -168,7 +392,9 @@ describe("SessionCanvas", () => {
 		const root = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
 		const spawn = view.container.querySelector<HTMLElement>('[data-id="spawn:spawn-run"]');
 		const fork = view.container.querySelector<HTMLElement>('[data-id="fork:pi:forked"]');
-		expect(root?.getAttribute("aria-label")).toBe("root oturumu, root");
+		expect(root?.getAttribute("aria-label")).toBe(
+			"root oturumu, root, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı",
+		);
 		expect(root?.getAttribute("tabindex")).toBe("0");
 		expect(root?.querySelector(".session-node.kp-card")).not.toBeNull();
 		expect(spawn?.getAttribute("aria-label")).toContain("oluşturma ilişkisi");

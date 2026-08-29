@@ -63,7 +63,7 @@
 	--motion-fast: 80ms;
 	--ease-standard: ease-out;
 	--topbar-height: 72px;
-	--node-width: 248px;
+	--node-width: 296px;
 	--pane-width: min(456px, calc(100vw - var(--space-8)));
 	--problem-panel-width: min(360px, calc(100vw - var(--space-8)));
 	--state-width: min(480px, calc(100vw - var(--space-8)));
@@ -130,7 +130,7 @@ button:disabled {
 	position: relative;
 	z-index: 20;
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto auto;
+	grid-template-columns: minmax(0, 1fr) auto auto auto;
 	align-items: center;
 	gap: var(--space-4);
 	min-width: 0;
@@ -238,6 +238,25 @@ button:disabled {
 	font: var(--t-micro);
 }
 
+.detail-setting {
+	display: grid;
+	gap: var(--space-1);
+}
+
+.detail-setting > span {
+	color: var(--text-muted);
+	font: var(--t-micro);
+}
+
+.detail-setting [data-scope="toggle-group"] {
+	min-height: var(--control-min);
+}
+
+.detail-setting button {
+	min-width: var(--control-min);
+	min-height: var(--control-min);
+}
+
 .workspace {
 	position: relative;
 	min-height: 0;
@@ -287,12 +306,23 @@ button:disabled {
 .session-node {
 	position: relative;
 	display: grid;
-	grid-template-columns: auto minmax(0, 1fr);
-	gap: var(--space-1) var(--space-3);
+	gap: var(--space-1);
 	width: var(--node-width);
-	min-height: 132px;
+	min-height: 72px;
 	color: var(--text-primary);
 	text-align: left;
+}
+
+.session-node[data-detail-level="meta"] {
+	min-height: 132px;
+}
+
+.session-node[data-detail-level="live"] {
+	min-height: 152px;
+}
+
+.session-node[data-detail-level="full"] {
+	min-height: 176px;
 }
 
 .react-flow__node-session:hover .session-node,
@@ -307,15 +337,12 @@ button:disabled {
 		var(--shadow-raised);
 }
 
-.session-node__signal {
-	grid-row: 1 / span 2;
-	width: var(--space-3);
-	height: var(--space-3);
-	margin-top: var(--space-1);
-	border: 1px solid var(--accent);
-	border-radius: var(--radius-sm);
-	background: var(--accent-soft);
-	box-shadow: inset 0 0 0 2px var(--surface-raised);
+.session-node__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-2);
+	min-width: 0;
 }
 
 .session-node__title {
@@ -323,6 +350,22 @@ button:disabled {
 	font: 700 var(--t-h-feed);
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.session-node__status {
+	display: inline-flex;
+	align-items: center;
+	flex: none;
+	gap: var(--space-1);
+	color: var(--text-secondary);
+	font: 650 var(--t-meta);
+}
+
+.session-node__status svg,
+.session-node__metadata svg,
+.session-node__live svg,
+.session-node__history svg {
+	stroke: currentcolor;
 }
 
 .session-node__id {
@@ -334,7 +377,6 @@ button:disabled {
 }
 
 .session-node__path {
-	grid-column: 1 / -1;
 	overflow: hidden;
 	color: var(--text-secondary);
 	font: var(--t-body-sm);
@@ -342,22 +384,39 @@ button:disabled {
 	white-space: nowrap;
 }
 
-.session-node__facts {
-	grid-column: 1 / -1;
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--space-2);
+.session-node__metadata,
+.session-node__live,
+.session-node__runtime {
+	min-width: 0;
+	font: var(--t-micro);
 }
 
-.session-node__facts [data-scope="badge"] {
+.session-node__live span:last-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.session-node__history {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--space-1);
+	padding-top: var(--space-1);
+	border-top: 1px solid var(--border-faint);
+}
+
+.session-node__history-label,
+.session-node__history [data-scope="badge"] {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--space-1);
 	color: var(--text-muted);
+	font: var(--t-micro);
 }
 
-.session-node__facts svg {
-	stroke: currentcolor;
+.session-node__history-label {
+	margin-right: auto;
 }
 
 .react-flow__handle {
