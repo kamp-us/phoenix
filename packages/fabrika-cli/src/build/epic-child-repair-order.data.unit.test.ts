@@ -1,8 +1,13 @@
 /**
- * The epic-child repair route is executable data in the checked-in build skill. `tree --issue`
- * requires the lane branch, while `branch --resume-lane` is the transition that establishes it;
- * pinning their order here prevents a generic isolated checkout from stalling before that transition
- * (#7185).
+ * The epic-child standing-`FAIL` entry is executable data in the checked-in build skill: it must name
+ * the mechanized `build resume-child`, and it must not spell the sequence back out beside it.
+ *
+ * This pin used to assert the six-command order the skill listed. That is exactly what it could not
+ * enforce — a resumed builder read the corrected order, ran the armed proof first anyway, and parked
+ * epic #7140 while this test was green (#7187). The order now lives in
+ * `./resume-child-verb.ts`, under executable coverage in `./resume-child-verb.unit.test.ts`; what is
+ * left for a data test is the one claim a data test can make, that the skill routes to the verb
+ * rather than back to the pieces.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -29,15 +34,23 @@ const standingFailCommands = (): ReadonlyArray<string> => {
 		.filter((line) => line.startsWith("fabrika build "));
 };
 
-describe("the build skill's epic-child standing-FAIL entry (#7185)", () => {
-	it("proves cleanliness before resume-lane and arms lane identity only after checkout", () => {
+describe("the build skill's epic-child standing-FAIL entry (#7187)", () => {
+	it("routes the repair through the mechanized entry, then the builder's own verdict read", () => {
 		assert.deepStrictEqual(standingFailCommands(), [
-			"fabrika build claim $issue_or_pr_number --resume",
+			"fabrika build resume-child $issue_or_pr_number",
 			"fabrika build verdicts --issue $issue_or_pr_number",
-			"fabrika build confirm $issue_or_pr_number --token <claim-token>",
-			"fabrika build tree --require-clean",
-			"fabrika build branch $issue_or_pr_number --resume-lane --token <claim-token>",
-			"fabrika build tree --issue $issue_or_pr_number",
 		]);
+	});
+
+	/**
+	 * The regression this file exists for now: a later edit re-listing `claim --resume`, `confirm`,
+	 * `tree` and `branch --resume-lane` here hands the ordering decision back to the agent, which is
+	 * the failure the mechanized entry retired.
+	 */
+	it("does not reassemble the sequence the entry runs", () => {
+		const fenced = standingFailCommands().join("\n");
+		for (const piece of ["--resume-lane", "--require-clean", "build confirm", "build claim"]) {
+			assert.notInclude(fenced, piece, `the fence spells out "${piece}" instead of resume-child`);
+		}
 	});
 });

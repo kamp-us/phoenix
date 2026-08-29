@@ -75,6 +75,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build claimants` | who holds the claim on one issue, asked by a caller holding no token | the same ownership fold `confirm` runs, reported instead of tested against a caller; *what to do about a stranded claim* stays with the driver |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
+| `build resume-child` | open an epic child's standing-`FAIL` repair lane: claim, confirm, clean tree, resume the branch, prove the armed lane — in that order | a fixed sequence of five verbs whose order is derivable from what each one needs; every refusal is the composed verb's own, and *fixing the FAIL* stays in the skill |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
 | `build commit` | create this lane's commit from an authored message, and prove the commit carries it | a prescribed carrying path, a claim test over the numbers named, and a read-back — no judgment; *authoring* the message stays in the skill |
 | `build check` | run this surface's validators in this tree, cache-bypassed; green/red/unknown | command execution + tree-binding assertions; *fixing red* stays in the skill |
@@ -1052,7 +1053,9 @@ verdicts, whose fresh claim the gate has already refused, so both doors are shut
 being an open PR and never typed (founder ruling on #5866, #5914); the objection there was that a
 typed mode is passable in a state where it means nothing, and a child has no PR to derive from — so
 the word is admitted here exactly because the seam checks the fact it asserts. The route it opens is
-`build branch --resume-lane`.
+`build resume-child`, which passes `--resume` here itself and carries the lane on to
+`build branch --resume-lane` — the refusal names that entry rather than the pieces, because naming
+the pieces is what handed a builder an ordering decision it then got wrong (#7187).
 
 **Errors**
 
@@ -1079,7 +1082,7 @@ the word is admitted here exactly because the seam checks the fact it asserts. T
 | `build claim: --purpose "<value>" is not one of plan \| gate \| build — an unrecognised purpose refuses, and never falls back to build.` | 10 | usage error |
 | `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n> --token <minted token>" before any further action.` — preceded by `build claim: the token this run minted is <minted token> — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim <n>": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
-| `build claim: #<n> already carries a build a reviewer failed — <gate> <polarity> over <base>..<tip> (comment <id>); …. A fresh build would re-implement it; run "fabrika build claim <n> --resume" to take the repair lane instead, then "fabrika build branch <n> --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.` — every standing verdict is named, `PASS` ones included, whenever at least one is a `FAIL` | 31 | refusal |
+| `build claim: #<n> already carries a build a reviewer failed — <gate> <polarity> over <base>..<tip> (comment <id>); …. A fresh build would re-implement it; run "fabrika build resume-child <n>" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in (#7187). Nothing was written.` — every standing verdict is named, `PASS` ones included, whenever at least one is a `FAIL` | 31 | refusal |
 | `build claim: #<n> is already built and graded — <gate> PASS over <base>..<tip> (comment <id>); …. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.` — when every standing verdict is a `PASS` | 31 | refusal |
 | `build claim: --resume says #<n> holds a build to repair, and no gate holds a standing FAIL over it — drop --resume and claim it as the fresh build it is. Nothing was written.` | 31 | refusal |
 | `build claim: cannot read the comments on #<n>: <reason> — whether it already carries a graded build is UNKNOWN, never "no"; nothing was written.` | 11 | refusal |
@@ -1507,6 +1510,112 @@ $ echo $?
 - #4500 — eight trees, one stamp: identity via per-claim nonce makes duplicate lanes
   unconstructible instead of detected.
 - 2026-08-03 amendment on #4707 — no stamp files; ownership is derivable from git.
+
+---
+
+## `build resume-child`
+
+**Invocation**
+
+```
+fabrika build resume-child 7162 [--token <token>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<number>` | positional integer | yes | — | the epic child whose standing-`FAIL` repair lane this opens |
+| `--token` | string | no | — | the repair claim this lane already holds, when it is re-running; the claim step then answers off the standing marker and writes nothing |
+
+**Output** — machine. One JSON object:
+
+```json
+{"answer":"resumed","issue":7162,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/7162-tuval-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":7162,"nonce":"c1a4d6f8"}}
+```
+
+`token` is the winning repair claim every later verb of the lane takes as `--token`; `branch` is the
+branch this run left checked out, and its trailing nonce is `claim.nonce` by construction.
+
+**The five steps, in the one order that works.** An epic child's repair opens on facts that must be
+established in sequence, and each step needs what the one before it produced:
+
+1. `build claim <n> --resume` — the repair claim. `--resume` is checked against the child's own
+   range-scoped verdicts, so a child holding no standing `FAIL` refuses on `31` here, before any
+   marker is written.
+2. `build confirm <n> --token <won>` — the claim re-proved, before any mutation.
+3. `build tree --require-clean` — **unarmed**. No lane branch is checked out yet, so there is no lane
+   identity to prove; this asserts only that the generic isolated checkout carries no unauthored hunk.
+4. `build branch <n> --resume-lane --token <won>` — the one mutation. It re-keys the single prior
+   `build/<n>-<slug>-<old-nonce>` branch to this claim's nonce and checks it out, under
+   `build branch`'s own worktree-safety proof.
+5. `build tree --issue <n>` — **armed**. Now that a lane branch is checked out, the issue number, the
+   claim nonce and live claim ownership are proven together.
+
+**Why it is one verb.** Steps 3 and 5 are the same verb under different postures, and running the
+armed one first refuses the generic checkout on `14` — which is exactly what a resumed builder did on
+#7162, parking epic #7140 without changing a file, while reading a `SKILL.md` that stated the correct
+order (#7187). A documented order is a claim about what an agent will do; this is a claim about what
+the tool does.
+
+**It sequences and derives nothing.** Every step is the same `run*` function the CLI leaf calls, so a
+refusal keeps its own exit code, its own words and its own fail-closed reading. This verb adds one
+stderr line naming the step that stopped, and — once a claim has landed — one line naming how to
+retract it. No step after a refusal runs, so the branch is re-keyed only once the claim and
+cleanliness steps have passed.
+
+**Exit status** — the stopping step's, never a code of this verb's own.
+
+| Code | Trigger |
+|---|---|
+| `7` | the child is proven absent or closed, or no branch in this clone's refs was cut for it |
+| `10` | a composed usage refusal |
+| `11` | a read is UNKNOWN, several prior branches name the child, another worktree still holds the branch, or a composed verb answered outside its documented shape |
+| `13` | the generic checkout is dirty at step 3 |
+| `14` | the armed proof reads the wrong lane — including a tree still on a generic harness branch |
+| `15` | the claim is foreign |
+| `20` / `21` / `30` / `32` | the admission test, at the claim step |
+| `31` | the child holds no standing `FAIL`, so there is nothing to repair |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build resume-child: stopped at the <step> step on exit <code>; the steps after it did not run.` | the step's | context line, above the stopping verb's own reason |
+| `build resume-child: the repair claim on #<n> stands — re-run this verb to continue it, or retract it with "fabrika build release <n> --token <token>".` | the step's | context line, on any stop past the claim |
+| `build resume-child: "build claim <n> --resume" answered without a readable token — which lane holds the repair is UNKNOWN, so nothing was checked out. …` | 11 | refusal |
+| `build resume-child: "build tree --issue <n>" answered without a readable proof — <branch> is checked out and whether it carries this claim's identity is UNKNOWN. …` | 11 | refusal |
+
+**Scope** — not a judging verb, and not a router: it runs a fixed sequence and stops at the first
+refusal. It opens no PR — an epic child has none (ADR 0285) — and it reads no verdict rows;
+`build verdicts --issue <n>` is the read that hands the lane its findings, after this returns.
+
+**Examples**
+
+```
+$ fabrika build resume-child 7162
+{"answer":"resumed","issue":7162,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/7162-tuval-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":7162,"nonce":"c1a4d6f8"}}
+```
+
+```
+$ fabrika build resume-child 7162
+build resume-child: stopped at the clean-tree step on exit 13; the steps after it did not run.
+build resume-child: the repair claim on #7162 stands — re-run this verb to continue it, or retract it with "fabrika build release 7162 --token build:s-9f2e:c1a4d6f8-…".
+build tree: 2 uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.
+$ echo $?
+13
+```
+
+**Grounding**
+
+- #7187 — a resumed builder read the corrected order and ran the armed proof first anyway; exit `14`
+  on its generic branch parked epic #7140 with no file changed.
+- #7185 / PR #7186 — the prose correction this replaces, and the `SKILL.md`-parsing test that passed
+  while the incident happened.
+- #6386 — why step 4 re-keys rather than cuts: two branches carrying one child's commits is the
+  range `lane prove` refuses as underivable.
+- ADR 0285 — an epic child opens no PR, which is why its repair names an issue and has no head to
+  resume from.
 
 ---
 

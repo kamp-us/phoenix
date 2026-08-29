@@ -201,6 +201,7 @@ Contract: [`skills/build/contract.md`](../../claude-plugins/fabrika/skills/build
 | `build claimants` | who holds an issue's claim, read by a caller holding none — no token, no write, no clearance |
 | `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0 |
 | `build branch` / `scratch` | the lane's branch off a fresh base, and its scratch directory |
+| `build resume-child` | an epic child's standing-`FAIL` repair lane, opened as one operation: claim, confirm, clean tree, resumed branch, armed proof |
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
 | `build check` | this surface's validators, run here with the build cache bypassed |
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
