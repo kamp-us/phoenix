@@ -927,6 +927,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=9557e68464da6a36ba3f9156d4a74af640d8c56091d612b87e392d7339434922))(ioredis@5.10.1)
+      '@kampus/authz':
+        specifier: workspace:*
+        version: link:../authz
       '@kampus/d1-rest':
         specifier: workspace:*
         version: link:../d1-rest

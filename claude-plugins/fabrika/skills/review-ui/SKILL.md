@@ -94,6 +94,14 @@ you render independently or you have not looked.
 fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni
 ```
 
+**A surface behind login is named, not skipped.** A surface id may carry a realized state, and
+`auth` is the one realized today: `--surface /pano:auth` renders the same route as the moderator-tier
+test account instead of a visitor, so a delta that only exists signed in is judged rather than
+missed. Anything else after the colon is refused on `10` — a state nothing renders would shoot the
+default pixels under a variant's name. `:auth` needs `PREVIEW_TEST_SESSION_TOKEN` and
+`BETTER_AUTH_SECRET` in the environment; with either unset the verb refuses `11` rather than handing
+you an anonymous shot that reads as the signed-in one.
+
 The verb captures the PR's **preview deployment** at the inspected head — never a checkout, never
 the PR's code run on your machine. Every surface returns a proven outcome — captured, crashed
 (13), unreachable (14), invalid capture (15) — and two run-level refusals precede the per-surface

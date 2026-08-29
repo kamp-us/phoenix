@@ -57,6 +57,8 @@ export interface CaptureCookie {
 	readonly url?: string;
 	readonly domain?: string;
 	readonly path?: string;
+	/** Required for a `__Secure-`-prefixed name — Playwright rejects one set without it. */
+	readonly secure?: boolean;
 }
 
 export interface CaptureOptions {

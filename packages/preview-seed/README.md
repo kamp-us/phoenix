@@ -35,7 +35,8 @@ A pure, unit-tested core + a thin Effect bin (the repo tooling idiom):
   of the canonical `apps/web/worker/db/drizzle/migrations` columns).
 - `src/seed.ts` — idempotent upserts; runs against any `D1Database` (in-memory
   test fake or REST adapter) and also emits `{sql, params}` for the REST batch.
-- `src/bin.ts` — the `preview-seed run` CLI.
+- `src/test-account.ts` — the review-ui test account + its session row.
+- `src/bin.ts` — the `preview-seed run` and `preview-seed test-account` CLI.
 
 ## Running it
 
@@ -55,3 +56,50 @@ node packages/preview-seed/src/bin.ts run --database-id <stage-d1-uuid>
 Transport is the Cloudflare D1 REST query API via alchemy's already-installed
 `@distilled.cloud/cloudflare` — the same primitive alchemy uses to apply
 migrations to a deployed D1, so no new Cloudflare dependency and no workerd.
+
+## The review-ui test account
+
+`review-ui render` judges what renders, and until now that could only be the
+anonymous view: a per-PR preview deploys an empty D1, so nothing behind login
+existed to shoot and a UI delta that only appears signed in ended a review as
+unseen ground reading clean (issue #7051). This verb provisions the one account
+that render authenticates as.
+
+```bash
+PREVIEW_TEST_SESSION_TOKEN=<32+ char secret> \
+  node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1-uuid>
+```
+
+It writes three rows in one atomic D1 `batch` — the `user` row at
+`moderator` + `yazar`, its `session` row carrying the supplied token, and the
+`(id, "moderates", "platform:platform")` tuple that is the real moderation
+authority (ADR 0107 §4; `user.role` is vestigial and written only so a coarse
+read agrees). Re-running it upserts the same rows, so the token can be rotated by
+re-running with a new one.
+
+`review-ui render --surface /pano:auth` then signs that same token with
+`$BETTER_AUTH_SECRET` and seeds it as the better-auth session cookie, so the
+capture browser is the signed-in moderator.
+
+### The guard boundary — load-bearing
+
+**Direct-D1, never a runtime route.** Same rule as `run` above and for the same
+reason: the `ENVIRONMENT`-gated `/api/admin/*` seeder routes were deleted as a
+fail-open security hole (CLAUDE.md, "Sözlük seed"). Nothing in this path may be
+rebuilt as a worker endpoint — an account-minting route on the public worker is
+strictly worse than the seeder routes that were removed.
+
+**Throwaway stages and previews only, and the fence is not the caller's word for
+it.** A caller-asserted "this is a preview" proves nothing, so the verb reads the
+target instead: a preview/stage D1 deploys empty and this package's content
+fixtures denormalize their author, so a throwaway carries **no human `user` row at
+all**. Finding one that is not the test identity, the verb refuses and writes
+nothing — that database is somebody's real world. Point it at a freshly deployed
+preview D1 instead; there is no override flag, and adding one would be adding the
+hole back.
+
+**The token is a live moderator credential.** It is read only from
+`$PREVIEW_TEST_SESSION_TOKEN` (never a flag, so it stays out of process listings),
+must be at least 32 characters, and is refused if it carries whitespace, `;` or
+`,`. Treat it like any other CI secret: scope it to preview, rotate it by
+re-running the verb.

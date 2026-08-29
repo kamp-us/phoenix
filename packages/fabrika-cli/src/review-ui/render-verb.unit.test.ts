@@ -141,9 +141,42 @@ describe("runRender", () => {
 		expect(outcome.code).toBe(1);
 	});
 
-	it("refuses a non-kebab --out and a reserved :state suffix on 10", async () => {
+	it("refuses a non-kebab --out and an unrealized :state suffix on 10", async () => {
 		expect((await run(happy(), {out: "Judged"})).outcome.code).toBe(OFF_VOCABULARY);
 		expect((await run(happy(), {surfaces: ["/pano:empty"]})).outcome.code).toBe(OFF_VOCABULARY);
+	});
+
+	// An `:auth` surface rendered anonymously is the "unseen ground reading as clean" defect
+	// (#7051), so a half-set or absent credential pair is UNKNOWN rather than a visitor's shot.
+	it("refuses an :auth surface with no credentials on 11, never the anonymous render", async () => {
+		expect((await run(happy(), {surfaces: ["/pano:auth"]})).outcome.code).toBe(
+			PRECONDITION_UNKNOWN,
+		);
+		const halfSet = await run(happy(), {
+			surfaces: ["/pano:auth"],
+			env: {CLAUDE_PIPELINE_REPO: "o/r", PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32)},
+		});
+		expect(halfSet.outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(halfSet.outcome.stderr.join("\n")).toContain("BETTER_AUTH_SECRET");
+	});
+
+	it("seeds the session cookie onto the :auth surface only, so the default stays the visitor's", async () => {
+		const seen = new Map<string, number>();
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/pano:auth"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: (request) => {
+				seen.set(request.surface, request.cookies.length);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen.get("/pano")).toBe(0);
+		expect(seen.get("/pano:auth")).toBe(2);
 	});
 
 	it("refuses a closed PR on 7 — a closed PR is provably not reviewable scope", async () => {

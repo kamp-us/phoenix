@@ -7,7 +7,7 @@ import type {SurfaceRender} from "./render-verb.ts";
 
 const PREVIEW = "https://pr-4321-web.example.test";
 
-const request = {surface: "/pano", previewUrl: PREVIEW, outDir: "/tmp/shots"};
+const request = {surface: "/pano", previewUrl: PREVIEW, outDir: "/tmp/shots", cookies: []};
 
 const failing =
 	(message: string): CaptureShots =>

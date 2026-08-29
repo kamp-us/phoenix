@@ -10,9 +10,17 @@
  *
  * The renderer is an injected seam ({@link RenderLeg}) so every refusal below is testable without a
  * browser; `render-leg.ts` is the one that drives the capture machinery.
+ *
+ * A surface may name a state (`/pano:auth`), but only one this repo can actually put on screen —
+ * the vocabulary and its mechanism live in `capture/states.ts`. Anything else is refused rather
+ * than shot, because a state nothing renders captures the default pixels under a variant's name,
+ * which is coverage claimed and not held (#7051).
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readIdentity, sessionCookies} from "../capture/auth.ts";
+import type {CaptureCookie} from "../capture/capture.ts";
+import {isRealizedState, REALIZED_STATES, stateOf} from "../capture/states.ts";
 import {writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
@@ -40,10 +48,12 @@ const VERB = "review-ui render";
 
 /** What one surface's render is asked for: the preview it hangs off, and where its PNG belongs. */
 export interface SurfaceRenderRequest {
-	/** The surface id — a bare route, since `:state` is refused upstream. */
+	/** The surface id — `<route>` or `<route>:<state>`. */
 	readonly surface: string;
 	readonly previewUrl: string;
 	readonly outDir: string;
+	/** Seeded into the capture context before navigation. Empty ⇒ the anonymous render. */
+	readonly cookies: readonly CaptureCookie[];
 }
 
 /**
@@ -138,11 +148,16 @@ export const runRender = (
 				`${VERB}: --out "${options.out}" is not a kebab-case set name.`,
 			);
 		}
-		const stateful = options.surfaces.find((surface) => surface.includes(":"));
-		if (stateful !== undefined) {
+		// A state is admitted only when something puts it on screen. Parsing one and shooting the
+		// default pixels under a variant's name is coverage claimed and not held (#7051).
+		const unrealized = options.surfaces.find((surface) => {
+			const state = stateOf(surface);
+			return state !== null && !isRealizedState(state);
+		});
+		if (unrealized !== undefined) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --surface "${stateful}" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.`,
+				`${VERB}: --surface "${unrealized}" names a :state nothing renders — the realized states are ${REALIZED_STATES.join(", ")}; render the bare route.`,
 			);
 		}
 
@@ -198,10 +213,45 @@ export const runRender = (
 			);
 		}
 
+		// An `:auth` surface rendered without credentials would come back as the visitor's page under
+		// the signed-in name — the "unseen ground reading as clean" this whole axis exists to stop —
+		// so a missing half of the pair is UNKNOWN here, before a browser launches.
+		const wantsAuth = options.surfaces.some((surface) => stateOf(surface) === "auth");
+		const identity = readIdentity(options.env);
+		if (wantsAuth) {
+			if (identity === null) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: an :auth surface was requested but neither PREVIEW_TEST_SESSION_TOKEN nor BETTER_AUTH_SECRET is set — the authenticated render is UNKNOWN, never the anonymous one.`,
+					[scanned],
+				);
+			}
+			if ("missing" in identity) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: an :auth surface was requested but ${identity.missing} is unset — the authenticated render is UNKNOWN, never the anonymous one.`,
+					[scanned],
+				);
+			}
+		}
+		const authCookies: readonly CaptureCookie[] =
+			identity !== null && !("missing" in identity)
+				? sessionCookies(announced.url, identity.token, identity.secret)
+				: [];
+
 		const setDir = setDirectory(options.tmpRoot, pr, head, options.out);
 		const renders: SurfaceRender[] = [];
 		for (const surface of options.surfaces) {
-			renders.push(yield* options.render({surface, previewUrl: announced.url, outDir: setDir}));
+			renders.push(
+				yield* options.render({
+					surface,
+					previewUrl: announced.url,
+					outDir: setDir,
+					// Only the `:auth` variant carries the session; a bare route stays the visitor's
+					// render, so the two are genuinely different pixels rather than one shot twice.
+					cookies: stateOf(surface) === "auth" ? authCookies : [],
+				}),
+			);
 		}
 		const enumerated = [
 			scanned,

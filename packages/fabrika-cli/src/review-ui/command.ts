@@ -55,7 +55,7 @@ const render = leafCommand(
 		surface: Flag.string("surface").pipe(
 			Flag.atLeast(1),
 			Flag.withDescription(
-				"a surface id to capture — a bare route such as /pano; repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
+				"a surface id to capture — a route such as /pano, or /pano:auth for the signed-in render; repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
 			),
 		),
 		app: Flag.string("app").pipe(
@@ -83,7 +83,7 @@ const render = leafCommand(
 ).pipe(
 	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
-		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per surface (path, dimensions, sha256, page errors); every surface's outcome is enumerated on stderr. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, or a --surface carries the reserved :state suffix), 11 (a read failed, the preview comment is malformed or names several apps, or a capture's validity is undeterminable), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano",
+		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per surface (path, dimensions, sha256, page errors); every surface's outcome is enumerated on stderr. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, or a --surface names a :state nothing renders — the realized set is auth), 11 (a read failed, the preview comment is malformed or names several apps, a capture's validity is undeterminable, or an :auth surface was requested with PREVIEW_TEST_SESSION_TOKEN/BETTER_AUTH_SECRET unset), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano",
 	),
 );
 

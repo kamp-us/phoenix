@@ -59,7 +59,7 @@ export const makeCaptureRenderLeg =
 				return {_tag: "Failed", reason: plan} satisfies SurfaceRender;
 			}
 
-			const captured = yield* capture(plan, request.outDir).pipe(
+			const captured = yield* capture(plan, request.outDir, {cookies: request.cookies}).pipe(
 				Effect.catch((error) => Effect.succeed(error.message)),
 			);
 			if (typeof captured === "string") {
