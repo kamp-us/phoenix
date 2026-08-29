@@ -10,6 +10,7 @@ import {act, render, screen, within} from "@testing-library/react";
 import type {ReactNode} from "react";
 import {MemoryRouter} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+import {installFakeStorage} from "../tests/client/fakeStorage";
 import {App} from "./App";
 import {WELCOME_SEEN_SCHEMA, welcomeSeenKey} from "./components/onboarding/welcomeSeen";
 import {WELCOME_PATH} from "./pages/welcomeGating";
@@ -117,13 +118,17 @@ vi.mock("./pages/useProfileStats", () => ({useProfileStats: () => ({status: "idl
 vi.mock("./components/divan/useDivanAccess", () => ({useDivanAccess: () => false}));
 vi.mock("./components/bildirim/useBildirimUnread", () => ({useBildirimUnread: () => 0}));
 
-// `loading: false` on every read models the shell-key members' synchronous `__BOOT__` resolution
-// (ADR 0179): a member carries its final value on the first render, with no post-boot flip.
+// `loading: false` models the shell-key members' synchronous `__BOOT__` resolution (ADR 0179): a
+// member carries its final value on the first render, with no post-boot flip. `PHOENIX_WELCOME` is
+// not a member, so it alone gets a settable `loading` axis.
 // `signedIn` drives the mocked `readBootUser` below; default false = `__BOOT__` absent.
 const flags = vi.hoisted(() => ({
 	mecmua: false,
 	mecmuaFeed: false,
 	welcome: false,
+	// `PHOENIX_WELCOME` is NOT a boot member, so unlike its neighbours above it really does
+	// start loading and resolve later — the axis the redirect race lives on.
+	welcomeLoading: false,
 	signedIn: false,
 }));
 vi.mock("./flags/useFlag", async () => {
@@ -138,7 +143,7 @@ vi.mock("./flags/useFlag", async () => {
 						: key === PHOENIX_WELCOME
 							? flags.welcome
 							: false,
-			loading: false,
+			loading: key === PHOENIX_WELCOME ? flags.welcomeLoading : false,
 		}),
 	};
 });
@@ -688,11 +693,13 @@ describe("post-auth welcome intercept (#7043)", () => {
 		fateMounts.length = 0;
 		sessionState = {data: null, isPending: true};
 		flags.welcome = false;
-		localStorage.clear();
+		flags.welcomeLoading = false;
+		installFakeStorage();
 	});
 	afterEach(() => {
 		flags.welcome = false;
-		localStorage.clear();
+		flags.welcomeLoading = false;
+		vi.unstubAllGlobals();
 		vi.clearAllMocks();
 	});
 
@@ -751,6 +758,33 @@ describe("post-auth welcome intercept (#7043)", () => {
 		});
 		expect(screen.queryByTestId("welcome-stub")).toBeNull();
 		expect(screen.getByTestId("eager-pano-feed")).toBeTruthy();
+	});
+
+	// REGRESSION (criterion 2, the async boundary): `PHOENIX_WELCOME` resolves after boot, so the
+	// session can settle first. Consuming `value` alone read the not-yet-loaded `false`, navigated
+	// to the old returnTo and unmounted /auth — the new account never reached /hosgeldin with the
+	// flag ON. The redirect must hold until the flag lands.
+	it("flag on but still loading when the session resolves: the redirect waits, then detours", () => {
+		flags.welcome = true;
+		flags.welcomeLoading = true;
+		renderApp(AUTH_ROUTE);
+
+		// The session wins the race. Nothing may navigate yet — neither destination is knowable.
+		act(() => {
+			setSession(SIGNED_IN);
+		});
+		expect(screen.queryByTestId("welcome-stub")).toBeNull();
+		expect(screen.queryByTestId("eager-pano-feed")).toBeNull();
+
+		// The flag lands second. `session.data` is the SAME reference, so only the resolved flag
+		// can re-fire the effect — which is exactly the dependency that was missing.
+		act(() => {
+			flags.welcomeLoading = false;
+			setSession({...SIGNED_IN});
+		});
+		expect(screen.getByTestId("welcome-stub").textContent).toBe(
+			`${WELCOME_PATH}?returnTo=${encodeURIComponent("/pano")}`,
+		);
 	});
 
 	// The marker is per account, so one welcomed account on a shared browser never silently

@@ -88,6 +88,12 @@ regardless of membership.
   page, so both read `value` alone and let the default hold through loading. Use `<FlagGate>` for
   the declarative version.
 
+An **irreversible** action off a non-member flag is neither of those, and it must honour `loading`
+even though it is not a page gate. The post-auth redirect in
+[`App.tsx`](../apps/web/src/App.tsx) reads `PHOENIX_WELCOME` to choose between the old destination
+and the `/hosgeldin` detour: acting on the not-yet-loaded `false` navigates and unmounts `/auth`, so
+the flag's real value arrives with nothing left to steer. Hold the navigation while `loading`.
+
 ## Pages carrying the gate today
 
 `BildirimlerPage`, `CaylakVisibilityPage`, `MecmuaDraftsPage`, `MecmuaEditorPage`,
@@ -98,3 +104,10 @@ regardless of membership.
 this account has already been welcomed and, if so, redirects to the carried `returnTo` instead of
 rendering. That fifth rung is why its states are lifted into the pure `welcomeGate`
 ([`welcomeGating.ts`](../apps/web/src/pages/welcomeGating.ts)), per the two-condition rule above.
+
+The suppression's input is read **once per account id**, not once per mount. The marker is keyed by
+user, and on a reload the session is still pending for the first renders — so a mount-frozen read
+answers for a `null` id and then survives the real account's arrival, re-showing a welcome that was
+already suppressed. Latching on the id keeps both halves: the answer is stable across the mid-visit
+write that would otherwise bounce the reader off their own arrival, and it still waits for an
+account to answer about.

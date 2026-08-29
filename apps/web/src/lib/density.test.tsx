@@ -1,26 +1,8 @@
 import {act, render} from "@testing-library/react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+import {installFakeStorage} from "../../tests/client/fakeStorage";
 import {DensityProvider, useDensity} from "./density";
 import {DENSITY_STORAGE_KEY} from "./densityStorage";
-
-// jsdom in the `client` tier ships no localStorage (Node's is experimental/off), so the
-// provider has nothing to read/write against without a fake installed per test.
-function installFakeStorage(initial?: Record<string, string>): Storage {
-	const map = new Map<string, string>(Object.entries(initial ?? {}));
-	const storage: Storage = {
-		get length() {
-			return map.size;
-		},
-		clear: () => map.clear(),
-		getItem: (k) => map.get(k) ?? null,
-		key: (i) => [...map.keys()][i] ?? null,
-		removeItem: (k) => void map.delete(k),
-		setItem: (k, v) => void map.set(k, v),
-	};
-	vi.stubGlobal("localStorage", storage);
-	Object.defineProperty(window, "localStorage", {value: storage, configurable: true});
-	return storage;
-}
 
 function Probe() {
 	const {setChoice} = useDensity();

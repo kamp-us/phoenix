@@ -9,6 +9,7 @@
 import {fireEvent, render, screen} from "@testing-library/react";
 import {MemoryRouter, Route, Routes, useLocation} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
+import {installFakeStorage} from "../../tests/client/fakeStorage";
 import {WELCOME_SEEN_SCHEMA, welcomeSeenKey} from "../components/onboarding/welcomeSeen";
 import {WelcomePage} from "./WelcomePage";
 import {WELCOME_PATH} from "./welcomeGating";
@@ -47,8 +48,10 @@ function LocationProbe({label}: {label: string}) {
 	return <div data-testid={label}>{`${location.pathname}${location.search}`}</div>;
 }
 
-function renderRoute(initialEntry = `${WELCOME_PATH}?returnTo=${encodeURIComponent("/pano")}`) {
-	return render(
+const DEFAULT_ENTRY = `${WELCOME_PATH}?returnTo=${encodeURIComponent("/pano")}`;
+
+function routeTree(initialEntry: string) {
+	return (
 		<MemoryRouter initialEntries={[initialEntry]}>
 			<Routes>
 				<Route path={WELCOME_PATH} element={<WelcomePage />} />
@@ -56,12 +59,19 @@ function renderRoute(initialEntry = `${WELCOME_PATH}?returnTo=${encodeURICompone
 				<Route path="/auth" element={<LocationProbe label="auth-probe" />} />
 				<Route path="/" element={<LocationProbe label="home-probe" />} />
 			</Routes>
-		</MemoryRouter>,
+		</MemoryRouter>
 	);
 }
 
+function renderRoute(initialEntry = DEFAULT_ENTRY) {
+	const view = render(routeTree(initialEntry));
+	// Re-render the SAME mounted tree, the way a resolving session re-renders a live page —
+	// distinct from `renderRoute()` again, which is a fresh mount (a reload).
+	return {...view, settle: () => view.rerender(routeTree(initialEntry))};
+}
+
 beforeEach(() => {
-	localStorage.clear();
+	installFakeStorage();
 	flag.value = false;
 	flag.loading = false;
 	signedIn = true;
@@ -74,7 +84,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	localStorage.clear();
+	vi.unstubAllGlobals();
 });
 
 describe("WelcomePage — the flag-dark gate (.patterns/flag-dark-page-gate.md)", () => {
@@ -179,6 +189,26 @@ describe("WelcomePage — shown-once persistence (criterion 4)", () => {
 		// A later login hands the component a brand-new session object; same account id.
 		renderRoute();
 		expect(screen.getByTestId("pano-probe")).toBeTruthy();
+	});
+
+	// REGRESSION: a real reload paints with `session.isPending` true, so the account id is
+	// not knowable yet. Freezing the marker read at mount latched `false` for the null id and
+	// re-showed the welcome once the session landed — the suppression this criterion buys.
+	it("a reload whose session is still pending still suppresses once the account lands", () => {
+		flag.value = true;
+		installFakeStorage({[welcomeSeenKey(WELCOME_SEEN_SCHEMA, "u-1")]: "1"});
+		sessionPending = true;
+		signedIn = false;
+		const {settle} = renderRoute();
+		expect(screen.getByTestId("welcome-loading")).toBeTruthy();
+
+		// The session resolves into the SAME mounted component, as it does on a real reload.
+		sessionPending = false;
+		signedIn = true;
+		settle();
+
+		expect(screen.queryByTestId("welcome-page")).toBeNull();
+		expect(screen.getByTestId("pano-probe").textContent).toBe("/pano");
 	});
 
 	it("another account on the same browser is not suppressed by u-1's marker", () => {

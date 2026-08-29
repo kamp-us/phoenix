@@ -255,7 +255,7 @@ function LayoutContent() {
 	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data, me?.id ?? null);
 	// The welcome arrival's seam (#7043): one flag releases both this intercept and the
 	// /hosgeldin surface.
-	const {value: welcomeOn} = useFlag(PHOENIX_WELCOME, false);
+	const {value: welcomeOn, loading: welcomeLoading} = useFlag(PHOENIX_WELCOME, false);
 	// #1888: hold the off-/auth redirect while a chosen-username signup is still
 	// resolving. `signUp.email` establishes the session before the separate
 	// `setUsername` lands; without this hold the redirect unmounts AuthPage and
@@ -267,6 +267,11 @@ function LayoutContent() {
 		if (!session.data) return;
 		if (location.pathname !== "/auth") return;
 		if (usernamePending) return;
+		// `PHOENIX_WELCOME` is not a boot member (ADR 0179), so it starts `{value:false,
+		// loading:true}` and resolves async. Without this hold a session that settles first
+		// navigates on the not-yet-loaded `false`, unmounting /auth before the enabled value
+		// lands — and a brand-new account never reaches /hosgeldin with the flag ON.
+		if (welcomeLoading) return;
 		const params = new URLSearchParams(location.search);
 		const target = safeReturnTo(params.get("returnTo"));
 		// The welcome intercept (#7043, epic #4304): flag on + never welcomed ⇒ the first
@@ -275,7 +280,15 @@ function LayoutContent() {
 		const welcomeSeen = welcomeOn ? hasSeenWelcome(welcomeStorage(), session.data.user.id) : false;
 		const destination = postAuthDestination(welcomeOn, welcomeSeen, target);
 		navigate(destination.to, {replace: true});
-	}, [session.data, location.pathname, location.search, navigate, usernamePending, welcomeOn]);
+	}, [
+		session.data,
+		location.pathname,
+		location.search,
+		navigate,
+		usernamePending,
+		welcomeOn,
+		welcomeLoading,
+	]);
 
 	const sessionUser = session.data?.user;
 	const username = me?.username ?? null;

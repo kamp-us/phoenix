@@ -47,10 +47,16 @@ export function WelcomePage() {
 	const returnTo = welcomeReturnTo(location.search);
 	const userId = session.data?.user.id ?? null;
 
-	// The seen-decision freezes at mount. The effect below writes the marker mid-visit;
-	// re-reading it on every render would flip this very visit to `return` and bounce
-	// the reader before the screen ever painted.
-	const [seenAtArrival] = useState(() => hasSeenWelcome(welcomeStorage(), userId));
+	// The seen-decision latches per account, NOT at mount: on a reload `session.isPending`
+	// holds `userId` at null for the first renders, and a mount-frozen `false` would then
+	// survive the real session's arrival and re-show a welcome that was already suppressed.
+	// It must still latch once the id is known, because the effect below writes the marker
+	// mid-visit and a live re-read would bounce this very visit before it painted.
+	const [seenLatch, setSeenLatch] = useState<{userId: string; seen: boolean} | null>(null);
+	if (userId !== null && seenLatch?.userId !== userId) {
+		setSeenLatch({userId, seen: hasSeenWelcome(welcomeStorage(), userId)});
+	}
+	const seenAtArrival = seenLatch?.userId === userId && seenLatch.seen;
 
 	const gate = welcomeGate({
 		flagOn,
