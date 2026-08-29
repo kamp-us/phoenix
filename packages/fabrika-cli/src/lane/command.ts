@@ -21,6 +21,7 @@ import {runBrief} from "./brief-verb.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
+import {expectationReader} from "./expectation.ts";
 import {deriveRepoRoot, onGround, repoGroundRefusal} from "./ground.ts";
 import {runHistory} from "./history-verb.ts";
 import {runIntegrate} from "./integrate-verb.ts";
@@ -333,18 +334,32 @@ const templatePath = (kind: LaneKey["_tag"]): string =>
 
 const open = leafCommand(
 	"open",
-	{lane: laneArgument, root: rootFlag},
-	Effect.fn(function* ({lane, root}) {
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the epic check reads (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote); read only for an issue key",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, repo}) {
 		yield* emit(
 			yield* onKey("open", lane, root, (key, ref) =>
-				runOpen({...ref, templatePath: templatePath(key._tag)}),
+				runOpen({
+					...ref,
+					templatePath: templatePath(key._tag),
+					issue: key._tag === "Issue" ? Number(key.lane) : null,
+					expectation: expectationReader(Option.getOrNull(repo), process.env),
+				}),
 			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Boot a lane from the committed template its key selects."),
 	Command.withDescription(
-		'Boot one lane: create `<root>/<key>/` and place a byte-identical copy of the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template or the lane dir\'s existence could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep',
+		"Boot one lane: create `<root>/<key>/` and place a byte-identical copy of the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. An ISSUE key first reads that issue's native sub-issue links: the coder template has one task, so an issue carrying children has no machine here and is refused at 46 before anything is written — `fabrika lane emit <n>` is the boot for it, and it needs the epic's `## Dependencies` topology, so plan the epic first if it has none (#7024). That read is the one network call; a `chore:<name>` key drives no issue and is never asked. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template, the lane dir's existence, or the issue's child list could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 46 (the issue carries sub-issue links, so this template is the wrong machine for it). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep",
 	),
 );
 
@@ -382,7 +397,7 @@ const emitLane = leafCommand(
 ).pipe(
 	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
 	Command.withDescription(
-		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — remove it to regenerate), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane emit 5680",
+		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes, replaced, droppedEvents}. An existing lane is refused at 14 with ONE proven exception (#7024): a lane whose machine was BOOTED from a committed template is the wrong machine for an epic by construction, so where its log also names no task this machine carries — every event in it is orphaned and can never replay — the lane is re-emitted in place, `replaced` reads true, `droppedEvents` counts the orphaned lines removed with it, and the operator is told on stderr. An emitted `epic-<n>` machine, and a booted one whose log DOES name a task this machine carries, both still refuse at 14. Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists and is not the proven wrong-template case — remove it to regenerate), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane emit 5680",
 	),
 );
 
@@ -697,8 +712,14 @@ const migrate = leafCommand(
 		check: Flag.boolean("check").pipe(
 			Flag.withDescription("judge every lane and report, writing nothing"),
 		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the shape judgement reads (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
 	},
-	Effect.fn(function* ({root, check}) {
+	Effect.fn(function* ({root, check, repo}) {
 		let base: string | undefined;
 		if (Option.isSome(root)) {
 			base = root.value;
@@ -726,14 +747,19 @@ const migrate = leafCommand(
 				"migrate",
 				roots.map((swept) => swept.root),
 				process.cwd(),
-				() => runMigrate({roots, check}),
+				() =>
+					runMigrate({
+						roots,
+						check,
+						expectations: expectationReader(Option.getOrNull(repo), process.env),
+					}),
 			),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Bring every booted lane's machine up to the committed template."),
 	Command.withDescription(
-		'Bring each booted lane\'s workflow.json up to the committed template its root selects, but only where the swap provably moves nothing. `lane open` places a byte-identical copy at boot and refuses to overwrite one afterwards, so a template edit reaches lanes booted after it and no lane already on disk — safe until a token→event map in code changes with it, at which point every booted lane is asked for a cell its frozen machine does not have (ADR 0313). Two things are kept: the lane\'s own `machine.context`, which is per-lane DATA (the task\'s maxRetries, and whatever else a lane declares) and would be erased by a verbatim copy, and any lane whose machine was GENERATED rather than booted — an emitted epic document has no committed template to be brought up to, and is reported, never touched. State is the event log replayed from scratch with no snapshot, so the swap is safe exactly when the existing events.jsonl folds to the same per-task leaf state through both machines; anything else is a rewritten history, not a migration. Each lane carries one verdict: "current" (already the machine this verb would write, read past formatting), "migrated" (judged safe and written), "stale" (judged safe, --check withheld the write), "generated" (not booted from this template), "unsafe" (the log will not replay through one of the two machines, or it folds to a different state — named, never written) or "unreadable". stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one, which is read as a relocated root whose lanes may have booted from either committed template — the lane\'s own machine id picks, never the root\'s position; an absent root holds no lanes and is not a fault. Exits 11 (a template could not be read, or a root is there and could not be listed — the lane set is UNKNOWN, never empty), 37 (at least one lane cannot take the template without moving; those lanes are named on stderr and none of them was written, and so are the ones that were), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot). Examples: fabrika lane migrate --check · fabrika lane migrate',
+		'Bring each booted lane\'s workflow.json up to the committed template its root selects, but only where the swap provably moves nothing. `lane open` places a byte-identical copy at boot and refuses to overwrite one afterwards, so a template edit reaches lanes booted after it and no lane already on disk — safe until a token→event map in code changes with it, at which point every booted lane is asked for a cell its frozen machine does not have (ADR 0313). Two things are kept: the lane\'s own `machine.context`, which is per-lane DATA (the task\'s maxRetries, and whatever else a lane declares) and would be erased by a verbatim copy, and any lane whose machine was GENERATED rather than booted — an emitted epic document has no committed template to be brought up to, and is reported, never touched. State is the event log replayed from scratch with no snapshot, so the swap is safe exactly when the existing events.jsonl folds to the same per-task leaf state through both machines; anything else is a rewritten history, not a migration. Each lane carries one verdict: "current" (already the machine this verb would write, read past formatting), "migrated" (judged safe and written), "stale" (judged safe, --check withheld the write), "generated" (not booted from this template), "mismatched" (the machine is not the one this lane\'s issue calls for — never written), "unsafe" (the log will not replay through one of the two machines, or it folds to a different state — named, never written) or "unreadable". stdout is {check, scanned, summary, lanes}. Staleness was the only wrongness this sweep could see, and a coder-template lane booted on an epic grafts cleanly and read "current" (#7024) — so each ISSUE-keyed lane is additionally judged against its issue\'s native sub-issue links, and every judged row carries shape: {"state":"matches"} | {"state":"mismatched",reason} | {"state":"unknown",reason} — a board read that failed is unknown, never "matches". That read is the verb\'s only network call, one per issue-keyed lane; chore lanes drive no issue and are not judged. A mismatched lane is skipped ahead of every migration verdict and the sweep exits 46; where unsafe lanes are present too, 37 wins as the more dangerous class. Both default roots are swept unless --root names one, which is read as a relocated root whose lanes may have booted from either committed template — the lane\'s own machine id picks, never the root\'s position; an absent root holds no lanes and is not a fault. Exits 11 (a template could not be read, or a root is there and could not be listed — the lane set is UNKNOWN, never empty), 37 (at least one lane cannot take the template without moving; those lanes are named on stderr and none of them was written, and so are the ones that were), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot), 46 (at least one lane runs a machine its issue does not call for; re-emit an epic\'s lane with `fabrika lane emit <n>`). Examples: fabrika lane migrate --check · fabrika lane migrate',
 	),
 );
 

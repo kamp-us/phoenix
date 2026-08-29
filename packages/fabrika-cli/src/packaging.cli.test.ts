@@ -41,7 +41,12 @@ interface Run {
 	readonly stderr: string;
 }
 
-/** `FABRIKA_SKIP_INFER` pins the invocation to the unpacked tarball rather than this checkout. */
+/**
+ * `FABRIKA_SKIP_INFER` pins the invocation to the unpacked tarball rather than this checkout, and the
+ * emptied `PATH` keeps the run off the network: an issue key makes `lane open` ask the board whether
+ * the issue is an epic (#7024), and with no `git` and no `gh` to resolve a repo or a token, that read
+ * refuses the same way in every environment instead of hitting the API from a packaging test.
+ */
 const bootLane = (key: string, root: string): Run => {
 	try {
 		const stdout = execFileSync(
@@ -49,7 +54,15 @@ const bootLane = (key: string, root: string): Run => {
 			[join(tarballRoot, "dist", "bin.js"), "lane", "open", key, "--root", root],
 			{
 				encoding: "utf8",
-				env: {...process.env, FABRIKA_SKIP_INFER: "1"},
+				env: {
+					...process.env,
+					FABRIKA_SKIP_INFER: "1",
+					CLAUDE_PIPELINE_REPO: "",
+					GITHUB_REPOSITORY: "",
+					GITHUB_TOKEN: "",
+					GH_TOKEN: "",
+					PATH: "",
+				},
 				stdio: ["ignore", "pipe", "pipe"],
 			},
 		);
@@ -108,13 +121,20 @@ describe("the packed package ships what it reads at run time (#6011)", {
 		expect(absent).toEqual([]);
 	});
 
-	it("boots an issue lane from the tarball, byte-identical to the committed template", () => {
+	it("ships the coder template inside the tarball, byte-identical to the committed one", () => {
+		expect(
+			readFileSync(join(tarballRoot, "dist", "lane", "templates", "coder.workflow.json"), "utf8"),
+		).toBe(committedTemplate("coder.workflow.json"));
+	});
+
+	it("resolves the coder template's path from the tarball on an issue boot", () => {
+		// An issue key cannot reach the write here: `lane open` asks the board whether the issue is an
+		// epic, and this run has nothing to ask it with (#7024). The template read runs first and is
+		// the thing #6011 is about, so its silence is what this asserts — the bytes are the test above.
 		const run = bootLane("6011", join(scratch, "lanes"));
+
 		expect(run.stderr).not.toContain("cannot read the committed template");
-		expect(run.code).toBe(0);
-		expect(readFileSync(join(scratch, "lanes", "6011", "workflow.json"), "utf8")).toBe(
-			committedTemplate("coder.workflow.json"),
-		);
+		expect(run.stderr).toContain("cannot establish whether #6011 is an epic");
 	});
 
 	it("boots a chore lane from the tarball, byte-identical to the committed template", () => {
