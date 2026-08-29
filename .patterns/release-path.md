@@ -14,7 +14,7 @@ Four surfaces, in the order a change flows through them:
 | Surface | Role |
 |---|---|
 | [`release-please-config.json`](../release-please-config.json) + [`.release-please-manifest.json`](../.release-please-manifest.json) | The package roots, their tag components, and each one's currently-released version. The manifest is release-please's memory of where it left off. |
-| [`.github/workflows/release-please.yml`](../.github/workflows/release-please.yml) | Runs on every push to `main`. Derives each package's next version from conventional commits and grooms one standing Release PR. Holds no registry credential and never publishes. |
+| [`.github/workflows/release-please.yml`](../.github/workflows/release-please.yml) | Runs on every push to `main`. Derives each package's next version from conventional commits and grooms one standing Release PR **per configured package**. Holds no registry credential and never publishes. |
 | [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) | Runs on `release: published`. Resolves the tag prefix to a workspace member, typechecks, builds `dist/`, and `pnpm publish`es under an OIDC credential. |
 | [`fabrika guard publish-isolation-guard`](../packages/fabrika-cli/src/guard/publish-isolation-verb.ts) | A PR gate that *machine-reads* `publish.yml` to derive which packages publish, then checks none of them links a private workspace member. |
 
@@ -237,7 +237,16 @@ So expect no outcome in either direction for a first run. If it 403s, the path f
 nothing was published, **no version number is burned**, and re-running the release after fixing
 the registration recovers cleanly.
 
-Because `release-please-config.json` sets `separate-pull-requests: false`, one Release PR can
-carry several packages and its merge can create their tags together — one publish run per tag,
-some over registrations proven by exercise and some over registrations being used for the
-first time.
+Because `release-please-config.json` sets `separate-pull-requests: true`, each configured
+package gets its own Release PR and its merge creates that package's tag alone — so a first
+run over an unproven registration is isolated to one PR, and merging it can never carry a
+second package's tag along with it.
+
+That flag also fixes the head branch names: with it `true` the merge plugin never runs
+(`if (!this.separatePullRequests)` in the action's bundle), and every branch is
+`release-please--branches--main--components--<component>`. The aggregate
+`release-please--branches--main` does not exist. Anything that has to find a Release PR —
+the `#5946` body repair and the `#5718` checks kick both do — derives those names from the
+config rather than hardcoding one, because `gh pr list --head` answers empty for a branch
+that does not exist and an empty answer is indistinguishable from "no release is due"
+(#7068).
