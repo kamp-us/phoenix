@@ -344,7 +344,7 @@ const clearBranchFree = (
 			);
 		}
 
-		const freed = yield* treesFreedOf(options, issue, recipe, candidates);
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, []);
 		if (freed._tag === "Refused") return no(freed.outcome);
 
 		return {
@@ -368,12 +368,16 @@ type TreeRead =
  * `spawn-clear`, for which it is the second half. Every listed tree counts as a hold, a prunable
  * record included: a checkout is blocked on a stale registration too, so reading one as free would
  * clear a park still standing.
+ *
+ * `scanned` carries the reads the caller already performed, so a refusal from here reports the whole
+ * scope the caller covered rather than the tree half alone.
  */
 const treesFreedOf = (
 	options: UnparkOptions,
 	issue: number,
 	recipe: ParkRecipe,
 	candidates: ReadonlyArray<string>,
+	scanned: ReadonlyArray<string>,
 ): Effect.Effect<TreeRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const no = (outcome: VerbOutcome): TreeRead => ({_tag: "Refused", outcome});
@@ -384,6 +388,7 @@ const treesFreedOf = (
 				refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read which working tree holds ${candidates.join(", ")}: ${checkouts.reason} — the park's cause is UNKNOWN, never cleared.`,
+					scanned,
 				),
 			);
 		}
@@ -403,7 +408,7 @@ const treesFreedOf = (
 					refuse(
 						PRECONDITION_UNKNOWN,
 						`${VERB}: cannot re-read which working tree holds ${candidates.join(", ")} after the retirement: ${after.reason} — the park's cause is UNKNOWN, never cleared.`,
-						[scope],
+						[...scanned, scope],
 					),
 				);
 			}
@@ -419,8 +424,12 @@ const treesFreedOf = (
 						.map((checkout) => `${checkout.branch} is checked out in ${checkout.path}`)
 						.join("; ")}; nothing was written.`,
 					retired === 0
-						? [scope]
-						: [scope, `${VERB}: ${retired} working tree(s) were retired, and these still hold.`],
+						? [...scanned, scope]
+						: [
+								...scanned,
+								scope,
+								`${VERB}: ${retired} working tree(s) were retired, and these still hold.`,
+							],
 				),
 			);
 		}
@@ -439,9 +448,16 @@ const treesFreedOf = (
  * 0295 — this verb evicts nothing from absence), and a working tree still holding its lane branch,
  * which the row's `build retire` remedy takes back where the board licenses it.
  *
- * A lane carrying no branch for the issue clears on the claim read alone. Unlike `branch-free`, whose
- * whole cause is a branch, a dead reviewer or shipper never cut one and "no branch here" is the
- * ordinary case rather than the wrong clone.
+ * A lane carrying no branch for the issue clears on the claim read alone, and that holds for all
+ * three shell roles rather than only the two that cut nothing. A dead reviewer or shipper never cut
+ * a branch, so "no branch here" is their ordinary case rather than `branch-free`'s wrong clone. A
+ * dead builder did cut one, and never pushed it (ADR 0285) — but it was cut in a worktree of this
+ * clone, whose branch refs live in the shared common git dir, so {@link localBranches} lists it here
+ * (`.patterns/worktree-agent-constraints.md`; the same sharing `build branch --resume-lane` reads a
+ * missing branch as gone rather than elsewhere on). That containment holds only while the unpark runs
+ * in the clone that spawned the shell — which is the clone the lane ledger lives in, and nothing
+ * enforces it: run this from another clone and a dead builder's zero reads as free, where
+ * `branch-free`'s same zero refuses at `TARGET_ABSENT`.
  */
 const clearSpawnClear = (
 	options: UnparkOptions,
@@ -503,7 +519,7 @@ const clearSpawnClear = (
 			return {_tag: "Cleared", mechanism: `spawn-clear:#${issue} unclaimed, no lane branch`};
 		}
 
-		const freed = yield* treesFreedOf(options, issue, recipe, candidates);
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, [claimed]);
 		if (freed._tag === "Refused") return no(freed.outcome);
 
 		return {

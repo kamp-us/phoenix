@@ -358,6 +358,63 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
+	// The composition's own path, which `branch-free`'s coverage of the shared tree read cannot reach:
+	// the claim half comes back empty, so the tree half runs, and it refuses under `spawn-dead`'s park
+	// and remedy rather than `branch-free`'s.
+	it("is PARK_HOLDS when no claim stands but a working tree still holds the lane branch", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH, "main")],
+				[TREES, worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[PRUNE, okOut("")],
+				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toMatch(/\/trees\/agent-a9bd/);
+		// Both halves' scopes survive the refusal, so the claim read the clearance already did is not
+		// dropped on the way out through the tree half.
+		expect(stderr).toMatch(/build claim marker/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("clears under its own mechanism once the holding tree is retired", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH)],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[PRUNE, okOut("")],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, worktreeList()],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify({...openIssue, state: "closed"})}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toBe(
+			`spawn-clear:#${LANE} unclaimed, ${LANE_BRANCH} free (retired 1 working tree(s))`,
+		);
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
 	// ADR 0295: a claim leaves through a written release or an adopt succession, never through this
 	// verb inferring the claimant gone — so the residue read holds rather than clears.
 	it("is PARK_HOLDS while the dead shell's claim still stands, naming the token", async () => {
