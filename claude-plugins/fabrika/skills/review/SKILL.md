@@ -136,6 +136,19 @@ reporting on its own trigger. Treat that `16` as a blocked read, not a verdict �
 runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
 be read`, naming the `16`, rather than grading around it.
 
+**A `pending` is a read of this moment, and you never wait it out on a timer.** This verb is a point
+read, not a blocking one: there is no `--wait` here doing the blocking for you, so a queued
+`ci-required` aggregator leaves you a gap, and
+[§14 of the skill conventions](../../docs/skill-conventions.md#14-a-skill-never-sleeps-and-never-polls-on-a-timer)
+governs it — no `sleep`, foreground or background, and no re-read on a cadence. That rule is
+load-bearing here because this skill's own text is where it was missing: a reviewer waiting on a
+queued aggregator left background timers that fired after its run had ended and re-notified the
+driver twice with nothing to route
+([#7260](https://github.com/kamp-us/phoenix/issues/7260)). So take the `pending` as the answer the
+head gives you now — the code class has no execution evidence yet, so it ends on `UNKNOWN — the
+artifact could not be read` exactly as the `16` path does, and the head is re-read by a later run,
+not by this one sleeping through the queue.
+
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no
 namespace posts a native APPROVE.

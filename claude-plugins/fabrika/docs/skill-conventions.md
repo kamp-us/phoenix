@@ -406,6 +406,36 @@ this stays a note rather than a defence.
 Read out of the installed Claude Code build (2.1.233) frontmatter schema; observations recorded on
 [#5588](https://github.com/kamp-us/phoenix/issues/5588), the M45 native-shell campaign.
 
+## 14. A skill never sleeps and never polls on a timer
+
+**No fabrika skill runs `sleep`, foreground or background, and none re-reads a lane, a check or any
+other state on a timer.** This section is where that rule lives; a skill contract cites it and does
+not restate it. A spawned shell returns its result to whoever spawned it, so that return *is* the
+wait — there is no interval to fill. Where a wait genuinely has to block, a CLI verb does the
+blocking in-process and the skill calls that verb once.
+
+The rule binds every skill, not just the ones that spawn. Two incidents, one on each side of a
+spawn, are why:
+
+- **[#6696](https://github.com/kamp-us/phoenix/issues/6696), driver side.** An operator waiting on a
+  reviewer spawned `sleep 575` in the background about every nine seconds, waited on none of them,
+  and left ~55 live shells on the founder's machine while no lane state moved.
+- **[#7260](https://github.com/kamp-us/phoenix/issues/7260), spawned side.** A reviewer waiting on a
+  queued `ci-required` aggregator left background timers behind. Two fired after the run had already
+  reported its verdict and terminated, re-notifying the driver each time with nothing to route.
+
+Neither skill's text asked for a sleep. The harness refuses a foreground one, so a background
+`sleep` is what a model reaches for when a step leaves it a wait to fill and no rule against filling
+it — which makes the absence of this rule from a skill the defect, and copying the rule into each
+skill the wrong fix, because the copies drift.
+
+**The one legitimate `sleep` is inside a CLI verb.** `ship reconcile --wait` polls the merge queue
+on an `Effect.sleep` cadence
+([`packages/fabrika-cli/src/ship/reconcile-verb.ts`](../../../packages/fabrika-cli/src/ship/reconcile-verb.ts)),
+and that is correct: the verb owns its own loop, bounds it by a poll count, and returns one answer
+to a caller that made one call. That is the shape a skill-side wait converts into — a verb whose
+waiting is bounded and whose caller blocks on nothing else.
+
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —
