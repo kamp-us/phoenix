@@ -229,10 +229,11 @@ jobs:
       # repo-wide `releases_created` would dispatch a publish for a package that did not
       # release.
       - name: Dispatch the npm publish for each tag this push released
-        if: ${{ steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-opencode--release_created'] == 'true' }}
+        if: ${{ steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-pi--release_created'] == 'true' || steps.release.outputs['packages/fabrika-opencode--release_created'] == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FABRIKA_CLI_TAG: ${{ steps.release.outputs['packages/fabrika-cli--tag_name'] }}
+          FABRIKA_PI_TAG: ${{ steps.release.outputs['packages/fabrika-pi--tag_name'] }}
           FABRIKA_OPENCODE_TAG: ${{ steps.release.outputs['packages/fabrika-opencode--tag_name'] }}
         run: |
           # `-e` spelled out because the runner sets it for us: a `run:` block with no
@@ -247,6 +248,7 @@ jobs:
           # so every configured package's tag rides the same loop.
           tags=()
           if [ -n "${FABRIKA_CLI_TAG:-}" ]; then tags+=("$FABRIKA_CLI_TAG"); fi
+          if [ -n "${FABRIKA_PI_TAG:-}" ]; then tags+=("$FABRIKA_PI_TAG"); fi
           if [ -n "${FABRIKA_OPENCODE_TAG:-}" ]; then tags+=("$FABRIKA_OPENCODE_TAG"); fi
 
           if [ "${#tags[@]}" -eq 0 ]; then
@@ -344,10 +346,11 @@ jobs:
       # The one gate in this file, keyed on the PER-PATH outputs. `releases_created`
       # appears nowhere.
       - name: Summarize which packages this push released
-        if: ${{ steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-opencode--release_created'] == 'true' }}
+        if: ${{ steps.release.outputs['packages/fabrika-cli--release_created'] == 'true' || steps.release.outputs['packages/fabrika-pi--release_created'] == 'true' || steps.release.outputs['packages/fabrika-opencode--release_created'] == 'true' }}
         env:
           PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
           FABRIKA_CLI_TAG: ${{ steps.release.outputs['packages/fabrika-cli--tag_name'] }}
+          FABRIKA_PI_TAG: ${{ steps.release.outputs['packages/fabrika-pi--tag_name'] }}
           FABRIKA_OPENCODE_TAG: ${{ steps.release.outputs['packages/fabrika-opencode--tag_name'] }}
         run: |
           set -uo pipefail
@@ -370,7 +373,7 @@ jobs:
             # shellcheck disable=SC2016
             printf -- '- `%s`\n' "${released[@]}"
             echo
-            echo "Tags: \`${FABRIKA_CLI_TAG:-none}\` \`${FABRIKA_OPENCODE_TAG:-none}\`"
+            echo "Tags: \`${FABRIKA_CLI_TAG:-none}\` \`${FABRIKA_PI_TAG:-none}\` \`${FABRIKA_OPENCODE_TAG:-none}\`"
             echo
             echo "Publishing is \`publish.yml\`, dispatched by this run at each tag above (ADR 0292)."
             echo "A human-cut release reaches the same workflow on the \`release: published\` event instead."
