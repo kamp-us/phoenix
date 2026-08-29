@@ -1,0 +1,24 @@
+{
+	"name": "duplicate-frontend",
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./extension.js"
+		]
+	},
+	"tuval": {
+		"contractVersion": 1,
+		"frontend": {
+			"nodes": [
+				{
+					"key": "duplicate.node",
+					"asset": "./asset.js"
+				},
+				{
+					"key": "duplicate.node",
+					"asset": "./asset.js"
+				}
+			]
+		}
+	}
+}

@@ -1,0 +1,20 @@
+{
+	"name": "frontend-failure",
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./extension.js"
+		]
+	},
+	"tuval": {
+		"contractVersion": 1,
+		"frontend": {
+			"panels": [
+				{
+					"key": "failure.panel",
+					"asset": "./asset.js"
+				}
+			]
+		}
+	}
+}

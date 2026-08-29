@@ -1065,3 +1065,197 @@ kbd {
 		bottom: var(--space-2);
 	}
 }
+
+.contribution-status {
+	position: absolute;
+	z-index: 7;
+	right: var(--space-4);
+	bottom: var(--space-4);
+	display: grid;
+	gap: var(--space-3);
+	width: min(360px, calc(100vw - var(--space-8)));
+	max-height: min(52vh, 480px);
+	overflow: auto;
+}
+
+.contribution-status header,
+.contribution-status__diagnostics > strong,
+.contribution-status li {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.contribution-status header h2 {
+	margin: 0 auto 0 0;
+	font: 700 var(--t-h-feed);
+}
+
+.contribution-status p,
+.contribution-status ul {
+	margin: 0;
+}
+
+.contribution-status p,
+.contribution-status li span {
+	color: var(--text-muted);
+	font: var(--t-meta);
+}
+
+.contribution-status ul {
+	display: grid;
+	gap: var(--space-2);
+	padding: 0;
+	list-style: none;
+}
+
+.contribution-status__diagnostics {
+	display: grid;
+	gap: var(--space-2);
+	padding-top: var(--space-3);
+	border-top: 1px solid var(--border);
+}
+
+.contribution-status__diagnostics li {
+	align-items: start;
+	flex-direction: column;
+	gap: 0;
+	padding-left: var(--space-3);
+	border-left: 2px solid var(--border-strong);
+}
+
+.package-node {
+	position: relative;
+	min-width: 240px;
+	padding-top: var(--space-5);
+}
+
+.package-attribution {
+	display: block;
+	color: var(--text-muted);
+	font: var(--t-micro);
+}
+
+.package-node > .package-attribution {
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.fixture-package-node,
+.package-panel {
+	display: grid;
+	gap: var(--space-2);
+	padding: var(--space-4);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+	background: var(--surface-raised);
+	box-shadow: var(--shadow-raised);
+	color: var(--text-primary);
+}
+
+.fixture-package-node strong {
+	font: 700 var(--t-h-feed);
+}
+
+.fixture-package-node span {
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+}
+
+.package-panels {
+	display: grid;
+	gap: var(--space-2);
+	margin: var(--space-4);
+}
+
+.package-panel {
+	min-width: 220px;
+}
+
+.fixture-package-panel {
+	display: grid;
+	gap: var(--space-1);
+}
+
+.fixture-package-panel span {
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+}
+
+@media (max-width: 720px) {
+	.canvas {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		padding: var(--space-2);
+		overflow-x: hidden;
+		overflow-y: auto;
+	}
+
+	.canvas-stage {
+		position: relative;
+		inset: auto;
+		order: 3;
+		flex: 0 0 440px;
+		min-height: 440px;
+		border: 1px solid var(--border-faint);
+		border-radius: var(--radius-lg);
+		overflow: hidden;
+	}
+
+	.state-panel,
+	.state-panel[data-tone="warning"] {
+		position: relative;
+		inset: auto;
+		order: 1;
+		width: auto;
+		padding: var(--space-4);
+		transform: none;
+		text-align: left;
+	}
+
+	.state-panel .kp-btn,
+	.state-panel[data-tone="warning"] .kp-btn {
+		justify-self: start;
+	}
+
+	.contribution-status {
+		position: relative;
+		inset: auto;
+		order: 2;
+		width: auto;
+		max-height: none;
+		overflow: visible;
+	}
+
+	.session-launch {
+		position: relative;
+		inset: auto;
+		order: 4;
+		width: auto;
+		transform: none;
+	}
+
+	.lineage-problems {
+		position: relative;
+		inset: auto;
+		order: 5;
+		width: auto;
+		max-height: none;
+	}
+
+	.canvas-controls {
+		flex-wrap: wrap;
+		margin: var(--space-2);
+	}
+
+	.react-flow__panel.package-panels {
+		top: calc(var(--control-min) + var(--control-min) + var(--control-min) + var(--space-4));
+		right: 0;
+		bottom: calc(var(--space-12) + var(--space-12) + var(--space-12));
+		max-width: calc(100% - var(--space-4));
+		overflow: auto;
+		margin: var(--space-2);
+	}
+}

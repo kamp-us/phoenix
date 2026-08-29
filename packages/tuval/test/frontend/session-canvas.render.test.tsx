@@ -3,6 +3,10 @@
 import {cleanup, render, waitFor} from "@testing-library/react";
 import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from "vitest";
 import {toLineageEdges, toSessionNodes} from "../../src/frontend-shell/canvas-adapter.js";
+import {
+	type ContributionKind,
+	ContributionRegistry,
+} from "../../src/frontend-shell/contribution-registry.js";
 import type {NodeAttachment} from "../../src/frontend-shell/node-detail.js";
 import {SessionCanvas} from "../../src/frontend-shell/session-canvas.js";
 import type {LineageProjection} from "../../src/shared/lineage.js";
@@ -370,6 +374,116 @@ describe("SessionCanvas", () => {
 		).not.toBeNull();
 		expect(failed?.textContent).toContain("Başarısız");
 		expect(failed?.querySelector('.session-node__status[data-status="failed"] svg')).not.toBeNull();
+	});
+
+	it("renders a package-attributed custom React Flow node without replacing built-ins", async () => {
+		const asset = "/api/contribution-assets/v1-0.js";
+		const registry = await ContributionRegistry.load(
+			{
+				contractVersion: 1,
+				frontend: [{kind: "node", key: "fixture.node", asset, packageName: "fixture-package"}],
+				diagnostics: [],
+			},
+			ContributionRegistry.empty(),
+			{
+				read: async () => ({ok: true, contentType: "text/javascript"}),
+				importModule: async () => ({
+					default: {
+						contractVersion: 1,
+						kind: "node",
+						render: (_props: unknown, api: {createElement: typeof import("react").createElement}) =>
+							api.createElement("strong", null, "Paket tuvali"),
+					},
+				}),
+			},
+		);
+		const view = render(
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={toSessionNodes(projection)}
+					edges={toLineageEdges(projection)}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+					contributions={registry}
+				/>
+			</div>,
+		);
+		await waitFor(() =>
+			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(4),
+		);
+		const custom = view.container.querySelector<HTMLElement>(
+			"[data-id='package:fixture-package:fixture.node']",
+		);
+		expect(custom?.getAttribute("aria-label")).toBe(
+			"fixture-package paketinden fixture.node özel düğümü",
+		);
+		expect(custom?.textContent).toContain("fixture-package");
+		expect(custom?.textContent).toContain("Paket tuvali");
+		expect(view.container.querySelector("[data-id='pi:root']")).not.toBeNull();
+	});
+
+	it("instantiates healthy package edges and panels without replacing domain graph identities", async () => {
+		const assets = {
+			node: "/api/contribution-assets/v1-0.js",
+			edge: "/api/contribution-assets/v1-1.js",
+			panel: "/api/contribution-assets/v1-2.js",
+		};
+		const kinds: ReadonlyArray<ContributionKind> = ["node", "edge", "panel"];
+		const registry = await ContributionRegistry.load(
+			{
+				contractVersion: 1,
+				frontend: kinds.map((kind) => ({
+					kind,
+					key: `fixture.${kind}`,
+					asset: assets[kind],
+					packageName: "fixture-package",
+				})),
+				diagnostics: [],
+			},
+			ContributionRegistry.empty(),
+			{
+				read: async () => ({ok: true, contentType: "text/javascript"}),
+				importModule: async (asset) => {
+					const kind = kinds.find((candidate) => assets[candidate] === asset);
+					return {
+						default: {
+							contractVersion: 1,
+							kind,
+							render: (
+								_props: unknown,
+								api: {createElement: typeof import("react").createElement},
+							) =>
+								api.createElement("span", {"data-testid": `fixture-${kind}`}, `${kind} sağlıklı`),
+						},
+					};
+				},
+			},
+		);
+		const domainNodes = toSessionNodes(projection);
+		const domainEdges = toLineageEdges(projection);
+		const view = render(
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={domainNodes}
+					edges={domainEdges}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+					contributions={registry}
+				/>
+			</div>,
+		);
+
+		await waitFor(() => expect(view.getByTestId("fixture-edge")).not.toBeNull());
+		expect(view.getByTestId("fixture-panel")).not.toBeNull();
+		expect(
+			view.container.querySelector('[data-id="package:fixture-package:fixture.edge"]'),
+		).not.toBeNull();
+		for (const node of domainNodes)
+			expect(view.container.querySelector(`[data-id="${node.id}"]`)).not.toBeNull();
+		for (const edge of domainEdges)
+			expect(view.container.querySelector(`[data-id="${edge.id}"]`)).not.toBeNull();
 	});
 
 	it("renders named typed edges, resume continuity, and matching relationship handles", async () => {

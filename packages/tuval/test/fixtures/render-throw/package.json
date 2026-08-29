@@ -1,5 +1,5 @@
 {
-	"name": "fixture-plain-pi",
+	"name": "fixture-render-throw",
 	"type": "module",
 	"pi": {
 		"extensions": [
@@ -8,28 +8,22 @@
 	},
 	"tuval": {
 		"contractVersion": 1,
-		"backend": [
-			{
-				"module": "./backend.js",
-				"export": "makeLayer"
-			}
-		],
 		"frontend": {
 			"nodes": [
 				{
-					"key": "fixture.node",
-					"asset": "./asset.js"
+					"key": "throw.node",
+					"asset": "./node.js"
 				}
 			],
 			"edges": [
 				{
-					"key": "fixture.edge",
+					"key": "throw.edge",
 					"asset": "./edge.js"
 				}
 			],
 			"panels": [
 				{
-					"key": "fixture.panel",
+					"key": "throw.panel",
 					"asset": "./panel.js"
 				}
 			]

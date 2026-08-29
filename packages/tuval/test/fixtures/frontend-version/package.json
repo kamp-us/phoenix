@@ -1,0 +1,20 @@
+{
+	"name": "frontend-version",
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./extension.js"
+		]
+	},
+	"tuval": {
+		"contractVersion": 1,
+		"frontend": {
+			"edges": [
+				{
+					"key": "version.edge",
+					"asset": "./asset.js"
+				}
+			]
+		}
+	}
+}
