@@ -1,7 +1,7 @@
 ---
 id: 0320
 title: The review bar splits across the two review cells, and the lane's own machine decides where
-status: accepted
+status: amended-in-part by [0340](0340-an-epic-childs-review-ui-is-the-tails-by-construction.md)
 date: 2026-08-21
 tags: [fabrika, lane, pipeline, review, state-machine]
 ---
