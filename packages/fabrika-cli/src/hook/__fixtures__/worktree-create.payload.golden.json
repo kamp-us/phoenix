@@ -1,0 +1,7 @@
+{
+	"session_id": "80f40b22-8788-40d0-ac1c-08ab808d6086",
+	"transcript_path": "/Users/<operator>/.claude/projects/-private-tmp-fabrika-worktree-capture-repo/80f40b22-8788-40d0-ac1c-08ab808d6086.jsonl",
+	"cwd": "/private/tmp/fabrika-worktree-capture/repo",
+	"hook_event_name": "WorktreeCreate",
+	"name": "capture-probe"
+}

@@ -15,6 +15,7 @@ import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {runCheck} from "./check-verb.ts";
 import {runCodes} from "./codes-verb.ts";
+import {runWorktreeCreate} from "./worktree-create-verb.ts";
 
 const jsonFlag = Flag.boolean("json").pipe(
 	Flag.withDescription("emit the full result object on stdout instead of the line grammar"),
@@ -46,11 +47,35 @@ const codes = leafCommand(
 	),
 );
 
+const worktreeCreate = leafCommand(
+	"worktree-create",
+	{
+		dryRun: Flag.boolean("dry-run").pipe(
+			Flag.withDescription("print the path this would create, and create nothing"),
+		),
+	},
+	Effect.fn(function* ({dryRun}) {
+		yield* emitOutcome(
+			yield* runWorktreeCreate({
+				stdin: Effect.sync(readStdin),
+				dryRun,
+				env: globalThis.process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Provision the isolation worktree a WorktreeCreate envelope names."),
+	Command.withDescription(
+		"Create the `isolation: worktree` tree the WorktreeCreate envelope on STDIN names, with its deps installed, and print its absolute path on stdout — the path the harness adopts. Fetches the base before branching, runs `git worktree add --detach` under a PATH that resolves the toolchain so lefthook's post-checkout install runs, and refuses unless the virtual store landed. Exits 3 (stdin held nothing), 12 (not a hook envelope), 13 (fd 0 unreadable — UNKNOWN), 14 (a harness event this verb does not judge), 15 (the envelope names no creatable worktree), 16 (the base could not be fetched), 17 (`git worktree add` failed), 18 (the tree was created dep-less). Every non-zero exit blocks the spawn. Example: fabrika hook worktree-create",
+	),
+);
+
 export const hookCommand = Command.make("hook").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
 		check,
 		codes,
+		worktreeCreate,
 	]),
 	Command.withShortDescription("Own fabrika's Claude Code hook surface."),
 	Command.withDescription(

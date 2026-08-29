@@ -2,5 +2,18 @@
 	"enabledPlugins": {
 		"fabrika@kampus": true,
 		"kampus-pipeline@kampus": false
+	},
+	"hooks": {
+		"WorktreeCreate": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "fabrika hook worktree-create",
+						"timeout": 600
+					}
+				]
+			}
+		]
 	}
 }
