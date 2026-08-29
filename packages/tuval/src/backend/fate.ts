@@ -1,6 +1,11 @@
 import {Fate, FateServer} from "@kampus/fate-effect";
 import {Effect, Schema} from "effect";
 import {
+	ExtensionUICancelRequest,
+	ExtensionUIResponseRequest,
+	ExtensionUIUnloadRequest,
+} from "../shared/extension-ui.js";
+import {
 	AbortLiveSessionRequest,
 	AttachLiveSessionRequest,
 	CreateLiveSessionRequest,
@@ -10,6 +15,7 @@ import {
 	SetThinkingLiveSessionRequest,
 	SteerLiveSessionRequest,
 } from "../shared/live-session.js";
+import {ExtensionUI} from "./extension-ui.js";
 import {LineageIndex} from "./lineage.js";
 import {LiveSession} from "./live-session.js";
 import {PiDiscovery} from "./pi-discovery.js";
@@ -37,8 +43,37 @@ export const tuvalFateConfig = FateServer.config({
 				return yield* liveSession.current();
 			}),
 		),
+		"extensionUi.current": Fate.query(
+			{type: "TuvalExtensionUISnapshots"},
+			Effect.fn("extensionUi.current")(function* () {
+				const extensionUI = yield* ExtensionUI;
+				return yield* extensionUI.snapshots();
+			}),
+		),
 	},
 	mutations: {
+		"extensionUi.respond": Fate.mutation(
+			{input: ExtensionUIResponseRequest, type: "TuvalExtensionUIResponseOutcome"},
+			Effect.fn("extensionUi.respond")(function* ({input}) {
+				const extensionUI = yield* ExtensionUI;
+				return yield* extensionUI.respond(input);
+			}),
+		),
+		"extensionUi.cancel": Fate.mutation(
+			{input: ExtensionUICancelRequest, type: "TuvalExtensionUIResponseOutcome"},
+			Effect.fn("extensionUi.cancel")(function* ({input}) {
+				const extensionUI = yield* ExtensionUI;
+				return yield* extensionUI.cancel(input);
+			}),
+		),
+		"extensionUi.unload": Fate.mutation(
+			{input: ExtensionUIUnloadRequest, type: "TuvalExtensionUIUnloadOutcome"},
+			Effect.fn("extensionUi.unload")(function* ({input}) {
+				const extensionUI = yield* ExtensionUI;
+				yield* extensionUI.unload(input.scope);
+				return {_tag: "unloaded" as const, scope: input.scope};
+			}),
+		),
 		"liveSession.create": Fate.mutation(
 			{input: CreateLiveSessionRequest, type: "TuvalControlOutcome"},
 			Effect.fn("liveSession.create")(function* ({input}) {

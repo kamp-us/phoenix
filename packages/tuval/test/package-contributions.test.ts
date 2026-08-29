@@ -6,7 +6,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Exit} from "effect";
+import {Effect, Exit, Layer} from "effect";
+import {makeExtensionUI, PackageExtensionUI} from "../src/backend/extension-ui.js";
 import {
 	buildPackageBackendLayers,
 	ContributionStartupFailure,
@@ -123,6 +124,36 @@ describe("pi-native Tuval package contributions", () => {
 				[{kind: "node", key: "fixture.node"}],
 			);
 			assert.match(emitted.frontend[0]?.asset ?? "", /asset\.txt$/);
+		}),
+	);
+
+	it.effect("binds the resolved package name into each server-loaded backend Layer", () =>
+		Effect.gen(function* () {
+			const observed: Array<string> = [];
+			const layer = Layer.effectDiscard(
+				Effect.gen(function* () {
+					const extensionUI = yield* PackageExtensionUI;
+					observed.push(extensionUI.packageName);
+				}),
+			);
+			yield* buildPackageBackendLayers(
+				{
+					contractVersion: 1,
+					backend: [
+						{
+							packageName: "portable-package",
+							source: "fixture",
+							module: "fixture.js",
+							exportName: "makeLayer",
+							layer,
+						},
+					],
+					frontend: [],
+					diagnostics: [],
+				},
+				makeExtensionUI(),
+			);
+			assert.deepStrictEqual(observed, ["portable-package"]);
 		}),
 	);
 

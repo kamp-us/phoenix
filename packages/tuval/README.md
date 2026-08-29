@@ -120,6 +120,23 @@ protocol failures return correlated refusals carrying the last observed projecti
 protocol event produces a diagnostic and a disconnected snapshot while retaining the last validated
 transcript.
 
+## Extension UI contract
+
+Tuval classifies all nine methods in pi 0.84.3's RPC Extension UI Protocol. `select`, `confirm`,
+`input`, and `editor` are correlated blocking requests; without an attached browser subscriber they
+return an explicit unavailable outcome and never approve. `notify`, `setStatus`, and string-array
+`setWidget` are supported fire-and-forget operations. `setTitle` is unavailable and
+`set_editor_text` is deferred to the rendered bridge. Status and widget values are scoped by pi
+package name plus session id and retain only their current value.
+
+`GET /fate/extension-ui/live` streams requests, current-state updates, settlement, degradation, and
+unload events. `extensionUi.current` returns replayable current status/widget state;
+`extensionUi.respond`, `extensionUi.cancel`, and `extensionUi.unload` are typed fate mutations.
+Reconnect replays current status/widgets only. Disconnect cancels pending dialogs, and unload also
+removes the package/session state and duplicate-response markers. Package identity comes from pi's
+resolved package contribution metadata and is provided to backend Layers as `PackageExtensionUI`;
+it is never inferred from caller-controlled keys or machine-specific paths.
+
 ## Pi package contributions
 
 Tuval discovers only packages resolved by pi's `SettingsManager` and `DefaultPackageManager`; it has

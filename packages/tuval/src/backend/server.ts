@@ -9,6 +9,7 @@ import {
 	type LiveTopicPublisher,
 } from "@kampus/fate-effect";
 import {Effect, Fiber, FileSystem, Layer, Queue, Schema, Stream} from "effect";
+import {ExtensionUI, type ExtensionUIService, makeExtensionUI} from "./extension-ui.js";
 import {TuvalFateServerLive} from "./fate.js";
 import {LineageIndexLive, type LineageIndexOptions} from "./lineage.js";
 import {
@@ -42,6 +43,7 @@ export interface StartTuvalOptions extends PiDiscoveryOptions {
 	readonly log?: (line: string) => void;
 	readonly liveSession?: LiveSessionService;
 	readonly liveSessionTransport?: ByteTransportFactory;
+	readonly extensionUI?: ExtensionUIService;
 	readonly requestDispatchGate?: Effect.Effect<void>;
 	readonly onRequestQueued?: () => void;
 }
@@ -220,6 +222,21 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 		yield* writeWebResponse(webResponse, response);
 		return;
 	}
+	if (request.method === "GET" && url.pathname === "/fate/extension-ui/live") {
+		const extensionUI = yield* ExtensionUI;
+		response.statusCode = 200;
+		response.setHeader("content-type", "text/event-stream; charset=utf-8");
+		response.setHeader("cache-control", "no-cache");
+		response.setHeader("connection", "keep-alive");
+		response.flushHeaders();
+		yield* Stream.callback((queue) =>
+			Effect.acquireRelease(
+				extensionUI.subscribe((event) => Queue.offerUnsafe(queue, event)),
+				(unsubscribe) => Effect.sync(unsubscribe),
+			),
+		).pipe(Stream.runForEach((event) => Effect.sync(() => response.write(sseFrame(event)))));
+		return;
+	}
 	if (request.method === "GET" && url.pathname === "/fate/live") {
 		const afterSequence = afterSequenceOf(url);
 		if (afterSequence === undefined) {
@@ -251,6 +268,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 	options: StartTuvalOptions = {},
 ) {
 	const fs = yield* FileSystem.FileSystem;
+	const extensionUI = options.extensionUI ?? makeExtensionUI();
 	const contributions = yield* loadPackageContributions().pipe(
 		Effect.mapError(
 			(error) =>
@@ -260,7 +278,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 				}),
 		),
 	);
-	yield* buildPackageBackendLayers(contributions).pipe(
+	yield* buildPackageBackendLayers(contributions, extensionUI).pipe(
 		Effect.mapError(
 			(error) =>
 				new StartupFailure({message: "Tuval package backend failed during startup", cause: error}),
@@ -299,10 +317,15 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 		discoveryLayer,
 		lineageLayer,
 		Layer.succeed(LiveSession, liveSession),
+		Layer.succeed(ExtensionUI, extensionUI),
 	);
 	const fateLayer = TuvalFateServerLive.pipe(Layer.provide(serviceLayers));
 	const appContext = yield* Layer.build(
-		Layer.merge(fateLayer, Layer.succeed(LiveSession, liveSession)),
+		Layer.mergeAll(
+			fateLayer,
+			Layer.succeed(LiveSession, liveSession),
+			Layer.succeed(ExtensionUI, extensionUI),
+		),
 	);
 	const staticAsset =
 		options.staticAsset ?? fileURLToPath(new URL("../frontend-shell/index.html", import.meta.url));

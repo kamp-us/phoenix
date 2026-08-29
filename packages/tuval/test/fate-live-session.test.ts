@@ -6,6 +6,7 @@ import {
 	type LiveTopicPublisher,
 } from "@kampus/fate-effect";
 import {Effect, Layer, Schema, Stream} from "effect";
+import {ExtensionUI, makeExtensionUI} from "../src/backend/extension-ui.js";
 import {TuvalFateServerLive} from "../src/backend/fate.js";
 import {LineageIndex} from "../src/backend/lineage.js";
 import {
@@ -87,6 +88,7 @@ const handle = (
 					Layer.provide(
 						Layer.mergeAll(
 							Layer.succeed(LiveSession, live),
+							Layer.succeed(ExtensionUI, makeExtensionUI()),
 							Layer.succeed(LineageIndex, {project: () => Effect.succeed(lineage)}),
 							Layer.succeed(PiDiscovery, {
 								discover: () => Effect.succeed({_tag: "empty", sessions: [] as const}),
