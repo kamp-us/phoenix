@@ -1897,7 +1897,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 		const stderr = out.stderr.join("\n");
 		expect(stderr).toContain("review-code FAIL over");
 		expect(stderr).toContain("governance PASS over");
-		expect(stderr).toContain('"fabrika build claim 4312 --resume"');
+		expect(stderr).toContain('"fabrika build resume-child 4312"');
 	});
 
 	it("admits a fresh claim on a child holding no standing verdict at all", async () => {
