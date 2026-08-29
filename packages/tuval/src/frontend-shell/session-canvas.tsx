@@ -1,6 +1,7 @@
 import {
 	Background,
 	BaseEdge,
+	type EdgeChange,
 	type EdgeProps,
 	type EdgeTypes,
 	Handle,
@@ -36,6 +37,7 @@ import {MetaRow} from "../../../../apps/web/src/components/ui/MetaRow.js";
 import type {LineageNode} from "../shared/lineage.js";
 import type {SessionCanvasNode, SessionRelationshipEdge} from "./canvas-adapter.js";
 import {
+	type ContributionCanvasEdge,
 	type ContributionCanvasNode,
 	type ContributionDiagnostic,
 	ContributionPanels,
@@ -272,14 +274,24 @@ export interface SessionCanvasProps {
 }
 
 type CanvasNode = SessionCanvasNode | ContributionCanvasNode;
+type CanvasEdge = SessionRelationshipEdge | ContributionCanvasEdge;
 
-const isSessionCanvasNode = (node: CanvasNode): node is SessionCanvasNode => "session" in node.data;
+const isSessionCanvasNode = (node: CanvasNode): node is SessionCanvasNode =>
+	!node.id.startsWith("package:") && "session" in node.data;
 
 type SessionNodeChange = Parameters<OnNodesChange<SessionCanvasNode>>[0][number];
+type SessionEdgeChange = Parameters<OnEdgesChange<SessionRelationshipEdge>>[0][number];
 
 const isSessionNodeChange = (change: NodeChange<CanvasNode>): change is SessionNodeChange => {
 	if (change.type === "add" || change.type === "replace") {
 		return isSessionCanvasNode(change.item);
+	}
+	return !change.id.startsWith("package:");
+};
+
+const isSessionEdgeChange = (change: EdgeChange<CanvasEdge>): change is SessionEdgeChange => {
+	if (change.type === "add" || change.type === "replace") {
+		return !change.item.id.startsWith("package:");
 	}
 	return !change.id.startsWith("package:");
 };
@@ -312,6 +324,58 @@ export function SessionCanvas({
 			data: {packageName: entry.packageName, contributionKey: entry.key},
 		}),
 	);
+	const packageEdgeEntries = [...contributions.edges.values()];
+	const packageEdgeNodes: ReadonlyArray<SessionCanvasNode> = packageEdgeEntries.flatMap(
+		(entry, index) => {
+			const source = nodes.at(index % nodes.length);
+			const target = nodes.at((index + 1) % nodes.length);
+			if (source === undefined || target === undefined) return [];
+			const identity = `package:${entry.packageName}:${entry.key}`;
+			const y = contributionOrigin.y + 180 + index * 140;
+			return [
+				{
+					...source,
+					id: `${identity}:source`,
+					position: {x: contributionOrigin.x - 200, y},
+					draggable: false,
+					selectable: false,
+					focusable: false,
+					ariaLabel: `${entry.packageName} paketinden ${entry.key} bağı başlangıcı`,
+					data: {...source.data, title: `${entry.key} başlangıcı`, detailLevel: "bare"},
+				},
+				{
+					...target,
+					id: `${identity}:target`,
+					position: {x: contributionOrigin.x + 200, y},
+					draggable: false,
+					selectable: false,
+					focusable: false,
+					ariaLabel: `${entry.packageName} paketinden ${entry.key} bağı bitişi`,
+					data: {...target.data, title: `${entry.key} bitişi`, detailLevel: "bare"},
+				},
+			];
+		},
+	);
+	const packageEdges: ReadonlyArray<ContributionCanvasEdge> = packageEdgeEntries.flatMap(
+		(entry) => {
+			const identity = `package:${entry.packageName}:${entry.key}`;
+			if (!packageEdgeNodes.some(({id}) => id === `${identity}:source`)) return [];
+			return [
+				{
+					id: identity,
+					type: entry.key,
+					source: `${identity}:source`,
+					target: `${identity}:target`,
+					sourceHandle: "relation-out",
+					targetHandle: "relation-in",
+					selectable: true,
+					focusable: true,
+					ariaLabel: `${entry.packageName} paketinden ${entry.key} özel bağı`,
+					data: {packageName: entry.packageName, contributionKey: entry.key},
+				},
+			];
+		},
+	);
 	const allNodeTypes = useMemo(
 		() =>
 			({
@@ -329,11 +393,11 @@ export function SessionCanvas({
 		[contributions, onContributionFailure],
 	);
 	return (
-		<ReactFlow<CanvasNode, SessionRelationshipEdge>
-			nodes={[...nodes, ...packageNodes]}
-			edges={[...edges]}
+		<ReactFlow<CanvasNode, CanvasEdge>
+			nodes={[...nodes, ...packageNodes, ...packageEdgeNodes]}
+			edges={[...edges, ...packageEdges]}
 			onNodesChange={(changes) => onNodesChange(changes.filter(isSessionNodeChange))}
-			onEdgesChange={onEdgesChange}
+			onEdgesChange={(changes) => onEdgesChange(changes.filter(isSessionEdgeChange))}
 			onNodeClick={(_, node) => {
 				if (isSessionCanvasNode(node)) onSelect(node.data.session);
 			}}

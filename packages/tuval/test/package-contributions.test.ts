@@ -65,7 +65,11 @@ describe("pi-native Tuval package contributions", () => {
 			const catalog = yield* load(fixture("plain-pi"));
 			assert.deepStrictEqual(
 				catalog.frontend.map(({kind, key}) => ({kind, key})),
-				[{kind: "node", key: "fixture.node"}],
+				[
+					{kind: "node", key: "fixture.node"},
+					{kind: "edge", key: "fixture.edge"},
+					{kind: "panel", key: "fixture.panel"},
+				],
 			);
 			assert.strictEqual(catalog.backend.length, 1);
 		}).pipe(Effect.provide(NodeServices.layer)),
@@ -98,7 +102,7 @@ describe("pi-native Tuval package contributions", () => {
 			);
 			assert.deepStrictEqual(
 				catalog.frontend.map(({key}) => key),
-				["fixture.node"],
+				["fixture.node", "fixture.edge", "fixture.panel"],
 			);
 			assert.deepStrictEqual(
 				catalog.diagnostics.map(({packageName}) => packageName),
@@ -122,7 +126,11 @@ describe("pi-native Tuval package contributions", () => {
 			assert.strictEqual(emitted.contractVersion, 1);
 			assert.deepStrictEqual(
 				emitted.frontend.map(({kind, key}) => ({kind, key})),
-				[{kind: "node", key: "fixture.node"}],
+				[
+					{kind: "node", key: "fixture.node"},
+					{kind: "edge", key: "fixture.edge"},
+					{kind: "panel", key: "fixture.panel"},
+				],
 			);
 			const asset = emitted.frontend[0]?.asset ?? "";
 			assert.match(asset, /^\/api\/contribution-assets\/v1-\d+\.js$/);

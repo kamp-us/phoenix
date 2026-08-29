@@ -20,6 +20,18 @@
 					"key": "fixture.node",
 					"asset": "./asset.js"
 				}
+			],
+			"edges": [
+				{
+					"key": "fixture.edge",
+					"asset": "./edge.js"
+				}
+			],
+			"panels": [
+				{
+					"key": "fixture.panel",
+					"asset": "./panel.js"
+				}
 			]
 		}
 	}

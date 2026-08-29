@@ -1172,3 +1172,90 @@ kbd {
 .package-panel {
 	min-width: 220px;
 }
+
+.fixture-package-panel {
+	display: grid;
+	gap: var(--space-1);
+}
+
+.fixture-package-panel span {
+	color: var(--text-secondary);
+	font: var(--t-body-sm);
+}
+
+@media (max-width: 720px) {
+	.canvas {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+		padding: var(--space-2);
+		overflow-x: hidden;
+		overflow-y: auto;
+	}
+
+	.canvas-stage {
+		position: relative;
+		inset: auto;
+		order: 3;
+		flex: 0 0 440px;
+		min-height: 440px;
+		border: 1px solid var(--border-faint);
+		border-radius: var(--radius-lg);
+		overflow: hidden;
+	}
+
+	.state-panel,
+	.state-panel[data-tone="warning"] {
+		position: relative;
+		inset: auto;
+		order: 1;
+		width: auto;
+		padding: var(--space-4);
+		transform: none;
+		text-align: left;
+	}
+
+	.state-panel .kp-btn,
+	.state-panel[data-tone="warning"] .kp-btn {
+		justify-self: start;
+	}
+
+	.contribution-status {
+		position: relative;
+		inset: auto;
+		order: 2;
+		width: auto;
+		max-height: none;
+		overflow: visible;
+	}
+
+	.session-launch {
+		position: relative;
+		inset: auto;
+		order: 4;
+		width: auto;
+		transform: none;
+	}
+
+	.lineage-problems {
+		position: relative;
+		inset: auto;
+		order: 5;
+		width: auto;
+		max-height: none;
+	}
+
+	.canvas-controls {
+		flex-wrap: wrap;
+		margin: var(--space-2);
+	}
+
+	.react-flow__panel.package-panels {
+		top: calc(var(--control-min) + var(--control-min) + var(--control-min) + var(--space-4));
+		right: 0;
+		bottom: calc(var(--space-12) + var(--space-12) + var(--space-12));
+		max-width: calc(100% - var(--space-4));
+		overflow: auto;
+		margin: var(--space-2);
+	}
+}
