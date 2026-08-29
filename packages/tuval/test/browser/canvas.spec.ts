@@ -3,8 +3,9 @@ import {mkdir, mkdtemp, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
-import {expect, type Page, type Route, test} from "@playwright/test";
+import {expect, type Locator, type Page, type Route, test} from "@playwright/test";
 import type {DiscoveredSession, DiscoveryOutcome} from "../../src/shared/discovery.js";
+import type {LineageProjection} from "../../src/shared/lineage.js";
 import type {AttachedLiveSession} from "../../src/shared/live-session.js";
 
 let processRoot = "";
@@ -111,11 +112,51 @@ const fulfill = (route: Route, id: string, data: unknown) =>
 		body: JSON.stringify(fateEnvelope(id, data)),
 	});
 
+const lineageProjection = (sessions: ReadonlyArray<DiscoveredSession>): LineageProjection => {
+	const unique = [...new Map(sessions.map((value) => [value.identity, value])).values()];
+	return {
+		graph: {
+			version: 2,
+			nodes: unique.map((value) => ({
+				id: value.identity,
+				piSessionId: value.piSessionId,
+				createdAt: value.createdAt,
+				updatedAt: value.updatedAt,
+				cwd: value.cwd,
+				sourceFiles: [value.sourceFile],
+			})),
+			edges: unique.flatMap((value) => {
+				if (value.parentSessionId === undefined) return [];
+				const parent = unique.find((candidate) => candidate.piSessionId === value.parentSessionId);
+				return parent === undefined
+					? []
+					: [
+							{
+								id: `fork:${value.identity}`,
+								kind: "fork" as const,
+								parent: parent.identity,
+								child: value.identity,
+								source: "protocol" as const,
+							},
+						];
+			}),
+			continuity: [],
+			ownership: [],
+		},
+		problems: [],
+	};
+};
+
+const sessionsFrom = (outcome: DiscoveryOutcome): ReadonlyArray<DiscoveredSession> =>
+	outcome._tag === "ready" || outcome._tag === "partial-source" ? outcome.sessions : [];
+
 const routeOutcome = async (
 	page: Page,
 	outcome: () => DiscoveryOutcome,
 	delay = 0,
+	lineage?: () => LineageProjection,
 ): Promise<void> => {
+	let latest: DiscoveryOutcome | undefined;
 	await page.route("**/fate", async (route) => {
 		const body = route.request().postDataJSON() as {
 			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
@@ -124,7 +165,16 @@ const routeOutcome = async (
 		const id = typeof operation?.id === "string" ? operation.id : "unknown";
 		if (operation?.name === "discovery") {
 			if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-			await fulfill(route, id, outcome());
+			latest = outcome();
+			await fulfill(route, id, latest);
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(
+				route,
+				id,
+				lineage?.() ?? lineageProjection(latest === undefined ? [] : sessionsFrom(latest)),
+			);
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
@@ -200,6 +250,121 @@ const pageErrors = (page: Page): Array<string> => {
 	return errors;
 };
 
+const blankPanePoint = async (pane: Locator) =>
+	pane.evaluate((element) => {
+		const bounds = element.getBoundingClientRect();
+		for (let y = bounds.top + 24; y < bounds.bottom - 24; y += 24) {
+			for (let x = bounds.left + 24; x < bounds.right - 24; x += 24) {
+				if (document.elementFromPoint(x, y) === element) return {x, y};
+			}
+		}
+		return null;
+	});
+
+interface RasterStats {
+	readonly paintedPixels: number;
+	readonly solidPixels: number;
+	readonly contrast: number;
+}
+
+const edgeRasterStats = async (
+	page: Page,
+	edgeId: string,
+	clip: {readonly x: number; readonly y: number; readonly width: number; readonly height: number},
+	mode: "edge" | "marker" = "edge",
+): Promise<RasterStats> => {
+	const captureClip = {
+		x: Math.max(0, clip.x),
+		y: Math.max(0, clip.y),
+		width: Math.max(1, clip.width),
+		height: Math.max(1, clip.height),
+	};
+	const target = page.locator(
+		mode === "edge"
+			? `.react-flow__edge[data-id="${edgeId}"]`
+			: `.react-flow__edge[data-id="${edgeId}"] .relationship-edge`,
+	);
+	const painted = await page.screenshot({clip: captureClip});
+	const previous = await target.evaluate((element, paintMode) => {
+		if (paintMode === "marker") {
+			const value = element.getAttribute("marker-end");
+			element.removeAttribute("marker-end");
+			return {attribute: "marker-end", value};
+		}
+		const value = element.getAttribute("style");
+		if (!(element instanceof SVGElement)) throw new Error("relationship edge is not SVG");
+		element.style.opacity = "0";
+		return {attribute: "style", value};
+	}, mode);
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+			),
+	);
+	const hidden = await page.screenshot({clip: captureClip});
+	await target.evaluate((element, state) => {
+		if (state.value === null) element.removeAttribute(state.attribute);
+		else element.setAttribute(state.attribute, state.value);
+	}, previous);
+	return await page.evaluate(
+		async ({paintedSource, hiddenSource}) => {
+			const decode = async (source: string): Promise<ImageData> => {
+				const image = new Image();
+				image.src = `data:image/png;base64,${source}`;
+				await image.decode();
+				const canvas = document.createElement("canvas");
+				canvas.width = image.naturalWidth;
+				canvas.height = image.naturalHeight;
+				const context = canvas.getContext("2d", {willReadFrequently: true});
+				if (context === null) throw new Error("Chromium did not provide a 2D capture context");
+				context.drawImage(image, 0, 0);
+				return context.getImageData(0, 0, canvas.width, canvas.height);
+			};
+			const visible = await decode(paintedSource);
+			const background = await decode(hiddenSource);
+			const luminance = (r: number, g: number, b: number): number => {
+				const channel = (value: number): number => {
+					const normalized = value / 255;
+					return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+				};
+				return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+			};
+			let paintedPixels = 0;
+			let solidPixels = 0;
+			let contrast = 1;
+			for (let index = 0; index < visible.data.length; index += 4) {
+				const delta = Math.max(
+					Math.abs((visible.data[index] ?? 0) - (background.data[index] ?? 0)),
+					Math.abs((visible.data[index + 1] ?? 0) - (background.data[index + 1] ?? 0)),
+					Math.abs((visible.data[index + 2] ?? 0) - (background.data[index + 2] ?? 0)),
+				);
+				if (delta >= 4) paintedPixels += 1;
+				if (delta >= 32) solidPixels += 1;
+				if (delta >= 32) {
+					const foregroundLight = luminance(
+						visible.data[index] ?? 0,
+						visible.data[index + 1] ?? 0,
+						visible.data[index + 2] ?? 0,
+					);
+					const backgroundLight = luminance(
+						background.data[index] ?? 0,
+						background.data[index + 1] ?? 0,
+						background.data[index + 2] ?? 0,
+					);
+					contrast = Math.max(
+						contrast,
+						(Math.max(foregroundLight, backgroundLight) + 0.05) /
+							(Math.min(foregroundLight, backgroundLight) + 0.05),
+					);
+				}
+			}
+			return {paintedPixels, solidPixels, contrast};
+		},
+		{paintedSource: painted.toString("base64"), hiddenSource: hidden.toString("base64")},
+	);
+};
+
 test.beforeAll(async () => {
 	processRoot = await mkdtemp(join(tmpdir(), "tuval-playwright-"));
 	const project = join(processRoot, "--Users-test-canvas");
@@ -227,12 +392,12 @@ test("the existing tuval process renders the React Flow pan and zoom canvas", as
 	const pane = page.locator(".react-flow__pane");
 	const viewport = page.locator(".react-flow__viewport");
 	const beforePan = await viewport.getAttribute("style");
-	const bounds = await pane.boundingBox();
-	expect(bounds).not.toBeNull();
-	if (bounds !== null) {
-		await page.mouse.move(bounds.x + bounds.width * 0.75, bounds.y + bounds.height * 0.7);
+	const start = await blankPanePoint(pane);
+	expect(start).not.toBeNull();
+	if (start !== null) {
+		await page.mouse.move(start.x, start.y);
 		await page.mouse.down();
-		await page.mouse.move(bounds.x + bounds.width * 0.75 + 64, bounds.y + bounds.height * 0.7 + 40);
+		await page.mouse.move(start.x + 64, start.y + 40, {steps: 8});
 		await page.mouse.up();
 	}
 	await expect(viewport).not.toHaveAttribute("style", beforePan ?? "");
@@ -259,12 +424,12 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 
 	const rootNode = page.locator('[data-id="pi:flow-root"]');
 	const childNode = page.locator('[data-id="pi:flow-child"]');
-	const edge = page.locator('[data-id="relationship:pi:flow-root:pi:flow-child"]');
+	const edge = page.locator('[data-id="fork:pi:flow-child"]');
 	await expect(rootNode).toHaveAttribute("aria-label", "root oturumu, flow-root");
 	await expect(childNode).toHaveAttribute("aria-label", "child oturumu, flow-child");
 	await expect(edge).toHaveAttribute(
 		"aria-label",
-		"flow-root oturumundan flow-child oturumuna ilişki",
+		"flow-root oturumundan flow-child oturumuna dallanma ilişkisi, kaynak protocol",
 	);
 	await expect(rootNode).toHaveAttribute("tabindex", "0");
 	await expect(edge).toHaveAttribute("tabindex", "0");
@@ -284,7 +449,9 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	}
 	expect(tabLabels).toContain("root oturumu, flow-root");
 	expect(tabLabels).toContain("child oturumu, flow-child");
-	expect(tabLabels).toContain("flow-root oturumundan flow-child oturumuna ilişki");
+	expect(tabLabels).toContain(
+		"flow-root oturumundan flow-child oturumuna dallanma ilişkisi, kaynak protocol",
+	);
 
 	await rootNode.focus();
 	await page.keyboard.press("Enter");
@@ -299,6 +466,348 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	await page.keyboard.press("ArrowRight");
 	await expect(childNode).not.toHaveAttribute("style", beforeMove ?? "");
 	await expect(page.locator(".react-flow__edge")).toHaveCount(1);
+	expect(errors).toEqual([]);
+});
+
+test("coincident spawn and fork relations paint distinct strokes and a visible arrowhead", async ({
+	page,
+}, testInfo) => {
+	const errors = pageErrors(page);
+	const root = session("coincident-root", "/work/root");
+	const child = session("coincident-child", "/work/child");
+	const base = lineageProjection([root, child]);
+	const projection: LineageProjection = {
+		...base,
+		graph: {
+			...base.graph,
+			edges: [
+				{
+					id: "spawn:coincident",
+					kind: "spawn",
+					parent: root.identity,
+					child: child.identity,
+					runId: "coincident",
+					observedAt: 1,
+				},
+				{
+					id: `fork:${child.identity}`,
+					kind: "fork",
+					parent: root.identity,
+					child: child.identity,
+					source: "protocol",
+				},
+			],
+		},
+	};
+	await routeOutcome(
+		page,
+		() => ({_tag: "ready", sessions: [root, child]}),
+		0,
+		() => projection,
+	);
+	await page.goto(tuvalUrl);
+
+	const spawn = page.locator('[data-id="spawn:coincident"] .relationship-edge');
+	const fork = page.locator(`[data-id="fork:${child.identity}"] .relationship-edge`);
+	await expect(spawn).toBeVisible();
+	await expect(fork).toBeVisible();
+	await expect(spawn).not.toHaveAttribute("d", (await fork.getAttribute("d")) ?? "");
+
+	const capturePath = testInfo.outputPath("coincident-lineage-canvas.png");
+	await page.screenshot({path: capturePath, fullPage: true});
+	await testInfo.attach("coincident-lineage-canvas", {
+		path: capturePath,
+		contentType: "image/png",
+	});
+
+	const spawnBox = await spawn.boundingBox();
+	const forkBox = await fork.boundingBox();
+	if (spawnBox === null || forkBox === null)
+		throw new Error("coincident edge paths did not render");
+	const spawnPixels = await edgeRasterStats(page, "spawn:coincident", {
+		x: spawnBox.x - 8,
+		y: spawnBox.y - 8,
+		width: spawnBox.width + 16,
+		height: spawnBox.height + 16,
+	});
+	const forkPixels = await edgeRasterStats(page, `fork:${child.identity}`, {
+		x: forkBox.x - 8,
+		y: forkBox.y - 8,
+		width: forkBox.width + 16,
+		height: forkBox.height + 16,
+	});
+	expect(spawnPixels.paintedPixels).toBeGreaterThan(80);
+	expect(spawnPixels.solidPixels).toBeGreaterThan(20);
+	expect(spawnPixels.contrast).toBeGreaterThanOrEqual(3);
+	expect(forkPixels.paintedPixels).toBeGreaterThan(40);
+	expect(forkPixels.contrast).toBeGreaterThanOrEqual(3);
+
+	const targetHandle = page.locator(
+		`[data-nodeid="${child.identity}"][data-handleid="relation-in"]`,
+	);
+	const targetBox = await targetHandle.boundingBox();
+	if (targetBox === null) throw new Error("coincident target handle did not render");
+	const arrowPixels = await edgeRasterStats(
+		page,
+		"spawn:coincident",
+		{
+			x: targetBox.x - 28,
+			y: targetBox.y - 12,
+			width: 32,
+			height: targetBox.height + 24,
+		},
+		"marker",
+	);
+	expect(arrowPixels.solidPixels).toBeGreaterThan(24);
+	expect(arrowPixels.contrast).toBeGreaterThanOrEqual(3);
+
+	expect(errors).toEqual([]);
+});
+
+test("typed lineage stays readable and durable across dense problems and a conflicting refresh", async ({
+	page,
+}, testInfo) => {
+	const errors = pageErrors(page);
+	const root = session("lineage-root", "/work/root");
+	const children = Array.from({length: 12}, (_, index) =>
+		session(`lineage-child-${index + 1}`, `/work/child-${index + 1}`),
+	);
+	const sessions = [root, ...children];
+	const base = lineageProjection(sessions);
+	const projection: LineageProjection = {
+		...base,
+		graph: {
+			...base.graph,
+			edges: [
+				...children.map((child, index) =>
+					index % 2 === 0
+						? {
+								id: `spawn:dense-${index + 1}`,
+								kind: "spawn" as const,
+								parent: root.identity,
+								child: child.identity,
+								runId: `dense-${index + 1}`,
+								observedAt: index + 1,
+							}
+						: {
+								id: `fork:${child.identity}`,
+								kind: "fork" as const,
+								parent: root.identity,
+								child: child.identity,
+								source: "protocol" as const,
+							},
+				),
+				{
+					id: "spawn:dense-skip-parent",
+					kind: "spawn" as const,
+					parent: children[3]!.identity,
+					child: children[1]!.identity,
+					runId: "dense-skip-parent",
+					observedAt: 20,
+				},
+			],
+			continuity: [
+				{
+					id: "resume:dense-resume",
+					runId: "dense-resume",
+					session: children[0]?.identity ?? root.identity,
+					parent: root.identity,
+					observedAt: 100,
+				},
+			],
+		},
+		problems: [
+			{code: "unresolved-session", source: "run:unjoined", message: "parent is not joined"},
+			{code: "malformed-run", source: "run:broken", message: "status entry is malformed"},
+			{code: "retention-loss", source: "run:expired", message: "source artifact expired"},
+			{
+				code: "protocol-unavailable",
+				source: "pi-protocol",
+				message: "metadata transport unavailable",
+			},
+		],
+	};
+	let lineageCalls = 0;
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			lineageCalls += 1;
+			if (lineageCalls === 1) {
+				await fulfill(route, id, projection);
+			} else {
+				await route.fulfill({
+					status: 200,
+					contentType: "application/json",
+					body: JSON.stringify({
+						version: 1,
+						results: [{id, ok: false, error: {message: "conflicting lineage record"}}],
+					}),
+				});
+			}
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			const input = operation.input as {readonly sessionId: string};
+			await fulfill(route, id, {
+				_tag: "refused",
+				sessionId: input.sessionId,
+				code: "disconnected",
+				reason: "test live transport is unavailable",
+			});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: null});
+	});
+	await page.goto(tuvalUrl);
+
+	await expect(page.locator(".react-flow__node")).toHaveCount(13);
+	await expect(page.locator(".react-flow__edge")).toHaveCount(13);
+	await expect(page.locator('.canvas-legend [data-kind="spawn"]')).toContainText(
+		"Oluşturma · düz ok",
+	);
+	await expect(page.locator('.canvas-legend [data-kind="fork"]')).toContainText(
+		"Dallanma · kesik çizgi",
+	);
+	await expect(page.locator(".relationship-edge--spawn").first()).toHaveAttribute(
+		"marker-end",
+		/.+/,
+	);
+	const forkDash = await page
+		.locator(".relationship-edge--fork")
+		.first()
+		.evaluate((element) => getComputedStyle(element).strokeDasharray);
+	expect(forkDash).not.toBe("none");
+	await expect(page.locator(`[data-id="${children[0]?.identity}"]`)).toHaveAttribute(
+		"aria-label",
+		/1 devam kaydı/,
+	);
+	await expect(page.getByText("1 devam")).toBeVisible();
+	await expect(page.locator('[data-id^="resume:"]')).toHaveCount(0);
+	await expect(page.getByText("Birleşmemiş oturum")).toBeVisible();
+	await expect(page.getByText("Bozuk kayıt")).toBeVisible();
+	await expect(page.getByText("Kaynağı artık yok")).toBeVisible();
+	const edgeNodeIntersections = await page.evaluate(
+		(relationships) => {
+			const collisions: Array<string> = [];
+			for (const relationship of relationships) {
+				const path = document.querySelector<SVGPathElement>(
+					`.react-flow__edge[data-id="${relationship.id}"] .relationship-edge`,
+				);
+				const matrix = path?.getScreenCTM();
+				if (path === null || path === undefined || matrix === null || matrix === undefined) {
+					collisions.push(`${relationship.id}:missing-path`);
+					continue;
+				}
+				const unrelated = [...document.querySelectorAll<HTMLElement>(".react-flow__node")].filter(
+					(node) =>
+						node.dataset.id !== relationship.parent && node.dataset.id !== relationship.child,
+				);
+				const length = path.getTotalLength();
+				for (let sample = 1; sample < 100; sample += 1) {
+					const point = path.getPointAtLength((length * sample) / 100).matrixTransform(matrix);
+					for (const node of unrelated) {
+						const bounds = node.getBoundingClientRect();
+						if (
+							point.x > bounds.left + 1 &&
+							point.x < bounds.right - 1 &&
+							point.y > bounds.top + 1 &&
+							point.y < bounds.bottom - 1
+						) {
+							collisions.push(`${relationship.id}:${node.dataset.id ?? "unknown"}`);
+						}
+					}
+				}
+			}
+			return [...new Set(collisions)];
+		},
+		projection.graph.edges.map(({id, parent, child}) => ({id, parent, child})),
+	);
+	expect(edgeNodeIntersections).toEqual([]);
+	const stageBox = await page.locator("#canvas-stage").boundingBox();
+	const problemBox = await page.locator(".lineage-problems").boundingBox();
+	if (stageBox === null || problemBox === null)
+		throw new Error("dense canvas regions did not render");
+	expect(stageBox.x + stageBox.width).toBeLessThanOrEqual(problemBox.x);
+	for (const nodeElement of await page.locator(".react-flow__node").all()) {
+		const nodeBox = await nodeElement.boundingBox();
+		if (nodeBox === null) throw new Error("dense lineage node did not render");
+		expect(
+			nodeBox.x + nodeBox.width <= problemBox.x || nodeBox.x >= problemBox.x + problemBox.width,
+		).toBe(true);
+	}
+	const capturePath = testInfo.outputPath("lineage-canvas.png");
+	await page.screenshot({path: capturePath, fullPage: true});
+	await testInfo.attach("lineage-canvas", {path: capturePath, contentType: "image/png"});
+
+	const viewport = page.locator(".react-flow__viewport");
+	const pane = page.locator(".react-flow__pane");
+	const beforePan = await viewport.getAttribute("style");
+	const paneBounds = await pane.boundingBox();
+	if (paneBounds === null) throw new Error("dense lineage pane did not render");
+	await page.mouse.move(paneBounds.x + 40, paneBounds.y + 300);
+	await page.mouse.down();
+	await page.mouse.move(paneBounds.x + 96, paneBounds.y + 332);
+	await page.mouse.up();
+	await expect(viewport).not.toHaveAttribute("style", beforePan ?? "");
+	const beforeZoom = await viewport.getAttribute("style");
+	await page.getByRole("button", {name: "Yakınlaştır"}).click();
+	await expect(viewport).not.toHaveAttribute("style", beforeZoom ?? "");
+	const edge = page.locator('[data-id="spawn:dense-1"]');
+	await edge.focus();
+	await page.keyboard.press("Enter");
+	await expect(edge).toHaveClass(/selected/);
+
+	await page.getByRole("button", {name: "Oturumları yenile"}).click();
+	await expect(page.getByText("Çakışan veya okunamayan bağ verisi")).toBeVisible();
+	await expect(page.locator(".react-flow__node")).toHaveCount(13);
+	await expect(page.locator(".react-flow__edge")).toHaveCount(13);
+	expect(errors).toEqual([]);
+});
+
+test("an initial lineage failure keeps discovered sessions as truthful nodes without edges", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	const root = session("known-root", "/work/known-root");
+	const child = session("known-child", "/work/known-child", "known-root");
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions: [root, child]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({
+					version: 1,
+					results: [{id, ok: false, error: {message: "initial lineage conflict"}}],
+				}),
+			});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: null});
+	});
+	await page.goto(tuvalUrl);
+
+	await expect(page.locator(".react-flow__node")).toHaveCount(2);
+	await expect(page.locator('[data-id="pi:known-root"]')).toBeVisible();
+	await expect(page.locator('[data-id="pi:known-child"]')).toBeVisible();
+	await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+	await expect(page.getByText("Çakışan veya okunamayan bağ verisi")).toBeVisible();
 	expect(errors).toEqual([]);
 });
 
@@ -524,6 +1033,16 @@ for (const refreshCase of clearingRefreshCases) {
 				);
 				return;
 			}
+			if (operation?.name === "lineage") {
+				await fulfill(
+					route,
+					id,
+					lineageProjection(
+						discoveryCalls === 1 ? [selectedSession, survivor] : sessionsFrom(refreshCase.outcome),
+					),
+				);
+				return;
+			}
 			if (operation?.name === "liveSession.attach") {
 				await fulfill(route, id, {_tag: "attached", session: liveSession("refresh-selected")});
 				return;
@@ -592,6 +1111,16 @@ test("discovery remains serialized through a stateful release and its live event
 			discoveryResponses += 1;
 			return;
 		}
+		if (operation?.name === "lineage") {
+			const sessions =
+				discoveryCalls === 2
+					? []
+					: discoveryCalls === 1
+						? [selectedSession]
+						: [selectedSession, newerSession];
+			await fulfill(route, id, lineageProjection(sessions));
+			return;
+		}
 		if (operation?.name === "liveSession.attach") {
 			const input = operation.input as {readonly sessionId: string};
 			attachment = input.sessionId;
@@ -658,6 +1187,10 @@ test("Composer keeps its keyboard focus ring visible while the editor scrolls", 
 		const id = typeof operation?.id === "string" ? operation.id : "unknown";
 		if (operation?.name === "discovery") {
 			await fulfill(route, id, {_tag: "ready", sessions: [selectedSession]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([selectedSession]));
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
@@ -760,6 +1293,10 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 			if (discoveryCalls === 2) await refreshGate;
 			await fulfill(route, id, {_tag: "ready", sessions: [alpha, beta]});
 			discoveryResponses += 1;
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([alpha, beta]));
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
@@ -896,6 +1433,10 @@ test("an original prompt completion cannot corrupt a newly attached pane after a
 			await fulfill(route, id, {_tag: "ready", sessions: [alpha, beta]});
 			return;
 		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([alpha, beta]));
+			return;
+		}
 		if (operation?.name === "liveSession.attach") {
 			const input = operation.input as {readonly sessionId: string};
 			if (input.sessionId === "prompt-alpha") alphaAttachments += 1;
@@ -967,6 +1508,10 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 		const id = typeof operation?.id === "string" ? operation.id : "unknown";
 		if (operation?.name === "discovery") {
 			await fulfill(route, id, {_tag: "ready", sessions: [alpha, beta]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([alpha, beta]));
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {

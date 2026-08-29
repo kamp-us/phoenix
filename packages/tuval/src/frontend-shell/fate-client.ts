@@ -1,4 +1,9 @@
+import {Option, Schema} from "effect";
 import type {DiscoveredSession, DiscoveryOutcome, DiscoveryProblem} from "../shared/discovery.js";
+import {
+	type LineageProjection,
+	LineageProjection as LineageProjectionSchema,
+} from "../shared/lineage.js";
 import type {
 	AttachedLiveSession,
 	AttachLiveSessionOutcome,
@@ -271,6 +276,17 @@ export const discoverSessions = async (): Promise<DiscoveryOutcome> => {
 	);
 	if (outcome === undefined) throw new Error("Oturum keşfi okunamayan bir yanıt döndürdü");
 	return outcome;
+};
+
+export const decodeLineageProjection = (value: unknown): LineageProjection | undefined =>
+	Option.getOrUndefined(Schema.decodeUnknownOption(LineageProjectionSchema)(value));
+
+export const readLineage = async (): Promise<LineageProjection> => {
+	const projection = decodeLineageProjection(
+		await runFate({id: "lineage", kind: "query", name: "lineage"}),
+	);
+	if (projection === undefined) throw new Error("Oturum bağları okunamayan bir yanıt döndürdü");
+	return projection;
 };
 
 export const attachLiveSession = async (sessionId: string): Promise<AttachLiveSessionOutcome> => {

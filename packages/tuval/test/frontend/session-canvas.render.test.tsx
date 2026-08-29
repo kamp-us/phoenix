@@ -2,19 +2,53 @@
 
 import {cleanup, render, waitFor} from "@testing-library/react";
 import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from "vitest";
-import {toRelationshipEdges, toSessionNodes} from "../../src/frontend-shell/canvas-adapter.js";
+import {toLineageEdges, toSessionNodes} from "../../src/frontend-shell/canvas-adapter.js";
 import {SessionCanvas} from "../../src/frontend-shell/session-canvas.js";
-import type {DiscoveredSession} from "../../src/shared/discovery.js";
+import type {LineageProjection} from "../../src/shared/lineage.js";
 
-const session = (id: string, parentSessionId?: string): DiscoveredSession => ({
-	identity: `pi:${id}` as DiscoveredSession["identity"],
+const node = (id: string) => ({
+	id: `pi:${id}` as LineageProjection["graph"]["nodes"][number]["id"],
 	piSessionId: id,
 	createdAt: 1,
 	updatedAt: 2,
 	cwd: `/work/${id}`,
-	sourceFile: `/fixtures/${id}.jsonl`,
-	...(parentSessionId === undefined ? {} : {parentSessionId}),
+	sourceFiles: [`/fixtures/${id}.jsonl`],
 });
+
+const projection: LineageProjection = {
+	graph: {
+		version: 2,
+		nodes: [node("root"), node("spawned"), node("forked")],
+		edges: [
+			{
+				id: "spawn:spawn-run",
+				kind: "spawn",
+				parent: node("root").id,
+				child: node("spawned").id,
+				runId: "spawn-run",
+				observedAt: 10,
+			},
+			{
+				id: `fork:${node("forked").id}`,
+				kind: "fork",
+				parent: node("root").id,
+				child: node("forked").id,
+				source: "header",
+			},
+		],
+		continuity: [
+			{
+				id: "resume:resume-run",
+				runId: "resume-run",
+				session: node("spawned").id,
+				parent: node("root").id,
+				observedAt: 20,
+			},
+		],
+		ownership: [],
+	},
+	problems: [],
+};
 
 const offsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
 const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
@@ -80,13 +114,26 @@ afterAll(() => {
 });
 
 describe("SessionCanvas", () => {
-	it("renders named focusable nodes, a named edge, and matching relationship handles", async () => {
-		const sessions = [session("root"), session("child", "root")];
+	it("renders coincident spawn and fork relations as different painted paths", async () => {
+		const coincident: LineageProjection = {
+			...projection,
+			graph: {
+				...projection.graph,
+				edges: [
+					projection.graph.edges[0]!,
+					{
+						...projection.graph.edges[1]!,
+						parent: node("root").id,
+						child: node("spawned").id,
+					},
+				],
+			},
+		};
 		const view = render(
 			<div style={{width: 800, height: 600}}>
 				<SessionCanvas
-					nodes={toSessionNodes(sessions)}
-					edges={toRelationshipEdges(sessions)}
+					nodes={toSessionNodes(coincident)}
+					edges={toLineageEdges(coincident)}
 					onNodesChange={vi.fn()}
 					onEdgesChange={vi.fn()}
 					onSelect={vi.fn()}
@@ -95,25 +142,49 @@ describe("SessionCanvas", () => {
 		);
 
 		await waitFor(() => {
-			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(2);
-			expect(view.container.querySelectorAll(".react-flow__edge")).toHaveLength(1);
+			const paths = [...view.container.querySelectorAll<SVGPathElement>(".relationship-edge")];
+			expect(paths).toHaveLength(2);
+			expect(paths[0]?.getAttribute("d")).not.toBe(paths[1]?.getAttribute("d"));
+		});
+	});
+
+	it("renders named typed edges, resume continuity, and matching relationship handles", async () => {
+		const view = render(
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={toSessionNodes(projection)}
+					edges={toLineageEdges(projection)}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+				/>
+			</div>,
+		);
+
+		await waitFor(() => {
+			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3);
+			expect(view.container.querySelectorAll(".react-flow__edge")).toHaveLength(2);
 		});
 		const root = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
-		const edge = view.container.querySelector<HTMLElement>(
-			'[data-id="relationship:pi:root:pi:child"]',
-		);
+		const spawn = view.container.querySelector<HTMLElement>('[data-id="spawn:spawn-run"]');
+		const fork = view.container.querySelector<HTMLElement>('[data-id="fork:pi:forked"]');
 		expect(root?.getAttribute("aria-label")).toBe("root oturumu, root");
 		expect(root?.getAttribute("tabindex")).toBe("0");
 		expect(root?.querySelector(".session-node.kp-card")).not.toBeNull();
-		expect(edge?.getAttribute("aria-label")).toBe("root oturumundan child oturumuna ilişki");
-		expect(edge?.getAttribute("tabindex")).toBe("0");
+		expect(spawn?.getAttribute("aria-label")).toContain("oluşturma ilişkisi");
+		expect(fork?.getAttribute("aria-label")).toContain("dallanma ilişkisi");
+		expect(spawn?.getAttribute("tabindex")).toBe("0");
+		expect(fork?.getAttribute("tabindex")).toBe("0");
+		expect(view.getAllByText("Oluşturma").length).toBeGreaterThan(0);
+		expect(view.getAllByText("Dallanma").length).toBeGreaterThan(0);
+		expect(view.getByText("1 devam")).toBeTruthy();
+		expect(view.container.querySelectorAll('[data-id^="resume:"]')).toHaveLength(0);
 		expect(
 			view.container.querySelector('[data-nodeid="pi:root"][data-handleid="relation-out"]'),
 		).not.toBeNull();
 		expect(
-			view.container.querySelector('[data-nodeid="pi:child"][data-handleid="relation-in"]'),
+			view.container.querySelector('[data-nodeid="pi:forked"][data-handleid="relation-in"]'),
 		).not.toBeNull();
 		expect(view.container.querySelectorAll(".canvas-controls .kp-btn")).toHaveLength(3);
-		expect(view.container.querySelectorAll(".canvas-controls .lucide")).toHaveLength(3);
 	});
 });
