@@ -13,22 +13,14 @@
  */
 import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
-import type {VerbOutcome} from "../verb.ts";
 import {runAmend} from "./amend-verb.ts";
 import {DEFAULT_LIMIT} from "./dedup.ts";
 import {runDedup} from "./dedup-verb.ts";
 import {runFile} from "./file-verb.ts";
 import {runNote} from "./note-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 const DEFAULT_LABEL = "status:needs-triage";
 

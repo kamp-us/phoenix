@@ -15,23 +15,16 @@
 
 import {Effect, type FileSystem, Option, Result} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
+import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readFile} from "../io/fs.ts";
 import {readStdin} from "../io/stdin.ts";
-import {FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {FAILED, refuse} from "../verb.ts";
 import {type DocumentRead, runAnswer} from "./answer-verb.ts";
 import {openSubject, runOpen} from "./open-verb.ts";
 import {runRead} from "./read-verb.ts";
 import {runRound} from "./round-verb.ts";
 import {runRule} from "./rule-verb.ts";
-
-/** Write the outcome and exit on its code — stdout is the answer, everything else is stderr. */
-const emit = (outcome: VerbOutcome): Effect.Effect<void> =>
-	Effect.sync(() => {
-		for (const line of outcome.stderr) process.stderr.write(`${line}\n`);
-		if (outcome.stdout !== "") process.stdout.write(outcome.stdout);
-		process.exit(outcome.code);
-	});
 
 /**
  * Read a document the verb was pointed at, as a value.
