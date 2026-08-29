@@ -2,6 +2,7 @@ import {Option, Schema} from "effect";
 import {ExtensionUISnapshot} from "../shared/extension-ui.js";
 import {
 	ResilienceDiagnostic,
+	type ResilienceDiagnostic as ResilienceDiagnosticValue,
 	type RestorationSnapshot,
 	type RestorationStage,
 	type RestorationStageResult,
@@ -37,39 +38,99 @@ const decodeStringRecord = (value: unknown): Readonly<Record<string, string>> | 
 		? (value as Readonly<Record<string, string>>)
 		: undefined;
 
-export const decodeRestorationSnapshot = (value: unknown): RestorationSnapshot | undefined => {
-	if (
-		!isRecord(value) ||
-		!Array.isArray(value.stages) ||
-		!Array.isArray(value.packageRegistrations)
-	) {
-		return undefined;
+const safeDiagnostic = (
+	component: "snapshot" | "selection" | "settings" | "package" | "extension-ui" | "diagnostics",
+): ResilienceDiagnosticValue => {
+	if (component === "selection") {
+		return {
+			category: "persistence",
+			code: "selected-session-state-invalid",
+			message: "Kalıcı seçili oturum bilgisi okunamadı.",
+			action: "Kullanılabilir bir oturumu yeniden seç.",
+		};
 	}
-	const decodedStages = value.stages.map(decodeStage);
-	const settings = decodeStringRecord(value.settings);
-	const diagnostics = Option.getOrUndefined(
-		Schema.decodeUnknownOption(Schema.Array(ResilienceDiagnostic))(value.diagnostics),
-	);
-	const extensionUI = Option.getOrUndefined(
-		Schema.decodeUnknownOption(Schema.Array(ExtensionUISnapshot))(value.extensionUI),
-	);
-	if (
-		decodedStages.some((stage) => stage === undefined) ||
-		settings === undefined ||
-		diagnostics === undefined ||
-		extensionUI === undefined ||
-		!value.packageRegistrations.every((name) => typeof name === "string") ||
-		!(value.selectedSessionId === null || typeof value.selectedSessionId === "string")
-	) {
-		return undefined;
+	if (component === "settings") {
+		return {
+			category: "persistence",
+			code: "workspace-settings-invalid",
+			message: "Kalıcı çalışma alanı ayarları okunamadı.",
+			action: "Ayarları gözden geçir; sağlıklı çalışma alanı verileri korundu.",
+		};
+	}
+	if (component === "package") {
+		return {
+			category: "package",
+			code: "package-registrations-invalid",
+			message: "Kalıcı paket kayıtlarının bir bölümü okunamadı.",
+			action: "Paket kayıtlarını gözden geçir; geçerli kayıtlar korundu.",
+		};
+	}
+	if (component === "extension-ui") {
+		return {
+			category: "ui-bridge",
+			code: "extension-ui-current-invalid",
+			message: "Kalıcı Extension UI durumunun bir bölümü okunamadı.",
+			action: "Extension UI kaynağını gözden geçir; geçerli durum korundu.",
+		};
 	}
 	return {
-		stages: decodedStages as ReadonlyArray<RestorationStageResult>,
-		selectedSessionId: value.selectedSessionId,
-		settings,
-		packageRegistrations: value.packageRegistrations as ReadonlyArray<string>,
-		extensionUI,
-		diagnostics,
+		category: "startup",
+		code: "workspace-state-unavailable",
+		message:
+			component === "diagnostics"
+				? "Geri yükleme tanılarının bir bölümü okunamadı."
+				: "Geri yükleme aşamalarının bir bölümü okunamadı.",
+		action: "Kalıcı çalışma alanı kaynağını gözden geçir; geçerli bölümler korundu.",
+	};
+};
+
+const decodeItems = <A>(
+	value: unknown,
+	decode: (candidate: unknown) => A | undefined,
+): {readonly values: ReadonlyArray<A>; readonly invalid: boolean} => {
+	if (!Array.isArray(value)) return {values: [], invalid: true};
+	const decoded = value.map(decode);
+	return {
+		values: decoded.filter((candidate): candidate is A => candidate !== undefined),
+		invalid: decoded.some((candidate) => candidate === undefined),
+	};
+};
+
+export const decodeRestorationSnapshot = (value: unknown): RestorationSnapshot | undefined => {
+	if (!isRecord(value)) return undefined;
+
+	const decodedStages = decodeItems(value.stages, decodeStage);
+	const settings = decodeStringRecord(value.settings);
+	const packageRegistrations = decodeItems(value.packageRegistrations, (candidate) =>
+		typeof candidate === "string" ? candidate : undefined,
+	);
+	const extensionUI = decodeItems(value.extensionUI, (candidate) =>
+		Option.getOrUndefined(Schema.decodeUnknownOption(ExtensionUISnapshot)(candidate)),
+	);
+	const diagnostics = decodeItems(value.diagnostics, (candidate) =>
+		Option.getOrUndefined(Schema.decodeUnknownOption(ResilienceDiagnostic)(candidate)),
+	);
+	const selectedSessionId =
+		value.selectedSessionId === null || typeof value.selectedSessionId === "string"
+			? value.selectedSessionId
+			: null;
+	const safeDiagnostics: Array<ResilienceDiagnosticValue> = [];
+	if (decodedStages.invalid) safeDiagnostics.push(safeDiagnostic("snapshot"));
+	if (!(value.selectedSessionId === null || typeof value.selectedSessionId === "string")) {
+		safeDiagnostics.push(safeDiagnostic("selection"));
+	}
+	if (settings === undefined) safeDiagnostics.push(safeDiagnostic("settings"));
+	if (packageRegistrations.invalid) safeDiagnostics.push(safeDiagnostic("package"));
+	if (extensionUI.invalid) safeDiagnostics.push(safeDiagnostic("extension-ui"));
+	if (diagnostics.invalid) safeDiagnostics.push(safeDiagnostic("diagnostics"));
+
+	return {
+		stages: decodedStages.values,
+		selectedSessionId,
+		settings: settings ?? {},
+		packageRegistrations: packageRegistrations.values,
+		extensionUI: extensionUI.values,
+		diagnostics: [...diagnostics.values, ...safeDiagnostics],
 	};
 };
 

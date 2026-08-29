@@ -228,10 +228,31 @@ describe("ExtensionUIBridge", () => {
 		expect(screen.getByText(/Paket oturumu kaldırıldı/)).toBeTruthy();
 	});
 
-	it("replaces mounted reconnect state, clears notices, and never reopens resolved dialogs", async () => {
+	it("preserves hydrated state on empty open and replaces it only when replay begins", async () => {
 		const client = new FakeClient();
-		render(<ExtensionUIBridge client={client} />);
+		render(
+			<ExtensionUIBridge
+				client={client}
+				initialSnapshots={[
+					{
+						scope,
+						statuses: [{key: "hydrated", text: "sunucudan geri yüklendi"}],
+						widgets: [
+							{
+								key: "hydrated",
+								lines: ["kalıcı widget"],
+								placement: "aboveEditor",
+							},
+						],
+					},
+				]}
+			/>,
+		);
+		expect(await screen.findByText("sunucudan geri yüklendi")).toBeTruthy();
+		expect(screen.getByText("kalıcı widget")).toBeTruthy();
 		client.handlers?.open();
+		expect(screen.getByText("sunucudan geri yüklendi")).toBeTruthy();
+		expect(screen.getByText("kalıcı widget")).toBeTruthy();
 		client.emit({
 			_tag: "status",
 			sequence: 1,
@@ -277,6 +298,8 @@ describe("ExtensionUIBridge", () => {
 			replay: true,
 		});
 		expect(await screen.findByText("son değer")).toBeTruthy();
+		expect(screen.queryByText("sunucudan geri yüklendi")).toBeNull();
+		expect(screen.queryByText("kalıcı widget")).toBeNull();
 		expect(screen.queryByText("silinmesi gereken durum")).toBeNull();
 		expect(screen.queryByText("silinmesi gereken widget")).toBeNull();
 		expect(screen.queryByText("yeniden oynatılmayan bildirim")).toBeNull();

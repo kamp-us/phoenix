@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import {render, screen} from "@testing-library/react";
-import {describe, expect, it, vi} from "vitest";
+import {cleanup, render, screen} from "@testing-library/react";
+import {afterEach, describe, expect, it, vi} from "vitest";
 import {RestorationStatus} from "../../src/frontend-shell/restoration-status.js";
 
 const degradedSnapshot = {
@@ -29,6 +29,8 @@ const degradedSnapshot = {
 	],
 };
 
+afterEach(cleanup);
+
 describe("RestorationStatus", () => {
 	it("keeps independent diagnostics actionable beside healthy state", () => {
 		const useFirst = vi.fn();
@@ -48,7 +50,27 @@ describe("RestorationStatus", () => {
 		expect(screen.getByText("Kalıcı çalışma alanı")).toBeTruthy();
 		expect(screen.getByText("Paket")).toBeTruthy();
 		expect(screen.getByText("Önceki sohbet kullanılamıyor")).toBeTruthy();
-		screen.getByRole("button", {name: "İlk kullanılabilir oturumu seç"}).click();
+		screen.getByRole("button", {name: "Kullanılabilir oturuma geç"}).click();
+		expect(useFirst).toHaveBeenCalledOnce();
+	});
+
+	it("keeps the safe fallback reachable when durable selection was cleared", () => {
+		const useFirst = vi.fn();
+		render(
+			<RestorationStatus
+				snapshot={{...degradedSnapshot, selectedSessionId: null}}
+				failure={null}
+				selection={{
+					_tag: "unavailable",
+					sessionId: null,
+					reason: "Kalıcı oturum artık kullanılamıyor.",
+				}}
+				onUseFirstSession={useFirst}
+			/>,
+		);
+		expect(screen.getByText("Önceki sohbet kullanılamıyor")).toBeTruthy();
+		expect(screen.queryByText(/^Oturum:/)).toBeNull();
+		screen.getByRole("button", {name: "Kullanılabilir oturuma geç"}).click();
 		expect(useFirst).toHaveBeenCalledOnce();
 	});
 

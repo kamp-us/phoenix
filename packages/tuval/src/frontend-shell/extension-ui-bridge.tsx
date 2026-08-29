@@ -385,6 +385,7 @@ export function ExtensionUIBridge({
 }) {
 	const [state, setState] = useState<BridgeState>(initialState);
 	const submitted = useRef(new Set<string>());
+	const awaitingAuthoritativeReplay = useRef(false);
 	const active = state.dialogs.at(0);
 	const currentOrder = (left: StatusView | WidgetView, right: StatusView | WidgetView) =>
 		extensionUIScopeKey(left.scope).localeCompare(extensionUIScopeKey(right.scope)) ||
@@ -414,16 +415,28 @@ export function ExtensionUIBridge({
 	useEffect(
 		() =>
 			client.subscribe({
-				open: () =>
+				open: () => {
+					awaitingAuthoritativeReplay.current = true;
 					setState((current) => ({
 						...current,
 						connection: "connected",
 						dialogs: [],
 						notices: [],
-						statuses: new Map(),
-						widgets: new Map(),
-					})),
-				event: (event) => setState((current) => reduceExtensionUIEvent(current, event)),
+					}));
+				},
+				event: (event) =>
+					setState((current) => {
+						const startsReplay =
+							awaitingAuthoritativeReplay.current &&
+							(event._tag === "status" || event._tag === "widget") &&
+							event.replay;
+						if (!startsReplay) return reduceExtensionUIEvent(current, event);
+						awaitingAuthoritativeReplay.current = false;
+						return reduceExtensionUIEvent(
+							{...current, statuses: new Map(), widgets: new Map()},
+							event,
+						);
+					}),
 				disconnect: () =>
 					setState((current) =>
 						appendNotice(

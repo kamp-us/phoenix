@@ -196,7 +196,9 @@ const installEventSource = async (page: Page): Promise<void> => {
 	await page.addInitScript(() => {
 		class TestEventSource {
 			static readonly instances: Array<TestEventSource> = [];
+			static autoOpen = true;
 			readonly url: string;
+			closed = false;
 			onopen: ((event: Event) => unknown) | null = null;
 			onmessage: ((event: MessageEvent<string>) => unknown) | null = null;
 			onerror: ((event: Event) => unknown) | null = null;
@@ -204,17 +206,29 @@ const installEventSource = async (page: Page): Promise<void> => {
 			constructor(url: string | URL) {
 				this.url = String(url);
 				TestEventSource.instances.push(this);
-				queueMicrotask(() => this.onopen?.(new Event("open")));
+				if (TestEventSource.autoOpen) queueMicrotask(() => this.onopen?.(new Event("open")));
 			}
 
-			close(): void {}
+			close(): void {
+				this.closed = true;
+			}
 		}
 		Reflect.set(window, "EventSource", TestEventSource);
+		Reflect.set(window, "__tuvalSetEventSourceAutoOpen", (value: boolean) => {
+			TestEventSource.autoOpen = value;
+		});
+		Reflect.set(window, "__tuvalEventSourceState", () => {
+			const live = TestEventSource.instances.filter(({url}) => url.includes("/fate/live?"));
+			return {count: live.length, closed: live.map(({closed}) => closed)};
+		});
 		Reflect.set(window, "__tuvalEmit", (data: string) => {
 			TestEventSource.instances.at(-1)?.onmessage?.(new MessageEvent("message", {data}));
 		});
 		Reflect.set(window, "__tuvalDisconnect", () => {
-			TestEventSource.instances.at(-1)?.onerror?.(new Event("error"));
+			TestEventSource.instances
+				.filter(({url}) => url.includes("/fate/live?"))
+				.at(-1)
+				?.onerror?.(new Event("error"));
 		});
 	});
 };
@@ -2002,5 +2016,77 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 	const screenshotPath = testInfo.outputPath("cockpit-six-controls.png");
 	await page.screenshot({path: screenshotPath, fullPage: true});
 	await testInfo.attach("cockpit-six-controls", {path: screenshotPath, contentType: "image/png"});
+	expect(errors).toEqual([]);
+});
+
+test("browser reconnect closes native retries, stops after three attempts, and rearms safely", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const selected = session("bounded-reconnect", "/work/bounded-reconnect");
+	let discoveryCalls = 0;
+	await page.route("**/fate", async (route) => {
+		const operation = route.request().postDataJSON()?.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			discoveryCalls += 1;
+			await fulfill(route, id, {_tag: "ready", sessions: [selected]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([selected]));
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			await fulfill(route, id, {_tag: "attached", session: liveSession(selected.piSessionId)});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: selected.piSessionId});
+	});
+	await page.goto(tuvalUrl);
+	await selectNode(page, selected.identity);
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
+	await page.evaluate(() => {
+		const setAutoOpen = Reflect.get(window, "__tuvalSetEventSourceAutoOpen") as (
+			value: boolean,
+		) => void;
+		setAutoOpen(false);
+	});
+	for (let expected = 2; expected <= 4; expected += 1) {
+		await disconnectLive(page);
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() =>
+						(
+							Reflect.get(window, "__tuvalEventSourceState") as () => {
+								count: number;
+							}
+						)().count,
+				),
+			)
+			.toBe(expected);
+	}
+	await disconnectLive(page);
+	await expect(page.getByText("Yeniden bağlanma durdu", {exact: true})).toBeVisible();
+	const stopped = await page.evaluate(() =>
+		(
+			Reflect.get(window, "__tuvalEventSourceState") as () => {
+				count: number;
+				closed: Array<boolean>;
+			}
+		)(),
+	);
+	expect(stopped).toEqual({count: 4, closed: [true, true, true, true]});
+	await page.evaluate(() => {
+		const setAutoOpen = Reflect.get(window, "__tuvalSetEventSourceAutoOpen") as (
+			value: boolean,
+		) => void;
+		setAutoOpen(true);
+	});
+	await page.getByRole("button", {name: "Yeniden bağlan"}).click();
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
+	await expect.poll(() => discoveryCalls).toBe(2);
 	expect(errors).toEqual([]);
 });

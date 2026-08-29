@@ -7,7 +7,7 @@ import type {ResilienceDiagnostic, RestorationSnapshot} from "../shared/resilien
 export type SelectionRestoration =
 	| {readonly _tag: "idle"}
 	| {readonly _tag: "restored"; readonly sessionId: string}
-	| {readonly _tag: "unavailable"; readonly sessionId: string; readonly reason: string};
+	| {readonly _tag: "unavailable"; readonly sessionId: string | null; readonly reason: string};
 
 const stageLabels = {
 	discovery: "Oturumlar",
@@ -72,9 +72,9 @@ export function RestorationStatus({
 				<div className="restoration-status__problem" role="status">
 					<strong>Önceki sohbet kullanılamıyor</strong>
 					<span>{selection.reason}</span>
-					<small>Oturum: {selection.sessionId}</small>
+					{selection.sessionId === null ? null : <small>Oturum: {selection.sessionId}</small>}
 					<Button type="button" variant="secondary" onClick={onUseFirstSession}>
-						İlk kullanılabilir oturumu seç
+						Kullanılabilir oturuma geç
 					</Button>
 				</div>
 			) : null}

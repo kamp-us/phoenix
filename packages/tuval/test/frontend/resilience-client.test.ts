@@ -11,7 +11,7 @@ const snapshot = {
 		{stage: "extension-ui-current", status: "restored"},
 	],
 	selectedSessionId: "child-session",
-	settings: {theme: "dark"},
+	settings: {density: "compact", nodeDetailLevel: "full", theme: "dark"},
 	packageRegistrations: ["fixture-package"],
 	extensionUI: [
 		{
@@ -36,12 +36,44 @@ describe("decodeRestorationSnapshot", () => {
 		expect(decodeRestorationSnapshot(snapshot)).toEqual(snapshot);
 	});
 
-	it.each([
-		{...snapshot, selectedSessionId: 42},
-		{...snapshot, packageRegistrations: ["healthy", 42]},
-		{...snapshot, stages: [{stage: "unknown", status: "restored"}]},
-		{...snapshot, diagnostics: [{...snapshot.diagnostics[0], message: {prompt: "secret"}}]},
-	])("refuses an invalid independent source without guessing", (candidate) => {
-		expect(decodeRestorationSnapshot(candidate)).toBeUndefined();
+	it("retains every healthy component when selection and one extension snapshot are corrupt", () => {
+		const decoded = decodeRestorationSnapshot({
+			...snapshot,
+			selectedSessionId: 42,
+			extensionUI: [...snapshot.extensionUI, {scope: {packageName: "broken"}, statuses: []}],
+		});
+		expect(decoded).toMatchObject({
+			selectedSessionId: null,
+			settings: snapshot.settings,
+			packageRegistrations: snapshot.packageRegistrations,
+			extensionUI: snapshot.extensionUI,
+		});
+		expect(decoded?.stages).toEqual(snapshot.stages);
+		expect(decoded?.diagnostics.map(({code}) => code)).toEqual(
+			expect.arrayContaining([
+				"lineage-restore-failed",
+				"selected-session-state-invalid",
+				"extension-ui-current-invalid",
+			]),
+		);
+	});
+
+	it("redacts malformed diagnostic content while preserving valid stages and settings", () => {
+		const decoded = decodeRestorationSnapshot({
+			...snapshot,
+			diagnostics: [
+				snapshot.diagnostics[0],
+				{...snapshot.diagnostics[0], message: {prompt: "secret"}},
+			],
+		});
+		expect(decoded?.settings).toEqual(snapshot.settings);
+		expect(decoded?.stages).toEqual(snapshot.stages);
+		expect(JSON.stringify(decoded)).not.toContain("secret");
+		expect(decoded?.diagnostics.map(({code}) => code)).toContain("workspace-state-unavailable");
+	});
+
+	it("refuses only a non-object envelope", () => {
+		expect(decodeRestorationSnapshot(null)).toBeUndefined();
+		expect(decodeRestorationSnapshot("invalid")).toBeUndefined();
 	});
 });
