@@ -114,6 +114,34 @@ to each class's slice: code → [rubrics/code.md](rubrics/code.md) · doc →
 any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy; the
 doc rubric's prose-craft line is the fallback until it lands.
 
+<!-- anchor: STAGE-ONLY-UNDER-THE-ALLOCATED-PATH --> **A diff too large for one read is staged under
+the path this verb allocates, and never under a name you chose.** The session scratchpad is shared
+by every lane in the session, so a generic `diff.txt` there is a name a concurrent lane writes too:
+on PR #7232 a reviewer's file was replaced with an unrelated PR's diff between two offset reads, and
+the verdict it was heading for would have carried the right head over the wrong bytes — which
+nothing downstream can detect (#7246).
+
+```bash
+fabrika review scratch $pr_number --slug diff --lane <lane> --sha 03135b91
+```
+
+`<lane>` is the lane key your spawn brief's `## Task` section carries, and `--sha` is step 1's head:
+the first separates you from the other reviewers of this session, the second from your own earlier
+round. The verb prints one absolute path, creates its directory, and **refuses rather than handing
+back the session-wide directory** when either is missing. A run whose caller named no lane cannot
+stage: read the diff in place instead, and never substitute a name of your own.
+
+Then read that path off the verb and redirect the diff into it, typing the path out literally —
+`fabrika review diff $pr_number --sha 03135b91 > <the path it printed>`. **Never capture the
+allocation into a shell variable and never redirect through one.** Command substitution and a
+variable the verifier cannot resolve are each on their own enough for a worktree-isolated shell to
+refuse the line, so a fence built that way does not run for the reviewer it is written for (ADR
+[0235](../../../../.decisions/0235-fences-carry-zero-expansions.md)). A redirect whose target is the
+literal path carries no expansion and runs.
+
+The path is machine-local, so it never appears in what you post — `review post` and
+`review append-criterion` red on it at `5`.
+
 **A contract you need while grading arrives one section at a time** — including a `contract.md` the
 diff itself edits. Take each heading the judgment touches with
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`, never the whole file (ADR
