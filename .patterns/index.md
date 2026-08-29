@@ -166,6 +166,12 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 - **One service per feature folder.** Reads + writes coexist.
 - **Testing strategy:** **two tiers** ([ADR 0082](../.decisions/0082-two-test-tiers-unit-integration.md)). `unit` — pure logic and Effect control flow with **no database**, substituting the `Drizzle` seam directly (`*.unit.test.ts`, offline in the `unit` Vitest project under `@effect/vitest`); `integration` — real behavior against **real remote D1** and the deployed worker (black-box HTTP, [alchemy-test-harness.md](./alchemy-test-harness.md)). `node:sqlite` / `makeSqliteTestDb` is **banned** as a backing. Litmus: *could this be wrong even if the DB behaved perfectly?* yes → `unit`, only-wrong-if-real-D1-differs → `integration`. See [effect-testing.md](./effect-testing.md).
 
+## Index — docs & meta patterns
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [package-readme-shape.md](./package-readme-shape.md) | The canonical `packages/*/README.md` section order (explanation → how-to → reference → testing), the no-tutorial-at-package-scale rule, the small-package minimum; the [`diataxis`](../claude-plugins/fabrika/skills/diataxis/SKILL.md) skill is the single-mode classifier | Writing or restructuring a package README |
+
 ## When to add a new pattern doc here
 
 A pattern may enter through either source-backed path:

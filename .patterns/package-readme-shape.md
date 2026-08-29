@@ -1,46 +1,44 @@
-# Diátaxis-lite README shape
+# package-readme-shape — the canonical `packages/*/README.md` section order
 
-The canonical section order every `packages/*/README.md` follows, scaled to package size.
-Grounded in the shape the repo converged on: [`packages/cf-credentials/README.md`](../packages/cf-credentials/README.md),
-[`packages/composer/README.md`](../packages/composer/README.md), [`packages/depo/README.md`](../packages/depo/README.md).
-The `diataxis` skill is the classifier that checks a page holds one dominant mode; this doc is
-the README-sized projection of that law.
+Use the [`diataxis` skill](../claude-plugins/fabrika/skills/diataxis/SKILL.md) to classify the README
+before applying this shape. A README has one dominant mode; entries for other reader needs link to
+their own pages instead of embedding a second mode.
 
-## The canonical section order
+## Canonical order
 
-1. **`# @kampus/<name>`** — one-line identity: what the package is in a sentence.
-2. **`## What it is`** — explanation. The surfaces a consumer touches, named file-by-file or
-   export-by-export. This is the *reference-adjacent* half: concrete, checkable against source.
-3. **`## Why it exists`** — explanation. The forcing constraint or decision that minted the
-   package, citing the ADR (and the "promote at the 2nd usage" trigger where it applies).
-   Scope and non-goals live here — in the explanation half, never buried in a how-to step.
-4. **`## How to use it`** — how-to. The runnable commands and the import-and-call snippet a
-   consumer needs. No narrative arc; if it needs steps 1-through-6 with prose between, that is
-   a tutorial and belongs on its own linked surface.
-5. **Reference tail** — tables of rules/invariants, module maps, config keys, flags. Last
-   section(s), or linked out to a dedicated page when they outgrow the README.
-6. **`## Testing`** — short tail: how to run this package's tests, anything surprising about
-   them.
+```text
+# <package name>
+## What it is          ← explanation, or a link to the explanation home
+## Why it exists       ← explanation, or links to the governing ADRs
+## How to use it       ← how-to recipes
+## Reference           ← reference content or a link to the reference page
+## Testing             ← short task-oriented validation commands
+```
 
-A small package may satisfy the shape in three short sections (`What it is`, `How to use it`,
-`Testing`) — the minimum is that explanation leads and reference trails.
+The navigation order is explanation → how-to → reference → testing even when the README's dominant
+mode moves some entries to linked pages.
 
-## The rules that make it checkable
+## Rules
 
-- **No tutorial at package scale.** A numbered walkthrough with narrative between steps moves
-  to its own linked surface (e.g. `WALKTHROUGH.md` beside the README), referenced from
-  *How to use it* — never blended into the README body.
-- **Scope and non-goals live in the explanation half** (*What it is* / *Why it exists*). A
-  reader deciding "is this for me?" should not have to parse a how-to to find the boundary.
-- **Every behavioural claim must verify against source at the PR's head.** Commands run,
-  exports exist, behaviours hold. The additive truth rule: each public surface introduced
-  since the README's last truth pass is either described or explicitly named as out of scope.
-- **One dominant mode per section.** Explanation sections explain; how-to sections instruct;
-  reference sections enumerate. The `diataxis` skill flags type-mixing.
+1. **Explanation first.** State what the package is and point to the decision that forced it. Do not
+   re-argue an ADR in the README.
+2. **No tutorial at package scale.** Move every start-to-finish lesson to a linked tutorial next to
+   the package.
+3. **Scope and non-goals live in the explanation half.** State them once on the explanation surface.
+4. **How-to is recipes, not lessons.** Each recipe targets one result and assumes competence.
+5. **Reference is dry and complete.** Keep exports, flags, configuration keys, and module maps on a
+   reference surface at the tail or on a linked page.
+6. **Small-package minimum.** A small package may use three short entries: what/why, how to use it,
+   and testing.
+7. **One dominant mode.** A page that answers more than one reader need must split; section labels do
+   not make a mixed page single-mode.
 
-## Applying it to an existing README
+## Classification contract
 
-Re-ground before restructuring: diff the README's claims against `src/**` at head (the
-drift window = commits touching the package after the README's last touch), then reorder into
-the canonical order, moving any walkthrough to its own surface and demoting stale claims.
-Worked example: [`packages/fate-effect/README.md`](../packages/fate-effect/README.md).
+Record one dominant mode with no unresolved type-mixing flag. The `diataxis` skill classifies; a
+`build` repair splits any mixed page it reports.
+
+## See also
+
+- [Pattern library index](./index.md)
+- [`diataxis` classifier](../claude-plugins/fabrika/skills/diataxis/SKILL.md)
