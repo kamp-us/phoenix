@@ -109,6 +109,16 @@ export const NO_LANDING_METHOD = 19;
 export const LABEL_ABSENT = PLAN_LABEL_ABSENT;
 
 /**
+ * Refused: every check run at the head passed and **not one workflow this repo authors produced a
+ * run there**, so no gate of the repo's own inspected the bytes `ship` would merge (#6915).
+ *
+ * `review`'s `16` proves the same fact, and this group does not import it: `16` here is
+ * {@link PROVEN_NOT_IN_STATE}, a meaning `ship` allocated first, so the two groups seat one fact on
+ * two numbers rather than one number on two meanings.
+ */
+export const NO_GATE_COVERAGE = 20;
+
+/**
  * The unallocated codes. `4` is `report file`'s body-section seat and `14`/`15` are `review`'s ACL
  * and append-only seats; no verb here performs any of the three. Excluded from the alignment
  * check's allocations — reading a gap as an allocation reports a collision on a seat nobody sits in.

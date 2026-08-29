@@ -869,7 +869,7 @@ record it. Contract:
 | `ship cp-approval` | the ADR 0175 cardinality discharge — `discharge` / `stop` / `n/a`, from head-bound signals only |
 | `ship gate` | the verdict conjunction over every required namespace |
 | `ship floor` | whether a governance-root diff carries its head-bound `governance` verdict |
-| `ship checks` | the head CI rollup, with the running-vs-wedged split and the zero-checkset facts |
+| `ship checks` | the head CI rollup, with the running-vs-wedged split, the zero-checkset facts, and the gate-coverage floor under `green` |
 | `ship evidence` | the SHA-bound run-evidence bundle as `present` / `pending` / `failed` / `absent` / `unknown`, with the manifest's checks collapsed to a status tally |
 | `ship threads` | every unresolved review thread, both pagination layers count-proved |
 | `ship resolve` | the sanctioned thread-resolution write, refusing any thread not positively bot-classed |

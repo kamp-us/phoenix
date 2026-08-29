@@ -11,20 +11,26 @@
  * re-derives for itself. Zero workflows is `no-producer` — a different fact from `pending`, and no
  * longer collapsed into it (#6298): a repo with no CI is not a repo whose CI is still running, and
  * printing the second over the first tells an operator to wait for a run nothing will ever start.
+ *
+ * A `green` is served only over bytes a gate of this repo's own inspected: the coverage read is
+ * `../review/gate-coverage.ts`, the same module `review ci` refuses on, and a head where every
+ * repo-authored workflow was silent refuses on {@link NO_GATE_COVERAGE} rather than printing the
+ * word this group merges on (#6915).
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {reasonHistogram} from "../evidence.ts";
 import {commitExists} from "../io/pulls.ts";
+import {gateCoverageOf} from "../review/gate-coverage.ts";
 import {isFailing, isInformational, isStalled, rollupOf, statusOf} from "../review/rollup.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {
 	latestPerContext,
 	listRunsAtHead,
 	listShipCheckRuns,
-	listWorkflows,
+	listWorkflowPaths,
 	type ShipCheckRun,
 } from "./github.ts";
 import {isSuperseded, supersededSuites} from "./supersession.ts";
@@ -75,8 +81,16 @@ const checkClassOf = (run: ShipCheckRun, superseded: ReadonlySet<number>): strin
 
 export interface Sample {
 	readonly runs: ReadonlyArray<ShipCheckRun>;
-	readonly workflows: number;
+	/**
+	 * The repo's active workflow inventory, path-addressed.
+	 *
+	 * Paths rather than the count it used to be: the count is `no-producer`'s discriminator and the
+	 * paths are the gate-coverage read's left operand, and holding both would be one fact stored twice.
+	 */
+	readonly workflows: ReadonlyArray<string>;
 	readonly runCount: number;
+	/** The workflows that produced a run at this head — gate coverage's right operand. */
+	readonly ranAtHead: ReadonlyArray<string>;
 	/** The suites a newer run of their own workflow replaced at this head — see `./supersession.ts`. */
 	readonly superseded: ReadonlySet<number>;
 }
@@ -95,7 +109,7 @@ const supersededGating = (sample: Sample): ReadonlyArray<ShipCheckRun> =>
 export const rollupFor = (sample: Sample, wedged: ReadonlyArray<string>): ChecksRollup => {
 	if (wedged.length > 0) return "wedged";
 	if (sample.runs.length === 0) {
-		if (sample.workflows === 0) return "no-producer";
+		if (sample.workflows.length === 0) return "no-producer";
 		return sample.runCount === 0 ? "no-runs" : "pending";
 	}
 	const gating = sample.runs.filter((run) => !isInformational(run.name));
@@ -164,7 +178,7 @@ export const runChecks = (
 					diagnostics,
 				);
 			}
-			const workflows = yield* listWorkflows(repo);
+			const workflows = yield* listWorkflowPaths(repo);
 			if (workflows._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
@@ -186,6 +200,7 @@ export const runChecks = (
 				runs: latestPerContext(runs),
 				workflows: workflows.value,
 				runCount: atHead.value.declared,
+				ranAtHead: atHead.value.runs.map((run) => run.path),
 				superseded: supersededSuites(atHead.value.runs),
 			} satisfies Sample;
 		});
@@ -195,6 +210,7 @@ export const runChecks = (
 			rollup: ChecksRollup,
 			wedged: ReadonlyArray<string>,
 			settle: Settle | null,
+			notes: ReadonlyArray<string> = [],
 		): VerbOutcome => {
 			const failing = read.runs
 				.filter(
@@ -227,6 +243,7 @@ export const runChecks = (
 				...(failing.length === 0
 					? []
 					: [`${VERB}: failing gating checks: ${failing.join(", ")} — route these to heal-ci.`]),
+				...notes,
 			];
 			const checks = reasonHistogram(read.runs, (run) => checkClassOf(run, read.superseded));
 			if (json) {
@@ -236,7 +253,7 @@ export const runChecks = (
 						sha: bound,
 						rollup,
 						checks,
-						workflows: read.workflows,
+						workflows: read.workflows.length,
 						runs: read.runCount,
 						settle,
 					}),
@@ -249,7 +266,7 @@ export const runChecks = (
 					`checks\t${bound}\t${rollup}`,
 					`run\t${read.runs.length}`,
 					...Object.entries(checks).map(([checkClass, count]) => `check\t${checkClass}\t${count}`),
-					`facts\tworkflows:${read.workflows}\truns:${read.runCount}`,
+					`facts\tworkflows:${read.workflows.length}\truns:${read.runCount}`,
 				].join("\n"),
 				scope,
 			);
@@ -258,7 +275,43 @@ export const runChecks = (
 		const ci = yield* resolveCi(options.cwd);
 
 		/**
-		 * `render`, with the no-producer case routed through the repo's own declaration first.
+		 * A `green` that no gate of this repo's own produced — the merge-authority fail-open of #6915.
+		 *
+		 * The same read `review ci` refuses on, through the same module (`../review/gate-coverage.ts`),
+		 * asked at the one word that reads as "merge this": a `red` already routes to `heal-ci`, and a
+		 * `pending` head is one `ship` waits on rather than lands.
+		 */
+		const covered = (
+			read: Sample,
+			rollup: ChecksRollup,
+		):
+			| {readonly _tag: "Ungated"; readonly outcome: VerbOutcome}
+			| {readonly _tag: "Judged"; readonly notes: ReadonlyArray<string>} => {
+			if (rollup !== "green") return {_tag: "Judged", notes: []};
+			const coverage = gateCoverageOf(read.workflows, read.ranAtHead);
+			if (coverage._tag === "Uncovered") {
+				return {
+					_tag: "Ungated",
+					outcome: refuse(
+						NO_GATE_COVERAGE,
+						`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${bound} — the ${read.runs.length} check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).`,
+						diagnostics,
+					),
+				};
+			}
+			return {
+				_tag: "Judged",
+				notes: [
+					coverage._tag === "NoGates"
+						? `${VERB}: ${repo} authors no workflow of its own — every run at ${bound} is platform-provided, so there is no gate coverage to judge.`
+						: `${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${bound}.`,
+				],
+			};
+		};
+
+		/**
+		 * `render`, behind the two doors every exit of this verb passes: gate coverage, and the repo's
+		 * own declaration on the no-producer case.
 		 *
 		 * The rollup already knows a repo has no workflows; what a *caller* gets for that is the
 		 * repo's call, and only here is it read — so every exit of this verb, waiting or not, passes
@@ -270,8 +323,10 @@ export const runChecks = (
 			wedged: ReadonlyArray<string>,
 			settle: Settle | null,
 		): VerbOutcome => {
-			if (rollup !== "no-producer") return render(read, rollup, wedged, settle);
-			const producer = producerFor(VERB, repo, read.workflows, ci);
+			const coverage = covered(read, rollup);
+			if (coverage._tag === "Ungated") return coverage.outcome;
+			if (rollup !== "no-producer") return render(read, rollup, wedged, settle, coverage.notes);
+			const producer = producerFor(VERB, repo, read.workflows.length, ci);
 			if (producer._tag === "Unknown") return refuse(PRECONDITION_UNKNOWN, producer.reason);
 			if (producer._tag === "Refused") return refuse(ZERO_SCOPE, producer.reason, diagnostics);
 			const rendered = render(read, rollup, wedged, settle);
