@@ -766,6 +766,7 @@ describe("Tuval local server", () => {
 		it.effect("serves only loaded exact contribution assets as JavaScript", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
 				const {root, asset} = yield* fixture();
 				const contribution = yield* contributionPackage(root);
 				const server = yield* startTuval({
@@ -800,10 +801,16 @@ describe("Tuval local server", () => {
 					assert.notInclude(yield* tryPromise(() => response.text()), root);
 				}
 
+				const outside = path.join(root, "outside-secret.js");
+				yield* fs.writeFileString(outside, "export const secret = 'outside';\n");
 				yield* fs.remove(contribution.contributionAsset);
-				const unreadable = yield* tryPromise(() => fetch(`${server.url}${assetUrl}`));
-				assert.strictEqual(unreadable.status, 404);
-				assert.notInclude(yield* tryPromise(() => unreadable.text()), root);
+				yield* fs.symlink(outside, contribution.contributionAsset);
+				const swapped = yield* tryPromise(() => fetch(`${server.url}${assetUrl}`));
+				assert.strictEqual(swapped.status, 200);
+				assert.strictEqual(
+					yield* tryPromise(() => swapped.text()),
+					"export const contribution = 'loaded';\n",
+				);
 			}),
 		);
 

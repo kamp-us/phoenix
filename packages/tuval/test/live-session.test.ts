@@ -14,6 +14,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, Schema, Stream} from "effect";
 import * as TestClock from "effect/testing/TestClock";
 import {
+	type LiveSessionStateOptions,
 	makeDurableLiveSession,
 	makeResilientPiLiveSession,
 	PiLiveSession,
@@ -291,8 +292,8 @@ class SyntheticPiProtocol {
 	}
 }
 
-const connect = (protocol: SyntheticPiProtocol) =>
-	Effect.acquireRelease(PiLiveSession.connect(protocol.factory), (service) =>
+const connect = (protocol: SyntheticPiProtocol, options: LiveSessionStateOptions = {}) =>
+	Effect.acquireRelease(PiLiveSession.connect(protocol.factory, options), (service) =>
 		service.dispose().pipe(Effect.ignore),
 	);
 
@@ -584,6 +585,83 @@ describe("PiLiveSession", () => {
 				correlationId: "prompt-2",
 				code: "lease-refused",
 			});
+		}),
+	);
+
+	it.effect(
+		"times out prompt acknowledgement, ignores the late response, and retries freshly",
+		() =>
+			Effect.gen(function* () {
+				const initial = snapshot("prompt-timeout", 1);
+				const protocol = new SyntheticPiProtocol(initial);
+				let expire = () => {};
+				const service = yield* connect(protocol, {
+					acknowledgementTimeoutMs: 25,
+					makeAcknowledgementDeadline: () => ({
+						elapsed: new Promise<void>((resolve) => {
+							expire = resolve;
+						}),
+						cancel: () => {},
+					}),
+				});
+				yield* service.attach(initial.id);
+				const timedOut = yield* service
+					.prompt({correlationId: "bounded-prompt", text: "first delivery"})
+					.pipe(Effect.forkChild);
+				yield* Effect.yieldNow;
+				expire();
+				assert.deepInclude(yield* Fiber.join(timedOut), {
+					_tag: "refused",
+					correlationId: "bounded-prompt",
+					code: "protocol",
+				});
+
+				protocol.acknowledgePrompt("first delivery", snapshot(initial.id, 2));
+				assert.isTrue((yield* service.current())?.connection === "connected");
+				for (let index = 0; index < 101; index += 1) {
+					const exhausted = yield* service
+						.prompt({correlationId: `expired-${index}`, text: `expired delivery ${index}`})
+						.pipe(Effect.forkChild);
+					yield* Effect.yieldNow;
+					expire();
+					assert.deepInclude(yield* Fiber.join(exhausted), {_tag: "refused", code: "protocol"});
+				}
+				const retry = yield* service
+					.prompt({correlationId: "bounded-prompt", text: "fresh delivery"})
+					.pipe(Effect.forkChild);
+				yield* Effect.yieldNow;
+				protocol.acknowledgePrompt("fresh delivery", snapshot(initial.id, 3));
+				assert.strictEqual((yield* Fiber.join(retry))._tag, "acknowledged");
+				assert.lengthOf(
+					protocol.commands.filter((command) => command === "prompt"),
+					103,
+				);
+			}),
+	);
+
+	it.effect("cancels the exact Pi prompt request when its Effect is interrupted", () =>
+		Effect.gen(function* () {
+			const initial = snapshot("prompt-interruption", 1);
+			const protocol = new SyntheticPiProtocol(initial);
+			const service = yield* connect(protocol, {acknowledgementTimeoutMs: 60_000});
+			yield* service.attach(initial.id);
+			const interrupted = yield* service
+				.prompt({correlationId: "interrupted-prompt", text: "cancel me"})
+				.pipe(Effect.forkChild);
+			yield* Effect.yieldNow;
+			yield* Fiber.interrupt(interrupted);
+			yield* Effect.yieldNow;
+			protocol.acknowledgePrompt("cancel me", snapshot(initial.id, 2));
+			const retry = yield* service
+				.prompt({correlationId: "interrupted-prompt", text: "retry me"})
+				.pipe(Effect.forkChild);
+			yield* Effect.yieldNow;
+			protocol.acknowledgePrompt("retry me", snapshot(initial.id, 3));
+			assert.strictEqual((yield* Fiber.join(retry))._tag, "acknowledged");
+			assert.lengthOf(
+				protocol.commands.filter((command) => command === "prompt"),
+				2,
+			);
 		}),
 	);
 
