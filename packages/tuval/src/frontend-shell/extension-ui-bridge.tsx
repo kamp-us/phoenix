@@ -8,6 +8,7 @@ import type {
 	ExtensionUIRequest,
 	ExtensionUIResponse,
 	ExtensionUIScope,
+	ExtensionUISnapshot,
 } from "../shared/extension-ui.js";
 import {type ExtensionUIBrowserClient, extensionUIBrowserClient} from "./extension-ui-client.js";
 
@@ -377,11 +378,14 @@ const Widget = ({widget}: {readonly widget: WidgetView}) => (
 
 export function ExtensionUIBridge({
 	client = extensionUIBrowserClient,
+	initialSnapshots = [],
 }: {
 	readonly client?: ExtensionUIBrowserClient;
+	readonly initialSnapshots?: ReadonlyArray<ExtensionUISnapshot>;
 }) {
 	const [state, setState] = useState<BridgeState>(initialState);
 	const submitted = useRef(new Set<string>());
+	const awaitingAuthoritativeReplay = useRef(false);
 	const active = state.dialogs.at(0);
 	const currentOrder = (left: StatusView | WidgetView, right: StatusView | WidgetView) =>
 		extensionUIScopeKey(left.scope).localeCompare(extensionUIScopeKey(right.scope)) ||
@@ -391,19 +395,48 @@ export function ExtensionUIBridge({
 	const aboveWidgets = widgets.filter(({placement}) => placement === "aboveEditor");
 	const belowWidgets = widgets.filter(({placement}) => placement === "belowEditor");
 
+	useEffect(() => {
+		if (initialSnapshots.length === 0) return;
+		setState((current) => {
+			const statuses = new Map(current.statuses);
+			const widgets = new Map(current.widgets);
+			for (const snapshot of initialSnapshots) {
+				for (const status of snapshot.statuses) {
+					statuses.set(stateKey(snapshot.scope, status.key), {...status, scope: snapshot.scope});
+				}
+				for (const widget of snapshot.widgets) {
+					widgets.set(stateKey(snapshot.scope, widget.key), {...widget, scope: snapshot.scope});
+				}
+			}
+			return {...current, statuses, widgets};
+		});
+	}, [initialSnapshots]);
+
 	useEffect(
 		() =>
 			client.subscribe({
-				open: () =>
+				open: () => {
+					awaitingAuthoritativeReplay.current = true;
 					setState((current) => ({
 						...current,
 						connection: "connected",
 						dialogs: [],
 						notices: [],
-						statuses: new Map(),
-						widgets: new Map(),
-					})),
-				event: (event) => setState((current) => reduceExtensionUIEvent(current, event)),
+					}));
+				},
+				event: (event) =>
+					setState((current) => {
+						const startsReplay =
+							awaitingAuthoritativeReplay.current &&
+							(event._tag === "status" || event._tag === "widget") &&
+							event.replay;
+						if (!startsReplay) return reduceExtensionUIEvent(current, event);
+						awaitingAuthoritativeReplay.current = false;
+						return reduceExtensionUIEvent(
+							{...current, statuses: new Map(), widgets: new Map()},
+							event,
+						);
+					}),
 				disconnect: () =>
 					setState((current) =>
 						appendNotice(
@@ -478,7 +511,11 @@ export function ExtensionUIBridge({
 	};
 
 	return (
-		<section className="extension-ui" aria-label="Paket extension UI">
+		<section
+			className="extension-ui"
+			data-mobile-panel="extensions"
+			aria-label="Paket extension UI"
+		>
 			<div
 				className="extension-ui__connection"
 				data-state={state.connection}

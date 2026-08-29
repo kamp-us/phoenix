@@ -62,9 +62,9 @@ const writeSession = async (directory: string, id: string, cwd: string): Promise
 };
 
 const startProcess = async (sessionRoot: string): Promise<{child: ChildProcess; url: string}> => {
-	const bin = fileURLToPath(new URL("../../dist/backend/bin.js", import.meta.url));
-	const child = spawn(process.execPath, [bin, "--no-open"], {
-		env: {...process.env, PI_CODING_AGENT_SESSION_DIR: sessionRoot},
+	const bin = fileURLToPath(new URL("./tuval-server.mjs", import.meta.url));
+	const child = spawn(process.execPath, [bin, "0"], {
+		env: {...process.env, TUVAL_SESSION_ROOT: sessionRoot},
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	const url = await new Promise<string>((resolve, reject) => {
@@ -196,7 +196,9 @@ const installEventSource = async (page: Page): Promise<void> => {
 	await page.addInitScript(() => {
 		class TestEventSource {
 			static readonly instances: Array<TestEventSource> = [];
+			static autoOpen = true;
 			readonly url: string;
+			closed = false;
 			onopen: ((event: Event) => unknown) | null = null;
 			onmessage: ((event: MessageEvent<string>) => unknown) | null = null;
 			onerror: ((event: Event) => unknown) | null = null;
@@ -204,17 +206,29 @@ const installEventSource = async (page: Page): Promise<void> => {
 			constructor(url: string | URL) {
 				this.url = String(url);
 				TestEventSource.instances.push(this);
-				queueMicrotask(() => this.onopen?.(new Event("open")));
+				if (TestEventSource.autoOpen) queueMicrotask(() => this.onopen?.(new Event("open")));
 			}
 
-			close(): void {}
+			close(): void {
+				this.closed = true;
+			}
 		}
 		Reflect.set(window, "EventSource", TestEventSource);
+		Reflect.set(window, "__tuvalSetEventSourceAutoOpen", (value: boolean) => {
+			TestEventSource.autoOpen = value;
+		});
+		Reflect.set(window, "__tuvalEventSourceState", () => {
+			const live = TestEventSource.instances.filter(({url}) => url.includes("/fate/live?"));
+			return {count: live.length, closed: live.map(({closed}) => closed)};
+		});
 		Reflect.set(window, "__tuvalEmit", (data: string) => {
 			TestEventSource.instances.at(-1)?.onmessage?.(new MessageEvent("message", {data}));
 		});
 		Reflect.set(window, "__tuvalDisconnect", () => {
-			TestEventSource.instances.at(-1)?.onerror?.(new Event("error"));
+			TestEventSource.instances
+				.filter(({url}) => url.includes("/fate/live?"))
+				.at(-1)
+				?.onerror?.(new Event("error"));
 		});
 	});
 };
@@ -384,7 +398,7 @@ test.afterAll(async () => {
 test("the existing tuval process renders the React Flow pan and zoom canvas", async ({page}) => {
 	const errors = pageErrors(page);
 	await page.goto(tuvalUrl);
-	const nodes = page.locator(".react-flow__node");
+	const nodes = page.locator('[data-id="pi:session-alpha"], [data-id="pi:session-beta"]');
 	await expect(nodes).toHaveCount(2);
 	await expect(page.locator("#status-label")).toHaveText("Bağlı");
 	await expect(page.locator("aside")).toHaveCount(0);
@@ -420,6 +434,77 @@ test("the existing tuval process renders the React Flow pan and zoom canvas", as
 	expect(errors).toEqual([]);
 });
 
+test("early restoration selection survives React Flow's initializing null selection exactly once", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const parent = session("hydrate-parent", "/work/hydrate-parent");
+	const child = session("hydrate-child", "/work/hydrate-child", "hydrate-parent");
+	let releaseRestoration = () => {};
+	const restorationRead = new Promise<void>((resolve) => {
+		releaseRestoration = resolve;
+	});
+	let attachCalls = 0;
+	let releaseCalls = 0;
+	await page.route("**/api/resilience", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				stages: [
+					"discovery",
+					"lineage",
+					"selection",
+					"settings",
+					"package-registrations",
+					"extension-ui-current",
+				].map((stage) => ({stage, status: "restored"})),
+				selectedSessionId: child.piSessionId,
+				settings: {nodeDetailLevel: "full"},
+				packageRegistrations: [],
+				extensionUI: [],
+				diagnostics: [],
+			}),
+		});
+		releaseRestoration();
+	});
+	await page.route("**/fate", async (route) => {
+		const operation = route.request().postDataJSON()?.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await restorationRead;
+			await fulfill(route, id, {_tag: "ready", sessions: [parent, child]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([parent, child]));
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			attachCalls += 1;
+			await fulfill(route, id, {_tag: "attached", session: liveSession(child.piSessionId)});
+			return;
+		}
+		if (operation?.name === "liveSession.release") releaseCalls += 1;
+		await fulfill(route, id, {_tag: "released", sessionId: child.piSessionId});
+	});
+
+	await page.goto(tuvalUrl);
+	const childNode = page.locator(`[data-id="${child.identity}"]`);
+	await expect(childNode.locator(".session-node")).toHaveAttribute("data-selected", "true");
+	await expect(page.locator("#chat-title")).toHaveText("hydrate-child");
+	await expect(page.getByText("hydrate-child mevcut konuşma", {exact: true})).toHaveCount(1);
+	await expect.poll(() => attachCalls).toBe(1);
+	expect(releaseCalls).toBe(0);
+	await childNode.focus();
+	await expect(childNode).toBeFocused();
+	await expect(page.locator("#chat-title")).toHaveText("hydrate-child");
+	expect(attachCalls).toBe(1);
+	expect(releaseCalls).toBe(0);
+	expect(errors).toEqual([]);
+});
+
 test("React Flow renders and operates the complete keyboard relationship contract", async ({
 	page,
 }) => {
@@ -428,6 +513,7 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	const child = session("flow-child", "/work/child", "flow-root");
 	await routeOutcome(page, () => ({_tag: "ready", sessions: [root, child]}));
 	await page.goto(tuvalUrl);
+	await expect(page.getByText("Çalışma alanı geri yüklendi")).toBeVisible();
 
 	const rootNode = page.locator('[data-id="pi:flow-root"]');
 	const childNode = page.locator('[data-id="pi:flow-child"]');
@@ -2001,5 +2087,77 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 	const screenshotPath = testInfo.outputPath("cockpit-six-controls.png");
 	await page.screenshot({path: screenshotPath, fullPage: true});
 	await testInfo.attach("cockpit-six-controls", {path: screenshotPath, contentType: "image/png"});
+	expect(errors).toEqual([]);
+});
+
+test("browser reconnect closes native retries, stops after three attempts, and rearms safely", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const selected = session("bounded-reconnect", "/work/bounded-reconnect");
+	let discoveryCalls = 0;
+	await page.route("**/fate", async (route) => {
+		const operation = route.request().postDataJSON()?.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			discoveryCalls += 1;
+			await fulfill(route, id, {_tag: "ready", sessions: [selected]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([selected]));
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			await fulfill(route, id, {_tag: "attached", session: liveSession(selected.piSessionId)});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: selected.piSessionId});
+	});
+	await page.goto(tuvalUrl);
+	await selectNode(page, selected.identity);
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
+	await page.evaluate(() => {
+		const setAutoOpen = Reflect.get(window, "__tuvalSetEventSourceAutoOpen") as (
+			value: boolean,
+		) => void;
+		setAutoOpen(false);
+	});
+	for (let expected = 2; expected <= 4; expected += 1) {
+		await disconnectLive(page);
+		await expect
+			.poll(() =>
+				page.evaluate(
+					() =>
+						(
+							Reflect.get(window, "__tuvalEventSourceState") as () => {
+								count: number;
+							}
+						)().count,
+				),
+			)
+			.toBe(expected);
+	}
+	await disconnectLive(page);
+	await expect(page.getByText("Yeniden bağlanma durdu", {exact: true})).toBeVisible();
+	const stopped = await page.evaluate(() =>
+		(
+			Reflect.get(window, "__tuvalEventSourceState") as () => {
+				count: number;
+				closed: Array<boolean>;
+			}
+		)(),
+	);
+	expect(stopped).toEqual({count: 4, closed: [true, true, true, true]});
+	await page.evaluate(() => {
+		const setAutoOpen = Reflect.get(window, "__tuvalSetEventSourceAutoOpen") as (
+			value: boolean,
+		) => void;
+		setAutoOpen(true);
+	});
+	await page.getByRole("button", {name: "Yeniden bağlan"}).click();
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
+	await expect.poll(() => discoveryCalls).toBe(2);
 	expect(errors).toEqual([]);
 });

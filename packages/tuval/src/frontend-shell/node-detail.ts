@@ -14,14 +14,18 @@ export const NODE_DETAIL_STORAGE_KEY = "tuval.workspace.node-detail-level";
 
 const nodeDetailLevelSet: ReadonlySet<string> = new Set(NODE_DETAIL_LEVELS);
 
-const isNodeDetailLevel = (value: string | null): value is NodeDetailLevel =>
-	value !== null && nodeDetailLevelSet.has(value);
+export const decodeNodeDetailLevel = (
+	value: string | null | undefined,
+): NodeDetailLevel | undefined =>
+	value !== null && value !== undefined && nodeDetailLevelSet.has(value)
+		? (value as NodeDetailLevel)
+		: undefined;
 
 export const readStoredNodeDetailLevel = (storage: Storage | undefined): NodeDetailLevel => {
 	if (storage === undefined) return DEFAULT_NODE_DETAIL_LEVEL;
 	try {
 		const stored = storage.getItem(NODE_DETAIL_STORAGE_KEY);
-		return isNodeDetailLevel(stored) ? stored : DEFAULT_NODE_DETAIL_LEVEL;
+		return decodeNodeDetailLevel(stored) ?? DEFAULT_NODE_DETAIL_LEVEL;
 	} catch {
 		return DEFAULT_NODE_DETAIL_LEVEL;
 	}
@@ -42,6 +46,8 @@ export const writeStoredNodeDetailLevel = (
 export type NodeAttachmentConnection =
 	| "pending"
 	| "attached"
+	| "reconnecting"
+	| "stopped"
 	| "refused"
 	| "disconnected"
 	| "malformed";
@@ -102,10 +108,20 @@ const metadataTimestamp = (updatedAt: number): string =>
 
 export const nodeStatus = (node: LineageNode, attachment: NodeAttachment | null): NodeStatus => {
 	const liveSession = attachment?.session;
+	if (attachment?.connection === "reconnecting") {
+		return {
+			kind: "pending",
+			source: liveSession === null ? "metadata" : "live",
+			sourceLabel: liveSession === null ? "Metadata" : "Canlı bağlantı yok",
+			label: "Bağlantı kesildi",
+			detail: "Canlı bağlantı yenilenirken kayıtlı görünüm korunuyor.",
+		};
+	}
 	if (
 		liveSession !== null &&
 		liveSession !== undefined &&
 		(attachment?.connection === "disconnected" ||
+			attachment?.connection === "stopped" ||
 			liveSession._tag === "disconnected" ||
 			liveSession.completion === "disconnected")
 	) {

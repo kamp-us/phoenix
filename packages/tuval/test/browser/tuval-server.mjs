@@ -14,6 +14,9 @@ NodeRuntime.runMain(
 		Effect.gen(function* () {
 			yield* startTuval({
 				port,
+				...(process.env.TUVAL_SESSION_ROOT === undefined
+					? {}
+					: {sessionRoots: [process.env.TUVAL_SESSION_ROOT]}),
 				openBrowser: () => Effect.void,
 				packageContributions: {cwd: root, agentDir: root, settingsManager, packageManager},
 				log: (line) => console.log(line),

@@ -15,7 +15,14 @@ import type {
 } from "../shared/live-session.js";
 import {sessionTitle} from "./canvas-adapter.js";
 
-export type PaneConnection = "pending" | "attached" | "refused" | "disconnected" | "malformed";
+export type PaneConnection =
+	| "pending"
+	| "attached"
+	| "reconnecting"
+	| "stopped"
+	| "refused"
+	| "disconnected"
+	| "malformed";
 
 export interface SendResult {
 	readonly ok: boolean;
@@ -28,6 +35,7 @@ export interface ChatPaneProps {
 	readonly session: LiveSessionView | null;
 	readonly message?: string;
 	readonly onClose: () => void;
+	readonly onReconnect?: () => void;
 	readonly onSend: (text: string) => Promise<SendResult>;
 	readonly onSteer?: (text: string) => Promise<ControlLiveSessionOutcome>;
 	readonly onAbort?: () => Promise<ControlLiveSessionOutcome>;
@@ -112,6 +120,20 @@ const connectionCopy = (
 	if (connection === "pending") {
 		return {tone: "loading", title: "Bağlanıyor", detail: "Oturum sahipliği doğrulanıyor."};
 	}
+	if (connection === "reconnecting") {
+		return {
+			tone: "danger",
+			title: "Bağlantı kesildi · yeniden bağlanıyor",
+			detail: message ?? "Son doğrulanmış konuşma korunurken bağlantı yenileniyor.",
+		};
+	}
+	if (connection === "stopped") {
+		return {
+			tone: "danger",
+			title: "Yeniden bağlanma durdu",
+			detail: message ?? "Üç deneme tamamlandı; son doğrulanmış konuşma korunuyor.",
+		};
+	}
 	if (connection === "refused") {
 		return {
 			tone: "danger",
@@ -149,6 +171,7 @@ export function ChatPane({
 	session,
 	message,
 	onClose,
+	onReconnect = () => undefined,
 	onSend,
 	onSteer,
 	onAbort,
@@ -298,6 +321,7 @@ export function ChatPane({
 		<Surface
 			as="aside"
 			className="chat-pane"
+			data-mobile-panel="chat"
 			aria-labelledby="chat-title"
 			data-connection={connection}
 			tone="default"
@@ -329,6 +353,11 @@ export function ChatPane({
 			>
 				<strong>{connectionStatus.title}</strong>
 				<span>{connectionStatus.detail}</span>
+				{connection === "stopped" ? (
+					<Button type="button" variant="secondary" onClick={onReconnect}>
+						Yeniden bağlan
+					</Button>
+				) : null}
 			</Surface>
 
 			{session === null ? (
