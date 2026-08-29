@@ -7,6 +7,12 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import {Effect, FileSystem, Layer, Path, Schema} from "effect";
+import {
+	type ExtensionUIService,
+	makeExtensionUI,
+	PackageExtensionUI,
+	packageExtensionUI,
+} from "./extension-ui.js";
 import {parsePackageJson} from "./package-json.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
@@ -51,7 +57,7 @@ export interface FrontendContribution {
 	readonly source: string;
 }
 
-type BackendLayer = Layer.Layer<unknown, unknown, never>;
+type BackendLayer = Layer.Layer<never, unknown, PackageExtensionUI>;
 
 const BackendLayer = Schema.declare<BackendLayer>((value): value is BackendLayer =>
 	Layer.isLayer(value),
@@ -263,9 +269,16 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 
 export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")(function* (
 	catalog: TuvalContributionCatalog,
+	extensionUI?: ExtensionUIService,
 ) {
+	const bridge = extensionUI ?? makeExtensionUI();
 	for (const contribution of catalog.backend) {
-		yield* Layer.build(contribution.layer).pipe(
+		const layer = contribution.layer.pipe(
+			Layer.provide(
+				Layer.succeed(PackageExtensionUI, packageExtensionUI(contribution.packageName, bridge)),
+			),
+		);
+		yield* Layer.build(layer).pipe(
 			Effect.mapError(
 				(cause) =>
 					new ContributionStartupFailure({
