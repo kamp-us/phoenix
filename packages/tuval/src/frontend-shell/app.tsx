@@ -11,7 +11,12 @@ import {Card, Surface} from "../../../../apps/web/src/components/ui/Card.js";
 import {ToggleGroup} from "../../../../apps/web/src/components/ui/ToggleGroup.js";
 import type {DiscoveredSession, DiscoveryOutcome, DiscoveryProblem} from "../shared/discovery.js";
 import type {LineageNode, LineageProblem, LineageProjection} from "../shared/lineage.js";
-import type {LiveSessionView} from "../shared/live-session.js";
+import type {
+	ControlLiveSessionOutcome,
+	LiveSessionView,
+	ModelRef,
+	ThinkingLevel,
+} from "../shared/live-session.js";
 import {
 	reconcileLineageEdges,
 	reconcileSessionNodes,
@@ -20,12 +25,18 @@ import {
 } from "./canvas-adapter.js";
 import {ChatPane, type PaneConnection, type SendResult} from "./chat-pane.js";
 import {
+	abortLiveSession,
 	attachLiveSession,
+	createLiveSession,
 	decodeLiveEvent,
 	discoverSessions,
+	openLiveSession,
 	promptLiveSession,
 	readLineage,
 	releaseLiveSession,
+	setModelLiveSession,
+	setThinkingLiveSession,
+	steerLiveSession,
 } from "./fate-client.js";
 import {
 	NODE_DETAIL_LEVELS,
@@ -34,6 +45,7 @@ import {
 	writeStoredNodeDetailLevel,
 } from "./node-detail.js";
 import {SessionCanvas} from "./session-canvas.js";
+import {SessionLaunchControls} from "./session-launch-controls.js";
 import "@manti-ui/styles/index.css";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
@@ -485,6 +497,29 @@ export function TuvalApp() {
 					) {
 						advanceCursor(event.sequence, event.outcome.session.revision);
 						setCurrentPane({connection: "attached", session: event.outcome.session});
+					} else if (
+						event._tag === "control" &&
+						event.outcome._tag === "acknowledged" &&
+						event.outcome.session.sessionId === selected.piSessionId
+					) {
+						advanceCursor(event.sequence, event.outcome.session.revision);
+						setCurrentPane({connection: "attached", session: event.outcome.session});
+					} else if (
+						event._tag === "control" &&
+						event.outcome._tag === "refused" &&
+						event.outcome.session?.sessionId === selected.piSessionId
+					) {
+						const refusal = event.outcome;
+						const observed = refusal.session;
+						if (observed === null) return;
+						advanceCursor(event.sequence, observed.revision);
+						setCurrentPane((current) => ({
+							...current,
+							session: observed,
+							...(refusal.code === "disconnected"
+								? {connection: "disconnected" as const, message: refusal.reason}
+								: {}),
+						}));
 					} else if (event._tag === "released" && event.sessionId === selected.piSessionId) {
 						setCurrentPane((current) => ({
 							...current,
@@ -553,6 +588,114 @@ export function TuvalApp() {
 			ignoreSelectionChange.current = false;
 			focusCanvasNode(identity);
 		});
+	};
+
+	const acceptReplacement = (
+		outcome: ControlLiveSessionOutcome,
+		cwdHint: string,
+	): ControlLiveSessionOutcome => {
+		if (outcome._tag !== "acknowledged") return outcome;
+		const now = Date.now();
+		const discovered: DiscoveredSession = {
+			identity: `pi:${outcome.session.sessionId}` as DiscoveredSession["identity"],
+			piSessionId: outcome.session.sessionId,
+			createdAt: now,
+			updatedAt: now,
+			cwd: cwdHint,
+			sourceFile: "",
+		};
+		setOutcome((current) => {
+			const sessions = sessionsOf(current);
+			const prior = sessions.find((session) => session.piSessionId === discovered.piSessionId);
+			const stable = prior === undefined ? discovered : {...discovered, ...prior};
+			const next = [
+				...sessions.filter((session) => session.piSessionId !== stable.piSessionId),
+				stable,
+			];
+			return current?._tag === "partial-source"
+				? {...current, sessions: next}
+				: {_tag: "ready", sessions: next};
+		});
+		setLineage((current) => {
+			if (current === null) return knownSessionsProjection([discovered]);
+			if (current.graph.nodes.some((node) => node.piSessionId === discovered.piSessionId)) {
+				return current;
+			}
+			return {
+				...current,
+				graph: {
+					...current.graph,
+					nodes: [
+						...current.graph.nodes,
+						{
+							id: discovered.identity,
+							piSessionId: discovered.piSessionId,
+							createdAt: discovered.createdAt,
+							updatedAt: discovered.updatedAt,
+							cwd: discovered.cwd,
+							sourceFiles: [],
+						},
+					],
+				},
+			};
+		});
+		requestAnimationFrame(() => focusCanvasNode(discovered.identity));
+		return outcome;
+	};
+
+	const runSelectedControl = async (
+		request: (correlationId: string) => Promise<ControlLiveSessionOutcome>,
+	): Promise<ControlLiveSessionOutcome> => {
+		const target = selectedRef.current;
+		const targetGeneration = selectionGeneration.current;
+		if (target === null) {
+			return {
+				_tag: "refused",
+				command: "steer",
+				correlationId: "missing-selection",
+				code: "ownership-refused",
+				reason: "Açık bir oturum yok.",
+				session: null,
+			};
+		}
+		const outcome = await request(crypto.randomUUID());
+		if (
+			targetGeneration !== selectionGeneration.current ||
+			selectedRef.current?.identity !== target.identity
+		) {
+			return {
+				_tag: "refused",
+				command: outcome.command,
+				correlationId: outcome.correlationId,
+				code: "ownership-refused",
+				reason: "Denetim sürerken başka bir oturuma geçildi.",
+				session: null,
+			};
+		}
+		const observed = outcome._tag === "acknowledged" ? outcome.session : outcome.session;
+		if (observed !== null) {
+			const cursor = streamCursor.current;
+			if (
+				cursor?.sessionId === target.piSessionId &&
+				cursor.generation === targetGeneration &&
+				observed.lastEventSequence >= cursor.sequence &&
+				observed.revision >= cursor.revision
+			) {
+				streamCursor.current = {
+					...cursor,
+					sequence: observed.lastEventSequence,
+					revision: observed.revision,
+				};
+				updatePaneForSelection(target.identity, targetGeneration, (current) => ({
+					...current,
+					session: observed,
+					...(outcome._tag === "refused" && outcome.code === "disconnected"
+						? {connection: "disconnected" as const, message: outcome.reason}
+						: {}),
+				}));
+			}
+		}
+		return outcome;
 	};
 
 	const sendPrompt = async (text: string): Promise<SendResult> => {
@@ -700,6 +843,29 @@ export function TuvalApp() {
 						/>
 					</div>
 
+					<SessionLaunchControls
+						createAvailable={
+							paneSelection._tag !== "open" ||
+							paneSelection.pane.session?.controls?.create !== false
+						}
+						openAvailable={
+							paneSelection._tag !== "open" || paneSelection.pane.session?.controls?.open !== false
+						}
+						onCreate={(cwd) =>
+							createLiveSession(crypto.randomUUID(), cwd).then((result) =>
+								acceptReplacement(result, cwd),
+							)
+						}
+						onOpen={(sessionId) =>
+							openLiveSession(crypto.randomUUID(), sessionId).then((result) => {
+								const known = sessionsOf(outcome).find(
+									(session) => session.piSessionId === sessionId,
+								);
+								return acceptReplacement(result, known?.cwd ?? `Oturum ${sessionId}`);
+							})
+						}
+					/>
+
 					{lineageFailure === null && lineageProblems.length === 0 ? null : (
 						<Card as="section" className="lineage-problems" role="status" aria-live="polite">
 							<p className="lineage-problems__eyebrow">Oturum bağları</p>
@@ -773,6 +939,16 @@ export function TuvalApp() {
 							: {message: paneSelection.pane.message})}
 						onClose={closePane}
 						onSend={sendPrompt}
+						onSteer={(text) =>
+							runSelectedControl((correlationId) => steerLiveSession(correlationId, text))
+						}
+						onAbort={() => runSelectedControl((correlationId) => abortLiveSession(correlationId))}
+						onSetModel={(model: ModelRef) =>
+							runSelectedControl((correlationId) => setModelLiveSession(correlationId, model))
+						}
+						onSetThinking={(level: ThinkingLevel) =>
+							runSelectedControl((correlationId) => setThinkingLiveSession(correlationId, level))
+						}
 					/>
 				)}
 			</main>
