@@ -91,6 +91,7 @@ export const LineageProblem = Schema.Struct({
 		"unresolved-session",
 		"retention-loss",
 		"protocol-unavailable",
+		"lock-cleanup-failed",
 	]),
 	source: Schema.String,
 	message: Schema.String,

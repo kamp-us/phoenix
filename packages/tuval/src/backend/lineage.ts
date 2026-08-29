@@ -7,6 +7,7 @@ import {
 	Layer,
 	Option,
 	Path,
+	Ref,
 	Result,
 	Schema,
 	Semaphore,
@@ -1354,6 +1355,50 @@ export const withLineageStoreFileLock = <A, E, R>(
 		releaseStoreFileLock,
 	);
 
+const compareLineageProblems = (left: LineageProblem, right: LineageProblem): number =>
+	compareLineageText(left.source, right.source) || compareLineageText(left.code, right.code);
+
+const withCommittedLineageStoreFileLock = <E, R>(
+	storePath: string,
+	use: (
+		fence: Effect.Effect<void, LineageStoreReadError, FileSystem.FileSystem>,
+	) => Effect.Effect<LineageProjection, E, R>,
+) =>
+	Effect.gen(function* () {
+		const cleanupFailure = yield* Ref.make<LineageStoreReadError | undefined>(undefined);
+		const projection = yield* Effect.acquireUseRelease(
+			acquireStoreFileLock(storePath),
+			(lock) => use(fenceStoreFileLock(lock)),
+			(lock) =>
+				Effect.result(releaseStoreFileLock(lock)).pipe(
+					Effect.flatMap((released) =>
+						Result.isFailure(released)
+							? Ref.set(cleanupFailure, released.failure).pipe(
+									Effect.andThen(
+										Effect.logWarning(
+											`Lineage store committed but lock cleanup failed: ${released.failure.message}`,
+										),
+									),
+								)
+							: Effect.void,
+					),
+				),
+		);
+		const cleanup = yield* Ref.get(cleanupFailure);
+		if (cleanup === undefined) return projection;
+		return {
+			graph: projection.graph,
+			problems: [
+				...projection.problems,
+				{
+					code: "lock-cleanup-failed" as const,
+					source: cleanup.path,
+					message: cleanup.message,
+				},
+			].sort(compareLineageProblems),
+		} satisfies LineageProjection;
+	});
+
 const storeLocks = new Map<string, Semaphore.Semaphore>();
 const storeLock = (storePath: string): Semaphore.Semaphore => {
 	const existing = storeLocks.get(storePath);
@@ -1408,10 +1453,7 @@ const refreshLineageUnlocked = Effect.fn("Lineage.refreshUnlocked")(function* (
 			...runs.problems,
 			...protocolProblems,
 			...normalized.success.problems,
-		].sort(
-			(left, right) =>
-				compareLineageText(left.source, right.source) || compareLineageText(left.code, right.code),
-		),
+		].sort(compareLineageProblems),
 	} satisfies LineageProjection;
 });
 
@@ -1421,7 +1463,7 @@ export const refreshLineage = Effect.fn("Lineage.refresh")(function* (
 	const path = yield* Path.Path;
 	const storePath = path.resolve(options.storePath);
 	return yield* storeLock(storePath).withPermit(
-		withLineageStoreFileLock(storePath, (beforeCommit) =>
+		withCommittedLineageStoreFileLock(storePath, (beforeCommit) =>
 			refreshLineageUnlocked({...options, storePath}, beforeCommit),
 		),
 	);

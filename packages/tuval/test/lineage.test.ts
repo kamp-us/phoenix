@@ -2092,99 +2092,136 @@ describe("Tuval lineage index", () => {
 			}),
 		);
 
-		it.effect(
-			"surfaces every lock-boundary failure through refresh without changing the store",
-			() =>
-				Effect.gen(function* () {
-					const fs = yield* FileSystem.FileSystem;
-					const path = yield* Path.Path;
-					const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-matrix-"});
-					const missingRoot = path.join(root, "missing");
-					const processService = LineageLockProcess.of({
-						identity: {host: "test-host", pid: 202},
-						status: () => Effect.succeed("dead" as const),
-					});
-					const operations = [
-						"acquire-owner-read",
-						"dead-rename",
-						"dead-owner-read",
-						"dead-remove",
-						"release-owner-read",
-						"release-rename",
-						"release-owner-read-after-rename",
-						"release-remove",
-					] as const;
-					for (const operation of operations) {
-						const directory = path.join(root, operation);
-						const storePath = path.join(directory, "lineage.json");
-						const lockPath = `${storePath}.lock`;
-						const ownerPath = path.join(lockPath, "owner.json");
-						yield* fs.makeDirectory(directory, {recursive: true});
-						yield* writeLineageStore(storePath, emptyLineageStore());
-						const committed = yield* fs.readFileString(storePath);
-						if (operation.startsWith("acquire-") || operation.startsWith("dead-")) {
-							yield* fs.makeDirectory(lockPath);
-							yield* fs.writeFileString(
-								ownerPath,
-								JSON.stringify({version: 1, token: "dead-token", host: "test-host", pid: 101}),
-							);
-						}
-						let lockOwnerReads = 0;
-						const failure = (method: string, target: string) =>
-							PlatformError.systemError({
-								_tag: "PermissionDenied",
-								module: "FileSystem",
-								method,
-								pathOrDescriptor: target,
-							});
-						const failingFs = FileSystem.FileSystem.of({
-							...fs,
-							readFileString: (target, options) => {
-								const fail =
-									(operation === "acquire-owner-read" && target === ownerPath) ||
-									(operation === "dead-owner-read" &&
-										target.includes(".dead-") &&
-										target.endsWith("owner.json")) ||
-									(operation === "release-owner-read" &&
-										target === ownerPath &&
-										++lockOwnerReads === 2) ||
-									(operation === "release-owner-read-after-rename" &&
-										target.includes(".release-") &&
-										target.endsWith("owner.json"));
-								return fail
-									? Effect.fail(failure("readFileString", target))
-									: fs.readFileString(target, options);
-							},
-							rename: (from, to) => {
-								const fail =
-									(operation === "dead-rename" && from === lockPath && to.includes(".dead-")) ||
-									(operation === "release-rename" && from === lockPath && to.includes(".release-"));
-								return fail ? Effect.fail(failure("rename", from)) : fs.rename(from, to);
-							},
-							remove: (target, options) => {
-								const fail =
-									(operation === "dead-remove" && target.includes(".dead-")) ||
-									(operation === "release-remove" && target.includes(".release-"));
-								return fail ? Effect.fail(failure("remove", target)) : fs.remove(target, options);
-							},
-						});
-						const result = yield* Effect.result(
-							refreshLineage({
-								runRoots: [missingRoot],
-								sessionRoots: [missingRoot],
-								storePath,
-							}).pipe(
-								Effect.provideService(FileSystem.FileSystem, failingFs),
-								Effect.provideService(LineageLockProcess, processService),
-							),
+		it.effect("reports lock failures according to the committed-store boundary", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-lineage-lock-matrix-"});
+				const missingRoot = path.join(root, "missing");
+				const processService = LineageLockProcess.of({
+					identity: {host: "test-host", pid: 202},
+					status: () => Effect.succeed("dead" as const),
+				});
+				const operations = [
+					"acquire-owner-read",
+					"dead-rename",
+					"dead-owner-read",
+					"dead-remove",
+					"precommit-owner-read",
+					"release-owner-read",
+					"release-rename",
+					"release-owner-read-after-rename",
+					"release-remove",
+				] as const;
+				for (const operation of operations) {
+					const directory = path.join(root, operation);
+					const sessionsRoot = path.join(directory, "sessions");
+					const storePath = path.join(directory, "lineage.json");
+					const lockPath = `${storePath}.lock`;
+					const ownerPath = path.join(lockPath, "owner.json");
+					yield* fs.makeDirectory(directory, {recursive: true});
+					yield* writeLineageStore(storePath, emptyLineageStore());
+					const committed = yield* fs.readFileString(storePath);
+					yield* writeSession(sessionsRoot, "pending.jsonl", {id: `pending-${operation}`});
+					if (operation.startsWith("acquire-") || operation.startsWith("dead-")) {
+						yield* fs.makeDirectory(lockPath);
+						yield* fs.writeFileString(
+							ownerPath,
+							JSON.stringify({version: 1, token: "dead-token", host: "test-host", pid: 101}),
 						);
+					}
+					let lockOwnerReads = 0;
+					const failure = (method: string, target: string) =>
+						PlatformError.systemError({
+							_tag: "PermissionDenied",
+							module: "FileSystem",
+							method,
+							pathOrDescriptor: target,
+						});
+					const failingFs = FileSystem.FileSystem.of({
+						...fs,
+						readFileString: (target, options) => {
+							if (target === ownerPath) lockOwnerReads += 1;
+							const fail =
+								(operation === "acquire-owner-read" && target === ownerPath) ||
+								(operation === "dead-owner-read" &&
+									target.includes(".dead-") &&
+									target.endsWith("owner.json")) ||
+								(operation === "precommit-owner-read" &&
+									target === ownerPath &&
+									lockOwnerReads === 1) ||
+								(operation === "release-owner-read" &&
+									target === ownerPath &&
+									lockOwnerReads === 2) ||
+								(operation === "release-owner-read-after-rename" &&
+									target.includes(".release-") &&
+									target.endsWith("owner.json"));
+							return fail
+								? Effect.fail(failure("readFileString", target))
+								: fs.readFileString(target, options);
+						},
+						rename: (from, to) => {
+							const fail =
+								(operation === "dead-rename" && from === lockPath && to.includes(".dead-")) ||
+								(operation === "release-rename" && from === lockPath && to.includes(".release-"));
+							return fail ? Effect.fail(failure("rename", from)) : fs.rename(from, to);
+						},
+						remove: (target, options) => {
+							const fail =
+								(operation === "dead-remove" && target.includes(".dead-")) ||
+								(operation === "release-remove" && target.includes(".release-"));
+							return fail ? Effect.fail(failure("remove", target)) : fs.remove(target, options);
+						},
+					});
+					const result = yield* Effect.result(
+						refreshLineage({
+							runRoots: [missingRoot],
+							sessionRoots: [sessionsRoot],
+							storePath,
+						}).pipe(
+							Effect.provideService(FileSystem.FileSystem, failingFs),
+							Effect.provideService(LineageLockProcess, processService),
+						),
+					);
+					const releaseFailure = operation.startsWith("release-");
+					if (!releaseFailure) {
 						assert.isTrue(Result.isFailure(result), operation);
 						if (Result.isFailure(result)) {
 							assert.strictEqual(result.failure._tag, "tuval/LineageStoreReadError", operation);
 						}
 						assert.strictEqual(yield* fs.readFileString(storePath), committed, operation);
+						continue;
 					}
-				}),
+					assert.isTrue(Result.isSuccess(result), operation);
+					if (Result.isSuccess(result)) {
+						assert.doesNotThrow(() => Schema.decodeUnknownSync(LineageProjection)(result.success));
+						assert.deepEqual(
+							result.success.graph.nodes.map((node) => node.piSessionId),
+							[`pending-${operation}`],
+							operation,
+						);
+						assert.include(
+							result.success.problems.map((problem) => problem.code),
+							"lock-cleanup-failed",
+						);
+					}
+					const updated = yield* fs.readFileString(storePath);
+					assert.notStrictEqual(updated, committed, operation);
+					assert.deepEqual(
+						Schema.decodeUnknownSync(LineageStoreDocument)(JSON.parse(updated)).nodes.map(
+							(node) => node.piSessionId,
+						),
+						[`pending-${operation}`],
+						operation,
+					);
+					assert.isTrue(
+						(yield* fs.readDirectory(directory)).some((entry) =>
+							entry.startsWith("lineage.json.lock"),
+						),
+						operation,
+					);
+				}
+			}),
 		);
 
 		it.effect("treats an ownerless visible lock as uncertain on Darwin's real filesystem", () =>

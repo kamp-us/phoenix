@@ -85,12 +85,16 @@ run under a same-host process-shared filesystem lock. The lock directory is acqu
 non-recursive directory create, so a visible generation is never replaced; owner metadata is written
 before protected work. An `AlreadyExists` observation remains contention even when the prior owner
 releases before inspection, so acquisition retries within its wait budget. A contender recovers an
-owner only when Node's signal-zero probe proves that exact same-host pid absent. Live, remote, ownerless, malformed, and unknown generations remain held
-until an operator resolves them. Recovery atomically quarantines the dead generation. Release moves
-and removes only its own token-matched generation; an owner-read, quarantine, or cleanup failure
-fails the refresh and retains the generation for diagnosis. Because a live process cannot lose its
-lock, the writer's token fence immediately before rename remains valid through the committed-store
-rename. Failed writes and renames remove temporary files without replacing the committed store.
+owner only when Node's signal-zero probe proves that exact same-host pid absent. Live, remote,
+ownerless, malformed, and unknown generations remain held until an operator resolves them. Recovery
+atomically quarantines the dead generation. Release moves and removes only its own token-matched
+generation. The store-file rename is the commit point: an ownership or fence failure
+before it returns a typed Effect error and leaves the committed bytes unchanged. A release cleanup
+failure after it cannot imply rollback; the query returns the committed graph with a serializable
+`lock-cleanup-failed` problem, logs the failure, and retains the uncertain generation for operator
+diagnosis. Because a live process cannot lose its lock, the writer's token fence immediately before
+rename remains valid through commit. Failed writes and renames remove temporary files without
+replacing the committed store.
 Reused run ids with changed sessions, timestamps, or parent facts are refused, while unresolved
 parents remain diagnostic-only.
 

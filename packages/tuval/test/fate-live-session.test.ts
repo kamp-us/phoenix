@@ -227,7 +227,14 @@ describe("live-session fate-effect contract", () => {
 						},
 					],
 				},
-				problems: [{code: "retention-loss", source: "fixture", message: "missing source"}],
+				problems: [
+					{code: "retention-loss", source: "fixture", message: "missing source"},
+					{
+						code: "lock-cleanup-failed",
+						source: "lineage.json.lock",
+						message: "committed; operator cleanup required",
+					},
+				],
 			};
 			const live: LiveSessionService = {
 				current: () => Effect.succeed(null),
