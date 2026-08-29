@@ -23,7 +23,7 @@ import {cycleDocOr} from "../config/paths.ts";
 import {searchOpenIssues} from "../io/issues.ts";
 import {probeCycleDoc} from "../plan/github.ts";
 import {sectionCount} from "../plan/ledger.ts";
-import {rank, tokenize} from "../report/dedup.ts";
+import {rank, searchTokens, tokenize} from "../report/dedup.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {PRECONDITION_UNKNOWN, REGION_UNRESOLVABLE, STALE_GROUND} from "./codes.ts";
 import {bodyDigest} from "./digest.ts";
@@ -111,6 +111,7 @@ export const runOpen = (
 		const cycleDoc = yield* probeCycleDoc(repo, cycle.path, options.env);
 
 		const tokens = tokenize(epic.title);
+		const sent = searchTokens(tokens);
 		const backlog = yield* openBacklog(options.env, repo);
 		if (backlog._tag === "Failure") {
 			return refuse(
@@ -119,7 +120,7 @@ export const runOpen = (
 				notes,
 			);
 		}
-		const search = yield* searchOpenIssues(repo, tokens);
+		const search = yield* searchOpenIssues(repo, sent);
 		if (search._tag === "Failure") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -127,6 +128,7 @@ export const runOpen = (
 				notes,
 			);
 		}
+		const narrowed = sent.length === tokens.length ? "" : `; sent to search: ${sent.join(", ")}`;
 		const ranked = rank({
 			tokens,
 			queue: backlog.value,
@@ -214,7 +216,7 @@ export const runOpen = (
 					VERB,
 					children.value.length,
 					"existing child",
-					`${backlog.value.length} open backlog issue(s) and ${search.value.length} search hit(s) ranked`,
+					`${backlog.value.length} open backlog issue(s) and ${search.value.length} search hit(s) ranked${narrowed}`,
 				),
 			],
 		);
