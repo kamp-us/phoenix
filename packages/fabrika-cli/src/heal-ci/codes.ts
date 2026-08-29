@@ -1,5 +1,5 @@
 /**
- * The one exit table all seven `heal-ci` verbs allocate from, so a code means one thing across this
+ * The one exit table all eight `heal-ci` verbs allocate from, so a code means one thing across this
  * group whichever verb produced it (`claude-plugins/fabrika/skills/heal-ci/contract.md`).
  *
  * **Every shared seat is imported, never re-typed as a numeral.** `3`-`11` come from
@@ -59,7 +59,10 @@ export const ZERO_SCOPE = SHARED_NO_TARGET;
 export const WRITE_UNKNOWN = SHARED_WRITE_UNKNOWN;
 /** The write landed but the read-back does not match. */
 export const READBACK_MISMATCH = SHARED_READBACK_MISMATCH;
-/** A supplied value is off a closed vocabulary — an unknown `--signature`. */
+/**
+ * A supplied value is off a closed vocabulary — an unknown `--signature` (`rerun`), an unknown
+ * `--class` (`note`), or a `--slug` that is not one kebab-case path segment (`scratch`).
+ */
 export const OFF_VOCABULARY = SHARED_CLASSIFIED;
 /** A **precondition read failed** — nothing was proven and (for a write) nothing was written. */
 export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
@@ -75,6 +78,9 @@ export const INCOMPLETE_SCAN = REVIEW_INCOMPLETE_SCAN;
  * Neither {@link ZERO_SCOPE} (the target exists) nor {@link PRECONDITION_UNKNOWN} (nothing failed).
  * It is v1's `rerun-once.sh` scar made structural: the guard lives in the verb, so a caller that has
  * convinced itself a second rerun is warranted still cannot get one.
+ *
+ * Both write verbs seat here, for the same reason in two shapes: `rerun` on a head already rerun,
+ * `note` on a pull request already carrying a note at this `<pr>:<class>:<head>` key.
  */
 export const PROVEN_NOT_IN_STATE = 14;
 /**

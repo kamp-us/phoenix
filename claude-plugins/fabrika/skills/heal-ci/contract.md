@@ -569,10 +569,17 @@ a zero-stall answer carries the scope it rests on rather than standing as a bare
 line per emitted PR, **ordered by strand age descending**, ties broken by ascending PR number:
 
 ```
-pr	<number>	<stall-token>	<age-minutes>	<head-sha>
+pr	<number>	<stall-token>	<age-minutes>	<head-sha>	<lane>
 ```
 
-With `--json`: `{"outcome":"swept","scanned":<n>,"stalled":<n>,"prs":[{"number":<n>,"token":…,"ageMinutes":<n>,"head":…}…]}`.
+With `--json`: `{"outcome":"swept","scanned":<n>,"stalled":<n>,"prs":[{"number":<n>,"token":…,"ageMinutes":<n>,"head":…,"lane":…}…]}`.
+
+**The lane is the note's arrow, looked up here rather than by the caller.** It is one of
+`build`/`review`/`ship`/`author`/`human`/`nobody`, and it is a total function of the row's stall
+class plus the owner and author this verb already read — `SKILL.md` §2 carries the table. A caller
+composing a note's first line relays this column; deriving one in a workflow's `run:` block is the
+shape ADR 0228 forbids, and hardcoding one is how the scheduled sweep told every reader the detector
+had found nothing for anyone to do (#7209).
 
 **This verb writes nothing.** It files no issue, assigns nobody, and spawns nothing — a detector
 converts a strand into claimable work and normal pull adopts it (ADR 0205, founder ruling #3532).
@@ -629,9 +636,9 @@ false-completeness this verb exists to prevent.
 ```
 $ fabrika heal-ci sweep
 swept	23	3
-pr	4315	claim-stale	631	4a91c07de3b8215f6c0a9e4d7b2318fa5c6e0d94
-pr	4322	ungated	564	9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18
-pr	4321	gated-unshipped	35	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c
+pr	4315	claim-stale	631	4a91c07de3b8215f6c0a9e4d7b2318fa5c6e0d94	human
+pr	4322	ungated	564	9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18	review
+pr	4321	gated-unshipped	35	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	ship
 ```
 
 ```
@@ -1309,7 +1316,10 @@ fabrika heal-ci scratch 4321 --slug note
 | `--slug` | string | yes | — | the leaf filename under the lane's directory; kebab-case, no path separators |
 
 **Output** — machine channel. One absolute path:
-`<temp root>/fabrika-heal-ci/<session-id>/<pr>/<slug>`. The directory is created if absent.
+`<temp root>/fabrika-heal-ci/<session-id>/<pr>/<slug>`. The directory is created if absent; **the leaf
+file is not** — the caller allocates, writes the body, then reads it back on stdin. Redirecting
+`note`'s stdin straight from an unwritten path posts nothing on a first run and posts the *previous*
+classification's body on a second, the path being a pure function of session, PR and slug.
 
 Two healers deriving similar working filenames in one working directory overwrote each other's note
 bodies mid-post (#7209/#7210) — the failure `build scratch` and `triage scratch` already make

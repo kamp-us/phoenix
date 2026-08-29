@@ -512,7 +512,7 @@ table a failure log matches. Contract:
 | Verb | Answers |
 |---|---|
 | `heal-ci diagnose` | one PR's stall class from an ordered, total predicate chain, with its evidence |
-| `heal-ci sweep` | every open PR classified with its strand age — the scheduled surface |
+| `heal-ci sweep` | every open PR classified with its strand age and its note arrow — the scheduled surface |
 | `heal-ci surface` | declared required contexts against the runs that actually post at the head |
 | `heal-ci logs` | the failed-job log text for **every** failing gating context at a head |
 | `heal-ci classify` | pure: log text on stdin → one signature from a ten-row ordered table, default-deny |
@@ -541,6 +541,9 @@ Five behaviours are worth knowing:
 - **`sweep` writes nothing.** It files no issue, assigns nobody and spawns nothing (ADR 0205): a
   detector emits claimable work and normal pull adopts it. Filing is `report file`'s, which is why
   `4` stays a deliberate gap here.
+- **The note's arrow is a lookup, and `sweep` emits it.** Each row's sixth column is the lane the
+  stall class hands the work to (`build`/`review`/`ship`/`author`/`human`/`nobody`), so the note's
+  first line relays a lane instead of a caller deriving one in a `run:` block (ADR 0228).
 
 ## The `hook` group
 

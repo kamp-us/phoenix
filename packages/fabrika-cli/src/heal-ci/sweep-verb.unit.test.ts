@@ -104,10 +104,25 @@ describe("runSweep reports the whole board or none of it", () => {
 		);
 		expect(out.code).toBe(0);
 		expect(out.stdout).toBe(
-			["swept\t2\t2", `pr\t4321\tungated\t60\t${HEAD}`, `pr\t4322\tungated\t60\t${HEAD}`, ""].join(
-				"\n",
-			),
+			[
+				"swept\t2\t2",
+				`pr\t4321\tungated\t60\t${HEAD}\treview`,
+				`pr\t4322\tungated\t60\t${HEAD}\treview`,
+				"",
+			].join("\n"),
 		);
+	});
+
+	// The scheduled workflow relays this column into the note's first line, so an absent or
+	// hardcoded lane is a note telling every reader the detector found nothing to do (#7209).
+	it("carries the class's arrow as the row's sixth column, never a fixed word", async () => {
+		const out = await run(classifiable([OPEN_PULLS, openPulls({number: 4321, head: HEAD})]), {
+			json: true,
+		});
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).prs).toEqual([
+			{number: 4321, token: "ungated", ageMinutes: 60, head: HEAD, lane: "review"},
+		]);
 	});
 
 	it("answers a quiet board rather than refusing it", async () => {

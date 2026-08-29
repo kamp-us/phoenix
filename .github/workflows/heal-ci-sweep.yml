@@ -133,6 +133,12 @@ jobs:
       # no comments and globs for nothing; it passes the class and the head and relays the verb's
       # exit (ADR 0228). `14` is the verb's proven "this key is already recorded", which is a success
       # here and the one code mapped rather than relayed; every other non-zero reds the job.
+      #
+      # The note's arrow is relayed too: `sweep` emits the lane as the row's sixth column, off the
+      # lookup in `heal-ci/lane.ts` that reads the class the same verb derived. This block used to
+      # print a hardcoded `nobody`, which told every reader the board's own detector had found nothing
+      # for anyone to do — on `ungated` and `gated-unshipped`, the two classes the skill exists to
+      # catch (#7209).
       - name: Post the durable note on each stranded pull request
         env:
           GH_TOKEN: ${{ github.token }}
@@ -141,21 +147,28 @@ jobs:
           set +e
           set -uo pipefail
 
-          ROWS="$(jq -r '.prs[] | select(.token != "attended") | [.number, .token, .ageMinutes, .head] | @tsv' sweep.json)"
+          ROWS="$(jq -r '.prs[] | select(.token != "attended") | [.number, .token, .ageMinutes, .head, .lane] | @tsv' sweep.json)"
           if [ -z "$ROWS" ]; then
             echo "heal-ci-sweep: no stranded rows — posting nothing."
             exit 0
           fi
 
           failed=0
-          while IFS=$'\t' read -r PR TOKEN AGE HEAD; do
+          while IFS=$'\t' read -r PR TOKEN AGE HEAD LANE; do
             if [ -z "${PR-}" ]; then
               continue
             fi
 
-            NOTE="$(node packages/fabrika-cli/src/bin.ts heal-ci scratch "$PR" --slug note)"
+            # `</dev/null` on every command inside this loop: a child that reads stdin consumes the
+            # rows still queued on `done <<< "$ROWS"` and silently truncates the sweep to its first PR.
+            NOTE="$(node packages/fabrika-cli/src/bin.ts heal-ci scratch "$PR" --slug note </dev/null)"
             if [ -z "${NOTE-}" ]; then
               echo "::error::heal-ci-sweep: no scratch path for #${PR} — nothing was posted for it."
+              failed=1
+              continue
+            fi
+            if [ -z "${LANE-}" ]; then
+              echo "::error::heal-ci-sweep: the sweep row for #${PR} carries no lane — the arrow is unread, so nothing was posted for it."
               failed=1
               continue
             fi
@@ -164,7 +177,7 @@ jobs:
             # substitution.
             # shellcheck disable=SC2016
             {
-              printf 'heal-ci: ROUTED — PR #%s @ %s → nobody\n\n' "$PR" "$HEAD"
+              printf 'heal-ci: ROUTED — PR #%s @ %s → %s\n\n' "$PR" "$HEAD" "$LANE"
               printf 'Scheduled stall sweep: this pull request classifies as `%s`, stranded %s minute(s) at head `%s`.\n\n' "$TOKEN" "$AGE" "$HEAD"
               printf 'Detection only — this run merged nothing, re-ran nothing and spawned nothing. What to do about the flag is a driver decision; `/fabrika:heal-ci %s` reads the full diagnosis.\n\n' "$PR"
               printf 'Posted by the `heal-ci-sweep` workflow (#6146). The suppression key `<pr>:<class>:<head>` rides in the marker below, matched over the whole comment history: no further note lands here until this pull request changes class or gains a new head commit.\n'
