@@ -150,6 +150,25 @@ describe("ContributionRegistry", () => {
 		expect(registry.diagnostics.map(({code}) => code)).toEqual(["built-in-key", "duplicate-key"]);
 	});
 
+	it("commits package renderers and diagnostics under one stable registry revision", async () => {
+		const asset = "/api/contribution-assets/v1-0.js";
+		const loaded = await ContributionRegistry.load(
+			catalog([entry("fixture-package", "edge", "fixture.edge", asset)]),
+			ContributionRegistry.empty(),
+			transport({[asset]: moduleFor("edge")}),
+		);
+		const failed = loaded.withDiagnostic({
+			packageName: "fixture-package",
+			kind: "edge",
+			key: "fixture.edge",
+			code: "render-failed",
+			message: "Katkı fixture.edge çizilirken durduruldu",
+		});
+		expect(failed.revision).toBe(loaded.revision);
+		expect([...failed.edges.keys()]).toEqual(["fixture.edge"]);
+		expect(failed.diagnostics.map(({key}) => key)).toEqual(["fixture.edge"]);
+	});
+
 	it("surfaces missing assets, backend diagnostics, and unload without retaining stale renderers", async () => {
 		const asset = "/api/contribution-assets/v1-0.js";
 		const first = await ContributionRegistry.load(
@@ -172,6 +191,7 @@ describe("ContributionRegistry", () => {
 			transport({}),
 		);
 		expect(missing.loaded).toEqual([]);
+		expect(missing.revision).toBe(first.revision + 1);
 		expect(missing.diagnostics.map(({packageName, code}) => ({packageName, code}))).toEqual([
 			{packageName: "manifest-package", code: "unsupported-version"},
 			{packageName: "fixture-package", code: "unloaded"},

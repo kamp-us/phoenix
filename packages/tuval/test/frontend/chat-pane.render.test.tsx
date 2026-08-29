@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import {cleanup, render, screen} from "@testing-library/react";
+import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {ChatPane} from "../../src/frontend-shell/chat-pane.js";
 import type {DiscoveredSession} from "../../src/shared/discovery.js";
@@ -65,6 +65,47 @@ describe("ChatPane", () => {
 		expect(view.container.querySelector(".chat-pane.kp-surface")).toBeTruthy();
 		expect(view.container.querySelectorAll(".transcript-entry.kp-card")).toHaveLength(2);
 		expect(screen.getByRole("button", {name: "Gönder"}).getAttribute("data-scope")).toBe("button");
+	});
+
+	it("clears a draft before a different session identity can submit it", async () => {
+		const onSend = vi.fn(async () => ({ok: true, message: "onaylandı"}));
+		const view = render(
+			<ChatPane
+				selected={selected}
+				connection="attached"
+				session={attached}
+				onClose={vi.fn()}
+				onSend={onSend}
+			/>,
+		);
+		const editor = screen.getByRole("textbox", {name: "İstem"});
+		editor.textContent = "alfa taslağı";
+		fireEvent.input(editor);
+		await waitFor(() =>
+			expect((screen.getByRole("button", {name: "Gönder"}) as HTMLButtonElement).disabled).toBe(
+				false,
+			),
+		);
+
+		const beta = {
+			...selected,
+			identity: "pi:beta" as DiscoveredSession["identity"],
+			piSessionId: "beta",
+		};
+		view.rerender(
+			<ChatPane
+				selected={beta}
+				connection="attached"
+				session={{...attached, sessionId: "beta"}}
+				onClose={vi.fn()}
+				onSend={onSend}
+			/>,
+		);
+		await waitFor(() =>
+			expect(screen.getByRole("textbox", {name: "İstem"}).textContent ?? "").toBe(""),
+		);
+		fireEvent.submit(screen.getByRole("textbox", {name: "İstem"}).closest("form")!);
+		expect(onSend).not.toHaveBeenCalled();
 	});
 
 	it("announces ownership refusal and malformed stream states as accessible errors", () => {

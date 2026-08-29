@@ -48,13 +48,14 @@ const stop = async (child: ChildProcess) => {
 	await new Promise<void>((resolve) => child.once("exit", () => resolve()));
 };
 
-const restartWithPeerSnapshot = async (server: Awaited<ReturnType<typeof start>>) => {
+const restartWithSnapshots = async (
+	server: Awaited<ReturnType<typeof start>>,
+	packages: ReadonlyArray<string>,
+) => {
 	await stop(server.child);
-	const child = spawn(
-		process.execPath,
-		[harness, new URL(server.url).port, "../fixtures/extension-ui-peer"],
-		{stdio: ["ignore", "pipe", "pipe"]},
-	);
+	const child = spawn(process.execPath, [harness, new URL(server.url).port, ...packages], {
+		stdio: ["ignore", "pipe", "pipe"],
+	});
 	await new Promise<void>((resolve, reject) => {
 		const timer = setTimeout(
 			() => reject(new Error("Tuval reconnect fixture did not start")),
@@ -162,7 +163,7 @@ test("real server preserves correlation, placement, scoped isolation, and mounte
 		await testInfo.attach("extension-ui-desktop", {path: desktop, contentType: "image/png"});
 
 		const responsesBeforeReconnect = responseOperations.length;
-		const restart = restartWithPeerSnapshot(server);
+		const restart = restartWithSnapshots(server, ["../fixtures/extension-ui-peer"]);
 		await expect(page.locator(".extension-ui__connection")).toHaveAttribute(
 			"data-state",
 			"disconnected",
@@ -183,6 +184,19 @@ test("real server preserves correlation, placement, scoped isolation, and mounte
 		expect(mutations.filter(({name}) => name === "extensionUi.respond")).toHaveLength(
 			responsesBeforeReconnect,
 		);
+
+		const emptyRestart = restartWithSnapshots(server, []);
+		await expect(page.locator(".extension-ui__connection")).toHaveAttribute(
+			"data-state",
+			"disconnected",
+		);
+		server = await emptyRestart;
+		await expect(page.locator(".extension-ui__connection")).toHaveAttribute(
+			"data-state",
+			"connected",
+		);
+		await expect(page.getByText("eş paket durumu")).toHaveCount(0);
+		await expect(page.getByText("peer below")).toHaveCount(0);
 
 		await page.setViewportSize({width: 390, height: 844});
 		const mobile = testInfo.outputPath("extension-ui-mobile.png");

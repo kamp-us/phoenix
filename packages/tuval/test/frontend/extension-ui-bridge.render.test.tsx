@@ -25,6 +25,9 @@ class FakeClient implements ExtensionUIBrowserClient {
 	emit(event: ExtensionUIEvent): void {
 		this.handlers?.event(event);
 	}
+	snapshot(snapshots: Parameters<NonNullable<typeof this.handlers>["snapshot"]>[0]): void {
+		this.handlers?.snapshot(snapshots);
+	}
 }
 
 const request = (sequence: number, value: ExtensionUIRequest): ExtensionUIEvent => ({
@@ -228,7 +231,31 @@ describe("ExtensionUIBridge", () => {
 		expect(screen.getByText(/Paket oturumu kaldırıldı/)).toBeTruthy();
 	});
 
-	it("preserves hydrated state on empty open and replaces it only when replay begins", async () => {
+	it("preserves hydrated state on connection-open and clears it on an authoritative empty snapshot", async () => {
+		const client = new FakeClient();
+		render(
+			<ExtensionUIBridge
+				client={client}
+				initialSnapshots={[
+					{
+						scope,
+						statuses: [{key: "hydrated", text: "sunucudan geri yüklendi"}],
+						widgets: [{key: "hydrated", lines: ["kalıcı widget"], placement: "aboveEditor"}],
+					},
+				]}
+			/>,
+		);
+		expect(await screen.findByText("sunucudan geri yüklendi")).toBeTruthy();
+		expect(screen.getByText("kalıcı widget")).toBeTruthy();
+		client.handlers?.open();
+		expect(screen.getByText("sunucudan geri yüklendi")).toBeTruthy();
+		expect(screen.getByText("kalıcı widget")).toBeTruthy();
+		client.snapshot([]);
+		await waitFor(() => expect(screen.queryByText("sunucudan geri yüklendi")).toBeNull());
+		expect(screen.queryByText("kalıcı widget")).toBeNull();
+	});
+
+	it("replaces hydrated state atomically when an authoritative snapshot arrives", async () => {
 		const client = new FakeClient();
 		render(
 			<ExtensionUIBridge
@@ -289,14 +316,13 @@ describe("ExtensionUIBridge", () => {
 		expect(client.respond).not.toHaveBeenCalled();
 
 		client.handlers?.open();
-		client.emit({
-			_tag: "status",
-			sequence: 7,
-			scope,
-			key: "phase",
-			text: "son değer",
-			replay: true,
-		});
+		client.snapshot([
+			{
+				scope,
+				statuses: [{key: "phase", text: "son değer"}],
+				widgets: [],
+			},
+		]);
 		expect(await screen.findByText("son değer")).toBeTruthy();
 		expect(screen.queryByText("sunucudan geri yüklendi")).toBeNull();
 		expect(screen.queryByText("kalıcı widget")).toBeNull();
