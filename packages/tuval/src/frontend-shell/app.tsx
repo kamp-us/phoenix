@@ -25,6 +25,7 @@ import {
 } from "./canvas-adapter.js";
 import {ChatPane, type PaneConnection, type SendResult} from "./chat-pane.js";
 import {ContributionStatus, useContributions} from "./contributions.js";
+import {ExtensionUIBridge} from "./extension-ui-bridge.js";
 import {
 	abortLiveSession,
 	attachLiveSession,
@@ -1008,6 +1009,7 @@ export function TuvalApp() {
 					/>
 				)}
 			</main>
+			<ExtensionUIBridge />
 		</div>
 	);
 }
