@@ -433,8 +433,19 @@ skill the wrong fix, because the copies drift.
 on an `Effect.sleep` cadence
 ([`packages/fabrika-cli/src/ship/reconcile-verb.ts`](../../../packages/fabrika-cli/src/ship/reconcile-verb.ts)),
 and that is correct: the verb owns its own loop, bounds it by a poll count, and returns one answer
-to a caller that made one call. That is the shape a skill-side wait converts into — a verb whose
-waiting is bounded and whose caller blocks on nothing else.
+to a caller that made one call. `review ci --wait`
+([`packages/fabrika-cli/src/review/ci-verb.ts`](../../../packages/fabrika-cli/src/review/ci-verb.ts))
+is the same shape over a queued check set, bounded by a wall-clock budget instead of a count, and it
+is where this rule was actually converted: the reviewer's wait was the gap that produced the
+[#7260](https://github.com/kamp-us/phoenix/issues/7260) timers, and moving the loop into the verb is
+what closed it rather than parking the lane on a human
+([#7282](https://github.com/kamp-us/phoenix/issues/7282)). That is the shape a skill-side wait
+converts into — a verb whose waiting is bounded and whose caller blocks on nothing else.
+
+**A bound that runs out is its own answer, never the permissive one.** Both verbs say so in their
+output: `ship reconcile` returns `unresolved`, `review ci --wait` returns `settle
+budget-exhausted` beside a rollup that still reads `pending`. A wait that converts "I ran out of
+time" into "it passed" is worse than the `sleep` it replaced.
 
 ## What these conventions deliberately do not cover
 

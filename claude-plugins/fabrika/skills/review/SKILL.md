@@ -124,7 +124,7 @@ green as this PR's. The code class's execution evidence is the structural CI-at-
 incomplete enumerations:
 
 ```bash
-fabrika review ci $pr_number --sha 03135b91
+fabrika review ci $pr_number --sha 03135b91 --wait
 ```
 
 **Its `green` now carries gate coverage, and the absence of coverage is its own answer.** A head
@@ -136,18 +136,29 @@ reporting on its own trigger. Treat that `16` as a blocked read, not a verdict �
 runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
 be read`, naming the `16`, rather than grading around it.
 
-**A `pending` is a read of this moment, and you never wait it out on a timer.** This verb is a point
-read, not a blocking one: there is no `--wait` here doing the blocking for you, so a queued
-`ci-required` aggregator leaves you a gap, and
+**A queued aggregator is waited out by the verb, never by you on a timer.** You are normally spawned
+minutes after the push, so a `pending` is the ordinary read, not a pathology — and the wait it opens
+is exactly the gap
 [§14 of the skill conventions](../../docs/skill-conventions.md#14-a-skill-never-sleeps-and-never-polls-on-a-timer)
-governs it — no `sleep`, foreground or background, and no re-read on a cadence. That rule is
+governs: no `sleep`, foreground or background, and no re-read on a cadence. That rule is
 load-bearing here because this skill's own text is where it was missing: a reviewer waiting on a
 queued aggregator left background timers that fired after its run had ended and re-notified the
 driver twice with nothing to route
-([#7260](https://github.com/kamp-us/phoenix/issues/7260)). So take the `pending` as the answer the
-head gives you now — the code class has no execution evidence yet, so it ends on `UNKNOWN — the
-artifact could not be read` exactly as the `16` path does, and the head is re-read by a later run,
-not by this one sleeping through the queue.
+([#7260](https://github.com/kamp-us/phoenix/issues/7260)). The `--wait` above is why one call is
+enough: the verb owns the loop, bounds it by a wall-clock budget, and prints a `settle` line ahead of
+the rollup. Each token routes on its own:
+
+- `settled` — CI concluded inside the budget. The `green` or `red` beside it is the code class's
+  execution evidence; judge on it.
+- `budget-exhausted` — the budget ran out with the head still `pending`. Nothing about this head was
+  proven, and a wait that long is a stuck queue rather than a race with one, so the class ends on
+  `UNKNOWN — the artifact could not be read`, naming the token. That is a park a human should see;
+  `heal-ci` is the lane that moves a stalled PR.
+- `head-moved` — the PR left the head you are judging. Re-read at the new head; a verdict binds only
+  what was inspected.
+
+The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
+so a `16` head or a repo with no producer never burns the budget.
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no

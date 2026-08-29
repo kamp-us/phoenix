@@ -68,6 +68,19 @@ const PATCH = /PATCH .*\/repos\/o\/r\/issues\/4287$/;
 
 const ENV = {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>;
 
+/** The point read `review ci` answers with by default — no `--wait`, so the bound is unused. */
+const POINT_READ = {
+	pr: 4321,
+	sha: null,
+	wait: false,
+	budgetSeconds: 600,
+	cadenceSeconds: 30,
+	repo: null,
+	json: false,
+	env: ENV,
+	cwd: "/repo",
+};
+
 /** The pinned write instant, and the stamp `review post` emits from it under every verdict body. */
 const NOW = Effect.succeed(Date.parse("2026-08-09T06:30:00.412Z"));
 const STAMP = "Verdict-written: 2026-08-09T06:30:00Z";
@@ -132,11 +145,7 @@ describe("the CI rollup's fail-closed buckets", () => {
 
 	it("reds a cancelled check — a check that proved nothing must not read green", async () => {
 		const {runCi} = await import("./ci-verb.ts");
-		const out = await withShell(
-			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
-			script,
-			http,
-		);
+		const out = await withShell(runCi(POINT_READ), script, http);
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tred`);
 	});
 
@@ -145,11 +154,7 @@ describe("the CI rollup's fail-closed buckets", () => {
 			rollupOf: (runs) => actual.rollupOf(runs.filter((run) => run.conclusion !== "cancelled")),
 		}));
 		const {runCi} = await import("./ci-verb.ts");
-		const out = await withShell(
-			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
-			script,
-			http,
-		);
+		const out = await withShell(runCi(POINT_READ), script, http);
 		// The intended death, named exactly: the answer flips to the permissive token, at exit 0.
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
@@ -171,11 +176,7 @@ describe("the CI rollup's gate-coverage refusal", () => {
 
 	it("refuses a head no gate inspected — a passing check set is not gate coverage", async () => {
 		const {runCi} = await import("./ci-verb.ts");
-		const out = await withShell(
-			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
-			script,
-			http,
-		);
+		const out = await withShell(runCi(POINT_READ), script, http);
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
 	});
@@ -185,11 +186,7 @@ describe("the CI rollup's gate-coverage refusal", () => {
 			gateCoverageOf: () => ({_tag: "Covered", declared: 1, covered: 1}),
 		}));
 		const {runCi} = await import("./ci-verb.ts");
-		const out = await withShell(
-			runCi({pr: 4321, sha: null, repo: null, json: false, env: ENV, cwd: "/repo"}),
-			script,
-			http,
-		);
+		const out = await withShell(runCi(POINT_READ), script, http);
 		// The intended death: the ungated head reports the permissive token, at exit 0.
 		expect(out.code).toBe(0);
 		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tgreen`);
