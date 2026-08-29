@@ -224,15 +224,24 @@ fewer than 2 surviving tokens ⇒ `indeterminate`.
 
 With `--json`, one object with keys `outcome` (the token), `candidates` (array of
 `{number, source, score, title}`, empty unless `outcome` is `candidates`), `reason` (the
-explanatory string for `none` and `indeterminate`, else `null`), `tokens` (the keywords actually
-used), `truncated` (boolean), `queueCount` and `searchCount`.
+explanatory string for `none` and `indeterminate`, else `null`), `tokens` (the ranking keywords),
+`searchTokens` (the narrower slice sent to the search query — `[]` on `indeterminate`, where neither
+source was read), `truncated` (boolean), `queueCount` and `searchCount`.
 
 **Matching.** `--query` is lowercased and split on any run of non-letter, non-number characters over
 the **full Unicode letter class**, not ASCII — Turkish is a product-copy language in this repo, and
 an ASCII-only split shreds a Turkish stem into sub-threshold fragments and drops it entirely.
 Tokens shorter than 3 characters and stopwords in **both** repo languages are dropped; the
-remainder is deduped in first-seen order and capped at 12, because GitHub's search AND-joins its
-terms and an over-long query matches nothing. A query token matches a title token on an exact hit or
+remainder is deduped in first-seen order and capped at 12.
+
+**Ranking and search get different lists.** Scoring counts how many query tokens a title carries, so
+more tokens sharpen it; GitHub AND-joins its search terms, so every added token narrows the result
+set toward zero. Ranking therefore gets all 12, while the search query gets only the **leading 4** —
+measured against `kamp-us/phoenix` on 2026-08-28, where the collapse lands between 4 and 5 terms. The
+distinctiveness floor is evaluated against the ranking list, so narrowing the search send never
+pushes a usable query into `indeterminate`.
+
+A query token matches a title token on an exact hit or
 a shared prefix of at least 5 characters, which is what lets an agglutinative Turkish inflection
 match a bare stem without a morphological analyzer while staying off short English derivational
 overlaps. A queue row is kept only when its title overlaps (score > 0); a search row already matched
@@ -277,8 +286,9 @@ label queue is read-after-write consistent and catches an issue filed seconds ag
 index is eventually consistent — it lags fresh issues but reaches older open issues that have
 already left the queue. An empty intake queue is a normal state, so `none` at exit 0 is an answer;
 a queue or index that could not be read is exit 27 or 28 with **nothing** on stdout. The scope line
-goes to stderr on every run, naming both source counts, the tokens actually used, and whether the
-list was truncated.
+goes to stderr on every run, naming both source counts, the ranking tokens, the narrower list
+actually sent to search when the two differ (`; sent to search: <tokens>`), and whether the list was
+truncated.
 
 **Examples**
 
@@ -303,7 +313,7 @@ $ echo $?
 
 ```
 $ fabrika report dedup --query "retry helper abort reason" --json
-{"outcome":"candidates","candidates":[{"number":4312,"source":"both","score":4,"title":"Abort reason lost when the worker retry helper re-wraps the request"}],"reason":null,"tokens":["retry","helper","abort","reason"],"truncated":false,"queueCount":31,"searchCount":6}
+{"outcome":"candidates","candidates":[{"number":4312,"source":"both","score":4,"title":"Abort reason lost when the worker retry helper re-wraps the request"}],"reason":null,"tokens":["retry","helper","abort","reason"],"searchTokens":["retry","helper","abort","reason"],"truncated":false,"queueCount":31,"searchCount":6}
 ```
 
 ```

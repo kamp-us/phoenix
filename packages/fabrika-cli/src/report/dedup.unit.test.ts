@@ -1,5 +1,14 @@
 import {describe, expect, it} from "vitest";
-import {MAX_TOKENS, rank, renderCandidate, scoreTitle, tokenize, tokensMatch} from "./dedup.ts";
+import {
+	MAX_TOKENS,
+	rank,
+	renderCandidate,
+	SEARCH_TOKENS,
+	scoreTitle,
+	searchTokens,
+	tokenize,
+	tokensMatch,
+} from "./dedup.ts";
 
 describe("tokenize", () => {
 	it("lowercases, drops short tokens and English stopwords, and dedupes first-seen", () => {
@@ -25,9 +34,25 @@ describe("tokenize", () => {
 		expect(tokenize("sözlük için bir tanım ve çok şey")).toEqual(["sözlük", "tanım"]);
 	});
 
-	it("caps at 12 tokens, because GitHub AND-joins and an over-long query matches nothing", () => {
+	it("caps at 12 tokens, the width ranking scores against", () => {
 		const query = Array.from({length: 30}, (_, i) => `token${i}`).join(" ");
 		expect(tokenize(query)).toHaveLength(MAX_TOKENS);
+	});
+});
+
+describe("searchTokens", () => {
+	it("narrows a full ranking list to the leading slice the AND-joined query gets (#7213)", () => {
+		const ranking = tokenize(
+			"review render seed authenticated notification rows state suffix reserved unimplemented exit capture",
+		);
+		expect(ranking).toHaveLength(MAX_TOKENS);
+		expect(searchTokens(ranking)).toEqual(ranking.slice(0, SEARCH_TOKENS));
+		expect(searchTokens(ranking)).toHaveLength(SEARCH_TOKENS);
+	});
+
+	it("leaves a list already at or below the slice size alone", () => {
+		const short = ["retry", "helper"];
+		expect(searchTokens(short)).toEqual(short);
 	});
 });
 

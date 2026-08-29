@@ -792,8 +792,13 @@ File one follow-up observation into the intake queue. Contract:
 **Exit codes.** The shared table this group defines, plus `27` the intake queue could not be read ·
 `28` the search index could not be read.
 
-Five behaviours are worth knowing:
+Six behaviours are worth knowing:
 
+- **`dedup` ranks against more tokens than it searches with.** Scoring gets sharper with every token
+  and GitHub's AND-joined search gets narrower, so ranking receives up to 12 and the search query
+  receives only the leading 4. Twelve AND-joined terms matched nothing on essentially every real
+  call, which made `none` a negative resting on one source. The stderr scope line and `--json`'s
+  `searchTokens` both name the narrower list whenever it differs.
 - **The body is a value, never a path.** The three writing verbs take it on **stdin only** — no
   `--body`, no `--body-file`. A flag that accepts a path turns the body into a string the verb
   could post verbatim. A shell redirect is fine: the *shell* reads the file.
