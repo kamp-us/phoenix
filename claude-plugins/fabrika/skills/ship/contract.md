@@ -1111,6 +1111,21 @@ that one counts latest-per-context check-run rows). These are the zero-checkset
 discriminators (`no-runs` requires workflows ≥ 1 and runs = 0 at this head: Actions exist
 and none fired — the dropped-trigger state `ship nudge` re-derives).
 
+**A `green` is served only over bytes a gate of this repo's own inspected** (#6915). Where the
+rollup would be `green`, the head's workflow runs are read against the active inventory through
+`src/review/gate-coverage.ts` — the same module `review ci` refuses on, so the two gates cannot
+drift a second copy of the rule. A workflow the repo checks in is addressed by its file path
+(`.github/workflows/…`); one the platform provides on the repo's behalf is addressed
+`dynamic/<provider>/<name>`, and that prefix is the whole discriminator: no expected job names, and
+never `review ci`'s informational *name* denylist, which answers a different question. A head where
+the repo declares at least one workflow of its own and **none** of them produced a run refuses on
+`20` — `ship` is the merge authority, so "no gate inspected these bytes" must not read as "every
+gate passed". Otherwise the coverage is stated on the notes channel: `ship checks: <k> of <m>
+workflow(s) <repo> authors produced a run at <sha>.`, or, for a repo that authors no workflow at
+all, `ship checks: <repo> authors no workflow of its own — …`. The floor sits on `green` alone: a
+`red` head already routes to `heal-ci` by name, and a `pending` head is one this group waits on
+rather than lands.
+
 **Zero workflows is `no-producer`, and it no longer collapses into `pending`** (#6298). A repo with
 no CI and a repo whose CI has not reported yet are different facts, and printing the second over the
 first tells an operator to wait for a run nothing will ever start. Workflow *existence* is the whole
@@ -1152,6 +1167,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `7` | the PR or the `--sha` commit is proven absent; **or the repo has zero workflows** under the shipped `ci.noProducer: "refuse"` |
 | `11` | the check-run read, the workflow read, or `.fabrika.jsonc`'s `ci` key failed — CI state is UNKNOWN, never `green`, and no substituted count is printed |
 | `13` | entries received < declared `total_count` — never read as "no red checks" |
+| `20` | every check at the head passed and **no workflow the repo authors produced a run there** — no gate inspected these bytes, so `green` is UNKNOWN, never merged (#6915) |
 
 **Errors**
 
@@ -1165,6 +1181,9 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
+| `ship checks: none of the <m> workflow(s) <repo> authors produced a run at <sha> — the <k> check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).` | 20 | refusal |
+| `ship checks: <k> of <m> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
+| `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 
 **Scope** — the check runs and workflow inventory at one commit, paginated,
 count-verified. Zero *declared* check runs with zero workflows is `green`-ineligible and
@@ -1197,6 +1216,13 @@ $ fabrika ship checks 4323 --sha 7c04ef19   # a repo declaring "ci": {"noProduce
 checks	7c04ef19	no-producer
 run	0
 facts	workflows:0	runs:0
+```
+
+```
+$ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only CodeQL's own workflow ran
+ship checks: none of the 12 workflow(s) kamp-us/phoenix authors produced a run at 5b1c0d72 — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).
+$ echo $?
+20
 ```
 
 ```

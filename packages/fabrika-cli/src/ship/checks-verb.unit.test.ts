@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {rollupFor, runChecks} from "./checks-verb.ts";
-import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {checkRuns, ENV, HEAD, pull, runsTotal, workflows} from "./fixtures.test-support.ts";
 
 const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
@@ -60,7 +60,11 @@ const noRun = (name: string, status: string, conclusion: string | null = null) =
 	conclusion,
 });
 
-const empty = {runs: [], superseded: new Set<number>()};
+const empty = {runs: [], ranAtHead: [], superseded: new Set<number>()};
+
+/** An inventory of N workflows, path-addressed the way the platform answers. */
+const inventory = (count: number): ReadonlyArray<string> =>
+	Array.from({length: count}, (_, index) => `.github/w${index}.yml`);
 
 /**
  * One sample's check rows, with the suites a newer run replaced.
@@ -81,26 +85,29 @@ const sampleOf = (
 		id: index + 1,
 		checkSuiteId: row.suite ?? 1,
 	})),
-	workflows: 1,
+	workflows: inventory(1),
 	runCount: 2,
+	ranAtHead: [],
 	superseded: new Set(superseded),
 });
 
 describe("rollupFor", () => {
 	it("names any wedged check as the whole answer", () => {
-		expect(rollupFor({...empty, workflows: 3, runCount: 0}, ["ci-required"])).toBe("wedged");
+		expect(rollupFor({...empty, workflows: inventory(3), runCount: 0}, ["ci-required"])).toBe(
+			"wedged",
+		);
 	});
 
 	it("is no-runs only with positive evidence: workflows exist and none fired at this head", () => {
-		expect(rollupFor({...empty, workflows: 12, runCount: 0}, [])).toBe("no-runs");
+		expect(rollupFor({...empty, workflows: inventory(12), runCount: 0}, [])).toBe("no-runs");
 	});
 
 	it("is no-producer on zero workflows, never collapsed into pending (#6298)", () => {
-		expect(rollupFor({...empty, workflows: 0, runCount: 0}, [])).toBe("no-producer");
+		expect(rollupFor({...empty, workflows: [], runCount: 0}, [])).toBe("no-producer");
 	});
 
 	it("keeps no-producer apart from pending — the second waits on a run, the first never will", () => {
-		expect(rollupFor({...empty, workflows: 1, runCount: 3}, [])).toBe("pending");
+		expect(rollupFor({...empty, workflows: inventory(1), runCount: 3}, [])).toBe("pending");
 	});
 });
 
@@ -336,6 +343,83 @@ describe("runChecks", () => {
 		);
 		expect(out.code).toBe(ZERO_SCOPE);
 		expect(out.stderr.at(-1)).toBe(`ship checks: no commit ${HEAD} on PR #4321.`);
+	});
+});
+
+/**
+ * #6915: the merge-authority twin of the review-side fail-open (#6522). Every check at the head
+ * passed, and the workflows that produced them were the platform's own — so the word this group
+ * merges on would have been printed over bytes no gate of the repo inspected.
+ */
+describe("the gate-coverage floor under a green head", () => {
+	const CI = ".github/workflows/ci.yml";
+	const CODEQL = "dynamic/github-code-scanning/codeql";
+
+	/** A passing head whose only check runs came from platform-provided and informational suites. */
+	const passingChecks = served(
+		checkRuns(2, [
+			noRun("CodeQL", "completed", "success"),
+			noRun("deploy (web)", "completed", "success"),
+		]),
+	);
+
+	it("refuses on 20 when the repo declares a gate and none of them ran at this head", async () => {
+		const out = await run(found, [
+			[RUNS, passingChecks],
+			[WORKFLOWS, served(workflows({path: CI}, {path: CODEQL}))],
+			[RUN_COUNT, served(runsTotal(1, [{id: 11, path: CODEQL}]))],
+		]);
+		expect(out.code).toBe(NO_GATE_COVERAGE);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			`ship checks: none of the 1 workflow(s) o/r authors produced a run at ${HEAD} — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).`,
+		);
+	});
+
+	it("answers green when the declared gate workflow produced a run at this head", async () => {
+		const out = await run(found, [
+			[RUNS, served(checkRuns(1, [noRun("ci-required", "completed", "success")]))],
+			[WORKFLOWS, served(workflows({path: CI}, {path: CODEQL}))],
+			[
+				RUN_COUNT,
+				served(
+					runsTotal(2, [
+						{id: 11, path: CI},
+						{id: 12, path: CODEQL, workflowId: 2},
+					]),
+				),
+			],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tgreen`);
+		expect(out.stderr).toContain(
+			`ship checks: 1 of 1 workflow(s) o/r authors produced a run at ${HEAD}.`,
+		);
+	});
+
+	it("judges no coverage on a repo that authors no workflow of its own", async () => {
+		const out = await run(found, [
+			[RUNS, served(checkRuns(1, [noRun("CodeQL", "completed", "success")]))],
+			[WORKFLOWS, served(workflows({path: CODEQL}))],
+			[RUN_COUNT, served(runsTotal(1, [{id: 11, path: CODEQL}]))],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tgreen`);
+		expect(out.stderr).toContain(
+			`ship checks: o/r authors no workflow of its own — every run at ${HEAD} is platform-provided, so there is no gate coverage to judge.`,
+		);
+	});
+
+	// The floor sits on `green` alone: a `red` head already routes to `heal-ci` by name, and swapping
+	// that route for a coverage refusal would lose the names the route is made of.
+	it("leaves a red ungated head red rather than refusing it", async () => {
+		const out = await run(found, [
+			[RUNS, served(checkRuns(1, [noRun("unit tests", "completed", "failure")]))],
+			[WORKFLOWS, served(workflows({path: CI}))],
+			[RUN_COUNT, served(runsTotal(1, [{id: 11, path: CODEQL}]))],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`checks\t${HEAD}\tred`);
 	});
 });
 

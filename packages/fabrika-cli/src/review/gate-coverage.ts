@@ -12,6 +12,10 @@
  * CodeQL setup, Dependabot, the Copilot reviewer — is addressed as `dynamic/<provider>/<name>`. That
  * prefix is the platform's own marker, which is why the discriminator can be structural: no expected
  * job names, no second copy of the repo's CI shape to drift (#5603, R17.1).
+ *
+ * `ship checks` asks the same question at its own `green` (#6915) and asks it through this module
+ * rather than a ship-side copy — the merge authority and the review gate reading one head must not
+ * be able to disagree about which gates ran on it.
  */
 
 /** The prefix every workflow file checked into a repository is addressed by. */

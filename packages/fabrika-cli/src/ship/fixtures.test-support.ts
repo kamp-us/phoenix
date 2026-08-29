@@ -86,14 +86,23 @@ export const checkRuns = (
 		}),
 	);
 
-export const workflows = (...states: ReadonlyArray<string>): ExecResult =>
+/**
+ * The workflow inventory: one entry per argument, each a state or a `{state, path}` pair.
+ *
+ * The default path is deliberately outside `.github/workflows/`, so a caller that says only "active"
+ * declares no *gate* — `../review/gate-coverage.ts` reads the prefix, and a fixture that quietly
+ * declared one would make every case a coverage case.
+ */
+export const workflows = (
+	...entries: ReadonlyArray<string | {state?: string; path: string}>
+): ExecResult =>
 	okOut(
 		JSON.stringify({
-			total_count: states.length,
-			workflows: states.map((state, index) => ({
+			total_count: entries.length,
+			workflows: entries.map((entry, index) => ({
 				id: index + 1,
-				state,
-				path: `.github/w${index}.yml`,
+				state: typeof entry === "string" ? entry : (entry.state ?? "active"),
+				path: typeof entry === "string" ? `.github/w${index}.yml` : entry.path,
 			})),
 		}),
 	);
@@ -112,6 +121,8 @@ export const runsTotal = (
 		checkSuiteId?: number | null;
 		status?: string;
 		conclusion?: string | null;
+		/** Which workflow produced the run — the gate-coverage read's only input. */
+		path?: string;
 	}> = [],
 ): ExecResult =>
 	okOut(
@@ -120,7 +131,7 @@ export const runsTotal = (
 			workflow_runs: rows.map((row) => ({
 				id: row.id,
 				name: "ci",
-				path: ".github/workflows/ci.yml",
+				path: row.path ?? ".github/workflows/ci.yml",
 				workflow_id: row.workflowId ?? 1,
 				check_suite_id: row.checkSuiteId === undefined ? row.id : row.checkSuiteId,
 				status: row.status ?? "completed",
