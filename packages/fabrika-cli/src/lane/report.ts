@@ -167,6 +167,16 @@ export const PARK_CAUSES = {
 	 */
 	"head-behind-base":
 		"the PR's head is behind its base and must move before an approval is solicited",
+	/**
+	 * The #7217 shape: the lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
+	 * under ADR 0304 that cell is the whole dispatch permission — so no stage may open against it.
+	 *
+	 * A pause is open-ended, which is why this is a park and not a bounded wait (ADR 0313's merge-queue
+	 * dwell is the other side of that line). Its `KNOWN_PARKS` row clears by re-reading the same cell:
+	 * resuming the campaign stays a human's act on `ROADMAP.md`, so the row names no remedy verb.
+	 */
+	"campaign-paused":
+		"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
 } as const;
 
 export type ParkCause = keyof typeof PARK_CAUSES;

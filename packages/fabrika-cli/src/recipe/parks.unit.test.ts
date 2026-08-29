@@ -39,6 +39,15 @@ describe("classifyPark", () => {
 		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("branch-free");
 	});
 
+	it("is Known for a BLOCKED whose cause is the campaign-paused shape (#7217)", () => {
+		const parked = classifyPark("blocked", "campaign-paused");
+
+		expect(parked._tag).toBe("Known");
+		expect(parked._tag === "Known" && parked.recipe.clearance).toBe("campaign-active");
+		// No verb may resume a campaign on a lane's behalf, so this row names no remedy to run first.
+		expect(parked._tag === "Known" && parked.recipe.remedy).toBeNull();
+	});
+
 	it("is Novel for a bare BLOCKED, and says the ledger records no cause", () => {
 		const parked = classifyPark("blocked", null);
 

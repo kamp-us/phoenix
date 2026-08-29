@@ -56,6 +56,37 @@ export const parkedBlockedOn = (cause: string): string =>
 /** The #6395 park: BLOCKED because a working tree still held the lane branch. */
 export const PARKED_ON_WORKTREE = parkedBlockedOn("worktree-holds-branch");
 
+/** The #7217 park: BLOCKED because the campaign homing the lane's milestone read `paused`. */
+export const PARKED_ON_CAMPAIGN = parkedBlockedOn("campaign-paused");
+
+/** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
+export const LANE_MILESTONE = 49;
+
+export interface CampaignFixtureRow {
+	readonly name: string;
+	readonly milestone: number;
+	readonly state: string;
+}
+
+/**
+ * A `ROADMAP.md` whose `## Campaigns` table holds exactly `rows`.
+ *
+ * Written in the shipped column spelling rather than a minimal one, because the clearance reads it
+ * through the dispatch fence's own parse and a fixture the fence would call `Malformed` would prove
+ * nothing about the row it is meant to be testing.
+ */
+export const campaignsTable = (...rows: ReadonlyArray<CampaignFixtureRow>): string =>
+	[
+		"# Roadmap",
+		"",
+		"## Campaigns",
+		"",
+		"| Campaign | Milestone | State |",
+		"|----------|-----------|-------|",
+		...rows.map((row) => `| ${row.name} | #${row.milestone} | ${row.state} |`),
+		"",
+	].join("\n");
+
 /** The lane branch `childLaneBranches` reads for {@link LANE}'s issue. */
 export const LANE_BRANCH = `build/${LANE}-caylak-in-place-reads-87b626e1`;
 

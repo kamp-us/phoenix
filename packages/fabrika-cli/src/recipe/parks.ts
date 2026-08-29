@@ -18,7 +18,7 @@
  */
 
 /** The clearance read a recipe relays. One constructor per read, so a new recipe cannot be prose. */
-export type Clearance = "cp-approval" | "branch-free";
+export type Clearance = "cp-approval" | "branch-free" | "campaign-active";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -49,7 +49,7 @@ export interface ParkRecipe {
 }
 
 /**
- * The parks with a fixed fix today: one keyed by its leaf, one by its cause.
+ * The parks with a fixed fix today: one keyed by its leaf, two by their cause.
  *
  * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table (ADR 0175), relayed
  * rather than re-derived — the §CP cardinality question has exactly one answer in this package and a
@@ -60,6 +60,12 @@ export interface ParkRecipe {
  * `build retire`, which takes that checkout back when the board licenses it (ADR 0323). Without the
  * remedy the row read the pin and could never remove it, so every lane parked on this cause sat at
  * exit 13 until a human ran `git worktree remove` by hand.
+ *
+ * `blocked` + `campaign-paused` is #7217, and its clearance is the dispatch permission read back:
+ * ADR 0304 makes the lane milestone's `## Campaigns` `State` cell the whole answer, so the park is
+ * clear exactly when that cell reads `active` at the trunk. It names no remedy because resuming a
+ * campaign is a human's judgment recorded through `campaign state` — a recipe that "removed" this
+ * cause would be granting the dispatch it is only allowed to observe.
  */
 export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 	{
@@ -75,6 +81,13 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "branch-free",
 		remedy: "fabrika build retire",
 		waitingOn: "the working tree holding this build's lane branch to be removed",
+	},
+	{
+		park: "blocked",
+		cause: "campaign-paused",
+		clearance: "campaign-active",
+		remedy: null,
+		waitingOn: "the campaign homing this lane's milestone to read active again",
 	},
 ];
 
