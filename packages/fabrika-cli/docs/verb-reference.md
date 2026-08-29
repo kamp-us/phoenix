@@ -112,7 +112,7 @@ git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the
 from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
 every read that failed, is KEEP.
 
-`build retire-branch` is the recovery ADR [0324](../../.decisions/0324-retire-superseded-lane-branch.md)
+`build retire-branch` is the recovery ADR [0324](../../../.decisions/0324-retire-superseded-lane-branch.md)
 rules for a clone already in the two-branch state, where `lane prove` refuses because two branches
 carry one child's commits. It **renames** the superseded ones into `retired/` and deletes nothing, so
 a mistaken retirement costs a rename back rather than a child's only copy of its work. The survivor
