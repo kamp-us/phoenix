@@ -436,6 +436,62 @@ describe("Tuval resilience and restoration", () => {
 			}),
 		);
 
+		it.effect("syncs a newly created state directory parent before committing with a warning", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-parent-sync-"});
+				const directory = path.join(root, "state");
+				const synced: Array<string> = [];
+				const store = yield* makeFileWorkspaceStateStore(path.join(directory, "workspace.json"), {
+					syncDirectory: (target) =>
+						Effect.sync(() => void synced.push(target)).pipe(
+							Effect.andThen(
+								target === root
+									? Effect.fail(
+											new WorkspaceStateStoreError({
+												operation: "save",
+												message: "parent sync refused",
+											}),
+										)
+									: Effect.void,
+							),
+						),
+				});
+				const result = yield* store.save(persisted);
+				assert.strictEqual(result._tag, "committed-with-warning");
+				assert.deepStrictEqual(synced, [root, directory]);
+				assert.deepStrictEqual((yield* store.load()).document, persisted);
+			}),
+		);
+
+		it.effect("keeps valid package and extension array members beside corrupt siblings", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-member-decode-"});
+				const statePath = path.join(root, "workspace-state.json");
+				yield* fs.writeFileString(
+					statePath,
+					JSON.stringify({
+						...persisted,
+						packageRegistrations: ["available-package", 42, "second-valid"],
+						extensionUI: [persisted.extensionUI[0], {scope: {packageName: "broken"}}],
+					}),
+				);
+				const loaded = yield* (yield* makeFileWorkspaceStateStore(statePath)).load();
+				assert.deepStrictEqual(loaded.document.packageRegistrations, [
+					"available-package",
+					"second-valid",
+				]);
+				assert.deepStrictEqual(loaded.document.extensionUI, persisted.extensionUI);
+				assert.isTrue(
+					loaded.diagnostics.some(({code}) => code === "package-registrations-invalid"),
+				);
+				assert.isTrue(loaded.diagnostics.some(({code}) => code === "extension-ui-current-invalid"));
+			}),
+		);
+
 		it.effect("decodes persistence domains independently with typed diagnostics", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;

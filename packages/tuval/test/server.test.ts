@@ -261,7 +261,7 @@ const syntheticUnixPiServer = Effect.fn("test.syntheticUnixPiServer")(function* 
 		if (closed) return Effect.void;
 		closed = true;
 		return Effect.callback<void>((resume) => {
-			for (const socket of sockets) socket.destroy();
+			for (const socket of [...sockets]) socket.destroy();
 			server.close(() => resume(Effect.void));
 		});
 	});
@@ -344,6 +344,7 @@ describe("Tuval local server", () => {
 					first.kill("SIGKILL");
 					yield* Fiber.join(firstExit);
 					yield* protocol.close;
+					yield* fs.remove(socket).pipe(Effect.ignore);
 					const restartedProtocol = yield* syntheticUnixPiServer(socket);
 
 					const second = spawnTuval();
@@ -384,6 +385,126 @@ describe("Tuval local server", () => {
 				}),
 			30_000,
 		);
+		it.effect(
+			"reconnects headlessly after transport replacement while the Tuval server stays up",
+			() =>
+				Effect.gen(function* () {
+					const {asset} = yield* fixture();
+					const commands: Array<string> = [];
+					let connections = 0;
+					let activeHandlers: Parameters<ByteTransportFactory>[0] | undefined;
+					let truth = liveSnapshot;
+					const transport: ByteTransportFactory = (handlers) => {
+						connections += 1;
+						activeHandlers = handlers;
+						const decoder = new ClientMessageDecoder();
+						return {
+							send: async (chunk) => {
+								for (const message of decoder.push(chunk)) {
+									if (message.type === "hello") {
+										handlers.onData(
+											encodeServerMessage({
+												type: "hello",
+												version: PROTOCOL_VERSION,
+												connectionId: `headless-${connections}`,
+												snapshot: {
+													serverId: "headless",
+													protocolVersion: PROTOCOL_VERSION,
+													revision: truth.revision,
+													sessions: [{id: truth.id, createdAt: truth.createdAt, cwd: truth.cwd}],
+													models: [],
+												},
+											}),
+										);
+										continue;
+									}
+									commands.push(message.request.command);
+									if (message.request.command === "attach") {
+										handlers.onData(
+											encodeServerMessage({
+												type: "response",
+												id: message.id,
+												ok: true,
+												result: {command: "attach", session: truth},
+											}),
+										);
+									} else if (message.request.command === "prompt") {
+										handlers.onData(
+											encodeServerMessage({
+												type: "response",
+												id: message.id,
+												ok: true,
+												result: {command: "prompt", session: truth},
+											}),
+										);
+									} else if (message.request.command === "detach") {
+										handlers.onData(
+											encodeServerMessage({
+												type: "response",
+												id: message.id,
+												ok: true,
+												result: {command: "detach", sessionId: truth.id},
+											}),
+										);
+									}
+								}
+							},
+							close: handlers.onClose,
+						};
+					};
+					const server = yield* startTuval({
+						staticAsset: asset,
+						liveSessionTransport: transport,
+						reconnect: {retries: 0, baseDelayMs: 1, maxDelayMs: 1},
+						openBrowser: () => Effect.void,
+					});
+					const mutate = (name: string, input: Record<string, unknown>) =>
+						tryPromise(() =>
+							fetch(`${server.url}/fate`, {
+								method: "POST",
+								headers: {"content-type": "application/json"},
+								body: JSON.stringify({
+									version: 1,
+									operations: [{id: name, kind: "mutation", name, input, select: []}],
+								}),
+							}).then((response) => response.json()),
+						);
+					yield* mutate("liveSession.attach", {sessionId: truth.id});
+					yield* mutate("liveSession.prompt", {
+						correlationId: "headless-before-reconnect",
+						text: "run once",
+					});
+					truth = {...truth, revision: 2, updatedAt: 2};
+					activeHandlers?.onClose();
+					for (let attempt = 0; attempt < 50; attempt += 1) {
+						if (commands.filter((command) => command === "attach").length === 2) break;
+						yield* Effect.yieldNow;
+					}
+					const current = (yield* tryPromise(() =>
+						fetch(`${server.url}/fate`, {
+							method: "POST",
+							headers: {"content-type": "application/json"},
+							body: JSON.stringify({
+								version: 1,
+								operations: [
+									{id: "current", kind: "query", name: "liveSession.current", select: []},
+								],
+							}),
+						}).then((response) => response.json()),
+					)) as {results: Array<{data: {sessionId: string; revision: number}}>};
+					assert.deepInclude(current.results[0]?.data, {sessionId: truth.id, revision: 2});
+					assert.strictEqual(connections, 2);
+					assert.lengthOf(
+						commands.filter((command) => command === "attach"),
+						2,
+					);
+					assert.lengthOf(
+						commands.filter((command) => command === "prompt"),
+						1,
+					);
+				}),
+		);
+
 		it.effect("continues independent restoration after initial transport exhaustion", () =>
 			Effect.gen(function* () {
 				const {asset} = yield* fixture();
@@ -420,6 +541,109 @@ describe("Tuval local server", () => {
 				)) as {diagnostics: Array<{code: string; message: string}>};
 				assert.isTrue(resilience.diagnostics.some(({code}) => code === "reconnect-exhausted"));
 				assert.notInclude(JSON.stringify(resilience), "alice");
+			}),
+		);
+
+		it.effect("degrades package resolution without aborting independent startup restoration", () =>
+			Effect.gen(function* () {
+				const {root, asset} = yield* fixture();
+				const settingsManager = SettingsManager.inMemory({}, {projectTrusted: true});
+				const packageManager = new DefaultPackageManager({
+					cwd: root,
+					agentDir: root,
+					settingsManager,
+				});
+				packageManager.resolve = () =>
+					Promise.reject(new Error("resolution failed at /Users/alice/private-package"));
+				let restoredSettings: Record<string, string> = {};
+				const server = yield* startTuval({
+					staticAsset: asset,
+					packageContributions: {cwd: root, agentDir: root, settingsManager, packageManager},
+					workspaceStateStore: makeMemoryWorkspaceStateStore({
+						version: 1,
+						selectedSessionId: null,
+						settings: {theme: "dark"},
+						packageRegistrations: [],
+						extensionUI: [],
+					}),
+					operationalWorkspaceSettings: {
+						read: () => Effect.succeed(restoredSettings),
+						restore: (settings) =>
+							Effect.sync(() => {
+								restoredSettings = {...settings};
+							}),
+					},
+					openBrowser: () => Effect.void,
+				});
+				assert.deepStrictEqual(restoredSettings, {theme: "dark"});
+				const catalog = (yield* tryPromise(() =>
+					fetch(`${server.url}/api/contributions`).then((response) => response.json()),
+				)) as {diagnostics: Array<{reason: string}>; frontend: unknown[]};
+				assert.deepStrictEqual(catalog.frontend, []);
+				assert.deepInclude(catalog.diagnostics[0], {reason: "package-resolution-failed"});
+				const resilience = (yield* tryPromise(() =>
+					fetch(`${server.url}/api/resilience`).then((response) => response.json()),
+				)) as {diagnostics: Array<{code: string}>};
+				assert.isTrue(
+					resilience.diagnostics.some(({code}) => code === "package-resolution-failed"),
+				);
+			}),
+		);
+
+		it.effect("commits registrations and replay state only for activated backend packages", () =>
+			Effect.gen(function* () {
+				const {root, asset} = yield* fixture();
+				const plain = fileURLToPath(new URL("./fixtures/plain-pi", import.meta.url));
+				const failing = fileURLToPath(new URL("./fixtures/backend-failure", import.meta.url));
+				const settingsManager = SettingsManager.inMemory(
+					{packages: [plain, failing]},
+					{projectTrusted: true},
+				);
+				const store = makeMemoryWorkspaceStateStore({
+					version: 1,
+					selectedSessionId: null,
+					settings: {},
+					packageRegistrations: ["fixture-plain-pi", "backend-failure"],
+					extensionUI: [
+						{
+							scope: {packageName: "fixture-plain-pi", sessionId: "healthy-session"},
+							statuses: [{key: "health", text: "ready"}],
+							widgets: [],
+						},
+						{
+							scope: {packageName: "backend-failure", sessionId: "failed-session"},
+							statuses: [{key: "stale", text: "must-not-replay"}],
+							widgets: [],
+						},
+					],
+				});
+				const server = yield* startTuval({
+					staticAsset: asset,
+					packageContributions: {
+						cwd: root,
+						agentDir: root,
+						settingsManager,
+						packageManager: new DefaultPackageManager({
+							cwd: root,
+							agentDir: root,
+							settingsManager,
+						}),
+					},
+					workspaceStateStore: store,
+					openBrowser: () => Effect.void,
+				});
+				assert.deepStrictEqual(store.current().packageRegistrations, ["fixture-plain-pi"]);
+				assert.deepStrictEqual(
+					store.current().extensionUI.map(({scope}) => scope.packageName),
+					["fixture-plain-pi"],
+				);
+				const resilience = (yield* tryPromise(() =>
+					fetch(`${server.url}/api/resilience`).then((response) => response.json()),
+				)) as {diagnostics: Array<{code: string}>; packageRegistrations: string[]};
+				assert.deepStrictEqual(resilience.packageRegistrations, ["fixture-plain-pi"]);
+				assert.isTrue(
+					resilience.diagnostics.some(({code}) => code === "backend-layer-build-failed"),
+				);
 			}),
 		);
 

@@ -835,11 +835,12 @@ describe("PiLiveSession", () => {
 				const initial = snapshot("stale-reconnect-selection", 1);
 				const first = new SyntheticPiProtocol(initial);
 				const second = new SyntheticPiProtocol(initial);
+				const third = new SyntheticPiProtocol(snapshot(initial.id, 2));
 				second.locked.add(initial.id);
 				let connections = 0;
 				const factory: ByteTransportFactory = (handlers) => {
 					connections += 1;
-					return (connections === 1 ? first : second).factory(handlers);
+					return (connections === 1 ? first : connections === 2 ? second : third).factory(handlers);
 				};
 				const service = yield* makeResilientPiLiveSession(factory, {retries: 0});
 				yield* service.attach(initial.id);
@@ -847,12 +848,29 @@ describe("PiLiveSession", () => {
 				for (let attempt = 0; attempt < 20; attempt += 1) yield* Effect.yieldNow;
 				assert.strictEqual(connections, 2);
 				assert.isNull(yield* service.current());
+				assert.strictEqual(yield* service.selectionIntent(), initial.id);
 				const fresh = yield* service
 					.events()
 					.pipe(Stream.take(1), Stream.runCollect, Effect.forkChild);
 				yield* Effect.yieldNow;
 				assert.isUndefined(fresh.pollUnsafe());
 				yield* Fiber.interrupt(fresh);
+				second.disconnect();
+				let restored = yield* service.current();
+				for (let attempt = 0; attempt < 50; attempt += 1) {
+					yield* Effect.yieldNow;
+					restored = yield* service.current();
+					if (restored?.sessionId === initial.id) break;
+				}
+				assert.strictEqual(connections, 3);
+				assert.deepInclude(restored, {
+					_tag: "attached",
+					sessionId: initial.id,
+					revision: 2,
+				});
+				assert.strictEqual(yield* service.selectionIntent(), initial.id);
+				assert.deepInclude(yield* service.release(), {_tag: "released"});
+				assert.isNull(yield* service.selectionIntent());
 			}),
 		),
 	);

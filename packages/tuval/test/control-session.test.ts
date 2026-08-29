@@ -91,6 +91,15 @@ class SyntheticControlProtocol {
 		this.#deliver({type: "event", event: {type: "session_snapshot", snapshot: next}});
 	}
 
+	respondUnknown(id: string): void {
+		this.#deliver({
+			type: "response",
+			id,
+			ok: false,
+			error: {code: "invalid_request", message: "unknown synthetic request"},
+		});
+	}
+
 	heldCount(command: string): number {
 		return this.#held.filter((message) => message.request.command === command).length;
 	}
@@ -386,6 +395,27 @@ describe("patched PiClient request cancellation", () => {
 		}),
 	);
 
+	it.effect("rejects an unrelated older response instead of swallowing it as cancelled", () =>
+		Effect.gen(function* () {
+			const target = snapshot("cancel-exact-id");
+			const protocol = new SyntheticControlProtocol([model("small", ["off"])], target);
+			protocol.behavior.set("attach", "hold");
+			const client = yield* connectClient(protocol);
+			const controller = new AbortController();
+			const acquisition = client.acquireSession(target.id, {
+				mode: "exclusive",
+				signal: controller.signal,
+			});
+			yield* Effect.yieldNow;
+			controller.abort();
+			assert.instanceOf((yield* cancelled(acquisition)).cause, PiRequestCancelledError);
+			protocol.respondUnknown("request-0");
+			yield* Effect.yieldNow;
+			assert.isFalse(client.connected);
+			assert.strictEqual(client.pendingRequestCount, 0);
+		}),
+	);
+
 	it.effect("keeps the pending registry at zero across repeated never-settling cancellations", () =>
 		Effect.gen(function* () {
 			const target = snapshot("cancel-repeated");
@@ -612,6 +642,26 @@ describe("PiLiveSession acknowledged controls", () => {
 				});
 				if (timedOut._tag !== "refused") return;
 				assert.deepEqual(timedOut.session?.model, existing.model);
+				protocol.acknowledgeHeld("set_model");
+				yield* Effect.yieldNow;
+				yield* Effect.yieldNow;
+				assert.deepEqual((yield* service.current())?.model, existing.model);
+				assert.lengthOf(
+					(yield* service.eventsAfter()).filter(
+						(event) =>
+							event._tag === "control" &&
+							event.outcome.correlationId === "model-timeout" &&
+							event.outcome._tag === "acknowledged",
+					),
+					0,
+				);
+				assert.deepInclude(
+					yield* service.setThinking({
+						correlationId: "after-model-timeout",
+						thinkingLevel: "low",
+					}),
+					{_tag: "acknowledged"},
+				);
 			}),
 	);
 

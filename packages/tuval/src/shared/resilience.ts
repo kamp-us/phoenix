@@ -33,6 +33,7 @@ export const ResilienceDiagnosticCode = Schema.Literals([
 	"extension-ui-package-unavailable",
 	"live-session-protocol-degraded",
 	"reconnect-exhausted",
+	"package-resolution-failed",
 	"package-root-unavailable",
 	"package-manifest-unreadable",
 	"package-manifest-invalid-json",

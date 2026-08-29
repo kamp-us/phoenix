@@ -38,6 +38,8 @@ export class LiveSessionAdapterError extends Schema.TaggedErrorClass<LiveSession
 
 export interface LiveSessionService {
 	readonly current: () => Effect.Effect<LiveSessionView | null>;
+	readonly selectionIntent: () => Effect.Effect<string | null>;
+	readonly restoreSelectionIntent: (sessionId: string) => Effect.Effect<AttachLiveSessionOutcome>;
 	readonly attach: (
 		sessionId: string,
 		checkpoint?: LiveSelectionCheckpoint,
@@ -100,6 +102,24 @@ const controlFromState = (
 
 const fromState = (state: LiveSessionState): LiveSessionService => ({
 	current: Effect.fn("LiveSession.current")(() => Effect.sync(() => state.current())),
+	selectionIntent: Effect.fn("LiveSession.selectionIntent")(() =>
+		Effect.sync(() => state.current()?.sessionId ?? null),
+	),
+	restoreSelectionIntent: Effect.fn("LiveSession.restoreSelectionIntent")((sessionId) =>
+		Effect.tryPromise({
+			try: () => state.attach(sessionId),
+			catch: (cause) => new LiveSessionAdapterError({cause}),
+		}).pipe(
+			Effect.catch(() =>
+				Effect.succeed({
+					_tag: "refused" as const,
+					sessionId,
+					code: "protocol" as const,
+					reason: "The live-session adapter failed while restoring selection intent",
+				}),
+			),
+		),
+	),
 	attach: Effect.fn("LiveSession.attach")((sessionId, checkpoint) =>
 		Effect.tryPromise({
 			try: () => state.attach(sessionId, checkpoint),
@@ -141,17 +161,23 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 		),
 	),
 	steer: Effect.fn("LiveSession.steer")((request) =>
-		controlFromState(state, "steer", request.correlationId, () => state.steer(request)),
+		controlFromState(state, "steer", request.correlationId, (signal) =>
+			state.steer(request, signal),
+		),
 	),
 	abort: Effect.fn("LiveSession.abort")((request) =>
-		controlFromState(state, "abort", request.correlationId, () => state.abort(request)),
+		controlFromState(state, "abort", request.correlationId, (signal) =>
+			state.abort(request, signal),
+		),
 	),
 	setModel: Effect.fn("LiveSession.setModel")((request) =>
-		controlFromState(state, "set-model", request.correlationId, () => state.setModel(request)),
+		controlFromState(state, "set-model", request.correlationId, (signal) =>
+			state.setModel(request, signal),
+		),
 	),
 	setThinking: Effect.fn("LiveSession.setThinking")((request) =>
-		controlFromState(state, "set-thinking", request.correlationId, () =>
-			state.setThinking(request),
+		controlFromState(state, "set-thinking", request.correlationId, (signal) =>
+			state.setThinking(request, signal),
 		),
 	),
 	release: Effect.fn("LiveSession.release")((checkpoint) => {
@@ -223,6 +249,9 @@ export class PiLiveSession implements LiveSessionService {
 	}
 
 	readonly current = () => this.#service.current();
+	readonly selectionIntent = () => this.#service.selectionIntent();
+	readonly restoreSelectionIntent = (sessionId: string) =>
+		this.#service.restoreSelectionIntent(sessionId);
 	readonly attach = (sessionId: string, checkpoint?: LiveSelectionCheckpoint) =>
 		this.#service.attach(sessionId, checkpoint);
 	readonly prompt = (request: PromptLiveSessionRequest) => this.#service.prompt(request);
@@ -317,6 +346,11 @@ class ReconnectingLiveSession implements LiveSessionService {
 	}
 
 	readonly current = () => this.#service.current();
+	readonly selectionIntent = () => Effect.succeed(this.#selectedSessionId ?? null);
+	readonly restoreSelectionIntent = (sessionId: string) => {
+		this.#selectedSessionId = sessionId;
+		return this.#service.attach(sessionId);
+	};
 	readonly attach = (sessionId: string, checkpoint?: LiveSelectionCheckpoint) =>
 		this.#service.attach(sessionId, checkpoint).pipe(
 			Effect.tap((outcome) =>
@@ -470,6 +504,8 @@ export const makeDurableLiveSession = (
 		Effect.runPromise(checkpoint(candidateSessionId, commit));
 	return {
 		current: service.current,
+		selectionIntent: service.selectionIntent,
+		restoreSelectionIntent: service.restoreSelectionIntent,
 		attach: (sessionId) => service.attach(sessionId, durableCheckpoint),
 		prompt: service.prompt,
 		create: (request) => service.create(request, durableCheckpoint),
@@ -487,6 +523,15 @@ export const makeDurableLiveSession = (
 
 export const makeUnavailableLiveSession = (): LiveSessionService => ({
 	current: Effect.fn("LiveSession.current")(() => Effect.succeed(null)),
+	selectionIntent: Effect.fn("LiveSession.selectionIntent")(() => Effect.succeed(null)),
+	restoreSelectionIntent: Effect.fn("LiveSession.restoreSelectionIntent")((sessionId) =>
+		Effect.succeed({
+			_tag: "refused" as const,
+			sessionId,
+			code: "disconnected" as const,
+			reason: "Tuval live protocol transport is not configured",
+		}),
+	),
 	attach: Effect.fn("LiveSession.attach")((sessionId) =>
 		Effect.succeed({
 			_tag: "refused",

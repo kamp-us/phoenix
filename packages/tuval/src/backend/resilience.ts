@@ -1,8 +1,8 @@
 import {createHash} from "node:crypto";
 import type {SettingsManager} from "@earendil-works/pi-coding-agent";
-import {Context, Crypto, Effect, FileSystem, Path, Result, Schema} from "effect";
+import {Context, Crypto, Effect, FileSystem, Path, Result, Schema, type Scope} from "effect";
 import type {DiscoveryOutcome} from "../shared/discovery.js";
-import type {ExtensionUISnapshot} from "../shared/extension-ui.js";
+import {ExtensionUISnapshot} from "../shared/extension-ui.js";
 import {
 	emptyWorkspaceState,
 	type ResilienceDiagnostic,
@@ -358,6 +358,39 @@ export const makeFileWorkspaceStateStore = Effect.fn("TuvalResilience.fileStore"
 			}),
 		};
 	};
+	const decodeArrayDomain = <A>(input: {
+		readonly parsed: Record<string, unknown>;
+		readonly key: string;
+		readonly decodeMember: (value: unknown) => A | undefined;
+		readonly category: ResilienceDiagnosticCategory;
+		readonly code: ResilienceDiagnosticCode;
+		readonly message: string;
+		readonly action: string;
+	}): {readonly value: ReadonlyArray<A>; readonly diagnostic?: ResilienceDiagnostic} => {
+		const raw = input.parsed[input.key];
+		const values: Array<A> = [];
+		let invalid = !Array.isArray(raw);
+		if (Array.isArray(raw)) {
+			for (const member of raw) {
+				const decoded = input.decodeMember(member);
+				if (decoded === undefined) invalid = true;
+				else values.push(decoded);
+			}
+		}
+		return {
+			value: values,
+			...(invalid
+				? {
+						diagnostic: resilienceDiagnostic({
+							category: input.category,
+							code: input.code,
+							message: input.message,
+							action: input.action,
+						}),
+					}
+				: {}),
+		};
+	};
 	const rejectUnsafeTarget = Effect.fn("TuvalResilience.rejectUnsafeTarget")(function* () {
 		const linked = yield* Effect.result(fs.readLink(resolvedStorePath));
 		if (Result.isSuccess(linked)) {
@@ -434,35 +467,29 @@ export const makeFileWorkspaceStateStore = Effect.fn("TuvalResilience.fileStore"
 				message: "Persisted workspace settings were invalid",
 				action: "Review workspace settings; other workspace state was preserved",
 			});
-			const registrations = decodeDomain({
+			const registrations = decodeArrayDomain({
 				parsed: object,
 				key: "packageRegistrations",
-				decode: (value) => {
-					const decoded = Schema.decodeUnknownOption(
-						WorkspaceStateDocument.fields.packageRegistrations,
-					)(value);
+				decodeMember: (value) => {
+					const decoded = Schema.decodeUnknownOption(Schema.String)(value);
 					return decoded._tag === "Some" ? decoded.value : undefined;
 				},
-				fallback: [],
 				category: "package",
 				code: "package-registrations-invalid",
-				message: "Persisted package registrations were invalid",
-				action: "Review package registrations; other workspace state was preserved",
+				message: "One or more persisted package registrations were invalid",
+				action: "Review package registrations; valid registrations were preserved",
 			});
-			const extensionUI = decodeDomain({
+			const extensionUI = decodeArrayDomain({
 				parsed: object,
 				key: "extensionUI",
-				decode: (value) => {
-					const decoded = Schema.decodeUnknownOption(WorkspaceStateDocument.fields.extensionUI)(
-						value,
-					);
+				decodeMember: (value) => {
+					const decoded = Schema.decodeUnknownOption(ExtensionUISnapshot)(value);
 					return decoded._tag === "Some" ? decoded.value : undefined;
 				},
-				fallback: [],
 				category: "ui-bridge",
 				code: "extension-ui-current-invalid",
-				message: "Persisted extension UI current state was invalid",
-				action: "Reload the affected extension; other workspace state was preserved",
+				message: "One or more persisted extension UI snapshots were invalid",
+				action: "Reload the affected extension; valid current state was preserved",
 			});
 			return {
 				source: "persisted" as const,
@@ -506,16 +533,34 @@ export const makeFileWorkspaceStateStore = Effect.fn("TuvalResilience.fileStore"
 				)}.tmp`,
 			);
 			const bytes = new TextEncoder().encode(`${JSON.stringify(encoded, null, 2)}\n`);
-			yield* fs.makeDirectory(directory, {recursive: true}).pipe(
-				Effect.andThen(
-					Effect.scoped(
-						Effect.gen(function* () {
-							const file = yield* fs.open(temporaryPath, {flag: "w", mode: 0o600});
-							yield* file.writeAll(bytes);
-							yield* file.sync;
+			const directoryExisted = yield* fs.exists(directory).pipe(
+				Effect.mapError(
+					() =>
+						new WorkspaceStateStoreError({
+							operation: "save",
+							message: "Workspace state directory could not be inspected",
 						}),
-					),
 				),
+			);
+			yield* fs.makeDirectory(directory, {recursive: true}).pipe(
+				Effect.mapError(
+					() =>
+						new WorkspaceStateStoreError({
+							operation: "save",
+							message: "Workspace state directory could not be created",
+						}),
+				),
+			);
+			const parentSync = directoryExisted
+				? Result.succeed(undefined)
+				: yield* Effect.result(syncDirectory(path.dirname(directory)));
+			yield* Effect.scoped(
+				Effect.gen(function* () {
+					const file = yield* fs.open(temporaryPath, {flag: "w", mode: 0o600});
+					yield* file.writeAll(bytes);
+					yield* file.sync;
+				}),
+			).pipe(
 				Effect.andThen(fs.rename(temporaryPath, resolvedStorePath)),
 				Effect.ensuring(fs.remove(temporaryPath).pipe(Effect.ignore)),
 				Effect.mapError(
@@ -527,7 +572,9 @@ export const makeFileWorkspaceStateStore = Effect.fn("TuvalResilience.fileStore"
 				),
 			);
 			const directorySync = yield* Effect.result(syncDirectory(directory));
-			return workspaceStateDirectorySyncResult(Result.isSuccess(directorySync));
+			return workspaceStateDirectorySyncResult(
+				Result.isSuccess(parentSync) && Result.isSuccess(directorySync),
+			);
 		}),
 	} satisfies WorkspaceStateStore;
 });
@@ -540,6 +587,9 @@ export interface RestorationDependencies {
 	readonly restoreSettings: (settings: WorkspaceSettings) => Effect.Effect<void, unknown>;
 	readonly readSettings?: () => Effect.Effect<WorkspaceSettings, unknown>;
 	readonly availablePackageRegistrations: ReadonlyArray<string>;
+	readonly preparePackageRegistrations?: (
+		packages: ReadonlyArray<string>,
+	) => Effect.Effect<ReadonlyArray<string>, unknown, Scope.Scope>;
 	readonly restorePackageRegistrations: (
 		packages: ReadonlyArray<string>,
 	) => Effect.Effect<void, unknown>;
@@ -685,11 +735,31 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 			(currentSettings !== undefined && Result.isFailure(currentSettings)),
 	);
 
-	const availablePackages = [...new Set(dependencies.availablePackageRegistrations)].sort();
+	let availablePackages = [...new Set(dependencies.availablePackageRegistrations)].sort();
 	const requestedPackages =
 		Result.isSuccess(loaded) && loaded.success.source === "missing"
 			? availablePackages
 			: persisted.packageRegistrations;
+	if (dependencies.preparePackageRegistrations !== undefined) {
+		const prepared = yield* Effect.result(
+			dependencies.preparePackageRegistrations(
+				requestedPackages.filter((packageName) => availablePackages.includes(packageName)),
+			),
+		);
+		if (Result.isSuccess(prepared)) {
+			availablePackages = [...new Set(prepared.success)].sort();
+		} else {
+			availablePackages = [];
+			diagnostics.push(
+				resilienceDiagnostic({
+					category: "package",
+					code: "package-registration-restore-failed",
+					message: "Package activation could not be prepared",
+					action: "Inspect package registrations; other restoration domains continued",
+				}),
+			);
+		}
+	}
 	const restoredPackages = requestedPackages
 		.filter((packageName) => availablePackages.includes(packageName))
 		.sort();

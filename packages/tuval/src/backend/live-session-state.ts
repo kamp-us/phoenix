@@ -132,11 +132,21 @@ export interface LiveSessionState {
 		checkpoint?: LiveSelectionCheckpoint,
 		signal?: AbortSignal,
 	) => Promise<ControlLiveSessionOutcome>;
-	readonly steer: (request: SteerLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
-	readonly abort: (request: AbortLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
-	readonly setModel: (request: SetModelLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
+	readonly steer: (
+		request: SteerLiveSessionRequest,
+		signal?: AbortSignal,
+	) => Promise<ControlLiveSessionOutcome>;
+	readonly abort: (
+		request: AbortLiveSessionRequest,
+		signal?: AbortSignal,
+	) => Promise<ControlLiveSessionOutcome>;
+	readonly setModel: (
+		request: SetModelLiveSessionRequest,
+		signal?: AbortSignal,
+	) => Promise<ControlLiveSessionOutcome>;
 	readonly setThinking: (
 		request: SetThinkingLiveSessionRequest,
+		signal?: AbortSignal,
 	) => Promise<ControlLiveSessionOutcome>;
 	readonly release: (checkpoint?: LiveSelectionCheckpoint) => Promise<ReleaseLiveSessionOutcome>;
 	readonly eventsAfter: (sequence?: number) => ReadonlyArray<LiveSessionEvent>;
@@ -449,17 +459,29 @@ export class PiLiveSessionState implements LiveSessionState {
 	): Promise<ControlLiveSessionOutcome> =>
 		this.#correlateControl({command: "open", ...request}, checkpoint, signal);
 
-	steer = (request: SteerLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "steer", ...request}, immediateCheckpoint);
+	steer = (
+		request: SteerLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "steer", ...request}, immediateCheckpoint, signal);
 
-	abort = (request: AbortLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "abort", ...request}, immediateCheckpoint);
+	abort = (
+		request: AbortLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "abort", ...request}, immediateCheckpoint, signal);
 
-	setModel = (request: SetModelLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "set-model", ...request}, immediateCheckpoint);
+	setModel = (
+		request: SetModelLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "set-model", ...request}, immediateCheckpoint, signal);
 
-	setThinking = (request: SetThinkingLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "set-thinking", ...request}, immediateCheckpoint);
+	setThinking = (
+		request: SetThinkingLiveSessionRequest,
+		signal?: AbortSignal,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "set-thinking", ...request}, immediateCheckpoint, signal);
 
 	release = (
 		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
@@ -664,14 +686,28 @@ export class PiLiveSessionState implements LiveSessionState {
 					attempt,
 				);
 			case "steer":
-				return this.#runSessionControl(request, (lease) => lease.steer(request.text));
+				return this.#runSessionControl(
+					request,
+					(lease, operationSignal) => lease.steer(request.text, operationSignal),
+					signal,
+				);
 			case "abort":
-				return this.#runSessionControl(request, (lease) => lease.abort());
+				return this.#runSessionControl(
+					request,
+					(lease, operationSignal) => lease.abort(operationSignal),
+					signal,
+				);
 			case "set-model":
-				return this.#runSessionControl(request, (lease) => lease.setModel(request.model));
+				return this.#runSessionControl(
+					request,
+					(lease, operationSignal) => lease.setModel(request.model, operationSignal),
+					signal,
+				);
 			case "set-thinking":
-				return this.#runSessionControl(request, (lease) =>
-					lease.setThinking(request.thinkingLevel),
+				return this.#runSessionControl(
+					request,
+					(lease, operationSignal) => lease.setThinking(request.thinkingLevel, operationSignal),
+					signal,
 				);
 		}
 	}
@@ -854,7 +890,8 @@ export class PiLiveSessionState implements LiveSessionState {
 
 	async #runSessionControl(
 		request: Exclude<ControlRequest, {command: "create" | "open"}>,
-		execute: (lease: PiSessionHandle) => Promise<SessionSnapshot>,
+		execute: (lease: PiSessionHandle, signal: AbortSignal) => Promise<SessionSnapshot>,
+		signal: AbortSignal | undefined,
 	): Promise<ControlLiveSessionOutcome> {
 		const attachment = this.#attachment;
 		if (attachment === undefined) {
@@ -928,7 +965,11 @@ export class PiLiveSessionState implements LiveSessionState {
 			this.#pendingIdleControl = true;
 			this.#publishSession(attachment);
 		}
-		const operation = execute(attachment.lease)
+		const operationCancellation = new AbortController();
+		const onAbort = () => operationCancellation.abort();
+		if (signal?.aborted) onAbort();
+		else signal?.addEventListener("abort", onAbort, {once: true});
+		const operation = execute(attachment.lease, operationCancellation.signal)
 			.then(() => this.#reconcileAttachment(attachment))
 			.then((reconciled) => {
 				if (idleControl) this.#pendingIdleControl = false;
@@ -936,16 +977,18 @@ export class PiLiveSessionState implements LiveSessionState {
 				return this.#acknowledged(request, reconciled);
 			})
 			.finally(() => {
+				signal?.removeEventListener("abort", onAbort);
 				if (!idleControl || !this.#pendingIdleControl) return;
 				this.#pendingIdleControl = false;
 				if (this.#attachment === attachment) this.#publishSession(attachment);
 			});
-		return this.#awaitAcknowledgement(request, operation);
+		return this.#awaitAcknowledgement(request, operation, operationCancellation);
 	}
 
 	async #awaitAcknowledgement(
 		request: ControlRequest,
 		operation: Promise<ControlLiveSessionOutcome>,
+		operationCancellation: AbortController,
 	): Promise<ControlLiveSessionOutcome> {
 		const deadline = this.#makeAcknowledgementDeadline(this.#acknowledgementTimeoutMs);
 		const observed = operation.then(
@@ -956,14 +999,15 @@ export class PiLiveSessionState implements LiveSessionState {
 			observed,
 			deadline.elapsed.then(() => ({_tag: "timeout" as const})),
 		]);
+		deadline.cancel();
 		if (winner._tag === "timeout") {
+			operationCancellation.abort();
 			return this.#controlRefusal(
 				request,
 				"timeout",
 				`Pi did not acknowledge ${request.command} within ${this.#acknowledgementTimeoutMs}ms`,
 			);
 		}
-		deadline.cancel();
 		if (winner._tag === "outcome") return winner.outcome;
 		return this.#controlRefusal(
 			request,

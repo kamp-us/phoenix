@@ -47,8 +47,11 @@ Fail closed at package granularity. An unsupported or malformed contract, duplic
 key, unavailable canonical file, outside-target symlink, non-file asset, or invalid backend export
 excludes that package's entire Tuval contribution while preserving valid packages. The first package
 in pi's resolved order owns a key.
-A backend module or factory exception and a Layer construction failure are startup failures because
-a partially initialized backend is not a valid runtime.
+Package resolution failure produces a typed package diagnostic and an empty contribution source; it
+does not abort independent workspace restoration. Backend Layers activate per package in a child
+scope before that package's registration or replayable extension state becomes visible. If any Layer
+in the package fails, the child scope rolls back, the package's backend/frontend registration and
+retained extension projection are removed and persisted, and healthy packages remain active.
 
 A built-in Tuval capability uses the same route: Tuval's own `package.json` declares an ordinary pi
 extension and optional Tuval manifest. Do not add a privileged server bootstrap for built-ins.
