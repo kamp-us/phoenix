@@ -40,7 +40,8 @@ leaves the substrate open makes the implementer guess (#4734).
 | `heal-ci logs` | the failed-job log text for **every** failing gating context at a head | run resolution, job selection and byte-bounding are mechanical; reading the failure is judgment |
 | `heal-ci classify` | **pure**: log text on stdin → one signature from a closed taxonomy, default-deny | a fixed pattern table over text, no network and no state; there is no judgment in a table lookup |
 | `heal-ci rerun` | the at-most-once transient rerun, precondition re-derived inside the verb, read-back verified | the guard, the write and the proof are mechanical; whether a transient is worth rerunning at all is judgment |
-| `heal-ci note` | the durable stop-path comment | posting with the sibling groups' write protocol is mechanical; what the note says is the skill's |
+| `heal-ci note` | the durable stop-path comment, suppressed per `<pr>:<class>:<head>` | posting with the sibling groups' write protocol, and reading the key back over the whole history, are mechanical; what the note says is the skill's |
+| `heal-ci scratch` | the per-lane path a healer's note bodies go under | naming a directory from a session id and a PR number is mechanical; what goes in it is the skill's |
 
 ### Considered and deliberately not derived
 
@@ -225,7 +226,7 @@ empty `--sha` cannot reach the matching logic at all.
 
 ### The shared exit taxonomy
 
-All seven verbs allocate from one internal table, so a code means one thing across this group.
+All eight verbs allocate from one internal table, so a code means one thing across this group.
 The `3`–`11` seats are **imported from
 [`report/codes.ts`](../../../../packages/fabrika-cli/src/report/codes.ts)** and `12`/`13` from
 [`review/codes.ts`](../../../../packages/fabrika-cli/src/review/codes.ts) — the import-not-restate
@@ -245,11 +246,11 @@ idiom `ship/codes.ts` already ships — never re-typed as numerals and never rea
 | `7` | zero scope: the target is **proven absent (404)**, or a required input is proven empty where emptiness is not a fact — a fail-closed refusal | `diagnose`, `surface`, `logs`, `rerun`, `note` |
 | `8` | the write, or the read that confirms it, failed — the outcome is **UNKNOWN** | `rerun`, `note` |
 | `9` | the write landed but the read-back does not match | `rerun`, `note` |
-| `10` | a supplied value is off a closed vocabulary — an unknown `--signature` | `rerun` |
-| `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all except `classify`, which reads no precondition |
+| `10` | a supplied value is off a closed vocabulary — an unknown `--signature`, an unknown `--class`, a malformed `--slug` | `rerun`, `note`, `scratch` |
+| `11` | a **precondition read failed** — nothing was proven and (for a write) nothing was written | all except `classify` and `scratch`, neither of which reads a precondition |
 | `12` | refused: the live head moved past the inspected `--sha` — a mutation formed over a tree that is no longer the PR | `rerun` |
-| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page | `diagnose`, `sweep`, `surface`, `logs`, `rerun` |
-| `14` | refused: **proven not in the state this write acts on** — nothing was mutated | `rerun` |
+| `13` | refused: a read completed but its scope is **provably incomplete** — received short of a declared count, or (where the platform declares none) pagination never reached a terminal page | `diagnose`, `sweep`, `surface`, `logs`, `rerun`, `note` |
+| `14` | refused: **proven not in the state this write acts on** — nothing was mutated | `rerun`, `note` |
 | `15` | refused: the run's logs are **proven unavailable** (expired or purged by the platform) — a fact about the run, not a failed read | `logs` |
 | `16` | the rerun **provably landed** and its durable marker could not be written — the record, not the rerun, is missing | `rerun` |
 | `127` | the verb never ran (unresolved binary) | all |
@@ -265,11 +266,14 @@ spending a second rerun did not land — so the invariant is live but unrecorded
 sees a head that looks un-rerun. Folding that into `8` would hide the one fact an operator must act
 on immediately, which is the same reasoning `ship nudge` seats its own `17` on.
 
-**`14` and `15` are this group's own proven refusals.** `14` is the write-side state guard: a
-rerun aimed at a head that was already rerun, at a run that is not failed, or at a closed PR — the
-verb proved the state and declined, which is neither `7` (the target exists) nor `11` (nothing
-failed). It is v1's most important scar made structural, and §S19 below is why it must live in the
-verb. `15` exists because "GitHub has expired these logs" is a *verdict* about a run — permanent,
+**`14` and `15` are this group's own proven refusals.** `14` is the write-side state guard, and both
+write verbs seat on it: a rerun aimed at a head that was already rerun, at a run that is not failed,
+or at a closed PR, and a note whose `<pr>:<class>:<head>` key the PR already carries. Each is a state
+the verb proved and declined on, which is neither `7` (the target exists) nor `11` (nothing failed) —
+and both are refusals that are *successes*, since nothing was mutated. It is v1's most important scar
+made structural, and §S19 below is why it must live in the verb rather than in the caller: the note's
+copy of the guard lived in a workflow's `run:` block and covered exactly that one caller (#7209).
+`15` exists because "GitHub has expired these logs" is a *verdict* about a run — permanent,
 actionable, and a different remedy from a transport failure — and folding it into `11` would tell
 the caller to retry a read that can never succeed.
 
@@ -301,6 +305,30 @@ third step (strip trailing newlines) is the one a re-derivation drops, and dropp
 [`report/leaks.ts`](../../../../packages/fabrika-cli/src/report/leaks.ts) — import it, never
 re-derive it. This is the authored-text guard only; scanning *landed* content is `leak-guard.yml`'s
 enforced seam.
+
+### The note suppression key is a specified format too
+
+`heal-ci note` reads a marker the same verb writes, so the format is stated here for the same reason
+the rerun marker's is. The marker is **one whole line** of the posted comment, and it is composed by
+the verb from `--class`, `--sha` and the PR number — never authored by a caller:
+
+```
+<!-- heal-ci-note key=<pr>:<stall-class>:<40-hex head sha> -->
+```
+
+The detection read matches that **whole line, anywhere in the body**, with the head compared as full
+40-hex equality — never a prefix, and never a substring of the body. Whole-line-anywhere rather than
+first-line-only because the note's first line is the skill's fixed
+`heal-ci: <terminal> — PR #<n> @ <sha> → <lane>` signal line, which every receiver parses; the machine
+marker rides below it rather than displacing it. Whole-line rather than substring because a substring
+search matches the key quoted inside a human's reply, and suppressing on somebody's quotation is how
+a real strand goes unrecorded.
+
+**It cannot overlap the rerun marker's format, in either direction**, and a test asserts both
+readings: an HTML comment is not a `heal-ci-rerun:` first line, and a `RERUN-QUEUED` note — which
+carries this key and names the same head at the same moment — is not read as the at-most-once rerun
+marker. The reader and writer live in `packages/fabrika-cli/src/heal-ci/note-key.ts`, beside but not
+inside `marker.ts`: two formats, two readers, no overlap.
 
 ### The rerun marker is a specified format, because two steps must agree on it
 
@@ -541,10 +569,17 @@ a zero-stall answer carries the scope it rests on rather than standing as a bare
 line per emitted PR, **ordered by strand age descending**, ties broken by ascending PR number:
 
 ```
-pr	<number>	<stall-token>	<age-minutes>	<head-sha>
+pr	<number>	<stall-token>	<age-minutes>	<head-sha>	<lane>
 ```
 
-With `--json`: `{"outcome":"swept","scanned":<n>,"stalled":<n>,"prs":[{"number":<n>,"token":…,"ageMinutes":<n>,"head":…}…]}`.
+With `--json`: `{"outcome":"swept","scanned":<n>,"stalled":<n>,"prs":[{"number":<n>,"token":…,"ageMinutes":<n>,"head":…,"lane":…}…]}`.
+
+**The lane is the note's arrow, looked up here rather than by the caller.** It is one of
+`build`/`review`/`ship`/`author`/`human`/`nobody`, and it is a total function of the row's stall
+class plus the owner and author this verb already read — `SKILL.md` §2 carries the table. A caller
+composing a note's first line relays this column; deriving one in a workflow's `run:` block is the
+shape ADR 0228 forbids, and hardcoding one is how the scheduled sweep told every reader the detector
+had found nothing for anyone to do (#7209).
 
 **This verb writes nothing.** It files no issue, assigns nobody, and spawns nothing — a detector
 converts a strand into claimable work and normal pull adopts it (ADR 0205, founder ruling #3532).
@@ -601,9 +636,9 @@ false-completeness this verb exists to prevent.
 ```
 $ fabrika heal-ci sweep
 swept	23	3
-pr	4315	claim-stale	631	4a91c07de3b8215f6c0a9e4d7b2318fa5c6e0d94
-pr	4322	ungated	564	9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18
-pr	4321	gated-unshipped	35	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c
+pr	4315	claim-stale	631	4a91c07de3b8215f6c0a9e4d7b2318fa5c6e0d94	human
+pr	4322	ungated	564	9fe12ab0c7714d9e2b3a6f05812cc4d7e6a09b18	review
+pr	4321	gated-unshipped	35	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	ship
 ```
 
 ```
@@ -1139,7 +1174,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika heal-ci note 4321 [--repo <owner/name>] [--json]
+fabrika heal-ci note 4321 --class <stall-token> --sha <40-hex head> [--repo <owner/name>] [--json]
 ```
 
 The body arrives on **stdin only** — no `--body`, no `--body-file`; a path flag is how a
@@ -1150,54 +1185,103 @@ machine-local path reaches a public surface while the poster reads success.
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
+| `--class` | string | yes | — | the stall class this note records — one of `heal-ci diagnose`'s ten tokens, the key's middle field |
+| `--sha` | string | yes | — | the head the classification was taken at, as a **full 40-hex** sha |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the durable note: the terminal token and its reason, as the skill's terminal vocabulary phrases them |
 
 **Output** — machine channel. One line: `noted\t<comment-url>`.
-With `--json`: `{"outcome":"noted","commentUrl":…}`.
+With `--json`: `{"outcome":"noted","commentUrl":…,"key":"<pr>:<class>:<head>"}`.
 
 Leak-scanned (`report/leaks.ts`, imported), posted as a **new** comment — a strand's history is a
 history, not a state, and each classification is its own record — then read back through
 `normalizeForReadback`. A note on a closed or merged PR is legal: a strand that resolved while the
 run was classifying it still deserves the record.
 
+**Suppressed per `<pr>:<class>:<head>`, inside the verb.** What is *not* its own record is the same
+classification of the same head by a second caller: two sweeps three minutes apart left up to six
+substantively identical notes on one pull request (#7209). Before creating, `note` reads the pull
+request's **whole** comment history and refuses `14` when a comment already carries this exact key,
+posting nothing. One key earns exactly one note for as long as the PR is open, so a strand is
+re-noticed only when its class changes or a new commit lands on its head — the two events that make
+the earlier note stale. The key's format is the block above under
+["The note suppression key"](#the-note-suppression-key-is-a-specified-format-too); the reader and
+writer are `heal-ci/note-key.ts`, and the verb composes the marker itself — a caller never writes one
+into the body.
+
+**`--sha` is a full sha here, and a divergence from the live head is a notice.** The key is an
+identity and an identity built from an abbreviation cannot be compared for equality, so a 7-40 value
+is a usage error (`1`) rather than something to prefix-match — the same incident produced two notes on
+one PR citing `6d8fc285…` and `6d8fc283…`, a hand-typed prefix diverging in its fifth digit. And
+unlike `heal-ci rerun`, a head that moved under this write does **not** refuse `12`: a note is the
+record of a classification taken at a head, so refusing here would lose the only trace of a strand
+somebody just diagnosed. The verb says so on stderr and records at the head it was given.
+
 **Exit status**
 
 | Code | Trigger |
 |---|---|
+| `1` | `--sha` is not a full 40-hex sha |
 | `3` | stdin was read and held nothing |
 | `5` | the body carries a machine-local path |
 | `6` | the body is a bare `@` path reference |
 | `7` | the PR is proven absent (404) |
 | `8` | the comment create, or its confirming re-read, failed — UNKNOWN whether it landed |
 | `9` | the comment landed but the read-back does not match |
-| `11` | the PR could not be read — nothing was posted |
+| `10` | `--class` is off the ten-token stall vocabulary |
+| `11` | the PR, or its comment history, could not be read — nothing was posted |
+| `13` | the comment enumeration is short of the PR's declared count — nothing was posted |
+| `14` | refused: this key is already recorded on the PR — nothing was written |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
+| `heal-ci note: --sha must be the full 40-hex head this classification was taken at, not "<value>" — a suppression key built from an abbreviation cannot be compared for equality.` | 1 | usage |
 | `heal-ci note: no body on stdin — a silent classification leaves the strand as invisible as it was found; write the reason.` | 3 | refusal |
 | `heal-ci note: the body carries a machine-local path at line <k> (<class>) — cite it repo-relative.` | 5 | refusal |
 | `heal-ci note: the body is a bare "@" path reference — the bytes never arrived. Send them on stdin.` | 6 | refusal |
 | `heal-ci note: PR #<n> not found in <repo>.` | 7 | refusal |
 | `heal-ci note: create failed: <reason> — UNKNOWN whether the note landed; re-read before retrying.` | 8 | refusal |
 | `heal-ci note: the read-back does not match — inspect comment <id>.` | 9 | refusal |
+| `heal-ci note: --class <value> is not a stall class (known: <the ten tokens>).` | 10 | refusal |
 | `heal-ci note: cannot read PR #<n>: <reason> — nothing was posted.` | 11 | refusal |
+| `heal-ci note: cannot read #<n>'s comments: <reason> — suppression state is UNKNOWN, so nothing was posted.` | 11 | refusal |
+| `heal-ci note: received <k> of <n> declared comments — refusing to post over a truncated suppression read.` | 13 | refusal |
+| `heal-ci note: #<n> already carries a note at key <pr>:<class>:<head> (comment <id>) — this strand is recorded; nothing was posted.` | 14 | refusal |
 
-**Scope** — one PR, one comment write, one read-back.
+**Scope** — one PR, one fully paginated comment read, one comment write, one read-back.
 
 **Examples**
 
 ```
-$ fabrika heal-ci note 4321 <<'EOF'
+$ fabrika heal-ci note 4321 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c <<'EOF'
 heal-ci: ROUTED — PR #4321 @ 03135b91 → ship
 
 Stall class `gated-unshipped`: review-code and review-doc both PASS at this head, CI green,
 no merge intent armed and no queue entry. Strand age 35m. Nothing is failing; nobody is holding it.
 EOF
 noted	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5155001122
+```
+
+The comment that lands carries the machine marker as its last line, below the authored text:
+
+```
+heal-ci: ROUTED — PR #4321 @ 03135b91 → ship
+
+Stall class `gated-unshipped`: …
+
+<!-- heal-ci-note key=4321:gated-unshipped:03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c -->
+```
+
+A second caller over the same strand at the same head:
+
+```
+$ fabrika heal-ci note 4321 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c < note.md
+heal-ci note: #4321 already carries a note at key 4321:gated-unshipped:03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c (comment 5155001122) — this strand is recorded; nothing was posted.
+$ echo $?
+14
 ```
 
 **Grounding**
@@ -1208,6 +1292,74 @@ noted	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5155001122
 - v1's two comment writers discarded their responses to `/dev/null`, so the only routed action of
   an invocation was reported done on the strength of a write response rather than a read-back.
 - #2393's class — the leak predicate is generic by design and is imported, never re-derived.
+- #7209: the suppression existed and lived in `.github/workflows/heal-ci-sweep.yml`'s `run:` block,
+  which built the key, paged the comments and globbed for a hit. That deduped the scheduled path
+  alone, left every other caller posting bare, and put the workflow on the wrong side of ADR 0228 —
+  a script deriving a decision rather than relaying a verb's. Moving it here fixes both, and every
+  note path inherits it.
+
+---
+
+## `heal-ci scratch`
+
+**Invocation**
+
+```
+fabrika heal-ci scratch 4321 --slug note
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull-request number this lane is repairing |
+| `--slug` | string | yes | — | the leaf filename under the lane's directory; kebab-case, no path separators |
+
+**Output** — machine channel. One absolute path:
+`<temp root>/fabrika-heal-ci/<session-id>/<pr>/<slug>`. The directory is created if absent; **the leaf
+file is not** — the caller allocates, writes the body, then reads it back on stdin. Redirecting
+`note`'s stdin straight from an unwritten path posts nothing on a first run and posts the *previous*
+classification's body on a second, the path being a pure function of session, PR and slug.
+
+Two healers deriving similar working filenames in one working directory overwrote each other's note
+bodies mid-post (#7209/#7210) — the failure `build scratch` and `triage scratch` already make
+unconstructible for their lanes.
+
+**No nonce and no `--token`, unlike the sibling allocators.** They key on a claim nonce because a
+build or triage fan-out runs many lanes under one session id, so the session alone hands them all one
+directory. This group has no claim verb and no fan-out: a `heal-ci` run is one forked shell, so two
+concurrent healers are two session ids, and within one of them the PR under repair separates one
+sweep row from the next. Both halves of the key are already in the path, and minting a nonce for a
+lane identity that does not exist would key the namespace on a value nothing else in the run can
+reproduce.
+
+The printed path is machine-local by definition and must never reach a posted artifact — which is why
+`heal-ci note` reds on one (`5`).
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `1` | the directory could not be created, the positional is not a PR number, no session id is set (`FABRIKA_SESSION_ID` → `CLAUDE_CODE_SESSION_ID` → `PI_SUBAGENT_PARENT_SESSION`), or the id is not one path segment |
+| `10` | `--slug` carries a path separator or is not kebab-case |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `heal-ci scratch: <n> is not a pull-request number.` | 1 | usage |
+| `heal-ci scratch: no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID, PI_SUBAGENT_PARENT_SESSION are all unset — refusing to key a scratch namespace on an unattributable session.` | 1 | refusal |
+| `heal-ci scratch: the session id is not one path segment — it cannot name a directory of its own.` | 1 | refusal |
+| `heal-ci scratch: cannot create <dir>: <reason>` | 1 | refusal |
+| `heal-ci scratch: --slug "<value>" must be a kebab-case leaf, no path separators.` | 10 | refusal |
+
+**Scope** — one directory allocation. No network, no repository read, no write to any surface.
+
+**Grounding**
+
+- `build scratch` (#6037) and `triage scratch` (#6630): a namespace keyed on the session alone hands
+  every lane the same directory, and a fixed name like `note.md` clobbers a sibling's file silently.
+- ADR 0215 §5 and #4500: the CLI never mints an identity when the session chain comes up empty.
 
 ---
 

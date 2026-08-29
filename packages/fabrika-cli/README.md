@@ -512,19 +512,20 @@ table a failure log matches. Contract:
 | Verb | Answers |
 |---|---|
 | `heal-ci diagnose` | one PR's stall class from an ordered, total predicate chain, with its evidence |
-| `heal-ci sweep` | every open PR classified with its strand age — the scheduled surface |
+| `heal-ci sweep` | every open PR classified with its strand age and its note arrow — the scheduled surface |
 | `heal-ci surface` | declared required contexts against the runs that actually post at the head |
 | `heal-ci logs` | the failed-job log text for **every** failing gating context at a head |
 | `heal-ci classify` | pure: log text on stdin → one signature from a ten-row ordered table, default-deny |
 | `heal-ci rerun` | the at-most-once transient rerun, precondition re-derived inside the verb |
-| `heal-ci note` | the durable stop-path comment |
+| `heal-ci note` | the durable stop-path comment, suppressed once per `<pr>:<class>:<head>` |
+| `heal-ci scratch` | the per-lane path a healer's note bodies go under |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13` a
 read completed and its scope is provably incomplete · `14` proven not in the state this write acts
 on · `15` the run's logs are proven expired or purged · `16` the rerun provably landed and its
 durable marker could not be written. `4` is a deliberate gap.
 
-Five behaviours are worth knowing:
+Six behaviours are worth knowing:
 
 - **Every classification is an exit-`0` answer**, `red` and `wedged` and `not-open` included. A
   non-zero exit means the verb could not produce an answer at all.
@@ -540,6 +541,9 @@ Five behaviours are worth knowing:
 - **`sweep` writes nothing.** It files no issue, assigns nobody and spawns nothing (ADR 0205): a
   detector emits claimable work and normal pull adopts it. Filing is `report file`'s, which is why
   `4` stays a deliberate gap here.
+- **The note's arrow is a lookup, and `sweep` emits it.** Each row's sixth column is the lane the
+  stall class hands the work to (`build`/`review`/`ship`/`author`/`human`/`nobody`), so the note's
+  first line relays a lane instead of a caller deriving one in a `run:` block (ADR 0228).
 
 ## The `hook` group
 

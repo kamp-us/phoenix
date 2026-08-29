@@ -1,5 +1,5 @@
 /**
- * The `heal-ci` verb group — `fabrika heal-ci <diagnose|sweep|surface|logs|classify|rerun|note>`,
+ * The `heal-ci` verb group — `fabrika heal-ci <diagnose|sweep|surface|logs|classify|rerun|note|scratch>`,
  * the `heal-ci` skill's repair lane.
  *
  * The adapter and nothing else: it declares the flags (`--help` is the interface, so every flag
@@ -14,6 +14,7 @@
  * live head": a caller that passes the flag gets it bound and prefix-matched, and one that omits it
  * never reaches the matching logic at all.
  */
+import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
@@ -24,7 +25,9 @@ import {runDiagnose} from "./diagnose-verb.ts";
 import {runLogs} from "./logs-verb.ts";
 import {runNote} from "./note-verb.ts";
 import {runRerun} from "./rerun-verb.ts";
+import {runScratch} from "./scratch-verb.ts";
 import {SIGNATURE_IDS} from "./signatures.ts";
+import {STALL_TOKENS} from "./stall.ts";
 import {runSurface} from "./surface-verb.ts";
 import {runSweep} from "./sweep-verb.ts";
 
@@ -152,7 +155,7 @@ const sweep = leafCommand(
 ).pipe(
 	Command.withShortDescription("Every open PR classified with its strand age."),
 	Command.withDescription(
-		"Classify every open pull request through `heal-ci diagnose`'s shared predicate chain and emit the stalled ones, ordered by strand age descending with ties broken by ascending PR number. First stdout line is `swept\\t<scanned>\\t<stalled>` — both counts always, so a zero-stall answer carries the scope it rests on rather than standing as a bare claim — then one `pr\\t<number>\\t<token>\\t<age>\\t<head>` line per emitted PR. This verb writes nothing: it files no issue, assigns nobody and spawns nothing (ADR 0205). A PR that closed between the list read and its classification stays in the scanned count and leaves the stalled one. Exits 11 (the open-PR list or a per-PR read failed, or the rate limit was exhausted mid-sweep — the sweep is UNKNOWN, never a shorter list), 13 (the enumeration never reached a terminal page, or the open-PR count exceeds --limit). Example: fabrika heal-ci sweep --min-age-minutes 30",
+		"Classify every open pull request through `heal-ci diagnose`'s shared predicate chain and emit the stalled ones, ordered by strand age descending with ties broken by ascending PR number. First stdout line is `swept\\t<scanned>\\t<stalled>` — both counts always, so a zero-stall answer carries the scope it rests on rather than standing as a bare claim — then one `pr\\t<number>\\t<token>\\t<age>\\t<head>\\t<lane>` line per emitted PR, the lane being the note's arrow looked up off the class (build|review|ship|author|human|nobody) so a caller relays it instead of deriving one. This verb writes nothing: it files no issue, assigns nobody and spawns nothing (ADR 0205). A PR that closed between the list read and its classification stays in the scanned count and leaves the stalled one. Exits 11 (the open-PR list or a per-PR read failed, or the rate limit was exhausted mid-sweep — the sweep is UNKNOWN, never a shorter list), 13 (the enumeration never reached a terminal page, or the open-PR count exceeds --limit). Example: fabrika heal-ci sweep --min-age-minutes 30",
 	),
 );
 
@@ -262,11 +265,27 @@ const rerun = leafCommand(
 
 const note = leafCommand(
 	"note",
-	{pr: prArg, repo: repoFlag, json: jsonFlag},
-	Effect.fn(function* ({pr, repo, json}) {
+	{
+		pr: prArg,
+		stallClass: Flag.string("class").pipe(
+			Flag.withDescription(
+				`the stall class this note records, the key's middle field: one of ${STALL_TOKENS.join(", ")}`,
+			),
+		),
+		sha: Flag.string("sha").pipe(
+			Flag.withDescription(
+				"the full 40-hex head the classification was taken at; the key compares it as equality, so an abbreviation is a usage error",
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({pr, stallClass, sha, repo, json}) {
 		yield* emit(
 			yield* runNote({
 				pr,
+				stallClass,
+				sha,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -275,14 +294,34 @@ const note = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Post the durable stop-path note on a pull request."),
+	Command.withShortDescription("Post the durable stop-path note, once per class and head."),
 	Command.withDescription(
-		"Post the durable record of what this lane decided, as a NEW comment — a strand's history is a history, not a state, so each classification is its own record and a note on a closed or merged PR is legal. The body arrives on stdin only: a path flag is how a machine-local path reaches a public surface while the poster reads success. Leak-scanned before the write and read back after it. Stdout is one line: `noted\\t<comment-url>`. Exits 3 (stdin held nothing — a silent classification leaves the strand as invisible as it was found), 5 (the body carries a machine-local path), 6 (the body is a bare @ path reference), 7 (the PR is proven absent), 8 (the create or its confirming re-read failed — UNKNOWN whether it landed), 9 (it landed and the read-back does not match), 11 (the PR could not be read — nothing was posted). Example: fabrika heal-ci note 4321 < note.md",
+		"Post the durable record of what this lane decided, as a NEW comment — a strand's history is a history, not a state, so each classification is its own record and a note on a closed or merged PR is legal. What is not its own record is the SAME classification of the same head by a second caller: --class and --sha, with the PR number, form the key `<pr>:<class>:<head>`, which the verb emits as the HTML-comment marker `<!-- heal-ci-note key=<pr>:<class>:<head> -->` on the note's last line and reads back over the pull request's WHOLE comment history before creating. A comment already carrying that exact key is exit 14 with nothing posted; a comment list that could not be read is 11, never an absent note. One key earns one note for as long as the PR is open, so a strand is re-noticed only when its class changes or a new commit lands. The body arrives on stdin only: a path flag is how a machine-local path reaches a public surface while the poster reads success. Leak-scanned before the write and read back after it. Stdout is one line: `noted\\t<comment-url>`. A --sha that is not the live head is a stderr notice, never a refusal — the note records a classification at the head it was taken at. Exits 1 (--sha is not a full 40-hex sha), 3 (stdin held nothing — a silent classification leaves the strand as invisible as it was found), 5 (the body carries a machine-local path), 6 (the body is a bare @ path reference), 7 (the PR is proven absent), 8 (the create or its confirming re-read failed — UNKNOWN whether it landed), 9 (it landed and the read-back does not match), 10 (--class is off the stall vocabulary), 11 (the PR or its comments could not be read — nothing was posted), 13 (the comment enumeration is short of the declared count), 14 (proven: this key is already recorded — a refusal that is a success, since nothing was written). Example: fabrika heal-ci note 4321 --class gated-unshipped --sha 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c < note.md",
+	),
+);
+
+const scratch = leafCommand(
+	"scratch",
+	{
+		pr: prArg,
+		slug: Flag.string("slug").pipe(
+			Flag.withDescription(
+				"the leaf filename under the lane's directory; kebab-case, no separators",
+			),
+		),
+	},
+	Effect.fn(function* ({pr, slug}) {
+		yield* emit(yield* runScratch({pr, slug, env: process.env, tmpRoot: tmpdir()}));
+	}),
+).pipe(
+	Command.withShortDescription("The per-lane scratch path a healer's note bodies go under."),
+	Command.withDescription(
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-heal-ci/<session-id>/<pr>/<slug>, one absolute path on stdout, the directory created if absent. Two healers deriving similar working filenames in one working directory overwrote each other's note bodies mid-post (#7209); the session id and the PR number key the namespace so that is unconstructible. This group has no claim verb, so unlike `build scratch` and `triage scratch` there is no nonce and no --token: a heal-ci run is one forked shell, so two concurrent healers are two session ids, and the PR separates one sweep row from the next within one of them. The printed path is machine-local and must never reach a posted artifact — `heal-ci note` reds on one. Exits 1 (the directory could not be created, the positional is not a PR number, no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain), or the id is not one path segment), 10 (--slug carries a path separator or is not kebab-case). Example: fabrika heal-ci scratch 4321 --slug note",
 	),
 );
 
 export const healCiCommand = Command.make("heal-ci").pipe(
-	Command.withSubcommands([diagnose, sweep, surface, logs, classify, rerun, note]),
+	Command.withSubcommands([diagnose, sweep, surface, logs, classify, rerun, note, scratch]),
 	Command.withShortDescription("Classify a stranded or red PR and drive it toward green."),
 	Command.withDescription(
 		"The repair lane: classify one stranded or red pull request — or sweep the whole board for them — read the failing logs, match them against a closed signature table, spend the one guarded rerun a transient earns, and leave the durable record of what was decided",
