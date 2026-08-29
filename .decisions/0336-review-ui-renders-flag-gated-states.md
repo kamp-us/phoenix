@@ -26,7 +26,7 @@ The gap was reported as #6541; the founder ruled on it at [this comment](https:/
 
 **`review-ui render` gets a flag-override plus seeded-session path, so a dark-shipped feature's real states paint under the gate.**
 
-1. **Override at capture.** The verb grows a preview-scoped flag override and a seeded session, so gated and behind-auth states become reachable during a gate run. The implementation lands on its own build ticket against `render-verb.ts`, not under the decision issue.
+1. **Override at capture.** The verb grows a preview-scoped flag override and a seeded session, so gated and behind-auth states become reachable during a gate run. The implementation lands on its own build ticket, [#7218](https://github.com/kamp-us/phoenix/issues/7218), not under the decision issue.
 
 2. **The interim rider.** Until that path ships, a `review-ui` verdict must name the states that did not render. This is not optional politeness — an unnamed hole in the evidence is indistinguishable from a clean read, which is exactly how #6434 passed.
 
