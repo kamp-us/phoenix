@@ -9,6 +9,10 @@
  * spent a lane retry on stale worktree state. Every refusal below the merge resets the branch
  * through `ORIG_HEAD`, so a recorded `FAIL` names a branch that never carried the bad merge.
  *
+ * Above the merge sits the other half of that guarantee: a seat already holding modified tracked
+ * files is refused on exit 45 before anything runs, because dirt the child did not write reads as
+ * its conflict or its bad lockfile and spends its retry budget either way (#7244).
+ *
  * On exit 0 the last stdout line is always `INTEGRATE-VERDICT: MERGED`, the line above it the merged
  * head. Publishing that head is `lane push`'s and recording the `DONE` is the driver's: this verb
  * neither pushes nor writes the lane's log, so its answer is a fact about a tree and nothing else.
@@ -35,6 +39,7 @@ import {epicBranch} from "../wire/lane-brief.ts";
 import {assemblySeat, worktrees} from "./assembly.ts";
 import {
 	APPEND_UNKNOWN,
+	ASSEMBLY_DIRTY,
 	ASSEMBLY_RED,
 	ASSEMBLY_UNSEATED,
 	LANE_UNREADABLE,
@@ -72,6 +77,32 @@ const headOf = (path: string) =>
 		read.ok
 			? ({_tag: "Read", sha: read.stdout.trim()} as const)
 			: ({_tag: "Unreadable", reason: read.reason} as const),
+	);
+
+type TrackedChanges =
+	| {readonly _tag: "Read"; readonly paths: ReadonlyArray<string>}
+	| {readonly _tag: "Unreadable"; readonly reason: string};
+
+/**
+ * The tracked paths git reports as changed in `path`.
+ *
+ * `--untracked-files=no` is the whole scope claim: this is the set `git merge` refuses to overwrite
+ * and the set an install can repair, and a file no commit tracks is neither. Both readers of this —
+ * the pre-merge cleanliness gate and {@link reconcile}'s post-install probe — need the same set, and
+ * the second is only a claim about the install because the first proved the baseline empty (#7244).
+ */
+const trackedChanges = (
+	path: string,
+): Effect.Effect<TrackedChanges, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.map(
+		execCapture("git", ["-C", path, "status", "--porcelain", "--untracked-files=no"]),
+		(read) =>
+			read.ok
+				? ({
+						_tag: "Read",
+						paths: read.stdout.split("\n").filter((line) => line.trim() !== ""),
+					} as const)
+				: ({_tag: "Unreadable", reason: read.reason} as const),
 	);
 
 /**
@@ -154,16 +185,8 @@ const reconcile = (
 				),
 			};
 		}
-		// `--untracked-files=no`: the claim is about what the install did to the repo's own dependency
-		// artifacts, and an untracked file a package manager scratched into the tree is not one.
-		const dirty = yield* execCapture("git", [
-			"-C",
-			path,
-			"status",
-			"--porcelain",
-			"--untracked-files=no",
-		]);
-		if (!dirty.ok) {
+		const dirty = yield* trackedChanges(path);
+		if (dirty._tag === "Unreadable") {
 			return {
 				_tag: "Refused" as const,
 				outcome: refuse(
@@ -172,7 +195,7 @@ const reconcile = (
 				),
 			};
 		}
-		const changed = dirty.stdout.split("\n").filter((line) => line.trim() !== "");
+		const changed = dirty.paths;
 		if (changed.length > 0) {
 			return {
 				_tag: "Refused" as const,
@@ -272,6 +295,21 @@ export const runIntegrate = (
 			);
 		}
 		const head = before.sha;
+
+		const seated = yield* trackedChanges(path);
+		if (seated._tag === "Unreadable") {
+			return refuse(
+				LANE_UNREADABLE,
+				`${VERB}: cannot read whether ${path} is clean before the merge: ${seated.reason} — whether a later refusal would be ${options.child}'s or this tree's is UNKNOWN, so nothing was merged.`,
+			);
+		}
+		if (seated.paths.length > 0) {
+			return refuse(
+				ASSEMBLY_DIRTY,
+				`${VERB}: ${path} already held ${seated.paths.length} modified tracked path(s) before ${options.child} was merged — that is the driver's tree and not the child's range, so nothing was merged, installed or validated and ${path} is still at ${head}. Clean the seat, then integrate again.`,
+				seated.paths,
+			);
+		}
 
 		// `--no-ff` so each landing is one commit a reader can name: a fast-forward would leave two
 		// children's ranges indistinguishable in the history the epic reviewer reads.

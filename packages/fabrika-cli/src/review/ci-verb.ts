@@ -11,8 +11,15 @@
  * skill acts on `rollup` and no skill iterates the rows — and a repo with 34 workflows paid ~20 rows
  * of it on every read. What the rows were *for*, naming the red and still-running checks, moves to
  * the notes channel below, the same split `ship checks` landed on.
+ *
+ * `--wait` is the bounded in-verb wait a reviewer spawned minutes after a push needs: a `pending`
+ * there is the ordinary state of a healthy PR, and a caller that cannot wait for it has only a park
+ * on a human to offer for a condition that clears itself (#7282). The verb owns the loop so no skill
+ * ever sleeps — `claude-plugins/fabrika/docs/skill-conventions.md` §14 — and it loops on `pending`
+ * alone: every refusal and the `no-producer` answer are states no amount of waiting changes, so they
+ * return on the first read rather than burning the budget.
  */
-import {Effect, type FileSystem, type Path} from "effect";
+import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
@@ -23,20 +30,44 @@ import {listRunsAtHead, listWorkflowPaths, listWorkflows} from "../ship/github.t
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {gateCoverageOf} from "./gate-coverage.ts";
-import {isFailing, rollupOf, statusOf} from "./rollup.ts";
+import {isFailing, type Rollup, rollupOf, statusOf} from "./rollup.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "review ci";
 
+/**
+ * How a `--wait` ended — the token that keeps a waited answer distinguishable from a point read.
+ *
+ * `budget-exhausted` is the one a caller must not read as a verdict: the rollup beside it is still
+ * `pending`, so nothing about the head was proven, and the answer says the wait ran out rather than
+ * that CI concluded.
+ */
+export type Settle = "settled" | "budget-exhausted" | "head-moved";
+
 export interface CiOptions {
 	readonly pr: number;
 	readonly sha: string | null;
+	readonly wait: boolean;
+	readonly budgetSeconds: number;
+	readonly cadenceSeconds: number;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	/** Where `.fabrika.jsonc` is looked for — the repo root above it, per `config/working-root.ts`. */
 	readonly cwd: string;
 }
+
+/** One enumeration at the bound head: an outcome no wait can change, or a rollup to route on. */
+type Sample =
+	| {readonly _tag: "Done"; readonly outcome: VerbOutcome}
+	| {
+			readonly _tag: "Read";
+			readonly rollup: Rollup;
+			readonly runs: ReadonlyArray<CheckRun>;
+			readonly declared: number;
+			readonly gates: {readonly declared: number; readonly covered: number} | null;
+			readonly notes: ReadonlyArray<string>;
+	  };
 
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
 const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.startsWith(a);
@@ -45,7 +76,9 @@ const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.star
  * The rollup token for a repo that has opted out of having CI at all.
  *
  * Its own word, deliberately outside {@link rollupOf}'s three: a caller keying on `green` must not
- * see one here, and a caller keying on `pending` must not wait for a run that will never start.
+ * see one here, and a caller keying on `pending` must not wait for a run that will never start —
+ * which is why `--wait` returns this answer on the first read and carries no settle token, there
+ * having been nothing to wait for.
  */
 const NO_PRODUCER = "no-producer";
 
@@ -64,6 +97,7 @@ const noProducerAnswer = (
 					scanned: 0,
 					declared: 0,
 					gates: null,
+					settle: null,
 				}),
 				diagnostics,
 			)
@@ -134,115 +168,177 @@ export const runCi = (
 			}
 		}
 
-		const enumerated = yield* listCheckRuns(repo, sha);
-		if (enumerated._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot enumerate check runs at ${sha}: ${enumerated.reason} — CI state is UNKNOWN, never green.`,
-				diagnostics,
-			);
-		}
-		const {declared, runs} = enumerated.value;
-		diagnostics.push(scannedLine(VERB, runs.length, "check run", `${declared} declared`));
-		if (declared === 0) {
-			// The producer question is asked HERE and nowhere else on this path: an enumeration that
-			// returned runs already proves a producer. Empty is the one reading where "no CI at all"
-			// and "nothing has reported yet" are two different repos wearing one answer.
-			const inventory = yield* listWorkflows(repo);
-			if (inventory._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot enumerate the workflow inventory of ${repo}: ${inventory.reason} — whether a producer exists is UNKNOWN, never green.`,
-					diagnostics,
+		const sample: Effect.Effect<
+			Sample,
+			never,
+			ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+		> = Effect.gen(function* () {
+			const done = (outcome: VerbOutcome): Sample => ({_tag: "Done", outcome});
+			const enumerated = yield* listCheckRuns(repo, sha);
+			if (enumerated._tag === "Failure") {
+				return done(
+					refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: cannot enumerate check runs at ${sha}: ${enumerated.reason} — CI state is UNKNOWN, never green.`,
+						diagnostics,
+					),
 				);
 			}
-			const producer = producerFor(VERB, repo, inventory.value, yield* resolveCi(options.cwd));
-			if (producer._tag === "Unknown") {
-				return refuse(PRECONDITION_UNKNOWN, producer.reason, diagnostics);
+			const {declared, runs} = enumerated.value;
+			// Every poll re-reads the head, so the scanned line is this sample's, not the run's: it
+			// rides the sample's own notes and never accumulates one row per poll on the preamble.
+			const notes = [
+				...diagnostics,
+				scannedLine(VERB, runs.length, "check run", `${declared} declared`),
+			];
+			if (declared === 0) {
+				// The producer question is asked HERE and nowhere else on this path: an enumeration that
+				// returned runs already proves a producer. Empty is the one reading where "no CI at all"
+				// and "nothing has reported yet" are two different repos wearing one answer.
+				const inventory = yield* listWorkflows(repo);
+				if (inventory._tag === "Failure") {
+					return done(
+						refuse(
+							PRECONDITION_UNKNOWN,
+							`${VERB}: cannot enumerate the workflow inventory of ${repo}: ${inventory.reason} — whether a producer exists is UNKNOWN, never green.`,
+							notes,
+						),
+					);
+				}
+				const producer = producerFor(VERB, repo, inventory.value, yield* resolveCi(options.cwd));
+				if (producer._tag === "Unknown") {
+					return done(refuse(PRECONDITION_UNKNOWN, producer.reason, notes));
+				}
+				if (producer._tag === "Refused") return done(refuse(ZERO_SCOPE, producer.reason, notes));
+				if (producer._tag === "OptedOut") {
+					return done(noProducerAnswer(sha, json, [...notes, producer.note]));
+				}
+				return done(
+					refuse(
+						ZERO_SCOPE,
+						`${VERB}: zero check runs declared at ${sha} — refusing to report green over an empty enumeration (ADR 0092).`,
+						notes,
+					),
+				);
 			}
-			if (producer._tag === "Refused") return refuse(ZERO_SCOPE, producer.reason, diagnostics);
-			if (producer._tag === "OptedOut") {
-				return noProducerAnswer(sha, json, [...diagnostics, producer.note]);
+			if (runs.length < declared) {
+				return done(
+					refuse(
+						INCOMPLETE_SCAN,
+						`${VERB}: received ${runs.length} of ${declared} declared check runs at ${sha} — refusing the partial enumeration (#3999).`,
+						notes,
+					),
+				);
 			}
-			return refuse(
-				ZERO_SCOPE,
-				`${VERB}: zero check runs declared at ${sha} — refusing to report green over an empty enumeration (ADR 0092).`,
-				diagnostics,
-			);
-		}
-		if (runs.length < declared) {
-			return refuse(
-				INCOMPLETE_SCAN,
-				`${VERB}: received ${runs.length} of ${declared} declared check runs at ${sha} — refusing the partial enumeration (#3999).`,
-				diagnostics,
-			);
-		}
 
-		const rollup = rollupOf(runs);
-		const checks: ReasonHistogram = reasonHistogram(runs, statusOf);
-		const notes = [...diagnostics, ...namedLines(VERB, runs)];
-		// A red rollup is already the answer a caller must act on, so the coverage question is asked
-		// only where it changes one: `green` and `pending` are the two words that read as "nothing to
-		// do here", and both are wrong over bytes no gate inspected.
-		let gates: {readonly declared: number; readonly covered: number} | null = null;
-		if (rollup !== "red") {
-			const inventory = yield* listWorkflowPaths(repo);
-			if (inventory._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot enumerate the workflow inventory of ${repo}: ${inventory.reason} — which gates exist is UNKNOWN, never green.`,
-					diagnostics,
+			const rollup = rollupOf(runs);
+			notes.push(...namedLines(VERB, runs));
+			// A red rollup is already the answer a caller must act on, so the coverage question is asked
+			// only where it changes one: `green` and `pending` are the two words that read as "nothing to
+			// do here", and both are wrong over bytes no gate inspected.
+			let gates: {readonly declared: number; readonly covered: number} | null = null;
+			if (rollup !== "red") {
+				const inventory = yield* listWorkflowPaths(repo);
+				if (inventory._tag === "Failure") {
+					return done(
+						refuse(
+							PRECONDITION_UNKNOWN,
+							`${VERB}: cannot enumerate the workflow inventory of ${repo}: ${inventory.reason} — which gates exist is UNKNOWN, never green.`,
+							notes,
+						),
+					);
+				}
+				const atHead = yield* listRunsAtHead(repo, sha);
+				if (atHead._tag === "Failure") {
+					return done(
+						refuse(
+							PRECONDITION_UNKNOWN,
+							`${VERB}: cannot enumerate the workflow runs at ${sha}: ${atHead.reason} — which gates ran is UNKNOWN, never green.`,
+							notes,
+						),
+					);
+				}
+				const coverage = gateCoverageOf(
+					inventory.value,
+					atHead.value.runs.map((run) => run.path),
 				);
+				if (coverage._tag === "Uncovered") {
+					// The `16` refusal is why `--wait` may not simply loop on "not green": a head no gate of
+					// this repo ran at has nothing coming, so waiting out the budget would answer nothing.
+					return done(
+						refuse(
+							NO_GATE_COVERAGE,
+							`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).`,
+							notes,
+						),
+					);
+				}
+				if (coverage._tag === "NoGates") {
+					notes.push(
+						`${VERB}: ${repo} authors no workflow of its own — every run at ${sha} is platform-provided, so there is no gate coverage to judge.`,
+					);
+				} else {
+					gates = {declared: coverage.declared, covered: coverage.covered};
+					notes.push(
+						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha}.`,
+					);
+				}
 			}
-			const atHead = yield* listRunsAtHead(repo, sha);
-			if (atHead._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot enumerate the workflow runs at ${sha}: ${atHead.reason} — which gates ran is UNKNOWN, never green.`,
-					diagnostics,
-				);
+			return {_tag: "Read", rollup, runs, declared, gates, notes} satisfies Sample;
+		});
+
+		const render = (read: Extract<Sample, {_tag: "Read"}>, settle: Settle | null): VerbOutcome => {
+			const checks: ReasonHistogram = reasonHistogram(read.runs, statusOf);
+			return json
+				? answer(
+						JSON.stringify({
+							outcome: "ci",
+							sha,
+							rollup: read.rollup,
+							checks,
+							scanned: read.runs.length,
+							declared: read.declared,
+							gates: read.gates,
+							settle,
+						}),
+						read.notes,
+					)
+				: answer(
+						[
+							...(settle === null ? [] : [`settle\t${settle}`]),
+							`ci\t${sha}\t${read.rollup}`,
+							`run\t${read.runs.length}`,
+							...Object.entries(checks).map(([status, count]) => `check\t${status}\t${count}`),
+						].join("\n"),
+						read.notes,
+					);
+		};
+
+		const first = yield* sample;
+		if (first._tag === "Done") return first.outcome;
+		if (!options.wait) return render(first, null);
+
+		// The budget is WALL CLOCK, gh-call latency included — counting only the sleeps is how a verb
+		// silently overruns the bound it claims to hold (`ship checks --wait` records the same lesson).
+		const startedAt = yield* Clock.currentTimeMillis;
+		let read = first;
+		for (;;) {
+			if (read.rollup !== "pending") return render(read, "settled");
+			const now = yield* Clock.currentTimeMillis;
+			if (now - startedAt >= options.budgetSeconds * 1000) {
+				return render(read, "budget-exhausted");
 			}
-			const coverage = gateCoverageOf(
-				inventory.value,
-				atHead.value.runs.map((run) => run.path),
-			);
-			if (coverage._tag === "Uncovered") {
-				return refuse(
-					NO_GATE_COVERAGE,
-					`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha} — the ${runs.length} check run(s) here came from elsewhere, so no gate inspected these bytes: the CI state is UNKNOWN, never green (#6522).`,
-					diagnostics,
-				);
+			yield* Effect.sleep(`${options.cadenceSeconds} seconds`);
+
+			const moved = yield* openPull(VERB, repo, pr, {requireOpen: false, requireFiles: false});
+			if (moved._tag === "Refused") return moved.outcome;
+			if (!prefixMatch(moved.pull.headSha, sha)) {
+				// The wait was for a tree the PR no longer is: the last read still binds what it inspected,
+				// and the caller is told the head moved rather than handed a stale `settled`.
+				return render(read, "head-moved");
 			}
-			if (coverage._tag === "NoGates") {
-				notes.push(
-					`${VERB}: ${repo} authors no workflow of its own — every run at ${sha} is platform-provided, so there is no gate coverage to judge.`,
-				);
-			} else {
-				gates = {declared: coverage.declared, covered: coverage.covered};
-				notes.push(
-					`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha}.`,
-				);
-			}
+			const next = yield* sample;
+			if (next._tag === "Done") return next.outcome;
+			read = next;
 		}
-		return json
-			? answer(
-					JSON.stringify({
-						outcome: "ci",
-						sha,
-						rollup,
-						checks,
-						scanned: runs.length,
-						declared,
-						gates,
-					}),
-					notes,
-				)
-			: answer(
-					[
-						`ci\t${sha}\t${rollup}`,
-						`run\t${runs.length}`,
-						...Object.entries(checks).map(([status, count]) => `check\t${status}\t${count}`),
-					].join("\n"),
-					notes,
-				);
 	});

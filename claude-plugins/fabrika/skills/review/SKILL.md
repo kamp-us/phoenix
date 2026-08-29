@@ -114,6 +114,34 @@ to each class's slice: code → [rubrics/code.md](rubrics/code.md) · doc →
 any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy; the
 doc rubric's prose-craft line is the fallback until it lands.
 
+<!-- anchor: STAGE-ONLY-UNDER-THE-ALLOCATED-PATH --> **A diff too large for one read is staged under
+the path this verb allocates, and never under a name you chose.** The session scratchpad is shared
+by every lane in the session, so a generic `diff.txt` there is a name a concurrent lane writes too:
+on PR #7232 a reviewer's file was replaced with an unrelated PR's diff between two offset reads, and
+the verdict it was heading for would have carried the right head over the wrong bytes — which
+nothing downstream can detect (#7246).
+
+```bash
+fabrika review scratch $pr_number --slug diff --lane <lane> --sha 03135b91
+```
+
+`<lane>` is the lane key your spawn brief's `## Task` section carries, and `--sha` is step 1's head:
+the first separates you from the other reviewers of this session, the second from your own earlier
+round. The verb prints one absolute path, creates its directory, and **refuses rather than handing
+back the session-wide directory** when either is missing. A run whose caller named no lane cannot
+stage: read the diff in place instead, and never substitute a name of your own.
+
+Then read that path off the verb and redirect the diff into it, typing the path out literally —
+`fabrika review diff $pr_number --sha 03135b91 > <the path it printed>`. **Never capture the
+allocation into a shell variable and never redirect through one.** Command substitution and a
+variable the verifier cannot resolve are each on their own enough for a worktree-isolated shell to
+refuse the line, so a fence built that way does not run for the reviewer it is written for (ADR
+[0235](../../../../.decisions/0235-fences-carry-zero-expansions.md)). A redirect whose target is the
+literal path carries no expansion and runs.
+
+The path is machine-local, so it never appears in what you post — `review post` and
+`review append-criterion` red on it at `5`.
+
 **A contract you need while grading arrives one section at a time** — including a `contract.md` the
 diff itself edits. Take each heading the judgment touches with
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`, never the whole file (ADR
@@ -124,7 +152,7 @@ green as this PR's. The code class's execution evidence is the structural CI-at-
 incomplete enumerations:
 
 ```bash
-fabrika review ci $pr_number --sha 03135b91
+fabrika review ci $pr_number --sha 03135b91 --wait
 ```
 
 **Its `green` now carries gate coverage, and the absence of coverage is its own answer.** A head
@@ -135,6 +163,30 @@ conflicted: GitHub stops making `pull_request` runs while a platform-provided ch
 reporting on its own trigger. Treat that `16` as a blocked read, not a verdict — the head needs
 runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
 be read`, naming the `16`, rather than grading around it.
+
+**A queued aggregator is waited out by the verb, never by you on a timer.** You are normally spawned
+minutes after the push, so a `pending` is the ordinary read, not a pathology — and the wait it opens
+is exactly the gap
+[§14 of the skill conventions](../../docs/skill-conventions.md#14-a-skill-never-sleeps-and-never-polls-on-a-timer)
+governs: no `sleep`, foreground or background, and no re-read on a cadence. That rule is
+load-bearing here because this skill's own text is where it was missing: a reviewer waiting on a
+queued aggregator left background timers that fired after its run had ended and re-notified the
+driver twice with nothing to route
+([#7260](https://github.com/kamp-us/phoenix/issues/7260)). The `--wait` above is why one call is
+enough: the verb owns the loop, bounds it by a wall-clock budget, and prints a `settle` line ahead of
+the rollup. Each token routes on its own:
+
+- `settled` — CI concluded inside the budget. The `green` or `red` beside it is the code class's
+  execution evidence; judge on it.
+- `budget-exhausted` — the budget ran out with the head still `pending`. Nothing about this head was
+  proven, and a wait that long is a stuck queue rather than a race with one, so the class ends on
+  `UNKNOWN — the artifact could not be read`, naming the token. That is a park a human should see;
+  `heal-ci` is the lane that moves a stalled PR.
+- `head-moved` — the PR left the head you are judging. Re-read at the new head; a verdict binds only
+  what was inspected.
+
+The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
+so a `16` head or a repo with no producer never burns the budget.
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no

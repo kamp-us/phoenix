@@ -10,7 +10,9 @@
  *
  * It exists because `build eligible` and the claim seam once each carried their own answer: eligible
  * discharged a landed edge and claim refused it on 16, so every sequential epic tracer after the
- * first parked at a human until someone deleted the graph edge by hand (#7035).
+ * first parked at a human until someone deleted the graph edge by hand (#7035). `build pick` was the
+ * third answer to the same edge — it counted the child `blocked` in its excluded histogram, so a
+ * buildable child read as unavailable to anyone reading the pool (#7223).
  *
  * **Discharge moves an answer only toward admitting.** An unreadable branch, an unnameable trunk and
  * a standalone issue all leave every edge exactly as the board read it, so a gate can never admit on
@@ -93,10 +95,12 @@ export interface DischargedGate {
 }
 
 /**
- * The whole gate for a seam that only needs "may this start" — `build claim` today.
+ * The whole gate for a seam that only needs "may this start" — `build claim` and `build pick`.
  *
  * The parent is resolved lazily, so an issue the board already reads as clear costs exactly what it
- * cost before this discharge existed. A parent that could not be read is UNKNOWN rather than
+ * cost before this discharge existed. That laziness is what lets the pool afford this over a whole
+ * board: it pays the parent resolve and the branch read only for the candidates the graph already
+ * refused. A parent that could not be read is UNKNOWN rather than
  * blocked: the evidence that would discharge the edge is the thing that went unread, and that is the
  * answer `build eligible` seats on the same failure.
  */

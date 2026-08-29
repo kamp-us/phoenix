@@ -26,10 +26,14 @@ see [issue #801](https://github.com/kamp-us/phoenix/issues/801) for the trace).
 So for the default worktree base the constraint stands, and the in-session fix is
 the Bash-write workaround below — not a setting.
 
-**There is one relocation lever, but it is a scoped, coordinated change, not a
-flip.** Claude Code supports a `WorktreeCreate` hook that replaces the default
-worktree-creation logic and can land worktrees outside `.claude/` (a base path with
-no `.claude/` substring would dodge the protected-path guard entirely). Adopting it
+**There is one relocation lever, and this repo already holds it — but pulling it is
+still a scoped, coordinated change, not a flip.** The `WorktreeCreate` hook that
+replaces the default worktree-creation logic is declared and live (ADR
+[0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md)), so the
+base path is now ours to choose; it deliberately keeps laying trees at
+`<repo>/.claude/worktrees/<name>`, because moving them is a separate decision from
+provisioning them. A base with no `.claude/` substring would dodge the protected-path
+guard entirely. Making that move
 is NOT free: the biome config and [ADR 0060](../.decisions/0060-worktree-lint-changed-paths.md)
 key on the literal base segment `/.claude/worktrees/`, so both would have to track a new base in
 lockstep. That is a control-plane (`.claude/settings.json` hook) change to scope and review
@@ -232,29 +236,42 @@ hook **consumer**, never a hook **generator**. Two operational corollaries:
   untracked, so this is a one-time **operator** step, not a committed change — the
   `prepare` guard then prevents the pollution from recurring.
 
-## Your worktree arrives auto-provisioned — verify before installing, never symlink
+## Your worktree arrives provisioned by a hook this repo declares — verify, never symlink
 
-A current `isolation:worktree` spawn arrives with `node_modules` **already provisioned** by the
-harness at `git worktree add` time (a real, version-pinned `pnpm install` — its virtual-store
-`@kampus/*` links resolve worktree-local and correct, per
-[ADR 0109](../.decisions/0109-worktree-deps-provision-not-share.md)). That provisioning runs
-**out-of-band, before your first turn**, so it costs your metered run nothing
+A worktree's deps come from **one** thing, and knowing which one is the difference between a wasted
+turn and a lane that dies on its first verb.
+
+The provider is `fabrika hook worktree-create`, declared on `WorktreeCreate` in this repo's own
+[`.claude/settings.json`](../.claude/settings.json) with a 600s timeout (ADR
+[0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md), restoring ADR
+[0178](../.decisions/0178-worktreecreate-hook-provisioning.md)'s mechanism). It runs `git worktree
+add` itself under a `PATH` that resolves the toolchain, which is what lets lefthook's
+`post-checkout` `bootstrap-deps` run the real, version-pinned install (ADR
+[0109](../.decisions/0109-worktree-deps-provision-not-share.md)) instead of clean-SKIPping. It
+refuses unless `node_modules/.pnpm` actually landed, so a dep-less tree is never handed to an agent
+— and because a refusal blocks creation, you either get a usable tree or no tree at all. That work
+happens **out-of-band, before your first turn**, so it costs your metered run nothing
 ([token-economics-measurement.md §6](../reports/token-economics-measurement.md)).
 
-So **do not reflexively run `pnpm install`** on entry — it is redundant setup overhead (≈170 tokens
-of ingested output, plus a wasted Bash turn) that the harness already paid for you, and it is the
-recurring per-spawn cost the token-economics audit ([#1487](https://github.com/kamp-us/phoenix/issues/1487))
-flagged. **Verify, then install only if actually missing:**
+**The harness's own path provisions nothing.** When the hook does not fire — settings not reloaded
+since it landed, a checkout where `fabrika` does not resolve, a session started before this — the
+harness provisions internally, and its `git worktree add` execs git hooks with a **stripped `PATH`**
+(#787–#789), so `bootstrap-deps` finds no corepack, no pinned pnpm and no npm and **clean-SKIPs at
+exit 0** (ADR 0109 §3). The skip is silent, so a dep-less tree looks exactly like a provisioned one.
+That was the live state for months after ADR [0303](../.decisions/0303-retire-kampus-pipeline-plugin.md)
+deleted the v1 hook, and it cost three lanes in one session
+([#7220](https://github.com/kamp-us/phoenix/issues/7220)) — one at exit `126` on its first
+`build tree`. A worktree on a `worktree-agent-<hex>` branch was made by that internal path; one at a
+detached head came from the hook.
+
+**So check the artifact, don't assume either way.** One line, and it is correct under both:
 
 ```bash
-# install ONLY if the worktree truly arrived without deps (the rare non-auto-provisioned path);
-# otherwise the harness already provisioned it — running install again is pure overhead.
 [ -d node_modules/.pnpm ] || pnpm install --prefer-offline --ignore-scripts
 ```
 
-Just run the real command you need (`pnpm typecheck` / `pnpm lint:worktree` / `pnpm build`) — if it
-fails because deps are genuinely absent, *then* install with the line above, with `--ignore-scripts`
-(a worktree shares `.git/hooks`, so a bare install would regenerate the **shared** hooks — #1243).
+`--ignore-scripts` matters: a worktree shares `.git/hooks`, so a bare install would regenerate the
+**shared** hooks (#1243).
 
 **Never symlink the primary checkout's `node_modules` into your worktree.** It looks like a shortcut
 to skip the install, but it is **silently incorrect**: pnpm's virtual store holds *relative* links
@@ -305,9 +322,9 @@ locked at all** (`review-head materialize` runs `git worktree add --detach`, no 
 leaves the `review-head-idle` removal path able to take a **live reviewer's** tree with no lock
 protection whatsoever. Two live shipper worktrees were removed mid-run; **which** reaper and which
 signal state produced those two removals is not established. Presence rides the owner, per
-[ADR 0191](../.decisions/0191-crew-claim-lifecycle.md): `create-worktree.sh` stamps
+[ADR 0191](../.decisions/0191-crew-claim-lifecycle.md): the v1 `create-worktree.sh` stamped
 the owning `sessionId` into the tree's git admin dir (`<gitdir>/kampus-owner.json`, invisible to
-`git status`), and the sweep resolves it against the harness's live-session registry
+`git status`), and the sweep resolved it against the harness's live-session registry
 (`$CLAUDE_CONFIG_DIR`, else the agent tool's default config home → `sessions/<pid>.json`, one file
 per running session).
 **The three-state resolution is the safety property:** `alive` and `unknown` both KEEP, and only
@@ -315,14 +332,16 @@ per running session).
 could not execute leaks an orphan rather than destroying a live tree. A sweep that removes nothing
 and reports `registry UNRESOLVED` is the gate working, not a no-op.
 
-**The stamp has no live producer right now ([#4180](https://github.com/kamp-us/phoenix/issues/4180)).**
-The paragraph above describes the code contract, not the runtime: the harness provisions agent
-worktrees on its own internal path — every registered tree sits on a harness-made
-`worktree-<name>` branch, which `create-worktree.sh`'s `git worktree add --detach` never produces —
-so the `WorktreeCreate` hook does not run and no tree is stamped (272 registered, 0 stamped). Read
-"the sweep resolves the owner from the stamp" as what the code *would* do; in the field it resolves
-`owner-unknown` every time and KEEPs. Safe direction, but the sweep is effectively lock-only today,
-so `0 reapable` is partly an absence of evidence.
+**The stamp has no producer at all now, and no consumer either.** The paragraph above is history, not
+runtime. It was already inert when [#4180](https://github.com/kamp-us/phoenix/issues/4180) measured
+it — 272 trees registered, 0 stamped, because the harness's internal path leaves a
+`worktree-<name>` branch and the v1 hook never ran — and both halves have since been deleted:
+`create-worktree.sh` with the v1 plugin (ADR
+[0303](../.decisions/0303-retire-kampus-pipeline-plugin.md)) and `worktree-sweep`, its only reader,
+with `packages/pipeline-cli/`. The `WorktreeCreate` provider ADR
+[0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md) restores deliberately
+does **not** stamp: a record nothing reads is not worth writing. Read the owner-presence gate as the
+reasoning a future reaper should follow, not as a mechanism that runs.
 
 **Expect near-silence, and not only from legacy trees.** The stamp carries the **launcher's**
 session id, so a long-lived launcher makes every tree it provisioned read `alive` for the

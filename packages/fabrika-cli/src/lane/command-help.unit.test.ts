@@ -6,6 +6,7 @@
 import {describe, expect, it} from "vitest";
 import type {CommandNode} from "../unknown-subcommand.ts";
 import {laneCommand} from "./command.ts";
+import {PARK_CAUSE_TOKENS} from "./report.ts";
 
 /** A flag as this test reads it: a combinator chain over a `Single` carrying the help text. */
 interface FlagNode {
@@ -69,5 +70,21 @@ describe("the lane group's repository-root help contract (#5815)", () => {
 
 		expect(help).toContain("the owning repository's .fabrika/lanes");
 		expect(help).toContain("derived off the primary checkout");
+	});
+});
+
+describe("the closed park-cause set --cause advertises", () => {
+	// The listing is what an operator reads before parking, so a token missing from it is a token
+	// nobody names — and a `BLOCKED` carrying no cause is Novel forever (#6480, #7217).
+	it.each(PARK_CAUSE_TOKENS)("lane transition --cause offers %s", (token) => {
+		expect(flagHelp(leafNamed("transition"))).toContain(token);
+	});
+
+	it("offers campaign-paused beside the two tokens that predate it", () => {
+		expect([...PARK_CAUSE_TOKENS]).toEqual([
+			"campaign-paused",
+			"head-behind-base",
+			"worktree-holds-branch",
+		]);
 	});
 });

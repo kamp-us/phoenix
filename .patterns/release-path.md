@@ -14,7 +14,7 @@ Four surfaces, in the order a change flows through them:
 | Surface | Role |
 |---|---|
 | [`release-please-config.json`](../release-please-config.json) + [`.release-please-manifest.json`](../.release-please-manifest.json) | The package roots, their tag components, and each one's currently-released version. The manifest is release-please's memory of where it left off. |
-| [`.github/workflows/release-please.yml`](../.github/workflows/release-please.yml) | Runs on every push to `main`. Derives each package's next version from conventional commits and grooms one standing Release PR. Holds no registry credential and never publishes. |
+| [`.github/workflows/release-please.yml`](../.github/workflows/release-please.yml) | Runs on every push to `main`. Derives each package's next version from conventional commits and grooms one standing Release PR **per configured package**. Holds no registry credential and never publishes. |
 | [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) | Runs on `release: published`. Resolves the tag prefix to a workspace member, typechecks, builds `dist/`, and `pnpm publish`es under an OIDC credential. |
 | [`fabrika guard publish-isolation-guard`](../packages/fabrika-cli/src/guard/publish-isolation-verb.ts) | A PR gate that *machine-reads* `publish.yml` to derive which packages publish, then checks none of them links a private workspace member. |
 
@@ -117,7 +117,8 @@ pipeline-cli action on a fabrika-cli release.
 
 `release-please.yml`'s only condition keys on the per-path
 `<path>--release_created` outputs (`packages/fabrika-cli--release_created`,
-`packages/fabrika-opencode--release_created`) and reports from the `paths_released` JSON array.
+`packages/fabrika-pi--release_created`, `packages/fabrika-opencode--release_created`) and reports
+from the `paths_released` JSON array.
 `releases_created` appears nowhere in the file, deliberately. A later "simplification" back
 to the single output is the regression ADR 0239 §5 Hazard A names.
 
@@ -205,7 +206,7 @@ corrupted by it — no version is consumed, because nothing was published.
 
 ## Current state
 
-Two package roots are configured today (`fabrika-cli`, `fabrika-opencode`).
+Three package roots are configured today (`fabrika-cli`, `fabrika-pi`, `fabrika-opencode`).
 `pipeline-cli` was deleted from the repo with its release machinery (#6326) — its npm
 artifacts remain, so its history below stays recorded. Registrations that exist name this
 repo and this workflow file, but only some have ever been *exercised* by it, and those are
@@ -221,6 +222,13 @@ two different facts.
   for the package. `fabrika-cli@0.1.0` reached the registry through the bootstrap `pnpm publish`
   of step 4 above, not through this path (its artifact carries no attestations). Its **first**
   release run is the first use of that registration, and that run is the proof.
+- **`fabrika-pi` — wired, not yet bootstrapped
+  ([#7273](https://github.com/kamp-us/phoenix/issues/7273)).** The resolve arm, the release-please
+  root and manifest entry all exist; steps 4–5 do not. A human must run the bootstrap `pnpm publish`
+  of `0.1.0` from `packages/fabrika-pi`, then register the Trusted Publisher on npmjs.com. Until both
+  happen, a Release PR merge for the package creates a tag whose publish run 403s after install/build
+  pass — fail-closed, no version consumed. That the package ships to npm at all is ADR
+  [0332](../.decisions/0332-fabrika-pi-ships-as-npm-package.md).
 - **`fabrika-opencode` — wired, not yet bootstrapped (#6965).** The resolve arm, the
   release-please root and manifest entry all exist; steps 4–5 do not. A human must run the
   bootstrap `pnpm publish` of `0.1.0` from a checkout at the merge that introduced it, then
@@ -237,7 +245,27 @@ So expect no outcome in either direction for a first run. If it 403s, the path f
 nothing was published, **no version number is burned**, and re-running the release after fixing
 the registration recovers cleanly.
 
-Because `release-please-config.json` sets `separate-pull-requests: false`, one Release PR can
-carry several packages and its merge can create their tags together — one publish run per tag,
-some over registrations proven by exercise and some over registrations being used for the
-first time.
+Because `release-please-config.json` sets `separate-pull-requests: true`, each configured
+package gets its own Release PR and its merge creates that package's tag alone — so a first
+run over an unproven registration is isolated to one PR, and merging it can never carry a
+second package's tag along with it.
+
+That flag also fixes the head branch names: with it `true` the merge plugin never runs
+(`if (!this.separatePullRequests)` in the action's bundle), and every branch is
+`release-please--branches--main--components--<component>`. release-please no longer
+*produces* the aggregate `release-please--branches--main`. Anything that has to find a
+Release PR — the `#5946` body repair and the `#5718` checks kick both do — derives those
+names from the config rather than hardcoding one, because `gh pr list --head` answers empty
+for a branch nothing grooms and an empty answer is indistinguishable from "no release is
+due" (#7068).
+
+**The aggregate branch that already existed is not removed by the flip, and it must not be
+merged.** release-please matches an existing Release PR by head branch name, so once it
+stops computing the aggregate name it neither grooms nor acts on the branch — it is simply
+left behind, still open, still merge-armed, and no longer covered by either guard above. Its
+checks freeze at whatever they last read, which is stale-but-green reading exactly like
+ready: merging it cuts tags for every package off a frozen commit range, and npm versions
+are immutable (constraint 1), so that is not recoverable. **So if you find an open
+`chore: release main` on `release-please--branches--main`, leave it alone and take the
+release from the per-component PRs instead.** It is superseded, not stranded: release-please
+regenerates its content as the per-component Release PRs on the next push to `main`.

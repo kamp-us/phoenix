@@ -1,6 +1,7 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, fakeSeams, linkNext, type Scripted} from "../fakes.test-support.ts";
+import {errOut, fakeFs, fakeSeams, linkNext, okOut, type Scripted} from "../fakes.test-support.ts";
+import type {ExecResult} from "../io/exec.ts";
 import {ROADMAP_FILE} from "../triage/roadmap.ts";
 import {FAILED} from "../verb.ts";
 import {BAD_SECTIONS, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -13,6 +14,7 @@ import {
 	GH_TOKEN_ENV,
 	issue,
 	NO_BLOCKERS,
+	NOT_FOUND,
 	served,
 } from "./fixtures.test-support.ts";
 import {runPick} from "./pick-verb.ts";
@@ -410,6 +412,7 @@ describe("runPick — the blocked_by graph", () => {
 	const edges = (n: number) =>
 		new RegExp(`^GET \\S+/repos/o/r/issues/${n}/dependencies/blocked_by`);
 	const blocker = (n: number) => new RegExp(`^GET \\S+/repos/o/r/issues/${n}$`);
+	const parent = (n: number) => new RegExp(`^GET \\S+/repos/o/r/issues/${n}/parent$`);
 
 	it("excludes a candidate with an open blocker, with `blocked` as its named reason", async () => {
 		const out = await run([
@@ -418,6 +421,7 @@ describe("runPick — the blocked_by graph", () => {
 			[bucket("p2"), EMPTY],
 			[edges(500), blockedBy(210)],
 			[blocker(210), issue({number: 210, state: "open"})],
+			[parent(500), NOT_FOUND],
 		]);
 		expect(out.code).toBe(0);
 		expect(pool(out)).toEqual([]);
@@ -448,6 +452,108 @@ describe("runPick — the blocked_by graph", () => {
 		expect(pool(out)).toEqual([]);
 		expect(excluded(out)).toEqual({unreadable: 1});
 		expect(out.stderr.join("\n")).toContain("cannot read the blocked_by edges of #500");
+	});
+
+	/**
+	 * The pool used to answer the pre-discharge question while `build eligible` and `build claim`
+	 * answered the discharged one, so one edge got three answers and a buildable child read as
+	 * blocked to anyone browsing (#7223).
+	 */
+	describe("the assembly-branch discharge", () => {
+		const CHILD = 500;
+		const BLOCKER = 210;
+		const EPIC = 6767;
+		const ASSEMBLY = new RegExp(`^git rev-parse --verify --quiet epic/${EPIC}\\^\\{commit\\}$`);
+		const TRUNK = /^GET \S+\/repos\/o\/r$/;
+		const MERGE_BASE = /^git merge-base origin\/main [0-9a-f]{40}$/;
+		const ASSEMBLY_LOG = /^git log --format=.* [0-9a-f]{40}\.\.[0-9a-f]{40}$/;
+		const TIP = "9a1c2b3d4e5f60718293a4b5c6d7e8f901234567";
+		const BASE = "0123456789abcdef0123456789abcdef01234567";
+
+		/** The three reads that bound the assembly range — tip, trunk, merge base. */
+		const RANGE_ENDPOINTS: ReadonlyArray<Scripted> = [
+			[ASSEMBLY, okOut(`${TIP}\n`)],
+			[TRUNK, served({default_branch: "main"})],
+			[MERGE_BASE, okOut(`${BASE}\n`)],
+		];
+
+		const commitLog = (...messages: ReadonlyArray<string>): ExecResult =>
+			okOut(messages.map((message, i) => `${TIP.slice(0, 39)}${i}\x1f${message}\x1e`).join(""));
+
+		/** One p0 child with one open blocker on the board, and nothing in the other two buckets. */
+		const BOARD: ReadonlyArray<Scripted> = [
+			[bucket("p0"), candidatePage({number: CHILD, labels: [...TRIAGED, "p0"]})],
+			[bucket("p1"), EMPTY],
+			[bucket("p2"), EMPTY],
+			[edges(CHILD), blockedBy(BLOCKER)],
+			[blocker(BLOCKER), issue({number: BLOCKER, state: "open"})],
+		];
+
+		it("admits a child whose blocker's work landed on the parent epic's assembly branch", async () => {
+			const out = await run([
+				...BOARD,
+				[parent(CHILD), served({number: EPIC})],
+				...RANGE_ENDPOINTS,
+				[ASSEMBLY_LOG, commitLog(`feat(tracer): the first tracer (#${BLOCKER})`)],
+			]);
+			expect(out.code).toBe(0);
+			expect(pool(out).map((row) => row.number)).toEqual([CHILD]);
+			expect(excluded(out)).toEqual({});
+			expect(out.stderr.join("\n")).toContain(`adds a commit naming #${BLOCKER}`);
+		});
+
+		it("still excludes an open edge the branch does not carry — discharge only ever admits", async () => {
+			const out = await run([
+				...BOARD,
+				[parent(CHILD), served({number: EPIC})],
+				...RANGE_ENDPOINTS,
+				[ASSEMBLY_LOG, commitLog("chore(epic): assembly branch cut (#6768)")],
+			]);
+			expect(pool(out)).toEqual([]);
+			expect(excluded(out)).toEqual({blocked: 1});
+			expect(out.stderr.join("\n")).toContain(`#${CHILD} is blocked by #${BLOCKER}`);
+		});
+
+		it("keeps the board's state when the assembly branch cannot be read", async () => {
+			const out = await run([
+				...BOARD,
+				[parent(CHILD), served({number: EPIC})],
+				[ASSEMBLY, errOut(`fatal: ambiguous argument 'epic/${EPIC}'`)],
+			]);
+			expect(pool(out)).toEqual([]);
+			expect(excluded(out)).toEqual({blocked: 1});
+			expect(out.stderr.join("\n")).toContain(`cannot read epic/${EPIC} in this tree`);
+		});
+
+		it("leaves a parentless candidate exactly as the board read it — no branch is derivable", async () => {
+			const out = await run([...BOARD, [parent(CHILD), NOT_FOUND]]);
+			expect(pool(out)).toEqual([]);
+			expect(excluded(out)).toEqual({blocked: 1});
+			expect(out.stderr.join("\n")).not.toContain("assembly branch");
+		});
+
+		it("excludes a candidate whose parent could not be read — an unread parent is never an admission", async () => {
+			const out = await run([...BOARD, [parent(CHILD), GATEWAY]]);
+			expect(pool(out)).toEqual([]);
+			expect(excluded(out)).toEqual({unreadable: 1});
+			expect(out.stderr.join("\n")).toContain(`the parent of #${CHILD} could not be read`);
+		});
+
+		/** The cost fence: an all-clear pool pays for neither the parent resolve nor the branch read. */
+		it("resolves no parent and reads no branch for a pool whose candidates are all clear", async () => {
+			const seams = fakeSeams([
+				[bucket("p0"), candidatePage({number: CHILD, labels: [...TRIAGED, "p0"]})],
+				[bucket("p1"), EMPTY],
+				[bucket("p2"), EMPTY],
+				NO_BLOCKERS,
+			]);
+			const out = await Effect.runPromise(
+				Effect.provide(runPick(options), Layer.merge(seams.layer, NO_CAMPAIGNS.layer)),
+			);
+			expect(pool(out).map((row) => row.number)).toEqual([CHILD]);
+			expect(seams.requests.some((line) => parent(CHILD).test(line))).toBe(false);
+			expect(seams.calls.some((line) => /rev-parse/.test(line))).toBe(false);
+		});
 	});
 
 	/** The graph read is last because it is the only axis that costs a call — nothing else does. */

@@ -1,6 +1,6 @@
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts";
+import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {workflows} from "../ship/fixtures.test-support.ts";
 import {runCi} from "./ci-verb.ts";
@@ -45,6 +45,9 @@ const GATED: ReadonlyArray<Scripted> = [
 const options = {
 	pr: 4321,
 	sha: null as string | null,
+	wait: false,
+	budgetSeconds: 600,
+	cadenceSeconds: 30,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -396,5 +399,118 @@ describe("the no-producer split", () => {
 		const out = await run(empty, [[WORKFLOWS, BAD_GATEWAY]]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("whether a producer exists is UNKNOWN, never green");
+	});
+});
+
+/**
+ * The bounded wait of #7282: a `pending` is the ordinary state of a PR minutes after a push, and a
+ * caller that cannot wait for it has only a park on a human to offer for a condition that clears
+ * itself. The verb owns the loop so no skill ever sleeps (`docs/skill-conventions.md` §14).
+ */
+describe("the bounded --wait", () => {
+	const PENDING = runs(3, [
+		{name: "lint / format / typecheck", status: "completed", conclusion: "success"},
+		{name: "unit tests", status: "queued", conclusion: null},
+		{name: "leak-guard", status: "in_progress", conclusion: null},
+	]);
+
+	it("answers a pending head with this moment's read, and no settle token, without --wait", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[RUNS, PENDING],
+			],
+			GATED,
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n")[0]).toBe(`ci\t${HEAD}\tpending`);
+		expect(out.stdout).not.toContain("settle\t");
+	});
+
+	it("stays in the loop and settles on the head's own verdict once CI concludes", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[once(RUNS), PENDING],
+				[RUNS, GREEN],
+			],
+			GATED,
+			{wait: true, cadenceSeconds: 0},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tgreen`]);
+	});
+
+	/**
+	 * The whole point of the settle token: an exhausted bound must not read as a verdict. The rollup
+	 * beside it is still `pending`, so nothing about the head was proven — the wait ran out.
+	 */
+	it("exhausts the bound on a head that never concludes, still pending and never green", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[RUNS, PENDING],
+			],
+			GATED,
+			{wait: true, cadenceSeconds: 0, budgetSeconds: 0},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+			"settle\tbudget-exhausted",
+			`ci\t${HEAD}\tpending`,
+		]);
+		expect(out.stdout).not.toContain("green");
+	});
+
+	it("stops when the PR leaves the head this answer binds", async () => {
+		const out = await run(
+			[
+				[once(PULL), served(pull())],
+				[PULL, served(pull({head: OLD_HEAD}))],
+				[RUNS, PENDING],
+			],
+			GATED,
+			{wait: true, cadenceSeconds: 0},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+			"settle\thead-moved",
+			`ci\t${HEAD}\tpending`,
+		]);
+	});
+
+	/**
+	 * The `16` head has nothing coming — no gate of this repo ran at it — so a wait would answer
+	 * nothing. A cadence no test could sit through proves the refusal is taken on the first read.
+	 */
+	it("refuses an ungated head on 16 at once, without entering the loop", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[RUNS, PENDING],
+			],
+			[
+				[WORKFLOWS, served(inventory(CI_YML, CODEQL))],
+				[AT_HEAD, served(runsAtHead(CODEQL))],
+			],
+			{wait: true, cadenceSeconds: 86_400},
+		);
+		expect(out.code).toBe(NO_GATE_COVERAGE);
+		expect(out.stdout).toBe("");
+	});
+
+	it("returns no-producer at once — a caller must not wait for a run that will never start", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull())],
+				[RUNS, runs(0, [])],
+			],
+			[[WORKFLOWS, served(workflows())]],
+			{wait: true, cadenceSeconds: 86_400},
+			{[CONFIG]: '{"ci": {"noProducer": "degrade"}}'},
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe([`ci\t${HEAD}\tno-producer`, "run\t0", ""].join("\n"));
+		expect(out.stdout).not.toContain("settle\t");
 	});
 });

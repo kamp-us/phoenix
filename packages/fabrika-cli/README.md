@@ -201,6 +201,7 @@ Contract: [`skills/build/contract.md`](../../claude-plugins/fabrika/skills/build
 | `build claimants` | who holds an issue's claim, read by a caller holding none — no token, no write, no clearance |
 | `build issue` | the claimed issue's body and its criteria — `found` / `absent` / `malformed`, all on exit 0 |
 | `build branch` / `scratch` | the lane's branch off a fresh base, and its scratch directory |
+| `build resume-child` | an epic child's standing-`FAIL` repair lane, opened as one operation: claim, confirm, clean tree, resumed branch, armed proof |
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
 | `build check` | this surface's validators, run here with the build cache bypassed |
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
@@ -551,15 +552,25 @@ surface's convention lives in
 |---|---|
 | `hook check` | whether the envelope on stdin is one fabrika can act on |
 | `hook codes` | the exit taxonomy every verb in the group allocates from |
+| `hook worktree-create` | the absolute path of the provisioned worktree the envelope named |
 
 **Exit codes.** `3` stdin held nothing · `12` bytes arrived and are provably not an envelope ·
 `13` fd 0 could not be read · `14` a readable envelope arrived and is not the event this verb
 judges. Three failure codes rather than one, so an unread pipe cannot pass for a bad payload.
+`worktree-create` adds four proven refusals of its own: `15` the envelope names no creatable
+worktree · `16` the base could not be fetched · `17` `git worktree add` failed · `18` the tree was
+created and arrived dep-less.
 
-- **The required fields are captured, not assumed.** They are the keys present in both real
-  envelopes committed at `src/hook/__fixtures__/`, with their capture method and harness version
-  beside them (ADR 0180). The golden test runs the argv it reads out of the committed `hooks.json`,
-  so a green test cannot be exercising a verb the surface does not declare.
+- **The required fields are captured, not assumed.** They are the keys present in every real
+  envelope committed at `src/hook/__fixtures__/`, with each capture's method and harness version
+  beside it (ADR 0180). The golden test runs the argv it reads out of the committed declarations, so
+  a green test cannot be exercising a verb no surface declares.
+- **`hook worktree-create` is the one verb that writes.** It creates the `isolation: worktree` tree
+  and prints the path the harness adopts, so every failure arm refuses and a refusal blocks the
+  spawn — including the last one, which reds when `git worktree add` succeeded and
+  `node_modules/.pnpm` is still absent. It is declared in phoenix's own `.claude/settings.json` and
+  deliberately **not** in the plugin's `hooks.json`, because a plugin-declared provider preempts git
+  worktree creation in every adopting repo (ADR 0337).
 - **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
   `PreToolUse` — is retired, decision and declaration both (ADR
   [0331](../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human
@@ -605,7 +616,8 @@ outside the closed park-cause set · `36` the `UNBLOCKED` would restore a state 
 the `--class` is outside the review classes · `39` the cwd is not in a repository · `40` another
 writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
 branch · `42` the child conflicts and the merge was aborted · `43` the merged lockfile does not
-install, or the install changed a tracked file · `44` the merged tree failed a code validator.
+install, or the install changed a tracked file · `44` the merged tree failed a code validator · `45`
+the assembly worktree already held modified tracked files before the merge, so nothing was merged.
 
 To open a lane, copy a template in and speak the operator's six events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED`:
@@ -799,8 +811,13 @@ File one follow-up observation into the intake queue. Contract:
 **Exit codes.** The shared table this group defines, plus `27` the intake queue could not be read ·
 `28` the search index could not be read.
 
-Five behaviours are worth knowing:
+Six behaviours are worth knowing:
 
+- **`dedup` ranks against more tokens than it searches with.** Scoring gets sharper with every token
+  and GitHub's AND-joined search gets narrower, so ranking receives up to 12 and the search query
+  receives only the leading 4. Twelve AND-joined terms matched nothing on essentially every real
+  call, which made `none` a negative resting on one source. The stderr scope line and `--json`'s
+  `searchTokens` both name the narrower list whenever it differs.
 - **The body is a value, never a path.** The three writing verbs take it on **stdin only** — no
   `--body`, no `--body-file`. A flag that accepts a path turns the body into a string the verb
   could post verbatim. A shell redirect is fine: the *shell* reads the file.
@@ -829,11 +846,12 @@ back. Contract:
 | `review scope` | head SHA, linked issue, the code / doc / skill partition of the changed files, and the `self` / `harness` flags |
 | `review diff` | the diff bytes at the bound commit, with truncation refused rather than passed through |
 | `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format |
-| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration |
+| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved>` |
 | `review verdicts` | every verdict marker on the PR, each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
 | `review post` | the single sanctioned verdict emit — compose, bind, one comment per namespace, read back |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
+| `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13`
 the read completed and its scope is provably incomplete · `14` the invoking token is below `write`,
@@ -852,6 +870,11 @@ append-only fence. `4` is a deliberate gap.
 - **Every guard is demonstrated failing.**
   [`src/review/mutation.unit.test.ts`](./src/review/mutation.unit.test.ts) plants a counterexample
   per guard, breaks exactly that guard, and asserts the verb returns the specific wrong answer.
+- **`scratch`'s nonce is derived, not claimed.** This group ships no claim verb, so there is no
+  token to key on: the nonce is twelve hex of `sha256(--lane, --sha)` — `--lane` separating two
+  reviewers of one session, `--sha` separating two rounds of one lane. Both are required, and a
+  blank `--lane` refuses rather than degrading to the session-wide directory two reviewers share
+  (#7246).
 
 ## The `review-ui` group
 

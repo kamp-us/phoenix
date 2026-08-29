@@ -117,7 +117,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 |---|---|---|
 | [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (Effect-patched `tsc`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
 | [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, an absolute home path, a vault, or a sibling-repo path — or an operator email — in a changed doc or script. |
-| [`gitleaks`](./.github/workflows/gitleaks.yml) | The PR's new commits for committed secrets (API keys, tokens, private keys). | A credential committed anywhere in the diff. |
+| [`gitleaks`](./.github/workflows/gitleaks.yml) | The files this PR adds or edits, read at HEAD, for secrets (API keys, tokens, private keys) — the merge result, not the branch's commits (ADR 0338). | A credential standing in a changed file at HEAD. Removing it at head clears the gate; a secret added and reverted inside the PR is not caught. |
 | [`fanout-guard`](./.github/workflows/fanout-guard.yml) | Every `Fate.mutation` is classified fanned/not, and each fanned mutation's feature publishes the `/fate/live` invalidation (ADR 0155). | An unclassified mutation, or a fanned mutation whose feature omits the `WorkerLivePublisher` publish. |
 | [`readme-guard`](./.github/workflows/readme-guard.yml) | Every `packages/*` workspace member (a dir with `package.json`) carries a `README.md`. | Adding a package without a README. |
 | [`migrations-guard`](./.github/workflows/migrations-guard.yml) | The committed D1 migrations tree: the frozen flat `NNNN_*.sql` history plus the `<timestamp>_<name>/migration.sql` directories `drizzle-kit generate` writes — each directory carries its `snapshot.json` and one `.sql`, prefixes are unique and sort after the flat history, every migration has its row in the committed baseline, and a landed migration's SQL never changes — nor its apply id: renaming or deleting a landed file reds (ADR 0309 + its #7055 amendment). | Editing, renaming, or deleting a landed migration, hand-adding a flat one, landing a migration without its baseline row, or a directory that would apply ahead of history. |
@@ -198,36 +198,46 @@ the files it touched, so a commit written `fix(guards): …` whose diff only tou
 `packages/fabrika-cli/` bumps **fabrika-cli**. Your scope string is changelog prose; your diff
 is what decides. A commit touching no package root bumps nothing.
 
-### The standing Release PR
+### The standing Release PRs — one per package
 
-The answer is parked in one long-lived pull request — titled `chore: release main`, on the
-branch `release-please--branches--main`, opened by `github-actions[bot]` — that is re-groomed
-on every push to `main` and sits there until a human merges it. Merging it *is* the release
-act; ADR [0083](./.decisions/0083-agents-deploy-humans-release.md) survives by construction,
-since only the number is automated.
+Each package's answer is parked in its own long-lived pull request — titled
+`chore(main): release <component> <version>`, on the branch
+`release-please--branches--main--components--<component>`, opened by `github-actions[bot]` —
+re-groomed on every push to `main` and sitting there until a human merges it. Merging one
+*is* the release act; ADR [0083](./.decisions/0083-agents-deploy-humans-release.md) survives
+by construction, since only the number is automated.
 
-It covers **all** configured package roots at once (`separate-pull-requests: false`), so one
-merge can cut several releases the day a second root is configured again.
+Each covers **one** package root (`separate-pull-requests: true`), so merging one cuts that
+package's tag alone and never carries a sibling's release along with it. Packages ship at
+their own cadence.
+
+> **Do not merge an open `chore: release main`.** That is the retired aggregate PR on
+> `release-please--branches--main`, left over from when this repo bundled every package into
+> one release. release-please no longer produces or grooms that branch, so such a PR is
+> superseded: its commit range is frozen, its body is no longer repaired, and its checks are
+> stale-but-green — which reads exactly like ready. Merging it would cut tags for every
+> package off that frozen range, and npm versions are immutable, so that is not recoverable.
+> Leave it alone — release-please supersedes it with the per-component PRs above.
 
 **Before you merge one, check:**
 
-- **The commit range is what you expect.** Skim the PR's per-package changelog sections. An
+- **The commit range is what you expect.** Skim the PR's changelog section. An
   unexpectedly long list means the history boundary (`last-release-sha` /`bootstrap-sha` in
   [`release-please-config.json`](./release-please-config.json)) is wrong, and merging folds the
   whole backlog into one version.
-- **Each derived version is the one you want.** npm versions are **immutable**: a wrong number,
+- **The derived version is the one you want.** npm versions are **immutable**: a wrong number,
   or a release that fires before a rename or manifest fix has landed on `main`, is baked into
   the registry permanently and can only be superseded by a higher version. This is the one
   check with no undo.
 - **Everything the release depends on is already on `main`.** The publish job builds from the
   *tagged* tree, so anything merged after the tag is not in the tarball.
 
-### What merging it does
+### What merging one does
 
-1. Version bumps and per-package `CHANGELOG.md` updates land on `main`.
-2. A tag `<unscoped-name>-v<version>` (e.g. `fabrika-cli-v0.3.0`) is created **per released
-   package**, each with a GitHub Release.
-3. Each `release: published` event fires [`publish.yml`](./.github/workflows/publish.yml) —
+1. That package's version bump and its `CHANGELOG.md` update land on `main`.
+2. A tag `<unscoped-name>-v<version>` (e.g. `fabrika-cli-v0.3.0`) is created for **that one
+   package**, with a GitHub Release.
+3. The `release: published` event fires [`publish.yml`](./.github/workflows/publish.yml) —
    once per tag, resolving that tag's prefix to one workspace member. It checks out the tagged
    tree, installs, typechecks, builds `src/` → `dist/` (the tarball ships compiled JS, never raw
    `.ts`), then `pnpm publish`es under a short-lived OIDC credential. It is `pnpm publish`, not

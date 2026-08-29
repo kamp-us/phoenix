@@ -9,6 +9,7 @@
  * **Every leaf is declared with `leafCommand`, never a bare `Command.make`** — the bare form silently
  * opts out of the excess-operand guard, which `../excess-operand.unit.test.ts` reds on.
  */
+import {tmpdir} from "node:os";
 import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
@@ -22,6 +23,7 @@ import {runDeviations} from "./deviations-verb.ts";
 import {runDiff} from "./diff-verb.ts";
 import {runPost} from "./post-verb.ts";
 import {runScope} from "./scope-verb.ts";
+import {runScratch} from "./scratch-verb.ts";
 import {runVerdicts} from "./verdicts-verb.ts";
 
 /**
@@ -129,14 +131,30 @@ const ci = leafCommand(
 				"the head to enumerate check runs at (default: the PR's live head); give the inspected head so the answer binds to what is being judged",
 			),
 		),
+		wait: Flag.boolean("wait").pipe(
+			Flag.withDescription(
+				"poll a `pending` head until CI concludes or the budget expires, instead of answering with this moment's read",
+			),
+		),
+		budgetSeconds: Flag.integer("budget-seconds").pipe(
+			Flag.withDefault(600),
+			Flag.withDescription("--wait only: total wall-clock budget, gh-call latency included"),
+		),
+		cadenceSeconds: Flag.integer("cadence-seconds").pipe(
+			Flag.withDefault(30),
+			Flag.withDescription("--wait only: sleep between polls"),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, sha, repo, json}) {
+	Effect.fn(function* ({pr, sha, wait, budgetSeconds, cadenceSeconds, repo, json}) {
 		yield* emit(
 			yield* runCi({
 				pr,
 				sha: Option.getOrNull(sha),
+				wait,
+				budgetSeconds,
+				cadenceSeconds,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -145,9 +163,11 @@ const ci = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Roll up the live check runs at a head, fail-closed."),
+	Command.withShortDescription(
+		"Roll up a head's check runs, fail-closed; --wait waits out a pending.",
+	),
 	Command.withDescription(
-		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally under ADR 0308, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates ran: with at least one run from a workflow this repo authors, the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows — ADR 0092), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999), 16 (the enumeration is complete, but no workflow this repo authors produced a run at the head — no gate inspected these bytes, so the answer is neither green nor pending; #6522). Example: fabrika review ci 4321 --sha 03135b91',
+		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally under ADR 0308, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates ran: with at least one run from a workflow this repo authors, the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop so no caller ever sleeps (`docs/skill-conventions.md` §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`: every refusal and the `no-producer` answer are states no waiting changes, so they return on the first read rather than burning the budget. `budget-exhausted` still prints `pending` — the wait ran out, CI did not conclude, and it is never a verdict; `head-moved` says the PR left the head this answer binds. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows — ADR 0092), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999), 16 (the enumeration is complete, but no workflow this repo authors produced a run at the head — no gate inspected these bytes, so the answer is neither green nor pending; #6522). Example: fabrika review ci 4321 --sha 03135b91',
 	),
 );
 
@@ -300,6 +320,36 @@ const appendCriterion = leafCommand(
 	),
 );
 
+const scratch = leafCommand(
+	"scratch",
+	{
+		pr: Argument.integer("pr").pipe(
+			Argument.withDescription("the pull request this lane is reviewing"),
+		),
+		slug: Flag.string("slug").pipe(
+			Flag.withDescription("the file's leaf name: kebab-case, no path separators"),
+		),
+		lane: Flag.string("lane").pipe(
+			Flag.withDescription(
+				"the lane key from this reviewer's spawn brief — what tells two reviewers of ONE session apart",
+			),
+		),
+		sha: Flag.string("sha").pipe(
+			Flag.withDescription(
+				"the head `review scope` bound (7–40 hex) — what tells two review ROUNDS of one lane apart",
+			),
+		),
+	},
+	Effect.fn(function* ({pr, slug, lane, sha}) {
+		yield* emit(yield* runScratch({pr, slug, lane, sha, env: process.env, tmpRoot: tmpdir()}));
+	}),
+).pipe(
+	Command.withShortDescription("The per-lane scratch path a reviewer's staged files go under."),
+	Command.withDescription(
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>, one absolute path on stdout, the directory created if absent. The nonce is twelve hex of sha256(--lane, --sha), because this group ships no claim verb to take one from: --lane is what keys the namespace per LANE rather than per session, so two reviewers of one session cannot clobber each other's fixed-name files, and --sha is what keys it per ROUND, so round 2 cannot read round 1's staged diff under the same name. Both are required — a default for either returns a path shared with whatever that axis separates. The printed path is machine-local and must never reach a posted artifact; `review post` and `review append-criterion` red on it at 5. Exits 1 (the directory could not be created, --lane is blank, the positional is not a PR number, or no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment), 10 (--slug carries a path separator or is not kebab-case, or --sha is not a head SHA). Example: fabrika review scratch 4321 --slug diff --lane 4287 --sha 03135b91",
+	),
+);
+
 export const reviewCommand = Command.make("review").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
@@ -311,9 +361,10 @@ export const reviewCommand = Command.make("review").pipe(
 		deviations,
 		post,
 		appendCriterion,
+		scratch,
 	]),
 	Command.withShortDescription("Read what a text review needs off one pull request."),
 	Command.withDescription(
-		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
+		"Read everything a text review needs off one pull request — scope, diff, criteria, CI, verdicts, deviations — allocate the per-lane scratch path its staged reads go under, and emit the verdict or a reviewer-authored criterion through the one sanctioned write path",
 	),
 );

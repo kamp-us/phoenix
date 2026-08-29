@@ -64,7 +64,12 @@ const run = (
 			runOpen({number: 4300, token: TOKEN, repo: null, cwd: "/repo", env}),
 			Layer.mergeAll(shell.layer, fs.layer),
 		),
-	).then((outcome) => ({outcome, written: fs.written, calls: shell.calls}));
+	).then((outcome) => ({
+		outcome,
+		written: fs.written,
+		calls: shell.calls,
+		requests: shell.requests,
+	}));
 };
 
 describe("runOpen", () => {
@@ -252,5 +257,37 @@ describe("runOpen", () => {
 		const {candidates} = JSON.parse(outcome.stdout);
 		expect(candidates.outcome).toBe("candidates");
 		expect(candidates.items.map((item: {number: number}) => item.number)).toEqual([4180]);
+	});
+
+	/**
+	 * The two lists pull opposite ways (#7213): GitHub ANDs the search terms, so every extra one
+	 * narrows toward zero, while `scoreTitle` gets sharper with more. `report dedup` split them and
+	 * this verb was the second call site still sending one list to both — the guard is here so a
+	 * third does not drift back.
+	 */
+	it("sends only the SEARCH_TOKENS prefix to search while rank keeps the full list", async () => {
+		const {outcome, requests} = await run([
+			[EPIC_READ, epic({title: "moderation queue triage backlog dashboard rewrite"})],
+			...CLEAN.slice(1).filter(([pattern]) => pattern !== BACKLOG),
+			[BACKLOG, backlogPage([4180, "dashboard rewrite notes"])],
+		]);
+		const query = requests.find((line) => SEARCH.test(line)) ?? "";
+		expect(decodeURIComponent(query)).toContain("moderation queue triage backlog");
+		expect(decodeURIComponent(query)).not.toContain("dashboard");
+		const {candidates} = JSON.parse(outcome.stdout);
+		expect(candidates.items).toEqual([{number: 4180, title: "dashboard rewrite notes", score: 2}]);
+	});
+
+	it("names the tokens actually sent when the search list is shorter than the ranking list", async () => {
+		const {outcome} = await run([
+			[EPIC_READ, epic({title: "moderation queue triage backlog dashboard rewrite"})],
+			...CLEAN.slice(1),
+		]);
+		expect(outcome.stderr.at(-1)).toContain("sent to search: moderation, queue, triage, backlog");
+	});
+
+	it("says nothing about a narrowed send when the whole list went to search", async () => {
+		const {outcome} = await run(CLEAN);
+		expect(outcome.stderr.at(-1)).not.toContain("sent to search");
 	});
 });

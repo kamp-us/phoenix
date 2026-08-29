@@ -285,7 +285,7 @@ const readPriorBuild = (
 				outcome: refuse(
 					PRIOR_BUILD_MISMATCH,
 					failed.length > 0
-						? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build claim ${number} --resume" to take the repair lane instead, then "fabrika build branch ${number} --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.`
+						? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build resume-child ${number}" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in (#7187). Nothing was written.`
 						: `${CLAIM}: #${number} is already built and graded — ${graded}. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.`,
 					[...lines, ...notes],
 				),

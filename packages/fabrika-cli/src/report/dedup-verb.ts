@@ -8,6 +8,10 @@
  * The two halves are read for different reasons. The **label queue** is read-after-write consistent
  * and catches an issue filed seconds ago; the **search index** is eventually consistent — it lags
  * fresh issues but reaches older open issues that have already left the queue.
+ *
+ * The search half is sent a **narrower token list than ranking scores against** (#7213), so the
+ * stderr scope line and `--json` both carry `searchTokens` beside `tokens` whenever the two differ —
+ * a diagnostic naming a scope the run did not read is worse than none.
  */
 
 import {Effect} from "effect";
@@ -15,7 +19,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {listLabels, openIssuesWithLabel, resolveRepo, searchOpenIssues} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {NO_TARGET, QUEUE_UNREADABLE, SEARCH_UNREADABLE} from "./codes.ts";
-import {rank, renderCandidate, tokenize} from "./dedup.ts";
+import {rank, renderCandidate, searchTokens, tokenize} from "./dedup.ts";
 
 /**
  * `--label` does not exist in `--repo`, so the queue half has **no scope** — and a scope of zero
@@ -88,6 +92,9 @@ export const runDedup = (
 							candidates: [],
 							reason: result.reason,
 							tokens,
+							// Neither source was read, so nothing reached the search query — not the
+							// slice this query would have produced.
+							searchTokens: [],
 							truncated: false,
 							queueCount: 0,
 							searchCount: 0,
@@ -97,8 +104,9 @@ export const runDedup = (
 				: answer(result.outcome, diagnostics);
 		}
 
+		const sent = searchTokens(tokens);
 		const queue = yield* openIssuesWithLabel(repo, label);
-		const search = yield* searchOpenIssues(repo, tokens);
+		const search = yield* searchOpenIssues(repo, sent);
 
 		// The queue is the load-bearing half — it is the one that catches an issue filed seconds ago —
 		// so when both fail its code is the one reported, and the reason names both failures so
@@ -120,7 +128,8 @@ export const runDedup = (
 
 		const result = rank({tokens, queue: queue.value, search: search.value, limit, label, exclude});
 		const excluded = exclude === null ? "" : `; #${exclude} excluded from both sources`;
-		const scope = `report dedup: ${repo}, ${queue.value.length} open issue(s) in the ${label} queue, ${search.value.length} search hit(s)${excluded}; tokens: ${tokens.join(", ")}${result.truncated ? `; list TRUNCATED to --limit ${limit}` : ""}.`;
+		const narrowed = sent.length === tokens.length ? "" : `; sent to search: ${sent.join(", ")}`;
+		const scope = `report dedup: ${repo}, ${queue.value.length} open issue(s) in the ${label} queue, ${search.value.length} search hit(s)${excluded}; tokens: ${tokens.join(", ")}${narrowed}${result.truncated ? `; list TRUNCATED to --limit ${limit}` : ""}.`;
 		const diagnostics =
 			result.reason === null ? [scope] : [scope, `report dedup: ${result.reason}.`];
 
@@ -131,6 +140,7 @@ export const runDedup = (
 					candidates: result.candidates,
 					reason: result.reason,
 					tokens,
+					searchTokens: sent,
 					truncated: result.truncated,
 					queueCount: queue.value.length,
 					searchCount: search.value.length,

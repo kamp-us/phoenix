@@ -22,16 +22,19 @@ import {
 } from "./codes.ts";
 import {
 	branchList,
+	campaignsTable,
 	closingPulls,
 	httpError,
 	LANE,
 	LANE_BRANCH,
+	LANE_MILESTONE,
 	LANES_ROOT,
 	LOG,
 	laneTemplate,
 	nominatedPulls,
 	PARKED_AT_CP,
 	PARKED_BLOCKED,
+	PARKED_ON_CAMPAIGN,
 	PARKED_ON_WORKTREE,
 	parkedBlockedOn,
 	WORKFLOW,
@@ -56,6 +59,14 @@ const STATUS = /^git -C \S+ status --porcelain$/;
 const SELF = /^git rev-parse --path-format=absolute/;
 const LANE_ISSUE = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}$`);
 const LANE_COMMENTS = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}/comments`);
+const REMOTES = /^git remote$/;
+const FETCH = /^git fetch --quiet origin main$/;
+const RESOLVE = /^git rev-parse --verify/;
+const SHOW = /^git show \S+:ROADMAP\.md$/;
+
+/** The checkout the clearance reads `.fabrika.jsonc` off — unconfigured, so `ROADMAP.md` is default. */
+const CWD = "/repo";
+const TRUNK_SHA = "0123456789abcdef0123456789abcdef01234567";
 
 /** What `build retire` reads the park's number as — an open issue, so only a closed one licenses. */
 const openIssue = {
@@ -139,7 +150,7 @@ const run = (
 ) =>
 	Effect.runPromise(
 		Effect.provide(
-			runUnpark({root: LANES_ROOT, lane: LANE, task, repo: null, env: ENV}),
+			runUnpark({root: LANES_ROOT, lane: LANE, task, repo: null, cwd: CWD, env: ENV}),
 			// The nominator's body-search half is tailed, so a test scripting its own wins the lookup.
 			// Empty by default: the union then answers off the closing edge, as these tests always did.
 			Layer.merge(fs.layer, fakeSeams([...script, ...http, NO_NOMINATIONS]).layer),
@@ -288,6 +299,130 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 	});
 });
 
+describe("recipe unpark — a campaign-paused park clears on the row it parked on (#7217)", () => {
+	/** The lane's issue as the clearance reads it: homed on the milestone a campaign row pins. */
+	const homed = (milestone: number | null): ReadonlyArray<Scripted> => [
+		[
+			LANE_ISSUE,
+			{
+				status: 200,
+				body: JSON.stringify({
+					...openIssue,
+					milestone: milestone === null ? null : {number: milestone},
+				}),
+			},
+		],
+	];
+
+	/** The trunk read: fetch the base, resolve it, show `ROADMAP.md` as of that commit. */
+	const trunkRoadmap = (text: string): ReadonlyArray<Scripted> => [
+		[REMOTES, okOut("origin")],
+		[FETCH, okOut("")],
+		[RESOLVE, okOut(TRUNK_SHA)],
+		[SHOW, okOut(text)],
+	];
+
+	const campaign = (state: string): ReadonlyArray<Scripted> =>
+		trunkRoadmap(campaignsTable({name: "Epic lanes", milestone: LANE_MILESTONE, state}));
+
+	it("clears once the lane's campaign reads active again", async () => {
+		const fs = lane(PARKED_ON_CAMPAIGN);
+
+		const out = await run(fs, campaign("active"), homed(LANE_MILESTONE));
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "campaign-active",
+			mechanism: `campaign-active:#${LANE_MILESTONE}`,
+			current: "build",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("is PARK_HOLDS while the row still reads paused, naming the state it read", async () => {
+		const fs = lane(PARKED_ON_CAMPAIGN);
+
+		const out = await run(fs, campaign("paused"), homed(LANE_MILESTONE));
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads paused/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	// `done` is not `active` either, and the recipe may not read a retired campaign as a resumed one.
+	it("is PARK_HOLDS on a done campaign — only active clears", async () => {
+		const fs = lane(PARKED_ON_CAMPAIGN);
+
+		const out = await run(fs, campaign("done"), homed(LANE_MILESTONE));
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/reads done/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when ROADMAP.md cannot be read at the trunk — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_CAMPAIGN);
+
+		const out = await run(
+			fs,
+			[
+				[REMOTES, okOut("origin")],
+				[FETCH, okOut("")],
+				[RESOLVE, okOut(TRUNK_SHA)],
+				[SHOW, errOut("fatal: path 'ROADMAP.md' does not exist")],
+			],
+			homed(LANE_MILESTONE),
+		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toMatch(/cannot read ROADMAP\.md at origin\/main/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the ## Campaigns table will not parse — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_CAMPAIGN);
+
+		const out = await run(
+			fs,
+			trunkRoadmap(
+				["## Campaigns", "", "| Campaign | Milestone | State |", "|---|---|---|", "| Epic lanes |"]
+					.join("\n")
+					.concat("\n"),
+			),
+			homed(LANE_MILESTONE),
+		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toMatch(/cannot read the ## Campaigns table/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is TARGET_ABSENT when the lane's issue is homed on no milestone", async () => {
+		const fs = lane(PARKED_ON_CAMPAIGN);
+
+		const out = await run(fs, campaign("active"), homed(null));
+
+		expect(out.code).toBe(TARGET_ABSENT);
+		expect(out.stderr.join("\n")).toMatch(/homed on no milestone/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is TARGET_ABSENT when no campaign row pins the lane's milestone", async () => {
+		const fs = lane(PARKED_ON_CAMPAIGN);
+
+		const out = await run(
+			fs,
+			trunkRoadmap(campaignsTable({name: "Some other campaign", milestone: 51, state: "active"})),
+			homed(LANE_MILESTONE),
+		);
+
+		expect(out.code).toBe(TARGET_ABSENT);
+		expect(out.stderr.join("\n")).toMatch(new RegExp(`pins milestone #${LANE_MILESTONE}`));
+		expect(fs.written.size).toBe(0);
+	});
+});
+
 describe("recipe unpark — the refusals write nothing", () => {
 	it("is PARK_NOVEL on a bare BLOCKED park, with the log byte-identical", async () => {
 		const fs = lane(PARKED_BLOCKED);
@@ -404,7 +539,7 @@ describe("recipe unpark — the refusals write nothing", () => {
 
 		const out = await Effect.runPromise(
 			Effect.provide(
-				runUnpark({root, lane: "nightly", task: null, repo: null, env: ENV}),
+				runUnpark({root, lane: "nightly", task: null, repo: null, cwd: CWD, env: ENV}),
 				Layer.merge(fs.layer, fakeSeams([...DISCHARGED, ...DISCHARGED_HTTP]).layer),
 			),
 		);

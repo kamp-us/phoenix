@@ -59,6 +59,39 @@ export const ENVELOPE_UNKNOWN = 13;
  */
 export const WRONG_EVENT = 14;
 
+/**
+ * A readable `WorktreeCreate` envelope arrived and no worktree can be planned from it — an absent or
+ * relative `cwd`, an absent `name`, or a `name` that is not a plain slug.
+ *
+ * Apart from {@link MALFORMED_ENVELOPE} because the envelope is well-formed: every field
+ * `../hook/envelope.ts` requires is present, and it is the *per-event* half this verb needs that is
+ * unusable. Collapsing them would report a harness sending garbage when it sent a fine envelope.
+ */
+export const UNPLANNABLE_WORKTREE = 15;
+
+/**
+ * The pre-branch `git fetch` failed, so the base is possibly stale and nothing was created.
+ *
+ * Its own seat because it is the one refusal that protects a *correctness* property rather than the
+ * provisioning: branching a lane off a cached tip silently bases it on state missing a sibling's
+ * just-merged commit, and the two collide only at ship time (#3620/#3678).
+ */
+export const BASE_FETCH_FAILED = 16;
+
+/** `git worktree add` failed. The tree does not exist, so no path may be emitted (ADR 0092). */
+export const WORKTREE_ADD_FAILED = 17;
+
+/**
+ * The tree was created and its deps were **not** provisioned — `node_modules/.pnpm` is absent after
+ * `git worktree add` returned.
+ *
+ * The whole point of the hook is that this state never reaches an agent, so it is a refusal and not
+ * a warning: `bootstrap-deps` clean-SKIPs at exit 0 when it finds no toolchain (ADR 0109 §3), which
+ * makes a successful `git worktree add` byte-identical to a provisioned one. Checking the artifact
+ * is the only way to tell them apart.
+ */
+export const DEPS_NOT_PROVISIONED = 18;
+
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
 
@@ -79,6 +112,10 @@ export const HOOK_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	},
 	{code: ENVELOPE_UNKNOWN, meaning: "fd 0 could not be read — UNKNOWN, never malformed"},
 	{code: WRONG_EVENT, meaning: "the envelope is a harness event this verb does not judge"},
+	{code: UNPLANNABLE_WORKTREE, meaning: "the envelope names no worktree this verb can create"},
+	{code: BASE_FETCH_FAILED, meaning: "the base ref could not be fetched — the base would be stale"},
+	{code: WORKTREE_ADD_FAILED, meaning: "`git worktree add` failed — no worktree exists"},
+	{code: DEPS_NOT_PROVISIONED, meaning: "the worktree was created and its deps were not installed"},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
 ];

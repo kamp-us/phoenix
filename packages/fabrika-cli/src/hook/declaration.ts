@@ -1,5 +1,11 @@
 /**
- * Read `claude-plugins/fabrika/hooks.json` and judge it against the two rules that fix the surface.
+ * Read a hook declaration and judge it against the two rules that fix the surface.
+ *
+ * Two documents declare fabrika hooks and both are read here, because rule 5 binds a declared
+ * command wherever it is written: `claude-plugins/fabrika/hooks.json` is the **plugin** surface,
+ * which travels to every adopting repo, and phoenix's own `.claude/settings.json` carries the one
+ * event the plugin surface may not (ADR 0337). They share this shape exactly, so one reader serves
+ * both — what differs is which events each may declare, which the golden test asserts per document.
  *
  * This exists so the declaration is checked as *data* rather than by a reviewer's eye. The rules are
  * not restated here — they are cli-interface-convention rule 5 (a plain literal command string, and

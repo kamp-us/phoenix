@@ -63,3 +63,22 @@ The remaining pipeline-cli verbs whose only callers were v1 scripts (e.g. `drive
 `worktree-sweep`'s hook path) are left registered; sweeping them is separate follow-up work.
 ADRs and dated reports keep their references to the deleted tree as history — `.decisions/` is
 the why + history surface, and history does not get rewritten when its subject dies.
+
+## Amendment (2026-08-28, #7220) — one deleted hook was load-bearing, and its absence went unnoticed
+
+The deletion above is unchanged and still right. What it did not weigh is that **one** of the ten
+retired hooks was not a v1 convenience: `create-worktree.sh` was ADR
+[0178](0178-worktreecreate-hook-provisioning.md)'s `WorktreeCreate` provider, the thing that gave a
+worktree's `pnpm install` a 600s budget so ADR
+[0109](0109-worktree-deps-provision-not-share.md)'s `post-checkout` install could actually run.
+
+Deleting it did not fall back to something else. The harness's own worktree path execs git hooks with
+a stripped `PATH`, so `bootstrap-deps` clean-SKIPs at exit 0 (0109 §3) — silently. So from this
+deletion until #7220, **every `isolation: worktree` shell arrived without `node_modules`**, and the
+only signal was each shell paying an install or failing on its first verb.
+
+The "Hooks" bullet reads as a clean removal of v1 apparatus. For nine of the ten it was. For this one
+the entry it should have carried is: *this hook has a live consumer, and nothing replaces it.* ADR
+[0337](0337-worktree-provisioning-rehomed-onto-repo-settings.md) rehomes the mechanism onto a fabrika
+verb declared in this repo's own `.claude/settings.json`, and records why the plugin's `hooks.json` is
+the one surface it may **not** live on.

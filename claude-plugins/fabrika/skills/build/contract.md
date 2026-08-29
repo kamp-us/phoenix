@@ -66,7 +66,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | Verb | Purpose | Split test |
 |---|---|---|
 | `build tree` | prove the ground: optionally clean, optionally this lane's | two git-derivable assertions — no judgment; *what to do on a refusal* (stop, report) stays in the skill |
-| `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing — no judgment; the *choice* among candidates stays in the skill |
+| `build pick` | the ranked candidate pool: `status:triaged` + `ready-for:agent` + unassigned, paginated | a label/assignee filter over a paged listing, plus the same `blocked_by` gate `build claim` runs — no judgment; the *choice* among candidates stays in the skill |
 | `build eligible` | one issue's dependency gate: `eligible` / blocked-by-named-edge / UNKNOWN | derivable entirely from the issue's native `blocked_by` edges, those blockers' states, and the commits `epic/<parent>` adds over the trunk in this tree |
 | `build claim` | race the earliest-authorized claim on an issue; win, or name the winner | a deterministic race protocol; *what to do on a loss* stays in the skill |
 | `build confirm` | re-prove this LANE still holds the claim before a mutation | a lookup with a defined answer |
@@ -75,6 +75,7 @@ second answer to a gated question can contradict the gate (interface convention 
 | `build claimants` | who holds the claim on one issue, asked by a caller holding no token | the same ownership fold `confirm` runs, reported instead of tested against a caller; *what to do about a stranded claim* stays with the driver |
 | `build issue` | the claimed issue's body + parsed acceptance criteria, through the content gate | fetch + parse via the wire module; *judging* the criteria stays in the skill |
 | `build branch` | cut (or resume) the lane's nonce branch off a freshly fetched base | fetch, derive, create — the nonce is a function of the claim token |
+| `build resume-child` | open an epic child's standing-`FAIL` repair lane: claim, confirm, clean tree, resume the branch, prove the armed lane — in that order | a fixed sequence of five verbs whose order is derivable from what each one needs; every refusal is the composed verb's own, and *fixing the FAIL* stays in the skill |
 | `build scratch` | the per-lane scratch path, allocated fail-closed | deterministic path derivation keyed session + issue + claim nonce |
 | `build commit` | create this lane's commit from an authored message, and prove the commit carries it | a prescribed carrying path, a claim test over the numbers named, and a read-back — no judgment; *authoring* the message stays in the skill |
 | `build check` | run this surface's validators in this tree, cache-bypassed; green/red/unknown | command execution + tree-binding assertions; *fixing red* stays in the skill |
@@ -548,15 +549,28 @@ The filter, fail-closed on every axis:
   `plan` or `gate` claim targets an epic, whose criteria arrive per child from the plan ledger
   ([#6025](https://github.com/kamp-us/phoenix/issues/6025)), and a repair claim names a PR whose
   branch cannot repair an issue body. The matching refusal at the stamp is `triage apply`'s `16`.
-- **no open `blocked_by` edge**, read off GitHub's native graph and nothing else (ADR 0301) through
-  the same `packages/fabrika-cli/src/build/blockedness.ts` reader `build eligible` uses. A candidate
-  with any blocker still open is excluded with reason `blocked`, and one whose edge list could not
-  be read is excluded with reason `unreadable` and the failure named on stderr — a candidate whose
-  blockedness is UNKNOWN is never offered. This axis runs **last**, because it is the only one that
-  costs a network call: the admission test and the criteria block are both answered off facts the
-  listing already returned, so a candidate they exclude is never paid for here. It replaces the
-  retired `status:blocked` label, which this filter only ever dropped as a side effect of the
-  one-`status:`-label rule above, printing no reason at all.
+- **no open, undischarged `blocked_by` edge**, read off GitHub's native graph and nothing else (ADR
+  0301) through the same `packages/fabrika-cli/src/build/discharge.ts` gate `build claim` uses, over
+  the same `blockedness.ts` reader `build eligible` reads. A candidate with any blocker still open
+  and not carried by the parent epic's assembly branch is excluded with reason `blocked`, and one
+  whose edge list — or whose parent — could not be read is excluded with reason `unreadable` and the
+  failure named on stderr; a candidate whose blockedness is UNKNOWN is never offered. This axis runs
+  **last**, because it is the only one that costs a network call: the admission test and the criteria
+  block are both answered off facts the listing already returned, so a candidate they exclude is
+  never paid for here — and the discharge inside is lazier still, resolving no parent and reading no
+  branch for a candidate the graph already reads clear. It replaces the retired `status:blocked`
+  label, which this filter only ever dropped as a side effect of the one-`status:`-label rule above,
+  printing no reason at all.
+
+  **The pool answers the same discharge question the claim seam does** ([#7223](https://github.com/kamp-us/phoenix/issues/7223)).
+  It used to read the pre-discharge gate, so one edge got three answers: `build eligible` said
+  eligible, `build claim` admitted, and the pool counted the child `blocked`. What that cost was a
+  wrong pool — a buildable epic child reading as unavailable to anyone, human or driver, browsing for
+  work. The derivation is shared rather than copied, so the three cannot drift apart again. Discharge
+  moves an answer only toward admitting: an unreadable assembly branch, an unnameable trunk and a
+  parentless candidate each leave every edge exactly as the board read it and still exclude. What
+  the branch read added is named on stderr, so an admission on discharge evidence is auditable rather
+  than merely plausible.
 - open, and not a pull request.
 
 **Every bucket read paginates, and a failed bucket read fails the verb.** v1's candidate pool
@@ -585,7 +599,8 @@ verdict — the pool still answers on `0`. Those two codes are the claim seam's.
 | `build pick: --limit "<value>" is not a positive integer.` | 1 | usage error |
 
 **Scope** — every open issue in `--repo` carrying `status:triaged`, read via paginated REST, judged
-against the active campaigns. The scope line on stderr names the per-bucket counts scanned **and the
+against the active campaigns; plus, for each candidate the graph reads blocked, that issue's parent
+and the commits `epic/<parent>` adds over the trunk in this tree. The scope line on stderr names the per-bucket counts scanned **and the
 table's state** — `campaigns: 1 active — fabrika fast follows (#46)`, `campaigns: 2 active — fabrika fast follows (#46), fabrika everywhere (#47)`, or `campaigns: none active — scope fence inert` —
 so an empty pool is auditable and a fence that is off is visible as off rather than inferred.
 
@@ -604,6 +619,17 @@ fence is inert, and both the answer and the scope line say so — the same #4290
 $ fabrika build pick
 build pick: scanned p0=0 p1=3 p2=41 · campaigns: none active — scope fence inert
 {"pool":[{"number":4290,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":{},"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"none"}}
+```
+
+An epic child whose blocker is still open on the board but whose work already landed on the run's
+assembly branch is in the pool, and the branch read that put it there is on stderr:
+
+```
+$ fabrika build pick
+build pick: scanned p0 0, p1 1, p2 0 in kamp-us/phoenix; 1 candidate(s) survived the filter, 0 excluded — 0 by the admission test, 0 for no acceptance-criteria block, 0 on the blocked_by graph.
+build pick: campaigns: 1 active — Epic lanes (#49).
+build pick: origin/main..epic/6767 adds a commit naming #7029 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).
+{"pool":[{"number":7030,"title":"The second tracer","priority":"p1","type":"chore","home":"49"}],"excluded":{},"scanned":{"p0":0,"p1":1,"p2":0},"campaigns":{"state":"active","milestones":["49"]}}
 ```
 
 ```
@@ -1052,7 +1078,9 @@ verdicts, whose fresh claim the gate has already refused, so both doors are shut
 being an open PR and never typed (founder ruling on #5866, #5914); the objection there was that a
 typed mode is passable in a state where it means nothing, and a child has no PR to derive from — so
 the word is admitted here exactly because the seam checks the fact it asserts. The route it opens is
-`build branch --resume-lane`.
+`build resume-child`, which passes `--resume` here itself and carries the lane on to
+`build branch --resume-lane` — the refusal names that entry rather than the pieces, because naming
+the pieces is what handed a builder an ordering decision it then got wrong (#7187).
 
 **Errors**
 
@@ -1079,7 +1107,7 @@ the word is admitted here exactly because the seam checks the fact it asserts. T
 | `build claim: --purpose "<value>" is not one of plan \| gate \| build — an unrecognised purpose refuses, and never falls back to build.` | 10 | usage error |
 | `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n> --token <minted token>" before any further action.` — preceded by `build claim: the token this run minted is <minted token> — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim <n>": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
-| `build claim: #<n> already carries a build a reviewer failed — <gate> <polarity> over <base>..<tip> (comment <id>); …. A fresh build would re-implement it; run "fabrika build claim <n> --resume" to take the repair lane instead, then "fabrika build branch <n> --resume-lane --token <token>" to stand on the branch that build left. Nothing was written.` — every standing verdict is named, `PASS` ones included, whenever at least one is a `FAIL` | 31 | refusal |
+| `build claim: #<n> already carries a build a reviewer failed — <gate> <polarity> over <base>..<tip> (comment <id>); …. A fresh build would re-implement it; run "fabrika build resume-child <n>" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in (#7187). Nothing was written.` — every standing verdict is named, `PASS` ones included, whenever at least one is a `FAIL` | 31 | refusal |
 | `build claim: #<n> is already built and graded — <gate> PASS over <base>..<tip> (comment <id>); …. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.` — when every standing verdict is a `PASS` | 31 | refusal |
 | `build claim: --resume says #<n> holds a build to repair, and no gate holds a standing FAIL over it — drop --resume and claim it as the fresh build it is. Nothing was written.` | 31 | refusal |
 | `build claim: cannot read the comments on #<n>: <reason> — whether it already carries a graded build is UNKNOWN, never "no"; nothing was written.` | 11 | refusal |
@@ -1507,6 +1535,122 @@ $ echo $?
 - #4500 — eight trees, one stamp: identity via per-claim nonce makes duplicate lanes
   unconstructible instead of detected.
 - 2026-08-03 amendment on #4707 — no stamp files; ownership is derivable from git.
+
+---
+
+## `build resume-child`
+
+**Invocation**
+
+```
+fabrika build resume-child 7162 [--token <token>]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<number>` | positional integer | yes | — | the epic child whose standing-`FAIL` repair lane this opens |
+| `--token` | string | no | — | the repair claim this lane already holds, when it is re-running; the claim step then answers off the standing marker and writes nothing. Omitting it on a re-run over a held claim is not a shorter spelling of the same run: the claim step mints a second marker, loses the earliest-wins tiebreak to this lane's own prior claim and refuses on `15` |
+
+**Output** — machine. One JSON object:
+
+```json
+{"answer":"resumed","issue":7162,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/7162-tuval-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":7162,"nonce":"c1a4d6f8"}}
+```
+
+`token` is the winning repair claim every later verb of the lane takes as `--token`; `branch` is the
+branch this run left checked out, and its trailing nonce is `claim.nonce` by construction.
+
+**The five steps, in the one order that works.** An epic child's repair opens on facts that must be
+established in sequence, and each step needs what the one before it produced:
+
+1. `build claim <n> --resume` — the repair claim. `--resume` is checked against the child's own
+   range-scoped verdicts, so a child holding no standing `FAIL` refuses on `31` here, before any
+   marker is written.
+2. `build confirm <n> --token <won>` — the claim re-proved, before any mutation.
+3. `build tree --require-clean` — **unarmed**. No lane branch is checked out yet, so there is no lane
+   identity to prove; this asserts only that the generic isolated checkout carries no unauthored hunk.
+4. `build branch <n> --resume-lane --token <won>` — the one mutation. It re-keys the single prior
+   `build/<n>-<slug>-<old-nonce>` branch to this claim's nonce and checks it out, under
+   `build branch`'s own worktree-safety proof.
+5. `build tree --issue <n>` — **armed**. Now that a lane branch is checked out, the issue number, the
+   claim nonce and live claim ownership are proven together.
+
+**Why it is one verb.** Steps 3 and 5 are the same verb under different postures, and running the
+armed one first refuses the generic checkout on `14` — which is exactly what a resumed builder did on
+#7162, parking epic #7140 without changing a file, while reading a `SKILL.md` that stated the correct
+order (#7187). A documented order is a claim about what an agent will do; this is a claim about what
+the tool does.
+
+**It sequences and derives nothing.** Every step is the same `run*` function the CLI leaf calls, so a
+refusal keeps its own exit code, its own words and its own fail-closed reading. This verb adds one
+stderr line naming the step that stopped, and — once a claim has landed — one line spelling out both
+ways forward from a held claim, each with the won token already in it: the `--token` re-run that
+continues the lane, and the `build release` that retracts it. No step after a refusal runs, so the
+branch is re-keyed only once the claim and cleanliness steps have passed.
+
+**Exit status** — the stopping step's, never a code of this verb's own.
+
+| Code | Trigger |
+|---|---|
+| `7` | the child is proven absent or closed, or no branch in this clone's refs was cut for it |
+| `10` | a composed usage refusal |
+| `11` | a read is UNKNOWN, several prior branches name the child, another worktree still holds the branch, or a composed verb answered outside its documented shape |
+| `13` | the generic checkout is dirty at step 3 |
+| `14` | the armed proof reads the wrong lane — including a tree still on a generic harness branch |
+| `15` | the claim is foreign |
+| `20` / `21` / `30` / `32` | the admission test, at the claim step |
+| `31` | the child holds no standing `FAIL`, so there is nothing to repair |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `build resume-child: stopped at the <step> step on exit <code>; the steps after it did not run.` | the step's | context line, above the stopping verb's own reason |
+| `build resume-child: the repair claim on #<n> stands — continue it with "fabrika build resume-child <n> --token <token>", or retract it with "fabrika build release <n> --token <token>". A re-run without --token mints a second claim and refuses on 15.` | the step's | context line, on any stop past the claim |
+| `build resume-child: "build claim <n> --resume" answered without a readable token — which lane holds the repair is UNKNOWN, so nothing was checked out. …` | 11 | refusal |
+| `build resume-child: "build tree --issue <n>" answered without a readable proof — <branch> is checked out and whether it carries this claim's identity is UNKNOWN. …` | 11 | refusal |
+
+**Scope** — not a judging verb, and not a router: it runs a fixed sequence and stops at the first
+refusal. It opens no PR — an epic child has none (ADR 0285) — and it reads no verdict rows;
+`build verdicts --issue <n>` is the read that hands the lane its findings, after this returns.
+
+**Examples**
+
+```
+$ fabrika build resume-child 7162
+{"answer":"resumed","issue":7162,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/7162-tuval-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":7162,"nonce":"c1a4d6f8"}}
+```
+
+```
+$ fabrika build resume-child 7162
+build resume-child: stopped at the clean-tree step on exit 13; the steps after it did not run.
+build resume-child: the repair claim on #7162 stands — continue it with "fabrika build resume-child 7162 --token build:s-9f2e:c1a4d6f8-…", or retract it with "fabrika build release 7162 --token build:s-9f2e:c1a4d6f8-…". A re-run without --token mints a second claim and refuses on 15.
+build tree: 2 uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.
+$ echo $?
+13
+```
+
+The continuation that stop line names, after the tree was cleaned. The claim step answers off the
+standing marker and writes nothing, and the run goes on to the branch it stopped short of:
+
+```
+$ fabrika build resume-child 7162 --token build:s-9f2e:c1a4d6f8-…
+build claim: #7162 is already held by this lane (comment 5460495961) — answered with the marker that owns it; nothing was written.
+{"answer":"resumed","issue":7162,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/7162-tuval-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":7162,"nonce":"c1a4d6f8"}}
+```
+
+**Grounding**
+
+- #7187 — a resumed builder read the corrected order and ran the armed proof first anyway; exit `14`
+  on its generic branch parked epic #7140 with no file changed.
+- #7185 / PR #7186 — the prose correction this replaces, and the `SKILL.md`-parsing test that passed
+  while the incident happened.
+- #6386 — why step 4 re-keys rather than cuts: two branches carrying one child's commits is the
+  range `lane prove` refuses as underivable.
+- ADR 0285 — an epic child opens no PR, which is why its repair names an issue and has no head to
+  resume from.
 
 ---
 

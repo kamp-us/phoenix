@@ -30,6 +30,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `review deviations` | the PR body's `## Deviations` section state (found / absent / malformed), its entries, and the Tier-M token scan over the diff | section detection and token scanning are mechanical; matching entry *substance* against findings is judgment (Tier R) |
 | `review post` | the single sanctioned verdict emit: compose through the `verdict-marker` wire format, bind to the inspected head at post time, post one comment per namespace at that head, read it back | marker composition, head re-resolution, leak scan and read-back are a protocol; the polarity and clause are judgment |
 | `review append-criterion` | append one reviewer-authored acceptance criterion to the linked issue under the four fences (append-only · ACL-gated fail-closed · frozen at `src/retry-budget.ts`'s `CAP_ROUND`), with provenance tag | the fences and the diff-guarded append are mechanical (ADR 0079); whether a finding is in-scope is judgment |
+| `review scratch` | the per-lane directory this reviewer's staged files go under, allocated fail-closed | deriving a namespace no second lane resolves to, and refusing when it cannot be derived, is mechanical; what to stage there is judgment |
 
 ### Considered and deliberately not derived
 
@@ -108,7 +109,7 @@ Stated once rather than repeated per block.
 
 ### The shared exit taxonomy
 
-All eight verbs allocate from one internal table, so a code means one thing across *this group*.
+All nine verbs allocate from one internal table, so a code means one thing across *this group*.
 Repo-wide the same number does not — `wire`'s `3`–`8` are its own — but where this group's codes overlap
 **`report`'s and `triage`'s writing verbs** (`3`, `5`, `6`,
 `7`, `8`, `9`, `11`) they match them deliberately, code for code, read from the **shipped
@@ -218,7 +219,9 @@ newlines) is the one a re-derivation drops, and dropping it fires exit `9` on cl
 `review post` and `review append-criterion` share the leak predicate **already implemented** at
 `packages/fabrika-cli/src/report/leaks.ts` — import it, never re-derive it. A verdict body that
 must *cite* a leak found in the diff cites it by class root or repo-relative form; the refusal
-message says so (#3785 is the incident where review prose tripped the guard).
+message says so (#3785 is the incident where review prose tripped the guard). `review scratch`'s
+answer is a path under one of those roots, so a verdict quoting where the diff was staged reds on
+`5` — the same refusal `build pr` and `build note` make.
 
 ---
 
@@ -576,7 +579,8 @@ open	the retry guide documents the delay table
 **Invocation**
 
 ```
-fabrika review ci 4321 [--sha <head>] [--repo <owner/name>] [--json]
+fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence-seconds <n>]
+                       [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -585,16 +589,21 @@ fabrika review ci 4321 [--sha <head>] [--repo <owner/name>] [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | no | the PR's live head | the head to enumerate check runs at; give the inspected head so the answer binds to what is being judged |
+| `--wait` | boolean | no | `false` | poll a `pending` head until CI concludes or the budget expires, instead of answering with this moment's read |
+| `--budget-seconds` | integer | no | `600` | `--wait` only: total wall-clock budget, gh-call latency included |
+| `--cadence-seconds` | integer | no | `30` | `--wait` only: sleep between polls |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. First line: `ci\t<sha>\t<green|red|pending|no-producer>`. Second line:
-`run\t<count>` — how many check runs were enumerated, so the line channel carries its own
-completeness proof. Then one line per status present —
+**Output** — machine channel. Under `--wait`, a first line
+`settle\t<settled|budget-exhausted|head-moved>`; without it that line is absent. Then
+`ci\t<sha>\t<green|red|pending|no-producer>`, then `run\t<count>` — how many check runs were
+enumerated, so the line channel carries its own completeness proof. Then one line per status present
+—
 `check\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>\t<count>`.
 
 With `--json`:
-`{"outcome":"ci","sha":…,"rollup":…,"checks":{<status>:<count>…},"scanned":<n>,"declared":<m>,"gates":{"declared":<g>,"covered":<c>}|null}`.
+`{"outcome":"ci","sha":…,"rollup":…,"checks":{<status>:<count>…},"scanned":<n>,"declared":<m>,"gates":{"declared":<g>,"covered":<c>}|null,"settle":<token>|null}`.
 
 `checks` is an **evidence-array collapsed to a status tally** under ADR
 [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md): this skill acts on `rollup`,
@@ -641,6 +650,29 @@ of its own has no gate to have missed, and says so on stderr at exit `0`. The re
 `red` rollup, which is already the answer a caller must act on; `green` and `pending` are the two
 words that read as "nothing to do here", and both are wrong over bytes no gate inspected (#6522).
 
+**`--wait` is the bounded in-verb wait, and it polls a `pending` and nothing else.** A `pending` is
+the ordinary state of a PR minutes after a push — exactly when a reviewer is spawned — so a caller
+that can only take this moment's read has a park on a human to offer for a condition that clears
+itself in minutes (#7282). The verb owns the loop, which is what keeps the ban in
+[`docs/skill-conventions.md` §14](../../docs/skill-conventions.md#14-a-skill-never-sleeps-and-never-polls-on-a-timer)
+whole: the skill makes one call and never sleeps. The budget is **wall clock**, gh-call latency
+included, so the verb cannot overrun the bound it claims to hold.
+
+The settle token says how the wait ended, and it is the whole difference between a proven answer and
+a bound that ran out:
+
+- `settled` — CI concluded inside the budget; the rollup beside it is `green` or `red` and is a
+  verdict.
+- `budget-exhausted` — the budget ran out with the head still `pending`. **Nothing was proven**, and
+  the rollup says so by still reading `pending`: this is a stuck or very slow queue, not a race with
+  it.
+- `head-moved` — the PR left the head this answer binds during the wait. The last read still binds
+  what it inspected; the caller re-reads at the new head rather than trusting a stale `settled`.
+
+Every refusal and the `no-producer` answer are states no waiting changes, so `--wait` returns them
+on the **first** read rather than burning the budget: the `16` head has no gate of this repo's coming
+at all, and a repo with no producer has no run to wait for.
+
 If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
 the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
 though the `12` stale-refusal seat belongs to `review post`, the write seam.
@@ -684,6 +716,27 @@ $ fabrika review ci 4321 --sha 03135b91
 ci	03135b91	green
 run	3
 check	success	3
+```
+
+A head still queued at the read, waited out to its verdict:
+
+```
+$ fabrika review ci 4321 --sha 03135b91 --wait
+settle	settled
+ci	03135b91	green
+run	3
+check	success	3
+```
+
+The same call on a queue that never finishes — `pending` beside the token, and never a verdict:
+
+```
+$ fabrika review ci 4321 --sha 03135b91 --wait --budget-seconds 120
+settle	budget-exhausted
+ci	03135b91	pending
+run	3
+check	success	1
+check	queued	2
 ```
 
 **Grounding**
@@ -1167,6 +1220,80 @@ escalated-frozen	4287	3
   (the S8 scar) — a first-class verb is the difference between a fence and a fence description.
 - ADR 0055 — authority from the ACL check; a below-write author or a failed lookup skips the
   append entirely, fail-closed.
+
+---
+
+## `review scratch`
+
+**Invocation**
+
+```
+fabrika review scratch 4321 --slug <leaf> --lane <lane-key> --sha <head>
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the pull request this lane is reviewing |
+| `--slug` | string | yes | — | the file's leaf name: kebab-case, no path separators |
+| `--lane` | string | yes | — | the lane key from this reviewer's spawn brief |
+| `--sha` | string | yes | — | the head `review scope` bound, 7–40 hex |
+
+**Output** — machine channel. One absolute path on stdout:
+`<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>`. The directory is created if
+absent; the leaf is not. `<lane-nonce>` is twelve hex of `sha256(<lane> \n <sha>)`. No `--json`:
+the path is the answer.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `1` | the directory could not be created, `--lane` is blank, the positional is not a PR number, or no session id is set (the `FABRIKA_SESSION_ID` → `CLAUDE_CODE_SESSION_ID` → `PI_SUBAGENT_PARENT_SESSION` chain) or the id is not one path segment |
+| `10` | `--slug` carries a path separator or is not kebab-case, or `--sha` is not a head SHA |
+
+**Errors**
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review scratch: <n> is not a pull-request number.` | 1 | refusal |
+| `review scratch: --lane is blank — this run names no lane, so the only namespace left is the session's, which is the one two reviewers share; refusing to allocate it.` | 1 | refusal |
+| `review scratch: no session id is set — … — refusing to key a scratch namespace on an unattributable session.` | 1 | refusal |
+| `review scratch: the session id is not one path segment — it cannot name a directory of its own.` | 1 | refusal |
+| `review scratch: cannot create <dir>: <reason>` | 1 | refusal |
+| `review scratch: --slug "<v>" must be a kebab-case leaf, no path separators.` | 10 | refusal |
+| `review scratch: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+
+**Scope** — one directory, allocated. It writes no file, reads no board state, and makes no network
+call.
+
+**Examples**
+
+```
+$ fabrika review scratch 4321 --slug diff --lane 4287 --sha 03135b91
+/var/folders/kx/T/fabrika-review/s-9f2e/4321-8c9e018c5568/diff
+
+$ fabrika review scratch 4321 --slug diff --lane "" --sha 03135b91
+review scratch: --lane is blank — this run names no lane, so the only namespace left is the
+session's, which is the one two reviewers share; refusing to allocate it.
+$ echo $?
+1
+```
+
+**Grounding**
+
+- #7246 — a reviewer redirected `review diff` to a generic `diff.txt` in the session scratchpad and
+  read it in two passes; between the reads a concurrent lane replaced the bytes with another PR's
+  diff. The verdict would have graded one PR's criteria against another PR's bytes while carrying
+  the correct head, which nothing downstream — `ship`'s re-derivation included — can detect. Caught
+  only by an unrelated cross-check against `gh pr view --json files`. Live on PR #7232.
+- `build scratch` (#4516, #4544, #4875, #4692, #6037) and `triage scratch` (#6630) took the same
+  fix before this group did, both keyed on a claim token's nonce. This group ships no claim verb, so
+  the key is derived from `--lane` and `--sha` instead: same namespace shape, a source this lane can
+  actually name.
+- The alternative — have `review diff` verify staged bytes on re-read — was offered on #7246 and not
+  filed. It re-derives *detection* where the namespace makes the collision unconstructible, which is
+  the route both prior fixes took.
 
 ---
 

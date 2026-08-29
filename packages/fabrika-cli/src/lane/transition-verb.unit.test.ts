@@ -138,6 +138,16 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "worktree-holds-branch"});
 	});
 
+	it("records campaign-paused, the cause a recipe clears by re-reading the row (#7217)", async () => {
+		const fs = freshLane(logLine("WIP"));
+
+		const out = await run(fs, "BLOCKED", null, "campaign-paused");
+
+		expect(out.code).toBe(0);
+		const appended = JSON.parse(fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "");
+		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "campaign-paused"});
+	});
+
 	it("refuses a cause outside the closed set, log byte-identical", async () => {
 		const fs = freshLane(logLine("WIP"));
 

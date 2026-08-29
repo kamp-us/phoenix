@@ -1797,8 +1797,10 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 		expect(out.code).toBe(PRIOR_BUILD_MISMATCH);
 		expect(out.stderr.join("\n")).toContain("review-code FAIL over");
 		expect(out.stderr.join("\n")).toContain("comment 8801");
-		expect(out.stderr.join("\n")).toContain('"fabrika build claim 4312 --resume"');
-		expect(out.stderr.join("\n")).toContain("--resume-lane");
+		// The route is the mechanized entry, never the pieces: naming them here is what handed the
+		// ordering decision back to a builder, who then inverted it and parked an epic (#7187).
+		expect(out.stderr.join("\n")).toContain('"fabrika build resume-child 4312"');
+		expect(out.stderr.join("\n")).not.toContain("--resume-lane");
 	});
 
 	it("writes no marker when it refuses — the claim path leaves nothing to retract", async () => {
@@ -1864,7 +1866,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 		expect(stderr).toContain("comment 8801");
 		expect(stderr).toContain("fold");
 		expect(stderr).not.toContain("--resume-lane");
-		expect(stderr).not.toContain('"fabrika build claim 4312 --resume"');
+		expect(stderr).not.toContain("fabrika build resume-child");
 	});
 
 	it("writes no marker when it refuses a PASS-only child either", async () => {
@@ -1895,7 +1897,7 @@ describe("runClaim — the prior-build gate on an epic child", () => {
 		const stderr = out.stderr.join("\n");
 		expect(stderr).toContain("review-code FAIL over");
 		expect(stderr).toContain("governance PASS over");
-		expect(stderr).toContain('"fabrika build claim 4312 --resume"');
+		expect(stderr).toContain('"fabrika build resume-child 4312"');
 	});
 
 	it("admits a fresh claim on a child holding no standing verdict at all", async () => {

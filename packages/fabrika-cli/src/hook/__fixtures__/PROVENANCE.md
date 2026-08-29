@@ -11,6 +11,7 @@ before trusting any fixture here; a fixture with no provenance beside it is an a
 | [`pre-tool-use.payload.golden.json`](pre-tool-use.payload.golden.json) | `PreToolUse` | `Bash` | [1](#capture-1--the-surface-envelopes) |
 | [`pre-tool-use-spawn.payload.golden.json`](pre-tool-use-spawn.payload.golden.json) | `PreToolUse` (a subagent spawn, `model: "opus"`) | `Task` | [2](#capture-2--the-spawn-envelopes) |
 | [`pre-tool-use-spawn-unset-model.payload.golden.json`](pre-tool-use-spawn-unset-model.payload.golden.json) | `PreToolUse` (a subagent spawn, no model passed) | `Task` | [2](#capture-2--the-spawn-envelopes) |
+| [`worktree-create.payload.golden.json`](worktree-create.payload.golden.json) | `WorktreeCreate` | — | [3](#capture-3--the-worktreecreate-envelope) |
 
 **Sanitization — one substitution, and only one, in every fixture here.** The operator's
 home-directory segment inside `transcript_path` is replaced with `<operator>`; nothing else is
@@ -56,13 +57,40 @@ guard filtering on `tool_name === "Task"` would never run. And the model arrives
 **`opus`**, never the canonical `claude-opus-4-8` — which is the fact the alias map in
 [`../../models.ts`](../../models.ts) exists for.
 
+<a id="capture-3--the-worktreecreate-envelope"></a>
+## Capture 3 — the `WorktreeCreate` envelope
+
+**Captured:** 2026-08-28, against **Claude Code 2.1.251**.
+
+**How:** a throwaway git repository at `/private/tmp/fabrika-worktree-capture/repo` (one commit, no
+remote), and `claude -p "say ok" --worktree capture-probe` against a `--settings` file whose `hooks`
+block registered `{"type": "command", "command": "cat > <sink>", "timeout": 30}` on `WorktreeCreate`.
+The probe writes stdin and prints no path, so the harness refused the creation with
+`WorktreeCreate hook failed: hook succeeded but returned no worktree path` — the envelope is captured
+and no worktree is made, which is the same shape capture 2 used for the blocked spawns.
+
+**Why a temp directory outside the session scratchpad:** this repo commits no operator or
+machine-local path, and the payload's `cwd` is *the repo the probe ran in*, verbatim. Capturing under
+a path that carried an operator segment would have forced a second edit to a captured value. Only
+`transcript_path` carries the home, so the elision below stays the single substitution it is
+everywhere else here.
+
+**A second run proved the mechanism the fixture only describes.** With the probe replaced by a script
+that ran `git worktree add --detach "$cwd/.claude/worktrees/$name" HEAD` and echoed that path,
+`claude --worktree roundtrip` started normally and `git worktree list` showed the tree at
+`…/repo/.claude/worktrees/roundtrip`. So the constructed layout in
+[`../worktree-create.ts`](../worktree-create.ts) is an observed round trip, not an inference from the
+harness's default path.
+
 ## What is golden here, and what is not
 
 The golden part is the **key set** — which keys the harness sends and which it does not. `PreToolUse`
 carries `prompt_id`, `permission_mode` and `effort`, none of which the hand-authored envelope in v1's
 spawn-guard test knew about; `SessionStart` carries `source` and carries **no** `tool_name`,
 `tool_input` or `prompt_id`; a spawn's `tool_input` carries `subagent_type` and `run_in_background`
-beside the optional `model`. Those presences and absences are what
+beside the optional `model`; `WorktreeCreate` carries `name`, a slug, and carries **no**
+`worktree_path` and **no** `base_ref` — the two fields v1's first handler was built to, which
+fail-closed every worktree spawn crew-wide (#2925). Those presences and absences are what
 [`../envelope.golden.test.ts`](../envelope.golden.test.ts) pins. The values are illustrative — except
 `tool_input.model`, whose alias spelling is itself part of what was captured.
 
