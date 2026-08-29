@@ -47,7 +47,7 @@ type Listener = (event: LiveSessionEvent) => void;
 interface Attachment {
 	readonly lease: PiSessionHandle;
 	readonly generation: number;
-	readonly unsubscribes: ReadonlyArray<Unsubscribe>;
+	readonly unsubscribes: Array<Unsubscribe>;
 	snapshot: SessionSnapshot;
 	transcript: Array<LiveTranscriptEntry>;
 	readonly toolCallBuffers: Map<string, string>;
@@ -80,6 +80,11 @@ export interface AcknowledgementDeadline {
 	readonly cancel: () => void;
 }
 
+export type LiveSelectionCheckpoint = (
+	candidateSessionId: string | null,
+	commit: () => void,
+) => Promise<boolean>;
+
 export interface LiveSessionStateOptions {
 	readonly acknowledgementTimeoutMs?: number;
 	readonly makeAcknowledgementDeadline?: (timeoutMs: number) => AcknowledgementDeadline;
@@ -94,17 +99,26 @@ interface PendingAttachment {
 
 export interface LiveSessionState {
 	readonly current: () => LiveSessionView | null;
-	readonly attach: (sessionId: string) => Promise<AttachLiveSessionOutcome>;
+	readonly attach: (
+		sessionId: string,
+		checkpoint?: LiveSelectionCheckpoint,
+	) => Promise<AttachLiveSessionOutcome>;
 	readonly prompt: (request: PromptLiveSessionRequest) => Promise<PromptLiveSessionOutcome>;
-	readonly create: (request: CreateLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
-	readonly open: (request: OpenLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
+	readonly create: (
+		request: CreateLiveSessionRequest,
+		checkpoint?: LiveSelectionCheckpoint,
+	) => Promise<ControlLiveSessionOutcome>;
+	readonly open: (
+		request: OpenLiveSessionRequest,
+		checkpoint?: LiveSelectionCheckpoint,
+	) => Promise<ControlLiveSessionOutcome>;
 	readonly steer: (request: SteerLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
 	readonly abort: (request: AbortLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
 	readonly setModel: (request: SetModelLiveSessionRequest) => Promise<ControlLiveSessionOutcome>;
 	readonly setThinking: (
 		request: SetThinkingLiveSessionRequest,
 	) => Promise<ControlLiveSessionOutcome>;
-	readonly release: () => Promise<ReleaseLiveSessionOutcome>;
+	readonly release: (checkpoint?: LiveSelectionCheckpoint) => Promise<ReleaseLiveSessionOutcome>;
 	readonly eventsAfter: (sequence?: number) => ReadonlyArray<LiveSessionEvent>;
 	readonly subscribe: (listener: Listener) => Unsubscribe;
 	readonly dispose: () => Promise<void>;
@@ -213,9 +227,24 @@ const reduceProgress = (
 	return undefined;
 };
 
+class SelectionCheckpointRefused extends Error {
+	readonly command: "attach" | "create" | "open";
+
+	constructor(command: "attach" | "create" | "open") {
+		super(`Pi acknowledged ${command}, but the durable selection checkpoint was refused`);
+		this.command = command;
+	}
+}
+
+const immediateCheckpoint: LiveSelectionCheckpoint = async (_candidateSessionId, commit) => {
+	commit();
+	return true;
+};
+
 const refusalCode = (
 	error: unknown,
-): "lease-refused" | "disconnected" | "not-found" | "protocol" => {
+): "lease-refused" | "disconnected" | "not-found" | "persistence" | "protocol" => {
+	if (error instanceof SelectionCheckpointRefused) return "persistence";
 	if (error instanceof PiDisconnectedError) return "disconnected";
 	if (error instanceof PiSessionOwnershipError || error instanceof PiSessionDetachedError) {
 		return "lease-refused";
@@ -255,7 +284,8 @@ const sameModel = (left: ModelRef, right: ModelRef): boolean =>
 
 const controlErrorCode = (
 	error: unknown,
-): "ownership-refused" | "unsupported-capability" | "disconnected" | "protocol" => {
+): "ownership-refused" | "unsupported-capability" | "disconnected" | "persistence" | "protocol" => {
+	if (error instanceof SelectionCheckpointRefused) return "persistence";
 	if (error instanceof PiDisconnectedError) return "disconnected";
 	if (error instanceof PiSessionOwnershipError || error instanceof PiSessionDetachedError) {
 		return "ownership-refused";
@@ -347,7 +377,10 @@ export class PiLiveSessionState implements LiveSessionState {
 		return attachment === undefined ? null : this.#viewOf(attachment, this.#sequence);
 	};
 
-	attach = (sessionId: string): Promise<AttachLiveSessionOutcome> => this.#attach(sessionId);
+	attach = (
+		sessionId: string,
+		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
+	): Promise<AttachLiveSessionOutcome> => this.#attach(sessionId, checkpoint);
 
 	prompt = (request: PromptLiveSessionRequest): Promise<PromptLiveSessionOutcome> => {
 		const generation = this.#attachment?.generation;
@@ -381,28 +414,55 @@ export class PiLiveSessionState implements LiveSessionState {
 		return result;
 	};
 
-	create = (request: CreateLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "create", ...request});
+	create = (
+		request: CreateLiveSessionRequest,
+		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "create", ...request}, checkpoint);
 
-	open = (request: OpenLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "open", ...request});
+	open = (
+		request: OpenLiveSessionRequest,
+		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
+	): Promise<ControlLiveSessionOutcome> =>
+		this.#correlateControl({command: "open", ...request}, checkpoint);
 
 	steer = (request: SteerLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "steer", ...request});
+		this.#correlateControl({command: "steer", ...request}, immediateCheckpoint);
 
 	abort = (request: AbortLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "abort", ...request});
+		this.#correlateControl({command: "abort", ...request}, immediateCheckpoint);
 
 	setModel = (request: SetModelLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "set-model", ...request});
+		this.#correlateControl({command: "set-model", ...request}, immediateCheckpoint);
 
 	setThinking = (request: SetThinkingLiveSessionRequest): Promise<ControlLiveSessionOutcome> =>
-		this.#correlateControl({command: "set-thinking", ...request});
+		this.#correlateControl({command: "set-thinking", ...request}, immediateCheckpoint);
 
-	release = (): Promise<ReleaseLiveSessionOutcome> =>
+	release = (
+		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
+	): Promise<ReleaseLiveSessionOutcome> =>
 		this.#serialize(async () => {
-			const sessionId = this.#attachment?.snapshot.id ?? null;
-			await this.#releaseAttachment();
+			const attachment = this.#attachment;
+			const sessionId = attachment?.snapshot.id ?? null;
+			if (attachment === undefined) return {_tag: "released", sessionId};
+			const committed = await checkpoint(null, () => {
+				this.#clearPrompts();
+				if (this.#attachment === attachment) this.#attachment = undefined;
+				this.#publish({
+					_tag: "released",
+					sequence: this.#nextSequence(),
+					sessionId: attachment.snapshot.id,
+				});
+			});
+			if (!committed) {
+				return {
+					_tag: "failed",
+					sessionId,
+					code: "persistence",
+					reason: "Release was not committed because its durable checkpoint was refused",
+				};
+			}
+			await this.#releaseLease(attachment);
 			return {_tag: "released", sessionId};
 		});
 
@@ -425,7 +485,10 @@ export class PiLiveSessionState implements LiveSessionState {
 		await this.#client.dispose();
 	};
 
-	async #attach(sessionId: string): Promise<AttachLiveSessionOutcome> {
+	async #attach(
+		sessionId: string,
+		checkpoint: LiveSelectionCheckpoint,
+	): Promise<AttachLiveSessionOutcome> {
 		return this.#serialize(async () => {
 			if (this.#disposed) {
 				return {
@@ -435,13 +498,10 @@ export class PiLiveSessionState implements LiveSessionState {
 					reason: "Tuval live-session service is disposed",
 				};
 			}
-			if (
-				this.#attachment?.snapshot.id === sessionId &&
-				this.#attachment.disconnectedReason === undefined
-			) {
-				return {_tag: "attached", session: this.#attachedViewOf(this.#attachment, this.#sequence)};
+			const previous = this.#attachment;
+			if (previous?.snapshot.id === sessionId && previous.disconnectedReason === undefined) {
+				return {_tag: "attached", session: this.#attachedViewOf(previous, this.#sequence)};
 			}
-			await this.#releaseAttachment();
 			const pending: PendingAttachment = {sessionId, eventsAfterSnapshot: []};
 			this.#pendingAttachment = pending;
 			let lease: PiSessionHandle;
@@ -467,27 +527,29 @@ export class PiLiveSessionState implements LiveSessionState {
 					reason: "PiClient attached without a session snapshot",
 				};
 			}
-			const generation = ++this.#generation;
-			const attachment: Attachment = {
-				lease,
-				generation,
-				snapshot,
-				transcript: snapshot.transcript.map(entryOf),
-				toolCallBuffers: new Map(),
-				unsubscribes: [],
-				leaseReleased: false,
-			};
-			const unsubscribes = [lease.subscribe((next) => this.#acceptSnapshot(generation, next))];
-			this.#attachment = {...attachment, unsubscribes};
-			this.#options.onSessionSubscriptionBound?.(snapshot.id);
-			if (this.#pendingAttachment === pending) this.#pendingAttachment = undefined;
-			for (const event of pending.eventsAfterSnapshot) this.#acceptEvent(generation, event);
-			this.#publishSession(this.#attachment);
-			return {_tag: "attached", session: this.#attachedViewOf(this.#attachment, this.#sequence)};
+			const candidate = this.#candidateAttachment(lease, snapshot);
+			const committed = await checkpoint(sessionId, () =>
+				this.#commitAttachment(candidate, pending),
+			);
+			if (!committed) {
+				if (this.#pendingAttachment === pending) this.#pendingAttachment = undefined;
+				await lease.dispose().catch(() => undefined);
+				return {
+					_tag: "refused",
+					sessionId,
+					code: "persistence",
+					reason: "Pi acknowledged attach, but the durable selection checkpoint was refused",
+				};
+			}
+			if (previous !== undefined && previous !== candidate) await this.#releaseLease(previous);
+			return {_tag: "attached", session: this.#attachedViewOf(candidate, this.#sequence)};
 		});
 	}
 
-	#correlateControl(request: ControlRequest): Promise<ControlLiveSessionOutcome> {
+	#correlateControl(
+		request: ControlRequest,
+		checkpoint: LiveSelectionCheckpoint,
+	): Promise<ControlLiveSessionOutcome> {
 		const fingerprint = JSON.stringify(request);
 		const existing = this.#controls.get(request.correlationId);
 		if (existing !== undefined) {
@@ -513,7 +575,9 @@ export class PiLiveSessionState implements LiveSessionState {
 				),
 			);
 		}
-		const result = this.#runControl(request).then((outcome) => this.#publishControl(outcome));
+		const result = this.#runControl(request, checkpoint).then((outcome) =>
+			this.#publishControl(outcome),
+		);
 		const correlated: CorrelatedControl = {fingerprint, result, settled: false};
 		this.#controls.set(request.correlationId, correlated);
 		void result.then(
@@ -527,17 +591,20 @@ export class PiLiveSessionState implements LiveSessionState {
 		return result;
 	}
 
-	#runControl(request: ControlRequest): Promise<ControlLiveSessionOutcome> {
+	#runControl(
+		request: ControlRequest,
+		checkpoint: LiveSelectionCheckpoint,
+	): Promise<ControlLiveSessionOutcome> {
 		switch (request.command) {
 			case "create":
-				return this.#runReplacement(request, () =>
+				return this.#runReplacement(request, checkpoint, () =>
 					this.#client.createSession({
 						...(request.cwd === undefined ? {} : {cwd: request.cwd}),
 						...(request.name === undefined ? {} : {name: request.name}),
 					}),
 				);
 			case "open":
-				return this.#runReplacement(request, () =>
+				return this.#runReplacement(request, checkpoint, () =>
 					this.#client.acquireSession(request.sessionId, {mode: "exclusive"}),
 				);
 			case "steer":
@@ -555,6 +622,7 @@ export class PiLiveSessionState implements LiveSessionState {
 
 	async #runReplacement(
 		request: Extract<ControlRequest, {command: "create" | "open"}>,
+		checkpoint: LiveSelectionCheckpoint,
 		acquire: () => Promise<PiSessionHandle>,
 	): Promise<ControlLiveSessionOutcome> {
 		const previous = this.#attachment;
@@ -605,14 +673,15 @@ export class PiLiveSessionState implements LiveSessionState {
 					"The selected session changed before the request was acknowledged",
 				);
 			}
-			if (previous !== undefined) await this.#releaseAttachment();
-			const attachment = this.#bindLease(lease, snapshot);
-			if (pending !== undefined) {
-				for (const event of pending.eventsAfterSnapshot) {
-					this.#acceptEvent(attachment.generation, event);
-				}
+			const attachment = this.#candidateAttachment(lease, snapshot);
+			const committed = await checkpoint(snapshot.id, () =>
+				this.#commitAttachment(attachment, pending),
+			);
+			if (!committed) {
+				await lease.dispose().catch(() => undefined);
+				throw new SelectionCheckpointRefused(request.command);
 			}
-			this.#publishSession(attachment);
+			if (previous !== undefined) await this.#releaseLease(previous);
 			return attachment;
 		})
 			.then((attachment) => {
@@ -813,22 +882,33 @@ export class PiLiveSessionState implements LiveSessionState {
 		return false;
 	}
 
-	#bindLease(lease: PiSessionHandle, snapshot: SessionSnapshot): Attachment {
-		const generation = ++this.#generation;
-		const attachment: Attachment = {
+	#candidateAttachment(lease: PiSessionHandle, snapshot: SessionSnapshot): Attachment {
+		return {
 			lease,
-			generation,
+			generation: ++this.#generation,
 			snapshot,
 			transcript: snapshot.transcript.map(entryOf),
 			toolCallBuffers: new Map(),
 			unsubscribes: [],
 			leaseReleased: false,
 		};
-		const unsubscribes = [lease.subscribe((next) => this.#acceptSnapshot(generation, next))];
-		const bound = {...attachment, unsubscribes};
-		this.#attachment = bound;
-		this.#options.onSessionSubscriptionBound?.(snapshot.id);
-		return bound;
+	}
+
+	#commitAttachment(attachment: Attachment, pending?: PendingAttachment): void {
+		const unsubscribe = attachment.lease.subscribe((next) =>
+			this.#acceptSnapshot(attachment.generation, next),
+		);
+		attachment.unsubscribes.push(unsubscribe);
+		this.#clearPrompts();
+		this.#attachment = attachment;
+		this.#options.onSessionSubscriptionBound?.(attachment.snapshot.id);
+		if (pending !== undefined && this.#pendingAttachment === pending) {
+			this.#pendingAttachment = undefined;
+		}
+		for (const event of pending?.eventsAfterSnapshot ?? []) {
+			this.#acceptEvent(attachment.generation, event);
+		}
+		this.#publishSession(attachment);
 	}
 
 	#reconcileAttachment(attachment: Attachment): Attachment {
@@ -1118,7 +1198,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		this.#publish({
 			_tag: "diagnostic",
 			sequence: this.#nextSequence(),
-			sessionId,
+			sessionId: diagnostic.sessionId ?? null,
 			message: diagnostic.message,
 			diagnostic,
 		});

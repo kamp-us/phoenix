@@ -2,6 +2,7 @@ import {spawn} from "node:child_process";
 import {createServer as createHttpServer} from "node:http";
 import {createServer as createUnixServer, type Socket} from "node:net";
 import {fileURLToPath} from "node:url";
+import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {DefaultPackageManager, SettingsManager} from "@earendil-works/pi-coding-agent";
 import {
 	ClientMessageDecoder,
@@ -18,6 +19,7 @@ import {makeExtensionUI} from "../src/backend/extension-ui.js";
 import {makeDiscoveryTransport} from "../src/backend/pi-protocol.js";
 import {
 	makeMemoryWorkspaceStateStore,
+	makeOperationalPackageRegistrations,
 	makeOperationalWorkspaceSettings,
 } from "../src/backend/resilience.js";
 import {startTuval, TUVAL_HOST} from "../src/backend/server.js";
@@ -382,6 +384,45 @@ describe("Tuval local server", () => {
 				}),
 			30_000,
 		);
+		it.effect("continues independent restoration after initial transport exhaustion", () =>
+			Effect.gen(function* () {
+				const {asset} = yield* fixture();
+				let attempts = 0;
+				let restoredSettings: Record<string, string> | undefined;
+				const unavailable: ByteTransportFactory = () => {
+					attempts += 1;
+					return Promise.reject(new Error("transport unavailable at /Users/alice/private.sock"));
+				};
+				const server = yield* startTuval({
+					staticAsset: asset,
+					liveSessionTransport: unavailable,
+					reconnect: {retries: 0, rearmDelayMs: 10_000},
+					workspaceStateStore: makeMemoryWorkspaceStateStore({
+						version: 1,
+						selectedSessionId: null,
+						settings: {theme: "dark"},
+						packageRegistrations: [],
+						extensionUI: [],
+					}),
+					operationalWorkspaceSettings: {
+						read: () => Effect.succeed(restoredSettings ?? {}),
+						restore: (settings) =>
+							Effect.sync(() => {
+								restoredSettings = {...settings};
+							}),
+					},
+					openBrowser: () => Effect.void,
+				});
+				assert.strictEqual(attempts, 2);
+				assert.deepStrictEqual(restoredSettings, {theme: "dark"});
+				const resilience = (yield* tryPromise(() =>
+					fetch(`${server.url}/api/resilience`).then((response) => response.json()),
+				)) as {diagnostics: Array<{code: string; message: string}>};
+				assert.isTrue(resilience.diagnostics.some(({code}) => code === "reconnect-exhausted"));
+				assert.notInclude(JSON.stringify(resilience), "alice");
+			}),
+		);
+
 		it.effect("binds loopback, serves static and fate discovery, then opens after readiness", () =>
 			Effect.gen(function* () {
 				const {root, asset} = yield* fixture();
@@ -613,7 +654,7 @@ describe("Tuval local server", () => {
 						version: 1,
 						selectedSessionId: null,
 						settings: {theme: "dark"},
-						packageRegistrations: [],
+						packageRegistrations: ["restart-package"],
 						extensionUI: [
 							{
 								scope: {packageName: "restart-package", sessionId: "restart-session"},
@@ -643,6 +684,9 @@ describe("Tuval local server", () => {
 						},
 						workspaceStateStore: store,
 						operationalWorkspaceSettings,
+						operationalPackageRegistrations: makeOperationalPackageRegistrations([
+							"restart-package",
+						]),
 						openBrowser: () => Effect.void,
 					};
 					const first = yield* startTuval({...common, extensionUI: firstUI});

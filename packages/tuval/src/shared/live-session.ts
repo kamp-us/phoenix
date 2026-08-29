@@ -126,7 +126,13 @@ export const AttachLiveSessionOutcome = Schema.Union([
 	Schema.Struct({
 		_tag: Schema.Literal("refused"),
 		sessionId: Schema.String,
-		code: Schema.Literals(["lease-refused", "disconnected", "not-found", "protocol"]),
+		code: Schema.Literals([
+			"lease-refused",
+			"disconnected",
+			"not-found",
+			"persistence",
+			"protocol",
+		]),
 		reason: Schema.String,
 	}),
 ]);
@@ -243,6 +249,7 @@ export const ControlLiveSessionOutcome = Schema.Union([
 			"unavailable",
 			"timeout",
 			"disconnected",
+			"persistence",
 			"protocol",
 		]),
 		reason: Schema.String,

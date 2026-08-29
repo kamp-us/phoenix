@@ -1,5 +1,5 @@
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
-import {Context, Duration, Effect, Fiber, Queue, Schedule, Stream} from "effect";
+import {Context, Duration, Effect, Fiber, Queue, Result, Schedule, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import type {
 	AbortLiveSessionRequest,
@@ -18,13 +18,18 @@ import type {
 	SteerLiveSessionRequest,
 } from "../shared/live-session.js";
 import {
+	type LiveSelectionCheckpoint,
 	type LiveSessionState,
 	type LiveSessionStateOptions,
 	PiLiveSessionState,
 } from "./live-session-state.js";
 import {resilienceDiagnostic} from "./resilience.js";
 
-export type {AcknowledgementDeadline, LiveSessionStateOptions} from "./live-session-state.js";
+export type {
+	AcknowledgementDeadline,
+	LiveSelectionCheckpoint,
+	LiveSessionStateOptions,
+} from "./live-session-state.js";
 
 export class LiveSessionAdapterError extends Schema.TaggedErrorClass<LiveSessionAdapterError>()(
 	"tuval/LiveSessionAdapterError",
@@ -33,10 +38,19 @@ export class LiveSessionAdapterError extends Schema.TaggedErrorClass<LiveSession
 
 export interface LiveSessionService {
 	readonly current: () => Effect.Effect<LiveSessionView | null>;
-	readonly attach: (sessionId: string) => Effect.Effect<AttachLiveSessionOutcome>;
+	readonly attach: (
+		sessionId: string,
+		checkpoint?: LiveSelectionCheckpoint,
+	) => Effect.Effect<AttachLiveSessionOutcome>;
 	readonly prompt: (request: PromptLiveSessionRequest) => Effect.Effect<PromptLiveSessionOutcome>;
-	readonly create: (request: CreateLiveSessionRequest) => Effect.Effect<ControlLiveSessionOutcome>;
-	readonly open: (request: OpenLiveSessionRequest) => Effect.Effect<ControlLiveSessionOutcome>;
+	readonly create: (
+		request: CreateLiveSessionRequest,
+		checkpoint?: LiveSelectionCheckpoint,
+	) => Effect.Effect<ControlLiveSessionOutcome>;
+	readonly open: (
+		request: OpenLiveSessionRequest,
+		checkpoint?: LiveSelectionCheckpoint,
+	) => Effect.Effect<ControlLiveSessionOutcome>;
 	readonly steer: (request: SteerLiveSessionRequest) => Effect.Effect<ControlLiveSessionOutcome>;
 	readonly abort: (request: AbortLiveSessionRequest) => Effect.Effect<ControlLiveSessionOutcome>;
 	readonly setModel: (
@@ -45,7 +59,9 @@ export interface LiveSessionService {
 	readonly setThinking: (
 		request: SetThinkingLiveSessionRequest,
 	) => Effect.Effect<ControlLiveSessionOutcome>;
-	readonly release: () => Effect.Effect<ReleaseLiveSessionOutcome>;
+	readonly release: (
+		checkpoint?: LiveSelectionCheckpoint,
+	) => Effect.Effect<ReleaseLiveSessionOutcome>;
 	readonly eventsAfter: (sequence?: number) => Effect.Effect<ReadonlyArray<LiveSessionEvent>>;
 	readonly events: (sequence?: number) => Stream.Stream<LiveSessionEvent>;
 	readonly dispose: () => Effect.Effect<void, LiveSessionAdapterError>;
@@ -84,9 +100,9 @@ const controlFromState = (
 
 const fromState = (state: LiveSessionState): LiveSessionService => ({
 	current: Effect.fn("LiveSession.current")(() => Effect.sync(() => state.current())),
-	attach: Effect.fn("LiveSession.attach")((sessionId) =>
+	attach: Effect.fn("LiveSession.attach")((sessionId, checkpoint) =>
 		Effect.tryPromise({
-			try: () => state.attach(sessionId),
+			try: () => state.attach(sessionId, checkpoint),
 			catch: (cause) => new LiveSessionAdapterError({cause}),
 		}).pipe(
 			Effect.catch(() =>
@@ -114,11 +130,13 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 			),
 		),
 	),
-	create: Effect.fn("LiveSession.create")((request) =>
-		controlFromState(state, "create", request.correlationId, () => state.create(request)),
+	create: Effect.fn("LiveSession.create")((request, checkpoint) =>
+		controlFromState(state, "create", request.correlationId, () =>
+			state.create(request, checkpoint),
+		),
 	),
-	open: Effect.fn("LiveSession.open")((request) =>
-		controlFromState(state, "open", request.correlationId, () => state.open(request)),
+	open: Effect.fn("LiveSession.open")((request, checkpoint) =>
+		controlFromState(state, "open", request.correlationId, () => state.open(request, checkpoint)),
 	),
 	steer: Effect.fn("LiveSession.steer")((request) =>
 		controlFromState(state, "steer", request.correlationId, () => state.steer(request)),
@@ -134,10 +152,10 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 			state.setThinking(request),
 		),
 	),
-	release: Effect.fn("LiveSession.release")(() => {
+	release: Effect.fn("LiveSession.release")((checkpoint) => {
 		const sessionId = state.current()?.sessionId ?? null;
 		return Effect.tryPromise({
-			try: () => state.release(),
+			try: () => state.release(checkpoint),
 			catch: (cause) => new LiveSessionAdapterError({cause}),
 		}).pipe(
 			Effect.catch(() =>
@@ -153,11 +171,24 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 	eventsAfter: Effect.fn("LiveSession.eventsAfter")((sequence = 0) =>
 		Effect.sync(() => state.eventsAfter(sequence)),
 	),
-	events: (sequence = 0) =>
+	events: (sequence?: number) =>
 		Stream.callback((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
-					for (const event of state.eventsAfter(sequence)) Queue.offerUnsafe(queue, event);
+					const current = state.current();
+					const replay =
+						sequence === undefined
+							? current === null
+								? []
+								: [
+										{
+											_tag: "session" as const,
+											sequence: current.lastEventSequence,
+											session: current,
+										},
+									]
+							: state.eventsAfter(sequence);
+					for (const event of replay) Queue.offerUnsafe(queue, event);
 					return state.subscribe((event) => Queue.offerUnsafe(queue, event));
 				}),
 				(unsubscribe) => Effect.sync(unsubscribe),
@@ -190,16 +221,19 @@ export class PiLiveSession implements LiveSessionService {
 	}
 
 	readonly current = () => this.#service.current();
-	readonly attach = (sessionId: string) => this.#service.attach(sessionId);
+	readonly attach = (sessionId: string, checkpoint?: LiveSelectionCheckpoint) =>
+		this.#service.attach(sessionId, checkpoint);
 	readonly prompt = (request: PromptLiveSessionRequest) => this.#service.prompt(request);
-	readonly create = (request: CreateLiveSessionRequest) => this.#service.create(request);
-	readonly open = (request: OpenLiveSessionRequest) => this.#service.open(request);
+	readonly create = (request: CreateLiveSessionRequest, checkpoint?: LiveSelectionCheckpoint) =>
+		this.#service.create(request, checkpoint);
+	readonly open = (request: OpenLiveSessionRequest, checkpoint?: LiveSelectionCheckpoint) =>
+		this.#service.open(request, checkpoint);
 	readonly steer = (request: SteerLiveSessionRequest) => this.#service.steer(request);
 	readonly abort = (request: AbortLiveSessionRequest) => this.#service.abort(request);
 	readonly setModel = (request: SetModelLiveSessionRequest) => this.#service.setModel(request);
 	readonly setThinking = (request: SetThinkingLiveSessionRequest) =>
 		this.#service.setThinking(request);
-	readonly release = () => this.#service.release();
+	readonly release = (checkpoint?: LiveSelectionCheckpoint) => this.#service.release(checkpoint);
 	readonly eventsAfter = (sequence?: number) => this.#service.eventsAfter(sequence);
 	readonly events = (sequence?: number) => this.#service.events(sequence);
 	readonly dispose = () => this.#service.dispose();
@@ -209,6 +243,7 @@ export interface LiveSessionReconnectOptions {
 	readonly retries?: number;
 	readonly baseDelayMs?: number;
 	readonly maxDelayMs?: number;
+	readonly rearmDelayMs?: number;
 }
 
 const reconnectSchedule = (options: LiveSessionReconnectOptions) => {
@@ -235,6 +270,7 @@ class ReconnectingLiveSession implements LiveSessionService {
 	#service: LiveSessionService = makeUnavailableLiveSession();
 	#forwarder: Fiber.Fiber<void, never> | undefined;
 	#selectedSessionId: string | undefined;
+	#replayableSession: LiveSessionEvent | undefined;
 	#sequence = 0;
 	#disposed = false;
 
@@ -249,6 +285,7 @@ class ReconnectingLiveSession implements LiveSessionService {
 		if (this.#forwarder !== undefined) yield* Fiber.interrupt(this.#forwarder);
 		const previous = this.#service;
 		this.#service = next;
+		this.#replayableSession = undefined;
 		this.#forwarder = yield* next.events().pipe(
 			Stream.runForEach((event) => Effect.sync(() => this.#publish(event))),
 			Effect.forkScoped,
@@ -278,8 +315,8 @@ class ReconnectingLiveSession implements LiveSessionService {
 	}
 
 	readonly current = () => this.#service.current();
-	readonly attach = (sessionId: string) =>
-		this.#service.attach(sessionId).pipe(
+	readonly attach = (sessionId: string, checkpoint?: LiveSelectionCheckpoint) =>
+		this.#service.attach(sessionId, checkpoint).pipe(
 			Effect.tap((outcome) =>
 				Effect.sync(() => {
 					if (outcome._tag === "attached") this.#selectedSessionId = sessionId;
@@ -287,32 +324,36 @@ class ReconnectingLiveSession implements LiveSessionService {
 			),
 		);
 	readonly prompt = (request: PromptLiveSessionRequest) => this.#service.prompt(request);
-	readonly create = (request: CreateLiveSessionRequest) =>
-		this.#trackSelection(this.#service.create(request));
-	readonly open = (request: OpenLiveSessionRequest) =>
-		this.#trackSelection(this.#service.open(request));
+	readonly create = (request: CreateLiveSessionRequest, checkpoint?: LiveSelectionCheckpoint) =>
+		this.#trackSelection(this.#service.create(request, checkpoint));
+	readonly open = (request: OpenLiveSessionRequest, checkpoint?: LiveSelectionCheckpoint) =>
+		this.#trackSelection(this.#service.open(request, checkpoint));
 	readonly steer = (request: SteerLiveSessionRequest) => this.#service.steer(request);
 	readonly abort = (request: AbortLiveSessionRequest) => this.#service.abort(request);
 	readonly setModel = (request: SetModelLiveSessionRequest) => this.#service.setModel(request);
 	readonly setThinking = (request: SetThinkingLiveSessionRequest) =>
 		this.#service.setThinking(request);
-	readonly release = () =>
-		this.#service.release().pipe(
-			Effect.tap(() =>
+	readonly release = (checkpoint?: LiveSelectionCheckpoint) =>
+		this.#service.release(checkpoint).pipe(
+			Effect.tap((outcome) =>
 				Effect.sync(() => {
-					this.#selectedSessionId = undefined;
+					if (outcome._tag === "released") this.#selectedSessionId = undefined;
 				}),
 			),
 		);
 	readonly eventsAfter = (sequence = 0) =>
 		Effect.sync(() => this.#events.filter((event) => event.sequence > sequence));
-	readonly events = (sequence = 0) =>
+	readonly events = (sequence?: number) =>
 		Stream.callback<LiveSessionEvent>((queue) =>
 			Effect.acquireRelease(
 				Effect.sync(() => {
-					for (const event of this.#events) {
-						if (event.sequence > sequence) Queue.offerUnsafe(queue, event);
-					}
+					const replay =
+						sequence === undefined
+							? this.#replayableSession === undefined
+								? []
+								: [this.#replayableSession]
+							: this.#events.filter((event) => event.sequence > sequence);
+					for (const event of replay) Queue.offerUnsafe(queue, event);
 					const listener = (event: LiveSessionEvent) => Queue.offerUnsafe(queue, event);
 					this.#listeners.add(listener);
 					return listener;
@@ -359,7 +400,7 @@ class ReconnectingLiveSession implements LiveSessionService {
 		this.#publish({
 			_tag: "diagnostic",
 			sequence: 0,
-			sessionId: sessionId ?? null,
+			sessionId: diagnostic.sessionId ?? null,
 			message: diagnostic.message,
 			diagnostic,
 		});
@@ -367,6 +408,8 @@ class ReconnectingLiveSession implements LiveSessionService {
 
 	#publish(event: LiveSessionEvent): void {
 		const sequenced = {...event, sequence: ++this.#sequence} as LiveSessionEvent;
+		if (sequenced._tag === "session") this.#replayableSession = sequenced;
+		if (sequenced._tag === "released") this.#replayableSession = undefined;
 		this.#events.push(sequenced);
 		if (this.#events.length > 500) this.#events.shift();
 		for (const listener of this.#listeners) listener(sequenced);
@@ -388,96 +431,52 @@ export const makeResilientPiLiveSession = Effect.fn("LiveSession.resilientConnec
 	};
 	const connect = () =>
 		connectLiveSessionWithBackoff(PiLiveSession.connect(transportFactory, stateOptions), options);
-	yield* service.replace(yield* connect());
-	yield* Effect.forkScoped(
-		Effect.forever(
-			Queue.take(reconnects).pipe(
-				Effect.flatMap(() => connect()),
-				Effect.flatMap((next) =>
-					service.replace(next).pipe(Effect.andThen(service.restoreSelection())),
-				),
-				Effect.catch((error) => Effect.sync(() => service.publishReconnectFailure(error))),
+	const rearmDelay = Duration.millis(
+		Math.max(1, Math.floor(options.rearmDelayMs ?? options.maxDelayMs ?? 2_000)),
+	);
+	const recover = connect().pipe(
+		Effect.flatMap((next) =>
+			service.replace(next).pipe(Effect.andThen(service.restoreSelection())),
+		),
+		Effect.catch((error) =>
+			Effect.sync(() => service.publishReconnectFailure(error)).pipe(
+				Effect.andThen(Effect.sleep(rearmDelay)),
+				Effect.andThen(Effect.sync(() => void Queue.offerUnsafe(reconnects, undefined))),
 			),
 		),
 	);
+	const initial = yield* Effect.result(connect());
+	if (Result.isSuccess(initial)) yield* service.replace(initial.success);
+	else {
+		service.publishReconnectFailure(initial.failure);
+		yield* Effect.forkScoped(
+			Effect.sleep(rearmDelay).pipe(
+				Effect.andThen(Effect.sync(() => void Queue.offerUnsafe(reconnects, undefined))),
+			),
+		);
+	}
+	yield* Effect.forkScoped(Effect.forever(Queue.take(reconnects).pipe(Effect.andThen(recover))));
 	yield* Effect.addFinalizer(() => service.dispose().pipe(Effect.ignore));
 	return service as LiveSessionService;
 });
 
 export const makeDurableLiveSession = (
 	service: LiveSessionService,
-	checkpoint: () => Effect.Effect<boolean>,
+	checkpoint: (candidateSessionId: string | null, commit: () => void) => Effect.Effect<boolean>,
 ): LiveSessionService => {
-	const durableControl = (
-		operation: Effect.Effect<ControlLiveSessionOutcome>,
-	): Effect.Effect<ControlLiveSessionOutcome> =>
-		operation.pipe(
-			Effect.flatMap((outcome): Effect.Effect<ControlLiveSessionOutcome> => {
-				if (outcome._tag !== "acknowledged") return Effect.succeed(outcome);
-				return checkpoint().pipe(
-					Effect.map(
-						(durable): ControlLiveSessionOutcome =>
-							durable
-								? outcome
-								: {
-										_tag: "refused",
-										command: outcome.command,
-										correlationId: outcome.correlationId,
-										code: "protocol",
-										reason: "Acknowledged selection could not be persisted",
-										session: outcome.session,
-									},
-					),
-				);
-			}),
-		);
+	const durableCheckpoint: LiveSelectionCheckpoint = (candidateSessionId, commit) =>
+		Effect.runPromise(checkpoint(candidateSessionId, commit));
 	return {
 		current: service.current,
-		attach: (sessionId) =>
-			service.attach(sessionId).pipe(
-				Effect.flatMap((outcome): Effect.Effect<AttachLiveSessionOutcome> => {
-					if (outcome._tag !== "attached") return Effect.succeed(outcome);
-					return checkpoint().pipe(
-						Effect.map(
-							(durable): AttachLiveSessionOutcome =>
-								durable
-									? outcome
-									: {
-											_tag: "refused",
-											sessionId,
-											code: "protocol",
-											reason: "Attached selection could not be persisted",
-										},
-						),
-					);
-				}),
-			),
+		attach: (sessionId) => service.attach(sessionId, durableCheckpoint),
 		prompt: service.prompt,
-		create: (request) => durableControl(service.create(request)),
-		open: (request) => durableControl(service.open(request)),
+		create: (request) => service.create(request, durableCheckpoint),
+		open: (request) => service.open(request, durableCheckpoint),
 		steer: service.steer,
 		abort: service.abort,
 		setModel: service.setModel,
 		setThinking: service.setThinking,
-		release: () =>
-			service.release().pipe(
-				Effect.flatMap((outcome): Effect.Effect<ReleaseLiveSessionOutcome> => {
-					if (outcome._tag !== "released") return Effect.succeed(outcome);
-					return checkpoint().pipe(
-						Effect.map(
-							(durable): ReleaseLiveSessionOutcome =>
-								durable
-									? outcome
-									: {
-											_tag: "failed",
-											sessionId: outcome.sessionId,
-											code: "persistence",
-											reason: "Released selection could not be persisted",
-										},
-						),
-					);
-				}),
-			),
+		release: () => service.release(durableCheckpoint),
 		eventsAfter: service.eventsAfter,
 		events: service.events,
 		dispose: service.dispose,

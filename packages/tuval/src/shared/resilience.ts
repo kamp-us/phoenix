@@ -14,6 +14,7 @@ export type ResilienceDiagnosticCategory = (typeof ResilienceDiagnosticCategory)
 export const ResilienceDiagnosticCode = Schema.Literals([
 	"workspace-state-unavailable",
 	"workspace-state-save-failed",
+	"workspace-state-directory-sync-failed",
 	"selected-session-state-invalid",
 	"workspace-settings-invalid",
 	"package-registrations-invalid",
@@ -29,6 +30,7 @@ export const ResilienceDiagnosticCode = Schema.Literals([
 	"package-registration-unavailable",
 	"package-registration-restore-failed",
 	"extension-ui-current-restore-failed",
+	"extension-ui-package-unavailable",
 	"live-session-protocol-degraded",
 	"reconnect-exhausted",
 	"package-root-unavailable",
@@ -53,6 +55,7 @@ export const ResilienceDiagnostic = Schema.Struct({
 	action: Schema.String,
 	sessionId: Schema.optionalKey(Schema.String),
 	packageName: Schema.optionalKey(Schema.String),
+	sourceId: Schema.optionalKey(Schema.String),
 });
 export type ResilienceDiagnostic = (typeof ResilienceDiagnostic)["Type"];
 

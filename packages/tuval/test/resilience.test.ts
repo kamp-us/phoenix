@@ -11,6 +11,7 @@ import {
 	resilienceDiagnostic,
 	restoreWorkspace,
 	WorkspaceStateStoreError,
+	workspaceStateDirectorySyncResult,
 } from "../src/backend/resilience.js";
 import {sessionIdentity} from "../src/shared/discovery.js";
 import {emptyWorkspaceState, type WorkspaceStateDocument} from "../src/shared/resilience.js";
@@ -114,6 +115,50 @@ describe("Tuval resilience and restoration", () => {
 			}),
 	);
 
+	it.effect("drops extension state for unavailable packages with a safe diagnostic", () =>
+		Effect.gen(function* () {
+			const unavailablePackage = "removed package token=private";
+			let applied: ReadonlyArray<(typeof persisted.extensionUI)[number]> = [];
+			const restored = yield* restoreWorkspace({
+				store: makeMemoryWorkspaceStateStore({
+					...persisted,
+					extensionUI: [
+						...persisted.extensionUI,
+						{
+							scope: {packageName: unavailablePackage, sessionId: "removed-session"},
+							statuses: [{key: "secret", text: "must-not-replay"}],
+							widgets: [],
+						},
+						{
+							scope: {packageName: "installed-unregistered", sessionId: "removed-session"},
+							statuses: [{key: "stale", text: "must-not-replay"}],
+							widgets: [],
+						},
+					],
+				}),
+				discover: () => Effect.succeed(discovered),
+				restoreLineage: () => Effect.void,
+				restoreSelection: () => Effect.succeed(true),
+				restoreSettings: () => Effect.void,
+				availablePackageRegistrations: ["available-package", "installed-unregistered"],
+				restorePackageRegistrations: () => Effect.void,
+				restoreExtensionUI: (snapshots) =>
+					Effect.sync(() => {
+						applied = snapshots;
+					}),
+			});
+			assert.deepStrictEqual(applied, persisted.extensionUI);
+			assert.deepStrictEqual(restored.extensionUI, persisted.extensionUI);
+			const diagnostic = restored.diagnostics.find(
+				({code, packageName}) =>
+					code === "extension-ui-package-unavailable" && packageName?.startsWith("sha256:"),
+			);
+			assert.isDefined(diagnostic);
+			assert.notInclude(JSON.stringify(diagnostic), "private");
+			assert.notInclude(JSON.stringify(diagnostic), unavailablePackage);
+		}),
+	);
+
 	it.effect("keeps explicit empty package intent distinct from a missing-store cold boot", () =>
 		Effect.gen(function* () {
 			for (const testCase of [
@@ -158,7 +203,7 @@ describe("Tuval resilience and restoration", () => {
 								message: "Workspace state is not valid JSON",
 							}),
 						),
-					save: () => Effect.void,
+					save: () => Effect.succeed({_tag: "durable" as const}),
 				},
 				discover: () =>
 					Effect.sync(() => void stages.push("discovery")).pipe(Effect.as(discovered)),
@@ -176,6 +221,30 @@ describe("Tuval resilience and restoration", () => {
 						diagnostic.category === "persistence" &&
 						diagnostic.code === "workspace-state-unavailable",
 				),
+			);
+		}),
+	);
+
+	it.effect("reports only applied settings when persisted values are unsupported", () =>
+		Effect.gen(function* () {
+			const restored = yield* restoreWorkspace({
+				store: makeMemoryWorkspaceStateStore({
+					...persisted,
+					settings: {unsupportedSetting: "private-value"},
+				}),
+				discover: () => Effect.succeed(discovered),
+				restoreLineage: () => Effect.void,
+				restoreSelection: () => Effect.succeed(true),
+				restoreSettings: () => Effect.fail(new Error("unsupported settings")),
+				readSettings: () => Effect.succeed({theme: "system"}),
+				availablePackageRegistrations: ["available-package"],
+				restorePackageRegistrations: () => Effect.void,
+				restoreExtensionUI: () => Effect.void,
+			});
+			assert.deepStrictEqual(restored.settings, {theme: "system"});
+			assert.deepInclude(
+				restored.diagnostics.find(({code}) => code === "settings-restore-failed"),
+				{category: "persistence", code: "settings-restore-failed"},
 			);
 		}),
 	);
@@ -198,10 +267,14 @@ describe("Tuval resilience and restoration", () => {
 
 	it("redacts secrets and machine-local paths while retaining actionable categories", () => {
 		const redacted = redactDiagnosticText(
-			"failed /Users/alice/.pi/session.jsonl token=super-secret Authorization: Bearer abc.def prompt='private words' transcript=private-history",
+			String.raw`failed /Users/alice/.pi/session.jsonl /Users/Alice Doe/private.sock ~/secret/file file:///Users/alice/private "C:\\Users\\Alice Doe\\secret.txt" \\\\server\\private share\\secret.txt token="super secret suffix" Authorization: Bearer abc.def prompt='private words' transcript=private-history`,
 		);
 		assert.notInclude(redacted, "alice");
-		assert.notInclude(redacted, "super-secret");
+		assert.notInclude(redacted, "super secret suffix");
+		assert.notInclude(redacted, "Alice Doe");
+		assert.notInclude(redacted, "Doe/private.sock");
+		assert.notInclude(redacted, "server");
+		assert.notInclude(redacted, "private share");
 		assert.notInclude(redacted, "abc.def");
 		assert.notInclude(redacted, "private words");
 		assert.notInclude(redacted, "private-history");
@@ -221,20 +294,59 @@ describe("Tuval resilience and restoration", () => {
 		assert.notInclude(jsonRedacted, "private");
 		assert.notInclude(jsonRedacted, "history");
 		assert.include(jsonRedacted, "safe category");
-		assert.deepInclude(
-			resilienceDiagnostic({
-				category: "package",
-				code: "package-registration-unavailable",
-				message: "Registration unavailable",
-				action: "Reinstall the package",
-				sessionId: "/Users/alice/session",
-				packageName: "token=private",
-			}),
-			{sessionId: "[redacted]", packageName: "[redacted]"},
-		);
+		const malicious = resilienceDiagnostic({
+			category: "package",
+			code: "package-registration-unavailable",
+			message: String.raw`prompt="raw public prompt" at C:\\Users\\Alice Doe\\transcript.txt`,
+			action: "token='raw action token'",
+			sessionId: "session correlation prompt=raw",
+			packageName: "package token=private",
+			sourceId: "file:///Users/alice/source.jsonl",
+		});
+		assert.notInclude(JSON.stringify(malicious), "raw");
+		assert.notInclude(JSON.stringify(malicious), "Alice");
+		assert.notInclude(JSON.stringify(malicious), "alice");
+		assert.match(malicious.sessionId ?? "", /^sha256:/);
+		assert.match(malicious.packageName ?? "", /^sha256:/);
+		assert.match(malicious.sourceId ?? "", /^sha256:/);
+		const correlations = resilienceDiagnostic({
+			category: "package",
+			code: "package-registration-unavailable",
+			message: "Registration unavailable",
+			action: "Reinstall the package",
+			sessionId: "/Users/alice/session",
+			packageName: "token=private",
+		});
+		assert.match(correlations.sessionId ?? "", /^sha256:/);
+		assert.match(correlations.packageName ?? "", /^sha256:/);
+	});
+
+	it("reports a committed state with a durability warning after directory sync refusal", () => {
+		const result = workspaceStateDirectorySyncResult(false);
+		assert.strictEqual(result._tag, "committed-with-warning");
+		if (result._tag !== "committed-with-warning") return;
+		assert.strictEqual(result.diagnostic.category, "persistence");
+		assert.strictEqual(result.diagnostic.code, "workspace-state-directory-sync-failed");
 	});
 
 	it.layer(NodeServices.layer)((it) => {
+		it.effect("keeps the renamed checkpoint committed when directory sync is refused", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-sync-warning-"});
+				const statePath = path.join(root, "workspace-state.json");
+				const store = yield* makeFileWorkspaceStateStore(statePath, {
+					syncDirectory: () => Effect.fail(new Error("directory sync refused")),
+				});
+				const result = yield* store.save(persisted);
+				assert.strictEqual(result._tag, "committed-with-warning");
+				if (result._tag !== "committed-with-warning") return;
+				assert.strictEqual(result.diagnostic.code, "workspace-state-directory-sync-failed");
+				assert.deepStrictEqual((yield* store.load()).document, persisted);
+			}),
+		);
+
 		it.effect("decodes persistence domains independently with typed diagnostics", () =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystem.FileSystem;

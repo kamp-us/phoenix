@@ -182,12 +182,12 @@ const fateContext = {
 
 const sseFrame = (event: unknown): string => `data: ${JSON.stringify(event)}\n\n`;
 
-const afterSequenceOf = (url: URL): number | undefined => {
+const afterSequenceOf = (url: URL): {readonly valid: boolean; readonly sequence?: number} => {
 	const value = url.searchParams.get("afterSequence");
-	if (value === null) return 0;
-	if (!/^\d+$/.test(value)) return undefined;
+	if (value === null) return {valid: true};
+	if (!/^\d+$/.test(value)) return {valid: false};
 	const sequence = Number(value);
-	return Number.isSafeInteger(sequence) ? sequence : undefined;
+	return Number.isSafeInteger(sequence) ? {valid: true, sequence} : {valid: false};
 };
 
 const writeFailure = (response: ServerResponse, error: unknown): void => {
@@ -298,7 +298,7 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 	}
 	if (request.method === "GET" && url.pathname === "/fate/live") {
 		const afterSequence = afterSequenceOf(url);
-		if (afterSequence === undefined) {
+		if (!afterSequence.valid) {
 			response.statusCode = 400;
 			response.end("afterSequence must be a non-negative safe integer");
 			return;
@@ -310,7 +310,7 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 		response.setHeader("connection", "keep-alive");
 		response.flushHeaders();
 		yield* liveSession
-			.events(afterSequence)
+			.events(afterSequence.sequence)
 			.pipe(Stream.runForEach((event) => Effect.sync(() => response.write(sseFrame(event)))));
 		return;
 	}
@@ -341,18 +341,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 		options.liveSession ??
 		(options.liveSessionTransport === undefined
 			? makeUnavailableLiveSession()
-			: yield* makeResilientPiLiveSession(
-					options.liveSessionTransport,
-					options.reconnect ?? {},
-				).pipe(
-					Effect.mapError(
-						(error) =>
-							new StartupFailure({
-								message: "Tuval could not connect to the pi live protocol",
-								cause: error.cause,
-							}),
-					),
-				));
+			: yield* makeResilientPiLiveSession(options.liveSessionTransport, options.reconnect ?? {}));
 	yield* Effect.addFinalizer(() => rawLiveSession.dispose().pipe(Effect.ignore));
 
 	const discoveryOptions = {
@@ -402,6 +391,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 		restoreSelection: (sessionId) =>
 			rawLiveSession.attach(sessionId).pipe(Effect.map((outcome) => outcome._tag === "attached")),
 		restoreSettings: operationalSettings.restore,
+		readSettings: operationalSettings.read,
 		availablePackageRegistrations: operationalRegistrations.available,
 		restorePackageRegistrations: operationalRegistrations.restore,
 		restoreExtensionUI: rawExtensionUI.restore,
@@ -420,11 +410,19 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 		),
 	};
 	let packageDiagnostics: Array<ReturnType<typeof resilienceDiagnostic>> = [];
+	const transportDiagnostics = (yield* rawLiveSession.eventsAfter(0)).flatMap((event) =>
+		event._tag === "diagnostic" && event.diagnostic !== undefined ? [event.diagnostic] : [],
+	);
 	const persistenceDiagnostics: Array<ReturnType<typeof resilienceDiagnostic>> = [];
 	const restoration = (): RestorationSnapshot => ({
 		...restored,
 		packageRegistrations: [...activeNames].sort(),
-		diagnostics: [...restored.diagnostics, ...packageDiagnostics, ...persistenceDiagnostics],
+		diagnostics: [
+			...restored.diagnostics,
+			...transportDiagnostics,
+			...packageDiagnostics,
+			...persistenceDiagnostics,
+		],
 	});
 	let liveSession: LiveSessionService = rawLiveSession;
 	let extensionUI: ExtensionUIService = rawExtensionUI;
@@ -445,6 +443,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 	const persistWorkspace = (
 		candidateExtensionUI?: ReadonlyArray<ExtensionUISnapshot>,
 		commitExtensionUI: () => void = () => {},
+		candidateSessionId?: string | null,
 	): Effect.Effect<boolean> =>
 		persistenceSemaphore
 			.withPermit(
@@ -462,18 +461,24 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 					);
 					const document: WorkspaceStateDocument = {
 						version: 1,
-						selectedSessionId: current?.sessionId ?? null,
+						selectedSessionId:
+							candidateSessionId === undefined ? (current?.sessionId ?? null) : candidateSessionId,
 						settings,
 						packageRegistrations: [...packageRegistrations],
 						extensionUI: extensionUISnapshots,
 					};
-					yield* workspaceStateStore.save(document);
+					const warning = yield* workspaceStateStore.save(document);
+					if (warning._tag === "committed-with-warning") {
+						persistenceDiagnostics.push(warning.diagnostic);
+					}
 					yield* Effect.sync(commitExtensionUI);
 					return true;
 				}),
 			)
 			.pipe(Effect.catch(() => recordPersistenceFailure));
-	liveSession = makeDurableLiveSession(rawLiveSession, () => persistWorkspace());
+	liveSession = makeDurableLiveSession(rawLiveSession, (candidateSessionId, commit) =>
+		persistWorkspace(undefined, commit, candidateSessionId),
+	);
 	extensionUI = makeDurableExtensionUI(rawExtensionUI, persistWorkspace);
 	const backendContributionDiagnostics = yield* buildPackageBackendLayers(
 		activeContributions,

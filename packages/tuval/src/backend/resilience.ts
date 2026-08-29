@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import type {SettingsManager} from "@earendil-works/pi-coding-agent";
 import {Context, Crypto, Effect, FileSystem, Path, Result, Schema} from "effect";
 import type {DiscoveryOutcome} from "../shared/discovery.js";
@@ -25,11 +26,18 @@ export interface WorkspaceStateLoad {
 	readonly diagnostics: ReadonlyArray<ResilienceDiagnostic>;
 }
 
+export type WorkspaceStateSaveResult =
+	| {readonly _tag: "durable"}
+	| {
+			readonly _tag: "committed-with-warning";
+			readonly diagnostic: ResilienceDiagnostic;
+	  };
+
 export interface WorkspaceStateStore {
 	readonly load: () => Effect.Effect<WorkspaceStateLoad, WorkspaceStateStoreError>;
 	readonly save: (
 		document: WorkspaceStateDocumentType,
-	) => Effect.Effect<void, WorkspaceStateStoreError>;
+	) => Effect.Effect<WorkspaceStateSaveResult, WorkspaceStateStoreError>;
 }
 
 export interface WorkspaceSettingsService {
@@ -68,6 +76,14 @@ export const makeOperationalWorkspaceSettings = (
 };
 
 const thinkingLevels = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+const piWorkspaceSettingKeys = new Set([
+	"theme",
+	"defaultProvider",
+	"defaultModel",
+	"defaultThinkingLevel",
+	"steeringMode",
+	"followUpMode",
+]);
 
 /** Adapts the persisted public workspace subset to pi's real SettingsManager. */
 export const makePiOperationalWorkspaceSettings = (
@@ -90,6 +106,24 @@ export const makePiOperationalWorkspaceSettings = (
 	restore: (settings) =>
 		Effect.tryPromise({
 			try: async () => {
+				const unsupportedKey = Object.keys(settings).find(
+					(key) => !piWorkspaceSettingKeys.has(key),
+				);
+				if (unsupportedKey !== undefined) {
+					throw new Error(`Unsupported persisted workspace setting: ${unsupportedKey}`);
+				}
+				if (
+					(settings.defaultThinkingLevel !== undefined &&
+						!thinkingLevels.has(settings.defaultThinkingLevel)) ||
+					(settings.steeringMode !== undefined &&
+						settings.steeringMode !== "all" &&
+						settings.steeringMode !== "one-at-a-time") ||
+					(settings.followUpMode !== undefined &&
+						settings.followUpMode !== "all" &&
+						settings.followUpMode !== "one-at-a-time")
+				) {
+					throw new Error("Persisted workspace setting value is unsupported");
+				}
 				if (settings.theme !== undefined) manager.setTheme(settings.theme);
 				if (settings.defaultProvider !== undefined) {
 					manager.setDefaultProvider(settings.defaultProvider);
@@ -132,12 +166,19 @@ export const makeOperationalPackageRegistrations = (
 };
 
 const sensitiveKey = /(?:token|secret|password|authorization|api[-_]?key|prompt|transcript)/i;
-const sensitiveAssignment =
-	/\b(token|secret|password|authorization|api[-_]?key)\b["']?\s*[:=]\s*(?:bearer\s+)?[^\s,;]+/gi;
+const assignedValue = String.raw`(?:bearer\s+)?(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\s,;]+)`;
+const sensitiveAssignment = new RegExp(
+	String.raw`\b(token|secret|password|authorization|api[-_]?key|prompt|transcript)\b["']?\s*[:=]\s*${assignedValue}`,
+	"gi",
+);
 const bearer = /\bbearer\s+[A-Za-z0-9._~+/-]+=*/gi;
-const contentAssignment = /\b(prompt|transcript)\b["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi;
-const unixPath = /(?:^|[\s("'])\/(?:[^\s)"']+\/?)+/g;
-const windowsPath = /\b[A-Za-z]:\\(?:[^\s"']+\\?)+/g;
+const quotedLocalPath =
+	/(["'])(?:file:\/{2,3}|~(?:[A-Za-z0-9._-]+)?[\\/]|[A-Za-z]:\\|\\\\|\/)(?:\\.|(?!\1).)*\1/g;
+const fileUrl = /\bfile:\/{2,3}(?:(?!\s+\w+\s*[:=])[^,;"')])+/gi;
+const homePath = /(?:^|[\s("'])~(?:[A-Za-z0-9._-]+)?[\\/](?:(?!\s+\w+\s*[:=])[^,;"')])+/g;
+const uncPath = /\\\\[^\s\\"']+\\(?:(?!\s+\w+\s*[:=])[^,;"'])+/g;
+const windowsPath = /\b[A-Za-z]:\\(?:(?!\s+\w+\s*[:=])[^,;"'])+/g;
+const unixPath = /(?:^|[\s("'])\/(?:(?!\s+\w+\s*[:=])[^,;)"'])+/g;
 
 const redactJsonValue = (value: unknown): unknown => {
 	if (Array.isArray(value)) return value.map(redactJsonValue);
@@ -163,15 +204,19 @@ export const redactDiagnosticText = (value: string): string => {
 	return source
 		.replace(sensitiveAssignment, (_match, key: string) => `${key}=[redacted]`)
 		.replace(bearer, "Bearer [redacted]")
-		.replace(contentAssignment, (_match, kind: string) => `${kind}=[redacted]`)
+		.replace(quotedLocalPath, "[local-path]")
+		.replace(fileUrl, "[local-path]")
+		.replace(homePath, (match) => `${match[0]?.trim() === "" ? match[0] : ""}[local-path]`)
+		.replace(uncPath, "[local-path]")
 		.replace(windowsPath, "[local-path]")
 		.replace(unixPath, (match) => `${match[0]?.trim() === "" ? match[0] : ""}[local-path]`);
 };
 
+const publicCorrelation = /^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}$/;
 const redactDiagnosticCorrelation = (value: string): string =>
-	/[\\/]|\b(token|secret|password|authorization|prompt|transcript)\b/i.test(value)
-		? "[redacted]"
-		: value;
+	publicCorrelation.test(value) && !sensitiveKey.test(value)
+		? value
+		: `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
 
 export const resilienceDiagnostic = (input: {
 	readonly category: ResilienceDiagnosticCategory;
@@ -180,6 +225,7 @@ export const resilienceDiagnostic = (input: {
 	readonly action: string;
 	readonly sessionId?: string;
 	readonly packageName?: string;
+	readonly sourceId?: string;
 }): ResilienceDiagnostic => ({
 	category: input.category,
 	code: input.code,
@@ -191,7 +237,21 @@ export const resilienceDiagnostic = (input: {
 	...(input.packageName === undefined
 		? {}
 		: {packageName: redactDiagnosticCorrelation(input.packageName)}),
+	...(input.sourceId === undefined ? {} : {sourceId: redactDiagnosticCorrelation(input.sourceId)}),
 });
+
+export const workspaceStateDirectorySyncResult = (synced: boolean): WorkspaceStateSaveResult =>
+	synced
+		? {_tag: "durable"}
+		: {
+				_tag: "committed-with-warning",
+				diagnostic: resilienceDiagnostic({
+					category: "persistence",
+					code: "workspace-state-directory-sync-failed",
+					message: "Workspace state was committed but its directory sync was refused",
+					action: "Keep the committed state and inspect directory durability before shutdown",
+				}),
+			};
 
 export const makeMemoryWorkspaceStateStore = (
 	initial?: WorkspaceStateDocumentType,
@@ -204,6 +264,7 @@ export const makeMemoryWorkspaceStateStore = (
 			Effect.sync(() => {
 				document = structuredClone(next);
 				source = "persisted";
+				return {_tag: "durable" as const};
 			}),
 		current: () => structuredClone(document),
 	};
@@ -211,11 +272,20 @@ export const makeMemoryWorkspaceStateStore = (
 
 export const makeFileWorkspaceStateStore = Effect.fn("TuvalResilience.fileStore")(function* (
 	storePath: string,
+	options: {
+		readonly syncDirectory?: (directory: string) => Effect.Effect<void, unknown>;
+	} = {},
 ) {
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
 	const crypto = yield* Crypto.Crypto;
 	const resolvedStorePath = path.resolve(storePath);
+	const syncDirectory =
+		options.syncDirectory ??
+		((directory: string) =>
+			Effect.scoped(
+				fs.open(directory, {flag: "r"}).pipe(Effect.flatMap((directoryFile) => directoryFile.sync)),
+			));
 	const decodeDomain = <A>(input: {
 		readonly parsed: Record<string, unknown>;
 		readonly key: string;
@@ -397,13 +467,6 @@ export const makeFileWorkspaceStateStore = Effect.fn("TuvalResilience.fileStore"
 					),
 				),
 				Effect.andThen(fs.rename(temporaryPath, resolvedStorePath)),
-				Effect.andThen(
-					Effect.scoped(
-						fs
-							.open(directory, {flag: "r"})
-							.pipe(Effect.flatMap((directoryFile) => directoryFile.sync)),
-					),
-				),
 				Effect.ensuring(fs.remove(temporaryPath).pipe(Effect.ignore)),
 				Effect.mapError(
 					() =>
@@ -413,6 +476,8 @@ export const makeFileWorkspaceStateStore = Effect.fn("TuvalResilience.fileStore"
 						}),
 				),
 			);
+			const directorySync = yield* Effect.result(syncDirectory(directory));
+			return workspaceStateDirectorySyncResult(Result.isSuccess(directorySync));
 		}),
 	} satisfies WorkspaceStateStore;
 });
@@ -423,6 +488,7 @@ export interface RestorationDependencies {
 	readonly restoreLineage: () => Effect.Effect<unknown, unknown>;
 	readonly restoreSelection: (sessionId: string) => Effect.Effect<boolean, unknown>;
 	readonly restoreSettings: (settings: WorkspaceSettings) => Effect.Effect<void, unknown>;
+	readonly readSettings?: () => Effect.Effect<WorkspaceSettings, unknown>;
 	readonly availablePackageRegistrations: ReadonlyArray<string>;
 	readonly restorePackageRegistrations: (
 		packages: ReadonlyArray<string>,
@@ -468,13 +534,14 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 		}
 		if (outcome._tag === "partial-source") {
 			discoveryDegraded = true;
-			for (const _problem of outcome.problems) {
+			for (const problem of outcome.problems) {
 				diagnostics.push(
 					resilienceDiagnostic({
 						category: "startup",
 						code: "discovery-source-unavailable",
 						message: "A configured session source was unavailable or corrupt",
 						action: "Repair that session source; valid sessions remain available",
+						sourceId: problem.source,
 					}),
 				);
 			}
@@ -554,7 +621,19 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 			}),
 		);
 	}
-	mark("settings", Result.isFailure(settings));
+	const currentSettings =
+		dependencies.readSettings === undefined
+			? undefined
+			: yield* Effect.result(dependencies.readSettings());
+	const restoredSettings =
+		currentSettings !== undefined && Result.isSuccess(currentSettings)
+			? currentSettings.success
+			: persisted.settings;
+	mark(
+		"settings",
+		Result.isFailure(settings) ||
+			(currentSettings !== undefined && Result.isFailure(currentSettings)),
+	);
 
 	const availablePackages = [...new Set(dependencies.availablePackageRegistrations)].sort();
 	const requestedPackages =
@@ -591,7 +670,28 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 	}
 	mark("package-registrations", missingPackages.length > 0 || Result.isFailure(packages));
 
-	const extensionUI = yield* Effect.result(dependencies.restoreExtensionUI(persisted.extensionUI));
+	const restoredExtensionUI = persisted.extensionUI.filter((snapshot) =>
+		restoredPackages.includes(snapshot.scope.packageName),
+	);
+	const unavailableExtensionPackages = [
+		...new Set(
+			persisted.extensionUI
+				.filter((snapshot) => !restoredPackages.includes(snapshot.scope.packageName))
+				.map((snapshot) => snapshot.scope.packageName),
+		),
+	].sort();
+	for (const packageName of unavailableExtensionPackages) {
+		diagnostics.push(
+			resilienceDiagnostic({
+				category: "ui-bridge",
+				code: "extension-ui-package-unavailable",
+				message: "Persisted extension UI state belonged to an unavailable package",
+				action: "Reinstall the package to recreate its current extension UI state",
+				packageName,
+			}),
+		);
+	}
+	const extensionUI = yield* Effect.result(dependencies.restoreExtensionUI(restoredExtensionUI));
 	if (Result.isFailure(extensionUI)) {
 		diagnostics.push(
 			resilienceDiagnostic({
@@ -602,14 +702,17 @@ export const restoreWorkspace = Effect.fn("TuvalResilience.restoreWorkspace")(fu
 			}),
 		);
 	}
-	mark("extension-ui-current", Result.isFailure(extensionUI));
+	mark(
+		"extension-ui-current",
+		unavailableExtensionPackages.length > 0 || Result.isFailure(extensionUI),
+	);
 
 	return {
 		stages,
 		selectedSessionId,
-		settings: persisted.settings,
+		settings: restoredSettings,
 		packageRegistrations: restoredPackages,
-		extensionUI: persisted.extensionUI,
+		extensionUI: restoredExtensionUI,
 		diagnostics,
 	} satisfies RestorationSnapshot;
 });
