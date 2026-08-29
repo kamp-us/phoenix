@@ -538,8 +538,10 @@ individually to "check" one of them, and never move the armed proof ahead of the
 nothing left here for an ordering choice to get wrong. A refusal from `resume-child` is the stopping
 step's own — it names which step stopped, keeps that verb's code and words, and runs nothing after
 it, so read the code off the table in [`contract.md`](contract.md) and route on that. On any stop
-past the claim, the repair claim stands: re-running `resume-child` continues the same lane rather
-than minting a second one.
+past the claim, the repair claim stands, and the stop line prints the token it stands under: continue
+that same lane with `fabrika build resume-child <n> --token <token>`. **The token is not optional on a
+re-run** — a bare `resume-child <n>` over a held claim mints a second one, loses the earliest-wins
+tiebreak to your own prior claim and refuses on `15`.
 
 `--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` the claim
 step refuses on `31`, so the entry can never be run past the fence. `--resume-lane` **re-keys** the

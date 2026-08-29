@@ -84,6 +84,14 @@ const CLAIMED_THREAD = comments(
 	{id: 9001, body: MINE, createdAt: "2026-08-09T00:00:01Z"},
 );
 
+/** The board a mid-sequence stop leaves behind: this lane's marker already standing beside the FAIL. */
+const HOLDS_THE_CLAIM: ReadonlyArray<Scripted> = [
+	[COMMENTS, CLAIMED_THREAD],
+	[ISSUE, CLAIMABLE],
+	[PERM, WRITES],
+	NO_BLOCKERS,
+];
+
 /** No `ROADMAP.md`: the scope fence is inert, so this suite asks only about the sequence. */
 const NO_CAMPAIGNS = fakeFs({files: {}});
 
@@ -308,6 +316,17 @@ describe("runResumeChild — the fail-closed stops, each still its own", () => {
 		expect(shell.calls.some((line) => RENAME.test(line))).toBe(false);
 	});
 
+	it("names the exact --token re-run that continues the lane, not a bare one", async () => {
+		const {outcome} = await run([
+			...WINS_THE_CLAIM,
+			[TREE_ROOT, GIT_DIRS],
+			[STATUS, okOut(" M a.ts\n")],
+		]);
+		expect(outcome.stderr.join("\n")).toContain(
+			`"fabrika build resume-child ${CHILD} --token ${LANE_TOKEN}"`,
+		);
+	});
+
 	it("names the step it stopped at, and keeps the stopping verb's own reason last", async () => {
 		const {outcome} = await run([
 			...WINS_THE_CLAIM,
@@ -318,5 +337,40 @@ describe("runResumeChild — the fail-closed stops, each still its own", () => {
 			"build resume-child: stopped at the clean-tree step on exit 13",
 		);
 		expect(outcome.stderr.at(-1)).toContain("uncommitted change(s) at open — refusing");
+	});
+});
+
+/**
+ * The continuation the stop line promises, executed. A mid-sequence stop leaves a marker on the
+ * board, and only the `--token` arm of `build claim` answers off it — so this is the run that has to
+ * work, and the one the surfaces have to name. They said "re-run this verb" and meant this.
+ */
+describe("runResumeChild — continuing a lane that already holds its claim", () => {
+	it("carries the same claim through on --token, writing no second marker", async () => {
+		const {outcome, shell} = await run([...HOLDS_THE_CLAIM, ...GENERIC_CHECKOUT], {
+			token: LANE_TOKEN,
+		});
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout)).toEqual({
+			answer: "resumed",
+			issue: CHILD,
+			token: LANE_TOKEN,
+			branch: RESUMED,
+			root: "/repo/trees/lane-a",
+			claim: {number: CHILD, nonce: NONCE},
+		});
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+		expect(outcome.stderr.join("\n")).toContain("already held by this lane");
+	});
+
+	it("reaches the checkout the stop short-circuited, in the same order", async () => {
+		const {shell} = await run([...HOLDS_THE_CLAIM, ...GENERIC_CHECKOUT], {token: LANE_TOKEN});
+		expect(shell.calls).toContain(`git branch -m ${PRIOR} ${RESUMED}`);
+		expect(shell.calls.findIndex((line) => STATUS.test(line))).toBeLessThan(
+			shell.calls.findIndex((line) => RENAME.test(line)),
+		);
+		expect(shell.calls.findIndex((line) => SWITCH.test(line))).toBeLessThan(
+			shell.calls.findIndex((line) => ABBREV_REF.test(line)),
+		);
 	});
 });

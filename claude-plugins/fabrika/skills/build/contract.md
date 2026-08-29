@@ -1526,7 +1526,7 @@ fabrika build resume-child 7162 [--token <token>]
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the epic child whose standing-`FAIL` repair lane this opens |
-| `--token` | string | no | — | the repair claim this lane already holds, when it is re-running; the claim step then answers off the standing marker and writes nothing |
+| `--token` | string | no | — | the repair claim this lane already holds, when it is re-running; the claim step then answers off the standing marker and writes nothing. Omitting it on a re-run over a held claim is not a shorter spelling of the same run: the claim step mints a second marker, loses the earliest-wins tiebreak to this lane's own prior claim and refuses on `15` |
 
 **Output** — machine. One JSON object:
 
@@ -1560,9 +1560,10 @@ the tool does.
 
 **It sequences and derives nothing.** Every step is the same `run*` function the CLI leaf calls, so a
 refusal keeps its own exit code, its own words and its own fail-closed reading. This verb adds one
-stderr line naming the step that stopped, and — once a claim has landed — one line naming how to
-retract it. No step after a refusal runs, so the branch is re-keyed only once the claim and
-cleanliness steps have passed.
+stderr line naming the step that stopped, and — once a claim has landed — one line spelling out both
+ways forward from a held claim, each with the won token already in it: the `--token` re-run that
+continues the lane, and the `build release` that retracts it. No step after a refusal runs, so the
+branch is re-keyed only once the claim and cleanliness steps have passed.
 
 **Exit status** — the stopping step's, never a code of this verb's own.
 
@@ -1582,7 +1583,7 @@ cleanliness steps have passed.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `build resume-child: stopped at the <step> step on exit <code>; the steps after it did not run.` | the step's | context line, above the stopping verb's own reason |
-| `build resume-child: the repair claim on #<n> stands — re-run this verb to continue it, or retract it with "fabrika build release <n> --token <token>".` | the step's | context line, on any stop past the claim |
+| `build resume-child: the repair claim on #<n> stands — continue it with "fabrika build resume-child <n> --token <token>", or retract it with "fabrika build release <n> --token <token>". A re-run without --token mints a second claim and refuses on 15.` | the step's | context line, on any stop past the claim |
 | `build resume-child: "build claim <n> --resume" answered without a readable token — which lane holds the repair is UNKNOWN, so nothing was checked out. …` | 11 | refusal |
 | `build resume-child: "build tree --issue <n>" answered without a readable proof — <branch> is checked out and whether it carries this claim's identity is UNKNOWN. …` | 11 | refusal |
 
@@ -1600,10 +1601,19 @@ $ fabrika build resume-child 7162
 ```
 $ fabrika build resume-child 7162
 build resume-child: stopped at the clean-tree step on exit 13; the steps after it did not run.
-build resume-child: the repair claim on #7162 stands — re-run this verb to continue it, or retract it with "fabrika build release 7162 --token build:s-9f2e:c1a4d6f8-…".
+build resume-child: the repair claim on #7162 stands — continue it with "fabrika build resume-child 7162 --token build:s-9f2e:c1a4d6f8-…", or retract it with "fabrika build release 7162 --token build:s-9f2e:c1a4d6f8-…". A re-run without --token mints a second claim and refuses on 15.
 build tree: 2 uncommitted change(s) at open — refusing; an unauthored hunk is not yours to keep or clean.
 $ echo $?
 13
+```
+
+The continuation that stop line names, after the tree was cleaned. The claim step answers off the
+standing marker and writes nothing, and the run goes on to the branch it stopped short of:
+
+```
+$ fabrika build resume-child 7162 --token build:s-9f2e:c1a4d6f8-…
+build claim: #7162 is already held by this lane (comment 5460495961) — answered with the marker that owns it; nothing was written.
+{"answer":"resumed","issue":7162,"token":"build:s-9f2e:c1a4d6f8-…","branch":"build/7162-tuval-bootstrap-c1a4d6f8","root":"/abs/path","claim":{"number":7162,"nonce":"c1a4d6f8"}}
 ```
 
 **Grounding**

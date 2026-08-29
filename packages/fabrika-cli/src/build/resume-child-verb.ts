@@ -31,6 +31,8 @@ export interface ResumeChildOptions {
 	 *
 	 * Passed straight to `build claim`, which answers `won` off the standing marker and writes nothing
 	 * when the token names this lane, so a re-run after a mid-sequence refusal costs no second marker.
+	 * That arm is the only one gated on this field, so continuing a lane means re-running WITH it; a
+	 * tokenless re-run over a held claim posts a second marker and loses to the first on `15` (#6037).
 	 */
 	readonly token: string | null;
 	readonly repo: string | null;
@@ -109,9 +111,11 @@ export const runResumeChild = (
 		}
 		const notes = [...claimed.stderr];
 		// Every refusal past this point leaves a marker on the board, and a lane that cannot say how to
-		// retract it is how a child ends up claimed by nobody who is still running.
+		// retract it is how a child ends up claimed by nobody who is still running. The re-run carries
+		// `--token` because only that arm of `build claim` answers off the standing marker: a tokenless
+		// re-run posts a second one, then loses the earliest-wins tiebreak to its own prior claim (#6037).
 		const held = [
-			`${VERB}: the repair claim on #${issue} stands — re-run this verb to continue it, or retract it with "fabrika build release ${issue} --token ${won}".`,
+			`${VERB}: the repair claim on #${issue} stands — continue it with "fabrika build resume-child ${issue} --token ${won}", or retract it with "fabrika build release ${issue} --token ${won}". A re-run without --token mints a second claim and refuses on 15.`,
 		];
 
 		const confirmed = yield* runConfirm({number: issue, repo, env, token: won});
@@ -127,6 +131,8 @@ export const runResumeChild = (
 		const branched = yield* runBranch({
 			number: issue,
 			slug: null,
+			// Inert, not a rebase: the `resumeLane` path returns before it fetches or reads `base`, and a
+			// repair keeps the child's commits where they are. This is the CLI's own default for the flag.
 			base: "origin/main",
 			resume: null,
 			resumeLane: true,
