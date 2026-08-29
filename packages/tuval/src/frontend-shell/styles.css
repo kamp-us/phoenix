@@ -716,16 +716,28 @@ kbd {
 	font: var(--t-mono);
 }
 
-.chat-pane {
+.workspace-side-stack {
 	position: absolute;
 	z-index: 12;
 	top: var(--space-3);
 	right: var(--space-3);
 	bottom: var(--space-3);
 	display: grid;
-	grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+	grid-template-rows: minmax(0, 1fr) auto;
 	gap: var(--space-3);
 	width: var(--pane-width);
+	pointer-events: none;
+}
+
+.chat-pane {
+	position: relative;
+	display: grid;
+	grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+	gap: var(--space-3);
+	width: 100%;
+	min-height: 0;
+	overflow: hidden;
+	pointer-events: auto;
 	animation: pane-in 180ms ease-out;
 }
 
@@ -1185,12 +1197,17 @@ kbd {
 }
 
 .extension-ui {
-	position: fixed;
+	position: relative;
 	z-index: 30;
-	inset: auto var(--space-4) var(--space-4) auto;
+	align-self: end;
+	justify-self: end;
 	display: grid;
 	gap: var(--space-2);
-	width: var(--problem-panel-width);
+	width: min(var(--problem-panel-width), 100%);
+	max-height: min(176px, 24vh);
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
 	pointer-events: none;
 }
 
@@ -1630,12 +1647,16 @@ kbd {
 		min-height: var(--control-min);
 	}
 
-	.workspace[data-mobile-layer="canvas"] > .chat-pane,
-	.workspace[data-mobile-layer="canvas"] > .extension-ui,
+	.workspace-side-stack {
+		display: contents;
+	}
+
+	.workspace[data-mobile-layer="canvas"] .chat-pane,
+	.workspace[data-mobile-layer="canvas"] .extension-ui,
 	.workspace[data-mobile-layer="chat"] > .canvas,
-	.workspace[data-mobile-layer="chat"] > .extension-ui,
+	.workspace[data-mobile-layer="chat"] .extension-ui,
 	.workspace[data-mobile-layer="extensions"] > .canvas,
-	.workspace[data-mobile-layer="extensions"] > .chat-pane {
+	.workspace[data-mobile-layer="extensions"] .chat-pane {
 		display: none;
 	}
 

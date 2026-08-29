@@ -1284,41 +1284,43 @@ export function TuvalApp() {
 					</p>
 				</section>
 
-				{paneSelection._tag === "closed" ? null : (
-					<ChatPane
-						key={`${paneSelection.selected.identity}:${paneSelection.generation}`}
-						selected={paneSelection.selected}
-						connection={paneSelection.pane.connection}
-						session={paneSelection.pane.session}
-						{...(paneSelection.pane.message === undefined
-							? {}
-							: {message: paneSelection.pane.message})}
-						onClose={closePane}
-						onReconnect={rearmReconnect}
-						onSend={sendPrompt}
-						onSteer={(text) =>
-							runSelectedControl((correlationId, sessionId) =>
-								steerLiveSession(sessionId, correlationId, text),
-							)
-						}
-						onAbort={() =>
-							runSelectedControl((correlationId, sessionId) =>
-								abortLiveSession(sessionId, correlationId),
-							)
-						}
-						onSetModel={(model: ModelRef) =>
-							runSelectedControl((correlationId, sessionId) =>
-								setModelLiveSession(sessionId, correlationId, model),
-							)
-						}
-						onSetThinking={(level: ThinkingLevel) =>
-							runSelectedControl((correlationId, sessionId) =>
-								setThinkingLiveSession(sessionId, correlationId, level),
-							)
-						}
-					/>
-				)}
-				<ExtensionUIBridge initialSnapshots={restoration?.extensionUI ?? []} />
+				<div className="workspace-side-stack">
+					{paneSelection._tag === "closed" ? null : (
+						<ChatPane
+							key={`${paneSelection.selected.identity}:${paneSelection.generation}`}
+							selected={paneSelection.selected}
+							connection={paneSelection.pane.connection}
+							session={paneSelection.pane.session}
+							{...(paneSelection.pane.message === undefined
+								? {}
+								: {message: paneSelection.pane.message})}
+							onClose={closePane}
+							onReconnect={rearmReconnect}
+							onSend={sendPrompt}
+							onSteer={(text) =>
+								runSelectedControl((correlationId, sessionId) =>
+									steerLiveSession(sessionId, correlationId, text),
+								)
+							}
+							onAbort={() =>
+								runSelectedControl((correlationId, sessionId) =>
+									abortLiveSession(sessionId, correlationId),
+								)
+							}
+							onSetModel={(model: ModelRef) =>
+								runSelectedControl((correlationId, sessionId) =>
+									setModelLiveSession(sessionId, correlationId, model),
+								)
+							}
+							onSetThinking={(level: ThinkingLevel) =>
+								runSelectedControl((correlationId, sessionId) =>
+									setThinkingLiveSession(sessionId, correlationId, level),
+								)
+							}
+						/>
+					)}
+					<ExtensionUIBridge initialSnapshots={restoration?.extensionUI ?? []} />
+				</div>
 			</main>
 		</div>
 	);

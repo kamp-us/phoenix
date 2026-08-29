@@ -263,6 +263,65 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		await expect(coldPage.getByText("eş paket durumu", {exact: true})).toHaveCount(1);
 		await expect(coldPage.getByText("peer below", {exact: true})).toHaveCount(1);
 
+		const desktopChat = coldPage.locator(".chat-pane");
+		const desktopTranscript = coldPage.locator(".transcript");
+		const desktopComposer = coldPage.locator(".composer-shell");
+		const desktopExtension = coldPage.locator(".extension-ui");
+		const [desktopChatBox, desktopTranscriptBox, desktopComposerBox, desktopExtensionBox] =
+			await Promise.all([
+				desktopChat.boundingBox(),
+				desktopTranscript.boundingBox(),
+				desktopComposer.boundingBox(),
+				desktopExtension.boundingBox(),
+			]);
+		expect(desktopChatBox).not.toBeNull();
+		expect(desktopTranscriptBox).not.toBeNull();
+		expect(desktopComposerBox).not.toBeNull();
+		expect(desktopExtensionBox).not.toBeNull();
+		expect((desktopChatBox?.y ?? 0) + (desktopChatBox?.height ?? 0)).toBeLessThanOrEqual(
+			desktopExtensionBox?.y ?? 0,
+		);
+		expect(
+			(desktopTranscriptBox?.y ?? 0) + (desktopTranscriptBox?.height ?? 0),
+		).toBeLessThanOrEqual(desktopExtensionBox?.y ?? 0);
+		expect((desktopComposerBox?.y ?? 0) + (desktopComposerBox?.height ?? 0)).toBeLessThanOrEqual(
+			desktopExtensionBox?.y ?? 0,
+		);
+		expect(desktopChatBox?.width).toBe(456);
+		expect(desktopExtensionBox?.width).toBe(360);
+		expect(await desktopTranscript.evaluate((element) => getComputedStyle(element).overflowY)).toBe(
+			"auto",
+		);
+		const transcriptScroll = await desktopTranscript.evaluate((element) => {
+			element.scrollTop = 0;
+			const startsAtTop = element.scrollTop === 0;
+			element.scrollTop = element.scrollHeight;
+			return {
+				startsAtTop,
+				scrollTop: element.scrollTop,
+				scrollHeight: element.scrollHeight,
+				clientHeight: element.clientHeight,
+			};
+		});
+		expect(transcriptScroll.startsAtTop).toBe(true);
+		expect(transcriptScroll.scrollHeight).toBeGreaterThan(transcriptScroll.clientHeight);
+		expect(transcriptScroll.scrollTop).toBeGreaterThan(0);
+		const desktopEditor = coldPage.getByRole("textbox", {name: "İstem"});
+		await desktopEditor.focus();
+		await expect(desktopEditor).toBeFocused();
+		await expect(
+			coldPage.getByText("fixture-extension-ui-peer · session-peer").first(),
+		).toBeVisible();
+		await expect(coldPage.locator(".react-flow")).toBeVisible();
+		await expect(coldPage.getByRole("button", {name: "Yakınlaştır"})).toBeEnabled();
+
+		const coldDesktop = testInfo.outputPath("daily-driver-cold-desktop-a11y.png");
+		await coldPage.screenshot({path: coldDesktop});
+		await testInfo.attach("daily-driver-cold-desktop-a11y", {
+			path: coldDesktop,
+			contentType: "image/png",
+		});
+
 		await coldPage.setViewportSize({width: 390, height: 844});
 		const mobileNavigation = coldPage.getByRole("navigation", {
 			name: "Mobil çalışma alanı katmanları",
