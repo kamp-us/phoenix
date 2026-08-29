@@ -148,6 +148,15 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
 Only **gating** reds reach this lane — an informational context is red without blocking anything,
 and treating one as healable is how a non-failure stalled a mergeable PR.
 
+**The logs you are classifying came from `refs/pull/<n>/merge`, not from the PR's head.** A
+`pull_request` workflow builds the prospective merge of head into base and labels the runs with the
+head SHA, so a `logic` red naming a symbol or a line nobody can find at the head is still a real
+failure of the tree that must merge — the head being clean disproves nothing, and reclassifying on
+that basis is how a correct FAIL gets filed as a gate misreading its own SHA
+([#6794](https://github.com/kamp-us/phoenix/issues/6794)). Route it to repair as the `logic` it is;
+reproducing it against that ref is the repair lane's step, stated with its citation and worked
+example in [`build`'s Repair section](../build/SKILL.md#repair).
+
 ## 4 — The one rerun, and why the verb owns the guard
 
 ```bash
