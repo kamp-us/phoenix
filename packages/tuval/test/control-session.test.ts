@@ -1,4 +1,11 @@
-import type {ByteTransportFactory, ByteTransportHandlers} from "@earendil-works/pi-client";
+// @patch-pin: @earendil-works/pi-client@0.84.3
+
+import {
+	type ByteTransportFactory,
+	type ByteTransportHandlers,
+	PiClient,
+	PiRequestCancelledError,
+} from "@earendil-works/pi-client";
 import {
 	type ClientMessage,
 	ClientMessageDecoder,
@@ -299,6 +306,11 @@ class DeadlineWaitError extends Schema.TaggedErrorClass<DeadlineWaitError>()(
 	{message: Schema.String},
 ) {}
 
+class PiClientTestError extends Schema.TaggedErrorClass<PiClientTestError>()(
+	"tuval/test/PiClientTestError",
+	{cause: Schema.Defect()},
+) {}
+
 const waitForActiveDeadline = (deadlines: ManualDeadlines) =>
 	Effect.tryPromise({
 		try: () => deadlines.waitForActive(),
@@ -312,6 +324,94 @@ const connect = (
 	Effect.acquireRelease(PiLiveSession.connect(protocol.factory, options), (service) =>
 		service.dispose().pipe(Effect.ignore),
 	);
+
+const connectClient = (protocol: SyntheticControlProtocol) =>
+	Effect.acquireRelease(
+		Effect.tryPromise({
+			try: () => PiClient.connect({transportFactory: protocol.factory}),
+			catch: () => new DeadlineWaitError({message: "PiClient did not connect"}),
+		}),
+		(client) =>
+			Effect.tryPromise({
+				try: () => client.dispose(),
+				catch: (cause) => new PiClientTestError({cause}),
+			}).pipe(Effect.ignore),
+	);
+
+const cancelled = (acquisition: Promise<unknown>) =>
+	Effect.flip(
+		Effect.tryPromise({
+			try: () => acquisition,
+			catch: (cause) => new PiClientTestError({cause}),
+		}),
+	);
+
+describe("patched PiClient request cancellation", () => {
+	it.effect("makes old attach acknowledgements inert before, during, and after a fresh retry", () =>
+		Effect.gen(function* () {
+			for (const timing of ["before", "during", "after"] as const) {
+				const target = snapshot(`cancel-${timing}`);
+				const protocol = new SyntheticControlProtocol([model("small", ["off"])], target);
+				protocol.behavior.set("attach", "hold");
+				const client = yield* connectClient(protocol);
+
+				const oldCancellation = new AbortController();
+				const old = client.acquireSession(target.id, {
+					mode: "exclusive",
+					signal: oldCancellation.signal,
+				});
+				yield* Effect.yieldNow;
+				assert.strictEqual(client.pendingRequestCount, 1);
+				oldCancellation.abort();
+				assert.instanceOf((yield* cancelled(old)).cause, PiRequestCancelledError);
+				assert.strictEqual(client.pendingRequestCount, 0);
+				if (timing === "before") protocol.acknowledgeHeld("attach");
+
+				const fresh = client.acquireSession(target.id, {mode: "exclusive"});
+				yield* Effect.yieldNow;
+				if (timing === "during") protocol.acknowledgeHeld("attach");
+				protocol.acknowledgeHeld("attach", timing === "after" ? 1 : 0);
+				const freshLease = yield* Effect.tryPromise({
+					try: () => fresh,
+					catch: (cause) => new PiClientTestError({cause}),
+				});
+				if (timing === "after") protocol.acknowledgeHeld("attach");
+				yield* Effect.yieldNow;
+
+				assert.isTrue(freshLease.active);
+				assert.strictEqual(client.pendingRequestCount, 0);
+				assert.strictEqual(protocol.heldCount("detach"), 0);
+				assert.notInclude(protocol.commands, "detach");
+			}
+		}),
+	);
+
+	it.effect("keeps the pending registry at zero across repeated never-settling cancellations", () =>
+		Effect.gen(function* () {
+			const target = snapshot("cancel-repeated");
+			const protocol = new SyntheticControlProtocol([model("small", ["off"])], target);
+			protocol.behavior.set("attach", "hold");
+			const client = yield* connectClient(protocol);
+
+			for (let index = 0; index < 32; index += 1) {
+				const controller = new AbortController();
+				const acquisition = client.acquireSession(target.id, {
+					mode: "exclusive",
+					signal: controller.signal,
+				});
+				yield* Effect.yieldNow;
+				controller.abort();
+				assert.instanceOf((yield* cancelled(acquisition)).cause, PiRequestCancelledError);
+				assert.strictEqual(client.pendingRequestCount, 0);
+			}
+			while (protocol.heldCount("attach") > 0) protocol.acknowledgeHeld("attach");
+			yield* Effect.yieldNow;
+			assert.strictEqual(client.pendingRequestCount, 0);
+			assert.notInclude(protocol.commands, "detach");
+			assert.isTrue(client.connected);
+		}),
+	);
+});
 
 describe("PiLiveSession acknowledged controls", () => {
 	it.effect(
@@ -615,11 +715,21 @@ describe("PiLiveSession acknowledged controls", () => {
 				});
 				assert.strictEqual(openCheckpoints, 1);
 				assert.strictEqual((yield* openService.current())?.sessionId, second.id);
-				openProtocol.behavior.set("detach", "hold");
+				const detachCount = openProtocol.commands.filter((command) => command === "detach").length;
 				openProtocol.acknowledgeHeld("attach");
 				yield* Effect.yieldNow;
 				yield* Effect.yieldNow;
-				assert.strictEqual(openProtocol.heldCount("detach"), 1);
+				assert.strictEqual(
+					openProtocol.commands.filter((command) => command === "detach").length,
+					detachCount,
+				);
+				assert.deepInclude(
+					yield* openService.setThinking({
+						correlationId: "fresh-open-remains-attached",
+						thinkingLevel: "low",
+					}),
+					{_tag: "acknowledged", command: "set-thinking"},
+				);
 				assert.strictEqual(
 					(yield* openService.eventsAfter()).filter(
 						(event) =>
@@ -629,8 +739,37 @@ describe("PiLiveSession acknowledged controls", () => {
 					).length,
 					1,
 				);
-				openProtocol.behavior.set("detach", "acknowledge");
 			}),
+	);
+
+	it.effect("settles every fiber across repeated never-acknowledged replacement timeouts", () =>
+		Effect.gen(function* () {
+			const deadlines = new ManualDeadlines();
+			const first = snapshot("repeated-timeout-first");
+			const protocol = new SyntheticControlProtocol([model("small", ["off"])], first);
+			const service = yield* connect(protocol, {makeAcknowledgementDeadline: deadlines.make});
+			yield* service.attach(first.id);
+			protocol.behavior.set("create", "hold");
+			const detachCount = protocol.commands.filter((command) => command === "detach").length;
+
+			for (let index = 0; index < 16; index += 1) {
+				const fiber = yield* service
+					.create({correlationId: "repeated-timeout"})
+					.pipe(Effect.forkChild);
+				yield* waitForActiveDeadline(deadlines);
+				deadlines.elapse();
+				assert.deepInclude(yield* Fiber.join(fiber), {_tag: "refused", code: "timeout"});
+				assert.isDefined(fiber.pollUnsafe());
+			}
+			while (protocol.heldCount("create") > 0) protocol.acknowledgeHeld("create");
+			yield* Effect.yieldNow;
+			yield* Effect.yieldNow;
+			assert.strictEqual((yield* service.current())?.sessionId, first.id);
+			assert.strictEqual(
+				protocol.commands.filter((command) => command === "detach").length,
+				detachCount,
+			);
+		}),
 	);
 
 	it.effect("leaves the deadline before a slow replacement checkpoint", () =>

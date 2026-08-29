@@ -640,11 +640,14 @@ export class PiLiveSessionState implements LiveSessionState {
 				return this.#runReplacement(
 					request,
 					checkpoint,
-					() =>
-						this.#client.createSession({
-							...(request.cwd === undefined ? {} : {cwd: request.cwd}),
-							...(request.name === undefined ? {} : {name: request.name}),
-						}),
+					(acquisitionSignal) =>
+						this.#client.createSession(
+							{
+								...(request.cwd === undefined ? {} : {cwd: request.cwd}),
+								...(request.name === undefined ? {} : {name: request.name}),
+							},
+							acquisitionSignal,
+						),
 					signal,
 					attempt,
 				);
@@ -652,7 +655,11 @@ export class PiLiveSessionState implements LiveSessionState {
 				return this.#runReplacement(
 					request,
 					checkpoint,
-					() => this.#client.acquireSession(request.sessionId, {mode: "exclusive"}),
+					(acquisitionSignal) =>
+						this.#client.acquireSession(request.sessionId, {
+							mode: "exclusive",
+							signal: acquisitionSignal,
+						}),
 					signal,
 					attempt,
 				);
@@ -672,7 +679,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	async #runReplacement(
 		request: Extract<ControlRequest, {command: "create" | "open"}>,
 		checkpoint: LiveSelectionCheckpoint,
-		acquire: () => Promise<PiSessionHandle>,
+		acquire: (signal: AbortSignal) => Promise<PiSessionHandle>,
 		signal: AbortSignal | undefined,
 		attempt: ControlAttempt,
 	): Promise<ControlLiveSessionOutcome> {
@@ -714,10 +721,12 @@ export class PiLiveSessionState implements LiveSessionState {
 						: undefined;
 				if (pending !== undefined) this.#pendingAttachment = pending;
 				let acknowledgement: ReplacementAcknowledgement;
+				const acquisitionCancellation = new AbortController();
 				try {
 					acknowledgement = await this.#awaitReplacementAcknowledgement(
 						request,
-						acquire(),
+						acquire(acquisitionCancellation.signal),
+						acquisitionCancellation,
 						signal,
 						interruptReplacement,
 						attempt,
@@ -779,6 +788,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	async #awaitReplacementAcknowledgement(
 		request: Extract<ControlRequest, {command: "create" | "open"}>,
 		acquisition: Promise<PiSessionHandle>,
+		acquisitionCancellation: AbortController,
 		signal: AbortSignal | undefined,
 		interruptReplacement: () => void,
 		attempt: ControlAttempt,
@@ -790,6 +800,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			const onAbort = () => {
 				interruptReplacement();
 				resolve({_tag: "interrupted"});
+				acquisitionCancellation.abort();
 			};
 			if (signal.aborted) onAbort();
 			else {
@@ -811,10 +822,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		if (winner._tag === "acknowledged") return winner;
 		if (winner._tag === "error") throw winner.error;
 		attempt.tombstone();
-		if (request.command === "open") {
-			this.#client.tombstoneSessionAcquisition(request.sessionId);
-		}
-		this.#disposeSupersededAcquisition(acquisition);
+		acquisitionCancellation.abort();
 		if (winner._tag === "interrupted") {
 			throw new ReplacementInterrupted(`Interrupted before ${request.command} acknowledgement`);
 		}
