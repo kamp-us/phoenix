@@ -11,6 +11,7 @@ dist
 build
 # `build` names a fabrika surface, not build output — both are source (#4707, #4988)
 !claude-plugins/fabrika/skills/build/
+!codex-plugins/fabrika/skills/build
 !packages/fabrika-cli/src/build/
 *.tsbuildinfo
 .next

@@ -1,0 +1,12 @@
+{
+	"name": "kampus",
+	"interface": { "displayName": "kamp.us" },
+	"plugins": [
+		{
+			"name": "fabrika",
+			"source": { "source": "local", "path": "./codex-plugins/fabrika" },
+			"policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+			"category": "Developer Tools"
+		}
+	]
+}

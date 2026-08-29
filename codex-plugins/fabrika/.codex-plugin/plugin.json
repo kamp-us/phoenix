@@ -1,0 +1,28 @@
+{
+	"name": "fabrika",
+	"version": "0.1.0+codex.20260829224116",
+	"description": "The kamp.us agent pipeline: report, triage, build, review, and ship through guarded CLI verbs.",
+	"author": {
+		"name": "kamp-us",
+		"url": "https://github.com/kamp-us"
+	},
+	"homepage": "https://github.com/kamp-us/phoenix/tree/main/claude-plugins/fabrika",
+	"repository": "https://github.com/kamp-us/phoenix",
+	"license": "MIT",
+	"keywords": ["agent-workflow", "skills", "issue-pipeline", "repo-agnostic"],
+	"skills": "./skills/",
+	"interface": {
+		"displayName": "fabrika",
+		"shortDescription": "Run the kamp.us agent pipeline in Codex.",
+		"longDescription": "Turn GitHub issues into guarded pull requests through fabrika's report, triage, build, review, and ship workflow.",
+		"developerName": "kamp-us",
+		"category": "Developer Tools",
+		"capabilities": ["Interactive", "Write"],
+		"websiteURL": "https://github.com/kamp-us/phoenix/tree/main/claude-plugins/fabrika",
+		"defaultPrompt": [
+			"Use fabrika to report this follow-up.",
+			"Use fabrika to build the next agent-ready issue.",
+			"Use fabrika to review and ship this pull request."
+		]
+	}
+}

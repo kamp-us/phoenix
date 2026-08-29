@@ -65,3 +65,21 @@ fabrika is not Claude Code-only: it also runs in [opencode](https://opencode.ai)
 [`@kampus/fabrika-opencode`](../../packages/fabrika-opencode/) plugin, which registers the same
 eight agent shells as subagents and loads the bundled skills with one config line. See
 [packages/fabrika-opencode/README.md](../../packages/fabrika-opencode/README.md).
+
+## Codex
+
+Register this checkout's Codex marketplace, then install fabrika:
+
+```bash
+codex plugin marketplace add ./
+codex plugin add fabrika@kampus
+```
+
+Start a new Codex thread after installation. The plugin loads the canonical `skills/` directory
+directly, so `report`, `triage`, `build`, `review`, `ship`, and the rest of the skill roster need no
+copied bundle and update with this checkout.
+
+Codex's plugin manifest currently has a skill surface and no agent-shell registration surface. The
+skills are therefore invoked directly in Codex (`Use fabrika build on issue #123`); the eight
+shells under `agents/` remain Claude Code/opencode/pi host adapters and are not silently translated
+into an unsupported Codex manifest field.
