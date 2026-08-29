@@ -149,20 +149,33 @@ export type ExtensionUICancelRequest = (typeof ExtensionUICancelRequest)["Type"]
 export const ExtensionUIUnloadRequest = Schema.Struct({scope: ExtensionUIScope});
 export type ExtensionUIUnloadRequest = (typeof ExtensionUIUnloadRequest)["Type"];
 
-export interface ExtensionUIStatusState {
-	readonly key: string;
-	readonly text: string;
-}
-export interface ExtensionUIWidgetState {
-	readonly key: string;
-	readonly lines: ReadonlyArray<string>;
-	readonly placement: "aboveEditor" | "belowEditor";
-}
-export interface ExtensionUISnapshot {
-	readonly scope: ExtensionUIScope;
-	readonly statuses: ReadonlyArray<ExtensionUIStatusState>;
-	readonly widgets: ReadonlyArray<ExtensionUIWidgetState>;
-}
+export const ExtensionUIUnloadOutcome = Schema.Union([
+	Schema.Struct({_tag: Schema.Literal("unloaded"), scope: ExtensionUIScope}),
+	Schema.Struct({
+		_tag: Schema.Literal("refused"),
+		scope: ExtensionUIScope,
+		reason: Schema.String,
+	}),
+]);
+export type ExtensionUIUnloadOutcome = (typeof ExtensionUIUnloadOutcome)["Type"];
+
+export const ExtensionUIStatusState = Schema.Struct({
+	key: Schema.String,
+	text: Schema.String,
+});
+export type ExtensionUIStatusState = (typeof ExtensionUIStatusState)["Type"];
+export const ExtensionUIWidgetState = Schema.Struct({
+	key: Schema.String,
+	lines: Schema.Array(Schema.String),
+	placement: Schema.Literals(["aboveEditor", "belowEditor"]),
+});
+export type ExtensionUIWidgetState = (typeof ExtensionUIWidgetState)["Type"];
+export const ExtensionUISnapshot = Schema.Struct({
+	scope: ExtensionUIScope,
+	statuses: Schema.Array(ExtensionUIStatusState),
+	widgets: Schema.Array(ExtensionUIWidgetState),
+});
+export type ExtensionUISnapshot = (typeof ExtensionUISnapshot)["Type"];
 
 export type ExtensionUIEvent =
 	| {

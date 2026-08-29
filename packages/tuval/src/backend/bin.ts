@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import {createUnixTransportFactory} from "@earendil-works/pi-client/unix";
+import {getAgentDir, SettingsManager} from "@earendil-works/pi-coding-agent";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {makeFileWorkspaceStateStore, makePiOperationalWorkspaceSettings} from "./resilience.js";
 import {startTuval} from "./server.js";
 
 class CliFailure extends Schema.TaggedErrorClass<CliFailure>()("tuval/CliFailure", {
@@ -35,7 +37,20 @@ export const tuvalCommand = Command.make(
 		const socketPath = Option.getOrUndefined(piSocket);
 		return yield* Effect.scoped(
 			Effect.gen(function* () {
+				const agentDir = getAgentDir();
+				const sessionRoot = `${agentDir}/sessions`;
+				const workspaceStatePath = `${agentDir}/tuval/workspace-state.json`;
+				const workspaceStateStore = yield* makeFileWorkspaceStateStore(workspaceStatePath);
+				const settingsManager = SettingsManager.create(process.cwd(), agentDir);
 				yield* startTuval({
+					workspaceStateStore,
+					operationalWorkspaceSettings: makePiOperationalWorkspaceSettings(settingsManager),
+					packageContributions: {settingsManager, agentDir, cwd: process.cwd()},
+					sessionRoots: [sessionRoot],
+					lineage: {
+						runRoots: [sessionRoot],
+						storePath: `${agentDir}/tuval/lineage.json`,
+					},
 					...(selectedPort === undefined ? {} : {port: selectedPort}),
 					...(open ? {} : {openBrowser: () => Effect.void}),
 					...(socketPath === undefined

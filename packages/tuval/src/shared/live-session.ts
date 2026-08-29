@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import {ResilienceDiagnostic} from "./resilience.js";
 
 export const ModelRef = Schema.Struct({
 	provider: Schema.String,
@@ -152,10 +153,18 @@ export const PromptLiveSessionOutcome = Schema.Union([
 ]);
 export type PromptLiveSessionOutcome = (typeof PromptLiveSessionOutcome)["Type"];
 
-export const ReleaseLiveSessionOutcome = Schema.Struct({
-	_tag: Schema.Literal("released"),
-	sessionId: Schema.NullOr(Schema.String),
-});
+export const ReleaseLiveSessionOutcome = Schema.Union([
+	Schema.Struct({
+		_tag: Schema.Literal("released"),
+		sessionId: Schema.NullOr(Schema.String),
+	}),
+	Schema.Struct({
+		_tag: Schema.Literal("failed"),
+		sessionId: Schema.NullOr(Schema.String),
+		code: Schema.Literals(["protocol", "persistence"]),
+		reason: Schema.String,
+	}),
+]);
 export type ReleaseLiveSessionOutcome = (typeof ReleaseLiveSessionOutcome)["Type"];
 
 export const CreateLiveSessionRequest = Schema.Struct({
@@ -269,6 +278,7 @@ export const LiveSessionEvent = Schema.Union([
 		sequence: Schema.Number,
 		sessionId: Schema.NullOr(Schema.String),
 		message: Schema.String,
+		diagnostic: Schema.optionalKey(ResilienceDiagnostic),
 	}),
 ]);
 export type LiveSessionEvent = (typeof LiveSessionEvent)["Type"];

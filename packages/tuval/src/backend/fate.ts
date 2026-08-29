@@ -70,8 +70,7 @@ export const tuvalFateConfig = FateServer.config({
 			{input: ExtensionUIUnloadRequest, type: "TuvalExtensionUIUnloadOutcome"},
 			Effect.fn("extensionUi.unload")(function* ({input}) {
 				const extensionUI = yield* ExtensionUI;
-				yield* extensionUI.unload(input.scope);
-				return {_tag: "unloaded" as const, scope: input.scope};
+				return yield* extensionUI.unload(input.scope);
 			}),
 		),
 		"liveSession.create": Fate.mutation(

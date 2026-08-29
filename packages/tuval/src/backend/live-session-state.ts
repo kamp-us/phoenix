@@ -35,6 +35,7 @@ import type {
 	SetThinkingLiveSessionRequest,
 	SteerLiveSessionRequest,
 } from "../shared/live-session.js";
+import {resilienceDiagnostic} from "./resilience.js";
 
 const EVENT_HISTORY_LIMIT = 500;
 const CORRELATED_PROMPT_LIMIT = 100;
@@ -82,6 +83,8 @@ export interface AcknowledgementDeadline {
 export interface LiveSessionStateOptions {
 	readonly acknowledgementTimeoutMs?: number;
 	readonly makeAcknowledgementDeadline?: (timeoutMs: number) => AcknowledgementDeadline;
+	readonly onDisconnected?: () => void;
+	readonly onSessionSubscriptionBound?: (sessionId: string) => void;
 }
 
 interface PendingAttachment {
@@ -281,6 +284,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	readonly #unsubscribeServer: Unsubscribe;
 	readonly #acknowledgementTimeoutMs: number;
 	readonly #makeAcknowledgementDeadline: (timeoutMs: number) => AcknowledgementDeadline;
+	readonly #options: LiveSessionStateOptions;
 	#attachment: Attachment | undefined;
 	#pendingAttachment: PendingAttachment | undefined;
 	#sequence = 0;
@@ -294,15 +298,22 @@ export class PiLiveSessionState implements LiveSessionState {
 
 	private constructor(client: PiClient, options: LiveSessionStateOptions) {
 		this.#client = client;
+		this.#options = options;
 		this.#acknowledgementTimeoutMs = options.acknowledgementTimeoutMs ?? ACKNOWLEDGEMENT_TIMEOUT_MS;
 		this.#makeAcknowledgementDeadline =
 			options.makeAcknowledgementDeadline ?? makeAcknowledgementDeadline;
 		this.#unsubscribeConnection = client.onConnectionStateChange((change) => {
 			if (change.state !== "disconnected") return;
+			options.onDisconnected?.();
 			const attachment = this.#attachment;
 			if (attachment === undefined || attachment.disconnectedReason !== undefined) return;
 			attachment.disconnectedReason = change.error?.message ?? "PiClient disconnected";
-			this.#publishDiagnostic(attachment.disconnectedReason, attachment.snapshot.id);
+			this.#publishDiagnostic(
+				change.error === undefined
+					? "Pi live transport disconnected"
+					: "Pi live protocol input was invalid and the transport disconnected",
+				attachment.snapshot.id,
+			);
 			this.#publishSession(attachment);
 			void this.#serialize(() => this.#releaseLease(attachment));
 		});
@@ -468,6 +479,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			};
 			const unsubscribes = [lease.subscribe((next) => this.#acceptSnapshot(generation, next))];
 			this.#attachment = {...attachment, unsubscribes};
+			this.#options.onSessionSubscriptionBound?.(snapshot.id);
 			if (this.#pendingAttachment === pending) this.#pendingAttachment = undefined;
 			for (const event of pending.eventsAfterSnapshot) this.#acceptEvent(generation, event);
 			this.#publishSession(this.#attachment);
@@ -815,6 +827,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		const unsubscribes = [lease.subscribe((next) => this.#acceptSnapshot(generation, next))];
 		const bound = {...attachment, unsubscribes};
 		this.#attachment = bound;
+		this.#options.onSessionSubscriptionBound?.(snapshot.id);
 		return bound;
 	}
 
@@ -982,9 +995,9 @@ export class PiLiveSessionState implements LiveSessionState {
 				this.#publishSession(attachment);
 				void this.#serialize(() => this.#releaseLease(attachment));
 			}
-		} catch (error) {
+		} catch {
 			this.#publishDiagnostic(
-				`Malformed live event was ignored: ${messageOf(error)}`,
+				"Malformed live event was ignored after protocol validation failed",
 				attachment.snapshot.id,
 			);
 		}
@@ -994,12 +1007,9 @@ export class PiLiveSessionState implements LiveSessionState {
 		if (attachment.leaseReleased) return;
 		attachment.leaseReleased = true;
 		for (const unsubscribe of attachment.unsubscribes) unsubscribe();
-		await attachment.lease.dispose().catch((error) => {
+		await attachment.lease.dispose().catch(() => {
 			if (attachment.disconnectedReason === undefined) {
-				this.#publishDiagnostic(
-					`PiClient lease cleanup failed: ${messageOf(error)}`,
-					attachment.snapshot.id,
-				);
+				this.#publishDiagnostic("PiClient lease cleanup failed", attachment.snapshot.id);
 			}
 		});
 	}
@@ -1098,7 +1108,20 @@ export class PiLiveSessionState implements LiveSessionState {
 	}
 
 	#publishDiagnostic(message: string, sessionId: string | null): void {
-		this.#publish({_tag: "diagnostic", sequence: this.#nextSequence(), sessionId, message});
+		const diagnostic = resilienceDiagnostic({
+			category: "protocol",
+			code: "live-session-protocol-degraded",
+			message,
+			action: "Refresh live session truth or select another retained session",
+			...(sessionId === null ? {} : {sessionId}),
+		});
+		this.#publish({
+			_tag: "diagnostic",
+			sequence: this.#nextSequence(),
+			sessionId,
+			message: diagnostic.message,
+			diagnostic,
+		});
 	}
 
 	#nextSequence(): number {

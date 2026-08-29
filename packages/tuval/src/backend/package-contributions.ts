@@ -6,7 +6,7 @@ import {
 	type PathMetadata,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import {Effect, FileSystem, Layer, Path, Schema} from "effect";
+import {Effect, FileSystem, Layer, Path, Result, Schema} from "effect";
 import {
 	type ExtensionUIService,
 	makeExtensionUI,
@@ -85,7 +85,8 @@ type PackageDiagnosticReason =
 	| "manifest-invalid"
 	| "backend-module-unavailable"
 	| "backend-export-not-factory"
-	| "backend-export-not-layer";
+	| "backend-export-not-layer"
+	| "backend-layer-build-failed";
 
 type KeyDiagnosticReason = "duplicate-key" | "shadowed-key" | "asset-unavailable";
 export type ContributionDiagnosticReason = PackageDiagnosticReason | KeyDiagnosticReason;
@@ -209,6 +210,8 @@ const diagnosticMessage = (rejection: ContributionRejection): string => {
 			return "Backend contribution export is not a factory";
 		case "backend-export-not-layer":
 			return "Backend contribution factory did not return an Effect Layer";
+		case "backend-layer-build-failed":
+			return "Backend contribution Layer could not be activated";
 	}
 };
 
@@ -332,8 +335,12 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 						message: "Backend contribution module failed to load",
 						cause,
 					}),
-			});
-			const factory = loaded[entry.export];
+			}).pipe(Effect.option);
+			if (loaded._tag === "None") {
+				invalid = {reason: "backend-module-unavailable"};
+				break;
+			}
+			const factory = loaded.value[entry.export];
 			if (typeof factory !== "function") {
 				invalid = {reason: "backend-export-not-factory"};
 				break;
@@ -346,8 +353,12 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 						message: "Backend contribution factory failed",
 						cause,
 					}),
-			});
-			const decodedLayer = Schema.decodeUnknownOption(BackendLayer)(layer);
+			}).pipe(Effect.option);
+			if (layer._tag === "None") {
+				invalid = {reason: "backend-export-not-layer"};
+				break;
+			}
+			const decodedLayer = Schema.decodeUnknownOption(BackendLayer)(layer.value);
 			if (decodedLayer._tag === "None") {
 				invalid = {reason: "backend-export-not-layer"};
 				break;
@@ -383,23 +394,34 @@ export const buildPackageBackendLayers = Effect.fn("TuvalPackages.buildBackend")
 	extensionUI?: ExtensionUIService,
 ) {
 	const bridge = extensionUI ?? makeExtensionUI();
+	const diagnostics: Array<ContributionDiagnostic> = [];
 	for (const contribution of catalog.backend) {
 		const layer = contribution.layer.pipe(
 			Layer.provide(
 				Layer.succeed(PackageExtensionUI, packageExtensionUI(contribution.packageName, bridge)),
 			),
 		);
-		yield* Layer.build(layer).pipe(
-			Effect.mapError(
-				(cause) =>
-					new ContributionStartupFailure({
-						packageName: contribution.packageName,
-						message: "Backend contribution layer failed to build",
-						cause,
-					}),
+		const built = yield* Effect.result(
+			Layer.build(layer).pipe(
+				Effect.mapError(
+					(cause) =>
+						new ContributionStartupFailure({
+							packageName: contribution.packageName,
+							message: "Backend contribution layer failed to build",
+							cause,
+						}),
+				),
 			),
 		);
+		if (Result.isFailure(built)) {
+			diagnostics.push({
+				packageName: contribution.packageName,
+				reason: "backend-layer-build-failed",
+				message: diagnosticMessage({reason: "backend-layer-build-failed"}),
+			});
+		}
 	}
+	return diagnostics;
 });
 
 export const emitContributionCatalog = (catalog: TuvalContributionCatalog) => ({

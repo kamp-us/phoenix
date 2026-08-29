@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Exit, FileSystem, Layer, Path, Schema} from "effect";
+import {Effect, FileSystem, Layer, Path, Schema} from "effect";
 import {makeExtensionUI, PackageExtensionUI} from "../src/backend/extension-ui.js";
 import {
 	buildPackageBackendLayers,
@@ -111,11 +111,17 @@ describe("pi-native Tuval package contributions", () => {
 		}),
 	);
 
-	it.effect("surfaces backend layer construction failures", () =>
+	it.effect("isolates backend layer construction failures with package diagnostics", () =>
 		Effect.gen(function* () {
 			const catalog = yield* load(fixture("backend-failure"));
-			const exit = yield* Effect.exit(buildPackageBackendLayers(catalog));
-			assert.isTrue(Exit.isFailure(exit));
+			const diagnostics = yield* buildPackageBackendLayers(catalog);
+			assert.lengthOf(diagnostics, 1);
+			assert.strictEqual(diagnostics[0]?.packageName, "backend-failure");
+			assert.strictEqual(diagnostics[0]?.reason, "backend-layer-build-failed");
+			assert.strictEqual(
+				diagnostics[0]?.message,
+				"Backend contribution Layer could not be activated",
+			);
 		}),
 	);
 

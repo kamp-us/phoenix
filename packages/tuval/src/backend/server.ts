@@ -9,14 +9,24 @@ import {
 	type LiveTopicPublisher,
 } from "@kampus/fate-effect";
 import {Effect, Fiber, FileSystem, Layer, Queue, Schema, Stream} from "effect";
-import {ExtensionUI, type ExtensionUIService, makeExtensionUI} from "./extension-ui.js";
+import * as Semaphore from "effect/Semaphore";
+import type {ExtensionUISnapshot} from "../shared/extension-ui.js";
+import type {RestorationSnapshot, WorkspaceStateDocument} from "../shared/resilience.js";
+import {
+	ExtensionUI,
+	type ExtensionUIService,
+	makeDurableExtensionUI,
+	makeExtensionUI,
+} from "./extension-ui.js";
 import {TuvalFateServerLive} from "./fate.js";
-import {LineageIndexLive, type LineageIndexOptions} from "./lineage.js";
+import {LineageIndex, LineageIndexLive, type LineageIndexOptions} from "./lineage.js";
 import {
 	LiveSession,
+	type LiveSessionReconnectOptions,
 	type LiveSessionService,
+	makeDurableLiveSession,
+	makeResilientPiLiveSession,
 	makeUnavailableLiveSession,
-	PiLiveSession,
 } from "./live-session.js";
 import {
 	buildPackageBackendLayers,
@@ -25,7 +35,19 @@ import {
 	loadPackageContributions,
 	type TuvalContributionCatalog,
 } from "./package-contributions.js";
-import {PiDiscoveryLive, type PiDiscoveryOptions} from "./pi-discovery.js";
+import {PiDiscovery, PiDiscoveryLive, type PiDiscoveryOptions} from "./pi-discovery.js";
+import {
+	makeMemoryWorkspaceStateStore,
+	makeOperationalPackageRegistrations,
+	makeOperationalWorkspaceSettings,
+	OperationalPackageRegistrations,
+	OperationalWorkspaceSettings,
+	type PackageRegistrationsService,
+	resilienceDiagnostic,
+	restoreWorkspace,
+	type WorkspaceSettingsService,
+	type WorkspaceStateStore,
+} from "./resilience.js";
 
 export const TUVAL_HOST = "127.0.0.1";
 
@@ -46,6 +68,10 @@ export interface StartTuvalOptions extends PiDiscoveryOptions {
 	readonly liveSession?: LiveSessionService;
 	readonly liveSessionTransport?: ByteTransportFactory;
 	readonly extensionUI?: ExtensionUIService;
+	readonly reconnect?: LiveSessionReconnectOptions;
+	readonly workspaceStateStore?: WorkspaceStateStore;
+	readonly operationalWorkspaceSettings?: WorkspaceSettingsService;
+	readonly operationalPackageRegistrations?: PackageRegistrationsService;
 	readonly requestDispatchGate?: Effect.Effect<void>;
 	readonly onRequestQueued?: () => void;
 }
@@ -206,11 +232,17 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 	staticAsset: string,
 	fs: typeof FileSystem.FileSystem.Service,
 	contributions: TuvalContributionCatalog,
+	restoration: RestorationSnapshot,
 ) {
 	const url = new URL(request.url ?? "/", origin);
 	if (request.method === "GET" && url.pathname === "/health") {
 		response.setHeader("content-type", "application/json; charset=utf-8");
 		response.end(JSON.stringify({status: "ready", url: origin, pid: process.pid}));
+		return;
+	}
+	if (request.method === "GET" && url.pathname === "/api/resilience") {
+		response.setHeader("content-type", "application/json; charset=utf-8");
+		response.end(JSON.stringify(restoration));
 		return;
 	}
 	if (request.method === "GET" && url.pathname === "/api/contributions") {
@@ -225,7 +257,13 @@ const handleRequest = Effect.fn("TuvalServer.handleRequest")(function* (
 			response.end("Contribution asset unavailable");
 			return;
 		}
-		const asset = yield* fs.readFile(assetFile).pipe(Effect.option);
+		const currentAsset = yield* fs.realPath(assetFile).pipe(Effect.option);
+		if (currentAsset._tag === "None" || currentAsset.value !== assetFile) {
+			response.statusCode = 404;
+			response.end("Contribution asset unavailable");
+			return;
+		}
+		const asset = yield* fs.readFile(currentAsset.value).pipe(Effect.option);
 		if (asset._tag === "None") {
 			response.statusCode = 404;
 			response.end("Contribution asset unavailable");
@@ -289,7 +327,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 	options: StartTuvalOptions = {},
 ) {
 	const fs = yield* FileSystem.FileSystem;
-	const extensionUI = options.extensionUI ?? makeExtensionUI();
+	const rawExtensionUI = options.extensionUI ?? makeExtensionUI();
 	const contributions = yield* loadPackageContributions(options.packageContributions).pipe(
 		Effect.mapError(
 			(error) =>
@@ -299,17 +337,14 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 				}),
 		),
 	);
-	yield* buildPackageBackendLayers(contributions, extensionUI).pipe(
-		Effect.mapError(
-			(error) =>
-				new StartupFailure({message: "Tuval package backend failed during startup", cause: error}),
-		),
-	);
-	const liveSession =
+	const rawLiveSession =
 		options.liveSession ??
 		(options.liveSessionTransport === undefined
 			? makeUnavailableLiveSession()
-			: yield* PiLiveSession.connect(options.liveSessionTransport).pipe(
+			: yield* makeResilientPiLiveSession(
+					options.liveSessionTransport,
+					options.reconnect ?? {},
+				).pipe(
 					Effect.mapError(
 						(error) =>
 							new StartupFailure({
@@ -318,7 +353,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 							}),
 					),
 				));
-	yield* Effect.addFinalizer(() => liveSession.dispose().pipe(Effect.ignore));
+	yield* Effect.addFinalizer(() => rawLiveSession.dispose().pipe(Effect.ignore));
 
 	const discoveryOptions = {
 		...options,
@@ -334,20 +369,137 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 			: {sessionRoots: options.sessionRoots}),
 	};
 	const lineageLayer = LineageIndexLive(lineageOptions).pipe(Layer.provide(discoveryLayer));
+	const restorationContext = yield* Layer.build(Layer.mergeAll(discoveryLayer, lineageLayer));
+	const availablePackageRegistrations = [
+		...new Set([
+			...contributions.backend.map(({packageName}) => packageName),
+			...contributions.frontend.map(({packageName}) => packageName),
+		]),
+	].sort();
+	const operationalSettings =
+		options.operationalWorkspaceSettings ?? makeOperationalWorkspaceSettings();
+	const operationalRegistrations =
+		options.operationalPackageRegistrations ??
+		makeOperationalPackageRegistrations(availablePackageRegistrations);
+	const workspaceStateStore = options.workspaceStateStore ?? makeMemoryWorkspaceStateStore();
+	const durableRestoration = options.workspaceStateStore !== undefined;
+	const restored = yield* restoreWorkspace({
+		store: workspaceStateStore,
+		discover: () =>
+			durableRestoration
+				? Effect.gen(function* () {
+						const discovery = yield* PiDiscovery;
+						return yield* discovery.discover();
+					}).pipe(Effect.provideContext(restorationContext))
+				: Effect.succeed({_tag: "empty" as const, sessions: [] as const}),
+		restoreLineage: () =>
+			durableRestoration
+				? Effect.gen(function* () {
+						const lineage = yield* LineageIndex;
+						return yield* lineage.project();
+					}).pipe(Effect.provideContext(restorationContext))
+				: Effect.void,
+		restoreSelection: (sessionId) =>
+			rawLiveSession.attach(sessionId).pipe(Effect.map((outcome) => outcome._tag === "attached")),
+		restoreSettings: operationalSettings.restore,
+		availablePackageRegistrations: operationalRegistrations.available,
+		restorePackageRegistrations: operationalRegistrations.restore,
+		restoreExtensionUI: rawExtensionUI.restore,
+	});
+	const activeNames = new Set(yield* operationalRegistrations.read());
+	const activeFrontend = contributions.frontend.filter(({packageName}) =>
+		activeNames.has(packageName),
+	);
+	const activeAssetUrls = new Set(activeFrontend.map(({asset}) => asset));
+	const activeContributions: TuvalContributionCatalog = {
+		...contributions,
+		backend: contributions.backend.filter(({packageName}) => activeNames.has(packageName)),
+		frontend: activeFrontend,
+		assetFiles: new Map(
+			[...contributions.assetFiles].filter(([asset]) => activeAssetUrls.has(asset)),
+		),
+	};
+	let packageDiagnostics: Array<ReturnType<typeof resilienceDiagnostic>> = [];
+	const persistenceDiagnostics: Array<ReturnType<typeof resilienceDiagnostic>> = [];
+	const restoration = (): RestorationSnapshot => ({
+		...restored,
+		packageRegistrations: [...activeNames].sort(),
+		diagnostics: [...restored.diagnostics, ...packageDiagnostics, ...persistenceDiagnostics],
+	});
+	let liveSession: LiveSessionService = rawLiveSession;
+	let extensionUI: ExtensionUIService = rawExtensionUI;
+	const persistenceSemaphore = yield* Semaphore.make(1);
+	const recordPersistenceFailure = Effect.sync(() => {
+		if (!persistenceDiagnostics.some(({code}) => code === "workspace-state-save-failed")) {
+			persistenceDiagnostics.push(
+				resilienceDiagnostic({
+					category: "persistence",
+					code: "workspace-state-save-failed",
+					message: "Workspace state could not be durably persisted",
+					action: "Repair the workspace state store before retrying the operation",
+				}),
+			);
+		}
+		return false;
+	});
+	const persistWorkspace = (
+		candidateExtensionUI?: ReadonlyArray<ExtensionUISnapshot>,
+		commitExtensionUI: () => void = () => {},
+	): Effect.Effect<boolean> =>
+		persistenceSemaphore
+			.withPermit(
+				Effect.gen(function* () {
+					const [current, extensionUISnapshots, settings, packageRegistrations] = yield* Effect.all(
+						[
+							rawLiveSession.current(),
+							candidateExtensionUI === undefined
+								? rawExtensionUI.snapshots()
+								: Effect.succeed(candidateExtensionUI),
+							operationalSettings.read(),
+							operationalRegistrations.read(),
+						],
+						{concurrency: 1},
+					);
+					const document: WorkspaceStateDocument = {
+						version: 1,
+						selectedSessionId: current?.sessionId ?? null,
+						settings,
+						packageRegistrations: [...packageRegistrations],
+						extensionUI: extensionUISnapshots,
+					};
+					yield* workspaceStateStore.save(document);
+					yield* Effect.sync(commitExtensionUI);
+					return true;
+				}),
+			)
+			.pipe(Effect.catch(() => recordPersistenceFailure));
+	liveSession = makeDurableLiveSession(rawLiveSession, () => persistWorkspace());
+	extensionUI = makeDurableExtensionUI(rawExtensionUI, persistWorkspace);
+	const backendContributionDiagnostics = yield* buildPackageBackendLayers(
+		activeContributions,
+		extensionUI,
+	);
+	packageDiagnostics = [...contributions.diagnostics, ...backendContributionDiagnostics].map(
+		(diagnostic) =>
+			resilienceDiagnostic({
+				category: "package",
+				code: diagnostic.reason,
+				message: diagnostic.message,
+				action: "Review the package manifest or registration; other packages remain available",
+				packageName: diagnostic.packageName,
+			}),
+	);
 	const serviceLayers = Layer.mergeAll(
 		discoveryLayer,
 		lineageLayer,
 		Layer.succeed(LiveSession, liveSession),
 		Layer.succeed(ExtensionUI, extensionUI),
+		Layer.succeed(OperationalWorkspaceSettings, operationalSettings),
+		Layer.succeed(OperationalPackageRegistrations, operationalRegistrations),
 	);
 	const fateLayer = TuvalFateServerLive.pipe(Layer.provide(serviceLayers));
-	const appContext = yield* Layer.build(
-		Layer.mergeAll(
-			fateLayer,
-			Layer.succeed(LiveSession, liveSession),
-			Layer.succeed(ExtensionUI, extensionUI),
-		),
-	);
+	const appContext = yield* Layer.build(Layer.mergeAll(fateLayer, serviceLayers));
+	yield* Effect.addFinalizer(() => persistWorkspace().pipe(Effect.ignore));
 	const staticAsset =
 		options.staticAsset ?? fileURLToPath(new URL("../frontend-shell/index.html", import.meta.url));
 	let origin = `http://${TUVAL_HOST}`;
@@ -360,7 +512,15 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 				Effect.flatMap(({request, response}) =>
 					Effect.forkChild(
 						Effect.raceFirst(
-							handleRequest(request, response, origin, staticAsset, fs, contributions).pipe(
+							handleRequest(
+								request,
+								response,
+								origin,
+								staticAsset,
+								fs,
+								activeContributions,
+								restoration(),
+							).pipe(
 								Effect.catch((error) => Effect.sync(() => writeFailure(response, error))),
 								Effect.provideContext(appContext),
 							),
@@ -415,6 +575,7 @@ export const startTuval = Effect.fn("TuvalServer.start")(function* (
 			closed = true;
 			return Effect.gen(function* () {
 				acceptingRequests = false;
+				yield* persistWorkspace();
 				yield* Fiber.interrupt(requestSupervisor);
 				const queued = yield* Queue.takeBetween(requests, 0, Number.POSITIVE_INFINITY);
 				yield* Effect.forEach(queued, ({response}) => endQueuedResponse(response), {
