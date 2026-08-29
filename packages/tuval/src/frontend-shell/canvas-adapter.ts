@@ -17,6 +17,8 @@ export interface LineageEdgeData extends Record<string, unknown> {
 	readonly kind: LineageEdge["kind"];
 	readonly label: "Oluşturma" | "Dallanma";
 	readonly detail: string;
+	readonly laneOffset: number;
+	readonly routeY: number | null;
 }
 
 export type SessionCanvasNode = Node<SessionNodeData, "session">;
@@ -66,14 +68,11 @@ const positions = (projection: LineageProjection): ReadonlyMap<string, {x: numbe
 	const result = new Map<string, {x: number; y: number}>();
 	for (const [depth, layer] of layers) {
 		layer.sort((left, right) => compareText(left.id, right.id));
-		const rows = Math.min(4, layer.length);
-		const center = (rows - 1) / 2;
+		const center = (layer.length - 1) / 2;
 		layer.forEach((node, index) => {
-			const column = Math.floor(index / rows);
-			const row = index % rows;
 			result.set(node.id, {
-				x: (depth + column) * 336,
-				y: Math.round((row - center) * 180),
+				x: depth * 360,
+				y: Math.round((index - center) * 160),
 			});
 		});
 	}
@@ -125,25 +124,59 @@ export const reconcileSessionNodes = (
 	});
 };
 
-const edgeLabel = (edge: LineageEdge): LineageEdgeData =>
+const edgeLabel = (
+	edge: LineageEdge,
+	laneOffset: number,
+	routeY: number | null,
+): LineageEdgeData =>
 	edge.kind === "spawn"
-		? {kind: "spawn", label: "Oluşturma", detail: `run ${edge.runId}`}
-		: {kind: "fork", label: "Dallanma", detail: `kaynak ${edge.source}`};
+		? {kind: "spawn", label: "Oluşturma", detail: `run ${edge.runId}`, laneOffset, routeY}
+		: {
+				kind: "fork",
+				label: "Dallanma",
+				detail: `kaynak ${edge.source}`,
+				laneOffset,
+				routeY,
+			};
 
 const edgeAriaLabel = (edge: LineageEdge, nodes: ReadonlyMap<string, LineageNode>): string => {
 	const parent = nodes.get(edge.parent)?.piSessionId ?? edge.parent;
 	const child = nodes.get(edge.child)?.piSessionId ?? edge.child;
 	const relation = edge.kind === "spawn" ? "oluşturma" : "dallanma";
-	return `${parent} oturumundan ${child} oturumuna ${relation} ilişkisi, ${edgeLabel(edge).detail}`;
+	return `${parent} oturumundan ${child} oturumuna ${relation} ilişkisi, ${edgeLabel(edge, 0, null).detail}`;
 };
 
 export const toLineageEdges = (
 	projection: LineageProjection,
 ): ReadonlyArray<SessionRelationshipEdge> => {
 	const nodes = new Map(projection.graph.nodes.map((node) => [node.id, node]));
-	return [...projection.graph.edges]
-		.sort((left, right) => compareText(left.id, right.id))
-		.map((edge) => ({
+	const sorted = [...projection.graph.edges].sort((left, right) => compareText(left.id, right.id));
+	const depths = nodeDepths(projection);
+	const projectedPositions = positions(projection);
+	const yPositions = [...projectedPositions.values()].map((position) => position.y);
+	const minY = Math.min(0, ...yPositions);
+	const maxY = Math.max(0, ...yPositions) + 132;
+	const skipEdges = sorted.filter(
+		(edge) => (depths.get(edge.child) ?? 0) - (depths.get(edge.parent) ?? 0) > 1,
+	);
+	const routeY = new Map(
+		skipEdges.map((edge, index) => [
+			edge.id,
+			index % 2 === 0
+				? minY - 32 - Math.floor(index / 2) * 24
+				: maxY + 32 + Math.floor(index / 2) * 24,
+		]),
+	);
+	const coincident = new Map<string, ReadonlyArray<LineageEdge>>();
+	for (const edge of sorted) {
+		const key = `${edge.parent}\u0000${edge.child}`;
+		coincident.set(key, [...(coincident.get(key) ?? []), edge]);
+	}
+	return sorted.map((edge) => {
+		const siblings = coincident.get(`${edge.parent}\u0000${edge.child}`) ?? [edge];
+		const index = siblings.findIndex((candidate) => candidate.id === edge.id);
+		const laneOffset = siblings.length === 1 ? 0 : (index - (siblings.length - 1) / 2) * 32;
+		return {
 			id: edge.id,
 			type: "relationship" as const,
 			source: edge.parent,
@@ -152,10 +185,19 @@ export const toLineageEdges = (
 			targetHandle: "relation-in",
 			ariaLabel: edgeAriaLabel(edge, nodes),
 			...(edge.kind === "spawn"
-				? {markerEnd: {type: MarkerType.ArrowClosed, color: "var(--border-strong)"}}
+				? {
+						markerEnd: {
+							type: MarkerType.ArrowClosed,
+							color: "currentColor",
+							width: 24,
+							height: 24,
+							strokeWidth: 1.5,
+						},
+					}
 				: {}),
-			data: edgeLabel(edge),
-		}));
+			data: edgeLabel(edge, laneOffset, routeY.get(edge.id) ?? null),
+		};
+	});
 };
 
 export const reconcileLineageEdges = (

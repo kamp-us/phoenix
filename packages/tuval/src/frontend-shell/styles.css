@@ -65,6 +65,7 @@
 	--topbar-height: 72px;
 	--node-width: 248px;
 	--pane-width: min(456px, calc(100vw - var(--space-8)));
+	--problem-panel-width: min(360px, calc(100vw - var(--space-8)));
 	--state-width: min(480px, calc(100vw - var(--space-8)));
 	--t-body: 14px / 1.5;
 	--t-body-sm: 13px / 1.45;
@@ -261,6 +262,10 @@ button:disabled {
 	z-index: 1;
 }
 
+.canvas[data-has-lineage-problems="true"] .canvas-stage {
+	right: calc(var(--problem-panel-width) + var(--space-8));
+}
+
 .react-flow {
 	background: transparent;
 }
@@ -362,9 +367,26 @@ button:disabled {
 	background: var(--surface-raised);
 }
 
+.react-flow .react-flow__edges,
+.react-flow .react-flow__edges > svg {
+	width: 100%;
+	height: 100%;
+}
+
+.react-flow .react-flow__edges {
+	inset: 0;
+	pointer-events: none;
+}
+
 .react-flow__edge-path.relationship-edge {
-	stroke: var(--border-strong);
-	stroke-width: 2;
+	color: var(--border-strong);
+	stroke: currentcolor;
+	stroke-width: 3;
+	vector-effect: non-scaling-stroke;
+}
+
+.react-flow__marker {
+	color: var(--border-strong);
 }
 
 .react-flow__edge-path.relationship-edge--fork {
@@ -421,7 +443,7 @@ button:disabled {
 	right: var(--space-4);
 	display: grid;
 	gap: var(--space-2);
-	width: min(360px, calc(100vw - var(--space-8)));
+	width: var(--problem-panel-width);
 	max-height: min(280px, calc(100vh - var(--topbar-height) - var(--space-8)));
 	overflow: auto;
 }
@@ -847,6 +869,16 @@ kbd {
 	.react-flow__node-session,
 	.session-node {
 		--node-width: 220px;
+	}
+
+	.canvas[data-has-lineage-problems="true"] .canvas-stage {
+		right: 0;
+		bottom: calc(280px + var(--space-8));
+	}
+
+	.lineage-problems {
+		top: auto;
+		bottom: var(--space-4);
 	}
 
 	.chat-pane {

@@ -3,7 +3,6 @@ import {
 	BaseEdge,
 	type EdgeProps,
 	type EdgeTypes,
-	getSmoothStepPath,
 	Handle,
 	type NodeProps,
 	type NodeTypes,
@@ -60,15 +59,16 @@ export function RelationshipEdgeView({
 	data,
 	selected,
 }: EdgeProps<SessionRelationshipEdge>) {
-	const [path] = getSmoothStepPath({
-		sourceX,
-		sourceY,
-		targetX,
-		targetY,
-		sourcePosition,
-		targetPosition,
-		borderRadius: 12,
-	});
+	const laneOffset = data?.laneOffset ?? 0;
+	const distance = Math.abs(targetX - sourceX);
+	const control = Math.max(48, distance * 0.42);
+	const sourceControlX = sourcePosition === Position.Left ? sourceX - control : sourceX + control;
+	const targetControlX = targetPosition === Position.Right ? targetX + control : targetX - control;
+	const routeY = data?.routeY;
+	const path =
+		routeY === null || routeY === undefined
+			? `M ${sourceX} ${sourceY} C ${sourceControlX} ${sourceY + laneOffset}, ${targetControlX} ${targetY + laneOffset}, ${targetX} ${targetY}`
+			: `M ${sourceX} ${sourceY} C ${sourceX + 48} ${sourceY}, ${sourceX + 48} ${routeY + laneOffset}, ${sourceX + 96} ${routeY + laneOffset} L ${targetX - 96} ${routeY + laneOffset} C ${targetX - 48} ${routeY + laneOffset}, ${targetX - 48} ${targetY}, ${targetX} ${targetY}`;
 	const kind = data?.kind ?? "spawn";
 	return (
 		<BaseEdge
@@ -76,8 +76,10 @@ export function RelationshipEdgeView({
 			path={path}
 			{...(markerEnd === undefined ? {} : {markerEnd})}
 			style={{
-				stroke: selected ? "var(--accent)" : "var(--text-muted)",
-				strokeWidth: selected ? 3 : 2,
+				color: selected ? "var(--accent)" : "var(--border-strong)",
+				stroke: "currentColor",
+				strokeWidth: selected ? 4 : 3,
+				strokeLinecap: "round",
 			}}
 			className={`relationship-edge relationship-edge--${kind}`}
 		/>

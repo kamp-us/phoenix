@@ -114,6 +114,40 @@ afterAll(() => {
 });
 
 describe("SessionCanvas", () => {
+	it("renders coincident spawn and fork relations as different painted paths", async () => {
+		const coincident: LineageProjection = {
+			...projection,
+			graph: {
+				...projection.graph,
+				edges: [
+					projection.graph.edges[0]!,
+					{
+						...projection.graph.edges[1]!,
+						parent: node("root").id,
+						child: node("spawned").id,
+					},
+				],
+			},
+		};
+		const view = render(
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={toSessionNodes(coincident)}
+					edges={toLineageEdges(coincident)}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+				/>
+			</div>,
+		);
+
+		await waitFor(() => {
+			const paths = [...view.container.querySelectorAll<SVGPathElement>(".relationship-edge")];
+			expect(paths).toHaveLength(2);
+			expect(paths[0]?.getAttribute("d")).not.toBe(paths[1]?.getAttribute("d"));
+		});
+	});
+
 	it("renders named typed edges, resume continuity, and matching relationship handles", async () => {
 		const view = render(
 			<div style={{width: 800, height: 600}}>

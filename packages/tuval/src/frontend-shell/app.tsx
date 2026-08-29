@@ -161,6 +161,28 @@ const sessionsOf = (outcome: DiscoveryOutcome | null): ReadonlyArray<DiscoveredS
 	return [];
 };
 
+const knownSessionsProjection = (
+	sessions: ReadonlyArray<DiscoveredSession>,
+): LineageProjection => ({
+	graph: {
+		version: 2,
+		nodes: [...new Map(sessions.map((session) => [session.identity, session])).values()].map(
+			(session) => ({
+				id: session.identity,
+				piSessionId: session.piSessionId,
+				createdAt: session.createdAt,
+				updatedAt: session.updatedAt,
+				cwd: session.cwd,
+				sourceFiles: [session.sourceFile],
+			}),
+		),
+		edges: [],
+		continuity: [],
+		ownership: [],
+	},
+	problems: [],
+});
+
 const discoveredSessionFrom = (node: LineageNode): DiscoveredSession => ({
 	identity: node.id,
 	piSessionId: node.piSessionId,
@@ -299,7 +321,7 @@ export function TuvalApp() {
 			(reason: unknown) => ({status: "rejected", reason}) as const,
 		);
 		try {
-			await applyDiscovery(
+			const discoveryOutcome: DiscoveryOutcome =
 				discoveryResult.status === "fulfilled"
 					? discoveryResult.value
 					: {
@@ -309,14 +331,14 @@ export function TuvalApp() {
 									? discoveryResult.reason.message
 									: String(discoveryResult.reason),
 							retryable: true,
-						},
-				generation,
-			);
+						};
+			await applyDiscovery(discoveryOutcome, generation);
 			if (generation !== discoveryGeneration.current) return;
 			if (lineageResult.status === "fulfilled") {
 				setLineage(lineageResult.value);
 				setLineageFailure(null);
 			} else {
+				setLineage((current) => current ?? knownSessionsProjection(sessionsOf(discoveryOutcome)));
 				setLineageFailure(
 					lineageResult.reason instanceof Error
 						? lineageResult.reason.message
@@ -583,6 +605,9 @@ export function TuvalApp() {
 				<section
 					id="canvas"
 					className="canvas"
+					data-has-lineage-problems={
+						lineageFailure !== null || lineageProblems.length > 0 ? "true" : "false"
+					}
 					aria-label="Serbest kaydırılabilir oturum tuvali"
 					tabIndex={-1}
 				>
