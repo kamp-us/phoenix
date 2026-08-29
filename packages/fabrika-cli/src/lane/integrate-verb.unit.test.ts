@@ -8,6 +8,7 @@ import {errOut, fakeFs, fakeShell, okOut, once} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	APPEND_UNKNOWN,
+	ASSEMBLY_DIRTY,
 	ASSEMBLY_RED,
 	ASSEMBLY_UNSEATED,
 	LANE_UNREADABLE,
@@ -63,15 +64,19 @@ const CONSCRIPTED = listing([MAIN, BRANCH]);
 const HAS_CHILD = okOut(`main\n${BRANCH}\n${CHILD}\n`);
 
 /**
- * The reads every run makes before the merge: the seat, the branch list, the pre-merge head.
+ * The reads every run makes before the merge: the seat, the branch list, the pre-merge head, and the
+ * proof the seat was clean when the merge found it.
  *
  * A function rather than a constant because `once` carries its spent flag on the regex it returns,
- * so one shared array would answer the second test's pre-merge read with the third entry.
+ * so one shared array would answer the second test's pre-merge read with the third entry. The
+ * cleanliness read is `once` for the same reason from the other side: a test scripting a *dirty*
+ * post-install status needs its own entry reachable on the second call.
  */
 const upToMerge = (): ReadonlyArray<readonly [RegExp, ExecResult]> => [
 	[LIST, SEATED],
 	[BRANCHES, HAS_CHILD],
 	[once(HEAD), okOut(BEFORE)],
+	[once(STATUS), okOut("")],
 ];
 
 const run = (
@@ -174,6 +179,55 @@ describe("runIntegrate", () => {
 		expect(outcome.stderr.join("\n")).toContain("pnpm-lock.yaml");
 		expect(calls).not.toContain(TYPECHECK);
 		expect(calls).toContain(`git -C ${SEAT} reset --hard ORIG_HEAD`);
+	});
+
+	it("merges nothing into a seat that was already dirty — that dirt is not the child's (#7244)", async () => {
+		const {outcome, calls} = await run([
+			[LIST, SEATED],
+			[BRANCHES, HAS_CHILD],
+			[HEAD, okOut(BEFORE)],
+			[STATUS, okOut(" M pnpm-lock.yaml\n M packages/tuval/package.json\n")],
+		]);
+
+		expect(outcome.code).toBe(ASSEMBLY_DIRTY);
+		expect(outcome.stderr.join("\n")).toContain("pnpm-lock.yaml");
+		expect(outcome.stderr.join("\n")).toContain("packages/tuval/package.json");
+		expect(calls.some((line) => line.includes(" merge "))).toBe(false);
+		expect(calls).not.toContain(INSTALL);
+		expect(calls).not.toContain(TYPECHECK);
+		// Nothing moved the head, so there is nothing to reset — a reset here would be the verb
+		// undoing a merge it never made.
+		expect(calls).not.toContain(`git -C ${SEAT} reset --hard ORIG_HEAD`);
+	});
+
+	it("is UNKNOWN, never a pass, when the seat's cleanliness cannot be read before the merge", async () => {
+		const {outcome, calls} = await run([
+			[LIST, SEATED],
+			[BRANCHES, HAS_CHILD],
+			[HEAD, okOut(BEFORE)],
+			[STATUS, errOut("fatal: not a git repository")],
+		]);
+
+		expect(outcome.code).toBe(LANE_UNREADABLE);
+		expect(calls.some((line) => line.includes(" merge "))).toBe(false);
+		expect(calls).not.toContain(INSTALL);
+	});
+
+	it("proves the seat clean before merging, so the post-install probe diffs against an empty baseline", async () => {
+		const {calls} = await run([
+			...upToMerge(),
+			[MERGE, okOut("")],
+			[RECONCILE, okOut("")],
+			[STATUS, okOut("")],
+			[VALIDATE, okOut("")],
+			[HEAD, okOut(AFTER)],
+		]);
+
+		const status = `git -C ${SEAT} status --porcelain --untracked-files=no`;
+		const merge = `git -C ${SEAT} merge --no-ff ${CHILD}`;
+		expect(calls.indexOf(status)).toBeGreaterThan(-1);
+		expect(calls.indexOf(status)).toBeLessThan(calls.indexOf(merge));
+		expect(calls.filter((line) => line === status)).toHaveLength(2);
 	});
 
 	it("aborts a conflicting merge and reconciles nothing — there is no merged tree to judge", async () => {

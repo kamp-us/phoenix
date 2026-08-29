@@ -606,7 +606,8 @@ outside the closed park-cause set · `36` the `UNBLOCKED` would restore a state 
 the `--class` is outside the review classes · `39` the cwd is not in a repository · `40` another
 writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
 branch · `42` the child conflicts and the merge was aborted · `43` the merged lockfile does not
-install, or the install changed a tracked file · `44` the merged tree failed a code validator.
+install, or the install changed a tracked file · `44` the merged tree failed a code validator · `45`
+the assembly worktree already held modified tracked files before the merge, so nothing was merged.
 
 To open a lane, copy a template in and speak the operator's six events — `DONE` / `PASS` / `FAIL` /
 `BLOCKED` / `WIP` / `UNBLOCKED`:
