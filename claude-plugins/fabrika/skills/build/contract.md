@@ -860,8 +860,24 @@ open is `16` naming **every** one of them, and an edge list — or a blocker's o
 not be read is `11`, never "not blocked". The order is the point: the two axes answer without IO, so
 a number the fence already refuses never costs the read. It is **not overridable**, because the
 remedy is neither an edit nor a re-label but waiting, and there is no unblock act — the edge stays,
-the blocker closes, and the next read answers unblocked. In repair `<number>` is a PR, which carries
-no edges of its own and names a lane that has already started, so the gate does not run.
+the blocker closes or its work lands, and the next read answers unblocked. In repair `<number>` is a
+PR, which carries no edges of its own and names a lane that has already started, so the gate does not
+run.
+
+**A blocker whose work landed on the epic run's assembly branch is discharged here exactly as it is
+at `build eligible`.** ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md)'s
+2026-08-29 amendment narrows its own "any blocker open" bullet to "open **and undischarged**", which
+is what authorizes this. Under ADR 0285 a child's issue stays open until the single tail PR merges, so
+inside a run in flight "the blocker is closed" answers a different question from "the blocker's work
+landed" — and the second is the one this gate means (#6063). The derivation lives once, in
+`packages/fabrika-cli/src/build/discharge.ts`, and both seams answer from it: while `claim` carried
+none of its own, `eligible` said go on an edge `claim` refused on `16`, and every sequential epic
+tracer after the first parked at a human who deleted the graph edge by hand
+([#7035](https://github.com/kamp-us/phoenix/issues/7035)). The parent is resolved only when an edge
+is still undischarged, so an issue the board already reads clear costs no extra call, and **discharge
+moves an answer only toward admitting**: an unreadable branch, an unnameable trunk and a standalone
+issue all leave every edge as the board read it, and a parent that could not be read is `11` rather
+than an admission on evidence nobody read.
 
 **The purpose decides which axes bind — it never enters an axis.** `--purpose`
 says why this lane claims: `build` (the default) is bound by all four, while `plan` and `gate` are
@@ -994,7 +1010,7 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the campaigns table or the issue's home could not be read — scope admission is UNKNOWN, never admitted; or, `claim` against an issue only, its `blocked_by` list or a blocker's own state could not be read — blockedness is UNKNOWN, never "not blocked" |
 | `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
-| `16` | `claim` against an **issue** only, proven: a `blocked_by` blocker is still open — every one is named on stderr, and no marker was written. Not overridable: the remedy is waiting, and the edge clears when the blocker closes |
+| `16` | `claim` against an **issue** only, proven: a `blocked_by` blocker is still open — every one is named on stderr, and no marker was written. Not overridable: the remedy is waiting, and the edge clears when the blocker closes or its work lands on the epic run's assembly branch |
 | `20` | `claim` only, proven: the issue's home is pinned by no `active` campaign row — no marker was written |
 | `21` | `claim --purpose build` only (the default), proven: the issue's audience is not an agent — no marker was written. Unreachable when the target is an open PR serving a `type:decision` issue (#5914) |
 | `30` | `claim --purpose build` against an **issue** only, proven: the issue is `type:decision` or `type:epic` — no marker was written. Not overridable: a decision opens it with `--cites <ruling-comment-url>`, an epic with `--purpose plan` or `--purpose gate` |
@@ -1048,8 +1064,11 @@ the word is admitted here exactly because the seam checks the fact it asserts. T
 | `build claim: type not buildable — this issue carries <label>, whose deliverable is not a pull request an agent build lane produces; <remedy>.` (`<remedy>` names `--cites` for a decision and `--purpose plan`/`--purpose gate` for an epic) | 30 | refusal |
 | `build claim: --cites <detail>; nothing was written.` — the URL is not an issue-comment URL, or names another repository or another issue | 1 | refusal |
 | `build claim: cannot read the "## Campaigns" table: <reason> — scope is UNKNOWN, never admitted; nothing was written.` | 11 | refusal |
-| `build claim: blocked by <n> open blocked_by edges: #<a>, #<b> — there is no unblock act, so the edge clears when the blocker closes; nothing was written.` — preceded by `build claim: scanned <n> blocked_by edges.` | 16 | refusal |
-| `build claim: cannot read the blocked_by edges of #<n>: <reason> — blockedness is UNKNOWN, never "not blocked"; nothing was written.` | 11 | refusal |
+| `build claim: blocked by <n> open blocked_by edges: #<a>, #<b> — there is no unblock act, so the edge clears when the blocker closes or its work lands on the epic run's assembly branch; nothing was written.` — preceded by `build claim: scanned <n> blocked_by edges.` | 16 | refusal |
+| `build claim: cannot read the blocked_by edges of #<n>: <reason> — blockedness is UNKNOWN, never "not blocked"; nothing was written.` (`<reason>` also covers a parent that could not be read, which leaves the assembly-branch discharge unread) | 11 | refusal |
+| `build claim: origin/<trunk>..epic/<p> adds a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).` | 0, 11 or 16 | detail line, once |
+| `build claim: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged blocker.` | 11 or 16 | detail line, once |
+| `build claim: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints) | 11 or 16 | detail line, once |
 | `build claim: the "## Campaigns" table does not parse: <detail> — a malformed table is never read as "nothing is active"; nothing was written.` | 4 | refusal |
 | `build claim: #<n> is already held by this lane (comment <id>) — answered with the marker that owns it; nothing was written.` — beside `{"answer":"won", …}` on exit 0, when `--token` names a lane that already holds `<n>` | 0 | answer |
 | `build claim: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
@@ -1087,7 +1106,9 @@ action is identical. The same reading applies wherever a sibling verb's precondi
 "claim confirmed (`15`/`11`)": an unclaimed target refuses on `15` with the no-claim message.
 
 **Scope** — one issue's comment markers, paginated in full, plus — for `claim` — that issue's home
-and audience against the active campaigns, and its `blocked_by` edges with each blocker's state. An unauthorized author's marker is counted and reported on
+and audience against the active campaigns, its `blocked_by` edges with each blocker's state, and —
+only when an edge is still undischarged — that issue's parent and the commits `epic/<parent>` adds
+over the trunk in this tree. An unauthorized author's marker is counted and reported on
 stderr but never wins: content is not authority. `claim`'s scope line names the declaration it judged
 against (`campaigns: 1 active — fabrika fast follows (#46)`, `campaigns: 2 active — fabrika fast
 follows (#46), fabrika everywhere (#47)`, or `campaigns: none active — scope fence inert`), so a
@@ -1115,6 +1136,29 @@ $ echo $?
 ```
 $ fabrika build claim 4290 --override "hotfix for the release blocker" --override-lane build-ui
 {"answer":"won","number":4290,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build","override":{"lane":"build-ui","reason":"hotfix for the release blocker"}}
+```
+
+The sequential-tracer shape: the edge is still on the graph, and the blocker's work is on the
+assembly branch, so the claim is admitted rather than parked.
+
+```
+$ fabrika build claim 6007
+build claim: campaigns: 1 active — Epic lanes (#49).
+build claim: purpose: build — the audience axis binds; this issue carries ready-for:agent.
+build claim: origin/main..epic/5817 adds a commit naming #6004 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).
+build claim: scanned 1 blocked_by edge; none open.
+{"answer":"won","number":6007,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build"}
+```
+
+```
+$ fabrika build claim 6008
+build claim: campaigns: 1 active — Epic lanes (#49).
+build claim: purpose: build — the audience axis binds; this issue carries ready-for:agent.
+build claim: origin/main..epic/5817 adds 3 commit(s), none naming an undischarged blocker.
+build claim: scanned 1 blocked_by edge.
+build claim: blocked by 1 open blocked_by edge: #6007 — there is no unblock act, so the edge clears when the blocker closes or its work lands on the epic run's assembly branch; nothing was written.
+$ echo $?
+16
 ```
 
 ```

@@ -42,7 +42,9 @@
  * Blockedness rides the same moment but not the same module: ADR 0301 makes the native `blocked_by`
  * graph the one carrier of "do not start this yet", and the gate reading it is composed AFTER the
  * pure axes, since those answer without IO and an out-of-scope number should refuse on the cheaper
- * fact.
+ * fact. That gate carries the assembly-branch discharge of [`./discharge.ts`](./discharge.ts), the
+ * same derivation `build eligible` answers from: without it the two seams disagreed on one edge, and
+ * every sequential epic tracer after the first parked at a human (#7035).
  *
  * In repair the number is a **PR**, which carries no home and no audience of its
  * own, so the test runs over the issue that PR serves (#5562) — and when that issue is
@@ -53,6 +55,7 @@
  * a PR, never off the pairing being impossible.
  */
 import {Effect, type FileSystem, type Path} from "effect";
+import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
 	createComment,
@@ -63,7 +66,6 @@ import {
 } from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {readBlockedGate} from "./blockedness.ts";
 import {
 	BUILD_CLAIM,
 	type ClaimOverride,
@@ -86,6 +88,7 @@ import {
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {readDischargedGate} from "./discharge.ts";
 import {currentBranch, detachHead} from "./git.ts";
 import {composeToken, laneNumber, nonceOf, parseLaneBranch, parseToken} from "./lane.ts";
 import {failing, readRangeVerdicts} from "./range-verdicts.ts";
@@ -353,7 +356,10 @@ export const runClaim = (
 ): Effect.Effect<
 	VerbOutcome,
 	never,
-	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+	| ChildProcessSpawner.ChildProcessSpawner
+	| FileSystem.FileSystem
+	| HttpClient.HttpClient
+	| Path.Path
 > =>
 	Effect.gen(function* () {
 		const purpose = parseClaimPurpose(options.purpose);
@@ -465,12 +471,12 @@ export const runClaim = (
 		// carries no edges of its own, and a lane repairing an open PR has already started.
 		const gateNotes: string[] = [];
 		if (scopeSubjectOf(ready.issue)._tag === "Own") {
-			const gate = yield* readBlockedGate(repo, number);
+			const {gate, notes} = yield* readDischargedGate(CLAIM, options.env, repo, number);
 			if (gate._tag === "Unknown") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
 					`${CLAIM}: cannot read the blocked_by edges of #${number}: ${gate.reason} — blockedness is UNKNOWN, never "not blocked"; nothing was written.`,
-					lines,
+					[...lines, ...notes],
 				);
 			}
 			if (gate._tag === "Blocked") {
@@ -478,11 +484,11 @@ export const runClaim = (
 					BLOCKED,
 					`${CLAIM}: blocked by ${gate.open.length} open blocked_by edge${
 						gate.open.length === 1 ? "" : "s"
-					}: ${gate.open.map((blocker) => `#${blocker}`).join(", ")} — there is no unblock act, so the edge clears when the blocker closes; nothing was written.`,
-					[...lines, scannedLine(CLAIM, gate.scanned, "blocked_by edge")],
+					}: ${gate.open.map((blocker) => `#${blocker}`).join(", ")} — there is no unblock act, so the edge clears when the blocker closes or its work lands on the epic run's assembly branch; nothing was written.`,
+					[...lines, ...notes, scannedLine(CLAIM, gate.scanned, "blocked_by edge")],
 				);
 			}
-			gateNotes.push(scannedLine(CLAIM, gate.scanned, "blocked_by edge", "none open"));
+			gateNotes.push(...notes, scannedLine(CLAIM, gate.scanned, "blocked_by edge", "none open"));
 
 			// Last of the three IO gates, and last for the same reason blockedness is second: it costs a
 			// comment page, and a number the pure axes already refused should never pay for it. Only a

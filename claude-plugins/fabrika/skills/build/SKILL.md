@@ -119,8 +119,10 @@ names the winner — that lane is theirs, back off, including when the winner sh
 `20` (out of scope) or `21` (audience not agent) means the fence refused before writing any marker,
 including on a number handed straight to you: end the run naming the code, and **never override on
 your own authority**. Exit `16` is the blockedness gate that runs after those two: the issue's
-native `blocked_by` graph still names an open blocker, every one of them is on stderr, and no
-override reaches it — end `BACKED-OFF` and take the next candidate. `--override "<reason>"
+native `blocked_by` graph still names an open blocker the parent epic's assembly branch does not
+already carry, every one of them is on stderr, and no override reaches it — end `BACKED-OFF` and
+take the next candidate. A blocker whose work landed on `epic/<N>` is discharged here exactly as
+`build eligible` discharges it, so the two never disagree about one edge (#7035). `--override "<reason>"
 --override-lane "<lane>"` (both flags required) is the operator's act, taken only when they ask for
 it in so many words, and the reason it records is theirs, not a rationale you compose.
 

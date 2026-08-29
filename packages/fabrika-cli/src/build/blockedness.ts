@@ -4,8 +4,10 @@
  * ADR 0301 makes the graph the one carrier of "do not start this yet", for a standalone issue
  * exactly as for an epic child, and #5387 ruled the same for the epic ledger's prose
  * `## Dependencies` block: that block is at most a rendering of the graph, never an input anything
- * parses to decide behaviour. This module is the one reader over that one source, so `build
- * eligible` today and the claim-seam gate of #6249 answer the same question the same way.
+ * parses to decide behaviour. This module is the one reader over that one source, so every seam that
+ * gates on blockedness starts from the same read. What the epic run's assembly branch then
+ * discharges off that read is [`./discharge.ts`](./discharge.ts)'s, shared by `build eligible` and
+ * the claim seam so the two cannot drift again (#7035).
  *
  * **A `blocked_by` entry is not a block on its own.** The endpoint lists every blocker whatever its
  * state, so the derivation — "any blocker issue still open" — lives here, in the reader, as
@@ -71,7 +73,8 @@ export const readBlockedness = (repo: string, issue: number): Shell<Blockedness>
 	});
 
 /**
- * The gate's answer for the seams that only need "may this start" — `build claim` and `build pick`.
+ * The gate's answer for the seams that only need "may this start" — `build pick`, and `build claim`
+ * once [`./discharge.ts`](./discharge.ts) has subtracted what the assembly branch carries.
  *
  * ADR 0301 keeps this **out** of the admission test: that module is pure and total over facts
  * already on an issue, while blockedness needs a paged network read and its remedy is waiting rather
@@ -103,6 +106,6 @@ export const gateOf = (blockedness: Blockedness): BlockedGate => {
 			};
 };
 
-/** Read the graph and seat it — the whole gate, for a seam that carries no discharge evidence. */
+/** Read the graph and seat it — the whole gate, for `build pick`, which carries no discharge evidence. */
 export const readBlockedGate = (repo: string, issue: number): Shell<BlockedGate> =>
 	Effect.map(readBlockedness(repo, issue), gateOf);

@@ -1609,11 +1609,20 @@ describe("runAdopt / succession", () => {
 describe("runClaim — the blockedness gate", () => {
 	const EDGES = /^GET \S+\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
 	const blocker = (n: number) => new RegExp(`^GET \\S+/repos/o/r/issues/${n}$`);
+	const PARENT = /^GET \S+\/repos\/o\/r\/issues\/4312\/parent$/;
+
+	/**
+	 * Standalone unless the case scripts otherwise — the fakes resolve by first match, so a test
+	 * naming its own parent above wins over this. A standalone issue's blockers land on no derivable
+	 * assembly branch, which is the pre-discharge behaviour these cases are about.
+	 */
+	const STANDALONE: Scripted = [PARENT, NOT_FOUND];
 
 	const claimAgainst = (graph: ReadonlyArray<Scripted>) => {
 		const shell = fakeSeams([
 			[ISSUE, CLAIMABLE],
 			...graph,
+			STANDALONE,
 			unclaimed(),
 			[POST, POSTED],
 			[GET_COMMENT, ECHO],
@@ -1673,6 +1682,72 @@ describe("runClaim — the blockedness gate", () => {
 		]);
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
 		expect(out.stderr.at(-1)).toContain("blocker #210");
+	});
+
+	/**
+	 * The divergence #7035 reported: `build eligible` discharged an edge whose blocker's work had
+	 * landed on the epic run's assembly branch and this seam refused the same edge on 16, so every
+	 * sequential epic tracer after the first parked at a human.
+	 */
+	describe("the assembly-branch discharge", () => {
+		const PARENT_EPIC: Scripted = [PARENT, served({number: 4300})];
+		const ASSEMBLY = /^git rev-parse --verify --quiet epic\/4300\^\{commit\}$/;
+		const TRUNK = /^GET \S+\/repos\/o\/r$/;
+		const MERGE_BASE = /^git merge-base origin\/main [0-9a-f]{40}$/;
+		const ASSEMBLY_LOG = /^git log --format=.* [0-9a-f]{40}\.\.[0-9a-f]{40}$/;
+		const TIP = "9a1c2b3d4e5f60718293a4b5c6d7e8f901234567";
+		const BASE = "0123456789abcdef0123456789abcdef01234567";
+		const RANGE_ENDPOINTS: ReadonlyArray<Scripted> = [
+			[ASSEMBLY, okOut(`${TIP}\n`)],
+			[TRUNK, served({default_branch: "main"})],
+			[MERGE_BASE, okOut(`${BASE}\n`)],
+		];
+		const commitLog = (...messages: ReadonlyArray<string>) =>
+			okOut(messages.map((message, i) => `${TIP.slice(0, 39)}${i}\x1f${message}\x1e`).join(""));
+		const OPEN_EDGE: ReadonlyArray<Scripted> = [
+			[EDGES, blockedBy(210)],
+			[blocker(210), issue({number: 210, state: "open"})],
+		];
+
+		it("admits an edge whose blocker's work landed on the branch, as eligible already did", async () => {
+			const {out} = await claimAgainst([
+				...OPEN_EDGE,
+				PARENT_EPIC,
+				...RANGE_ENDPOINTS,
+				[ASSEMBLY_LOG, commitLog("feat(tracer): the first tracer (#210)")],
+			]);
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout).answer).toBe("won");
+			expect(out.stderr.join("\n")).toContain("adds a commit naming #210");
+		});
+
+		it("still refuses on 16 when the branch carries no commit naming the blocker", async () => {
+			const {out, shell} = await claimAgainst([
+				...OPEN_EDGE,
+				PARENT_EPIC,
+				...RANGE_ENDPOINTS,
+				[ASSEMBLY_LOG, commitLog("chore(epic): assembly branch cut (#4301)")],
+			]);
+			expect(out.code).toBe(BLOCKED);
+			expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+			expect(out.stderr.join("\n")).toContain("none naming an undischarged blocker");
+		});
+
+		it("refuses on 16 when the branch cannot be read — never admits on unread evidence", async () => {
+			const {out} = await claimAgainst([
+				...OPEN_EDGE,
+				PARENT_EPIC,
+				[ASSEMBLY, errOut("fatal: ambiguous argument 'epic/4300'")],
+			]);
+			expect(out.code).toBe(BLOCKED);
+			expect(out.stderr.join("\n")).toContain("cannot read epic/4300 in this tree");
+		});
+
+		it("reads no branch for a standalone issue, and refuses exactly as it did before", async () => {
+			const {out, shell} = await claimAgainst(OPEN_EDGE);
+			expect(out.code).toBe(BLOCKED);
+			expect(shell.calls.some((line) => /rev-parse/.test(line))).toBe(false);
+		});
 	});
 
 	/**
