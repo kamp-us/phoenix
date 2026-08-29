@@ -28,10 +28,18 @@ The plugin's `config()` hook runs at startup and:
 - registers each bundled agent shell as a subagent — the shell markdown under `dist/agents/`
   becomes the agent's prompt;
 - appends the bundled skills dir (`dist/skills/`) to `skills.paths`, leaving paths you
-  already configured in place.
+  already configured in place;
+- raises `subagent_depth` to `2` if you have it lower or unset.
 
 Agent shells that share a name with one of your own agents resolve to the plugin's
 definition; rename yours if you need both.
+
+The depth raise is not a preference. The `operator` shell drives a lane by spawning the
+other shells, and it is already one level down when it does — opencode's default depth of
+`1` refuses that call, so every lane stalls with work recorded and no builder running
+(issue [#6980](https://github.com/kamp-us/phoenix/issues/6980)). The `operator` mirror
+pairs it with a `task: allow` permission, without which opencode strips the spawn tool
+from any subagent whose definition does not name `task`.
 
 ## Fallback: clone-and-point
 

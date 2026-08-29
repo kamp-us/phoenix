@@ -3,15 +3,17 @@ import {dirname, join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {Config, Plugin} from "@opencode-ai/plugin";
 import {parseAgentMarkdown} from "./agents.ts";
+import {raiseSubagentDepth} from "./subagent-depth.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const agentsDir = resolve(here, "./agents");
 const skillsDir = resolve(here, "./skills");
 
-// The runtime config schema carries `skills.paths` (opencode core v1 config; this repo's
-// own opencode.json sets it), but @opencode-ai/sdk@1.18.21's generated Config type does
-// not declare it yet — so the one key this plugin appends goes through this narrow view.
+// The runtime config schema carries `skills.paths` and `subagent_depth` (opencode core v1
+// config; this repo's own opencode.json sets both), but @opencode-ai/sdk@1.18.21's generated
+// Config type declares neither — so the keys this plugin writes go through these narrow views.
 type SkillsConfigView = {paths?: string[]};
+type DepthConfigView = {subagent_depth?: number};
 
 type AgentEntry = NonNullable<NonNullable<Config["agent"]>[string]>;
 
@@ -36,6 +38,9 @@ export const FabrikaOpenCodePlugin: Plugin = async () => {
 				skills.paths.push(skillsDir);
 			}
 			(cfg as Config & {skills?: SkillsConfigView}).skills = skills;
+
+			const depth = cfg as Config & DepthConfigView;
+			depth.subagent_depth = raiseSubagentDepth(depth.subagent_depth);
 		},
 	};
 };
