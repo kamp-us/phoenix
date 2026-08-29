@@ -4,6 +4,7 @@ import {
 	type EdgeProps,
 	type EdgeTypes,
 	Handle,
+	type NodeChange,
 	type NodeProps,
 	type NodeTypes,
 	type OnEdgesChange,
@@ -27,12 +28,21 @@ import {
 	ZoomIn,
 	ZoomOut,
 } from "lucide-react";
+import {useMemo} from "react";
 import {Badge} from "../../../../apps/web/src/components/ui/Badge.js";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card} from "../../../../apps/web/src/components/ui/Card.js";
 import {MetaRow} from "../../../../apps/web/src/components/ui/MetaRow.js";
 import type {LineageNode} from "../shared/lineage.js";
 import type {SessionCanvasNode, SessionRelationshipEdge} from "./canvas-adapter.js";
+import {
+	type ContributionCanvasNode,
+	type ContributionDiagnostic,
+	ContributionPanels,
+	ContributionRegistry,
+	contributionEdgeTypes,
+	contributionNodeTypes,
+} from "./contribution-registry.js";
 import {includesNodeDetail, nodeStatus, thinkingLabel} from "./node-detail.js";
 
 const incomingLabel = (kinds: SessionCanvasNode["data"]["incomingKinds"]): string => {
@@ -257,7 +267,22 @@ export interface SessionCanvasProps {
 	readonly onNodesChange: OnNodesChange<SessionCanvasNode>;
 	readonly onEdgesChange: OnEdgesChange<SessionRelationshipEdge>;
 	readonly onSelect: (session: LineageNode | null) => void;
+	readonly contributions?: ContributionRegistry;
+	readonly onContributionFailure?: (failure: ContributionDiagnostic) => void;
 }
+
+type CanvasNode = SessionCanvasNode | ContributionCanvasNode;
+
+const isSessionCanvasNode = (node: CanvasNode): node is SessionCanvasNode => "session" in node.data;
+
+type SessionNodeChange = Parameters<OnNodesChange<SessionCanvasNode>>[0][number];
+
+const isSessionNodeChange = (change: NodeChange<CanvasNode>): change is SessionNodeChange => {
+	if (change.type === "add" || change.type === "replace") {
+		return isSessionCanvasNode(change.item);
+	}
+	return !change.id.startsWith("package:");
+};
 
 export function SessionCanvas({
 	nodes,
@@ -265,19 +290,59 @@ export function SessionCanvas({
 	onNodesChange,
 	onEdgesChange,
 	onSelect,
+	contributions = ContributionRegistry.empty(),
+	onContributionFailure = () => undefined,
 }: SessionCanvasProps) {
+	const horizontal = nodes.map(({position}) => position.x);
+	const vertical = nodes.map(({position}) => position.y);
+	const contributionOrigin = {
+		x: horizontal.length === 0 ? 0 : (Math.min(...horizontal) + Math.max(...horizontal)) / 2,
+		y: vertical.length === 0 ? 0 : (Math.min(...vertical) + Math.max(...vertical)) / 2,
+	};
+	const packageNodes: ReadonlyArray<ContributionCanvasNode> = [...contributions.nodes.values()].map(
+		(entry, index) => ({
+			id: `package:${entry.packageName}:${entry.key}`,
+			type: entry.key,
+			position: {x: contributionOrigin.x + index * 360, y: contributionOrigin.y},
+			initialWidth: 280,
+			initialHeight: 112,
+			draggable: false,
+			selectable: true,
+			ariaLabel: `${entry.packageName} paketinden ${entry.key} özel düğümü`,
+			data: {packageName: entry.packageName, contributionKey: entry.key},
+		}),
+	);
+	const allNodeTypes = useMemo(
+		() =>
+			({
+				...nodeTypes,
+				...contributionNodeTypes(contributions, onContributionFailure),
+			}) satisfies NodeTypes,
+		[contributions, onContributionFailure],
+	);
+	const allEdgeTypes = useMemo(
+		() =>
+			({
+				...edgeTypes,
+				...contributionEdgeTypes(contributions, onContributionFailure),
+			}) satisfies EdgeTypes,
+		[contributions, onContributionFailure],
+	);
 	return (
-		<ReactFlow<SessionCanvasNode, SessionRelationshipEdge>
-			nodes={[...nodes]}
+		<ReactFlow<CanvasNode, SessionRelationshipEdge>
+			nodes={[...nodes, ...packageNodes]}
 			edges={[...edges]}
-			onNodesChange={onNodesChange}
+			onNodesChange={(changes) => onNodesChange(changes.filter(isSessionNodeChange))}
 			onEdgesChange={onEdgesChange}
-			onNodeClick={(_, node) => onSelect(node.data.session)}
-			onSelectionChange={({nodes: selectedNodes}) =>
-				onSelect(selectedNodes.at(-1)?.data.session ?? null)
-			}
-			nodeTypes={nodeTypes}
-			edgeTypes={edgeTypes}
+			onNodeClick={(_, node) => {
+				if (isSessionCanvasNode(node)) onSelect(node.data.session);
+			}}
+			onSelectionChange={({nodes: selectedNodes}) => {
+				const selected = selectedNodes.findLast(isSessionCanvasNode);
+				onSelect(selected === undefined ? null : selected.data.session);
+			}}
+			nodeTypes={allNodeTypes}
+			edgeTypes={allEdgeTypes}
 			ariaLabelConfig={ariaLabelConfig}
 			nodesConnectable={false}
 			deleteKeyCode={null}
@@ -291,6 +356,7 @@ export function SessionCanvas({
 			<Background color="var(--border-faint)" gap={24} size={1} />
 			<CanvasControls />
 			<CanvasLegend />
+			<ContributionPanels registry={contributions} onFailure={onContributionFailure} />
 		</ReactFlow>
 	);
 }

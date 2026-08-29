@@ -1,5 +1,5 @@
 {
-	"name": "fixture-plain-pi",
+	"name": "duplicate-frontend",
 	"type": "module",
 	"pi": {
 		"extensions": [
@@ -8,16 +8,14 @@
 	},
 	"tuval": {
 		"contractVersion": 1,
-		"backend": [
-			{
-				"module": "./backend.js",
-				"export": "makeLayer"
-			}
-		],
 		"frontend": {
 			"nodes": [
 				{
-					"key": "fixture.node",
+					"key": "duplicate.node",
+					"asset": "./asset.js"
+				},
+				{
+					"key": "duplicate.node",
 					"asset": "./asset.js"
 				}
 			]

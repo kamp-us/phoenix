@@ -24,6 +24,7 @@ import {
 	type SessionRelationshipEdge,
 } from "./canvas-adapter.js";
 import {ChatPane, type PaneConnection, type SendResult} from "./chat-pane.js";
+import {ContributionStatus, useContributions} from "./contributions.js";
 import {
 	abortLiveSession,
 	attachLiveSession,
@@ -248,6 +249,7 @@ const focusCanvasNode = (identity: string): void => {
 };
 
 export function TuvalApp() {
+	const contributions = useContributions();
 	const [detailLevel, setDetailLevelState] = useState<NodeDetailLevel>(() =>
 		readStoredNodeDetailLevel(browserStorage()),
 	);
@@ -590,6 +592,15 @@ export function TuvalApp() {
 		});
 	};
 
+	useEffect(() => {
+		if (selected === null) return;
+		const onEscape = (event: KeyboardEvent): void => {
+			if (event.key === "Escape") setTimeout(closePane, 0);
+		};
+		document.addEventListener("keydown", onEscape, {capture: true});
+		return () => document.removeEventListener("keydown", onEscape, {capture: true});
+	}, [selected]);
+
 	const acceptReplacement = (
 		controlOutcome: ControlLiveSessionOutcome,
 		cwdHint: string,
@@ -824,7 +835,10 @@ export function TuvalApp() {
 					variant="secondary"
 					type="button"
 					disabled={discovering}
-					onClick={() => void discover()}
+					onClick={() => {
+						void discover();
+						void contributions.reload();
+					}}
 				>
 					Oturumları yenile
 				</Button>
@@ -846,6 +860,8 @@ export function TuvalApp() {
 							edges={edges}
 							onNodesChange={onNodesChange}
 							onEdgesChange={onEdgesChange}
+							contributions={contributions.registry}
+							onContributionFailure={contributions.reportFailure}
 							onSelect={(lineageSession) => {
 								if (ignoreSelectionChange.current) return;
 								const session =
@@ -867,6 +883,8 @@ export function TuvalApp() {
 							}}
 						/>
 					</div>
+
+					<ContributionStatus state={contributions} />
 
 					<SessionLaunchControls
 						createAvailable={
@@ -941,7 +959,10 @@ export function TuvalApp() {
 								variant="primary"
 								type="button"
 								disabled={discovering}
-								onClick={() => void discover()}
+								onClick={() => {
+									void discover();
+									void contributions.reload();
+								}}
 							>
 								{view.state.action}
 							</Button>

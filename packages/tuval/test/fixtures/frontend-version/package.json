@@ -1,5 +1,5 @@
 {
-	"name": "fixture-plain-pi",
+	"name": "frontend-version",
 	"type": "module",
 	"pi": {
 		"extensions": [
@@ -8,16 +8,10 @@
 	},
 	"tuval": {
 		"contractVersion": 1,
-		"backend": [
-			{
-				"module": "./backend.js",
-				"export": "makeLayer"
-			}
-		],
 		"frontend": {
-			"nodes": [
+			"edges": [
 				{
-					"key": "fixture.node",
+					"key": "version.edge",
 					"asset": "./asset.js"
 				}
 			]
