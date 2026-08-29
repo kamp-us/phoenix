@@ -13,35 +13,119 @@ import {
 	ReactFlow,
 	useReactFlow,
 } from "@xyflow/react";
-import {RotateCcw, Scan, ZoomIn, ZoomOut} from "lucide-react";
+import {
+	Activity,
+	AlertTriangle,
+	CheckCircle2,
+	CircleDashed,
+	Database,
+	History,
+	Link2Off,
+	Radio,
+	RotateCcw,
+	Scan,
+	ZoomIn,
+	ZoomOut,
+} from "lucide-react";
 import {Badge} from "../../../../apps/web/src/components/ui/Badge.js";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card} from "../../../../apps/web/src/components/ui/Card.js";
+import {MetaRow} from "../../../../apps/web/src/components/ui/MetaRow.js";
 import type {LineageNode} from "../shared/lineage.js";
 import type {SessionCanvasNode, SessionRelationshipEdge} from "./canvas-adapter.js";
+import {includesNodeDetail, nodeStatus, thinkingLabel} from "./node-detail.js";
 
 const incomingLabel = (kinds: SessionCanvasNode["data"]["incomingKinds"]): string => {
 	if (kinds.length === 0) return "Kök oturum";
 	return kinds.map((kind) => (kind === "spawn" ? "Oluşturma" : "Dallanma")).join(" + ");
 };
 
+const statusIcon = (kind: ReturnType<typeof nodeStatus>["kind"]) => {
+	if (kind === "running") return <Activity size={16} aria-hidden="true" />;
+	if (kind === "stalled") return <CircleDashed size={16} aria-hidden="true" />;
+	if (kind === "failed") return <AlertTriangle size={16} aria-hidden="true" />;
+	if (kind === "disconnected") return <Link2Off size={16} aria-hidden="true" />;
+	if (kind === "pending") return <Radio size={16} aria-hidden="true" />;
+	if (kind === "unknown") return <CircleDashed size={16} aria-hidden="true" />;
+	return <CheckCircle2 size={16} aria-hidden="true" />;
+};
+
+const metadataTimestamp = (timestamp: number): string =>
+	new Intl.DateTimeFormat("tr-TR", {dateStyle: "short", timeStyle: "short"}).format(
+		new Date(timestamp),
+	);
+
 export function SessionNodeCard({data, selected}: NodeProps<SessionCanvasNode>) {
+	const status = nodeStatus(data.session, data.attachment);
+	const showMeta = includesNodeDetail(data.detailLevel, "meta");
+	const showLive = includesNodeDetail(data.detailLevel, "live");
+	const showFull = includesNodeDetail(data.detailLevel, "full");
+	const liveSession = data.attachment?.session;
+	const unjoined = data.session.sourceFiles.length === 0;
 	return (
-		<Card as="article" className="session-node" data-selected={selected ? "true" : "false"}>
+		<Card
+			as="article"
+			className="session-node"
+			data-detail-level={data.detailLevel}
+			data-status={status.kind}
+			data-selected={selected ? "true" : "false"}
+		>
 			<Handle id="relation-in" type="target" position={Position.Left} isConnectable={false} />
-			<span className="session-node__signal" aria-hidden="true" />
-			<strong className="session-node__title">{data.title}</strong>
-			<span className="session-node__id">{data.session.piSessionId}</span>
-			<span className="session-node__path">{data.session.cwd}</span>
-			<div className="session-node__facts">
-				<Badge>{incomingLabel(data.incomingKinds)}</Badge>
-				{data.continuity.length === 0 ? null : (
-					<Badge>
-						<RotateCcw size={12} aria-hidden="true" />
-						{data.continuity.length} devam
-					</Badge>
-				)}
-			</div>
+			<header className="session-node__header">
+				<strong className="session-node__title">{data.title}</strong>
+				<span className="session-node__status" data-status={status.kind}>
+					{statusIcon(status.kind)}
+					{status.label}
+				</span>
+			</header>
+			{showMeta ? (
+				<>
+					<span className="session-node__id">{data.session.piSessionId}</span>
+					<span className="session-node__path">{data.session.cwd}</span>
+					<MetaRow className="session-node__metadata">
+						<Database size={12} aria-hidden="true" />
+						<span>Metadata</span>
+						<MetaRow.Dot />
+						<time dateTime={new Date(data.session.updatedAt).toISOString()}>
+							{metadataTimestamp(data.session.updatedAt)}
+						</time>
+					</MetaRow>
+				</>
+			) : null}
+			{showLive ? (
+				<MetaRow className="session-node__live" data-source={status.source}>
+					<Radio size={12} aria-hidden="true" />
+					<strong>{status.sourceLabel}</strong>
+					<MetaRow.Dot />
+					<span>{status.detail}</span>
+				</MetaRow>
+			) : null}
+			{showFull ? (
+				<>
+					{liveSession === null || liveSession === undefined ? null : (
+						<MetaRow className="session-node__runtime">
+							<span>{liveSession.model.id}</span>
+							<MetaRow.Dot />
+							<span>düşünme {thinkingLabel(liveSession.thinkingLevel)}</span>
+							<MetaRow.Dot />
+							<span>r{liveSession.revision}</span>
+						</MetaRow>
+					)}
+					<div className="session-node__history">
+						<span className="session-node__history-label">
+							<History size={12} aria-hidden="true" />
+							Kalıcı geçmiş
+						</span>
+						<Badge>{unjoined ? "Geçmişe katılmadı" : incomingLabel(data.incomingKinds)}</Badge>
+						{data.continuity.length === 0 ? null : (
+							<Badge>
+								<RotateCcw size={12} aria-hidden="true" />
+								{data.continuity.length} devam
+							</Badge>
+						)}
+					</div>
+				</>
+			) : null}
 			<Handle id="relation-out" type="source" position={Position.Right} isConnectable={false} />
 		</Card>
 	);

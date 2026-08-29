@@ -456,6 +456,7 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	await rootNode.focus();
 	await page.keyboard.press("Enter");
 	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.getByRole("alert")).toContainText("Bağlantı kesildi");
 	await page.keyboard.press("Escape");
 	await expect(page.locator("aside")).toHaveCount(0);
 	await expect(rootNode).not.toHaveClass(/selected/);
@@ -667,6 +668,7 @@ test("typed lineage stays readable and durable across dense problems and a confl
 		await fulfill(route, id, {_tag: "released", sessionId: null});
 	});
 	await page.goto(tuvalUrl);
+	await page.locator(".detail-setting").getByText("Tam", {exact: true}).click();
 
 	await expect(page.locator(".react-flow__node")).toHaveCount(13);
 	await expect(page.locator(".react-flow__edge")).toHaveCount(13);
@@ -808,6 +810,141 @@ test("an initial lineage failure keeps discovered sessions as truthful nodes wit
 	await expect(page.locator('[data-id="pi:known-child"]')).toBeVisible();
 	await expect(page.locator(".react-flow__edge")).toHaveCount(0);
 	await expect(page.getByText("Çakışan veya okunamayan bağ verisi")).toBeVisible();
+	expect(errors).toEqual([]);
+});
+
+test("all four persisted detail levels preserve the live React Flow interaction contract", async ({
+	page,
+}, testInfo) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const root = session("detail-root", "/work/detail-root");
+	const stalled = session("detail-stalled", "/work/detail-stalled", "detail-root");
+	const completed = session("detail-completed", "/work/detail-completed", "detail-root");
+	const failed = session("detail-failed", "/work/detail-failed", "detail-stalled");
+	const sessions = [root, stalled, completed, failed];
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection(sessions));
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			const input = operation.input as {readonly sessionId: string};
+			await fulfill(route, id, {
+				_tag: "attached",
+				session: {
+					...liveSession(input.sessionId),
+					phase: "retry",
+					completion: "running",
+				},
+			});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: null});
+	});
+	await page.goto(tuvalUrl);
+	await expect(page.locator(".react-flow__node")).toHaveCount(4);
+	await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+
+	const levels = [
+		{value: "bare", label: "Sade"},
+		{value: "meta", label: "Meta"},
+		{value: "live", label: "Canlı"},
+		{value: "full", label: "Tam"},
+	] as const;
+	const pane = page.locator(".react-flow__pane");
+	const viewport = page.locator(".react-flow__viewport");
+	const relationship = page.locator('[data-id="fork:pi:detail-stalled"]');
+	for (const level of levels) {
+		await page.locator(".detail-setting").getByText(level.label, {exact: true}).click();
+		await expect(page.locator(`.session-node[data-detail-level="${level.value}"]`)).toHaveCount(4);
+		await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+		await expect(page.locator(".relationship-edge").first()).toBeVisible();
+		const nodeBoxes = await page.locator(".react-flow__node").evaluateAll((elements) =>
+			elements.map((element) => {
+				const box = element.getBoundingClientRect();
+				return {left: box.left, right: box.right, top: box.top, bottom: box.bottom};
+			}),
+		);
+		for (let leftIndex = 0; leftIndex < nodeBoxes.length; leftIndex += 1) {
+			for (let rightIndex = leftIndex + 1; rightIndex < nodeBoxes.length; rightIndex += 1) {
+				const left = nodeBoxes[leftIndex]!;
+				const right = nodeBoxes[rightIndex]!;
+				const overlaps =
+					left.left < right.right &&
+					left.right > right.left &&
+					left.top < right.bottom &&
+					left.bottom > right.top;
+				expect(overlaps).toBe(false);
+			}
+		}
+
+		const beforePan = await viewport.getAttribute("style");
+		const start = await blankPanePoint(pane);
+		expect(start).not.toBeNull();
+		if (start !== null) {
+			await page.mouse.move(start.x, start.y);
+			await page.mouse.down();
+			await page.mouse.move(start.x + 24, start.y + 16, {steps: 4});
+			await page.mouse.up();
+		}
+		await expect(viewport).not.toHaveAttribute("style", beforePan ?? "");
+		const beforeZoom = await viewport.getAttribute("style");
+		await page.getByRole("button", {name: "Yakınlaştır"}).click();
+		await expect(viewport).not.toHaveAttribute("style", beforeZoom ?? "");
+
+		await relationship.focus();
+		await page.keyboard.press("Enter");
+		await expect(relationship).toHaveClass(/selected/);
+		await page.keyboard.press("Escape");
+		await expect(relationship).not.toHaveClass(/selected/);
+		await page.getByRole("button", {name: "Tümünü göster"}).click();
+
+		const capturePath = testInfo.outputPath(`node-detail-${level.value}.png`);
+		await page.screenshot({path: capturePath, fullPage: true});
+		await testInfo.attach(`node-detail-${level.value}`, {
+			path: capturePath,
+			contentType: "image/png",
+		});
+	}
+
+	await page.locator(".detail-setting").getByText("Canlı", {exact: true}).click();
+	await selectNode(page, stalled.identity);
+	await expect(page.locator(`[data-id="${stalled.identity}"]`)).toContainText("Protokol canlı");
+	await expect(page.locator(`[data-id="${stalled.identity}"]`)).toContainText("Takıldı");
+	await expect(page.locator("#chat-title")).toHaveText("detail-stalled");
+	await page.locator(".chat-pane").evaluate(async (element) => {
+		await Promise.all(element.getAnimations().map((animation) => animation.finished));
+	});
+	const attachedCapturePath = testInfo.outputPath("node-detail-live-attached.png");
+	await page.screenshot({path: attachedCapturePath, fullPage: true});
+	await testInfo.attach("node-detail-live-attached", {
+		path: attachedCapturePath,
+		contentType: "image/png",
+	});
+	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
+	await expect(page.locator("aside")).toHaveCount(0);
+	await page.locator(".detail-setting").getByText("Tam", {exact: true}).click();
+
+	await page.reload();
+	await expect(page.locator('.session-node[data-detail-level="full"]')).toHaveCount(4);
+	await expect(page.locator(".detail-setting").getByText("Tam", {exact: true})).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
+	await expect(page.locator(".react-flow__edge")).toHaveCount(3);
+	expect(await page.evaluate(() => localStorage.getItem("tuval.workspace.node-detail-level"))).toBe(
+		"full",
+	);
 	expect(errors).toEqual([]);
 });
 
@@ -1473,18 +1610,18 @@ test("an original prompt completion cannot corrupt a newly attached pane after a
 
 	await selectNode(page, "pi:prompt-beta");
 	await expect(page.locator("#chat-title")).toHaveText("beta");
-	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
 	await selectNode(page, "pi:prompt-alpha");
 	await expect.poll(() => alphaAttachments).toBe(2);
 	await expect(page.locator("#chat-title")).toHaveText("alpha");
-	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
 	const newAlphaSubmit = page.locator('.composer-shell button[type="submit"]');
 	await expect(newAlphaSubmit).toBeEnabled();
 
 	finishOriginalAlpha?.();
 	await expect.poll(() => originalAlphaResponses).toBe(1);
 	await expect(page.locator("#chat-title")).toHaveText("alpha");
-	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
 	await expect(page.getByText("Eski Alpha sahipliği artık geçerli değil.")).toHaveCount(0);
 	await expect(page.getByText("Oturum açılamadı")).toHaveCount(0);
 	await expect(page.getByText("Gönderiliyor; onay bekleniyor.")).toHaveCount(0);
@@ -1547,7 +1684,7 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 	await expect(page.getByRole("alert")).toContainText("başka bir çalışma alanında");
 
 	await selectNode(page, "pi:error-alpha");
-	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
 	await emitLive(page, {
 		_tag: "session",
 		sequence: 9,
@@ -1570,14 +1707,14 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 	await selectNode(page, "pi:error-beta");
 	await expect(page.getByRole("alert")).toContainText("Oturum açılamadı");
 	await selectNode(page, "pi:error-alpha");
-	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
 	await disconnectLive(page);
 	await expect(page.getByRole("alert")).toContainText("Bağlantı kesildi");
 
 	await selectNode(page, "pi:error-beta");
 	await expect(page.getByRole("alert")).toContainText("Oturum açılamadı");
 	await selectNode(page, "pi:error-alpha");
-	await expect(page.getByText("Canlı", {exact: true})).toBeVisible();
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
 	promptFails = true;
 	const editor = page.getByRole("textbox", {name: "İstem"});
 	await editor.fill("başarısız gönderim");

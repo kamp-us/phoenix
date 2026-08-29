@@ -199,8 +199,8 @@ describe("Tuval lineage canvas adapter", () => {
 			nodes.map(({id, position}) => ({id, position})),
 			[
 				{id: first.id, position: {x: 0, y: 0}},
-				{id: last.id, position: {x: 720, y: 0}},
-				{id: middle.id, position: {x: 360, y: 0}},
+				{id: last.id, position: {x: 1120, y: 0}},
+				{id: middle.id, position: {x: 560, y: 0}},
 			],
 		);
 		const skipped = toLineageEdges(skipLayer).find((edge) => edge.id === "spawn:first-last");

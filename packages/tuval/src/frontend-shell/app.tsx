@@ -8,6 +8,7 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import {createRoot} from "react-dom/client";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card, Surface} from "../../../../apps/web/src/components/ui/Card.js";
+import {ToggleGroup} from "../../../../apps/web/src/components/ui/ToggleGroup.js";
 import type {DiscoveredSession, DiscoveryOutcome, DiscoveryProblem} from "../shared/discovery.js";
 import type {LineageNode, LineageProblem, LineageProjection} from "../shared/lineage.js";
 import type {LiveSessionView} from "../shared/live-session.js";
@@ -26,6 +27,12 @@ import {
 	readLineage,
 	releaseLiveSession,
 } from "./fate-client.js";
+import {
+	NODE_DETAIL_LEVELS,
+	type NodeDetailLevel,
+	readStoredNodeDetailLevel,
+	writeStoredNodeDetailLevel,
+} from "./node-detail.js";
 import {SessionCanvas} from "./session-canvas.js";
 import "@manti-ui/styles/index.css";
 import "@xyflow/react/dist/style.css";
@@ -56,6 +63,21 @@ interface StreamCursor {
 }
 
 const pendingPane = (): PaneState => ({connection: "pending", session: null});
+
+const browserStorage = (): Storage | undefined => {
+	try {
+		return typeof window === "undefined" ? undefined : window.localStorage;
+	} catch {
+		return undefined;
+	}
+};
+
+const nodeDetailLabels: Readonly<Record<NodeDetailLevel, string>> = {
+	bare: "Sade",
+	meta: "Meta",
+	live: "Canlı",
+	full: "Tam",
+};
 
 interface DiscoveryView {
 	readonly tone: string;
@@ -214,6 +236,9 @@ const focusCanvasNode = (identity: string): void => {
 };
 
 export function TuvalApp() {
+	const [detailLevel, setDetailLevelState] = useState<NodeDetailLevel>(() =>
+		readStoredNodeDetailLevel(browserStorage()),
+	);
 	const [outcome, setOutcome] = useState<DiscoveryOutcome | null>(null);
 	const [lineage, setLineage] = useState<LineageProjection | null>(null);
 	const [lineageFailure, setLineageFailure] = useState<string | null>(null);
@@ -250,14 +275,26 @@ export function TuvalApp() {
 
 	useEffect(() => {
 		if (lineage === null) return;
+		const attachments =
+			paneSelection._tag === "open" && paneSelection.pane.session !== null
+				? new Map([[paneSelection.selected.identity, paneSelection.pane]])
+				: undefined;
 		setNodes((current) =>
-			reconcileSessionNodes(current, lineage).map((node) => ({
+			reconcileSessionNodes(current, lineage, {
+				detailLevel,
+				...(attachments === undefined ? {} : {attachments}),
+			}).map((node) => ({
 				...node,
 				selected: node.id === selected?.identity,
 			})),
 		);
 		setEdges((current) => reconcileLineageEdges(current, lineage));
-	}, [lineage, selected]);
+	}, [detailLevel, lineage, paneSelection, selected]);
+
+	const setDetailLevel = (next: NodeDetailLevel): void => {
+		writeStoredNodeDetailLevel(browserStorage(), next);
+		setDetailLevelState(next);
+	};
 
 	const applyDiscovery = useCallback(
 		async (next: DiscoveryOutcome, generation: number): Promise<void> => {
@@ -346,7 +383,9 @@ export function TuvalApp() {
 				);
 			}
 			requestAnimationFrame(() => {
-				ignoreSelectionChange.current = false;
+				requestAnimationFrame(() => {
+					ignoreSelectionChange.current = false;
+				});
 			});
 		} finally {
 			discoveryInFlight.current = false;
@@ -589,6 +628,28 @@ export function TuvalApp() {
 				<div className="status-badge" data-tone={view.tone} role="status" aria-live="polite">
 					<strong id="status-label">{view.label}</strong>
 					<span id="status-description">{view.description}</span>
+				</div>
+				<div className="detail-setting">
+					<span id="detail-setting-label">Oturum ayrıntısı</span>
+					<ToggleGroup
+						aria-labelledby="detail-setting-label"
+						className="kp-toggle-group kp-toggle-group--segmented"
+						size="sm"
+						value={[detailLevel]}
+						onValueChange={(next) => {
+							const selectedLevel = next.at(-1);
+							if (
+								selectedLevel !== undefined &&
+								NODE_DETAIL_LEVELS.includes(selectedLevel as NodeDetailLevel)
+							) {
+								setDetailLevel(selectedLevel as NodeDetailLevel);
+							}
+						}}
+						items={NODE_DETAIL_LEVELS.map((level) => ({
+							value: level,
+							label: nodeDetailLabels[level],
+						}))}
+					/>
 				</div>
 				<Button
 					id="refresh-sessions"

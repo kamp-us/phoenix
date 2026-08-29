@@ -253,11 +253,55 @@ describe("SessionCanvas", () => {
 		expect(unknownCard?.textContent).not.toContain("Protokol canlı");
 	});
 
+	it("renders failed and completed live states with text and drawn icons", async () => {
+		const live = (sessionId: string, completion: "complete" | "error"): AttachedLiveSession => ({
+			_tag: "attached",
+			sessionId,
+			revision: 2,
+			phase: "idle",
+			model: {provider: "anthropic", id: "claude-sonnet"},
+			thinkingLevel: "medium",
+			completion,
+			transcript: [],
+			lastEventSequence: 3,
+			connection: "connected",
+			ownership: "exclusive",
+		});
+		const view = render(
+			<div style={{width: 800, height: 600}}>
+				<SessionCanvas
+					nodes={toSessionNodes(projection, {
+						detailLevel: "live",
+						attachments: new Map([
+							[node("root").id, {connection: "attached", session: live("root", "complete")}],
+							[node("spawned").id, {connection: "attached", session: live("spawned", "error")}],
+						]),
+					})}
+					edges={toLineageEdges(projection)}
+					onNodesChange={vi.fn()}
+					onEdgesChange={vi.fn()}
+					onSelect={vi.fn()}
+				/>
+			</div>,
+		);
+		await waitFor(() =>
+			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3),
+		);
+		const completed = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
+		const failed = view.container.querySelector<HTMLElement>('[data-id="pi:spawned"]');
+		expect(completed?.textContent).toContain("Tamamlandı");
+		expect(
+			completed?.querySelector('.session-node__status[data-status="completed"] svg'),
+		).not.toBeNull();
+		expect(failed?.textContent).toContain("Başarısız");
+		expect(failed?.querySelector('.session-node__status[data-status="failed"] svg')).not.toBeNull();
+	});
+
 	it("renders named typed edges, resume continuity, and matching relationship handles", async () => {
 		const view = render(
 			<div style={{width: 800, height: 600}}>
 				<SessionCanvas
-					nodes={toSessionNodes(projection)}
+					nodes={toSessionNodes(projection, {detailLevel: "full"})}
 					edges={toLineageEdges(projection)}
 					onNodesChange={vi.fn()}
 					onEdgesChange={vi.fn()}

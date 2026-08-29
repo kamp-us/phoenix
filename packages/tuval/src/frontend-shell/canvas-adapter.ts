@@ -5,12 +5,24 @@ import type {
 	LineageNode,
 	LineageProjection,
 } from "../shared/lineage.js";
+import {
+	DEFAULT_NODE_DETAIL_LEVEL,
+	type NodeAttachment,
+	type NodeDetailLevel,
+} from "./node-detail.js";
 
 export interface SessionNodeData extends Record<string, unknown> {
 	readonly session: LineageNode;
 	readonly title: string;
 	readonly incomingKinds: ReadonlyArray<LineageEdge["kind"]>;
 	readonly continuity: ReadonlyArray<ContinuityObservation>;
+	readonly detailLevel: NodeDetailLevel;
+	readonly attachment: NodeAttachment | null;
+}
+
+export interface SessionNodeProjectionOptions {
+	readonly detailLevel?: NodeDetailLevel;
+	readonly attachments?: ReadonlyMap<string, NodeAttachment>;
 }
 
 export interface LineageEdgeData extends Record<string, unknown> {
@@ -71,8 +83,8 @@ const positions = (projection: LineageProjection): ReadonlyMap<string, {x: numbe
 		const center = (layer.length - 1) / 2;
 		layer.forEach((node, index) => {
 			result.set(node.id, {
-				x: depth * 360,
-				y: Math.round((index - center) * 160),
+				x: depth * 560,
+				y: Math.round((index - center) * 240),
 			});
 		});
 	}
@@ -83,6 +95,7 @@ const nodeFrom = (
 	projection: LineageProjection,
 	node: LineageNode,
 	position: {readonly x: number; readonly y: number},
+	options: SessionNodeProjectionOptions,
 ): SessionCanvasNode => {
 	const continuity = projection.graph.continuity.filter((entry) => entry.session === node.id);
 	const incomingKinds = [
@@ -91,28 +104,42 @@ const nodeFrom = (
 		),
 	].sort(compareText);
 	const continuityLabel = continuity.length === 0 ? "" : `, ${continuity.length} devam kaydı`;
+	const attachment = options.attachments?.get(node.id) ?? null;
 	return {
 		id: node.id,
 		type: "session",
 		position,
 		ariaLabel: `${sessionTitle(node.cwd)} oturumu, ${node.piSessionId}${continuityLabel}`,
-		data: {session: node, title: sessionTitle(node.cwd), incomingKinds, continuity},
+		data: {
+			session: node,
+			title: sessionTitle(node.cwd),
+			incomingKinds,
+			continuity,
+			detailLevel: options.detailLevel ?? DEFAULT_NODE_DETAIL_LEVEL,
+			attachment,
+		},
 	};
 };
 
-export const toSessionNodes = (projection: LineageProjection): ReadonlyArray<SessionCanvasNode> => {
+export const toSessionNodes = (
+	projection: LineageProjection,
+	options: SessionNodeProjectionOptions = {},
+): ReadonlyArray<SessionCanvasNode> => {
 	const projectedPositions = positions(projection);
 	return [...projection.graph.nodes]
 		.sort((left, right) => compareText(left.id, right.id))
-		.map((node) => nodeFrom(projection, node, projectedPositions.get(node.id) ?? {x: 0, y: 0}));
+		.map((node) =>
+			nodeFrom(projection, node, projectedPositions.get(node.id) ?? {x: 0, y: 0}, options),
+		);
 };
 
 export const reconcileSessionNodes = (
 	current: ReadonlyArray<SessionCanvasNode>,
 	projection: LineageProjection,
+	options: SessionNodeProjectionOptions = {},
 ): ReadonlyArray<SessionCanvasNode> => {
 	const previous = new Map(current.map((node) => [node.id, node]));
-	return toSessionNodes(projection).map((next) => {
+	return toSessionNodes(projection, options).map((next) => {
 		const node = previous.get(next.id);
 		return node === undefined
 			? next
@@ -155,12 +182,15 @@ export const toLineageEdges = (
 	const projectedPositions = positions(projection);
 	const yPositions = [...projectedPositions.values()].map((position) => position.y);
 	const minY = Math.min(0, ...yPositions);
-	const maxY = Math.max(0, ...yPositions) + 132;
-	const skipEdges = sorted.filter(
-		(edge) => (depths.get(edge.child) ?? 0) - (depths.get(edge.parent) ?? 0) > 1,
-	);
+	const maxY = Math.max(0, ...yPositions) + 216;
+	const routedEdges = sorted.filter((edge) => {
+		const depthDistance = (depths.get(edge.child) ?? 0) - (depths.get(edge.parent) ?? 0);
+		const sourceY = projectedPositions.get(edge.parent)?.y ?? 0;
+		const targetY = projectedPositions.get(edge.child)?.y ?? 0;
+		return depthDistance > 1 || Math.abs(targetY - sourceY) > 240;
+	});
 	const routeY = new Map(
-		skipEdges.map((edge, index) => [
+		routedEdges.map((edge, index) => [
 			edge.id,
 			index % 2 === 0
 				? minY - 32 - Math.floor(index / 2) * 24
