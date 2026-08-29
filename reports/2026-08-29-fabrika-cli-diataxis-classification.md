@@ -112,7 +112,7 @@ are counted, not only plain quoted strings.
 | Group | Pairs | Short description | Long description | Intruding material | Where that why lives |
 |---|---|---|---|---|---|
 | `adr` | 8 | reference | reference | 2 of 8 argue; 7 carry `Example:` | no decision holds this |
-| `build` | 24 | reference (1 argues) | reference | 19 of 24 argue, 14 cite an issue or ADR — the heaviest explanation load in the package | no decision holds this |
+| `build` | 24 | reference (1 argues) | reference | 19 of 24 argue, 14 cite an issue or ADR — the heaviest explanation load in the package, and `build claim`'s 4142-char string is the longest in it | no decision holds this |
 | `campaign` | 4 | reference | reference | 3 of 4 argue, 2 cite | no decision holds this |
 | `ci` | 5 | reference (1 argues) | reference | all 5 argue, 4 cite | [ADR 0054](../.decisions/0054-run-evidence-bundle.md), [ADR 0069](../.decisions/0069-derived-changelog-from-shipped-work.md), [ADR 0092](../.decisions/0092-gates-fail-closed-on-zero-scope.md) |
 | `config` | 2 | reference | reference | 1 argues | no decision holds this |
@@ -125,7 +125,7 @@ are counted, not only plain quoted strings.
 | `handoff` | 5 | reference | reference | 1 of 5 argues | no decision holds this |
 | `heal-ci` | 9 | reference | reference | 8 of 9 argue, 4 cite | [ADR 0205](../.decisions/0205-orphan-red-prs-convert-to-board-work.md), [ADR 0228](../.decisions/0228-scripts-relay-never-derive.md) |
 | `hook` | 4 | reference | reference | 1 of 4 argues | [ADR 0180](../.decisions/0180-capture-real-runtime-artifact-before-coding.md), [ADR 0331](../.decisions/0331-fabrika-spawn-hook-retired.md), [ADR 0337](../.decisions/0337-worktree-provisioning-rehomed-onto-repo-settings.md) |
-| `lane` | 19 | reference | reference | all 19 argue, 13 cite; the longest single string in the package at 2623 chars | no decision holds this |
+| `lane` | 19 | reference | reference | all 19 argue, 13 cite; six of the package's seven longest strings, topping out at 2615 chars | no decision holds this |
 | `ledger` | 8 | reference | reference | 6 of 8 argue, 3 cite | no decision holds this |
 | `map` | 9 | reference | reference | 5 of 9 argue | no decision holds this |
 | `pattern` | 6 | reference | reference | 4 of 6 argue | no decision holds this |
@@ -145,8 +145,18 @@ are counted, not only plain quoted strings.
 **Table C totals across the 30 groups:** 266 pairs. Every short description is single-mode reference
 except 4 that argue. On the long side, 214 of 266 enumerate exit codes and 205 carry an `Example:`
 invocation — both reference behaviour — while **193 of 266 (73%) carry rationale, and 105 (39%) cite
-an issue number or an ADR inside the string a reader sees under `--help`.** Longest strings: `lane`
-2623 chars, `ship` 2063, `review` 2038, `heal-ci` 1973, `recipe` 1917.
+an issue number or an ADR inside the string a reader sees under `--help`.** The `Example:` figure
+counts the literal `Example:`; widening the rule to `Example:` or `Examples:` gives 216 instead, so
+quote the rule alongside either number.
+
+**The longest string in the package is `build claim`'s, at 4142 chars.** The next six are all
+`lane` — 2615, 2554, 2479, 2283, 2231, 2222 — so `lane` holds six of the seven longest without
+holding the first. Read as per-group maxima the order is `build` 4142, `lane` 2615, `ship` 2055,
+`review` 2030, `heal-ci` 1965, `recipe` 1909. Length here is the literal's source text between its
+delimiters, escape sequences left unexpanded, a `${…}` hole counted as its own source, concatenated
+parts summed. State that rule when reusing these: a scan that looks for the next backtick rather
+than tracking interpolation depth over-runs `build claim`'s nested backtick and drops the string
+entirely, which is how an earlier draft of this section named `lane` the package maximum.
 
 The uniform verdict is therefore **host reference, intruding explanation, on 30 of 30 groups**, with
 `build`, `guard`, `lane`, `ship` and `heal-ci` carrying the heaviest load. The intruding material is
