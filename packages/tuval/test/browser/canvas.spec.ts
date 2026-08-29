@@ -559,17 +559,42 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	).toHaveCount(1);
 
 	const tabLabels: Array<string | null> = [];
-	for (let index = 0; index < 12; index += 1) {
+	const graphFocusPaint = new Map<
+		string,
+		{outlineWidth: string; outlineStyle: string; outlineOffset: string}
+	>();
+	for (let index = 0; index < 30; index += 1) {
 		await page.keyboard.press("Tab");
-		tabLabels.push(
-			await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null),
-		);
+		const active = await page.evaluate(() => {
+			const element = document.activeElement;
+			if (!(element instanceof Element)) return {label: null, paint: null};
+			const style = getComputedStyle(element);
+			return {
+				label: element.getAttribute("aria-label"),
+				paint: {
+					outlineWidth: style.outlineWidth,
+					outlineStyle: style.outlineStyle,
+					outlineOffset: style.outlineOffset,
+				},
+			};
+		});
+		tabLabels.push(active.label);
+		if (active.label !== null && active.paint !== null)
+			graphFocusPaint.set(active.label, active.paint);
 	}
-	expect(tabLabels).toContain("root oturumu, flow-root, Kayıtlı görünüm");
-	expect(tabLabels).toContain("child oturumu, flow-child, Kayıtlı görünüm");
-	expect(tabLabels).toContain(
+	const graphLabels = [
+		"root oturumu, flow-root, Kayıtlı görünüm",
+		"child oturumu, flow-child, Kayıtlı görünüm",
 		"flow-root oturumundan flow-child oturumuna dallanma ilişkisi, kaynak protocol",
-	);
+	];
+	for (const label of graphLabels) {
+		expect(tabLabels).toContain(label);
+		expect(graphFocusPaint.get(label)).toEqual({
+			outlineWidth: "2px",
+			outlineStyle: "solid",
+			outlineOffset: "2px",
+		});
+	}
 
 	await rootNode.focus();
 	await expect(rootNode).toBeFocused();
