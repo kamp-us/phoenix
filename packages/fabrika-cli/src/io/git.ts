@@ -14,7 +14,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {execCapture} from "./exec.ts";
+import {execCapture, execCaptureInput} from "./exec.ts";
 
 export type Failure = {readonly _tag: "Failure"; readonly reason: string};
 export type Ok<A> = {readonly _tag: "Ok"; readonly value: A};
@@ -518,6 +518,90 @@ export const commitStatuses = (
 			dir,
 		]);
 		return r.ok ? ok(parseNameStatus(r.stdout)) : fail(r.reason);
+	});
+
+/**
+ * The trunk this clone's `origin` points its HEAD at, as a ref name (`origin/main`).
+ *
+ * Derived, never defaulted to a spelling: a clone whose `origin/HEAD` is unset answers a failure
+ * carrying git's own remedy, because guessing `origin/main` in a repo whose trunk is called
+ * something else would compare every branch against a ref that resolves to nothing.
+ */
+export const originHeadRef: Shell<Attempt<string>> = Effect.gen(function* () {
+	const r = yield* execCapture("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+	if (!r.ok) {
+		return fail(
+			`this clone's origin/HEAD names no branch (${r.reason}) — \`git remote set-head origin -a\` sets it`,
+		);
+	}
+	const ref = r.stdout.trim();
+	return ref === "" ? fail("`git symbolic-ref` exited 0 and named no ref") : ok(ref);
+});
+
+/** One patch, and the commit git attributed it to — all-zeroes for a diff that names no commit. */
+export interface PatchIdentity {
+	readonly patch: string;
+	readonly commit: string;
+}
+
+const parsePatchIds = (stdout: string): ReadonlyArray<PatchIdentity> =>
+	stdout
+		.split("\n")
+		.map((line) => line.trim().split(/\s+/))
+		.flatMap(([patch, commit]) =>
+			patch === undefined || patch === "" ? [] : [{patch, commit: commit ?? ""}],
+		);
+
+/**
+ * The stable patch identities of a stream of diffs, read by handing the bytes to `git patch-id`.
+ *
+ * `--stable` is load-bearing: the default id depends on the order git happened to emit the file
+ * hunks in, so two runs over the same content can disagree, and a comparison across two *different*
+ * commands (a branch's own diff against a trunk commit's) would be comparing nothing.
+ *
+ * The bytes are piped in rather than shelled through a `|`, so no shell is spawned and the input is
+ * whatever the caller read — there is no second command whose flags could drift from the first's.
+ */
+export const patchIdsOf = (diffs: string): Shell<Attempt<ReadonlyArray<PatchIdentity>>> =>
+	Effect.gen(function* () {
+		if (diffs.trim() === "") return ok([]);
+		const r = yield* execCaptureInput("git", ["patch-id", "--stable"], diffs);
+		return r.ok ? ok(parsePatchIds(r.stdout)) : fail(r.reason);
+	});
+
+/**
+ * The patches the commits in `base..ref` apply to `paths`, newest first, at most `limit` of them.
+ *
+ * The pathspec is what makes the answer comparable to a branch's own net diff: limited to exactly
+ * the paths that branch touches, a squash commit's diff IS that net diff, byte for byte, so their
+ * patch ids agree. It is also what keeps the read small — an unbounded `log -p` over this repo's
+ * trunk is tens of megabytes.
+ *
+ * An empty `paths` is refused rather than widened. A pathspec that silently becomes "everything" is
+ * the same defect ADR 0092 names on the guard side: a scope nobody chose, read as an answer.
+ */
+export const patchIdsIn = (
+	base: string,
+	ref: string,
+	paths: ReadonlyArray<string>,
+	limit: number,
+): Shell<Attempt<ReadonlyArray<PatchIdentity>>> =>
+	Effect.gen(function* () {
+		if (paths.length === 0) return fail("no paths to bound the trunk scan with");
+		const log = yield* execCapture("git", [
+			"log",
+			"--no-merges",
+			"-p",
+			...DIFF_FLAGS,
+			"--format=commit %H",
+			"-n",
+			`${limit}`,
+			`${base}..${ref}`,
+			"--",
+			...paths,
+		]);
+		if (!log.ok) return fail(log.reason);
+		return yield* patchIdsOf(log.stdout);
 	});
 
 /** One commit's own unified diff, under the same config-proof flags every range read uses. */
