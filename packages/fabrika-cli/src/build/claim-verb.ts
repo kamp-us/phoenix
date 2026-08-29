@@ -46,8 +46,9 @@
  * same derivation `build eligible` answers from: without it the two seams disagreed on one edge, and
  * every sequential epic tracer after the first parked at a human (#7035).
  *
- * In repair the number is a **PR**, which carries no home and no audience of its
- * own, so the test runs over the issue that PR serves (#5562) — and when that issue is
+ * In repair the number is a **PR**, which carries no home and no audience of its own, so the test
+ * runs over the issue that PR serves (#5562). The repair route passes that issue explicitly and the
+ * plural linkage reader selects it without reference-order dependence — and when that issue is
  * `type:decision` the audience axis does not bind, because triage routes a decision to
  * `ready-for:human` by default and a repair lane would otherwise fail a fence it had no way to
  * satisfy (#5914). The default is not an exclusion — a decision issue carrying a founder ruling
@@ -65,6 +66,7 @@ import {
 	listComments,
 } from "../io/issues.ts";
 import {normalizeForReadback} from "../report/compose.ts";
+import {issueRefsOf} from "../review/classes.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	BUILD_CLAIM,
@@ -87,6 +89,7 @@ import {
 	PRIOR_BUILD_MISMATCH,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
+	WRONG_LANE,
 } from "./codes.ts";
 import {readDischargedGate} from "./discharge.ts";
 import {currentBranch, detachHead} from "./git.ts";
@@ -114,6 +117,8 @@ import {openIssue, resolveAdmissionSubject, resolveTargetRepo, scannedLine} from
 
 export interface ClaimOptions {
 	readonly number: number;
+	/** Repair only: the served issue retained independently from the PR's linkage order. */
+	readonly issue: number | null;
 	readonly repo: string | null;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in. */
 	readonly cwd: string;
@@ -161,7 +166,16 @@ export interface ClaimOptions {
 // release / adopt ask about a marker rather than about what this repo admits.
 export type ProtocolOptions = Omit<
 	ClaimOptions,
-	"uuid" | "at" | "purpose" | "override" | "overrideLane" | "cites" | "token" | "cwd" | "resume"
+	| "uuid"
+	| "at"
+	| "purpose"
+	| "override"
+	| "overrideLane"
+	| "cites"
+	| "token"
+	| "cwd"
+	| "resume"
+	| "issue"
 > & {
 	/** The token `build claim` handed this lane — the identity it is asking under (#6037). */
 	readonly token: string;
@@ -377,6 +391,26 @@ export const runClaim = (
 		if (ready._tag === "Refused") return ready.outcome;
 		const {repo, session} = ready;
 		const {number} = options;
+		if (options.issue !== null) {
+			if (!Number.isInteger(options.issue) || options.issue <= 0) {
+				return refuse(FAILED, `${CLAIM}: --issue ${options.issue} is not a positive integer.`);
+			}
+			if (!ready.issue.isPullRequest) {
+				return refuse(
+					OFF_VOCABULARY,
+					`${CLAIM}: --issue is repair-only, but #${number} is an issue rather than a pull request; nothing was written.`,
+				);
+			}
+			const refs = issueRefsOf(ready.issue.body);
+			if (!refs.numbers.includes(options.issue)) {
+				const actual =
+					refs.numbers.length === 0 ? "no served issues" : `#${refs.numbers.join(", #")}`;
+				return refuse(
+					WRONG_LANE,
+					`${CLAIM}: PR #${number} does not serve requested issue #${options.issue} through ${refs.kind}; it serves ${actual} instead — nothing was written.`,
+				);
+			}
+		}
 
 		// Already THIS LANE's: answer with the marker that owns it and write nothing. A second marker
 		// would leave `claim` printing one nonce while `confirm`/`requireClaim` read the earliest
@@ -417,7 +451,13 @@ export const runClaim = (
 			);
 		}
 		const scopeLine = dispatchScopeLine(CLAIM, read.dispatch);
-		const subject = yield* resolveAdmissionSubject(CLAIM, repo, read.dispatch, ready.issue);
+		const subject = yield* resolveAdmissionSubject(
+			CLAIM,
+			repo,
+			read.dispatch,
+			ready.issue,
+			options.issue,
+		);
 		const judged = subject._tag === "Judged" ? subject.facts : ready.issue;
 		const repair = subject._tag === "Judged" ? subject.repair : NOT_REPAIR;
 		const purposeLine = purposeScopeLine(CLAIM, purpose, audienceAxisOf(judged), repair);

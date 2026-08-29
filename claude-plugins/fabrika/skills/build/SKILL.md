@@ -441,7 +441,7 @@ PR number as the issue, never claim the issue as a substitute, and never guess f
 Claim the PR's number first — repair mutates a shared lane exactly like a build does:
 
 ```bash
-fabrika build claim <repair-pr>
+fabrika build claim <repair-pr> --issue <served-issue>
 fabrika build verdicts --pr <repair-pr>
 ```
 
@@ -453,9 +453,10 @@ build claim: subject: PR #<repair-pr> serves #<served-issue> (fixes|part-of) —
 
 Consume it as a cross-check against the two Ground operands already retained. If the line is absent,
 malformed, repeated, or names any other PR or issue, stop `STOPPED` before mutation; never guess an
-operand from a partial answer. The line proves which subject the claim admitted, not that the live PR
-body links the retained served issue — the two-subject `build tree` proof below still owns that
-membership fact over the live linkage set.
+operand from a partial answer. The `--issue` operand makes admission select the retained served issue
+from the live linkage set, independent of reference order. The line proves which subject the claim
+admitted; the two-subject
+`build tree` proof below re-proves that membership after the branch is resumed.
 
 **Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
 An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim admits it

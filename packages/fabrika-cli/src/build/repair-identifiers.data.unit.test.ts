@@ -27,7 +27,8 @@ describe("build skill repair identifiers (#7162 / PR #7180)", () => {
 		assert.notInclude(mainRepair, "$issue_or_pr_number");
 	});
 
-	it("proves the PR claim and served issue together after resuming", () => {
+	it("preserves the served issue through claim and proves both subjects after resuming", () => {
+		assert.include(rendered, `fabrika build claim ${PR} --issue ${ISSUE}`);
 		assert.include(rendered, `fabrika build tree --issue ${ISSUE} --repair ${PR}`);
 		assert.notInclude(rendered, `fabrika build tree --issue ${PR}`);
 		assert.isBelow(
@@ -54,7 +55,7 @@ describe("build skill repair identifiers (#7162 / PR #7180)", () => {
 		for (const defect of ["absent", "malformed", "repeated"]) {
 			assert.include(mainRepair, defect);
 		}
-		assert.include(contract, "complete set contain the explicit issue operand");
+		assert.include(contract, "Claim selects that explicit member with the plural linkage parser");
 		assert.include(mainRepair, "served-issue set contains the explicitly");
 		assert.include(mainRepair, "Exit `4` means the linkage is absent");
 	});

@@ -724,6 +724,23 @@ describe("scopeSubjectOf", () => {
 		});
 	});
 
+	it.each([
+		["first", "Fixes #4312\nFixes #4313\n"],
+		["last", "Fixes #4313\nFixes #4312\n"],
+	])("selects an explicitly requested issue when it appears %s", (_order, body) => {
+		expect(scopeSubjectOf(pull(body), 4312)).toEqual({
+			_tag: "Served",
+			number: 4312,
+			kind: "fixes",
+		});
+	});
+
+	it("does not substitute another linked issue for the explicitly requested one", () => {
+		expect(scopeSubjectOf(pull("Fixes #4312\nFixes #4313\n"), 4314)).toEqual({
+			_tag: "Unserved",
+		});
+	});
+
 	it("resolves a partial PR through Part of #<n>, the reference review scope reads", () => {
 		expect(scopeSubjectOf(pull("Part of #4312\n"))).toEqual({
 			_tag: "Served",
