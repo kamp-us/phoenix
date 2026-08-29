@@ -159,3 +159,65 @@ re-emitted — which means retiring its directory by hand and running `lane emit
 
 `lane migrate`'s `generated` verdict therefore stays a skip, and its reason points a reader here
 rather than stating only that the machine was generated.
+
+## Amendment — 2026-08-29: the wait is floored at the recorder, so a fast driver pass cannot spend one
+
+Founder ruling,
+[2026-08-29](https://github.com/kamp-us/phoenix/issues/7241#issuecomment-5460774711), on
+[#7241](https://github.com/kamp-us/phoenix/issues/7241). This amendment transcribes it.
+
+The budget above is spent per driver pass, not per unit of elapsed time. It fired on lane 6915:
+two of three waits went in roughly ninety seconds while [#7227](https://github.com/kamp-us/phoenix/pull/7227)
+was simply still in the queue with `ship gate` satisfied, 37 gating checks green and
+`mergeable_state` reading `clean`. A third back-to-back pass would have parked a person under
+`human:queue-stall` — a park meaning "the driver was quick", carrying nothing about the queue. Since
+#6178 needed ~1.7x the shipper's ~480s horizon, the guard that exists to protect a person's
+attention can fire well inside a dwell this decision already calls normal.
+
+**The floor lives at the recorder.** `lane report` answers **"too soon"** and leaves the log
+unappended when a `ship:queued` task's queue re-fold arrives before an elapsed-time floor, measured
+against the `at` of that task's previous `WIP` entry in the lane's `events.jsonl`. The clock is
+already there: `LogEntry` in [`lane/fold.ts`](../packages/fabrika-cli/src/lane/fold.ts) carries a
+required ISO `at` on every line and `parseLog` rejects one without it. Nothing folds it today. A
+wait is then spent only by elapsed time, and a driver's own pacing stops being an input to the
+budget.
+
+**The sentence this revises** is the one above reading "The driver never counts re-folds and never
+decides the wait is over; the cell's own budget does that." The driver still counts nothing and
+still decides nothing — the recorder does both — but the cell's budget is no longer the whole
+mechanism, because a re-fold now has to clear the floor before it reaches the budget at all.
+
+**What survives it, unchanged.** `WAIT_BUDGET = 3` in
+[`wait-budget.ts`](../packages/fabrika-cli/src/wait-budget.ts) stays a declared constant no recorded
+event moves, so a founder's cleared round still buys a repair round and never a longer wait. The
+wait counter stays separate from the retry budget. The compiler's structural recognition in
+[`lane/machine.ts`](../packages/fabrika-cli/src/lane/machine.ts) is untouched — the wait arm is still
+one counter comparison, still reads polarity off the event, and still dereferences no guard or
+action name past `class:`.
+
+**The cost the ruling accepts** is a new driver-facing answer. "too soon" is something `operate`'s
+`ship:queued` section must handle on a lane it may not `sleep` on, so a driver that meets it hands
+the lane back rather than deciding the wait itself. That is a change to what a driver does, which
+the decision above deliberately fixed; the ruling takes it knowingly, because the alternative is a
+budget that measures driver speed.
+
+**Two other arms were rejected**, so the next reader does not re-open them:
+
+1. **A floor in the fold** — thread the previous wait's `at` into `TaskState` in
+   [`lane/fold.ts`](../packages/fabrika-cli/src/lane/fold.ts) and let the wait arm decline to spend
+   under the floor. Rejected: a floor alone makes the wait unbounded, so the arm needs a
+   total-elapsed ceiling as well, which redesigns the budget rather than patching it — and it puts a
+   clock inside a fold whose whole guarantee is that it is a pure replay of the log.
+2. **A pacing rule in prose only** — state in
+   [`operate/SKILL.md`](../claude-plugins/fabrika/skills/operate/SKILL.md) that a driver must not
+   take consecutive `ship:queued` passes on one lane. Rejected: it is correct only if a driver's own
+   pacing is a legitimate input to the budget, and the ruling holds it is not. Raising `maxWaits`
+   was never a third answer, since the count still measures driver speed.
+
+**The mechanism is authorised here and built elsewhere.** This record is the transcription; the
+refusal itself is code in [`lane/report.ts`](../packages/fabrika-cli/src/lane/report.ts), tracked as
+[#7269](https://github.com/kamp-us/phoenix/issues/7269), which also owns the floor's unset value and
+the driver-side handling rule. Until it lands, the exit side stays
+[#7237](https://github.com/kamp-us/phoenix/issues/7237)'s — no verb closes a `human:queue-stall` once
+the PR lands — and [#6717](https://github.com/kamp-us/phoenix/issues/6717) still asks separately what
+an `UNBLOCKED` grants after such a park.
