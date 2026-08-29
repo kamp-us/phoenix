@@ -79,6 +79,10 @@ point: **name the state durably and stop.** You never dispatch a reviewer, assig
 the PR yourself — a detector converts a strand into claimable work and normal pull adopts it.
 Post the class with `fabrika heal-ci note` and end.
 
+```bash
+fabrika heal-ci note $pr_number --class <stall-token> --sha <the 40-hex head diagnose printed> < "$(fabrika heal-ci scratch $pr_number --slug note)"
+```
+
 **Naming a lane is not dispatching it.** The note's arrow names *whose work this is* so a puller
 can recognise it; it summons nobody. The arrow is a **lookup with no judgment in it**, so two runs
 over one strand write the same word: `ungated` → **review**, `gated-unshipped` → **ship**,
@@ -185,7 +189,10 @@ runs when a human already suspects trouble cannot close that gap, so this skill 
 schedule and classifies **every** open PR, not only the red ones.
 
 The sweep emits one row per stalled PR, oldest strand first, and **writes nothing on its own
-authority**. Work the rows top-down through step 1. The header carries both the scanned and the
+authority**. Work the rows top-down through step 1. Each row is
+`pr\t<number>\t<token>\t<age>\t<head>`, and the token and head are exactly what `note` wants: pass
+them as `--class` and `--sha` on every row, so a sweep working the same board another one just worked
+suppresses on the key instead of posting a second copy of every note. The header carries both the scanned and the
 stalled count, and it is the scanned count that proves the sweep ran over real scope — so zero
 stalled rows at a proven non-zero scan is a good night, reported in those words rather than as
 silence.
@@ -233,7 +240,17 @@ already headed for. After two refused attempts, stop on `REFUSED — note carrie
 path`, so the third attempt has a name rather than falling off the mapping.
 
 Every terminal that names a stall on one PR posts its reason durably with `fabrika heal-ci note`
-before the run ends. Four do not, each for a stated reason: `ATTENDED` and `NOT-OPEN` (no strand to
+before the run ends. **Pass `--class` and `--sha` on every call, on every path.** They form the key
+`<pr>:<class>:<head>`, which the verb emits as an HTML-comment marker and reads back over the whole
+comment history before it creates: exit `14` means this strand is already recorded at this class and
+head, nothing was posted, and the run ends on whichever terminal it was already headed for. That is
+how "a NEW comment every time" and "one note per strand" are both true — a new comment per
+*classification*, not per caller. The clause is not optional politeness: two sweeps three minutes
+apart left up to six identical notes on one pull request because the routed path posted bare (#7209).
+
+**Write the body through `fabrika heal-ci scratch $pr_number --slug note`, never a fixed filename in
+the working directory.** Two runs deriving similar names overwrote each other's note bodies mid-post.
+The path it prints is machine-local, so it never appears in the note itself. Four do not, each for a stated reason: `ATTENDED` and `NOT-OPEN` (no strand to
 record), `SWEPT` (board-level — `note` takes a PR number, and the sweep writes nothing), and
 `UNKNOWN` (you hold no answer, and a note asserting one would be the confident-wrong record this
 skill exists to prevent).

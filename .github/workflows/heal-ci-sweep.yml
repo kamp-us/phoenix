@@ -11,14 +11,15 @@ name: heal-ci-sweep
 # itself flagged. Acting on a flag stays with drivers (ADR 0205, founder ruling #3532); the verb
 # behind it writes nothing at all (packages/fabrika-cli/src/heal-ci/sweep-verb.ts).
 #
-# SUPPRESSION. `fabrika heal-ci note` posts a NEW comment every call by design — a strand's history
-# is a history, not a state (claude-plugins/fabrika/skills/heal-ci/contract.md, section
-# `heal-ci note`) — so on a 6-hourly cron an unattended strand would collect a note per cycle. The
-# key is `<pr>:<stall-class>:<head-sha>`, carried in an HTML-comment marker inside each note, and
-# the window is unbounded: the whole comment history of the pull request is searched, so one key
-# earns exactly one note for as long as that pull request is open. A strand is re-noticed only when
-# its class changes or a new commit lands on its head — the two events that make the earlier note
-# stale.
+# SUPPRESSION LIVES IN THE VERB. `fabrika heal-ci note` posts a new comment per *classification* —
+# a strand's history is a history, not a state — but it refuses `14` when the pull request already
+# carries a note at the key `<pr>:<class>:<head>`, which it emits as an HTML-comment marker and
+# reads back over the whole comment history. One key earns exactly one note for as long as that
+# pull request is open, and a strand is re-noticed only when its class changes or a new commit lands
+# on its head — the two events that make the earlier note stale. This workflow used to build that
+# key, page the comments and glob for a hit in its own bash, which deduped this path alone and left
+# every other caller posting bare: two overlapping sweeps left up to six identical notes per pull
+# request (#7209).
 #
 # NO `lane stale` HERE, deliberately. The lane ledger lives in `.fabrika/lanes` on the machine that
 # ran the lane; CI has no copy and cannot read one. Stale-lane detection in CI is blocked on the
@@ -127,12 +128,15 @@ jobs:
           echo "heal-ci-sweep: exit '${CODE-}' — 11 is an UNKNOWN sweep (a list or per-PR read failed, or the rate limit was exhausted mid-scan), 13 a non-terminal enumeration or an open-PR count over --limit, and an empty code means the sweep step never recorded one. No notes were posted. See the sweep step output above." >&2
           exit 1
 
-      # The only write this workflow makes. One note per stranded row whose suppression key is not
-      # already on the pull request; a run with zero stalled rows posts nothing anywhere.
+      # The only write this workflow makes. One note per stranded row; a run with zero stalled rows
+      # posts nothing anywhere. This block derives no suppression decision — it builds no key, pages
+      # no comments and globs for nothing; it passes the class and the head and relays the verb's
+      # exit (ADR 0228). `14` is the verb's proven "this key is already recorded", which is a success
+      # here and the one code mapped rather than relayed; every other non-zero reds the job.
       - name: Post the durable note on each stranded pull request
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+          FABRIKA_SESSION_ID: heal-ci-sweep-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set +e
           set -uo pipefail
@@ -148,34 +152,30 @@ jobs:
             if [ -z "${PR-}" ]; then
               continue
             fi
-            KEY="${PR}:${TOKEN}:${HEAD}"
 
-            # An unreadable comment list is UNKNOWN suppression state, not an absent note: posting
-            # anyway is how one strand collects a note per cycle. Skip the write and red the job.
-            if ! BODIES="$(gh api --paginate "repos/${REPO}/issues/${PR}/comments?per_page=100" --jq '.[].body' </dev/null)"; then
-              echo "::error::heal-ci-sweep: cannot read #${PR}'s comments — suppression state is UNKNOWN, so nothing was posted for it."
+            NOTE="$(node packages/fabrika-cli/src/bin.ts heal-ci scratch "$PR" --slug note)"
+            if [ -z "${NOTE-}" ]; then
+              echo "::error::heal-ci-sweep: no scratch path for #${PR} — nothing was posted for it."
               failed=1
               continue
             fi
-            case "$BODIES" in
-              *"heal-ci-sweep key=${KEY} "*)
-                echo "heal-ci-sweep: #${PR} already carries a note at key ${KEY} — suppressed."
-                continue
-                ;;
-            esac
 
             # The backticks in the printf formats below are markdown code spans, not command
             # substitution.
             # shellcheck disable=SC2016
             {
-              printf '<!-- heal-ci-sweep key=%s -->\n' "$KEY"
+              printf 'heal-ci: ROUTED — PR #%s @ %s → nobody\n\n' "$PR" "$HEAD"
               printf 'Scheduled stall sweep: this pull request classifies as `%s`, stranded %s minute(s) at head `%s`.\n\n' "$TOKEN" "$AGE" "$HEAD"
               printf 'Detection only — this run merged nothing, re-ran nothing and spawned nothing. What to do about the flag is a driver decision; `/fabrika:heal-ci %s` reads the full diagnosis.\n\n' "$PR"
-              printf 'Posted by the `heal-ci-sweep` workflow (#6146). Suppression key `<pr>:<class>:<head>` over the whole comment history: no further note lands here until this pull request changes class or gains a new head commit.\n'
-            } > note.md
+              printf 'Posted by the `heal-ci-sweep` workflow (#6146). The suppression key `<pr>:<class>:<head>` rides in the marker below, matched over the whole comment history: no further note lands here until this pull request changes class or gains a new head commit.\n'
+            } > "$NOTE"
 
-            if ! node packages/fabrika-cli/src/bin.ts heal-ci note "$PR" < note.md; then
-              echo "::error::heal-ci-sweep: the note on #${PR} did not land — see the verb's output above."
+            node packages/fabrika-cli/src/bin.ts heal-ci note "$PR" --class "$TOKEN" --sha "$HEAD" < "$NOTE"
+            CODE=$?
+            if [ "$CODE" = "14" ]; then
+              echo "heal-ci-sweep: #${PR} already carries a note at ${PR}:${TOKEN}:${HEAD} — the verb suppressed it."
+            elif [ "$CODE" != "0" ]; then
+              echo "::error::heal-ci-sweep: the note on #${PR} exited ${CODE} — see the verb's output above."
               failed=1
             fi
           done <<< "$ROWS"

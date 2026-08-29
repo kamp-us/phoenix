@@ -189,3 +189,65 @@ describe("the marker is written only once a new attempt is confirmed", () => {
 		expect(out.stderr.at(-1)).toContain("the rerun is real, the record is not");
 	});
 });
+
+/**
+ * What the at-most-once guard does and does not cover when two callers reach it at once (#7209).
+ *
+ * The two heal-ci sweeps that collided in the incident overlapped by minutes, so the question is not
+ * academic. The answer these tests record: the guard is **read-before-write per caller**, so it holds
+ * absolutely once either of its two signals has landed, and does NOT hold across the window between
+ * one caller's read and its own write. Nothing in the verb closes that window — GitHub offers no
+ * conditional create — so it is recorded here rather than asserted away.
+ */
+describe("the at-most-once guard under two concurrent callers at one head", () => {
+	/** Both signals still say un-rerun: the board each caller sees before either has written. */
+	const beforeEitherWrote = (): ReadonlyArray<Scripted> => [
+		[PULL, reply(pull())],
+		[COMMENTS, reply(comments())],
+		[CREATE_COMMENT, reply(createdComment(5155001122), 201)],
+		[READ_COMMENT, reply(commentBody(MARKER))],
+		[once(RUN), workflowRun({attempt: 1})],
+		[RERUN, accepted],
+		[RUN, workflowRun({attempt: 2})],
+	];
+
+	it("holds once the marker has landed, whichever caller wrote it", async () => {
+		const seams = fakeSeams([
+			[PULL, reply(pull({comments: 1}))],
+			[COMMENTS, reply(comments({id: 42, body: MARKER}))],
+			[RUN, workflowRun({attempt: 1})],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runRerun(options), seams.layer));
+		expect(out.code).toBe(PROVEN_NOT_IN_STATE);
+		expect(seams.requests.some((request) => RERUN.test(request))).toBe(false);
+	});
+
+	it("holds once run_attempt has moved, even with no marker to read", async () => {
+		const seams = fakeSeams([
+			[PULL, reply(pull())],
+			[COMMENTS, reply(comments())],
+			[RUN, workflowRun({attempt: 2})],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runRerun(options), seams.layer));
+		expect(out.code).toBe(PROVEN_NOT_IN_STATE);
+		expect(seams.requests.some((request) => RERUN.test(request))).toBe(false);
+	});
+
+	/**
+	 * The open window, stated as a fact rather than a wish: a second caller whose reads all completed
+	 * before the first caller's dispatch passes every arm of the guard and dispatches too. Closing it
+	 * needs a claim seam this group does not have, so the skill's own serialization is what bounds it.
+	 */
+	it("does NOT hold when both callers read before either wrote — both dispatch", async () => {
+		const first = fakeSeams(beforeEitherWrote());
+		const second = fakeSeams(beforeEitherWrote());
+		const [a, b] = await Promise.all([
+			Effect.runPromise(Effect.provide(runRerun(options), first.layer)),
+			Effect.runPromise(Effect.provide(runRerun(options), second.layer)),
+		]);
+		expect(a.code).toBe(0);
+		expect(b.code).toBe(0);
+		expect(first.requests.some((request) => RERUN.test(request))).toBe(true);
+		expect(second.requests.some((request) => RERUN.test(request))).toBe(true);
+	});
+});

@@ -517,7 +517,8 @@ table a failure log matches. Contract:
 | `heal-ci logs` | the failed-job log text for **every** failing gating context at a head |
 | `heal-ci classify` | pure: log text on stdin → one signature from a ten-row ordered table, default-deny |
 | `heal-ci rerun` | the at-most-once transient rerun, precondition re-derived inside the verb |
-| `heal-ci note` | the durable stop-path comment |
+| `heal-ci note` | the durable stop-path comment, suppressed once per `<pr>:<class>:<head>` |
+| `heal-ci scratch` | the per-lane path a healer's note bodies go under |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13` a
 read completed and its scope is provably incomplete · `14` proven not in the state this write acts

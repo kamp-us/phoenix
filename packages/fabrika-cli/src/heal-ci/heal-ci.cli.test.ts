@@ -38,10 +38,19 @@ const fabrika = (args: ReadonlyArray<string>, stdin = ""): Run => {
 };
 
 describe("fabrika heal-ci, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => {
-	it("lists all seven verbs under --help by its registration alone", () => {
+	it("lists all eight verbs under --help by its registration alone", () => {
 		const run = fabrika(["heal-ci", "--help"]);
 		expect(run.code).toBe(0);
-		for (const verb of ["diagnose", "sweep", "surface", "logs", "classify", "rerun", "note"]) {
+		for (const verb of [
+			"diagnose",
+			"sweep",
+			"surface",
+			"logs",
+			"classify",
+			"rerun",
+			"note",
+			"scratch",
+		]) {
 			expect(run.stdout).toContain(verb);
 		}
 	});
