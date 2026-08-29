@@ -55,7 +55,9 @@ The pool is `status:triaged` + `ready-for:agent` + unassigned + homed on a miles
 — assignment is how humans keep documents out of this pool. Read the `excluded` histogram beside the
 pool: it counts why issues were left out — `out-of-scope`, `audience-not-agent`,
 `no-acceptance-criteria` or `unreadable` from the admission test, or `blocked`, this verb's own
-axis: an issue whose native `blocked_by` graph still names an open blocker. `campaigns` says
+axis: an issue whose native `blocked_by` graph still names an open blocker that the parent epic's
+assembly branch does not already carry — the same discharged gate `build claim` runs, so the pool and
+the claim never state different facts about one edge. `campaigns` says
 whether any campaign is active at all — an inert fence is a fact to report, not a shorter pool to
 explain.
 Two refusals before claiming: a `type:decision`'s deliverable is a recorded choice

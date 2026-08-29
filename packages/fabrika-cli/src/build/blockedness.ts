@@ -6,8 +6,8 @@
  * `## Dependencies` block: that block is at most a rendering of the graph, never an input anything
  * parses to decide behaviour. This module is the one reader over that one source, so every seam that
  * gates on blockedness starts from the same read. What the epic run's assembly branch then
- * discharges off that read is [`./discharge.ts`](./discharge.ts)'s, shared by `build eligible` and
- * the claim seam so the two cannot drift again (#7035).
+ * discharges off that read is [`./discharge.ts`](./discharge.ts)'s, shared by `build eligible`, the
+ * claim seam and the pool so the three cannot drift again (#7035, #7223).
  *
  * **A `blocked_by` entry is not a block on its own.** The endpoint lists every blocker whatever its
  * state, so the derivation — "any blocker issue still open" — lives here, in the reader, as
@@ -73,7 +73,7 @@ export const readBlockedness = (repo: string, issue: number): Shell<Blockedness>
 	});
 
 /**
- * The gate's answer for the seams that only need "may this start" — `build pick`, and `build claim`
+ * The gate's answer for the seams that only need "may this start" — `build claim` and `build pick`,
  * once [`./discharge.ts`](./discharge.ts) has subtracted what the assembly branch carries.
  *
  * ADR 0301 keeps this **out** of the admission test: that module is pure and total over facts
@@ -105,7 +105,3 @@ export const gateOf = (blockedness: Blockedness): BlockedGate => {
 				reason: unread.map((row) => `blocker #${row.number}: ${row.reason}`).join("; "),
 			};
 };
-
-/** Read the graph and seat it — the whole gate, for `build pick`, which carries no discharge evidence. */
-export const readBlockedGate = (repo: string, issue: number): Shell<BlockedGate> =>
-	Effect.map(readBlockedness(repo, issue), gateOf);

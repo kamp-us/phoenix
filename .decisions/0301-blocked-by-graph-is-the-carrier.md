@@ -188,3 +188,12 @@ no vocabulary impact
 > `packages/fabrika-cli/src/build/discharge.ts`, so the two cannot drift again. `build pick` is the
 > one seam still reading the undischarged gate, tracked as
 > [#7223](https://github.com/kamp-us/phoenix/issues/7223).
+
+> Amendment 2026-08-28 — **the pool answers from that derivation too.** `build pick` now runs the
+> same `discharge.ts` gate, so the third answer that amendment left open is closed and
+> `blockedness.ts`'s discharge-free `readBlockedGate` is deleted rather than left as a second door
+> onto the same question. Nothing in the ruling moves: the graph is still the one carrier, discharge
+> still only ever admits, and a candidate whose parent or edge list could not be read is excluded
+> `unreadable` rather than offered. The lazy shape is what makes it affordable over a whole board —
+> the parent resolve and the branch read fire only for a candidate the graph already refused. Filed
+> against [#7223](https://github.com/kamp-us/phoenix/issues/7223).
