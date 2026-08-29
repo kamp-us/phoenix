@@ -54,6 +54,8 @@ export const RunOwnership = Schema.Union([
 		kind: Schema.Literal("wrapper"),
 		runId: Schema.String,
 		session: SessionIdentity,
+		parentReference: AuthoritativeParentReference,
+		observedAt: Schema.Finite,
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("direct"),
@@ -236,9 +238,6 @@ const mergeOwnership = (
 	if (left.session !== right.session) {
 		return conflict(left.runId, `Run ${left.runId} maps to conflicting sessions`);
 	}
-	if (left.kind === "wrapper" && right.kind === "wrapper") return Result.succeed(left);
-	if (left.kind === "wrapper") return Result.succeed(right);
-	if (right.kind === "wrapper") return Result.succeed(left);
 	if (!sameParentReference(left.parentReference, right.parentReference)) {
 		return conflict(
 			left.runId,
@@ -248,6 +247,9 @@ const mergeOwnership = (
 	if (left.observedAt !== right.observedAt) {
 		return conflict(left.runId, `Run ${left.runId} has conflicting authoritative timestamps`);
 	}
+	if (left.kind === "wrapper" && right.kind === "wrapper") return Result.succeed(left);
+	if (left.kind === "wrapper") return Result.succeed(right);
+	if (right.kind === "wrapper") return Result.succeed(left);
 	if (left.kind === "direct" && right.kind === "direct") return Result.succeed(left);
 	if (left.kind === "observation" && right.kind === "direct") return Result.succeed(left);
 	if (left.kind === "direct" && right.kind === "observation") return Result.succeed(right);
@@ -325,13 +327,12 @@ export const validateLineageStore = (
 			return conflict(ownership.runId, `Run ${ownership.runId} owns an unknown session`);
 		}
 		if (
-			ownership.kind !== "wrapper" &&
 			ownership.parentReference.kind !== "none" &&
 			ownership.parentReference.value.trim().length === 0
 		) {
 			return conflict(ownership.runId, `Run ${ownership.runId} has an empty parent reference`);
 		}
-		if (ownership.kind !== "wrapper" && !Number.isFinite(ownership.observedAt)) {
+		if (!Number.isFinite(ownership.observedAt)) {
 			return conflict(ownership.runId, `Run ${ownership.runId} has a non-finite timestamp`);
 		}
 		if (ownership.kind === "observation") {

@@ -98,6 +98,8 @@ interface SessionArtifact {
 interface RunCandidate {
 	readonly runId: string;
 	readonly wrapperRunId?: string;
+	readonly wrapperParentReference?: AuthoritativeParentReference;
+	readonly wrapperObservedAt?: number;
 	readonly parentRunId?: string;
 	readonly parentSessionRef?: string;
 	readonly sessionRef: string;
@@ -383,6 +385,8 @@ const collectEntryCandidates = (
 		readonly source: string;
 		readonly location: string;
 		readonly wrapperRunId?: string;
+		readonly wrapperParentReference?: AuthoritativeParentReference;
+		readonly wrapperObservedAt?: number;
 		readonly parentSessionRef?: string;
 		readonly inheritedParentRunId?: string;
 		readonly fallbackStartedAt: number;
@@ -440,6 +444,12 @@ const collectEntryCandidates = (
 			candidates.push({
 				runId,
 				...(input.wrapperRunId === undefined ? {} : {wrapperRunId: input.wrapperRunId}),
+				...(input.wrapperParentReference === undefined
+					? {}
+					: {wrapperParentReference: input.wrapperParentReference}),
+				...(input.wrapperObservedAt === undefined
+					? {}
+					: {wrapperObservedAt: input.wrapperObservedAt}),
 				...(explicitParentRunId === undefined ? {} : {parentRunId: explicitParentRunId}),
 				...(explicitParentRunId !== undefined || wrapperParent === undefined
 					? {}
@@ -514,6 +524,13 @@ const readRunCandidates = Effect.fn("Lineage.readRunCandidates")(function* (sour
 		problems.push(malformedRunProblem(`${source}#status`, `run status has an empty ${emptyField}`));
 	}
 	const wrapperRunId = topLevelUsable ? (status.runId ?? status.id) : undefined;
+	const wrapperParentReference: AuthoritativeParentReference =
+		status.parentRunId !== undefined
+			? {kind: "run", value: status.parentRunId}
+			: status.parentWorkflowRunId !== undefined
+				? {kind: "run", value: status.parentWorkflowRunId}
+				: {kind: "none"};
+	const wrapperObservedAt = status.startedAt ?? 0;
 	const parentSessionRef = topLevelUsable ? status.sessionId : undefined;
 	const nestedValues = [
 		["steps", status.steps ?? []],
@@ -548,9 +565,11 @@ const readRunCandidates = Effect.fn("Lineage.readRunCandidates")(function* (sour
 	const base = {
 		source,
 		location: "status",
-		...(wrapperRunId === undefined ? {} : {wrapperRunId}),
+		...(wrapperRunId === undefined
+			? {}
+			: {wrapperRunId, wrapperParentReference, wrapperObservedAt}),
 		...(parentSessionRef === undefined ? {} : {parentSessionRef}),
-		fallbackStartedAt: status.startedAt ?? 0,
+		fallbackStartedAt: wrapperObservedAt,
 		statusSessionEntries: statusSession.success.claimedEntries,
 	};
 	for (const [name, values] of nestedValues) {
@@ -722,35 +741,33 @@ const lineageRecords = (
 				}),
 			);
 		}
-		if (existing.kind !== "wrapper" && ownership.kind !== "wrapper") {
-			if (!sameAuthoritativeParent(existing.parentReference, ownership.parentReference)) {
-				return Result.fail(
-					new LineageConflictError({
-						recordId: ownership.runId,
-						message: `Run ${ownership.runId} has conflicting authoritative parent references`,
-					}),
-				);
-			}
-			if (existing.observedAt !== ownership.observedAt) {
-				return Result.fail(
-					new LineageConflictError({
-						recordId: ownership.runId,
-						message: `Run ${ownership.runId} has conflicting authoritative timestamps`,
-					}),
-				);
-			}
-			if (
-				existing.kind === "observation" &&
-				ownership.kind === "observation" &&
-				existing.parent !== ownership.parent
-			) {
-				return Result.fail(
-					new LineageConflictError({
-						recordId: ownership.runId,
-						message: `Run ${ownership.runId} has conflicting authoritative observations`,
-					}),
-				);
-			}
+		if (!sameAuthoritativeParent(existing.parentReference, ownership.parentReference)) {
+			return Result.fail(
+				new LineageConflictError({
+					recordId: ownership.runId,
+					message: `Run ${ownership.runId} has conflicting authoritative parent references`,
+				}),
+			);
+		}
+		if (existing.observedAt !== ownership.observedAt) {
+			return Result.fail(
+				new LineageConflictError({
+					recordId: ownership.runId,
+					message: `Run ${ownership.runId} has conflicting authoritative timestamps`,
+				}),
+			);
+		}
+		if (
+			existing.kind === "observation" &&
+			ownership.kind === "observation" &&
+			existing.parent !== ownership.parent
+		) {
+			return Result.fail(
+				new LineageConflictError({
+					recordId: ownership.runId,
+					message: `Run ${ownership.runId} has conflicting authoritative observations`,
+				}),
+			);
 		}
 		const preferred =
 			existing.kind === "observation"
@@ -766,9 +783,7 @@ const lineageRecords = (
 	};
 
 	const parentFacts = new Map<string, AuthoritativeParentReference>(
-		current.ownership.flatMap((ownership) =>
-			ownership.kind === "wrapper" ? [] : ([[ownership.runId, ownership.parentReference]] as const),
-		),
+		current.ownership.map((ownership) => [ownership.runId, ownership.parentReference]),
 	);
 	for (const candidate of candidates) {
 		const reference = authoritativeParentReference(candidate);
@@ -836,13 +851,22 @@ const lineageRecords = (
 		if (Result.isFailure(inserted)) return Result.fail(inserted.failure);
 	}
 	for (const candidate of candidates) {
-		if (candidate.parentSessionRef === undefined || candidate.wrapperRunId === undefined) continue;
+		if (
+			candidate.parentSessionRef === undefined ||
+			candidate.wrapperRunId === undefined ||
+			candidate.wrapperParentReference === undefined ||
+			candidate.wrapperObservedAt === undefined
+		) {
+			continue;
+		}
 		const parent = resolveSession(candidate.parentSessionRef, byFile, knownNodes, path);
 		if (parent === undefined) continue;
 		const inserted = insertOwnership({
 			kind: "wrapper",
 			runId: candidate.wrapperRunId,
 			session: parent,
+			parentReference: candidate.wrapperParentReference,
+			observedAt: candidate.wrapperObservedAt,
 		});
 		if (Result.isFailure(inserted)) return Result.fail(inserted.failure);
 	}
@@ -1208,10 +1232,7 @@ const publishStoreFileLock = Effect.fn("LineageStore.publishFileLock")(function*
 	};
 	const created = yield* Effect.result(fs.makeDirectory(lockPath, {recursive: false}));
 	if (Result.isFailure(created)) {
-		const exists = yield* fs
-			.exists(lockPath)
-			.pipe(Effect.mapError((error) => lockError(lockPath, error)));
-		if (exists) return undefined;
+		if (created.failure.reason._tag === "AlreadyExists") return undefined;
 		return yield* lockError(lockPath, created.failure);
 	}
 	const ownerPath = path.join(lockPath, "owner.json");

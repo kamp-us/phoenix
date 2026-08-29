@@ -72,7 +72,7 @@ diagnostic-only.
 The normalized version-2 store lives under `~/.pi/agent/tuval/lineage.json` by default. This
 unshipped format has no migration path: version 1 and unknown versions are refused. Every direct
 run with a resolved session identity is conflict-checked and persisted before parent resolution,
-alongside wrapper and retained ownership. Direct and observation records retain both the
+alongside wrapper and retained ownership. Direct, wrapper, and observation records retain both the
 authoritative parent-reference kind/value and the observed timestamp even when that parent cannot
 resolve. A run-valued observation parent must name retained ownership for the same resolved parent
 session, so lookup and parent-fact comparison survive lifecycle-source deletion.
@@ -83,8 +83,9 @@ intervals, an acyclic graph, and one spawn origin strictly before each continuit
 `(observedAt, runId)`. One run cannot be both origin and continuity. Load, merge, and atomic rename
 run under a same-host process-shared filesystem lock. The lock directory is acquired with a
 non-recursive directory create, so a visible generation is never replaced; owner metadata is written
-before protected work. A contender recovers an owner only when Node's signal-zero probe proves that
-exact same-host pid absent. Live, remote, ownerless, malformed, and unknown generations remain held
+before protected work. An `AlreadyExists` observation remains contention even when the prior owner
+releases before inspection, so acquisition retries within its wait budget. A contender recovers an
+owner only when Node's signal-zero probe proves that exact same-host pid absent. Live, remote, ownerless, malformed, and unknown generations remain held
 until an operator resolves them. Recovery atomically quarantines the dead generation. Release moves
 and removes only its own token-matched generation; an owner-read, quarantine, or cleanup failure
 fails the refresh and retains the generation for diagnosis. Because a live process cannot lose its
