@@ -579,7 +579,8 @@ open	the retry guide documents the delay table
 **Invocation**
 
 ```
-fabrika review ci 4321 [--sha <head>] [--repo <owner/name>] [--json]
+fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence-seconds <n>]
+                       [--repo <owner/name>] [--json]
 ```
 
 **Inputs**
@@ -588,16 +589,21 @@ fabrika review ci 4321 [--sha <head>] [--repo <owner/name>] [--json]
 |---|---|---|---|---|
 | *(positional)* | integer | yes | — | the pull-request number |
 | `--sha` | string | no | the PR's live head | the head to enumerate check runs at; give the inspected head so the answer binds to what is being judged |
+| `--wait` | boolean | no | `false` | poll a `pending` head until CI concludes or the budget expires, instead of answering with this moment's read |
+| `--budget-seconds` | integer | no | `600` | `--wait` only: total wall-clock budget, gh-call latency included |
+| `--cadence-seconds` | integer | no | `30` | `--wait` only: sleep between polls |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 
-**Output** — machine channel. First line: `ci\t<sha>\t<green|red|pending|no-producer>`. Second line:
-`run\t<count>` — how many check runs were enumerated, so the line channel carries its own
-completeness proof. Then one line per status present —
+**Output** — machine channel. Under `--wait`, a first line
+`settle\t<settled|budget-exhausted|head-moved>`; without it that line is absent. Then
+`ci\t<sha>\t<green|red|pending|no-producer>`, then `run\t<count>` — how many check runs were
+enumerated, so the line channel carries its own completeness proof. Then one line per status present
+—
 `check\t<success|failure|neutral|cancelled|skipped|timed_out|action_required|in_progress|queued>\t<count>`.
 
 With `--json`:
-`{"outcome":"ci","sha":…,"rollup":…,"checks":{<status>:<count>…},"scanned":<n>,"declared":<m>,"gates":{"declared":<g>,"covered":<c>}|null}`.
+`{"outcome":"ci","sha":…,"rollup":…,"checks":{<status>:<count>…},"scanned":<n>,"declared":<m>,"gates":{"declared":<g>,"covered":<c>}|null,"settle":<token>|null}`.
 
 `checks` is an **evidence-array collapsed to a status tally** under ADR
 [0308](../../../../.decisions/0308-bounded-evidence-output-shape.md): this skill acts on `rollup`,
@@ -644,6 +650,29 @@ of its own has no gate to have missed, and says so on stderr at exit `0`. The re
 `red` rollup, which is already the answer a caller must act on; `green` and `pending` are the two
 words that read as "nothing to do here", and both are wrong over bytes no gate inspected (#6522).
 
+**`--wait` is the bounded in-verb wait, and it polls a `pending` and nothing else.** A `pending` is
+the ordinary state of a PR minutes after a push — exactly when a reviewer is spawned — so a caller
+that can only take this moment's read has a park on a human to offer for a condition that clears
+itself in minutes (#7282). The verb owns the loop, which is what keeps the ban in
+[`docs/skill-conventions.md` §14](../../docs/skill-conventions.md#14-a-skill-never-sleeps-and-never-polls-on-a-timer)
+whole: the skill makes one call and never sleeps. The budget is **wall clock**, gh-call latency
+included, so the verb cannot overrun the bound it claims to hold.
+
+The settle token says how the wait ended, and it is the whole difference between a proven answer and
+a bound that ran out:
+
+- `settled` — CI concluded inside the budget; the rollup beside it is `green` or `red` and is a
+  verdict.
+- `budget-exhausted` — the budget ran out with the head still `pending`. **Nothing was proven**, and
+  the rollup says so by still reading `pending`: this is a stuck or very slow queue, not a race with
+  it.
+- `head-moved` — the PR left the head this answer binds during the wait. The last read still binds
+  what it inspected; the caller re-reads at the new head rather than trusting a stale `settled`.
+
+Every refusal and the `no-producer` answer are states no waiting changes, so `--wait` returns them
+on the **first** read rather than burning the budget: the `16` head has no gate of this repo's coming
+at all, and a repo with no producer has no run to wait for.
+
 If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
 the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
 though the `12` stale-refusal seat belongs to `review post`, the write seam.
@@ -687,6 +716,27 @@ $ fabrika review ci 4321 --sha 03135b91
 ci	03135b91	green
 run	3
 check	success	3
+```
+
+A head still queued at the read, waited out to its verdict:
+
+```
+$ fabrika review ci 4321 --sha 03135b91 --wait
+settle	settled
+ci	03135b91	green
+run	3
+check	success	3
+```
+
+The same call on a queue that never finishes — `pending` beside the token, and never a verdict:
+
+```
+$ fabrika review ci 4321 --sha 03135b91 --wait --budget-seconds 120
+settle	budget-exhausted
+ci	03135b91	pending
+run	3
+check	success	1
+check	queued	2
 ```
 
 **Grounding**

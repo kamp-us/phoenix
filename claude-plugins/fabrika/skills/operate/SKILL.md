@@ -228,13 +228,10 @@ seats on those codes. Each is a park naming what the verb named — never a prom
 instead. Parallel active tasks brief and spawn in parallel.
 
 **Then do nothing until a spawn returns — and never `sleep`.** A shell spawned with the Agent tool
-returns its result to you, so that return *is* the wait: there is no interval to fill and nothing to
-poll. Never run `sleep`, foreground or background, and never re-read `lane status` on a timer while
-a spawn is in flight — a timed `lane status` is the same defect wearing a fabrika verb. The harness
-refuses a foreground `sleep`, which makes a background one the shape this goes wrong in: an operator
-waiting on a reviewer spawned `sleep 575` in the background about every nine seconds, waited on none
-of them, and left ~55 live shells on the founder's machine while no lane state moved
-([#6696](https://github.com/kamp-us/phoenix/issues/6696)). So dispatch every task the fold routed,
+returns its result to you, so that return *is* the wait. The rule and both incidents behind it are
+[§14 of the skill conventions](../../docs/skill-conventions.md#14-a-skill-never-sleeps-and-never-polls-on-a-timer);
+the one thing it adds for you is that a timed `lane status` is the same defect wearing a fabrika
+verb, so it is banned on the same terms as a bare `sleep`. So dispatch every task the fold routed,
 say in one line what you dispatched, and end the turn. Your next move is
 [§3](#3--verify-the-record-landed-and-record-what-no-shell-can)'s fresh `lane status`, once a spawn
 has returned.

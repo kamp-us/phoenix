@@ -131,14 +131,30 @@ const ci = leafCommand(
 				"the head to enumerate check runs at (default: the PR's live head); give the inspected head so the answer binds to what is being judged",
 			),
 		),
+		wait: Flag.boolean("wait").pipe(
+			Flag.withDescription(
+				"poll a `pending` head until CI concludes or the budget expires, instead of answering with this moment's read",
+			),
+		),
+		budgetSeconds: Flag.integer("budget-seconds").pipe(
+			Flag.withDefault(600),
+			Flag.withDescription("--wait only: total wall-clock budget, gh-call latency included"),
+		),
+		cadenceSeconds: Flag.integer("cadence-seconds").pipe(
+			Flag.withDefault(30),
+			Flag.withDescription("--wait only: sleep between polls"),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, sha, repo, json}) {
+	Effect.fn(function* ({pr, sha, wait, budgetSeconds, cadenceSeconds, repo, json}) {
 		yield* emit(
 			yield* runCi({
 				pr,
 				sha: Option.getOrNull(sha),
+				wait,
+				budgetSeconds,
+				cadenceSeconds,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -147,9 +163,11 @@ const ci = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Roll up the live check runs at a head, fail-closed."),
+	Command.withShortDescription(
+		"Roll up a head's check runs, fail-closed; --wait waits out a pending.",
+	),
 	Command.withDescription(
-		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally under ADR 0308, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates ran: with at least one run from a workflow this repo authors, the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows — ADR 0092), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999), 16 (the enumeration is complete, but no workflow this repo authors produced a run at the head — no gate inspected these bytes, so the answer is neither green nor pending; #6522). Example: fabrika review ci 4321 --sha 03135b91',
+		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally under ADR 0308, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates ran: with at least one run from a workflow this repo authors, the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop so no caller ever sleeps (`docs/skill-conventions.md` §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`: every refusal and the `no-producer` answer are states no waiting changes, so they return on the first read rather than burning the budget. `budget-exhausted` still prints `pending` — the wait ran out, CI did not conclude, and it is never a verdict; `head-moved` says the PR left the head this answer binds. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows — ADR 0092), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999), 16 (the enumeration is complete, but no workflow this repo authors produced a run at the head — no gate inspected these bytes, so the answer is neither green nor pending; #6522). Example: fabrika review ci 4321 --sha 03135b91',
 	),
 );
 
