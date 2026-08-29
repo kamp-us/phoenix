@@ -80,11 +80,18 @@ the PR yourself — a detector converts a strand into claimable work and normal 
 Post the class with `fabrika heal-ci note` and end.
 
 ```bash
-note_body="$(fabrika heal-ci scratch $pr_number --slug note)"
-# write the note into "$note_body" here — scratch allocates the directory and
-# prints the leaf path, it never creates the file
-fabrika heal-ci note $pr_number --class <stall-token> --sha <40-hex head> < "$note_body"
+fabrika heal-ci scratch $pr_number --slug note
 ```
+
+`scratch` allocates the directory and prints one leaf path; it never creates the file, so writing
+the body there is yours. Then post it, typing that path out literally —
+`fabrika heal-ci note $pr_number --class <stall-token> --sha <40-hex head> < <the path it printed>`.
+**Never capture the allocation into a shell variable and never redirect through one.** Command
+substitution and a variable the verifier cannot resolve are each on their own enough for a
+worktree-isolated shell to refuse the line, so a fence built that way does not run for the agent it
+is written for (ADR
+[0235](../../../../.decisions/0235-fences-carry-zero-expansions.md)). A redirect whose target is the
+literal path carries no expansion and runs.
 
 **Naming a lane is not dispatching it.** The note's arrow names *whose work this is* so a puller
 can recognise it; it summons nobody. The arrow is a **lookup with no judgment in it**, so two runs
