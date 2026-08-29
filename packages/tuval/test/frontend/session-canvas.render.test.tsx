@@ -170,6 +170,12 @@ describe("SessionCanvas", () => {
 			live: ["Protokol canlı", "Takıldı", "Yeniden deniyor"],
 			full: ["Kalıcı geçmiş", "1 devam", "claude-sonnet", "yüksek"],
 		} as const;
+		const accessibleNameByLevel = {
+			bare: "spawned oturumu, Takıldı",
+			meta: "spawned oturumu, spawned, Takıldı",
+			live: "spawned oturumu, spawned, Takıldı, Protokol canlı, Yeniden deniyor",
+			full: "spawned oturumu, spawned, Takıldı, Protokol canlı, Yeniden deniyor, 1 devam kaydı",
+		} as const;
 		for (const level of ["bare", "meta", "live", "full"] as const) {
 			const view = render(
 				<div style={{width: 800, height: 600}}>
@@ -192,6 +198,7 @@ describe("SessionCanvas", () => {
 			);
 			const card = view.container.querySelector<HTMLElement>('[data-id="pi:spawned"]');
 			for (const expected of fieldsByLevel[level]) expect(card?.textContent).toContain(expected);
+			expect(card?.getAttribute("aria-label")).toBe(accessibleNameByLevel[level]);
 			if (level === "bare") {
 				expect(card?.textContent).not.toContain("/work/spawned");
 				expect(card?.textContent).not.toContain("Kalıcı geçmiş");
@@ -234,18 +241,25 @@ describe("SessionCanvas", () => {
 		await waitFor(() =>
 			expect(view.container.querySelectorAll(".react-flow__node")).toHaveLength(3),
 		);
-		const status = view.container.querySelector<HTMLElement>(
-			'[data-id="pi:root"] .session-node__status',
-		);
+		const nodeElement = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
+		const status = nodeElement?.querySelector<HTMLElement>(".session-node__status");
 		expect(status?.getAttribute("role")).toBe("status");
 		expect(status?.getAttribute("aria-live")).toBe("polite");
 		expect(status?.getAttribute("aria-atomic")).toBe("true");
 		expect(status?.textContent).toContain("Kayıtlı görünüm");
+		expect(nodeElement?.getAttribute("aria-label")).toBe(
+			"root oturumu, root, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı",
+		);
 
 		view.rerender(
 			canvas(new Map([[node("root").id, {connection: "attached", session: attached}]])),
 		);
 		await waitFor(() => expect(status?.textContent).toContain("Takıldı"));
+		await waitFor(() =>
+			expect(nodeElement?.getAttribute("aria-label")).toBe(
+				"root oturumu, root, Takıldı, Protokol canlı, Yeniden deniyor",
+			),
+		);
 	});
 
 	it("labels disconnected and unknown unattached state without claiming protocol-live data", async () => {
@@ -294,13 +308,22 @@ describe("SessionCanvas", () => {
 		);
 		const refusedCard = view.container.querySelector<HTMLElement>('[data-id="pi:spawned"]');
 		expect(refusedCard?.textContent).toContain("Kayıtlı görünüm");
+		expect(refusedCard?.getAttribute("aria-label")).toBe(
+			"spawned oturumu, spawned, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı, 1 devam kaydı",
+		);
 		expect(refusedCard?.textContent).toContain("Canlı bağlantı kurulmadı");
 		expect(refusedCard?.textContent).not.toContain("Son canlı görünüm korunuyor");
 		const disconnectedCard = view.container.querySelector<HTMLElement>('[data-id="pi:forked"]');
 		expect(disconnectedCard?.textContent).toContain("Bağlantı kesildi");
+		expect(disconnectedCard?.getAttribute("aria-label")).toBe(
+			"forked oturumu, forked, Bağlantı kesildi, Canlı bağlantı yok, socket closed",
+		);
 		expect(disconnectedCard?.textContent).not.toContain("Protokol canlı");
 		const unknownCard = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
 		expect(unknownCard?.textContent).toContain("Tazelik bilinmiyor");
+		expect(unknownCard?.getAttribute("aria-label")).toBe(
+			"root oturumu, root, Tazelik bilinmiyor, Metadata, Okunabilir bir oturum kaynağı yok.",
+		);
 		expect(unknownCard?.textContent).toContain("Geçmişe katılmadı");
 		expect(unknownCard?.textContent).not.toContain("Protokol canlı");
 	});
@@ -369,7 +392,9 @@ describe("SessionCanvas", () => {
 		const root = view.container.querySelector<HTMLElement>('[data-id="pi:root"]');
 		const spawn = view.container.querySelector<HTMLElement>('[data-id="spawn:spawn-run"]');
 		const fork = view.container.querySelector<HTMLElement>('[data-id="fork:pi:forked"]');
-		expect(root?.getAttribute("aria-label")).toBe("root oturumu, root");
+		expect(root?.getAttribute("aria-label")).toBe(
+			"root oturumu, root, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı",
+		);
 		expect(root?.getAttribute("tabindex")).toBe("0");
 		expect(root?.querySelector(".session-node.kp-card")).not.toBeNull();
 		expect(spawn?.getAttribute("aria-label")).toContain("oluşturma ilişkisi");

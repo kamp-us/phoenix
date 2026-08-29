@@ -432,8 +432,11 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	const rootNode = page.locator('[data-id="pi:flow-root"]');
 	const childNode = page.locator('[data-id="pi:flow-child"]');
 	const edge = page.locator('[data-id="fork:pi:flow-child"]');
-	await expect(rootNode).toHaveAttribute("aria-label", "root oturumu, flow-root");
-	await expect(childNode).toHaveAttribute("aria-label", "child oturumu, flow-child");
+	await expect(rootNode).toHaveAttribute("aria-label", "root oturumu, flow-root, Kayıtlı görünüm");
+	await expect(childNode).toHaveAttribute(
+		"aria-label",
+		"child oturumu, flow-child, Kayıtlı görünüm",
+	);
 	await expect(edge).toHaveAttribute(
 		"aria-label",
 		"flow-root oturumundan flow-child oturumuna dallanma ilişkisi, kaynak protocol",
@@ -454,8 +457,8 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 			await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null),
 		);
 	}
-	expect(tabLabels).toContain("root oturumu, flow-root");
-	expect(tabLabels).toContain("child oturumu, flow-child");
+	expect(tabLabels).toContain("root oturumu, flow-root, Kayıtlı görünüm");
+	expect(tabLabels).toContain("child oturumu, flow-child, Kayıtlı görünüm");
 	expect(tabLabels).toContain(
 		"flow-root oturumundan flow-child oturumuna dallanma ilişkisi, kaynak protocol",
 	);
@@ -841,7 +844,16 @@ test("all four persisted detail levels preserve the live React Flow interaction 
 			return;
 		}
 		if (operation?.name === "lineage") {
-			await fulfill(route, id, lineageProjection(sessions));
+			const detailProjection = lineageProjection(sessions);
+			await fulfill(route, id, {
+				...detailProjection,
+				graph: {
+					...detailProjection.graph,
+					nodes: detailProjection.graph.nodes.map((candidate) =>
+						candidate.id === root.identity ? {...candidate, sourceFiles: []} : candidate,
+					),
+				},
+			});
 			return;
 		}
 		if (operation?.name === "liveSession.attach") {
@@ -871,9 +883,25 @@ test("all four persisted detail levels preserve the live React Flow interaction 
 	const pane = page.locator(".react-flow__pane");
 	const viewport = page.locator(".react-flow__viewport");
 	const relationship = page.locator('[data-id="fork:pi:detail-stalled"]');
+	const stalledNode = page.locator(`[data-id="${stalled.identity}"]`);
+	const unknownNode = page.locator(`[data-id="${root.identity}"]`);
+	const durableNameByLevel = {
+		bare: "detail-stalled oturumu, Kayıtlı görünüm",
+		meta: "detail-stalled oturumu, detail-stalled, Kayıtlı görünüm",
+		live: "detail-stalled oturumu, detail-stalled, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı",
+		full: "detail-stalled oturumu, detail-stalled, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı",
+	} as const;
+	const unknownNameByLevel = {
+		bare: "detail-root oturumu, Tazelik bilinmiyor",
+		meta: "detail-root oturumu, detail-root, Tazelik bilinmiyor",
+		live: "detail-root oturumu, detail-root, Tazelik bilinmiyor, Metadata, Okunabilir bir oturum kaynağı yok.",
+		full: "detail-root oturumu, detail-root, Tazelik bilinmiyor, Metadata, Okunabilir bir oturum kaynağı yok.",
+	} as const;
 	for (const level of levels) {
 		await page.locator(".detail-setting").getByText(level.label, {exact: true}).click();
 		await expect(page.locator(`.session-node[data-detail-level="${level.value}"]`)).toHaveCount(4);
+		await expect(stalledNode).toHaveAccessibleName(durableNameByLevel[level.value]);
+		await expect(unknownNode).toHaveAccessibleName(unknownNameByLevel[level.value]);
 		await expect(page.locator(".react-flow__edge")).toHaveCount(3);
 		await expect(page.locator(".relationship-edge").first()).toBeVisible();
 		const nodeBoxes = await page.locator(".react-flow__node").evaluateAll((elements) =>
@@ -925,12 +953,15 @@ test("all four persisted detail levels preserve the live React Flow interaction 
 	}
 
 	await page.locator(".detail-setting").getByText("Canlı", {exact: true}).click();
-	const stalledNode = page.locator(`[data-id="${stalled.identity}"]`);
 	const stalledStatus = stalledNode.getByRole("status");
 	await expect(stalledStatus).toHaveText(/Kayıtlı görünüm/);
+	await expect(stalledNode).toHaveAccessibleName(durableNameByLevel.live);
 	await selectNode(page, stalled.identity);
 	await expect(stalledNode).toContainText("Protokol canlı");
 	await expect(stalledStatus).toHaveText(/Takıldı/);
+	await expect(stalledNode).toHaveAccessibleName(
+		"detail-stalled oturumu, detail-stalled, Takıldı, Protokol canlı, Yeniden deniyor",
+	);
 	await expect(stalledStatus).toHaveAttribute("aria-live", "polite");
 	await expect(stalledStatus).toHaveAttribute("aria-atomic", "true");
 	await expect(page.locator("#chat-title")).toHaveText("detail-stalled");
@@ -943,6 +974,11 @@ test("all four persisted detail levels preserve the live React Flow interaction 
 		path: attachedCapturePath,
 		contentType: "image/png",
 	});
+	await disconnectLive(page);
+	await expect(stalledStatus).toHaveText(/Bağlantı kesildi/);
+	await expect(stalledNode).toHaveAccessibleName(
+		/detail-stalled oturumu, detail-stalled, Bağlantı kesildi, Canlı bağlantı yok/,
+	);
 	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
 	await expect(page.locator("aside")).toHaveCount(0);
 	await page.locator(".detail-setting").getByText("Tam", {exact: true}).click();

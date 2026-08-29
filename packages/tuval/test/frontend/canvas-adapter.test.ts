@@ -6,7 +6,9 @@ import {
 	toLineageEdges,
 	toSessionNodes,
 } from "../../src/frontend-shell/canvas-adapter.js";
+import type {NodeAttachment, NodeDetailLevel} from "../../src/frontend-shell/node-detail.js";
 import type {LineageProjection} from "../../src/shared/lineage.js";
+import type {AttachedLiveSession, DisconnectedLiveSession} from "../../src/shared/live-session.js";
 
 const node = (id: string, cwd = `/work/${id}`) => ({
 	id: `pi:${id}` as LineageProjection["graph"]["nodes"][number]["id"],
@@ -53,7 +55,81 @@ const projection = (): LineageProjection => ({
 });
 
 describe("Tuval lineage canvas adapter", () => {
-	it("keeps interaction fields while refreshing typed lineage node data", () => {
+	it("projects only level-visible current freshness into accessible node names", () => {
+		const statusNode = node("status", "/work/worker");
+		const statusProjection: LineageProjection = {
+			graph: {
+				version: 2,
+				nodes: [statusNode],
+				edges: [],
+				continuity: [],
+				ownership: [],
+			},
+			problems: [],
+		};
+		const live = (completion: AttachedLiveSession["completion"]): NodeAttachment => ({
+			connection: "attached",
+			session: {
+				_tag: "attached",
+				sessionId: "status",
+				revision: 2,
+				phase: "idle",
+				model: {provider: "anthropic", id: "claude-sonnet"},
+				thinkingLevel: "medium",
+				completion,
+				transcript: [],
+				lastEventSequence: 3,
+				connection: "connected",
+				ownership: "exclusive",
+			},
+		});
+		const disconnected: DisconnectedLiveSession = {
+			_tag: "disconnected",
+			sessionId: "status",
+			revision: 2,
+			phase: "idle",
+			model: {provider: "anthropic", id: "claude-sonnet"},
+			thinkingLevel: "medium",
+			completion: "disconnected",
+			transcript: [],
+			lastEventSequence: 3,
+			connection: "disconnected",
+			ownership: "none",
+			reason: "socket closed",
+		};
+		const ariaLabel = (detailLevel: NodeDetailLevel, attachment?: NodeAttachment) =>
+			toSessionNodes(statusProjection, {
+				detailLevel,
+				...(attachment === undefined ? {} : {attachments: new Map([[statusNode.id, attachment]])}),
+			})[0]?.ariaLabel;
+
+		assert.equal(ariaLabel("bare"), "worker oturumu, Kayıtlı görünüm");
+		assert.equal(ariaLabel("meta"), "worker oturumu, status, Kayıtlı görünüm");
+		assert.equal(
+			ariaLabel("live"),
+			"worker oturumu, status, Kayıtlı görünüm, Metadata, Canlı bağlantı kurulmadı",
+		);
+		assert.equal(
+			ariaLabel("live", live("complete")),
+			"worker oturumu, status, Tamamlandı, Protokol canlı, Yeni tur bekleniyor",
+		);
+		assert.equal(
+			ariaLabel("full", {connection: "disconnected", session: disconnected}),
+			"worker oturumu, status, Bağlantı kesildi, Canlı bağlantı yok, socket closed",
+		);
+		assert.equal(
+			toSessionNodes(
+				{
+					...statusProjection,
+					graph: {...statusProjection.graph, nodes: [{...statusNode, sourceFiles: []}]},
+				},
+				{detailLevel: "live"},
+			)[0]?.ariaLabel,
+			"worker oturumu, status, Tazelik bilinmiyor, Metadata, Okunabilir bir oturum kaynağı yok.",
+		);
+	});
+
+	it("keeps interaction fields while refreshing typed lineage node data and accessible status", () => {
 		const initial = toSessionNodes(projection()).find(
 			(candidate) => candidate.id === node("root").id,
 		);
@@ -75,14 +151,39 @@ describe("Tuval lineage canvas adapter", () => {
 				),
 			},
 		};
-		const updated = reconcileSessionNodes([moved], next).find(
-			(candidate) => candidate.id === node("root").id,
-		);
+		const updated = reconcileSessionNodes([moved], next, {
+			detailLevel: "live",
+			attachments: new Map([
+				[
+					node("root").id,
+					{
+						connection: "attached",
+						session: {
+							_tag: "attached",
+							sessionId: "root",
+							revision: 3,
+							phase: "idle",
+							model: {provider: "anthropic", id: "claude-sonnet"},
+							thinkingLevel: "medium",
+							completion: "error",
+							transcript: [],
+							lastEventSequence: 4,
+							connection: "connected",
+							ownership: "exclusive",
+						},
+					},
+				],
+			]),
+		}).find((candidate) => candidate.id === node("root").id);
 		assert.ok(updated);
 		assert.deepEqual(updated.position, moved.position);
 		assert.equal(updated.selected, true);
 		assert.deepEqual(updated.measured, moved.measured);
 		assert.equal(updated.data.title, "renamed");
+		assert.equal(
+			updated.ariaLabel,
+			"renamed oturumu, root, Başarısız, Protokol canlı, Yeni tur bekleniyor",
+		);
 	});
 
 	it("projects spawn and fork as distinct named edges without projecting resume as an edge", () => {
@@ -212,7 +313,7 @@ describe("Tuval lineage canvas adapter", () => {
 	});
 
 	it("keeps resume continuity on the stable session node", () => {
-		const nodes = toSessionNodes(projection());
+		const nodes = toSessionNodes(projection(), {detailLevel: "full"});
 		const resumed = nodes.find((candidate) => candidate.id === node("spawned").id);
 		assert.ok(resumed);
 		assert.equal(resumed.data.continuity.length, 1);

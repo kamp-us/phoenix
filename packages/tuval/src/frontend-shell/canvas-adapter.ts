@@ -7,8 +7,10 @@ import type {
 } from "../shared/lineage.js";
 import {
 	DEFAULT_NODE_DETAIL_LEVEL,
+	includesNodeDetail,
 	type NodeAttachment,
 	type NodeDetailLevel,
+	nodeStatus,
 } from "./node-detail.js";
 
 export interface SessionNodeData extends Record<string, unknown> {
@@ -91,6 +93,24 @@ const positions = (projection: LineageProjection): ReadonlyMap<string, {x: numbe
 	return result;
 };
 
+const nodeAriaLabel = (
+	node: LineageNode,
+	title: string,
+	continuityCount: number,
+	detailLevel: NodeDetailLevel,
+	attachment: NodeAttachment | null,
+): string => {
+	const status = nodeStatus(node, attachment);
+	const parts = [`${title} oturumu`];
+	if (includesNodeDetail(detailLevel, "meta")) parts.push(node.piSessionId);
+	parts.push(status.label);
+	if (includesNodeDetail(detailLevel, "live")) parts.push(status.sourceLabel, status.detail);
+	if (includesNodeDetail(detailLevel, "full") && continuityCount > 0) {
+		parts.push(`${continuityCount} devam kaydı`);
+	}
+	return parts.join(", ");
+};
+
 const nodeFrom = (
 	projection: LineageProjection,
 	node: LineageNode,
@@ -103,19 +123,20 @@ const nodeFrom = (
 			projection.graph.edges.filter((edge) => edge.child === node.id).map((edge) => edge.kind),
 		),
 	].sort(compareText);
-	const continuityLabel = continuity.length === 0 ? "" : `, ${continuity.length} devam kaydı`;
 	const attachment = options.attachments?.get(node.id) ?? null;
+	const detailLevel = options.detailLevel ?? DEFAULT_NODE_DETAIL_LEVEL;
+	const title = sessionTitle(node.cwd);
 	return {
 		id: node.id,
 		type: "session",
 		position,
-		ariaLabel: `${sessionTitle(node.cwd)} oturumu, ${node.piSessionId}${continuityLabel}`,
+		ariaLabel: nodeAriaLabel(node, title, continuity.length, detailLevel, attachment),
 		data: {
 			session: node,
-			title: sessionTitle(node.cwd),
+			title,
 			incomingKinds,
 			continuity,
-			detailLevel: options.detailLevel ?? DEFAULT_NODE_DETAIL_LEVEL,
+			detailLevel,
 			attachment,
 		},
 	};
