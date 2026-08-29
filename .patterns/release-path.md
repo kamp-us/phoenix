@@ -117,7 +117,8 @@ pipeline-cli action on a fabrika-cli release.
 
 `release-please.yml`'s only condition keys on the per-path
 `<path>--release_created` outputs (`packages/fabrika-cli--release_created`,
-`packages/fabrika-opencode--release_created`) and reports from the `paths_released` JSON array.
+`packages/fabrika-pi--release_created`, `packages/fabrika-opencode--release_created`) and reports
+from the `paths_released` JSON array.
 `releases_created` appears nowhere in the file, deliberately. A later "simplification" back
 to the single output is the regression ADR 0239 §5 Hazard A names.
 
@@ -205,7 +206,7 @@ corrupted by it — no version is consumed, because nothing was published.
 
 ## Current state
 
-Two package roots are configured today (`fabrika-cli`, `fabrika-opencode`).
+Three package roots are configured today (`fabrika-cli`, `fabrika-pi`, `fabrika-opencode`).
 `pipeline-cli` was deleted from the repo with its release machinery (#6326) — its npm
 artifacts remain, so its history below stays recorded. Registrations that exist name this
 repo and this workflow file, but only some have ever been *exercised* by it, and those are
@@ -221,6 +222,13 @@ two different facts.
   for the package. `fabrika-cli@0.1.0` reached the registry through the bootstrap `pnpm publish`
   of step 4 above, not through this path (its artifact carries no attestations). Its **first**
   release run is the first use of that registration, and that run is the proof.
+- **`fabrika-pi` — wired, not yet bootstrapped
+  ([#7273](https://github.com/kamp-us/phoenix/issues/7273)).** The resolve arm, the release-please
+  root and manifest entry all exist; steps 4–5 do not. A human must run the bootstrap `pnpm publish`
+  of `0.1.0` from `packages/fabrika-pi`, then register the Trusted Publisher on npmjs.com. Until both
+  happen, a Release PR merge for the package creates a tag whose publish run 403s after install/build
+  pass — fail-closed, no version consumed. That the package ships to npm at all is ADR
+  [0332](../.decisions/0332-fabrika-pi-ships-as-npm-package.md).
 - **`fabrika-opencode` — wired, not yet bootstrapped (#6965).** The resolve arm, the
   release-please root and manifest entry all exist; steps 4–5 do not. A human must run the
   bootstrap `pnpm publish` of `0.1.0` from a checkout at the merge that introduced it, then
