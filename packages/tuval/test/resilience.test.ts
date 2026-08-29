@@ -2,6 +2,7 @@ import {NodeServices} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, FileSystem, Path} from "effect";
 import * as TestClock from "effect/testing/TestClock";
+import * as fc from "fast-check";
 import {makeExtensionUI} from "../src/backend/extension-ui.js";
 import {connectLiveSessionWithBackoff} from "../src/backend/live-session.js";
 import {
@@ -319,6 +320,74 @@ describe("Tuval resilience and restoration", () => {
 		});
 		assert.match(correlations.sessionId ?? "", /^sha256:/);
 		assert.match(correlations.packageName ?? "", /^sha256:/);
+	});
+
+	it("redacts canonical sensitive key tokens across JSON, assignments, and correlations", () => {
+		const sensitiveKeys = [
+			"access_token",
+			"refreshToken",
+			"OPENAI_API_KEY",
+			"promptText",
+			"transcript_path",
+			"auth.cookie",
+			"session-credential",
+			"Authorization",
+			"authorisation",
+			"bearerToken",
+			"password.value",
+			"clientSecret",
+		] as const;
+		for (const key of sensitiveKeys) {
+			const text = redactDiagnosticText(`${key}="quoted private words"`);
+			assert.notInclude(text, "quoted private words", key);
+			assert.include(text, "[redacted]", key);
+			const json = redactDiagnosticText(JSON.stringify({[key]: "json private words"}));
+			assert.notInclude(json, "json private words", key);
+			const diagnostic = resilienceDiagnostic({
+				category: "protocol",
+				code: "reconnect-exhausted",
+				message: "Reconnect failed",
+				action: "Retry",
+				sourceId: key,
+			});
+			assert.match(diagnostic.sourceId ?? "", /^sha256:/, key);
+		}
+
+		for (const key of [
+			"tokenizer",
+			"promptly",
+			"transcription",
+			"cookiecutter",
+			"credentialed",
+			"bearerly",
+			"secretary",
+			"passwordless",
+		]) {
+			assert.strictEqual(
+				redactDiagnosticText(`${key}="innocent quoted words"`),
+				`${key}="innocent quoted words"`,
+			);
+			assert.include(redactDiagnosticText(JSON.stringify({[key]: "innocent"})), "innocent");
+		}
+	});
+
+	it("redacts separator and case variants without substring overmatching", () => {
+		fc.assert(
+			fc.property(
+				fc.constantFrom("token", "prompt", "transcript", "cookie", "credential", "secret"),
+				fc.constantFrom("_", "-", ".", "/", ":", "@"),
+				fc.constantFrom("access", "refresh", "session", "system", "client"),
+				(sensitive, separator, prefix) => {
+					const key = `${prefix}${separator}${sensitive.toUpperCase()}`;
+					const privateValue = `private quoted ${prefix}`;
+					assert.notInclude(redactDiagnosticText(`${key}="${privateValue}"`), privateValue);
+					assert.notInclude(
+						redactDiagnosticText(JSON.stringify({[key]: privateValue})),
+						privateValue,
+					);
+				},
+			),
+		);
 	});
 
 	it("reports a committed state with a durability warning after directory sync refusal", () => {

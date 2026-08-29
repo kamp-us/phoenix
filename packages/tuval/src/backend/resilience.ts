@@ -165,11 +165,47 @@ export const makeOperationalPackageRegistrations = (
 	};
 };
 
-const sensitiveKey = /(?:token|secret|password|authorization|api[-_]?key|prompt|transcript)/i;
+const sensitiveKeyTokens = new Set([
+	"authorization",
+	"authorisation",
+	"bearer",
+	"bearers",
+	"cookie",
+	"cookies",
+	"credential",
+	"credentials",
+	"password",
+	"passwords",
+	"prompt",
+	"prompts",
+	"secret",
+	"secrets",
+	"token",
+	"tokens",
+	"transcript",
+	"transcripts",
+]);
+
+const canonicalKeyTokens = (value: string): ReadonlyArray<string> =>
+	value
+		.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+		.split(/[^A-Za-z0-9]+/)
+		.filter((token) => token.length > 0)
+		.map((token) => token.toLowerCase());
+
+const isSensitiveKey = (value: string): boolean => {
+	const tokens = canonicalKeyTokens(value);
+	return (
+		tokens.some((token) => sensitiveKeyTokens.has(token)) ||
+		tokens.some((token, index) => token === "api" && tokens[index + 1] === "key")
+	);
+};
+
 const assignedValue = String.raw`(?:bearer\s+)?(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\s,;]+)`;
-const sensitiveAssignment = new RegExp(
-	String.raw`\b(token|secret|password|authorization|api[-_]?key|prompt|transcript)\b["']?\s*[:=]\s*${assignedValue}`,
-	"gi",
+const diagnosticAssignment = new RegExp(
+	String.raw`(^|[\s,;([{])(["']?)([A-Za-z0-9][^\s"'=,;()\[\]{}]*)\2(\s*[:=]\s*)${assignedValue}`,
+	"gim",
 );
 const bearer = /\bbearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 const quotedLocalPath =
@@ -186,7 +222,7 @@ const redactJsonValue = (value: unknown): unknown => {
 	return Object.fromEntries(
 		Object.entries(value).map(([key, child]) => [
 			key,
-			sensitiveKey.test(key) ? "[redacted]" : redactJsonValue(child),
+			isSensitiveKey(key) ? "[redacted]" : redactJsonValue(child),
 		]),
 	);
 };
@@ -202,7 +238,11 @@ export const redactDiagnosticText = (value: string): string => {
 			? JSON.stringify(redactJsonValue(parsed.success))
 			: value;
 	return source
-		.replace(sensitiveAssignment, (_match, key: string) => `${key}=[redacted]`)
+		.replace(
+			diagnosticAssignment,
+			(match, prefix: string, quote: string, key: string, separator: string) =>
+				isSensitiveKey(key) ? `${prefix}${quote}${key}${quote}${separator}[redacted]` : match,
+		)
 		.replace(bearer, "Bearer [redacted]")
 		.replace(quotedLocalPath, "[local-path]")
 		.replace(fileUrl, "[local-path]")
@@ -214,7 +254,7 @@ export const redactDiagnosticText = (value: string): string => {
 
 const publicCorrelation = /^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}$/;
 const redactDiagnosticCorrelation = (value: string): string =>
-	publicCorrelation.test(value) && !sensitiveKey.test(value)
+	publicCorrelation.test(value) && !isSensitiveKey(value)
 		? value
 		: `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
 

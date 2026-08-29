@@ -80,7 +80,7 @@ const controlFromState = (
 	state: LiveSessionState,
 	command: LiveSessionControlCommand,
 	correlationId: string,
-	run: () => Promise<ControlLiveSessionOutcome>,
+	run: (signal: AbortSignal) => Promise<ControlLiveSessionOutcome>,
 ): Effect.Effect<ControlLiveSessionOutcome> =>
 	Effect.tryPromise({
 		try: run,
@@ -131,12 +131,14 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 		),
 	),
 	create: Effect.fn("LiveSession.create")((request, checkpoint) =>
-		controlFromState(state, "create", request.correlationId, () =>
-			state.create(request, checkpoint),
+		controlFromState(state, "create", request.correlationId, (signal) =>
+			state.create(request, checkpoint, signal),
 		),
 	),
 	open: Effect.fn("LiveSession.open")((request, checkpoint) =>
-		controlFromState(state, "open", request.correlationId, () => state.open(request, checkpoint)),
+		controlFromState(state, "open", request.correlationId, (signal) =>
+			state.open(request, checkpoint, signal),
+		),
 	),
 	steer: Effect.fn("LiveSession.steer")((request) =>
 		controlFromState(state, "steer", request.correlationId, () => state.steer(request)),
