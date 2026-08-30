@@ -67,6 +67,7 @@
 	--pane-width: min(456px, calc(100vw - var(--space-8)));
 	--problem-panel-width: min(360px, calc(100vw - var(--space-8)));
 	--state-width: min(480px, calc(100vw - var(--space-8)));
+	--mobile-canvas-height: 440px;
 	--t-body: 14px / 1.5;
 	--t-body-sm: 13px / 1.45;
 	--t-meta: 12px / 1.4;
@@ -483,6 +484,76 @@ button:disabled {
 
 .canvas-controls svg {
 	stroke: currentcolor;
+}
+
+.session-canvas-root,
+.session-canvas-flow {
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+}
+
+.session-canvas-root {
+	position: relative;
+}
+
+.session-archive-panel {
+	width: min(var(--node-width), calc(100% - var(--space-8)));
+	margin: var(--space-4);
+}
+
+.session-archive {
+	display: grid;
+	gap: var(--space-2);
+	padding: var(--space-3);
+	background: color-mix(in oklch, var(--surface-raised), transparent 4%);
+	box-shadow: var(--shadow-dropdown);
+}
+
+.session-archive label {
+	color: var(--text-secondary);
+	font: var(--t-meta);
+}
+
+.session-archive input,
+.session-archive select {
+	width: 100%;
+	min-height: var(--control-min);
+	padding: 0 var(--space-3);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-md);
+	background: var(--surface-sunken);
+	color: var(--text-primary);
+	font: var(--t-body-sm);
+}
+
+#session-working-set-summary {
+	display: grid;
+	gap: var(--space-1);
+	padding-top: var(--space-2);
+	border-top: 1px solid var(--border-faint);
+	color: var(--text-secondary);
+	font: var(--t-meta);
+}
+
+#session-working-set-summary strong {
+	color: var(--text-primary);
+	font: var(--t-h-feed);
+}
+
+#session-working-set-summary span {
+	display: block;
+}
+
+.session-archive__paging {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--space-2);
+}
+
+.session-archive__paging .kp-btn {
+	min-height: var(--control-min);
 }
 
 .canvas-legend {
@@ -1426,8 +1497,8 @@ kbd {
 		position: relative;
 		inset: auto;
 		order: 3;
-		flex: 0 0 440px;
-		min-height: 440px;
+		flex: 0 0 var(--mobile-canvas-height);
+		min-height: var(--mobile-canvas-height);
 		border: 1px solid var(--border-faint);
 		border-radius: var(--radius-lg);
 		overflow: hidden;
@@ -1477,6 +1548,30 @@ kbd {
 	.canvas-controls {
 		flex-wrap: wrap;
 		margin: var(--space-2);
+	}
+
+	.canvas-stage:has(.session-canvas-root[data-has-archive="true"]) {
+		flex-basis: auto;
+		min-height: 0;
+		overflow: visible;
+	}
+
+	.session-canvas-root[data-has-archive="true"] {
+		display: grid;
+		height: auto;
+		gap: var(--space-3);
+	}
+
+	.session-canvas-root[data-has-archive="true"] .session-canvas-flow {
+		height: var(--mobile-canvas-height);
+		min-height: var(--mobile-canvas-height);
+		overflow: hidden;
+	}
+
+	.session-archive-panel {
+		position: static;
+		width: auto;
+		margin: 0;
 	}
 
 	.react-flow__panel.package-panels {
@@ -1789,5 +1884,29 @@ kbd {
 @media (min-width: 721px) {
 	.mobile-workspace-nav {
 		display: none;
+	}
+
+	.session-canvas-root[data-has-archive="true"] {
+		display: grid;
+		grid-template-columns: var(--node-width) minmax(0, 1fr);
+		gap: var(--space-4);
+		padding: var(--space-4);
+	}
+
+	.session-canvas-root[data-has-archive="true"] .session-canvas-flow {
+		grid-column: 2;
+	}
+
+	.session-canvas-root[data-has-archive="true"] .package-panels {
+		max-width: var(--problem-panel-width);
+		overflow: auto;
+	}
+
+	.session-canvas-root[data-has-archive="true"] .session-archive-panel {
+		align-self: end;
+		grid-column: 1;
+		grid-row: 1;
+		width: auto;
+		margin: 0;
 	}
 }

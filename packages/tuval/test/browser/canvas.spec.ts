@@ -505,6 +505,146 @@ test("early restoration selection survives React Flow's initializing null select
 	expect(errors).toEqual([]);
 });
 
+test("a 1,000-plus archive keeps a bounded useful canvas with complete progressive access", async ({
+	page,
+}, testInfo) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const sessions = Array.from({length: 1_205}, (_, index) => {
+		const id = `archive-${String(index).padStart(4, "0")}`;
+		const parentSessionId = index === 3 ? "archive-0002" : index === 4 ? "archive-0003" : undefined;
+		return {
+			...session(id, `/work/archive/project-${index}`, parentSessionId),
+			createdAt: index,
+			updatedAt: index,
+		};
+	});
+	const selected = sessions[3]!;
+	const parent = sessions[2]!;
+	const child = sessions[4]!;
+	const recent = sessions.at(-1)!;
+	let attachCalls = 0;
+	await page.route("**/api/resilience", async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: "application/json",
+			body: JSON.stringify({
+				stages: [
+					"discovery",
+					"lineage",
+					"selection",
+					"settings",
+					"package-registrations",
+					"extension-ui-current",
+				].map((stage) => ({stage, status: "restored"})),
+				selectedSessionId: selected.piSessionId,
+				settings: {nodeDetailLevel: "meta"},
+				packageRegistrations: [],
+				extensionUI: [],
+				diagnostics: [],
+			}),
+		});
+	});
+	await page.route("**/fate", async (route) => {
+		const operation = route.request().postDataJSON()?.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection(sessions));
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			attachCalls += 1;
+			const input = operation.input as {readonly sessionId: string};
+			await fulfill(route, id, {_tag: "attached", session: liveSession(input.sessionId)});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: null});
+	});
+
+	await page.goto(tuvalUrl);
+	await expect(page.locator("#session-working-set-summary")).toContainText("1205 oturum tuvalde");
+	await expect(page.locator("#session-working-set-summary")).toContainText("arşivde");
+	await expect
+		.poll(async () => page.locator(".react-flow__node-session").count())
+		.toBeLessThanOrEqual(10);
+	await expect(page.locator(`[data-id="${selected.identity}"]`)).toBeVisible();
+	await expect(page.locator(`[data-id="${parent.identity}"]`)).toBeVisible();
+	await expect(page.locator(`[data-id="${child.identity}"]`)).toBeVisible();
+	await expect(page.locator(`[data-id="${recent.identity}"]`)).toBeVisible();
+	await expect(page.locator(`[data-id="fork:${selected.identity}"]`)).toBeVisible();
+	await expect(page.locator(`[data-id="fork:${child.identity}"]`)).toHaveCount(1);
+	await expect(page.locator(`[data-id="${selected.identity}"] .session-node`)).toHaveAttribute(
+		"data-selected",
+		"true",
+	);
+	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator("#chat-title")).toHaveText("project-3");
+	await expect.poll(() => attachCalls).toBe(1);
+
+	const scale = await page.locator(".react-flow__viewport").evaluate((element) => {
+		const transform = getComputedStyle(element).transform;
+		if (transform === "none") return 1;
+		return new DOMMatrixReadOnly(transform).a;
+	});
+	expect(scale).toBeGreaterThanOrEqual(0.5);
+	const recentBox = await page.locator(`[data-id="${recent.identity}"]`).boundingBox();
+	if (recentBox === null) throw new Error("recent working-set session did not render");
+	expect(recentBox.width).toBeGreaterThanOrEqual(140);
+	const desktopCapture = testInfo.outputPath("large-corpus-working-set.png");
+	await page.screenshot({path: desktopCapture, fullPage: true});
+	await testInfo.attach("large-corpus-working-set", {
+		path: desktopCapture,
+		contentType: "image/png",
+	});
+
+	const searchStarted = Date.now();
+	await page.locator("#session-archive-search").fill("archive-0600");
+	await expect(page.locator(`[data-id="pi:archive-0600"]`)).toBeVisible();
+	expect(Date.now() - searchStarted).toBeLessThan(500);
+	await expect(page.locator(`[data-id="${selected.identity}"]`)).toBeVisible();
+	await expect(page.locator("#session-working-set-summary")).toContainText("1 eşleşme");
+	await expect
+		.poll(async () => page.locator(".react-flow__node-session").count())
+		.toBeLessThanOrEqual(10);
+
+	await page.locator("#session-archive-search").fill("");
+	await page.getByRole("button", {name: "Daha eski"}).click();
+	await expect(page.locator('[data-id="pi:archive-1200"]')).toBeVisible();
+	await expect(page.locator("#session-working-set-summary")).toContainText("5–8");
+	await page.locator("#session-archive-filter").selectOption("lineage");
+	await expect(page.locator("#session-working-set-summary")).toContainText("3 eşleşme");
+	await expect(page.locator(`[data-id="${parent.identity}"]`)).toBeVisible();
+	await expect(page.locator(`[data-id="${child.identity}"]`)).toBeVisible();
+
+	await selectNode(page, child.identity);
+	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator("#chat-title")).toHaveText("project-4");
+	await expect.poll(() => attachCalls).toBe(2);
+
+	await page.setViewportSize({width: 680, height: 760});
+	await page.getByRole("button", {name: "Tuval", exact: true}).click();
+	await expect(page.locator("#session-archive-search")).toBeVisible();
+	const searchBox = await page.locator("#session-archive-search").boundingBox();
+	if (searchBox === null) throw new Error("responsive archive search did not render");
+	expect(searchBox.height).toBeGreaterThanOrEqual(36);
+	await page.locator("#session-archive-search").fill("archive-0002");
+	await expect(page.locator(`[data-id="${parent.identity}"]`)).toBeVisible();
+	await expect
+		.poll(async () => page.locator(".react-flow__node-session").count())
+		.toBeLessThanOrEqual(10);
+	const mobileCapture = testInfo.outputPath("large-corpus-working-set-mobile.png");
+	await page.screenshot({path: mobileCapture, fullPage: true});
+	await testInfo.attach("large-corpus-working-set-mobile", {
+		path: mobileCapture,
+		contentType: "image/png",
+	});
+	expect(errors).toEqual([]);
+});
+
 test("React Flow renders and operates the complete keyboard relationship contract", async ({
 	page,
 }) => {
@@ -1084,7 +1224,7 @@ test("all four persisted detail levels preserve the live React Flow interaction 
 		await expect(relationship).toHaveClass(/selected/);
 		await page.keyboard.press("Escape");
 		await expect(relationship).not.toHaveClass(/selected/);
-		await page.getByRole("button", {name: "Tümünü göster"}).click();
+		await page.getByRole("button", {name: "Çalışma kümesini göster"}).click();
 
 		const capturePath = testInfo.outputPath(`node-detail-${level.value}.png`);
 		await page.screenshot({path: capturePath, fullPage: true});

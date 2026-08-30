@@ -4,7 +4,7 @@ import {
 	type OnEdgesChange,
 	type OnNodesChange,
 } from "@xyflow/react";
-import {useCallback, useEffect, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {createRoot} from "react-dom/client";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card, Surface} from "../../../../apps/web/src/components/ui/Card.js";
@@ -50,8 +50,13 @@ import {
 } from "./node-detail.js";
 import {readRestorationSnapshot} from "./resilience-client.js";
 import {RestorationStatus, type SelectionRestoration} from "./restoration-status.js";
-import {SessionCanvas} from "./session-canvas.js";
+import {type SessionArchiveControls, SessionCanvas} from "./session-canvas.js";
 import {SessionLaunchControls} from "./session-launch-controls.js";
+import {
+	SESSION_WORKING_SET_ARCHIVE_THRESHOLD,
+	type SessionWorkingSetFilter,
+	selectSessionWorkingSet,
+} from "./session-working-set.js";
 import "@manti-ui/styles/index.css";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
@@ -279,6 +284,10 @@ export function TuvalApp() {
 	const [mobileLayer, setMobileLayer] = useState<"canvas" | "chat" | "extensions">("canvas");
 	const [discovering, setDiscovering] = useState(false);
 	const [streamCycle, setStreamCycle] = useState(0);
+	const [archiveQuery, setArchiveQuery] = useState("");
+	const [archiveFilter, setArchiveFilter] = useState<SessionWorkingSetFilter>("all");
+	const [archivePage, setArchivePage] = useState(0);
+	const [archiveViewRevision, setArchiveViewRevision] = useState(0);
 	const discoveryGeneration = useRef(0);
 	const discoveryInFlight = useRef(false);
 	const selectionGeneration = useRef(0);
@@ -292,6 +301,31 @@ export function TuvalApp() {
 	const selected = paneSelection._tag === "open" ? paneSelection.selected : null;
 	const view = discoveryView(outcome);
 	const lineageProblems = lineage?.problems ?? [];
+	const restoredIdentity =
+		selected === null && restoration !== null && restoration.selectedSessionId !== null
+			? lineage?.graph.nodes.find((node) => node.piSessionId === restoration.selectedSessionId)?.id
+			: undefined;
+	const workingSet = useMemo(
+		() =>
+			lineage === null
+				? null
+				: selectSessionWorkingSet(lineage, {
+						query: archiveQuery,
+						filter: archiveFilter,
+						page: archivePage,
+						pinnedIds:
+							selected !== null
+								? [selected.identity]
+								: restoredIdentity === undefined
+									? []
+									: [restoredIdentity],
+					}),
+		[archiveFilter, archivePage, archiveQuery, lineage, restoredIdentity, selected?.identity],
+	);
+
+	useEffect(() => {
+		if (workingSet !== null && archivePage !== workingSet.page) setArchivePage(workingSet.page);
+	}, [archivePage, workingSet]);
 
 	const updatePaneForSelection = useCallback(
 		(identity: string, generation: number, update: PaneUpdate): void => {
@@ -311,13 +345,13 @@ export function TuvalApp() {
 	);
 
 	useEffect(() => {
-		if (lineage === null) return;
+		if (workingSet === null) return;
 		const attachments =
 			paneSelection._tag === "open" && paneSelection.pane.session !== null
 				? new Map([[paneSelection.selected.identity, paneSelection.pane]])
 				: undefined;
 		setNodes((current) =>
-			reconcileSessionNodes(current, lineage, {
+			reconcileSessionNodes(current, workingSet.projection, {
 				detailLevel,
 				...(attachments === undefined ? {} : {attachments}),
 			}).map((node) => ({
@@ -325,8 +359,8 @@ export function TuvalApp() {
 				selected: node.id === selected?.identity,
 			})),
 		);
-		setEdges((current) => reconcileLineageEdges(current, lineage));
-	}, [detailLevel, lineage, paneSelection, selected]);
+		setEdges((current) => reconcileLineageEdges(current, workingSet.projection));
+	}, [detailLevel, paneSelection, selected, workingSet]);
 
 	const setDetailLevel = (next: NodeDetailLevel): void => {
 		writeStoredNodeDetailLevel(browserStorage(), next);
@@ -593,6 +627,15 @@ export function TuvalApp() {
 		};
 		setSelectionRestoration({_tag: "restored", sessionId: restoredSessionId});
 		openSession(restoredSession);
+		requestAnimationFrame(() => {
+			const hydration = selectionHydration.current;
+			if (
+				hydration._tag === "applying-restored-selection" &&
+				hydration.identity === restoredSession.identity
+			) {
+				selectionHydration.current = {_tag: "active"};
+			}
+		});
 	}, [lineage, nodes, openSession, outcome, restoration]);
 
 	useEffect(() => {
@@ -1101,6 +1144,41 @@ export function TuvalApp() {
 		}
 	};
 
+	const archiveControls: SessionArchiveControls | undefined =
+		workingSet !== null && workingSet.totalCount > SESSION_WORKING_SET_ARCHIVE_THRESHOLD
+			? {
+					query: archiveQuery,
+					filter: archiveFilter,
+					visibleCount: workingSet.visibleCount,
+					totalCount: workingSet.totalCount,
+					matchedCount: workingSet.matchedCount,
+					hiddenCount: workingSet.hiddenCount,
+					pageStart: workingSet.pageStart,
+					pageEnd: workingSet.pageEnd,
+					hasNewer: workingSet.hasNewer,
+					hasOlder: workingSet.hasOlder,
+					viewRevision: archiveViewRevision,
+					onQueryChange: (query) => {
+						setArchiveQuery(query);
+						setArchivePage(0);
+						setArchiveViewRevision((revision) => revision + 1);
+					},
+					onFilterChange: (filter) => {
+						setArchiveFilter(filter);
+						setArchivePage(0);
+						setArchiveViewRevision((revision) => revision + 1);
+					},
+					onNewer: () => {
+						setArchivePage((page) => Math.max(0, page - 1));
+						setArchiveViewRevision((revision) => revision + 1);
+					},
+					onOlder: () => {
+						setArchivePage((page) => page + 1);
+						setArchiveViewRevision((revision) => revision + 1);
+					},
+				}
+			: undefined;
+
 	return (
 		<div className="tuval-shell">
 			<header className="topbar">
@@ -1237,6 +1315,7 @@ export function TuvalApp() {
 							edges={edges}
 							onNodesChange={onNodesChange}
 							onEdgesChange={onEdgesChange}
+							{...(archiveControls === undefined ? {} : {archive: archiveControls})}
 							contributions={contributions.registry}
 							onContributionFailure={contributions.reportFailure}
 							onSelect={(lineageSession) => {

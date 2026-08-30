@@ -29,7 +29,7 @@ import {
 	ZoomIn,
 	ZoomOut,
 } from "lucide-react";
-import {useMemo} from "react";
+import {useEffect, useMemo} from "react";
 import {Badge} from "../../../../apps/web/src/components/ui/Badge.js";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card} from "../../../../apps/web/src/components/ui/Card.js";
@@ -46,6 +46,7 @@ import {
 	contributionNodeTypes,
 } from "./contribution-registry.js";
 import {includesNodeDetail, nodeStatus, thinkingLabel} from "./node-detail.js";
+import type {SessionWorkingSetFilter} from "./session-working-set.js";
 
 const incomingLabel = (kinds: SessionCanvasNode["data"]["incomingKinds"]): string => {
 	if (kinds.length === 0) return "Kök oturum";
@@ -210,7 +211,7 @@ export const ariaLabelConfig = {
 	"controls.ariaLabel": "Tuval yakınlaştırma denetimleri",
 	"controls.zoomIn.ariaLabel": "Yakınlaştır",
 	"controls.zoomOut.ariaLabel": "Uzaklaştır",
-	"controls.fitView.ariaLabel": "Tüm oturumları göster",
+	"controls.fitView.ariaLabel": "Çalışma kümesini göster",
 	"controls.interactive.ariaLabel": "Oturum etkileşimini aç veya kapat",
 	"minimap.ariaLabel": "Oturum haritası",
 	"handle.ariaLabel": "Oturum ilişkisi bağlantısı",
@@ -258,10 +259,95 @@ function CanvasControls() {
 				icon={<Scan size={16} />}
 				onClick={() => void fitView()}
 			>
-				Tümünü göster
+				Çalışma kümesini göster
 			</Button>
 		</Panel>
 	);
+}
+
+export interface SessionArchiveControls {
+	readonly query: string;
+	readonly filter: SessionWorkingSetFilter;
+	readonly visibleCount: number;
+	readonly totalCount: number;
+	readonly matchedCount: number;
+	readonly hiddenCount: number;
+	readonly pageStart: number;
+	readonly pageEnd: number;
+	readonly hasNewer: boolean;
+	readonly hasOlder: boolean;
+	readonly viewRevision: number;
+	readonly onQueryChange: (query: string) => void;
+	readonly onFilterChange: (filter: SessionWorkingSetFilter) => void;
+	readonly onNewer: () => void;
+	readonly onOlder: () => void;
+}
+
+function ArchiveControls({archive}: {readonly archive: SessionArchiveControls}) {
+	return (
+		<div className="session-archive-panel">
+			<Card as="section" className="session-archive" aria-labelledby="session-archive-title">
+				<strong id="session-archive-title">Oturum arşivi</strong>
+				<label htmlFor="session-archive-search">Oturum ara</label>
+				<input
+					id="session-archive-search"
+					className="nodrag nopan nowheel"
+					type="search"
+					value={archive.query}
+					placeholder="Kimlik veya çalışma dizini"
+					onChange={(event) => archive.onQueryChange(event.currentTarget.value)}
+				/>
+				<label htmlFor="session-archive-filter">Filtre</label>
+				<select
+					id="session-archive-filter"
+					className="nodrag nopan nowheel"
+					value={archive.filter}
+					onChange={(event) =>
+						archive.onFilterChange(event.currentTarget.value as SessionWorkingSetFilter)
+					}
+				>
+					<option value="all">Tüm oturumlar</option>
+					<option value="lineage">Bağı olanlar</option>
+					<option value="roots">Kök oturumlar</option>
+				</select>
+				<output id="session-working-set-summary" aria-live="polite">
+					<strong>{archive.visibleCount}</strong> / {archive.totalCount} oturum tuvalde
+					<span>
+						{archive.matchedCount} eşleşme · {archive.hiddenCount} arşivde · {archive.pageStart}–
+						{archive.pageEnd}
+					</span>
+				</output>
+				<div className="session-archive__paging">
+					<Button
+						type="button"
+						variant="secondary"
+						disabled={!archive.hasNewer}
+						onClick={archive.onNewer}
+					>
+						Daha yeni
+					</Button>
+					<Button
+						type="button"
+						variant="secondary"
+						disabled={!archive.hasOlder}
+						onClick={archive.onOlder}
+					>
+						Daha eski
+					</Button>
+				</div>
+			</Card>
+		</div>
+	);
+}
+
+function WorkingSetFit({revision}: {readonly revision: number}) {
+	const {fitView} = useReactFlow();
+	useEffect(() => {
+		if (revision === 0) return;
+		const frame = requestAnimationFrame(() => void fitView({padding: 0.2, maxZoom: 1}));
+		return () => cancelAnimationFrame(frame);
+	}, [fitView, revision]);
+	return null;
 }
 
 export interface SessionCanvasProps {
@@ -270,6 +356,7 @@ export interface SessionCanvasProps {
 	readonly onNodesChange: OnNodesChange<SessionCanvasNode>;
 	readonly onEdgesChange: OnEdgesChange<SessionRelationshipEdge>;
 	readonly onSelect: (session: LineageNode | null) => void;
+	readonly archive?: SessionArchiveControls;
 	readonly contributions?: ContributionRegistry;
 	readonly onContributionFailure?: (failure: ContributionDiagnostic) => void;
 }
@@ -303,6 +390,7 @@ export function SessionCanvas({
 	onNodesChange,
 	onEdgesChange,
 	onSelect,
+	archive,
 	contributions = ContributionRegistry.empty(),
 	onContributionFailure = () => undefined,
 }: SessionCanvasProps) {
@@ -394,45 +482,54 @@ export function SessionCanvas({
 		[contributions.revision, onContributionFailure],
 	);
 	return (
-		<ReactFlow<CanvasNode, CanvasEdge>
-			nodes={[...nodes, ...packageNodes, ...packageEdgeNodes]}
-			edges={[...edges, ...packageEdges]}
-			onNodesChange={(changes) => {
-				const sessionChanges = changes.filter(isSessionNodeChange);
-				onNodesChange(sessionChanges);
-				const selectedChange = sessionChanges.findLast(
-					(change) => change.type === "select" && change.selected,
-				);
-				if (selectedChange?.type === "select") {
-					const selectedNode = nodes.find(({id}) => id === selectedChange.id);
-					if (selectedNode !== undefined) onSelect(selectedNode.data.session);
-					return;
-				}
-				const clearedSelectedNode = sessionChanges.some(
-					(change) =>
-						change.type === "select" &&
-						!change.selected &&
-						nodes.some(({id, selected}) => id === change.id && selected),
-				);
-				if (clearedSelectedNode) onSelect(null);
-			}}
-			onEdgesChange={(changes) => onEdgesChange(changes.filter(isSessionEdgeChange))}
-			nodeTypes={allNodeTypes}
-			edgeTypes={allEdgeTypes}
-			ariaLabelConfig={ariaLabelConfig}
-			nodesConnectable={false}
-			deleteKeyCode={null}
-			fitView
-			fitViewOptions={{padding: 0.2, maxZoom: 1}}
-			minZoom={0.35}
-			maxZoom={1.8}
-			colorMode="dark"
-			proOptions={{hideAttribution: true}}
+		<div
+			className="session-canvas-root"
+			data-has-archive={archive === undefined ? "false" : "true"}
 		>
-			<Background color="var(--border-faint)" gap={24} size={1} />
-			<CanvasControls />
-			<CanvasLegend />
-			<ContributionPanels registry={contributions} onFailure={onContributionFailure} />
-		</ReactFlow>
+			<div className="session-canvas-flow">
+				<ReactFlow<CanvasNode, CanvasEdge>
+					nodes={[...nodes, ...packageNodes, ...packageEdgeNodes]}
+					edges={[...edges, ...packageEdges]}
+					onNodesChange={(changes) => {
+						const sessionChanges = changes.filter(isSessionNodeChange);
+						onNodesChange(sessionChanges);
+						const selectedChange = sessionChanges.findLast(
+							(change) => change.type === "select" && change.selected,
+						);
+						if (selectedChange?.type === "select") {
+							const selectedNode = nodes.find(({id}) => id === selectedChange.id);
+							if (selectedNode !== undefined) onSelect(selectedNode.data.session);
+							return;
+						}
+						const clearedSelectedNode = sessionChanges.some(
+							(change) =>
+								change.type === "select" &&
+								!change.selected &&
+								nodes.some(({id, selected}) => id === change.id && selected),
+						);
+						if (clearedSelectedNode) onSelect(null);
+					}}
+					onEdgesChange={(changes) => onEdgesChange(changes.filter(isSessionEdgeChange))}
+					nodeTypes={allNodeTypes}
+					edgeTypes={allEdgeTypes}
+					ariaLabelConfig={ariaLabelConfig}
+					nodesConnectable={false}
+					deleteKeyCode={null}
+					fitView
+					fitViewOptions={{padding: 0.2, maxZoom: 1}}
+					minZoom={0.35}
+					maxZoom={1.8}
+					colorMode="dark"
+					proOptions={{hideAttribution: true}}
+				>
+					<Background color="var(--border-faint)" gap={24} size={1} />
+					<CanvasControls />
+					{archive === undefined ? null : <WorkingSetFit revision={archive.viewRevision} />}
+					<CanvasLegend />
+					<ContributionPanels registry={contributions} onFailure={onContributionFailure} />
+				</ReactFlow>
+			</div>
+			{archive === undefined ? null : <ArchiveControls archive={archive} />}
+		</div>
 	);
 }
