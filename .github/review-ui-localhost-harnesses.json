@@ -1,0 +1,32 @@
+{
+	"schemaVersion": 1,
+	"harnesses": [
+		{
+			"id": "tuval",
+			"workflow": ".github/workflows/review-ui-localhost-evidence.yml",
+			"check": "review-ui localhost evidence / tuval",
+			"event": "pull_request_target",
+			"artifact": "review-ui-localhost-tuval",
+			"captureCommand": ["pnpm", "--filter", "tuval", "test"],
+			"serverCommand": ["node", "packages/tuval/test/browser/tuval-server.mjs", "0"],
+			"readinessPattern": "Tuval ready at (http://127\\.0\\.0\\.1:[0-9]+)",
+			"captureReadySelector": ".react-flow__node",
+			"surfaces": [
+				{
+					"id": "tuval-cockpit-desktop",
+					"route": "/",
+					"state": "desktop",
+					"width": 1280,
+					"height": 800
+				},
+				{
+					"id": "tuval-cockpit-mobile",
+					"route": "/",
+					"state": "mobile",
+					"width": 390,
+					"height": 844
+				}
+			]
+		}
+	]
+}

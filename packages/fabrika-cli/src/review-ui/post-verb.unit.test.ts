@@ -2,6 +2,7 @@ import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {read as readMarker} from "../wire/verdict-marker.ts";
 import {
 	EMPTY_STDIN,
 	INVALID_CAPTURE,
@@ -14,6 +15,7 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {CI_PROVENANCE_RECEIPT, type CiCaptureManifest} from "./localhost-evidence.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
 import {runPost, type UploadLeg} from "./post-verb.ts";
 import {classifyProbe} from "./upload-leg.ts";
@@ -23,11 +25,16 @@ const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 const SET_DIR = "/tmp/fabrika-review-ui/4321-03135b91/judged";
 const CAPTURE_PATH = `${SET_DIR}/pano.png`;
 const MANIFEST_PATH = `${SET_DIR}/manifest.json`;
+const CI_CAPTURE_PATH = `${SET_DIR}/captures/desktop.png`;
+const CI_RECEIPT_PATH = `${SET_DIR}/${CI_PROVENANCE_RECEIPT}`;
 const HARNESS = "/repo/design-harness.json";
 const HOSTED = "https://github.com/user-attachments/assets/9c41";
 const URL = "https://example.test/pull/4321#issuecomment-5154902211";
 
-const BYTES = new TextEncoder().encode("png bytes");
+const BYTES = Uint8Array.from([
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 5, 0,
+	0, 0, 8, 92,
+]);
 
 const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => ({
 	set: "judged",
@@ -42,6 +49,35 @@ const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => 
 			height: 2140,
 			sha256: sha256Hex(BYTES),
 			pageErrors: {rows: [], more: 0},
+		},
+	],
+	...overrides,
+});
+
+const ciManifest = (overrides: Partial<CiCaptureManifest> = {}): CiCaptureManifest => ({
+	schemaVersion: 1,
+	source: "github-actions",
+	repository: "o/r",
+	pr: 4321,
+	head: HEAD,
+	harness: "tuval",
+	declarationSha256: "a".repeat(64),
+	producer: {
+		workflow: ".github/workflows/review-ui-localhost-evidence.yml",
+		check: "review-ui localhost evidence / tuval",
+		event: "pull_request_target",
+		runId: 42,
+		artifact: "review-ui-localhost-tuval",
+	},
+	captures: [
+		{
+			surface: "desktop",
+			path: "captures/desktop.png",
+			width: 1280,
+			height: 2140,
+			sha256: sha256Hex(BYTES),
+			pageErrors: {rows: [], more: 0},
+			errorCoverage: {pageerror: "readable", consoleError: "readable"},
 		},
 	],
 	...overrides,
@@ -157,6 +193,7 @@ const run = (
 const COMPOSED = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence\n\n### /pano\n\n![/pano](${HOSTED})`;
 
 const happy = (): ReadonlyArray<Scripted> => [
+	[once(PULL), pull()],
 	[PULL, pull()],
 	[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 	[COMMENTS, comments()],
@@ -184,6 +221,55 @@ describe("runPost", () => {
 		expect(body).toContain(`![/pano](${HOSTED})`);
 		// The gallery embeds the hosted URL, never the local path the reviewer judged.
 		expect(body).not.toContain(CAPTURE_PATH);
+	});
+
+	it("posts CI-fetched pixels through the ordinary marker that ship already consumes", async () => {
+		const ciComposed = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence provenance\n\n- GitHub Actions run: 42\n- Governed harness: tuval\n- Browser error coverage: pageerror and console.error readable for 1/1 captures\n\n## Evidence\n\n### desktop\n\n![desktop](${HOSTED})`;
+		const script: ReadonlyArray<Scripted> = [
+			[once(PULL), pull()],
+			[PULL, pull()],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[COMMENTS, comments()],
+			[CREATE, {status: 201, body: JSON.stringify({id: 5154902211, html_url: URL})}],
+			[READBACK, posted(ciComposed)],
+		];
+		const document = JSON.stringify(ciManifest());
+		const layer = fs({
+			strings: {
+				[MANIFEST_PATH]: document,
+				[CI_RECEIPT_PATH]: JSON.stringify({
+					schemaVersion: 1,
+					repository: "o/r",
+					pr: 4321,
+					head: HEAD,
+					harness: "tuval",
+					runId: 42,
+					checkId: 9,
+					artifactId: 10,
+					manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+				}),
+			},
+			bytes: {[CI_CAPTURE_PATH]: BYTES},
+		});
+		const {outcome, requests, bodies} = await run(script, {}, layer);
+		expect(outcome.code).toBe(0);
+		const write = bodies[requests.findIndex((request) => CREATE.test(request))] ?? "";
+		const body = String(JSON.parse(write).body);
+		const marker = readMarker(body);
+		expect(marker._tag).toBe("Found");
+		if (marker._tag === "Found") expect(marker.value.namespace).toBe("review-ui");
+		expect(body).toContain("GitHub Actions run: 42");
+		expect(body).not.toContain(CI_CAPTURE_PATH);
+	});
+
+	it("rejects a builder-authored CI manifest without the consumer provenance receipt", async () => {
+		const layer = fs({
+			strings: {[MANIFEST_PATH]: JSON.stringify(ciManifest())},
+			bytes: {[CI_CAPTURE_PATH]: BYTES},
+		});
+		const {outcome, requests} = await run(happy(), {}, layer);
+		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("refuses an empty verdict body on 3 — an empty verdict reads as ungated", async () => {
@@ -267,6 +353,7 @@ describe("runPost", () => {
 
 	it("edits this namespace's own comment instead of stacking a second marker", async () => {
 		const {outcome, requests} = await run([
+			[once(PULL), pull()],
 			[PULL, pull()],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[
@@ -287,6 +374,7 @@ describe("runPost", () => {
 
 	it("edits the NEWEST of two markers at one SHA, not whichever came back first (#4881)", async () => {
 		const {outcome, requests} = await run([
+			[once(PULL), pull()],
 			[PULL, pull()],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[
@@ -311,8 +399,18 @@ describe("runPost", () => {
 		expect(requests.find((request) => PATCH.test(request))).toContain("issues/comments/42");
 	});
 
+	it("refuses when the head moves after upload but before posting", async () => {
+		const script = happy().map((entry, index) =>
+			index === 1 ? ([PULL, pull("open", OLD_HEAD)] as Scripted) : entry,
+		);
+		const {outcome, requests} = await run(script);
+		expect(outcome.code).toBe(STALE_TREE);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
 	it("refuses on 8 when the write itself failed — UNKNOWN, never 1", async () => {
 		const {outcome} = await run([
+			[once(PULL), pull()],
 			[PULL, pull()],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[COMMENTS, comments()],
@@ -323,6 +421,7 @@ describe("runPost", () => {
 
 	it("refuses on 9 when the read-back does not yield this marker", async () => {
 		const {outcome} = await run([
+			[once(PULL), pull()],
 			[PULL, pull()],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[COMMENTS, comments()],

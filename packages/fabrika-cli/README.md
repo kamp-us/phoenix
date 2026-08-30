@@ -897,12 +897,15 @@ append-only fence. `4` is a deliberate gap.
 
 ## The `review-ui` group
 
-Judge a UI pull request over its preview deployment. Contract:
+Judge a UI pull request over its preview deployment by default, or over a governed exact-head CI
+artifact for a declared localhost-only product. Contract:
 [`skills/review-ui/contract.md`](../../claude-plugins/fabrika/skills/review-ui/contract.md).
 
 | Verb | Answers |
 |---|---|
 | `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized state (`/pano:auth` renders signed in as the test moderator, refusing on `11` unless the session proves it took). `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface is `:auth` and on `11` unless the preview's own evaluation says the key took |
+| `review-ui fetch` | the exact-head GitHub Actions artifact for a governed localhost-only harness, validated and copied into reviewer-owned scratch; no local path or caller-selected producer input exists |
+| `review-ui ci-produce` | the internal trusted-workflow leg that runs the declared journey and writes the versioned capture artifact |
 | `review-ui post` | the `review-ui` verdict on stdin, posted as one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
 | `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |

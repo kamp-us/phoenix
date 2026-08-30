@@ -19,6 +19,7 @@
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {validateCaptureBytes} from "../capture/png.ts";
 import {exists, readFile} from "../io/fs.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
@@ -46,6 +47,11 @@ import {
 	UPLOAD_FAILED,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
+import {
+	CI_PROVENANCE_RECEIPT,
+	parseCiCaptureManifest,
+	parseValidatedCiProvenance,
+} from "./localhost-evidence.ts";
 import {
 	type CaptureEntry,
 	manifestPath,
@@ -310,15 +316,65 @@ export const runPost = (
 				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json (${document.failure.reason}) — a set without its manifest is not a set; re-run review-ui render.`,
 			);
 		}
-		const read = parseManifest(document.success);
-		if (read._tag === "Malformed") {
+		const raw = parseJson(document.success);
+		const ciDocument = isRecord(raw) && raw.source === "github-actions";
+		const ciRead = ciDocument ? parseCiCaptureManifest(document.success) : null;
+		const previewRead = ciDocument ? null : parseManifest(document.success);
+		const malformed =
+			ciRead?._tag === "Malformed"
+				? ciRead.reason
+				: previewRead?._tag === "Malformed"
+					? previewRead.reason
+					: null;
+		if (malformed !== null) {
 			return refuse(
 				MALFORMED_DOCUMENT,
-				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json (${read.reason}) — a set without its manifest is not a set; re-run review-ui render.`,
+				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json (${malformed}) — a set without its manifest is not a set; re-run the sanctioned producer.`,
 			);
 		}
-		const manifest = read.value;
-		if (!prefixMatch(manifest.head, inspected)) {
+		const manifest =
+			ciRead?._tag === "Manifest"
+				? ciRead.value
+				: previewRead?._tag === "Manifest"
+					? previewRead.value
+					: null;
+		if (manifest === null) {
+			return refuse(
+				MALFORMED_DOCUMENT,
+				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json.`,
+			);
+		}
+		if (ciDocument) {
+			const receiptRead = yield* Effect.result(readFile(`${setDir}/${CI_PROVENANCE_RECEIPT}`));
+			if (Result.isFailure(receiptRead)) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: CI evidence set "${options.evidence}" has no consumer-validated provenance receipt — a builder-authored manifest is not evidence.`,
+				);
+			}
+			const receipt = parseValidatedCiProvenance(receiptRead.success);
+			const ciManifest = ciRead?._tag === "Manifest" ? ciRead.value : null;
+			const manifestHash = sha256Hex(new TextEncoder().encode(document.success));
+			if (
+				receipt === null ||
+				ciManifest === null ||
+				receipt.repository !== repo ||
+				receipt.pr !== pr ||
+				receipt.head !== live ||
+				receipt.harness !== ciManifest.harness ||
+				receipt.runId !== ciManifest.producer.runId ||
+				receipt.manifestSha256 !== manifestHash
+			) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: CI evidence set "${options.evidence}" does not match its consumer-validated provenance receipt.`,
+				);
+			}
+		}
+		const manifestMatches = ciDocument
+			? manifest.head === live && inspected === live
+			: prefixMatch(manifest.head, inspected);
+		if (!manifestMatches) {
 			return refuse(
 				STALE_TREE,
 				`${VERB}: evidence set "${options.evidence}" was rendered at ${manifest.head.slice(0, 7)}, you are posting at ${inspected.slice(0, 7)} — stale pixels; re-render at the live head.`,
@@ -328,7 +384,8 @@ export const runPost = (
 		// Step 3 — re-validate every capture against the manifest that claims it.
 		const bytesByEntry: Array<readonly [CaptureEntry, Uint8Array]> = [];
 		for (const entry of manifest.captures) {
-			const bytes = yield* readCaptureBytes(entry.path);
+			const capturePath = ciDocument ? `${setDir}/${entry.path}` : entry.path;
+			const bytes = yield* readCaptureBytes(capturePath);
 			if (bytes._tag === "Unreadable") {
 				return unreadable(
 					`capture "${entry.surface}" in set "${options.evidence}"`,
@@ -337,10 +394,16 @@ export const runPost = (
 				);
 			}
 			const actual = sha256Hex(bytes.value);
-			if (actual !== entry.sha256) {
+			const dimensions = validateCaptureBytes(bytes.value);
+			if (
+				actual !== entry.sha256 ||
+				dimensions._tag === "Invalid" ||
+				dimensions.width !== entry.width ||
+				dimensions.height !== entry.height
+			) {
 				return refuse(
 					INVALID_CAPTURE,
-					`${VERB}: capture "${entry.surface}" in set "${options.evidence}" is invalid or fails its manifest sha (recorded ${entry.sha256.slice(0, 12)}, read ${actual.slice(0, 12)}).`,
+					`${VERB}: capture "${entry.surface}" in set "${options.evidence}" is invalid or fails its manifest hash/dimensions (recorded ${entry.sha256.slice(0, 12)}, read ${actual.slice(0, 12)}).`,
 				);
 			}
 			bytesByEntry.push([entry, bytes.value]);
@@ -382,6 +445,22 @@ export const runPost = (
 			);
 		}
 
+		// The upload can take long enough for a push to race it. Re-read before composing any marker.
+		const postingTarget = yield* openPull(VERB, repo, pr, {
+			requireOpen: true,
+			closedReason: "a verdict on a closed PR gates nothing.",
+			requireFiles: false,
+			unknownMessage: (reason) =>
+				`${VERB}: cannot re-read the PR for #${pr}: ${reason} — nothing was posted.`,
+		});
+		if (postingTarget._tag === "Refused") return postingTarget.outcome;
+		if (postingTarget.pull.headSha !== live) {
+			return refuse(
+				STALE_TREE,
+				`${VERB}: the live head moved from ${live} to ${postingTarget.pull.headSha} before posting — the tree you judged is gone.`,
+			);
+		}
+
 		// Step 5 — compose through the wire format, or through the ADR 0151 advisory shape.
 		const firstLine =
 			carrier === "advisory"
@@ -397,7 +476,16 @@ export const runPost = (
 					});
 		const below =
 			carrier === "advisory" ? `${reviewedHeadLine(inspected)}\n\n${authored.text}` : authored.text;
-		const composed = `${firstLine}\n${below.replace(/\n+$/, "")}\n\n${gallery(hosted)}\n`;
+		const provenance = ciDocument
+			? [
+					"## Evidence provenance",
+					"",
+					`- GitHub Actions run: ${"producer" in manifest ? manifest.producer.runId : "unknown"}`,
+					`- Governed harness: ${"harness" in manifest ? manifest.harness : "unknown"}`,
+					`- Browser error coverage: pageerror and console.error readable for ${manifest.captures.length}/${manifest.captures.length} captures`,
+				].join("\n")
+			: "";
+		const composed = `${firstLine}\n${below.replace(/\n+$/, "")}\n\n${provenance === "" ? "" : `${provenance}\n\n`}${gallery(hosted)}\n`;
 
 		// Step 6 — the scan runs over the ASSEMBLED comment, so nothing this verb appended escapes it.
 		const leaked = leakRefusal(SURFACE, composed);

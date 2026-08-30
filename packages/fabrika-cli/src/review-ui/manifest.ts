@@ -41,6 +41,11 @@ export interface CaptureEntry {
 	 * they are one serialization, and there is no uncollapsed entry for either to hold.
 	 */
 	readonly pageErrors: CapAndCount<PageError>;
+	/** CI captures prove both browser error channels were readable before the manifest was written. */
+	readonly errorCoverage?: {
+		readonly pageerror: "readable";
+		readonly consoleError: "readable";
+	};
 }
 
 export interface CaptureManifest {

@@ -130,3 +130,32 @@ that guards the design law is guarded by the same control-plane rule it embodies
   gate that governs this skill, since `review-design` is itself gate-critical.
 - **ADR [0144](0144-depo-internal-asset-cdn.md)** — depo, explicitly **not** a dependency: evidence
   hosting uses GitHub user-attachments, not depo.
+
+## Amendment — governed localhost-only CI evidence (2026-08-29, #7306)
+
+The preview producer remains the default, but it is not the only lawful producer. A rendered product
+whose containment contract intentionally permits loopback only may use an exact-head CI producer
+when, and only when, the harness is declared under the repository's governed `.github` authority.
+The declaration fixes the workflow, check, event, artifact, commands, and surfaces; neither PR text
+nor a caller can nominate them.
+
+The trusted workflow executes from the base branch with read-only permissions, checks out the PR at
+its full live head in a separate directory, runs the declared journey and loopback server in
+isolation, and records bounded `pageerror` and `console.error` evidence. An uncaught page error makes
+the producer red. Its versioned manifest binds repository, PR, exact head, declaration digest,
+harness, workflow, check, run, artifact name, every surface, dimensions, and SHA-256.
+
+The reviewer consumes the artifact only through GitHub. The consumer independently proves the
+workflow/event/repository/PR/head association, successful completed run and check, unique unexpired
+artifact, positive manifest schema, complete members, hashes, dimensions, readable error evidence,
+and an unchanged live head. It then places the validated set in reviewer-owned scratch. No local
+path, builder capture, or caller-selected workflow/run/artifact is an input.
+
+`review-ui post` revalidates those bytes and the live head, verified-uploads them, records provenance
+and browser-error coverage, and emits the ordinary SHA-bound `review-ui` marker. `ship` therefore
+keeps one verdict grammar and one fail-closed namespace: missing, pending, stale, invalid, or
+untrusted CI evidence produces no marker and no bypass.
+
+This amendment also supersedes this record's earlier statement that evidence upload is display-only
+and may fail without affecting the verdict. The shipped post contract makes verified upload a
+precondition of marker creation (#3925), for preview and CI evidence alike.

@@ -6,8 +6,8 @@ The verbs land in `packages/fabrika-cli/` under the **`review-ui`** subcommand g
 in `packages/fabrika-cli/src/registry.ts` beside the shipped `adr`, `build`, `report`,
 `review`, `spend`, `triage` and `wire` groups. The
 [CLI interface convention](../../docs/cli-interface-convention.md) governs every verb; where this
-spec and that doc disagree, the doc wins and this spec is the bug. **None of these verbs exists yet** —
-this spec is greenfield.
+spec and that doc disagree, the doc wins and this spec is the bug. The governed localhost CI
+evidence extension is recorded by [#7306](https://github.com/kamp-us/phoenix/issues/7306).
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** (ADR 0238). The v1 prior
 art — `claude-plugins/kampus-pipeline/skills/review-design/` and the six field-4 tools — was
@@ -60,6 +60,8 @@ this contract (one registry-side enum addition; flagged in the implementation ti
 | Verb | Purpose | Split test |
 |---|---|---|
 | `review-ui render` | capture named surfaces from the PR's preview deployment at the inspected head, one validated PNG per surface, each surface's outcome proven | preview resolution, head-binding, capture and per-surface outcome typing are mechanical; *choosing the surfaces and looking at the pixels* stays in the skill |
+| `review-ui fetch` | resolve and validate the exact-head artifact for a governed localhost-only harness, then materialize it in reviewer-owned scratch | producer/run/check/artifact/manifest/integrity validation is mechanical; *looking at the fetched pixels and judging them* stays in the skill |
+| `review-ui ci-produce` | trusted-workflow-only leg that runs the governed journey and creates the versioned artifact | capture and browser-error collection are mechanical; the workflow, never a reviewer or builder, supplies this leg |
 | `review-ui post` | the single sanctioned `review-ui` verdict emit: verify-upload the evidence set, compose through the wire format, bind to the inspected head at post time, post one comment, read it back | upload-verify-compose-post-readback is a protocol; *the polarity and every finding behind it* are judgment |
 | `review-ui note` | the single sanctioned non-verdict write: post one plain comment naming a proven blocker state (can't-see, escalation), leak-scanned, read back — never a marker | compose-scan-post-readback is a protocol; *whether the state warrants a note* is judgment |
 | `review-ui route` | the single sanctioned way to resolve this namespace with no verdict: post one head-bound `routed-elsewhere` record stating that the PR renders nothing, leak-scanned, upserted, read back | binding, upsert and read-back are a protocol; *whether the diff renders anything* is judgment, and no verb may take it |
@@ -186,7 +188,7 @@ re-review at the live head), where `13`/`14`/`15`/`16` each route differently an
 **`16` is not `7`**: the PR exists; what is proven absent is the repo's ability to show it — a
 routable can't-see state the skill acts on by name, the #4305 declaration made mechanical.
 
-## Required environment — the two render paths
+## Required environment — the three render paths
 
 Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-ui`:
 
@@ -201,7 +203,10 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   tool presence, decided by the model; no verb probes for Chrome, no env var, and no `review-ui`
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
-  capture sets only, so the attach path has one validated producer.
+  capture sets or `review-ui fetch` sets, so neither interactive output nor a local import can enter.
+- **Governed localhost path (exception): trusted CI.** A harness declared by the repository default
+  branch may be rendered by the fixed `pull_request_target` workflow/check at the PR's exact head.
+  The reviewer downloads with `review-ui fetch`; the reviewer session never runs the PR code.
 - **`:auth` surfaces need two environment values**, both unset by default: `PREVIEW_TEST_SESSION_TOKEN`
   (the session token `preview-seed test-account` wrote onto the preview D1) and `BETTER_AUTH_SECRET`
   (the preview worker's, so the cookie signature verifies). With neither or one set, an `:auth`
@@ -226,6 +231,51 @@ list **paginated** (v1 read one page of 100; a busy PR's sticky comment silently
 comment that carries the anchor but no parseable URL + SHA for `--app` is malformed and refuses
 on `11` (a malformed announcement is an unreadable one, not a missing one); no comment with the
 anchor at all is the proven `16`.
+
+---
+
+## `review-ui fetch`
+
+```
+fabrika review-ui fetch <pr> --harness <declared-id> --out <kebab-set> [--repo <owner/name>]
+```
+
+Preview deployment remains the default. This verb exists only for a localhost-only harness named in
+`.github/review-ui-localhost-harnesses.json` on the repository default branch. There are deliberately
+no workflow, check, run, artifact, manifest, or local-path operands.
+
+The consumer requires one `pull_request_target` run from the declared workflow whose repository, PR
+association, and full head equal the open PR's live state; its status/conclusion and declared check
+must be `completed/success`. It requires one named, non-expired artifact. Zero and more-than-one are
+both refusals. The zip member set rejects duplicates, traversal, absolute paths, and members outside
+`manifest.json` plus `captures/*.png`.
+
+The version-1 positive manifest binds repository, PR, the full 40-character head, harness,
+declaration SHA-256, workflow, check, event, run id, artifact name, and a non-empty capture list.
+Each capture binds one relative member, surface/state id, dimensions, SHA-256, at most three bounded
+`pageerror`/`console.error` rows plus `more`, and positive readability for both error channels. The
+consumer requires every declared surface exactly once, rejects uncaught page errors, re-derives PNG
+dimensions and hashes, re-reads the live head, and only then materializes the set below the normal
+reviewer scratch root with a consumer-authored receipt binding its manifest hash to the observed
+run/check/artifact ids. The artifact member allowlist excludes that receipt, so a builder cannot
+supply it.
+
+On success stdout is one object:
+`{"answer":"fetched","set":"judged","pr":7190,"head":"<40-hex>","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[...]}`.
+Each capture row names its reviewer-scratch path, dimensions, SHA-256 and bounded page errors so the
+reviewer can open exactly the bytes the consumer validated. These paths are outputs, never inputs.
+
+`ci-produce` is the workflow's internal counterpart. It reads the same governed declaration from the
+trusted base checkout, asserts the subject checkout's exact full Git head, runs the loopback server
+in isolation without passing Actions credentials into PR code, captures every declared state with
+both browser listeners attached, and writes the manifest only on success. The consumer performs the
+independent live-PR binding. It is not a reviewer import interface: a locally produced
+manifest has no matching GitHub run/check/artifact and `fetch` never accepts it.
+
+For PR #7190, a synchronize event after this authority reaches its head produces the Tuval artifact.
+The reviewer fetches `--harness tuval`, judges the fetched pixels and error evidence, and sends the
+set through ordinary `review-ui post`; `ship` consumes that ordinary marker without a second grammar.
+No apps/web, preview, Cloudflare, or production Tuval route is introduced.
 
 ---
 

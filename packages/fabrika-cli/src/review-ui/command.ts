@@ -20,6 +20,8 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {readStdin} from "../io/stdin.ts";
 import {refuse} from "../verb.ts";
+import {runCiFetch} from "./ci-fetch-verb.ts";
+import {runCiProduce} from "./ci-produce-verb.ts";
 import {PRECONDITION_UNKNOWN} from "./codes.ts";
 import {runNote} from "./note-verb.ts";
 import {runPost} from "./post-verb.ts";
@@ -92,6 +94,63 @@ const render = leafCommand(
 	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
 		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per surface (path, dimensions, sha256, page errors); every surface's outcome is enumerated on stderr. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, a --flag operand is not a <key>=<on|off> pair, or --flag was passed with an anonymous surface), 11 (a read failed, the preview comment is malformed or names several apps, a capture's validity is undeterminable, an :auth surface was requested with PREVIEW_TEST_SESSION_TOKEN/BETTER_AUTH_SECRET unset, an :auth surface's session proof did not come back signed in, or a forced flag evaluated at its default anyway), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano",
+	),
+);
+
+const fetch = leafCommand(
+	"fetch",
+	{
+		pr: prArg,
+		harness: Flag.string("harness").pipe(
+			Flag.withDescription(
+				"a localhost-only harness declared by the repository's governed authority",
+			),
+		),
+		out: Flag.string("out").pipe(
+			Flag.withDescription("kebab-case reviewer-owned capture-set name"),
+		),
+		repo: repoFlag,
+	},
+	Effect.fn(function* ({pr, harness, out, repo}) {
+		yield* emit(
+			yield* runCiFetch({
+				pr,
+				harness,
+				out,
+				repo: Option.getOrNull(repo),
+				env: process.env,
+				tmpRoot: tmpdir(),
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Fetch a governed localhost harness's exact-head CI captures."),
+	Command.withDescription(
+		"Resolve the declared producer from the repository default branch, require its successful pull_request_target run, check and unique non-expired artifact for the open PR's exact live head, validate the manifest and every PNG, then materialize the set in reviewer-owned scratch. There is no local path, workflow, run, check, artifact or manifest input. Preview rendering remains the default review-ui path. Exits 4 (malformed declaration/manifest), 7 (PR absent/closed), 10 (unknown harness or bad set name), 11 (producer evidence unresolved), 12 (head moved), 13 (uncaught page error), 15 (capture hash/dimensions invalid).",
+	),
+);
+
+const ciProduce = leafCommand(
+	"ci-produce",
+	{
+		pr: prArg,
+		head: Flag.string("head"),
+		harness: Flag.string("harness"),
+		runId: Flag.integer("run-id"),
+		repository: Flag.string("repository"),
+		subjectRoot: Flag.string("subject-root"),
+		authorityRoot: Flag.string("authority-root"),
+		outputDir: Flag.string("output-dir"),
+	},
+	Effect.fn(function* (options) {
+		yield* emit(yield* runCiProduce({...options, env: process.env}));
+	}),
+).pipe(
+	Command.withShortDescription(
+		"Produce the governed localhost capture artifact inside trusted CI.",
+	),
+	Command.withDescription(
+		"Internal trusted-workflow leg: run the governed browser journey against the exact PR head, independently capture every declared surface with both browser error channels, re-read the live head, and write the versioned artifact manifest. This is not an evidence import path; review-ui fetch accepts only the matching GitHub run/check/artifact.",
 	),
 );
 
@@ -212,6 +271,8 @@ export const reviewUiCommand = Command.make("review-ui").pipe(
 	Command.withSubcommands([
 		// One leaf per line, so concurrent slices append at distinct lines rather than all editing one.
 		render,
+		fetch,
+		ciProduce,
 		post,
 		note,
 		route,

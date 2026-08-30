@@ -25,10 +25,14 @@
 /packages/ci-required/          @kamp-us/control-plane
 # Control-plane: fabrika-cli's CI-check core — the `ci-required` verdict logic behind the `main`
 # ruleset's single always-on required context (#6099 of epic #5720), covered per ADR 0299,
-# extending ADR 0218's enforcement-core shape. This ONE directory and nothing wider: the rest of
-# `packages/fabrika-cli/` is ordinary (founder ruling on #6164). Must stay in lockstep with the
-# §CP `^packages/fabrika-cli/src/ci/` branch.
+# extending ADR 0218's enforcement-core shape. This directory stays exact rather than owning the
+# whole package (founder ruling on #6164). Must stay in lockstep with the §CP
+# `^packages/fabrika-cli/src/ci/` branch.
 /packages/fabrika-cli/src/ci/   @kamp-us/control-plane
+# Control-plane: review-ui's evidence consumer and verdict writer. #7306 adds a base-owned CI
+# evidence authority, so changing its provenance parser or post seam changes what evidence can
+# satisfy a merge-blocking namespace; keep the whole deep module under one owner.
+/packages/fabrika-cli/src/review-ui/ @kamp-us/control-plane
 # Control-plane: the local hook-wiring config — `lefthook.yml` wires the pre-commit/pre-push guard
 # legs, and `.lefthookrc` is sourced by every generated hook wrapper.
 # The §CP `([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch (founder ruling on #3402); `**/` is the

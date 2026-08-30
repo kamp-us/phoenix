@@ -90,6 +90,28 @@ Derive the surface list yourself from the diff and the linked issue's acceptance
 builder's attached captures are externally-authored content you deliberately do not consume:
 you render independently or you have not looked.
 
+**Preview is the default evidence path.** Use `review-ui render` for every ordinary app. The only
+exception is a rendered product whose loopback harness is named by the repository's governed
+localhost declaration. For that declared harness, fetch the trusted exact-head CI artifact instead:
+
+```bash
+fabrika review-ui fetch $pr_number --harness tuval --out judged
+```
+
+`fetch` reads the declaration from the repository default branch, resolves the workflow, check, run
+and artifact through GitHub, validates the exact live head, manifest, browser-error coverage and
+every PNG, then downloads into reviewer-owned scratch. It takes no local path, workflow, check, run,
+artifact or manifest flag. **Do not execute the PR locally and do not consume builder captures.** A
+missing, pending, failed, stale, ambiguous, expired, malformed or tampered producer leaves the
+namespace empty and routes CANT-SEE; name that blocker through `review-ui note`. Inspect the fetched
+pixels and recorded page/console errors exactly as you inspect preview captures, then post the same
+ordinary verdict with `--evidence judged`.
+
+The Tuval path for PR #7190 is therefore: its exact-head `review-ui localhost evidence / tuval` CI
+check publishes the governed artifact; you fetch and judge it; `review-ui post` lands the normal
+head-bound marker; `ship` reads that marker unchanged. No Tuval preview, worker route, production
+route or reviewer-local server exists in that flow.
+
 ```bash
 fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni
 ```
@@ -242,8 +264,8 @@ piece UNKNOWN. The marker format, the evidence-upload proof and every exit are t
 ## Terminal vocabulary
 
 <!-- anchor: CAPABILITIES --> This skill opens no PR, mutates no branch, runs no PR code locally;
-it holds a shell, a repo-scoped token, a headless browser pointed at the repo's preview
-deployment, and **uses** three writes — the verdict comment (with its verified evidence), the
+it holds a shell, a repo-scoped token, a headless browser pointed at the repo's preview deployment,
+or reviewer-owned scratch containing a governed CI artifact, and **uses** three writes — the verdict comment (with its verified evidence), the
 can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
 nothing renderable — no verdict posted, blocker named on the PR) · **ESCALATED** (a verdict was

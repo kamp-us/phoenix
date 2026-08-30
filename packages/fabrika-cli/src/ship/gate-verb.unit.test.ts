@@ -298,6 +298,20 @@ describe("runGate", () => {
 		);
 	});
 
+	it("accepts the ordinary review-ui PASS marker regardless of whether preview or CI supplied its pixels", async () => {
+		const out = await run(
+			[
+				[PULL, served(pull({comments: 1}))],
+				[COMMENTS, commentsServed({id: 1, body: marker("review-ui", "PASS", HEAD)})],
+				[ACL, permission("write")],
+			],
+			{require: ["review-ui"]},
+		);
+		expect(out.stdout).toBe(
+			[`gate\tsatisfied\t${HEAD}`, "ns\treview-ui\tpass\tmarker", ""].join("\n"),
+		);
+	});
+
 	// ADR 0316. `review-ui` is the one namespace whose emit path cannot answer a PR that renders
 	// nothing — `render` refuses zero surfaces, `post` refuses without captures — so the class
 	// `ship scope` raises off a path test named a namespace nothing legal could fill (#6376).

@@ -1,0 +1,101 @@
+name: review-ui localhost evidence
+
+on:
+  # This event executes the workflow from the base branch, never from the PR. The job checks out the
+  # subject separately and has no write permission or repository secret, so PR code can render but
+  # cannot nominate its producer or publish a hand-authored manifest.
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "packages/tuval/**"
+      - "pnpm-lock.yaml"
+
+concurrency:
+  group: review-ui-localhost-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  capture-tuval:
+    name: review-ui localhost evidence / tuval
+    runs-on: ubuntu-latest
+    container:
+      # Tag matches the catalogued @playwright/test line; Chromium and its system libraries are
+      # pre-baked, so the trusted producer never downloads a browser after PR code is present.
+      image: mcr.microsoft.com/playwright:v1.62.1-jammy
+    timeout-minutes: 30
+    env:
+      SUBJECT_HEAD: ${{ github.event.pull_request.head.sha }}
+      SUBJECT_PR: ${{ github.event.pull_request.number }}
+      TARGET_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Assert exact subject identity
+        run: |
+          set -uo pipefail
+          case "${SUBJECT_HEAD:-}" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) echo "::error::pull_request_target supplied no exact 40-character lowercase head"; exit 1 ;;
+          esac
+
+      - name: Check out trusted producer
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          path: authority
+          persist-credentials: false
+
+      - name: Check out exact PR head
+        uses: actions/checkout@v4.2.2
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ env.SUBJECT_HEAD }}
+          path: subject
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: authority/package.json
+          cache: pnpm
+          cache-dependency-path: |
+            authority/pnpm-lock.yaml
+            subject/pnpm-lock.yaml
+
+      - name: Install trusted producer
+        working-directory: authority
+        run: pnpm install --frozen-lockfile
+
+      - name: Install exact-head subject
+        working-directory: subject
+        run: pnpm install --frozen-lockfile
+
+      - name: Run governed journey and package captures
+        working-directory: authority
+        run: |
+          set -uo pipefail
+          node packages/fabrika-cli/src/bin.ts --skip-infer review-ui ci-produce \
+            "$SUBJECT_PR" \
+            --head "$SUBJECT_HEAD" \
+            --harness tuval \
+            --run-id "$GITHUB_RUN_ID" \
+            --repository "$TARGET_REPOSITORY" \
+            --subject-root "$GITHUB_WORKSPACE/subject" \
+            --authority-root "$GITHUB_WORKSPACE/authority" \
+            --output-dir "$GITHUB_WORKSPACE/review-ui-localhost-tuval"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::trusted localhost evidence producer refused with exit $status"
+            exit "$status"
+          fi
+
+      - name: Publish exact-head capture artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: review-ui-localhost-tuval
+          path: review-ui-localhost-tuval/
+          if-no-files-found: error
+          retention-days: 7

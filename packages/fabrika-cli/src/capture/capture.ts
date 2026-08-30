@@ -83,6 +83,10 @@ export interface CaptureCookie {
 export interface CaptureOptions {
 	/** Per-navigation timeout in ms (default 30s). */
 	readonly navigationTimeoutMs?: number;
+	/** Navigation milestone (default `networkidle`; localhost live streams use `load`). */
+	readonly waitUntil?: "load" | "networkidle";
+	/** A governed selector that must be visible before the screenshot is taken. */
+	readonly readySelector?: string;
 	/** Full-page screenshot (default) vs. above-the-fold only. */
 	readonly fullPage?: boolean;
 	/**
@@ -159,6 +163,7 @@ export const captureShots = (
 	options: CaptureOptions = {},
 ): Effect.Effect<readonly CapturedSurface[], CaptureError> => {
 	const navigationTimeoutMs = options.navigationTimeoutMs ?? 30_000;
+	const waitUntil = options.waitUntil ?? "networkidle";
 	const fullPage = options.fullPage ?? true;
 	return Effect.acquireUseRelease(
 		Effect.tryPromise({
@@ -210,9 +215,15 @@ export const captureShots = (
 							});
 							try {
 								const response = await page.goto(shot.url, {
-									waitUntil: "networkidle",
+									waitUntil,
 									timeout: navigationTimeoutMs,
 								});
+								if (options.readySelector !== undefined) {
+									await page.locator(options.readySelector).first().waitFor({
+										state: "visible",
+										timeout: navigationTimeoutMs,
+									});
+								}
 								// A clip crops to the changed region; Playwright rejects clip + fullPage
 								// together, so a clipped shot is never full-page.
 								const buffer = await page.screenshot(
