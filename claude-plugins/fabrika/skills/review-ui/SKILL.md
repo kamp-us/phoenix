@@ -104,9 +104,10 @@ the PR locally and do not consume builder captures.** Exit `13` is the one red-r
 validated set is materialized, stderr names every capture path for independent pixel inspection, its
 uncaught page errors are proven FAIL ground, and you post the ordinary FAIL with `--evidence judged`.
 It is never CANT-SEE. Exit `12` means the head moved and the fetch must be retried at the new head.
-Exit `1` or `10` is a caller error to correct before retrying; exit `7` means the subject is absent or
-closed and ends this review without a marker. Evidence refusals `4`, `11`, or `15` on an open,
-unmoved subject leave the namespace empty and route CANT-SEE through `review-ui note`; never post from
+Exit `1` or `10` is a caller error to correct before retrying. Exit `7` means the subject is absent or
+closed and ends at **CANT-SEE** without a marker; do not attempt `review-ui note`, because there is no
+open subject on which to land it. Evidence refusals `4`, `11`, or `15` on an open, unmoved subject
+leave the namespace empty and route CANT-SEE through `review-ui note`; never post from
 an unresolved set. After a successful fetch, inspect the pixels and recorded page/console errors,
 then post the ordinary verdict with `--evidence judged`. `post` re-downloads the governed live-head artifact and byte-compares the manifest and every
 capture before it accepts the fetched set. The operator sequence, including the Tuval #7190 recovery,
@@ -270,7 +271,8 @@ it holds a shell, a repo-scoped token, a headless browser pointed at the repo's 
 or reviewer-owned scratch containing a governed CI artifact, and **uses** three writes — the verdict comment (with its verified evidence), the
 can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
-nothing renderable — no verdict posted, blocker named on the PR) · **ESCALATED** (a verdict was
+nothing renderable — no verdict posted, blocker named on the open PR; an absent or closed subject
+from fetch exit `7` also ends here, with no note attempted) · **ESCALATED** (a verdict was
 formed but provably could not land — the evidence upload or the write path failed after exactly
 one re-run; the state named on the PR through `review-ui note` where that write still lands, and
 in the session report when even the note cannot — the empty namespace fail-closes either way;

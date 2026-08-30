@@ -50,6 +50,8 @@ jobs:
           persist-credentials: false
 
       - uses: pnpm/action-setup@v4.1.0
+        with:
+          package_json_file: authority/package.json
 
       - uses: actions/setup-node@v4.4.0
         with:

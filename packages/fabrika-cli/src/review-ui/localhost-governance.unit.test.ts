@@ -45,6 +45,22 @@ describe("localhost evidence governance floor", () => {
 		}
 	});
 
+	it("boots pnpm from the governed manifest in the nested authority checkout", () => {
+		const authority = parseLocalhostDeclarations(read(LOCALHOST_DECLARATIONS_PATH));
+		assert.strictEqual(authority._tag, "Declarations");
+		if (authority._tag !== "Declarations") return;
+		const packageManifest = JSON.parse(read("package.json")) as {packageManager?: unknown};
+		assert.match(String(packageManifest.packageManager), /^pnpm@[0-9]+\.[0-9]+\.[0-9]+$/);
+		for (const harness of authority.value.harnesses) {
+			const workflow = read(harness.workflow);
+			assert.include(workflow, "path: authority");
+			assert.match(
+				workflow,
+				/- uses: pnpm\/action-setup@v4\.1\.0\n\s+with:\n\s+package_json_file: authority\/package\.json/,
+			);
+		}
+	});
+
 	it("does not pass Actions credentials or workflow command files into PR code", () => {
 		assert.deepStrictEqual(
 			isolatedEnvironment({
