@@ -303,7 +303,7 @@ bounded error evidence are present in that answer for inspection before posting 
 
 | Code | Trigger |
 |---|---|
-| `0` | the validated set and receipt were materialized and the JSON answer was printed with `render: "clean" | "red"` |
+| `0` | the validated set and receipt were materialized and the JSON answer was printed with `render` equal to `"clean"` or `"red"` |
 | `1` | invocation/flag parsing failed, or `<pr>` is not a positive pull-request number |
 | `4` | default-branch declaration, artifact manifest, producer binding, members, surface cardinality, or receipt materialization schema is malformed |
 | `7` | PR is proven absent or closed — zero scope |

@@ -841,7 +841,7 @@ artifact for a declared localhost-only product. Contract:
 | Verb | Answers |
 |---|---|
 | `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized state (`/pano:auth` renders signed in as the test moderator, refusing on `11` unless the session proves it took). `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface is `:auth` and on `11` unless the preview's own evaluation says the key took |
-| `review-ui fetch` | validates the governed exact-head Actions artifact into reviewer-owned scratch; exit `0` returns a typed `render: "clean" | "red"` answer, while every non-zero produces no evidence answer. See the [consumer and verdict record](../../../.patterns/review-ui-localhost-ci-evidence.md#consumer-and-verdict) |
+| `review-ui fetch` | validates the governed exact-head Actions artifact into reviewer-owned scratch; exit `0` returns a typed answer whose `render` is `"clean"` or `"red"`, while every non-zero produces no evidence answer. See the [consumer and verdict record](../../../.patterns/review-ui-localhost-ci-evidence.md#consumer-and-verdict) |
 | `review-ui ci-produce` | creates that artifact through the base-owned, declaration-bound isolation leg. See the [authority and isolation contract](../../../.patterns/review-ui-localhost-ci-evidence.md#authority-and-isolation) |
 | `review-ui post` | the single `review-ui` verdict emit. Preview sets require the external render capability. CI sets trigger a live-head artifact re-download and byte comparison before capture/head validation, verified upload, and comment post |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
