@@ -2,7 +2,14 @@ import {mkdtemp, readFile, writeFile} from "node:fs/promises";
 import {join} from "node:path";
 import {Effect} from "effect";
 import {execCapture} from "../io/exec.ts";
-import {ambientToken, authed, onTransport, pagedEnvelope, restBytes} from "../io/gh-api.ts";
+import {
+	ambientToken,
+	authed,
+	type EnvelopeRead,
+	onTransport,
+	pagedEnvelope,
+	restBytes,
+} from "../io/gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {isRecord} from "../io/json.ts";
 import {type LocalhostHarnessDeclaration, parseCiCaptureManifest} from "./localhost-evidence.ts";
@@ -67,6 +74,19 @@ export const decodeWorkflowRuns = (entries: readonly unknown[]): Attempt<readonl
 	return ok(runs);
 };
 
+export const completeEnvelope = (
+	read: EnvelopeRead,
+	kind: "workflow runs" | "check runs" | "artifacts",
+): Attempt<readonly unknown[]> => {
+	if (!read.exhausted) return fail(`${kind} pagination did not reach a terminal page`);
+	if (read.declared !== read.entries.length) {
+		return fail(
+			`${kind} declared ${read.declared} row(s), but GitHub returned ${read.entries.length}`,
+		);
+	}
+	return ok(read.entries);
+};
+
 const runsForWorkflow = (repo: string, workflow: string): Shell<Attempt<readonly RunRecord[]>> =>
 	authed((token) =>
 		Effect.map(
@@ -75,7 +95,11 @@ const runsForWorkflow = (repo: string, workflow: string): Shell<Attempt<readonly
 				`repos/${repo}/actions/workflows/${encodeURIComponent(workflow.split("/").at(-1) ?? workflow)}/runs`,
 				"workflow_runs",
 			),
-			(read) => (read._tag === "Failure" ? read : decodeWorkflowRuns(read.value.entries)),
+			(read) => {
+				if (read._tag === "Failure") return read;
+				const complete = completeEnvelope(read.value, "workflow runs");
+				return complete._tag === "Failure" ? complete : decodeWorkflowRuns(complete.value);
+			},
 		),
 	);
 
@@ -187,7 +211,9 @@ export const resolveCiIdentity = (
 			),
 		);
 		if (checks._tag === "Failure") return checks;
-		const selectedCheck = selectUniqueCompleted(checks.value.entries, harness.check, "check");
+		const completeChecks = completeEnvelope(checks.value, "check runs");
+		if (completeChecks._tag === "Failure") return fail(`run ${run.id} ${completeChecks.reason}`);
+		const selectedCheck = selectUniqueCompleted(completeChecks.value, harness.check, "check");
 		if (selectedCheck._tag === "Failure") return fail(`run ${run.id} ${selectedCheck.reason}`);
 		const check = selectedCheck.value;
 		if (typeof check.id !== "number") return fail(`the ${harness.check} check has no id`);
@@ -196,8 +222,12 @@ export const resolveCiIdentity = (
 			pagedEnvelope(token.value, `repos/${repo}/actions/runs/${run.id}/artifacts`, "artifacts"),
 		);
 		if (artifacts._tag === "Failure") return artifacts;
+		const completeArtifacts = completeEnvelope(artifacts.value, "artifacts");
+		if (completeArtifacts._tag === "Failure") {
+			return fail(`run ${run.id} ${completeArtifacts.reason}`);
+		}
 		const selectedArtifact = selectUniqueCompleted(
-			artifacts.value.entries,
+			completeArtifacts.value,
 			harness.artifact,
 			"artifact",
 		);

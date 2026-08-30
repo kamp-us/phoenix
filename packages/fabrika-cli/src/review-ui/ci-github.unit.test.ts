@@ -1,8 +1,14 @@
 import {assert, describe, it} from "@effect/vitest";
+import {Effect} from "effect";
+import {afterEach, beforeEach, vi} from "vitest";
+import {fakeSeams, type Scripted} from "../fakes.test-support.ts";
+import {forgetAmbientToken} from "../io/gh-api.ts";
 import {
+	completeEnvelope,
 	decodeWorkflowRuns,
 	hasExactManifestMembers,
 	type RunRecord,
+	resolveCiIdentity,
 	safeArtifactMembers,
 	selectTrustedRun,
 	selectUniqueCompleted,
@@ -42,7 +48,122 @@ const run = (overrides: Partial<RunRecord> = {}): RunRecord => ({
 const select = (runs: readonly RunRecord[]) =>
 	selectTrustedRun(runs, "kamp-us/phoenix", 7190, HEAD, AUTHORITY_HEAD, harness);
 
+const runEnvelope = {
+	id: 42,
+	status: "completed",
+	conclusion: "success",
+	event: "pull_request_target",
+	path: harness.workflow,
+	repository: {full_name: "kamp-us/phoenix"},
+	head_sha: HEAD,
+	display_title: `review-ui localhost evidence / tuval / PR #7190 / subject ${HEAD} / authority ${AUTHORITY_HEAD}`,
+	check_suite_id: 7,
+};
+const RUNS = /GET .*\/actions\/workflows\/review-ui-localhost-evidence\.yml\/runs/;
+const CHECKS = /GET .*\/check-suites\/7\/check-runs/;
+const ARTIFACTS = /GET .*\/actions\/runs\/42\/artifacts/;
+
+beforeEach(() => {
+	forgetAmbientToken();
+	vi.stubEnv("GITHUB_TOKEN", "token");
+});
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+	forgetAmbientToken();
+});
+
 describe("trusted localhost Actions provenance", () => {
+	it("requires exhausted pagination and exact declared totals before selecting runs, checks, or artifacts", () => {
+		for (const kind of ["workflow runs", "check runs", "artifacts"] as const) {
+			assert.strictEqual(
+				completeEnvelope({declared: 1, entries: [{}], exhausted: true}, kind)._tag,
+				"Ok",
+			);
+			for (const incomplete of [
+				{declared: 1, entries: [{}], exhausted: false},
+				{declared: 2, entries: [{}], exhausted: true},
+				{declared: 0, entries: [{}], exhausted: true},
+			]) {
+				assert.strictEqual(completeEnvelope(incomplete, kind)._tag, "Failure");
+			}
+		}
+	});
+
+	it("refuses inconsistent declared totals at each enumeration before reading or selecting the next leg", async () => {
+		const completeRuns: Scripted = [
+			RUNS,
+			{status: 200, body: JSON.stringify({total_count: 1, workflow_runs: [runEnvelope]})},
+		];
+		const completeChecks: Scripted = [
+			CHECKS,
+			{
+				status: 200,
+				body: JSON.stringify({
+					total_count: 1,
+					check_runs: [{id: 9, name: harness.check, status: "completed", conclusion: "success"}],
+				}),
+			},
+		];
+		const inconsistent = [
+			{
+				script: [
+					[
+						RUNS,
+						{status: 200, body: JSON.stringify({total_count: 2, workflow_runs: [runEnvelope]})},
+					],
+				] satisfies ReadonlyArray<Scripted>,
+				unread: CHECKS,
+			},
+			{
+				script: [
+					completeRuns,
+					[
+						CHECKS,
+						{
+							status: 200,
+							body: JSON.stringify({
+								total_count: 2,
+								check_runs: [
+									{id: 9, name: harness.check, status: "completed", conclusion: "success"},
+								],
+							}),
+						},
+					],
+				] satisfies ReadonlyArray<Scripted>,
+				unread: ARTIFACTS,
+			},
+			{
+				script: [
+					completeRuns,
+					completeChecks,
+					[
+						ARTIFACTS,
+						{
+							status: 200,
+							body: JSON.stringify({
+								total_count: 2,
+								artifacts: [{id: 10, name: harness.artifact, expired: false}],
+							}),
+						},
+					],
+				] satisfies ReadonlyArray<Scripted>,
+				unread: /this-leg-does-not-exist/,
+			},
+		];
+		for (const testCase of inconsistent) {
+			const seams = fakeSeams(testCase.script);
+			const outcome = await Effect.runPromise(
+				Effect.provide(
+					resolveCiIdentity("kamp-us/phoenix", 7190, HEAD, AUTHORITY_HEAD, harness),
+					seams.layer,
+				),
+			);
+			assert.strictEqual(outcome._tag, "Failure");
+			assert.isFalse(seams.requests.some((request) => testCase.unread.test(request)));
+		}
+	});
+
 	it("replays a recorded pull_request_target run whose head_sha is the PR head and associations are empty", () => {
 		const decoded = decodeWorkflowRuns([
 			{

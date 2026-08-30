@@ -92,24 +92,25 @@ you render independently or you have not looked.
 
 **Preview is the default evidence path.** Use `review-ui render` for every ordinary app. The only
 exception is a rendered product whose loopback harness is named by the repository's governed
-localhost declaration. For that declared harness, fetch the trusted exact-head CI artifact instead:
+localhost declaration. Before invoking `review-ui fetch`, read the fetch interface and its proven
+outcomes at
+`fabrika wire doc-section --heading "review-ui fetch" < <skill-base>/contract.md`, the posting
+interface and evidence checks at
+`fabrika wire doc-section --heading "review-ui post" < <skill-base>/contract.md`, and the shared
+code-to-meaning lookup at
+`fabrika wire doc-section --heading "The shared exit matrix" < <skill-base>/contract.md`. Only after
+all three reads succeed, fetch the trusted exact-head CI artifact:
 
 ```bash
 fabrika review-ui fetch $pr_number --harness tuval --out judged
 ```
 
-Read the fetch interface and its proven outcomes at
-`fabrika wire doc-section --heading "review-ui fetch" < <skill-base>/contract.md`, the posting
-interface and evidence checks at
-`fabrika wire doc-section --heading "review-ui post" < <skill-base>/contract.md`, and the shared
-code-to-meaning lookup at
-`fabrika wire doc-section --heading "The shared exit matrix" < <skill-base>/contract.md`. **Do not
-execute the PR locally and do not consume builder captures.** Inspect every materialized capture and
-its recorded page/console errors. Proven uncaught page errors are FAIL ground: post the ordinary
-FAIL with `--evidence judged`, never CANT-SEE. An unresolved evidence set emits no marker; on an open
-subject, route CANT-SEE through `review-ui note`. After an accepted clean fetch, post the ordinary
-judged verdict with `--evidence judged`. The operator sequence, including the Tuval #7190 recovery,
-lives in
+**Do not execute the PR locally and do not consume builder captures.** Inspect every materialized
+capture and its recorded page/console errors. Proven uncaught page errors are FAIL ground: post the
+ordinary FAIL with `--evidence judged`, never CANT-SEE. An unresolved evidence set emits no marker;
+on an open subject, route CANT-SEE through `review-ui note`. After an accepted clean fetch, post the
+ordinary judged verdict with `--evidence judged`. The reviewer sequence and the operator-owned
+producer-recovery route live in
 [`ops/runbook-review-ui-localhost-evidence.md`](../../../../ops/runbook-review-ui-localhost-evidence.md).
 
 ```bash

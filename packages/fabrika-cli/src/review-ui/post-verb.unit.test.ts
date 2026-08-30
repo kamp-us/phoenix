@@ -471,6 +471,27 @@ describe("runPost", () => {
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
+	it("independently binds the byte-matched CI manifest repository and PR to the live target", async () => {
+		for (const forged of [ciManifest({repository: "attacker/fork"}), ciManifest({pr: 9999})]) {
+			const document = JSON.stringify(forged);
+			const {outcome, requests} = await run(
+				[
+					[once(PULL), pull()],
+					[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+					[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
+					[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
+				],
+				{fetchCiBundle: fetchedBundle(document)},
+				ciWorld(document),
+			);
+			expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+			expect(outcome.stderr.join("\n")).toContain(
+				"does not match its consumer-validated provenance receipt",
+			);
+			expect(requests.some((request) => CREATE.test(request))).toBe(false);
+		}
+	});
+
 	it("revalidates receipt check and artifact ids against the re-downloaded artifact", async () => {
 		const document = JSON.stringify(ciManifest());
 		for (const ids of [

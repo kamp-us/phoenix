@@ -225,6 +225,23 @@ describe("localhost evidence governance floor", () => {
 		assert.strictEqual(bounded.more, 1);
 	});
 
+	it("requires all localhost wire reads before fetch and routes PR-state recovery to ship", () => {
+		const skill = read("claude-plugins/fabrika/skills/review-ui/SKILL.md");
+		const fetchInvocation = skill.indexOf(
+			"fabrika review-ui fetch $pr_number --harness tuval --out judged",
+		);
+		for (const heading of ["review-ui fetch", "review-ui post", "The shared exit matrix"]) {
+			const contractRead = skill.indexOf(`--heading "${heading}"`);
+			assert.isAtLeast(contractRead, 0);
+			assert.isBelow(contractRead, fetchInvocation);
+		}
+		const runbook = read("ops/runbook-review-ui-localhost-evidence.md");
+		assert.include(runbook, 'fabrika ship nudge 7190 --sha "$live_head"');
+		assert.notInclude(runbook, "Close #7190 without merging it");
+		const contract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
+		assert.notInclude(contract, "has no readable preview manifest");
+	});
+
 	it("keeps every review-ui verb contract locally complete", () => {
 		const contract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
 		const verbs = ["fetch", "ci-produce", "render", "post", "note", "route"];

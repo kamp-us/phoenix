@@ -641,6 +641,12 @@ export const runPost = (
 					`${VERB}: CI evidence set "${options.evidence}" manifest does not byte-match the exact re-downloaded GitHub artifact.`,
 				);
 			}
+			if (ciManifest.repository !== repo || ciManifest.pr !== pr) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: CI evidence set "${options.evidence}" does not match its consumer-validated provenance receipt.`,
+				);
+			}
 			for (const capture of ciManifest.captures) {
 				const remote = yield* readCaptureBytes(`${bundle.value.directory}/${capture.path}`);
 				const local = yield* readCaptureBytes(`${setDir}/${capture.path}`);

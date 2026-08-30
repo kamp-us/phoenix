@@ -828,7 +828,6 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
 | `review-ui post: evidence set "<set>" has no readable manifest.json (<reason>) — a set without its manifest is not a set; re-run the sanctioned producer (review-ui render or review-ui fetch).` | 4 | refusal |
 | `review-ui post: evidence set "<set>" has no readable manifest.json.` | 4 | refusal |
-| `review-ui post: preview evidence set "<set>" has no readable preview manifest.` | 4 | refusal |
 | `review-ui post: preview evidence set "<set>" does not match its render request.` | 4 | refusal |
 | `review-ui post: preview evidence set "<set>" was not authenticated by an independent live-preview recapture (<reason>).` | 4 / 11 | refusal |
 | `review-ui post: CI evidence set "<set>" has no consumer-validated provenance receipt — a builder-authored manifest is not evidence.` | 4 | refusal |
