@@ -53,7 +53,7 @@ import {
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {foldLog, nextLeaf, resolveTask} from "./fold.ts";
-import {nominateOpenPulls} from "./nominate.ts";
+import {nominatePulls} from "./nominate.ts";
 import {
 	claimOf,
 	epicOf,
@@ -364,7 +364,7 @@ const traceOpenPull = (
 	ChildProcessSpawner.ChildProcessSpawner
 > =>
 	Effect.gen(function* () {
-		const nominated = yield* nominateOpenPulls(repo, issue);
+		const nominated = yield* nominatePulls(repo, issue);
 		if (nominated._tag === "Unreadable") {
 			return {
 				_tag: "Refused" as const,

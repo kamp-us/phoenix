@@ -51,7 +51,7 @@ import {
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {foldLog, resolveTask} from "./fold.ts";
-import {nominateOpenPulls, nominationScope} from "./nominate.ts";
+import {nominatePulls, nominationScope} from "./nominate.ts";
 import {epicOf, issueOf, tracePulls} from "./prove.ts";
 import {DEEPEN_REMEDY, locateRange, type RangeLocation} from "./range.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
@@ -300,7 +300,7 @@ export const runBrief = (
 			]);
 		}
 
-		const nominated = yield* nominateOpenPulls(repo.value, issue);
+		const nominated = yield* nominatePulls(repo.value, issue);
 		if (nominated._tag === "Unreadable") {
 			return refuse(
 				LANE_UNREADABLE,

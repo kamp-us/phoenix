@@ -238,15 +238,18 @@ export const MISDIRECTED_PUSH = 34;
 export const CAUSE_UNRECOGNISED = 35;
 
 /**
- * The `UNBLOCKED` would walk the door out of an error final back into a state whose guarded routes
- * all fall straight back through it — the state restored, the repair budget still spent. Refused
- * with the log unappended.
+ * The resume would walk the door out of a park back into a state whose guarded routes all fall
+ * straight back through it — the state restored, the budget it needs still spent. Refused with the
+ * log unappended, on either budget.
  *
  * Its own seat rather than {@link EVENT_REFUSED}'s: that one says the machine holds no cell, and the
  * remedy is a different event. Here the cell is there and the fold would succeed — it would advertise
  * `active`/`review` on a lane that re-freezes on its next `FAIL`, which is what #6570 reports. The
- * remedy is not another event at all but a recorded clearance (`build clear`), so a caller reading
- * only the code must not be told to retype the transition (ADR 0312).
+ * remedy is not another event at all but a grant, so a caller reading only the code must not be told
+ * to retype the transition. **Which grant differs by axis and the message says which**: a recorded
+ * `CLEARED` round for retries (`build clear`, ADR 0312), and waits granted on this same resume for
+ * the wait axis (`recipe unpark`, else `--grant-wait`, ADR 0313) — `build clear` buys a repair round
+ * and never a longer wait.
  */
 export const RESUME_UNBUDGETED = 36;
 
@@ -360,3 +363,15 @@ export const ASSEMBLY_DIRTY = 45;
  * different verb — `lane emit` for an issue with children, `lane open` for one without.
  */
 export const SHAPE_MISMATCH = 46;
+
+/**
+ * The `--grant-wait` handed to `lane transition` is not a whole grant of at least one wait, or rides
+ * on an event that is not `UNBLOCKED` — refused with the log unappended.
+ *
+ * Its own seat rather than {@link RESUME_UNBUDGETED}'s: that one says a resume needs a grant and
+ * carries none, and the remedy is to add one. This one says the grant itself is unrecordable, and
+ * the two must not fold together — a `--grant-wait 0` that landed would raise the budget by nothing
+ * while reading as a granted resume, which is the silent no-op ADR 0313's wait axis exists to make
+ * loud (the parse refuses the same shape on a log line already).
+ */
+export const GRANT_REFUSED = 47;

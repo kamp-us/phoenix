@@ -17,7 +17,7 @@
  *
  * The transport is `../io/gh-api.ts`, not a `gh` subprocess. REST throughout, with two of the three
  * carves ADR 0315 records: the review-thread block at the bottom, and the auto-merge mutation.
- * Neither has a REST route at all. The third is `openPullsClosing` in `../io/pulls.ts`.
+ * Neither has a REST route at all. The third is `pullsClosing` in `../io/pulls.ts`.
  */
 
 import {writeFile} from "node:fs/promises";

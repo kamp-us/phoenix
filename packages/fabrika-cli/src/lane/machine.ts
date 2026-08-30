@@ -83,6 +83,16 @@ export interface LaneMsg {
 	readonly round?: number;
 	/** The lane classes the recorder observed; absent leaves {@link TaskState.classes} standing. */
 	readonly classes?: ReadonlyArray<string>;
+	/**
+	 * Waits this event grants, raising {@link TaskState.maxWaits} from its own position in the log.
+	 *
+	 * It rides the resume rather than arriving as an eighth event, because the point is that ONE
+	 * recorded line both clears the park and buys the read the resumed lane needs: a bare `UNBLOCKED`
+	 * out of `human:queue-stall` restores a state whose wait budget is spent, and the fold refuses
+	 * exactly that (ADR 0313). `recipe unpark` grants it once it has proven the queue moved; a
+	 * human's `lane transition --grant-wait` is the fallback for when that read cannot run.
+	 */
+	readonly waitGrant?: number;
 }
 
 export type TaskMachine = Machine<TaskState, LaneMsg, never, never, unknown>;
@@ -104,6 +114,17 @@ export interface CompiledTask {
 	 * the error final the resume just left (ADR 0313).
 	 */
 	readonly guardedStates: ReadonlySet<string>;
+	/**
+	 * Per **waits**-guarded state, the parks its spent-budget arm falls into — `ship:queued`'s `WIP`
+	 * to `human:queue-stall`, and nothing else in today's machine.
+	 *
+	 * The wait axis's own resume read, and it needs the pairing where {@link guardedStates} needs
+	 * only the name: a retry-guarded state's fallthrough is a final, so `errorFinals` already says
+	 * where a resume came from. A wait park is a plain state, so the pair is what tells the fold that
+	 * a resume lands back in the state whose spent guard produced this very park — rather than in one
+	 * a differently-caused park happens to share (ADR 0313).
+	 */
+	readonly waitParks: ReadonlyMap<string, ReadonlySet<string>>;
 	/**
 	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours
 	 * (ADR 0312). Carried so a refusal can name the repair — re-record each as a `CLEARED` event —
@@ -146,9 +167,20 @@ const classGuardOf = (arm: unknown): string | undefined => {
 	return CLASS_GUARD.exec(arm.guard)?.[1];
 };
 
-/** Fold the classes an event carried into the state before any guard reads them. */
-const withClasses = (state: TaskState, msg: LaneMsg): TaskState =>
-	msg.classes === undefined ? state : {...state, classes: msg.classes};
+/**
+ * Fold the payloads an event carried into the state before any guard reads them — the classes a
+ * `class:<name>` arm routes on, and the waits the event grants.
+ *
+ * Applying the grant here rather than in one cell is what makes it a property of the event instead
+ * of the edge: the budget stays a fold over the recorded log, and replaying that log twice yields
+ * the same `maxWaits` because the grant is read off the line rather than accumulated in context.
+ */
+const withPayload = (state: TaskState, msg: LaneMsg): TaskState => {
+	const classed = msg.classes === undefined ? state : {...state, classes: msg.classes};
+	return msg.waitGrant === undefined
+		? classed
+		: {...classed, maxWaits: classed.maxWaits + msg.waitGrant};
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
@@ -184,6 +216,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const finals = new Set<string>();
 	const errorFinals = new Set<string>();
 	const guardedStates = new Set<string>();
+	const waitParks = new Map<string, Set<string>>();
 	for (const [name, node] of Object.entries(states)) {
 		if (nodeType(node) === "final") finals.add(name);
 	}
@@ -235,7 +268,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				const laneClass = classGuardOf(transition[0]);
 				if (laneClass !== undefined) {
 					cells[msg] = (s, m) => {
-						const c = withClasses(s, m);
+						const c = withPayload(s, m);
 						const target = c.classes.includes(laneClass) ? taken : fallthrough;
 						return [{...c, type: target, was: c.type}, []];
 					};
@@ -243,16 +276,21 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				}
 				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
 				if (msg === "FAIL") guardedStates.add(stateName);
+				else {
+					const parks = waitParks.get(stateName) ?? new Set<string>();
+					parks.add(fallthrough);
+					waitParks.set(stateName, parks);
+				}
 				cells[msg] =
 					msg === "FAIL"
 						? (s, m) => {
-								const c = withClasses(s, m);
+								const c = withPayload(s, m);
 								return c.retries < c.maxRetries
 									? [{...c, type: taken, retries: c.retries + 1, was: c.type}, []]
 									: [{...c, type: fallthrough, was: c.type}, []];
 							}
 						: (s, m) => {
-								const c = withClasses(s, m);
+								const c = withPayload(s, m);
 								return c.waits < c.maxWaits
 									? [{...c, type: taken, waits: c.waits + 1, was: c.type}, []]
 									: [{...c, type: fallthrough, was: c.type}, []];
@@ -269,13 +307,13 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			}
 			if (nodeType(states[transition]) === "history") {
 				cells[msg] = (s, m) => {
-					const c = withClasses(s, m);
+					const c = withPayload(s, m);
 					return [{...c, type: c.was ?? initialState}, []];
 				};
 			} else {
 				const target = transition;
 				cells[msg] = (s, m) => {
-					const c = withClasses(s, m);
+					const c = withPayload(s, m);
 					return [{...c, type: target, was: c.type}, []];
 				};
 			}
@@ -339,7 +377,17 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		update: table as never,
 	});
 	return {
-		task: {machine, initial, finals, errorFinals, openFinals, guardedStates, staleGrants, extras},
+		task: {
+			machine,
+			initial,
+			finals,
+			errorFinals,
+			openFinals,
+			guardedStates,
+			waitParks,
+			staleGrants,
+			extras,
+		},
 		defects: [],
 	};
 };

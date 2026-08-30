@@ -562,6 +562,9 @@ and the ref did not move · `31` this session does not hold the driver's claim �
 token is no shell's · `33` an assembly git write was aimed at the main working tree · `34` the
 assembly branch tracks another ref and clearing that upstream did not take · `35` the `--cause` is
 outside the closed park-cause set · `36` the `UNBLOCKED` would restore a state with no budget left
+— read the refusal for which budget: retries want a recorded `CLEARED` (`build clear`), waits want
+the grant on this same resume (`--grant-wait`, else `recipe unpark`) · `47` the `--grant-wait` is
+not a whole grant of at least one wait, or rides on an event that is not `UNBLOCKED`
 · `37` a booted lane's machine cannot be replaced by the template without moving the lane · `38`
 the `--class` is outside the review classes · `39` the cwd is not in a repository · `40` another
 writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
@@ -592,7 +595,10 @@ Three behaviours are worth knowing:
   [`src/lane/templates/coder.workflow.json`](../src/lane/templates/coder.workflow.json) is the
   single-issue coder machine: `queued → build → review → ship`, review `FAIL` retried on a budget
   of 2 then frozen, `BLOCKED`/`UNBLOCKED` suspend-resume from any working state, and ship `BLOCKED`
-  parking in `human:cp-approval` until the approval lands as `UNBLOCKED`.
+  parking in `human:cp-approval` until the approval lands as `UNBLOCKED`. A shipper that leaves the
+  PR in the merge queue records `WIP` into `ship:queued`, which re-enters itself on a separate wait
+  budget and escalates to `human:queue-stall` when that budget is spent — a park `recipe unpark`
+  clears, granting the resumed lane one fresh read on the same event (ADR 0313).
 
 ## The `ledger` group
 
@@ -730,7 +736,7 @@ read-back.
 
 | Verb | Answers |
 |---|---|
-| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it |
+| `recipe unpark` | whether a parked lane's park is a known recipe, and on a known one clears it — and on the queue-stall row grants the waits that clear buys, on the same recorded event |
 | `recipe rerun` | the failed workflow runs at a PR's live head, rerequested only behind a head-bound `governance` PASS |
 | `recipe route` | which recipe a chore-lane state applies, and which of the six events one exit folds to |
 
