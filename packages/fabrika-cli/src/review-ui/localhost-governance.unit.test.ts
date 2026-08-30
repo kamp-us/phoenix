@@ -4,6 +4,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {
 	boundedBrowserErrors,
 	isolatedEnvironment,
+	subjectCaptureContainerArgs,
 	subjectInstallAndTestContainerArgs,
 	subjectPrepareServerContainerArgs,
 	subjectServerContainerArgs,
@@ -94,9 +95,10 @@ describe("localhost evidence governance floor", () => {
 			"subject-server",
 			"fresh-server-workspace",
 			"/trusted-fixture",
-			4173,
 			["node", "server.mjs", "4173"],
 		);
+		assert.include(server.join(" "), "--network none");
+		assert.notInclude(server, "--publish");
 		assert.include(server, "--read-only");
 		assert.include(server, "--cap-drop");
 		assert.include(server, "no-new-privileges");
@@ -104,6 +106,20 @@ describe("localhost evidence governance floor", () => {
 		assert.include(server, "type=bind,src=/trusted-fixture,dst=/review-ui-fixture,readonly");
 		assert.notInclude(server.join(" "), "authority");
 		assert.notInclude(server.join(" "), "review-ui-localhost-tuval");
+
+		const capture = subjectCaptureContainerArgs(
+			"subject",
+			"subject-server",
+			"/authority",
+			"/trusted-output",
+			4173,
+			"tuval",
+		);
+		assert.include(capture.join(" "), "--network container:subject-server");
+		assert.include(capture, "type=bind,src=/authority,dst=/authority,readonly");
+		assert.include(capture, "type=bind,src=/trusted-output,dst=/capture-output");
+		assert.include(capture, "--read-only");
+		assert.include(capture, "no-new-privileges");
 	});
 
 	it("bounds every browser-error row while preserving deterministic priority and overflow", () => {
@@ -148,6 +164,28 @@ describe("localhost evidence governance floor", () => {
 				assert.include(section, `**${heading}**`, `review-ui ${verb} ${heading}`);
 			}
 			assert.include(section, `$ fabrika review-ui ${verb}`, `review-ui ${verb} literal example`);
+		}
+	});
+
+	it("pins fetch and ci-produce contract inputs to their shipped flag help", () => {
+		const contract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
+		const command = read("packages/fabrika-cli/src/review-ui/command.ts");
+		const descriptions = [
+			"the pull-request number this verb acts on",
+			"a localhost-only harness declared by the repository's governed authority",
+			"kebab-case reviewer-owned capture-set name",
+			"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			"the exact lowercase 40-character PR head checked out as the subject",
+			"the localhost harness id from the trusted declaration",
+			"the positive GitHub Actions run id bound into the manifest",
+			"the owner/name repository identity bound into the manifest",
+			"the exact-head subject input to the trusted image recipe",
+			"the trusted base checkout containing the declaration and producer",
+			"the trusted host directory where captures and manifest are written",
+		];
+		for (const description of descriptions) {
+			assert.include(command, `"${description}"`);
+			assert.include(contract, `| ${description} |`);
 		}
 	});
 

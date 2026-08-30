@@ -11,7 +11,14 @@ import {
 	SURFACE_UNREACHABLE,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {parseManifest} from "./manifest.ts";
+import {
+	PREVIEW_PROVENANCE_RECEIPT,
+	parseManifest,
+	parsePreviewProvenance,
+	previewProvenanceKeyPath,
+	sha256Hex,
+	verifyPreviewProvenance,
+} from "./manifest.ts";
 import {type RenderLeg, runRender, type SurfaceRender} from "./render-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -92,14 +99,32 @@ const happy = (): ReadonlyArray<Scripted> => [
 ];
 
 describe("runRender", () => {
-	it("captures the surface, prints the manifest, and writes the same bytes to the set", async () => {
+	it("captures the surface and writes the manifest plus render provenance", async () => {
 		const {outcome, written} = await run(happy());
 		expect(outcome.code).toBe(0);
 		const manifest = parseManifest(outcome.stdout);
 		expect(manifest._tag).toBe("Manifest");
-		expect(written.get("/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json")).toBe(
-			outcome.stdout.trimEnd(),
+		const document = outcome.stdout.trimEnd();
+		expect(written.get("/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json")).toBe(document);
+		const receipt = parsePreviewProvenance(
+			written.get(`/tmp/fabrika-review-ui/4321-03135b91/judged/${PREVIEW_PROVENANCE_RECEIPT}`) ??
+				"",
 		);
+		expect(receipt).toMatchObject({
+			source: "review-ui-render",
+			repository: "o/r",
+			pr: 4321,
+			head: HEAD,
+			app: "web",
+			previewUrl: PREVIEW,
+			manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+		});
+		expect(receipt).not.toBeNull();
+		if (receipt !== null) {
+			const key = written.get(previewProvenanceKeyPath("/tmp", receipt.keyId));
+			expect(key).toBeDefined();
+			expect(verifyPreviewProvenance(receipt, key ?? "")).toBe(true);
+		}
 	});
 
 	it("prints the capped page errors on both channels, so the file reader cannot desync (ADR 0308)", async () => {

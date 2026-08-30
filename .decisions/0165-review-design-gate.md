@@ -164,13 +164,19 @@ governed test run share a container with a read-only root filesystem, all Linux 
 dropped, `no-new-privileges`, no network, and one disposable test workspace. That workspace is
 never served. A separate server workspace is freshly copied from the image's immutable exact-head
 `/subject-source` and receives an offline install with both execution-disabling flags; only that
-workspace is mounted read-only into the server under the same root/capability restrictions. The
-server receives only the read-only fixture. Neither container receives Actions credentials, the
-authority checkout, Docker socket, or artifact-output mount. Docker documents the read-only root
-flag, capability drop, security options, `none` network, and mount modes used by those exact arguments
+workspace is mounted read-only into the server under the same root/capability/network restrictions,
+including `--network none`; the server publishes no host port and receives only the read-only
+fixture. Docker documents that the `none` driver leaves only loopback
+([none driver](https://docs.docker.com/engine/network/drivers/none/)). A base-owned capture sidecar
+uses `--network container:<server>` to share that isolated network stack
+([container networks](https://docs.docker.com/engine/network/#container-networks)), so its browser
+reaches loopback without external network. The PR server receives no Actions credentials, authority
+checkout, Docker socket, or artifact-output mount. The trusted sidecar receives the authority
+checkout read-only and the prepared output only; the host validates the captures and writes the
+manifest. Docker documents the remaining read-only root, capability, security, and mount controls
 ([Docker run reference](https://docs.docker.com/reference/cli/docker/container/run/),
-[Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/)). The trusted host alone
-drives capture and writes bounded `pageerror` and `console.error` evidence, truncating each row to
+[Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/)). Browser-error evidence is
+bounded by truncating each row to
 1,024 UTF-16 code units and ordering uncaught page errors before console errors so the bounded
 overflow cannot hide the hard-fail kind. A successful journey whose later browser capture records an
 uncaught page error still publishes its manifest so the consumer can materialize the pixels, then
@@ -182,7 +188,11 @@ harness, workflow, check, run, artifact name, every surface, dimensions, and SHA
 The reviewer consumes the artifact only through GitHub. The consumer independently proves the
 workflow/event/repository/PR/head association, successful completed run and check, unique unexpired
 artifact, positive manifest schema, complete members, hashes, dimensions, readable error evidence,
-and an unchanged live head. It then places the validated set in reviewer-owned scratch. No local
+and an unchanged head. GitHub's authoritative REST OpenAPI `Artifact` schema requires the boolean
+`expired` field and defines it as whether the artifact has expired
+([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
+[required list](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141602-L141612)).
+The consumer then places the validated set in reviewer-owned scratch. No local
 path, builder capture, or caller-selected workflow/run/artifact is an input.
 
 `review-ui post` revalidates those bytes and the live head, re-resolves the governed workflow and the

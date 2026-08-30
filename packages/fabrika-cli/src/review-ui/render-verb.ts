@@ -55,8 +55,12 @@ import {
 	type CaptureManifest,
 	isKebabSetName,
 	manifestPath,
+	mintPreviewProvenance,
+	PREVIEW_PROVENANCE_RECEIPT,
+	previewProvenanceKeyPath,
 	serializeManifest,
 	setDirectory,
+	sha256Hex,
 } from "./manifest.ts";
 import {resolvePreview} from "./preview.ts";
 
@@ -353,13 +357,34 @@ export const runRender = (
 			captures: renders.map((render) => (render as {entry: CaptureEntry}).entry),
 		};
 		const document = serializeManifest(manifest);
-		// A set without its manifest is not a set: `post` reads the set through it, so a manifest that
-		// did not land makes the captures unusable as evidence and the run UNKNOWN.
-		const written = yield* Effect.result(writeFile(manifestPath(setDir), document));
+		const provenance = mintPreviewProvenance({
+			repository: repo,
+			pr,
+			head,
+			app: announced.app,
+			previewUrl: announced.url,
+			manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+		});
+		const receipt = JSON.stringify(provenance.receipt);
+		// A set without the manifest, signed receipt, and out-of-set key is not a set: `post` requires
+		// this producer capability before it reads route-shaped bytes as preview evidence.
+		const written = yield* Effect.result(
+			Effect.all(
+				[
+					writeFile(manifestPath(setDir), document),
+					writeFile(`${setDir}/${PREVIEW_PROVENANCE_RECEIPT}`, receipt),
+					writeFile(
+						previewProvenanceKeyPath(options.tmpRoot, provenance.receipt.keyId),
+						provenance.key,
+					),
+				],
+				{concurrency: 3},
+			),
+		);
 		if (Result.isFailure(written)) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot write the set manifest for #${pr}: ${written.failure.reason} — the captures exist but the set does not.`,
+				`${VERB}: cannot write the set manifest and preview provenance for #${pr}: ${written.failure.reason} — the captures exist but the set does not.`,
 				enumerated,
 			);
 		}

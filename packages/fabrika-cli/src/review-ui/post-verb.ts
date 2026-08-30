@@ -2,8 +2,9 @@
  * `review-ui post` — the single sanctioned `review-ui` verdict emit.
  *
  * Eight steps, each gating the next: re-resolve the live head, read the evidence set through its
- * manifest, re-resolve a CI receipt's workflow/run/check/artifact tuple through GitHub, re-validate
- * every capture, **verify-upload every capture before anything posts**, compose through the wire
+ * manifest, require a `render` receipt for preview evidence or re-resolve a CI receipt's
+ * workflow/run/check/artifact tuple through GitHub, re-validate every capture, **verify-upload every
+ * capture before anything posts**, compose through the wire
  * format with complete provenance, leak-scan the assembled comment, upsert one
  * comment for this namespace under this carrier, and read it back from live PR state.
  *
@@ -17,7 +18,7 @@
  * There is no `--namespace`. This group emits `review-ui` and nothing else, so a
  * misdirected-namespace write is unrepresentable rather than refused.
  */
-import {Effect, type FileSystem, type Path, Result} from "effect";
+import {Effect, type FileSystem, Path, Result} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {validateCaptureBytes} from "../capture/png.ts";
@@ -63,11 +64,17 @@ import {
 import {
 	type CaptureEntry,
 	manifestPath,
+	PREVIEW_PROVENANCE_RECEIPT,
+	type PreviewProvenance,
 	parseManifest,
+	parsePreviewProvenance,
+	previewProvenanceKeyPath,
 	readCaptureBytes,
 	setDirectory,
 	sha256Hex,
+	verifyPreviewProvenance,
 } from "./manifest.ts";
+import {resolvePreview} from "./preview.ts";
 
 const VERB = "review-ui post";
 
@@ -326,17 +333,10 @@ export const runPost = (
 			);
 		}
 		const raw = parseJson(document.success);
-		const captures = isRecord(raw) && Array.isArray(raw.captures) ? raw.captures : [];
-		const previewShaped =
-			captures.length > 0 &&
-			captures.every(
-				(entry) =>
-					isRecord(entry) && typeof entry.surface === "string" && entry.surface.startsWith("/"),
-			);
 		const ciDocument = isRecord(raw) && raw.source === "github-actions";
-		const requiresCiProvenance = ciDocument || !previewShaped;
-		const ciRead = requiresCiProvenance ? parseCiCaptureManifest(document.success) : null;
-		const previewRead = requiresCiProvenance ? null : parseManifest(document.success);
+		const requiresCiProvenance = ciDocument;
+		const ciRead = ciDocument ? parseCiCaptureManifest(document.success) : null;
+		const previewRead = ciDocument ? null : parseManifest(document.success);
 		const malformed =
 			ciRead?._tag === "Malformed"
 				? ciRead.reason
@@ -362,6 +362,51 @@ export const runPost = (
 			);
 		}
 		let trustedCiProvenance: ValidatedCiProvenance | null = null;
+		let trustedPreviewProvenance: PreviewProvenance | null = null;
+		if (!requiresCiProvenance) {
+			const previewManifest = previewRead?._tag === "Manifest" ? previewRead.value : null;
+			if (previewManifest === null) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: preview evidence set "${options.evidence}" has no readable preview manifest.`,
+				);
+			}
+			const receiptRead = yield* Effect.result(readFile(`${setDir}/${PREVIEW_PROVENANCE_RECEIPT}`));
+			if (Result.isFailure(receiptRead)) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: preview evidence set "${options.evidence}" has no review-ui render provenance receipt — route-shaped local captures are not evidence.`,
+				);
+			}
+			const receipt = parsePreviewProvenance(receiptRead.success);
+			const keyRead =
+				receipt === null
+					? null
+					: yield* Effect.result(
+							readFile(previewProvenanceKeyPath(options.tmpRoot, receipt.keyId)),
+						);
+			const manifestHash = sha256Hex(new TextEncoder().encode(document.success));
+			if (
+				receipt === null ||
+				keyRead === null ||
+				Result.isFailure(keyRead) ||
+				!verifyPreviewProvenance(receipt, keyRead.success) ||
+				receipt.repository !== repo ||
+				receipt.pr !== pr ||
+				receipt.head !== previewManifest.head ||
+				receipt.previewUrl !== previewManifest.previewUrl ||
+				receipt.manifestSha256 !== manifestHash ||
+				previewManifest.pr !== pr ||
+				previewManifest.set !== options.evidence ||
+				previewManifest.captures.some((capture) => !capture.surface.startsWith("/"))
+			) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: preview evidence set "${options.evidence}" does not match its review-ui render provenance receipt.`,
+				);
+			}
+			trustedPreviewProvenance = receipt;
+		}
 		if (requiresCiProvenance) {
 			const receiptRead = yield* Effect.result(readFile(`${setDir}/${CI_PROVENANCE_RECEIPT}`));
 			if (Result.isFailure(receiptRead)) {
@@ -473,9 +518,18 @@ export const runPost = (
 
 		// Step 3 — re-validate every capture against the manifest that claims it.
 		const bytesByEntry: Array<readonly [CaptureEntry, Uint8Array]> = [];
+		const path = yield* Path.Path;
+		const previewRoot = path.resolve(setDir);
 		for (const entry of manifest.captures) {
 			const capturePath = requiresCiProvenance ? `${setDir}/${entry.path}` : entry.path;
-			const bytes = yield* readCaptureBytes(capturePath);
+			const resolvedCapturePath = path.resolve(capturePath);
+			if (!requiresCiProvenance && !resolvedCapturePath.startsWith(`${previewRoot}${path.sep}`)) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: preview capture "${entry.surface}" resolves outside its review-ui render set.`,
+				);
+			}
+			const bytes = yield* readCaptureBytes(resolvedCapturePath);
 			if (bytes._tag === "Unreadable") {
 				return unreadable(
 					`capture "${entry.surface}" in set "${options.evidence}"`,
@@ -591,6 +645,19 @@ export const runPost = (
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
 		const comments = yield* listComments(repo, pr);
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
+		if (trustedPreviewProvenance !== null) {
+			const preview = resolvePreview(comments.value, trustedPreviewProvenance.app);
+			if (
+				preview._tag !== "Resolved" ||
+				preview.value.url !== trustedPreviewProvenance.previewUrl ||
+				!prefixMatch(live, preview.value.deployedSha)
+			) {
+				return refuse(
+					STALE_TREE,
+					`${VERB}: preview evidence set "${options.evidence}" no longer matches the live preview announcement.`,
+				);
+			}
+		}
 		const diagnostics = [scannedLine(VERB, comments.value.length, "comment")];
 		// The NEWEST match by write stamp, stated rather than left to the order the API returned: a
 		// body-only repair legitimately leaves two verdicts at one SHA, and editing the older one

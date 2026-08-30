@@ -35,8 +35,12 @@ A moved-head `12` restarts at the new head. Exit `13` follows the FAIL route abo
 
 ## Tuval PR #7190
 
-After the platform authority is available on #7190's head, a `synchronize` event runs
-`review-ui localhost evidence / tuval`. Fetch with `--harness tuval`, judge the desktop and mobile
-captures plus browser-error evidence, and post through the ordinary marker as above. Do not add an
-`apps/web` route, preview deployment, Cloudflare binding, production endpoint, or reviewer-local
-server to unblock Tuval.
+After the platform authority reaches the default branch, #7190 needs its first run even when its head
+is unchanged. Close and reopen the PR: `reopened` is a declared `pull_request_target` activity type
+for `review-ui-localhost-evidence.yml`, so that cycle creates the first
+`review-ui localhost evidence / tuval` run at the same exact head. After a run exists, the Actions UI
+may rerun it without another PR event.
+
+Fetch with `--harness tuval`, judge the desktop and mobile captures plus browser-error evidence, and
+post through the ordinary marker as above. Do not add an `apps/web` route, preview deployment,
+Cloudflare binding, production endpoint, or reviewer-local server to unblock Tuval.

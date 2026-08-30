@@ -1,17 +1,18 @@
 /**
  * The capture set: where its bytes live, what its manifest says, and how a later verb re-reads it.
  *
- * `review-ui render` writes the manifest and `review-ui post` reads it, so the two never trade a
- * carried variable — a set is whatever its `manifest.json` says it is, and a set without a readable
- * manifest is not a set. The manifest bytes are byte-identical to `render`'s stdout object for the
- * same reason: one document, two channels, so nothing can be true on one and not the other.
+ * `review-ui render` writes the manifest, producer receipt, and an out-of-set capability key;
+ * `review-ui post` reads all three, so the two never trade a carried variable. A set without those
+ * readable records is not a set. The manifest bytes are byte-identical to `render`'s
+ * stdout object for the same reason: one document, two channels, so nothing can be true on one and
+ * not the other.
  *
  * The set path is **deterministic from the PR and the head**, never a `mktemp -d` nobody recorded
  * (v1 S4: a PASS whose evidence upload failed was unauditable). The `--out` set name is the run's
  * own key inside that directory — two concurrent reviews of one head name different sets and never
  * write each other's bytes (the run-keyed rule #5111 states; a session is not a run).
  */
-import {createHash} from "node:crypto";
+import {createHash, createHmac, randomBytes, timingSafeEqual} from "node:crypto";
 import {Effect, FileSystem} from "effect";
 import type {PageError} from "../capture/page-errors.ts";
 import type {CapAndCount} from "../evidence.ts";
@@ -57,6 +58,90 @@ export interface CaptureManifest {
 	readonly previewUrl: string;
 	readonly captures: readonly CaptureEntry[];
 }
+
+/** Written only by `review-ui render`; an arbitrary route-shaped manifest does not select preview. */
+export const PREVIEW_PROVENANCE_RECEIPT = "preview-provenance.json";
+
+export interface PreviewProvenance {
+	readonly schemaVersion: 1;
+	readonly source: "review-ui-render";
+	readonly repository: string;
+	readonly pr: number;
+	readonly head: string;
+	readonly app: string;
+	readonly previewUrl: string;
+	readonly manifestSha256: string;
+	readonly keyId: string;
+	readonly signature: string;
+}
+
+export type UnsignedPreviewProvenance = Omit<PreviewProvenance, "signature">;
+
+const previewProvenancePayload = (value: UnsignedPreviewProvenance): string =>
+	JSON.stringify(value);
+
+export const mintPreviewProvenance = (
+	fields: Omit<UnsignedPreviewProvenance, "schemaVersion" | "source" | "keyId">,
+): {readonly receipt: PreviewProvenance; readonly key: string} => {
+	const key = randomBytes(32).toString("hex");
+	const unsigned: UnsignedPreviewProvenance = {
+		schemaVersion: 1,
+		source: "review-ui-render",
+		...fields,
+		keyId: randomBytes(16).toString("hex"),
+	};
+	return {
+		receipt: {
+			...unsigned,
+			signature: createHmac("sha256", key).update(previewProvenancePayload(unsigned)).digest("hex"),
+		},
+		key,
+	};
+};
+
+export const previewProvenanceKeyPath = (tmpRoot: string, keyId: string): string =>
+	`${tmpRoot}/fabrika-review-ui-provenance/${keyId}.key`;
+
+export const verifyPreviewProvenance = (receipt: PreviewProvenance, key: string): boolean => {
+	const {signature, ...unsigned} = receipt;
+	const expected = createHmac("sha256", key).update(previewProvenancePayload(unsigned)).digest();
+	return (
+		/^[0-9a-f]{64}$/.test(signature) && timingSafeEqual(expected, Buffer.from(signature, "hex"))
+	);
+};
+
+export const parsePreviewProvenance = (text: string): PreviewProvenance | null => {
+	const value = parseJson(text);
+	if (
+		!isRecord(value) ||
+		value.schemaVersion !== 1 ||
+		value.source !== "review-ui-render" ||
+		typeof value.repository !== "string" ||
+		typeof value.pr !== "number" ||
+		typeof value.head !== "string" ||
+		typeof value.app !== "string" ||
+		typeof value.previewUrl !== "string" ||
+		typeof value.manifestSha256 !== "string" ||
+		typeof value.keyId !== "string" ||
+		!/^[0-9a-f]{32}$/.test(value.keyId) ||
+		typeof value.signature !== "string" ||
+		!/^[0-9a-f]{64}$/.test(value.signature)
+	) {
+		return null;
+	}
+	return {
+		schemaVersion: 1,
+		source: "review-ui-render",
+		repository: value.repository,
+		pr: value.pr,
+		head: value.head,
+		app: value.app,
+		previewUrl: value.previewUrl,
+		manifestSha256: value.manifestSha256,
+		keyId: value.keyId,
+		signature: value.signature,
+	};
+};
 
 /** A kebab-case set name: the grammar `--out` is held to, so a set name is a safe path segment. */
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

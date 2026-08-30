@@ -246,10 +246,10 @@ fabrika review-ui fetch <pr> --harness <declared-id> --out <kebab-set> [--repo <
 
 | Input | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `<pr>` | positive integer | yes | — | open pull request whose live full head the artifact must bind |
-| `--harness` | governed kebab-case id | yes | — | one id from the default branch's localhost declaration |
-| `--out` | kebab-case string | yes | — | capture-set key below reviewer-owned OS scratch |
-| `--repo` | `owner/name` | no | resolved | target repository |
+| `<pr>` | positive integer | yes | — | the pull-request number this verb acts on |
+| `--harness` | governed kebab-case id | yes | — | a localhost-only harness declared by the repository's governed authority |
+| `--out` | kebab-case string | yes | — | kebab-case reviewer-owned capture-set name |
+| `--repo` | `owner/name` | no | resolved | the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote) |
 
 There are no workflow, check, run, artifact, manifest, receipt, or local-path operands. Preview is the
 default path; this verb selects only a declared localhost exception.
@@ -257,13 +257,18 @@ default path; this verb selects only a declared localhost exception.
 **Output** — machine channel. One newline-terminated JSON object on complete success:
 
 ```
-{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"<reviewer scratch>/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0}}]}
+{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"<reviewer scratch>/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"<reviewer scratch>/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 Paths are outputs, never inputs. The operation reads the declaration from the repository default
 branch; resolves exactly one successful completed `pull_request_target` run with matching workflow,
 repository, PR association, and full live head; resolves exactly one successful named check and one
-artifact whose `expired` field is present, boolean, and false; rejects unsafe or duplicate zip
+artifact whose `expired` field is present, boolean, and false. GitHub's authoritative REST OpenAPI
+`Artifact` schema makes `expired` required,
+types it as boolean, and defines it as whether the artifact has expired
+([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
+[required list](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141602-L141612)).
+The consumer rejects unsafe or duplicate zip
 members; validates the positive manifest and every declared surface exactly once *before* any set
 comparison can collapse duplicates; rejects unreadable error coverage and bad dimensions or hashes;
 re-reads the live head; then materializes the captures and a consumer-authored receipt binding the
@@ -280,7 +285,7 @@ the caller can post the proven red render as FAIL.
 | `1` | invocation/flag parsing failed, or `<pr>` is not a positive pull-request number |
 | `4` | default-branch declaration, artifact manifest, producer binding, members, surface cardinality, or receipt materialization schema is malformed |
 | `7` | PR is proven absent or closed — zero scope |
-| `10` | PR number, `--harness`, or `--out` is off vocabulary |
+| `10` | `--harness` or `--out` is off vocabulary |
 | `11` | repo/default branch/declaration/run/check/artifact/download/scratch read is UNKNOWN; zero, ambiguous, pending, failed, cancelled, action-required, missing-expiry, expired, or otherwise untrusted producer evidence is unresolved |
 | `12` | live head moved before materialization |
 | `13` | the accepted, integrity-validated set was materialized and its manifest records an uncaught page error — proven red-render/FAIL ground, never CANT-SEE |
@@ -347,14 +352,14 @@ fabrika review-ui ci-produce <pr> --head <40-hex> --harness <id> --run-id <posit
 
 | Input | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `<pr>` | positive integer | yes | — | PR identity bound into the manifest |
-| `--head` | lowercase 40-hex string | yes | — | exact checked-out subject head |
-| `--harness` | governed kebab-case id | yes | — | declaration row to execute |
-| `--run-id` | positive integer | yes | — | Actions run identity bound into the manifest |
-| `--repository` | `owner/name` string | yes | — | repository identity bound into the manifest |
-| `--subject-root` | absolute path string | yes | — | exact-head subject input to the base-owned image recipe |
-| `--authority-root` | absolute path string | yes | — | trusted base checkout containing producer and declaration |
-| `--output-dir` | absolute path string | yes | — | trusted host output outside both checkouts |
+| `<pr>` | positive integer | yes | — | the pull-request number this verb acts on |
+| `--head` | lowercase 40-hex string | yes | — | the exact lowercase 40-character PR head checked out as the subject |
+| `--harness` | governed kebab-case id | yes | — | the localhost harness id from the trusted declaration |
+| `--run-id` | positive integer | yes | — | the positive GitHub Actions run id bound into the manifest |
+| `--repository` | `owner/name` string | yes | — | the owner/name repository identity bound into the manifest |
+| `--subject-root` | absolute path string | yes | — | the exact-head subject input to the trusted image recipe |
+| `--authority-root` | absolute path string | yes | — | the trusted base checkout containing the declaration and producer |
+| `--output-dir` | absolute path string | yes | — | the trusted host directory where captures and manifest are written |
 
 This is an internal workflow interface, not a reviewer import. Image construction pins pnpm 10.27.0
 and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user. The
@@ -367,9 +372,16 @@ The offline PR-controlled install and governed test run under a read-only root f
 `--cap-drop ALL`, `no-new-privileges`, `--network none`, and a disposable test workspace. That
 workspace is never served. A separate server workspace is freshly copied from the image's immutable
 exact-head source and installed offline with both execution-disabling flags before being mounted
-read-only into the server. Neither runtime receives Actions credentials, the authority checkout,
-Docker socket, or output-directory mount. The trusted host alone drives Playwright and writes
-captures and the manifest.
+read-only into the server, which also runs with `--network none` and publishes no host port. A
+base-owned capture sidecar runs with `--network container:<server>`, sharing only that isolated
+network namespace so its browser reaches the server's loopback without gaining external network.
+Docker documents that the `none` driver leaves only loopback
+([none driver](https://docs.docker.com/engine/network/drivers/none/)) and that container networking
+shares another container's networking stack
+([container networks](https://docs.docker.com/engine/network/#container-networks)). The PR server
+receives no Actions credentials, authority checkout, Docker socket, or output mount. The trusted
+sidecar receives the authority checkout read-only and the prepared capture output only; the host
+validates those captures and alone writes the manifest.
 
 **Output** — machine channel. On complete success, one newline-terminated version-1 CI manifest.
 There is no empty successful answer. The object binds the declaration and producer identity, then one
@@ -392,7 +404,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `1` | invocation/flag parsing failed, including a missing required input or invalid PR operand |
 | `4` | the governed declaration is malformed |
 | `10` | head, run id, repository, harness, non-absolute root operand, or output placement is off vocabulary |
-| `11` | declaration, fixture, output, image, workspace, server, port, capture, or manifest write is unreadable/UNKNOWN |
+| `11` | declaration, fixture, output, image, workspace, server, sidecar, capture, or manifest write is unreadable/UNKNOWN |
 | `12` | the subject checkout is not the named full head |
 | `13` | the governed browser journey command failed; no server, capture, manifest, or artifact is produced |
 | `15` | a captured PNG is invalid |
@@ -420,7 +432,8 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the isolated subject server could not start.` | `11` | refusal |
 | `review-ui ci-produce: Docker returned no subject container id.` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject server did not report readiness.` | `11` | refusal |
-| `review-ui ci-produce: the subject server port is unreadable.` | `11` | refusal |
+| `review-ui ci-produce: the trusted capture output could not be prepared (<reason>).` | `11` | refusal |
+| `review-ui ci-produce: the trusted isolated capture sidecar failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted localhost capture failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: <surface> is not a valid capture (<reason>).` | `15` | refusal |
 | `review-ui ci-produce: cannot write the capture manifest (<reason>).` | `11` | refusal |
@@ -671,12 +684,18 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    refusal: a verdict formed over a moved-past tree is re-reviewed, never re-bound.
 2. **Read the evidence set through its manifest** (`<set>/manifest.json`; a named set with no
    manifest or one that does not parse is `4`). Preview evidence must carry route-shaped surface ids
-   (`/...`). Any CI source or non-route surface is CI-shaped and must parse as the positive CI
-   manifest and carry the consumer receipt whose repository, PR, live full head, harness, run,
-   check, artifact and manifest hash agree. Post then rereads the default-branch declaration and
-   independently re-resolves the exact successful workflow/run/check/artifact tuple through GitHub;
-   copied or edited receipt ids refuse before upload. Thus a preview-shaped local manifest cannot
-   present a governed localhost surface to bypass provenance. A CI manifest carrying any uncaught
+   (`/...`), keep every capture inside its deterministic set directory, and carry the separate
+   `review-ui render` receipt binding repository, PR, head, app, preview URL, and manifest hash. The
+   receipt is HMAC-signed by a random capability key stored outside the evidence set in
+   reviewer-owned scratch, so importing or authoring set-local JSON cannot select the preview arm.
+   The receipt's app, URL, and head must still match the live preview announcement before posting. A
+   route-shaped local manifest without that producer provenance refuses on `4`. Any CI source must
+   parse as the positive CI manifest and carry the consumer receipt whose repository, PR, live full
+   head, harness, run, check, artifact and manifest hash agree. Post then rereads the default-branch
+   declaration and independently re-resolves the exact successful workflow/run/check/artifact tuple
+   through GitHub; copied or edited receipt ids refuse before upload. Thus neither a route-shaped
+   arbitrary local manifest nor a preview-shaped manifest naming a governed localhost surface can
+   bypass provenance. A CI manifest carrying any uncaught
    `pageerror` cannot be posted with PASS (`13`); the materialized set is FAIL ground. **Refuse on
    `12` when the set's recorded head is not `--sha`**:
    stale captures under a new head are re-rendered or re-fetched, never rebound.
@@ -736,6 +755,10 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: --carrier advisory is a PASS path only — post the FAIL marker instead.` | 10 | refusal |
 | `review-ui post: cannot read <what> for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
 | `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run the sanctioned producer (review-ui render or review-ui fetch).` | 4 | refusal |
+| `review-ui post: preview evidence set "<set>" has no review-ui render provenance receipt — route-shaped local captures are not evidence.` | 4 | refusal |
+| `review-ui post: preview evidence set "<set>" does not match its review-ui render provenance receipt.` | 4 | refusal |
+| `review-ui post: preview capture "<surface>" resolves outside its review-ui render set.` | 4 | refusal |
+| `review-ui post: preview evidence set "<set>" no longer matches the live preview announcement.` | 12 | refusal |
 | `review-ui post: CI evidence set "<set>" has no consumer-validated provenance receipt...` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" does not match its consumer-validated provenance receipt.` | 4 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the default branch is unreadable (<reason>).` | 11 | refusal |

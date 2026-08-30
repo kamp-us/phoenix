@@ -29,7 +29,15 @@ import {
 	type CiCaptureManifest,
 	declarationDigest,
 } from "./localhost-evidence.ts";
-import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
+import {
+	type CaptureManifest,
+	mintPreviewProvenance,
+	PREVIEW_PROVENANCE_RECEIPT,
+	parseManifest,
+	previewProvenanceKeyPath,
+	serializeManifest,
+	sha256Hex,
+} from "./manifest.ts";
 import {runPost, type UploadLeg} from "./post-verb.ts";
 import {classifyProbe} from "./upload-leg.ts";
 
@@ -38,6 +46,7 @@ const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 const SET_DIR = "/tmp/fabrika-review-ui/4321-03135b91/judged";
 const CAPTURE_PATH = `${SET_DIR}/pano.png`;
 const MANIFEST_PATH = `${SET_DIR}/manifest.json`;
+const PREVIEW_RECEIPT_PATH = `${SET_DIR}/${PREVIEW_PROVENANCE_RECEIPT}`;
 const CI_CAPTURE_PATH = `${SET_DIR}/captures/desktop.png`;
 const CI_RECEIPT_PATH = `${SET_DIR}/${CI_PROVENANCE_RECEIPT}`;
 const HARNESS = "/repo/design-harness.json";
@@ -84,6 +93,23 @@ const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => 
 	],
 	...overrides,
 });
+
+const previewProvenance = (document: string) => {
+	const parsed = JSON.parse(document) as CaptureManifest;
+	const minted = mintPreviewProvenance({
+		repository: "o/r",
+		pr: parsed.pr,
+		head: parsed.head,
+		app: "web",
+		previewUrl: parsed.previewUrl,
+		manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+	});
+	return {
+		receipt: JSON.stringify(minted.receipt),
+		keyPath: previewProvenanceKeyPath("/tmp", minted.receipt.keyId),
+		key: minted.key,
+	};
+};
 
 const ciManifest = (overrides: Partial<CiCaptureManifest> = {}): CiCaptureManifest => ({
 	schemaVersion: 1,
@@ -146,11 +172,22 @@ const fs = (shape: FsShape): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
 		Path.layer,
 	);
 
-const world = (overrides: FsShape = {}): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
-	fs({
-		strings: {[MANIFEST_PATH]: serializeManifest(manifest()), ...overrides.strings},
+const world = (overrides: FsShape = {}): Layer.Layer<FileSystem.FileSystem | Path.Path> => {
+	const document = overrides.strings?.[MANIFEST_PATH] ?? serializeManifest(manifest());
+	const provenance =
+		parseManifest(document)._tag === "Manifest"
+			? previewProvenance(document)
+			: {receipt: "{}", keyPath: "/absent", key: ""};
+	return fs({
+		strings: {
+			[MANIFEST_PATH]: document,
+			[PREVIEW_RECEIPT_PATH]: provenance.receipt,
+			[provenance.keyPath]: provenance.key,
+			...overrides.strings,
+		},
 		bytes: {[CAPTURE_PATH]: BYTES, ...overrides.bytes},
 	});
+};
 
 const PULL = /GET .*\/repos\/o\/r\/pulls\/4321\b/;
 const REPO = /GET .*\/repos\/o\/r$/;
@@ -182,7 +219,15 @@ const comments = (
 ): HttpReply => ({
 	status: 200,
 	body: JSON.stringify(
-		rows.map((row) => ({
+		[
+			{
+				id: 7,
+				body: `<!-- preview-deploy:web -->\n- **web** — Stage \`pr-4321\` → https://pr-4321.example.test <sub>(${HEAD})</sub>`,
+				author: "kampus-bot",
+				updatedAt: "2026-08-07T00:00:00Z",
+			},
+			...rows,
+		].map((row) => ({
 			id: row.id,
 			user: {login: row.author ?? "kampus-bot"},
 			created_at: "2026-08-08T00:00:00Z",
@@ -419,6 +464,42 @@ describe("runPost", () => {
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
+	it("rejects an arbitrary route-shaped manifest that carries no render capability", async () => {
+		const document = serializeManifest(manifest());
+		const forged = previewProvenance(document);
+		const layer = fs({
+			strings: {
+				[MANIFEST_PATH]: document,
+				[PREVIEW_RECEIPT_PATH]: forged.receipt,
+			},
+			bytes: {[CAPTURE_PATH]: BYTES},
+		});
+		const {outcome, requests} = await run(happy(), {}, layer);
+		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+		expect(outcome.stderr.join("\n")).toContain("does not match its review-ui render provenance");
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("rejects a preview manifest whose capture path escapes the render set", async () => {
+		const outside = manifest({
+			captures: [{...manifest().captures[0]!, path: "/tmp/arbitrary.png"}],
+		});
+		const document = serializeManifest(outside);
+		const provenance = previewProvenance(document);
+		const layer = fs({
+			strings: {
+				[MANIFEST_PATH]: document,
+				[PREVIEW_RECEIPT_PATH]: provenance.receipt,
+				[provenance.keyPath]: provenance.key,
+			},
+			bytes: {"/tmp/arbitrary.png": BYTES},
+		});
+		const {outcome, requests} = await run(happy(), {}, layer);
+		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+		expect(outcome.stderr.join("\n")).toContain("outside its review-ui render set");
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
 	it("rejects a preview-shaped local manifest for a CI-shaped surface without provenance", async () => {
 		const preview = manifest();
 		const local = manifest({
@@ -488,10 +569,18 @@ describe("runPost", () => {
 	});
 
 	it("keeps an unreadable capture UNKNOWN (11) rather than calling it invalid", async () => {
+		const document = serializeManifest(manifest());
+		const provenance = previewProvenance(document);
 		const {outcome} = await run(
 			happy(),
 			{},
-			fs({strings: {[MANIFEST_PATH]: serializeManifest(manifest())}}),
+			fs({
+				strings: {
+					[MANIFEST_PATH]: document,
+					[PREVIEW_RECEIPT_PATH]: provenance.receipt,
+					[provenance.keyPath]: provenance.key,
+				},
+			}),
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});

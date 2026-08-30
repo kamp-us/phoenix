@@ -1,12 +1,13 @@
-import {mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
+import {chmod, mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {isAbsolute, join, resolve, sep} from "node:path";
-import {Effect} from "effect";
+import {Effect, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CapturedSurface, captureShots} from "../capture/capture.ts";
 import type {Shot} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
 import {execRecord} from "../io/exec.ts";
+import {isRecord, parseJson} from "../io/json.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	INVALID_CAPTURE,
@@ -28,6 +29,8 @@ import {PAGE_ERROR_CAP, sha256Hex} from "./manifest.ts";
 const VERB = "review-ui ci-produce";
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const SUBJECT_DOCKERFILE = ".github/review-ui-localhost-subject.Dockerfile";
+const CAPTURE_SIDECAR = "/authority/packages/fabrika-cli/src/review-ui/ci-capture-sidecar.ts";
+const CAPTURE_RESULT = "capture-result.json";
 
 export const isolatedEnvironment = (
 	env: Readonly<Record<string, string | undefined>>,
@@ -58,6 +61,7 @@ export interface CiProduceOptions {
 	readonly outputDir: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly capture?: typeof captureLocalhost;
+	readonly readSidecar?: typeof readSidecarCaptures;
 }
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes).trim();
@@ -126,7 +130,6 @@ export const subjectServerContainerArgs = (
 	name: string,
 	volume: string,
 	fixtureRoot: string,
-	containerPort: number,
 	command: readonly string[],
 ): readonly string[] => [
 	"run",
@@ -134,6 +137,8 @@ export const subjectServerContainerArgs = (
 	"--rm",
 	"--name",
 	name,
+	"--network",
+	"none",
 	...containerGuardArgs(),
 	"--mount",
 	`type=volume,src=${volume},dst=/subject,readonly`,
@@ -143,10 +148,36 @@ export const subjectServerContainerArgs = (
 	`type=bind,src=${fixtureRoot},dst=/review-ui-fixture,readonly`,
 	"--env",
 	"TUVAL_SESSION_ROOT=/review-ui-fixture/sessions",
-	"--publish",
-	`127.0.0.1::${containerPort}`,
 	image,
 	...command,
+];
+
+export const subjectCaptureContainerArgs = (
+	image: string,
+	server: string,
+	authorityRoot: string,
+	outputDir: string,
+	containerPort: number,
+	harness: string,
+): readonly string[] => [
+	"run",
+	"--rm",
+	"--network",
+	`container:${server}`,
+	...containerGuardArgs(),
+	"--mount",
+	`type=bind,src=${authorityRoot},dst=/authority,readonly`,
+	"--mount",
+	`type=bind,src=${outputDir},dst=/capture-output`,
+	"--workdir",
+	"/authority",
+	"--entrypoint",
+	"node",
+	image,
+	CAPTURE_SIDECAR,
+	String(containerPort),
+	"/capture-output",
+	harness,
 ];
 
 const ran = (
@@ -196,7 +227,7 @@ export const boundedBrowserErrors = (
 	};
 };
 
-const captureLocalhost = (
+export const captureLocalhost = (
 	url: string,
 	outputDir: string,
 	captureReadySelector: string,
@@ -219,6 +250,48 @@ const captureLocalhost = (
 		waitUntil: "load",
 		readySelector: captureReadySelector,
 	}).pipe(Effect.mapError((cause) => cause.message));
+};
+
+export const readSidecarCaptures = async (
+	outputDir: string,
+): Promise<readonly CapturedSurface[]> => {
+	const resultPath = join(outputDir, CAPTURE_RESULT);
+	const resultDocument = await readFile(resultPath, "utf8");
+	await rm(resultPath, {force: true});
+	const value = parseJson(resultDocument);
+	if (!Array.isArray(value) || value.length === 0) {
+		throw new Error("the capture sidecar returned no capture rows");
+	}
+	const captures: CapturedSurface[] = [];
+	for (const row of value) {
+		if (
+			!isRecord(row) ||
+			typeof row.surface !== "string" ||
+			typeof row.route !== "string" ||
+			(row.state !== null && typeof row.state !== "string") ||
+			typeof row.fileName !== "string" ||
+			!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.png$/.test(row.fileName) ||
+			!Array.isArray(row.pageErrors) ||
+			!row.pageErrors.every(
+				(error) =>
+					isRecord(error) && typeof error.kind === "string" && typeof error.text === "string",
+			)
+		) {
+			throw new Error("the capture sidecar returned a malformed capture row");
+		}
+		const localPath = join(outputDir, "captures", row.fileName);
+		captures.push({
+			surface: row.surface,
+			route: row.route,
+			state: row.state,
+			fileName: row.fileName,
+			localPath,
+			pngBytes: await readFile(localPath),
+			pageErrors: row.pageErrors,
+			...(typeof row.status === "number" ? {status: row.status} : {}),
+		});
+	}
+	return captures;
 };
 
 export const runCiProduce = (
@@ -415,7 +488,6 @@ export const runCiProduce = (
 					container,
 					serverVolume,
 					fixtureRoot,
-					harness.containerPort,
 					harness.serverCommand,
 				),
 				options.authorityRoot,
@@ -453,27 +525,61 @@ export const runCiProduce = (
 					`${VERB}: the isolated subject server did not report readiness.`,
 				);
 			}
-			const portRead = yield* ran(
-				"docker",
-				["port", containerId, `${harness.containerPort}/tcp`],
-				options.authorityRoot,
-				env,
-				10,
-			);
-			const portMatch =
-				portRead._tag === "Ran" && portRead.exitCode === 0
-					? /127\.0\.0\.1:(\d+)/.exec(decode(portRead.stdout))
-					: null;
-			if (portMatch?.[1] === undefined) {
-				return refuse(PRECONDITION_UNKNOWN, `${VERB}: the subject server port is unreadable.`);
+			let captures: Result.Result<readonly CapturedSurface[], string>;
+			if (options.capture !== undefined) {
+				captures = yield* options
+					.capture(
+						`http://127.0.0.1:${harness.containerPort}`,
+						options.outputDir,
+						harness.captureReadySelector,
+						harness.surfaces,
+					)
+					.pipe(Effect.result);
+			} else {
+				const outputReady = yield* Effect.tryPromise({
+					try: async () => {
+						await mkdir(join(options.outputDir, "captures"), {recursive: true});
+						await chmod(options.outputDir, 0o777);
+						await chmod(join(options.outputDir, "captures"), 0o777);
+					},
+					catch: (cause) => String(cause),
+				}).pipe(Effect.result);
+				if (Result.isFailure(outputReady)) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the trusted capture output could not be prepared (${outputReady.failure}).`,
+					);
+				}
+				const sidecar = yield* ran(
+					"docker",
+					subjectCaptureContainerArgs(
+						image,
+						containerId,
+						options.authorityRoot,
+						options.outputDir,
+						harness.containerPort,
+						harness.id,
+					),
+					options.authorityRoot,
+					env,
+					300,
+				);
+				if (
+					sidecar._tag !== "Ran" ||
+					sidecar.exitCode !== 0 ||
+					sidecar.timedOut ||
+					sidecar.truncated
+				) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the trusted isolated capture sidecar failed (${sidecar._tag === "Ran" ? decode(sidecar.stderr) || `exit ${sidecar.exitCode}` : sidecar.reason}).`,
+					);
+				}
+				captures = yield* Effect.tryPromise({
+					try: () => (options.readSidecar ?? readSidecarCaptures)(options.outputDir),
+					catch: (cause) => String(cause),
+				}).pipe(Effect.result);
 			}
-
-			const captures = yield* (options.capture ?? captureLocalhost)(
-				`http://127.0.0.1:${portMatch[1]}`,
-				options.outputDir,
-				harness.captureReadySelector,
-				harness.surfaces,
-			).pipe(Effect.result);
 			if (captures._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,

@@ -190,7 +190,7 @@ its own interim rider out: a flag-off state is now a state you render, not one y
 **Two eyes, one record:** when this session's tool surface carries the `claude-in-chrome` tools you
 may additionally inspect the preview live — navigate, probe states, look closer. Detection is tool
 presence, nothing else; absent Chrome you use the captures silently. Chrome pixels never substitute
-for `review-ui render` captures: the verb's validation is what makes a capture a record.
+for `review-ui render` captures: the verb's manifest plus producer receipt is what makes a capture a record.
 
 ## 4 — Judge pairwise against the law, row by row
 

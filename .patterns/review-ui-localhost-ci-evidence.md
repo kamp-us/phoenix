@@ -32,12 +32,17 @@ disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
 `no-new-privileges`, and `--network none`. That workspace is never served. A separate server
 workspace is freshly copied from the image's immutable exact-head source and installed offline with
 both execution-disabling flags before it is mounted read-only into the server under the same
-restrictions. The server receives only the read-only fixture. Neither container receives Actions
-credentials, the authority checkout, Docker socket, or artifact-output mount. Docker documents those
-root, capability, network, security, and mount controls in the
-[`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/) and
-[bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/). The trusted host drives
-Playwright and alone writes the captures and manifest.
+restrictions, including `--network none`; the server publishes no host port and receives only the
+read-only fixture. Docker's `none` driver leaves only loopback
+([none driver](https://docs.docker.com/engine/network/drivers/none/)). A base-owned capture sidecar
+uses `--network container:<server>` to share that isolated network stack
+([container networks](https://docs.docker.com/engine/network/#container-networks)), reaching the
+server on loopback without external network. The PR server receives no Actions credentials,
+authority checkout, Docker socket, or artifact-output mount. The trusted sidecar receives the
+authority checkout read-only and prepared output mount only; the host validates its captures and
+alone writes the manifest. Docker documents the remaining root, capability, security, and mount
+controls in the [`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/)
+and [bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/).
 
 ## Producer record
 
@@ -56,7 +61,12 @@ capture, manifest creation, and workflow artifact upload.
 
 `review-ui fetch` requires one successful completed run whose workflow, event, repository, PR
 association, and exact head match the declaration. It requires the named successful check and one
-artifact whose `expired` field is present, boolean, and false. Member names are checked for traversal
+artifact whose `expired` field is present, boolean, and false. GitHub's authoritative REST OpenAPI
+`Artifact` schema requires `expired`, types it as boolean, and defines it as whether the artifact has
+expired
+([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
+[required list](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141602-L141612)).
+Member names are checked for traversal
 and duplicates before extraction. Capture surfaces are checked for duplicates before any `Set`
 comparison, then matched exactly against the declaration.
 
@@ -67,10 +77,15 @@ its member allowlist excludes it. An accepted artifact containing an uncaught pa
 materialized, then `fetch` exits `13`: this is a proven red render that must be posted as FAIL, not an
 unresolved CANT-SEE.
 
-`review-ui post` accepts route-shaped preview sets from `review-ui render`. A CI source or non-route
-surface is CI-shaped and must carry the positive CI manifest and matching consumer receipt, so a
-preview-shaped local manifest cannot present a governed localhost surface to bypass provenance. The
-verb revalidates every capture and the live head, reads the governed declaration again, re-resolves
+`review-ui post` accepts route-shaped preview sets only with the separate `review-ui render`
+provenance receipt binding repository, PR, head, app, preview URL, and manifest hash. The receipt is
+HMAC-signed by a random capability key held outside the set in reviewer-owned scratch, so set-local
+JSON cannot nominate preview provenance. Every preview capture must remain inside that deterministic
+set directory, and the receipt must still match the
+live preview announcement before posting. Route shape alone does not select this arm. A CI source
+must carry the positive CI manifest and matching consumer receipt, so neither an arbitrary
+route-shaped manifest nor a preview-shaped local manifest can bypass provenance. The verb revalidates
+every capture and the live head, reads the governed declaration again, re-resolves
 the exact run/check/artifact ids through GitHub, verified-uploads the pixels, records the workflow,
 event, run, check and artifact provenance plus browser-error coverage, and refuses a PASS over any
 recorded uncaught page error before it emits the ordinary

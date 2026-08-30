@@ -5,7 +5,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {CapturedSurface} from "../capture/capture.ts";
 import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
-import {runCiProduce} from "./ci-produce-verb.ts";
+import {readSidecarCaptures, runCiProduce} from "./ci-produce-verb.ts";
 import {LOCALHOST_DECLARATIONS_PATH, parseCiCaptureManifest} from "./localhost-evidence.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -60,6 +60,29 @@ const capture = (_url: string, outputDir: string) =>
 	});
 
 describe("trusted localhost producer flow", () => {
+	it("consumes the sidecar control record without leaving it in the artifact", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ci-capture-sidecar-"));
+		await mkdir(join(root, "captures"), {recursive: true});
+		await writeFile(join(root, "captures/desktop.png"), PNG);
+		await writeFile(
+			join(root, "capture-result.json"),
+			JSON.stringify([
+				{
+					surface: "desktop",
+					route: "/",
+					state: "desktop",
+					fileName: "desktop.png",
+					pageErrors: [],
+				},
+			]),
+		);
+		const captures = await readSidecarCaptures(root);
+		expect(captures).toHaveLength(1);
+		expect(Array.from(captures[0]?.pngBytes ?? [])).toEqual(Array.from(PNG));
+		await expect(readFile(join(root, "capture-result.json"), "utf8")).rejects.toThrow();
+		await rm(root, {recursive: true, force: true});
+	});
+
 	it("refuses a non-positive PR and relative root operands at the verb seam", async () => {
 		const seams = fakeSeams([]);
 		const base = {
@@ -147,7 +170,7 @@ describe("trusted localhost producer flow", () => {
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ready")],
-			[/^docker port container-id 4173\/tcp$/, okOut("127.0.0.1:49152")],
+			[/^docker run --rm --network container:container-id /, okOut("")],
 			[/^docker rm /, okOut("")],
 			[/^docker volume rm .*test-workspace$/, okOut("")],
 			[/^docker volume rm .*server-workspace$/, okOut("")],
@@ -166,7 +189,7 @@ describe("trusted localhost producer flow", () => {
 					authorityRoot,
 					outputDir,
 					env: {PATH: "/bin", GITHUB_TOKEN: "not-for-subject"},
-					capture,
+					readSidecar: (directory) => Effect.runPromise(capture("", directory)),
 				}),
 				seams.layer,
 			),
@@ -194,6 +217,9 @@ describe("trusted localhost producer flow", () => {
 				call.startsWith("docker run --rm --network none") && call.includes("server-workspace"),
 		);
 		const server = seams.calls.find((call) => call.startsWith("docker run --detach"));
+		const sidecar = seams.calls.find((call) =>
+			call.startsWith("docker run --rm --network container:container-id"),
+		);
 		expect(subjectRun).toContain("--read-only --cap-drop ALL");
 		expect(subjectRun).toContain("no-new-privileges");
 		expect(subjectRun).toContain("pnpm install --offline --frozen-lockfile");
@@ -201,8 +227,13 @@ describe("trusted localhost producer flow", () => {
 		expect(serverPreparation).toContain("cp -a /subject-source/. /subject/");
 		expect(serverPreparation).toContain("--ignore-scripts --ignore-pnpmfile");
 		expect(serverPreparation).not.toContain("test-workspace");
+		expect(server).toContain("--network none");
+		expect(server).not.toContain("--publish");
 		expect(server).toContain("server-workspace,dst=/subject,readonly");
 		expect(server).not.toContain("test-workspace");
+		expect(sidecar).toContain("/authority,dst=/authority,readonly");
+		expect(sidecar).toContain("/output,dst=/capture-output");
+		expect(sidecar).toContain("ci-capture-sidecar.ts 4173 /capture-output tuval");
 		await rm(root, {recursive: true, force: true});
 	});
 });
