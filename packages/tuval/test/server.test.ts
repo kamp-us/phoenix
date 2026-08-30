@@ -648,7 +648,8 @@ describe("Tuval local server", () => {
 			"clears proven-missing selection intent durably",
 			() =>
 				Effect.gen(function* () {
-					const {asset} = yield* fixture();
+					const path = yield* Path.Path;
+					const {root, asset} = yield* fixture();
 					const unavailable: ByteTransportFactory = () => Promise.reject(new Error("offline"));
 					const missingStore = makeMemoryWorkspaceStateStore({
 						version: 1,
@@ -659,6 +660,7 @@ describe("Tuval local server", () => {
 					});
 					const missing = yield* startTuval({
 						staticAsset: asset,
+						sessionRoots: [path.join(root, "empty-sessions")],
 						protocolTransport: makeDiscoveryTransport([]),
 						liveSessionTransport: unavailable,
 						reconnect: {retries: 0, rearmDelayMs: 10_000},

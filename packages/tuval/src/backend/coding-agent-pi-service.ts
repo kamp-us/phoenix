@@ -1,7 +1,6 @@
 import {randomUUID} from "node:crypto";
-import type {Dirent} from "node:fs";
-import {readdir, stat} from "node:fs/promises";
-import {join} from "node:path";
+import {stat} from "node:fs/promises";
+import {basename} from "node:path";
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {
 	type AgentSession,
@@ -26,6 +25,7 @@ import {
 	type TranscriptItem,
 } from "@earendil-works/pi-protocol";
 import {sessionIdFromFilename} from "./pi-home.js";
+import {indexSessionFiles} from "./session-file-index.js";
 
 interface CodingAgentPiServiceOptions {
 	readonly agentDir?: string;
@@ -297,62 +297,40 @@ const modelMetadataOf = (model: CodingModel, authenticated: boolean): ModelMetad
 	authenticated,
 });
 
-const metadataForRoot = async (root: string): Promise<Array<SessionMetadata & {path: string}>> => {
-	let entries: Array<Dirent>;
-	try {
-		entries = await readdir(root, {withFileTypes: true});
-	} catch {
-		return [];
+type IndexedSessionMetadata = SessionMetadata & {readonly path: string};
+
+const metadataForRoot = async (root: string): Promise<Array<IndexedSessionMetadata>> => {
+	const indexed = await indexSessionFiles(root);
+	const sessions: Array<IndexedSessionMetadata> = [];
+	for (const path of indexed.files) {
+		try {
+			const manager = SessionManager.open(path);
+			const header = manager.getHeader();
+			if (header === null) continue;
+			const id =
+				sessionIdFromFilename(path) ?? (basename(path) === "session.jsonl" ? header.id : undefined);
+			if (id === undefined || id.length === 0) continue;
+			const info = await stat(path);
+			const headerTime = Date.parse(header.timestamp);
+			const parentSessionId =
+				header.parentSession === undefined
+					? undefined
+					: sessionIdFromFilename(header.parentSession);
+			const sessionName = manager.getSessionName();
+			sessions.push({
+				id,
+				createdAt: Number.isFinite(headerTime)
+					? Math.floor(headerTime)
+					: Math.floor(info.birthtimeMs),
+				updatedAt: Math.floor(info.mtimeMs),
+				cwd: header.cwd,
+				...(sessionName === undefined ? {} : {sessionName}),
+				...(parentSessionId === undefined ? {} : {parentSessionId}),
+				path,
+			});
+		} catch {}
 	}
-	const files = entries.flatMap((entry) => {
-		if (entry.isFile() && entry.name.endsWith(".jsonl")) return [join(root, entry.name)];
-		if (!entry.isDirectory()) return [];
-		return [join(root, entry.name)];
-	});
-	const nested = await Promise.all(
-		files.map(async (candidate) => {
-			if (candidate.endsWith(".jsonl")) return [candidate];
-			try {
-				return (await readdir(candidate, {withFileTypes: true})).flatMap((entry) =>
-					entry.isFile() && entry.name.endsWith(".jsonl") ? [join(candidate, entry.name)] : [],
-				);
-			} catch {
-				return [];
-			}
-		}),
-	);
-	const sessions = await Promise.all(
-		nested.flat().map(async (path): Promise<(SessionMetadata & {path: string}) | undefined> => {
-			try {
-				const manager = SessionManager.open(path);
-				const header = manager.getHeader();
-				if (header === null) return undefined;
-				const info = await stat(path);
-				const headerTime = Date.parse(header.timestamp);
-				const parentSessionId =
-					header.parentSession === undefined
-						? undefined
-						: sessionIdFromFilename(header.parentSession);
-				const sessionName = manager.getSessionName();
-				return {
-					id: header.id,
-					createdAt: Number.isFinite(headerTime)
-						? Math.floor(headerTime)
-						: Math.floor(info.birthtimeMs),
-					updatedAt: Math.floor(info.mtimeMs),
-					cwd: header.cwd,
-					...(sessionName === undefined ? {} : {sessionName}),
-					...(parentSessionId === undefined ? {} : {parentSessionId}),
-					path,
-				};
-			} catch {
-				return undefined;
-			}
-		}),
-	);
-	return sessions.filter(
-		(session): session is SessionMetadata & {path: string} => session !== undefined,
-	);
+	return sessions;
 };
 
 const withDeadline = async <A>(
@@ -391,11 +369,21 @@ export const makeCodingAgentPiTransport = (
 	const owners = new Map<string, string>();
 	let serverRevision = 0;
 
-	const listMetadata = async (): Promise<Array<SessionMetadata & {path: string}>> => {
+	const listMetadata = async (): Promise<Array<IndexedSessionMetadata>> => {
 		const listed = (await Promise.all(roots.map(metadataForRoot))).flat();
-		return [...new Map(listed.map((session) => [session.id, session])).values()].sort(
-			(left, right) => left.id.localeCompare(right.id),
-		);
+		const byId = new Map<string, IndexedSessionMetadata>();
+		for (const session of listed) {
+			const existing = byId.get(session.id);
+			if (
+				existing === undefined ||
+				(session.updatedAt ?? 0) > (existing.updatedAt ?? 0) ||
+				((session.updatedAt ?? 0) === (existing.updatedAt ?? 0) &&
+					session.path.localeCompare(existing.path) < 0)
+			) {
+				byId.set(session.id, session);
+			}
+		}
+		return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
 	};
 
 	return (handlers) => {

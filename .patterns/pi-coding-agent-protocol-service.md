@@ -21,6 +21,16 @@ Prompt, steer, abort, model, and thinking commands delegate to that session. A p
 for pi's preflight acceptance, not for the whole model turn; subsequent authoritative snapshots carry
 the stream and settled transcript.
 
+## Session file index
+
+Discovery and the production protocol service consume the same `indexSessionFiles` result. The index
+walks nested project, fork, and subagent directories recursively, while canonical-root containment,
+no-symlink traversal, a depth limit, and an entry limit keep the walk bounded. Standard timestamped
+files keep their filename session id; a generic subagent `session.jsonl` uses its validated header id.
+When the same id appears more than once, protocol metadata chooses the newest file and breaks an equal
+mtime deterministically by path. A canvas node must therefore be selected from the same file set the
+attach and cold-restoration path can open.
+
 ## Cancellation and deadlines
 
 Every transport operation has a deadline. The Fate request's `AbortSignal` also reaches PiClient

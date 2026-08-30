@@ -3,6 +3,7 @@ import type {SessionMetadata} from "@earendil-works/pi-protocol";
 import {Effect, FileSystem, Option, Path, Result, Schema} from "effect";
 import type {DiscoveredSession, DiscoveryProblem} from "../shared/discovery.js";
 import {sessionIdentity} from "../shared/discovery.js";
+import {indexSessionFiles} from "./session-file-index.js";
 
 interface SessionHeader {
 	readonly type: "session";
@@ -51,35 +52,12 @@ const problem = (source: string, error: unknown): DiscoveryProblem => ({
 	message: messageOf(error),
 });
 
-const sessionFilesIn = Effect.fn("PiHome.sessionFilesIn")(function* (root: string) {
-	const fs = yield* FileSystem.FileSystem;
-	const path = yield* Path.Path;
-	const entries = yield* fs.readDirectory(root);
-	const files: Array<string> = [];
-	for (const name of entries) {
-		const entryPath = path.join(root, name);
-		if (yield* Effect.isSuccess(fs.readLink(entryPath))) continue;
-		const info = yield* Effect.result(fs.stat(entryPath));
-		if (Result.isSuccess(info) && info.success.type === "File" && name.endsWith(".jsonl")) {
-			files.push(entryPath);
-			continue;
-		}
-		if (Result.isSuccess(info) && info.success.type !== "Directory") continue;
-		const children = yield* Effect.result(fs.readDirectory(entryPath));
-		if (Result.isFailure(children)) {
-			files.push(entryPath);
-			continue;
-		}
-		for (const child of children.success) {
-			if (!child.endsWith(".jsonl")) continue;
-			const childPath = path.join(entryPath, child);
-			if (yield* Effect.isSuccess(fs.readLink(childPath))) continue;
-			const childInfo = yield* Effect.result(fs.stat(childPath));
-			if (Result.isFailure(childInfo) || childInfo.success.type === "File") files.push(childPath);
-		}
-	}
-	return files;
-});
+const sessionFilesIn = Effect.fn("PiHome.sessionFilesIn")((root: string) =>
+	Effect.tryPromise({
+		try: () => indexSessionFiles(root),
+		catch: (error) => new PiHomeReadError({message: messageOf(error)}),
+	}),
+);
 
 const readFirstLine = Effect.fn("PiHome.readFirstLine")(function* (sessionPath: string) {
 	const fs = yield* FileSystem.FileSystem;
@@ -97,11 +75,6 @@ const readFirstLine = Effect.fn("PiHome.readFirstLine")(function* (sessionPath: 
 const readSession = Effect.fn("PiHome.readSession")(function* (sessionPath: string) {
 	const fs = yield* FileSystem.FileSystem;
 	const filenameId = sessionIdFromFilename(sessionPath);
-	if (filenameId === undefined || filenameId.length === 0) {
-		return yield* new PiHomeReadError({
-			message: "session filename does not end in _<session-id>.jsonl",
-		});
-	}
 	const firstLine = yield* readFirstLine(sessionPath);
 	const parsed = yield* Effect.try({
 		try: () => JSON.parse(firstLine) as unknown,
@@ -109,6 +82,13 @@ const readSession = Effect.fn("PiHome.readSession")(function* (sessionPath: stri
 	});
 	if (!isHeader(parsed)) {
 		return yield* new PiHomeReadError({message: "session header is missing type, id, or cwd"});
+	}
+	const filename = sessionPath.split(/[\\/]/).at(-1);
+	const sessionId = filenameId ?? (filename === "session.jsonl" ? parsed.id : undefined);
+	if (sessionId === undefined || sessionId.length === 0) {
+		return yield* new PiHomeReadError({
+			message: "session filename does not end in _<session-id>.jsonl",
+		});
 	}
 	const fileInfo = yield* fs.stat(sessionPath);
 	const headerTime = parsed.timestamp === undefined ? Number.NaN : Date.parse(parsed.timestamp);
@@ -119,8 +99,8 @@ const readSession = Effect.fn("PiHome.readSession")(function* (sessionPath: stri
 		parsed.parentSessionId ??
 		(parsed.parentSession === undefined ? undefined : sessionIdFromFilename(parsed.parentSession));
 	return {
-		identity: sessionIdentity(filenameId),
-		piSessionId: filenameId,
+		identity: sessionIdentity(sessionId),
+		piSessionId: sessionId,
 		createdAt: Math.floor(createdAt),
 		updatedAt: Math.floor(mtime),
 		cwd: parsed.cwd,
@@ -149,18 +129,30 @@ export const scanPiHomes = Effect.fn("PiHome.scan")(function* (roots: ReadonlyAr
 	const sessions: Array<DiscoveredSession> = [];
 	const problems: Array<DiscoveryProblem> = [];
 	for (const root of roots) {
-		const files = yield* Effect.result(sessionFilesIn(root));
-		if (Result.isFailure(files)) {
-			if (files.failure.reason._tag !== "NotFound") problems.push(problem(root, files.failure));
+		const indexed = yield* Effect.result(sessionFilesIn(root));
+		if (Result.isFailure(indexed)) {
+			problems.push(problem(root, indexed.failure));
 			continue;
 		}
-		for (const file of files.success) {
+		problems.push(...indexed.success.problems);
+		for (const file of indexed.success.files) {
 			const session = yield* Effect.result(readSession(file));
 			if (Result.isFailure(session)) problems.push(problem(file, session.failure));
 			else sessions.push(session.success);
 		}
 	}
-	const byIdentity = new Map(sessions.map((session) => [session.identity, session]));
+	const byIdentity = new Map<DiscoveredSession["identity"], DiscoveredSession>();
+	for (const session of sessions) {
+		const existing = byIdentity.get(session.identity);
+		if (
+			existing === undefined ||
+			session.updatedAt > existing.updatedAt ||
+			(session.updatedAt === existing.updatedAt &&
+				session.sourceFile.localeCompare(existing.sourceFile) < 0)
+		) {
+			byIdentity.set(session.identity, session);
+		}
+	}
 	return {
 		sessions: [...byIdentity.values()].sort((left, right) =>
 			left.identity.localeCompare(right.identity),

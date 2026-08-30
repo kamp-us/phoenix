@@ -47,6 +47,7 @@ const stopServer = async (child: ChildProcess | undefined) => {
 };
 
 const writeSession = async (directory: string, id: string, cwd: string, parentSession?: string) => {
+	await mkdir(directory, {recursive: true});
 	const path = join(directory, `2026-08-29T10-00-00-000Z_${id}.jsonl`);
 	const timestamp = "2026-08-29T10:00:00.000Z";
 	const entries = [
@@ -109,7 +110,12 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 	await mkdir(sessions, {recursive: true});
 	await mkdir(stateDirectory, {recursive: true});
 	const parentPath = await writeSession(sessions, "daily-parent", "/work/daily-parent");
-	const childPath = await writeSession(sessions, "daily-child", "/work/daily-child", parentPath);
+	const childPath = await writeSession(
+		join(sessions, "daily-parent", "forks"),
+		"daily-child",
+		"/work/daily-child",
+		parentPath,
+	);
 	await writeFile(
 		join(root, "settings.json"),
 		`${JSON.stringify(

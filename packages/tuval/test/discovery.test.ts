@@ -61,6 +61,41 @@ describe("pi home discovery", () => {
 				}),
 		);
 
+		it.effect("discovers nested fork and subagent session layouts recursively", () =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystem.FileSystem;
+				const path = yield* Path.Path;
+				const root = yield* fs.makeTempDirectoryScoped({prefix: "tuval-nested-discovery-"});
+				const forkDirectory = path.join(root, "--project", "parent", "forks");
+				const subagentDirectory = path.join(
+					root,
+					"--project",
+					"parent",
+					"session",
+					"child",
+					"run-0",
+				);
+				yield* fs.makeDirectory(forkDirectory, {recursive: true});
+				yield* fs.makeDirectory(subagentDirectory, {recursive: true});
+				yield* fs.writeFileString(
+					path.join(forkDirectory, "2026-08-25T08-33-59-250Z_nested-fork.jsonl"),
+					`${JSON.stringify({type: "session", id: "nested-fork", cwd: "/work/fork"})}\n`,
+				);
+				yield* fs.writeFileString(
+					path.join(subagentDirectory, "session.jsonl"),
+					`${JSON.stringify({type: "session", id: "subagent-session", cwd: "/work/subagent"})}\n`,
+				);
+
+				const outcome = yield* discoverPiSessions({sessionRoots: [root]});
+				assert.strictEqual(outcome._tag, "ready");
+				if (outcome._tag !== "ready") return;
+				assert.deepEqual(
+					outcome.sessions.map(({piSessionId}) => piSessionId),
+					["nested-fork", "subagent-session"],
+				);
+			}),
+		);
+
 		it.effect("distinguishes protocol metadata availability, absence, and failure", () =>
 			Effect.gen(function* () {
 				const authoritative = [
