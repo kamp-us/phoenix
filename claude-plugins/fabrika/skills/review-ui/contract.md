@@ -397,7 +397,8 @@ version-matched behavior is grounded in pnpm's
 and [root lifecycle gate](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/core/src/install/index.ts#L1521-L1531).
 The offline PR-controlled install and governed test run under a read-only root filesystem,
 `--cap-drop ALL`, `no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap
-headroom, 256 PIDs, and a 4 GiB tmpfs-backed disposable test workspace. The 4 GiB memory and
+headroom, 256 PIDs, a 4 GiB tmpfs-backed disposable test workspace, and a 64 MiB unprivileged
+tmpfs for pnpm's project-state symlink under its otherwise read-only home. The 4 GiB memory and
 workspace ceilings and a 1 GiB shared-memory ceiling are the measured bounds needed by Tuval's
 existing `test:browser` journey; the prior 2 GiB memory/workspace and default 64 MiB shared-memory
 bounds produced Docker OOM, no-space, and Chromium crash results for that exact command. The

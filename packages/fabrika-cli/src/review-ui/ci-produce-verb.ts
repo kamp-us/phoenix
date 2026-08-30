@@ -100,6 +100,11 @@ const containerGuardArgs = (memory = "2g", sharedMemory = "64m"): readonly strin
 	"/tmp:rw,nosuid,nodev,size=64m",
 ];
 
+const pnpmStateTmpfsArgs = (): readonly string[] => [
+	"--tmpfs",
+	"/home/node/.local/share/pnpm:rw,nosuid,nodev,size=64m,uid=1000,gid=1000",
+];
+
 const boundedVolumeCreateArgs = (name: string, size: string): readonly string[] => [
 	"volume",
 	"create",
@@ -130,6 +135,7 @@ export const subjectInstallAndTestContainerArgs = (
 	"--name",
 	name,
 	...containerGuardArgs("4g", "1g"),
+	...pnpmStateTmpfsArgs(),
 	"--mount",
 	`type=volume,src=${volume},dst=/subject`,
 	"--workdir",
@@ -156,6 +162,7 @@ export const subjectPrepareServerContainerArgs = (
 	"--name",
 	name,
 	...containerGuardArgs(),
+	...pnpmStateTmpfsArgs(),
 	"--mount",
 	`type=volume,src=${volume},dst=/subject`,
 	"--workdir",

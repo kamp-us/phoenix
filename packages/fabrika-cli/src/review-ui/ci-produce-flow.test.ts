@@ -787,12 +787,18 @@ describe("trusted localhost producer flow", () => {
 		expect(subjectRun).toContain("--read-only --cap-drop ALL");
 		expect(subjectRun).toContain("--memory 4g --memory-swap 4g");
 		expect(subjectRun).toContain("--shm-size 1g");
+		expect(subjectRun).toContain(
+			"/home/node/.local/share/pnpm:rw,nosuid,nodev,size=64m,uid=1000,gid=1000",
+		);
 		expect(subjectRun).toContain("no-new-privileges");
 		expect(subjectRun).toContain("pnpm install --offline --frozen-lockfile");
 		expect(subjectRun).toContain("pnpm --filter tuval test:browser");
 		expect(subjectRun).not.toContain("GITHUB_TOKEN");
 		expect(serverPreparation).toContain("cp -R /subject-source/. /subject/");
 		expect(serverPreparation).toContain("--ignore-scripts --ignore-pnpmfile");
+		expect(serverPreparation).toContain(
+			"/home/node/.local/share/pnpm:rw,nosuid,nodev,size=64m,uid=1000,gid=1000",
+		);
 		expect(serverPreparation).toContain("pnpm --filter tuval build");
 		expect(serverPreparation).not.toContain("test-workspace");
 		expect(server).toContain("--network none");

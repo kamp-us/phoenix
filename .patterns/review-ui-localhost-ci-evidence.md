@@ -38,7 +38,9 @@ neither package lifecycle scripts nor the PR's pnpmfile hooks.
 An offline `pnpm install` then runs every PR-controlled lifecycle script and the governed test in a
 disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
 `no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap headroom, and 256 PIDs.
-Those measured memory/workspace ceilings plus 1 GiB of bounded shared memory let Tuval's existing
+A separate 64 MiB unprivileged tmpfs gives pnpm only the writable home-state path its project
+registry needs; the rest of the root stays read-only. Those measured memory/workspace ceilings plus
+1 GiB of bounded shared memory let Tuval's existing
 `test:browser` journey complete; Docker proved the former 2 GiB and default 64 MiB shared-memory
 bounds OOM-killed, ran out of space, or crashed Chromium on the exact command. The journey's
 dynamic-port test servers finish before the
