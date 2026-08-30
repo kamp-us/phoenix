@@ -20,6 +20,11 @@ The route is intentionally absent from `alchemy dev`, the worker, and production
 | `src/components/agent/AgentChatInput.tsx` | Phoenix composition, input completion, attachments, streamed activity, extension dialogs |
 | Cloudflare Worker | Nothing — no child process, local filesystem, or Pi credentials |
 
+The Atölye exhibit opts into `mockWhenUnavailable`: when a deployed preview has no `/__pi/*`
+bridge, the composer falls back to display-only models, thinking levels, commands, and local UI
+interactions. The fallback never creates a worker route or emulates a remote agent; a healthy local
+bridge always wins and remains the only path that executes Pi.
+
 The Vite middleware accepts only `localhost` / loopback hosts. It starts Pi with `--approve` by
 default so the developer can exercise this project's local Pi resources. The browser's `proje izni`
 control can restart that captured child with `--approve` or `--no-approve`; that startup authority

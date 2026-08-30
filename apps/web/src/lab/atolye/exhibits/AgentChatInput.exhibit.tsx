@@ -8,6 +8,7 @@ export const agentChatInputExhibit = defineExhibit<React.ComponentProps<typeof A
 	summary:
 		"Pi RPC ile çalışan; / komutları, @ dosya anmaları, görsel ekleri ve eklenti diyalogları için yerel prototip.",
 	component: AgentChatInput,
+	fixedProps: {mockWhenUnavailable: true},
 	knobs: {
 		variant: {
 			kind: "enum",

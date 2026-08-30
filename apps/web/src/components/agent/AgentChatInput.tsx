@@ -94,6 +94,28 @@ const thinkingLevelIcons: Readonly<Record<PiThinkingLevel, LucideIcon>> = {
 	max: Sparkles,
 };
 
+const mockModels: readonly PiModel[] = [
+	{provider: "openai", id: "gpt-5.5", name: "GPT-5.5"},
+	{provider: "openai", id: "gpt-5.6-luna", name: "GPT-5.6 Luna"},
+	{provider: "openai", id: "gpt-5.6-sol", name: "GPT-5.6 Sol"},
+	{provider: "openai", id: "gpt-5.6-terra", name: "GPT-5.6 Terra"},
+];
+
+const mockThinkingLevels: readonly PiThinkingLevel[] = [
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+];
+
+const mockCommands: readonly PiCommand[] = [
+	{name: "review", description: "Değişiklikleri gözden geçir."},
+	{name: "compact", description: "Oturum bağlamını sıkıştır."},
+];
+
+const mockFiles = ["apps/web/src/App.tsx", "apps/web/src/components/agent/AgentChatInput.tsx"];
+
 type ConnectionState = "loading" | "ready" | "unavailable" | "working";
 
 interface Completion {
@@ -255,12 +277,14 @@ export interface AgentChatInputProps {
 	readonly initialValue?: string;
 	readonly disabled?: boolean;
 	readonly variant?: "harness" | "focused";
+	readonly mockWhenUnavailable?: boolean;
 }
 
 export function AgentChatInput({
 	initialValue = "",
 	disabled = false,
 	variant = "harness",
+	mockWhenUnavailable = false,
 }: AgentChatInputProps) {
 	const inputId = useId();
 	const imageInputRef = useRef<HTMLInputElement>(null);
@@ -284,30 +308,56 @@ export function AgentChatInput({
 	const [extensionStatus, setExtensionStatus] = useState<string>();
 	const [widget, setWidget] = useState<readonly string[]>();
 	const [inspectorOpen, setInspectorOpen] = useState(false);
+	const [usingMockHarness, setUsingMockHarness] = useState(false);
 
 	useEffect(() => setDraft(initialValue), [initialValue]);
 
 	useEffect(() => {
 		let current = true;
-		const unsubscribe = subscribeToPiEvents(
-			(event) => {
-				if (!current) return;
-				handleEvent(event);
-			},
-			() => {
-				if (current) setConnection("unavailable");
-			},
-		);
+		let unsubscribe: () => void = () => undefined;
+		const applyMockHarness = () => {
+			setUsingMockHarness(true);
+			setCommands(mockCommands);
+			setModels(mockModels);
+			setThinkingLevels(mockThinkingLevels);
+			applyState({
+				isStreaming: false,
+				model: mockModels[0],
+				thinkingLevel: "medium",
+				projectTrust: "approve",
+			});
+			setError(undefined);
+		};
 		void Promise.all([loadPiState(), loadPiCommands(), loadPiModels(), loadPiThinkingLevels()])
 			.then(([nextState, nextCommands, nextModels, nextThinkingLevels]) => {
 				if (!current) return;
+				const selectableThinkingLevels = nextThinkingLevels.filter((level) => level !== "off");
+				if (
+					mockWhenUnavailable &&
+					(nextModels.length === 0 || selectableThinkingLevels.length === 0)
+				) {
+					applyMockHarness();
+					return;
+				}
 				applyState(nextState);
 				setCommands(nextCommands);
 				setModels(nextModels);
-				setThinkingLevels(nextThinkingLevels);
+				setThinkingLevels(selectableThinkingLevels);
+				unsubscribe = subscribeToPiEvents(
+					(event) => {
+						if (current) handleEvent(event);
+					},
+					() => {
+						if (current) setConnection("unavailable");
+					},
+				);
 			})
 			.catch((cause: unknown) => {
 				if (!current) return;
+				if (mockWhenUnavailable) {
+					applyMockHarness();
+					return;
+				}
 				setConnection("unavailable");
 				setError(cause instanceof Error ? cause.message : "Pi harness'a bağlanılamadı.");
 			});
@@ -315,7 +365,7 @@ export function AgentChatInput({
 			current = false;
 			unsubscribe();
 		};
-	}, []);
+	}, [mockWhenUnavailable]);
 
 	function applyState(nextState: Record<string, unknown>) {
 		setState(nextState);
@@ -332,6 +382,11 @@ export function AgentChatInput({
 		}
 		let current = true;
 		const timer = window.setTimeout(() => {
+			if (usingMockHarness) {
+				const query = completion.query.toLocaleLowerCase();
+				setFiles(mockFiles.filter((path) => path.toLocaleLowerCase().includes(query)));
+				return;
+			}
 			void loadPiFiles(completion.query)
 				.then((nextFiles) => {
 					if (current) setFiles(nextFiles);
@@ -344,7 +399,7 @@ export function AgentChatInput({
 			current = false;
 			window.clearTimeout(timer);
 		};
-	}, [completion, completionDismissed]);
+	}, [completion, completionDismissed, usingMockHarness]);
 
 	const suggestions = useMemo<readonly Suggestion[]>(() => {
 		if (!completion || completionDismissed) return [];
@@ -449,6 +504,13 @@ export function AgentChatInput({
 		const message = draft.trim();
 		if ((!message && images.length === 0) || disabled || connection === "unavailable") return;
 		setError(undefined);
+		if (usingMockHarness) {
+			addActivity("Deploy preview istemi mock harness'a gönderildi.");
+			setAssistantText("Bu, Agent Chat Input görünümünü denemek için üretilen mock yanıttır.");
+			setDraft("");
+			setImages([]);
+			return;
+		}
 		try {
 			const requestedDelivery =
 				variant === "focused"
@@ -483,6 +545,11 @@ export function AgentChatInput({
 	}
 
 	async function stop() {
+		if (usingMockHarness) {
+			setConnection("ready");
+			addActivity("Mock tur durduruldu.");
+			return;
+		}
 		try {
 			await abortPi();
 			addActivity("Pi durdurma isteğini aldı.");
@@ -494,6 +561,11 @@ export function AgentChatInput({
 	async function changeModel(value: string | undefined) {
 		const nextModel = models.find((model) => modelValue(model) === value);
 		if (!nextModel || value === selectedModelValue(state)) return;
+		if (usingMockHarness) {
+			setState((current) => ({...(current ?? {}), model: nextModel}));
+			addActivity(`Mock Pi modeli ${nextModel.name} olarak değiştirildi.`);
+			return;
+		}
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
@@ -515,6 +587,11 @@ export function AgentChatInput({
 	async function changeThinkingLevel(value: string | undefined) {
 		const nextLevel = thinkingLevelValue(value);
 		if (!nextLevel || nextLevel === thinkingLevelValue(state?.thinkingLevel)) return;
+		if (usingMockHarness) {
+			setState((current) => ({...(current ?? {}), thinkingLevel: nextLevel}));
+			addActivity(`Mock düşünme eforu ${thinkingLevelLabels[nextLevel]} olarak değiştirildi.`);
+			return;
+		}
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
@@ -531,6 +608,15 @@ export function AgentChatInput({
 	async function changeProjectTrust(value: string | undefined) {
 		const nextProjectTrust = projectTrustValue(value);
 		if (!nextProjectTrust || nextProjectTrust === projectTrust) return;
+		if (usingMockHarness) {
+			setProjectTrust(nextProjectTrust);
+			addActivity(
+				nextProjectTrust === "approve"
+					? "Mock proje kaynakları yüklendi."
+					: "Mock proje kaynakları yoksayıldı.",
+			);
+			return;
+		}
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
@@ -545,7 +631,7 @@ export function AgentChatInput({
 			applyState(nextState);
 			setCommands(nextCommands);
 			setModels(nextModels);
-			setThinkingLevels(nextThinkingLevels);
+			setThinkingLevels(nextThinkingLevels.filter((level) => level !== "off"));
 			addActivity(
 				nextProjectTrust === "approve"
 					? "Pi proje kaynaklarını yükleyecek şekilde yeniden başlatıldı."
@@ -657,7 +743,9 @@ export function AgentChatInput({
 		[thinkingLevels],
 	);
 	const selectedModel = selectedModelValue(state) ?? modelItems[0]?.value;
-	const selectedThinking = thinkingLevelValue(state?.thinkingLevel) ?? thinkingLevels[0] ?? "off";
+	const stateThinking = thinkingLevelValue(state?.thinkingLevel);
+	const selectedThinking =
+		stateThinking && stateThinking !== "off" ? stateThinking : (thinkingLevels[0] ?? "minimal");
 	const settingsDisabled = disabled || settingsChanging || connection !== "ready";
 	const focusedDelivery =
 		connection === "working" ? (delivery === "prompt" ? "follow_up" : delivery) : "prompt";

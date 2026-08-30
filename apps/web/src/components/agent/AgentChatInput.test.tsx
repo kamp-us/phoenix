@@ -32,7 +32,7 @@ function installHarnessFetch() {
 			});
 		}
 		if (path === "/__pi/thinking-levels") {
-			return response({levels: {levels: ["low", "medium", "high"]}});
+			return response({levels: {levels: ["off", "minimal", "low", "medium", "high"]}});
 		}
 		if (path.startsWith("/__pi/files")) return response({files: ["apps/web/src/App.tsx"]});
 		if (path === "/__pi/model") {
@@ -188,5 +188,19 @@ describe("AgentChatInput", () => {
 		});
 
 		expect(await screen.findByText("ekran.png")).toBeTruthy();
+	});
+
+	it("shows mock controls in deploy previews and omits the off effort", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => response({})),
+		);
+		render(<AgentChatInput variant="focused" mockWhenUnavailable />);
+
+		expect(await screen.findByRole("button", {name: "model: GPT-5.5"})).toBeTruthy();
+		fireEvent.click(screen.getByRole("button", {name: "düşünme eforu: orta"}));
+
+		expect(await screen.findByRole("menuitemradio", {name: "minimal"})).toBeTruthy();
+		expect(screen.queryByRole("menuitemradio", {name: "kapalı"})).toBeNull();
 	});
 });
