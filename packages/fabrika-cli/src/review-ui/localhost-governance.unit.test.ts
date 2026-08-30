@@ -122,7 +122,7 @@ describe("localhost evidence governance floor", () => {
 		assert.include(test, "--pids-limit");
 		assert.include(
 			test,
-			'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile && exec "$@"',
+			'cp -R /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile && exec "$@"',
 		);
 		assert.notInclude(test.join(" "), "authority");
 		assert.notInclude(test.join(" "), "review-ui-localhost-tuval");
@@ -142,7 +142,7 @@ describe("localhost evidence governance floor", () => {
 		assert.include(serverPreparation, "--pids-limit");
 		assert.include(
 			serverPreparation,
-			'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile && exec "$@"',
+			'cp -R /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile && exec "$@"',
 		);
 		assert.include(serverPreparation.join(" "), "pnpm --filter tuval build");
 		assert.notInclude(serverPreparation.join(" "), "subject-test-workspace");

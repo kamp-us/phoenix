@@ -790,7 +790,7 @@ describe("trusted localhost producer flow", () => {
 		expect(subjectRun).toContain("pnpm install --offline --frozen-lockfile");
 		expect(subjectRun).toContain("pnpm --filter tuval test:browser");
 		expect(subjectRun).not.toContain("GITHUB_TOKEN");
-		expect(serverPreparation).toContain("cp -a /subject-source/. /subject/");
+		expect(serverPreparation).toContain("cp -R /subject-source/. /subject/");
 		expect(serverPreparation).toContain("--ignore-scripts --ignore-pnpmfile");
 		expect(serverPreparation).toContain("pnpm --filter tuval build");
 		expect(serverPreparation).not.toContain("test-workspace");

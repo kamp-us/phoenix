@@ -136,7 +136,7 @@ export const subjectInstallAndTestContainerArgs = (
 	"sh",
 	image,
 	"-c",
-	'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile && exec "$@"',
+	'cp -R /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile && exec "$@"',
 	"--",
 	...command,
 ];
@@ -162,7 +162,7 @@ export const subjectPrepareServerContainerArgs = (
 	"sh",
 	image,
 	"-c",
-	'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile && exec "$@"',
+	'cp -R /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile && exec "$@"',
 	"--",
 	...buildCommand,
 ];
