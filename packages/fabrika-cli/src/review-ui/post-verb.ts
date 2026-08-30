@@ -2,8 +2,9 @@
  * `review-ui post` — the single sanctioned `review-ui` verdict emit.
  *
  * Eight steps, each gating the next: re-resolve the live head, read the evidence set through its
- * manifest, re-validate every capture against that manifest, **verify-upload every capture before
- * anything posts**, compose through the wire format, leak-scan the assembled comment, upsert one
+ * manifest, re-resolve a CI receipt's workflow/run/check/artifact tuple through GitHub, re-validate
+ * every capture, **verify-upload every capture before anything posts**, compose through the wire
+ * format with complete provenance, leak-scan the assembled comment, upsert one
  * comment for this namespace under this carrier, and read it back from live PR state.
  *
  * Step 4 is this verb's reason to exist. The capture package's upload leg is `never`-typed by
@@ -29,6 +30,7 @@ import {normalizeForReadback} from "../report/compose.ts";
 import {emitAdvisory, readAdvisory, reviewedHeadLine} from "../review/advisory.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
+import {defaultBranch, readFileAtRef} from "../ship/github.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	emit as emitMarker,
@@ -37,20 +39,26 @@ import {
 	read as readMarker,
 	clause as toClause,
 } from "../wire/verdict-marker.ts";
+import {resolveCiIdentity} from "./ci-github.ts";
 import {
 	INVALID_CAPTURE,
 	MALFORMED_DOCUMENT,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
+	RENDER_CRASHED,
 	STALE_TREE,
 	UPLOAD_FAILED,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {
 	CI_PROVENANCE_RECEIPT,
+	declarationDigest,
+	LOCALHOST_DECLARATIONS_PATH,
 	parseCiCaptureManifest,
+	parseLocalhostDeclarations,
 	parseValidatedCiProvenance,
+	type ValidatedCiProvenance,
 } from "./localhost-evidence.ts";
 import {
 	type CaptureEntry,
@@ -121,6 +129,7 @@ export interface PostOptions {
 	 */
 	readonly harnessPath: string;
 	readonly upload: UploadLeg;
+	readonly resolveCiIdentity?: typeof resolveCiIdentity;
 }
 
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
@@ -352,6 +361,7 @@ export const runPost = (
 				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json.`,
 			);
 		}
+		let trustedCiProvenance: ValidatedCiProvenance | null = null;
 		if (requiresCiProvenance) {
 			const receiptRead = yield* Effect.result(readFile(`${setDir}/${CI_PROVENANCE_RECEIPT}`));
 			if (Result.isFailure(receiptRead)) {
@@ -378,6 +388,78 @@ export const runPost = (
 					`${VERB}: CI evidence set "${options.evidence}" does not match its consumer-validated provenance receipt.`,
 				);
 			}
+
+			const base = yield* defaultBranch(repo);
+			if (base._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot revalidate CI provenance because the default branch is unreadable (${base.reason}).`,
+				);
+			}
+			const authority = yield* readFileAtRef(repo, LOCALHOST_DECLARATIONS_PATH, base.value);
+			if (authority._tag !== "Present") {
+				return refuse(
+					authority._tag === "Absent" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
+					`${VERB}: cannot revalidate CI provenance because the governed declaration is ${authority._tag === "Absent" ? "absent" : `unreadable (${authority.reason})`}.`,
+				);
+			}
+			const declarations = parseLocalhostDeclarations(authority.value);
+			if (declarations._tag === "Malformed") {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: cannot revalidate CI provenance because the governed declaration is malformed (${declarations.reason}).`,
+				);
+			}
+			const harness = declarations.value.harnesses.find((entry) => entry.id === receipt.harness);
+			if (
+				harness === undefined ||
+				ciManifest.declarationSha256 !== declarationDigest(authority.value) ||
+				ciManifest.producer.workflow !== harness.workflow ||
+				ciManifest.producer.check !== harness.check ||
+				ciManifest.producer.event !== harness.event ||
+				ciManifest.producer.artifact !== harness.artifact
+			) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: CI evidence set "${options.evidence}" no longer matches the governed producer declaration.`,
+				);
+			}
+			const identity = yield* (options.resolveCiIdentity ?? resolveCiIdentity)(
+				repo,
+				pr,
+				live,
+				harness,
+			);
+			if (identity._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: trusted CI provenance could not be revalidated (${identity.reason}).`,
+				);
+			}
+			if (
+				identity.value.runId !== receipt.runId ||
+				identity.value.checkId !== receipt.checkId ||
+				identity.value.artifactId !== receipt.artifactId ||
+				identity.value.artifactName !== harness.artifact
+			) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: CI evidence set "${options.evidence}" receipt does not match the trusted run, check, and artifact identities.`,
+				);
+			}
+			trustedCiProvenance = receipt;
+		}
+		if (
+			requiresCiProvenance &&
+			polarity === "PASS" &&
+			manifest.captures.some((capture) =>
+				capture.pageErrors.rows.some((error) => error.kind === "pageerror"),
+			)
+		) {
+			return refuse(
+				RENDER_CRASHED,
+				`${VERB}: CI evidence records an uncaught page error — the materialized render is FAIL ground and cannot carry PASS.`,
+			);
 		}
 		const manifestMatches = requiresCiProvenance
 			? manifest.head === live && inspected === live
@@ -484,15 +566,20 @@ export const runPost = (
 					});
 		const below =
 			carrier === "advisory" ? `${reviewedHeadLine(inspected)}\n\n${authored.text}` : authored.text;
-		const provenance = ciDocument
-			? [
-					"## Evidence provenance",
-					"",
-					`- GitHub Actions run: ${"producer" in manifest ? manifest.producer.runId : "unknown"}`,
-					`- Governed harness: ${"harness" in manifest ? manifest.harness : "unknown"}`,
-					`- Browser error coverage: pageerror and console.error readable for ${manifest.captures.length}/${manifest.captures.length} captures`,
-				].join("\n")
-			: "";
+		const provenance =
+			ciDocument && "producer" in manifest && "harness" in manifest && trustedCiProvenance !== null
+				? [
+						"## Evidence provenance",
+						"",
+						`- Repository: ${trustedCiProvenance.repository}`,
+						`- Workflow: ${manifest.producer.workflow} (${manifest.producer.event})`,
+						`- GitHub Actions run: [${trustedCiProvenance.runId}](https://github.com/${repo}/actions/runs/${trustedCiProvenance.runId})`,
+						`- Check: ${manifest.producer.check} ([${trustedCiProvenance.checkId}](https://github.com/${repo}/runs/${trustedCiProvenance.checkId}))`,
+						`- Artifact: ${manifest.producer.artifact} (id ${trustedCiProvenance.artifactId})`,
+						`- Governed harness: ${manifest.harness}`,
+						`- Browser error coverage: pageerror and console.error readable for ${manifest.captures.length}/${manifest.captures.length} captures`,
+					].join("\n")
+				: "";
 		const composed = `${firstLine}\n${below.replace(/\n+$/, "")}\n\n${provenance === "" ? "" : `${provenance}\n\n`}${gallery(hosted)}\n`;
 
 		// Step 6 — the scan runs over the ASSEMBLED comment, so nothing this verb appended escapes it.

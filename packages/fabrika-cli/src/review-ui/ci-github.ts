@@ -19,11 +19,14 @@ export interface RunRecord {
 	readonly pullHeads: readonly string[];
 }
 
-export interface CiBundle {
+export interface CiIdentity {
 	readonly runId: number;
 	readonly checkId: number;
 	readonly artifactId: number;
 	readonly artifactName: string;
+}
+
+export interface CiBundle extends CiIdentity {
 	readonly directory: string;
 	readonly manifestText: string;
 }
@@ -143,13 +146,12 @@ export const safeArtifactMembers = (listing: string): readonly string[] | null =
 		: null;
 };
 
-export const fetchCiBundle = (
+export const resolveCiIdentity = (
 	repo: string,
 	pr: number,
 	head: string,
 	harness: LocalhostHarnessDeclaration,
-	scratchRoot: string,
-): Shell<Attempt<CiBundle>> =>
+): Shell<Attempt<CiIdentity>> =>
 	Effect.gen(function* () {
 		const listed = yield* runsForWorkflow(repo, harness.workflow);
 		if (listed._tag === "Failure") return listed;
@@ -185,8 +187,28 @@ export const fetchCiBundle = (
 			return fail(`run ${run.id} ${selectedArtifact.reason}`);
 		const artifact = selectedArtifact.value;
 		if (typeof artifact.id !== "number") return fail(`the ${harness.artifact} artifact has no id`);
+		return ok({
+			runId: run.id,
+			checkId: check.id,
+			artifactId: artifact.id,
+			artifactName: harness.artifact,
+		});
+	});
+
+export const fetchCiBundle = (
+	repo: string,
+	pr: number,
+	head: string,
+	harness: LocalhostHarnessDeclaration,
+	scratchRoot: string,
+): Shell<Attempt<CiBundle>> =>
+	Effect.gen(function* () {
+		const identity = yield* resolveCiIdentity(repo, pr, head, harness);
+		if (identity._tag === "Failure") return identity;
+		const token = yield* ambientToken;
+		if (token._tag === "Failure") return token;
 		const downloaded = yield* onTransport(
-			restBytes(token.value, `repos/${repo}/actions/artifacts/${artifact.id}/zip`),
+			restBytes(token.value, `repos/${repo}/actions/artifacts/${identity.value.artifactId}/zip`),
 		);
 		if (downloaded._tag === "Unreachable") return fail(downloaded.reason);
 		if (downloaded.status < 200 || downloaded.status >= 300) {
@@ -220,10 +242,7 @@ export const fetchCiBundle = (
 		}).pipe(Effect.match({onFailure: fail, onSuccess: ok}));
 		if (manifest._tag === "Failure") return manifest;
 		return ok({
-			runId: run.id,
-			checkId: check.id,
-			artifactId: artifact.id,
-			artifactName: harness.artifact,
+			...identity.value,
 			directory: directory.value,
 			manifestText: manifest.value,
 		});

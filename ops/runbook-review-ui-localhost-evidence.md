@@ -17,6 +17,8 @@ surfaces stay on the preview path.
    ```
 
 5. Inspect every returned PNG and its bounded page/console-error evidence against the design law.
+   Exit `13` means the validated set was materialized with an uncaught page error: treat that as a
+   red render and post FAIL from the set. Do not route it to CANT-SEE.
 6. Post the ordinary verdict with the fetched set:
 
    ```bash
@@ -27,8 +29,9 @@ surfaces stay on the preview path.
 7. Re-read the landed marker through the normal review/ship flow. There is no localhost-specific
    marker or ship override.
 
-A fetch refusal is CANT-SEE, not permission to import local bytes. Post the blocker with
-`review-ui note`; repair the producer state named by the refusal and repeat from the live head.
+A fetch refusal other than `13` is CANT-SEE, not permission to import local bytes. Post the blocker
+with `review-ui note`; repair the producer state named by the refusal and repeat from the live head.
+A moved-head `12` restarts at the new head. Exit `13` follows the FAIL route above.
 
 ## Tuval PR #7190
 

@@ -1,7 +1,15 @@
 import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
+import {
+	fakeSeams,
+	type HttpReply,
+	once,
+	type Scripted,
+	unconfigured,
+} from "../fakes.test-support.ts";
+import {ok} from "../io/git.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {runGate} from "../ship/gate-verb.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
 import {
 	EMPTY_STDIN,
@@ -10,12 +18,17 @@ import {
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
+	RENDER_CRASHED,
 	STALE_TREE,
 	UPLOAD_FAILED,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {CI_PROVENANCE_RECEIPT, type CiCaptureManifest} from "./localhost-evidence.ts";
+import {
+	CI_PROVENANCE_RECEIPT,
+	type CiCaptureManifest,
+	declarationDigest,
+} from "./localhost-evidence.ts";
 import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
 import {runPost, type UploadLeg} from "./post-verb.ts";
 import {classifyProbe} from "./upload-leg.ts";
@@ -30,6 +43,24 @@ const CI_RECEIPT_PATH = `${SET_DIR}/${CI_PROVENANCE_RECEIPT}`;
 const HARNESS = "/repo/design-harness.json";
 const HOSTED = "https://github.com/user-attachments/assets/9c41";
 const URL = "https://example.test/pull/4321#issuecomment-5154902211";
+const CI_AUTHORITY = JSON.stringify({
+	schemaVersion: 1,
+	harnesses: [
+		{
+			id: "tuval",
+			workflow: ".github/workflows/review-ui-localhost-evidence.yml",
+			check: "review-ui localhost evidence / tuval",
+			event: "pull_request_target",
+			artifact: "review-ui-localhost-tuval",
+			captureCommand: ["pnpm", "--filter", "tuval", "test"],
+			serverCommand: ["node", "server.mjs", "4173"],
+			containerPort: 4173,
+			readinessPattern: "ready (http://127.0.0.1:[0-9]+)",
+			captureReadySelector: ".react-flow__node",
+			surfaces: [{id: "desktop", route: "/", state: "desktop", width: 1280, height: 800}],
+		},
+	],
+});
 
 const BYTES = Uint8Array.from([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 5, 0,
@@ -61,7 +92,7 @@ const ciManifest = (overrides: Partial<CiCaptureManifest> = {}): CiCaptureManife
 	pr: 4321,
 	head: HEAD,
 	harness: "tuval",
-	declarationSha256: "a".repeat(64),
+	declarationSha256: declarationDigest(CI_AUTHORITY),
 	producer: {
 		workflow: ".github/workflows/review-ui-localhost-evidence.yml",
 		check: "review-ui localhost evidence / tuval",
@@ -122,11 +153,16 @@ const world = (overrides: FsShape = {}): Layer.Layer<FileSystem.FileSystem | Pat
 	});
 
 const PULL = /GET .*\/repos\/o\/r\/pulls\/4321\b/;
+const REPO = /GET .*\/repos\/o\/r$/;
+const AUTHORITY = /GET .*\/repos\/o\/r\/contents\/\.github\/review-ui-localhost-harnesses\.json/;
 const USER = /GET .*api\.github\.com\/user$/;
 const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4321\/comments/;
 const CREATE = /POST .*\/repos\/o\/r\/issues\/4321\/comments/;
 const PATCH = /PATCH .*\/repos\/o\/r\/issues\/comments\/\d+/;
 const READBACK = /GET .*\/repos\/o\/r\/issues\/comments\/\d+/;
+const FILES = /GET .*\/repos\/o\/r\/pulls\/4321\/files/;
+const REVIEWS = /GET .*\/repos\/o\/r\/pulls\/4321\/reviews/;
+const ACL = /GET .*\/repos\/o\/r\/collaborators\/[^/]+\/permission/;
 
 const pull = (state = "open", head = HEAD): HttpReply => ({
 	status: 200,
@@ -174,6 +210,10 @@ const options = {
 	tmpRoot: "/tmp",
 	harnessPath: HARNESS,
 	upload: hostingLeg,
+	resolveCiIdentity: () =>
+		Effect.succeed(
+			ok({runId: 42, checkId: 9, artifactId: 10, artifactName: "review-ui-localhost-tuval"}),
+		),
 };
 
 /** The comment as the verb will have posted it, echoed back by the read-back read. */
@@ -223,10 +263,12 @@ describe("runPost", () => {
 		expect(body).not.toContain(CAPTURE_PATH);
 	});
 
-	it("posts CI-fetched pixels through the ordinary marker that ship already consumes", async () => {
-		const ciComposed = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence provenance\n\n- GitHub Actions run: 42\n- Governed harness: tuval\n- Browser error coverage: pageerror and console.error readable for 1/1 captures\n\n## Evidence\n\n### desktop\n\n![desktop](${HOSTED})`;
+	it("carries a CI-fetched PASS through the exact posted comment into ship gate", async () => {
+		const ciComposed = `review-ui: PASS @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence provenance\n\n- Repository: o/r\n- Workflow: .github/workflows/review-ui-localhost-evidence.yml (pull_request_target)\n- GitHub Actions run: [42](https://github.com/o/r/actions/runs/42)\n- Check: review-ui localhost evidence / tuval ([9](https://github.com/o/r/runs/9))\n- Artifact: review-ui-localhost-tuval (id 10)\n- Governed harness: tuval\n- Browser error coverage: pageerror and console.error readable for 1/1 captures\n\n## Evidence\n\n### desktop\n\n![desktop](${HOSTED})`;
 		const script: ReadonlyArray<Scripted> = [
 			[once(PULL), pull()],
+			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+			[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
 			[PULL, pull()],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[COMMENTS, comments()],
@@ -251,15 +293,120 @@ describe("runPost", () => {
 			},
 			bytes: {[CI_CAPTURE_PATH]: BYTES},
 		});
-		const {outcome, requests, bodies} = await run(script, {}, layer);
+		const {outcome, requests, bodies} = await run(script, {polarity: "PASS"}, layer);
 		expect(outcome.code).toBe(0);
 		const write = bodies[requests.findIndex((request) => CREATE.test(request))] ?? "";
 		const body = String(JSON.parse(write).body);
 		const marker = readMarker(body);
 		expect(marker._tag).toBe("Found");
 		if (marker._tag === "Found") expect(marker.value.namespace).toBe("review-ui");
-		expect(body).toContain("GitHub Actions run: 42");
+		expect(body).toContain("GitHub Actions run: [42]");
+		expect(body).toContain("Check: review-ui localhost evidence / tuval ([9]");
+		expect(body).toContain("Artifact: review-ui-localhost-tuval (id 10)");
 		expect(body).not.toContain(CI_CAPTURE_PATH);
+
+		const gateSeams = fakeSeams([
+			[once(PULL), pull()],
+			[FILES, {status: 200, body: JSON.stringify([{filename: "apps/web/src/a.ts"}])}],
+			[COMMENTS, comments({id: 5154902211, body, author: "kampus-bot"})],
+			[ACL, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[REVIEWS, {status: 200, body: "[]"}],
+		]);
+		const gate = await Effect.runPromise(
+			Effect.provide(
+				runGate({
+					pr: 4321,
+					sha: HEAD,
+					require: ["review-ui"],
+					cp: false,
+					repo: null,
+					json: false,
+					cwd: "/repo",
+					env: {CLAUDE_PIPELINE_REPO: "o/r"},
+				}),
+				Layer.merge(gateSeams.layer, unconfigured),
+			),
+		);
+		expect(gate.stdout, JSON.stringify({gate, requests: gateSeams.requests})).toContain(
+			`gate\tsatisfied\t${HEAD}`,
+		);
+		expect(gate.stdout).toContain("ns\treview-ui\tpass\tmarker");
+	});
+
+	it("revalidates receipt check and artifact ids against trusted GitHub identity", async () => {
+		const document = JSON.stringify(ciManifest());
+		for (const ids of [
+			{checkId: 90, artifactId: 10},
+			{checkId: 9, artifactId: 100},
+		]) {
+			const layer = fs({
+				strings: {
+					[MANIFEST_PATH]: document,
+					[CI_RECEIPT_PATH]: JSON.stringify({
+						schemaVersion: 1,
+						repository: "o/r",
+						pr: 4321,
+						head: HEAD,
+						harness: "tuval",
+						runId: 42,
+						...ids,
+						manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+					}),
+				},
+				bytes: {[CI_CAPTURE_PATH]: BYTES},
+			});
+			const {outcome, requests} = await run(
+				[
+					[once(PULL), pull()],
+					[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+					[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
+				],
+				{},
+				layer,
+			);
+			expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+			expect(requests.some((request) => CREATE.test(request))).toBe(false);
+		}
+	});
+
+	it("refuses to turn a proven CI page crash into PASS", async () => {
+		const red = ciManifest({
+			captures: [
+				{
+					...ciManifest().captures[0]!,
+					pageErrors: {rows: [{kind: "pageerror", text: "boom"}], more: 0},
+				},
+			],
+		});
+		const document = JSON.stringify(red);
+		const layer = fs({
+			strings: {
+				[MANIFEST_PATH]: document,
+				[CI_RECEIPT_PATH]: JSON.stringify({
+					schemaVersion: 1,
+					repository: "o/r",
+					pr: 4321,
+					head: HEAD,
+					harness: "tuval",
+					runId: 42,
+					checkId: 9,
+					artifactId: 10,
+					manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+				}),
+			},
+			bytes: {[CI_CAPTURE_PATH]: BYTES},
+		});
+		const {outcome, requests} = await run(
+			[
+				[once(PULL), pull()],
+				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
+			],
+			{polarity: "PASS"},
+			layer,
+		);
+		expect(outcome.code).toBe(RENDER_CRASHED);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("rejects a builder-authored CI manifest without the consumer provenance receipt", async () => {

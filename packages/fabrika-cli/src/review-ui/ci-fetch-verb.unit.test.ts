@@ -5,7 +5,7 @@ import {Effect, Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {forgetAmbientToken} from "../io/gh-api.ts";
-import {ok} from "../io/git.ts";
+import {fail, ok} from "../io/git.ts";
 import {runCiFetch} from "./ci-fetch-verb.ts";
 import {CI_PROVENANCE_RECEIPT, declarationDigest} from "./localhost-evidence.ts";
 import {sha256Hex} from "./manifest.ts";
@@ -61,39 +61,47 @@ afterEach(() => {
 	forgetAmbientToken();
 });
 
+const ciManifest = (
+	overrides: Record<string, unknown> = {},
+	captureOverrides: Record<string, unknown> = {},
+) =>
+	JSON.stringify({
+		schemaVersion: 1,
+		source: "github-actions",
+		repository: "o/r",
+		pr: 7190,
+		head: HEAD,
+		harness: "tuval",
+		declarationSha256: declarationDigest(authority),
+		producer: {
+			workflow: ".github/workflows/review-ui-localhost-evidence.yml",
+			check: "review-ui localhost evidence / tuval",
+			event: "pull_request_target",
+			runId: 42,
+			artifact: "review-ui-localhost-tuval",
+		},
+		captures: [
+			{
+				surface: "desktop",
+				path: "captures/desktop.png",
+				width: 1280,
+				height: 800,
+				sha256: sha256Hex(PNG),
+				pageErrors: {rows: [], more: 0},
+				errorCoverage: {pageerror: "readable", consoleError: "readable"},
+				...captureOverrides,
+			},
+		],
+		...overrides,
+	});
+
 describe("runCiFetch", () => {
 	it("materializes only a provenance-bound exact-head artifact and writes the consumer receipt", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-fetch-test-"));
 		const artifact = join(root, "artifact");
 		await mkdir(join(artifact, "captures"), {recursive: true});
 		await writeFile(join(artifact, "captures/desktop.png"), PNG);
-		const manifest = JSON.stringify({
-			schemaVersion: 1,
-			source: "github-actions",
-			repository: "o/r",
-			pr: 7190,
-			head: HEAD,
-			harness: "tuval",
-			declarationSha256: declarationDigest(authority),
-			producer: {
-				workflow: ".github/workflows/review-ui-localhost-evidence.yml",
-				check: "review-ui localhost evidence / tuval",
-				event: "pull_request_target",
-				runId: 42,
-				artifact: "review-ui-localhost-tuval",
-			},
-			captures: [
-				{
-					surface: "desktop",
-					path: "captures/desktop.png",
-					width: 1280,
-					height: 800,
-					sha256: sha256Hex(PNG),
-					pageErrors: {rows: [], more: 0},
-					errorCoverage: {pageerror: "readable", consoleError: "readable"},
-				},
-			],
-		});
+		const manifest = ciManifest();
 		const script: ReadonlyArray<Scripted> = [
 			[once(PULL), pull()],
 			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
@@ -136,5 +144,115 @@ describe("runCiFetch", () => {
 		);
 		expect(receipt).toMatchObject({runId: 42, checkId: 51, artifactId: 61, head: HEAD});
 		await rm(root, {recursive: true, force: true});
+	});
+
+	it("covers producer, head, schema, integrity, error-evidence, and artifact refusals", async () => {
+		const cases: ReadonlyArray<{
+			name: string;
+			manifest: string;
+			expected: number;
+			secondHead?: string;
+			bytes?: Uint8Array | null;
+			bundleFailure?: string;
+			materializedOnRefusal?: boolean;
+		}> = [
+			{
+				name: "run mismatch",
+				manifest: ciManifest({producer: {...JSON.parse(ciManifest()).producer, runId: 43}}),
+				expected: 4,
+			},
+			{
+				name: "moved head",
+				manifest: ciManifest(),
+				secondHead: "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192",
+				expected: 12,
+			},
+			{
+				name: "capture tampering",
+				manifest: ciManifest(),
+				bytes: new TextEncoder().encode("tampered"),
+				expected: 15,
+			},
+			{
+				name: "unreadable error evidence",
+				manifest: ciManifest(
+					{},
+					{
+						errorCoverage: {pageerror: "unreadable", consoleError: "readable"},
+					},
+				),
+				expected: 4,
+			},
+			{
+				name: "ambiguous artifact",
+				manifest: ciManifest(),
+				bundleFailure: "produced 2 review-ui-localhost-tuval artifacts — ambiguous",
+				expected: 11,
+			},
+			{
+				name: "uncaught page error remains a materialized red render",
+				manifest: ciManifest(
+					{},
+					{
+						pageErrors: {rows: [{kind: "pageerror", text: "boom"}], more: 0},
+					},
+				),
+				expected: 13,
+				materializedOnRefusal: true,
+			},
+		];
+
+		for (const row of cases) {
+			const root = await mkdtemp(join(tmpdir(), "ci-fetch-refusal-test-"));
+			const artifact = join(root, "artifact");
+			await mkdir(join(artifact, "captures"), {recursive: true});
+			if (row.bytes !== null) {
+				await writeFile(join(artifact, "captures/desktop.png"), row.bytes ?? PNG);
+			}
+			const seams = fakeSeams([
+				[once(PULL), pull()],
+				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[AUTHORITY, {status: 200, body: authority}],
+				[PULL, pull(row.secondHead ?? HEAD)],
+			]);
+			const outcome = await Effect.runPromise(
+				Effect.provide(
+					runCiFetch({
+						pr: 7190,
+						harness: "tuval",
+						out: "judged",
+						repo: "o/r",
+						env: {},
+						tmpRoot: root,
+						fetchBundle: () =>
+							Effect.succeed(
+								row.bundleFailure === undefined
+									? ok({
+											runId: 42,
+											checkId: 51,
+											artifactId: 61,
+											artifactName: "review-ui-localhost-tuval",
+											directory: artifact,
+											manifestText: row.manifest,
+										})
+									: fail(row.bundleFailure),
+							),
+					}),
+					Layer.mergeAll(seams.layer),
+				),
+			);
+			expect(outcome.code, row.name).toBe(row.expected);
+			const receiptPath = join(
+				root,
+				"fabrika-review-ui/7190-03135b91/judged",
+				CI_PROVENANCE_RECEIPT,
+			);
+			if (row.materializedOnRefusal === true) {
+				expect(await readFile(receiptPath, "utf8"), row.name).toContain('"runId":42');
+			} else {
+				await expect(readFile(receiptPath, "utf8"), row.name).rejects.toThrow();
+			}
+			await rm(root, {recursive: true, force: true});
+		}
 	});
 });

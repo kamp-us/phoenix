@@ -126,7 +126,7 @@ const fetch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Fetch a governed localhost harness's exact-head CI captures."),
 	Command.withDescription(
-		"Resolve the declared producer from the repository default branch, require its successful pull_request_target run, check and unique non-expired artifact for the open PR's exact live head, validate the manifest and every PNG, then materialize the set in reviewer-owned scratch. There is no local path, workflow, run, check, artifact or manifest input. Preview rendering remains the default review-ui path. Exits 4 (malformed declaration/manifest), 7 (PR absent/closed), 10 (unknown harness or bad set name), 11 (producer evidence unresolved), 12 (head moved), 13 (uncaught page error), 15 (capture hash/dimensions invalid).",
+		"Resolve the declared producer from the repository default branch, require its successful pull_request_target run, check and unique non-expired artifact for the open PR's exact live head, validate the manifest and every PNG, then materialize the set in reviewer-owned scratch. There is no local path, workflow, run, check, artifact or manifest input. Preview rendering remains the default review-ui path. Exits 4 (malformed declaration/manifest), 7 (PR absent/closed), 10 (unknown harness or bad set name), 11 (producer evidence unresolved), 12 (head moved), 13 (the integrity-validated set was materialized with an uncaught page error: proven red-render/FAIL ground), 15 (capture hash/dimensions invalid).",
 	),
 );
 
@@ -147,7 +147,7 @@ const ciProduce = leafCommand(
 			Flag.withDescription("the owner/name repository identity bound into the manifest"),
 		),
 		subjectRoot: Flag.string("subject-root").pipe(
-			Flag.withDescription("the inert exact-head checkout used only as the isolated image context"),
+			Flag.withDescription("the exact-head subject input to the trusted image recipe"),
 		),
 		authorityRoot: Flag.string("authority-root").pipe(
 			Flag.withDescription("the trusted base checkout containing the declaration and producer"),
@@ -164,7 +164,7 @@ const ciProduce = leafCommand(
 		"Produce the governed localhost capture artifact inside trusted CI.",
 	),
 	Command.withDescription(
-		"Internal trusted-workflow leg: build the exact PR checkout with the trusted Dockerfile, run all PR-controlled install/test/server work in a read-only no-credential container with no authority or output mount, capture from the trusted host, and write the versioned artifact manifest only from that host. Prints the manifest on success. Exits 4 (trusted declaration malformed), 10 (head/run/repository/harness off vocabulary), 11 (checkout/image/server/capture/output state unreadable), 12 (subject checkout is not the named exact head), 13 (journey or uncaught page error made the render red), 15 (capture invalid). This is not an evidence import path.",
+		"Internal trusted-workflow leg: the image build performs only fixed-tool setup and a scriptless dependency fetch, then offline PR lifecycle install plus test run under read-only-root/capability-drop/no-network isolation and the server under the same root/capability restrictions with its installed workspace read-only. Neither runtime receives credentials, authority, Docker socket, or output mount; the trusted host alone captures and writes the versioned manifest. Prints the manifest on success. Exits 4 (trusted declaration malformed), 10 (head/run/repository/harness off vocabulary), 11 (checkout/image/workspace/server/capture/output state unreadable), 12 (subject checkout is not the named exact head), 13 (journey or uncaught page error made the render red), 15 (capture invalid). This is not an evidence import path.",
 	),
 );
 
@@ -226,7 +226,7 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the review-ui verdict on stdin as one comment."),
 	Command.withDescription(
-		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, upsert, and read it back from live state. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or design-harness.json violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (bad --polarity or --carrier, or advisory with FAIL), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its verification failed — nothing was posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
+		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, for CI evidence re-resolve the governed workflow/run/check/artifact ids through GitHub, re-validate every capture, verify-upload every capture BEFORE anything posts, record complete provenance, compose through the `verdict-marker` wire format, leak-scan, upsert, and read back. There is no --namespace. Prints one JSON object. Exits 3 (empty stdin), 4 (manifest/receipt/declaration/identity malformed or design-harness.json invalid), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent/closed), 8 (create/edit UNKNOWN), 9 (read-back mismatch), 10 (bad polarity/carrier), 11 (precondition or trusted provenance read failed), 12 (head/pixels stale), 13 (CI page crash cannot carry PASS), 15 (capture invalid), 17 (upload verification failed). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
 	),
 );
 

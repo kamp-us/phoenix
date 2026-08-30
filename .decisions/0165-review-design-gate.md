@@ -146,16 +146,23 @@ nor a caller can nominate them.
 GitHub documents that `pull_request_target` runs in the context of the pull request's base and warns
 that running untrusted code directly in that trigger can compromise the repository
 ([GitHub Actions event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)).
-The trusted workflow therefore checks out the PR's full live head only as an inert Docker build
-context. The base-owned producer installs on the host, while every PR-controlled install, test, and
-server process runs in a read-only, capability-dropped container with no authority checkout, Docker
-socket, or artifact-output mount. Docker's own storage documentation states that bind mounts grant
-host-path access and that read-only mounts prevent writes; omitting those mounts is the filesystem
-boundary used here
-([Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/),
-[Docker security](https://docs.docker.com/engine/security/)). The trusted host alone drives capture
-and writes bounded `pageerror` and `console.error` evidence. An uncaught page error makes the
-producer red. Its versioned manifest binds repository, PR, exact head, declaration digest,
+The trusted workflow therefore checks out the PR's full live head only as input to the base-owned
+Dockerfile. Image construction installs fixed authority-owned tool versions and performs `pnpm
+fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user; pnpm documents `fetch` as
+lockfile package acquisition into the virtual store, separate from installation
+([pnpm fetch](https://pnpm.io/cli/fetch)), while those two flags disable lifecycle hooks and the
+PR-supplied pnpmfile hook, so this step executes no PR-controlled code. The
+subsequent offline `pnpm install`—including every PR-controlled lifecycle script—and the governed
+test run share a container with a read-only root filesystem, all Linux capabilities dropped,
+`no-new-privileges`, no network, and one disposable workspace volume. The server reuses that volume
+read-only under the same root/capability restrictions and receives only the read-only fixture; neither
+container receives Actions credentials, the authority checkout, Docker socket, or artifact-output
+mount. Docker documents the read-only root flag, capability drop, security options, `none` network,
+and mount modes used by those exact arguments
+([Docker run reference](https://docs.docker.com/reference/cli/docker/container/run/),
+[Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/)). The trusted host alone
+drives capture and writes bounded `pageerror` and `console.error` evidence. An uncaught page error
+makes the producer red. Its versioned manifest binds repository, PR, exact head, declaration digest,
 harness, workflow, check, run, artifact name, every surface, dimensions, and SHA-256.
 
 The reviewer consumes the artifact only through GitHub. The consumer independently proves the
@@ -164,8 +171,11 @@ artifact, positive manifest schema, complete members, hashes, dimensions, readab
 and an unchanged live head. It then places the validated set in reviewer-owned scratch. No local
 path, builder capture, or caller-selected workflow/run/artifact is an input.
 
-`review-ui post` revalidates those bytes and the live head, verified-uploads them, records provenance
-and browser-error coverage, and emits the ordinary SHA-bound `review-ui` marker. `ship` therefore
+`review-ui post` revalidates those bytes and the live head, re-resolves the governed workflow and the
+exact run/check/artifact ids against GitHub, refuses PASS when the manifest records an uncaught page
+error, verified-uploads the captures, records complete workflow/check/artifact provenance and
+browser-error coverage, and emits the ordinary SHA-bound
+`review-ui` marker. `ship` therefore
 keeps one verdict grammar and one fail-closed namespace: missing, pending, stale, invalid, or
 untrusted CI evidence produces no marker and no bypass.
 

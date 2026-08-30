@@ -3,8 +3,8 @@ import {resolve} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {
 	isolatedEnvironment,
+	subjectInstallAndTestContainerArgs,
 	subjectServerContainerArgs,
-	subjectTestContainerArgs,
 } from "./ci-produce-verb.ts";
 import {LOCALHOST_DECLARATIONS_PATH, parseLocalhostDeclarations} from "./localhost-evidence.ts";
 
@@ -52,25 +52,67 @@ describe("localhost evidence governance floor", () => {
 			".github/review-ui-localhost-subject.Dockerfile",
 		);
 		const dockerfile = read(".github/review-ui-localhost-subject.Dockerfile");
-		assert.include(dockerfile, "pnpm install --frozen-lockfile");
+		assert.include(dockerfile, "pnpm fetch --frozen-lockfile --ignore-scripts --ignore-pnpmfile");
+		assert.notInclude(dockerfile, "pnpm install --frozen-lockfile");
 		assert.include(dockerfile, "USER node");
-		const test = subjectTestContainerArgs("subject", ["pnpm", "test"]);
+		const test = subjectInstallAndTestContainerArgs("subject", "subject-workspace", [
+			"pnpm",
+			"test",
+		]);
 		assert.include(test, "none");
 		assert.include(test, "--read-only");
+		assert.include(test, "--cap-drop");
+		assert.include(test, "no-new-privileges");
+		assert.include(
+			test,
+			'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile && exec "$@"',
+		);
 		assert.notInclude(test.join(" "), "authority");
 		assert.notInclude(test.join(" "), "review-ui-localhost-tuval");
 
 		const server = subjectServerContainerArgs(
 			"subject",
 			"subject-server",
+			"subject-workspace",
 			"/trusted-fixture",
 			4173,
 			["node", "server.mjs", "4173"],
 		);
 		assert.include(server, "--read-only");
+		assert.include(server, "--cap-drop");
+		assert.include(server, "no-new-privileges");
+		assert.include(server, "type=volume,src=subject-workspace,dst=/subject,readonly");
 		assert.include(server, "type=bind,src=/trusted-fixture,dst=/review-ui-fixture,readonly");
 		assert.notInclude(server.join(" "), "authority");
 		assert.notInclude(server.join(" "), "review-ui-localhost-tuval");
+	});
+
+	it("keeps every review-ui verb contract locally complete", () => {
+		const contract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
+		const verbs = ["fetch", "ci-produce", "render", "post", "note", "route"];
+		const headings = [
+			"Invocation",
+			"Inputs",
+			"Output",
+			"Exit status",
+			"Errors",
+			"Scope",
+			"Examples",
+			"Grounding",
+		];
+		for (const [index, verb] of verbs.entries()) {
+			const start = contract.indexOf(`## \`review-ui ${verb}\``);
+			const next =
+				index === verbs.length - 1
+					? contract.length
+					: contract.indexOf("\n## `review-ui ", start + 1);
+			assert.isAtLeast(start, 0, `review-ui ${verb} section`);
+			const section = contract.slice(start, next < 0 ? contract.length : next);
+			for (const heading of headings) {
+				assert.include(section, `**${heading}**`, `review-ui ${verb} ${heading}`);
+			}
+			assert.include(section, `$ fabrika review-ui ${verb}`, `review-ui ${verb} literal example`);
+		}
 	});
 
 	it("keeps the governance namespace rooted over .github", () => {

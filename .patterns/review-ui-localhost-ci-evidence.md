@@ -14,13 +14,21 @@ reads it through GitHub, never from the PR checkout. GitHub documents that `pull
 in the base context and warns against executing untrusted code directly in that privileged event
 ([event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)).
 
-The subject checkout is therefore inert host data used only as the build context of the base-owned
-Dockerfile. PR-controlled install, test, and server execution occurs in a read-only,
-capability-dropped container with no Actions credentials, authority checkout, Docker socket, or
-artifact-output mount. Docker documents that bind mounts are the mechanism that exposes host paths
-and that read-only bind mounts prevent container writes
-([bind mounts](https://docs.docker.com/engine/storage/bind-mounts/)); the producer exposes only a
-read-only fixture. The trusted host drives Playwright and alone writes the captures and manifest.
+The subject checkout is input only to the base-owned Dockerfile. Image construction installs fixed
+producer tools and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged
+`node` user; pnpm defines `fetch` as lockfile package acquisition into the virtual store rather than
+installation ([pnpm fetch](https://pnpm.io/cli/fetch)), and the two flags disable lifecycle and
+PR-supplied pnpmfile hooks, so no PR-controlled code executes in that build step. An offline `pnpm
+install` then runs every
+PR-controlled lifecycle script and the governed test in one disposable workspace volume under a
+read-only root filesystem, `--cap-drop ALL`, `no-new-privileges`, and `--network none`. The server
+reuses the installed workspace read-only under the same root/capability restrictions and receives
+only the read-only fixture. Neither container receives Actions credentials, the authority checkout,
+Docker socket, or artifact-output mount. Docker documents those root, capability, network, security,
+and mount controls in the
+[`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/) and
+[bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/). The trusted host drives
+Playwright and alone writes the captures and manifest.
 
 ## Producer record
 
@@ -41,11 +49,16 @@ comparison, then matched exactly against the declaration.
 The consumer re-derives hashes and dimensions, rejects unreadable error coverage, re-reads the live
 head, copies the validated set into reviewer-owned scratch, and writes a receipt binding the manifest
 hash to the observed run, check, and artifact ids. The artifact cannot supply that receipt because
-its member allowlist excludes it.
+its member allowlist excludes it. An accepted artifact containing an uncaught page error is still
+materialized, then `fetch` exits `13`: this is a proven red render that must be posted as FAIL, not an
+unresolved CANT-SEE.
 
 `review-ui post` accepts route-shaped preview sets from `review-ui render`. A CI source or non-route
 surface is CI-shaped and must carry the positive CI manifest and matching consumer receipt, so a
 preview-shaped local manifest cannot present a governed localhost surface to bypass provenance. The
-verb revalidates every capture and the live head, verified-uploads the pixels, records provenance and
-browser-error coverage, and emits the ordinary `review-ui` marker. `ship` has no alternate marker or
+verb revalidates every capture and the live head, reads the governed declaration again, re-resolves
+the exact run/check/artifact ids through GitHub, verified-uploads the pixels, records the workflow,
+event, run, check and artifact provenance plus browser-error coverage, and refuses a PASS over any
+recorded uncaught page error before it emits the ordinary
+`review-ui` marker. `ship` has no alternate marker or
 bypass: missing or invalid CI evidence leaves the namespace empty.

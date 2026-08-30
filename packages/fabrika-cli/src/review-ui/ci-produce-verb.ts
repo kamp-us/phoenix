@@ -56,6 +56,7 @@ export interface CiProduceOptions {
 	readonly authorityRoot: string;
 	readonly outputDir: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	readonly capture?: typeof captureLocalhost;
 }
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes).trim();
@@ -76,8 +77,9 @@ const containerGuardArgs = (): readonly string[] => [
 	"/tmp:rw,nosuid,nodev,size=64m",
 ];
 
-export const subjectTestContainerArgs = (
+export const subjectInstallAndTestContainerArgs = (
 	image: string,
+	volume: string,
 	command: readonly string[],
 ): readonly string[] => [
 	"run",
@@ -85,13 +87,23 @@ export const subjectTestContainerArgs = (
 	"--network",
 	"none",
 	...containerGuardArgs(),
+	"--mount",
+	`type=volume,src=${volume},dst=/subject`,
+	"--workdir",
+	"/subject",
+	"--entrypoint",
+	"sh",
 	image,
+	"-c",
+	'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile && exec "$@"',
+	"--",
 	...command,
 ];
 
 export const subjectServerContainerArgs = (
 	image: string,
 	name: string,
+	volume: string,
 	fixtureRoot: string,
 	containerPort: number,
 	command: readonly string[],
@@ -102,6 +114,10 @@ export const subjectServerContainerArgs = (
 	"--name",
 	name,
 	...containerGuardArgs(),
+	"--mount",
+	`type=volume,src=${volume},dst=/subject,readonly`,
+	"--workdir",
+	"/subject",
 	"--mount",
 	`type=bind,src=${fixtureRoot},dst=/review-ui-fixture,readonly`,
 	"--env",
@@ -233,6 +249,7 @@ export const runCiProduce = (
 
 		const image = `fabrika-review-ui-subject-${options.runId}`;
 		const container = `${image}-server`;
+		const volume = `${image}-workspace`;
 		const fixtureRead = yield* Effect.tryPromise({
 			try: createFixture,
 			catch: (cause) => String(cause),
@@ -245,6 +262,13 @@ export const runCiProduce = (
 			yield* ran("docker", ["rm", "--force", container], options.authorityRoot, env, 30).pipe(
 				Effect.ignore,
 			);
+			yield* ran(
+				"docker",
+				["volume", "rm", "--force", volume],
+				options.authorityRoot,
+				env,
+				30,
+			).pipe(Effect.ignore);
 			yield* ran("docker", ["image", "rm", "--force", image], options.authorityRoot, env, 60).pipe(
 				Effect.ignore,
 			);
@@ -284,9 +308,23 @@ export const runCiProduce = (
 				);
 			}
 
+			const volumeCreated = yield* ran(
+				"docker",
+				["volume", "create", volume],
+				options.authorityRoot,
+				env,
+				30,
+			);
+			if (volumeCreated._tag !== "Ran" || volumeCreated.exitCode !== 0) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: the isolated subject workspace could not be created.`,
+				);
+			}
+
 			const tested = yield* ran(
 				"docker",
-				subjectTestContainerArgs(image, harness.captureCommand),
+				subjectInstallAndTestContainerArgs(image, volume, harness.captureCommand),
 				options.authorityRoot,
 				env,
 				1_200,
@@ -303,6 +341,7 @@ export const runCiProduce = (
 				subjectServerContainerArgs(
 					image,
 					container,
+					volume,
 					fixtureRoot,
 					harness.containerPort,
 					harness.serverCommand,
@@ -357,7 +396,7 @@ export const runCiProduce = (
 				return refuse(PRECONDITION_UNKNOWN, `${VERB}: the subject server port is unreadable.`);
 			}
 
-			const captures = yield* captureLocalhost(
+			const captures = yield* (options.capture ?? captureLocalhost)(
 				`http://127.0.0.1:${portMatch[1]}`,
 				options.outputDir,
 				harness.captureReadySelector,

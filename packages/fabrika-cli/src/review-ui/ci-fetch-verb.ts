@@ -2,6 +2,7 @@
  * `review-ui fetch` resolves one governed localhost producer through GitHub and materializes only
  * its independently validated exact-head captures in reviewer-owned scratch. Producer identities
  * and artifact locations are declaration-derived; no filesystem or Actions identity is an input.
+ * Exit `13` is a materialized, integrity-validated red render, not an unresolved evidence state.
  */
 import {copyFile, mkdir, readFile, rename, rm, writeFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
@@ -159,12 +160,6 @@ export const runCiFetch = (
 		const red = manifest.captures.flatMap((capture) =>
 			capture.pageErrors.rows.filter((error) => error.kind === "pageerror"),
 		);
-		if (red.length > 0) {
-			return refuse(
-				RENDER_CRASHED,
-				`${VERB}: the artifact records ${red.length} uncaught page error(s); the render is red.`,
-			);
-		}
 		for (const capture of manifest.captures) {
 			const bytesRead = yield* Effect.tryPromise({
 				try: () => readFile(join(bundle.value.directory, capture.path)),
@@ -236,6 +231,12 @@ export const runCiFetch = (
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot materialize reviewer-owned evidence scratch (${materialized.failure}).`,
+			);
+		}
+		if (red.length > 0) {
+			return refuse(
+				RENDER_CRASHED,
+				`${VERB}: the accepted artifact records ${red.length} uncaught page error(s); the materialized render is red and must be posted as FAIL.`,
 			);
 		}
 		return answer(

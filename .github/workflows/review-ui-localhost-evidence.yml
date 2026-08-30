@@ -40,7 +40,7 @@ jobs:
           path: authority
           persist-credentials: false
 
-      - name: Check out exact PR head as inert Docker build context
+      - name: Check out exact PR head as isolated subject input
         uses: actions/checkout@v4.2.2
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}

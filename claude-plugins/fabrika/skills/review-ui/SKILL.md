@@ -100,10 +100,13 @@ fabrika review-ui fetch $pr_number --harness tuval --out judged
 
 Read the exact inputs, producer-resolution refusals, provenance receipt, output, and exit mapping at
 `fabrika wire doc-section --heading "review-ui fetch" < <skill-base>/contract.md`. **Do not execute
-the PR locally and do not consume builder captures.** A refused fetch leaves the namespace empty and
-routes CANT-SEE; name the blocker through `review-ui note`. Inspect the fetched pixels and recorded
-page/console errors, then post the ordinary verdict with `--evidence judged`. The operator sequence,
-including the Tuval #7190 recovery, lives in
+the PR locally and do not consume builder captures.** Exit `13` is the one red-render result: the
+validated set is materialized, its uncaught page errors are proven FAIL ground, and you post the
+ordinary FAIL with `--evidence judged`. It is never CANT-SEE. Exit `12` means the head moved and the
+fetch must be retried at the new head. Other producer/evidence refusals leave the namespace empty and
+route CANT-SEE through `review-ui note`; never post from an unresolved set. After a successful fetch,
+inspect the pixels and recorded page/console errors, then post the ordinary verdict with `--evidence
+judged`. The operator sequence, including the Tuval #7190 recovery, lives in
 [`ops/runbook-review-ui-localhost-evidence.md`](../../../../ops/runbook-review-ui-localhost-evidence.md).
 
 ```bash
