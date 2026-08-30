@@ -183,6 +183,34 @@ export const CONFIG_REFUSED = 18;
  * the message says which, because the caller's move differs: claim first, versus back off.
  */
 export const CLAIM_NOT_HELD = 19;
+/**
+ * Refused: the body being written states an ordering the live `blocked_by` graph carries no edge for.
+ *
+ * ADR 0301 makes the graph the one carrier of "do not start this yet", so prose stating an ordering
+ * the graph does not carry produces an issue `build pick` admits and no lane can build — #6663
+ * shipped exactly that and cost a claim, a read pass and a back-off. The founder ruling on #6728
+ * makes `enrich` fail-closed over it, on the `fanout-guard` / `catalog-guard` idiom.
+ *
+ * **There is no override flag**, and the two escapes are on the refusal line: wire the edge with
+ * `triage apply <n> --blocked-by <m>`, or reword the body so it states no ordering it does not own.
+ *
+ * Its own seat rather than {@link MALFORMED_CRITERIA}'s: that one is about the *shape* of a block in
+ * the body, fixed by re-sending corrected markdown, and this one is about the body disagreeing with
+ * the *graph*, which a re-send alone can never fix.
+ */
+export const UNWIRED_ORDERING = 20;
+/**
+ * Refused: a `--blocked-by` target is a **pull request**, and ADR 0301 says to name an issue instead.
+ *
+ * "a blocking pull request is named in the graph by the issue its merge closes" — so the edge the
+ * caller wants exists, addressed by another number. The remedy is a different argument, which is why
+ * this is a refusal rather than a POST the API is left to judge.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE}'s: `repos/{o}/{r}/issues/<n>` serves pull requests, so
+ * a PR number resolves `Present` and the proven-absent arm can never fire for one. Fusing the two
+ * would tell a caller "no such issue" about a number that exists and is on their screen.
+ */
+export const PULL_REQUEST_TARGET = 21;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -257,6 +285,16 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 	{
 		code: CLAIM_NOT_HELD,
 		meaning: "refused: the asking lane holds no live claim on the target",
+	},
+	{
+		code: UNWIRED_ORDERING,
+		meaning:
+			"refused: the composed body states an ordering the live blocked_by graph carries no edge for",
+	},
+	{
+		code: PULL_REQUEST_TARGET,
+		meaning:
+			"refused: a --blocked-by target is a pull request — ADR 0301 names a blocking PR by the issue its merge closes",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},
