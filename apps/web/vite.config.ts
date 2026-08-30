@@ -1,6 +1,7 @@
 import react from "@vitejs/plugin-react";
 import {fate} from "react-fate/vite";
 import {defineConfig} from "vite";
+import {piHarness} from "./piHarness.ts";
 
 // ── The two-process dev loop (ADR 0030) ──
 // `@cloudflare/vite-plugin` is gone: it only drives alchemy's *other* worker
@@ -23,6 +24,9 @@ const worker = {
 
 export default defineConfig({
 	plugins: [
+		// The agent harness stays on Vite's local-only development process: the deployed
+		// Cloudflare worker never gets a subprocess bridge. See .patterns/agent-chat-pi-rpc.md.
+		piHarness(),
 		// fate's codegen runs as a Vite plugin (no hand-run codegen, no committed
 		// artifact). It reads the server's data views + `fateServer` manifest from
 		// `worker/features/fate/schema.ts` and generates the typed `react-fate/client`
