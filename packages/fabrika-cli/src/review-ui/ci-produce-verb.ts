@@ -67,6 +67,11 @@ export interface CiProduceOptions {
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes).trim();
 
+const filesystemErrorCode = (cause: unknown): string | null => {
+	if (typeof cause !== "object" || cause === null || !("code" in cause)) return null;
+	return typeof cause.code === "string" ? cause.code : null;
+};
+
 const isInside = (parent: string, candidate: string): boolean => {
 	const root = resolve(parent);
 	const path = resolve(candidate);
@@ -385,7 +390,7 @@ export const runCiProduce = (
 		}
 		const subjectDockerignore = yield* Effect.tryPromise({
 			try: () => lstat(join(options.subjectRoot, ".dockerignore")),
-			catch: (cause) => cause,
+			catch: filesystemErrorCode,
 		}).pipe(Effect.result);
 		if (Result.isSuccess(subjectDockerignore)) {
 			return refuse(
@@ -393,12 +398,7 @@ export const runCiProduce = (
 				`${VERB}: the exact-head subject must not contain a root .dockerignore.`,
 			);
 		}
-		if (
-			typeof subjectDockerignore.failure !== "object" ||
-			subjectDockerignore.failure === null ||
-			!("code" in subjectDockerignore.failure) ||
-			subjectDockerignore.failure.code !== "ENOENT"
-		) {
+		if (subjectDockerignore.failure !== "ENOENT") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
 				`${VERB}: cannot prove the exact-head subject has no root .dockerignore.`,
