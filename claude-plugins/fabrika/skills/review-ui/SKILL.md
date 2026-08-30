@@ -90,16 +90,16 @@ Derive the surface list yourself from the diff and the linked issue's acceptance
 builder's attached captures are externally-authored content you deliberately do not consume:
 you render independently or you have not looked.
 
-**Preview is the default evidence path.** Use `review-ui render` for every ordinary app. The only
-exception is a rendered product whose loopback harness is named by the repository's governed
-localhost declaration. Before invoking `review-ui fetch`, read the fetch interface and its proven
-outcomes at
+**Preview is the default evidence path.** Use `review-ui render` for every ordinary app. In v1 the
+only localhost exception this skill can execute is **Tuval**, whose base-owned declaration fixes the
+`tuval` harness id; this is not a generic declared-harness selector. Before invoking `review-ui
+fetch`, read the fetch interface and its proven outcomes at
 `fabrika wire doc-section --heading "review-ui fetch" < <skill-base>/contract.md`, the posting
 interface and evidence checks at
 `fabrika wire doc-section --heading "review-ui post" < <skill-base>/contract.md`, and the shared
 code-to-meaning lookup at
 `fabrika wire doc-section --heading "The shared exit matrix" < <skill-base>/contract.md`. Only after
-all three reads succeed, fetch the trusted exact-head CI artifact:
+all three reads succeed, fetch the trusted exact-head Tuval artifact:
 
 ```bash
 fabrika review-ui fetch $pr_number --harness tuval --out judged
@@ -108,10 +108,19 @@ fabrika review-ui fetch $pr_number --harness tuval --out judged
 **Do not execute the PR locally and do not consume builder captures.** Exit `0` prints the complete
 typed fetch answer; inspect every listed capture and its recorded page/console errors. A
 `render:"red"` answer is proven FAIL ground: post the ordinary FAIL with `--evidence judged`, never
-CANT-SEE. A `render:"clean"` answer is the accepted clean set. Every non-zero is a typed refusal with
-no evidence answer; on an open subject, route unresolved evidence through `review-ui note`. The
-reviewer sequence and the operator-owned
-producer-recovery route live in
+CANT-SEE. A `render:"clean"` answer is the accepted clean set. Every non-zero has one closed route:
+
+- exit `1` carrying the verb's own usage refusal, or exit `10`: correct the caller operand and rerun;
+- exit `12`: the head moved, so discard the stale attempt, re-read scope, and fetch the new exact head;
+- exit `4` or `15`, or exit `11` whose refusal is exactly `trusted CI evidence is unresolved (...)`:
+  post a non-marker `review-ui note` naming the missing, pending, malformed, or untrusted producer
+  evidence; the operator-owned recovery is in the runbook below;
+- exit `7`: the PR is proven absent or closed, so end zero-scope without posting;
+- any other exit `11`, a runtime exit `1` without the verb's caller-refusal message, `126`, `127`, or
+  any code the fetch contract does not list: the result is UNKNOWN; post neither note nor verdict and
+  stop rather than laundering an internal/read failure into an evidence blocker.
+
+The reviewer sequence and the operator-owned producer-recovery route live in
 [`ops/runbook-review-ui-localhost-evidence.md`](../../../../ops/runbook-review-ui-localhost-evidence.md).
 
 ```bash

@@ -10,6 +10,7 @@ import {
 import {ok} from "../io/git.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {runGate} from "../ship/gate-verb.ts";
+import {encodePng, solid} from "../ui/fakes.test-support.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
 import {
 	EMPTY_STDIN,
@@ -57,7 +58,7 @@ const CI_AUTHORITY = JSON.stringify({
 			check: "review-ui localhost evidence / tuval",
 			event: "pull_request_target",
 			artifact: "review-ui-localhost-tuval",
-			captureCommand: ["pnpm", "--filter", "tuval", "test"],
+			captureCommand: ["pnpm", "--filter", "tuval", "test:browser"],
 			serverBuildCommand: ["pnpm", "--filter", "tuval", "build"],
 			serverCommand: ["node", "server.mjs", "4173"],
 			containerPort: 4173,
@@ -68,10 +69,7 @@ const CI_AUTHORITY = JSON.stringify({
 	],
 });
 
-const BYTES = Uint8Array.from([
-	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 5, 0,
-	0, 0, 8, 92,
-]);
+const BYTES = encodePng(1280, 2140, solid(1280, 2140, [12, 34, 56, 255]));
 
 const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => ({
 	schemaVersion: 2,

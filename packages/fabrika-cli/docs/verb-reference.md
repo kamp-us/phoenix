@@ -848,11 +848,12 @@ artifact for a declared localhost-only product. Contract:
 | `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |
 
 **Exit codes.** The shared table (with `4` a required file that does not parse or violates its
-schema), plus `12` the artifact is not the PR's current tree · `13` a surface threw an uncaught
-page error · `14` a surface is unreachable — status ≥ 400 or a failed navigation · `15` a capture
-was produced and is invalid — zero bytes, undecodable, or zero area · `16` no preview deployment
-exists for this PR, the skill's CANT-SEE route · `17` an evidence upload or its verification
-failed, with **nothing posted**.
+schema), plus `12` the artifact is not the PR's current tree · `13` preview `render` proved an
+uncaught page error, or `post` refused an attempted PASS over red evidence; a complete fetched CI set
+with `render:"red"` returns `0` · `14` a surface is unreachable — status ≥ 400 or a failed
+navigation · `15` capture bytes fail complete PNG decoding (chunk structure/CRC/IEND/inflate/raster),
+hash, dimensions, or set membership · `16` no preview deployment exists for this PR, the skill's
+CANT-SEE route · `17` an evidence upload or its verification failed, with **nothing posted**.
 
 ## The `ship` group
 

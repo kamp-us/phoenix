@@ -87,9 +87,10 @@ const records = yield* captureAndUpload({
   preview". `announcedApps` / `isPreviewAnnouncement` are its two probes. The
   `review-ui render` verb refuses on the SHA mismatch: pixels of an old tree must not
   bind a new head (ADR 0058).
-- `validateCaptureBytes(pngBytes)` is the capture-validity check — zero bytes,
-  undecodable, or zero area — over the PNG header alone (`decodePngHeader`), so it stays
-  pure and codec-free. A capture nobody can open is not evidence.
+- `validateCaptureBytes(pngBytes)` delegates to the governed `ui` PNG decoder. It requires the
+  complete chunk stream, every CRC, terminal IEND, an exact inflated raster, non-zero dimensions,
+  and no truncation or trailing bytes. `decodePngHeader` returns dimensions only after that complete
+  proof. A capture nobody can open is not evidence.
 
 Pure cores also exported for reuse/testing: `parseSurfaceSpec`,
 `buildCapturePlan`, `joinPreviewUrl`, `surfaceFileName`, `mergeRecord`,

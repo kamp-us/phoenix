@@ -7,7 +7,7 @@
 			"check": "review-ui localhost evidence / tuval",
 			"event": "pull_request_target",
 			"artifact": "review-ui-localhost-tuval",
-			"captureCommand": ["pnpm", "--filter", "tuval", "test"],
+			"captureCommand": ["pnpm", "--filter", "tuval", "test:browser"],
 			"serverBuildCommand": ["pnpm", "--filter", "tuval", "build"],
 			"serverCommand": ["node", "packages/tuval/test/browser/tuval-server.mjs", "4173"],
 			"containerPort": 4173,

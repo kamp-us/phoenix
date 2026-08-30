@@ -6,6 +6,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {forgetAmbientToken} from "../io/gh-api.ts";
 import {fail, ok} from "../io/git.ts";
+import {encodePng, solid} from "../ui/fakes.test-support.ts";
 import {runCiFetch} from "./ci-fetch-verb.ts";
 import {CI_PROVENANCE_RECEIPT, declarationDigest} from "./localhost-evidence.ts";
 import {sha256Hex} from "./manifest.ts";
@@ -16,10 +17,9 @@ const PULL = /GET .*\/repos\/o\/r\/pulls\/7190\b/;
 const REPO = /GET .*\/repos\/o\/r$/;
 const AUTHORITY_COMMIT = /GET .*\/repos\/o\/r\/commits\/main$/;
 const AUTHORITY = /GET .*\/repos\/o\/r\/contents\/\.github\/review-ui-localhost-harnesses\.json/;
-const PNG = Uint8Array.from([
-	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 5, 0,
-	0, 0, 3, 32,
-]);
+const PNG = encodePng(1280, 800, solid(1280, 800, [12, 34, 56, 255]));
+const CRC_CORRUPT_PNG = PNG.slice();
+CRC_CORRUPT_PNG[29] = (CRC_CORRUPT_PNG[29] ?? 0) ^ 0xff;
 
 const authority = JSON.stringify({
 	schemaVersion: 1,
@@ -30,7 +30,7 @@ const authority = JSON.stringify({
 			check: "review-ui localhost evidence / tuval",
 			event: "pull_request_target",
 			artifact: "review-ui-localhost-tuval",
-			captureCommand: ["pnpm", "--filter", "tuval", "test"],
+			captureCommand: ["pnpm", "--filter", "tuval", "test:browser"],
 			serverBuildCommand: ["pnpm", "--filter", "tuval", "build"],
 			serverCommand: ["node", "server.mjs", "4173"],
 			containerPort: 4173,
@@ -244,6 +244,18 @@ describe("runCiFetch", () => {
 				name: "invalid capture bytes",
 				manifest: ciManifest(),
 				bytes: new TextEncoder().encode("tampered"),
+				expected: 15,
+			},
+			{
+				name: "truncated PNG",
+				manifest: ciManifest(),
+				bytes: PNG.subarray(0, PNG.length - 5),
+				expected: 15,
+			},
+			{
+				name: "CRC-corrupt PNG",
+				manifest: ciManifest(),
+				bytes: CRC_CORRUPT_PNG,
 				expected: 15,
 			},
 			{

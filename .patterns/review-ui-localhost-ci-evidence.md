@@ -38,10 +38,15 @@ neither package lifecycle scripts nor the PR's pnpmfile hooks.
 An offline `pnpm install` then runs every PR-controlled lifecycle script and the governed test in a
 disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
 `no-new-privileges`, `--network none`, two CPUs, 2 GiB memory with no swap headroom, and 256 PIDs.
-Every foreground container is named before it starts, so the producer's unconditional cleanup can
-force-remove it after a client timeout. The test and server workspaces are named volumes backed by a
-2 GiB tmpfs rather than unbounded writable storage; capture output has a separate 256 MiB tmpfs
-ceiling, and cleanup force-removes every volume. The local driver's tmpfs is kept mounted from
+Every foreground container is named before it starts, so cleanup can attempt force-removal after a
+client timeout. The test and server workspaces are named volumes backed by a 2 GiB tmpfs rather than
+unbounded writable storage; capture output has a separate 256 MiB tmpfs ceiling. Cleanup attempts
+every named container, volume, image, and fixture sequentially on every outcome. Only an exact
+Docker absence response bound to that resource kind and name is ignored. Any other cleanup failure
+turns an otherwise successful run into UNKNOWN; an already-red operation keeps its original code and
+diagnostics and appends the cleanup failure. Fixture ownership begins at temporary-root creation, so
+a partial directory/write/permission failure also attempts removal and preserves both diagnostics
+when setup and cleanup fail. The local driver's tmpfs is kept mounted from
 sidecar write through read-only extraction by one named keeper container. This is required because
 tmpfs data does not survive an unmount
 ([Linux tmpfs](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)); sequential ephemeral
@@ -81,7 +86,9 @@ navigation-response, and manifest boundaries. The
 [Docker integration test](../packages/fabrika-cli/src/review-ui/ci-produce-docker.integration.test.ts)
 requires a prepared `server.mjs` to start from the kept server tmpfs, then requires the exact
 sidecar PNG bytes to survive the separate kept capture tmpfs and extraction into an artifact-ready
-manifest. A passing Docker-backed run proves that end-to-end byte path for its fixture.
+manifest. The fixture is a complete decodable PNG, and the shared delegated decoder verifies chunk
+structure, every CRC, terminal IEND, inflate/raster output, dimensions, and no truncation or trailing
+bytes. A passing Docker-backed run proves that end-to-end byte path for its fixture.
 
 The resulting positive record binds the PR source, governed authority, producer identity, declared
 journey, captures, integrity measurements, and readable browser-error evidence. That binding lets a

@@ -13,7 +13,6 @@ describe("decodePng", () => {
 		expect([...decoded.image.pixels]).toEqual([...pixels]);
 	});
 
-	/** Every one of these is what "a capture nobody can open" looks like on disk (#3925's class). */
 	it.each([
 		["zero bytes", new Uint8Array(0), "zero bytes"],
 		[
@@ -25,12 +24,27 @@ describe("decodePng", () => {
 		expect(decodePng(bytes)).toEqual({_tag: "Invalid", detail});
 	});
 
-	it("calls a PNG truncated mid-IDAT invalid rather than decoding a partial image", () => {
+	it("refuses chunk truncation, CRC corruption, missing IEND, and trailing bytes", () => {
 		const png = encodePng(4, 4, solid(4, 4, [0, 0, 0, 255]));
-		// Past the IEND chunk and into the pixel stream: a cut that only loses IEND is still a
-		// complete image, so the truncation has to reach the data to be a truncation at all.
-		const decoded = decodePng(png.subarray(0, png.length - 20));
-		expect(decoded._tag).toBe("Invalid");
+		expect(decodePng(png.subarray(0, png.length - 20))).toMatchObject({_tag: "Invalid"});
+		expect(decodePng(png.subarray(0, png.length - 12))).toEqual({
+			_tag: "Invalid",
+			detail: "the stream carries no complete IEND chunk",
+		});
+
+		const corrupt = png.slice();
+		corrupt[29] = (corrupt[29] ?? 0) ^ 0xff;
+		expect(decodePng(corrupt)).toEqual({
+			_tag: "Invalid",
+			detail: "the IHDR chunk CRC does not match",
+		});
+
+		const trailing = new Uint8Array(png.length + 1);
+		trailing.set(png);
+		expect(decodePng(trailing)).toEqual({
+			_tag: "Invalid",
+			detail: "the stream has bytes after IEND",
+		});
 	});
 });
 

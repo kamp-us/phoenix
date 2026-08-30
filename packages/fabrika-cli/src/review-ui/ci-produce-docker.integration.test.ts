@@ -163,7 +163,7 @@ import {join} from "node:path";
 const [port, outputDir] = process.argv.slice(2);
 const response = await fetch(\`http://127.0.0.1:\${port}/\`);
 if (!response.ok || !(await response.text()).includes("trusted sidecar fixture")) process.exit(2);
-const png = Uint8Array.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,5,0,0,0,3]);
+const png = Uint8Array.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,5,0,0,0,3,8,6,0,0,0,91,54,197,248,0,0,0,18,73,68,65,84,120,156,99,224,81,178,248,143,142,25,136,22,4,0,125,71,20,236,96,202,120,172,0,0,0,0,73,69,78,68,174,66,96,130]);
 await mkdir(join(outputDir, "captures"), {recursive: true});
 await writeFile(join(outputDir, "captures/desktop.png"), png);
 await writeFile(join(outputDir, "capture-result.json"), JSON.stringify([{surface:"desktop",route:"/",state:"desktop",fileName:"desktop.png",pageErrors:[],status:200}]));
@@ -214,9 +214,10 @@ await writeFile(join(outputDir, "capture-result.json"), JSON.stringify([{surface
 					.sort();
 				expect(members).toEqual(["captures/desktop.png", "manifest.json"]);
 				expect(await readFile(join(outputDir, "captures/desktop.png"))).toEqual(
-					Buffer.from([
-						137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 5, 0, 0, 0, 3,
-					]),
+					Buffer.from(
+						"iVBORw0KGgoAAAANSUhEUgAAAAUAAAADCAYAAABbNsX4AAAAEklEQVR4nGPgUbL4j44ZiBYEAH1HFOxgynisAAAAAElFTkSuQmCC",
+						"base64",
+					),
 				);
 				await expect(readFile(join(outputDir, "capture-result.json"))).rejects.toThrow();
 			} finally {

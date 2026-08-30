@@ -2,10 +2,10 @@
  * The PNG decoder the `ui` group validates and diffs with — `node:zlib` and nothing else.
  *
  * A capture nobody can open is not evidence (#3925's class), so "is this PNG valid?" has to be
- * answered by actually decoding it: zero bytes, a truncated stream, a corrupt IDAT and a zero-area
- * image are all facts a header sniff would miss. The decoder is deliberately dependency-free —
- * fabrika is a published package an adopter installs, and a codec dependency for a few hundred lines
- * of spec-defined unfiltering buys nothing.
+ * answered by actually decoding it: zero bytes, a truncated stream, a corrupt chunk/IDAT and a
+ * zero-area image are all facts a header sniff would miss. The decoder is deliberately
+ * dependency-free — fabrika is a published package an adopter installs, and a codec dependency for
+ * a few hundred lines of spec-defined parsing and unfiltering buys nothing.
  *
  * The supported subset is 8-bit, non-interlaced, colour types 0/2/3/4/6 — what every headless-browser
  * screenshot emits. Anything else decodes to an {@link Invalid} with the encoding named, never to a
@@ -28,8 +28,25 @@ export type PngRead =
 
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 const CHANNELS: Readonly<Record<number, number>> = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4};
+const CHUNK_TYPE = /^[A-Za-z]{4}$/;
 
 const invalid = (detail: string): PngRead => ({_tag: "Invalid", detail});
+
+const CRC_TABLE = (() => {
+	const table = new Uint32Array(256);
+	for (let n = 0; n < 256; n++) {
+		let c = n;
+		for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+		table[n] = c >>> 0;
+	}
+	return table;
+})();
+
+const crc32 = (bytes: Uint8Array): number => {
+	let c = 0xffffffff;
+	for (const byte of bytes) c = (CRC_TABLE[(c ^ byte) & 0xff] as number) ^ (c >>> 8);
+	return (c ^ 0xffffffff) >>> 0;
+};
 
 const paeth = (a: number, b: number, c: number): number => {
 	const p = a + b - c;
@@ -43,7 +60,12 @@ const paeth = (a: number, b: number, c: number): number => {
 /** Reverse the per-scanline filters in place, yielding raw samples row-major. */
 const unfilter = (raw: Buffer, width: number, height: number, bpp: number): Buffer | string => {
 	const stride = width * bpp;
-	if (raw.length < height * (stride + 1)) return "the pixel stream is truncated";
+	const expected = height * (stride + 1);
+	if (raw.length !== expected) {
+		return raw.length < expected
+			? "the pixel stream is truncated"
+			: "the pixel stream has trailing decoded bytes";
+	}
 	const out = Buffer.alloc(height * stride);
 	let pos = 0;
 	for (let y = 0; y < height; y++) {
@@ -137,32 +159,71 @@ export const decodePng = (bytes: Uint8Array): PngRead => {
 	let interlace = 0;
 	let palette: Buffer | null = null;
 	let transparency: Buffer | null = null;
+	let sawIhdr = false;
+	let sawIend = false;
+	let sawIdat = false;
+	let idatClosed = false;
 	const idat: Buffer[] = [];
-	while (offset + 8 <= buf.length) {
+	while (offset < buf.length) {
+		if (buf.length - offset < 12) return invalid("the final PNG chunk is truncated");
 		const length = buf.readUInt32BE(offset);
 		const type = buf.toString("ascii", offset + 4, offset + 8);
+		if (!CHUNK_TYPE.test(type)) return invalid("the stream carries an invalid chunk type");
 		const start = offset + 8;
-		if (start + length > buf.length) return invalid(`the ${type} chunk is truncated`);
-		const data = buf.subarray(start, start + length);
+		const end = start + length;
+		if (end + 4 > buf.length) return invalid(`the ${type} chunk is truncated`);
+		const expectedCrc = buf.readUInt32BE(end);
+		const actualCrc = crc32(buf.subarray(offset + 4, end));
+		if (expectedCrc !== actualCrc) return invalid(`the ${type} chunk CRC does not match`);
+		const data = buf.subarray(start, end);
+
+		if (!sawIhdr && type !== "IHDR") return invalid("IHDR is not the first chunk");
+		if (sawIdat && type !== "IDAT") idatClosed = true;
 		if (type === "IHDR") {
+			if (sawIhdr) return invalid("the stream carries more than one IHDR chunk");
+			if (length !== 13) return invalid("the IHDR chunk is not 13 bytes");
+			sawIhdr = true;
 			width = data.readUInt32BE(0);
 			height = data.readUInt32BE(4);
 			bitDepth = data[8] as number;
 			colorType = data[9] as number;
+			if (data[10] !== 0 || data[11] !== 0) {
+				return invalid("the IHDR chunk names an unsupported compression or filter method");
+			}
 			interlace = data[12] as number;
-		} else if (type === "PLTE") palette = Buffer.from(data);
-		else if (type === "tRNS") transparency = Buffer.from(data);
-		else if (type === "IDAT") idat.push(Buffer.from(data));
-		else if (type === "IEND") break;
-		offset = start + length + 4;
+		} else if (type === "PLTE") {
+			if (palette !== null || sawIdat)
+				return invalid("the PLTE chunk is duplicated or out of order");
+			palette = Buffer.from(data);
+		} else if (type === "tRNS") {
+			if (transparency !== null || sawIdat) {
+				return invalid("the tRNS chunk is duplicated or out of order");
+			}
+			transparency = Buffer.from(data);
+		} else if (type === "IDAT") {
+			if (idatClosed) return invalid("the IDAT chunks are not consecutive");
+			sawIdat = true;
+			idat.push(Buffer.from(data));
+		} else if (type === "IEND") {
+			if (length !== 0) return invalid("the IEND chunk is not empty");
+			if (!sawIdat) return invalid("IEND appears before any IDAT chunk");
+			sawIend = true;
+			offset = end + 4;
+			break;
+		} else if ((type.charCodeAt(0) & 0x20) === 0) {
+			return invalid(`the stream carries unsupported critical chunk ${type}`);
+		}
+		offset = end + 4;
 	}
-	if (colorType === -1) return invalid("the stream carries no IHDR chunk");
+	if (!sawIhdr) return invalid("the stream carries no IHDR chunk");
+	if (!sawIend) return invalid("the stream carries no complete IEND chunk");
+	if (offset !== buf.length) return invalid("the stream has bytes after IEND");
 	if (width === 0 || height === 0) return invalid(`zero area (${width}x${height})`);
 	if (bitDepth !== 8)
 		return invalid(`unsupported bit depth ${bitDepth} — only 8-bit is decodable here`);
 	if (interlace !== 0) return invalid("interlaced PNGs are not decodable here");
 	if (CHANNELS[colorType] === undefined) return invalid(`unsupported colour type ${colorType}`);
-	if (idat.length === 0) return invalid("the stream carries no IDAT chunk");
+	if (colorType === 3 && palette === null) return invalid("indexed colour carries no PLTE chunk");
 
 	let raw: Buffer;
 	try {

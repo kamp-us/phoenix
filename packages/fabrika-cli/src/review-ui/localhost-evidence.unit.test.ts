@@ -19,7 +19,7 @@ const declarations = {
 			check: "review-ui localhost evidence / tuval",
 			event: "pull_request_target",
 			artifact: "review-ui-localhost-tuval",
-			captureCommand: ["pnpm", "--filter", "tuval", "test"],
+			captureCommand: ["pnpm", "--filter", "tuval", "test:browser"],
 			serverBuildCommand: ["pnpm", "--filter", "tuval", "build"],
 			serverCommand: ["node", "server.mjs", "4173"],
 			containerPort: 4173,

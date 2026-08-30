@@ -6,15 +6,19 @@ import {describe, expect, it} from "vitest";
 import type {CapturedSurface} from "../capture/capture.ts";
 import {errOut, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
 import type {ChildRunner} from "../io/exec.ts";
-import {createFixture, readSidecarCaptures, runCiProduce} from "./ci-produce-verb.ts";
+import {encodePng, solid} from "../ui/fakes.test-support.ts";
+import {
+	createFixture,
+	isDockerResourceAlreadyAbsent,
+	readSidecarCaptures,
+	runCiProduce,
+	type TrustedFixtureOperations,
+} from "./ci-produce-verb.ts";
 import {LOCALHOST_DECLARATIONS_PATH, parseCiCaptureManifest} from "./localhost-evidence.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const AUTHORITY_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const PNG = Uint8Array.from([
-	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 5, 0,
-	0, 0, 3, 32,
-]);
+const PNG = encodePng(5, 3, solid(5, 3, [12, 34, 56, 255]));
 
 const authority = JSON.stringify({
 	schemaVersion: 1,
@@ -25,7 +29,7 @@ const authority = JSON.stringify({
 			check: "review-ui localhost evidence / tuval",
 			event: "pull_request_target",
 			artifact: "review-ui-localhost-tuval",
-			captureCommand: ["pnpm", "--filter", "tuval", "test"],
+			captureCommand: ["pnpm", "--filter", "tuval", "test:browser"],
 			serverBuildCommand: ["pnpm", "--filter", "tuval", "build"],
 			serverCommand: ["node", "server.mjs", "4173"],
 			containerPort: 4173,
@@ -74,6 +78,60 @@ describe("trusted localhost producer flow", () => {
 		expect((await stat(sessions)).mode & 0o777).toBe(0o755);
 		expect((await stat(fixture)).mode & 0o777).toBe(0o644);
 		await rm(root, {recursive: true, force: true});
+	});
+
+	it.each([
+		"mkdir",
+		"writeFile",
+		"chmod-root",
+		"chmod-sessions",
+		"chmod-fixture",
+	])("removes the fixture root when %s fails after ownership begins", async (failure) => {
+		const calls: string[] = [];
+		let chmodCall = 0;
+		const operations: TrustedFixtureOperations = {
+			mkdtemp: async () => {
+				calls.push("mkdtemp");
+				return "/fixture-root";
+			},
+			mkdir: async () => {
+				calls.push("mkdir");
+				if (failure === "mkdir") throw new Error("mkdir failed");
+			},
+			writeFile: async () => {
+				calls.push("writeFile");
+				if (failure === "writeFile") throw new Error("writeFile failed");
+			},
+			chmod: async () => {
+				chmodCall += 1;
+				const phase = ["chmod-root", "chmod-sessions", "chmod-fixture"][chmodCall - 1];
+				calls.push(phase ?? "chmod");
+				if (failure === phase) throw new Error(`${phase} failed`);
+			},
+			rm: async (path) => {
+				calls.push(`rm ${path}`);
+			},
+		};
+
+		await expect(createFixture(operations)).rejects.toThrow(`${failure} failed`);
+		expect(calls.at(-1)).toBe("rm /fixture-root");
+	});
+
+	it("preserves fixture setup and cleanup diagnostics when both fail", async () => {
+		const operations: TrustedFixtureOperations = {
+			mkdtemp: async () => "/fixture-root",
+			mkdir: async () => {
+				throw new Error("mkdir failed first");
+			},
+			writeFile: async () => undefined,
+			chmod: async () => undefined,
+			rm: async () => {
+				throw new Error("rm failed second");
+			},
+		};
+		await expect(createFixture(operations)).rejects.toThrow(
+			/mkdir failed first.*fixture cleanup failed.*rm failed second/,
+		);
 	});
 
 	it("consumes the sidecar control record without leaving it in the artifact", async () => {
@@ -404,8 +462,49 @@ describe("trusted localhost producer flow", () => {
 		await rm(root, {recursive: true, force: true});
 	});
 
+	it("recognizes only exact Docker kind/name absence diagnostics", () => {
+		expect(
+			isDockerResourceAlreadyAbsent(
+				"container",
+				"subject-server",
+				"Error response from daemon: No such container: subject-server",
+			),
+		).toBe(true);
+		expect(
+			isDockerResourceAlreadyAbsent(
+				"volume",
+				"subject-workspace",
+				"Error response from daemon: get subject-workspace: no such volume",
+			),
+		).toBe(true);
+		expect(
+			isDockerResourceAlreadyAbsent(
+				"image",
+				"subject-image",
+				"Error response from daemon: No such image: subject-image:latest",
+			),
+		).toBe(true);
+		expect(
+			isDockerResourceAlreadyAbsent(
+				"container",
+				"subject-server",
+				"dependency not found while removing container subject-server",
+			),
+		).toBe(false);
+		expect(
+			isDockerResourceAlreadyAbsent(
+				"container",
+				"subject-server",
+				"Error response from daemon: No such container: different-server",
+			),
+		).toBe(false);
+	});
+
 	it("makes cleanup command failure blocking and retains an earlier operation failure", async () => {
-		const run = async (journey: Scripted[1]) => {
+		const run = async (
+			journey: Scripted[1],
+			cleanupFailure: Scripted[1] = errOut("daemon refused cleanup"),
+		) => {
 			const root = await mkdtemp(join(tmpdir(), "ci-produce-cleanup-failure-"));
 			const authorityRoot = join(root, "authority");
 			const subjectRoot = join(root, "subject");
@@ -425,7 +524,7 @@ describe("trusted localhost producer flow", () => {
 				[/^docker run --rm --network none .*server-workspace/, okOut("")],
 				[/^docker run --detach .*server-workspace/, okOut("container-id")],
 				[/^docker logs container-id$/, okOut("ready")],
-				[/^docker rm --force .*server-keeper$/, errOut("daemon refused cleanup")],
+				[/^docker rm --force .*server-keeper$/, cleanupFailure],
 				[/^docker rm /, okOut("")],
 				[/^docker volume rm /, okOut("")],
 				[/^docker image rm /, okOut("")],
@@ -467,6 +566,23 @@ describe("trusted localhost producer flow", () => {
 		expect(operationAndCleanup.outcome.code).toBe(11);
 		expect(operationAndCleanup.outcome.stderr.join("\n")).toContain("journey failed first");
 		expect(operationAndCleanup.outcome.stderr.join("\n")).toContain("daemon refused cleanup");
+
+		const unrelatedNotFound = await run(
+			okOut(""),
+			errOut(
+				"dependency not found while removing container fabrika-review-ui-subject-42-server-keeper",
+			),
+		);
+		expect(unrelatedNotFound.outcome.code).toBe(11);
+		expect(unrelatedNotFound.outcome.stderr.join("\n")).toContain("dependency not found");
+
+		const exactAlreadyAbsent = await run(
+			okOut(""),
+			errOut(
+				"Error response from daemon: No such container: fabrika-review-ui-subject-42-server-keeper",
+			),
+		);
+		expect(exactAlreadyAbsent.outcome.code).toBe(0);
 	});
 
 	it("fails immediately with recorded diagnostics when the built server exits before readiness", async () => {
@@ -671,6 +787,7 @@ describe("trusted localhost producer flow", () => {
 		expect(subjectRun).toContain("--read-only --cap-drop ALL");
 		expect(subjectRun).toContain("no-new-privileges");
 		expect(subjectRun).toContain("pnpm install --offline --frozen-lockfile");
+		expect(subjectRun).toContain("pnpm --filter tuval test:browser");
 		expect(subjectRun).not.toContain("GITHUB_TOKEN");
 		expect(serverPreparation).toContain("cp -a /subject-source/. /subject/");
 		expect(serverPreparation).toContain("--ignore-scripts --ignore-pnpmfile");

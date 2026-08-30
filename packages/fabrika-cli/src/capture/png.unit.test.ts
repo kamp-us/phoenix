@@ -1,33 +1,24 @@
 import {assert, describe, it} from "@effect/vitest";
+import {encodePng, solid} from "../ui/fakes.test-support.ts";
 import {decodePngHeader, validateCaptureBytes} from "./png.ts";
 
-/** A PNG signature + IHDR chunk at the declared dimensions — the only bytes the header reader needs. */
-const png = (width: number, height: number): Uint8Array => {
-	const bytes = new Uint8Array(24);
-	bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
-	bytes.set([0x00, 0x00, 0x00, 0x0d], 8);
-	bytes.set([0x49, 0x48, 0x44, 0x52], 12);
-	new DataView(bytes.buffer).setUint32(16, width);
-	new DataView(bytes.buffer).setUint32(20, height);
-	return bytes;
-};
+const png = (width: number, height: number): Uint8Array =>
+	encodePng(width, height, solid(width, height, [10, 20, 30, 255]));
 
 describe("decodePngHeader", () => {
-	it("reads the declared dimensions out of the IHDR chunk", () => {
-		assert.deepStrictEqual(decodePngHeader(png(1280, 2140)), {width: 1280, height: 2140});
+	it("reads dimensions only from a complete decodable PNG", () => {
+		assert.deepStrictEqual(decodePngHeader(png(1280, 800)), {width: 1280, height: 800});
 	});
 
-	it("returns null for bytes that are not a PNG header", () => {
+	it("returns null for bytes that are not a complete PNG", () => {
 		assert.strictEqual(decodePngHeader(new Uint8Array(0)), null);
-		assert.strictEqual(decodePngHeader(new TextEncoder().encode("not a png at all!!!!!!!!")), null);
-		const wrongChunk = png(10, 10);
-		wrongChunk.set([0x49, 0x44, 0x41, 0x54], 12);
-		assert.strictEqual(decodePngHeader(wrongChunk), null);
+		assert.strictEqual(decodePngHeader(new TextEncoder().encode("not a png at all")), null);
+		assert.strictEqual(decodePngHeader(png(8, 4).subarray(0, 24)), null);
 	});
 });
 
 describe("validateCaptureBytes", () => {
-	it("accepts a decodable, non-zero-area capture", () => {
+	it("accepts a complete decodable, non-zero-area capture", () => {
 		assert.deepStrictEqual(validateCaptureBytes(png(1280, 800)), {
 			_tag: "Valid",
 			width: 1280,
@@ -35,14 +26,33 @@ describe("validateCaptureBytes", () => {
 		});
 	});
 
-	it("names each of the three ways a capture is not evidence", () => {
+	it("refuses malformed, truncated, CRC-corrupt, and unterminated captures", () => {
 		assert.deepStrictEqual(validateCaptureBytes(new Uint8Array(0)), {
 			_tag: "Invalid",
 			reason: "zero bytes",
 		});
 		assert.strictEqual(validateCaptureBytes(new Uint8Array(30))._tag, "Invalid");
-		const zeroArea = validateCaptureBytes(png(1280, 0));
-		assert.strictEqual(zeroArea._tag, "Invalid");
-		assert.match(zeroArea._tag === "Invalid" ? zeroArea.reason : "", /zero area/);
+
+		const complete = png(8, 4);
+		assert.match(
+			validateCaptureBytes(complete.subarray(0, 24))._tag === "Invalid"
+				? (validateCaptureBytes(complete.subarray(0, 24)) as {reason: string}).reason
+				: "",
+			/truncated/,
+		);
+
+		const badCrc = complete.slice();
+		badCrc[29] = (badCrc[29] ?? 0) ^ 0xff;
+		const crcResult = validateCaptureBytes(badCrc);
+		assert.match(crcResult._tag === "Invalid" ? crcResult.reason : "", /CRC/);
+
+		const withoutIend = complete.subarray(0, complete.length - 12);
+		const iendResult = validateCaptureBytes(withoutIend);
+		assert.match(iendResult._tag === "Invalid" ? iendResult.reason : "", /IEND/);
+
+		const trailing = new Uint8Array(complete.length + 1);
+		trailing.set(complete);
+		const trailingResult = validateCaptureBytes(trailing);
+		assert.match(trailingResult._tag === "Invalid" ? trailingResult.reason : "", /after IEND/);
 	});
 });

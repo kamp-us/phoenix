@@ -180,7 +180,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `12` | refused, proven: pixels or a marker would bind the wrong tree — a live head moved, a preview is stale, or a producer checkout does not match its named subject/authority revision |
 | `13` | proven red render or invalid PASS attempt: `render` records an uncaught page error, and `post` refuses PASS over red evidence; `fetch` instead returns a complete typed `render: "red"` answer on `0` |
 | `14` | proven: at least one surface is unreachable — missing HTTP response, status ≥ 400, or failed navigation; each named on stderr |
-| `15` | proven: produced or fetched capture bytes are invalid — zero bytes, undecodable, zero area, hash/dimension mismatch, or bad set membership |
+| `15` | proven: produced or fetched capture bytes are invalid — incomplete PNG structure/CRC/IEND/inflate/raster, zero area, hash/dimension mismatch, or bad set membership |
 | `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
 | `127` | the verb never ran at all (unresolved binary) |
@@ -310,7 +310,7 @@ bounded error evidence are present in that answer for inspection before posting 
 | `10` | `--harness` or `--out` is off vocabulary |
 | `11` | repo/default branch/exact authority revision/declaration/run/check/artifact/download/scratch read is UNKNOWN; zero, ambiguous, pending, failed, cancelled, action-required, missing-expiry, expired, or otherwise untrusted producer evidence is unresolved |
 | `12` | live head moved before materialization |
-| `15` | capture bytes fail PNG, hash, or dimension validation |
+| `15` | capture bytes fail complete PNG decoding (chunk structure/CRC/IEND/inflate/raster), hash, or dimension validation |
 
 **Errors**
 
@@ -399,9 +399,15 @@ The offline PR-controlled install and governed test run under a read-only root f
 `--cap-drop ALL`, `no-new-privileges`, `--network none`, two CPUs, 2 GiB memory with no swap
 headroom, 256 PIDs, and a 2 GiB tmpfs-backed disposable test workspace. Capture output uses a
 separate 256 MiB tmpfs volume and a fixed base-owned extraction container, so the artifact-directory
-copy cannot exceed that bound. Every foreground container has a deterministic run-scoped name, and
-unconditional cleanup force-removes all names and bounded volumes after success, failure, or client
-timeout. That workspace is never served. A
+copy cannot exceed that bound. Every foreground container has a deterministic run-scoped name.
+Cleanup is attempted sequentially for every named container, bounded volume, image, and the trusted
+fixture root after success, refusal, or client timeout; exact Docker kind/name absence is the only
+ignored nonzero response. A cleanup failure cannot turn an otherwise successful operation into
+success: it returns UNKNOWN on `11`. When the operation was already nonzero, its original code and
+diagnostics remain and the cleanup diagnostic is appended. Fixture cleanup ownership begins when
+its temporary root is created, so partial directory, file, or permission setup receives the same
+attempted removal and reports both setup and cleanup failures when both occur. That workspace is
+never served. A
 separate server workspace is freshly copied from the image's immutable
 exact-head source, installed offline with both install-time execution-disabling flags, and then run
 through the declaration's fixed `serverBuildCommand` under the same no-network isolation. The
@@ -422,8 +428,10 @@ There is no empty successful answer. The producer first proves both the subject 
 checkouts against their full supplied heads. The object binds the declaration and producer identity,
 including that authority revision, then one capture row per declared surface with its route and
 state. Before writing that manifest, every capture must prove a successful HTTP navigation response
-in the 2xx or 3xx range; an absent response, 4xx, or 5xx refuses as unreachable on `14`. The
-three-row error bound
+in the 2xx or 3xx range and pass the delegated PNG decoder: the complete chunk stream, every CRC,
+terminal IEND, compressed pixel stream, raster dimensions, and absence of truncation/trailing bytes
+must decode. An absent response, 4xx, or 5xx refuses as unreachable on `14`. The three-row error
+bound
 truncates every row to 1,024 UTF-16 code
 units and orders all uncaught `pageerror` rows before `console.error` rows, so console noise cannot
 hide the hard-fail kind in `more`. A successful journey whose later browser capture records an
@@ -443,10 +451,10 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `1` | invocation/flag parsing failed, including a missing required input or invalid PR operand |
 | `4` | the governed declaration is malformed |
 | `10` | subject head, authority head, run id, repository, harness, non-absolute root operand, output placement, or a subject root `.dockerignore` is off vocabulary |
-| `11` | declaration, fixture, output, image, workspace, governed journey command, server, sidecar, capture, or manifest write is unreadable/UNKNOWN |
+| `11` | declaration, fixture, output, image, workspace, governed journey command, server, sidecar, capture, manifest write, or otherwise-successful cleanup is unreadable/UNKNOWN |
 | `12` | the subject or authority checkout is not its named full head |
 | `14` | capture navigation returned no HTTP response, 4xx, or 5xx |
-| `15` | captured bytes are not a valid PNG or do not match the declared capture |
+| `15` | captured bytes do not completely decode as PNG or do not match the declared capture |
 
 **Errors**
 
@@ -466,7 +474,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the exact-head subject must not contain a root .dockerignore.` | `10` | refusal |
 | `review-ui ci-produce: cannot prove the exact-head subject has no root .dockerignore.` | `11` | refusal |
 | `review-ui ci-produce: --output-dir must be outside both the subject and authority checkouts.` | `10` | refusal |
-| `review-ui ci-produce: cannot create the trusted fixture.` | `11` | refusal |
+| `review-ui ci-produce: cannot create the trusted fixture (<setup reason>[; fixture cleanup failed (<cleanup reason>)]).` | `11` | refusal |
 | `review-ui ci-produce: the trusted output cannot be cleared.` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject image could not be built (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject workspace could not be created.` | `11` | refusal |
@@ -488,6 +496,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: capture <surface> navigation returned HTTP <status>, not a successful response.` | `14` | refusal |
 | `review-ui ci-produce: <surface> is not a valid capture (<reason>).` | `15` | refusal |
 | `review-ui ci-produce: cannot write the capture manifest (<reason>).` | `11` | refusal |
+| `review-ui ci-produce: cleanup failed (<resource diagnostic>[; ...]).` | `11` after an otherwise successful operation; appended diagnostic with the original code after an already-nonzero operation | refusal |
 
 **Scope** — exactly one PR identity, one exact authority revision, one governed harness, and every
 surface in that harness declaration. Zero scope is impossible: an unknown harness refuses on `10`, and a positive

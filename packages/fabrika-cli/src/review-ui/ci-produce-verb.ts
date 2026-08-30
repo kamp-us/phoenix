@@ -296,26 +296,78 @@ export const captureOutputContainerArgs = (
 	"cp -a /capture/. /output/",
 ];
 
-export const createFixture = (): Promise<string> =>
-	mkdtemp(join(tmpdir(), "fabrika-review-ui-localhost-")).then(async (root) => {
-		const sessions = join(root, "sessions");
-		const fixture = join(sessions, "2026-08-29T10-00-00-000Z_review-ui.jsonl");
-		await mkdir(sessions, {recursive: true});
-		await writeFile(
-			fixture,
-			`${JSON.stringify({
-				type: "session",
-				version: 3,
-				id: "review-ui",
-				timestamp: "2026-08-29T10:00:00.000Z",
-				cwd: "/work/review-ui",
-			})}\n`,
-		);
-		await chmod(root, 0o755);
-		await chmod(sessions, 0o755);
-		await chmod(fixture, 0o644);
-		return root;
-	});
+export interface TrustedFixtureOperations {
+	readonly mkdtemp: (prefix: string) => Promise<string>;
+	readonly mkdir: (path: string) => Promise<void>;
+	readonly writeFile: (path: string, data: string) => Promise<void>;
+	readonly chmod: (path: string, mode: number) => Promise<void>;
+	readonly rm: (path: string) => Promise<void>;
+}
+
+const trustedFixtureOperations: TrustedFixtureOperations = {
+	mkdtemp,
+	mkdir: async (path) => {
+		await mkdir(path, {recursive: true});
+	},
+	writeFile: (path, data) => writeFile(path, data),
+	chmod,
+	rm: (path) => rm(path, {recursive: true, force: true}),
+};
+
+export const createFixture = async (
+	operations: TrustedFixtureOperations = trustedFixtureOperations,
+): Promise<string> => {
+	const root = await operations.mkdtemp(join(tmpdir(), "fabrika-review-ui-localhost-"));
+	const sessions = join(root, "sessions");
+	const fixture = join(sessions, "2026-08-29T10-00-00-000Z_review-ui.jsonl");
+	const setup = operations
+		.mkdir(sessions)
+		.then(() =>
+			operations.writeFile(
+				fixture,
+				`${JSON.stringify({
+					type: "session",
+					version: 3,
+					id: "review-ui",
+					timestamp: "2026-08-29T10:00:00.000Z",
+					cwd: "/work/review-ui",
+				})}\n`,
+			),
+		)
+		.then(() => operations.chmod(root, 0o755))
+		.then(() => operations.chmod(sessions, 0o755))
+		.then(() => operations.chmod(fixture, 0o644));
+	return setup.then(
+		() => root,
+		(cause) =>
+			operations.rm(root).then(
+				() => Promise.reject(cause),
+				(cleanupCause) =>
+					Promise.reject(
+						new Error(`${String(cause)}; fixture cleanup failed (${String(cleanupCause)})`, {
+							cause,
+						}),
+					),
+			),
+	);
+};
+
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export const isDockerResourceAlreadyAbsent = (
+	kind: "container" | "volume" | "image",
+	name: string,
+	diagnostic: string,
+): boolean => {
+	const target = escapeRegex(name);
+	const exact =
+		kind === "container"
+			? `Error response from daemon: No such container: ${target}`
+			: kind === "volume"
+				? `Error response from daemon: (?:No such volume: ${target}|(?:get|remove) ${target}: no such volume)`
+				: `Error response from daemon: No such image: ${target}(?::latest)?`;
+	return new RegExp(`^${exact}$`).test(diagnostic.trim());
+};
 
 export const boundedBrowserErrors = (
 	errors: CapturedSurface["pageErrors"],
@@ -540,11 +592,14 @@ export const runCiProduce = (
 		const serverVolume = `${image}-server-workspace`;
 		const captureVolume = `${image}-capture-output`;
 		const fixtureRead = yield* Effect.tryPromise({
-			try: createFixture,
+			try: () => createFixture(),
 			catch: (cause) => String(cause),
 		}).pipe(Effect.result);
 		if (fixtureRead._tag === "Failure") {
-			return refuse(PRECONDITION_UNKNOWN, `${VERB}: cannot create the trusted fixture.`);
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot create the trusted fixture (${fixtureRead.failure}).`,
+			);
 		}
 		const fixtureRoot = fixtureRead.success;
 		const containersToClean = [
@@ -577,9 +632,9 @@ export const runCiProduce = (
 					const alreadyAbsent =
 						result._tag === "Ran" &&
 						result.exitCode !== 0 &&
-						new RegExp(`(?:no such|not found).*${kind}|${kind}.*(?:no such|not found)`, "i").test(
-							diagnostic,
-						);
+						!result.timedOut &&
+						!result.truncated &&
+						isDockerResourceAlreadyAbsent(kind, name, diagnostic);
 					if (
 						!alreadyAbsent &&
 						(result._tag !== "Ran" || result.exitCode !== 0 || result.timedOut || result.truncated)

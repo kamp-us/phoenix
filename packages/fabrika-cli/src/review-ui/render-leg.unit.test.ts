@@ -2,6 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type CapturedSurface, CaptureError} from "../capture/capture.ts";
 import {NO_FORCED_FLAGS} from "../capture/flag-override.ts";
+import {encodePng, solid} from "../ui/fakes.test-support.ts";
 import {PAGE_ERROR_CAP} from "./manifest.ts";
 import {type CaptureShots, makeCaptureRenderLeg} from "./render-leg.ts";
 import type {SurfaceRender} from "./render-verb.ts";
@@ -21,15 +22,7 @@ const failing =
 	() =>
 		Effect.fail(new CaptureError({message}));
 
-/** A 24-byte PNG header declaring 8x4 — enough for `validateCaptureBytes`, no codec needed. */
-const pngHeader = (): Uint8Array => {
-	const bytes = new Uint8Array(24);
-	bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
-	bytes.set([0x49, 0x48, 0x44, 0x52], 12);
-	bytes[19] = 8;
-	bytes[23] = 4;
-	return bytes;
-};
+const png = (): Uint8Array => encodePng(8, 4, solid(8, 4, [12, 34, 56, 255]));
 
 const succeeding =
 	(shot: Partial<CapturedSurface>): CaptureShots =>
@@ -41,7 +34,7 @@ const succeeding =
 				state: null,
 				localPath: "/tmp/shots/pano.png",
 				fileName: "pano.png",
-				pngBytes: pngHeader(),
+				pngBytes: png(),
 				pageErrors: [],
 				...shot,
 			},
@@ -63,7 +56,7 @@ const authShot =
 				state: "auth",
 				localPath: "/tmp/shots/pano-auth.png",
 				fileName: "pano-auth.png",
-				pngBytes: pngHeader(),
+				pngBytes: png(),
 				pageErrors: [],
 				status: 200,
 				...shot,
