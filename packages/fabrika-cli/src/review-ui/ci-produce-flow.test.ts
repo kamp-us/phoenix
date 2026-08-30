@@ -786,6 +786,7 @@ describe("trusted localhost producer flow", () => {
 		);
 		expect(subjectRun).toContain("--read-only --cap-drop ALL");
 		expect(subjectRun).toContain("--memory 4g --memory-swap 4g");
+		expect(subjectRun).toContain("--shm-size 1g");
 		expect(subjectRun).toContain("no-new-privileges");
 		expect(subjectRun).toContain("pnpm install --offline --frozen-lockfile");
 		expect(subjectRun).toContain("pnpm --filter tuval test:browser");
@@ -816,6 +817,7 @@ describe("trusted localhost producer flow", () => {
 				(call) => call.startsWith("docker inspect") && call.endsWith(" keeper-id"),
 			),
 		).toHaveLength(2);
+		expect(sidecar).toContain("--shm-size 1g");
 		expect(sidecar).toContain("/authority,dst=/authority,readonly");
 		expect(sidecar).toContain("capture-output,dst=/capture-output");
 		expect(sidecar).toContain("ci-capture-sidecar.ts 4173 /capture-output tuval");

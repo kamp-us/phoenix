@@ -80,7 +80,7 @@ const isInside = (parent: string, candidate: string): boolean => {
 	return path === root || path.startsWith(`${root}${sep}`);
 };
 
-const containerGuardArgs = (memory = "2g"): readonly string[] => [
+const containerGuardArgs = (memory = "2g", sharedMemory = "64m"): readonly string[] => [
 	"--read-only",
 	"--cap-drop",
 	"ALL",
@@ -94,6 +94,8 @@ const containerGuardArgs = (memory = "2g"): readonly string[] => [
 	memory,
 	"--pids-limit",
 	"256",
+	"--shm-size",
+	sharedMemory,
 	"--tmpfs",
 	"/tmp:rw,nosuid,nodev,size=64m",
 ];
@@ -127,7 +129,7 @@ export const subjectInstallAndTestContainerArgs = (
 	"none",
 	"--name",
 	name,
-	...containerGuardArgs("4g"),
+	...containerGuardArgs("4g", "1g"),
 	"--mount",
 	`type=volume,src=${volume},dst=/subject`,
 	"--workdir",
@@ -208,7 +210,7 @@ export const subjectCaptureContainerArgs = (
 	`container:${server}`,
 	"--name",
 	name,
-	...containerGuardArgs(),
+	...containerGuardArgs("2g", "1g"),
 	"--mount",
 	`type=bind,src=${authorityRoot},dst=/authority,readonly`,
 	"--mount",

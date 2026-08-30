@@ -38,9 +38,10 @@ neither package lifecycle scripts nor the PR's pnpmfile hooks.
 An offline `pnpm install` then runs every PR-controlled lifecycle script and the governed test in a
 disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
 `no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap headroom, and 256 PIDs.
-Those measured memory and workspace ceilings let Tuval's existing `test:browser` journey complete;
-Docker proved the former 2 GiB bounds OOM-killed or ran out of space on the exact command. The
-journey's dynamic-port test servers finish before the
+Those measured memory/workspace ceilings plus 1 GiB of bounded shared memory let Tuval's existing
+`test:browser` journey complete; Docker proved the former 2 GiB and default 64 MiB shared-memory
+bounds OOM-killed, ran out of space, or crashed Chromium on the exact command. The journey's
+dynamic-port test servers finish before the
 producer starts its separate fixed capture server, so there is no conflicting concurrent server.
 Every foreground container is named before it starts, so cleanup can attempt force-removal after a
 client timeout. The test and server workspaces are named volumes backed by a 4 GiB tmpfs rather than
@@ -72,7 +73,9 @@ uses `--network container:<server>` to share that isolated network stack
 ([container networks](https://docs.docker.com/engine/network/#container-networks)), reaching the
 server on loopback without external network. The PR server receives no Actions credentials,
 authority checkout, Docker socket, or artifact-output mount. The trusted sidecar receives the
-authority checkout read-only and a 256 MiB tmpfs output volume only. A fixed base-owned extraction
+authority checkout read-only and a 256 MiB tmpfs output volume only. It and the governed journey are
+the only browser-bearing containers and each has 1 GiB bounded shared memory; non-browser
+foreground containers keep 64 MiB. A fixed base-owned extraction
 container copies at most that bounded volume into the artifact directory; the host validates those
 captures and alone writes the manifest. Docker documents the remaining root, capability, CPU, memory, PID, tmpfs, named-container, and
 mount controls in the [`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/),
