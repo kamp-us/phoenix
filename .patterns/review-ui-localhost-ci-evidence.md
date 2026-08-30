@@ -79,8 +79,9 @@ subject and authority heads and the absence of a subject root `.dockerignore` be
 server-build, readiness/crash, keeper lifetime and bounds, timeout cleanup, head,
 navigation-response, and manifest boundaries. The
 [Docker integration test](../packages/fabrika-cli/src/review-ui/ci-produce-docker.integration.test.ts)
-builds and serves a real read-only volume and proves the exact sidecar PNG bytes survive the kept
-capture tmpfs through extraction into an artifact-ready manifest when a Docker daemon is available.
+requires a prepared `server.mjs` to start from the kept server tmpfs, then requires the exact
+sidecar PNG bytes to survive the separate kept capture tmpfs and extraction into an artifact-ready
+manifest. A passing Docker-backed run proves that end-to-end byte path for its fixture.
 
 The resulting positive record binds the PR source, governed authority, producer identity, declared
 journey, captures, integrity measurements, and readable browser-error evidence. That binding lets a

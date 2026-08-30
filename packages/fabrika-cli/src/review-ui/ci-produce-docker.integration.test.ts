@@ -9,6 +9,7 @@ import {
 	runCiProduce,
 	subjectPrepareServerContainerArgs,
 	subjectServerContainerArgs,
+	subjectVolumeKeeperContainerArgs,
 } from "./ci-produce-verb.ts";
 import {parseCiCaptureManifest} from "./localhost-evidence.ts";
 
@@ -36,6 +37,7 @@ describe("trusted localhost producer Docker boundary", () => {
 			const fixture = join(root, "fixture");
 			const image = `fabrika-review-ui-integration-${nonce}`;
 			const volume = `${image}-workspace`;
+			const keeper = `${image}-keeper`;
 			const container = `${image}-server`;
 			await mkdir(source, {recursive: true});
 			await mkdir(join(fixture, "sessions"), {recursive: true});
@@ -71,6 +73,8 @@ USER node
 			try {
 				docker(["build", "--tag", image, root]);
 				docker(["volume", "create", volume]);
+				const keeperId = docker(subjectVolumeKeeperContainerArgs(image, volume, keeper));
+				expect(docker(["inspect", "--format", "{{.State.Running}}", keeperId])).toBe("true");
 				docker(
 					subjectPrepareServerContainerArgs(image, volume, ["pnpm", "--filter", "tuval", "build"]),
 				);
@@ -91,6 +95,7 @@ USER node
 				expect(docker(["inspect", "--format", "{{.State.Running}}", container])).toBe("true");
 			} finally {
 				spawnSync("docker", ["rm", "--force", container], {stdio: "ignore"});
+				spawnSync("docker", ["rm", "--force", keeper], {stdio: "ignore"});
 				spawnSync("docker", ["volume", "rm", "--force", volume], {stdio: "ignore"});
 				spawnSync("docker", ["image", "rm", "--force", image], {stdio: "ignore"});
 				await rm(root, {recursive: true, force: true});

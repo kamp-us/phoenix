@@ -224,10 +224,11 @@ export const subjectCaptureContainerArgs = (
 	harness,
 ];
 
-export const captureVolumeKeeperContainerArgs = (
+const boundedVolumeKeeperContainerArgs = (
 	image: string,
 	volume: string,
 	name: string,
+	mountPoint: string,
 ): readonly string[] => [
 	"run",
 	"--detach",
@@ -251,13 +252,25 @@ export const captureVolumeKeeperContainerArgs = (
 	"--tmpfs",
 	"/tmp:rw,nosuid,nodev,size=4m",
 	"--mount",
-	`type=volume,src=${volume},dst=/capture-output`,
+	`type=volume,src=${volume},dst=${mountPoint}`,
 	"--entrypoint",
 	"node",
 	image,
 	"--eval",
 	"setInterval(() => {}, 2147483647)",
 ];
+
+export const subjectVolumeKeeperContainerArgs = (
+	image: string,
+	volume: string,
+	name: string,
+): readonly string[] => boundedVolumeKeeperContainerArgs(image, volume, name, "/subject");
+
+export const captureVolumeKeeperContainerArgs = (
+	image: string,
+	volume: string,
+	name: string,
+): readonly string[] => boundedVolumeKeeperContainerArgs(image, volume, name, "/capture-output");
 
 export const captureOutputContainerArgs = (
 	image: string,
@@ -518,6 +531,7 @@ export const runCiProduce = (
 		const image = `fabrika-review-ui-subject-${options.runId}`;
 		const testContainer = `${image}-test`;
 		const prepareContainer = `${image}-server-prepare`;
+		const serverKeeperContainer = `${image}-server-keeper`;
 		const container = `${image}-server`;
 		const captureContainer = `${image}-capture`;
 		const captureKeeperContainer = `${image}-capture-keeper`;
@@ -533,38 +547,62 @@ export const runCiProduce = (
 			return refuse(PRECONDITION_UNKNOWN, `${VERB}: cannot create the trusted fixture.`);
 		}
 		const fixtureRoot = fixtureRead.success;
+		const containersToClean = [
+			testContainer,
+			prepareContainer,
+			serverKeeperContainer,
+			container,
+			captureContainer,
+			captureKeeperContainer,
+			extractContainer,
+		];
+		const volumesToClean = [testVolume, serverVolume, captureVolume];
 		const cleanup = Effect.gen(function* () {
-			for (const name of [
-				testContainer,
-				prepareContainer,
-				container,
-				captureContainer,
-				captureKeeperContainer,
-				extractContainer,
-			]) {
-				yield* ran("docker", ["rm", "--force", name], options.authorityRoot, env, 30).pipe(
-					Effect.ignore,
-				);
-			}
-			for (const volume of [testVolume, serverVolume, captureVolume]) {
-				yield* ran(
-					"docker",
-					["volume", "rm", "--force", volume],
-					options.authorityRoot,
-					env,
-					30,
-				).pipe(Effect.ignore);
-			}
-			yield* ran("docker", ["image", "rm", "--force", image], options.authorityRoot, env, 60).pipe(
-				Effect.ignore,
-			);
-			yield* Effect.tryPromise({
+			const failures: string[] = [];
+			const cleanDockerResource = (kind: "container" | "volume" | "image", name: string) =>
+				Effect.gen(function* () {
+					const args =
+						kind === "container" ? ["rm", "--force", name] : [kind, "rm", "--force", name];
+					const result = yield* ran(
+						"docker",
+						args,
+						options.authorityRoot,
+						env,
+						kind === "image" ? 60 : 30,
+					);
+					const diagnostic =
+						result._tag === "Ran"
+							? `${decode(result.stdout)}\n${decode(result.stderr)}`
+							: result.reason;
+					const alreadyAbsent =
+						result._tag === "Ran" &&
+						result.exitCode !== 0 &&
+						new RegExp(`(?:no such|not found).*${kind}|${kind}.*(?:no such|not found)`, "i").test(
+							diagnostic,
+						);
+					if (
+						!alreadyAbsent &&
+						(result._tag !== "Ran" || result.exitCode !== 0 || result.timedOut || result.truncated)
+					) {
+						failures.push(
+							`${kind} ${name}: ${diagnostic.trim() || (result._tag === "Ran" ? `exit ${result.exitCode}` : "cleanup command failed")}`,
+						);
+					}
+				});
+			for (const name of containersToClean) yield* cleanDockerResource("container", name);
+			for (const volume of volumesToClean) yield* cleanDockerResource("volume", volume);
+			yield* cleanDockerResource("image", image);
+			const fixtureRemoval = yield* Effect.tryPromise({
 				try: () => rm(fixtureRoot, {recursive: true, force: true}),
-				catch: () => undefined,
-			}).pipe(Effect.ignore);
+				catch: (cause) => String(cause),
+			}).pipe(Effect.result);
+			if (fixtureRemoval._tag === "Failure") {
+				failures.push(`fixture ${fixtureRoot}: ${fixtureRemoval.failure}`);
+			}
+			return failures;
 		});
 
-		return yield* Effect.gen(function* () {
+		const operation = yield* Effect.gen(function* () {
 			const cleared = yield* Effect.tryPromise({
 				try: () => rm(options.outputDir, {recursive: true, force: true}),
 				catch: (cause) => String(cause),
@@ -629,6 +667,48 @@ export const runCiProduce = (
 				);
 			}
 
+			const serverKeeper = yield* ran(
+				"docker",
+				subjectVolumeKeeperContainerArgs(image, serverVolume, serverKeeperContainer),
+				options.authorityRoot,
+				env,
+				30,
+			);
+			const serverKeeperId =
+				serverKeeper._tag === "Ran" && serverKeeper.exitCode === 0
+					? decode(serverKeeper.stdout)
+					: "";
+			const keeperRunning = (keeperId: string) =>
+				ran(
+					"docker",
+					["inspect", "--format", "{{.State.Running}}", keeperId],
+					options.authorityRoot,
+					env,
+					10,
+				).pipe(
+					Effect.map(
+						(result) =>
+							result._tag === "Ran" &&
+							result.exitCode === 0 &&
+							!result.timedOut &&
+							!result.truncated &&
+							decode(result.stdout) === "true",
+					),
+				);
+			if (
+				serverKeeper._tag !== "Ran" ||
+				serverKeeper.exitCode !== 0 ||
+				serverKeeper.timedOut ||
+				serverKeeper.truncated ||
+				serverKeeperId === "" ||
+				!(yield* keeperRunning(serverKeeperId))
+			) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: the bounded server workspace could not be kept alive.`,
+				);
+			}
+
 			const preparedServer = yield* ran(
 				"docker",
 				subjectPrepareServerContainerArgs(
@@ -650,6 +730,12 @@ export const runCiProduce = (
 				return refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: the fresh exact-head server workspace could not be prepared.`,
+				);
+			}
+			if (!(yield* keeperRunning(serverKeeperId))) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: the bounded server workspace keeper exited during preparation.`,
 				);
 			}
 
@@ -675,6 +761,12 @@ export const runCiProduce = (
 			const containerId = decode(started.stdout);
 			if (containerId === "") {
 				return refuse(PRECONDITION_UNKNOWN, `${VERB}: Docker returned no subject container id.`);
+			}
+			if (!(yield* keeperRunning(serverKeeperId))) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: the bounded server workspace keeper exited during server startup.`,
+				);
 			}
 
 			let ready = false;
@@ -759,23 +851,6 @@ export const runCiProduce = (
 					captureKeeper._tag === "Ran" && captureKeeper.exitCode === 0
 						? decode(captureKeeper.stdout)
 						: "";
-				const keeperRunning = () =>
-					ran(
-						"docker",
-						["inspect", "--format", "{{.State.Running}}", captureKeeperId],
-						options.authorityRoot,
-						env,
-						10,
-					).pipe(
-						Effect.map(
-							(result) =>
-								result._tag === "Ran" &&
-								result.exitCode === 0 &&
-								!result.timedOut &&
-								!result.truncated &&
-								decode(result.stdout) === "true",
-						),
-					);
 				if (
 					captureKeeper._tag !== "Ran" ||
 					captureKeeper.exitCode !== 0 ||
@@ -788,7 +863,7 @@ export const runCiProduce = (
 						`${VERB}: the bounded capture workspace could not be kept alive.`,
 					);
 				}
-				if (!(yield* keeperRunning())) {
+				if (!(yield* keeperRunning(captureKeeperId))) {
 					return refuse(
 						PRECONDITION_UNKNOWN,
 						`${VERB}: the bounded capture workspace could not be kept alive.`,
@@ -820,7 +895,7 @@ export const runCiProduce = (
 						`${VERB}: the trusted isolated capture sidecar failed (${sidecar._tag === "Ran" ? decode(sidecar.stderr) || `exit ${sidecar.exitCode}` : sidecar.reason}).`,
 					);
 				}
-				if (!(yield* keeperRunning())) {
+				if (!(yield* keeperRunning(captureKeeperId))) {
 					return refuse(
 						PRECONDITION_UNKNOWN,
 						`${VERB}: the bounded capture workspace could not be kept alive.`,
@@ -950,5 +1025,11 @@ export const runCiProduce = (
 				);
 			}
 			return answer(JSON.stringify(manifest));
-		}).pipe(Effect.ensuring(cleanup));
+		});
+		const cleanupFailures = yield* cleanup;
+		if (cleanupFailures.length === 0) return operation;
+		const cleanupDiagnostic = `${VERB}: cleanup failed (${cleanupFailures.join("; ")}).`;
+		return operation.code === 0
+			? refuse(PRECONDITION_UNKNOWN, cleanupDiagnostic)
+			: {...operation, stderr: [...operation.stderr, cleanupDiagnostic]};
 	});

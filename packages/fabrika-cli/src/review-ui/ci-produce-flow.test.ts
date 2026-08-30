@@ -224,6 +224,7 @@ describe("trusted localhost producer flow", () => {
 			[/^docker rm /, okOut("")],
 			[/^docker volume rm .*test-workspace$/, okOut("")],
 			[/^docker volume rm .*server-workspace$/, okOut("")],
+			[/^docker volume rm .*capture-output$/, okOut("")],
 			[/^docker image rm /, okOut("")],
 		]);
 		const outcome = await Effect.runPromise(
@@ -250,6 +251,7 @@ describe("trusted localhost producer flow", () => {
 		expect(seams.calls.filter((call) => call.startsWith("docker rm --force "))).toEqual([
 			"docker rm --force fabrika-review-ui-subject-42-test",
 			"docker rm --force fabrika-review-ui-subject-42-server-prepare",
+			"docker rm --force fabrika-review-ui-subject-42-server-keeper",
 			"docker rm --force fabrika-review-ui-subject-42-server",
 			"docker rm --force fabrika-review-ui-subject-42-capture",
 			"docker rm --force fabrika-review-ui-subject-42-capture-keeper",
@@ -287,11 +289,13 @@ describe("trusted localhost producer flow", () => {
 			const timedOut = line.startsWith("docker run --rm --network container:container-id");
 			const stdout = line.startsWith("docker run --detach")
 				? line.includes("capture-keeper")
-					? "keeper-id"
-					: "container-id"
+					? "capture-keeper-id"
+					: line.includes("server-keeper")
+						? "server-keeper-id"
+						: "container-id"
 				: line === "docker logs container-id"
 					? "ready"
-					: line.startsWith("docker inspect --format") && line.endsWith(" keeper-id")
+					: line.startsWith("docker inspect --format") && line.endsWith("-keeper-id")
 						? "true"
 						: "";
 			return Effect.succeed({
@@ -326,6 +330,7 @@ describe("trusted localhost producer flow", () => {
 		expect(calls.filter((call) => call.startsWith("docker rm --force "))).toEqual([
 			"docker rm --force fabrika-review-ui-subject-42-test",
 			"docker rm --force fabrika-review-ui-subject-42-server-prepare",
+			"docker rm --force fabrika-review-ui-subject-42-server-keeper",
 			"docker rm --force fabrika-review-ui-subject-42-server",
 			"docker rm --force fabrika-review-ui-subject-42-capture",
 			"docker rm --force fabrika-review-ui-subject-42-capture-keeper",
@@ -335,6 +340,122 @@ describe("trusted localhost producer flow", () => {
 			calls.some((call) => call.startsWith("docker run") && call.includes("capture-extract")),
 		).toBe(false);
 		await rm(root, {recursive: true, force: true});
+	});
+
+	it("refuses when the bounded server-volume keeper dies during preparation", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ci-produce-server-keeper-death-"));
+		const authorityRoot = join(root, "authority");
+		const subjectRoot = join(root, "subject");
+		const outputDir = join(root, "output");
+		await mkdir(join(authorityRoot, ".github"), {recursive: true});
+		await mkdir(subjectRoot, {recursive: true});
+		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+		const seams = fakeSeams([
+			[once(/^git rev-parse HEAD$/), okOut(HEAD)],
+			[/^git rev-parse HEAD$/, okOut(AUTHORITY_HEAD)],
+			[/^docker build /, okOut("")],
+			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
+			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
+			[/^docker run --rm --network none .*test-workspace/, okOut("")],
+			[/^docker run --detach --network none .*server-keeper/, okOut("server-keeper-id")],
+			[once(/^docker inspect --format .* server-keeper-id$/), okOut("true")],
+			[/^docker inspect --format .* server-keeper-id$/, okOut("false")],
+			[/^docker run --rm --network none .*server-workspace/, okOut("")],
+			[/^docker rm /, okOut("")],
+			[/^docker volume rm /, okOut("")],
+			[/^docker image rm /, okOut("")],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runCiProduce({
+					pr: 7190,
+					head: HEAD,
+					authorityHead: AUTHORITY_HEAD,
+					harness: "tuval",
+					runId: 42,
+					repository: "kamp-us/phoenix",
+					subjectRoot,
+					authorityRoot,
+					outputDir,
+					env: {PATH: "/bin"},
+					capture,
+				}),
+				seams.layer,
+			),
+		);
+		expect(outcome.code).toBe(11);
+		expect(outcome.stderr.join("\n")).toContain("keeper exited during preparation");
+		expect(
+			seams.calls.some(
+				(call) => call.startsWith("docker run --detach") && call.includes("-server --network none"),
+			),
+		).toBe(false);
+		await rm(root, {recursive: true, force: true});
+	});
+
+	it("makes cleanup command failure blocking and retains an earlier operation failure", async () => {
+		const run = async (journey: Scripted[1]) => {
+			const root = await mkdtemp(join(tmpdir(), "ci-produce-cleanup-failure-"));
+			const authorityRoot = join(root, "authority");
+			const subjectRoot = join(root, "subject");
+			const outputDir = join(root, "output");
+			await mkdir(join(authorityRoot, ".github"), {recursive: true});
+			await mkdir(subjectRoot, {recursive: true});
+			await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+			const seams = fakeSeams([
+				[once(/^git rev-parse HEAD$/), okOut(HEAD)],
+				[/^git rev-parse HEAD$/, okOut(AUTHORITY_HEAD)],
+				[/^docker build /, okOut("")],
+				[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
+				[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
+				[/^docker run --rm --network none .*test-workspace/, journey],
+				[/^docker run --detach --network none .*server-keeper/, okOut("server-keeper-id")],
+				[/^docker inspect --format .* server-keeper-id$/, okOut("true")],
+				[/^docker run --rm --network none .*server-workspace/, okOut("")],
+				[/^docker run --detach .*server-workspace/, okOut("container-id")],
+				[/^docker logs container-id$/, okOut("ready")],
+				[/^docker rm --force .*server-keeper$/, errOut("daemon refused cleanup")],
+				[/^docker rm /, okOut("")],
+				[/^docker volume rm /, okOut("")],
+				[/^docker image rm /, okOut("")],
+			]);
+			const outcome = await Effect.runPromise(
+				Effect.provide(
+					runCiProduce({
+						pr: 7190,
+						head: HEAD,
+						authorityHead: AUTHORITY_HEAD,
+						harness: "tuval",
+						runId: 42,
+						repository: "kamp-us/phoenix",
+						subjectRoot,
+						authorityRoot,
+						outputDir,
+						env: {PATH: "/bin"},
+						capture,
+					}),
+					seams.layer,
+				),
+			);
+			await rm(root, {recursive: true, force: true});
+			return {outcome, calls: seams.calls};
+		};
+
+		const cleanupOnly = await run(okOut(""));
+		expect(cleanupOnly.outcome.code).toBe(11);
+		expect(cleanupOnly.outcome.stdout).toBe("");
+		expect(cleanupOnly.outcome.stderr.join("\n")).toContain("daemon refused cleanup");
+		expect(cleanupOnly.calls.filter((call) => call.startsWith("docker rm --force "))).toHaveLength(
+			7,
+		);
+		expect(
+			cleanupOnly.calls.filter((call) => call.startsWith("docker volume rm --force ")),
+		).toHaveLength(3);
+
+		const operationAndCleanup = await run(errOut("journey failed first"));
+		expect(operationAndCleanup.outcome.code).toBe(11);
+		expect(operationAndCleanup.outcome.stderr.join("\n")).toContain("journey failed first");
+		expect(operationAndCleanup.outcome.stderr.join("\n")).toContain("daemon refused cleanup");
 	});
 
 	it("fails immediately with recorded diagnostics when the built server exits before readiness", async () => {
@@ -352,6 +473,8 @@ describe("trusted localhost producer flow", () => {
 			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
 			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
 			[/^docker run --rm --network none .*test-workspace/, okOut("")],
+			[/^docker run --detach --network none .*server-keeper/, okOut("server-keeper-id")],
+			[/^docker inspect --format .* server-keeper-id$/, okOut("true")],
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ERR_MODULE_NOT_FOUND: dist/backend/server.js")],
@@ -359,6 +482,7 @@ describe("trusted localhost producer flow", () => {
 			[/^docker rm /, okOut("")],
 			[/^docker volume rm .*test-workspace$/, okOut("")],
 			[/^docker volume rm .*server-workspace$/, okOut("")],
+			[/^docker volume rm .*capture-output$/, okOut("")],
 			[/^docker image rm /, okOut("")],
 		]);
 		const outcome = await Effect.runPromise(
@@ -406,12 +530,15 @@ describe("trusted localhost producer flow", () => {
 			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
 			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
 			[/^docker run --rm --network none .*test-workspace/, okOut("")],
+			[/^docker run --detach --network none .*server-keeper/, okOut("server-keeper-id")],
+			[/^docker inspect --format .* server-keeper-id$/, okOut("true")],
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ready")],
 			[/^docker rm /, okOut("")],
 			[/^docker volume rm .*test-workspace$/, okOut("")],
 			[/^docker volume rm .*server-workspace$/, okOut("")],
+			[/^docker volume rm .*capture-output$/, okOut("")],
 			[/^docker image rm /, okOut("")],
 		]);
 		const outcome = await Effect.runPromise(
@@ -455,6 +582,8 @@ describe("trusted localhost producer flow", () => {
 			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
 			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
 			[/^docker run --rm --network none .*test-workspace/, okOut("")],
+			[/^docker run --detach --network none .*server-keeper/, okOut("server-keeper-id")],
+			[/^docker inspect --format .* server-keeper-id$/, okOut("true")],
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ready")],
@@ -516,10 +645,11 @@ describe("trusted localhost producer flow", () => {
 			(call) =>
 				call.startsWith("docker run --rm --network none") && call.includes("server-workspace"),
 		);
-		const server = seams.calls.find((call) => call.startsWith("docker run --detach"));
-		const keeper = seams.calls.find((call) =>
-			call.startsWith("docker run --detach --network none"),
+		const server = seams.calls.find(
+			(call) => call.startsWith("docker run --detach") && call.includes("-server --network none"),
 		);
+		const serverKeeper = seams.calls.find((call) => call.includes("-server-keeper"));
+		const captureKeeper = seams.calls.find((call) => call.includes("-capture-keeper"));
 		const sidecar = seams.calls.find((call) =>
 			call.startsWith("docker run --rm --network container:container-id"),
 		);
@@ -540,11 +670,18 @@ describe("trusted localhost producer flow", () => {
 		expect(server).not.toContain("--publish");
 		expect(server).toContain("server-workspace,dst=/subject,readonly");
 		expect(server).not.toContain("test-workspace");
-		expect(keeper).toContain("--cpus 0.1 --memory 64m --memory-swap 64m --pids-limit 16");
-		expect(keeper).toContain("--network none");
-		expect(keeper).toContain("capture-output,dst=/capture-output");
-		expect(keeper).not.toContain("authority");
-		expect(keeper).not.toContain("GITHUB_TOKEN");
+		expect(serverKeeper).toContain("--cpus 0.1 --memory 64m --memory-swap 64m --pids-limit 16");
+		expect(serverKeeper).toContain("server-workspace,dst=/subject");
+		expect(captureKeeper).toContain("--cpus 0.1 --memory 64m --memory-swap 64m --pids-limit 16");
+		expect(captureKeeper).toContain("--network none");
+		expect(captureKeeper).toContain("capture-output,dst=/capture-output");
+		expect(captureKeeper).not.toContain("authority");
+		expect(captureKeeper).not.toContain("GITHUB_TOKEN");
+		expect(
+			seams.calls.filter(
+				(call) => call.startsWith("docker inspect") && call.endsWith(" server-keeper-id"),
+			),
+		).toHaveLength(3);
 		expect(
 			seams.calls.filter(
 				(call) => call.startsWith("docker inspect") && call.endsWith(" keeper-id"),

@@ -11,6 +11,7 @@ import {
 	subjectPrepareServerContainerArgs,
 	subjectServerContainerArgs,
 	subjectVolumeCreateArgs,
+	subjectVolumeKeeperContainerArgs,
 } from "./ci-produce-verb.ts";
 import {
 	BROWSER_ERROR_TEXT_CAP,
@@ -166,6 +167,25 @@ describe("localhost evidence governance floor", () => {
 		assert.include(server, "type=bind,src=/trusted-fixture,dst=/review-ui-fixture,readonly");
 		assert.notInclude(server.join(" "), "authority");
 		assert.notInclude(server.join(" "), "review-ui-localhost-tuval");
+
+		const serverKeeper = subjectVolumeKeeperContainerArgs(
+			"subject",
+			"fresh-server-workspace",
+			"subject-server-keeper",
+		);
+		assert.include(serverKeeper.join(" "), "--detach --network none");
+		assert.include(serverKeeper, "--read-only");
+		assert.include(serverKeeper, "--cap-drop");
+		assert.include(serverKeeper, "no-new-privileges");
+		assert.include(serverKeeper, "--cpus");
+		assert.include(serverKeeper, "0.1");
+		assert.include(serverKeeper, "--memory");
+		assert.include(serverKeeper, "64m");
+		assert.include(serverKeeper, "--pids-limit");
+		assert.include(serverKeeper, "16");
+		assert.include(serverKeeper, "type=volume,src=fresh-server-workspace,dst=/subject");
+		assert.notInclude(serverKeeper.join(" "), "authority");
+		assert.notInclude(serverKeeper.join(" "), "GITHUB_TOKEN");
 
 		const capture = subjectCaptureContainerArgs(
 			"subject",

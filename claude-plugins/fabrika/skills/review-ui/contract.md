@@ -428,7 +428,7 @@ truncates every row to 1,024 UTF-16 code
 units and orders all uncaught `pageerror` rows before `console.error` rows, so console noise cannot
 hide the hard-fail kind in `more`. A successful journey whose later browser capture records an
 uncaught page error is still a successful transport output, so the workflow uploads it; `review-ui
-fetch` materializes that evidence and returns the red-render `13`. A governed journey command that
+fetch` materializes that evidence and returns a typed `render: "red"` answer on exit `0`. A governed journey command that
 itself fails stops before server start, capture, manifest creation, and artifact upload:
 
 ```
