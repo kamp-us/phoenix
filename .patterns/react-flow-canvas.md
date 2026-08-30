@@ -204,15 +204,19 @@ therefore reconciles the small projection rather than the archive.
 
 Search reads session id, identity, and working directory across the complete in-memory lineage
 projection. The lineage/root filter is applied before paging. Older/newer actions replace the page
-rather than accumulating nodes, and selected lineage stays pinned as the page moves. The displayed
-visible, total, matched, hidden, and page-range counts come from the same projection result handed
-to the adapter; never infer archive counts from mounted DOM nodes or hide excess wrappers with CSS.
+rather than accumulating nodes, and selected lineage stays pinned as the page moves. Add the whole
+page before filling the remaining mount budget with pinned lineage context; otherwise the cursor can
+advance past a page member that never mounted. The displayed visible, total, matched, hidden, and
+page-range counts come from the same projection result handed to the adapter; never infer archive
+counts from mounted DOM nodes or hide excess wrappers with CSS.
 
 Search, filter, and older/newer are explicit reveal actions, so each may call `fitView()` after the
-new bounded projection mounts. Selection and live SSE updates do not increment that reveal revision:
-they preserve the user's free-pan viewport. Small graphs keep their complete keyboard-reachable
-node/edge contract; archive graphs bound the tab sequence to the current working set, with search
-and paging providing keyboard access to every retained session.
+new bounded projection mounts. The archive projection uses tighter deterministic graph spacing and
+a 0.9 minimum fit zoom so meaning-carrying node text stays near its authored size; free pan and the
+ordinary 0.35 manual zoom floor remain available. Selection and live SSE updates do not increment
+that reveal revision, so they preserve the user's viewport. Small graphs keep their complete
+keyboard-reachable node/edge contract; archive graphs bound the tab sequence to the current working
+set, with search and paging providing keyboard access to every retained session.
 
 The canvas parent must have non-zero dimensions: React Flow's root wrapper is `width: 100%` and
 `height: 100%`. Render `Background` and the `Panel`-based shared-Button controls as children so they

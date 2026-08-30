@@ -74,6 +74,38 @@ describe("Tuval session working set", () => {
 		assert.equal(result.projection.graph.continuity.length, 1);
 	});
 
+	it("never advances past a page member when pinned lineage fills the remaining cap", () => {
+		const base = corpus();
+		const pinned = node(600);
+		const related = Array.from({length: 8}, (_, index) => node(500 + index));
+		const projection: LineageProjection = {
+			...base,
+			graph: {
+				...base.graph,
+				edges: [
+					...base.graph.edges,
+					...related.map((child, index) => ({
+						id: `spawn:pinned-${index}`,
+						kind: "spawn" as const,
+						parent: pinned.id,
+						child: child.id,
+						runId: `pinned-${index}`,
+						observedAt: index,
+					})),
+				],
+			},
+		};
+		const result = selectSessionWorkingSet(projection, {pinnedIds: [pinned.id]});
+		const ids = new Set(result.projection.graph.nodes.map(({id}) => id));
+
+		for (const recent of [node(1_204), node(1_203), node(1_202)]) {
+			assert.ok(ids.has(recent.id));
+		}
+		assert.ok(ids.has(pinned.id));
+		assert.equal(result.pageEnd, SESSION_WORKING_SET_PAGE_SIZE);
+		assert.ok(result.visibleCount <= SESSION_WORKING_SET_MAX_NODES);
+	});
+
 	it("searches the complete archive without mounting unrelated matches", () => {
 		const result = selectSessionWorkingSet(corpus(), {query: "project-17"});
 		const ids = result.projection.graph.nodes.map(({id}) => id);

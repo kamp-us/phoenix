@@ -1,7 +1,7 @@
 import type {LineageEdge, LineageNode, LineageProjection} from "../shared/lineage.js";
 
-export const SESSION_WORKING_SET_PAGE_SIZE = 4;
-export const SESSION_WORKING_SET_MAX_NODES = 10;
+export const SESSION_WORKING_SET_PAGE_SIZE = 3;
+export const SESSION_WORKING_SET_MAX_NODES = 9;
 export const SESSION_WORKING_SET_ARCHIVE_THRESHOLD = 48;
 const PINNED_CONTEXT_LIMIT = 6;
 
@@ -88,6 +88,7 @@ export const selectSessionWorkingSet = (
 
 	const pinned = [...new Set(options.pinnedIds ?? [])].filter((id) => nodesById.has(id));
 	for (const id of pinned) add(id);
+	for (const node of pageNodes) add(node.id);
 	const contextQueue = [...pinned];
 	let contextCount = 0;
 	while (
@@ -107,7 +108,6 @@ export const selectSessionWorkingSet = (
 			}
 		}
 	}
-	for (const node of pageNodes) add(node.id);
 	for (const node of pageNodes) {
 		for (const relation of [...(parents.get(node.id) ?? []), ...(children.get(node.id) ?? [])]) {
 			add(relation);

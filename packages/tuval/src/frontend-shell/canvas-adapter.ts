@@ -22,7 +22,12 @@ export interface SessionNodeData extends Record<string, unknown> {
 	readonly attachment: NodeAttachment | null;
 }
 
-export interface SessionNodeProjectionOptions {
+export interface SessionProjectionLayout {
+	readonly horizontalSpacing?: number;
+	readonly verticalSpacing?: number;
+}
+
+export interface SessionNodeProjectionOptions extends SessionProjectionLayout {
 	readonly detailLevel?: NodeDetailLevel;
 	readonly attachments?: ReadonlyMap<string, NodeAttachment>;
 }
@@ -70,7 +75,10 @@ const nodeDepths = (projection: LineageProjection): ReadonlyMap<string, number> 
 	return cache;
 };
 
-const positions = (projection: LineageProjection): ReadonlyMap<string, {x: number; y: number}> => {
+const positions = (
+	projection: LineageProjection,
+	layout: SessionProjectionLayout = {},
+): ReadonlyMap<string, {x: number; y: number}> => {
 	const depths = nodeDepths(projection);
 	const layers = new Map<number, Array<LineageNode>>();
 	for (const node of projection.graph.nodes) {
@@ -80,13 +88,15 @@ const positions = (projection: LineageProjection): ReadonlyMap<string, {x: numbe
 		layers.set(depth, layer);
 	}
 	const result = new Map<string, {x: number; y: number}>();
+	const horizontalSpacing = layout.horizontalSpacing ?? 560;
+	const verticalSpacing = layout.verticalSpacing ?? 240;
 	for (const [depth, layer] of layers) {
 		layer.sort((left, right) => compareText(left.id, right.id));
 		const center = (layer.length - 1) / 2;
 		layer.forEach((node, index) => {
 			result.set(node.id, {
-				x: depth * 560,
-				y: Math.round((index - center) * 240),
+				x: depth * horizontalSpacing,
+				y: Math.round((index - center) * verticalSpacing),
 			});
 		});
 	}
@@ -146,7 +156,7 @@ export const toSessionNodes = (
 	projection: LineageProjection,
 	options: SessionNodeProjectionOptions = {},
 ): ReadonlyArray<SessionCanvasNode> => {
-	const projectedPositions = positions(projection);
+	const projectedPositions = positions(projection, options);
 	return [...projection.graph.nodes]
 		.sort((left, right) => compareText(left.id, right.id))
 		.map((node) =>
@@ -196,11 +206,12 @@ const edgeAriaLabel = (edge: LineageEdge, nodes: ReadonlyMap<string, LineageNode
 
 export const toLineageEdges = (
 	projection: LineageProjection,
+	layout: SessionProjectionLayout = {},
 ): ReadonlyArray<SessionRelationshipEdge> => {
 	const nodes = new Map(projection.graph.nodes.map((node) => [node.id, node]));
 	const sorted = [...projection.graph.edges].sort((left, right) => compareText(left.id, right.id));
 	const depths = nodeDepths(projection);
-	const projectedPositions = positions(projection);
+	const projectedPositions = positions(projection, layout);
 	const yPositions = [...projectedPositions.values()].map((position) => position.y);
 	const minY = Math.min(0, ...yPositions);
 	const maxY = Math.max(0, ...yPositions) + 216;
@@ -254,9 +265,10 @@ export const toLineageEdges = (
 export const reconcileLineageEdges = (
 	current: ReadonlyArray<SessionRelationshipEdge>,
 	projection: LineageProjection,
+	layout: SessionProjectionLayout = {},
 ): ReadonlyArray<SessionRelationshipEdge> => {
 	const previous = new Map(current.map((edge) => [edge.id, edge]));
-	return toLineageEdges(projection).map((next) => {
+	return toLineageEdges(projection, layout).map((next) => {
 		const edge = previous.get(next.id);
 		return edge === undefined
 			? next

@@ -257,6 +257,21 @@ describe("Tuval lineage canvas adapter", () => {
 		}
 	});
 
+	it("supports a compact archive layout without changing graph identity", () => {
+		const nodes = toSessionNodes(projection(), {horizontalSpacing: 344, verticalSpacing: 160});
+		const byId = new Map(nodes.map((candidate) => [candidate.id, candidate.position]));
+
+		assert.deepEqual(byId.get(node("root").id), {x: 0, y: 0});
+		assert.deepEqual(byId.get(node("forked").id), {x: 344, y: -80});
+		assert.deepEqual(byId.get(node("spawned").id), {x: 344, y: 80});
+		assert.deepEqual(
+			toLineageEdges(projection(), {horizontalSpacing: 344, verticalSpacing: 160}).map(
+				({id}) => id,
+			),
+			toLineageEdges(projection()).map(({id}) => id),
+		);
+	});
+
 	it("assigns skip-layer relations to deterministic obstacle-free routing gutters", () => {
 		const first = node("first");
 		const middle = node("middle");

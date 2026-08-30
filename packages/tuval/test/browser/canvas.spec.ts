@@ -570,7 +570,7 @@ test("a 1,000-plus archive keeps a bounded useful canvas with complete progressi
 	await expect(page.locator("#session-working-set-summary")).toContainText("arşivde");
 	await expect
 		.poll(async () => page.locator(".react-flow__node-session").count())
-		.toBeLessThanOrEqual(10);
+		.toBeLessThanOrEqual(9);
 	await expect(page.locator(`[data-id="${selected.identity}"]`)).toBeVisible();
 	await expect(page.locator(`[data-id="${parent.identity}"]`)).toBeVisible();
 	await expect(page.locator(`[data-id="${child.identity}"]`)).toBeVisible();
@@ -590,10 +590,10 @@ test("a 1,000-plus archive keeps a bounded useful canvas with complete progressi
 		if (transform === "none") return 1;
 		return new DOMMatrixReadOnly(transform).a;
 	});
-	expect(scale).toBeGreaterThanOrEqual(0.5);
+	expect(scale).toBeGreaterThanOrEqual(0.9);
 	const recentBox = await page.locator(`[data-id="${recent.identity}"]`).boundingBox();
 	if (recentBox === null) throw new Error("recent working-set session did not render");
-	expect(recentBox.width).toBeGreaterThanOrEqual(140);
+	expect(recentBox.width).toBeGreaterThanOrEqual(260);
 	const desktopCapture = testInfo.outputPath("large-corpus-working-set.png");
 	await page.screenshot({path: desktopCapture, fullPage: true});
 	await testInfo.attach("large-corpus-working-set", {
@@ -609,12 +609,12 @@ test("a 1,000-plus archive keeps a bounded useful canvas with complete progressi
 	await expect(page.locator("#session-working-set-summary")).toContainText("1 eşleşme");
 	await expect
 		.poll(async () => page.locator(".react-flow__node-session").count())
-		.toBeLessThanOrEqual(10);
+		.toBeLessThanOrEqual(9);
 
 	await page.locator("#session-archive-search").fill("");
 	await page.getByRole("button", {name: "Daha eski"}).click();
-	await expect(page.locator('[data-id="pi:archive-1200"]')).toBeVisible();
-	await expect(page.locator("#session-working-set-summary")).toContainText("5–8");
+	await expect(page.locator('[data-id="pi:archive-1201"]')).toBeVisible();
+	await expect(page.locator("#session-working-set-summary")).toContainText("4–6");
 	await page.locator("#session-archive-filter").selectOption("lineage");
 	await expect(page.locator("#session-working-set-summary")).toContainText("3 eşleşme");
 	await expect(page.locator(`[data-id="${parent.identity}"]`)).toBeVisible();
@@ -635,7 +635,7 @@ test("a 1,000-plus archive keeps a bounded useful canvas with complete progressi
 	await expect(page.locator(`[data-id="${parent.identity}"]`)).toBeVisible();
 	await expect
 		.poll(async () => page.locator(".react-flow__node-session").count())
-		.toBeLessThanOrEqual(10);
+		.toBeLessThanOrEqual(9);
 	const mobileCapture = testInfo.outputPath("large-corpus-working-set-mobile.png");
 	await page.screenshot({path: mobileCapture, fullPage: true});
 	await testInfo.attach("large-corpus-working-set-mobile", {

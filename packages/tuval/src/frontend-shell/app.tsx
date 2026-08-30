@@ -22,6 +22,7 @@ import {
 	reconcileLineageEdges,
 	reconcileSessionNodes,
 	type SessionCanvasNode,
+	type SessionProjectionLayout,
 	type SessionRelationshipEdge,
 } from "./canvas-adapter.js";
 import {ChatPane, type PaneConnection, type SendResult} from "./chat-pane.js";
@@ -326,6 +327,13 @@ export function TuvalApp() {
 	useEffect(() => {
 		if (workingSet !== null && archivePage !== workingSet.page) setArchivePage(workingSet.page);
 	}, [archivePage, workingSet]);
+	const projectionLayout = useMemo<SessionProjectionLayout>(
+		() =>
+			workingSet !== null && workingSet.totalCount > SESSION_WORKING_SET_ARCHIVE_THRESHOLD
+				? {horizontalSpacing: 344, verticalSpacing: 160}
+				: {},
+		[workingSet?.totalCount],
+	);
 
 	const updatePaneForSelection = useCallback(
 		(identity: string, generation: number, update: PaneUpdate): void => {
@@ -353,14 +361,15 @@ export function TuvalApp() {
 		setNodes((current) =>
 			reconcileSessionNodes(current, workingSet.projection, {
 				detailLevel,
+				...projectionLayout,
 				...(attachments === undefined ? {} : {attachments}),
 			}).map((node) => ({
 				...node,
 				selected: node.id === selected?.identity,
 			})),
 		);
-		setEdges((current) => reconcileLineageEdges(current, workingSet.projection));
-	}, [detailLevel, paneSelection, selected, workingSet]);
+		setEdges((current) => reconcileLineageEdges(current, workingSet.projection, projectionLayout));
+	}, [detailLevel, paneSelection, projectionLayout, selected, workingSet]);
 
 	const setDetailLevel = (next: NodeDetailLevel): void => {
 		writeStoredNodeDetailLevel(browserStorage(), next);
@@ -412,7 +421,13 @@ export function TuvalApp() {
 				window.removeEventListener("pointerdown", markInteraction, {capture: true});
 				window.removeEventListener("keydown", markInteraction, {capture: true});
 				window.removeEventListener("input", markInteraction, {capture: true});
-				if (preserveGraphFocus && !userInteracted) focusCanvasNode(session.identity);
+				const activeNode =
+					document.activeElement instanceof HTMLElement
+						? document.activeElement.closest<HTMLElement>(".react-flow__node-session")?.dataset.id
+						: undefined;
+				if (preserveGraphFocus && !userInteracted && activeNode === session.identity) {
+					focusCanvasNode(session.identity);
+				}
 			});
 		});
 	}, []);

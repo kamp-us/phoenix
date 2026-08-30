@@ -233,7 +233,7 @@ function CanvasLegend() {
 	);
 }
 
-function CanvasControls() {
+function CanvasControls({minFitZoom}: {readonly minFitZoom: number}) {
 	const {fitView, zoomIn, zoomOut} = useReactFlow();
 	return (
 		<Panel className="canvas-controls" position="top-left" aria-label="Tuval görünüm denetimleri">
@@ -257,7 +257,7 @@ function CanvasControls() {
 				type="button"
 				variant="secondary"
 				icon={<Scan size={16} />}
-				onClick={() => void fitView()}
+				onClick={() => void fitView({minZoom: minFitZoom, maxZoom: 1})}
 			>
 				Çalışma kümesini göster
 			</Button>
@@ -340,13 +340,21 @@ function ArchiveControls({archive}: {readonly archive: SessionArchiveControls}) 
 	);
 }
 
-function WorkingSetFit({revision}: {readonly revision: number}) {
+function WorkingSetFit({
+	revision,
+	minFitZoom,
+}: {
+	readonly revision: number;
+	readonly minFitZoom: number;
+}) {
 	const {fitView} = useReactFlow();
 	useEffect(() => {
 		if (revision === 0) return;
-		const frame = requestAnimationFrame(() => void fitView({padding: 0.2, maxZoom: 1}));
+		const frame = requestAnimationFrame(
+			() => void fitView({padding: 0.1, minZoom: minFitZoom, maxZoom: 1}),
+		);
 		return () => cancelAnimationFrame(frame);
-	}, [fitView, revision]);
+	}, [fitView, minFitZoom, revision]);
 	return null;
 }
 
@@ -473,6 +481,7 @@ export function SessionCanvas({
 			}) satisfies NodeTypes,
 		[contributions.revision, onContributionFailure],
 	);
+	const minFitZoom = archive === undefined ? 0.35 : 0.9;
 	const allEdgeTypes = useMemo(
 		() =>
 			({
@@ -516,15 +525,21 @@ export function SessionCanvas({
 					nodesConnectable={false}
 					deleteKeyCode={null}
 					fitView
-					fitViewOptions={{padding: 0.2, maxZoom: 1}}
+					fitViewOptions={{
+						padding: archive === undefined ? 0.2 : 0.1,
+						minZoom: minFitZoom,
+						maxZoom: 1,
+					}}
 					minZoom={0.35}
 					maxZoom={1.8}
 					colorMode="dark"
 					proOptions={{hideAttribution: true}}
 				>
 					<Background color="var(--border-faint)" gap={24} size={1} />
-					<CanvasControls />
-					{archive === undefined ? null : <WorkingSetFit revision={archive.viewRevision} />}
+					<CanvasControls minFitZoom={minFitZoom} />
+					{archive === undefined ? null : (
+						<WorkingSetFit revision={archive.viewRevision} minFitZoom={minFitZoom} />
+					)}
 					<CanvasLegend />
 					<ContributionPanels registry={contributions} onFailure={onContributionFailure} />
 				</ReactFlow>
