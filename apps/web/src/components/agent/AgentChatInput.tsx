@@ -888,9 +888,10 @@ export function AgentChatInput({
 						<div className="kp-agent-chat__primary-controls">
 							{variant === "focused" ? (
 								<>
-									<input
+									<Input
 										ref={imageInputRef}
 										className="kp-visually-hidden"
+										label="Görsel ekle"
 										type="file"
 										accept="image/*"
 										tabIndex={-1}
