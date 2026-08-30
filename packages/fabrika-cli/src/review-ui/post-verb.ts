@@ -54,6 +54,7 @@ import {
 } from "./codes.ts";
 import {
 	CI_PROVENANCE_RECEIPT,
+	type CiCaptureManifest,
 	declarationDigest,
 	LOCALHOST_DECLARATIONS_PATH,
 	parseCiCaptureManifest,
@@ -151,6 +152,83 @@ const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
 		PRECONDITION_UNKNOWN,
 		`${VERB}: cannot read ${what} for #${pr}: ${reason} — nothing was uploaded or posted.`,
 	);
+
+const governedCiAuthority = (repo: string, manifest: CiCaptureManifest, evidence: string) =>
+	Effect.gen(function* () {
+		const base = yield* defaultBranch(repo);
+		if (base._tag === "Failure") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot revalidate CI provenance because the default branch is unreadable (${base.reason}).`,
+				),
+			} as const;
+		}
+		const revision = yield* commitShaAtRef(repo, base.value);
+		if (revision._tag === "Failure") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot revalidate CI provenance because the exact default-branch authority revision is unreadable (${revision.reason}).`,
+				),
+			} as const;
+		}
+		const authority = yield* readFileAtRef(repo, LOCALHOST_DECLARATIONS_PATH, revision.value);
+		if (authority._tag !== "Present") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					authority._tag === "Absent" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
+					`${VERB}: cannot revalidate CI provenance because the governed declaration is ${authority._tag === "Absent" ? "absent" : `unreadable (${authority.reason})`}.`,
+				),
+			} as const;
+		}
+		const declarations = parseLocalhostDeclarations(authority.value);
+		if (declarations._tag === "Malformed") {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: cannot revalidate CI provenance because the governed declaration is malformed (${declarations.reason}).`,
+				),
+			} as const;
+		}
+		const harness = declarations.value.harnesses.find((entry) => entry.id === manifest.harness);
+		const declaredSurfaces =
+			harness === undefined
+				? null
+				: new Map(harness.surfaces.map((surface) => [surface.id, surface] as const));
+		if (
+			harness === undefined ||
+			declaredSurfaces === null ||
+			manifest.captures.length !== declaredSurfaces.size ||
+			manifest.captures.some((capture) => {
+				const declared = declaredSurfaces.get(capture.surface);
+				return (
+					declared === undefined ||
+					capture.route !== declared.route ||
+					capture.state !== declared.state
+				);
+			}) ||
+			manifest.declarationSha256 !== declarationDigest(authority.value) ||
+			manifest.producer.workflow !== harness.workflow ||
+			manifest.producer.check !== harness.check ||
+			manifest.producer.event !== harness.event ||
+			manifest.producer.artifact !== harness.artifact ||
+			manifest.producer.authorityHead !== revision.value
+		) {
+			return {
+				_tag: "Refused",
+				outcome: refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: CI evidence set "${evidence}" no longer matches the governed producer declaration.`,
+				),
+			} as const;
+		}
+		return {_tag: "Valid", revision: revision.value, harness} as const;
+	});
 
 /**
  * Whether a comment already holds this namespace's verdict **under this carrier** — the upsert key.
@@ -448,73 +526,14 @@ export const runPost = (
 				);
 			}
 
-			const base = yield* defaultBranch(repo);
-			if (base._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot revalidate CI provenance because the default branch is unreadable (${base.reason}).`,
-				);
-			}
-			const authorityRevision = yield* commitShaAtRef(repo, base.value);
-			if (authorityRevision._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot revalidate CI provenance because the exact default-branch authority revision is unreadable (${authorityRevision.reason}).`,
-				);
-			}
-			const authority = yield* readFileAtRef(
-				repo,
-				LOCALHOST_DECLARATIONS_PATH,
-				authorityRevision.value,
-			);
-			if (authority._tag !== "Present") {
-				return refuse(
-					authority._tag === "Absent" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
-					`${VERB}: cannot revalidate CI provenance because the governed declaration is ${authority._tag === "Absent" ? "absent" : `unreadable (${authority.reason})`}.`,
-				);
-			}
-			const declarations = parseLocalhostDeclarations(authority.value);
-			if (declarations._tag === "Malformed") {
-				return refuse(
-					MALFORMED_DOCUMENT,
-					`${VERB}: cannot revalidate CI provenance because the governed declaration is malformed (${declarations.reason}).`,
-				);
-			}
-			const harness = declarations.value.harnesses.find((entry) => entry.id === receipt.harness);
-			const declaredSurfaces =
-				harness === undefined
-					? null
-					: new Map(harness.surfaces.map((surface) => [surface.id, surface] as const));
-			if (
-				harness === undefined ||
-				declaredSurfaces === null ||
-				ciManifest.captures.length !== declaredSurfaces.size ||
-				ciManifest.captures.some((capture) => {
-					const declared = declaredSurfaces.get(capture.surface);
-					return (
-						declared === undefined ||
-						capture.route !== declared.route ||
-						capture.state !== declared.state
-					);
-				}) ||
-				ciManifest.declarationSha256 !== declarationDigest(authority.value) ||
-				ciManifest.producer.workflow !== harness.workflow ||
-				ciManifest.producer.check !== harness.check ||
-				ciManifest.producer.event !== harness.event ||
-				ciManifest.producer.artifact !== harness.artifact ||
-				ciManifest.producer.authorityHead !== authorityRevision.value
-			) {
-				return refuse(
-					MALFORMED_DOCUMENT,
-					`${VERB}: CI evidence set "${options.evidence}" no longer matches the governed producer declaration.`,
-				);
-			}
+			const authority = yield* governedCiAuthority(repo, ciManifest, options.evidence);
+			if (authority._tag === "Refused") return authority.outcome;
 			const bundle = yield* (options.fetchCiBundle ?? fetchCiBundle)(
 				repo,
 				pr,
 				live,
-				authorityRevision.value,
-				harness,
+				authority.revision,
+				authority.harness,
 				options.tmpRoot,
 			);
 			if (bundle._tag === "Failure") {
@@ -529,8 +548,8 @@ export const runPost = (
 				bundle.value.runId !== receipt.runId ||
 				bundle.value.checkId !== receipt.checkId ||
 				bundle.value.artifactId !== receipt.artifactId ||
-				bundle.value.artifactName !== harness.artifact ||
-				bundle.value.authorityHead !== authorityRevision.value
+				bundle.value.artifactName !== authority.harness.artifact ||
+				bundle.value.authorityHead !== authority.revision
 			) {
 				return refuse(
 					MALFORMED_DOCUMENT,
@@ -683,6 +702,10 @@ export const runPost = (
 				STALE_TREE,
 				`${VERB}: the live head moved from ${live} to ${postingTarget.pull.headSha} before posting — the tree you judged is gone.`,
 			);
+		}
+		if (ciRead?._tag === "Manifest") {
+			const postingAuthority = yield* governedCiAuthority(repo, ciRead.value, options.evidence);
+			if (postingAuthority._tag === "Refused") return postingAuthority.outcome;
 		}
 
 		// Step 5 — compose through the wire format, or through the ADR 0151 advisory shape.

@@ -1,11 +1,11 @@
-import {mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
+import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {CapturedSurface} from "../capture/capture.ts";
 import {errOut, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
-import {readSidecarCaptures, runCiProduce} from "./ci-produce-verb.ts";
+import {createFixture, readSidecarCaptures, runCiProduce} from "./ci-produce-verb.ts";
 import {LOCALHOST_DECLARATIONS_PATH, parseCiCaptureManifest} from "./localhost-evidence.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -61,6 +61,16 @@ const capture = (_url: string, outputDir: string) =>
 	});
 
 describe("trusted localhost producer flow", () => {
+	it("makes the bind-mounted fixture traversable and readable by the unprivileged subject", async () => {
+		const root = await createFixture();
+		const sessions = join(root, "sessions");
+		const fixture = join(sessions, "2026-08-29T10-00-00-000Z_review-ui.jsonl");
+		expect((await stat(root)).mode & 0o777).toBe(0o755);
+		expect((await stat(sessions)).mode & 0o777).toBe(0o755);
+		expect((await stat(fixture)).mode & 0o777).toBe(0o644);
+		await rm(root, {recursive: true, force: true});
+	});
+
 	it("consumes the sidecar control record without leaving it in the artifact", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-capture-sidecar-"));
 		await mkdir(join(root, "captures"), {recursive: true});
@@ -228,7 +238,7 @@ describe("trusted localhost producer flow", () => {
 			),
 		);
 
-		expect(outcome.code).toBe(13);
+		expect(outcome.code).toBe(11);
 		expect(seams.calls.some((call) => call.includes("server-workspace,dst=/subject"))).toBe(false);
 		await expect(readFile(join(outputDir, "manifest.json"), "utf8")).rejects.toThrow();
 		await rm(root, {recursive: true, force: true});

@@ -60,8 +60,9 @@ Each row is at most
 console noise cannot push the hard-fail kind into the untyped overflow count. The producer keeps an
 artifact publishable when a successful journey's browser capture records an uncaught page error; the
 trusted consumer owns the red-render exit so the pixels and error record remain independently
-reviewable. If the governed journey command itself fails, the producer stops before server start,
-capture, manifest creation, and workflow artifact upload.
+reviewable. If the governed journey command itself fails, the producer returns the shared UNKNOWN
+execution seat (`11`) and stops before server start, capture, manifest creation, and workflow
+artifact upload.
 
 ## Consumer and verdict
 

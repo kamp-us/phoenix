@@ -349,9 +349,9 @@ $ fabrika review-ui fetch 7190 --harness tuval --out judged
 review-ui fetch: the accepted artifact records 1 uncaught page error(s); the materialized render is red and must be posted as FAIL.
 review-ui fetch: materialized capture tuval-cockpit-desktop: <reviewer scratch>/captures/tuval-cockpit-desktop.png
 review-ui fetch: materialized capture tuval-cockpit-mobile: <reviewer scratch>/captures/tuval-cockpit-mobile.png
-$ echo $?
-13
 ```
+
+This refusal exits with status `13`.
 
 **Grounding**
 
@@ -432,9 +432,8 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `1` | invocation/flag parsing failed, including a missing required input or invalid PR operand |
 | `4` | the governed declaration is malformed |
 | `10` | subject head, authority head, run id, repository, harness, non-absolute root operand, output placement, or a subject root `.dockerignore` is off vocabulary |
-| `11` | declaration, fixture, output, image, workspace, server, sidecar, capture, or manifest write is unreadable/UNKNOWN |
+| `11` | declaration, fixture, output, image, workspace, governed journey command, server, sidecar, capture, or manifest write is unreadable/UNKNOWN |
 | `12` | the subject or authority checkout is not its named full head |
-| `13` | the governed browser journey command failed; no server, capture, manifest, or artifact is produced |
 | `15` | a captured PNG is invalid |
 
 **Errors**
@@ -459,7 +458,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the trusted output cannot be cleared.` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject image could not be built (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject workspace could not be created.` | `11` | refusal |
-| `review-ui ci-produce: the governed browser journey failed (<reason>).` | `13` | refusal |
+| `review-ui ci-produce: the governed browser journey failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the fresh exact-head server workspace could not be prepared.` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject server could not start.` | `11` | refusal |
 | `review-ui ci-produce: Docker returned no subject container id.` | `11` | refusal |

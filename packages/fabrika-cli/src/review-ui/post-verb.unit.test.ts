@@ -43,6 +43,7 @@ import {classifyProbe} from "./upload-leg.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 const AUTHORITY_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const MOVED_AUTHORITY_HEAD = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 const SET_DIR = "/tmp/fabrika-review-ui/4321-03135b91/judged";
 const CAPTURE_PATH = `${SET_DIR}/pano.png`;
@@ -302,6 +303,25 @@ const fetchedBundle = (manifestText: string) => () =>
 		}),
 	);
 
+const ciWorld = (document: string = JSON.stringify(ciManifest())) =>
+	fs({
+		strings: {
+			[MANIFEST_PATH]: document,
+			[CI_RECEIPT_PATH]: JSON.stringify({
+				schemaVersion: 1,
+				repository: "o/r",
+				pr: 4321,
+				head: HEAD,
+				harness: "tuval",
+				runId: 42,
+				checkId: 9,
+				artifactId: 10,
+				manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+			}),
+		},
+		bytes: {[CI_CAPTURE_PATH]: BYTES},
+	});
+
 /** The comment as the verb will have posted it, echoed back by the read-back read. */
 const posted = (body: string): HttpReply => ({status: 200, body: JSON.stringify({body})});
 
@@ -418,6 +438,56 @@ describe("runPost", () => {
 			`gate\tsatisfied\t${HEAD}`,
 		);
 		expect(gate.stdout).toContain("ns\treview-ui\tpass\tmarker");
+	});
+
+	it("refuses when the default-branch authority moves during verified upload", async () => {
+		let uploads = 0;
+		const upload: UploadLeg = () => {
+			uploads += 1;
+			return Effect.succeed({_tag: "Hosted", url: HOSTED});
+		};
+		const {outcome, requests} = await run(
+			[
+				[once(PULL), pull()],
+				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[once(AUTHORITY_COMMIT), {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
+				[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: MOVED_AUTHORITY_HEAD})}],
+				[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
+				[PULL, pull()],
+			],
+			{upload},
+			ciWorld(),
+		);
+		expect(uploads).toBe(1);
+		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+		expect(outcome.stderr.join("\n")).toContain(
+			"no longer matches the governed producer declaration",
+		);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("refuses when the governed declaration is revoked during verified upload", async () => {
+		let uploads = 0;
+		const upload: UploadLeg = () => {
+			uploads += 1;
+			return Effect.succeed({_tag: "Hosted", url: HOSTED});
+		};
+		const {outcome, requests} = await run(
+			[
+				[once(PULL), pull()],
+				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
+				[once(AUTHORITY), {status: 200, body: CI_AUTHORITY}],
+				[AUTHORITY, {status: 404, body: "{}"}],
+				[PULL, pull()],
+			],
+			{upload},
+			ciWorld(),
+		);
+		expect(uploads).toBe(1);
+		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+		expect(outcome.stderr.join("\n")).toContain("governed declaration is absent");
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("revalidates receipt check and artifact ids against the re-downloaded artifact", async () => {

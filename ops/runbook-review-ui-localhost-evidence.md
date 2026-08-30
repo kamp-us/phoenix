@@ -60,13 +60,8 @@ The workflow declares `reopened` and matches `packages/tuval/**` plus `pnpm-lock
 3. Re-read the full live head. If it differs from the recorded head, restart at the new head. If it
    is unchanged, wait for `review-ui localhost evidence / tuval` at that exact head. A missing run is
    a producer-state failure, not permission to substitute evidence.
-4. After the first run exists, rerun it through GitHub's documented workflow-run rerun action
-   ([rerun workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs-and-deployments/manage-workflow-runs/re-running-workflows-and-jobs#re-running-all-the-jobs-in-a-workflow)).
-   GitHub keeps `GITHUB_RUN_ID` unchanged across reruns and increments `GITHUB_RUN_ATTEMPT` for each
-   attempt
-   ([default variables](https://docs.github.com/en/actions/reference/variables-reference#default-environment-variables)).
-   Treat the rerun as a new attempt of the same run id, not as a new run identity; wait for that
-   attempt's named check and artifact before fetching.
+4. Consume that first completed exact-head run and its named artifact; do not rerun the successful
+   producer before fetching.
 
 Fetch with `--harness tuval`, judge the desktop and mobile captures plus browser-error evidence, and
 post through the ordinary marker as above. Do not add an `apps/web` route, preview deployment,

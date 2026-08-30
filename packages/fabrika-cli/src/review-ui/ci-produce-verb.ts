@@ -14,7 +14,6 @@ import {
 	MALFORMED_DOCUMENT,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
-	RENDER_CRASHED,
 	STALE_TREE,
 } from "./codes.ts";
 import {
@@ -202,12 +201,13 @@ const ran = (
 		captureBytes: 1_048_576,
 	});
 
-const createFixture = (): Promise<string> =>
+export const createFixture = (): Promise<string> =>
 	mkdtemp(join(tmpdir(), "fabrika-review-ui-localhost-")).then(async (root) => {
 		const sessions = join(root, "sessions");
+		const fixture = join(sessions, "2026-08-29T10-00-00-000Z_review-ui.jsonl");
 		await mkdir(sessions, {recursive: true});
 		await writeFile(
-			join(sessions, "2026-08-29T10-00-00-000Z_review-ui.jsonl"),
+			fixture,
 			`${JSON.stringify({
 				type: "session",
 				version: 3,
@@ -216,6 +216,9 @@ const createFixture = (): Promise<string> =>
 				cwd: "/work/review-ui",
 			})}\n`,
 		);
+		await chmod(root, 0o755);
+		await chmod(sessions, 0o755);
+		await chmod(fixture, 0o644);
 		return root;
 	});
 
@@ -504,7 +507,7 @@ export const runCiProduce = (
 			);
 			if (tested._tag !== "Ran" || tested.exitCode !== 0 || tested.timedOut || tested.truncated) {
 				return refuse(
-					RENDER_CRASHED,
+					PRECONDITION_UNKNOWN,
 					`${VERB}: the governed browser journey failed (${tested._tag === "Ran" ? decode(tested.stderr) || `exit ${tested.exitCode}` : tested.reason}).`,
 				);
 			}
