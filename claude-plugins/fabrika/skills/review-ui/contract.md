@@ -486,7 +486,9 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the isolated subject server exited before readiness (<state>; <bounded logs>).` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject server did not report readiness.` | `11` | refusal |
 | `review-ui ci-produce: the trusted capture output could not be prepared (<reason>).` | `11` | refusal |
+| `review-ui ci-produce: the bounded capture workspace could not be created.` | `11` | refusal |
 | `review-ui ci-produce: the trusted isolated capture sidecar failed (<reason>).` | `11` | refusal |
+| `review-ui ci-produce: the bounded capture output could not be materialized.` | `11` | refusal |
 | `review-ui ci-produce: the trusted localhost capture failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted capture set does not contain every declared <harness> surface exactly once.` | `15` | refusal |
 | `review-ui ci-produce: capture <surface> does not match its declared route, state, and member.` | `15` | refusal |

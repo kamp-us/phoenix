@@ -43,8 +43,6 @@ export type CiBundleAttempt =
 	| {readonly _tag: "Ok"; readonly value: CiBundle}
 	| {readonly _tag: "Failure"; readonly reason: string; readonly kind?: "malformed-members"};
 
-const stringOf = (value: unknown): string => (typeof value === "string" ? value : "");
-
 export const decodeWorkflowRuns = (entries: readonly unknown[]): Attempt<readonly RunRecord[]> => {
 	const runs: RunRecord[] = [];
 	for (const value of entries) {
@@ -53,6 +51,10 @@ export const decodeWorkflowRuns = (entries: readonly unknown[]): Attempt<readonl
 			typeof value.id !== "number" ||
 			typeof value.status !== "string" ||
 			typeof value.event !== "string" ||
+			typeof value.path !== "string" ||
+			(value.conclusion !== null && typeof value.conclusion !== "string") ||
+			!isRecord(value.repository) ||
+			typeof value.repository.full_name !== "string" ||
 			typeof value.head_sha !== "string" ||
 			typeof value.display_title !== "string" ||
 			typeof value.check_suite_id !== "number"
@@ -62,10 +64,10 @@ export const decodeWorkflowRuns = (entries: readonly unknown[]): Attempt<readonl
 		runs.push({
 			id: value.id,
 			status: value.status,
-			conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
+			conclusion: value.conclusion,
 			event: value.event,
-			path: stringOf(value.path),
-			repository: isRecord(value.repository) ? stringOf(value.repository.full_name) : "",
+			path: value.path,
+			repository: value.repository.full_name,
 			subjectHead: value.head_sha,
 			title: value.display_title,
 			checkSuiteId: value.check_suite_id,
@@ -138,6 +140,19 @@ export const selectUniqueCompleted = (
 	name: string,
 	kind: "check" | "artifact",
 ): Attempt<Record<string, unknown>> => {
+	for (const value of rows) {
+		if (
+			!isRecord(value) ||
+			typeof value.id !== "number" ||
+			typeof value.name !== "string" ||
+			(kind === "check" &&
+				(typeof value.status !== "string" ||
+					(value.conclusion !== null && typeof value.conclusion !== "string"))) ||
+			(kind === "artifact" && typeof value.expired !== "boolean")
+		) {
+			return fail(`GitHub answered 200 but one ${kind} row is incomplete`);
+		}
+	}
 	const named = rows.filter((value) => isRecord(value) && value.name === name);
 	if (named.length !== 1) {
 		return fail(

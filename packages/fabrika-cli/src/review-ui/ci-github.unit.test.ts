@@ -186,6 +186,17 @@ describe("trusted localhost Actions provenance", () => {
 		}
 	});
 
+	it("refuses incomplete association fields instead of filtering malformed runs before selection", () => {
+		for (const incomplete of [
+			{...runEnvelope, path: undefined},
+			{...runEnvelope, conclusion: 0},
+			{...runEnvelope, repository: {}},
+			{...runEnvelope, repository: {full_name: 7}},
+		]) {
+			assert.strictEqual(decodeWorkflowRuns([incomplete])._tag, "Failure");
+		}
+	});
+
 	it("selects only the base-owned run title that binds PR, subject, and authority", () => {
 		assert.strictEqual(select([run()])._tag, "Ok");
 		for (const candidate of [
@@ -228,6 +239,14 @@ describe("trusted localhost Actions provenance", () => {
 	});
 
 	it("requires exactly one correctly named successful check and one non-expired artifact", () => {
+		for (const [kind, row] of [
+			["check", {id: 1, name: "other", conclusion: "success"}],
+			["check", {id: 1, name: "other", status: "completed", conclusion: 0}],
+			["artifact", {id: 1, name: "other"}],
+			["artifact", {id: 1, name: "other", expired: "false"}],
+		] as const) {
+			assert.strictEqual(selectUniqueCompleted([row], harness.check, kind)._tag, "Failure");
+		}
 		assert.strictEqual(
 			selectUniqueCompleted(
 				[{id: 1, name: harness.check, status: "completed", conclusion: "success"}],

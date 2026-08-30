@@ -141,7 +141,7 @@ USER node
 							event: "pull_request_target",
 							artifact: "review-ui-localhost-fixture",
 							captureCommand: ["sh", "-c", "test -f server-source.mjs"],
-							serverBuildCommand: ["sh", "-c", "cp server-source.mjs server.mjs"],
+							serverBuildCommand: ["cp", "server-source.mjs", "server.mjs"],
 							serverCommand: ["node", "server.mjs"],
 							containerPort: 4173,
 							readinessPattern: "fixture ready",
