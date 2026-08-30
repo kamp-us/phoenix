@@ -37,7 +37,7 @@ import {
 	parseFlagOperands,
 } from "../capture/flag-override.ts";
 import {isRealizedState, provesSession, REALIZED_STATES, stateOf} from "../capture/states.ts";
-import {writeFile} from "../io/fs.ts";
+import {writeFile, writePrivateFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -56,8 +56,9 @@ import {
 	isKebabSetName,
 	manifestPath,
 	mintPreviewProvenance,
+	newPreviewCapability,
 	PREVIEW_PROVENANCE_RECEIPT,
-	previewProvenanceKeyPath,
+	previewProvenanceCapabilityPath,
 	serializeManifest,
 	setDirectory,
 	sha256Hex,
@@ -357,26 +358,32 @@ export const runRender = (
 			captures: renders.map((render) => (render as {entry: CaptureEntry}).entry),
 		};
 		const document = serializeManifest(manifest);
-		const provenance = mintPreviewProvenance({
-			repository: repo,
+		const capability = newPreviewCapability();
+		const provenance = mintPreviewProvenance(
+			{
+				repository: repo,
+				pr,
+				head,
+				app: announced.app,
+				previewUrl: announced.url,
+				manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+			},
+			capability,
+		);
+		const receipt = JSON.stringify(provenance);
+		const capabilityPath = previewProvenanceCapabilityPath(
+			options.tmpRoot,
+			repo,
 			pr,
 			head,
-			app: announced.app,
-			previewUrl: announced.url,
-			manifestSha256: sha256Hex(new TextEncoder().encode(document)),
-		});
-		const receipt = JSON.stringify(provenance.receipt);
-		// A set without the manifest, signed receipt, and out-of-set key is not a set: `post` requires
-		// this producer capability before it reads route-shaped bytes as preview evidence.
+			options.out,
+		);
 		const written = yield* Effect.result(
 			Effect.all(
 				[
 					writeFile(manifestPath(setDir), document),
 					writeFile(`${setDir}/${PREVIEW_PROVENANCE_RECEIPT}`, receipt),
-					writeFile(
-						previewProvenanceKeyPath(options.tmpRoot, provenance.receipt.keyId),
-						provenance.key,
-					),
+					writePrivateFile(capabilityPath, capability),
 				],
 				{concurrency: 3},
 			),

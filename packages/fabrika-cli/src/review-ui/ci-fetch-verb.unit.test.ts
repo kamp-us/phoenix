@@ -86,6 +86,8 @@ const ciManifest = (
 		captures: [
 			{
 				surface: "desktop",
+				route: "/",
+				state: "desktop",
 				path: "captures/desktop.png",
 				width: 1280,
 				height: 800,
@@ -180,6 +182,26 @@ describe("runCiFetch", () => {
 			materializedOnRefusal?: boolean;
 		}> = [
 			...producerMismatchCases,
+			{
+				name: "missing declared route",
+				manifest: ciManifest({}, {route: undefined}),
+				expected: 4,
+			},
+			{
+				name: "wrong declared route",
+				manifest: ciManifest({}, {route: "/wrong"}),
+				expected: 4,
+			},
+			{
+				name: "missing declared state",
+				manifest: ciManifest({}, {state: undefined}),
+				expected: 4,
+			},
+			{
+				name: "wrong declared state",
+				manifest: ciManifest({}, {state: "mobile"}),
+				expected: 4,
+			},
 			{
 				name: "moved head",
 				manifest: ciManifest(),

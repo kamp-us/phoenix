@@ -1,9 +1,11 @@
 /**
  * The capture set: where its bytes live, what its manifest says, and how a later verb re-reads it.
  *
- * `review-ui render` writes the manifest, producer receipt, and an out-of-set capability key;
- * `review-ui post` reads all three, so the two never trade a carried variable. A set without those
- * readable records is not a set. The manifest bytes are byte-identical to `render`'s
+ * `review-ui render` writes the manifest and producer receipt, then signs the receipt with a
+ * reviewer-owned capability at a deterministic path outside the evidence set. `review-ui post`
+ * derives that path from trusted inputs rather than from the receipt, so set-local bytes cannot
+ * nominate their own verification key. A set without those readable records is not a set. The
+ * manifest bytes are byte-identical to `render`'s
  * stdout object for the same reason: one document, two channels, so nothing can be true on one and
  * not the other.
  *
@@ -71,7 +73,6 @@ export interface PreviewProvenance {
 	readonly app: string;
 	readonly previewUrl: string;
 	readonly manifestSha256: string;
-	readonly keyId: string;
 	readonly signature: string;
 }
 
@@ -80,27 +81,33 @@ export type UnsignedPreviewProvenance = Omit<PreviewProvenance, "signature">;
 const previewProvenancePayload = (value: UnsignedPreviewProvenance): string =>
 	JSON.stringify(value);
 
+export const newPreviewCapability = (): string => randomBytes(32).toString("hex");
+
 export const mintPreviewProvenance = (
-	fields: Omit<UnsignedPreviewProvenance, "schemaVersion" | "source" | "keyId">,
-): {readonly receipt: PreviewProvenance; readonly key: string} => {
-	const key = randomBytes(32).toString("hex");
+	fields: Omit<UnsignedPreviewProvenance, "schemaVersion" | "source">,
+	capability: string,
+): PreviewProvenance => {
 	const unsigned: UnsignedPreviewProvenance = {
 		schemaVersion: 1,
 		source: "review-ui-render",
 		...fields,
-		keyId: randomBytes(16).toString("hex"),
 	};
 	return {
-		receipt: {
-			...unsigned,
-			signature: createHmac("sha256", key).update(previewProvenancePayload(unsigned)).digest("hex"),
-		},
-		key,
+		...unsigned,
+		signature: createHmac("sha256", capability)
+			.update(previewProvenancePayload(unsigned))
+			.digest("hex"),
 	};
 };
 
-export const previewProvenanceKeyPath = (tmpRoot: string, keyId: string): string =>
-	`${tmpRoot}/fabrika-review-ui-provenance/${keyId}.key`;
+export const previewProvenanceCapabilityPath = (
+	tmpRoot: string,
+	repository: string,
+	pr: number,
+	head: string,
+	set: string,
+): string =>
+	`${tmpRoot}/fabrika-review-ui-capabilities/${sha256Hex(new TextEncoder().encode(repository))}/${pr}-${head}/${set}.key`;
 
 export const verifyPreviewProvenance = (receipt: PreviewProvenance, key: string): boolean => {
 	const {signature, ...unsigned} = receipt;
@@ -122,8 +129,6 @@ export const parsePreviewProvenance = (text: string): PreviewProvenance | null =
 		typeof value.app !== "string" ||
 		typeof value.previewUrl !== "string" ||
 		typeof value.manifestSha256 !== "string" ||
-		typeof value.keyId !== "string" ||
-		!/^[0-9a-f]{32}$/.test(value.keyId) ||
 		typeof value.signature !== "string" ||
 		!/^[0-9a-f]{64}$/.test(value.signature)
 	) {
@@ -138,7 +143,6 @@ export const parsePreviewProvenance = (text: string): PreviewProvenance | null =
 		app: value.app,
 		previewUrl: value.previewUrl,
 		manifestSha256: value.manifestSha256,
-		keyId: value.keyId,
 		signature: value.signature,
 	};
 };

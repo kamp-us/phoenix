@@ -207,3 +207,19 @@ export const writeFile = (
 	}).pipe(
 		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
 	);
+
+export const writePrivateFile = (
+	path: string,
+	text: string,
+): Effect.Effect<void, WriteFailed, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const pathService = yield* Path.Path;
+		const parent = pathService.dirname(path);
+		yield* fs.makeDirectory(parent, {recursive: true, mode: 0o700});
+		yield* fs.chmod(parent, 0o700);
+		yield* fs.writeFileString(path, text, {mode: 0o600});
+		yield* fs.chmod(path, 0o600);
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
+	);

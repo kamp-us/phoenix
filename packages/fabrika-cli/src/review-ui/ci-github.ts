@@ -5,7 +5,7 @@ import {execCapture} from "../io/exec.ts";
 import {ambientToken, authed, onTransport, pagedEnvelope, restBytes} from "../io/gh-api.ts";
 import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {isRecord} from "../io/json.ts";
-import type {LocalhostHarnessDeclaration} from "./localhost-evidence.ts";
+import {type LocalhostHarnessDeclaration, parseCiCaptureManifest} from "./localhost-evidence.ts";
 
 export interface PullAssociation {
 	readonly number: number;
@@ -165,6 +165,19 @@ export const safeArtifactMembers = (listing: string): readonly string[] | null =
 		: null;
 };
 
+export const hasExactManifestMembers = (
+	members: readonly string[],
+	manifestText: string,
+): boolean | null => {
+	const parsed = parseCiCaptureManifest(manifestText);
+	if (parsed._tag !== "Manifest") return null;
+	const expected = new Set([
+		"manifest.json",
+		...parsed.value.captures.map((capture) => capture.path),
+	]);
+	return members.length === expected.size && members.every((member) => expected.has(member));
+};
+
 export const resolveCiIdentity = (
 	repo: string,
 	pr: number,
@@ -266,6 +279,12 @@ export const fetchCiBundle = (
 			catch: (cause) => `cannot read the artifact manifest: ${String(cause)}`,
 		}).pipe(Effect.match({onFailure: fail, onSuccess: ok}));
 		if (manifest._tag === "Failure") return manifest;
+		if (hasExactManifestMembers(members, manifest.value) === false) {
+			return {
+				...fail("the artifact has extra or unmanifested members"),
+				kind: "malformed-members" as const,
+			};
+		}
 		return ok({
 			...identity.value,
 			directory: directory.value,

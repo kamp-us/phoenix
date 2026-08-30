@@ -129,7 +129,7 @@ export const runCiFetch = (
 			return refuse(
 				bundle.kind === "malformed-members" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
 				bundle.kind === "malformed-members"
-					? `${VERB}: the artifact has unsafe, duplicate, or incomplete members.`
+					? `${VERB}: the artifact has unsafe, duplicate, extra, or incomplete members.`
 					: `${VERB}: trusted CI evidence is unresolved (${bundle.reason}).`,
 			);
 		}
@@ -166,12 +166,24 @@ export const runCiFetch = (
 		if (new Set(captureSurfaces).size !== captureSurfaces.length) {
 			return refuse(MALFORMED_DOCUMENT, `${VERB}: the artifact contains a surface more than once.`);
 		}
-		const expected = new Set(harness.surfaces.map((surface) => surface.id));
+		const expected = new Map(harness.surfaces.map((surface) => [surface.id, surface] as const));
 		const actual = new Set(captureSurfaces);
-		if (expected.size !== actual.size || [...expected].some((surface) => !actual.has(surface))) {
+		if (
+			expected.size !== actual.size ||
+			[...expected].some(
+				([id, declared]) =>
+					!actual.has(id) ||
+					!manifest.captures.some(
+						(capture) =>
+							capture.surface === id &&
+							capture.route === declared.route &&
+							capture.state === declared.state,
+					),
+			)
+		) {
 			return refuse(
 				MALFORMED_DOCUMENT,
-				`${VERB}: the artifact does not contain every declared ${harness.id} surface/state exactly once.`,
+				`${VERB}: the artifact does not contain every declared ${harness.id} surface, route, and state exactly once.`,
 			);
 		}
 		const red = manifest.captures.flatMap((capture) =>

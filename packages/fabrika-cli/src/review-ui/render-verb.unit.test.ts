@@ -15,7 +15,7 @@ import {
 	PREVIEW_PROVENANCE_RECEIPT,
 	parseManifest,
 	parsePreviewProvenance,
-	previewProvenanceKeyPath,
+	previewProvenanceCapabilityPath,
 	sha256Hex,
 	verifyPreviewProvenance,
 } from "./manifest.ts";
@@ -121,9 +121,11 @@ describe("runRender", () => {
 		});
 		expect(receipt).not.toBeNull();
 		if (receipt !== null) {
-			const key = written.get(previewProvenanceKeyPath("/tmp", receipt.keyId));
-			expect(key).toBeDefined();
-			expect(verifyPreviewProvenance(receipt, key ?? "")).toBe(true);
+			const capability = written.get(
+				previewProvenanceCapabilityPath("/tmp", "o/r", 4321, HEAD, "judged"),
+			);
+			expect(capability).toBeDefined();
+			expect(verifyPreviewProvenance(receipt, capability ?? "")).toBe(true);
 		}
 	});
 

@@ -633,10 +633,38 @@ export const runCiProduce = (
 					`${VERB}: the trusted localhost capture failed (${captures.failure}).`,
 				);
 			}
+			const declarationsBySurface = new Map(
+				harness.surfaces.map((surface) => [surface.id, surface] as const),
+			);
+			if (
+				captures.success.length !== harness.surfaces.length ||
+				new Set(captures.success.map((capture) => capture.surface)).size !== captures.success.length
+			) {
+				return refuse(
+					INVALID_CAPTURE,
+					`${VERB}: the trusted capture set does not contain every declared ${harness.id} surface exactly once.`,
+				);
+			}
 			const validatedCaptures: Array<
-				readonly [CapturedSurface, {readonly width: number; readonly height: number}]
+				readonly [
+					CapturedSurface,
+					{readonly width: number; readonly height: number},
+					(typeof harness.surfaces)[number],
+				]
 			> = [];
 			for (const capture of captures.success) {
+				const declared = declarationsBySurface.get(capture.surface);
+				if (
+					declared === undefined ||
+					capture.route !== declared.route ||
+					capture.state !== declared.state ||
+					capture.fileName !== `${declared.id}.png`
+				) {
+					return refuse(
+						INVALID_CAPTURE,
+						`${VERB}: capture ${capture.surface} does not match its declared route, state, and member.`,
+					);
+				}
 				const valid = validateCaptureBytes(capture.pngBytes);
 				if (valid._tag === "Invalid") {
 					return refuse(
@@ -644,7 +672,7 @@ export const runCiProduce = (
 						`${VERB}: ${capture.surface} is not a valid capture (${valid.reason}).`,
 					);
 				}
-				validatedCaptures.push([capture, {width: valid.width, height: valid.height}]);
+				validatedCaptures.push([capture, {width: valid.width, height: valid.height}, declared]);
 			}
 			const manifest: CiCaptureManifest = {
 				schemaVersion: 1,
@@ -662,8 +690,10 @@ export const runCiProduce = (
 					artifact: harness.artifact,
 					authorityHead: options.authorityHead,
 				},
-				captures: validatedCaptures.map(([capture, dimensions]) => ({
+				captures: validatedCaptures.map(([capture, dimensions, declared]) => ({
 					surface: capture.surface,
+					route: declared.route,
+					state: declared.state,
 					path: `captures/${capture.fileName}`,
 					width: dimensions.width,
 					height: dimensions.height,

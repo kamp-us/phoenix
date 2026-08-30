@@ -284,6 +284,11 @@ describe("trusted localhost producer flow", () => {
 		expect(parsed._tag).toBe("Manifest");
 		if (parsed._tag === "Manifest") {
 			expect(parsed.value.producer.authorityHead).toBe(AUTHORITY_HEAD);
+			expect(parsed.value.captures[0]).toMatchObject({
+				surface: "desktop",
+				route: "/",
+				state: "desktop",
+			});
 			expect(parsed.value.captures[0]?.pageErrors).toEqual({
 				rows: [
 					{kind: "pageerror", text: "TypeError: boom"},

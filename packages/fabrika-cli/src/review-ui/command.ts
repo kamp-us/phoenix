@@ -188,7 +188,7 @@ const post = leafCommand(
 		),
 		evidence: Flag.string("evidence").pipe(
 			Flag.withDescription(
-				"the review-ui render or provenance-validated review-ui fetch set whose verified upload is this verdict's evidence",
+				"the kebab-case review-ui render or provenance-validated review-ui fetch set whose verified upload is this verdict's evidence",
 			),
 		),
 		carrier: Flag.string("carrier").pipe(

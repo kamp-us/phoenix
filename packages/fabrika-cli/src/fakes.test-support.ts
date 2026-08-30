@@ -108,6 +108,7 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 	const decoder = new TextDecoder();
 	const layer = Layer.merge(
 		FileSystem.layerNoop({
+			chmod: () => Effect.void,
 			readDirectory: (path: string) => {
 				const names = dirs[path];
 				return names === undefined || names === null

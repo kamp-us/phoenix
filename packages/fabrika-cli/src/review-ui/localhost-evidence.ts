@@ -214,6 +214,15 @@ export const parseValidatedCiProvenance = (text: string): ValidatedCiProvenance 
 	};
 };
 
+export interface CiCaptureEntry extends CaptureEntry {
+	readonly route: string;
+	readonly state: string;
+	readonly errorCoverage: {
+		readonly pageerror: "readable";
+		readonly consoleError: "readable";
+	};
+}
+
 export interface CiCaptureManifest {
 	readonly schemaVersion: 1;
 	readonly source: "github-actions";
@@ -223,18 +232,22 @@ export interface CiCaptureManifest {
 	readonly harness: string;
 	readonly declarationSha256: string;
 	readonly producer: CiProducerIdentity;
-	readonly captures: readonly CaptureEntry[];
+	readonly captures: readonly CiCaptureEntry[];
 }
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const RELATIVE_CAPTURE = /^captures\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.png$/;
 
-const toCiEntry = (value: unknown): CaptureEntry | null => {
+const toCiEntry = (value: unknown): CiCaptureEntry | null => {
 	if (!isRecord(value) || !isRecord(value.pageErrors) || !isRecord(value.errorCoverage))
 		return null;
 	if (
 		typeof value.surface !== "string" ||
+		typeof value.route !== "string" ||
+		!value.route.startsWith("/") ||
+		typeof value.state !== "string" ||
+		!SAFE_ID.test(value.state) ||
 		typeof value.path !== "string" ||
 		!RELATIVE_CAPTURE.test(value.path) ||
 		typeof value.width !== "number" ||
@@ -269,6 +282,8 @@ const toCiEntry = (value: unknown): CaptureEntry | null => {
 	}
 	return {
 		surface: value.surface,
+		route: value.route,
+		state: value.state,
 		path: value.path,
 		width: value.width,
 		height: value.height,
@@ -318,11 +333,11 @@ export const parseCiCaptureManifest = (text: string): CiManifestRead => {
 	if (captures.length === 0 || captures.some((capture) => capture === null)) {
 		return {_tag: "Malformed", reason: "the CI manifest contains a malformed or empty capture set"};
 	}
-	const paths = captures.map((capture) => (capture as CaptureEntry).path);
+	const paths = captures.map((capture) => (capture as CiCaptureEntry).path);
 	if (new Set(paths).size !== paths.length) {
 		return {_tag: "Malformed", reason: "two captures name the same artifact member"};
 	}
-	const surfaces = captures.map((capture) => (capture as CaptureEntry).surface);
+	const surfaces = captures.map((capture) => (capture as CiCaptureEntry).surface);
 	if (new Set(surfaces).size !== surfaces.length) {
 		return {_tag: "Malformed", reason: "two captures name the same surface"};
 	}
@@ -344,7 +359,7 @@ export const parseCiCaptureManifest = (text: string): CiManifestRead => {
 				artifact: parsed.producer.artifact,
 				authorityHead: parsed.producer.authorityHead,
 			},
-			captures: captures as readonly CaptureEntry[],
+			captures: captures as readonly CiCaptureEntry[],
 		},
 	};
 };

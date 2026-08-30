@@ -34,7 +34,7 @@ import {
 	mintPreviewProvenance,
 	PREVIEW_PROVENANCE_RECEIPT,
 	parseManifest,
-	previewProvenanceKeyPath,
+	previewProvenanceCapabilityPath,
 	serializeManifest,
 	sha256Hex,
 } from "./manifest.ts";
@@ -97,20 +97,29 @@ const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => 
 	...overrides,
 });
 
-const previewProvenance = (document: string) => {
+const previewProvenance = (document: string, capability = "a".repeat(64)) => {
 	const parsed = JSON.parse(document) as CaptureManifest;
-	const minted = mintPreviewProvenance({
-		repository: "o/r",
-		pr: parsed.pr,
-		head: parsed.head,
-		app: "web",
-		previewUrl: parsed.previewUrl,
-		manifestSha256: sha256Hex(new TextEncoder().encode(document)),
-	});
+	const receipt = mintPreviewProvenance(
+		{
+			repository: "o/r",
+			pr: parsed.pr,
+			head: parsed.head,
+			app: "web",
+			previewUrl: parsed.previewUrl,
+			manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+		},
+		capability,
+	);
 	return {
-		receipt: JSON.stringify(minted.receipt),
-		keyPath: previewProvenanceKeyPath("/tmp", minted.receipt.keyId),
-		key: minted.key,
+		receipt: JSON.stringify(receipt),
+		capabilityPath: previewProvenanceCapabilityPath(
+			"/tmp",
+			"o/r",
+			parsed.pr,
+			parsed.head,
+			parsed.set,
+		),
+		capability,
 	};
 };
 
@@ -133,6 +142,8 @@ const ciManifest = (overrides: Partial<CiCaptureManifest> = {}): CiCaptureManife
 	captures: [
 		{
 			surface: "desktop",
+			route: "/",
+			state: "desktop",
 			path: "captures/desktop.png",
 			width: 1280,
 			height: 2140,
@@ -181,12 +192,12 @@ const world = (overrides: FsShape = {}): Layer.Layer<FileSystem.FileSystem | Pat
 	const provenance =
 		parseManifest(document)._tag === "Manifest"
 			? previewProvenance(document)
-			: {receipt: "{}", keyPath: "/absent", key: ""};
+			: {receipt: "{}", capabilityPath: "/absent", capability: ""};
 	return fs({
 		strings: {
 			[MANIFEST_PATH]: document,
 			[PREVIEW_RECEIPT_PATH]: provenance.receipt,
-			[provenance.keyPath]: provenance.key,
+			[provenance.capabilityPath]: provenance.capability,
 			...overrides.strings,
 		},
 		bytes: {
@@ -542,13 +553,18 @@ describe("runPost", () => {
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
-	it("rejects an arbitrary route-shaped manifest that carries no render capability", async () => {
+	it("rejects a forged preview receipt plus the caller-nominated matching key", async () => {
 		const document = serializeManifest(manifest());
-		const forged = previewProvenance(document);
+		const forged = previewProvenance(document, "f".repeat(64));
+		const keyId = "1".repeat(32);
 		const layer = fs({
 			strings: {
 				[MANIFEST_PATH]: document,
-				[PREVIEW_RECEIPT_PATH]: forged.receipt,
+				[PREVIEW_RECEIPT_PATH]: JSON.stringify({
+					...(JSON.parse(forged.receipt) as Record<string, unknown>),
+					keyId,
+				}),
+				[`/tmp/fabrika-review-ui-provenance/${keyId}.key`]: forged.capability,
 			},
 			bytes: {[CAPTURE_PATH]: BYTES},
 		});
@@ -568,7 +584,7 @@ describe("runPost", () => {
 			strings: {
 				[MANIFEST_PATH]: document,
 				[PREVIEW_RECEIPT_PATH]: provenance.receipt,
-				[provenance.keyPath]: provenance.key,
+				[provenance.capabilityPath]: provenance.capability,
 			},
 			bytes: {"/tmp/arbitrary.png": BYTES},
 		});
@@ -603,6 +619,12 @@ describe("runPost", () => {
 		expect((await run(happy(), {polarity: "MAYBE"})).outcome.code).toBe(OFF_VOCABULARY);
 		expect((await run(happy(), {carrier: "letter"})).outcome.code).toBe(OFF_VOCABULARY);
 		expect((await run(happy(), {carrier: "advisory"})).outcome.code).toBe(OFF_VOCABULARY);
+	});
+
+	it("refuses an evidence name that could escape reviewer-owned scratch", async () => {
+		const {outcome, requests} = await run(happy(), {evidence: "../../attacker-key"});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(requests).toEqual([]);
 	});
 
 	it("refuses a closed PR on 7", async () => {
@@ -656,7 +678,7 @@ describe("runPost", () => {
 				strings: {
 					[MANIFEST_PATH]: document,
 					[PREVIEW_RECEIPT_PATH]: provenance.receipt,
-					[provenance.keyPath]: provenance.key,
+					[provenance.capabilityPath]: provenance.capability,
 				},
 			}),
 		);

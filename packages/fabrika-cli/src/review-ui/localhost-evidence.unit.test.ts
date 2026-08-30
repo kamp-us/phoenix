@@ -48,6 +48,8 @@ const manifest = {
 	captures: [
 		{
 			surface: "desktop",
+			route: "/",
+			state: "desktop",
 			path: "captures/desktop.png",
 			width: 1280,
 			height: 800,
@@ -98,6 +100,20 @@ describe("localhost evidence authority", () => {
 			)._tag,
 			"Malformed",
 		);
+	});
+
+	it("rejects missing or malformed route/state bindings", () => {
+		for (const capture of [
+			{...manifest.captures[0], route: undefined},
+			{...manifest.captures[0], route: "not-a-route"},
+			{...manifest.captures[0], state: undefined},
+			{...manifest.captures[0], state: "Not Safe"},
+		]) {
+			assert.strictEqual(
+				parseCiCaptureManifest(JSON.stringify({...manifest, captures: [capture]}))._tag,
+				"Malformed",
+			);
+		}
 	});
 
 	it("rejects arbitrary members, missing captures, and unreadable browser-error evidence", () => {

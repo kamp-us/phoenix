@@ -63,12 +63,13 @@ import {
 } from "./localhost-evidence.ts";
 import {
 	type CaptureEntry,
+	isKebabSetName,
 	manifestPath,
 	PREVIEW_PROVENANCE_RECEIPT,
 	type PreviewProvenance,
 	parseManifest,
 	parsePreviewProvenance,
-	previewProvenanceKeyPath,
+	previewProvenanceCapabilityPath,
 	readCaptureBytes,
 	setDirectory,
 	sha256Hex,
@@ -267,6 +268,12 @@ export const runPost = (
 		if (!Number.isInteger(pr) || pr <= 0) {
 			return refuse(FAILED, `${VERB}: ${pr} is not a pull-request number.`);
 		}
+		if (!isKebabSetName(options.evidence)) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --evidence "${options.evidence}" is not a kebab-case set name.`,
+			);
+		}
 		const polarity = options.polarity.toUpperCase();
 		if (polarity !== "PASS" && polarity !== "FAIL") {
 			return refuse(
@@ -374,6 +381,12 @@ export const runPost = (
 					`${VERB}: preview evidence set "${options.evidence}" has no readable preview manifest.`,
 				);
 			}
+			if (!prefixMatch(previewManifest.head, inspected)) {
+				return refuse(
+					STALE_TREE,
+					`${VERB}: evidence set "${options.evidence}" was rendered at ${previewManifest.head.slice(0, 7)}, you are posting at ${inspected.slice(0, 7)} — stale pixels; re-render at the live head.`,
+				);
+			}
 			const receiptRead = yield* Effect.result(readFile(`${setDir}/${PREVIEW_PROVENANCE_RECEIPT}`));
 			if (Result.isFailure(receiptRead)) {
 				return refuse(
@@ -382,18 +395,16 @@ export const runPost = (
 				);
 			}
 			const receipt = parsePreviewProvenance(receiptRead.success);
-			const keyRead =
-				receipt === null
-					? null
-					: yield* Effect.result(
-							readFile(previewProvenanceKeyPath(options.tmpRoot, receipt.keyId)),
-						);
+			const capabilityRead = yield* Effect.result(
+				readFile(
+					previewProvenanceCapabilityPath(options.tmpRoot, repo, pr, live, options.evidence),
+				),
+			);
 			const manifestHash = sha256Hex(new TextEncoder().encode(document.success));
 			if (
 				receipt === null ||
-				keyRead === null ||
-				Result.isFailure(keyRead) ||
-				!verifyPreviewProvenance(receipt, keyRead.success) ||
+				Result.isFailure(capabilityRead) ||
+				!verifyPreviewProvenance(receipt, capabilityRead.success) ||
 				receipt.repository !== repo ||
 				receipt.pr !== pr ||
 				receipt.head !== previewManifest.head ||
@@ -470,8 +481,22 @@ export const runPost = (
 				);
 			}
 			const harness = declarations.value.harnesses.find((entry) => entry.id === receipt.harness);
+			const declaredSurfaces =
+				harness === undefined
+					? null
+					: new Map(harness.surfaces.map((surface) => [surface.id, surface] as const));
 			if (
 				harness === undefined ||
+				declaredSurfaces === null ||
+				ciManifest.captures.length !== declaredSurfaces.size ||
+				ciManifest.captures.some((capture) => {
+					const declared = declaredSurfaces.get(capture.surface);
+					return (
+						declared === undefined ||
+						capture.route !== declared.route ||
+						capture.state !== declared.state
+					);
+				}) ||
 				ciManifest.declarationSha256 !== declarationDigest(authority.value) ||
 				ciManifest.producer.workflow !== harness.workflow ||
 				ciManifest.producer.check !== harness.check ||
@@ -496,7 +521,7 @@ export const runPost = (
 				return refuse(
 					bundle.kind === "malformed-members" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
 					bundle.kind === "malformed-members"
-						? `${VERB}: the re-downloaded CI artifact has unsafe, duplicate, or incomplete members.`
+						? `${VERB}: the re-downloaded CI artifact has unsafe, duplicate, extra, or incomplete members.`
 						: `${VERB}: trusted CI artifact could not be re-downloaded (${bundle.reason}).`,
 				);
 			}

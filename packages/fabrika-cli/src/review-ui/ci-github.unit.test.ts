@@ -1,5 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	hasExactManifestMembers,
 	type RunRecord,
 	safeArtifactMembers,
 	selectTrustedRun,
@@ -130,5 +131,45 @@ describe("trusted localhost Actions provenance", () => {
 		assert.isNull(safeArtifactMembers("manifest.json\n../builder.png\n"));
 		assert.isNull(safeArtifactMembers("manifest.json\nmanifest.json\n"));
 		assert.isNull(safeArtifactMembers("captures/desktop.png\n"));
+	});
+
+	it("rejects every extra member not named by the positive manifest", () => {
+		const manifest = JSON.stringify({
+			schemaVersion: 1,
+			source: "github-actions",
+			repository: "kamp-us/phoenix",
+			pr: 7190,
+			head: HEAD,
+			harness: "tuval",
+			declarationSha256: "a".repeat(64),
+			producer: {
+				workflow: harness.workflow,
+				check: harness.check,
+				event: harness.event,
+				runId: 42,
+				artifact: harness.artifact,
+				authorityHead: AUTHORITY_HEAD,
+			},
+			captures: [
+				{
+					surface: "desktop",
+					route: "/",
+					state: "desktop",
+					path: "captures/desktop.png",
+					width: 1280,
+					height: 800,
+					sha256: "b".repeat(64),
+					pageErrors: {rows: [], more: 0},
+					errorCoverage: {pageerror: "readable", consoleError: "readable"},
+				},
+			],
+		});
+		assert.isTrue(hasExactManifestMembers(["manifest.json", "captures/desktop.png"], manifest));
+		assert.isFalse(
+			hasExactManifestMembers(
+				["manifest.json", "captures/desktop.png", "captures/forged.png"],
+				manifest,
+			),
+		);
 	});
 });

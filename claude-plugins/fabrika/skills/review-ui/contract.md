@@ -274,9 +274,10 @@ and one artifact whose `expired` field is present, boolean, and false. GitHub's 
 types it as boolean, and defines it as whether the artifact has expired
 ([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
 [required list](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141602-L141612)).
-The consumer rejects unsafe or duplicate zip members. It validates the positive manifest and every
-declared surface exactly once *before* any set comparison can collapse duplicates. Unreadable error
-coverage, bad dimensions, and hash mismatches all refuse.
+The consumer rejects unsafe or duplicate zip members, then requires the complete member set to equal
+`manifest.json` plus every manifest-declared PNG. It validates every declared surface, route, and
+state exactly once *before* any set comparison can collapse duplicates. Unreadable error coverage,
+bad dimensions, and hash mismatches all refuse.
 
 After re-reading the live head, `fetch` copies the captures and the artifact's original manifest
 bytes into reviewer-owned scratch. It writes a receipt carrying the observed run, check, artifact,
@@ -316,11 +317,12 @@ can inspect those exact pixels before posting the proven red render as FAIL.
 | `review-ui fetch: cannot read the governed localhost declaration (<reason>).` | `11` | refusal |
 | `review-ui fetch: .github/review-ui-localhost-harnesses.json is absent at authority revision <sha>.` | `4` | refusal |
 | `review-ui fetch: the governed localhost declaration is malformed (<reason>).` | `4` | refusal |
+| `review-ui fetch: the artifact has unsafe, duplicate, extra, or incomplete members.` | `4` | refusal |
 | `review-ui fetch: trusted CI evidence is unresolved (<reason>).` | `11` | refusal |
 | `review-ui fetch: the CI capture manifest is malformed (<reason>).` | `4` | refusal |
 | `review-ui fetch: the artifact manifest does not bind the governed producer, exact authority revision, declaration, repository, PR, and exact live head.` | `4` | refusal |
 | `review-ui fetch: the artifact contains a surface more than once.` | `4` | refusal |
-| `review-ui fetch: the artifact does not contain every declared <harness> surface/state exactly once.` | `4` | refusal |
+| `review-ui fetch: the artifact does not contain every declared <harness> surface, route, and state exactly once.` | `4` | refusal |
 | `review-ui fetch: capture <surface> is unreadable (<reason>).` | `11` | refusal |
 | `review-ui fetch: capture <surface> fails its hash or dimensions.` | `15` | refusal |
 | `review-ui fetch: PR #<n> moved from <old> to <new> before the evidence set was accepted.` | `12` | refusal |
@@ -410,8 +412,8 @@ validates those captures and alone writes the manifest.
 **Output** — machine channel. On complete success, one newline-terminated version-1 CI manifest.
 There is no empty successful answer. The producer first proves both the subject and authority
 checkouts against their full supplied heads. The object binds the declaration and producer identity,
-including that authority revision, then one
-capture row per declared surface. The three-row error bound truncates every row to 1,024 UTF-16 code
+including that authority revision, then one capture row per declared surface with its route and
+state. The three-row error bound truncates every row to 1,024 UTF-16 code
 units and orders all uncaught `pageerror` rows before `console.error` rows, so console noise cannot
 hide the hard-fail kind in `more`. A successful journey whose later browser capture records an
 uncaught page error is still a successful transport output, so the workflow uploads it; `review-ui
@@ -419,7 +421,7 @@ fetch` materializes that evidence and returns the red-render `13`. A governed jo
 itself fails stops before server start, capture, manifest creation, and artifact upload:
 
 ```
-{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
+{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","route":"/","state":"desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
 ```
 
 **Exit status**
@@ -465,6 +467,8 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the trusted capture output could not be prepared (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted isolated capture sidecar failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted localhost capture failed (<reason>).` | `11` | refusal |
+| `review-ui ci-produce: the trusted capture set does not contain every declared <harness> surface exactly once.` | `15` | refusal |
+| `review-ui ci-produce: capture <surface> does not match its declared route, state, and member.` | `15` | refusal |
 | `review-ui ci-produce: <surface> is not a valid capture (<reason>).` | `15` | refusal |
 | `review-ui ci-produce: cannot write the capture manifest (<reason>).` | `11` | refusal |
 
@@ -480,7 +484,7 @@ whose digest is 64 `b` characters, the literal workflow call and stdout are:
 
 ```
 $ fabrika review-ui ci-produce 7190 --head 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c --authority-head cccccccccccccccccccccccccccccccccccccccc --harness tuval --run-id 42 --repository kamp-us/phoenix --subject-root /github/workspace/subject --authority-root /github/workspace/authority --output-dir /github/workspace/review-ui-localhost-tuval
-{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
+{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","route":"/","state":"desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
 ```
 
 **Grounding**
@@ -695,7 +699,7 @@ poster reads success.
 | `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
 | `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
-| `--evidence` | string | yes | — | a `review-ui render` route-surface set or a provenance-validated `review-ui fetch` set whose verified upload is this verdict's evidence |
+| `--evidence` | string | yes | — | the kebab-case name of a `review-ui render` route-surface set or provenance-validated `review-ui fetch` set whose verified upload is this verdict's evidence |
 | `--carrier` | enum | no | `marker` | `marker` (first-line SHA-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` body line). `advisory` is a PASS path only |
 | `--repo` | string | no | resolved | the repository |
 | stdin | markdown | yes | — | the verdict body below the first line: per-row findings with pixel evidence, the coverage table, advisories |
@@ -716,8 +720,9 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    manifest or one that does not parse is `4`). Preview evidence must carry route-shaped surface ids
    (`/...`), keep every capture inside its deterministic set directory, and carry the separate
    `review-ui render` receipt binding repository, PR, head, app, preview URL, and manifest hash. The
-   receipt is HMAC-signed by a random capability key stored outside the evidence set in
-   reviewer-owned scratch, so importing or authoring set-local JSON cannot select the preview arm.
+   receipt is HMAC-signed by a random capability stored outside the evidence set in reviewer-owned
+   scratch. `post` derives its path from trusted repository, live-head, PR, and set inputs rather
+   than from the receipt, so set-local JSON plus a caller-owned key cannot select the preview arm.
    The receipt's app, URL, and head must still match the live preview announcement before posting. A
    route-shaped local manifest without that producer provenance refuses on `4`. Any CI source must
    parse as the positive CI manifest and carry the consumer receipt whose repository, PR, live full
@@ -766,7 +771,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `7` | the PR is proven absent (404) or closed |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
 | `9` | the comment landed but the read-back does not yield this marker |
-| `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum |
+| `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum; or an `--evidence` name outside kebab-case set vocabulary |
 | `11` | a precondition read failed — the PR, live head, default-branch declaration, trusted GitHub artifact re-download, evidence files, or upload target; nothing was posted |
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
 | `13` | proven: CI evidence records an uncaught page error and the caller requested PASS — the materialized set must post FAIL |
@@ -778,6 +783,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `review-ui post: <n> is not a pull-request number.` | 1 | usage error |
+| `review-ui post: --evidence "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `review-ui post: no body on stdin — an empty verdict reads as ungated; pipe the verdict body in.` | 3 | refusal |
 | `review-ui post: the body is a bare "@" path reference — the body never arrived. Send its bytes on stdin.` | 6 | refusal |
 | `review-ui post: PR #<n> not found in <repo>.` | 7 | refusal |
@@ -797,10 +803,12 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: CI evidence set "<set>" has no consumer-validated provenance receipt — a builder-authored manifest is not evidence.` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" does not match its consumer-validated provenance receipt.` | 4 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the default branch is unreadable (<reason>).` | 11 | refusal |
+| `review-ui post: cannot revalidate CI provenance because the exact default-branch authority revision is unreadable (<reason>).` | 11 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the governed declaration is absent.` | 4 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the governed declaration is unreadable (<reason>).` | 11 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the governed declaration is malformed (<reason>).` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" no longer matches the governed producer declaration.` | 4 | refusal |
+| `review-ui post: the re-downloaded CI artifact has unsafe, duplicate, extra, or incomplete members.` | 4 | refusal |
 | `review-ui post: trusted CI artifact could not be re-downloaded (<reason>).` | 11 | refusal |
 | `review-ui post: CI evidence set "<set>" receipt does not match the trusted run, check, and artifact identities.` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" manifest does not byte-match the exact re-downloaded GitHub artifact.` | 4 | refusal |

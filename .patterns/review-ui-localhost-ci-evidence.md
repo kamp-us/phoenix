@@ -53,8 +53,9 @@ The producer proves both the subject checkout's full Git head and the trusted au
 full default-branch head, then proves the subject has no root `.dockerignore`, before image
 construction. Its positive manifest binds schema version,
 repository, PR, full subject head, full authority head, declaration digest, harness, workflow, check,
-event, run, artifact name, and every declared surface. Each capture binds a relative artifact
-member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence. Each row is at most
+event, run, artifact name, and every declared surface, route, and state. Each capture binds a
+relative artifact member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence.
+Each row is at most
 1,024 UTF-16 code units, and the rows place every uncaught `pageerror` ahead of console errors, so
 console noise cannot push the hard-fail kind into the untyped overflow count. The producer keeps an
 artifact publishable when a successful journey's browser capture records an uncaught page error; the
@@ -75,9 +76,11 @@ and false. GitHub's authoritative REST OpenAPI
 expired
 ([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
 [required list](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141602-L141612)).
-Member names are checked for traversal
-and duplicates before extraction. Capture surfaces are checked for duplicates before any `Set`
-comparison, then matched exactly against the declaration.
+Member names are checked for traversal and duplicates before extraction. After the positive
+manifest parses, the complete archive member set must equal `manifest.json` plus the declared
+capture paths; an extra PNG or any other unmanifested member is refused. Capture surfaces are
+checked for duplicates before any `Set` comparison, then their ids, routes, and states are matched
+exactly against the declaration.
 
 The consumer re-derives hashes and dimensions, rejects unreadable error coverage, and re-reads the
 live head. It preserves the artifact's manifest bytes when it copies the validated set into
@@ -90,9 +93,11 @@ pixels before posting the proven red render as FAIL. It is not an unresolved CAN
 
 `review-ui post` accepts route-shaped preview sets only with the separate `review-ui render`
 provenance receipt. That receipt binds repository, PR, head, app, preview URL, and manifest hash. A
-random capability key outside the evidence set signs it, so set-local JSON cannot nominate preview
-provenance. Every preview capture remains inside the deterministic set directory, and the receipt
-must still match the live preview announcement. Route shape alone does not select this arm.
+random reviewer-owned capability outside the evidence set signs it. Its path is derived from the
+trusted repository, live head, PR, and set name rather than a receipt field, so a caller-authored
+receipt cannot nominate a matching attacker-owned key. Every preview capture remains inside the
+deterministic set directory, and the receipt must still match the live preview announcement. Route
+shape alone does not select this arm.
 
 For CI evidence, the set-local receipt is only an index into GitHub identity. `post` reads the
 governed declaration at the exact current default-branch authority revision, resolves the successful
