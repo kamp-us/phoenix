@@ -16,6 +16,7 @@ import {CountToggle} from "../CountToggle";
 import {MetaRow} from "../MetaRow";
 import {NumberInput} from "../NumberInput";
 import {ScrollArea} from "../ScrollArea";
+import {Select} from "../Select";
 
 export interface InteractiveSpec {
 	readonly kind: "interactive";
@@ -148,6 +149,24 @@ const numberInputArb: fc.Arbitrary<ReactElement> = fc
 		<NumberInput label={inputLabel} value={String(value)} disabled={disabled} />
 	));
 
+const selectArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		value: fc.constantFrom("send", "steer", "follow-up"),
+		disabled: fc.boolean(),
+	})
+	.map(({value, disabled}) => (
+		<Select
+			label="Teslim modu"
+			items={[
+				{value: "send", label: "Gönder"},
+				{value: "steer", label: "Yönlendir"},
+				{value: "follow-up", label: "Sonraya al"},
+			]}
+			value={[value]}
+			disabled={disabled}
+		/>
+	));
+
 const alertArb: fc.Arbitrary<ReactElement> = fc
 	.record({
 		variant: fc.constantFrom(...(["secondary", "success", "info", "danger"] as const)),
@@ -174,6 +193,7 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	Button: {kind: "interactive", selector: "button", arb: buttonArb},
 	CountToggle: {kind: "interactive", selector: "button", arb: countToggleArb},
 	NumberInput: {kind: "interactive", selector: "input", arb: numberInputArb},
+	Select: {kind: "interactive", selector: "button", arb: selectArb},
 
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},

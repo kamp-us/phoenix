@@ -256,6 +256,15 @@ _Source: apps/web/src/components/ui/ScrollArea.tsx_
 **Slots:**
 - `children` — Scrollable content.
 
+## Select
+
+_Source: apps/web/src/components/ui/Select.tsx_
+
+**When to use:** The Manti-backed selection field for a compact fixed option list whose choices need keyboard navigation and a styled listbox.
+
+**Slots:**
+- `items` — The options supplied through `items`.
+
 ## Skeleton
 
 _Source: apps/web/src/components/ui/atoms.tsx_

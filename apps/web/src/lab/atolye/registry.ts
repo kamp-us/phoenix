@@ -1,6 +1,7 @@
 // The headless registry — the array order IS the curation order. See .patterns/atolye-exhibit-harness.md
 
 import type {AnyExhibit} from "./exhibit";
+import {agentChatInputExhibit} from "./exhibits/AgentChatInput.exhibit";
 import {avatarExhibit} from "./exhibits/Avatar.exhibit";
 import {buttonExhibit} from "./exhibits/Button.exhibit";
 import {cardExhibit} from "./exhibits/Card.exhibit";
@@ -28,6 +29,7 @@ const exhibits: readonly AnyExhibit[] = [
 	// The composer leads the catalog — atölye's first feature-level exhibit (#3095), ahead of
 	// the UI primitives it is built from.
 	composerExhibit,
+	agentChatInputExhibit,
 	buttonExhibit,
 	avatarExhibit,
 	cardExhibit,

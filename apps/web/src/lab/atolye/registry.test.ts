@@ -16,6 +16,15 @@ describe("exhibit registry — headless enumeration", () => {
 		expect(Object.keys(button?.knobs ?? {})).toContain("variant");
 	});
 
+	it("registers the local Pi Agent Chat Input prototype", () => {
+		const agentChatInput = getExhibit("agent-chat-input");
+		expect(agentChatInput?.title).toBe("Agent Chat Input");
+		expect(agentChatInput?.component).toBeTruthy();
+		expect(Object.keys(agentChatInput?.knobs ?? {})).toEqual(
+			expect.arrayContaining(["initialValue", "disabled"]),
+		);
+	});
+
 	it("resolves by id and returns undefined for an unknown slug", () => {
 		expect(getExhibit("button")?.id).toBe("button");
 		expect(getExhibit("does-not-exist")).toBeUndefined();
