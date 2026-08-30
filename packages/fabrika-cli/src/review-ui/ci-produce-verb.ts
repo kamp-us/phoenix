@@ -80,7 +80,7 @@ const isInside = (parent: string, candidate: string): boolean => {
 	return path === root || path.startsWith(`${root}${sep}`);
 };
 
-const containerGuardArgs = (): readonly string[] => [
+const containerGuardArgs = (memory = "2g"): readonly string[] => [
 	"--read-only",
 	"--cap-drop",
 	"ALL",
@@ -89,9 +89,9 @@ const containerGuardArgs = (): readonly string[] => [
 	"--cpus",
 	"2",
 	"--memory",
-	"2g",
+	memory,
 	"--memory-swap",
-	"2g",
+	memory,
 	"--pids-limit",
 	"256",
 	"--tmpfs",
@@ -127,7 +127,7 @@ export const subjectInstallAndTestContainerArgs = (
 	"none",
 	"--name",
 	name,
-	...containerGuardArgs(),
+	...containerGuardArgs("4g"),
 	"--mount",
 	`type=volume,src=${volume},dst=/subject`,
 	"--workdir",

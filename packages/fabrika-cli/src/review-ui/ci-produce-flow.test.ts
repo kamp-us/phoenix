@@ -785,6 +785,7 @@ describe("trusted localhost producer flow", () => {
 				call.startsWith("docker run --rm --network none") && call.includes("capture-extract"),
 		);
 		expect(subjectRun).toContain("--read-only --cap-drop ALL");
+		expect(subjectRun).toContain("--memory 4g --memory-swap 4g");
 		expect(subjectRun).toContain("no-new-privileges");
 		expect(subjectRun).toContain("pnpm install --offline --frozen-lockfile");
 		expect(subjectRun).toContain("pnpm --filter tuval test:browser");

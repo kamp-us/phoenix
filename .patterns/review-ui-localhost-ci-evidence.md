@@ -37,7 +37,10 @@ neither package lifecycle scripts nor the PR's pnpmfile hooks.
 
 An offline `pnpm install` then runs every PR-controlled lifecycle script and the governed test in a
 disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
-`no-new-privileges`, `--network none`, two CPUs, 2 GiB memory with no swap headroom, and 256 PIDs.
+`no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap headroom, and 256 PIDs.
+That measured ceiling lets Tuval's existing `test:browser` journey complete; Docker proved the former
+2 GiB ceiling OOM-killed the exact command. The journey's dynamic-port test servers finish before the
+producer starts its separate fixed capture server, so there is no conflicting concurrent server.
 Every foreground container is named before it starts, so cleanup can attempt force-removal after a
 client timeout. The test and server workspaces are named volumes backed by a 2 GiB tmpfs rather than
 unbounded writable storage; capture output has a separate 256 MiB tmpfs ceiling. Cleanup attempts
