@@ -165,6 +165,7 @@ describe("trusted localhost Actions provenance", () => {
 			],
 		});
 		assert.isTrue(hasExactManifestMembers(["manifest.json", "captures/desktop.png"], manifest));
+		assert.isFalse(hasExactManifestMembers(["manifest.json"], manifest));
 		assert.isFalse(
 			hasExactManifestMembers(
 				["manifest.json", "captures/desktop.png", "captures/forged.png"],

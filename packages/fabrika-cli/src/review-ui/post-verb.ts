@@ -606,7 +606,7 @@ export const runPost = (
 			);
 		}
 		const manifestMatches = requiresCiProvenance
-			? manifest.head === live && inspected === live
+			? manifest.head === live && prefixMatch(live, inspected)
 			: prefixMatch(manifest.head, inspected);
 		if (!manifestMatches) {
 			return refuse(

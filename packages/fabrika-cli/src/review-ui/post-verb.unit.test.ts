@@ -369,8 +369,8 @@ describe("runPost", () => {
 		expect(body).not.toContain(CAPTURE_PATH);
 	});
 
-	it("carries a CI-fetched PASS through the exact posted comment into ship gate", async () => {
-		const ciComposed = `review-ui: PASS @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence provenance\n\n- Repository: o/r\n- Workflow: .github/workflows/review-ui-localhost-evidence.yml (pull_request_target)\n- GitHub Actions run: [42](https://github.com/o/r/actions/runs/42)\n- Check: review-ui localhost evidence / tuval ([9](https://github.com/o/r/runs/9))\n- Artifact: review-ui-localhost-tuval (id 10)\n- Governed harness: tuval\n- Browser error coverage: pageerror and console.error readable for 1/1 captures\n\n## Evidence\n\n### desktop\n\n![desktop](${HOSTED})`;
+	it("carries the documented abbreviated CI invocation through the exact comment into ship", async () => {
+		const ciComposed = `review-ui: PASS @ 03135b91 — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence provenance\n\n- Repository: o/r\n- Workflow: .github/workflows/review-ui-localhost-evidence.yml (pull_request_target)\n- GitHub Actions run: [42](https://github.com/o/r/actions/runs/42)\n- Check: review-ui localhost evidence / tuval ([9](https://github.com/o/r/runs/9))\n- Artifact: review-ui-localhost-tuval (id 10)\n- Governed harness: tuval\n- Browser error coverage: pageerror and console.error readable for 1/1 captures\n\n## Evidence\n\n### desktop\n\n![desktop](${HOSTED})`;
 		const script: ReadonlyArray<Scripted> = [
 			[once(PULL), pull()],
 			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
@@ -400,8 +400,13 @@ describe("runPost", () => {
 			},
 			bytes: {[CI_CAPTURE_PATH]: BYTES},
 		});
-		const {outcome, requests, bodies} = await run(script, {polarity: "PASS"}, layer);
+		const {outcome, requests, bodies} = await run(
+			script,
+			{polarity: "PASS", sha: "03135b91"},
+			layer,
+		);
 		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).sha).toBe("03135b91");
 		const write = bodies[requests.findIndex((request) => CREATE.test(request))] ?? "";
 		const body = String(JSON.parse(write).body);
 		const marker = readMarker(body);

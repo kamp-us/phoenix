@@ -183,6 +183,31 @@ describe("runCiFetch", () => {
 		}> = [
 			...producerMismatchCases,
 			{
+				name: "stale full manifest head",
+				manifest: ciManifest({head: "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192"}),
+				expected: 4,
+			},
+			{
+				name: "wrong manifest repository",
+				manifest: ciManifest({repository: "attacker/fork"}),
+				expected: 4,
+			},
+			{
+				name: "wrong manifest PR",
+				manifest: ciManifest({pr: 1}),
+				expected: 4,
+			},
+			{
+				name: "wrong manifest harness",
+				manifest: ciManifest({harness: "other"}),
+				expected: 4,
+			},
+			{
+				name: "wrong manifest declaration digest",
+				manifest: ciManifest({declarationSha256: "b".repeat(64)}),
+				expected: 4,
+			},
+			{
 				name: "missing declared route",
 				manifest: ciManifest({}, {route: undefined}),
 				expected: 4,
