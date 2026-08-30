@@ -383,8 +383,10 @@ fabrika review-ui ci-produce <pr> --head <40-hex> --authority-head <40-hex> --ha
 
 This is an internal workflow interface, not a reviewer import. Its required `--repository` is a
 workflow-supplied identity and intentionally does not implement the reviewer-facing optional `--repo`
-resolution contract. Image construction pins pnpm 10.27.0
-and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user. The
+resolution contract. Before image construction, the producer rejects any root `.dockerignore` in
+the exact-head subject checkout, so PR-controlled context rules cannot omit changed source while the
+manifest still names the full head. Image construction pins pnpm 10.27.0 and performs `pnpm fetch
+--ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user. The
 version-matched behavior is grounded in pnpm's
 [`fetch` implementation](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/plugin-commands-installation/src/fetch.ts#L47-L76),
 [config loader](https://github.com/pnpm/pnpm/blob/v10.27.0/cli/cli-utils/src/getConfig.ts#L39-L62),
@@ -427,7 +429,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `0` | the complete manifest was written to the trusted output and printed |
 | `1` | invocation/flag parsing failed, including a missing required input or invalid PR operand |
 | `4` | the governed declaration is malformed |
-| `10` | subject head, authority head, run id, repository, harness, non-absolute root operand, or output placement is off vocabulary |
+| `10` | subject head, authority head, run id, repository, harness, non-absolute root operand, output placement, or a subject root `.dockerignore` is off vocabulary |
 | `11` | declaration, fixture, output, image, workspace, server, sidecar, capture, or manifest write is unreadable/UNKNOWN |
 | `12` | the subject or authority checkout is not its named full head |
 | `13` | the governed browser journey command failed; no server, capture, manifest, or artifact is produced |
@@ -448,6 +450,8 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: "<id>" is not a governed localhost harness.` | `10` | refusal |
 | `review-ui ci-produce: the subject checkout is <read>, not <expected>.` | `12` | refusal |
 | `review-ui ci-produce: the authority checkout is <read>, not <expected>.` | `12` | refusal |
+| `review-ui ci-produce: the exact-head subject must not contain a root .dockerignore.` | `10` | refusal |
+| `review-ui ci-produce: cannot prove the exact-head subject has no root .dockerignore.` | `11` | refusal |
 | `review-ui ci-produce: --output-dir must be outside both the subject and authority checkouts.` | `10` | refusal |
 | `review-ui ci-produce: cannot create the trusted fixture.` | `11` | refusal |
 | `review-ui ci-produce: the trusted output cannot be cleared.` | `11` | refusal |
@@ -467,7 +471,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 **Scope** — exactly one PR identity, one exact authority revision, one governed harness, and every
 surface in that harness declaration. Zero scope is impossible: an unknown harness refuses on `10`, and a positive
 harness with zero surfaces makes the declaration malformed on `4`. The trusted output must be
-outside both checkouts.
+outside both checkouts. A subject root `.dockerignore` is refused before Docker receives the context.
 
 **Examples**
 

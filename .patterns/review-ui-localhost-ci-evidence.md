@@ -15,8 +15,10 @@ the PR checkout. GitHub documents that `pull_request_target` runs
 in the base context and warns against executing untrusted code directly in that privileged event
 ([event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)).
 
-The subject checkout is input only to the base-owned Dockerfile. Image construction pins pnpm
-10.27.0 and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user.
+The subject checkout is input only to the base-owned Dockerfile. Before Docker receives that context,
+the producer refuses any subject root `.dockerignore`; PR-controlled context filtering therefore
+cannot hide changed source while the manifest still names the full head. Image construction pins
+pnpm 10.27.0 and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user.
 At that tag, the
 [`fetch` implementation](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/plugin-commands-installation/src/fetch.ts#L47-L76)
 uses an empty package manifest and sets `ignorePackageManifest`; the
@@ -48,7 +50,8 @@ and [bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/).
 ## Producer record
 
 The producer proves both the subject checkout's full Git head and the trusted authority checkout's
-full default-branch head before image construction. Its positive manifest binds schema version,
+full default-branch head, then proves the subject has no root `.dockerignore`, before image
+construction. Its positive manifest binds schema version,
 repository, PR, full subject head, full authority head, declaration digest, harness, workflow, check,
 event, run, artifact name, and every declared surface. Each capture binds a relative artifact
 member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence. Each row is at most

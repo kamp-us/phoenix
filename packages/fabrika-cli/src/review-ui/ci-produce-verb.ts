@@ -1,4 +1,4 @@
-import {chmod, mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
+import {chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {isAbsolute, join, resolve, sep} from "node:path";
 import {Effect, Result} from "effect";
@@ -381,6 +381,27 @@ export const runCiProduce = (
 			return refuse(
 				STALE_TREE,
 				`${VERB}: the authority checkout is ${authorityHead || "unreadable"}, not ${options.authorityHead}.`,
+			);
+		}
+		const subjectDockerignore = yield* Effect.tryPromise({
+			try: () => lstat(join(options.subjectRoot, ".dockerignore")),
+			catch: (cause) => cause,
+		}).pipe(Effect.result);
+		if (Result.isSuccess(subjectDockerignore)) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: the exact-head subject must not contain a root .dockerignore.`,
+			);
+		}
+		if (
+			typeof subjectDockerignore.failure !== "object" ||
+			subjectDockerignore.failure === null ||
+			!("code" in subjectDockerignore.failure) ||
+			subjectDockerignore.failure.code !== "ENOENT"
+		) {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot prove the exact-head subject has no root .dockerignore.`,
 			);
 		}
 

@@ -494,8 +494,10 @@ export const runPost = (
 			);
 			if (bundle._tag === "Failure") {
 				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: trusted CI artifact could not be re-downloaded (${bundle.reason}).`,
+					bundle.kind === "malformed-members" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
+					bundle.kind === "malformed-members"
+						? `${VERB}: the re-downloaded CI artifact has unsafe, duplicate, or incomplete members.`
+						: `${VERB}: trusted CI artifact could not be re-downloaded (${bundle.reason}).`,
 				);
 			}
 			if (

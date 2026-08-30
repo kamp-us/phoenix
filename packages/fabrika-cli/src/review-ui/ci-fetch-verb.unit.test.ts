@@ -176,6 +176,7 @@ describe("runCiFetch", () => {
 			secondHead?: string;
 			bytes?: Uint8Array | null;
 			bundleFailure?: string;
+			bundleFailureKind?: "malformed-members";
 			materializedOnRefusal?: boolean;
 		}> = [
 			...producerMismatchCases,
@@ -209,6 +210,13 @@ describe("runCiFetch", () => {
 						errorCoverage: {pageerror: "unreadable", consoleError: "readable"},
 					},
 				),
+				expected: 4,
+			},
+			{
+				name: "unsafe or duplicate artifact members",
+				manifest: ciManifest(),
+				bundleFailure: "the artifact has unsafe, duplicate, or incomplete members",
+				bundleFailureKind: "malformed-members",
 				expected: 4,
 			},
 			{
@@ -265,7 +273,9 @@ describe("runCiFetch", () => {
 											directory: artifact,
 											manifestText: row.manifest,
 										})
-									: fail(row.bundleFailure),
+									: row.bundleFailureKind === undefined
+										? fail(row.bundleFailure)
+										: {...fail(row.bundleFailure), kind: row.bundleFailureKind},
 							),
 					}),
 					Layer.mergeAll(seams.layer),

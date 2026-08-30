@@ -37,6 +37,10 @@ export interface CiBundle extends CiIdentity {
 	readonly manifestText: string;
 }
 
+export type CiBundleAttempt =
+	| {readonly _tag: "Ok"; readonly value: CiBundle}
+	| {readonly _tag: "Failure"; readonly reason: string; readonly kind?: "malformed-members"};
+
 const stringOf = (value: unknown): string => (typeof value === "string" ? value : "");
 
 const runsForWorkflow = (repo: string, workflow: string): Shell<Attempt<readonly RunRecord[]>> =>
@@ -219,7 +223,7 @@ export const fetchCiBundle = (
 	authorityHead: string,
 	harness: LocalhostHarnessDeclaration,
 	scratchRoot: string,
-): Shell<Attempt<CiBundle>> =>
+): Shell<CiBundleAttempt> =>
 	Effect.gen(function* () {
 		const identity = yield* resolveCiIdentity(repo, pr, head, authorityHead, harness);
 		if (identity._tag === "Failure") return identity;
@@ -250,7 +254,10 @@ export const fetchCiBundle = (
 		if (!list.ok) return fail(`cannot enumerate the artifact: ${list.reason}`);
 		const members = safeArtifactMembers(list.stdout);
 		if (members === null || !members.includes("manifest.json")) {
-			return fail("the artifact has unsafe, duplicate, or incomplete members");
+			return {
+				...fail("the artifact has unsafe, duplicate, or incomplete members"),
+				kind: "malformed-members" as const,
+			};
 		}
 		const extracted = yield* execCapture("unzip", ["-qq", zip, "-d", directory.value]);
 		if (!extracted.ok) return fail(`cannot extract the artifact: ${extracted.reason}`);

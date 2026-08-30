@@ -127,8 +127,10 @@ export const runCiFetch = (
 		);
 		if (bundle._tag === "Failure") {
 			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: trusted CI evidence is unresolved (${bundle.reason}).`,
+				bundle.kind === "malformed-members" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
+				bundle.kind === "malformed-members"
+					? `${VERB}: the artifact has unsafe, duplicate, or incomplete members.`
+					: `${VERB}: trusted CI evidence is unresolved (${bundle.reason}).`,
 			);
 		}
 		const parsed = parseCiCaptureManifest(bundle.value.manifestText);

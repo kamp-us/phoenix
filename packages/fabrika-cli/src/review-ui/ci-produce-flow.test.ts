@@ -151,6 +151,43 @@ describe("trusted localhost producer flow", () => {
 		await rm(root, {recursive: true, force: true});
 	});
 
+	it("refuses a subject-controlled .dockerignore that hides the rendered surface", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ci-produce-dockerignore-refusal-"));
+		const authorityRoot = join(root, "authority");
+		const subjectRoot = join(root, "subject");
+		const outputDir = join(root, "output");
+		await mkdir(join(authorityRoot, ".github"), {recursive: true});
+		await mkdir(subjectRoot, {recursive: true});
+		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+		await writeFile(join(subjectRoot, ".dockerignore"), "packages/tuval/**\n");
+		const seams = fakeSeams([
+			[once(/^git rev-parse HEAD$/), okOut(HEAD)],
+			[/^git rev-parse HEAD$/, okOut(AUTHORITY_HEAD)],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runCiProduce({
+					pr: 7190,
+					head: HEAD,
+					authorityHead: AUTHORITY_HEAD,
+					harness: "tuval",
+					runId: 42,
+					repository: "kamp-us/phoenix",
+					subjectRoot,
+					authorityRoot,
+					outputDir,
+					env: {PATH: "/bin"},
+					capture,
+				}),
+				seams.layer,
+			),
+		);
+		expect(outcome.code).toBe(10);
+		expect(outcome.stderr.join("\n")).toContain("must not contain a root .dockerignore");
+		expect(seams.calls.some((call) => call.startsWith("docker "))).toBe(false);
+		await rm(root, {recursive: true, force: true});
+	});
+
 	it("stops a failed governed journey before server preparation, capture, and manifest", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-produce-failed-journey-"));
 		const authorityRoot = join(root, "authority");
