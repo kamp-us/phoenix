@@ -366,7 +366,9 @@ trusted host alone drives Playwright and writes captures and the manifest.
 
 **Output** — machine channel. On complete success, one newline-terminated version-1 CI manifest.
 There is no empty successful answer. The object binds the declaration and producer identity, then one
-capture row per declared surface:
+capture row per declared surface. A capture row containing an uncaught page error is still a
+successful transport output so the workflow uploads it; `review-ui fetch` materializes that evidence
+and returns the red-render `13`:
 
 ```
 {"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
@@ -379,19 +381,21 @@ capture row per declared surface:
 | `0` | the complete manifest was written to the trusted output and printed |
 | `1` | invocation/flag parsing failed, including a missing required input or invalid PR operand |
 | `4` | the governed declaration is malformed |
-| `10` | head, run id, repository, harness, or output placement is off vocabulary |
+| `10` | head, run id, repository, harness, non-absolute root operand, or output placement is off vocabulary |
 | `11` | declaration, fixture, output, image, workspace, server, port, capture, or manifest write is unreadable/UNKNOWN |
 | `12` | the subject checkout is not the named full head |
-| `13` | the governed journey failed or an uncaught page error made the render red |
+| `13` | the governed browser journey command failed; captured page errors remain publishable manifest evidence and are classified by `review-ui fetch` |
 | `15` | a captured PNG is invalid |
 
 **Errors**
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
+| `review-ui ci-produce: <n> is not a pull-request number.` | `1` | usage error |
 | `review-ui ci-produce: --head must be one full lowercase 40-character SHA.` | `10` | refusal |
 | `review-ui ci-produce: --run-id must be a positive Actions run id.` | `10` | refusal |
 | `review-ui ci-produce: --repository must be one owner/name.` | `10` | refusal |
+| `review-ui ci-produce: --subject-root, --authority-root, and --output-dir must be absolute paths.` | `10` | refusal |
 | `review-ui ci-produce: cannot read the governed declaration: <reason>.` | `11` | refusal |
 | `review-ui ci-produce: the governed declaration is malformed (<reason>).` | `4` | refusal |
 | `review-ui ci-produce: "<id>" is not a governed localhost harness.` | `10` | refusal |
@@ -407,7 +411,6 @@ capture row per declared surface:
 | `review-ui ci-produce: the isolated subject server did not report readiness.` | `11` | refusal |
 | `review-ui ci-produce: the subject server port is unreadable.` | `11` | refusal |
 | `review-ui ci-produce: the trusted localhost capture failed (<reason>).` | `11` | refusal |
-| `review-ui ci-produce: <n> uncaught page error(s) made the render red.` | `13` | refusal |
 | `review-ui ci-produce: <surface> is not a valid capture (<reason>).` | `15` | refusal |
 | `review-ui ci-produce: cannot write the capture manifest (<reason>).` | `11` | refusal |
 

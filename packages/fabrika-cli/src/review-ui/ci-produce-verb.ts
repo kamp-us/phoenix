@@ -1,13 +1,13 @@
 import {mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
-import {join, resolve, sep} from "node:path";
+import {isAbsolute, join, resolve, sep} from "node:path";
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CapturedSurface, captureShots} from "../capture/capture.ts";
 import type {Shot} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
 import {execRecord} from "../io/exec.ts";
-import {answer, refuse, type VerbOutcome} from "../verb.ts";
+import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	INVALID_CAPTURE,
 	MALFORMED_DOCUMENT,
@@ -190,6 +190,9 @@ export const runCiProduce = (
 	options: CiProduceOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
+		if (!Number.isInteger(options.pr) || options.pr <= 0) {
+			return refuse(FAILED, `${VERB}: ${options.pr} is not a pull-request number.`);
+		}
 		if (!FULL_SHA.test(options.head)) {
 			return refuse(OFF_VOCABULARY, `${VERB}: --head must be one full lowercase 40-character SHA.`);
 		}
@@ -198,6 +201,16 @@ export const runCiProduce = (
 		}
 		if (!/^[^/\s]+\/[^/\s]+$/.test(options.repository)) {
 			return refuse(OFF_VOCABULARY, `${VERB}: --repository must be one owner/name.`);
+		}
+		if (
+			!isAbsolute(options.subjectRoot) ||
+			!isAbsolute(options.authorityRoot) ||
+			!isAbsolute(options.outputDir)
+		) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --subject-root, --authority-root, and --output-dir must be absolute paths.`,
+			);
 		}
 
 		const authorityRead = yield* Effect.tryPromise({
@@ -406,15 +419,6 @@ export const runCiProduce = (
 				return refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: the trusted localhost capture failed (${captures.failure}).`,
-				);
-			}
-			const uncaught = captures.success.flatMap((capture) =>
-				capture.pageErrors.filter((error) => error.kind === "pageerror"),
-			);
-			if (uncaught.length > 0) {
-				return refuse(
-					RENDER_CRASHED,
-					`${VERB}: ${uncaught.length} uncaught page error(s) made the render red.`,
 				);
 			}
 			const validatedCaptures: Array<

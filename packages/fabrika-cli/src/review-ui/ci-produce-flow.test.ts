@@ -47,7 +47,7 @@ const capture = (_url: string, outputDir: string) =>
 					localPath: path,
 					fileName: "desktop.png",
 					pngBytes: PNG,
-					pageErrors: [],
+					pageErrors: [{kind: "pageerror", text: "TypeError: boom"}],
 				},
 			];
 		},
@@ -55,7 +55,32 @@ const capture = (_url: string, outputDir: string) =>
 	});
 
 describe("trusted localhost producer flow", () => {
-	it("runs install/test through the hardened offline container and emits the positive manifest", async () => {
+	it("refuses a non-positive PR and relative root operands at the verb seam", async () => {
+		const seams = fakeSeams([]);
+		const base = {
+			pr: 7190,
+			head: HEAD,
+			harness: "tuval",
+			runId: 42,
+			repository: "kamp-us/phoenix",
+			subjectRoot: "/subject",
+			authorityRoot: "/authority",
+			outputDir: "/output",
+			env: {},
+			capture,
+		};
+		const badPr = await Effect.runPromise(
+			Effect.provide(runCiProduce({...base, pr: 0}), seams.layer),
+		);
+		const relative = await Effect.runPromise(
+			Effect.provide(runCiProduce({...base, outputDir: "relative-output"}), seams.layer),
+		);
+		expect(badPr.code).toBe(1);
+		expect(relative.code).toBe(10);
+		expect(seams.calls).toEqual([]);
+	});
+
+	it("isolates install/test and publishes page-error evidence for the fetch FAIL route", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-produce-flow-"));
 		const authorityRoot = join(root, "authority");
 		const subjectRoot = join(root, "subject");
@@ -98,6 +123,11 @@ describe("trusted localhost producer flow", () => {
 		expect(outcome.code).toBe(0);
 		const parsed = parseCiCaptureManifest(await readFile(join(outputDir, "manifest.json"), "utf8"));
 		expect(parsed._tag).toBe("Manifest");
+		if (parsed._tag === "Manifest") {
+			expect(parsed.value.captures[0]?.pageErrors.rows).toEqual([
+				{kind: "pageerror", text: "TypeError: boom"},
+			]);
+		}
 		const subjectRun = seams.calls.find((call) =>
 			call.startsWith("docker run --rm --network none"),
 		);

@@ -35,8 +35,9 @@ Playwright and alone writes the captures and manifest.
 The producer proves the subject checkout's full Git head before image construction. Its positive
 manifest binds schema version, repository, PR, full head, declaration digest, harness, workflow,
 check, event, run, artifact name, and every declared surface. Each capture binds a relative artifact
-member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence. An uncaught page
-error makes the producer red.
+member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence. The producer keeps
+that artifact publishable even when it records an uncaught page error; the trusted consumer owns the
+red-render exit so the pixels and error record remain independently reviewable.
 
 ## Consumer and verdict
 
