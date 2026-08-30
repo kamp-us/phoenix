@@ -92,7 +92,7 @@ const skillLintCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a broken gh call, frontmatter, push or path in a skill."),
 	Command.withDescription(
-		"Walk claude-plugins/ and red on any of four mechanical defects in the skill + agent corpus: a GraphQL-path `gh` invocation (REST only on this org, #743), a SKILL.md / agents/*.md frontmatter block that does not parse as strict YAML (#1766), a bare `git push` in a runnable block (#4213), and a repo-relative `./claude-plugins/…` literal inside a fence, which cannot resolve in a consumer's install (#4605). Prose naming a forbidden form is untouched; only runnable text is judged. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: nothing walked, a plugin dir contributed no file, or a check saw no file — fail-closed, ADR 0092), 11 (a read failed, so the verdict is UNKNOWN), 12 (a defect was found). Example: fabrika guard skill-lint check",
+		"Walk claude-plugins/ and red on any of four mechanical defects in the skill + agent corpus: a GraphQL-path `gh` invocation (REST only on this org), a SKILL.md / agents/*.md frontmatter block that does not parse as strict YAML, a bare `git push` in a runnable block, and a repo-relative `./claude-plugins/…` literal inside a fence, which cannot resolve in a consumer's install. Prose naming a forbidden form is untouched; only runnable text is judged. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: nothing walked, a plugin dir contributed no file, or a check saw no file — fail-closed, ADR 0092), 11 (a read failed, so the verdict is UNKNOWN), 12 (a defect was found). Example: fabrika guard skill-lint check",
 	),
 );
 
@@ -119,7 +119,7 @@ const noGhCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a `gh` invocation left in fabrika-cli's source."),
 	Command.withDescription(
-		"Walk packages/fabrika-cli/src/ and red on any invocation of the `gh` binary in it, in all three spellings: the binary named in argv position to any spawner, a shell string that runs it under a -c argument, and the same string reached after a shell operator. Epic #6629 put every GitHub call on the fetch client in src/io/gh-api.ts so a verb runs where no `gh` is installed — a phone, a lean CI image, a consumer repo — and one new call in one line puts the binary back with nothing else noticing. Comments are stripped before matching and a command string is judged only beside a spawn, so the package's own prose and test fixtures are untouched; ADR 0315's credential leg is sanctioned by file AND by matched text, never file-wide. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: nothing walked, or a directory contributed no file — fail-closed, ADR 0092), 11 (a read failed, so the verdict is UNKNOWN), 12 (an invocation was found). Example: fabrika guard no-gh check",
+		"Walk packages/fabrika-cli/src/ and red on any invocation of the `gh` binary in it, in all three spellings: the binary named in argv position to any spawner, a shell string that runs it under a -c argument, and the same string reached after a shell operator. Every GitHub call belongs on the fetch client in src/io/gh-api.ts, so a verb runs where no `gh` is installed (ADR 0315). Comments are stripped before matching and a command string is judged only beside a spawn, so the package's own prose and test fixtures are untouched; ADR 0315's credential leg is sanctioned by file AND by matched text, never file-wide. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: nothing walked, or a directory contributed no file — fail-closed, ADR 0092), 11 (a read failed, so the verdict is UNKNOWN), 12 (an invocation was found). Example: fabrika guard no-gh check",
 	),
 );
 
@@ -127,7 +127,7 @@ const noGhGuard = Command.make("no-gh").pipe(
 	Command.withSubcommands([noGhCheck]),
 	Command.withShortDescription("fabrika-cli's source holds no `gh` invocation."),
 	Command.withDescription(
-		"packages/fabrika-cli/src/ must reach GitHub over HTTP and never through the `gh` binary, so that every verb runs from a token alone (epic #6629, ADR 0315).",
+		"packages/fabrika-cli/src/ must reach GitHub over HTTP and never through the `gh` binary, so that every verb runs from a token alone (ADR 0315).",
 	),
 );
 
@@ -251,7 +251,7 @@ const unresolvedThreadsGuard = Command.make("unresolved-threads-guard").pipe(
 	Command.withSubcommands([unresolvedThreadsCheck]),
 	Command.withShortDescription("No unaccounted unresolved review thread reaches merge-ready."),
 	Command.withDescription(
-		"An unresolved inline review thread is a merge gate (ADR 0158), and a review verdict that simply omits one used to be the only thing standing between a CodeQL finding and a human merger. This guard is the machine half: every live thread must be named in the verdict, or the check reds.",
+		"An unresolved inline review thread is a merge gate (ADR 0158). This guard is the machine half: every live thread must be named in the verdict, or the check reds.",
 	),
 );
 
@@ -271,7 +271,7 @@ const settingsEnvCheck = leafCommand(
 	// biome-ignore-start lint/suspicious/noTemplateCurlyInString: the brace token IS this guard's subject — help text that spelled it any other way would not name the thing a reader is searching for.
 	Command.withShortDescription("Red on an unexpanded ${...} in a settings.json env value."),
 	Command.withDescription(
-		"Red when any `.claude/settings.json` `env` VALUE carries an unexpanded `${...}` token. Claude Code applies env values verbatim and expands nothing in them, so such a token never resolves — it is consumed literally, which is how one created a stray literal-token directory at the repo root and clobbered PATH (#2495). An empty or absent `env` block is a real pass; the fail-closed case is the file. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no .claude/settings.json to scan — fail-closed, ADR 0092), 11 (the file could not be read or does not parse, so the verdict is UNKNOWN), 12 (an env value carries a brace token). Example: fabrika guard settings-env-guard check",
+		"Red when any `.claude/settings.json` `env` VALUE carries an unexpanded `${...}` token. Claude Code applies env values verbatim and expands nothing in them, so such a token never resolves — it is consumed literally. An empty or absent `env` block is a real pass; the fail-closed case is the file. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no .claude/settings.json to scan — fail-closed, ADR 0092), 11 (the file could not be read or does not parse, so the verdict is UNKNOWN), 12 (an env value carries a brace token). Example: fabrika guard settings-env-guard check",
 	),
 );
 
@@ -299,7 +299,7 @@ const catalogCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a package.json dep pinning a hardcoded version."),
 	Command.withDescription(
-		"Every dependency in every workspace `package.json` — the root manifest included — must be sourced from the pnpm `catalog:` or a `workspace:` ref, never a hardcoded version string. A second version of one dep breaks frozen-lockfile CI downstream, which is what a hardcoded `@distilled.cloud/cloudflare` did in #535. A genuinely unavoidable exception lives in the guard's explicit reasoned allowlist, never a silent tolerance (#2737). Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest line under Actions. Exits 7 (zero scope: no manifest scanned — fail-closed, ADR 0092), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a dep pins a hardcoded version). Example: fabrika guard catalog-guard check",
+		"Every dependency in every workspace `package.json` — the root manifest included — must be sourced from the pnpm `catalog:` or a `workspace:` ref, never a hardcoded version string — a second version of one dep breaks frozen-lockfile CI downstream. A genuinely unavoidable exception lives in the guard's explicit reasoned allowlist, never a silent tolerance. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest line under Actions. Exits 7 (zero scope: no manifest scanned — fail-closed, ADR 0092), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a dep pins a hardcoded version). Example: fabrika guard catalog-guard check",
 	),
 );
 
@@ -307,7 +307,7 @@ const catalogGuard = Command.make("catalog-guard").pipe(
 	Command.withSubcommands([catalogCheck]),
 	Command.withShortDescription("Every dependency is on catalog: or workspace:."),
 	Command.withDescription(
-		"One shared version per dependency across the repo, declared once in `pnpm-workspace.yaml`. The convention was written and unenforced, so it held only by reviewer vigilance until a hardcoded pin broke frozen-lockfile CI.",
+		"One shared version per dependency across the repo, declared once in `pnpm-workspace.yaml`. A hardcoded pin reads as ordinary in review and breaks frozen-lockfile CI downstream, so the rule is guarded rather than left to vigilance.",
 	),
 );
 
@@ -326,7 +326,7 @@ const fanoutCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a fanned mutation that omits its /fate/live publish."),
 	Command.withDescription(
-		"Three invariants over the worker's `Fate.mutation` set (ADR 0155): every mutation is classified fanned/not in the fanned-mutations manifest, every fanned mutation's feature publishes a `/fate/live` invalidation, and every declared topic is still reachable from that feature's `live.ts` binding. The omission is invisible at the mutation site — the publisher's error channel is `never` — which is why four features shipped it silently (#1893–#1896), and the mis-aim class needed the third invariant on top (#2554). Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no mutation discovered, or the manifest parsed to no rows — fail-closed, ADR 0092), 11 (a source could not be read, so the verdict is UNKNOWN), 12 (drift, a missing publish, or a mis-aimed topic). Example: fabrika guard fanout-guard check",
+		"Three invariants over the worker's `Fate.mutation` set (ADR 0155): every mutation is classified fanned/not in the fanned-mutations manifest, every fanned mutation's feature publishes a `/fate/live` invalidation, and every declared topic is still reachable from that feature's `live.ts` binding. The omission is invisible at the mutation site — the publisher's error channel is `never` — so nothing at the call site forces it, and the mis-aim class needs the third invariant on top. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: no mutation discovered, or the manifest parsed to no rows — fail-closed, ADR 0092), 11 (a source could not be read, so the verdict is UNKNOWN), 12 (drift, a missing publish, or a mis-aimed topic). Example: fabrika guard fanout-guard check",
 	),
 );
 
@@ -361,7 +361,7 @@ const patchGuard = Command.make("patch-guard").pipe(
 	Command.withSubcommands([patchCheck]),
 	Command.withShortDescription("Every maintained pnpm patch is pinned by a behavior test."),
 	Command.withDescription(
-		"A `pnpm patch` forks a dependency's behaviour silently. ADR 0038's forcing function is this guard: a patch whose behaviour no test pins is a fork nothing verifies, and a pin left behind after the patch moved is a test guarding nothing.",
+		"A `pnpm patch` forks a dependency's behaviour silently, so ADR 0038 requires a behaviour-pinning test and this guard is its forcing function: an unpinned patch is a fork nothing verifies, and a pin left behind after the patch moved is a test guarding nothing.",
 	),
 );
 
@@ -380,7 +380,7 @@ const pointerCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a backticked CLAUDE.md path that no longer resolves."),
 	Command.withDescription(
-		"Every backticked repo-root-relative path in a git-tracked `CLAUDE.md` must resolve on disk, or be gitignored — a deliberately-absent generated path like `apps/web/.env` is a valid pointer, not rot. This is the class the `doc-links` gate cannot see: it validates `[text](path)` links and masks code spans by construction, so a backticked prose pointer rots unseen when its target moves (#988). Only unambiguous root-relative tokens are read, so a bare basename or an app-relative fragment is left alone. Prints the one-line all-clear on stdout; a red puts the file:line → path report on stderr, with GitHub ::error annotations on the pointer's line under Actions. Exits 7 (zero scope: no tracked CLAUDE.md — fail-closed, ADR 0092), 11 (git could not list the docs, or one could not be read, so the verdict is UNKNOWN), 12 (a pointer does not resolve). Example: fabrika guard pointer-guard check",
+		"Every backticked repo-root-relative path in a git-tracked `CLAUDE.md` must resolve on disk, or be gitignored — a deliberately-absent generated path like `apps/web/.env` is a valid pointer, not rot. This is the class the `doc-links` gate cannot see: it validates `[text](path)` links and masks code spans by construction, so a backticked prose pointer rots unseen when its target moves. Only unambiguous root-relative tokens are read, so a bare basename or an app-relative fragment is left alone. Prints the one-line all-clear on stdout; a red puts the file:line → path report on stderr, with GitHub ::error annotations on the pointer's line under Actions. Exits 7 (zero scope: no tracked CLAUDE.md — fail-closed, ADR 0092), 11 (git could not list the docs, or one could not be read, so the verdict is UNKNOWN), 12 (a pointer does not resolve). Example: fabrika guard pointer-guard check",
 	),
 );
 
@@ -407,7 +407,7 @@ const publishIsolationCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a published package linking a private or workspace dep."),
 	Command.withDescription(
-		"Every package the release pipeline ships must be installable from a clean registry state: no `workspace:*` specifier and no `@kampus/*` dependency that is not itself published (ADR 0201 §3). The published set is DERIVED from `publish.yml`'s release-tag grammar rather than hand-kept, so it cannot drift from what actually publishes. The forcing incident: a `@kampus/*` CLI published green at 0.2.0 and was uninstallable, because it declared three phoenix-private packages as registry deps (#3802). Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest under Actions. Exits 7 (zero scope: no published package derived, or a tag prefix maps to no member — fail-closed, ADR 0092), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a published package links a private or workspace dep). Example: fabrika guard publish-isolation-guard check",
+		"Every package the release pipeline ships must be installable from a clean registry state: no `workspace:*` specifier and no `@kampus/*` dependency that is not itself published (ADR 0201 §3). The published set is DERIVED from `publish.yml`'s release-tag grammar rather than hand-kept, so it cannot drift from what actually publishes. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on the offending manifest under Actions. Exits 7 (zero scope: no published package derived, or a tag prefix maps to no member — fail-closed, ADR 0092), 11 (a manifest could not be read or does not parse, so the verdict is UNKNOWN), 12 (a published package links a private or workspace dep). Example: fabrika guard publish-isolation-guard check",
 	),
 );
 
@@ -439,7 +439,7 @@ const leakScan = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a machine-local path in a changed doc or shell file."),
 	Command.withDescription(
-		"Scan the handed files for machine-local filesystem paths in shared-artifact surfaces — markdown and `.decisions/`/`.patterns/` docs, and `.sh` scripts, which a whole-file scan covers because a shell comment is the likeliest place for one to land (#173, #4496). The scanner self-scopes, so a caller may hand it every changed file. Prints the one-line all-clear with its per-surface scope on stdout; a red puts the report on stderr, with GitHub ::error annotations on each file under Actions. Exits 7 (zero scope: an empty file list — fail-closed, ADR 0092), 11 (a handed file exists and could not be read, so the verdict is UNKNOWN), 12 (a machine-local path is in a scanned surface). Example: fabrika guard leak-guard scan docs/guide.md scripts/run.sh",
+		"Scan the handed files for machine-local filesystem paths in shared-artifact surfaces — markdown and `.decisions/`/`.patterns/` docs, and `.sh` scripts, which a whole-file scan covers because a shell comment is the likeliest place for one to land. The scanner self-scopes, so a caller may hand it every changed file. Prints the one-line all-clear with its per-surface scope on stdout; a red puts the report on stderr, with GitHub ::error annotations on each file under Actions. Exits 7 (zero scope: an empty file list — fail-closed, ADR 0092), 11 (a handed file exists and could not be read, so the verdict is UNKNOWN), 12 (a machine-local path is in a scanned surface). Example: fabrika guard leak-guard scan docs/guide.md scripts/run.sh",
 	),
 );
 
@@ -468,7 +468,7 @@ const pathFilterCheck = leafCommand(
 		"Red when ci.yml's e2e filter and deploy.yml's deploy filter drift.",
 	),
 	Command.withDescription(
-		"ci.yml's `changes.e2e` and deploy.yml's `changes.deploy` dorny/paths-filter steps must classify a PR's diff identically — the same globs AND the same `(token, base)` diff basis. deploy's RUN-set must be a superset of e2e's, because ci.yml's `e2e` job polls deploy.yml's sticky preview-deploy comment on a 10-minute deadline: a PR that trips e2e while its deploy skips times that poll out and wedges the required `ci-required` check (#2372). Equal globs are not enough — the two steps' `token`/`base` inputs decide WHICH changed-file set the globs are applied to, and they drifted while the lists stayed byte-identical, permanently redding a defect-free PR (#3722, PR #3713). Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on both workflows under Actions. Exits 7 (zero scope: a missing file/job/step/key or an empty list — fail-closed, ADR 0092), 11 (a workflow could not be read, so the verdict is UNKNOWN), 12 (the globs or the diff basis drifted). Example: fabrika guard path-filter-guard check",
+		"ci.yml's `changes.e2e` and deploy.yml's `changes.deploy` dorny/paths-filter steps must classify a PR's diff identically — the same globs AND the same `(token, base)` diff basis. deploy's RUN-set must be a superset of e2e's, because ci.yml's `e2e` job polls deploy.yml's sticky preview-deploy comment on a 10-minute deadline: a PR that trips e2e while its deploy skips times that poll out and wedges the required `ci-required` check. Equal globs are not enough — the two steps' `token`/`base` inputs decide WHICH changed-file set the globs are applied to, so the two can drift while the lists stay byte-identical. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on both workflows under Actions. Exits 7 (zero scope: a missing file/job/step/key or an empty list — fail-closed, ADR 0092), 11 (a workflow could not be read, so the verdict is UNKNOWN), 12 (the globs or the diff basis drifted). Example: fabrika guard path-filter-guard check",
 	),
 );
 
@@ -476,7 +476,7 @@ const pathFilterGuard = Command.make("path-filter-guard").pipe(
 	Command.withSubcommands([pathFilterCheck]),
 	Command.withShortDescription("deploy's run-set stays a superset of e2e's."),
 	Command.withDescription(
-		"A PR that trips e2e but skips its deploy leaves e2e polling ten minutes for a preview that never arrives, and the required aggregate reds on a defect-free change. The invariant was pinned by two reciprocal human comments and nothing else.",
+		"A PR that trips e2e but skips its deploy leaves e2e polling ten minutes for a preview that never arrives, and the required aggregate reds on a defect-free change. Neither workflow's own diff shows the other half, so the pairing is guarded rather than left to a reviewer's memory.",
 	),
 );
 
@@ -495,7 +495,7 @@ const changeDetectCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red when ci.yml's change detection reads the GitHub API."),
 	Command.withDescription(
-		"ci.yml's `changes` job must detect changed files with a pure `git diff`, never the GitHub API. dorny/paths-filter calls `pulls.listFiles` whenever a `token` is set and falls back to `git diff` only when it is empty — and the action DEFAULTS the token, so an absent `token:` selects API mode too. That live API read is the job's only flake surface: a transient API-HTML blip (`invalid character '<'`) hard-failed the step and redded the `ci-required` aggregate on a defect-free docs-only PR (#3244/#3245). Prints the one-line all-clear on stdout; a red puts the report on stderr, with a GitHub ::error annotation on ci.yml under Actions. Exits 7 (zero scope: no changes job, no paths-filter step, or no `with:` block — fail-closed, ADR 0092), 11 (ci.yml could not be read, so the verdict is UNKNOWN), 12 (the step is in API mode). Example: fabrika guard change-detect-guard check",
+		"ci.yml's `changes` job must detect changed files with a pure `git diff`, never the GitHub API. dorny/paths-filter calls `pulls.listFiles` whenever a `token` is set and falls back to `git diff` only when it is empty — and the action DEFAULTS the token, so an absent `token:` selects API mode too. That live API read is the job's only flake surface, and a transient blip in it reds the `ci-required` aggregate on a defect-free PR. Prints the one-line all-clear on stdout; a red puts the report on stderr, with a GitHub ::error annotation on ci.yml under Actions. Exits 7 (zero scope: no changes job, no paths-filter step, or no `with:` block — fail-closed, ADR 0092), 11 (ci.yml could not be read, so the verdict is UNKNOWN), 12 (the step is in API mode). Example: fabrika guard change-detect-guard check",
 	),
 );
 
@@ -522,7 +522,7 @@ const codeownersCpCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a §CP control-plane path with no CODEOWNERS owner."),
 	Command.withDescription(
-		"Every path the §CP boundary regex marks control-plane must have a covering `.github/CODEOWNERS` row. The boundary is one anchored regex and CODEOWNERS enumerates the same paths literally, so the two drift silently — and the `main` ruleset pairs `required_approving_review_count: 0` with `require_code_owner_review: true`, which means a path matching NO row merges with ZERO approvals (#934/#953/#955). The §CP set is derived FROM the boundary const, never a re-hardcoded copy. Prints the one-line all-clear on stdout; a red names every uncovered path on stderr, with GitHub ::error annotations on CODEOWNERS under Actions. Exits 7 (zero scope: no CODEOWNERS, no owned rows, or a boundary resolving to no paths — fail-closed, ADR 0092), 11 (CODEOWNERS could not be read, so the verdict is UNKNOWN), 12 (a §CP path is unowned). Example: fabrika guard codeowners-cp check",
+		"Every path the §CP boundary regex marks control-plane must have a covering `.github/CODEOWNERS` row. The boundary is one anchored regex and CODEOWNERS enumerates the same paths literally, so the two drift silently — and the `main` ruleset pairs `required_approving_review_count: 0` with `require_code_owner_review: true`, which means a path matching NO row merges with ZERO approvals. The §CP set is derived FROM the boundary const, never a re-hardcoded copy. Prints the one-line all-clear on stdout; a red names every uncovered path on stderr, with GitHub ::error annotations on CODEOWNERS under Actions. Exits 7 (zero scope: no CODEOWNERS, no owned rows, or a boundary resolving to no paths — fail-closed, ADR 0092), 11 (CODEOWNERS could not be read, so the verdict is UNKNOWN), 12 (a §CP path is unowned). Example: fabrika guard codeowners-cp check",
 	),
 );
 
@@ -549,7 +549,7 @@ const decisionsIndexValidate = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a duplicate ADR id or a filename/frontmatter mismatch."),
 	Command.withDescription(
-		"The ADR number lock (ADR 0074): every record in the corpus `decisionsDir` declares carries the four index fields, its filename number and its frontmatter `id` name the same ADR, and no two records claim one id. The two halves compose — the duplicate check only sees a filename collision because the prefix↔id lock forces both axes to agree — which is what catches the #1471 class, two branches each minting the same number, green apart and colliding once both land. Prints the one-line all-clear on stdout; a red names every defect on stderr, with GitHub ::error annotations on each record under Actions. A repo declaring `decisionsDir: null` keeps no corpus, so the guard is skipped on exit 0 with that declaration named — a declared absence is not the ADR 0092 zero-scope red. Exits 7 (zero scope: the declared corpus directory is missing or holds no records — fail-closed, ADR 0092), 11 (a record or `.fabrika.jsonc` could not be read, so the verdict is UNKNOWN), 12 (a defect). Example: fabrika guard decisions-index validate",
+		"The ADR number lock (ADR 0074): every record in the corpus `decisionsDir` declares carries the four index fields, its filename number and its frontmatter `id` name the same ADR, and no two records claim one id. The two halves compose — the duplicate check only sees a filename collision because the prefix↔id lock forces both axes to agree — so two branches each minting the same number, green apart, are caught once both land. Prints the one-line all-clear on stdout; a red names every defect on stderr, with GitHub ::error annotations on each record under Actions. A repo declaring `decisionsDir: null` keeps no corpus, so the guard is skipped on exit 0 with that declaration named — a declared absence is not the ADR 0092 zero-scope red. Exits 7 (zero scope: the declared corpus directory is missing or holds no records — fail-closed, ADR 0092), 11 (a record or `.fabrika.jsonc` could not be read, so the verdict is UNKNOWN), 12 (a defect). Example: fabrika guard decisions-index validate",
 	),
 );
 
@@ -582,7 +582,7 @@ const designTokenCheck = leafCommand(
 ).pipe(
 	Command.withShortDescription("Red on a dead token ref, a raw hex, or an off-grid px."),
 	Command.withDescription(
-		"The first deterministic rung of the four-pillars design law (ADR 0162, design-system-manifest.md): a component CSS file must consume the design-token seam. Three rules — every `var(--…)` resolves to a declared, runtime-injected or grandfathered property (the Toast dead-ref class, #2167, which renders unstyled with nothing failing), no hex literal outside the raw-scale layer `tokens.css` (Pillar 2), and no raw `px` > 2px beyond each file's grandfathered ceiling (the 4px grid sanctions only 1px and 2px). The bounded allow-lists in `apps/web/src/styles/design-token-lint.config.json` grandfather the catalogued debt so the gate is green on main while still redding any NEW bypass; `--write-baseline` re-snapshots the ceilings after a real cleanup leg. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on each offending line under Actions. Exits 7 (zero scope: no CSS file discovered, or a malformed allow-list config — fail-closed, ADR 0092), 11 (a file could not be read, so the verdict is UNKNOWN), 12 (the seam is broken). Example: fabrika guard design-token-guard check",
+		"The first deterministic rung of the four-pillars design law (ADR 0162, design-system-manifest.md): a component CSS file must consume the design-token seam. Three rules — every `var(--…)` resolves to a declared, runtime-injected or grandfathered property (a dead ref renders unstyled with nothing failing), no hex literal outside the raw-scale layer `tokens.css` (Pillar 2), and no raw `px` > 2px beyond each file's grandfathered ceiling (the 4px grid sanctions only 1px and 2px). The bounded allow-lists in `apps/web/src/styles/design-token-lint.config.json` grandfather the catalogued debt so the gate is green on main while still redding any NEW bypass; `--write-baseline` re-snapshots the ceilings after a real cleanup leg. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on each offending line under Actions. Exits 7 (zero scope: no CSS file discovered, or a malformed allow-list config — fail-closed, ADR 0092), 11 (a file could not be read, so the verdict is UNKNOWN), 12 (the seam is broken). Example: fabrika guard design-token-guard check",
 	),
 );
 

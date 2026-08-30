@@ -126,9 +126,9 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
  * `review` FAIL is a two-arm guarded array so the fallthrough final is an *error* final by the
  * compiler's own structural read; a plain target would leave a failed epic review folding to
  * `complete`. The retry arm is `review` itself: a repair round happens outside the machine and the
- * next verdict is another review. Where the fallthrough goes — `human:epic-review`, a park-shaped
- * final that trips the lane for a human — is deliberately the safe placeholder #5793 asked for, not
- * a resolved answer: what a failing epic review *means* is still an open founder question.
+ * next verdict is another review. The fallthrough is `human:epic-review`, and it carries the same
+ * `final` + `UNBLOCKED` door `frozen` does: a twice-failed epic review is a park a human resumes,
+ * not the end of the run (ADR 0341, settling the question #5793 deferred).
  */
 const epicRegion = (ns: string): Record<string, unknown> => ({
 	initial: "review",
@@ -173,7 +173,7 @@ const epicRegion = (ns: string): Record<string, unknown> => ({
 		"human:queue-stall": {on: {[`${ns}.UNBLOCKED`]: "hist"}},
 		hist: {type: "history"},
 		shipped: {type: "final"},
-		"human:epic-review": {type: "final"},
+		"human:epic-review": {type: "final", on: {[`${ns}.UNBLOCKED`]: "hist"}},
 	},
 });
 
