@@ -108,17 +108,20 @@ fabrika review-ui fetch $pr_number --harness tuval --out judged
 **Do not execute the PR locally and do not consume builder captures.** Exit `0` prints the complete
 typed fetch answer; inspect every listed capture and its recorded page/console errors. A
 `render:"red"` answer is proven FAIL ground: post the ordinary FAIL with `--evidence judged`, never
-CANT-SEE. A `render:"clean"` answer is the accepted clean set. Every non-zero has one closed route:
+CANT-SEE. A `render:"clean"` answer is the accepted clean set. Every non-zero has one closed route, selected only by code — never by stderr:
 
-- exit `1` carrying the verb's own usage refusal, or exit `10`: correct the caller operand and rerun;
-- exit `12`: the head moved, so discard the stale attempt, re-read scope, and fetch the new exact head;
-- exit `4` or `15`, or exit `11` whose refusal is exactly `trusted CI evidence is unresolved (...)`:
-  post a non-marker `review-ui note` naming the missing, pending, malformed, or untrusted producer
-  evidence; the operator-owned recovery is in the runbook below;
-- exit `7`: the PR is proven absent or closed, so end zero-scope without posting;
-- any other exit `11`, a runtime exit `1` without the verb's caller-refusal message, `126`, `127`, or
-  any code the fetch contract does not list: the result is UNKNOWN; post neither note nor verdict and
-  stop rather than laundering an internal/read failure into an evidence blocker.
+- exit `10`: correct the caller operand and refetch; no terminal is reached while the corrected fetch
+  is still available;
+- exit `12`: discard the stale attempt, re-read scope, and refetch the new exact head; no terminal is
+  reached while that refetch is still available;
+- exit `4`, `15`, or `18`: the producer evidence is proven malformed, invalid, or unavailable; post a
+  non-marker `review-ui note` naming that evidence state, follow the operator-owned recovery in the
+  runbook below, and end CANT-SEE;
+- exit `7`: the PR is proven absent or closed, so end CANT-SEE without posting;
+- exit `11`, `1`, `126`, `127`, or any code the fetch contract does not list: end UNKNOWN. There is
+  no evidence answer, marker, or blocker note; route the invocation and its typed code to the
+  supervisor, who decides whether to retry or replace the failed transport, authority read, token,
+  scratch, unzip, installation, or runtime path. Never launder UNKNOWN into CANT-SEE.
 
 The reviewer sequence and the operator-owned producer-recovery route live in
 [`ops/runbook-review-ui-localhost-evidence.md`](../../../../ops/runbook-review-ui-localhost-evidence.md).
@@ -275,9 +278,11 @@ piece UNKNOWN.
 it holds a shell, a repo-scoped token, a headless browser pointed at the repo's preview deployment,
 or reviewer-owned scratch containing a governed CI artifact, and **uses** three writes — the verdict comment (with its verified evidence), the
 can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
-**verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
-nothing renderable — no verdict posted, blocker named on the open PR; an absent or closed subject
-also ends here, with no note attempted) · **ESCALATED** (a verdict was
+**verdict PASS** · **verdict FAIL** · **CANT-SEE** (the subject or required evidence is proven
+unavailable, malformed, or invalid; no verdict posted, blocker named on the open PR where one exists;
+an absent or closed subject also ends here, with no note attempted) · **UNKNOWN** (a transport,
+token, authority-read, scratch, unzip, installation, or runtime path proved no evidence state; no
+evidence answer, marker, or note exists, and the typed code routes to the supervisor) · **ESCALATED** (a verdict was
 formed but provably could not land — the evidence upload or the write path failed; the state named
 on the PR through `review-ui note` where that write still lands, and
 in the session report when even the note cannot — the empty namespace fail-closes either way;

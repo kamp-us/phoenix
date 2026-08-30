@@ -132,7 +132,7 @@ section.
   every list read paginates and reports its scanned count on stderr. The evidence-upload
   endpoint sits outside §11's porcelain scope exactly as `ui evidence`'s attachment tier states.
 - **A non-zero exit produced no answer; read its code before routing.** Proven refusals occupy
-  `12`–`17`; UNKNOWN/read failures never expose a partial answer. `fetch` returns every complete
+  `12`–`18`; UNKNOWN/read failures never expose a partial answer. `fetch` returns every complete
   materialized set on `0` and types it as `render: "clean" | "red"`, so a proven red set cannot be
   confused with a failed invocation. A partial capture set or upload is never a smaller success.
 - **Head-bound where a head matters.** `render` and `post` resolve the PR's live head and carry
@@ -176,13 +176,14 @@ sibling's numerals is not a goal the doctrine sets.
 | `8` | a write was attempted and its outcome could not be proven — UNKNOWN |
 | `9` | the write landed but the read-back does not match |
 | `10` | a semantic refusal on an operand or body: a supplied value is off its closed vocabulary, a CI identity/root/output operand is invalid, or a `note` body starts with a verdict carrier |
-| `11` | a required read or execution failed — no outcome is proven: PR/head/preview, default-branch authority, workflow run/check/artifact/download, producer workspace/build/server/readiness/sidecar, materialization, capture validity, provenance write, or upload-target state |
+| `11` | a required read or execution failed — no outcome is proven: PR/head/preview, default-branch authority, GitHub transport or token, artifact download, scratch, unzip, producer workspace/build/server/readiness/sidecar, materialization, capture validity, provenance write, or upload-target state |
 | `12` | refused, proven: pixels or a marker would bind the wrong tree — a live head moved, a preview is stale, or a producer checkout does not match its named subject/authority revision |
 | `13` | proven red render or invalid PASS attempt: `render` records an uncaught page error, and `post` refuses PASS over red evidence; `fetch` instead returns a complete typed `render: "red"` answer on `0` |
 | `14` | proven: at least one surface is unreachable — missing HTTP response, status ≥ 400, or failed navigation; each named on stderr |
 | `15` | proven: produced or fetched capture bytes are invalid — incomplete PNG structure/CRC/IEND/inflate/raster, zero area, hash/dimension mismatch, or bad set membership |
 | `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
+| `18` | proven: the governed localhost producer has no usable exact-head run, check, or artifact; the evidence is unavailable, not UNKNOWN |
 | `127` | the verb never ran at all (unresolved binary) |
 
 **`7` versus `11`** is the package's spine: a 404 is a fact about the repository, an unreachable
@@ -308,9 +309,15 @@ bounded error evidence are present in that answer for inspection before posting 
 | `4` | default-branch declaration, artifact manifest, producer binding, members, surface cardinality, or receipt materialization schema is malformed |
 | `7` | PR is proven absent or closed — zero scope |
 | `10` | `--harness` or `--out` is off vocabulary |
-| `11` | repo/default branch/exact authority revision/declaration/run/check/artifact/download/scratch read is UNKNOWN; zero, ambiguous, pending, failed, cancelled, action-required, missing-expiry, expired, or otherwise untrusted producer evidence is unresolved |
+| `11` | repository, GitHub transport/token, default-branch authority, declaration read, download, scratch, unzip, response-shape, or runtime state is UNKNOWN |
 | `12` | live head moved before materialization |
 | `15` | capture bytes fail complete PNG decoding (chunk structure/CRC/IEND/inflate/raster), hash, or dimension validation |
+| `18` | proven: no unique successful exact-head run, named check, or non-expired artifact is currently usable |
+
+Caller routing is code-only: `10` corrects the operand and refetches; `12` reads the moved live head
+and refetches; `4`, `15`, and `18` are proven evidence-unavailable CANT-SEE paths; `7` is proven
+zero-scope CANT-SEE; `11`, `1`, `126`, `127`, and unlisted codes are UNKNOWN with no evidence
+answer, marker, or note and route to the supervisor. Stderr is diagnostic data, never a routing key.
 
 **Errors**
 
@@ -321,21 +328,17 @@ bounded error evidence are present in that answer for inspection before posting 
 | `review-ui fetch: "<id>" is not a governed localhost-only harness.` | `10` | refusal |
 | `review-ui fetch: PR #<n> not found...` / `is closed...` | `7` | refusal |
 | `review-ui fetch: cannot read PR #<n>: <reason>.` | `11` | refusal |
-| `review-ui fetch: cannot resolve the repository default branch (<reason>).` | `11` | refusal |
-| `review-ui fetch: cannot resolve the exact default-branch authority revision (<reason>).` | `11` | refusal |
-| `review-ui fetch: cannot read the governed localhost declaration (<reason>).` | `11` | refusal |
 | `review-ui fetch: .github/review-ui-localhost-harnesses.json is absent at authority revision <sha>.` | `4` | refusal |
 | `review-ui fetch: the governed localhost declaration is malformed (<reason>).` | `4` | refusal |
-| `review-ui fetch: the artifact has unsafe, duplicate, extra, or incomplete members.` | `4` | refusal |
-| `review-ui fetch: trusted CI evidence is unresolved (<reason>).` | `11` | refusal |
+| `review-ui fetch: the artifact has unsafe, duplicate, extra, incomplete, or malformed members.` | `4` | refusal |
+| `review-ui fetch: trusted CI evidence is proven unavailable (<reason>).` | `18` | refusal |
+| `review-ui fetch: <TransportUnknown\|TokenUnknown\|AuthorityReadUnknown\|ScratchUnknown\|UnzipUnknown\|RuntimeUnknown> (<reason>) — the evidence state is UNKNOWN.` | `11` | refusal |
 | `review-ui fetch: the CI capture manifest is malformed (<reason>).` | `4` | refusal |
 | `review-ui fetch: the artifact manifest does not bind the governed producer, exact authority revision, declaration, repository, PR, and exact live head.` | `4` | refusal |
 | `review-ui fetch: the artifact contains a surface more than once.` | `4` | refusal |
 | `review-ui fetch: the artifact does not contain every declared <harness> surface, route, and state exactly once.` | `4` | refusal |
-| `review-ui fetch: capture <surface> is unreadable (<reason>).` | `11` | refusal |
 | `review-ui fetch: capture <surface> fails its hash or dimensions.` | `15` | refusal |
 | `review-ui fetch: PR #<n> moved from <old> to <new> before the evidence set was accepted.` | `12` | refusal |
-| `review-ui fetch: cannot materialize reviewer-owned evidence scratch (<reason>).` | `11` | refusal |
 
 **Scope** — one open PR, one default-branch declaration, one declared harness, one
 exact-head run/check/artifact tuple, and one output set. A missing or closed PR is `7`; no harnesses,
@@ -821,6 +824,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `13` | proven: CI evidence records an uncaught page error and the caller requested PASS — the materialized set must post FAIL |
 | `15` | proven: a capture is invalid or fails its manifest SHA-256 or dimensions |
 | `17` | proven: at least one evidence upload or its verification failed — nothing was posted |
+| `18` | proven: the exact-head governed CI run, check, or artifact required to revalidate this set is unavailable |
 
 **Errors**
 
@@ -851,8 +855,9 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: cannot revalidate CI provenance because the governed declaration is unreadable (<reason>).` | 11 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the governed declaration is malformed (<reason>).` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" no longer matches the governed producer declaration.` | 4 | refusal |
-| `review-ui post: the re-downloaded CI artifact has unsafe, duplicate, extra, or incomplete members.` | 4 | refusal |
-| `review-ui post: trusted CI artifact could not be re-downloaded (<reason>).` | 11 | refusal |
+| `review-ui post: the re-downloaded CI artifact has unsafe, duplicate, extra, incomplete, or malformed members.` | 4 | refusal |
+| `review-ui post: trusted CI artifact is proven unavailable (<reason>).` | 18 | refusal |
+| `review-ui post: trusted CI artifact re-download is UNKNOWN (<tag>: <reason>).` | 11 | refusal |
 | `review-ui post: CI evidence set "<set>" receipt does not match the trusted run, check, and artifact identities.` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" manifest does not byte-match the exact re-downloaded GitHub artifact.` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" capture "<surface>" does not byte-match the exact re-downloaded GitHub artifact.` | 4 | refusal |

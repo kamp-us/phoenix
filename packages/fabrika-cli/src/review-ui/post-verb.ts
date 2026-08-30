@@ -46,6 +46,7 @@ import {
 } from "../wire/verdict-marker.ts";
 import {fetchCiBundle} from "./ci-github.ts";
 import {
+	EVIDENCE_UNAVAILABLE,
 	INVALID_CAPTURE,
 	MALFORMED_DOCUMENT,
 	OFF_VOCABULARY,
@@ -610,13 +611,29 @@ export const runPost = (
 				authority.harness,
 				options.tmpRoot,
 			);
-			if (bundle._tag === "Failure") {
-				return refuse(
-					bundle.kind === "malformed-members" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
-					bundle.kind === "malformed-members"
-						? `${VERB}: the re-downloaded CI artifact has unsafe, duplicate, extra, or incomplete members.`
-						: `${VERB}: trusted CI artifact could not be re-downloaded (${bundle.reason}).`,
-				);
+			if (bundle._tag !== "Ok") {
+				switch (bundle._tag) {
+					case "MalformedArtifact":
+						return refuse(
+							MALFORMED_DOCUMENT,
+							`${VERB}: the re-downloaded CI artifact has unsafe, duplicate, extra, incomplete, or malformed members.`,
+						);
+					case "ProducerUnavailable":
+						return refuse(
+							EVIDENCE_UNAVAILABLE,
+							`${VERB}: trusted CI artifact is proven unavailable (${bundle.reason}).`,
+						);
+					case "AuthorityReadUnknown":
+					case "RuntimeUnknown":
+					case "ScratchUnknown":
+					case "TokenUnknown":
+					case "TransportUnknown":
+					case "UnzipUnknown":
+						return refuse(
+							PRECONDITION_UNKNOWN,
+							`${VERB}: trusted CI artifact re-download is UNKNOWN (${bundle._tag}: ${bundle.reason}).`,
+						);
+				}
 			}
 			if (
 				bundle.value.runId !== receipt.runId ||

@@ -124,9 +124,11 @@ identity, archive membership, manifest binding, hashes, dimensions, browser-erro
 live-head revalidation. The [`review-ui fetch`
 contract](../claude-plugins/fabrika/skills/review-ui/contract.md#review-ui-fetch) is the single
 reference for run/check/artifact selection, the manifest and receipt schemas, archive membership,
-integrity validation, materialization, and exit meanings. In particular, a trusted artifact with an
-uncaught page error is materialized for inspection and remains proven FAIL evidence, not an
-unresolved CANT-SEE.
+integrity validation, materialization, and exit meanings. The consumer carries a closed tagged
+failure algebra from GitHub selection through fetch: only `ProducerUnavailable` reaches typed exit
+`18`; transport, token, authority-read, scratch, unzip, and runtime tags stay UNKNOWN on `11`.
+Routing never inspects stderr. In particular, a trusted artifact with an uncaught page error is
+materialized for inspection and remains proven FAIL evidence, not an unresolved CANT-SEE.
 
 Preview manifests are also indexes, never local authority. Before posting preview evidence,
 `review-ui post` resolves the live preview announcement and independently re-renders every recorded

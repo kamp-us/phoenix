@@ -841,7 +841,7 @@ artifact for a declared localhost-only product. Contract:
 | Verb | Answers |
 |---|---|
 | `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized state (`/pano:auth` renders signed in as the test moderator, refusing on `11` unless the session proves it took). `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface is `:auth` and on `11` unless the preview's own evaluation says the key took |
-| `review-ui fetch` | validates the governed exact-head Actions artifact into reviewer-owned scratch; exit `0` returns a typed answer whose `render` is `"clean"` or `"red"`, while every non-zero produces no evidence answer. See the [consumer and verdict record](../../../.patterns/review-ui-localhost-ci-evidence.md#consumer-and-verdict) |
+| `review-ui fetch` | validates the governed exact-head Actions artifact into reviewer-owned scratch; exit `0` returns a typed answer whose `render` is `"clean"` or `"red"`, `18` proves the producer evidence unavailable, and `11` keeps transport/token/authority/scratch/unzip/runtime failures UNKNOWN. See the [consumer and verdict record](../../../.patterns/review-ui-localhost-ci-evidence.md#consumer-and-verdict) |
 | `review-ui ci-produce` | creates that artifact through the base-owned, declaration-bound isolation leg. See the [authority and isolation contract](../../../.patterns/review-ui-localhost-ci-evidence.md#authority-and-isolation) |
 | `review-ui post` | the single `review-ui` verdict emit. Preview sets require the external render capability. CI sets trigger a live-head artifact re-download and byte comparison before capture/head validation, verified upload, and comment post |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
@@ -853,7 +853,9 @@ uncaught page error, or `post` refused an attempted PASS over red evidence; a co
 with `render:"red"` returns `0` · `14` a surface is unreachable — status ≥ 400 or a failed
 navigation · `15` capture bytes fail complete PNG decoding (chunk structure/CRC/IEND/inflate/raster),
 hash, dimensions, or set membership · `16` no preview deployment exists for this PR, the skill's
-CANT-SEE route · `17` an evidence upload or its verification failed, with **nothing posted**.
+CANT-SEE route · `17` an evidence upload or its verification failed, with **nothing posted** · `18`
+the governed localhost producer has no usable exact-head run, check, or artifact — proven
+unavailable rather than UNKNOWN.
 
 ## The `ship` group
 

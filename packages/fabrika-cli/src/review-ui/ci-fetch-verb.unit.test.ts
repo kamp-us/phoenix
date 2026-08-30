@@ -5,9 +5,20 @@ import {Effect, Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {fakeSeams, once, type Scripted} from "../fakes.test-support.ts";
 import {forgetAmbientToken} from "../io/gh-api.ts";
-import {fail, ok} from "../io/git.ts";
 import {encodePng, solid} from "../ui/fakes.test-support.ts";
-import {runCiFetch} from "./ci-fetch-verb.ts";
+import {evidenceFailureOutcome, runCiFetch} from "./ci-fetch-verb.ts";
+import {
+	authorityReadUnknown,
+	ciOk,
+	malformedArtifact,
+	producerUnavailable,
+	runtimeUnknown,
+	scratchUnknown,
+	tokenUnknown,
+	transportUnknown,
+	unzipUnknown,
+} from "./ci-github.ts";
+import {EVIDENCE_UNAVAILABLE} from "./codes.ts";
 import {CI_PROVENANCE_RECEIPT, declarationDigest} from "./localhost-evidence.ts";
 import {sha256Hex} from "./manifest.ts";
 
@@ -102,6 +113,22 @@ const ciManifest = (
 	});
 
 describe("runCiFetch", () => {
+	it("routes only the proven producer-unavailable tag to 18 and keeps every UNKNOWN tag on 11", () => {
+		expect(evidenceFailureOutcome(producerUnavailable("none")).code).toBe(EVIDENCE_UNAVAILABLE);
+		for (const failure of [
+			transportUnknown("transport"),
+			tokenUnknown("token"),
+			authorityReadUnknown("authority"),
+			scratchUnknown("scratch"),
+			unzipUnknown("unzip"),
+			runtimeUnknown("runtime"),
+		]) {
+			const outcome = evidenceFailureOutcome(failure);
+			expect(outcome.code, failure._tag).toBe(11);
+			expect(outcome.stdout, failure._tag).toBe("");
+		}
+	});
+
 	it("materializes only a provenance-bound exact-head artifact and writes the consumer receipt", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-fetch-test-"));
 		const artifact = join(root, "artifact");
@@ -127,7 +154,7 @@ describe("runCiFetch", () => {
 					tmpRoot: root,
 					fetchBundle: () =>
 						Effect.succeed(
-							ok({
+							ciOk({
 								runId: 42,
 								checkId: 51,
 								artifactId: 61,
@@ -184,8 +211,7 @@ describe("runCiFetch", () => {
 			expected: number;
 			secondHead?: string;
 			bytes?: Uint8Array | null;
-			bundleFailure?: string;
-			bundleFailureKind?: "malformed-members";
+			bundleFailure?: "malformed" | "producer-unavailable" | "runtime-unknown";
 			materializedRed?: boolean;
 		}> = [
 			...producerMismatchCases,
@@ -281,14 +307,19 @@ describe("runCiFetch", () => {
 			{
 				name: "unsafe or duplicate artifact members",
 				manifest: ciManifest(),
-				bundleFailure: "the artifact has unsafe, duplicate, or incomplete members",
-				bundleFailureKind: "malformed-members",
+				bundleFailure: "malformed",
 				expected: 4,
 			},
 			{
 				name: "ambiguous artifact",
 				manifest: ciManifest(),
-				bundleFailure: "produced 2 review-ui-localhost-tuval artifacts — ambiguous",
+				bundleFailure: "producer-unavailable",
+				expected: EVIDENCE_UNAVAILABLE,
+			},
+			{
+				name: "runtime failure remains UNKNOWN",
+				manifest: ciManifest(),
+				bundleFailure: "runtime-unknown",
 				expected: 11,
 			},
 			{
@@ -330,7 +361,7 @@ describe("runCiFetch", () => {
 						fetchBundle: () =>
 							Effect.succeed(
 								row.bundleFailure === undefined
-									? ok({
+									? ciOk({
 											runId: 42,
 											checkId: 51,
 											artifactId: 61,
@@ -339,9 +370,11 @@ describe("runCiFetch", () => {
 											directory: artifact,
 											manifestText: row.manifest,
 										})
-									: row.bundleFailureKind === undefined
-										? fail(row.bundleFailure)
-										: {...fail(row.bundleFailure), kind: row.bundleFailureKind},
+									: row.bundleFailure === "malformed"
+										? malformedArtifact("unsafe members")
+										: row.bundleFailure === "producer-unavailable"
+											? producerUnavailable("ambiguous artifact")
+											: runtimeUnknown("runtime failed"),
 							),
 					}),
 					Layer.mergeAll(seams.layer),

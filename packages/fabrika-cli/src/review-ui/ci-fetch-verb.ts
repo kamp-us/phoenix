@@ -3,7 +3,8 @@
  * its independently validated exact-head captures in reviewer-owned scratch. Producer identities
  * and artifact locations are declaration-derived; no filesystem or Actions identity is an input.
  * An integrity-validated red render is a successful materialization whose typed stdout answer names
- * the red state, not a refusal code that can be mistaken for missing evidence.
+ * the red state, not a refusal code that can be mistaken for missing evidence. The closed GitHub
+ * failure algebra maps only proven producer unavailability to exit 18; every UNKNOWN tag stays 11.
  */
 import {copyFile, mkdir, readFile, rename, rm, writeFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
@@ -13,8 +14,14 @@ import {validateCaptureBytes} from "../capture/png.ts";
 import {openPull, resolveTargetRepo} from "../review/target.ts";
 import {commitShaAtRef, defaultBranch, readFileAtRef} from "../ship/github.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
-import {fetchCiBundle} from "./ci-github.ts";
 import {
+	authorityReadUnknown,
+	type CiEvidenceFailure,
+	fetchCiBundle,
+	scratchUnknown,
+} from "./ci-github.ts";
+import {
+	EVIDENCE_UNAVAILABLE,
 	INVALID_CAPTURE,
 	MALFORMED_DOCUMENT,
 	OFF_VOCABULARY,
@@ -31,6 +38,31 @@ import {
 import {isKebabSetName, manifestPath, setDirectory, sha256Hex} from "./manifest.ts";
 
 const VERB = "review-ui fetch";
+
+export const evidenceFailureOutcome = (failure: CiEvidenceFailure): VerbOutcome => {
+	switch (failure._tag) {
+		case "ProducerUnavailable":
+			return refuse(
+				EVIDENCE_UNAVAILABLE,
+				`${VERB}: trusted CI evidence is proven unavailable (${failure.reason}).`,
+			);
+		case "MalformedArtifact":
+			return refuse(
+				MALFORMED_DOCUMENT,
+				`${VERB}: the artifact has unsafe, duplicate, extra, incomplete, or malformed members.`,
+			);
+		case "AuthorityReadUnknown":
+		case "RuntimeUnknown":
+		case "ScratchUnknown":
+		case "TokenUnknown":
+		case "TransportUnknown":
+		case "UnzipUnknown":
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: ${failure._tag} (${failure.reason}) — the evidence state is UNKNOWN.`,
+			);
+	}
+};
 
 export interface CiFetchOptions {
 	readonly pr: number;
@@ -72,16 +104,16 @@ export const runCiFetch = (
 
 		const base = yield* defaultBranch(repo);
 		if (base._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot resolve the repository default branch (${base.reason}).`,
+			return evidenceFailureOutcome(
+				authorityReadUnknown(`cannot resolve the repository default branch: ${base.reason}`),
 			);
 		}
 		const authorityRevision = yield* commitShaAtRef(repo, base.value);
 		if (authorityRevision._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot resolve the exact default-branch authority revision (${authorityRevision.reason}).`,
+			return evidenceFailureOutcome(
+				authorityReadUnknown(
+					`cannot resolve the exact default-branch authority revision: ${authorityRevision.reason}`,
+				),
 			);
 		}
 		const authority = yield* readFileAtRef(
@@ -90,9 +122,8 @@ export const runCiFetch = (
 			authorityRevision.value,
 		);
 		if (authority._tag === "Unknown") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read the governed localhost declaration (${authority.reason}).`,
+			return evidenceFailureOutcome(
+				authorityReadUnknown(`cannot read the governed localhost declaration: ${authority.reason}`),
 			);
 		}
 		if (authority._tag === "Absent") {
@@ -124,14 +155,7 @@ export const runCiFetch = (
 			harness,
 			options.tmpRoot,
 		);
-		if (bundle._tag === "Failure") {
-			return refuse(
-				bundle.kind === "malformed-members" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
-				bundle.kind === "malformed-members"
-					? `${VERB}: the artifact has unsafe, duplicate, extra, or incomplete members.`
-					: `${VERB}: trusted CI evidence is unresolved (${bundle.reason}).`,
-			);
-		}
+		if (bundle._tag !== "Ok") return evidenceFailureOutcome(bundle);
 		const parsed = parseCiCaptureManifest(bundle.value.manifestText);
 		if (parsed._tag === "Malformed") {
 			return refuse(
@@ -194,9 +218,8 @@ export const runCiFetch = (
 				catch: (cause) => String(cause),
 			}).pipe(Effect.result);
 			if (bytesRead._tag === "Failure") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: capture ${capture.surface} is unreadable (${bytesRead.failure}).`,
+				return evidenceFailureOutcome(
+					scratchUnknown(`capture ${capture.surface} is unreadable: ${bytesRead.failure}`),
 				);
 			}
 			const bytes = bytesRead.success;
@@ -256,9 +279,10 @@ export const runCiFetch = (
 			catch: (cause) => String(cause),
 		}).pipe(Effect.result);
 		if (materialized._tag === "Failure") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot materialize reviewer-owned evidence scratch (${materialized.failure}).`,
+			return evidenceFailureOutcome(
+				scratchUnknown(
+					`cannot materialize reviewer-owned evidence scratch: ${materialized.failure}`,
+				),
 			);
 		}
 		return answer(

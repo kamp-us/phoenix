@@ -49,22 +49,31 @@ fabrika wire doc-section --heading "The shared exit matrix" < claude-plugins/fab
 5. Re-read the landed marker through the normal review/ship flow. There is no localhost-specific
    marker or ship override.
 
-Route a fetch refusal using the three wire sections read above rather than collapsing every nonzero
-exit into CANT-SEE:
+Route a fetch refusal only by the typed code from the three wire sections above, never by stderr:
 
-- Fix caller, invocation, or installation failures and retry before making any claim.
-- If #7190 is absent or closed, end at CANT-SEE without a marker or note; there is no open subject on
-  which to land one.
-- If the head moved, restart at the new live head; that refusal produced no evidence answer.
-- For any other trust or evidence refusal on an open, unmoved #7190, post CANT-SEE with
-  `review-ui note` and stop. A reviewer never changes PR state to manufacture another producer
-  event.
+- Exit `10`: correct the caller operand and refetch.
+- Exit `12`: discard the stale attempt, read the new live head, and refetch that exact head.
+- Exit `4`, `15`, or `18`: the producer evidence is proven malformed, invalid, or unavailable. On an
+  open PR, post a non-marker CANT-SEE blocker with `review-ui note` and stop. A reviewer never changes
+  PR state to manufacture another producer event.
+- Exit `7`: #7190 is proven absent or closed. End CANT-SEE without a marker or note; there is no open
+  subject on which to land one.
+- Exit `11`, `1`, `126`, `127`, or an unlisted code: end UNKNOWN. The invocation produced no evidence
+  answer, marker, or note. Route the typed code to the supervisor for retry or replacement of the
+  transport, token, authority-read, scratch, unzip, installation, or runtime path; do not report
+  CANT-SEE.
 
 ## Operator-owned dropped-trigger recovery
 
 Close/reopen recovery belongs to the `ship` capability set, not `review-ui`. Hand the open PR and
-its recorded full head to an operator. The operator reads the `ship nudge` contract and may invoke
-the sanctioned, self-guarding route:
+its recorded full head to an operator. Before any nudge, the operator must read the literal section
+through the contract-ingestion surface:
+
+```bash
+fabrika wire doc-section --heading "ship nudge" < claude-plugins/fabrika/skills/ship/contract.md
+```
+
+After that read succeeds, the operator may invoke the sanctioned, self-guarding route:
 
 The literal example below is bound to #7190's recorded head at this revision. If the operator's
 fresh read names another full head, the operator types that exact literal into `--sha`.

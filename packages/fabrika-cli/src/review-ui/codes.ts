@@ -78,3 +78,5 @@ export const INVALID_CAPTURE = 15;
 export const NO_PREVIEW = 16;
 /** Proven: at least one evidence upload or its verification failed — **nothing was posted**. */
 export const UPLOAD_FAILED = 17;
+/** Proven: the governed producer has no usable exact-head run, check, or artifact yet. */
+export const EVIDENCE_UNAVAILABLE = 18;

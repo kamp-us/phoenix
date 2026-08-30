@@ -85,7 +85,7 @@ describe("trusted localhost Actions provenance", () => {
 				{declared: 2, entries: [{}], exhausted: true},
 				{declared: 0, entries: [{}], exhausted: true},
 			]) {
-				assert.strictEqual(completeEnvelope(incomplete, kind)._tag, "Failure");
+				assert.strictEqual(completeEnvelope(incomplete, kind)._tag, "RuntimeUnknown");
 			}
 		}
 	});
@@ -159,9 +159,32 @@ describe("trusted localhost Actions provenance", () => {
 					seams.layer,
 				),
 			);
-			assert.strictEqual(outcome._tag, "Failure");
+			assert.strictEqual(outcome._tag, "RuntimeUnknown");
 			assert.isFalse(seams.requests.some((request) => testCase.unread.test(request)));
 		}
+	});
+
+	it("keeps GitHub transport and token failures typed UNKNOWN", async () => {
+		const transport = fakeSeams([[RUNS, {status: 503, body: "{}"}]]);
+		const transportOutcome = await Effect.runPromise(
+			Effect.provide(
+				resolveCiIdentity("kamp-us/phoenix", 7190, HEAD, AUTHORITY_HEAD, harness),
+				transport.layer,
+			),
+		);
+		assert.strictEqual(transportOutcome._tag, "TransportUnknown");
+
+		forgetAmbientToken();
+		vi.stubEnv("GITHUB_TOKEN", "");
+		vi.stubEnv("GH_TOKEN", "");
+		const noToken = fakeSeams([]);
+		const tokenOutcome = await Effect.runPromise(
+			Effect.provide(
+				resolveCiIdentity("kamp-us/phoenix", 7190, HEAD, AUTHORITY_HEAD, harness),
+				noToken.layer,
+			),
+		);
+		assert.strictEqual(tokenOutcome._tag, "TokenUnknown");
 	});
 
 	it("replays a recorded pull_request_target run whose head_sha is the PR head and associations are empty", () => {
@@ -193,7 +216,7 @@ describe("trusted localhost Actions provenance", () => {
 			{...runEnvelope, repository: {}},
 			{...runEnvelope, repository: {full_name: 7}},
 		]) {
-			assert.strictEqual(decodeWorkflowRuns([incomplete])._tag, "Failure");
+			assert.strictEqual(decodeWorkflowRuns([incomplete])._tag, "RuntimeUnknown");
 		}
 	});
 
@@ -212,7 +235,7 @@ describe("trusted localhost Actions provenance", () => {
 			}),
 			run({title: "review-ui localhost evidence / tuval / PR #7190 / short"}),
 		]) {
-			assert.strictEqual(select([candidate])._tag, "Failure");
+			assert.strictEqual(select([candidate])._tag, "ProducerUnavailable");
 		}
 	});
 
@@ -226,15 +249,15 @@ describe("trusted localhost Actions provenance", () => {
 		if (selected._tag === "Ok") assert.strictEqual(selected.value.id, 42);
 	});
 
-	it("refuses ambiguous, pending, failed, cancelled and action-required runs", () => {
-		assert.strictEqual(select([run(), run({id: 43})])._tag, "Failure");
+	it("types ambiguous, pending, failed, cancelled and action-required runs as proven unavailable", () => {
+		assert.strictEqual(select([run(), run({id: 43})])._tag, "ProducerUnavailable");
 		for (const candidate of [
 			run({status: "queued", conclusion: null}),
 			run({conclusion: "failure"}),
 			run({conclusion: "cancelled"}),
 			run({conclusion: "action_required"}),
 		]) {
-			assert.strictEqual(select([candidate])._tag, "Failure");
+			assert.strictEqual(select([candidate])._tag, "ProducerUnavailable");
 		}
 	});
 
@@ -245,7 +268,7 @@ describe("trusted localhost Actions provenance", () => {
 			["artifact", {id: 1, name: "other"}],
 			["artifact", {id: 1, name: "other", expired: "false"}],
 		] as const) {
-			assert.strictEqual(selectUniqueCompleted([row], harness.check, kind)._tag, "Failure");
+			assert.strictEqual(selectUniqueCompleted([row], harness.check, kind)._tag, "RuntimeUnknown");
 		}
 		assert.strictEqual(
 			selectUniqueCompleted(
@@ -263,7 +286,10 @@ describe("trusted localhost Actions provenance", () => {
 			],
 			[{id: 1, name: harness.check, status: "completed", conclusion: "failure"}],
 		]) {
-			assert.strictEqual(selectUniqueCompleted(checks, harness.check, "check")._tag, "Failure");
+			assert.strictEqual(
+				selectUniqueCompleted(checks, harness.check, "check")._tag,
+				"ProducerUnavailable",
+			);
 		}
 		assert.strictEqual(
 			selectUniqueCompleted(
@@ -274,7 +300,7 @@ describe("trusted localhost Actions provenance", () => {
 				harness.artifact,
 				"artifact",
 			)._tag,
-			"Failure",
+			"ProducerUnavailable",
 		);
 		assert.strictEqual(
 			selectUniqueCompleted(
@@ -284,14 +310,22 @@ describe("trusted localhost Actions provenance", () => {
 			)._tag,
 			"Ok",
 		);
-		for (const expired of [true, undefined, "false", 0]) {
+		assert.strictEqual(
+			selectUniqueCompleted(
+				[{id: 1, name: harness.artifact, expired: true}],
+				harness.artifact,
+				"artifact",
+			)._tag,
+			"ProducerUnavailable",
+		);
+		for (const expired of [undefined, "false", 0]) {
 			assert.strictEqual(
 				selectUniqueCompleted(
 					[{id: 1, name: harness.artifact, ...(expired === undefined ? {} : {expired})}],
 					harness.artifact,
 					"artifact",
 				)._tag,
-				"Failure",
+				"RuntimeUnknown",
 			);
 		}
 	});

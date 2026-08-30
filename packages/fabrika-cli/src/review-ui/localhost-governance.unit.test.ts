@@ -34,6 +34,7 @@ describe("localhost evidence governance floor", () => {
 			"ship/github.ts",
 			"capture/capture.ts",
 			"capture/png.ts",
+			"ui/png.ts",
 			"capture/upload.ts",
 		]) {
 			assert.match(
@@ -43,6 +44,12 @@ describe("localhost evidence governance floor", () => {
 					"m",
 				),
 			);
+		}
+		for (const decision of [
+			".decisions/0299-cp-fence-covers-fabrika-ci-core.md",
+			".decisions/0330-codeowners-is-the-cp-boundary.md",
+		]) {
+			assert.include(read(decision), "`src/ui/png.ts`");
 		}
 		for (const harness of authority.value.harnesses) {
 			assert.match(harness.workflow, /^\.github\/workflows\/[a-z0-9-]+\.yml$/);

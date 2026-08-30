@@ -1,7 +1,7 @@
 # @kampus/fabrika-cli/capture
 
 The **Playwright-capture + GitHub user-attachments upload** helper the
-`review-design` gate drives (ADR
+`review-ui` gate drives (ADR
 [0165](../../../../.decisions/0165-review-design-gate.md), epic
 [#1966](https://github.com/kamp-us/phoenix/issues/1966)).
 
@@ -10,7 +10,7 @@ preview deploy** URL and the changed surfaces to shoot, it drives a headless
 chromium to screenshot each surface, writes the PNG bytes to disk, uploads them
 to GitHub so they can be embedded as evidence in the SHA-bound verdict comment,
 and returns one record per surface. It **does not** judge the images (that is the
-`review-design` skill, [#2246](https://github.com/kamp-us/phoenix/issues/2246)),
+`review-ui` skill, [#2246](https://github.com/kamp-us/phoenix/issues/2246)),
 and it **does not** serve the app — it captures over the preview the pipeline
 already stood up.
 
@@ -41,7 +41,7 @@ and a published artifact may depend only on what a clean registry resolves (ADR
 ## Why it exists
 
 ADR 0162 made the four design pillars — performance · cohesiveness · usability ·
-accessibility — standing law; ADR 0165 made `review-design` the gate that checks
+accessibility — standing law; ADR 0165 made `review-ui` the gate that checks
 every UI PR against that law by *looking at the rendered screen*. A text-diff
 review can't see a missing focus ring, off-grid spacing, or a sub-36px tap
 target. This package is the "render it and grab the pixels" half: it produces the
@@ -116,7 +116,7 @@ null-editor `TypeError`, #2593) slipped past the visual prohibitions and reached
 live. So the capture render **listens for page errors** across the whole
 navigation window (`page.on("pageerror" | "console")`, attached before `goto`) and
 returns them per surface as `pageErrors`. An uncaught exception (`kind:
-"pageerror"`) is a **hard FAIL** for the `review-design` gate; a `console.error` is
+"pageerror"`) is a **hard FAIL** for the `review-ui` gate; a `console.error` is
 **advisory** (dev console.error is noisy — React key/prop warnings — so failing on
 it would trip the gate on benign output). The pure decision core
 (`renderCrashFailure`) is unit-tested against the #2593 crash class; the `capture`
@@ -125,7 +125,7 @@ bin also prints a `render FAILED — …` summary to stderr when any surface thr
 ## The golden-baseline seam (store · resolve · deterministic diff)
 
 Beyond capture+upload, this package is the **golden-baseline substrate** the
-generation loop and the `review-design` gate both anchor to — one notion of
+generation loop and the `review-ui` gate both anchor to — one notion of
 "golden", never two ([#2960](https://github.com/kamp-us/phoenix/issues/2960), epic
 [#2955](https://github.com/kamp-us/phoenix/issues/2955)). The storage design is ADR
 [0183](../../../../.decisions/0183-golden-screen-storage-depo-git-pointer.md): **golden
@@ -175,7 +175,7 @@ const result = diffRasters(goldenRaster, candidateRaster, {
   per-surface result** (deviation `magnitude` in [0, 1] + the differing `regions` as
   bounding boxes), **not a bare boolean**: this is the diff half of calibration B
   ([#2945](https://github.com/kamp-us/phoenix/issues/2945)); the accept/redline
-  *judgment* is the `review-design` child's, not this core.
+  *judgment* is the `review-ui` child's, not this core.
 - **Flake-canon split.** The capture-time canon (animations off, reduced-motion,
   `document.fonts.ready`, srgb, seeded data + frozen clock) is enforced when the
   bytes are *rendered* (the render harness, #2963). The **diff-time** canon lives
@@ -228,7 +228,7 @@ founder's step (#2962); this step stops at "a deterministic candidate set exists
   the **exact depo `sha256`** of the rendered bytes — the ADR 0183 §5 no-re-render
   anchor: the bless later moves the pointer to that same `sha256`, no re-render.
 - **`candidate-render.ts`** (thin Effect) — `renderCandidateSet` drives the reused
-  capture leg (the same flake canon `review-design` uses) + the depo store leg over
+  capture leg (the same flake canon `review-ui` uses) + the depo store leg over
   the priority set. Both impure legs are injected seams, so the whole orchestration is
   unit-tested with fakes — no browser, no depo.
 
@@ -326,7 +326,7 @@ GITHUB_TOKEN=<token> node packages/design-capture/src/bin.ts capture \
   --repo-id 1234177275
 ```
 
-Prints the `CaptureRecord[]` as JSON on stdout for the `review-design` skill to
+Prints the `CaptureRecord[]` as JSON on stdout for the `review-ui` skill to
 judge (`localPath`) and embed (`hostedUrl`). `$GITHUB_TOKEN` is read as a
 redacted config, never passed as a flag.
 
@@ -343,4 +343,4 @@ pnpm --filter @kampus/fabrika-cli test   # the unit tier
 
 Unit-only: the pure plan/parse/resolve/merge cores and `uploadAsset` over a
 stubbed transport. There is no integration tier — a real capture needs a live
-preview deploy, which the `review-design` reviewer run exercises end to end.
+preview deploy, which the `review-ui` reviewer run exercises end to end.
