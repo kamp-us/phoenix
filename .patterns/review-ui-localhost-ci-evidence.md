@@ -56,88 +56,53 @@ and [bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/).
 ## Producer record
 
 The
-[producer implementation](../packages/fabrika-cli/src/review-ui/ci-produce-verb.ts) proves both the
-subject checkout's full Git head and the trusted authority checkout's full default-branch head, then
-proves the subject has no root `.dockerignore`, before image construction. Its
+[producer implementation](../packages/fabrika-cli/src/review-ui/ci-produce-verb.ts) proves the full
+subject and authority heads and the absence of a subject root `.dockerignore` before building. Its
 [flow tests](../packages/fabrika-cli/src/review-ui/ci-produce-flow.test.ts) replay the isolation,
 server-build, readiness/crash, head, navigation-response, and manifest boundaries. The
 [Docker integration test](../packages/fabrika-cli/src/review-ui/ci-produce-docker.integration.test.ts)
-also builds and serves a real read-only volume when a Docker daemon is available. The positive
-manifest binds schema version,
-repository, PR, full subject head, full authority head, declaration digest, harness, workflow, check,
-event, run, artifact name, and every declared surface, route, and state. A capture must carry a
-successful HTTP navigation response (2xx or 3xx); a missing response or error status refuses before
-manifest creation. Each capture binds a
-relative artifact member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence.
-Each row is at most
-1,024 UTF-16 code units, and the rows place every uncaught `pageerror` ahead of console errors, so
-console noise cannot push the hard-fail kind into the untyped overflow count. The producer keeps an
-artifact publishable when a successful journey's browser capture records an uncaught page error; the
-trusted consumer owns the red-render exit so the pixels and error record remain independently
-reviewable. If the governed journey command itself fails, the producer returns the shared UNKNOWN
-execution seat (`11`) and stops before server start, capture, manifest creation, and workflow
-artifact upload.
+also builds and serves a real read-only volume when a Docker daemon is available.
+
+The resulting positive record binds the PR source, governed authority, producer identity, declared
+journey, captures, integrity measurements, and readable browser-error evidence. That binding lets a
+reviewer distinguish an exact-head render from a plausible-looking archive without trusting code or
+metadata from the PR. The complete manifest schema, capture and error limits, navigation rules, and
+refusal behavior live in the [`review-ui ci-produce`
+contract](../claude-plugins/fabrika/skills/review-ui/contract.md#review-ui-ci-produce).
 
 ## Consumer and verdict
 
 The [`review-ui fetch`
-implementation](../packages/fabrika-cli/src/review-ui/ci-fetch-verb.ts) requires one successful
-completed run whose workflow, event, repository, and `head_sha` match the exact PR head. The
-producer manifest separately binds the base-context `${{ github.sha }}` authority revision, which
-must equal the consumer's current default-branch revision. Its
+implementation](../packages/fabrika-cli/src/review-ui/ci-fetch-verb.ts) resolves evidence from the
+live PR and current default-branch authority rather than accepting a caller-selected producer.
+[Recorded run 33286961054](https://github.com/kamp-us/phoenix/actions/runs/33286961054)
+shows why both identities matter: Actions reports the PR head as `head_sha` while `pull_requests` may
+be empty. The base-owned run title therefore binds the PR number, subject head, and authority head;
+all three must agree with the live GitHub state. GitHub documents those workflow-run fields in
+[List workflow runs for a
+workflow](https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28#list-workflow-runs-for-a-workflow).
+
+The consumer's
 [integrity tests](../packages/fabrika-cli/src/review-ui/ci-fetch-verb.unit.test.ts) cover producer
 identity, archive membership, manifest binding, hashes, dimensions, browser-error coverage, and
-live-head revalidation.
-[Recorded run 33286961054](https://github.com/kamp-us/phoenix/actions/runs/33286961054)
-proves that Actions reports the PR head as `head_sha` while `pull_requests` may be empty. The
-base-owned workflow therefore sets an exact
-`run-name` containing the PR number, full subject head, and `${{ github.sha }}` authority; that
-exact title, the current authority, and `head_sha` must agree. These are fields of GitHub's
-documented workflow-run response
-([List workflow runs for a workflow](https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28#list-workflow-runs-for-a-workflow)).
-It requires the named successful check and one artifact whose `expired` field is present, boolean,
-and false. GitHub's authoritative REST OpenAPI
-`Artifact` schema requires `expired`, types it as boolean, and defines it as whether the artifact has
-expired
-([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
-[required list](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141602-L141612)).
-Member names are checked for traversal and duplicates before extraction. After the positive
-manifest parses, the complete archive member set must equal `manifest.json` plus the declared
-capture paths; an extra PNG or any other unmanifested member is refused. Capture surfaces are
-checked for duplicates before any `Set` comparison, then their ids, routes, and states are matched
-exactly against the declaration.
+live-head revalidation. The [`review-ui fetch`
+contract](../claude-plugins/fabrika/skills/review-ui/contract.md#review-ui-fetch) is the single
+reference for run/check/artifact selection, the manifest and receipt schemas, archive membership,
+integrity validation, materialization, and exit meanings. In particular, a trusted artifact with an
+uncaught page error is materialized for inspection and remains proven FAIL evidence, not an
+unresolved CANT-SEE.
 
-The consumer re-derives hashes and dimensions, rejects unreadable error coverage, and re-reads the
-live head. It preserves the artifact's manifest bytes when it copies the validated set into
-reviewer-owned scratch. Its receipt records the manifest hash and the observed run, check, and
-artifact ids; the artifact member allowlist excludes that receipt.
-
-An accepted artifact containing an uncaught page error is still materialized. `fetch` then exits
-`13` and prints every materialized capture path on stderr: the reviewer can inspect those exact
-pixels before posting the proven red render as FAIL. It is not an unresolved CANT-SEE.
-
-`review-ui post` accepts route-shaped preview sets only with the separate `review-ui render`
-provenance receipt. That receipt binds repository, PR, head, app, preview URL, and manifest hash. A
-random reviewer-owned capability outside the evidence set signs it. Its path is derived from the
-trusted repository, live head, PR, and set name rather than a receipt field, so a caller-authored
-receipt cannot nominate a matching attacker-owned key. Every preview capture remains inside the
-deterministic set directory, and the receipt must still match the live preview announcement. Route
-shape alone does not select this arm.
-
-For CI evidence, the set-local receipt is only an index into GitHub identity. `post` reads the
-governed declaration at the exact current default-branch authority revision, resolves the successful
-live-head and authority-head run/check/artifact tuple, and re-downloads
-that exact artifact. The local manifest and every local capture must byte-match the re-downloaded
-members before upload. This rejects a forged receipt even when it copies valid public GitHub ids and
-hashes attacker-chosen local bytes.
+The local receipt is only an index into GitHub identity. Before posting, `review-ui post` resolves
+the governed authority and exact run/check/artifact tuple again, re-downloads the artifact, and
+requires the local manifest and captures to byte-match it. A forged receipt therefore cannot bless
+attacker-chosen local bytes. The full provenance and receipt rules live in the [`review-ui post`
+contract](../claude-plugins/fabrika/skills/review-ui/contract.md#review-ui-post).
 
 After provenance succeeds, the
 [`review-ui post` implementation](../packages/fabrika-cli/src/review-ui/post-verb.ts) validates each
 capture and re-reads the live head. Its
 [provenance and post tests](../packages/fabrika-cli/src/review-ui/post-verb.unit.test.ts) cover byte
 recomparison, upload verification, page-crash polarity, ordinary marker emission, and ship
-consumption. The verb refuses a PASS over a recorded uncaught page error, verified-uploads the
-pixels, and records the workflow, event, run, check, artifact, and browser-error coverage before
-emitting the ordinary `review-ui` marker. The shared manifest/declaration schema has its own
+consumption. The shared manifest/declaration schema has its own
 [integrity tests](../packages/fabrika-cli/src/review-ui/localhost-evidence.unit.test.ts). `ship` has
 no alternate marker or bypass: missing or invalid evidence leaves the namespace empty.

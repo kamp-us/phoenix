@@ -33,21 +33,19 @@ surfaces stay on the preview path.
 7. Re-read the landed marker through the normal review/ship flow. There is no localhost-specific
    marker or ship override.
 
-Route a fetch refusal by its contract instead of collapsing every nonzero exit into CANT-SEE:
+Route a fetch refusal by the [`review-ui fetch`
+contract](../claude-plugins/fabrika/skills/review-ui/contract.md#review-ui-fetch) and its [shared exit
+matrix](../claude-plugins/fabrika/skills/review-ui/contract.md#the-shared-exit-matrix), rather than
+collapsing every nonzero exit into CANT-SEE:
 
-- `10` is a caller error. Correct the closed-vocabulary value and retry; do not post a blocker.
-- `1` is actionable as a caller error only when stderr is the verb's usage refusal. Otherwise the
-  verb failed at runtime: treat it as UNKNOWN and repair the invocation or installation before
-  making any claim.
-- `7` means the PR is absent or closed. End at CANT-SEE without a marker and do not attempt
-  `review-ui note`: there is no open subject on which to land the blocker.
-- `12` means the head moved. Restart at the new live head.
-- `13` follows the inspect-then-FAIL route above.
-- `4`, `11`, or `15` on an open, unmoved PR means the governed evidence cannot be trusted or seen.
-  Post CANT-SEE with `review-ui note`, repair the producer state named by the refusal, and repeat from
-  the live head. It is never permission to import local bytes.
-- `126` or `127` means the trusted verb did not run. Repair the local installation/invocation before
-  making any claim about the PR.
+- Fix caller, invocation, or installation failures and retry before making any claim.
+- If the PR is absent or closed, end at CANT-SEE without a marker or note; there is no open subject
+  on which to land one.
+- If the head moved, restart at the new live head. If trusted red evidence was materialized, follow
+  the inspect-then-FAIL route above.
+- For any other trust or evidence refusal on an open, unmoved PR, post CANT-SEE with `review-ui note`,
+  repair the producer state named by the refusal, and repeat from the live head. Never substitute or
+  import local bytes.
 
 ## Tuval PR #7190
 
