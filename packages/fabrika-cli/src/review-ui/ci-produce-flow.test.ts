@@ -342,7 +342,14 @@ describe("trusted localhost producer flow", () => {
 		await rm(root, {recursive: true, force: true});
 	});
 
-	it("refuses when the bounded server-volume keeper dies during preparation", async () => {
+	it.each([
+		{phase: "preparation", inspections: ["true", "false"], serverStarted: false},
+		{phase: "server startup", inspections: ["true", "true", "false"], serverStarted: true},
+	])("refuses when the bounded server-volume keeper dies during $phase", async ({
+		phase,
+		inspections,
+		serverStarted,
+	}) => {
 		const root = await mkdtemp(join(tmpdir(), "ci-produce-server-keeper-death-"));
 		const authorityRoot = join(root, "authority");
 		const subjectRoot = join(root, "subject");
@@ -350,6 +357,9 @@ describe("trusted localhost producer flow", () => {
 		await mkdir(join(authorityRoot, ".github"), {recursive: true});
 		await mkdir(subjectRoot, {recursive: true});
 		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+		const keeperInspections = inspections.map(
+			(value) => [once(/^docker inspect --format .* server-keeper-id$/), okOut(value)] as const,
+		);
 		const seams = fakeSeams([
 			[once(/^git rev-parse HEAD$/), okOut(HEAD)],
 			[/^git rev-parse HEAD$/, okOut(AUTHORITY_HEAD)],
@@ -358,9 +368,9 @@ describe("trusted localhost producer flow", () => {
 			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
 			[/^docker run --rm --network none .*test-workspace/, okOut("")],
 			[/^docker run --detach --network none .*server-keeper/, okOut("server-keeper-id")],
-			[once(/^docker inspect --format .* server-keeper-id$/), okOut("true")],
-			[/^docker inspect --format .* server-keeper-id$/, okOut("false")],
+			...keeperInspections,
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
+			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker rm /, okOut("")],
 			[/^docker volume rm /, okOut("")],
 			[/^docker image rm /, okOut("")],
@@ -384,12 +394,13 @@ describe("trusted localhost producer flow", () => {
 			),
 		);
 		expect(outcome.code).toBe(11);
-		expect(outcome.stderr.join("\n")).toContain("keeper exited during preparation");
+		expect(outcome.stderr.join("\n")).toContain(`keeper exited during ${phase}`);
 		expect(
 			seams.calls.some(
 				(call) => call.startsWith("docker run --detach") && call.includes("-server --network none"),
 			),
-		).toBe(false);
+		).toBe(serverStarted);
+		expect(seams.calls.some((call) => call.startsWith("docker logs container-id"))).toBe(false);
 		await rm(root, {recursive: true, force: true});
 	});
 

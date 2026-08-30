@@ -602,7 +602,7 @@ export const runCiProduce = (
 			return failures;
 		});
 
-		const operation = yield* Effect.gen(function* () {
+		const operation = Effect.gen(function* () {
 			const cleared = yield* Effect.tryPromise({
 				try: () => rm(options.outputDir, {recursive: true, force: true}),
 				catch: (cause) => String(cause),
@@ -1026,10 +1026,21 @@ export const runCiProduce = (
 			}
 			return answer(JSON.stringify(manifest));
 		});
-		const cleanupFailures = yield* cleanup;
-		if (cleanupFailures.length === 0) return operation;
+		let cleanupFailures: readonly string[] = [];
+		const operationOutcome = yield* operation.pipe(
+			Effect.ensuring(
+				cleanup.pipe(
+					Effect.tap((failures) =>
+						Effect.sync(() => {
+							cleanupFailures = failures;
+						}),
+					),
+				),
+			),
+		);
+		if (cleanupFailures.length === 0) return operationOutcome;
 		const cleanupDiagnostic = `${VERB}: cleanup failed (${cleanupFailures.join("; ")}).`;
-		return operation.code === 0
+		return operationOutcome.code === 0
 			? refuse(PRECONDITION_UNKNOWN, cleanupDiagnostic)
-			: {...operation, stderr: [...operation.stderr, cleanupDiagnostic]};
+			: {...operationOutcome, stderr: [...operationOutcome.stderr, cleanupDiagnostic]};
 	});
