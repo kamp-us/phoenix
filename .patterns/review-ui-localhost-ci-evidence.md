@@ -10,7 +10,8 @@ Preview remains the default for every undeclared product. Operational steps live
 
 The default-branch declaration fixes the harness id, workflow, check, event, artifact, subject test
 and server commands, container port, readiness signal, and complete surface/state list. The consumer
-reads it through GitHub, never from the PR checkout. GitHub documents that `pull_request_target` runs
+resolves the default branch to one exact commit and reads the declaration at that commit, never from
+the PR checkout. GitHub documents that `pull_request_target` runs
 in the base context and warns against executing untrusted code directly in that privileged event
 ([event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)).
 
@@ -46,9 +47,10 @@ and [bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/).
 
 ## Producer record
 
-The producer proves the subject checkout's full Git head before image construction. Its positive
-manifest binds schema version, repository, PR, full head, declaration digest, harness, workflow,
-check, event, run, artifact name, and every declared surface. Each capture binds a relative artifact
+The producer proves both the subject checkout's full Git head and the trusted authority checkout's
+full default-branch head before image construction. Its positive manifest binds schema version,
+repository, PR, full subject head, full authority head, declaration digest, harness, workflow, check,
+event, run, artifact name, and every declared surface. Each capture binds a relative artifact
 member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence. Each row is at most
 1,024 UTF-16 code units, and the rows place every uncaught `pageerror` ahead of console errors, so
 console noise cannot push the hard-fail kind into the untyped overflow count. The producer keeps an
@@ -59,9 +61,13 @@ capture, manifest creation, and workflow artifact upload.
 
 ## Consumer and verdict
 
-`review-ui fetch` requires one successful completed run whose workflow, event, repository, PR
-association, and exact head match the declaration. It requires the named successful check and one
-artifact whose `expired` field is present, boolean, and false. GitHub's authoritative REST OpenAPI
+`review-ui fetch` requires one successful completed run whose workflow, event, repository, and
+`head_sha` match the declaration's exact authority revision. The PR number and exact subject head
+must occur together in one GitHub `pull_requests` association row; independently flattened number
+and head lists are not authority. These are fields of GitHub's documented workflow-run response
+([List workflow runs for a workflow](https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28#list-workflow-runs-for-a-workflow)).
+It requires the named successful check and one artifact whose `expired` field is present, boolean,
+and false. GitHub's authoritative REST OpenAPI
 `Artifact` schema requires `expired`, types it as boolean, and defines it as whether the artifact has
 expired
 ([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
@@ -76,7 +82,8 @@ reviewer-owned scratch. Its receipt records the manifest hash and the observed r
 artifact ids; the artifact member allowlist excludes that receipt.
 
 An accepted artifact containing an uncaught page error is still materialized. `fetch` then exits
-`13`: this is a proven red render that must be posted as FAIL, not an unresolved CANT-SEE.
+`13` and prints every materialized capture path on stderr: the reviewer can inspect those exact
+pixels before posting the proven red render as FAIL. It is not an unresolved CANT-SEE.
 
 `review-ui post` accepts route-shaped preview sets only with the separate `review-ui render`
 provenance receipt. That receipt binds repository, PR, head, app, preview URL, and manifest hash. A
@@ -85,7 +92,8 @@ provenance. Every preview capture remains inside the deterministic set directory
 must still match the live preview announcement. Route shape alone does not select this arm.
 
 For CI evidence, the set-local receipt is only an index into GitHub identity. `post` reads the
-governed declaration, resolves the successful live-head run/check/artifact tuple, and re-downloads
+governed declaration at the exact current default-branch authority revision, resolves the successful
+live-head and authority-head run/check/artifact tuple, and re-downloads
 that exact artifact. The local manifest and every local capture must byte-match the re-downloaded
 members before upload. This rejects a forged receipt even when it copies valid public GitHub ids and
 hashes attacker-chosen local bytes.

@@ -126,7 +126,7 @@ const fetch = leafCommand(
 ).pipe(
 	Command.withShortDescription("Fetch a governed localhost harness's exact-head CI captures."),
 	Command.withDescription(
-		"Resolve the declared producer from the repository default branch, require its successful pull_request_target run, check and unique non-expired artifact for the open PR's exact live head, validate the manifest and every PNG, then materialize the set in reviewer-owned scratch. There is no local path, workflow, run, check, artifact or manifest input. Preview rendering remains the default review-ui path. Exits 4 (malformed declaration/manifest), 7 (PR absent/closed), 10 (unknown harness or bad set name), 11 (producer evidence unresolved), 12 (head moved), 13 (the integrity-validated set was materialized with an uncaught page error: proven red-render/FAIL ground), 15 (capture hash/dimensions invalid).",
+		"Resolve the declared producer from the repository default branch, require its successful pull_request_target run at that exact authority revision, named check and unique non-expired artifact for the open PR's exact live head, validate the manifest and every PNG, then materialize the set in reviewer-owned scratch. There is no local path, workflow, run, check, artifact or manifest input. Preview rendering remains the default review-ui path. Exits 4 (malformed declaration/manifest), 7 (PR absent/closed), 10 (unknown harness or bad set name), 11 (producer evidence unresolved), 12 (head moved), 13 (the integrity-validated set was materialized with an uncaught page error: proven red-render/FAIL ground, with every materialized capture path on stderr), 15 (capture hash/dimensions invalid).",
 	),
 );
 
@@ -136,6 +136,11 @@ const ciProduce = leafCommand(
 		pr: prArg,
 		head: Flag.string("head").pipe(
 			Flag.withDescription("the exact lowercase 40-character PR head checked out as the subject"),
+		),
+		authorityHead: Flag.string("authority-head").pipe(
+			Flag.withDescription(
+				"the exact default-branch authority revision checked out as trusted code",
+			),
 		),
 		harness: Flag.string("harness").pipe(
 			Flag.withDescription("the localhost harness id from the trusted declaration"),
@@ -164,7 +169,7 @@ const ciProduce = leafCommand(
 		"Produce the governed localhost capture artifact inside trusted CI.",
 	),
 	Command.withDescription(
-		"Internal trusted-workflow leg: the image build performs only fixed-tool setup and a scriptless dependency fetch, then offline PR lifecycle install plus test run under read-only-root/capability-drop/no-network isolation and the server under the same root/capability/no-network restrictions with its installed workspace read-only and no published port. A base-owned capture sidecar shares only the server's isolated network namespace to reach loopback; the host validates its output and alone writes the versioned manifest. The PR server receives no credentials, authority, Docker socket, or output mount. Prints the manifest on success. Exits 4 (trusted declaration malformed), 10 (head/run/repository/harness off vocabulary), 11 (checkout/image/workspace/server/capture/output state unreadable), 12 (subject checkout is not the named exact head), 13 (the governed journey command failed before capture; a successful journey's later page errors remain publishable for fetch to classify red), 15 (capture invalid). This is not an evidence import path.",
+		"Internal trusted-workflow leg: the image build performs only fixed-tool setup and a scriptless dependency fetch, then offline PR lifecycle install plus test run under read-only-root/capability-drop/no-network isolation and the server under the same root/capability/no-network restrictions with its installed workspace read-only and no published port. A base-owned capture sidecar shares only the server's isolated network namespace to reach loopback; the host validates its output and alone writes the versioned manifest. The PR server receives no credentials, authority, Docker socket, or output mount. Prints the manifest on success. Exits 4 (trusted declaration malformed), 10 (subject head, authority head, run, repository or harness off vocabulary), 11 (checkout/image/workspace/server/capture/output state unreadable), 12 (subject or authority checkout is not its named exact head), 13 (the governed journey command failed before capture; a successful journey's later page errors remain publishable for fetch to classify red), 15 (capture invalid). This is an internal workflow interface with required --repository, not the reviewer-facing optional --repo contract and not an evidence import path.",
 	),
 );
 

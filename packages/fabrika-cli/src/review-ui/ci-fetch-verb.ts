@@ -2,7 +2,8 @@
  * `review-ui fetch` resolves one governed localhost producer through GitHub and materializes only
  * its independently validated exact-head captures in reviewer-owned scratch. Producer identities
  * and artifact locations are declaration-derived; no filesystem or Actions identity is an input.
- * Exit `13` is a materialized, integrity-validated red render, not an unresolved evidence state.
+ * Exit `13` is a materialized, integrity-validated red render whose stderr names every capture path,
+ * not an unresolved evidence state.
  */
 import {copyFile, mkdir, readFile, rename, rm, writeFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
@@ -10,7 +11,7 @@ import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {validateCaptureBytes} from "../capture/png.ts";
 import {openPull, resolveTargetRepo} from "../review/target.ts";
-import {defaultBranch, readFileAtRef} from "../ship/github.ts";
+import {commitShaAtRef, defaultBranch, readFileAtRef} from "../ship/github.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {fetchCiBundle} from "./ci-github.ts";
 import {
@@ -77,7 +78,18 @@ export const runCiFetch = (
 				`${VERB}: cannot resolve the repository default branch (${base.reason}).`,
 			);
 		}
-		const authority = yield* readFileAtRef(repo, LOCALHOST_DECLARATIONS_PATH, base.value);
+		const authorityRevision = yield* commitShaAtRef(repo, base.value);
+		if (authorityRevision._tag === "Failure") {
+			return refuse(
+				PRECONDITION_UNKNOWN,
+				`${VERB}: cannot resolve the exact default-branch authority revision (${authorityRevision.reason}).`,
+			);
+		}
+		const authority = yield* readFileAtRef(
+			repo,
+			LOCALHOST_DECLARATIONS_PATH,
+			authorityRevision.value,
+		);
 		if (authority._tag === "Unknown") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
@@ -87,7 +99,7 @@ export const runCiFetch = (
 		if (authority._tag === "Absent") {
 			return refuse(
 				MALFORMED_DOCUMENT,
-				`${VERB}: ${LOCALHOST_DECLARATIONS_PATH} is absent on ${base.value}.`,
+				`${VERB}: ${LOCALHOST_DECLARATIONS_PATH} is absent at authority revision ${authorityRevision.value}.`,
 			);
 		}
 		const declarations = parseLocalhostDeclarations(authority.value);
@@ -109,6 +121,7 @@ export const runCiFetch = (
 			repo,
 			options.pr,
 			head,
+			authorityRevision.value,
 			harness,
 			options.tmpRoot,
 		);
@@ -138,11 +151,13 @@ export const runCiFetch = (
 			manifest.producer.event !== harness.event ||
 			manifest.producer.runId !== bundle.value.runId ||
 			manifest.producer.artifact !== harness.artifact ||
+			manifest.producer.authorityHead !== authorityRevision.value ||
+			bundle.value.authorityHead !== authorityRevision.value ||
 			bundle.value.artifactName !== harness.artifact
 		) {
 			return refuse(
 				MALFORMED_DOCUMENT,
-				`${VERB}: the artifact manifest does not bind the governed producer, declaration, repository, PR, and exact live head.`,
+				`${VERB}: the artifact manifest does not bind the governed producer, exact authority revision, declaration, repository, PR, and exact live head.`,
 			);
 		}
 		const captureSurfaces = manifest.captures.map((capture) => capture.surface);
@@ -234,9 +249,15 @@ export const runCiFetch = (
 			);
 		}
 		if (red.length > 0) {
+			const paths = manifest.captures
+				.map(
+					(capture) =>
+						`${VERB}: materialized capture ${capture.surface}: ${join(destination, capture.path)}`,
+				)
+				.join("\n");
 			return refuse(
 				RENDER_CRASHED,
-				`${VERB}: the accepted artifact records ${red.length} uncaught page error(s); the materialized render is red and must be posted as FAIL.`,
+				`${VERB}: the accepted artifact records ${red.length} uncaught page error(s); the materialized render is red and must be posted as FAIL.\n${paths}`,
 			);
 		}
 		return answer(

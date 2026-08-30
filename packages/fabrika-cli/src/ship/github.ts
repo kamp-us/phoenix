@@ -140,6 +140,24 @@ export const defaultBranch = (repo: string): Shell<Attempt<string>> =>
 		}),
 	);
 
+/** Resolve a branch or tag to the exact commit GitHub currently names for it. */
+export const commitShaAtRef = (repo: string, ref: string): Shell<Attempt<string>> =>
+	authed((token) =>
+		Effect.map(
+			restRead(token, "GET", `repos/${repo}/commits/${encodeURIComponent(ref)}`),
+			(outcome) => {
+				if (outcome._tag === "Unreachable") return fail(outcome.reason);
+				if (outcome.status < 200 || outcome.status >= 300) {
+					return fail(refusalText(outcome));
+				}
+				const sha = isRecord(outcome.body) ? outcome.body.sha : undefined;
+				return typeof sha === "string" && /^[0-9a-f]{40}$/.test(sha)
+					? ok(sha)
+					: fail("GitHub answered 200 but named no full commit SHA");
+			},
+		),
+	);
+
 /** One team's members, paged. A 404 is proven — the team does not exist in this org. */
 export const listTeamMembers = (
 	org: string,

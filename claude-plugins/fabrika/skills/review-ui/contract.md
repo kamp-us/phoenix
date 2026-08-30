@@ -115,15 +115,19 @@ freshness + the descriptive/normative firewall (`design-inventory-guard.yml`), t
 
 ## Shared conventions
 
-Every `review-ui` verb obeys these; stated once.
+Every reviewer-facing `review-ui` verb obeys these; stated once. The base-owned workflow-only
+`ci-produce` leg is explicitly internal, and its required identity operands are documented in its own
+section.
 
 - **Answer channel: machine.** Stdout carries one JSON object and nothing else; scope lines,
   refusal reasons and per-surface enumerations go to stderr. A non-zero exit prints nothing on
   stdout (`verb.ts`). Every "nothing found" is a state word — v1's callers read empty stdout as
   proven-negative on three separate channels (#4493's classifier, the blessed-surfaces probe, the
   render-errors extractor).
-- **Common inputs.** `--repo <owner/name>` (default: the resolution chain the shipped groups use;
-  none resolvable → exit 1). `--json` is not offered: the object is the only output shape.
+- **Common reviewer input.** `--repo <owner/name>` (default: the resolution chain the shipped groups
+  use; none resolvable → exit 1). Internal `ci-produce` does not resolve ambient repository state: its
+  trusted workflow must pass required `--repository <owner/name>`, which is bound into the manifest.
+  `--json` is not offered: the object is the only output shape.
 - **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql);
   every list read paginates and reports its scanned count on stderr. The evidence-upload
   endpoint sits outside §11's porcelain scope exactly as `ui evidence`'s attachment tier states.
@@ -260,10 +264,12 @@ default path; this verb selects only a declared localhost exception.
 {"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"<reviewer scratch>/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"<reviewer scratch>/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0}}]}
 ```
 
-Paths are outputs, never inputs. The operation reads the declaration from the repository default
-branch; resolves exactly one successful completed `pull_request_target` run with matching workflow,
-repository, PR association, and full live head; resolves exactly one successful named check and one
-artifact whose `expired` field is present, boolean, and false. GitHub's authoritative REST OpenAPI
+Paths are outputs, never inputs. The operation resolves the repository default branch to one exact
+commit, reads the declaration from that commit, and admits only a successful completed
+`pull_request_target` run whose `head_sha` is that same authority revision. The matching workflow,
+repository, and PR number plus full live head must occur together in one GitHub association row; two
+independent association lists cannot be combined. It then resolves exactly one successful named check
+and one artifact whose `expired` field is present, boolean, and false. GitHub's authoritative REST OpenAPI
 `Artifact` schema makes `expired` required,
 types it as boolean, and defines it as whether the artifact has expired
 ([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
@@ -278,8 +284,9 @@ and manifest hash. The artifact allowlist excludes that receipt, but the receipt
 itself: `post` re-downloads the selected artifact and byte-compares the members.
 
 There is no empty successful answer. An accepted artifact containing an uncaught page error is
-materialized with its receipt and exits `13` on stderr instead of printing the success object. The
-caller can therefore post the proven red render as FAIL.
+materialized with its receipt and exits `13` without printing a success object. Its stderr refusal
+then prints one `materialized capture <surface>: <path>` row for every validated PNG, so the caller
+can inspect those exact pixels before posting the proven red render as FAIL.
 
 **Exit status**
 
@@ -290,7 +297,7 @@ caller can therefore post the proven red render as FAIL.
 | `4` | default-branch declaration, artifact manifest, producer binding, members, surface cardinality, or receipt materialization schema is malformed |
 | `7` | PR is proven absent or closed — zero scope |
 | `10` | `--harness` or `--out` is off vocabulary |
-| `11` | repo/default branch/declaration/run/check/artifact/download/scratch read is UNKNOWN; zero, ambiguous, pending, failed, cancelled, action-required, missing-expiry, expired, or otherwise untrusted producer evidence is unresolved |
+| `11` | repo/default branch/exact authority revision/declaration/run/check/artifact/download/scratch read is UNKNOWN; zero, ambiguous, pending, failed, cancelled, action-required, missing-expiry, expired, or otherwise untrusted producer evidence is unresolved |
 | `12` | live head moved before materialization |
 | `13` | the accepted, integrity-validated set was materialized and its manifest records an uncaught page error — proven red-render/FAIL ground, never CANT-SEE |
 | `15` | capture bytes fail PNG, hash, or dimension validation |
@@ -305,19 +312,20 @@ caller can therefore post the proven red render as FAIL.
 | `review-ui fetch: PR #<n> not found...` / `is closed...` | `7` | refusal |
 | `review-ui fetch: cannot read PR #<n>: <reason>.` | `11` | refusal |
 | `review-ui fetch: cannot resolve the repository default branch (<reason>).` | `11` | refusal |
+| `review-ui fetch: cannot resolve the exact default-branch authority revision (<reason>).` | `11` | refusal |
 | `review-ui fetch: cannot read the governed localhost declaration (<reason>).` | `11` | refusal |
-| `review-ui fetch: .github/review-ui-localhost-harnesses.json is absent on <branch>.` | `4` | refusal |
+| `review-ui fetch: .github/review-ui-localhost-harnesses.json is absent at authority revision <sha>.` | `4` | refusal |
 | `review-ui fetch: the governed localhost declaration is malformed (<reason>).` | `4` | refusal |
 | `review-ui fetch: trusted CI evidence is unresolved (<reason>).` | `11` | refusal |
 | `review-ui fetch: the CI capture manifest is malformed (<reason>).` | `4` | refusal |
-| `review-ui fetch: the artifact manifest does not bind the governed producer, declaration, repository, PR, and exact live head.` | `4` | refusal |
+| `review-ui fetch: the artifact manifest does not bind the governed producer, exact authority revision, declaration, repository, PR, and exact live head.` | `4` | refusal |
 | `review-ui fetch: the artifact contains a surface more than once.` | `4` | refusal |
 | `review-ui fetch: the artifact does not contain every declared <harness> surface/state exactly once.` | `4` | refusal |
 | `review-ui fetch: capture <surface> is unreadable (<reason>).` | `11` | refusal |
 | `review-ui fetch: capture <surface> fails its hash or dimensions.` | `15` | refusal |
 | `review-ui fetch: PR #<n> moved from <old> to <new> before the evidence set was accepted.` | `12` | refusal |
 | `review-ui fetch: cannot materialize reviewer-owned evidence scratch (<reason>).` | `11` | refusal |
-| `review-ui fetch: the accepted artifact records <n> uncaught page error(s); the materialized render is red and must be posted as FAIL.` | `13` | refusal |
+| `review-ui fetch: the accepted artifact records <n> uncaught page error(s); the materialized render is red and must be posted as FAIL.` followed by one `review-ui fetch: materialized capture <surface>: <path>` row per capture | `13` | refusal |
 
 **Scope** — one open PR, one default-branch declaration, one declared harness, one
 exact-head run/check/artifact tuple, and one output set. A missing or closed PR is `7`; no harnesses,
@@ -337,6 +345,8 @@ With the same validated tuple and one recorded uncaught page error:
 ```
 $ fabrika review-ui fetch 7190 --harness tuval --out judged
 review-ui fetch: the accepted artifact records 1 uncaught page error(s); the materialized render is red and must be posted as FAIL.
+review-ui fetch: materialized capture tuval-cockpit-desktop: <reviewer scratch>/captures/tuval-cockpit-desktop.png
+review-ui fetch: materialized capture tuval-cockpit-mobile: <reviewer scratch>/captures/tuval-cockpit-mobile.png
 $ echo $?
 13
 ```
@@ -354,7 +364,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika review-ui ci-produce <pr> --head <40-hex> --harness <id> --run-id <positive-int> --repository <owner/name> --subject-root <exact-head-checkout> --authority-root <trusted-base-checkout> --output-dir <trusted-host-output>
+fabrika review-ui ci-produce <pr> --head <40-hex> --authority-head <40-hex> --harness <id> --run-id <positive-int> --repository <owner/name> --subject-root <exact-head-checkout> --authority-root <trusted-base-checkout> --output-dir <trusted-host-output>
 ```
 
 **Inputs**
@@ -363,6 +373,7 @@ fabrika review-ui ci-produce <pr> --head <40-hex> --harness <id> --run-id <posit
 |---|---|---|---|---|
 | `<pr>` | positive integer | yes | — | the pull-request number this verb acts on |
 | `--head` | lowercase 40-hex string | yes | — | the exact lowercase 40-character PR head checked out as the subject |
+| `--authority-head` | lowercase 40-hex string | yes | — | the exact default-branch authority revision checked out as trusted code |
 | `--harness` | governed kebab-case id | yes | — | the localhost harness id from the trusted declaration |
 | `--run-id` | positive integer | yes | — | the positive GitHub Actions run id bound into the manifest |
 | `--repository` | `owner/name` string | yes | — | the owner/name repository identity bound into the manifest |
@@ -370,7 +381,9 @@ fabrika review-ui ci-produce <pr> --head <40-hex> --harness <id> --run-id <posit
 | `--authority-root` | absolute path string | yes | — | the trusted base checkout containing the declaration and producer |
 | `--output-dir` | absolute path string | yes | — | the trusted host directory where captures and manifest are written |
 
-This is an internal workflow interface, not a reviewer import. Image construction pins pnpm 10.27.0
+This is an internal workflow interface, not a reviewer import. Its required `--repository` is a
+workflow-supplied identity and intentionally does not implement the reviewer-facing optional `--repo`
+resolution contract. Image construction pins pnpm 10.27.0
 and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user. The
 version-matched behavior is grounded in pnpm's
 [`fetch` implementation](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/plugin-commands-installation/src/fetch.ts#L47-L76),
@@ -393,7 +406,9 @@ sidecar receives the authority checkout read-only and the prepared capture outpu
 validates those captures and alone writes the manifest.
 
 **Output** — machine channel. On complete success, one newline-terminated version-1 CI manifest.
-There is no empty successful answer. The object binds the declaration and producer identity, then one
+There is no empty successful answer. The producer first proves both the subject and authority
+checkouts against their full supplied heads. The object binds the declaration and producer identity,
+including that authority revision, then one
 capture row per declared surface. The three-row error bound truncates every row to 1,024 UTF-16 code
 units and orders all uncaught `pageerror` rows before `console.error` rows, so console noise cannot
 hide the hard-fail kind in `more`. A successful journey whose later browser capture records an
@@ -402,7 +417,7 @@ fetch` materializes that evidence and returns the red-render `13`. A governed jo
 itself fails stops before server start, capture, manifest creation, and artifact upload:
 
 ```
-{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
+{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
 ```
 
 **Exit status**
@@ -412,9 +427,9 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `0` | the complete manifest was written to the trusted output and printed |
 | `1` | invocation/flag parsing failed, including a missing required input or invalid PR operand |
 | `4` | the governed declaration is malformed |
-| `10` | head, run id, repository, harness, non-absolute root operand, or output placement is off vocabulary |
+| `10` | subject head, authority head, run id, repository, harness, non-absolute root operand, or output placement is off vocabulary |
 | `11` | declaration, fixture, output, image, workspace, server, sidecar, capture, or manifest write is unreadable/UNKNOWN |
-| `12` | the subject checkout is not the named full head |
+| `12` | the subject or authority checkout is not its named full head |
 | `13` | the governed browser journey command failed; no server, capture, manifest, or artifact is produced |
 | `15` | a captured PNG is invalid |
 
@@ -424,6 +439,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 |---|---|---|
 | `review-ui ci-produce: <n> is not a pull-request number.` | `1` | usage error |
 | `review-ui ci-produce: --head must be one full lowercase 40-character SHA.` | `10` | refusal |
+| `review-ui ci-produce: --authority-head must be one full lowercase 40-character SHA.` | `10` | refusal |
 | `review-ui ci-produce: --run-id must be a positive Actions run id.` | `10` | refusal |
 | `review-ui ci-produce: --repository must be one owner/name.` | `10` | refusal |
 | `review-ui ci-produce: --subject-root, --authority-root, and --output-dir must be absolute paths.` | `10` | refusal |
@@ -431,6 +447,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the governed declaration is malformed (<reason>).` | `4` | refusal |
 | `review-ui ci-produce: "<id>" is not a governed localhost harness.` | `10` | refusal |
 | `review-ui ci-produce: the subject checkout is <read>, not <expected>.` | `12` | refusal |
+| `review-ui ci-produce: the authority checkout is <read>, not <expected>.` | `12` | refusal |
 | `review-ui ci-produce: --output-dir must be outside both the subject and authority checkouts.` | `10` | refusal |
 | `review-ui ci-produce: cannot create the trusted fixture.` | `11` | refusal |
 | `review-ui ci-produce: the trusted output cannot be cleared.` | `11` | refusal |
@@ -447,8 +464,8 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: <surface> is not a valid capture (<reason>).` | `15` | refusal |
 | `review-ui ci-produce: cannot write the capture manifest (<reason>).` | `11` | refusal |
 
-**Scope** — exactly one PR identity, one governed harness, and every surface in that
-harness declaration. Zero scope is impossible: an unknown harness refuses on `10`, and a positive
+**Scope** — exactly one PR identity, one exact authority revision, one governed harness, and every
+surface in that harness declaration. Zero scope is impossible: an unknown harness refuses on `10`, and a positive
 harness with zero surfaces makes the declaration malformed on `4`. The trusted output must be
 outside both checkouts.
 
@@ -458,14 +475,14 @@ Given a fixed authority declaration whose digest is 64 `a` characters and one fi
 whose digest is 64 `b` characters, the literal workflow call and stdout are:
 
 ```
-$ fabrika review-ui ci-produce 7190 --head 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c --harness tuval --run-id 42 --repository kamp-us/phoenix --subject-root /github/workspace/subject --authority-root /github/workspace/authority --output-dir /github/workspace/review-ui-localhost-tuval
-{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
+$ fabrika review-ui ci-produce 7190 --head 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c --authority-head cccccccccccccccccccccccccccccccccccccccc --harness tuval --run-id 42 --repository kamp-us/phoenix --subject-root /github/workspace/subject --authority-root /github/workspace/authority --output-dir /github/workspace/review-ui-localhost-tuval
+{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
 ```
 
 **Grounding**
 
 - ADR 0165 amendment — base-owned producer authority and runtime isolation for PR-controlled execution.
-- GitHub `pull_request_target` event reference — the privileged base context must not execute PR code directly.
+- GitHub `pull_request_target` event reference — the privileged base context must not execute PR code directly; the run's `head_sha` is bound to the exact default-branch revision read by the consumer.
 - #7306 — the exact head, positive manifest, bounded browser errors, and no reviewer-local execution are acceptance constraints.
 
 See [the localhost evidence runbook](../../../../ops/runbook-review-ui-localhost-evidence.md) for the

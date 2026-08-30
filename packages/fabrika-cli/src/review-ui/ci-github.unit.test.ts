@@ -8,6 +8,7 @@ import {
 import type {LocalhostHarnessDeclaration} from "./localhost-evidence.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
+const AUTHORITY_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const harness: LocalhostHarnessDeclaration = {
 	id: "tuval",
 	workflow: ".github/workflows/review-ui-localhost-evidence.yml",
@@ -29,51 +30,49 @@ const run = (overrides: Partial<RunRecord> = {}): RunRecord => ({
 	event: "pull_request_target",
 	path: harness.workflow,
 	repository: "kamp-us/phoenix",
+	authorityHead: AUTHORITY_HEAD,
 	checkSuiteId: 7,
-	pullNumbers: [7190],
-	pullHeads: [HEAD],
+	pulls: [{number: 7190, head: HEAD}],
 	...overrides,
 });
 
+const select = (runs: readonly RunRecord[]) =>
+	selectTrustedRun(runs, "kamp-us/phoenix", 7190, HEAD, AUTHORITY_HEAD, harness);
+
 describe("trusted localhost Actions provenance", () => {
-	it("selects one successful run only when workflow, event, repository, PR and exact head agree", () => {
-		assert.strictEqual(
-			selectTrustedRun([run()], "kamp-us/phoenix", 7190, HEAD, harness)._tag,
-			"Ok",
-		);
+	it("selects one successful run only when authority, workflow, event, repository and one PR/head association agree", () => {
+		assert.strictEqual(select([run()])._tag, "Ok");
 		for (const candidate of [
 			run({path: ".github/workflows/other.yml"}),
 			run({event: "pull_request"}),
 			run({repository: "attacker/fork"}),
-			run({pullNumbers: [1]}),
-			run({pullHeads: [HEAD.slice(0, 8)]}),
+			run({authorityHead: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}),
+			run({pulls: [{number: 1, head: HEAD}]}),
+			run({pulls: [{number: 7190, head: HEAD.slice(0, 8)}]}),
+			run({
+				pulls: [
+					{number: 7190, head: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+					{number: 1, head: HEAD},
+				],
+			}),
 		]) {
-			assert.strictEqual(
-				selectTrustedRun([candidate], "kamp-us/phoenix", 7190, HEAD, harness)._tag,
-				"Failure",
-			);
+			assert.strictEqual(select([candidate])._tag, "Failure");
 		}
 	});
 
 	it("refuses ambiguous, pending, failed, cancelled and action-required runs", () => {
-		assert.strictEqual(
-			selectTrustedRun([run(), run({id: 43})], "kamp-us/phoenix", 7190, HEAD, harness)._tag,
-			"Failure",
-		);
+		assert.strictEqual(select([run(), run({id: 43})])._tag, "Failure");
 		for (const candidate of [
 			run({status: "queued", conclusion: null}),
 			run({conclusion: "failure"}),
 			run({conclusion: "cancelled"}),
 			run({conclusion: "action_required"}),
 		]) {
-			assert.strictEqual(
-				selectTrustedRun([candidate], "kamp-us/phoenix", 7190, HEAD, harness)._tag,
-				"Failure",
-			);
+			assert.strictEqual(select([candidate])._tag, "Failure");
 		}
 	});
 
-	it("requires exactly one successful check and one non-expired artifact", () => {
+	it("requires exactly one correctly named successful check and one non-expired artifact", () => {
 		assert.strictEqual(
 			selectUniqueCompleted(
 				[{id: 1, name: harness.check, status: "completed", conclusion: "success"}],
@@ -82,14 +81,16 @@ describe("trusted localhost Actions provenance", () => {
 			)._tag,
 			"Ok",
 		);
-		assert.strictEqual(
-			selectUniqueCompleted(
-				[{id: 1, name: harness.check, status: "completed", conclusion: "failure"}],
-				harness.check,
-				"check",
-			)._tag,
-			"Failure",
-		);
+		for (const checks of [
+			[{id: 1, name: "wrong check", status: "completed", conclusion: "success"}],
+			[
+				{id: 1, name: harness.check, status: "completed", conclusion: "success"},
+				{id: 2, name: harness.check, status: "completed", conclusion: "success"},
+			],
+			[{id: 1, name: harness.check, status: "completed", conclusion: "failure"}],
+		]) {
+			assert.strictEqual(selectUniqueCompleted(checks, harness.check, "check")._tag, "Failure");
+		}
 		assert.strictEqual(
 			selectUniqueCompleted(
 				[

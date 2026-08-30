@@ -164,6 +164,12 @@ The consequence is one verdict grammar and one fail-closed namespace. Preview ev
 CI evidence both produce the ordinary SHA-bound `review-ui` marker. Missing, pending, stale,
 invalid, or untrusted evidence produces no marker and no bypass.
 
+An uncaught browser `pageerror` from a sanctioned, readable render is mandatory FAIL ground. It is an
+objective runtime failure independently of the six visual prohibitions, not a holistic or taste-based
+judgment. To that extent, this amendment supersedes the original blocking-scope statement that the
+gate FAILs only on those six prohibitions: the blocking set is those six visual rules plus a proven
+uncaught `pageerror`; the conservative/advisory rule for aesthetic judgment is unchanged.
+
 This amendment also supersedes this record's earlier statement that evidence upload is display-only
 and may fail without affecting the verdict. The shipped post contract makes verified upload a
 precondition of marker creation (#3925), for preview and CI evidence alike.

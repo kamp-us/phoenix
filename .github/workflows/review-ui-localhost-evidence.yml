@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      AUTHORITY_HEAD: ${{ github.sha }}
       SUBJECT_HEAD: ${{ github.event.pull_request.head.sha }}
       SUBJECT_PR: ${{ github.event.pull_request.number }}
       TARGET_REPOSITORY: ${{ github.repository }}
@@ -61,7 +62,17 @@ jobs:
         run: |
           set -uo pipefail
           pnpm install --frozen-lockfile
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::trusted producer install failed with exit $status"
+            exit "$status"
+          fi
           pnpm exec playwright install --with-deps chromium
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::trusted browser install failed with exit $status"
+            exit "$status"
+          fi
 
       - name: Run isolated subject and package trusted captures
         working-directory: authority
@@ -70,6 +81,7 @@ jobs:
           node packages/fabrika-cli/src/bin.ts --skip-infer review-ui ci-produce \
             "$SUBJECT_PR" \
             --head "$SUBJECT_HEAD" \
+            --authority-head "$AUTHORITY_HEAD" \
             --harness tuval \
             --run-id "$GITHUB_RUN_ID" \
             --repository "$TARGET_REPOSITORY" \

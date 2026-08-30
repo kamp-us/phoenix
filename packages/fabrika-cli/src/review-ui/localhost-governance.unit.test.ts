@@ -33,6 +33,12 @@ describe("localhost evidence governance floor", () => {
 			assert.include(workflow, `name: ${harness.check}`);
 			assert.include(workflow, `name: ${harness.artifact}`);
 			assert.include(workflow, `--harness ${harness.id}`);
+			assert.include(workflow, '--authority-head "$AUTHORITY_HEAD"');
+			assert.include(workflow, "pnpm install --frozen-lockfile\n          status=$?");
+			assert.include(
+				workflow,
+				"pnpm exec playwright install --with-deps chromium\n          status=$?",
+			);
 			assert.include(workflow, "persist-credentials: false");
 			assert.notInclude(workflow, "working-directory: subject");
 			assert.notInclude(workflow, "GITHUB_TOKEN:");
@@ -176,6 +182,7 @@ describe("localhost evidence governance floor", () => {
 			"kebab-case reviewer-owned capture-set name",
 			"the target owner/name (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
 			"the exact lowercase 40-character PR head checked out as the subject",
+			"the exact default-branch authority revision checked out as trusted code",
 			"the localhost harness id from the trusted declaration",
 			"the positive GitHub Actions run id bound into the manifest",
 			"the owner/name repository identity bound into the manifest",

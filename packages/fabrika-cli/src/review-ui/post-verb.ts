@@ -31,7 +31,7 @@ import {normalizeForReadback} from "../report/compose.ts";
 import {emitAdvisory, readAdvisory, reviewedHeadLine} from "../review/advisory.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
-import {defaultBranch, readFileAtRef} from "../ship/github.ts";
+import {commitShaAtRef, defaultBranch, readFileAtRef} from "../ship/github.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	emit as emitMarker,
@@ -444,7 +444,18 @@ export const runPost = (
 					`${VERB}: cannot revalidate CI provenance because the default branch is unreadable (${base.reason}).`,
 				);
 			}
-			const authority = yield* readFileAtRef(repo, LOCALHOST_DECLARATIONS_PATH, base.value);
+			const authorityRevision = yield* commitShaAtRef(repo, base.value);
+			if (authorityRevision._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot revalidate CI provenance because the exact default-branch authority revision is unreadable (${authorityRevision.reason}).`,
+				);
+			}
+			const authority = yield* readFileAtRef(
+				repo,
+				LOCALHOST_DECLARATIONS_PATH,
+				authorityRevision.value,
+			);
 			if (authority._tag !== "Present") {
 				return refuse(
 					authority._tag === "Absent" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
@@ -465,7 +476,8 @@ export const runPost = (
 				ciManifest.producer.workflow !== harness.workflow ||
 				ciManifest.producer.check !== harness.check ||
 				ciManifest.producer.event !== harness.event ||
-				ciManifest.producer.artifact !== harness.artifact
+				ciManifest.producer.artifact !== harness.artifact ||
+				ciManifest.producer.authorityHead !== authorityRevision.value
 			) {
 				return refuse(
 					MALFORMED_DOCUMENT,
@@ -476,6 +488,7 @@ export const runPost = (
 				repo,
 				pr,
 				live,
+				authorityRevision.value,
 				harness,
 				options.tmpRoot,
 			);
@@ -489,7 +502,8 @@ export const runPost = (
 				bundle.value.runId !== receipt.runId ||
 				bundle.value.checkId !== receipt.checkId ||
 				bundle.value.artifactId !== receipt.artifactId ||
-				bundle.value.artifactName !== harness.artifact
+				bundle.value.artifactName !== harness.artifact ||
+				bundle.value.authorityHead !== authorityRevision.value
 			) {
 				return refuse(
 					MALFORMED_DOCUMENT,

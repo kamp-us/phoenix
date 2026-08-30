@@ -11,8 +11,10 @@ import {CI_PROVENANCE_RECEIPT, declarationDigest} from "./localhost-evidence.ts"
 import {sha256Hex} from "./manifest.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
+const AUTHORITY_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const PULL = /GET .*\/repos\/o\/r\/pulls\/7190\b/;
 const REPO = /GET .*\/repos\/o\/r$/;
+const AUTHORITY_COMMIT = /GET .*\/repos\/o\/r\/commits\/main$/;
 const AUTHORITY = /GET .*\/repos\/o\/r\/contents\/\.github\/review-ui-localhost-harnesses\.json/;
 const PNG = Uint8Array.from([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 5, 0,
@@ -79,6 +81,7 @@ const ciManifest = (
 			event: "pull_request_target",
 			runId: 42,
 			artifact: "review-ui-localhost-tuval",
+			authorityHead: AUTHORITY_HEAD,
 		},
 		captures: [
 			{
@@ -105,6 +108,7 @@ describe("runCiFetch", () => {
 		const script: ReadonlyArray<Scripted> = [
 			[once(PULL), pull()],
 			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+			[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
 			[AUTHORITY, {status: 200, body: authority}],
 			[PULL, pull()],
 		];
@@ -125,6 +129,7 @@ describe("runCiFetch", () => {
 								checkId: 51,
 								artifactId: 61,
 								artifactName: "review-ui-localhost-tuval",
+								authorityHead: AUTHORITY_HEAD,
 								directory: artifact,
 								manifestText: manifest,
 							}),
@@ -150,6 +155,20 @@ describe("runCiFetch", () => {
 	});
 
 	it("covers producer, head, schema, integrity, error-evidence, and artifact refusals", async () => {
+		const producerMismatchCases = (
+			[
+				["workflow", ".github/workflows/other.yml"],
+				["check", "wrong check"],
+				["event", "pull_request"],
+				["runId", 43],
+				["artifact", "wrong-artifact"],
+				["authorityHead", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+			] as const
+		).map(([field, value]) => ({
+			name: `producer ${field} mismatch`,
+			manifest: ciManifest({producer: {...JSON.parse(ciManifest()).producer, [field]: value}}),
+			expected: 4,
+		}));
 		const cases: ReadonlyArray<{
 			name: string;
 			manifest: string;
@@ -159,11 +178,7 @@ describe("runCiFetch", () => {
 			bundleFailure?: string;
 			materializedOnRefusal?: boolean;
 		}> = [
-			{
-				name: "run mismatch",
-				manifest: ciManifest({producer: {...JSON.parse(ciManifest()).producer, runId: 43}}),
-				expected: 4,
-			},
+			...producerMismatchCases,
 			{
 				name: "moved head",
 				manifest: ciManifest(),
@@ -171,9 +186,19 @@ describe("runCiFetch", () => {
 				expected: 12,
 			},
 			{
-				name: "capture tampering",
+				name: "invalid capture bytes",
 				manifest: ciManifest(),
 				bytes: new TextEncoder().encode("tampered"),
+				expected: 15,
+			},
+			{
+				name: "valid PNG hash mismatch",
+				manifest: ciManifest({}, {sha256: "b".repeat(64)}),
+				expected: 15,
+			},
+			{
+				name: "valid PNG dimension mismatch",
+				manifest: ciManifest({}, {width: 1279}),
 				expected: 15,
 			},
 			{
@@ -215,6 +240,7 @@ describe("runCiFetch", () => {
 			const seams = fakeSeams([
 				[once(PULL), pull()],
 				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
 				[AUTHORITY, {status: 200, body: authority}],
 				[PULL, pull(row.secondHead ?? HEAD)],
 			]);
@@ -235,6 +261,7 @@ describe("runCiFetch", () => {
 											checkId: 51,
 											artifactId: 61,
 											artifactName: "review-ui-localhost-tuval",
+											authorityHead: AUTHORITY_HEAD,
 											directory: artifact,
 											manifestText: row.manifest,
 										})
@@ -252,6 +279,9 @@ describe("runCiFetch", () => {
 			);
 			if (row.materializedOnRefusal === true) {
 				expect(await readFile(receiptPath, "utf8"), row.name).toContain('"runId":42');
+				expect(outcome.stderr.join("\n"), row.name).toContain(
+					join(root, "fabrika-review-ui/7190-03135b91/judged/captures/desktop.png"),
+				);
 			} else {
 				await expect(readFile(receiptPath, "utf8"), row.name).rejects.toThrow();
 			}

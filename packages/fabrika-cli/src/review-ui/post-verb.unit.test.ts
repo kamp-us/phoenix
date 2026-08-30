@@ -42,6 +42,7 @@ import {runPost, type UploadLeg} from "./post-verb.ts";
 import {classifyProbe} from "./upload-leg.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
+const AUTHORITY_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 const SET_DIR = "/tmp/fabrika-review-ui/4321-03135b91/judged";
 const CAPTURE_PATH = `${SET_DIR}/pano.png`;
@@ -127,6 +128,7 @@ const ciManifest = (overrides: Partial<CiCaptureManifest> = {}): CiCaptureManife
 		event: "pull_request_target",
 		runId: 42,
 		artifact: "review-ui-localhost-tuval",
+		authorityHead: AUTHORITY_HEAD,
 	},
 	captures: [
 		{
@@ -197,6 +199,7 @@ const world = (overrides: FsShape = {}): Layer.Layer<FileSystem.FileSystem | Pat
 
 const PULL = /GET .*\/repos\/o\/r\/pulls\/4321\b/;
 const REPO = /GET .*\/repos\/o\/r$/;
+const AUTHORITY_COMMIT = /GET .*\/repos\/o\/r\/commits\/main$/;
 const AUTHORITY = /GET .*\/repos\/o\/r\/contents\/\.github\/review-ui-localhost-harnesses\.json/;
 const USER = /GET .*api\.github\.com\/user$/;
 const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4321\/comments/;
@@ -268,6 +271,7 @@ const options = {
 				checkId: 9,
 				artifactId: 10,
 				artifactName: "review-ui-localhost-tuval",
+				authorityHead: AUTHORITY_HEAD,
 				directory: REMOTE_CI_DIR,
 				manifestText: JSON.stringify(ciManifest()),
 			}),
@@ -281,6 +285,7 @@ const fetchedBundle = (manifestText: string) => () =>
 			checkId: 9,
 			artifactId: 10,
 			artifactName: "review-ui-localhost-tuval",
+			authorityHead: AUTHORITY_HEAD,
 			directory: REMOTE_CI_DIR,
 			manifestText,
 		}),
@@ -338,6 +343,7 @@ describe("runPost", () => {
 		const script: ReadonlyArray<Scripted> = [
 			[once(PULL), pull()],
 			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+			[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
 			[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
 			[PULL, pull()],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -429,6 +435,7 @@ describe("runPost", () => {
 				[
 					[once(PULL), pull()],
 					[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+					[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
 					[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
 				],
 				{},
@@ -470,6 +477,7 @@ describe("runPost", () => {
 			[
 				[once(PULL), pull()],
 				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
 				[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
 			],
 			{polarity: "PASS", fetchCiBundle: fetchedBundle(document)},
@@ -511,6 +519,7 @@ describe("runPost", () => {
 			[
 				[once(PULL), pull()],
 				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
 				[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
 			],
 			{},

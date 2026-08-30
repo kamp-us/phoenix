@@ -160,6 +160,7 @@ export interface CiProducerIdentity {
 	readonly event: "pull_request_target";
 	readonly runId: number;
 	readonly artifact: string;
+	readonly authorityHead: string;
 }
 
 export const CI_PROVENANCE_RECEIPT = "validated-provenance.json";
@@ -307,7 +308,9 @@ export const parseCiCaptureManifest = (text: string): CiManifestRead => {
 		typeof parsed.producer.runId !== "number" ||
 		!Number.isInteger(parsed.producer.runId) ||
 		parsed.producer.runId <= 0 ||
-		typeof parsed.producer.artifact !== "string"
+		typeof parsed.producer.artifact !== "string" ||
+		typeof parsed.producer.authorityHead !== "string" ||
+		!FULL_SHA.test(parsed.producer.authorityHead)
 	) {
 		return {_tag: "Malformed", reason: "the CI provenance is incomplete or off vocabulary"};
 	}
@@ -339,6 +342,7 @@ export const parseCiCaptureManifest = (text: string): CiManifestRead => {
 				event: "pull_request_target",
 				runId: parsed.producer.runId,
 				artifact: parsed.producer.artifact,
+				authorityHead: parsed.producer.authorityHead,
 			},
 			captures: captures as readonly CaptureEntry[],
 		},

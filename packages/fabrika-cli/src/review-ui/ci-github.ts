@@ -7,6 +7,11 @@ import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {isRecord} from "../io/json.ts";
 import type {LocalhostHarnessDeclaration} from "./localhost-evidence.ts";
 
+export interface PullAssociation {
+	readonly number: number;
+	readonly head: string;
+}
+
 export interface RunRecord {
 	readonly id: number;
 	readonly status: string;
@@ -14,9 +19,9 @@ export interface RunRecord {
 	readonly event: string;
 	readonly path: string;
 	readonly repository: string;
+	readonly authorityHead: string;
 	readonly checkSuiteId: number;
-	readonly pullNumbers: readonly number[];
-	readonly pullHeads: readonly string[];
+	readonly pulls: readonly PullAssociation[];
 }
 
 export interface CiIdentity {
@@ -24,6 +29,7 @@ export interface CiIdentity {
 	readonly checkId: number;
 	readonly artifactId: number;
 	readonly artifactName: string;
+	readonly authorityHead: string;
 }
 
 export interface CiBundle extends CiIdentity {
@@ -50,12 +56,24 @@ const runsForWorkflow = (repo: string, workflow: string): Shell<Attempt<readonly
 						typeof value.id !== "number" ||
 						typeof value.status !== "string" ||
 						typeof value.event !== "string" ||
+						typeof value.head_sha !== "string" ||
 						typeof value.check_suite_id !== "number" ||
 						!Array.isArray(value.pull_requests)
 					) {
 						return fail("GitHub answered 200 but one workflow run is incomplete");
 					}
-					const pulls = value.pull_requests.filter(isRecord);
+					const pulls: PullAssociation[] = [];
+					for (const pull of value.pull_requests) {
+						if (
+							!isRecord(pull) ||
+							typeof pull.number !== "number" ||
+							!isRecord(pull.head) ||
+							typeof pull.head.sha !== "string"
+						) {
+							return fail("GitHub answered 200 but one workflow run association is incomplete");
+						}
+						pulls.push({number: pull.number, head: pull.head.sha});
+					}
 					runs.push({
 						id: value.id,
 						status: value.status,
@@ -63,13 +81,9 @@ const runsForWorkflow = (repo: string, workflow: string): Shell<Attempt<readonly
 						event: value.event,
 						path: stringOf(value.path),
 						repository: isRecord(value.repository) ? stringOf(value.repository.full_name) : "",
+						authorityHead: value.head_sha,
 						checkSuiteId: value.check_suite_id,
-						pullNumbers: pulls.flatMap((pull) =>
-							typeof pull.number === "number" ? [pull.number] : [],
-						),
-						pullHeads: pulls.flatMap((pull) =>
-							isRecord(pull.head) && typeof pull.head.sha === "string" ? [pull.head.sha] : [],
-						),
+						pulls,
 					});
 				}
 				return ok(runs);
@@ -82,6 +96,7 @@ export const selectTrustedRun = (
 	repo: string,
 	pr: number,
 	head: string,
+	authorityHead: string,
 	harness: LocalhostHarnessDeclaration,
 ): Attempt<RunRecord> => {
 	const associated = runs.filter(
@@ -89,8 +104,8 @@ export const selectTrustedRun = (
 			run.path === harness.workflow &&
 			run.event === harness.event &&
 			run.repository === repo &&
-			run.pullNumbers.includes(pr) &&
-			run.pullHeads.includes(head),
+			run.authorityHead === authorityHead &&
+			run.pulls.some((pull) => pull.number === pr && pull.head === head),
 	);
 	if (associated.length !== 1) {
 		return fail(
@@ -150,12 +165,13 @@ export const resolveCiIdentity = (
 	repo: string,
 	pr: number,
 	head: string,
+	authorityHead: string,
 	harness: LocalhostHarnessDeclaration,
 ): Shell<Attempt<CiIdentity>> =>
 	Effect.gen(function* () {
 		const listed = yield* runsForWorkflow(repo, harness.workflow);
 		if (listed._tag === "Failure") return listed;
-		const selectedRun = selectTrustedRun(listed.value, repo, pr, head, harness);
+		const selectedRun = selectTrustedRun(listed.value, repo, pr, head, authorityHead, harness);
 		if (selectedRun._tag === "Failure") return selectedRun;
 		const run = selectedRun.value;
 
@@ -192,6 +208,7 @@ export const resolveCiIdentity = (
 			checkId: check.id,
 			artifactId: artifact.id,
 			artifactName: harness.artifact,
+			authorityHead: run.authorityHead,
 		});
 	});
 
@@ -199,11 +216,12 @@ export const fetchCiBundle = (
 	repo: string,
 	pr: number,
 	head: string,
+	authorityHead: string,
 	harness: LocalhostHarnessDeclaration,
 	scratchRoot: string,
 ): Shell<Attempt<CiBundle>> =>
 	Effect.gen(function* () {
-		const identity = yield* resolveCiIdentity(repo, pr, head, harness);
+		const identity = yield* resolveCiIdentity(repo, pr, head, authorityHead, harness);
 		if (identity._tag === "Failure") return identity;
 		const token = yield* ambientToken;
 		if (token._tag === "Failure") return token;

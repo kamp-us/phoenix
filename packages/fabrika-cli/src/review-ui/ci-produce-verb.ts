@@ -53,6 +53,7 @@ export const isolatedEnvironment = (
 export interface CiProduceOptions {
 	readonly pr: number;
 	readonly head: string;
+	readonly authorityHead: string;
 	readonly harness: string;
 	readonly runId: number;
 	readonly repository: string;
@@ -304,6 +305,12 @@ export const runCiProduce = (
 		if (!FULL_SHA.test(options.head)) {
 			return refuse(OFF_VOCABULARY, `${VERB}: --head must be one full lowercase 40-character SHA.`);
 		}
+		if (!FULL_SHA.test(options.authorityHead)) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --authority-head must be one full lowercase 40-character SHA.`,
+			);
+		}
 		if (!Number.isInteger(options.runId) || options.runId <= 0) {
 			return refuse(OFF_VOCABULARY, `${VERB}: --run-id must be a positive Actions run id.`);
 		}
@@ -348,13 +355,32 @@ export const runCiProduce = (
 		}
 
 		const env = isolatedEnvironment(options.env);
-		const checkedOut = yield* ran("git", ["rev-parse", "HEAD"], options.subjectRoot, env, 30);
-		const checkedOutHead =
-			checkedOut._tag === "Ran" && checkedOut.exitCode === 0 ? decode(checkedOut.stdout) : "";
-		if (checkedOutHead !== options.head) {
+		const subjectCheckout = yield* ran("git", ["rev-parse", "HEAD"], options.subjectRoot, env, 30);
+		const subjectHead =
+			subjectCheckout._tag === "Ran" && subjectCheckout.exitCode === 0
+				? decode(subjectCheckout.stdout)
+				: "";
+		if (subjectHead !== options.head) {
 			return refuse(
 				STALE_TREE,
-				`${VERB}: the subject checkout is ${checkedOutHead || "unreadable"}, not ${options.head}.`,
+				`${VERB}: the subject checkout is ${subjectHead || "unreadable"}, not ${options.head}.`,
+			);
+		}
+		const authorityCheckout = yield* ran(
+			"git",
+			["rev-parse", "HEAD"],
+			options.authorityRoot,
+			env,
+			30,
+		);
+		const authorityHead =
+			authorityCheckout._tag === "Ran" && authorityCheckout.exitCode === 0
+				? decode(authorityCheckout.stdout)
+				: "";
+		if (authorityHead !== options.authorityHead) {
+			return refuse(
+				STALE_TREE,
+				`${VERB}: the authority checkout is ${authorityHead || "unreadable"}, not ${options.authorityHead}.`,
 			);
 		}
 
@@ -613,6 +639,7 @@ export const runCiProduce = (
 					event: harness.event,
 					runId: options.runId,
 					artifact: harness.artifact,
+					authorityHead: options.authorityHead,
 				},
 				captures: validatedCaptures.map(([capture, dimensions]) => ({
 					surface: capture.surface,

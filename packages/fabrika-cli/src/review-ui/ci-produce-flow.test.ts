@@ -4,11 +4,12 @@ import {join} from "node:path";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {CapturedSurface} from "../capture/capture.ts";
-import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
 import {readSidecarCaptures, runCiProduce} from "./ci-produce-verb.ts";
 import {LOCALHOST_DECLARATIONS_PATH, parseCiCaptureManifest} from "./localhost-evidence.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
+const AUTHORITY_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const PNG = Uint8Array.from([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 5, 0,
 	0, 0, 3, 32,
@@ -88,6 +89,7 @@ describe("trusted localhost producer flow", () => {
 		const base = {
 			pr: 7190,
 			head: HEAD,
+			authorityHead: AUTHORITY_HEAD,
 			harness: "tuval",
 			runId: 42,
 			repository: "kamp-us/phoenix",
@@ -108,6 +110,47 @@ describe("trusted localhost producer flow", () => {
 		expect(seams.calls).toEqual([]);
 	});
 
+	it("refuses subject and authority checkout head mismatches before producer execution", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ci-produce-head-refusal-"));
+		const authorityRoot = join(root, "authority");
+		const subjectRoot = join(root, "subject");
+		const outputDir = join(root, "output");
+		await mkdir(join(authorityRoot, ".github"), {recursive: true});
+		await mkdir(subjectRoot, {recursive: true});
+		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+		const wrong = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+		for (const script of [
+			[[/^git rev-parse HEAD$/, okOut(wrong)]],
+			[
+				[once(/^git rev-parse HEAD$/), okOut(HEAD)],
+				[/^git rev-parse HEAD$/, okOut(wrong)],
+			],
+		] satisfies ReadonlyArray<ReadonlyArray<Scripted>>) {
+			const seams = fakeSeams(script);
+			const outcome = await Effect.runPromise(
+				Effect.provide(
+					runCiProduce({
+						pr: 7190,
+						head: HEAD,
+						authorityHead: AUTHORITY_HEAD,
+						harness: "tuval",
+						runId: 42,
+						repository: "kamp-us/phoenix",
+						subjectRoot,
+						authorityRoot,
+						outputDir,
+						env: {PATH: "/bin"},
+						capture,
+					}),
+					seams.layer,
+				),
+			);
+			expect(outcome.code).toBe(12);
+			expect(seams.calls.some((call) => call.startsWith("docker "))).toBe(false);
+		}
+		await rm(root, {recursive: true, force: true});
+	});
+
 	it("stops a failed governed journey before server preparation, capture, and manifest", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-produce-failed-journey-"));
 		const authorityRoot = join(root, "authority");
@@ -118,7 +161,8 @@ describe("trusted localhost producer flow", () => {
 		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
 
 		const seams = fakeSeams([
-			[/^git rev-parse HEAD$/, okOut(HEAD)],
+			[once(/^git rev-parse HEAD$/), okOut(HEAD)],
+			[/^git rev-parse HEAD$/, okOut(AUTHORITY_HEAD)],
 			[/^docker build /, okOut("")],
 			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
 			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
@@ -133,6 +177,7 @@ describe("trusted localhost producer flow", () => {
 				runCiProduce({
 					pr: 7190,
 					head: HEAD,
+					authorityHead: AUTHORITY_HEAD,
 					harness: "tuval",
 					runId: 42,
 					repository: "kamp-us/phoenix",
@@ -162,7 +207,8 @@ describe("trusted localhost producer flow", () => {
 		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
 
 		const script: ReadonlyArray<Scripted> = [
-			[/^git rev-parse HEAD$/, okOut(HEAD)],
+			[once(/^git rev-parse HEAD$/), okOut(HEAD)],
+			[/^git rev-parse HEAD$/, okOut(AUTHORITY_HEAD)],
 			[/^docker build /, okOut("")],
 			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
 			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
@@ -182,6 +228,7 @@ describe("trusted localhost producer flow", () => {
 				runCiProduce({
 					pr: 7190,
 					head: HEAD,
+					authorityHead: AUTHORITY_HEAD,
 					harness: "tuval",
 					runId: 42,
 					repository: "kamp-us/phoenix",
@@ -199,6 +246,7 @@ describe("trusted localhost producer flow", () => {
 		const parsed = parseCiCaptureManifest(await readFile(join(outputDir, "manifest.json"), "utf8"));
 		expect(parsed._tag).toBe("Manifest");
 		if (parsed._tag === "Manifest") {
+			expect(parsed.value.producer.authorityHead).toBe(AUTHORITY_HEAD);
 			expect(parsed.value.captures[0]?.pageErrors).toEqual({
 				rows: [
 					{kind: "pageerror", text: "TypeError: boom"},

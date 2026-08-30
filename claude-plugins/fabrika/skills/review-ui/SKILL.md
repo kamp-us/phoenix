@@ -101,12 +101,14 @@ fabrika review-ui fetch $pr_number --harness tuval --out judged
 Read the exact inputs, producer-resolution refusals, provenance receipt, output, and exit mapping at
 `fabrika wire doc-section --heading "review-ui fetch" < <skill-base>/contract.md`. **Do not execute
 the PR locally and do not consume builder captures.** Exit `13` is the one red-render result: the
-validated set is materialized, its uncaught page errors are proven FAIL ground, and you post the
-ordinary FAIL with `--evidence judged`. It is never CANT-SEE. Exit `12` means the head moved and the
-fetch must be retried at the new head. Other producer/evidence refusals leave the namespace empty and
-route CANT-SEE through `review-ui note`; never post from an unresolved set. After a successful fetch,
-inspect the pixels and recorded page/console errors, then post the ordinary verdict with `--evidence
-judged`. `post` re-downloads the governed live-head artifact and byte-compares the manifest and every
+validated set is materialized, stderr names every capture path for independent pixel inspection, its
+uncaught page errors are proven FAIL ground, and you post the ordinary FAIL with `--evidence judged`.
+It is never CANT-SEE. Exit `12` means the head moved and the fetch must be retried at the new head.
+Exit `1` or `10` is a caller error to correct before retrying; exit `7` means the subject is absent or
+closed and ends this review without a marker. Evidence refusals `4`, `11`, or `15` on an open,
+unmoved subject leave the namespace empty and route CANT-SEE through `review-ui note`; never post from
+an unresolved set. After a successful fetch, inspect the pixels and recorded page/console errors,
+then post the ordinary verdict with `--evidence judged`. `post` re-downloads the governed live-head artifact and byte-compares the manifest and every
 capture before it accepts the fetched set. The operator sequence, including the Tuval #7190 recovery,
 lives in
 [`ops/runbook-review-ui-localhost-evidence.md`](../../../../ops/runbook-review-ui-localhost-evidence.md).

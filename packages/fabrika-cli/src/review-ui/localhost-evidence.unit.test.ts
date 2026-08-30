@@ -7,6 +7,7 @@ import {
 } from "./localhost-evidence.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
+const AUTHORITY_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const HASH = "a".repeat(64);
 
 const declarations = {
@@ -42,6 +43,7 @@ const manifest = {
 		event: "pull_request_target",
 		runId: 42,
 		artifact: "review-ui-localhost-tuval",
+		authorityHead: AUTHORITY_HEAD,
 	},
 	captures: [
 		{
@@ -85,6 +87,15 @@ describe("localhost evidence authority", () => {
 		);
 		assert.strictEqual(
 			parseCiCaptureManifest(JSON.stringify({...manifest, source: "builder"}))._tag,
+			"Malformed",
+		);
+		assert.strictEqual(
+			parseCiCaptureManifest(
+				JSON.stringify({
+					...manifest,
+					producer: {...manifest.producer, authorityHead: HEAD.slice(0, 8)},
+				}),
+			)._tag,
 			"Malformed",
 		);
 	});
