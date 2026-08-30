@@ -5,7 +5,7 @@
 import {cleanup} from "@testing-library/react";
 import {afterAll, afterEach} from "vitest";
 
-// Manti's Zag/Floating UI layers use these two browser APIs, which jsdom does not
+// Manti's Zag/Floating UI layers use these browser APIs, which jsdom does not
 // provide. These are behaviourally inert shims with the right interface, enough to
 // let the client test tier mount those components.
 if (typeof globalThis.PointerEvent === "undefined") {
@@ -27,6 +27,10 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 		disconnect() {}
 	}
 	globalThis.ResizeObserver = ResizeObserverShim;
+}
+
+if (typeof Element.prototype.scrollIntoView === "undefined") {
+	Element.prototype.scrollIntoView = () => undefined;
 }
 
 afterEach(cleanup);

@@ -31,6 +31,8 @@ export {Popover} from "./Popover";
 export type {ReportButtonProps, ReportOutcome} from "./ReportButton";
 export {ReportButton} from "./ReportButton";
 export {ScrollArea} from "./ScrollArea";
+export type {SelectItem, SelectProps, SelectVariant} from "./Select";
+export {Select} from "./Select";
 export {Switch} from "./Switch";
 export {Tabs} from "./Tabs";
 export {ToggleGroup} from "./ToggleGroup";
