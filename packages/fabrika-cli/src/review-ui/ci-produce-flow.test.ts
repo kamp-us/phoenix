@@ -47,7 +47,12 @@ const capture = (_url: string, outputDir: string) =>
 					localPath: path,
 					fileName: "desktop.png",
 					pngBytes: PNG,
-					pageErrors: [{kind: "pageerror", text: "TypeError: boom"}],
+					pageErrors: [
+						{kind: "console.error", text: "console one"},
+						{kind: "console.error", text: "console two"},
+						{kind: "console.error", text: "console three"},
+						{kind: "pageerror", text: "TypeError: boom"},
+					],
 				},
 			];
 		},
@@ -124,9 +129,14 @@ describe("trusted localhost producer flow", () => {
 		const parsed = parseCiCaptureManifest(await readFile(join(outputDir, "manifest.json"), "utf8"));
 		expect(parsed._tag).toBe("Manifest");
 		if (parsed._tag === "Manifest") {
-			expect(parsed.value.captures[0]?.pageErrors.rows).toEqual([
-				{kind: "pageerror", text: "TypeError: boom"},
-			]);
+			expect(parsed.value.captures[0]?.pageErrors).toEqual({
+				rows: [
+					{kind: "pageerror", text: "TypeError: boom"},
+					{kind: "console.error", text: "console one"},
+					{kind: "console.error", text: "console two"},
+				],
+				more: 1,
+			});
 		}
 		const subjectRun = seams.calls.find((call) =>
 			call.startsWith("docker run --rm --network none"),

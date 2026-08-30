@@ -161,7 +161,8 @@ mount. Docker documents the read-only root flag, capability drop, security optio
 and mount modes used by those exact arguments
 ([Docker run reference](https://docs.docker.com/reference/cli/docker/container/run/),
 [Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/)). The trusted host alone
-drives capture and writes bounded `pageerror` and `console.error` evidence. The transport producer
+drives capture and writes bounded `pageerror` and `console.error` evidence, ordering uncaught page
+errors before console errors so the bounded overflow cannot hide the hard-fail kind. The transport producer
 still publishes a manifest containing an uncaught page error so the consumer can materialize the
 pixels, then `review-ui fetch` returns the proven red-render `13`; the error can never become a clean
 PASS. The versioned manifest binds repository, PR, exact head, declaration digest,

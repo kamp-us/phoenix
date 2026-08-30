@@ -161,6 +161,17 @@ const createFixture = (): Promise<string> =>
 		return root;
 	});
 
+export const boundedBrowserErrors = (
+	errors: CapturedSurface["pageErrors"],
+): {readonly rows: CapturedSurface["pageErrors"]; readonly more: number} => {
+	const pageErrors = errors.filter((error) => error.kind === "pageerror");
+	const consoleErrors = errors.filter((error) => error.kind === "console.error");
+	return {
+		rows: [...pageErrors, ...consoleErrors].slice(0, PAGE_ERROR_CAP),
+		more: Math.max(0, errors.length - PAGE_ERROR_CAP),
+	};
+};
+
 const captureLocalhost = (
 	url: string,
 	outputDir: string,
@@ -455,10 +466,7 @@ export const runCiProduce = (
 					width: dimensions.width,
 					height: dimensions.height,
 					sha256: sha256Hex(capture.pngBytes),
-					pageErrors: {
-						rows: capture.pageErrors.slice(0, PAGE_ERROR_CAP),
-						more: Math.max(0, capture.pageErrors.length - PAGE_ERROR_CAP),
-					},
+					pageErrors: boundedBrowserErrors(capture.pageErrors),
 					errorCoverage: {pageerror: "readable" as const, consoleError: "readable" as const},
 				})),
 			};

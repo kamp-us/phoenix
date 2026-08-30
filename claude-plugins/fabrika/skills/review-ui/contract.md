@@ -366,8 +366,10 @@ trusted host alone drives Playwright and writes captures and the manifest.
 
 **Output** — machine channel. On complete success, one newline-terminated version-1 CI manifest.
 There is no empty successful answer. The object binds the declaration and producer identity, then one
-capture row per declared surface. A capture row containing an uncaught page error is still a
-successful transport output so the workflow uploads it; `review-ui fetch` materializes that evidence
+capture row per declared surface. The three-row error bound orders all uncaught `pageerror` rows
+before `console.error` rows, so console noise cannot hide the hard-fail kind in `more`. A capture row
+containing an uncaught page error is still a successful transport output so the workflow uploads it;
+`review-ui fetch` materializes that evidence
 and returns the red-render `13`:
 
 ```
