@@ -15,7 +15,7 @@
  *   proof is exhausted pagination — a terminal page carrying no `rel="next"` link.
  *
  * REST throughout, with three carves recorded in ADR 0315: {@link graphqlRead} for review threads
- * and their mutations, the auto-merge mutation, and `openPullsClosing` in `./pulls.ts`. Issue
+ * and their mutations, the auto-merge mutation, and `pullsClosing` in `./pulls.ts`. Issue
  * *search* stays REST — this org's Projects-classic integration errors GraphQL search out.
  *
  * The credential is an argument to every leg *of this module*, never something a leg resolves —
@@ -556,9 +556,9 @@ export const pagedEnvelope = (
  * The one non-REST leg, and it is a carve rather than a default (ADR 0315).
  *
  * Three things need it and nothing else may: review-thread resolution state with the reply and
- * resolve mutations, `enablePullRequestAutoMerge`, and `openPullsClosing` in `./pulls.ts`. Issue
+ * resolve mutations, `enablePullRequestAutoMerge`, and `pullsClosing` in `./pulls.ts`. Issue
  * *search* stays REST — what this org's Projects-classic integration errors out is the GraphQL
- * search connection, not the `repository(...){issue(number:)}` node `openPullsClosing` reaches.
+ * search connection, not the `repository(...){issue(number:)}` node `pullsClosing` reaches.
  */
 export const graphqlRead = (
 	token: string,

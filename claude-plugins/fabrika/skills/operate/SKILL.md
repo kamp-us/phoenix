@@ -430,10 +430,21 @@ Relay its answer, never your own reading of the PR:
 
 The escalation bound is the machine's, not yours: **you never count re-folds and never decide the
 wait is over**. Record what the read said and re-fold; the cell escalates when its own budget is
-spent — to `human:queue-stall`, a park of its own that no recipe clears, so a spent queue wait is
-never swept as a control-plane approval. That budget is separate from the lane's build/review
-retries, so a long dwell cannot cost a later repair round. A non-zero exit from `reconcile` is
-UNKNOWN — end `STOPPED` naming the code, record nothing.
+spent — to `human:queue-stall`, a park of its own, so a spent queue wait is never swept as a
+control-plane approval. That budget is separate from the lane's build/review retries, so a long
+dwell cannot cost a later repair round. A non-zero exit from `reconcile` is UNKNOWN — end `STOPPED`
+naming the code, record nothing.
+
+**That park is recipe-clearable, and clearing it grants the read the resumed lane needs.**
+`recipe unpark` proves the queue actually moved — it relays `ship reconcile`'s own answer, and only
+`landed` or `ejected` clears — then records the `UNBLOCKED` and the waits it buys as **one** event,
+so the lane comes back one conclusive read below its budget instead of falling straight into the
+same stall. `unresolved` is exit `13`: the queue has not moved and the park stands, correctly. The
+scheduled `heal-ci` sweep is the natural caller, so a stall self-heals on the next pass without a
+person. A human clear stays the fallback for when that proving read cannot run, and it is
+`lane transition <lane> UNBLOCKED --grant-wait <n>` — never `build clear`, which buys a repair round
+and never a longer wait (ADR
+[0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)).
 
 **A lane booted before this cell existed cannot reach it, and will refuse the shipper's ordinary
 `QUEUED` instead.** `lane open` copies the template in at boot and never overwrites it, so a machine
@@ -826,6 +837,11 @@ happened.
 node <fabrika> recipe unpark <lane-key> --task <task>
 ```
 
+The table it keys on holds five rows today: `human:cp-approval`, `human:queue-stall`, and `blocked`
+carrying one of `worktree-holds-branch`, `campaign-paused` or `spawn-dead`. Reading which one
+matched is the verb's answer, not a list you maintain here — the rows live in
+[`packages/fabrika-cli/src/recipe/parks.ts`](../../../../packages/fabrika-cli/src/recipe/parks.ts).
+
 Exit `0` cleared it — the verb recorded the `UNBLOCKED` itself and re-read the fold to prove the task
 left the park, so your next move is the state that re-fold reads, not a park comment. Exit `12` is
 the park's cause outside the table, `13` is a known cause whose clearing condition is not met yet,
@@ -843,7 +859,10 @@ still the human's `UNBLOCKED`, and the two land in either order. Without a `CLEA
 `UNBLOCKED` is **refused** on exit `36`: the resume would restore the state and not the budget, so
 every guarded route out falls straight back to the park (ADR
 [0312](../../../../.decisions/0312-event-anchored-retry-budget.md)). Read that code as "the grant
-has not been recorded yet", never as an event to retype). One park class names its
+has not been recorded yet", never as an event to retype — and read *which* grant off the refusal,
+because the same code covers `human:queue-stall`, where the missing budget is waits and the grant
+rides the resume itself as `--grant-wait <n>` rather than arriving as a separate `CLEARED`). One
+park class names its
 owner here, not off the spawn's
 report: **a wire defect on the driven issue's own body** — an acceptance-criteria heading a
 spawned shell fail-louds on, a criteria block that reads as no shape the verbs parse.

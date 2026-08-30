@@ -6,9 +6,9 @@ import {
 	getPullDiff,
 	getPullRequest,
 	listPullFiles,
-	openPullsClosing,
 	patchComment,
 	permissionFor,
+	pullsClosing,
 } from "./pulls.ts";
 
 /** The credential comes off the environment, so a scripted request never depends on a `gh` spawn. */
@@ -57,12 +57,12 @@ const page = (nodes: ReadonlyArray<Node>, endCursor: string | null = null): Http
 
 const run = (script: ReadonlyArray<readonly [RegExp, HttpReply]>, issue = 5751) => {
 	const {http, layer} = wired(script);
-	return Effect.runPromise(Effect.provide(openPullsClosing("kamp-us/phoenix", issue), layer)).then(
+	return Effect.runPromise(Effect.provide(pullsClosing("kamp-us/phoenix", issue), layer)).then(
 		(result) => ({result, http}),
 	);
 };
 
-describe("openPullsClosing", () => {
+describe("pullsClosing", () => {
 	it("returns the one PR declaring it closes the issue", async () => {
 		const {result} = await run([[GRAPHQL, page([pr(5803)])]]);
 
@@ -115,7 +115,7 @@ describe("openPullsClosing", () => {
 			[GRAPHQL, page([pr(5804)])],
 		]);
 		const result = await Effect.runPromise(
-			Effect.provide(openPullsClosing("kamp-us/phoenix", 5751), layer),
+			Effect.provide(pullsClosing("kamp-us/phoenix", 5751), layer),
 		);
 
 		expect(result).toEqual({
@@ -162,9 +162,7 @@ describe("openPullsClosing", () => {
 
 	it("refuses a repo that is not owner/name", async () => {
 		const {http, layer} = wired([[GRAPHQL, page([pr(5803)])]]);
-		const result = await Effect.runPromise(
-			Effect.provide(openPullsClosing("phoenix", 5751), layer),
-		);
+		const result = await Effect.runPromise(Effect.provide(pullsClosing("phoenix", 5751), layer));
 
 		expect(result._tag).toBe("Failure");
 		expect(http.calls).toEqual([]);

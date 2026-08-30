@@ -221,3 +221,46 @@ the driver-side handling rule. Until it lands, the exit side stays
 [#7237](https://github.com/kamp-us/phoenix/issues/7237)'s — no verb closes a `human:queue-stall` once
 the PR lands — and [#6717](https://github.com/kamp-us/phoenix/issues/6717) still asks separately what
 an `UNBLOCKED` grants after such a park.
+
+## Amendment — 2026-08-29: the stall is recipe-clearable, and the clear grants the read it needs
+
+Founder ruling, [2026-08-29](https://github.com/kamp-us/phoenix/issues/6717#issuecomment-5465855103),
+answering [#6717](https://github.com/kamp-us/phoenix/issues/6717). Nothing above is withdrawn; two
+sentences in it were wrong, and this note says how.
+
+**"A human clears it with `UNBLOCKED` like any other park; the lane resumes at `ship:queued` and a
+re-read decides it from there."** That reads as though ordinary waiting resumes, and it did not. The
+clear restored the state and not the budget, so the resumed lane got exactly one conclusive read
+before the next `WIP` fell straight back into the same park — and unlike the retry axis, nothing was
+loud about it, because that axis's `unbudgeted-resume` refusal keys on `errorFinals` and
+`human:queue-stall` carries no `type: "final"`.
+
+**And the closing line's "no verb closes a `human:queue-stall` once the PR lands"
+([#7237](https://github.com/kamp-us/phoenix/issues/7237)).** One does now.
+
+The founder's criterion was smoothness without a person, and the shape ruled is neither a longer
+budget nor a plainer sentence:
+
+- **`human:queue-stall` gets a row in the recipe table** (`recipe/parks.ts`, the ADR
+  [0339](0339-park-cause-may-stand-alone.md) framework), keyed on its leaf alone — a `WIP` carries
+  no park cause, and the leaf is what keeps it off the §CP row above.
+- **Its proving read is `ship reconcile`'s answer relayed** (ADR [0228](0228-scripts-relay-never-derive.md)),
+  never a second reading of the queue: `landed` and `ejected` clear, `unresolved` holds the park at
+  exit `13`, `parked` routes a human, and an unreadable answer is UNKNOWN and never a clear. No verb
+  in the tree can read the queue's own position, so the row turns on the two outcomes that exist.
+- **The clear grants**, and the grant rides the same recorded `UNBLOCKED` as a `waitGrant` on the
+  event line. One event both clears the park and buys the fresh conclusive read, so there is no bare
+  resume and no second line for anybody to forget. The fold stays a pure replay: the grant is read
+  off the log, never accumulated in context.
+- **The wait axis gets the refusal it was missing.** A resume back into a wait-guarded state whose
+  spent guard produced the park it is leaving, with the budget still spent, is refused with the log
+  unappended (exit `36`) — keyed on the wait counter and that state's own park pairing rather than on
+  `errorFinals`, which structurally cannot reach it.
+- **A human's fallback is `lane transition <lane> UNBLOCKED --grant-wait <n>`**, for when the proving
+  read cannot run. It is not `build clear`: that buys a repair round and never a longer wait.
+
+The scheduled `heal-ci` sweep is the natural caller, so a stall self-heals on the next pass. Three
+shapes were rejected with it: a `CLEARED`-style event on the wait axis (a second line to remember),
+accepting the one-shot and only fixing the prose (still spends a person per clear), and making the
+park an error final (a doorless final). [#7269](https://github.com/kamp-us/phoenix/issues/7269)'s
+elapsed-time floor is untouched — it is a different fix to a different half of this ADR.

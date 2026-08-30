@@ -30,6 +30,7 @@
 
 import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
+import type {PullScope} from "../io/pulls.ts";
 import {ROUTED_NAMESPACES} from "../review/classes.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
@@ -302,6 +303,11 @@ export interface PullFact {
 	readonly number: number;
 	readonly open: boolean;
 	/**
+	 * Whether it merged. Not derivable from {@link open}: a merged PR and a rejected one both read
+	 * closed, and the one park whose clearing case is a *landed* PR has to tell them apart (#6717).
+	 */
+	readonly merged: boolean;
+	/**
 	 * **Every** issue the body links, through the closing keywords or `Part of` — never the search
 	 * term. Plural because an epic tail links one issue per landed child plus the epic itself, and a
 	 * scalar field there can only ever report one of them (#6797).
@@ -315,7 +321,7 @@ export type PullTrace =
 	| {readonly _tag: "Many"; readonly prs: ReadonlyArray<number>};
 
 /**
- * The open PR tracing to this issue.
+ * The PR tracing to this issue, within the caller's scope.
  *
  * The search index only nominates; the trace is the body's own links, so a PR that merely mentions
  * the number in prose is not a proof of it. Several is its own answer — which one the lane owns is
@@ -325,14 +331,21 @@ export type PullTrace =
  * and "candidates were read and every one linked elsewhere" have different remedies, and a refusal
  * saying the first of a board that shows the second is false of the board (#6797).
  */
-export const tracePulls = (issue: number, facts: ReadonlyArray<PullFact>): PullTrace => {
-	const open = facts.filter((fact) => fact.open);
-	const matched = open.filter((fact) => fact.linkedIssues.includes(issue));
+export const tracePulls = (
+	issue: number,
+	facts: ReadonlyArray<PullFact>,
+	scope: PullScope = "open",
+): PullTrace => {
+	const counts = (fact: PullFact): boolean =>
+		fact.open || (scope === "open-or-merged" && fact.merged);
+	const live = facts.filter(counts);
+	const matched = live.filter((fact) => fact.linkedIssues.includes(issue));
 	const first = matched[0];
+	const noun = scope === "open" ? "open PR" : "open or merged PR";
 	if (first === undefined) {
-		if (facts.length === 0) return {_tag: "None", why: `no open PR links #${issue}`};
+		if (facts.length === 0) return {_tag: "None", why: `no ${noun} links #${issue}`};
 		const read = facts.map((fact) => `#${fact.number}`).join(", ");
-		return open.length === 0
+		return live.length === 0
 			? {
 					_tag: "None",
 					why: `read ${read} — every candidate has closed since it was nominated`,

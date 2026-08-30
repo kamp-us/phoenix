@@ -10,7 +10,11 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
+import {compileText} from "../lane/machine.ts";
 import {CODEOWNERS, ENV, files, HEAD, pull} from "../ship/fixtures.test-support.ts";
+import {ADDED} from "../ship/queue.ts";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
 	NOT_PARKED,
 	PARK_HOLDS,
@@ -24,6 +28,7 @@ import {
 	branchList,
 	campaignsTable,
 	closingPulls,
+	closingPullsIn,
 	httpError,
 	LANE,
 	LANE_BRANCH,
@@ -33,6 +38,7 @@ import {
 	laneTemplate,
 	nominatedPulls,
 	PARKED_AT_CP,
+	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
 	PARKED_ON_CAMPAIGN,
 	PARKED_ON_SPAWN,
@@ -451,6 +457,96 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 		);
 
 		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a queue stall clears when the queue moved, and grants (#6717)", () => {
+	const RULES = /^GET \S+\/repos\/o\/r\/rules\/branches\/main$/;
+	const SUBJECTS = /^GET \S+\/repos\/o\/r\/commits\?sha=main/;
+	const TIMELINE = /^GET \S+\/repos\/o\/r\/issues\/4321\/timeline\?/;
+	const QUEUE_GOVERNED: Scripted = [
+		RULES,
+		{status: 200, body: JSON.stringify([{type: "merge_queue"}])},
+	];
+
+	/** The log the run left behind, parsed through the fold's own reader rather than by hand. */
+	const parsed = (written: string | undefined) => {
+		const read = parseLog(written ?? "");
+		if (read._tag !== "Parsed") throw new Error(read.defects.join("; "));
+		return read.entries;
+	};
+
+	/** That same log replayed — the clear's whole claim is what the fold reads back off it. */
+	const refolded = (entries: ReadonlyArray<LogEntry>) => {
+		const compiled = compileText(laneTemplate());
+		if (compiled._tag !== "Compiled") throw new Error(compiled.defects.join("; "));
+		const fold = foldLog(compiled.lane, entries);
+		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+		return fold.states.issue;
+	};
+
+	it("clears on `landed` and buys the resumed lane one fresh conclusive read", async () => {
+		const fs = lane(PARKED_AT_QUEUE_STALL);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPullsIn({number: 4321, state: "MERGED"}))],
+				[PULL, reply(pull({merged: true, state: "closed"}))],
+			],
+			[QUEUE_GOVERNED],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:queue-stall",
+			clearance: "queue-moved",
+			mechanism: "queue-moved:#4321 landed",
+			current: "ship:queued",
+			waitGrant: 1,
+		});
+
+		const before = parsed(PARKED_AT_QUEUE_STALL);
+		const entries = parsed(fs.written.get(LOG));
+		expect(entries).toHaveLength(before.length + 1);
+		expect(entries.at(-1)).toMatchObject({event: "ISSUE.UNBLOCKED", waitGrant: 1});
+		expect(entries.filter((entry) => entry.event.endsWith("CLEARED"))).toEqual([]);
+
+		// The grant rides the log line, so the re-fold is a pure replay and reads the same twice.
+		for (const state of [refolded(entries), refolded(entries)]) {
+			expect(state).toMatchObject({
+				type: "ship:queued",
+				waits: WAIT_BUDGET,
+				maxWaits: WAIT_BUDGET + 1,
+			});
+		}
+	});
+
+	it("leaves the park standing at PARK_HOLDS on `unresolved`, log byte-identical", async () => {
+		const fs = lane(PARKED_AT_QUEUE_STALL);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull())],
+			],
+			[
+				QUEUE_GOVERNED,
+				[SUBJECTS, {status: 200, body: "[]"}],
+				[
+					TIMELINE,
+					{
+						status: 200,
+						body: JSON.stringify([{event: ADDED, created_at: "2026-08-29T10:00:00Z"}]),
+					},
+				],
+			],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/the merge queue to move this PR/);
 		expect(fs.written.size).toBe(0);
 	});
 });

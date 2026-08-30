@@ -29,7 +29,15 @@ const freshLane = (extra: Parameters<typeof fakeFs>[0] = {}) =>
 const run = (fs: ReturnType<typeof fakeFs>) =>
 	Effect.runPromise(
 		Effect.provide(
-			runTransition({root: ROOT, lane: "42", event: "WIP", task: null, cause: null, classes: []}),
+			runTransition({
+				root: ROOT,
+				lane: "42",
+				event: "WIP",
+				task: null,
+				cause: null,
+				classes: [],
+				waitGrant: null,
+			}),
 			fs.layer,
 		),
 	);

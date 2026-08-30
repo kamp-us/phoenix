@@ -21,7 +21,12 @@
  */
 
 /** The clearance read a recipe relays. One constructor per read, so a new recipe cannot be prose. */
-export type Clearance = "cp-approval" | "branch-free" | "campaign-active" | "spawn-clear";
+export type Clearance =
+	| "cp-approval"
+	| "branch-free"
+	| "campaign-active"
+	| "spawn-clear"
+	| "queue-moved";
 
 export interface ParkRecipe {
 	/** The lane leaf state this recipe clears. */
@@ -52,7 +57,17 @@ export interface ParkRecipe {
 }
 
 /**
- * The parks with a fixed fix today: one keyed by its leaf, three by their cause.
+ * Waits a `queue-moved` clear grants the resumed lane, on the line that clears the park.
+ *
+ * One, because one conclusive read is what a moved queue needs: `reconcile` already answered
+ * `landed` or `ejected`, so the resumed lane's next `WIP` is the read that records that outcome, not
+ * the start of another dwell. Granting the whole budget again would let a lane that keeps clearing
+ * on a stale answer wait forever.
+ */
+export const QUEUE_MOVED_GRANT = 1;
+
+/**
+ * The parks with a fixed fix today: two keyed by their leaf, three by their cause.
  *
  * `human:cp-approval`'s clearance is `ship cp-approval`'s own discharge table (ADR 0175), relayed
  * rather than re-derived — the §CP cardinality question has exactly one answer in this package and a
@@ -77,6 +92,16 @@ export interface ParkRecipe {
  * the residue ADR 0321 makes the driver's to clear, so a park whose obligations were discharged
  * clears on the first pass and one whose stranded claim needs a `build adopt` holds at exit 13,
  * which is where ADR 0295 puts it.
+ *
+ * `human:queue-stall` is #6717, and it is the second row keyed by its leaf alone: a `WIP` carries no
+ * park cause and `lane report` refuses one on any non-`BLOCKED` event, so the leaf is all there is
+ * to key on. It does not collide with the §CP row keyed on the same `null` because the leaves
+ * differ. Its clearance is `ship reconcile`'s answer relayed (ADR 0228) — no verb in this tree can
+ * read the queue's own position, so the row turns on the two outcomes that already exist, `landed`
+ * and `ejected`. It names no remedy for the same reason `campaign-active` does not: a recipe that
+ * "removed" this cause would be merging the PR. What it does instead is grant, because the founder's
+ * ruling on #6717 makes the recipe the grantor — the clear and the wait it buys ride one recorded
+ * event, so there is no bare `UNBLOCKED` into a spent budget for the fold to refuse.
  */
 export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 	{
@@ -85,6 +110,13 @@ export const KNOWN_PARKS: ReadonlyArray<ParkRecipe> = [
 		clearance: "cp-approval",
 		remedy: null,
 		waitingOn: "a control-plane approval at the PR's current head",
+	},
+	{
+		park: "human:queue-stall",
+		cause: null,
+		clearance: "queue-moved",
+		remedy: null,
+		waitingOn: "the merge queue to move this PR — to land it, or to eject it",
 	},
 	{
 		park: "blocked",

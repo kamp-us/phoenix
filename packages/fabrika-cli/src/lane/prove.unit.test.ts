@@ -329,7 +329,7 @@ describe("traceRange", () => {
 });
 
 describe("tracePulls", () => {
-	const linking = {number: 4318, open: true, linkedIssues: [4312]};
+	const linking = {number: 4318, open: true, merged: false, linkedIssues: [4312]};
 
 	it("traces the one open PR whose body links the issue", () => {
 		expect(tracePulls(4312, [linking])).toEqual({_tag: "One", pr: 4318});
@@ -341,26 +341,44 @@ describe("tracePulls", () => {
 	 * left the tail unproven against the epic it closes.
 	 */
 	it("proves the epic tail against the epic whose reference is last among N+1", () => {
-		const tail = {number: 6690, open: true, linkedIssues: [6642, 6643, 6648, 6629]};
+		const tail = {number: 6690, open: true, merged: false, linkedIssues: [6642, 6643, 6648, 6629]};
 		expect(tracePulls(6629, [tail])).toEqual({_tag: "One", pr: 6690});
 		expect(tracePulls(6642, [tail])).toEqual({_tag: "One", pr: 6690});
 	});
 
 	it("does not count a PR that only mentions the number, or one that has closed", () => {
-		expect(tracePulls(4312, [{number: 4400, open: true, linkedIssues: []}])).toMatchObject({
+		expect(
+			tracePulls(4312, [{number: 4400, open: true, merged: false, linkedIssues: []}]),
+		).toMatchObject({
 			_tag: "None",
 		});
 		expect(tracePulls(4312, [{...linking, open: false}])).toMatchObject({_tag: "None"});
 	});
 
+	/** #6717: the queue-stall recipe's clearing case is a landed PR, which is closed. */
+	it("counts a merged PR only at open-or-merged scope, and never a rejected one", () => {
+		const landed = {...linking, open: false, merged: true};
+		expect(tracePulls(4312, [landed], "open-or-merged")).toEqual({_tag: "One", pr: 4318});
+		expect(tracePulls(4312, [landed])).toMatchObject({_tag: "None"});
+		expect(tracePulls(4312, [{...linking, open: false}], "open-or-merged")).toEqual({
+			_tag: "None",
+			why: "read #4318 — every candidate has closed since it was nominated",
+		});
+	});
+
 	it("keeps several linking PRs as their own answer rather than picking the first", () => {
-		const trace = tracePulls(4312, [linking, {number: 4319, open: true, linkedIssues: [4312]}]);
+		const trace = tracePulls(4312, [
+			linking,
+			{number: 4319, open: true, merged: false, linkedIssues: [4312]},
+		]);
 		expect(trace).toEqual({_tag: "Many", prs: [4318, 4319]});
 	});
 
 	it("tells a candidate that was read and discarded from one that was never nominated", () => {
 		const nothing = tracePulls(4312, []);
-		const read = tracePulls(4312, [{number: 4400, open: true, linkedIssues: [4000]}]);
+		const read = tracePulls(4312, [
+			{number: 4400, open: true, merged: false, linkedIssues: [4000]},
+		]);
 		const closed = tracePulls(4312, [{...linking, open: false}]);
 		expect(nothing).toEqual({_tag: "None", why: "no open PR links #4312"});
 		expect(read).toEqual({_tag: "None", why: "read #4400 — no candidate's body links #4312"});
