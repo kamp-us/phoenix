@@ -39,6 +39,7 @@ const attached: AttachedLiveSession = {
 			status: "complete",
 		},
 	],
+	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 8,
 	connection: "connected",
 	ownership: "exclusive",
@@ -65,6 +66,31 @@ describe("ChatPane", () => {
 		expect(view.container.querySelector(".chat-pane.kp-surface")).toBeTruthy();
 		expect(view.container.querySelectorAll(".transcript-entry.kp-card")).toHaveLength(2);
 		expect(screen.getByRole("button", {name: "Gönder"}).getAttribute("data-scope")).toBe("button");
+	});
+
+	it("distinguishes attached archive loading from ownership verification", () => {
+		const onLoadOlder = vi.fn();
+		const withArchive: AttachedLiveSession = {
+			...attached,
+			archive: {_tag: "more", hasMore: true, cursor: "cursor-one"},
+		};
+		render(
+			<ChatPane
+				selected={selected}
+				connection="attached"
+				session={withArchive}
+				historyLoading
+				onLoadOlder={onLoadOlder}
+				onClose={vi.fn()}
+				onSend={async () => ({ok: true, message: "onaylandı"})}
+			/>,
+		);
+		expect(screen.getByText("Canlı", {exact: true})).toBeTruthy();
+		expect(screen.getByText("Oturum bağlı; eski konuşma arşivden alınıyor.")).toBeTruthy();
+		expect(screen.queryByText("Oturum sahipliği doğrulanıyor.")).toBeNull();
+		expect(
+			(screen.getByRole("button", {name: "Geçmiş yükleniyor"}) as HTMLButtonElement).disabled,
+		).toBe(true);
 	});
 
 	it("clears a draft before a different session identity can submit it", async () => {

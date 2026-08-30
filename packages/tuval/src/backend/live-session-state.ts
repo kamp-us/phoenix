@@ -28,6 +28,7 @@ import type {
 	LiveSessionEvent,
 	LiveSessionView,
 	LiveTranscriptEntry,
+	LoadOlderTranscriptOutcome,
 	OpenLiveSessionRequest,
 	PromptLiveSessionOutcome,
 	PromptLiveSessionRequest,
@@ -36,6 +37,7 @@ import type {
 	SetThinkingLiveSessionRequest,
 	SteerLiveSessionRequest,
 } from "../shared/live-session.js";
+import type {TranscriptArchiveSource} from "./coding-agent-pi-service.js";
 import {resilienceDiagnostic} from "./resilience.js";
 
 const EVENT_HISTORY_LIMIT = 500;
@@ -52,6 +54,7 @@ interface Attachment {
 	snapshot: SessionSnapshot;
 	transcript: Array<LiveTranscriptEntry>;
 	readonly toolCallBuffers: Map<string, string>;
+	readonly archive: LiveSessionView["archive"];
 	disconnectedReason?: string;
 	leaseReleased: boolean;
 }
@@ -99,6 +102,7 @@ export interface LiveSessionStateOptions {
 	readonly makeAcknowledgementDeadline?: (timeoutMs: number) => AcknowledgementDeadline;
 	readonly onDisconnected?: () => void;
 	readonly onSessionSubscriptionBound?: (sessionId: string) => void;
+	readonly transcriptArchive?: TranscriptArchiveSource;
 }
 
 interface PendingAttachment {
@@ -154,6 +158,7 @@ export interface LiveSessionState {
 		signal?: AbortSignal,
 	) => Promise<ControlLiveSessionOutcome>;
 	readonly release: (checkpoint?: LiveSelectionCheckpoint) => Promise<ReleaseLiveSessionOutcome>;
+	readonly loadOlder: (cursor: string) => Promise<LoadOlderTranscriptOutcome>;
 	readonly eventsAfter: (sequence?: number) => ReadonlyArray<LiveSessionEvent>;
 	readonly subscribe: (listener: Listener) => Unsubscribe;
 	readonly dispose: () => Promise<void>;
@@ -500,6 +505,34 @@ export class PiLiveSessionState implements LiveSessionState {
 		signal?: AbortSignal,
 	): Promise<ControlLiveSessionOutcome> =>
 		this.#correlateControl({command: "set-thinking", ...request}, immediateCheckpoint, signal);
+
+	loadOlder = async (cursor: string): Promise<LoadOlderTranscriptOutcome> => {
+		const attachment = this.#attachment;
+		if (attachment === undefined) {
+			return {
+				_tag: "refused",
+				code: "no-attachment",
+				reason: "No live session is attached",
+			};
+		}
+		const archive = this.#options.transcriptArchive;
+		if (archive === undefined) {
+			return {
+				_tag: "refused",
+				code: "protocol",
+				reason: "The attached Pi transport does not expose transcript archives",
+			};
+		}
+		const outcome = await archive.loadOlder(cursor);
+		if (outcome._tag === "loaded" && outcome.sessionId !== attachment.snapshot.id) {
+			return {
+				_tag: "refused",
+				code: "stale-cursor",
+				reason: "Transcript archive cursor belongs to a different attached session",
+			};
+		}
+		return outcome;
+	};
 
 	release = (
 		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
@@ -1142,6 +1175,10 @@ export class PiLiveSessionState implements LiveSessionState {
 			snapshot,
 			transcript: snapshot.transcript.map(entryOf),
 			toolCallBuffers: new Map(),
+			archive: this.#options.transcriptArchive?.archiveState(snapshot.id, snapshot.transcript) ?? {
+				_tag: "complete",
+				hasMore: false,
+			},
 			unsubscribes: [],
 			leaseReleased: false,
 		};
@@ -1459,6 +1496,7 @@ export class PiLiveSessionState implements LiveSessionState {
 				attachment.disconnectedReason !== undefined,
 			),
 			transcript: [...attachment.transcript],
+			archive: attachment.archive,
 			lastEventSequence: sequence,
 			controls: this.#controlsOf(attachment),
 		};

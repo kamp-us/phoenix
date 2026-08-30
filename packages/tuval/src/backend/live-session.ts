@@ -9,6 +9,7 @@ import type {
 	LiveSessionControlCommand,
 	LiveSessionEvent,
 	LiveSessionView,
+	LoadOlderTranscriptOutcome,
 	OpenLiveSessionRequest,
 	PromptLiveSessionOutcome,
 	PromptLiveSessionRequest,
@@ -17,6 +18,7 @@ import type {
 	SetThinkingLiveSessionRequest,
 	SteerLiveSessionRequest,
 } from "../shared/live-session.js";
+import type {TranscriptArchiveSource} from "./coding-agent-pi-service.js";
 import {
 	type LiveSelectionCheckpoint,
 	type LiveSessionState,
@@ -65,6 +67,7 @@ export interface LiveSessionService {
 	readonly release: (
 		checkpoint?: LiveSelectionCheckpoint,
 	) => Effect.Effect<ReleaseLiveSessionOutcome>;
+	readonly loadOlder: (cursor: string) => Effect.Effect<LoadOlderTranscriptOutcome>;
 	readonly eventsAfter: (sequence?: number) => Effect.Effect<ReadonlyArray<LiveSessionEvent>>;
 	readonly events: (sequence?: number) => Stream.Stream<LiveSessionEvent>;
 	readonly dispose: () => Effect.Effect<void, LiveSessionAdapterError>;
@@ -181,6 +184,20 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 			state.setThinking(request, signal),
 		),
 	),
+	loadOlder: Effect.fn("LiveSession.loadOlder")((cursor) =>
+		Effect.tryPromise({
+			try: () => state.loadOlder(cursor),
+			catch: (cause) => new LiveSessionAdapterError({cause}),
+		}).pipe(
+			Effect.catch(() =>
+				Effect.succeed({
+					_tag: "refused" as const,
+					code: "protocol" as const,
+					reason: "The live-session adapter failed while loading transcript history",
+				}),
+			),
+		),
+	),
 	release: Effect.fn("LiveSession.release")((checkpoint) => {
 		const sessionId = state.current()?.sessionId ?? null;
 		return Effect.tryPromise({
@@ -266,6 +283,7 @@ export class PiLiveSession implements LiveSessionService {
 	readonly setThinking = (request: SetThinkingLiveSessionRequest) =>
 		this.#service.setThinking(request);
 	readonly release = (checkpoint?: LiveSelectionCheckpoint) => this.#service.release(checkpoint);
+	readonly loadOlder = (cursor: string) => this.#service.loadOlder(cursor);
 	readonly eventsAfter = (sequence?: number) => this.#service.eventsAfter(sequence);
 	readonly events = (sequence?: number) => this.#service.events(sequence);
 	readonly dispose = () => this.#service.dispose();
@@ -374,6 +392,7 @@ class ReconnectingLiveSession implements LiveSessionService {
 	readonly setModel = (request: SetModelLiveSessionRequest) => this.#service.setModel(request);
 	readonly setThinking = (request: SetThinkingLiveSessionRequest) =>
 		this.#service.setThinking(request);
+	readonly loadOlder = (cursor: string) => this.#service.loadOlder(cursor);
 	readonly release = (checkpoint?: LiveSelectionCheckpoint) =>
 		this.#service.release(checkpoint).pipe(
 			Effect.tap((outcome) =>
@@ -463,8 +482,13 @@ export const makeResilientPiLiveSession = Effect.fn("LiveSession.resilientConnec
 ) {
 	const reconnects = yield* Queue.dropping<void>(1);
 	const service = new ReconnectingLiveSession();
+	const transcriptArchive =
+		"archiveState" in transportFactory && "loadOlder" in transportFactory
+			? (transportFactory as ByteTransportFactory & TranscriptArchiveSource)
+			: undefined;
 	const stateOptions: LiveSessionStateOptions = {
 		...options,
+		...(transcriptArchive === undefined ? {} : {transcriptArchive}),
 		onDisconnected: () => {
 			options.onDisconnected?.();
 			Queue.offerUnsafe(reconnects, undefined);
@@ -523,6 +547,7 @@ export const makeDurableLiveSession = (
 		setModel: service.setModel,
 		setThinking: service.setThinking,
 		release: () => service.release(durableCheckpoint),
+		loadOlder: service.loadOlder,
 		eventsAfter: service.eventsAfter,
 		events: service.events,
 		dispose: service.dispose,
@@ -618,6 +643,13 @@ export const makeUnavailableLiveSession = (): LiveSessionService => ({
 	),
 	release: Effect.fn("LiveSession.release")(() =>
 		Effect.succeed({_tag: "released", sessionId: null}),
+	),
+	loadOlder: Effect.fn("LiveSession.loadOlder")(() =>
+		Effect.succeed({
+			_tag: "refused",
+			code: "no-attachment",
+			reason: "No live session is attached",
+		}),
 	),
 	eventsAfter: Effect.fn("LiveSession.eventsAfter")(() => Effect.succeed([])),
 	events: () => Stream.empty,

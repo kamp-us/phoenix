@@ -962,6 +962,15 @@ kbd {
 	scrollbar-color: var(--border-strong) transparent;
 }
 
+.transcript-archive {
+	display: grid;
+	justify-items: center;
+	gap: var(--space-2);
+	color: var(--text-muted);
+	font: var(--t-meta);
+	text-align: center;
+}
+
 .transcript-entry {
 	display: grid;
 	gap: var(--space-2);

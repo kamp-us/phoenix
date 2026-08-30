@@ -18,8 +18,11 @@ Attach and create instantiate the real `AgentSession` through pi's public `creat
 surface with the selected `SessionManager`, `SettingsManager`, and shared `ModelRuntime`
 ([SDK source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/core/sdk.ts)).
 Prompt, steer, abort, model, and thinking commands delegate to that session. A prompt response waits
-for pi's preflight acceptance, not for the whole model turn; subsequent authoritative snapshots carry
-the stream and settled transcript.
+for pi's preflight acceptance, not for the whole model turn. Attach and later snapshots carry only a
+recent transcript window bounded by both item count and encoded bytes; the window boundary moves back
+when necessary so a tool result never loses its assistant tool call. Older pages use an opaque,
+session-bound cursor and keep the same pairing rule. Live progress and acknowledgements therefore
+never serialize pages the browser already loaded.
 
 ## Session file index
 
@@ -45,7 +48,9 @@ retry. PiClient's acquire/release ownership contract is pinned in
 Focused unit tests may substitute a byte transport. They do not prove the daily-driver path. The
 acceptance journey starts the built `tuval` executable without `--pi-socket`, uses native Fate and
 EventSource in the browser, crosses Tuval into PiClient and this service, and drives a real
-`AgentSession`. Its deterministic model is pi-ai's production `fauxProvider`; only the provider is
-scripted, not the protocol or browser transport. The provider is the dependency's documented test
+`AgentSession`. Its retained-session fixture has a multi-megabyte transcript and proves a bounded
+attach response, bounded initial mount, ordered older-page loading, prompt updates, mounted reconnect,
+and cold restoration. Its deterministic model is pi-ai's production `fauxProvider`; only the provider
+is scripted, not the protocol or browser transport. The provider is the dependency's documented test
 surface
 ([documentation](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/ai/README.md#faux-provider-for-tests)).

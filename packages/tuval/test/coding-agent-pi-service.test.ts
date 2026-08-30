@@ -57,6 +57,81 @@ const writeSession = async (
 const transcriptText = (content: ReadonlyArray<{readonly type: string; readonly text?: string}>) =>
 	content.flatMap((part) => (part.type === "text" && part.text !== undefined ? [part.text] : []));
 
+const writePagedSession = async (path: string, id: string): Promise<void> => {
+	await mkdir(dirname(path), {recursive: true});
+	const timestamp = "2026-08-29T10:00:00.000Z";
+	const usage = {
+		input: 1,
+		output: 1,
+		cacheRead: 0,
+		cacheWrite: 0,
+		totalTokens: 2,
+		cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0},
+	};
+	const entries: Array<Record<string, unknown>> = [
+		{type: "session", version: 3, id, timestamp, cwd: `/work/${id}`},
+		{
+			type: "model_change",
+			id: `${id}-model`,
+			parentId: null,
+			timestamp,
+			provider: "tuval-faux",
+			modelId: "daily-driver",
+		},
+		{
+			type: "message",
+			id: `${id}-first`,
+			parentId: `${id}-model`,
+			timestamp,
+			message: {role: "user", content: "first", timestamp: 1},
+		},
+		{
+			type: "message",
+			id: `${id}-call`,
+			parentId: `${id}-first`,
+			timestamp,
+			message: {
+				role: "assistant",
+				content: [{type: "toolCall", id: "call-1", name: "read", arguments: {path: "x"}}],
+				api: "openai-completions",
+				provider: "tuval-faux",
+				model: "daily-driver",
+				usage,
+				stopReason: "toolUse",
+				timestamp: 2,
+			},
+		},
+		{
+			type: "message",
+			id: `${id}-result`,
+			parentId: `${id}-call`,
+			timestamp,
+			message: {
+				role: "toolResult",
+				toolCallId: "call-1",
+				toolName: "read",
+				content: [{type: "text", text: "paired result"}],
+				details: {},
+				isError: false,
+				timestamp: 3,
+			},
+		},
+	];
+	let parentId = `${id}-result`;
+	for (let index = 0; index < 79; index += 1) {
+		const entryId = `${id}-${index}`;
+		entries.push({
+			type: "message",
+			id: entryId,
+			parentId,
+			timestamp,
+			message: {role: "user", content: `${index}:${"x".repeat(5_000)}`, timestamp: 4 + index},
+		});
+		parentId = entryId;
+	}
+	await writeFile(path, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+};
+
 afterEach(async () => {
 	await Promise.all(
 		temporaryRoots.splice(0).map((root) => rm(root, {recursive: true, force: true})),
@@ -64,6 +139,75 @@ afterEach(async () => {
 });
 
 describe("coding-agent Pi session index", () => {
+	it("pages bounded archive windows without splitting a tool call from its result", async () => {
+		const root = await mkdtemp(join(tmpdir(), "tuval-coding-agent-pages-"));
+		temporaryRoots.push(root);
+		const sessions = join(root, "sessions");
+		const id = "paged-session";
+		await writePagedSession(join(sessions, `2026-08-29T10-00-00-000Z_${id}.jsonl`), id);
+		await writeFile(
+			join(root, "settings.json"),
+			`${JSON.stringify({
+				defaultProvider: "tuval-faux",
+				defaultModel: "daily-driver",
+				packages: [productionProvider],
+			})}\n`,
+		);
+		const transport = makeCodingAgentPiTransport({
+			agentDir: root,
+			cwd: "/work/project",
+			sessionRoots: [sessions],
+		});
+		const client = await PiClient.connect({transportFactory: transport});
+		try {
+			const lease = await client.acquireSession(id, {mode: "exclusive"});
+			const snapshot = lease.snapshot;
+			assert.ok(snapshot !== undefined);
+			assert.ok(snapshot.transcript.length <= 40);
+			assert.ok(Buffer.byteLength(JSON.stringify(snapshot), "utf8") < 300_000);
+			const archive = transport.archiveState(id, snapshot.transcript);
+			assert.equal(archive._tag, "more");
+			if (archive._tag !== "more") return;
+			const firstPage = await transport.loadOlder(archive.cursor);
+			assert.equal(firstPage._tag, "loaded");
+			if (firstPage._tag !== "loaded") return;
+			const toolIndex = firstPage.transcript.findIndex((entry) => entry.role === "assistant");
+			assert.ok(toolIndex >= 0);
+			assert.equal(firstPage.transcript[toolIndex + 1]?.role, "tool");
+			assert.deepEqual(
+				firstPage.transcript.slice(toolIndex, toolIndex + 2).map(({id: entryId}) => entryId),
+				[`${id}:1`, `${id}:2`],
+			);
+			assert.equal(firstPage.archive._tag, "more");
+			const stale = await transport.loadOlder(`${archive.cursor}broken`);
+			assert.equal(stale._tag, "refused");
+			if (stale._tag === "refused") assert.equal(stale.code, "invalid-cursor");
+			const progressEvents: Array<unknown> = [];
+			const unsubscribe = lease.onEvent((event) => {
+				if (event.type === "session_progress") progressEvents.push(event);
+			});
+			await lease.prompt("incremental update");
+			await new Promise<void>((resolve, reject) => {
+				const timeout = setTimeout(
+					() => reject(new Error("coding-agent prompt emitted no incremental progress")),
+					2_000,
+				);
+				const poll = () => {
+					if (progressEvents.length > 0) {
+						clearTimeout(timeout);
+						resolve();
+					} else setTimeout(poll, 10);
+				};
+				poll();
+			});
+			unsubscribe();
+			assert.ok(Buffer.byteLength(JSON.stringify(progressEvents[0]), "utf8") < 50_000);
+			await lease.detach();
+		} finally {
+			await client.dispose();
+		}
+	});
+
 	it("deduplicates and attaches nested fork and subagent session layouts", async () => {
 		const root = await mkdtemp(join(tmpdir(), "tuval-coding-agent-index-"));
 		temporaryRoots.push(root);

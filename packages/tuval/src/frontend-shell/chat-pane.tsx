@@ -35,8 +35,11 @@ export interface ChatPaneProps {
 	readonly connection: PaneConnection;
 	readonly session: LiveSessionView | null;
 	readonly message?: string;
+	readonly historyLoading?: boolean;
+	readonly historyMessage?: string;
 	readonly onClose: () => void;
 	readonly onReconnect?: () => void;
+	readonly onLoadOlder?: () => void;
 	readonly onSend: (text: string) => Promise<SendResult>;
 	readonly onSteer?: (text: string) => Promise<ControlLiveSessionOutcome>;
 	readonly onAbort?: () => Promise<ControlLiveSessionOutcome>;
@@ -178,8 +181,11 @@ export function ChatPane({
 	connection,
 	session,
 	message,
+	historyLoading = false,
+	historyMessage,
 	onClose,
 	onReconnect = () => undefined,
+	onLoadOlder = () => undefined,
 	onSend,
 	onSteer,
 	onAbort,
@@ -262,9 +268,10 @@ export function ChatPane({
 		});
 	}, [composer]);
 
+	const lastTranscriptId = session?.transcript.at(-1)?.id;
 	useEffect(() => {
 		transcriptEnd.current?.scrollIntoView?.({block: "nearest"});
-	}, [session?.revision, session?.transcript.length]);
+	}, [lastTranscriptId, session?.revision]);
 
 	const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
 		event.preventDefault();
@@ -512,6 +519,27 @@ export function ChatPane({
 						</section>
 					)}
 					<section className="transcript nowheel nodrag nopan" aria-label="Oturum konuşması">
+						{session.archive._tag === "more" ? (
+							<div className="transcript-archive" data-history-loading={historyLoading}>
+								<Button
+									type="button"
+									variant="secondary"
+									disabled={historyLoading}
+									onClick={onLoadOlder}
+								>
+									{historyLoading ? "Geçmiş yükleniyor" : "Daha eski iletileri yükle"}
+								</Button>
+								<span role="status" aria-live="polite">
+									{historyLoading
+										? "Oturum bağlı; eski konuşma arşivden alınıyor."
+										: (historyMessage ?? "Daha eski iletiler arşivde hazır.")}
+								</span>
+							</div>
+						) : historyMessage === undefined ? null : (
+							<p className="transcript-archive" role="alert">
+								{historyMessage}
+							</p>
+						)}
 						{session.transcript.length === 0 ? (
 							<EmptyState
 								className="chat-empty"

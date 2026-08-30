@@ -31,6 +31,7 @@ const attached: AttachedLiveSession = {
 	thinkingLevel: "high",
 	completion: "running",
 	transcript: [],
+	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 8,
 	connection: "connected",
 	ownership: "exclusive",

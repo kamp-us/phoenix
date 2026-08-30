@@ -104,15 +104,19 @@ parents remain diagnostic-only.
 
 The package exports the schema-backed live-session wire types from `tuval/live-session`.
 `@kampus/fate-effect` exposes the `liveSession.current` query plus `liveSession.attach`,
-`liveSession.prompt`, `liveSession.create`, `liveSession.open`, `liveSession.steer`,
+`liveSession.loadOlder`, `liveSession.prompt`, `liveSession.create`, `liveSession.open`, `liveSession.steer`,
 `liveSession.abort`, `liveSession.setModel`, `liveSession.setThinking`, and `liveSession.release`
 mutations. `GET /fate/live` streams the service's ordered events directly, starting after the
 optional sequence cursor; clients do not poll a query. Attachments hold one exclusive PiClient lease
 at a time. Replacing or disconnecting a session releases its subscription and lease before more work
 can use it.
 
-Transcript snapshots are reduced with ordered Pi protocol progress events by item identity, so an
-item present at the attach boundary is updated rather than duplicated. Prompt and control mutations
+Attach returns a recent transcript window bounded by item count and encoded bytes. Its archive state
+is either complete, or has `hasMore: true` with the only valid cursor for the next older page; the
+union cannot represent a cursor without more history. Pages preserve chronological order and keep
+assistant tool calls with their results. Browser-loaded pages remain local while ordered Pi protocol
+progress updates the bounded live window by item identity, so an item present at the attach boundary
+is updated rather than duplicated. Prompt and control mutations
 require caller-supplied correlation ids and return `acknowledged` only after PiClient resolves the
 matching protocol result. Control projections derive phase and lease availability from the observed
 snapshot and expose only authenticated pi models plus the selected model's supported thinking

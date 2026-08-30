@@ -67,6 +67,16 @@ export const LiveSessionCompletion = Schema.Literals([
 ]);
 export type LiveSessionCompletion = (typeof LiveSessionCompletion)["Type"];
 
+export const TranscriptArchiveState = Schema.Union([
+	Schema.Struct({_tag: Schema.Literal("complete"), hasMore: Schema.Literal(false)}),
+	Schema.Struct({
+		_tag: Schema.Literal("more"),
+		hasMore: Schema.Literal(true),
+		cursor: Schema.String,
+	}),
+]);
+export type TranscriptArchiveState = (typeof TranscriptArchiveState)["Type"];
+
 export const ModelCapability = Schema.Struct({
 	model: ModelRef,
 	name: Schema.String,
@@ -94,6 +104,7 @@ const LiveSessionBase = {
 	thinkingLevel: ThinkingLevel,
 	completion: LiveSessionCompletion,
 	transcript: Schema.Array(LiveTranscriptEntry),
+	archive: TranscriptArchiveState,
 	lastEventSequence: Schema.Number,
 	controls: Schema.optionalKey(LiveSessionControls),
 };
@@ -138,6 +149,24 @@ export const AttachLiveSessionOutcome = Schema.Union([
 	}),
 ]);
 export type AttachLiveSessionOutcome = (typeof AttachLiveSessionOutcome)["Type"];
+
+export const LoadOlderTranscriptRequest = Schema.Struct({cursor: Schema.String});
+export type LoadOlderTranscriptRequest = (typeof LoadOlderTranscriptRequest)["Type"];
+
+export const LoadOlderTranscriptOutcome = Schema.Union([
+	Schema.Struct({
+		_tag: Schema.Literal("loaded"),
+		sessionId: Schema.String,
+		transcript: Schema.Array(LiveTranscriptEntry),
+		archive: TranscriptArchiveState,
+	}),
+	Schema.Struct({
+		_tag: Schema.Literal("refused"),
+		code: Schema.Literals(["no-attachment", "invalid-cursor", "stale-cursor", "protocol"]),
+		reason: Schema.String,
+	}),
+]);
+export type LoadOlderTranscriptOutcome = (typeof LoadOlderTranscriptOutcome)["Type"];
 
 export const PromptLiveSessionRequest = Schema.Struct({
 	correlationId: Schema.String,

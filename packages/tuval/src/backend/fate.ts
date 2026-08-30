@@ -9,6 +9,7 @@ import {
 	AbortLiveSessionRequest,
 	AttachLiveSessionRequest,
 	CreateLiveSessionRequest,
+	LoadOlderTranscriptRequest,
 	OpenLiveSessionRequest,
 	PromptLiveSessionRequest,
 	SetModelLiveSessionRequest,
@@ -120,6 +121,13 @@ export const tuvalFateConfig = FateServer.config({
 			Effect.fn("liveSession.attach")(function* ({input}) {
 				const liveSession = yield* LiveSession;
 				return yield* liveSession.attach(input.sessionId);
+			}),
+		),
+		"liveSession.loadOlder": Fate.mutation(
+			{input: LoadOlderTranscriptRequest, type: "TuvalTranscriptArchivePage"},
+			Effect.fn("liveSession.loadOlder")(function* ({input}) {
+				const liveSession = yield* LiveSession;
+				return yield* liveSession.loadOlder(input.cursor);
 			}),
 		),
 		"liveSession.prompt": Fate.mutation(

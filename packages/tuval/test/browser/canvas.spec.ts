@@ -43,6 +43,7 @@ const liveSession = (
 	thinkingLevel: "high",
 	completion: "idle",
 	transcript,
+	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 4,
 	connection: "connected",
 	ownership: "exclusive",

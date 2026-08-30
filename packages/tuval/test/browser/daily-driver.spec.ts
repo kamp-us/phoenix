@@ -46,11 +46,17 @@ const stopServer = async (child: ChildProcess | undefined) => {
 	await new Promise<void>((resolve) => child.once("exit", () => resolve()));
 };
 
-const writeSession = async (directory: string, id: string, cwd: string, parentSession?: string) => {
+const writeSession = async (
+	directory: string,
+	id: string,
+	cwd: string,
+	parentSession?: string,
+	largeTranscript = false,
+) => {
 	await mkdir(directory, {recursive: true});
 	const path = join(directory, `2026-08-29T10-00-00-000Z_${id}.jsonl`);
 	const timestamp = "2026-08-29T10:00:00.000Z";
-	const entries = [
+	const entries: Array<Record<string, unknown>> = [
 		{
 			type: "session",
 			version: 3,
@@ -86,6 +92,70 @@ const writeSession = async (directory: string, id: string, cwd: string, parentSe
 			},
 		},
 	];
+	if (largeTranscript) {
+		const assistantId = `${id}-archive-tool-call`;
+		entries.push({
+			type: "message",
+			id: assistantId,
+			parentId: `${id}-existing`,
+			timestamp,
+			message: {
+				role: "assistant",
+				content: [
+					{
+						type: "toolCall",
+						id: `${id}-archive-tool`,
+						name: "read",
+						arguments: {path: "/work/archive.txt"},
+					},
+				],
+				api: "openai-completions",
+				provider: "tuval-faux",
+				model: "daily-driver",
+				usage: {
+					input: 1,
+					output: 1,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 2,
+					cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0},
+				},
+				stopReason: "toolUse",
+				timestamp: Date.parse(timestamp) + 1,
+			},
+		});
+		entries.push({
+			type: "message",
+			id: `${id}-archive-tool-result`,
+			parentId: assistantId,
+			timestamp,
+			message: {
+				role: "toolResult",
+				toolCallId: `${id}-archive-tool`,
+				toolName: "read",
+				content: [{type: "text", text: "arşiv araç sonucu"}],
+				details: {},
+				isError: false,
+				timestamp: Date.parse(timestamp) + 2,
+			},
+		});
+		let parentId = `${id}-archive-tool-result`;
+		for (let index = 0; index < 79; index += 1) {
+			const entryId = `${id}-large-${index}`;
+			entries.push({
+				type: "message",
+				id: entryId,
+				parentId,
+				timestamp,
+				message: {
+					role: "user",
+					content: `büyük arşiv ${index.toString().padStart(2, "0")} ${"x".repeat(55_000)}`,
+					timestamp: Date.parse(timestamp) + 3 + index,
+				},
+			});
+			parentId = entryId;
+		}
+	}
 	await writeFile(path, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 	return path;
 };
@@ -115,6 +185,7 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		"daily-child",
 		"/work/daily-child",
 		parentPath,
+		true,
 	);
 	await writeFile(
 		join(root, "settings.json"),
@@ -191,10 +262,54 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 			"aria-checked",
 			"true",
 		);
-		await selectNode(page, "pi:daily-child");
+		const attachStartedAt = Date.now();
+		const [attachResponse] = await Promise.all([
+			page.waitForResponse((response) => {
+				if (!response.url().endsWith("/fate") || response.request().method() !== "POST")
+					return false;
+				const operations = response.request().postDataJSON()?.operations ?? [];
+				return operations.some(({name}: {name?: string}) => name === "liveSession.attach");
+			}),
+			selectNode(page, "pi:daily-child"),
+		]);
+		const attachBytes = (await attachResponse.body()).byteLength;
 		await expect(child.locator(".session-node")).toHaveAttribute("data-selected", "true");
 		await expect(page.locator("#chat-title")).toHaveText("daily-child");
-		await expect(page.getByText("daily-child kalıcı konuşma", {exact: true})).toHaveCount(1);
+		await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
+		expect(Date.now() - attachStartedAt).toBeLessThan(5_000);
+		expect(attachBytes).toBeLessThan(500_000);
+		const mountedBeforeOlder = await page.locator(".transcript-entry").count();
+		expect(mountedBeforeOlder).toBeGreaterThan(0);
+		expect(mountedBeforeOlder).toBeLessThanOrEqual(40);
+		await expect(page.getByText(/büyük arşiv 78/)).toHaveCount(1);
+		await expect(page.getByText("daily-child kalıcı konuşma", {exact: true})).toHaveCount(0);
+		const loadOlder = page.getByRole("button", {name: "Daha eski iletileri yükle"});
+		await expect(loadOlder).toBeVisible();
+		await loadOlder.click();
+		await expect(page.getByText(/büyük arşiv 74/)).toHaveCount(1);
+		expect(await page.locator(".transcript-entry").count()).toBeGreaterThan(mountedBeforeOlder);
+		const loadedLabels = await page
+			.locator(".transcript-entry")
+			.evaluateAll((entries) => entries.map((entry) => entry.textContent ?? ""));
+		expect(loadedLabels.findIndex((text) => text.includes("büyük arşiv 74"))).toBeLessThan(
+			loadedLabels.findIndex((text) => text.includes("büyük arşiv 75")),
+		);
+		for (let pageIndex = 0; pageIndex < 24 && (await loadOlder.count()) > 0; pageIndex += 1) {
+			const previousCount = await page.locator(".transcript-entry").count();
+			await loadOlder.click();
+			await expect
+				.poll(() => page.locator(".transcript-entry").count())
+				.toBeGreaterThan(previousCount);
+		}
+		await expect(loadOlder).toHaveCount(0);
+		await expect(page.getByText("arşiv araç sonucu", {exact: true})).toHaveCount(1);
+		const pairedEntries = await page
+			.locator(".transcript-entry")
+			.evaluateAll((entries) => entries.map((entry) => entry.textContent ?? ""));
+		const toolCallIndex = pairedEntries.findIndex((text) => text.includes("read"));
+		const toolResultIndex = pairedEntries.findIndex((text) => text.includes("arşiv araç sonucu"));
+		expect(toolCallIndex).toBeGreaterThanOrEqual(0);
+		expect(toolResultIndex).toBe(toolCallIndex + 1);
 		const prompt = "tek günlük sürücü istemi";
 		const editor = page.getByRole("textbox", {name: "İstem"});
 		await editor.fill(prompt);

@@ -13,6 +13,8 @@ import {
 	type LiveSessionEvent,
 	type LiveSessionView,
 	type LiveTranscriptEntry,
+	type LoadOlderTranscriptOutcome,
+	LoadOlderTranscriptOutcome as LoadOlderTranscriptOutcomeSchema,
 	type ModelRef,
 	type PromptLiveSessionOutcome,
 	type ReleaseLiveSessionOutcome,
@@ -130,6 +132,11 @@ const isLiveSessionBase = (value: Readonly<Record<string, unknown>>): boolean =>
 	completionStates.has(value.completion) &&
 	Array.isArray(value.transcript) &&
 	value.transcript.every(isTranscriptEntry) &&
+	isRecord(value.archive) &&
+	((value.archive._tag === "complete" && value.archive.hasMore === false) ||
+		(value.archive._tag === "more" &&
+			value.archive.hasMore === true &&
+			typeof value.archive.cursor === "string")) &&
 	typeof value.lastEventSequence === "number";
 
 export const decodeLiveSession = (value: unknown): LiveSessionView | undefined => {
@@ -343,6 +350,21 @@ export const attachLiveSession = async (sessionId: string): Promise<AttachLiveSe
 	);
 	if (outcome === undefined) throw new Error("Bağlanma yanıtı okunamadı");
 	return bindAttachOutcome(sessionId, outcome);
+};
+
+export const loadOlderTranscript = async (cursor: string): Promise<LoadOlderTranscriptOutcome> => {
+	const outcome = Option.getOrUndefined(
+		Schema.decodeUnknownOption(LoadOlderTranscriptOutcomeSchema)(
+			await runFate({
+				id: "load-older",
+				kind: "mutation",
+				name: "liveSession.loadOlder",
+				input: {cursor},
+			}),
+		),
+	);
+	if (outcome === undefined) throw new Error("Geçmiş konuşma yanıtı okunamadı");
+	return outcome;
 };
 
 export const promptLiveSession = async (

@@ -4,6 +4,7 @@ import {basename} from "node:path";
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {
 	type AgentSession,
+	type AgentSessionEvent,
 	createAgentSession,
 	getAgentDir,
 	ModelRuntime,
@@ -23,7 +24,13 @@ import {
 	type SessionSnapshot,
 	type ThinkingLevel,
 	type TranscriptItem,
+	type TranscriptProgress,
 } from "@earendil-works/pi-protocol";
+import type {
+	LiveTranscriptEntry,
+	LoadOlderTranscriptOutcome,
+	TranscriptArchiveState,
+} from "../shared/live-session.js";
 import {sessionIdFromFilename} from "./pi-home.js";
 import {indexSessionFiles} from "./session-file-index.js";
 
@@ -46,10 +53,23 @@ interface SessionRuntime {
 	readonly session: AgentSession;
 	readonly createdAt: number;
 	readonly unsubscribe: () => void;
+	publishedTranscript: Array<TranscriptItem>;
 	revision: number;
 }
 
+export interface TranscriptArchiveSource {
+	archiveState: (
+		sessionId: string,
+		transcript: ReadonlyArray<TranscriptItem>,
+	) => TranscriptArchiveState;
+	loadOlder: (cursor: string) => Promise<LoadOlderTranscriptOutcome>;
+}
+
+export type CodingAgentPiTransport = ByteTransportFactory & TranscriptArchiveSource;
+
 const DEFAULT_OPERATION_TIMEOUT_MS = 30_000;
+export const TRANSCRIPT_WINDOW_LIMIT = 40;
+export const TRANSCRIPT_WINDOW_BYTE_LIMIT = 256_000;
 const THINKING_LEVELS: ReadonlyArray<ThinkingLevel> = [
 	"off",
 	"minimal",
@@ -163,10 +183,12 @@ const toolInputOf = (
 	return {input: {}};
 };
 
-const transcriptOf = (session: AgentSession): Array<TranscriptItem> => {
-	const messages = session.messages;
-	return messages.flatMap((message, index): Array<TranscriptItem> => {
-		const id = `${session.sessionId}:${index}`;
+const transcriptOfMessages = (
+	sessionId: string,
+	messages: ReadonlyArray<CodingMessage>,
+): Array<TranscriptItem> =>
+	messages.flatMap((message, index): Array<TranscriptItem> => {
+		const id = `${sessionId}:${index}`;
 		if (message.role === "user") {
 			return [
 				{
@@ -235,7 +257,46 @@ const transcriptOf = (session: AgentSession): Array<TranscriptItem> => {
 		}
 		return [];
 	});
+
+const transcriptOf = (session: AgentSession): Array<TranscriptItem> =>
+	transcriptOfMessages(session.sessionId, session.messages);
+
+const toolCallIds = (item: TranscriptItem): ReadonlyArray<string> =>
+	item.role === "assistant"
+		? item.content.flatMap((part) => (part.type === "toolCall" ? [part.toolCallId] : []))
+		: [];
+
+const pairedWindowStart = (
+	transcript: ReadonlyArray<TranscriptItem>,
+	candidateStart: number,
+): number => {
+	let start = Math.max(0, candidateStart);
+	while (transcript[start]?.role === "tool") {
+		const tool = transcript[start];
+		if (tool?.role !== "tool") break;
+		const call = transcript.findLastIndex(
+			(item, index) => index < start && toolCallIds(item).includes(tool.toolCallId),
+		);
+		if (call < 0) break;
+		start = call;
+	}
+	return start;
 };
+
+const boundedWindowStart = (transcript: ReadonlyArray<TranscriptItem>, before: number): number => {
+	let start = before;
+	let bytes = 0;
+	while (start > 0 && before - start < TRANSCRIPT_WINDOW_LIMIT) {
+		const nextBytes = Buffer.byteLength(JSON.stringify(transcript[start - 1]), "utf8");
+		if (start < before && bytes + nextBytes > TRANSCRIPT_WINDOW_BYTE_LIMIT) break;
+		bytes += nextBytes;
+		start -= 1;
+	}
+	return pairedWindowStart(transcript, start);
+};
+
+const recentTranscriptOf = (transcript: ReadonlyArray<TranscriptItem>): Array<TranscriptItem> =>
+	transcript.slice(boundedWindowStart(transcript, transcript.length));
 
 const phaseOf = (session: AgentSession): SessionPhase => {
 	if (session.isCompacting) return "compaction";
@@ -261,7 +322,7 @@ const snapshotOf = (runtime: SessionRuntime): SessionSnapshot => {
 		attached: true,
 		locked: true,
 		revision: runtime.revision,
-		transcript,
+		transcript: recentTranscriptOf(transcript),
 		queuedSteer: session.getSteeringMessages().map((text, index) => ({
 			id: `${session.sessionId}:queued:${index}`,
 			role: "user",
@@ -298,6 +359,59 @@ const modelMetadataOf = (model: CodingModel, authenticated: boolean): ModelMetad
 });
 
 type IndexedSessionMetadata = SessionMetadata & {readonly path: string};
+
+interface ArchiveCursorPayload {
+	readonly version: 1;
+	readonly sessionId: string;
+	readonly anchorId: string;
+}
+
+const encodeArchiveCursor = (payload: ArchiveCursorPayload): string =>
+	Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+
+const decodeArchiveCursor = (cursor: string): ArchiveCursorPayload | undefined => {
+	try {
+		const value: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			!("version" in value) ||
+			value.version !== 1 ||
+			!("sessionId" in value) ||
+			typeof value.sessionId !== "string" ||
+			!("anchorId" in value) ||
+			typeof value.anchorId !== "string"
+		) {
+			return undefined;
+		}
+		return value as ArchiveCursorPayload;
+	} catch {
+		return undefined;
+	}
+};
+
+const archiveEntryOf = (item: TranscriptItem): LiveTranscriptEntry => ({
+	id: item.id,
+	role: item.role,
+	content: [...item.content],
+	timestamp: item.timestamp,
+	status: item.role === "user" ? "complete" : item.status,
+});
+
+const archiveStateBefore = (
+	sessionId: string,
+	transcript: ReadonlyArray<TranscriptItem>,
+	before: number,
+): TranscriptArchiveState => {
+	if (before <= 0) return {_tag: "complete", hasMore: false};
+	const anchor = transcript[before];
+	if (anchor === undefined) return {_tag: "complete", hasMore: false};
+	return {
+		_tag: "more",
+		hasMore: true,
+		cursor: encodeArchiveCursor({version: 1, sessionId, anchorId: anchor.id}),
+	};
+};
 
 const metadataForRoot = async (root: string): Promise<Array<IndexedSessionMetadata>> => {
 	const indexed = await indexSessionFiles(root);
@@ -352,7 +466,7 @@ const withDeadline = async <A>(
 
 export const makeCodingAgentPiTransport = (
 	options: CodingAgentPiServiceOptions = {},
-): ByteTransportFactory => {
+): CodingAgentPiTransport => {
 	const agentDir = options.agentDir ?? getAgentDir();
 	const cwd = options.cwd ?? process.cwd();
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
@@ -386,7 +500,7 @@ export const makeCodingAgentPiTransport = (
 		return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
 	};
 
-	return (handlers) => {
+	const transport = ((handlers) => {
 		const connectionId = randomUUID();
 		const decoder = new ClientMessageDecoder();
 		const attached = new Map<string, SessionRuntime>();
@@ -401,7 +515,42 @@ export const makeCodingAgentPiTransport = (
 		const publish = (runtime: SessionRuntime): void => {
 			if (closed) return;
 			runtime.revision += 1;
+			runtime.publishedTranscript = recentTranscriptOf(transcriptOf(runtime.session));
 			deliver({type: "event", event: {type: "session_snapshot", snapshot: snapshotOf(runtime)}});
+		};
+
+		const publishSessionEvent = (runtime: SessionRuntime, event: AgentSessionEvent): void => {
+			if (closed) return;
+			const transcriptEvent =
+				event.type === "message_start" ||
+				event.type === "message_update" ||
+				event.type === "message_end" ||
+				event.type === "tool_execution_start" ||
+				event.type === "tool_execution_update" ||
+				event.type === "tool_execution_end";
+			if (!transcriptEvent) {
+				publish(runtime);
+				return;
+			}
+			const previous = new Map(runtime.publishedTranscript.map((item) => [item.id, item]));
+			const next = recentTranscriptOf(transcriptOf(runtime.session));
+			runtime.publishedTranscript = next;
+			for (const item of next) {
+				const prior = previous.get(item.id);
+				if (prior !== undefined && JSON.stringify(prior) === JSON.stringify(item)) continue;
+				const progress: TranscriptProgress =
+					prior === undefined
+						? {type: "item_started", item}
+						: item.role !== "user" && item.status !== "streaming" && item.status !== "running"
+							? {type: "item_finished", item}
+							: item.role === "user"
+								? {type: "item_started", item}
+								: {type: "item_updated", item};
+				deliver({
+					type: "event",
+					event: {type: "session_progress", sessionId: runtime.session.sessionId, progress},
+				});
+			}
 		};
 
 		const publishServerSnapshot = async (): Promise<void> => {
@@ -501,11 +650,12 @@ export const makeCodingAgentPiTransport = (
 				);
 				await restoreConfiguredModel(session, manager, modelRuntime);
 				let runtime: SessionRuntime;
-				const unsubscribe = session.subscribe(() => publish(runtime));
+				const unsubscribe = session.subscribe((event) => publishSessionEvent(runtime, event));
 				runtime = {
 					session,
 					createdAt: file.birthtimeMs > 0 ? Math.floor(file.birthtimeMs) : Date.now(),
 					unsubscribe,
+					publishedTranscript: recentTranscriptOf(transcriptOf(session)),
 					revision: 1,
 				};
 				attached.set(sessionId, runtime);
@@ -542,11 +692,12 @@ export const makeCodingAgentPiTransport = (
 			const sessionId = session.sessionId;
 			owners.set(sessionId, connectionId);
 			let runtime: SessionRuntime;
-			const unsubscribe = session.subscribe(() => publish(runtime));
+			const unsubscribe = session.subscribe((event) => publishSessionEvent(runtime, event));
 			runtime = {
 				session,
 				createdAt: Date.now(),
 				unsubscribe,
+				publishedTranscript: recentTranscriptOf(transcriptOf(session)),
 				revision: 1,
 			};
 			attached.set(sessionId, runtime);
@@ -739,5 +890,66 @@ export const makeCodingAgentPiTransport = (
 				);
 			},
 		};
+	}) as CodingAgentPiTransport;
+
+	transport.archiveState = (sessionId: string, transcript: ReadonlyArray<TranscriptItem>) => {
+		const first = transcript.at(0);
+		if (first === undefined) return {_tag: "complete", hasMore: false};
+		const prefix = `${sessionId}:`;
+		if (!first.id.startsWith(prefix)) return {_tag: "complete", hasMore: false};
+		const before = Number(first.id.slice(prefix.length));
+		if (!Number.isSafeInteger(before) || before <= 0) return {_tag: "complete", hasMore: false};
+		return {
+			_tag: "more",
+			hasMore: true,
+			cursor: encodeArchiveCursor({version: 1, sessionId, anchorId: first.id}),
+		};
 	};
+	transport.loadOlder = async (cursor: string) => {
+		const decoded = decodeArchiveCursor(cursor);
+		if (decoded === undefined) {
+			return {
+				_tag: "refused",
+				code: "invalid-cursor",
+				reason: "Transcript archive cursor is malformed",
+			};
+		}
+		const metadata = (await listMetadata()).find(({id}) => id === decoded.sessionId);
+		if (metadata === undefined) {
+			return {
+				_tag: "refused",
+				code: "stale-cursor",
+				reason: "Transcript archive cursor no longer names an available session",
+			};
+		}
+		try {
+			const manager = SessionManager.open(metadata.path);
+			const transcript = transcriptOfMessages(
+				decoded.sessionId,
+				manager.buildSessionContext().messages,
+			);
+			const before = transcript.findIndex(({id}) => id === decoded.anchorId);
+			if (before <= 0) {
+				return {
+					_tag: "refused",
+					code: "stale-cursor",
+					reason: "Transcript archive changed before the requested window",
+				};
+			}
+			const start = boundedWindowStart(transcript, before);
+			return {
+				_tag: "loaded",
+				sessionId: decoded.sessionId,
+				transcript: transcript.slice(start, before).map(archiveEntryOf),
+				archive: archiveStateBefore(decoded.sessionId, transcript, start),
+			};
+		} catch (error) {
+			return {
+				_tag: "refused",
+				code: "protocol",
+				reason: `Transcript archive could not be read: ${messageOf(error)}`,
+			};
+		}
+	};
+	return transport;
 };
