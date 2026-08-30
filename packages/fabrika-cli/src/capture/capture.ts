@@ -7,8 +7,8 @@
  *
  * `localPath` is the PRIMARY judged artifact (ADR 0165), so capture ALWAYS
  * produces it on success — losing it is never acceptable. Each capture also
- * collects the runtime errors thrown into the page during the render
- * (`pageErrors`) — the crash signal the gate fails on (see `page-errors.ts`, #2594).
+ * collects `pageerror` and `console.error` observations in `pageErrors`; consumers treat the former
+ * as crash evidence and the latter as advisory (see `page-errors.ts`, #2594).
  */
 import {mkdir, writeFile} from "node:fs/promises";
 import {join} from "node:path";
@@ -35,7 +35,7 @@ export interface CapturedSurface {
 	/** The filesystem-safe PNG name (basename of `localPath`) — also the upload attachment name. */
 	readonly fileName: string;
 	readonly pngBytes: Uint8Array;
-	/** Runtime errors thrown into the page during this render — the #2594 crash signal. */
+	/** `pageerror` crash evidence plus advisory `console.error` observations from the render. */
 	readonly pageErrors: readonly PageError[];
 	/**
 	 * The navigation's HTTP status, absent when the navigation served no response.

@@ -20,10 +20,10 @@ import {isRecord, parseJson} from "../io/json.ts";
 /**
  * How many page errors a capture carries in full before the rest become a count (ADR 0308).
  *
- * Raw console text carries no reason vocabulary to histogram, so the collapse is a cap-and-count.
- * Three is enough to recognize what a page is complaining about without paying for a dev-mode
- * console's whole tail — and a crash never reaches here at all, because an uncaught `pageerror`
- * routes to the `Crashed` arm before an entry is built.
+ * Raw browser-error text carries no reason vocabulary to histogram, so the collapse is a
+ * cap-and-count. Preview capture routes an uncaught `pageerror` before building an entry; the CI
+ * producer retains page errors ahead of console errors within this bound so its crash signal cannot
+ * disappear into the overflow count.
  */
 export const PAGE_ERROR_CAP = 3;
 
@@ -35,8 +35,9 @@ export interface CaptureEntry {
 	readonly height: number;
 	readonly sha256: string;
 	/**
-	 * Errors thrown into the page during this render — recorded data, never a gate outcome, and so
-	 * an evidence-array bounded at {@link PAGE_ERROR_CAP}. The collapsed shape is the only one the
+	 * Bounded `pageerror` and `console.error` observations from this render. Their consumer assigns
+	 * polarity: page errors are crash evidence while console errors remain advisory. The collapsed
+	 * shape is the only one the
 	 * type admits, which is what keeps the stdout object and the manifest file from disagreeing:
 	 * they are one serialization, and there is no uncollapsed entry for either to hold.
 	 */
