@@ -356,21 +356,29 @@ fabrika review-ui ci-produce <pr> --head <40-hex> --harness <id> --run-id <posit
 | `--authority-root` | absolute path string | yes | — | trusted base checkout containing producer and declaration |
 | `--output-dir` | absolute path string | yes | — | trusted host output outside both checkouts |
 
-This is an internal workflow interface, not a reviewer import. Image construction installs fixed
-producer tools and performs only a scriptless dependency fetch as the unprivileged `node` user. The
-offline PR-controlled install and governed test then run together under a read-only root filesystem,
-`--cap-drop ALL`, `no-new-privileges`, `--network none`, and a disposable workspace volume. The
-server reuses that volume read-only under the same root/capability restrictions. Neither runtime
-receives Actions credentials, the authority checkout, Docker socket, or output-directory mount. The
-trusted host alone drives Playwright and writes captures and the manifest.
+This is an internal workflow interface, not a reviewer import. Image construction pins pnpm 10.27.0
+and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user. The
+version-matched behavior is grounded in pnpm's
+[`fetch` implementation](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/plugin-commands-installation/src/fetch.ts#L47-L76),
+[config loader](https://github.com/pnpm/pnpm/blob/v10.27.0/cli/cli-utils/src/getConfig.ts#L39-L62),
+[dependency-build gate](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/core/src/install/index.ts#L1342-L1376),
+and [root lifecycle gate](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/core/src/install/index.ts#L1521-L1531).
+The offline PR-controlled install and governed test run under a read-only root filesystem,
+`--cap-drop ALL`, `no-new-privileges`, `--network none`, and a disposable test workspace. That
+workspace is never served. A separate server workspace is freshly copied from the image's immutable
+exact-head source and installed offline with both execution-disabling flags before being mounted
+read-only into the server. Neither runtime receives Actions credentials, the authority checkout,
+Docker socket, or output-directory mount. The trusted host alone drives Playwright and writes
+captures and the manifest.
 
 **Output** — machine channel. On complete success, one newline-terminated version-1 CI manifest.
 There is no empty successful answer. The object binds the declaration and producer identity, then one
-capture row per declared surface. The three-row error bound orders all uncaught `pageerror` rows
-before `console.error` rows, so console noise cannot hide the hard-fail kind in `more`. A capture row
-containing an uncaught page error is still a successful transport output so the workflow uploads it;
-`review-ui fetch` materializes that evidence
-and returns the red-render `13`:
+capture row per declared surface. The three-row error bound truncates every row to 1,024 UTF-16 code
+units and orders all uncaught `pageerror` rows before `console.error` rows, so console noise cannot
+hide the hard-fail kind in `more`. A successful journey whose later browser capture records an
+uncaught page error is still a successful transport output, so the workflow uploads it; `review-ui
+fetch` materializes that evidence and returns the red-render `13`. A governed journey command that
+itself fails stops before server start, capture, manifest creation, and artifact upload:
 
 ```
 {"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
@@ -386,7 +394,7 @@ and returns the red-render `13`:
 | `10` | head, run id, repository, harness, non-absolute root operand, or output placement is off vocabulary |
 | `11` | declaration, fixture, output, image, workspace, server, port, capture, or manifest write is unreadable/UNKNOWN |
 | `12` | the subject checkout is not the named full head |
-| `13` | the governed browser journey command failed; captured page errors remain publishable manifest evidence and are classified by `review-ui fetch` |
+| `13` | the governed browser journey command failed; no server, capture, manifest, or artifact is produced |
 | `15` | a captured PNG is invalid |
 
 **Errors**
@@ -408,6 +416,7 @@ and returns the red-render `13`:
 | `review-ui ci-produce: the isolated subject image could not be built (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject workspace could not be created.` | `11` | refusal |
 | `review-ui ci-produce: the governed browser journey failed (<reason>).` | `13` | refusal |
+| `review-ui ci-produce: the fresh exact-head server workspace could not be prepared.` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject server could not start.` | `11` | refusal |
 | `review-ui ci-produce: Docker returned no subject container id.` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject server did not report readiness.` | `11` | refusal |
@@ -671,7 +680,8 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    `pageerror` cannot be posted with PASS (`13`); the materialized set is FAIL ground. **Refuse on
    `12` when the set's recorded head is not `--sha`**:
    stale captures under a new head are re-rendered or re-fetched, never rebound.
-3. **Re-validate every capture against its manifest sha** (`15` on mismatch or invalidity).
+3. **Re-validate every capture against its manifest SHA-256 and dimensions** (`15` on a hash,
+   dimension, or PNG-validity mismatch).
 4. **Upload every capture and verify each upload individually, before anything posts** — the
    two-tier store exactly as `ui evidence` specifies it (store tier when the repo declares one;
    the GitHub user-attachment tier otherwise, each upload probed back). The tier choice reads
@@ -711,7 +721,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `11` | a precondition read failed — the PR, live head, default-branch declaration, trusted GitHub workflow/check/artifact resolution, evidence files, or upload target; nothing was posted |
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
 | `13` | proven: CI evidence records an uncaught page error and the caller requested PASS — the materialized set must post FAIL |
-| `15` | proven: a capture in the evidence set is invalid or fails its manifest sha |
+| `15` | proven: a capture is invalid or fails its manifest SHA-256 or dimensions |
 | `17` | proven: at least one evidence upload or its verification failed — nothing was posted |
 
 **Errors**
@@ -725,7 +735,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: --polarity must be PASS or FAIL — got "<v>".` | 10 | refusal |
 | `review-ui post: --carrier advisory is a PASS path only — post the FAIL marker instead.` | 10 | refusal |
 | `review-ui post: cannot read <what> for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
-| `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run the sanctioned producer.` | 4 | refusal |
+| `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run the sanctioned producer (review-ui render or review-ui fetch).` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" has no consumer-validated provenance receipt...` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" does not match its consumer-validated provenance receipt.` | 4 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the default branch is unreadable (<reason>).` | 11 | refusal |
@@ -737,7 +747,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
 | `review-ui post: CI evidence records an uncaught page error — the materialized render is FAIL ground and cannot carry PASS.` | 13 | refusal |
 | `review-ui post: evidence set "<set>" was rendered at <set-head7>, you are posting at <sha7> — stale pixels; re-render at the live head.` | 12 | refusal |
-| `review-ui post: capture "<id>" in set "<set>" is invalid or fails its manifest sha (<detail>).` | 15 | refusal |
+| `review-ui post: capture "<id>" in set "<set>" is invalid or fails its manifest hash/dimensions (recorded <hash12>, read <hash12>).` | 15 | refusal |
 | `review-ui post: upload failed for <k> of <m> captures (<first surface>: <reason>) — refusing to post a verdict over a broken evidence channel (#3925).` | 17 | refusal |
 | `review-ui post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
 | `review-ui post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |

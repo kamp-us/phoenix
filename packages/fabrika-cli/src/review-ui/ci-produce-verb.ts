@@ -17,6 +17,7 @@ import {
 	STALE_TREE,
 } from "./codes.ts";
 import {
+	BROWSER_ERROR_TEXT_CAP,
 	type CiCaptureManifest,
 	declarationDigest,
 	LOCALHOST_DECLARATIONS_PATH,
@@ -100,6 +101,26 @@ export const subjectInstallAndTestContainerArgs = (
 	...command,
 ];
 
+export const subjectPrepareServerContainerArgs = (
+	image: string,
+	volume: string,
+): readonly string[] => [
+	"run",
+	"--rm",
+	"--network",
+	"none",
+	...containerGuardArgs(),
+	"--mount",
+	`type=volume,src=${volume},dst=/subject`,
+	"--workdir",
+	"/subject",
+	"--entrypoint",
+	"sh",
+	image,
+	"-c",
+	"cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile",
+];
+
 export const subjectServerContainerArgs = (
 	image: string,
 	name: string,
@@ -167,7 +188,10 @@ export const boundedBrowserErrors = (
 	const pageErrors = errors.filter((error) => error.kind === "pageerror");
 	const consoleErrors = errors.filter((error) => error.kind === "console.error");
 	return {
-		rows: [...pageErrors, ...consoleErrors].slice(0, PAGE_ERROR_CAP),
+		rows: [...pageErrors, ...consoleErrors].slice(0, PAGE_ERROR_CAP).map((error) => ({
+			...error,
+			text: error.text.slice(0, BROWSER_ERROR_TEXT_CAP),
+		})),
 		more: Math.max(0, errors.length - PAGE_ERROR_CAP),
 	};
 };
@@ -273,7 +297,8 @@ export const runCiProduce = (
 
 		const image = `fabrika-review-ui-subject-${options.runId}`;
 		const container = `${image}-server`;
-		const volume = `${image}-workspace`;
+		const testVolume = `${image}-test-workspace`;
+		const serverVolume = `${image}-server-workspace`;
 		const fixtureRead = yield* Effect.tryPromise({
 			try: createFixture,
 			catch: (cause) => String(cause),
@@ -286,13 +311,15 @@ export const runCiProduce = (
 			yield* ran("docker", ["rm", "--force", container], options.authorityRoot, env, 30).pipe(
 				Effect.ignore,
 			);
-			yield* ran(
-				"docker",
-				["volume", "rm", "--force", volume],
-				options.authorityRoot,
-				env,
-				30,
-			).pipe(Effect.ignore);
+			for (const volume of [testVolume, serverVolume]) {
+				yield* ran(
+					"docker",
+					["volume", "rm", "--force", volume],
+					options.authorityRoot,
+					env,
+					30,
+				).pipe(Effect.ignore);
+			}
 			yield* ran("docker", ["image", "rm", "--force", image], options.authorityRoot, env, 60).pipe(
 				Effect.ignore,
 			);
@@ -332,23 +359,25 @@ export const runCiProduce = (
 				);
 			}
 
-			const volumeCreated = yield* ran(
-				"docker",
-				["volume", "create", volume],
-				options.authorityRoot,
-				env,
-				30,
-			);
-			if (volumeCreated._tag !== "Ran" || volumeCreated.exitCode !== 0) {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: the isolated subject workspace could not be created.`,
+			for (const volume of [testVolume, serverVolume]) {
+				const volumeCreated = yield* ran(
+					"docker",
+					["volume", "create", volume],
+					options.authorityRoot,
+					env,
+					30,
 				);
+				if (volumeCreated._tag !== "Ran" || volumeCreated.exitCode !== 0) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the isolated subject workspace could not be created.`,
+					);
+				}
 			}
 
 			const tested = yield* ran(
 				"docker",
-				subjectInstallAndTestContainerArgs(image, volume, harness.captureCommand),
+				subjectInstallAndTestContainerArgs(image, testVolume, harness.captureCommand),
 				options.authorityRoot,
 				env,
 				1_200,
@@ -360,12 +389,31 @@ export const runCiProduce = (
 				);
 			}
 
+			const preparedServer = yield* ran(
+				"docker",
+				subjectPrepareServerContainerArgs(image, serverVolume),
+				options.authorityRoot,
+				env,
+				1_200,
+			);
+			if (
+				preparedServer._tag !== "Ran" ||
+				preparedServer.exitCode !== 0 ||
+				preparedServer.timedOut ||
+				preparedServer.truncated
+			) {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: the fresh exact-head server workspace could not be prepared.`,
+				);
+			}
+
 			const started = yield* ran(
 				"docker",
 				subjectServerContainerArgs(
 					image,
 					container,
-					volume,
+					serverVolume,
 					fixtureRoot,
 					harness.containerPort,
 					harness.serverCommand,

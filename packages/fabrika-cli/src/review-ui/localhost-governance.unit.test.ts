@@ -2,11 +2,17 @@ import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {
+	boundedBrowserErrors,
 	isolatedEnvironment,
 	subjectInstallAndTestContainerArgs,
+	subjectPrepareServerContainerArgs,
 	subjectServerContainerArgs,
 } from "./ci-produce-verb.ts";
-import {LOCALHOST_DECLARATIONS_PATH, parseLocalhostDeclarations} from "./localhost-evidence.ts";
+import {
+	BROWSER_ERROR_TEXT_CAP,
+	LOCALHOST_DECLARATIONS_PATH,
+	parseLocalhostDeclarations,
+} from "./localhost-evidence.ts";
 
 const root = resolve(import.meta.dirname, "../../../..");
 const read = (path: string): string => readFileSync(resolve(root, path), "utf8");
@@ -70,10 +76,23 @@ describe("localhost evidence governance floor", () => {
 		assert.notInclude(test.join(" "), "authority");
 		assert.notInclude(test.join(" "), "review-ui-localhost-tuval");
 
+		const serverPreparation = subjectPrepareServerContainerArgs(
+			"subject",
+			"fresh-server-workspace",
+		);
+		assert.include(serverPreparation, "none");
+		assert.include(serverPreparation, "--read-only");
+		assert.include(serverPreparation, "no-new-privileges");
+		assert.include(
+			serverPreparation,
+			"cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile",
+		);
+		assert.notInclude(serverPreparation.join(" "), "subject-test-workspace");
+
 		const server = subjectServerContainerArgs(
 			"subject",
 			"subject-server",
-			"subject-workspace",
+			"fresh-server-workspace",
 			"/trusted-fixture",
 			4173,
 			["node", "server.mjs", "4173"],
@@ -81,10 +100,27 @@ describe("localhost evidence governance floor", () => {
 		assert.include(server, "--read-only");
 		assert.include(server, "--cap-drop");
 		assert.include(server, "no-new-privileges");
-		assert.include(server, "type=volume,src=subject-workspace,dst=/subject,readonly");
+		assert.include(server, "type=volume,src=fresh-server-workspace,dst=/subject,readonly");
 		assert.include(server, "type=bind,src=/trusted-fixture,dst=/review-ui-fixture,readonly");
 		assert.notInclude(server.join(" "), "authority");
 		assert.notInclude(server.join(" "), "review-ui-localhost-tuval");
+	});
+
+	it("bounds every browser-error row while preserving deterministic priority and overflow", () => {
+		const oversized = "x".repeat(BROWSER_ERROR_TEXT_CAP + 500);
+		const bounded = boundedBrowserErrors([
+			{kind: "console.error", text: oversized},
+			{kind: "pageerror", text: oversized},
+			{kind: "console.error", text: "second console"},
+			{kind: "pageerror", text: "second page"},
+		]);
+		assert.deepStrictEqual(
+			bounded.rows.map((row) => row.kind),
+			["pageerror", "pageerror", "console.error"],
+		);
+		assert.strictEqual(bounded.rows[0]?.text.length, BROWSER_ERROR_TEXT_CAP);
+		assert.strictEqual(bounded.rows[2]?.text.length, BROWSER_ERROR_TEXT_CAP);
+		assert.strictEqual(bounded.more, 1);
 	});
 
 	it("keeps every review-ui verb contract locally complete", () => {

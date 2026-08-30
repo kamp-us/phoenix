@@ -322,7 +322,7 @@ export const runPost = (
 		if (Result.isFailure(document)) {
 			return refuse(
 				MALFORMED_DOCUMENT,
-				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json (${document.failure.reason}) — a set without its manifest is not a set; re-run review-ui render.`,
+				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json (${document.failure.reason}) — a set without its manifest is not a set; re-run the sanctioned producer (review-ui render or review-ui fetch).`,
 			);
 		}
 		const raw = parseJson(document.success);
@@ -346,7 +346,7 @@ export const runPost = (
 		if (malformed !== null) {
 			return refuse(
 				MALFORMED_DOCUMENT,
-				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json (${malformed}) — a set without its manifest is not a set; re-run the sanctioned producer.`,
+				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json (${malformed}) — a set without its manifest is not a set; re-run the sanctioned producer (review-ui render or review-ui fetch).`,
 			);
 		}
 		const manifest =

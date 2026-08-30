@@ -1,5 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	BROWSER_ERROR_TEXT_CAP,
 	declarationDigest,
 	parseCiCaptureManifest,
 	parseLocalhostDeclarations,
@@ -144,5 +145,19 @@ describe("localhost evidence authority", () => {
 			],
 		};
 		assert.strictEqual(parseCiCaptureManifest(JSON.stringify(tooMany))._tag, "Malformed");
+
+		const oversizedRow = {
+			...manifest,
+			captures: [
+				{
+					...manifest.captures[0],
+					pageErrors: {
+						rows: [{kind: "console.error", text: "x".repeat(BROWSER_ERROR_TEXT_CAP + 1)}],
+						more: 0,
+					},
+				},
+			],
+		};
+		assert.strictEqual(parseCiCaptureManifest(JSON.stringify(oversizedRow))._tag, "Malformed");
 	});
 });

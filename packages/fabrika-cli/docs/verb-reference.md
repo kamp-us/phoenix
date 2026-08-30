@@ -842,7 +842,7 @@ artifact for a declared localhost-only product. Contract:
 |---|---|
 | `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized state (`/pano:auth` renders signed in as the test moderator, refusing on `11` unless the session proves it took). `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface is `:auth` and on `11` unless the preview's own evaluation says the key took |
 | `review-ui fetch` | the exact-head GitHub Actions artifact for a governed localhost-only harness, validated and copied into reviewer-owned scratch; exit `13` materializes a proven red render rather than routing CANT-SEE, and no local path or caller-selected producer input exists |
-| `review-ui ci-produce` | the base-owned internal leg whose image build runs no PR lifecycle code, then runs offline install/test and the server under read-only-root, capability-drop isolation; captures and manifest are written only by the trusted host |
+| `review-ui ci-produce` | the base-owned internal leg whose pinned, hook-disabled fetch runs no PR lifecycle code, then runs offline install/test in a disposable workspace and serves a separate fresh exact-head workspace read-only; the trusted host bounds browser-error rows and alone writes captures and manifest |
 | `review-ui post` | the `review-ui` verdict on stdin, posted as one comment after preview validation or CI receipt plus live GitHub workflow/run/check/artifact revalidation |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
 | `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |

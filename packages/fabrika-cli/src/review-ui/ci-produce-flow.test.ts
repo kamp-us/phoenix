@@ -4,7 +4,7 @@ import {join} from "node:path";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {CapturedSurface} from "../capture/capture.ts";
-import {fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {runCiProduce} from "./ci-produce-verb.ts";
 import {LOCALHOST_DECLARATIONS_PATH, parseCiCaptureManifest} from "./localhost-evidence.ts";
 
@@ -85,6 +85,50 @@ describe("trusted localhost producer flow", () => {
 		expect(seams.calls).toEqual([]);
 	});
 
+	it("stops a failed governed journey before server preparation, capture, and manifest", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ci-produce-failed-journey-"));
+		const authorityRoot = join(root, "authority");
+		const subjectRoot = join(root, "subject");
+		const outputDir = join(root, "output");
+		await mkdir(join(authorityRoot, ".github"), {recursive: true});
+		await mkdir(subjectRoot, {recursive: true});
+		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+
+		const seams = fakeSeams([
+			[/^git rev-parse HEAD$/, okOut(HEAD)],
+			[/^docker build /, okOut("")],
+			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
+			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
+			[/^docker run --rm --network none .*test-workspace/, errOut("journey failed")],
+			[/^docker rm /, okOut("")],
+			[/^docker volume rm .*test-workspace$/, okOut("")],
+			[/^docker volume rm .*server-workspace$/, okOut("")],
+			[/^docker image rm /, okOut("")],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runCiProduce({
+					pr: 7190,
+					head: HEAD,
+					harness: "tuval",
+					runId: 42,
+					repository: "kamp-us/phoenix",
+					subjectRoot,
+					authorityRoot,
+					outputDir,
+					env: {PATH: "/bin"},
+					capture,
+				}),
+				seams.layer,
+			),
+		);
+
+		expect(outcome.code).toBe(13);
+		expect(seams.calls.some((call) => call.includes("server-workspace,dst=/subject"))).toBe(false);
+		await expect(readFile(join(outputDir, "manifest.json"), "utf8")).rejects.toThrow();
+		await rm(root, {recursive: true, force: true});
+	});
+
 	it("isolates install/test and publishes page-error evidence for the fetch FAIL route", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-produce-flow-"));
 		const authorityRoot = join(root, "authority");
@@ -97,13 +141,16 @@ describe("trusted localhost producer flow", () => {
 		const script: ReadonlyArray<Scripted> = [
 			[/^git rev-parse HEAD$/, okOut(HEAD)],
 			[/^docker build /, okOut("")],
-			[/^docker volume create /, okOut("workspace")],
-			[/^docker run --rm --network none /, okOut("")],
-			[/^docker run --detach /, okOut("container-id")],
+			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
+			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
+			[/^docker run --rm --network none .*test-workspace/, okOut("")],
+			[/^docker run --rm --network none .*server-workspace/, okOut("")],
+			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ready")],
 			[/^docker port container-id 4173\/tcp$/, okOut("127.0.0.1:49152")],
 			[/^docker rm /, okOut("")],
-			[/^docker volume rm /, okOut("")],
+			[/^docker volume rm .*test-workspace$/, okOut("")],
+			[/^docker volume rm .*server-workspace$/, okOut("")],
 			[/^docker image rm /, okOut("")],
 		];
 		const seams = fakeSeams(script);
@@ -138,13 +185,24 @@ describe("trusted localhost producer flow", () => {
 				more: 1,
 			});
 		}
-		const subjectRun = seams.calls.find((call) =>
-			call.startsWith("docker run --rm --network none"),
+		const subjectRun = seams.calls.find(
+			(call) =>
+				call.startsWith("docker run --rm --network none") && call.includes("test-workspace"),
 		);
+		const serverPreparation = seams.calls.find(
+			(call) =>
+				call.startsWith("docker run --rm --network none") && call.includes("server-workspace"),
+		);
+		const server = seams.calls.find((call) => call.startsWith("docker run --detach"));
 		expect(subjectRun).toContain("--read-only --cap-drop ALL");
 		expect(subjectRun).toContain("no-new-privileges");
 		expect(subjectRun).toContain("pnpm install --offline --frozen-lockfile");
 		expect(subjectRun).not.toContain("GITHUB_TOKEN");
+		expect(serverPreparation).toContain("cp -a /subject-source/. /subject/");
+		expect(serverPreparation).toContain("--ignore-scripts --ignore-pnpmfile");
+		expect(serverPreparation).not.toContain("test-workspace");
+		expect(server).toContain("server-workspace,dst=/subject,readonly");
+		expect(server).not.toContain("test-workspace");
 		await rm(root, {recursive: true, force: true});
 	});
 });

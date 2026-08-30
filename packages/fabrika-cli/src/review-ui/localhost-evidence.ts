@@ -4,6 +4,7 @@ import type {CaptureEntry} from "./manifest.ts";
 
 export const LOCALHOST_DECLARATIONS_PATH = ".github/review-ui-localhost-harnesses.json";
 export const LOCALHOST_EVIDENCE_SCHEMA_VERSION = 1;
+export const BROWSER_ERROR_TEXT_CAP = 1_024;
 
 export interface LocalhostSurface {
 	readonly id: string;
@@ -259,7 +260,8 @@ const toCiEntry = (value: unknown): CaptureEntry | null => {
 			(row) =>
 				isRecord(row) &&
 				(row.kind === "pageerror" || row.kind === "console.error") &&
-				typeof row.text === "string",
+				typeof row.text === "string" &&
+				row.text.length <= BROWSER_ERROR_TEXT_CAP,
 		)
 	) {
 		return null;

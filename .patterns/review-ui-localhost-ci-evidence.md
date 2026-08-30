@@ -14,18 +14,27 @@ reads it through GitHub, never from the PR checkout. GitHub documents that `pull
 in the base context and warns against executing untrusted code directly in that privileged event
 ([event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)).
 
-The subject checkout is input only to the base-owned Dockerfile. Image construction installs fixed
-producer tools and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged
-`node` user; pnpm defines `fetch` as lockfile package acquisition into the virtual store rather than
-installation ([pnpm fetch](https://pnpm.io/cli/fetch)), and the two flags disable lifecycle and
-PR-supplied pnpmfile hooks, so no PR-controlled code executes in that build step. An offline `pnpm
-install` then runs every
-PR-controlled lifecycle script and the governed test in one disposable workspace volume under a
-read-only root filesystem, `--cap-drop ALL`, `no-new-privileges`, and `--network none`. The server
-reuses the installed workspace read-only under the same root/capability restrictions and receives
-only the read-only fixture. Neither container receives Actions credentials, the authority checkout,
-Docker socket, or artifact-output mount. Docker documents those root, capability, network, security,
-and mount controls in the
+The subject checkout is input only to the base-owned Dockerfile. Image construction pins pnpm
+10.27.0 and performs `pnpm fetch --ignore-scripts --ignore-pnpmfile` as the unprivileged `node` user.
+At that tag, the
+[`fetch` implementation](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/plugin-commands-installation/src/fetch.ts#L47-L76)
+uses an empty package manifest and sets `ignorePackageManifest`; the
+[config loader](https://github.com/pnpm/pnpm/blob/v10.27.0/cli/cli-utils/src/getConfig.ts#L39-L62)
+loads pnpmfile hooks only when `ignorePnpmfile` is false; and the
+[install core](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/core/src/install/index.ts#L1342-L1376)
+gates dependency builds on `ignoreScripts` while its
+[root lifecycle runner](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/core/src/install/index.ts#L1521-L1531)
+is under the inverse condition. Those version-matched paths establish that this fetch executes
+neither package lifecycle scripts nor the PR's pnpmfile hooks.
+
+An offline `pnpm install` then runs every PR-controlled lifecycle script and the governed test in a
+disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
+`no-new-privileges`, and `--network none`. That workspace is never served. A separate server
+workspace is freshly copied from the image's immutable exact-head source and installed offline with
+both execution-disabling flags before it is mounted read-only into the server under the same
+restrictions. The server receives only the read-only fixture. Neither container receives Actions
+credentials, the authority checkout, Docker socket, or artifact-output mount. Docker documents those
+root, capability, network, security, and mount controls in the
 [`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/) and
 [bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/). The trusted host drives
 Playwright and alone writes the captures and manifest.
@@ -35,11 +44,13 @@ Playwright and alone writes the captures and manifest.
 The producer proves the subject checkout's full Git head before image construction. Its positive
 manifest binds schema version, repository, PR, full head, declaration digest, harness, workflow,
 check, event, run, artifact name, and every declared surface. Each capture binds a relative artifact
-member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence. The bounded rows
-place every uncaught `pageerror` ahead of console errors, so console noise cannot push the hard-fail
-kind into the untyped overflow count. The producer keeps
-that artifact publishable even when it records an uncaught page error; the trusted consumer owns the
-red-render exit so the pixels and error record remain independently reviewable.
+member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence. Each row is at most
+1,024 UTF-16 code units, and the rows place every uncaught `pageerror` ahead of console errors, so
+console noise cannot push the hard-fail kind into the untyped overflow count. The producer keeps an
+artifact publishable when a successful journey's browser capture records an uncaught page error; the
+trusted consumer owns the red-render exit so the pixels and error record remain independently
+reviewable. If the governed journey command itself fails, the producer stops before server start,
+capture, manifest creation, and workflow artifact upload.
 
 ## Consumer and verdict
 
