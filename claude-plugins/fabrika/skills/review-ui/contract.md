@@ -261,11 +261,17 @@ default path; this verb selects only a declared localhost exception.
 **Output** — machine channel. One newline-terminated JSON object on complete success:
 
 ```
-{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"<reviewer scratch>/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"<reviewer scratch>/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0}}]}
+{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0}}]}
 ```
 
-Paths are outputs, never inputs. The operation resolves the repository default branch to one exact
-commit, reads the declaration from that commit, and admits only a successful completed
+Paths are outputs, never inputs. Their directory is derived as
+`<os.tmpdir()>/fabrika-review-ui/<pr>-<first-8-head-characters>/<set>/`; each capture appends its
+manifest member path. The byte-exact examples in this section fix `os.tmpdir()` to `/tmp`, so PR
+`7190`, head `03135b91…`, set `judged`, and member
+`captures/tuval-cockpit-desktop.png` derive
+`/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png` without an
+unresolved placeholder. The operation resolves the repository default branch to one exact commit,
+reads the declaration from that commit, and admits only a successful completed
 `pull_request_target` run whose `head_sha` is that same authority revision. The matching workflow,
 repository, and PR number plus full live head must occur together in one GitHub association row; two
 independent association lists cannot be combined. It then resolves exactly one successful named check
@@ -339,7 +345,7 @@ With the committed Tuval declaration, a live head `03135b91aa04f7e2c9d8b1640a5c2
 
 ```
 $ fabrika review-ui fetch 7190 --harness tuval --out judged
-{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"<reviewer scratch>/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"<reviewer scratch>/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0}}]}
+{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 With the same validated tuple and one recorded uncaught page error:
@@ -347,8 +353,8 @@ With the same validated tuple and one recorded uncaught page error:
 ```
 $ fabrika review-ui fetch 7190 --harness tuval --out judged
 review-ui fetch: the accepted artifact records 1 uncaught page error(s); the materialized render is red and must be posted as FAIL.
-review-ui fetch: materialized capture tuval-cockpit-desktop: <reviewer scratch>/captures/tuval-cockpit-desktop.png
-review-ui fetch: materialized capture tuval-cockpit-mobile: <reviewer scratch>/captures/tuval-cockpit-mobile.png
+review-ui fetch: materialized capture tuval-cockpit-desktop: /tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png
+review-ui fetch: materialized capture tuval-cockpit-mobile: /tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-mobile.png
 ```
 
 This refusal exits with status `13`.
@@ -413,7 +419,9 @@ validates those captures and alone writes the manifest.
 There is no empty successful answer. The producer first proves both the subject and authority
 checkouts against their full supplied heads. The object binds the declaration and producer identity,
 including that authority revision, then one capture row per declared surface with its route and
-state. The three-row error bound truncates every row to 1,024 UTF-16 code
+state. Before writing that manifest, every capture must prove a successful HTTP navigation response
+in the 2xx or 3xx range; an absent response, 4xx, or 5xx refuses on `15`. The three-row error bound
+truncates every row to 1,024 UTF-16 code
 units and orders all uncaught `pageerror` rows before `console.error` rows, so console noise cannot
 hide the hard-fail kind in `more`. A successful journey whose later browser capture records an
 uncaught page error is still a successful transport output, so the workflow uploads it; `review-ui
@@ -468,6 +476,8 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the trusted localhost capture failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted capture set does not contain every declared <harness> surface exactly once.` | `15` | refusal |
 | `review-ui ci-produce: capture <surface> does not match its declared route, state, and member.` | `15` | refusal |
+| `review-ui ci-produce: capture <surface> navigation returned no HTTP response.` | `15` | refusal |
+| `review-ui ci-produce: capture <surface> navigation returned HTTP <status>, not a successful response.` | `15` | refusal |
 | `review-ui ci-produce: <surface> is not a valid capture (<reason>).` | `15` | refusal |
 | `review-ui ci-produce: cannot write the capture manifest (<reason>).` | `11` | refusal |
 

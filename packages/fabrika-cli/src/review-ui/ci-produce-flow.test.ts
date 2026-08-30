@@ -34,7 +34,7 @@ const authority = JSON.stringify({
 	],
 });
 
-const capture = (_url: string, outputDir: string) =>
+const captureWithStatus = (status?: number) => (_url: string, outputDir: string) =>
 	Effect.tryPromise({
 		try: async (): Promise<readonly CapturedSurface[]> => {
 			const path = join(outputDir, "captures/desktop.png");
@@ -54,11 +54,14 @@ const capture = (_url: string, outputDir: string) =>
 						{kind: "console.error", text: "console three"},
 						{kind: "pageerror", text: "TypeError: boom"},
 					],
+					...(status === undefined ? {} : {status}),
 				},
 			];
 		},
 		catch: (cause) => String(cause),
 	});
+
+const capture = captureWithStatus(200);
 
 describe("trusted localhost producer flow", () => {
 	it("makes the bind-mounted fixture traversable and readable by the unprivileged subject", async () => {
@@ -84,11 +87,13 @@ describe("trusted localhost producer flow", () => {
 					state: "desktop",
 					fileName: "desktop.png",
 					pageErrors: [],
+					status: 200,
 				},
 			]),
 		);
 		const captures = await readSidecarCaptures(root);
 		expect(captures).toHaveLength(1);
+		expect(captures[0]?.status).toBe(200);
 		expect(Array.from(captures[0]?.pngBytes ?? [])).toEqual(Array.from(PNG));
 		await expect(readFile(join(root, "capture-result.json"), "utf8")).rejects.toThrow();
 		await rm(root, {recursive: true, force: true});
@@ -240,6 +245,59 @@ describe("trusted localhost producer flow", () => {
 
 		expect(outcome.code).toBe(11);
 		expect(seams.calls.some((call) => call.includes("server-workspace,dst=/subject"))).toBe(false);
+		await expect(readFile(join(outputDir, "manifest.json"), "utf8")).rejects.toThrow();
+		await rm(root, {recursive: true, force: true});
+	});
+
+	it.each([
+		{name: "absent", status: undefined, message: "returned no HTTP response"},
+		{name: "404", status: 404, message: "returned HTTP 404"},
+		{name: "500", status: 500, message: "returned HTTP 500"},
+	])("refuses a $name navigation response before manifest creation", async ({status, message}) => {
+		const root = await mkdtemp(join(tmpdir(), "ci-produce-http-refusal-"));
+		const authorityRoot = join(root, "authority");
+		const subjectRoot = join(root, "subject");
+		const outputDir = join(root, "output");
+		await mkdir(join(authorityRoot, ".github"), {recursive: true});
+		await mkdir(subjectRoot, {recursive: true});
+		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+
+		const seams = fakeSeams([
+			[once(/^git rev-parse HEAD$/), okOut(HEAD)],
+			[/^git rev-parse HEAD$/, okOut(AUTHORITY_HEAD)],
+			[/^docker build /, okOut("")],
+			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
+			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
+			[/^docker run --rm --network none .*test-workspace/, okOut("")],
+			[/^docker run --rm --network none .*server-workspace/, okOut("")],
+			[/^docker run --detach .*server-workspace/, okOut("container-id")],
+			[/^docker logs container-id$/, okOut("ready")],
+			[/^docker rm /, okOut("")],
+			[/^docker volume rm .*test-workspace$/, okOut("")],
+			[/^docker volume rm .*server-workspace$/, okOut("")],
+			[/^docker image rm /, okOut("")],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runCiProduce({
+					pr: 7190,
+					head: HEAD,
+					authorityHead: AUTHORITY_HEAD,
+					harness: "tuval",
+					runId: 42,
+					repository: "kamp-us/phoenix",
+					subjectRoot,
+					authorityRoot,
+					outputDir,
+					env: {PATH: "/bin"},
+					capture: captureWithStatus(status),
+				}),
+				seams.layer,
+			),
+		);
+
+		expect(outcome.code).toBe(15);
+		expect(outcome.stderr.join("\n")).toContain(message);
 		await expect(readFile(join(outputDir, "manifest.json"), "utf8")).rejects.toThrow();
 		await rm(root, {recursive: true, force: true});
 	});

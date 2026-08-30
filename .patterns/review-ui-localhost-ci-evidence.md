@@ -8,11 +8,16 @@ Preview remains the default for every undeclared product. Operational steps live
 
 ## Authority and isolation
 
-The default-branch declaration fixes the harness id, workflow, check, event, artifact, subject test
-and server commands, container port, readiness signal, and complete surface/state list. The consumer
-resolves the default branch to one exact commit and reads the declaration at that commit, never from
-the PR checkout. GitHub documents that `pull_request_target` runs
-in the base context and warns against executing untrusted code directly in that privileged event
+The default-branch
+[declaration](../.github/review-ui-localhost-harnesses.json) fixes the harness id, workflow, check,
+event, artifact, subject test and server commands, container port, readiness signal, and complete
+surface/state list. The base-owned
+[producer workflow](../.github/workflows/review-ui-localhost-evidence.yml) and
+[governance tests](../packages/fabrika-cli/src/review-ui/localhost-governance.unit.test.ts) pin that
+authority to governed repository surfaces. The consumer resolves the default branch to one exact
+commit and reads the declaration at that commit, never from the PR checkout. GitHub documents that
+`pull_request_target` runs in the base context and warns against executing untrusted code directly
+in that privileged event
 ([event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)).
 
 The subject checkout is input only to the base-owned Dockerfile. Before Docker receives that context,
@@ -49,11 +54,16 @@ and [bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/).
 
 ## Producer record
 
-The producer proves both the subject checkout's full Git head and the trusted authority checkout's
-full default-branch head, then proves the subject has no root `.dockerignore`, before image
-construction. Its positive manifest binds schema version,
+The
+[producer implementation](../packages/fabrika-cli/src/review-ui/ci-produce-verb.ts) proves both the
+subject checkout's full Git head and the trusted authority checkout's full default-branch head, then
+proves the subject has no root `.dockerignore`, before image construction. Its
+[flow tests](../packages/fabrika-cli/src/review-ui/ci-produce-flow.test.ts) exercise the isolation,
+head, journey, HTTP-response, and manifest boundaries. The positive manifest binds schema version,
 repository, PR, full subject head, full authority head, declaration digest, harness, workflow, check,
-event, run, artifact name, and every declared surface, route, and state. Each capture binds a
+event, run, artifact name, and every declared surface, route, and state. A capture must carry a
+successful HTTP navigation response (2xx or 3xx); a missing response or error status refuses before
+manifest creation. Each capture binds a
 relative artifact member, dimensions, SHA-256, and bounded `pageerror` / `console.error` evidence.
 Each row is at most
 1,024 UTF-16 code units, and the rows place every uncaught `pageerror` ahead of console errors, so
@@ -66,8 +76,13 @@ artifact upload.
 
 ## Consumer and verdict
 
-`review-ui fetch` requires one successful completed run whose workflow, event, repository, and
-`head_sha` match the declaration's exact authority revision. The PR number and exact subject head
+The [`review-ui fetch`
+implementation](../packages/fabrika-cli/src/review-ui/ci-fetch-verb.ts) requires one successful
+completed run whose workflow, event, repository, and `head_sha` match the declaration's exact
+authority revision. Its
+[integrity tests](../packages/fabrika-cli/src/review-ui/ci-fetch-verb.unit.test.ts) cover producer
+identity, archive membership, manifest binding, hashes, dimensions, browser-error coverage, and
+live-head revalidation. The PR number and exact subject head
 must occur together in one GitHub `pull_requests` association row; independently flattened number
 and head lists are not authority. These are fields of GitHub's documented workflow-run response
 ([List workflow runs for a workflow](https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28#list-workflow-runs-for-a-workflow)).
@@ -107,8 +122,13 @@ that exact artifact. The local manifest and every local capture must byte-match 
 members before upload. This rejects a forged receipt even when it copies valid public GitHub ids and
 hashes attacker-chosen local bytes.
 
-After provenance succeeds, `post` validates each capture and re-reads the live head. It refuses a
-PASS over a recorded uncaught page error, verified-uploads the pixels, and records the workflow,
-event, run, check, artifact, and browser-error coverage before emitting the ordinary `review-ui`
-marker. `ship` has no alternate marker or bypass: missing or invalid evidence leaves the namespace
-empty.
+After provenance succeeds, the
+[`review-ui post` implementation](../packages/fabrika-cli/src/review-ui/post-verb.ts) validates each
+capture and re-reads the live head. Its
+[provenance and post tests](../packages/fabrika-cli/src/review-ui/post-verb.unit.test.ts) cover byte
+recomparison, upload verification, page-crash polarity, ordinary marker emission, and ship
+consumption. The verb refuses a PASS over a recorded uncaught page error, verified-uploads the
+pixels, and records the workflow, event, run, check, artifact, and browser-error coverage before
+emitting the ordinary `review-ui` marker. The shared manifest/declaration schema has its own
+[integrity tests](../packages/fabrika-cli/src/review-ui/localhost-evidence.unit.test.ts). `ship` has
+no alternate marker or bypass: missing or invalid evidence leaves the namespace empty.

@@ -668,6 +668,18 @@ export const runCiProduce = (
 						`${VERB}: capture ${capture.surface} does not match its declared route, state, and member.`,
 					);
 				}
+				if (capture.status === undefined) {
+					return refuse(
+						INVALID_CAPTURE,
+						`${VERB}: capture ${capture.surface} navigation returned no HTTP response.`,
+					);
+				}
+				if (capture.status < 200 || capture.status >= 400) {
+					return refuse(
+						INVALID_CAPTURE,
+						`${VERB}: capture ${capture.surface} navigation returned HTTP ${capture.status}, not a successful response.`,
+					);
+				}
 				const valid = validateCaptureBytes(capture.pngBytes);
 				if (valid._tag === "Invalid") {
 					return refuse(
