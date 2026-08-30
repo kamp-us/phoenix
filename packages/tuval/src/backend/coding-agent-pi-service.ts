@@ -1,6 +1,5 @@
 import {randomUUID} from "node:crypto";
 import {stat} from "node:fs/promises";
-import {basename} from "node:path";
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {
 	type AgentSession,
@@ -19,20 +18,25 @@ import {
 	type ModelMetadata,
 	PROTOCOL_VERSION,
 	type ServerMessage,
-	type SessionMetadata,
 	type SessionPhase,
 	type SessionSnapshot,
 	type ThinkingLevel,
 	type TranscriptItem,
 	type TranscriptProgress,
 } from "@earendil-works/pi-protocol";
-import type {
-	LiveTranscriptEntry,
-	LoadOlderTranscriptOutcome,
-	TranscriptArchiveState,
-} from "../shared/live-session.js";
-import {sessionIdFromFilename} from "./pi-home.js";
-import {indexSessionFiles} from "./session-file-index.js";
+import type {LoadOlderTranscriptOutcome, TranscriptArchiveState} from "../shared/live-session.js";
+import {makeCodingAgentSessionIndex} from "./coding-agent-session-index.js";
+import {
+	type RuntimeLifecycle,
+	type RuntimeLifecycleSource,
+	RuntimeOwnership,
+} from "./runtime-lifecycle.js";
+import {
+	archiveEntryOf,
+	archiveStateBefore,
+	decodeArchiveCursor,
+	encodeArchiveCursor,
+} from "./transcript-archive.js";
 
 interface CodingAgentPiServiceOptions {
 	readonly agentDir?: string;
@@ -41,6 +45,7 @@ interface CodingAgentPiServiceOptions {
 	readonly settingsManager?: SettingsManager;
 	readonly modelRuntime?: ModelRuntime;
 	readonly operationTimeoutMs?: number;
+	readonly createAgentSession?: typeof createAgentSession;
 }
 
 type CodingMessage = AgentSession["messages"][number];
@@ -57,6 +62,13 @@ interface SessionRuntime {
 	revision: number;
 }
 
+interface PendingConstruction {
+	readonly lifecycle: RuntimeLifecycle;
+	readonly manager: SessionManager;
+	readonly snapshot: SessionSnapshot;
+	active: boolean;
+}
+
 export interface TranscriptArchiveSource {
 	archiveState: (
 		sessionId: string,
@@ -65,7 +77,9 @@ export interface TranscriptArchiveSource {
 	loadOlder: (cursor: string) => Promise<LoadOlderTranscriptOutcome>;
 }
 
-export type CodingAgentPiTransport = ByteTransportFactory & TranscriptArchiveSource;
+export type CodingAgentPiTransport = ByteTransportFactory &
+	TranscriptArchiveSource &
+	RuntimeLifecycleSource;
 
 const DEFAULT_OPERATION_TIMEOUT_MS = 30_000;
 export const TRANSCRIPT_WINDOW_LIMIT = 40;
@@ -333,6 +347,38 @@ const snapshotOf = (runtime: SessionRuntime): SessionSnapshot => {
 	};
 };
 
+const provisionalSnapshotOf = (
+	sessionId: string,
+	manager: SessionManager,
+	createdAt: number,
+	settingsManager: SettingsManager,
+): SessionSnapshot => {
+	const saved = manager.buildSessionContext();
+	const provider = saved.model?.provider ?? settingsManager.getDefaultProvider() ?? "unknown";
+	const modelId = saved.model?.modelId ?? settingsManager.getDefaultModel() ?? "unknown";
+	const thinkingLevel = THINKING_LEVELS.includes(saved.thinkingLevel as ThinkingLevel)
+		? (saved.thinkingLevel as ThinkingLevel)
+		: "off";
+	const transcript = transcriptOfMessages(sessionId, saved.messages);
+	const sessionName = manager.getSessionName();
+	return {
+		id: sessionId,
+		...(sessionName === undefined ? {} : {name: sessionName}),
+		cwd: manager.getCwd(),
+		createdAt,
+		updatedAt: transcript.at(-1)?.timestamp ?? createdAt,
+		phase: "idle",
+		model: {provider, id: modelId},
+		thinkingLevel,
+		attached: true,
+		locked: true,
+		revision: 1,
+		transcript: recentTranscriptOf(transcript),
+		queuedSteer: [],
+		queuedSteerCount: 0,
+	};
+};
+
 const supportedThinkingLevels = (model: CodingModel): Array<ThinkingLevel> => {
 	if (!model.reasoning) return ["off"];
 	const map = model.thinkingLevelMap;
@@ -357,95 +403,6 @@ const modelMetadataOf = (model: CodingModel, authenticated: boolean): ModelMetad
 	supportedThinkingLevels: supportedThinkingLevels(model),
 	authenticated,
 });
-
-type IndexedSessionMetadata = SessionMetadata & {readonly path: string};
-
-interface ArchiveCursorPayload {
-	readonly version: 1;
-	readonly sessionId: string;
-	readonly anchorId: string;
-}
-
-const encodeArchiveCursor = (payload: ArchiveCursorPayload): string =>
-	Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-
-const decodeArchiveCursor = (cursor: string): ArchiveCursorPayload | undefined => {
-	try {
-		const value: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-		if (
-			typeof value !== "object" ||
-			value === null ||
-			!("version" in value) ||
-			value.version !== 1 ||
-			!("sessionId" in value) ||
-			typeof value.sessionId !== "string" ||
-			!("anchorId" in value) ||
-			typeof value.anchorId !== "string"
-		) {
-			return undefined;
-		}
-		return value as ArchiveCursorPayload;
-	} catch {
-		return undefined;
-	}
-};
-
-const archiveEntryOf = (item: TranscriptItem): LiveTranscriptEntry => ({
-	id: item.id,
-	role: item.role,
-	content: [...item.content],
-	timestamp: item.timestamp,
-	status: item.role === "user" ? "complete" : item.status,
-});
-
-const archiveStateBefore = (
-	sessionId: string,
-	transcript: ReadonlyArray<TranscriptItem>,
-	before: number,
-): TranscriptArchiveState => {
-	if (before <= 0) return {_tag: "complete", hasMore: false};
-	const anchor = transcript[before];
-	if (anchor === undefined) return {_tag: "complete", hasMore: false};
-	return {
-		_tag: "more",
-		hasMore: true,
-		cursor: encodeArchiveCursor({version: 1, sessionId, anchorId: anchor.id}),
-	};
-};
-
-const metadataForRoot = async (root: string): Promise<Array<IndexedSessionMetadata>> => {
-	const indexed = await indexSessionFiles(root);
-	const sessions: Array<IndexedSessionMetadata> = [];
-	for (const path of indexed.files) {
-		try {
-			const manager = SessionManager.open(path);
-			const header = manager.getHeader();
-			if (header === null) continue;
-			const id =
-				sessionIdFromFilename(path) ?? (basename(path) === "session.jsonl" ? header.id : undefined);
-			if (id === undefined || id.length === 0) continue;
-			const info = await stat(path);
-			const headerTime = Date.parse(header.timestamp);
-			const parentSessionId =
-				header.parentSession === undefined
-					? undefined
-					: sessionIdFromFilename(header.parentSession);
-			const sessionName = manager.getSessionName();
-			sessions.push({
-				id,
-				createdAt: Number.isFinite(headerTime)
-					? Math.floor(headerTime)
-					: Math.floor(info.birthtimeMs),
-				updatedAt: Math.floor(info.mtimeMs),
-				cwd: header.cwd,
-				...(sessionName === undefined ? {} : {sessionName}),
-				...(parentSessionId === undefined ? {} : {parentSessionId}),
-				path,
-			});
-		} catch {}
-	}
-	return sessions;
-};
 
 const withDeadline = async <A>(
 	operation: Promise<A>,
@@ -472,6 +429,7 @@ export const makeCodingAgentPiTransport = (
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const roots = options.sessionRoots ?? [`${agentDir}/sessions`];
 	const operationTimeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS;
+	const createCodingAgentSession = options.createAgentSession ?? createAgentSession;
 	const runtimePromise =
 		options.modelRuntime === undefined
 			? ModelRuntime.create({
@@ -480,30 +438,17 @@ export const makeCodingAgentPiTransport = (
 					refreshOnCreate: false,
 				})
 			: Promise.resolve(options.modelRuntime);
-	const owners = new Map<string, string>();
+	const runtimeOwnership = new RuntimeOwnership();
 	let serverRevision = 0;
 
-	const listMetadata = async (): Promise<Array<IndexedSessionMetadata>> => {
-		const listed = (await Promise.all(roots.map(metadataForRoot))).flat();
-		const byId = new Map<string, IndexedSessionMetadata>();
-		for (const session of listed) {
-			const existing = byId.get(session.id);
-			if (
-				existing === undefined ||
-				(session.updatedAt ?? 0) > (existing.updatedAt ?? 0) ||
-				((session.updatedAt ?? 0) === (existing.updatedAt ?? 0) &&
-					session.path.localeCompare(existing.path) < 0)
-			) {
-				byId.set(session.id, session);
-			}
-		}
-		return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
-	};
+	const sessionIndex = makeCodingAgentSessionIndex(roots);
 
 	const transport = ((handlers) => {
 		const connectionId = randomUUID();
 		const decoder = new ClientMessageDecoder();
 		const attached = new Map<string, SessionRuntime>();
+		const constructions = new Map<string, PendingConstruction>();
+		const backgroundConstructions = new Set<Promise<void>>();
 		let closed = false;
 		let greeted = false;
 		let serialized = Promise.resolve();
@@ -558,7 +503,7 @@ export const makeCodingAgentPiTransport = (
 			const available = new Set(
 				modelRuntime.getAvailableSnapshot().map((model) => `${model.provider}\u0000${model.id}`),
 			);
-			const sessions = (await listMetadata()).map(({path: _path, ...metadata}) => metadata);
+			const sessions = (await sessionIndex.list()).map(({path: _path, ...metadata}) => metadata);
 			deliver({
 				type: "event",
 				event: {
@@ -599,14 +544,34 @@ export const makeCodingAgentPiTransport = (
 			}
 		};
 
+		const disposeSession = async (session: AgentSession): Promise<void> => {
+			if (!session.isIdle) await session.abort().catch(() => undefined);
+			session.dispose();
+		};
+
+		const cancelConstruction = (sessionId: string): boolean => {
+			const construction = constructions.get(sessionId);
+			if (construction === undefined) return false;
+			construction.active = false;
+			constructions.delete(sessionId);
+			runtimeOwnership.release(sessionId, connectionId);
+			return true;
+		};
+
 		const disposeRuntime = async (sessionId: string): Promise<void> => {
+			const cancelled = cancelConstruction(sessionId);
 			const runtime = attached.get(sessionId);
-			if (runtime === undefined) return;
+			if (runtime === undefined) {
+				if (!cancelled)
+					throw Object.assign(new Error(`Session ${sessionId} is not attached`), {
+						code: "session_locked",
+					});
+				return;
+			}
 			attached.delete(sessionId);
-			if (owners.get(sessionId) === connectionId) owners.delete(sessionId);
+			runtimeOwnership.release(sessionId, connectionId);
 			runtime.unsubscribe();
-			if (!runtime.session.isIdle) await runtime.session.abort().catch(() => undefined);
-			runtime.session.dispose();
+			await disposeSession(runtime.session);
 		};
 
 		const fail = (
@@ -623,37 +588,134 @@ export const makeCodingAgentPiTransport = (
 			deliver({type: "response", id, ok: false, error: {code, message}});
 		};
 
-		const attachSession = async (sessionId: string, path: string): Promise<SessionRuntime> => {
+		const beginAttach = async (
+			sessionId: string,
+			path: string,
+		): Promise<{readonly snapshot: SessionSnapshot; readonly start: () => void}> => {
 			const existing = attached.get(sessionId);
-			if (existing !== undefined) return existing;
-			const owner = owners.get(sessionId);
+			if (existing !== undefined) {
+				return {snapshot: snapshotOf(existing), start: () => undefined};
+			}
+			const pending = constructions.get(sessionId);
+			if (pending !== undefined) {
+				return {snapshot: pending.snapshot, start: () => undefined};
+			}
+			const owner = runtimeOwnership.ownerOf(sessionId);
 			if (owner !== undefined && owner !== connectionId) {
 				throw Object.assign(new Error(`Session ${sessionId} is attached by another client`), {
 					code: "session_locked",
 				});
 			}
-			owners.set(sessionId, connectionId);
+			const manager = SessionManager.open(path);
+			const file = await stat(path);
+			const createdAt = file.birthtimeMs > 0 ? Math.floor(file.birthtimeMs) : Date.now();
+			const snapshot = provisionalSnapshotOf(sessionId, manager, createdAt, settingsManager);
+			const construction: PendingConstruction = {
+				lifecycle: runtimeOwnership.begin(sessionId, connectionId),
+				manager,
+				snapshot,
+				active: true,
+			};
+			constructions.set(sessionId, construction);
+
+			const start = (): void => {
+				const background = (async () => {
+					let creation: ReturnType<typeof createCodingAgentSession> | undefined;
+					let preparation: ReturnType<typeof createCodingAgentSession> | undefined;
+					try {
+						const modelRuntime = await runtimePromise;
+						creation = createCodingAgentSession({
+							cwd: manager.getCwd(),
+							agentDir,
+							modelRuntime,
+							settingsManager,
+							sessionManager: manager,
+						});
+						preparation = creation.then(async (result) => {
+							await restoreConfiguredModel(result.session, manager, modelRuntime);
+							return result;
+						});
+						const {session} = await withDeadline(
+							preparation,
+							operationTimeoutMs,
+							`Attaching session ${sessionId}`,
+						);
+						if (
+							!construction.active ||
+							closed ||
+							constructions.get(sessionId) !== construction ||
+							!runtimeOwnership.isLoading(construction.lifecycle, connectionId)
+						) {
+							await disposeSession(session);
+							return;
+						}
+						let runtime: SessionRuntime;
+						const unsubscribe = session.subscribe((event) => publishSessionEvent(runtime, event));
+						runtime = {
+							session,
+							createdAt,
+							unsubscribe,
+							publishedTranscript: recentTranscriptOf(transcriptOf(session)),
+							revision: snapshot.revision,
+						};
+						constructions.delete(sessionId);
+						attached.set(sessionId, runtime);
+						runtimeOwnership.ready(construction.lifecycle, connectionId);
+						publish(runtime);
+					} catch (error) {
+						if (preparation !== undefined && creation !== undefined) {
+							void preparation.then(
+								({session}) => disposeSession(session),
+								() =>
+									void creation?.then(
+										({session}) => disposeSession(session),
+										() => undefined,
+									),
+							);
+						}
+						if (constructions.get(sessionId) !== construction || !construction.active) return;
+						construction.active = false;
+						runtimeOwnership.refuse(construction.lifecycle, connectionId, messageOf(error));
+					}
+				})();
+				backgroundConstructions.add(background);
+				void background.finally(() => backgroundConstructions.delete(background));
+			};
+			return {snapshot, start};
+		};
+
+		const createSession = async (command: Extract<Command, {command: "create"}>) => {
+			const sessionCwd = command.cwd ?? cwd;
+			const manager = SessionManager.create(sessionCwd);
+			const modelRuntime = await runtimePromise;
+			const creation = createCodingAgentSession({
+				cwd: sessionCwd,
+				agentDir,
+				modelRuntime,
+				settingsManager,
+				sessionManager: manager,
+			});
 			try {
-				const manager = SessionManager.open(path);
-				const file = await stat(path);
-				const modelRuntime = await runtimePromise;
 				const {session} = await withDeadline(
-					createAgentSession({
-						cwd: manager.getCwd(),
-						agentDir,
-						modelRuntime,
-						settingsManager,
-						sessionManager: manager,
-					}),
+					creation,
 					operationTimeoutMs,
-					`Attaching session ${sessionId}`,
+					"Creating a coding-agent session",
 				);
 				await restoreConfiguredModel(session, manager, modelRuntime);
+				if (command.name !== undefined) session.setSessionName(command.name);
+				if (command.model !== undefined) {
+					const model = modelRuntime.getModel(command.model.provider, command.model.id);
+					if (model === undefined) throw new Error("Requested model is unavailable");
+					await session.setModel(model);
+				}
+				if (command.thinkingLevel !== undefined) session.setThinkingLevel(command.thinkingLevel);
+				const sessionId = session.sessionId;
+				runtimeOwnership.adoptReady(sessionId, connectionId);
 				let runtime: SessionRuntime;
 				const unsubscribe = session.subscribe((event) => publishSessionEvent(runtime, event));
 				runtime = {
 					session,
-					createdAt: file.birthtimeMs > 0 ? Math.floor(file.birthtimeMs) : Date.now(),
+					createdAt: Date.now(),
 					unsubscribe,
 					publishedTranscript: recentTranscriptOf(transcriptOf(session)),
 					revision: 1,
@@ -661,47 +723,12 @@ export const makeCodingAgentPiTransport = (
 				attached.set(sessionId, runtime);
 				return runtime;
 			} catch (error) {
-				if (owners.get(sessionId) === connectionId) owners.delete(sessionId);
+				void creation.then(
+					({session}) => disposeSession(session),
+					() => undefined,
+				);
 				throw error;
 			}
-		};
-
-		const createSession = async (command: Extract<Command, {command: "create"}>) => {
-			const sessionCwd = command.cwd ?? cwd;
-			const manager = SessionManager.create(sessionCwd);
-			const modelRuntime = await runtimePromise;
-			const {session} = await withDeadline(
-				createAgentSession({
-					cwd: sessionCwd,
-					agentDir,
-					modelRuntime,
-					settingsManager,
-					sessionManager: manager,
-				}),
-				operationTimeoutMs,
-				"Creating a coding-agent session",
-			);
-			await restoreConfiguredModel(session, manager, modelRuntime);
-			if (command.name !== undefined) session.setSessionName(command.name);
-			if (command.model !== undefined) {
-				const model = modelRuntime.getModel(command.model.provider, command.model.id);
-				if (model === undefined) throw new Error("Requested model is unavailable");
-				await session.setModel(model);
-			}
-			if (command.thinkingLevel !== undefined) session.setThinkingLevel(command.thinkingLevel);
-			const sessionId = session.sessionId;
-			owners.set(sessionId, connectionId);
-			let runtime: SessionRuntime;
-			const unsubscribe = session.subscribe((event) => publishSessionEvent(runtime, event));
-			runtime = {
-				session,
-				createdAt: Date.now(),
-				unsubscribe,
-				publishedTranscript: recentTranscriptOf(transcriptOf(session)),
-				revision: 1,
-			};
-			attached.set(sessionId, runtime);
-			return runtime;
 		};
 
 		const requireRuntime = (sessionId: string): SessionRuntime => {
@@ -717,7 +744,9 @@ export const makeCodingAgentPiTransport = (
 		const handle = async (id: string, request: Command): Promise<void> => {
 			try {
 				if (request.command === "list") {
-					const sessions = (await listMetadata()).map(({path: _path, ...metadata}) => metadata);
+					const sessions = (await sessionIndex.list()).map(
+						({path: _path, ...metadata}) => metadata,
+					);
 					deliver({type: "response", id, ok: true, result: {command: "list", sessions}});
 					return;
 				}
@@ -732,25 +761,23 @@ export const makeCodingAgentPiTransport = (
 					return;
 				}
 				if (request.command === "attach") {
-					const metadata = (await listMetadata()).find(
-						(session) => session.id === request.sessionId,
-					);
+					const metadata = await sessionIndex.find(request.sessionId);
 					if (metadata === undefined) {
 						fail(id, "not_found", `Session ${request.sessionId} was not found`);
 						return;
 					}
-					const runtime = await attachSession(request.sessionId, metadata.path);
-					await publishServerSnapshot();
+					const attachment = await beginAttach(request.sessionId, metadata.path);
 					deliver({
 						type: "response",
 						id,
 						ok: true,
-						result: {command: "attach", session: snapshotOf(runtime)},
+						result: {command: "attach", session: attachment.snapshot},
 					});
+					attachment.start();
+					void publishServerSnapshot();
 					return;
 				}
 				if (request.command === "detach") {
-					requireRuntime(request.sessionId);
 					await disposeRuntime(request.sessionId);
 					deliver({
 						type: "response",
@@ -845,7 +872,9 @@ export const makeCodingAgentPiTransport = (
 								.getAvailableSnapshot()
 								.map((model) => `${model.provider}\u0000${model.id}`),
 						);
-						const sessions = (await listMetadata()).map(({path: _path, ...metadata}) => metadata);
+						const sessions = (await sessionIndex.list()).map(
+							({path: _path, ...metadata}) => metadata,
+						);
 						greeted = true;
 						deliver({
 							type: "hello",
@@ -879,15 +908,17 @@ export const makeCodingAgentPiTransport = (
 			close() {
 				if (closed) return;
 				closed = true;
+				for (const sessionId of [...constructions.keys()]) cancelConstruction(sessionId);
 				try {
 					decoder.end();
 				} catch (error) {
 					handlers.onError(error instanceof Error ? error : new Error(messageOf(error)));
 					return;
 				}
-				void Promise.all([...attached.keys()].map(disposeRuntime)).finally(() =>
-					handlers.onClose(),
-				);
+				void Promise.all([
+					...[...attached.keys()].map(disposeRuntime),
+					...backgroundConstructions,
+				]).finally(() => handlers.onClose());
 			},
 		};
 	}) as CodingAgentPiTransport;
@@ -905,6 +936,8 @@ export const makeCodingAgentPiTransport = (
 			cursor: encodeArchiveCursor({version: 1, sessionId, anchorId: first.id}),
 		};
 	};
+	transport.currentRuntime = runtimeOwnership.currentRuntime;
+	transport.subscribeRuntime = runtimeOwnership.subscribeRuntime;
 	transport.loadOlder = async (cursor: string) => {
 		const decoded = decodeArchiveCursor(cursor);
 		if (decoded === undefined) {
@@ -914,7 +947,7 @@ export const makeCodingAgentPiTransport = (
 				reason: "Transcript archive cursor is malformed",
 			};
 		}
-		const metadata = (await listMetadata()).find(({id}) => id === decoded.sessionId);
+		const metadata = (await sessionIndex.list()).find(({id}) => id === decoded.sessionId);
 		if (metadata === undefined) {
 			return {
 				_tag: "refused",

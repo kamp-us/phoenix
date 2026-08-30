@@ -390,7 +390,10 @@ describe("patched PiClient request cancellation", () => {
 				assert.isTrue(freshLease.active);
 				assert.strictEqual(client.pendingRequestCount, 0);
 				assert.strictEqual(protocol.heldCount("detach"), 0);
-				assert.notInclude(protocol.commands, "detach");
+				assert.strictEqual(
+					protocol.commands.filter((command) => command === "detach").length,
+					timing === "before" ? 1 : 0,
+				);
 			}
 		}),
 	);
@@ -437,7 +440,7 @@ describe("patched PiClient request cancellation", () => {
 			while (protocol.heldCount("attach") > 0) protocol.acknowledgeHeld("attach");
 			yield* Effect.yieldNow;
 			assert.strictEqual(client.pendingRequestCount, 0);
-			assert.notInclude(protocol.commands, "detach");
+			assert.strictEqual(protocol.commands.filter((command) => command === "detach").length, 32);
 			assert.isTrue(client.connected);
 		}),
 	);
@@ -817,7 +820,7 @@ describe("PiLiveSession acknowledged controls", () => {
 			assert.strictEqual((yield* service.current())?.sessionId, first.id);
 			assert.strictEqual(
 				protocol.commands.filter((command) => command === "detach").length,
-				detachCount,
+				detachCount + 16,
 			);
 		}),
 	);

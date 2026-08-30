@@ -14,8 +14,12 @@ authoritative server/session snapshots, and transport-neutral framing
 Tuval owns connection-level exclusive leases and rejects a second owner. Closing a connection aborts
 active work, disposes every coding-agent session, and releases those leases.
 
-Attach and create instantiate the real `AgentSession` through pi's public `createAgentSession` SDK
-surface with the selected `SessionManager`, `SettingsManager`, and shared `ModelRuntime`
+Attach reserves exclusive ownership and returns a bounded recent transcript projected directly from
+`SessionManager`; it does not wait for `AgentSession` construction. The live-session wire therefore
+states runtime `loading`, `ready`, or a reason-bearing `refused` separately from connection and
+ownership. Transcript paging remains available while loading, but prompt and control availability is
+false until `ready`. Construction then uses pi's public `createAgentSession` SDK surface with the
+selected `SessionManager`, `SettingsManager`, and shared `ModelRuntime`
 ([SDK source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/core/sdk.ts)).
 Prompt, steer, abort, model, and thinking commands delegate to that session. A prompt response waits
 for pi's preflight acceptance, not for the whole model turn. Attach and later snapshots carry only a
@@ -36,11 +40,16 @@ attach and cold-restoration path can open.
 
 ## Cancellation and deadlines
 
-Every transport operation has a deadline. The Fate request's `AbortSignal` also reaches PiClient
-attachment acquisition. Timeout or interruption aborts the exact request, refuses late lease
-commit, and leaves the serialized lifecycle available for a fresh attempt. A detach failure remains
-a failed release: the selected session and possible ownership stay visible until Pi acknowledges a
-retry. PiClient's acquire/release ownership contract is pinned in
+Every transport operation has a deadline. A direct attach caller returns immediately when its Fate
+`AbortSignal` is interrupted. Pi-protocol has no cancellation frame, so PiClient tombstones the
+correlation, consumes the late response, and detaches a successful late attach/create unless a newer
+attach for that session is already pending. Selection replacement uses the same bounded cleanup path.
+Release and transport close
+invalidate an active construction attempt and release provisional ownership immediately. Pi cannot
+cancel `createAgentSession` once called, so a late result is aborted when active and disposed instead
+of being installed; an attempt token prevents it from overwriting a newer reconnect. A detach failure
+remains a failed release: the selected session and possible ownership stay visible until Pi
+acknowledges a retry. PiClient's acquire/release ownership contract is pinned in
 [`client.ts`](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/client/src/client.ts#L209-L291).
 
 ## Acceptance proof
@@ -50,7 +59,10 @@ acceptance journey starts the built `tuval` executable without `--pi-socket`, us
 EventSource in the browser, crosses Tuval into PiClient and this service, and drives a real
 `AgentSession`. Its retained-session fixture has a multi-megabyte transcript and proves a bounded
 attach response, bounded initial mount, ordered older-page loading, prompt updates, mounted reconnect,
-and cold restoration. Its deterministic model is pi-ai's production `fauxProvider`; only the provider
-is scripted, not the protocol or browser transport. The provider is the dependency's documented test
-surface
+and cold restoration. Focused production-service integration also holds real construction behind a
+gate to prove a sub-second ownership/history acknowledgement, eventual readiness, reason-bearing
+refusal and retry, reconnect while loading, and late-runtime disposal. The browser test renders the
+same loading/refused/ready transitions and keeps Composer and controls disabled until ready. Its
+deterministic model is pi-ai's production `fauxProvider`; only the provider is scripted, not the
+protocol or browser transport. The provider is the dependency's documented test surface
 ([documentation](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/ai/README.md#faux-provider-for-tests)).

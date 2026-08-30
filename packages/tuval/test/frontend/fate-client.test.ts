@@ -21,6 +21,7 @@ const attachedSession = (sessionId: string): AttachedLiveSession => ({
 	transcript: [],
 	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 5,
+	runtime: {_tag: "ready"},
 	connection: "connected",
 	ownership: "exclusive",
 });
@@ -47,6 +48,7 @@ const sessionEvent = (toolCall: Readonly<Record<string, unknown>>): unknown => (
 		],
 		archive: {_tag: "complete", hasMore: false},
 		lastEventSequence: 5,
+		runtime: {_tag: "ready"},
 		connection: "connected",
 		ownership: "exclusive",
 	},

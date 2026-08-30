@@ -145,12 +145,19 @@ index 11fe04e..7a84611 100644
              },
          };
          return new SessionHandle(sessionId, callbacks);
-@@ -253,6 +281,8 @@ export class PiClient {
+@@ -253,6 +281,15 @@ export class PiClient {
          }
          const pending = this.#takePendingRequest(message.id);
          if (!pending) {
-+            if (this.#cancelledRequestIds.delete(message.id))
++            if (this.#cancelledRequestIds.delete(message.id)) {
++                if (message.ok &&
++                    (message.result.command === "attach" || message.result.command === "create") &&
++                    !this.#state.isSessionAttached(message.result.session.id) &&
++                    ![...this.#pendingRequests.values()].some(({ command }) => command.command === "attach" && command.sessionId === message.result.session.id)) {
++                    void this.#request({ command: "detach", sessionId: message.result.session.id }).catch(() => { });
++                }
 +                return;
++            }
              this.#connection.fail(new ProtocolValidationError("Response has no matching request"));
              return;
          }

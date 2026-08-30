@@ -41,6 +41,7 @@ const attached: AttachedLiveSession = {
 	],
 	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 8,
+	runtime: {_tag: "ready"},
 	connection: "connected",
 	ownership: "exclusive",
 };

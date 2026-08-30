@@ -120,7 +120,22 @@ const TranscriptEntry = ({entry}: {readonly entry: LiveTranscriptEntry}) => (
 const connectionCopy = (
 	connection: PaneConnection,
 	message: string | undefined,
+	runtime: LiveSessionView["runtime"] | undefined,
 ): {readonly tone: string; readonly title: string; readonly detail: string} => {
+	if (connection === "attached" && runtime?._tag === "loading") {
+		return {
+			tone: "loading",
+			title: "Geçmiş bağlandı · çalışma zamanı yükleniyor",
+			detail: "Son konuşma hazır; denetimler Pi çalışma zamanı hazır olunca açılacak.",
+		};
+	}
+	if (connection === "attached" && runtime?._tag === "refused") {
+		return {
+			tone: "danger",
+			title: "Çalışma zamanı başlatılamadı",
+			detail: runtime.reason,
+		};
+	}
 	if (connection === "pending") {
 		return {tone: "loading", title: "Bağlanıyor", detail: "Oturum sahipliği doğrulanıyor."};
 	}
@@ -208,10 +223,17 @@ export function ChatPane({
 	const transcriptEnd = useRef<HTMLDivElement>(null);
 	const composerOwner = useRef(selected.identity);
 	const composer = useComposerEditor();
-	const connectionStatus = connectionCopy(connection, message);
 	const attachedSession =
 		connection === "attached" && session?._tag === "attached" ? session : null;
-	const attached = attachedSession !== null;
+	const connectionStatus = connectionCopy(connection, message, attachedSession?.runtime);
+	const attached = attachedSession?.runtime._tag === "ready";
+	const runtimeUnavailable = attachedSession !== null && !attached;
+	const runtimeControlReason =
+		attachedSession?.runtime._tag === "loading"
+			? "Pi çalışma zamanı yüklenirken denetimler kullanılamaz."
+			: attachedSession?.runtime._tag === "refused"
+				? `Pi çalışma zamanı kullanılamıyor: ${attachedSession.runtime.reason}`
+				: undefined;
 	const controls = attachedSession?.controls;
 	const acknowledgedModel = attachedSession?.model;
 	const selectedModel = controls?.models.find(
@@ -263,10 +285,14 @@ export function ChatPane({
 					role: "textbox",
 					"aria-label": "İstem",
 					"aria-multiline": "true",
+					...(runtimeControlReason === undefined
+						? {}
+						: {"aria-describedby": "runtime-control-reason"}),
 				},
 			},
 		});
-	}, [composer]);
+		composer?.editor.setEditable(attached);
+	}, [attached, composer, runtimeControlReason]);
 
 	const lastTranscriptId = session?.transcript.at(-1)?.id;
 	useEffect(() => {
@@ -361,6 +387,7 @@ export function ChatPane({
 			data-mobile-panel="chat"
 			aria-labelledby="chat-title"
 			data-connection={connection}
+			data-runtime={attachedSession?.runtime._tag}
 			tone="default"
 			elevation="overlay"
 			radius="lg"
@@ -390,7 +417,7 @@ export function ChatPane({
 			>
 				<strong>{connectionStatus.title}</strong>
 				<span>{connectionStatus.detail}</span>
-				{connection === "stopped" ? (
+				{connection === "stopped" || attachedSession?.runtime._tag === "refused" ? (
 					<Button type="button" variant="secondary" onClick={onReconnect}>
 						Yeniden bağlan
 					</Button>
@@ -421,14 +448,20 @@ export function ChatPane({
 					</Surface>
 					{controls === undefined ? null : (
 						<section className="session-controls" aria-label="Canlı oturum denetimleri">
+							{runtimeControlReason === undefined ? null : (
+								<p id="runtime-control-reason" role="status">
+									{runtimeControlReason}
+								</p>
+							)}
 							<div className="session-controls__selectors">
-								{controls.setModel && controls.models.length > 0 && onSetModel !== undefined ? (
+								{controls.models.length > 0 && onSetModel !== undefined ? (
 									<label>
 										<span>Model</span>
 										<select
 											aria-label="Model"
 											value={`${session.model.provider}/${session.model.id}`}
-											disabled={pendingControl !== null}
+											disabled={!controls.setModel || pendingControl !== null}
+											aria-describedby={runtimeUnavailable ? "runtime-control-reason" : undefined}
 											onChange={(event) => {
 												const candidate = controls.models.find(
 													({model}) =>
@@ -450,15 +483,14 @@ export function ChatPane({
 										</select>
 									</label>
 								) : null}
-								{controls.setThinking &&
-								thinkingLevels.length > 0 &&
-								onSetThinking !== undefined ? (
+								{thinkingLevels.length > 0 && onSetThinking !== undefined ? (
 									<label>
 										<span>Düşünme düzeyi</span>
 										<select
 											aria-label="Düşünme düzeyi"
 											value={session.thinkingLevel}
-											disabled={pendingControl !== null}
+											disabled={!controls.setThinking || pendingControl !== null}
+											aria-describedby={runtimeUnavailable ? "runtime-control-reason" : undefined}
 											onChange={(event) =>
 												void runControl("set-thinking", () =>
 													onSetThinking(event.currentTarget.value as ThinkingLevel),
@@ -475,11 +507,14 @@ export function ChatPane({
 								) : null}
 							</div>
 							<div className="session-controls__actions">
-								{controls.steer && onSteer !== undefined ? (
+								{(controls.steer || runtimeUnavailable) && onSteer !== undefined ? (
 									<Button
 										type="button"
 										variant="secondary"
-										disabled={pendingControl !== null || composerText().length === 0}
+										disabled={
+											!controls.steer || pendingControl !== null || composerText().length === 0
+										}
+										aria-describedby={runtimeUnavailable ? "runtime-control-reason" : undefined}
 										onClick={() => {
 											const text = composerText();
 											if (text.length === 0) return;
@@ -493,11 +528,12 @@ export function ChatPane({
 										{pendingControl === "steer" ? "Yönlendiriliyor" : "Yönlendir"}
 									</Button>
 								) : null}
-								{controls.abort && onAbort !== undefined ? (
+								{(controls.abort || runtimeUnavailable) && onAbort !== undefined ? (
 									<Button
 										type="button"
 										variant="danger"
-										disabled={pendingControl !== null}
+										disabled={!controls.abort || pendingControl !== null}
+										aria-describedby={runtimeUnavailable ? "runtime-control-reason" : undefined}
 										onClick={() => void runControl("abort", onAbort)}
 									>
 										{pendingControl === "abort" ? "Durduruluyor" : "Durdur"}
@@ -571,7 +607,13 @@ export function ChatPane({
 						{sendStatus.text}
 					</p>
 				)}
-				<Button variant="primary" type="submit" disabled={!canSend} loading={sending}>
+				<Button
+					variant="primary"
+					type="submit"
+					disabled={!canSend}
+					loading={sending}
+					aria-describedby={runtimeUnavailable ? "runtime-control-reason" : undefined}
+				>
 					{sending ? "Gönderiliyor" : "Gönder"}
 				</Button>
 			</form>

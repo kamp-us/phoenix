@@ -113,7 +113,9 @@ class SyntheticPiProtocol {
 	readonly pendingPrompts = new Map<string, {id: string; sessionId: string; text: string}>();
 	readonly eventsOnAttach = new Map<string, ReadonlyArray<ServerEvent>>();
 	readonly pendingAttaches = new Map<string, {id: string; session: SessionSnapshot}>();
+	readonly pendingCreates: Array<{id: string; session: SessionSnapshot}> = [];
 	holdAttach = false;
+	holdCreate = false;
 	failDetach = false;
 	#handlers: ByteTransportHandlers | undefined;
 	#closed = false;
@@ -150,6 +152,18 @@ class SyntheticPiProtocol {
 			id: pending.id,
 			ok: true,
 			result: {command: "attach", session: pending.session},
+		});
+	}
+
+	acknowledgeCreate(): void {
+		const pending = this.pendingCreates.shift();
+		if (pending === undefined) throw new Error("No pending create");
+		this.snapshots.set(pending.session.id, pending.session);
+		this.#deliver({
+			type: "response",
+			id: pending.id,
+			ok: true,
+			result: {command: "create", session: pending.session},
 		});
 	}
 
@@ -282,13 +296,16 @@ class SyntheticPiProtocol {
 		}
 		if (command.command === "create") {
 			const created = snapshot("created-by-checkpoint", 1);
-			this.snapshots.set(created.id, created);
-			this.#deliver({
-				type: "response",
-				id: message.id,
-				ok: true,
-				result: {command: "create", session: created},
-			});
+			if (this.holdCreate) this.pendingCreates.push({id: message.id, session: created});
+			else {
+				this.snapshots.set(created.id, created);
+				this.#deliver({
+					type: "response",
+					id: message.id,
+					ok: true,
+					result: {command: "create", session: created},
+				});
+			}
 			return;
 		}
 		if (command.command === "prompt") {
@@ -680,6 +697,15 @@ describe("PiLiveSession", () => {
 			assert.isTrue(protocol.pendingAttaches.has(initial.id));
 			expire();
 			assert.deepInclude(yield* Fiber.join(timedOut), {_tag: "refused", code: "timeout"});
+			protocol.acknowledgeAttach(initial.id);
+			for (
+				let attempt = 0;
+				attempt < 100 && !protocol.detached.includes(initial.id);
+				attempt += 1
+			) {
+				yield* Effect.yieldNow;
+			}
+			assert.include(protocol.detached, initial.id);
 			assert.strictEqual(yield* service.current(), null);
 		}),
 	);
@@ -700,7 +726,102 @@ describe("PiLiveSession", () => {
 			}
 			assert.isTrue(protocol.pendingAttaches.has(initial.id));
 			yield* Fiber.interrupt(interrupted);
+			protocol.acknowledgeAttach(initial.id);
+			for (
+				let attempt = 0;
+				attempt < 100 && !protocol.detached.includes(initial.id);
+				attempt += 1
+			) {
+				yield* Effect.yieldNow;
+			}
+			assert.include(protocol.detached, initial.id);
 			assert.strictEqual(yield* service.current(), null);
+		}),
+	);
+
+	it.effect("detaches late open and create acknowledgements after replacement timeout", () =>
+		Effect.gen(function* () {
+			const first = snapshot("replacement-current", 1);
+			const second = snapshot("replacement-open", 1);
+			const openProtocol = new SyntheticPiProtocol(first, second);
+			let expireOpen = () => {};
+			const openService = yield* connect(openProtocol, {
+				acknowledgementTimeoutMs: 25,
+				makeAcknowledgementDeadline: () => ({
+					elapsed: new Promise<void>((resolve) => {
+						expireOpen = resolve;
+					}),
+					cancel: () => {},
+				}),
+			});
+			yield* openService.attach(first.id);
+			openProtocol.holdAttach = true;
+			const opening = yield* openService
+				.open({correlationId: "late-open", sessionId: second.id})
+				.pipe(Effect.forkChild);
+			for (
+				let attempt = 0;
+				attempt < 100 && !openProtocol.pendingAttaches.has(second.id);
+				attempt += 1
+			) {
+				yield* Effect.yieldNow;
+			}
+			expireOpen();
+			assert.deepInclude(yield* Fiber.join(opening), {
+				_tag: "refused",
+				command: "open",
+				code: "timeout",
+			});
+			openProtocol.acknowledgeAttach(second.id);
+			for (
+				let attempt = 0;
+				attempt < 100 && !openProtocol.detached.includes(second.id);
+				attempt += 1
+			) {
+				yield* Effect.yieldNow;
+			}
+			assert.include(openProtocol.detached, second.id);
+			assert.strictEqual((yield* openService.current())?.sessionId, first.id);
+
+			const createProtocol = new SyntheticPiProtocol(first);
+			createProtocol.holdCreate = true;
+			let expireCreate = () => {};
+			const createService = yield* connect(createProtocol, {
+				acknowledgementTimeoutMs: 25,
+				makeAcknowledgementDeadline: () => ({
+					elapsed: new Promise<void>((resolve) => {
+						expireCreate = resolve;
+					}),
+					cancel: () => {},
+				}),
+			});
+			yield* createService.attach(first.id);
+			const creating = yield* createService
+				.create({correlationId: "late-create"})
+				.pipe(Effect.forkChild);
+			for (
+				let attempt = 0;
+				attempt < 100 && createProtocol.pendingCreates.length === 0;
+				attempt += 1
+			) {
+				yield* Effect.yieldNow;
+			}
+			expireCreate();
+			assert.deepInclude(yield* Fiber.join(creating), {
+				_tag: "refused",
+				command: "create",
+				code: "timeout",
+			});
+			createProtocol.acknowledgeCreate();
+			for (
+				let attempt = 0;
+				attempt < 100 && !createProtocol.detached.includes("created-by-checkpoint");
+				attempt += 1
+			) {
+				yield* Effect.yieldNow;
+			}
+			assert.include(createProtocol.detached, "created-by-checkpoint");
+			assert.strictEqual((yield* createService.current())?.sessionId, first.id);
 		}),
 	);
 

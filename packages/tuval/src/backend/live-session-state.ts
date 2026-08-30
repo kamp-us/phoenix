@@ -26,6 +26,7 @@ import type {
 	CreateLiveSessionRequest,
 	LiveSessionControls,
 	LiveSessionEvent,
+	LiveSessionRuntime,
 	LiveSessionView,
 	LiveTranscriptEntry,
 	LoadOlderTranscriptOutcome,
@@ -39,6 +40,7 @@ import type {
 } from "../shared/live-session.js";
 import type {TranscriptArchiveSource} from "./coding-agent-pi-service.js";
 import {resilienceDiagnostic} from "./resilience.js";
+import type {RuntimeLifecycle, RuntimeLifecycleSource} from "./runtime-lifecycle.js";
 
 const EVENT_HISTORY_LIMIT = 500;
 const CORRELATED_PROMPT_LIMIT = 100;
@@ -46,6 +48,10 @@ const CORRELATED_CONTROL_LIMIT = 100;
 const ACKNOWLEDGEMENT_TIMEOUT_MS = 10_000;
 
 type Listener = (event: LiveSessionEvent) => void;
+
+type AttachmentRuntime =
+	| {readonly _tag: "implicit-ready"; readonly view: {_tag: "ready"}}
+	| {readonly _tag: "tracked"; readonly attempt: number; view: LiveSessionRuntime};
 
 interface Attachment {
 	readonly lease: PiSessionHandle;
@@ -55,6 +61,7 @@ interface Attachment {
 	transcript: Array<LiveTranscriptEntry>;
 	readonly toolCallBuffers: Map<string, string>;
 	readonly archive: LiveSessionView["archive"];
+	readonly runtime: AttachmentRuntime;
 	disconnectedReason?: string;
 	leaseReleased: boolean;
 }
@@ -103,6 +110,7 @@ export interface LiveSessionStateOptions {
 	readonly onDisconnected?: () => void;
 	readonly onSessionSubscriptionBound?: (sessionId: string) => void;
 	readonly transcriptArchive?: TranscriptArchiveSource;
+	readonly runtimeLifecycle?: RuntimeLifecycleSource;
 }
 
 interface PendingAttachment {
@@ -355,6 +363,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	readonly #unsubscribeConnection: Unsubscribe;
 	readonly #unsubscribeEvents: Unsubscribe;
 	readonly #unsubscribeServer: Unsubscribe;
+	readonly #unsubscribeRuntime: Unsubscribe;
 	readonly #acknowledgementTimeoutMs: number;
 	readonly #makeAcknowledgementDeadline: (timeoutMs: number) => AcknowledgementDeadline;
 	readonly #options: LiveSessionStateOptions;
@@ -407,6 +416,9 @@ export class PiLiveSessionState implements LiveSessionState {
 				else pending.eventsAfterSnapshot.push(event);
 			}
 		});
+		this.#unsubscribeRuntime =
+			options.runtimeLifecycle?.subscribeRuntime((event) => this.#acceptRuntime(event)) ??
+			(() => undefined);
 	}
 
 	static async connect(
@@ -590,6 +602,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		this.#unsubscribeConnection();
 		this.#unsubscribeServer();
 		this.#unsubscribeEvents();
+		this.#unsubscribeRuntime();
 		this.#listeners.clear();
 		await this.#client.dispose();
 	};
@@ -608,9 +621,18 @@ export class PiLiveSessionState implements LiveSessionState {
 					reason: "Tuval live-session service is disposed",
 				};
 			}
-			const previous = this.#attachment;
-			if (previous?.snapshot.id === sessionId && previous.disconnectedReason === undefined) {
+			let previous = this.#attachment;
+			if (
+				previous?.snapshot.id === sessionId &&
+				previous.disconnectedReason === undefined &&
+				previous.runtime.view._tag !== "refused"
+			) {
 				return {_tag: "attached", session: this.#attachedViewOf(previous, this.#sequence)};
+			}
+			if (previous?.snapshot.id === sessionId && previous.runtime.view._tag === "refused") {
+				this.#attachment = undefined;
+				await this.#releaseLease(previous);
+				previous = undefined;
 			}
 			const pending: PendingAttachment = {sessionId, eventsAfterSnapshot: []};
 			this.#pendingAttachment = pending;
@@ -947,6 +969,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		if (winner._tag === "error") throw winner.error;
 		attempt.tombstone();
 		acquisitionCancellation.abort();
+		this.#disposeSupersededAcquisition(acquisition);
 		if (winner._tag === "interrupted") {
 			throw new ReplacementInterrupted(`Interrupted before ${request.command} acknowledgement`);
 		}
@@ -1169,6 +1192,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	}
 
 	#candidateAttachment(lease: PiSessionHandle, snapshot: SessionSnapshot): Attachment {
+		const runtime = this.#options.runtimeLifecycle?.currentRuntime(snapshot.id);
 		return {
 			lease,
 			generation: ++this.#generation,
@@ -1179,6 +1203,10 @@ export class PiLiveSessionState implements LiveSessionState {
 				_tag: "complete",
 				hasMore: false,
 			},
+			runtime:
+				runtime === undefined
+					? {_tag: "implicit-ready", view: {_tag: "ready"}}
+					: {_tag: "tracked", attempt: runtime.attempt, view: this.#runtimeViewOf(runtime)},
 			unsubscribes: [],
 			leaseReleased: false,
 		};
@@ -1191,6 +1219,14 @@ export class PiLiveSessionState implements LiveSessionState {
 		attachment.unsubscribes.push(unsubscribe);
 		this.#clearPrompts();
 		this.#attachment = attachment;
+		const runtime = this.#options.runtimeLifecycle?.currentRuntime(attachment.snapshot.id);
+		if (
+			runtime !== undefined &&
+			attachment.runtime._tag === "tracked" &&
+			runtime.attempt === attachment.runtime.attempt
+		) {
+			attachment.runtime.view = this.#runtimeViewOf(runtime);
+		}
 		this.#options.onSessionSubscriptionBound?.(attachment.snapshot.id);
 		if (pending !== undefined && this.#pendingAttachment === pending) {
 			this.#pendingAttachment = undefined;
@@ -1247,6 +1283,16 @@ export class PiLiveSessionState implements LiveSessionState {
 				correlationId: request.correlationId,
 				code: "disconnected",
 				reason: attachment.disconnectedReason,
+			};
+		} else if (attachment.runtime.view._tag !== "ready") {
+			outcome = {
+				_tag: "refused",
+				correlationId: request.correlationId,
+				code: "no-attachment",
+				reason:
+					attachment.runtime.view._tag === "loading"
+						? "Pi runtime is still loading"
+						: attachment.runtime.view.reason,
 			};
 		} else {
 			const cancellation = new AbortController();
@@ -1370,6 +1416,27 @@ export class PiLiveSessionState implements LiveSessionState {
 		this.#promptGeneration = undefined;
 	}
 
+	#runtimeViewOf(runtime: RuntimeLifecycle | undefined): LiveSessionRuntime {
+		if (runtime === undefined || runtime.state._tag === "ready") return {_tag: "ready"};
+		if (runtime.state._tag === "loading") return {_tag: "loading"};
+		return {_tag: "refused", reason: runtime.state.reason};
+	}
+
+	#acceptRuntime(event: RuntimeLifecycle): void {
+		const attachment = this.#attachment;
+		if (
+			attachment === undefined ||
+			attachment.snapshot.id !== event.sessionId ||
+			attachment.runtime._tag !== "tracked" ||
+			attachment.runtime.attempt !== event.attempt ||
+			attachment.disconnectedReason !== undefined
+		) {
+			return;
+		}
+		attachment.runtime.view = this.#runtimeViewOf(event);
+		this.#publishSession(attachment);
+	}
+
 	#acceptSnapshot(generation: number, snapshot: SessionSnapshot): void {
 		const attachment = this.#attachment;
 		if (attachment === undefined || attachment.generation !== generation) return;
@@ -1452,6 +1519,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		);
 		const thinkingLevels = selected?.supportedThinkingLevels ?? [];
 		const owned =
+			attachment.runtime.view._tag === "ready" &&
 			attachment.disconnectedReason === undefined &&
 			this.#client.connected &&
 			!attachment.leaseReleased &&
@@ -1498,6 +1566,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			transcript: [...attachment.transcript],
 			archive: attachment.archive,
 			lastEventSequence: sequence,
+			runtime: attachment.runtime.view,
 			controls: this.#controlsOf(attachment),
 		};
 	}

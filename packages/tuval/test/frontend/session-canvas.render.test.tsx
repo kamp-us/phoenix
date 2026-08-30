@@ -166,6 +166,7 @@ describe("SessionCanvas", () => {
 			transcript: [],
 			archive: {_tag: "complete", hasMore: false},
 			lastEventSequence: 12,
+			runtime: {_tag: "ready"},
 			connection: "connected",
 			ownership: "exclusive",
 		};
@@ -226,6 +227,7 @@ describe("SessionCanvas", () => {
 			transcript: [],
 			archive: {_tag: "complete", hasMore: false},
 			lastEventSequence: 12,
+			runtime: {_tag: "ready"},
 			connection: "connected",
 			ownership: "exclusive",
 		};
@@ -280,6 +282,7 @@ describe("SessionCanvas", () => {
 			transcript: [],
 			archive: {_tag: "complete", hasMore: false},
 			lastEventSequence: 8,
+			runtime: {_tag: "ready"},
 			connection: "disconnected",
 			ownership: "none",
 			reason: "socket closed",
@@ -347,6 +350,7 @@ describe("SessionCanvas", () => {
 			transcript: [],
 			archive: {_tag: "complete", hasMore: false},
 			lastEventSequence: 3,
+			runtime: {_tag: "ready"},
 			connection: "connected",
 			ownership: "exclusive",
 		});

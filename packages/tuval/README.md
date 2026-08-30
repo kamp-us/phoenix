@@ -109,7 +109,10 @@ The package exports the schema-backed live-session wire types from `tuval/live-s
 mutations. `GET /fate/live` streams the service's ordered events directly, starting after the
 optional sequence cursor; clients do not poll a query. Attachments hold one exclusive PiClient lease
 at a time. Replacing or disconnecting a session releases its subscription and lease before more work
-can use it.
+can use it. Attach acknowledges that ownership
+with bounded `SessionManager` history before the controllable `AgentSession` is constructed. The
+required runtime state is `loading`, `ready`, or reason-bearing `refused`; Composer and controls stay
+disabled until `ready`, while a refused runtime can be retried without discarding visible history.
 
 Attach returns a recent transcript window bounded by item count and encoded bytes. Its archive state
 is either complete, or has `hasMore: true` with the only valid cursor for the next older page; the
@@ -121,9 +124,12 @@ require caller-supplied correlation ids and return `acknowledged` only after PiC
 matching protocol result. Control projections derive phase and lease availability from the observed
 snapshot and expose only authenticated pi models plus the selected model's supported thinking
 levels. Ownership, unsupported capability or value, unavailable phase, timeout, disconnect, and
-protocol failures return correlated refusals carrying the last observed projection. A malformed
-protocol event produces a diagnostic and a disconnected snapshot while retaining the last validated
-transcript.
+protocol failures return correlated refusals carrying the last observed projection. Release and
+disconnect invalidate a loading attempt immediately. Attach or replacement interruption returns to
+the caller immediately, then detaches the bounded late acknowledgement because pi-protocol has no
+cancel frame. Any `AgentSession` that finishes after cancellation or timeout is disposed. Reconnect
+starts one new attempt token, so an older construction cannot replace it. A malformed protocol event
+produces a diagnostic and a disconnected snapshot while retaining the last validated transcript.
 
 ## Extension UI contract
 

@@ -45,6 +45,7 @@ const liveSession = (
 	transcript,
 	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 4,
+	runtime: {_tag: "ready"},
 	connection: "connected",
 	ownership: "exclusive",
 });
@@ -1724,6 +1725,109 @@ test("Composer keeps its keyboard focus ring visible while the editor scrolls", 
 	});
 	expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
 	expect(scrollState.scrollTop).toBeGreaterThan(0);
+	expect(errors).toEqual([]);
+});
+
+test("slow runtime attach paints bounded history, refusal, retry, and eventual controls", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const retained = session("runtime-loading", "/work/runtime-loading");
+	let attachCalls = 0;
+	let releaseCalls = 0;
+	const runtimeSession = (
+		runtime: AttachedLiveSession["runtime"],
+		controlsReady: boolean,
+	): AttachedLiveSession => ({
+		...liveSession(retained.piSessionId),
+		runtime,
+		controls: {
+			create: controlsReady,
+			open: controlsReady,
+			steer: false,
+			abort: false,
+			setModel: controlsReady,
+			setThinking: controlsReady,
+			models: [
+				{
+					model: {provider: "anthropic", id: "claude-sonnet"},
+					name: "Claude Sonnet",
+					supportedThinkingLevels: ["off", "high"],
+				},
+			],
+			thinkingLevels: ["off", "high"],
+		},
+	});
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions: [retained]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([retained]));
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			attachCalls += 1;
+			await fulfill(route, id, {
+				_tag: "attached",
+				session: runtimeSession({_tag: "loading"}, false),
+			});
+			return;
+		}
+		releaseCalls += 1;
+		await fulfill(route, id, {_tag: "released", sessionId: retained.piSessionId});
+	});
+	await page.goto(tuvalUrl);
+
+	const startedAt = Date.now();
+	await selectNode(page, retained.identity);
+	await expect(page.getByText("Geçmiş bağlandı · çalışma zamanı yükleniyor")).toBeVisible();
+	expect(Date.now() - startedAt).toBeLessThan(1_000);
+	await expect(page.getByText("runtime-loading mevcut konuşma")).toBeVisible();
+	const editor = page.getByRole("textbox", {name: "İstem"});
+	await expect(editor).toHaveAttribute("contenteditable", "false");
+	await expect(editor).toHaveAttribute("aria-describedby", "runtime-control-reason");
+	await expect(
+		page.getByText("Pi çalışma zamanı yüklenirken denetimler kullanılamaz."),
+	).toBeVisible();
+	await expect(page.getByRole("button", {name: "Gönder"})).toBeDisabled();
+	await expect(page.getByRole("combobox", {name: "Model"})).toBeDisabled();
+	await expect(page.getByRole("combobox", {name: "Düşünme düzeyi"})).toBeDisabled();
+	await expect(page.getByRole("button", {name: "Yönlendir"})).toBeDisabled();
+	await expect(page.getByRole("button", {name: "Durdur"})).toBeDisabled();
+
+	await emitLive(page, {
+		_tag: "session",
+		sequence: 5,
+		session: runtimeSession({_tag: "refused", reason: "fixture extension failed"}, false),
+	});
+	await expect(page.getByText("Çalışma zamanı başlatılamadı")).toBeVisible();
+	await expect(page.getByText("fixture extension failed", {exact: true})).toBeVisible();
+	await page.getByRole("button", {name: "Yeniden bağlan"}).click();
+	await expect.poll(() => attachCalls).toBe(2);
+	await expect(page.getByText("Geçmiş bağlandı · çalışma zamanı yükleniyor")).toBeVisible();
+
+	await emitLive(page, {
+		_tag: "session",
+		sequence: 6,
+		session: runtimeSession({_tag: "ready"}, true),
+	});
+	await expect(page.locator(".chat-pane")).toHaveAttribute("data-runtime", "ready");
+	await expect(editor).toHaveAttribute("contenteditable", "true");
+	await expect(page.getByRole("combobox", {name: "Model"})).toBeEnabled();
+	await editor.fill("çalışma zamanı hazır olunca gönder");
+	await expect(page.getByRole("button", {name: "Gönder"})).toBeEnabled();
+	await expect(page.getByText("runtime-loading mevcut konuşma")).toBeVisible();
+
+	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
+	await expect.poll(() => releaseCalls).toBe(1);
 	expect(errors).toEqual([]);
 });
 
