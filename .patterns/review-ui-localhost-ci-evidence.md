@@ -40,9 +40,9 @@ disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
 `no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap headroom, and 256 PIDs.
 A separate 64 MiB unprivileged tmpfs gives pnpm only the writable home-state path its project
 registry needs; the rest of the root stays read-only. Those measured memory/workspace ceilings plus
-1 GiB of bounded shared memory let Tuval's existing
-`test:browser` journey complete; Docker proved the former 2 GiB and default 64 MiB shared-memory
-bounds OOM-killed, ran out of space, or crashed Chromium on the exact command. The journey's
+a 1 GiB bounded browser temporary filesystem let Tuval's existing `test:browser` journey execute
+without infrastructure crashes; Docker proved the former 2 GiB and 64 MiB bounds OOM-killed, ran out
+of space, or crashed Chromium on the exact command. The journey's
 dynamic-port test servers finish before the
 producer starts its separate fixed capture server, so there is no conflicting concurrent server.
 Every foreground container is named before it starts, so cleanup can attempt force-removal after a
@@ -76,8 +76,8 @@ uses `--network container:<server>` to share that isolated network stack
 server on loopback without external network. The PR server receives no Actions credentials,
 authority checkout, Docker socket, or artifact-output mount. The trusted sidecar receives the
 authority checkout read-only and a 256 MiB tmpfs output volume only. It and the governed journey are
-the only browser-bearing containers and each has 1 GiB bounded shared memory; non-browser
-foreground containers keep 64 MiB. A fixed base-owned extraction
+the only browser-bearing containers and each has a 1 GiB bounded `/tmp` plus a 64 MiB unprivileged
+font/browser cache; non-browser foreground containers keep a 64 MiB `/tmp`. A fixed base-owned extraction
 container copies at most that bounded volume into the artifact directory; the host validates those
 captures and alone writes the manifest. Docker documents the remaining root, capability, CPU, memory, PID, tmpfs, named-container, and
 mount controls in the [`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/),

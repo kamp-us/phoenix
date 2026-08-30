@@ -399,9 +399,9 @@ The offline PR-controlled install and governed test run under a read-only root f
 `--cap-drop ALL`, `no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap
 headroom, 256 PIDs, a 4 GiB tmpfs-backed disposable test workspace, and a 64 MiB unprivileged
 tmpfs for pnpm's project-state symlink under its otherwise read-only home. The 4 GiB memory and
-workspace ceilings and a 1 GiB shared-memory ceiling are the measured bounds needed by Tuval's
-existing `test:browser` journey; the prior 2 GiB memory/workspace and default 64 MiB shared-memory
-bounds produced Docker OOM, no-space, and Chromium crash results for that exact command. The
+workspace ceilings and a 1 GiB browser temporary-filesystem ceiling are the measured bounds needed
+by Tuval's existing `test:browser` journey; the prior 2 GiB memory/workspace and 64 MiB browser
+filesystem bounds produced Docker OOM, no-space, and Chromium crash results for that exact command. The
 journey's own dynamic-port servers
 exit with their Playwright cases before the later fixed capture server starts, so the producer never
 runs two conflicting Tuval servers concurrently. Capture output uses a
@@ -422,8 +422,9 @@ resulting built workspace is mounted read-only into the server, which also has n
 loopback and publishes no host port. A
 base-owned capture sidecar runs with `--network container:<server>`, sharing only that isolated
 network namespace so its browser reaches the server's loopback without gaining external network.
-Both browser-bearing containers receive the same bounded 1 GiB shared-memory ceiling; the server,
-preparation, extraction, and keeper containers keep the 64 MiB default.
+Both browser-bearing containers receive the same bounded 1 GiB `/tmp` plus a 64 MiB unprivileged
+font/browser-cache tmpfs; the server, preparation, extraction, and keeper containers keep the 64 MiB
+`/tmp` default.
 Docker documents that the `none` driver leaves only loopback
 ([none driver](https://docs.docker.com/engine/network/drivers/none/)) and that container networking
 shares another container's networking stack

@@ -80,7 +80,7 @@ const isInside = (parent: string, candidate: string): boolean => {
 	return path === root || path.startsWith(`${root}${sep}`);
 };
 
-const containerGuardArgs = (memory = "2g", sharedMemory = "64m"): readonly string[] => [
+const containerGuardArgs = (memory = "2g", temporaryStorage = "64m"): readonly string[] => [
 	"--read-only",
 	"--cap-drop",
 	"ALL",
@@ -94,10 +94,13 @@ const containerGuardArgs = (memory = "2g", sharedMemory = "64m"): readonly strin
 	memory,
 	"--pids-limit",
 	"256",
-	"--shm-size",
-	sharedMemory,
 	"--tmpfs",
-	"/tmp:rw,nosuid,nodev,size=64m",
+	`/tmp:rw,nosuid,nodev,size=${temporaryStorage}`,
+];
+
+const browserCacheTmpfsArgs = (): readonly string[] => [
+	"--tmpfs",
+	"/home/node/.cache:rw,nosuid,nodev,size=64m,uid=1000,gid=1000",
 ];
 
 const pnpmStateTmpfsArgs = (): readonly string[] => [
@@ -135,6 +138,7 @@ export const subjectInstallAndTestContainerArgs = (
 	"--name",
 	name,
 	...containerGuardArgs("4g", "1g"),
+	...browserCacheTmpfsArgs(),
 	...pnpmStateTmpfsArgs(),
 	"--mount",
 	`type=volume,src=${volume},dst=/subject`,
@@ -218,6 +222,7 @@ export const subjectCaptureContainerArgs = (
 	"--name",
 	name,
 	...containerGuardArgs("2g", "1g"),
+	...browserCacheTmpfsArgs(),
 	"--mount",
 	`type=bind,src=${authorityRoot},dst=/authority,readonly`,
 	"--mount",

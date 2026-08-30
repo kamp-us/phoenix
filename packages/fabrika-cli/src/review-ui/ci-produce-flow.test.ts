@@ -786,7 +786,8 @@ describe("trusted localhost producer flow", () => {
 		);
 		expect(subjectRun).toContain("--read-only --cap-drop ALL");
 		expect(subjectRun).toContain("--memory 4g --memory-swap 4g");
-		expect(subjectRun).toContain("--shm-size 1g");
+		expect(subjectRun).toContain("/tmp:rw,nosuid,nodev,size=1g");
+		expect(subjectRun).toContain("/home/node/.cache:rw,nosuid,nodev,size=64m,uid=1000,gid=1000");
 		expect(subjectRun).toContain(
 			"/home/node/.local/share/pnpm:rw,nosuid,nodev,size=64m,uid=1000,gid=1000",
 		);
@@ -823,7 +824,8 @@ describe("trusted localhost producer flow", () => {
 				(call) => call.startsWith("docker inspect") && call.endsWith(" keeper-id"),
 			),
 		).toHaveLength(2);
-		expect(sidecar).toContain("--shm-size 1g");
+		expect(sidecar).toContain("/tmp:rw,nosuid,nodev,size=1g");
+		expect(sidecar).toContain("/home/node/.cache:rw,nosuid,nodev,size=64m,uid=1000,gid=1000");
 		expect(sidecar).toContain("/authority,dst=/authority,readonly");
 		expect(sidecar).toContain("capture-output,dst=/capture-output");
 		expect(sidecar).toContain("ci-capture-sidecar.ts 4173 /capture-output tuval");
