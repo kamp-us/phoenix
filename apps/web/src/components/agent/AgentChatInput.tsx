@@ -1,5 +1,4 @@
 import {
-	AtSign,
 	Bot,
 	Brain,
 	ChevronDown,
@@ -7,15 +6,16 @@ import {
 	ChevronsUp,
 	ChevronUp,
 	CircleOff,
+	File as FileIcon,
 	FileImage,
 	type LucideIcon,
 	Minus,
 	Paperclip,
 	SendHorizontal,
 	ShieldCheck,
-	Slash,
 	Sparkles,
 	Square,
+	Terminal,
 	X,
 } from "lucide-react";
 import {
@@ -1169,7 +1169,7 @@ function SuggestionRow({
 			aria-selected={active}
 			onClick={onSelect}
 		>
-			<Icon icon={suggestion.kind === "command" ? Slash : AtSign} size={16} />
+			<Icon icon={suggestion.kind === "command" ? Terminal : FileIcon} size={16} />
 			<span className="kp-agent-chat__suggestion-main">
 				{suggestion.kind === "command" ? `/${command?.name ?? ""}` : `@${suggestion.path}`}
 			</span>
