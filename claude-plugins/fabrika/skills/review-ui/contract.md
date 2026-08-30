@@ -131,9 +131,10 @@ section.
 - **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql);
   every list read paginates and reports its scanned count on stderr. The evidence-upload
   endpoint sits outside §11's porcelain scope exactly as `ui evidence`'s attachment tier states.
-- **A non-zero exit is UNKNOWN** until the code is read. No partial answers: a partial capture
-  set or a partial upload is a refusal that names every failed member on stderr, never a smaller
-  success.
+- **A non-zero exit is not success; read its code before routing.** Proven typed outcomes occupy
+  `12`–`17`; UNKNOWN/read failures never expose a partial answer. `fetch` exit `13` is the one
+  complete materialized red-evidence result: stderr names every capture path so the caller can
+  inspect it and post FAIL. A partial capture set or upload is never a smaller success.
 - **Head-bound where a head matters.** `render` and `post` resolve the PR's live head and carry
   it; `render` binds the preview to it, `post` refuses when it moved. A verdict formed over one
   tree must be unrepresentable over another (ADR 0058; #3769's class). `note` carries no head:
@@ -165,21 +166,21 @@ sibling's numerals is not a goal the doctrine sets.
 | Code | Meaning |
 |---|---|
 | `0` | the answer is on stdout |
-| `1` | usage error (bad flag, zero `--surface` operands, unresolvable repo), or the verb failed to run |
+| `1` | usage/caller error when stderr is the verb's own refusal; otherwise the process failed at runtime and the result is UNKNOWN |
 | `126` | no implementation could be resolved |
 | `3` | stdin was read and held nothing (`post` and `note`; the aligned seat) |
-| `4` | a required file a verb derives from is absent, does not parse, or violates its schema — a capture set's `manifest.json`, or `design-harness.json` at the tier-choice read (the whole-file rule the `ui` group states; the seat the base uses for a malformed derived document) |
+| `4` | a required governed declaration, manifest, provenance receipt, artifact membership set, or other derived document is absent, malformed, or violates its schema |
 | `5` | the authored text carries a machine-local path (this group offers no `--redact`; the recovery is a rewrite) |
 | `6` | the authored text is a bare `@` path reference — not redactable |
 | `7` | zero scope: the target is **proven** absent (404), or the PR is closed — a deliberate, declared widening of the base seat (existence-only) to closed-target, because a closed PR is provably not reviewable scope, matching the sibling `review` group's use |
 | `8` | a write was attempted and its outcome could not be proven — UNKNOWN |
 | `9` | the write landed but the read-back does not match |
-| `10` | a semantic refusal on a value or body: a supplied value off its closed vocabulary (a bad `--polarity`, `--carrier advisory` with FAIL, a non-kebab `--out`, a `:state` outside the realized set), or a `note` body whose first line parses as a verdict carrier |
-| `11` | a required read or execution failed — no outcome is proven: the PR, its head, the preview probe, the harness, a capture's validity, or (at post time) the upload target's state. The same deliberate widening the `ui` group states: an execution that never became answerable leaves the run UNKNOWN exactly as a failed read does |
-| `12` | refused, proven: the artifact is not the PR's current tree — the live head moved past `--sha` at post time, or the preview's deployed head is not the live head at render time |
-| `13` | proven: at least one surface threw an uncaught page error during render — the render is red |
-| `14` | proven: at least one surface is unreachable — status ≥ 400 or failed navigation (no route, dark flag, gated tier); each named on stderr |
-| `15` | proven: a capture was produced but is invalid — zero bytes, undecodable, zero area, or a set member fails its manifest sha |
+| `10` | a semantic refusal on an operand or body: a supplied value is off its closed vocabulary, a CI identity/root/output operand is invalid, or a `note` body starts with a verdict carrier |
+| `11` | a required read or execution failed — no outcome is proven: PR/head/preview, default-branch authority, workflow run/check/artifact/download, producer workspace/build/server/readiness/sidecar, materialization, capture validity, provenance write, or upload-target state |
+| `12` | refused, proven: pixels or a marker would bind the wrong tree — a live head moved, a preview is stale, or a producer checkout does not match its named subject/authority revision |
+| `13` | proven red render: trusted evidence records an uncaught page error; `render`/`fetch` expose FAIL ground and `post` refuses PASS |
+| `14` | proven: at least one surface is unreachable — missing HTTP response, status ≥ 400, or failed navigation; each named on stderr |
+| `15` | proven: produced or fetched capture bytes are invalid — zero bytes, undecodable, zero area, hash/dimension mismatch, or bad set membership |
 | `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
 | `127` | the verb never ran at all (unresolved binary) |
@@ -272,9 +273,12 @@ manifest member path. The byte-exact examples in this section fix `os.tmpdir()` 
 `/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png` without an
 unresolved placeholder. The operation resolves the repository default branch to one exact commit,
 reads the declaration from that commit, and admits only a successful completed
-`pull_request_target` run whose `head_sha` is that same authority revision. The matching workflow,
-repository, and PR number plus full live head must occur together in one GitHub association row; two
-independent association lists cannot be combined. It then resolves exactly one successful named check
+`pull_request_target` run whose Actions `head_sha` is the full PR head. The base authority is a
+separate identity: it comes from the producer's checked-out `${{ github.sha }}` and must equal the
+current default-branch revision in the downloaded manifest. The workflow's base-owned `run-name`
+binds the PR number, full subject head, and `${{ github.sha }}` authority because
+`pull_request_target` run listings may carry an empty `pull_requests` array; the exact title,
+Actions `head_sha`, and current authority must agree. It then resolves exactly one successful named check
 and one artifact whose `expired` field is present, boolean, and false. GitHub's authoritative REST OpenAPI
 `Artifact` schema makes `expired` required,
 types it as boolean, and defines it as whether the artifact has expired
@@ -403,8 +407,10 @@ and [root lifecycle gate](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager
 The offline PR-controlled install and governed test run under a read-only root filesystem,
 `--cap-drop ALL`, `no-new-privileges`, `--network none`, and a disposable test workspace. That
 workspace is never served. A separate server workspace is freshly copied from the image's immutable
-exact-head source and installed offline with both execution-disabling flags before being mounted
-read-only into the server, which also runs with `--network none` and publishes no host port. A
+exact-head source, installed offline with both install-time execution-disabling flags, and then run
+through the declaration's fixed `serverBuildCommand` under the same no-network isolation. The
+resulting built workspace is mounted read-only into the server, which also has no network beyond
+loopback and publishes no host port. A
 base-owned capture sidecar runs with `--network container:<server>`, sharing only that isolated
 network namespace so its browser reaches the server's loopback without gaining external network.
 Docker documents that the `none` driver leaves only loopback
@@ -420,7 +426,8 @@ There is no empty successful answer. The producer first proves both the subject 
 checkouts against their full supplied heads. The object binds the declaration and producer identity,
 including that authority revision, then one capture row per declared surface with its route and
 state. Before writing that manifest, every capture must prove a successful HTTP navigation response
-in the 2xx or 3xx range; an absent response, 4xx, or 5xx refuses on `15`. The three-row error bound
+in the 2xx or 3xx range; an absent response, 4xx, or 5xx refuses as unreachable on `14`. The
+three-row error bound
 truncates every row to 1,024 UTF-16 code
 units and orders all uncaught `pageerror` rows before `console.error` rows, so console noise cannot
 hide the hard-fail kind in `more`. A successful journey whose later browser capture records an
@@ -442,7 +449,8 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `10` | subject head, authority head, run id, repository, harness, non-absolute root operand, output placement, or a subject root `.dockerignore` is off vocabulary |
 | `11` | declaration, fixture, output, image, workspace, governed journey command, server, sidecar, capture, or manifest write is unreadable/UNKNOWN |
 | `12` | the subject or authority checkout is not its named full head |
-| `15` | a captured PNG is invalid |
+| `14` | capture navigation returned no HTTP response, 4xx, or 5xx |
+| `15` | captured bytes are not a valid PNG or do not match the declared capture |
 
 **Errors**
 
@@ -470,14 +478,15 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the fresh exact-head server workspace could not be prepared.` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject server could not start.` | `11` | refusal |
 | `review-ui ci-produce: Docker returned no subject container id.` | `11` | refusal |
+| `review-ui ci-produce: the isolated subject server exited before readiness (<state>; <bounded logs>).` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject server did not report readiness.` | `11` | refusal |
 | `review-ui ci-produce: the trusted capture output could not be prepared (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted isolated capture sidecar failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted localhost capture failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted capture set does not contain every declared <harness> surface exactly once.` | `15` | refusal |
 | `review-ui ci-produce: capture <surface> does not match its declared route, state, and member.` | `15` | refusal |
-| `review-ui ci-produce: capture <surface> navigation returned no HTTP response.` | `15` | refusal |
-| `review-ui ci-produce: capture <surface> navigation returned HTTP <status>, not a successful response.` | `15` | refusal |
+| `review-ui ci-produce: capture <surface> navigation returned no HTTP response.` | `14` | refusal |
+| `review-ui ci-produce: capture <surface> navigation returned HTTP <status>, not a successful response.` | `14` | refusal |
 | `review-ui ci-produce: <surface> is not a valid capture (<reason>).` | `15` | refusal |
 | `review-ui ci-produce: cannot write the capture manifest (<reason>).` | `11` | refusal |
 
@@ -499,7 +508,7 @@ $ fabrika review-ui ci-produce 7190 --head 03135b91aa04f7e2c9d8b1640a5c22e9f01b7
 **Grounding**
 
 - ADR 0165 amendment — base-owned producer authority and runtime isolation for PR-controlled execution.
-- GitHub `pull_request_target` event reference — the privileged base context must not execute PR code directly; the run's `head_sha` is bound to the exact default-branch revision read by the consumer.
+- GitHub `pull_request_target` event reference plus [recorded run 33286961054](https://github.com/kamp-us/phoenix/actions/runs/33286961054) — the event executes base-owned workflow code while Actions reports the PR head as the run's `head_sha`; the producer manifest separately binds `${{ github.sha }}` as authority.
 - #7306 — the exact head, positive manifest, bounded browser errors, and no reviewer-local execution are acceptance constraints.
 
 See [the localhost evidence runbook](../../../../ops/runbook-review-ui-localhost-evidence.md) for the
@@ -591,7 +600,15 @@ evidence-array and prints collapsed (ADR 0308): `{"rows": [<first 3>], "more": <
 `more` always present so a list capped at exactly its length reads as whole. The stderr
 per-surface line counts the **whole** tally, not the kept rows. **Write the set manifest** `<set>/manifest.json`,
 byte-identical to the stdout JSON — `post` reads the set through it, and a set without its
-manifest is not a set.
+manifest is not a set. Render also writes `<set>/preview-provenance.json`, whose signed fields are
+`repository`, `pr`, `head`, `app`, `previewUrl`, and the manifest SHA-256. Signing uses a random
+32-byte capability encoded as 64 lowercase hex characters and HMAC-SHA256 over the exact JSON of
+the unsigned receipt (`schemaVersion`, `source`, then those fields in receipt order). The capability
+is not a set member: it is written at
+`<tmp>/fabrika-review-ui-capabilities/<sha256(repository)>/<pr>-<head>/<set>.key`, with its parent
+forced to mode `0700` and the key to `0600`. Exit `0` requires all three writes; stdout remains the
+manifest only. If any write fails, partial files may remain but
+are not an accepted set and `post` rejects them.
 
 Exit 0 requires **every** requested surface captured and valid. `12` and `16` are run-level
 refusals decided before the per-surface loop and never mix with its outcomes. When per-surface
@@ -605,7 +622,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`); a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; an `:auth` surface was requested while `PREVIEW_TEST_SESSION_TOKEN` / `BETTER_AUTH_SECRET` is unset; an `:auth` surface's session proof did not come back signed in; or a forced flag evaluated at its default anyway |
+| `11` | the PR/head/comment read failed; the preview comment is malformed or ambiguous; browser provision, capture validity, auth/flag proof, manifest write, provenance receipt write, or private capability write is UNKNOWN |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -632,6 +649,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: surface "<id>" threw during render: <first page error> — the render is red; a broken page is not composition to judge.` | 13 | refusal |
 | `review-ui render: surface "<id>" is unreachable at the preview (<reason>) — judge what renders, and hold the gap against the PR's Deviations (#4305).` | 14 | refusal |
 | `review-ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
+| `review-ui render: cannot write the set manifest and preview provenance for #<n>: <reason> — the captures exist but the set does not.` | 11 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
 **Scope** — exactly the `--surface` operands against one PR's announced preview. Zero operands

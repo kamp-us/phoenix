@@ -8,6 +8,7 @@
 			"event": "pull_request_target",
 			"artifact": "review-ui-localhost-tuval",
 			"captureCommand": ["pnpm", "--filter", "tuval", "test"],
+			"serverBuildCommand": ["pnpm", "--filter", "tuval", "build"],
 			"serverCommand": ["node", "packages/tuval/test/browser/tuval-server.mjs", "4173"],
 			"containerPort": 4173,
 			"readinessPattern": "Tuval ready at (http://127\\.0\\.0\\.1:4173)",

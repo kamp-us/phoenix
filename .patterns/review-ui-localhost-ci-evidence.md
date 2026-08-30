@@ -38,9 +38,10 @@ neither package lifecycle scripts nor the PR's pnpmfile hooks.
 An offline `pnpm install` then runs every PR-controlled lifecycle script and the governed test in a
 disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
 `no-new-privileges`, and `--network none`. That workspace is never served. A separate server
-workspace is freshly copied from the image's immutable exact-head source and installed offline with
-both execution-disabling flags before it is mounted read-only into the server under the same
-restrictions, including `--network none`; the server publishes no host port and receives only the
+workspace is freshly copied from the image's immutable exact-head source, installed offline with
+both install-time execution-disabling flags, and built by the declaration's fixed
+`serverBuildCommand` under the same no-network restrictions. The resulting workspace is mounted
+read-only into the server; the server publishes no host port and receives only the
 read-only fixture. Docker's `none` driver leaves only loopback
 ([none driver](https://docs.docker.com/engine/network/drivers/none/)). A base-owned capture sidecar
 uses `--network container:<server>` to share that isolated network stack
@@ -58,8 +59,11 @@ The
 [producer implementation](../packages/fabrika-cli/src/review-ui/ci-produce-verb.ts) proves both the
 subject checkout's full Git head and the trusted authority checkout's full default-branch head, then
 proves the subject has no root `.dockerignore`, before image construction. Its
-[flow tests](../packages/fabrika-cli/src/review-ui/ci-produce-flow.test.ts) exercise the isolation,
-head, journey, HTTP-response, and manifest boundaries. The positive manifest binds schema version,
+[flow tests](../packages/fabrika-cli/src/review-ui/ci-produce-flow.test.ts) replay the isolation,
+server-build, readiness/crash, head, navigation-response, and manifest boundaries. The
+[Docker integration test](../packages/fabrika-cli/src/review-ui/ci-produce-docker.integration.test.ts)
+also builds and serves a real read-only volume when a Docker daemon is available. The positive
+manifest binds schema version,
 repository, PR, full subject head, full authority head, declaration digest, harness, workflow, check,
 event, run, artifact name, and every declared surface, route, and state. A capture must carry a
 successful HTTP navigation response (2xx or 3xx); a missing response or error status refuses before
@@ -78,13 +82,18 @@ artifact upload.
 
 The [`review-ui fetch`
 implementation](../packages/fabrika-cli/src/review-ui/ci-fetch-verb.ts) requires one successful
-completed run whose workflow, event, repository, and `head_sha` match the declaration's exact
-authority revision. Its
+completed run whose workflow, event, repository, and `head_sha` match the exact PR head. The
+producer manifest separately binds the base-context `${{ github.sha }}` authority revision, which
+must equal the consumer's current default-branch revision. Its
 [integrity tests](../packages/fabrika-cli/src/review-ui/ci-fetch-verb.unit.test.ts) cover producer
 identity, archive membership, manifest binding, hashes, dimensions, browser-error coverage, and
-live-head revalidation. The PR number and exact subject head
-must occur together in one GitHub `pull_requests` association row; independently flattened number
-and head lists are not authority. These are fields of GitHub's documented workflow-run response
+live-head revalidation.
+[Recorded run 33286961054](https://github.com/kamp-us/phoenix/actions/runs/33286961054)
+proves that Actions reports the PR head as `head_sha` while `pull_requests` may be empty. The
+base-owned workflow therefore sets an exact
+`run-name` containing the PR number, full subject head, and `${{ github.sha }}` authority; that
+exact title, the current authority, and `head_sha` must agree. These are fields of GitHub's
+documented workflow-run response
 ([List workflow runs for a workflow](https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28#list-workflow-runs-for-a-workflow)).
 It requires the named successful check and one artifact whose `expired` field is present, boolean,
 and false. GitHub's authoritative REST OpenAPI

@@ -15,6 +15,7 @@ import {
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	STALE_TREE,
+	SURFACE_UNREACHABLE,
 } from "./codes.ts";
 import {
 	BROWSER_ERROR_TEXT_CAP,
@@ -113,6 +114,7 @@ export const subjectInstallAndTestContainerArgs = (
 export const subjectPrepareServerContainerArgs = (
 	image: string,
 	volume: string,
+	buildCommand: readonly string[],
 ): readonly string[] => [
 	"run",
 	"--rm",
@@ -127,7 +129,9 @@ export const subjectPrepareServerContainerArgs = (
 	"sh",
 	image,
 	"-c",
-	"cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile",
+	'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile && exec "$@"',
+	"--",
+	...buildCommand,
 ];
 
 export const subjectServerContainerArgs = (
@@ -139,7 +143,6 @@ export const subjectServerContainerArgs = (
 ): readonly string[] => [
 	"run",
 	"--detach",
-	"--rm",
 	"--name",
 	name,
 	"--network",
@@ -514,7 +517,7 @@ export const runCiProduce = (
 
 			const preparedServer = yield* ran(
 				"docker",
-				subjectPrepareServerContainerArgs(image, serverVolume),
+				subjectPrepareServerContainerArgs(image, serverVolume, harness.serverBuildCommand),
 				options.authorityRoot,
 				env,
 				1_200,
@@ -558,14 +561,27 @@ export const runCiProduce = (
 			let ready = false;
 			for (let attempt = 0; attempt < 80; attempt += 1) {
 				const logs = yield* ran("docker", ["logs", containerId], options.authorityRoot, env, 10);
-				if (
-					logs._tag === "Ran" &&
-					new RegExp(harness.readinessPattern).test(
-						`${decode(logs.stdout)}\n${decode(logs.stderr)}`,
-					)
-				) {
+				const logText = logs._tag === "Ran" ? `${decode(logs.stdout)}\n${decode(logs.stderr)}` : "";
+				if (new RegExp(harness.readinessPattern).test(logText)) {
 					ready = true;
 					break;
+				}
+				const inspected = yield* ran(
+					"docker",
+					["inspect", "--format", "{{.State.Running}} {{.State.ExitCode}}", containerId],
+					options.authorityRoot,
+					env,
+					10,
+				);
+				if (
+					inspected._tag === "Ran" &&
+					inspected.exitCode === 0 &&
+					decode(inspected.stdout).startsWith("false ")
+				) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the isolated subject server exited before readiness (${decode(inspected.stdout)}${logText.trim() === "" ? "" : `; ${logText.trim()}`}).`,
+					);
 				}
 				yield* Effect.sleep("250 millis");
 			}
@@ -670,13 +686,13 @@ export const runCiProduce = (
 				}
 				if (capture.status === undefined) {
 					return refuse(
-						INVALID_CAPTURE,
+						SURFACE_UNREACHABLE,
 						`${VERB}: capture ${capture.surface} navigation returned no HTTP response.`,
 					);
 				}
 				if (capture.status < 200 || capture.status >= 400) {
 					return refuse(
-						INVALID_CAPTURE,
+						SURFACE_UNREACHABLE,
 						`${VERB}: capture ${capture.surface} navigation returned HTTP ${capture.status}, not a successful response.`,
 					);
 				}

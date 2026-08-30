@@ -21,6 +21,7 @@ export interface LocalhostHarnessDeclaration {
 	readonly event: "pull_request_target";
 	readonly artifact: string;
 	readonly captureCommand: readonly string[];
+	readonly serverBuildCommand: readonly string[];
 	readonly serverCommand: readonly string[];
 	readonly containerPort: number;
 	readonly readinessPattern: string;
@@ -90,6 +91,7 @@ const toHarness = (value: unknown): LocalhostHarnessDeclaration | null => {
 		typeof value.artifact !== "string" ||
 		!SAFE_ID.test(value.artifact) ||
 		!strings(value.captureCommand) ||
+		!strings(value.serverBuildCommand) ||
 		!strings(value.serverCommand) ||
 		typeof value.containerPort !== "number" ||
 		!Number.isInteger(value.containerPort) ||
@@ -113,6 +115,7 @@ const toHarness = (value: unknown): LocalhostHarnessDeclaration | null => {
 		event: value.event,
 		artifact: value.artifact,
 		captureCommand: value.captureCommand,
+		serverBuildCommand: value.serverBuildCommand,
 		serverCommand: value.serverCommand,
 		containerPort: value.containerPort,
 		readinessPattern: value.readinessPattern,

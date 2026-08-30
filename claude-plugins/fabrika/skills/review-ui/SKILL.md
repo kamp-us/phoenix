@@ -104,14 +104,17 @@ the PR locally and do not consume builder captures.** Exit `13` is the one red-r
 validated set is materialized, stderr names every capture path for independent pixel inspection, its
 uncaught page errors are proven FAIL ground, and you post the ordinary FAIL with `--evidence judged`.
 It is never CANT-SEE. Exit `12` means the head moved and the fetch must be retried at the new head.
-Exit `1` or `10` is a caller error to correct before retrying. Exit `7` means the subject is absent or
-closed and ends at **CANT-SEE** without a marker; do not attempt `review-ui note`, because there is no
+Exit `10` is a caller error. Exit `1` is correctable only when stderr is the verb's own usage
+refusal; otherwise the verb failed at runtime and the answer is UNKNOWN until the invocation or
+installation is repaired. Exit `7` means the subject is absent or closed and ends at **CANT-SEE**
+without a marker; do not attempt `review-ui note`, because there is no
 open subject on which to land it. Evidence refusals `4`, `11`, or `15` on an open, unmoved subject
 leave the namespace empty and route CANT-SEE through `review-ui note`; never post from
 an unresolved set. After a successful fetch, inspect the pixels and recorded page/console errors,
 then post the ordinary verdict with `--evidence judged`. `post` re-downloads the governed live-head artifact and byte-compares the manifest and every
-capture before it accepts the fetched set. The operator sequence, including the Tuval #7190 recovery,
-lives in
+capture before it accepts the fetched set. If `post` returns `13`, it re-established the same red
+proof at emit time: retain the set and retry the ordinary verdict as FAIL, without noting or
+refetching. The operator sequence, including the Tuval #7190 recovery, lives in
 [`ops/runbook-review-ui-localhost-evidence.md`](../../../../ops/runbook-review-ui-localhost-evidence.md).
 
 ```bash

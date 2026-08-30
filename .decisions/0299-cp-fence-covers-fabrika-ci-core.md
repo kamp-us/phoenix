@@ -122,3 +122,5 @@ is the same property: whatever #6099 puts there is covered on arrival.
 no vocabulary impact
 
 > Amendment 2026-08-19: `packages/pipeline-cli/` is deleted, and the prose copy of `CONTROL_PLANE_RE=` in its `control-plane-paths/boundaries.md` went with it (no equivalent prose file exists under `packages/fabrika-cli/`). The lockstep is now two surfaces, not three: the single-source const in `packages/fabrika-cli/src/guard/control-plane-re.ts` and the literal `.github/CODEOWNERS` row. The same-commit rule below applies to those two.
+
+> Amendment 2026-08-30: The founder [ruled for #7306](https://github.com/kamp-us/phoenix/pull/7351#issuecomment-5470229879) that the merge-blocking `review-ui` evidence authority is a second, narrow control-plane slice. In addition to `packages/fabrika-cli/src/ci/`, CODEOWNERS therefore covers `packages/fabrika-cli/src/review-ui/` and the exact delegated authority files `src/ship/github.ts`, `src/capture/capture.ts`, `src/capture/png.ts`, and `src/capture/upload.ts`. This amends the earlier “rest of package ordinary” constraint only for that path-complete authority graph; every unrelated path in the package remains ordinary.

@@ -5,11 +5,14 @@ surfaces stay on the preview path.
 
 ## Restore a missing or stale artifact
 
-1. Confirm the pull request is open and note its full live head.
-2. Re-run or retrigger the declared `review-ui localhost evidence / <harness>` check at that exact
-   head. A head change invalidates the prior artifact.
-3. Wait for the declared check to complete successfully. Do not substitute another workflow, check,
-   run, artifact, manifest, local path, or builder capture.
+1. Confirm the pull request is open; record its full live head and the current default-branch
+   authority revision.
+2. If the existing run was created at both recorded revisions, it may be rerun. If the authority
+   revision advanced, emit a fresh declared event at the unchanged PR head; a rerun preserves its
+   stale event context and cannot recover authority. For Tuval, use the close/reopen sequence below.
+   A PR-head change also requires a fresh event at the new head.
+3. Wait for the declared check from that matching identity to complete successfully. Do not substitute
+   another workflow, check, run, artifact, manifest, local path, or builder capture.
 4. In an independent `review-ui` session, fetch the governed set:
 
    ```bash
@@ -32,8 +35,10 @@ surfaces stay on the preview path.
 
 Route a fetch refusal by its contract instead of collapsing every nonzero exit into CANT-SEE:
 
-- `1` or `10` is a caller error. Correct the invocation or closed-vocabulary value and retry; do not
-  post a blocker.
+- `10` is a caller error. Correct the closed-vocabulary value and retry; do not post a blocker.
+- `1` is actionable as a caller error only when stderr is the verb's usage refusal. Otherwise the
+  verb failed at runtime: treat it as UNKNOWN and repair the invocation or installation before
+  making any claim.
 - `7` means the PR is absent or closed. End at CANT-SEE without a marker and do not attempt
   `review-ui note`: there is no open subject on which to land the blocker.
 - `12` means the head moved. Restart at the new live head.
@@ -60,9 +65,14 @@ The workflow declares `reopened` and matches `packages/tuval/**` plus `pnpm-lock
 3. Re-read the full live head. If it differs from the recorded head, restart at the new head. If it
    is unchanged, wait for `review-ui localhost evidence / tuval` at that exact head. A missing run is
    a producer-state failure, not permission to substitute evidence.
-4. Consume that first completed exact-head run and its named artifact; do not rerun the successful
-   producer before fetching.
+4. Consume that first completed exact-head run by executing:
 
-Fetch with `--harness tuval`, judge the desktop and mobile captures plus browser-error evidence, and
+   ```bash
+   fabrika review-ui fetch 7190 --harness tuval --out judged
+   ```
+
+   Do not rerun the successful producer before fetching.
+
+Judge the desktop and mobile captures plus browser-error evidence, and
 post through the ordinary marker as above. Do not add an `apps/web` route, preview deployment,
 Cloudflare binding, production endpoint, or reviewer-local server to unblock Tuval.

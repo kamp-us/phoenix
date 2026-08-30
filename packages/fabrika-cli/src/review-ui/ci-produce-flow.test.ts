@@ -25,6 +25,7 @@ const authority = JSON.stringify({
 			event: "pull_request_target",
 			artifact: "review-ui-localhost-tuval",
 			captureCommand: ["pnpm", "--filter", "tuval", "test"],
+			serverBuildCommand: ["pnpm", "--filter", "tuval", "build"],
 			serverCommand: ["node", "server.mjs", "4173"],
 			containerPort: 4173,
 			readinessPattern: "ready",
@@ -249,6 +250,55 @@ describe("trusted localhost producer flow", () => {
 		await rm(root, {recursive: true, force: true});
 	});
 
+	it("fails immediately with recorded diagnostics when the built server exits before readiness", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ci-produce-readiness-refusal-"));
+		const authorityRoot = join(root, "authority");
+		const subjectRoot = join(root, "subject");
+		const outputDir = join(root, "output");
+		await mkdir(join(authorityRoot, ".github"), {recursive: true});
+		await mkdir(subjectRoot, {recursive: true});
+		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+		const seams = fakeSeams([
+			[once(/^git rev-parse HEAD$/), okOut(HEAD)],
+			[/^git rev-parse HEAD$/, okOut(AUTHORITY_HEAD)],
+			[/^docker build /, okOut("")],
+			[/^docker volume create .*test-workspace$/, okOut("test-workspace")],
+			[/^docker volume create .*server-workspace$/, okOut("server-workspace")],
+			[/^docker run --rm --network none .*test-workspace/, okOut("")],
+			[/^docker run --rm --network none .*server-workspace/, okOut("")],
+			[/^docker run --detach .*server-workspace/, okOut("container-id")],
+			[/^docker logs container-id$/, okOut("ERR_MODULE_NOT_FOUND: dist/backend/server.js")],
+			[/^docker inspect --format .* container-id$/, okOut("false 1")],
+			[/^docker rm /, okOut("")],
+			[/^docker volume rm .*test-workspace$/, okOut("")],
+			[/^docker volume rm .*server-workspace$/, okOut("")],
+			[/^docker image rm /, okOut("")],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runCiProduce({
+					pr: 7190,
+					head: HEAD,
+					authorityHead: AUTHORITY_HEAD,
+					harness: "tuval",
+					runId: 42,
+					repository: "kamp-us/phoenix",
+					subjectRoot,
+					authorityRoot,
+					outputDir,
+					env: {PATH: "/bin"},
+					capture,
+				}),
+				seams.layer,
+			),
+		);
+		expect(outcome.code).toBe(11);
+		expect(outcome.stderr.join("\n")).toContain("exited before readiness (false 1");
+		expect(outcome.stderr.join("\n")).toContain("ERR_MODULE_NOT_FOUND");
+		expect(seams.calls.filter((call) => call === "docker logs container-id")).toHaveLength(1);
+		await rm(root, {recursive: true, force: true});
+	});
+
 	it.each([
 		{name: "absent", status: undefined, message: "returned no HTTP response"},
 		{name: "404", status: 404, message: "returned HTTP 404"},
@@ -296,13 +346,13 @@ describe("trusted localhost producer flow", () => {
 			),
 		);
 
-		expect(outcome.code).toBe(15);
+		expect(outcome.code).toBe(14);
 		expect(outcome.stderr.join("\n")).toContain(message);
 		await expect(readFile(join(outputDir, "manifest.json"), "utf8")).rejects.toThrow();
 		await rm(root, {recursive: true, force: true});
 	});
 
-	it("isolates install/test and publishes page-error evidence for the fetch FAIL route", async () => {
+	it("replays the Docker build/readiness trace and publishes page-error evidence", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-produce-flow-"));
 		const authorityRoot = join(root, "authority");
 		const subjectRoot = join(root, "subject");
@@ -384,8 +434,10 @@ describe("trusted localhost producer flow", () => {
 		expect(subjectRun).not.toContain("GITHUB_TOKEN");
 		expect(serverPreparation).toContain("cp -a /subject-source/. /subject/");
 		expect(serverPreparation).toContain("--ignore-scripts --ignore-pnpmfile");
+		expect(serverPreparation).toContain("pnpm --filter tuval build");
 		expect(serverPreparation).not.toContain("test-workspace");
 		expect(server).toContain("--network none");
+		expect(server).not.toContain("--rm");
 		expect(server).not.toContain("--publish");
 		expect(server).toContain("server-workspace,dst=/subject,readonly");
 		expect(server).not.toContain("test-workspace");

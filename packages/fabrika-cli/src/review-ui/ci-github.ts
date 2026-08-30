@@ -7,11 +7,6 @@ import {type Attempt, fail, ok, type Shell} from "../io/git.ts";
 import {isRecord} from "../io/json.ts";
 import {type LocalhostHarnessDeclaration, parseCiCaptureManifest} from "./localhost-evidence.ts";
 
-export interface PullAssociation {
-	readonly number: number;
-	readonly head: string;
-}
-
 export interface RunRecord {
 	readonly id: number;
 	readonly status: string;
@@ -19,9 +14,9 @@ export interface RunRecord {
 	readonly event: string;
 	readonly path: string;
 	readonly repository: string;
-	readonly authorityHead: string;
+	readonly subjectHead: string;
+	readonly title: string;
 	readonly checkSuiteId: number;
-	readonly pulls: readonly PullAssociation[];
 }
 
 export interface CiIdentity {
@@ -43,6 +38,35 @@ export type CiBundleAttempt =
 
 const stringOf = (value: unknown): string => (typeof value === "string" ? value : "");
 
+export const decodeWorkflowRuns = (entries: readonly unknown[]): Attempt<readonly RunRecord[]> => {
+	const runs: RunRecord[] = [];
+	for (const value of entries) {
+		if (
+			!isRecord(value) ||
+			typeof value.id !== "number" ||
+			typeof value.status !== "string" ||
+			typeof value.event !== "string" ||
+			typeof value.head_sha !== "string" ||
+			typeof value.display_title !== "string" ||
+			typeof value.check_suite_id !== "number"
+		) {
+			return fail("GitHub answered 200 but one workflow run is incomplete");
+		}
+		runs.push({
+			id: value.id,
+			status: value.status,
+			conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
+			event: value.event,
+			path: stringOf(value.path),
+			repository: isRecord(value.repository) ? stringOf(value.repository.full_name) : "",
+			subjectHead: value.head_sha,
+			title: value.display_title,
+			checkSuiteId: value.check_suite_id,
+		});
+	}
+	return ok(runs);
+};
+
 const runsForWorkflow = (repo: string, workflow: string): Shell<Attempt<readonly RunRecord[]>> =>
 	authed((token) =>
 		Effect.map(
@@ -51,47 +75,7 @@ const runsForWorkflow = (repo: string, workflow: string): Shell<Attempt<readonly
 				`repos/${repo}/actions/workflows/${encodeURIComponent(workflow.split("/").at(-1) ?? workflow)}/runs`,
 				"workflow_runs",
 			),
-			(read) => {
-				if (read._tag === "Failure") return read;
-				const runs: RunRecord[] = [];
-				for (const value of read.value.entries) {
-					if (
-						!isRecord(value) ||
-						typeof value.id !== "number" ||
-						typeof value.status !== "string" ||
-						typeof value.event !== "string" ||
-						typeof value.head_sha !== "string" ||
-						typeof value.check_suite_id !== "number" ||
-						!Array.isArray(value.pull_requests)
-					) {
-						return fail("GitHub answered 200 but one workflow run is incomplete");
-					}
-					const pulls: PullAssociation[] = [];
-					for (const pull of value.pull_requests) {
-						if (
-							!isRecord(pull) ||
-							typeof pull.number !== "number" ||
-							!isRecord(pull.head) ||
-							typeof pull.head.sha !== "string"
-						) {
-							return fail("GitHub answered 200 but one workflow run association is incomplete");
-						}
-						pulls.push({number: pull.number, head: pull.head.sha});
-					}
-					runs.push({
-						id: value.id,
-						status: value.status,
-						conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
-						event: value.event,
-						path: stringOf(value.path),
-						repository: isRecord(value.repository) ? stringOf(value.repository.full_name) : "",
-						authorityHead: value.head_sha,
-						checkSuiteId: value.check_suite_id,
-						pulls,
-					});
-				}
-				return ok(runs);
-			},
+			(read) => (read._tag === "Failure" ? read : decodeWorkflowRuns(read.value.entries)),
 		),
 	);
 
@@ -103,13 +87,14 @@ export const selectTrustedRun = (
 	authorityHead: string,
 	harness: LocalhostHarnessDeclaration,
 ): Attempt<RunRecord> => {
+	const expectedTitle = `review-ui localhost evidence / ${harness.id} / PR #${pr} / subject ${head} / authority ${authorityHead}`;
 	const associated = runs.filter(
 		(run) =>
 			run.path === harness.workflow &&
 			run.event === harness.event &&
 			run.repository === repo &&
-			run.authorityHead === authorityHead &&
-			run.pulls.some((pull) => pull.number === pr && pull.head === head),
+			run.subjectHead === head &&
+			run.title === expectedTitle,
 	);
 	if (associated.length !== 1) {
 		return fail(
@@ -225,7 +210,7 @@ export const resolveCiIdentity = (
 			checkId: check.id,
 			artifactId: artifact.id,
 			artifactName: harness.artifact,
-			authorityHead: run.authorityHead,
+			authorityHead,
 		});
 	});
 

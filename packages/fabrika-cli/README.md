@@ -42,6 +42,14 @@ Ordered recipes — installing, credentialing, finding a group and a verb, readi
 from a consumer repo — are in
 [`docs/running-fabrika-in-a-repo.md`](./docs/running-fabrika-in-a-repo.md).
 
+`review-ui render` remains the default evidence producer. A localhost-only product enters through
+trusted CI only when the repository declares its harness: the workflow runs `review-ui ci-produce`,
+and the independent reviewer runs `review-ui fetch`. Callers cannot select a workflow, run,
+artifact, manifest, receipt, or local evidence path. See the
+[localhost evidence pattern](../../.patterns/review-ui-localhost-ci-evidence.md),
+[operator runbook](../../ops/runbook-review-ui-localhost-evidence.md), and
+[verb reference](./docs/verb-reference.md#review-ui).
+
 ## Reference
 
 - [`docs/verb-reference.md`](./docs/verb-reference.md) — every registered verb group, its verbs, its

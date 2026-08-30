@@ -1,4 +1,5 @@
 name: review-ui localhost evidence
+run-name: "review-ui localhost evidence / tuval / PR #${{ github.event.pull_request.number }} / subject ${{ github.event.pull_request.head.sha }} / authority ${{ github.sha }}"
 
 on:
   pull_request_target:

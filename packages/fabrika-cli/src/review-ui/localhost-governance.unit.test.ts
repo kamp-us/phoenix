@@ -25,11 +25,29 @@ describe("localhost evidence governance floor", () => {
 		if (authority._tag !== "Declarations") return;
 		const owners = read(".github/CODEOWNERS");
 		assert.match(owners, /^\/\.github\/\s+@kamp-us\/control-plane$/m);
-		assert.match(owners, /^\/packages\/fabrika-cli\/src\/review-ui\/\s+@kamp-us\/control-plane$/m);
+		for (const authorityPath of [
+			"review-ui/",
+			"ship/github.ts",
+			"capture/capture.ts",
+			"capture/png.ts",
+			"capture/upload.ts",
+		]) {
+			assert.match(
+				owners,
+				new RegExp(
+					`^/packages/fabrika-cli/src/${authorityPath.replaceAll(".", "\\.")}\\s+@kamp-us/control-plane$`,
+					"m",
+				),
+			);
+		}
 		for (const harness of authority.value.harnesses) {
 			assert.match(harness.workflow, /^\.github\/workflows\/[a-z0-9-]+\.yml$/);
 			const workflow = read(harness.workflow);
 			assert.include(workflow, "pull_request_target:");
+			assert.include(
+				workflow,
+				`run-name: "review-ui localhost evidence / ${harness.id} / PR #\${{ github.event.pull_request.number }} / subject \${{ github.event.pull_request.head.sha }} / authority \${{ github.sha }}"`,
+			);
 			assert.include(workflow, `name: ${harness.check}`);
 			assert.include(workflow, `name: ${harness.artifact}`);
 			assert.include(workflow, `--harness ${harness.id}`);
@@ -102,14 +120,16 @@ describe("localhost evidence governance floor", () => {
 		const serverPreparation = subjectPrepareServerContainerArgs(
 			"subject",
 			"fresh-server-workspace",
+			["pnpm", "--filter", "tuval", "build"],
 		);
 		assert.include(serverPreparation, "none");
 		assert.include(serverPreparation, "--read-only");
 		assert.include(serverPreparation, "no-new-privileges");
 		assert.include(
 			serverPreparation,
-			"cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile",
+			'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile && exec "$@"',
 		);
+		assert.include(serverPreparation.join(" "), "pnpm --filter tuval build");
 		assert.notInclude(serverPreparation.join(" "), "subject-test-workspace");
 
 		const server = subjectServerContainerArgs(
@@ -121,6 +141,7 @@ describe("localhost evidence governance floor", () => {
 		);
 		assert.include(server.join(" "), "--network none");
 		assert.notInclude(server, "--publish");
+		assert.notInclude(server, "--rm");
 		assert.include(server, "--read-only");
 		assert.include(server, "--cap-drop");
 		assert.include(server, "no-new-privileges");

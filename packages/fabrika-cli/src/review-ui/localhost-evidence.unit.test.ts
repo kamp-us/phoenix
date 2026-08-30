@@ -20,6 +20,7 @@ const declarations = {
 			event: "pull_request_target",
 			artifact: "review-ui-localhost-tuval",
 			captureCommand: ["pnpm", "--filter", "tuval", "test"],
+			serverBuildCommand: ["pnpm", "--filter", "tuval", "build"],
 			serverCommand: ["node", "server.mjs", "4173"],
 			containerPort: 4173,
 			readinessPattern: "ready (http://127.0.0.1:[0-9]+)",
@@ -75,6 +76,15 @@ describe("localhost evidence authority", () => {
 				JSON.stringify({
 					...declarations,
 					harnesses: [{...declarations.harnesses[0], event: "pull_request"}],
+				}),
+			)._tag,
+			"Malformed",
+		);
+		assert.strictEqual(
+			parseLocalhostDeclarations(
+				JSON.stringify({
+					...declarations,
+					harnesses: [{...declarations.harnesses[0], serverBuildCommand: []}],
 				}),
 			)._tag,
 			"Malformed",

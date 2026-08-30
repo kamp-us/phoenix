@@ -1,5 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	decodeWorkflowRuns,
 	hasExactManifestMembers,
 	type RunRecord,
 	safeArtifactMembers,
@@ -17,6 +18,7 @@ const harness: LocalhostHarnessDeclaration = {
 	event: "pull_request_target",
 	artifact: "review-ui-localhost-tuval",
 	captureCommand: ["pnpm", "--filter", "tuval", "test"],
+	serverBuildCommand: ["pnpm", "--filter", "tuval", "build"],
 	serverCommand: ["node", "server.mjs", "4173"],
 	containerPort: 4173,
 	readinessPattern: "ready (http://127.0.0.1:[0-9]+)",
@@ -31,9 +33,9 @@ const run = (overrides: Partial<RunRecord> = {}): RunRecord => ({
 	event: "pull_request_target",
 	path: harness.workflow,
 	repository: "kamp-us/phoenix",
-	authorityHead: AUTHORITY_HEAD,
+	subjectHead: HEAD,
+	title: `review-ui localhost evidence / tuval / PR #7190 / subject ${HEAD} / authority ${AUTHORITY_HEAD}`,
 	checkSuiteId: 7,
-	pulls: [{number: 7190, head: HEAD}],
 	...overrides,
 });
 
@@ -41,24 +43,55 @@ const select = (runs: readonly RunRecord[]) =>
 	selectTrustedRun(runs, "kamp-us/phoenix", 7190, HEAD, AUTHORITY_HEAD, harness);
 
 describe("trusted localhost Actions provenance", () => {
-	it("selects one successful run only when authority, workflow, event, repository and one PR/head association agree", () => {
+	it("replays a recorded pull_request_target run whose head_sha is the PR head and associations are empty", () => {
+		const decoded = decodeWorkflowRuns([
+			{
+				id: 33286961054,
+				status: "completed",
+				conclusion: "success",
+				event: "pull_request_target",
+				path: ".github/workflows/pr-cleanup.yml",
+				head_sha: "9e9976e84b342aca1105f78b1e3b87815895cb5a",
+				display_title:
+					"chore: Clearing human:queue-stall buys one conclusive read and nothing grants more waits",
+				check_suite_id: 90206922568,
+				repository: {full_name: "kamp-us/phoenix"},
+				pull_requests: [],
+			},
+		]);
+		assert.strictEqual(decoded._tag, "Ok");
+		if (decoded._tag === "Ok") {
+			assert.strictEqual(decoded.value[0]?.subjectHead, "9e9976e84b342aca1105f78b1e3b87815895cb5a");
+		}
+	});
+
+	it("selects only the base-owned run title that binds PR, subject, and authority", () => {
 		assert.strictEqual(select([run()])._tag, "Ok");
 		for (const candidate of [
 			run({path: ".github/workflows/other.yml"}),
 			run({event: "pull_request"}),
 			run({repository: "attacker/fork"}),
-			run({authorityHead: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}),
-			run({pulls: [{number: 1, head: HEAD}]}),
-			run({pulls: [{number: 7190, head: HEAD.slice(0, 8)}]}),
+			run({subjectHead: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}),
 			run({
-				pulls: [
-					{number: 7190, head: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
-					{number: 1, head: HEAD},
-				],
+				title: `review-ui localhost evidence / tuval / PR #1 / subject ${HEAD} / authority ${AUTHORITY_HEAD}`,
 			}),
+			run({
+				title: `review-ui localhost evidence / tuval / PR #7190 / subject ${HEAD} / authority ${"b".repeat(40)}`,
+			}),
+			run({title: "review-ui localhost evidence / tuval / PR #7190 / short"}),
 		]) {
 			assert.strictEqual(select([candidate])._tag, "Failure");
 		}
+	});
+
+	it("ignores a stale-authority run when a fresh matching event exists", () => {
+		const stale = run({
+			id: 41,
+			title: `review-ui localhost evidence / tuval / PR #7190 / subject ${HEAD} / authority ${"b".repeat(40)}`,
+		});
+		const selected = select([stale, run()]);
+		assert.strictEqual(selected._tag, "Ok");
+		if (selected._tag === "Ok") assert.strictEqual(selected.value.id, 42);
 	});
 
 	it("refuses ambiguous, pending, failed, cancelled and action-required runs", () => {

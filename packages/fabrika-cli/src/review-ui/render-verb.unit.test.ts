@@ -83,8 +83,12 @@ const options = {
 	render: legOf({}),
 };
 
-const run = (script: ReadonlyArray<Scripted>, overrides: Partial<typeof options> = {}) => {
-	const fs = fakeFs({});
+const run = (
+	script: ReadonlyArray<Scripted>,
+	overrides: Partial<typeof options> = {},
+	fsOptions: Parameters<typeof fakeFs>[0] = {},
+) => {
+	const fs = fakeFs(fsOptions);
 	return Effect.runPromise(
 		Effect.provide(
 			runRender({...options, ...overrides}),
@@ -127,6 +131,19 @@ describe("runRender", () => {
 			expect(capability).toBeDefined();
 			expect(verifyPreviewProvenance(receipt, capability ?? "")).toBe(true);
 		}
+	});
+
+	it.each([
+		"/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json",
+		`/tmp/fabrika-review-ui/4321-03135b91/judged/${PREVIEW_PROVENANCE_RECEIPT}`,
+		previewProvenanceCapabilityPath("/tmp", "o/r", 4321, HEAD, "judged"),
+	])("refuses when required render output cannot be written: %s", async (path) => {
+		const {outcome} = await run(happy(), {}, {unwritable: [path]});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain(
+			"cannot write the set manifest and preview provenance",
+		);
 	});
 
 	it("prints the capped page errors on both channels, so the file reader cannot desync (ADR 0308)", async () => {
