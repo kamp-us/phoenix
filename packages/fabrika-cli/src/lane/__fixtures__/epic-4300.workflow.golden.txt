@@ -336,7 +336,10 @@
 								"type": "final"
 							},
 							"human:epic-review": {
-								"type": "final"
+								"type": "final",
+								"on": {
+									"EPIC_4300.UNBLOCKED": "hist"
+								}
 							}
 						}
 					}

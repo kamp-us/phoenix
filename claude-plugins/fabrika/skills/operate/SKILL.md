@@ -209,7 +209,8 @@ active phase** (future phases read `waiting`; leave them alone), route on the le
 | `integrate` | land the child on the assembly branch yourself — the epic run, below |
 | a state `recipe route` names | apply that recipe verb — the chore drive, below |
 | a task's own final — `landed`, `shipped` | nothing to route and no event to record: that task is finished, and its phase advances when every task in it is final |
-| `frozen` | park — step 4. It is an error final, so it trips the phase where it sits and the fold says so; it is also the one final with a door out (ADR [0297](../../../../.decisions/0297-frozen-is-a-park-not-an-end.md)), and walking it is a human's `UNBLOCKED`, never yours |
+| `frozen` | park — step 4. It is an error final, so it trips the phase where it sits and the fold says so; it is also a final with a door out (ADR [0297](../../../../.decisions/0297-frozen-is-a-park-not-an-end.md)), and walking it is a human's `UNBLOCKED`, never yours |
+| `human:epic-review` | park — step 4, and the same shape as `frozen`: an error final that trips the epic's tail phase, carrying an `UNBLOCKED` door a human walks (ADR [0341](../../../../.decisions/0341-a-failed-epic-review-is-a-park.md)) |
 | `human:*` | park — step 4 |
 | `blocked` | park — step 4 |
 | any other name | end `STOPPED` naming the state — never guess a shell for a state you do not recognise, and never a park: `LANE-PARKED` promises a fold in `blocked`/`human:*`/`frozen`, which an unrecognised state cannot honour (Terminal vocabulary, below) |
@@ -834,11 +835,13 @@ not yours (ADR [0228](../../../../.decisions/0228-scripts-relay-never-derive.md)
 
 You cannot clear a park by hand: post on the driven issue what is needed and from whom (the parking
 spawn's report names both; for `human:cp-approval` it is a control-plane approval at the PR's
-current head; for `frozen` it is a founder-cleared repair round, recorded with `build clear`, which
-appends a `<TASK>.CLEARED` event to the lane's log and moves the task nowhere — the door out is
+current head; for `frozen` and for the epic tail's `human:epic-review` (ADR
+[0341](../../../../.decisions/0341-a-failed-epic-review-is-a-park.md)) it is a founder-cleared
+repair round, recorded with `build clear`, which appends a `<TASK>.CLEARED` event to the lane's log
+and moves the task nowhere — the door out is
 still the human's `UNBLOCKED`, and the two land in either order. Without a `CLEARED` behind it that
 `UNBLOCKED` is **refused** on exit `36`: the resume would restore the state and not the budget, so
-every guarded route out falls straight back to `frozen` (ADR
+every guarded route out falls straight back to the park (ADR
 [0312](../../../../.decisions/0312-event-anchored-retry-budget.md)). Read that code as "the grant
 has not been recorded yet", never as an event to retype). One park class names its
 owner here, not off the spawn's
@@ -898,8 +901,9 @@ issue to land on: print the same two verbs and hand their bytes to your caller, 
 chore's transcript is posted.
 
 **A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
-`frozen` the run ends `LANE-PARKED` with the transcript and the need posted (the founder-cleared
-round above); every other error final has no door and ends `LANE-TERMINAL`.
+`frozen` and on `human:epic-review` the run ends `LANE-PARKED` with the transcript and the need
+posted (the founder-cleared round above, which both of them need); every other error final has no
+door and ends `LANE-TERMINAL`.
 
 **Resume is a re-spawn.** There is no handoff and no memory: resuming a lane is spawning the
 operator again with the same issue number — step 1 tolerates the existing lane, and the fold says
@@ -971,10 +975,11 @@ unroutable state, or a `BLOCKED` refused with exit `12` — the code or state na
 guessed, no event recorded, the fold unchanged). An unroutable state ends `STOPPED`, never
 `LANE-PARKED`: a park promises an `UNBLOCKED` resume, which a state this skill does not recognise
 cannot honour — and appending `BLOCKED` toward cells you do not know is exactly the guess step 2's
-routing table forbids. That resume is mechanical from `blocked` and `human:*` only. From `frozen` it
-needs a recorded `CLEARED` behind it first — a bare `UNBLOCKED` is refused on exit `36`, per the
-park-clearing paragraph in step 4 above — so a `frozen` park's promise is "the founder grants the
-round, then the resume walks", not "the next driver records `UNBLOCKED`". A park reported as a
+routing table forbids. That resume is mechanical from `blocked` and from the `human:*` parks that
+are not error finals. From `frozen` and from `human:epic-review` — the two error finals with a door
+— it needs a recorded `CLEARED` behind it first: a bare `UNBLOCKED` is refused on exit `36`, per the
+park-clearing paragraph in step 4 above, so their promise is "the founder grants the round, then the
+resume walks", not "the next driver records `UNBLOCKED`". A park reported as a
 terminal destroys the caller's routing: the two differ in exactly who acts next. Follow-up
 observations leave through `/report` the moment you see them — never through scope creep in a
 lane you are only driving.
