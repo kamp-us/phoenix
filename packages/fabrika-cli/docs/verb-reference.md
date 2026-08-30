@@ -1055,8 +1055,8 @@ Take one intake-queue issue from arrival to triaged. Contract:
 | `triage provenance` | whether an issue was reported by an agent or a human |
 | `triage homes` | the assignable homes: open milestones and standing lanes |
 | `triage split` | one child of a bundled report, created exactly once |
-| `triage enrich` | an issue body replaced with the rewrite on stdin |
-| `triage apply` | type, priority, audience, status and home stamped as one owned-facet reconcile, read back |
+| `triage enrich` | an issue body replaced with the rewrite on stdin, refused when it states an unwired ordering |
+| `triage apply` | type, priority, audience, status, home and `--blocked-by` edges stamped as one owned-facet reconcile, read back |
 | `triage park` | an issue demoted to needs-info with the questions on stdin |
 | `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason |
 | `triage repair-criteria` | an acceptance-criteria block's shape repaired mechanically |
@@ -1067,7 +1067,22 @@ was named · `13` close-eligible, but the kill is unconfirmed (ADR 0159) · `14`
 drifted in a way no mechanical repair covers · `15` the composed body's authored region carries a
 `Malformed` criteria block · `16` `--ready-for agent` over a body whose criteria block does not
 read `Found` · `17` a live claim marker names another session · `18` no value of `.fabrika.jsonc`
-may be used · `19` the asking lane holds no live claim on the target. `4` is a deliberate gap.
+may be used · `19` the asking lane holds no live claim on the target · `20` the composed body states
+an ordering the live `blocked_by` graph carries no edge for · `21` a `--blocked-by` target is a pull
+request. `4` is a deliberate gap.
+
+**`triage apply --blocked-by` is the one triage route to the dependency graph.** ADR 0301 makes the
+native `blocked_by` graph the one carrier of "do not start this yet", and until this flag only
+`map ticket` could write an edge — so an ordered slice set shipped its ordering as prose and both
+build gates admitted work nobody could start (#6728). The flag is repeatable, resolves each target's
+internal `id` (never the issue number the POST would silently misread), skips the edges already live
+so a re-run is idempotent, and proves the result by re-reading the graph rather than by trusting the
+POST. Its last column reports what *that run* read back, so it is empty on any call without the flag
+— an empty column is never "the issue waits on nothing". A target that is a pull request refuses on
+`21`, because ADR 0301 names a blocking PR by the issue its merge closes. `triage enrich` is the
+other half: it refuses on `20` when the body it composed states an ordering the graph has no edge
+for, with no override — wire the edge or reword. It reds only on the issue's own voice and only on
+issue references; a third-person report ("it is already blocked on #N") and a PR number are neither.
 
 Two repairs are worth spelling out, because they are what `repair-criteria` will and will not do.
 It rewrites a level-drifted `## Acceptance criteria` heading to the conforming `###`, and, when the

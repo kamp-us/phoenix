@@ -75,18 +75,40 @@ export const blockedBy = (repo: string, issue: number): Shell<Existence<Readonly
 export const blocking = (repo: string, issue: number): Shell<Existence<ReadonlyArray<number>>> =>
 	listRelation(repo, `issues/${issue}/dependencies/blocking`);
 
-/** The target's internal `id` — the value both POST bodies take, never the issue number. */
-export const internalId = (repo: string, issue: number): Shell<Existence<number>> =>
+/** What an edge write needs to know about its target. */
+export interface EdgeTarget {
+	/** The internal `id` — the value both POST bodies take, never the issue number. */
+	readonly id: number;
+	/**
+	 * <!-- anchor: A-PR-RESOLVES-PRESENT-HERE --> `repos/{o}/{r}/issues/<n>` serves **pull requests
+	 * too**, answering 200 with an `id` and a `pull_request` object. So a caller that reads only the
+	 * id cannot tell an issue from a PR, and the 404 arm it would refuse a bad target on never fires
+	 * for one (#6728). ADR 0301 rules the case — a blocking PR is named in the graph by the issue its
+	 * merge closes — and this field is what lets a caller apply it.
+	 */
+	readonly pullRequest: boolean;
+}
+
+/** The target as an edge write sees it: the id to POST, and whether it is a pull request. */
+export const edgeTarget = (repo: string, issue: number): Shell<Existence<EdgeTarget>> =>
 	authedExistence((token) =>
 		restCall(token, {method: "GET", path: `repos/${repo}/issues/${issue}`}).pipe(
 			Effect.map((outcome) =>
 				existenceOf(outcome, (body) => {
 					const id = isRecord(body) ? body.id : undefined;
 					return typeof id === "number"
-						? ok(id)
+						? ok({id, pullRequest: isRecord(body) && body.pull_request !== undefined})
 						: fail("GitHub answered 200 but named no internal id");
 				}),
 			),
+		),
+	);
+
+/** The target's internal `id` alone, for a caller that has no issue-versus-PR question to ask. */
+export const internalId = (repo: string, issue: number): Shell<Existence<number>> =>
+	edgeTarget(repo, issue).pipe(
+		Effect.map(
+			(found): Existence<number> => (found._tag === "Present" ? present(found.value.id) : found),
 		),
 	);
 

@@ -17,6 +17,7 @@ import {
 	CRITERIA_REQUIRED,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	PULL_REQUEST_TARGET,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
@@ -90,6 +91,7 @@ const options = {
 	readyFor: "agent",
 	home: 47 as number | null,
 	lane: null as string | null,
+	blockedBy: [] as ReadonlyArray<number>,
 	token: null as string | null,
 	repo: null,
 	json: false,
@@ -171,7 +173,7 @@ describe("runApply", () => {
 	it("stamps the whole transition and prints the tab-separated triaged line", async () => {
 		const out = await run(happy());
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("triaged\t4312\tbug\tp2\tagent\t47\n");
+		expect(out.stdout).toBe("triaged\t4312\tbug\tp2\tagent\t47\t\n");
 	});
 
 	it("emits the record on STDOUT with --json, carrying what it read BACK", async () => {
@@ -252,7 +254,7 @@ describe("runApply", () => {
 			),
 		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toBe("triaged\t4312\tbug\tp2\tagent\twayfinder:backlog\n");
+		expect(out.stdout).toBe("triaged\t4312\tbug\tp2\tagent\twayfinder:backlog\t\n");
 		expect(shell.bodies[shell.requests.findIndex((c) => PATCH.test(c))]).toBe('{"milestone":null}');
 		expect(shell.requests.some((c) => MILESTONES.test(c))).toBe(false);
 	});
@@ -489,7 +491,7 @@ describe("runApply", () => {
 				{type: "epic"},
 			);
 			expect(out.code).toBe(0);
-			expect(out.stdout).toBe("triaged\t4312\tepic\tp2\tagent\t47\n");
+			expect(out.stdout).toBe("triaged\t4312\tepic\tp2\tagent\t47\t\n");
 		});
 
 		it("stamps --ready-for human over an absent block — the promise is made to an agent", async () => {
@@ -506,7 +508,152 @@ describe("runApply", () => {
 				{readyFor: "human"},
 			);
 			expect(out.code).toBe(0);
-			expect(out.stdout).toBe("triaged\t4312\tbug\tp2\thuman\t47\n");
+			expect(out.stdout).toBe("triaged\t4312\tbug\tp2\thuman\t47\t\n");
+		});
+	});
+
+	/**
+	 * ADR 0301 makes the graph the one carrier of "do not start this yet", and this flag is the only
+	 * triage route to it — #6663's ordering shipped as prose because there was none (#6728).
+	 */
+	describe("--blocked-by", () => {
+		const EDGES = /GET .*\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
+		const EDGE_WRITE = /POST .*\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by$/;
+		const TARGET = /GET .*\/repos\/o\/r\/issues\/4311$/;
+
+		const edgeList = (...numbers: ReadonlyArray<number>): HttpReply => ({
+			status: 200,
+			body: JSON.stringify(numbers.map((number) => ({number}))),
+		});
+		const target = (id: number): HttpReply => ({status: 200, body: JSON.stringify({id})});
+
+		const withEdges = (...rows: ReadonlyArray<Scripted>): ReadonlyArray<Scripted> => [
+			...rows,
+			...happy(),
+		];
+
+		it("resolves the internal id and POSTs it — never the issue number", async () => {
+			const shell = guardedShell(
+				withEdges(
+					[once(EDGES), edgeList()],
+					[EDGES, edgeList(4311)],
+					[TARGET, target(9911)],
+					[EDGE_WRITE, ACCEPTED],
+				),
+			);
+			const out = await Effect.runPromise(
+				Effect.provide(runApply({...options, blockedBy: [4311]}), triageContext(shell)),
+			);
+			expect(out.code).toBe(0);
+			const at = shell.requests.findIndex((line) => EDGE_WRITE.test(line));
+			expect(at).toBeGreaterThanOrEqual(0);
+			expect(shell.bodies[at]).toBe('{"issue_id":9911}');
+		});
+
+		it("reports the read-back edge set as the machine line's last column", async () => {
+			const out = await run(
+				withEdges(
+					[once(EDGES), edgeList()],
+					[EDGES, edgeList(4311)],
+					[TARGET, target(9911)],
+					[EDGE_WRITE, ACCEPTED],
+				),
+				{blockedBy: [4311]},
+			);
+			expect(out.stdout).toBe("triaged\t4312\tbug\tp2\tagent\t47\t#4311\n");
+			expect(out.stderr.at(-1)).toBe("triage apply: read back #4312 blocked_by #4311.");
+		});
+
+		it("leaves one edge and exits 0 when the edge is already live — the flag is idempotent", async () => {
+			const shell = guardedShell(withEdges([EDGES, edgeList(4311)], [EDGE_WRITE, ACCEPTED]));
+			const out = await Effect.runPromise(
+				Effect.provide(runApply({...options, blockedBy: [4311, 4311]}), triageContext(shell)),
+			);
+			expect(out.code).toBe(0);
+			expect(shell.requests.filter((line) => EDGE_WRITE.test(line))).toEqual([]);
+			expect(out.stdout).toBe("triaged\t4312\tbug\tp2\tagent\t47\t#4311\n");
+		});
+
+		it("refuses a target proven absent on ZERO_SCOPE, before any write of any kind", async () => {
+			const shell = guardedShell(
+				withEdges([EDGES, edgeList()], [TARGET, NOT_FOUND], [EDGE_WRITE, ACCEPTED]),
+			);
+			const out = await Effect.runPromise(
+				Effect.provide(runApply({...options, blockedBy: [4311]}), triageContext(shell)),
+			);
+			expect(out.code).toBe(ZERO_SCOPE);
+			expect(out.stderr.at(-1)).toContain("--blocked-by 4311 names no issue");
+			expect(
+				shell.requests.some(
+					(c) => EDGE_WRITE.test(c) || ADD.test(c) || REMOVE.test(c) || PATCH.test(c),
+				),
+			).toBe(false);
+		});
+
+		it("is PRECONDITION_UNKNOWN when the live edge set could not be read", async () => {
+			const out = await run(withEdges([EDGES, UNREADABLE]), {blockedBy: [4311]});
+			expect(out.code).toBe(PRECONDITION_UNKNOWN);
+			expect(out.stderr.at(-1)).toContain("no edge was written");
+		});
+
+		it("is WRITE_UNKNOWN when the edge POST fails", async () => {
+			const out = await run(
+				withEdges([EDGES, edgeList()], [TARGET, target(9911)], [EDGE_WRITE, WRITE_FAILED]),
+				{blockedBy: [4311]},
+			);
+			expect(out.code).toBe(WRITE_UNKNOWN);
+			expect(out.stderr.at(-1)).toContain("did NOT land");
+		});
+
+		/** The POST's own 2xx and a graph that carries the edge are different facts. */
+		it("is READBACK_MISMATCH when the written edge is absent from the read-back", async () => {
+			const out = await run(
+				withEdges([EDGES, edgeList()], [TARGET, target(9911)], [EDGE_WRITE, ACCEPTED]),
+				{blockedBy: [4311]},
+			);
+			expect(out.code).toBe(READBACK_MISMATCH);
+			expect(out.stderr.at(-1)).toContain("#4311");
+			expect(out.stderr.at(-1)).toContain("are not in it");
+		});
+
+		it("refuses a self-edge, which would make the issue permanently unbuildable", async () => {
+			const shell = guardedShell(happy());
+			const out = await Effect.runPromise(
+				Effect.provide(runApply({...options, blockedBy: [4312]}), triageContext(shell)),
+			);
+			expect(out.code).toBe(ZERO_SCOPE);
+			expect(out.stderr.at(-1)).toContain("names the issue itself");
+		});
+
+		it("reads no dependency endpoint at all when the flag is absent", async () => {
+			const shell = guardedShell(happy());
+			await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
+			expect(shell.requests.some((line) => /dependencies/.test(line))).toBe(false);
+		});
+
+		/**
+		 * `repos/{o}/{r}/issues/<n>` serves pull requests, so a PR number resolves Present and the
+		 * proven-absent arm above never fires for it. ADR 0301 rules the case rather than the POST.
+		 */
+		it("refuses a target that is a pull request on its own seat, writing nothing", async () => {
+			const shell = guardedShell(
+				withEdges(
+					[EDGES, edgeList()],
+					[TARGET, {status: 200, body: JSON.stringify({id: 9911, pull_request: {url: "u"}})}],
+					[EDGE_WRITE, ACCEPTED],
+				),
+			);
+			const out = await Effect.runPromise(
+				Effect.provide(runApply({...options, blockedBy: [4311]}), triageContext(shell)),
+			);
+			expect(out.code).toBe(PULL_REQUEST_TARGET);
+			expect(out.stderr.at(-1)).toContain("names a pull request, not an issue");
+			expect(out.stderr.at(-1)).toContain("the issue its merge closes");
+			expect(
+				shell.requests.some(
+					(c) => EDGE_WRITE.test(c) || ADD.test(c) || REMOVE.test(c) || PATCH.test(c),
+				),
+			).toBe(false);
 		});
 	});
 

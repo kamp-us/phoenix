@@ -85,6 +85,7 @@ const applyOptions = {
 	readyFor: "agent",
 	home: null as number | null,
 	lane: "team:infra" as string | null,
+	blockedBy: [] as ReadonlyArray<number>,
 	token: null as string | null,
 	repo: null,
 	json: false,
