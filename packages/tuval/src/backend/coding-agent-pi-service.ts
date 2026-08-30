@@ -27,7 +27,12 @@ import {
 	type IndexedSessionMetadata,
 	makeCodingAgentSessionIndex,
 } from "./coding-agent-session-index.js";
-import {boundedWindowStart, recentTranscriptOf, transcriptOf} from "./coding-agent-transcript.js";
+import {
+	planTranscriptWindow,
+	recentTranscriptOf,
+	transcriptOf,
+	transcriptSourceIndex,
+} from "./coding-agent-transcript.js";
 
 export {
 	TRANSCRIPT_WINDOW_BYTE_LIMIT,
@@ -767,14 +772,16 @@ export const makeCodingAgentPiTransport = (
 	transport.archiveState = (sessionId: string, transcript: ReadonlyArray<TranscriptItem>) => {
 		const first = transcript.at(0);
 		if (first === undefined) return {_tag: "complete", hasMore: false};
-		const prefix = `${sessionId}:`;
-		if (!first.id.startsWith(prefix)) return {_tag: "complete", hasMore: false};
-		const before = Number(first.id.slice(prefix.length));
-		if (!Number.isSafeInteger(before) || before <= 0) return {_tag: "complete", hasMore: false};
+		const before = transcriptSourceIndex(sessionId, first);
+		if (before === undefined || before <= 0) return {_tag: "complete", hasMore: false};
 		return {
 			_tag: "more",
 			hasMore: true,
-			cursor: encodeArchiveCursor({version: 1, sessionId, anchorId: first.id}),
+			cursor: encodeArchiveCursor({
+				version: 1,
+				sessionId,
+				anchorId: `${sessionId}:${before}`,
+			}),
 		};
 	};
 	transport.currentRuntime = runtimeOwnership.currentRuntime;
@@ -811,8 +818,8 @@ export const makeCodingAgentPiTransport = (
 					: (() => {
 							const before = cached.findIndex(({id}) => id === decoded.anchorId);
 							if (before <= 0) return null;
-							const start = boundedWindowStart(cached, before);
-							return {transcript: cached.slice(start, before), start};
+							const window = planTranscriptWindow(cached, before);
+							return {transcript: window.transcript, start: window.sourceStart};
 						})();
 			if (page === null) {
 				return {
@@ -834,7 +841,7 @@ export const makeCodingAgentPiTransport = (
 								cursor: encodeArchiveCursor({
 									version: 1,
 									sessionId: decoded.sessionId,
-									anchorId: page.transcript[0]?.id ?? decoded.anchorId,
+									anchorId: `${decoded.sessionId}:${page.start}`,
 								}),
 							},
 			};

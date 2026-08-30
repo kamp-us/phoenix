@@ -10,11 +10,7 @@ import {
 	type SessionHeader,
 } from "@earendil-works/pi-coding-agent";
 import type {ThinkingLevel, TranscriptItem} from "@earendil-works/pi-protocol";
-import {
-	boundedWindowStart,
-	recentTranscriptOf,
-	transcriptOfMessages,
-} from "./coding-agent-transcript.js";
+import {planTranscriptWindow, transcriptOfMessages} from "./coding-agent-transcript.js";
 
 interface SessionFileWorkerData {
 	readonly path: string;
@@ -105,11 +101,11 @@ const load = async (): Promise<void> => {
 			parentPort?.postMessage({type: "stale"});
 			return;
 		}
-		const start = boundedWindowStart(transcript, before);
+		const page = planTranscriptWindow(transcript, before);
 		parentPort?.postMessage({
 			type: "page",
-			transcript: transcript.slice(start, before),
-			start,
+			transcript: page.transcript,
+			start: page.sourceStart,
 		});
 		return;
 	}
@@ -117,10 +113,7 @@ const load = async (): Promise<void> => {
 	const thinkingLevel = THINKING_LEVELS.includes(context.thinkingLevel as ThinkingLevel)
 		? (context.thinkingLevel as ThinkingLevel)
 		: "off";
-	const recent = recentTranscriptOf(transcript);
-	const first = recent.at(0);
-	const before =
-		first === undefined ? transcript.length : Number(first.id.slice(`${data.sessionId}:`.length));
+	const recent = planTranscriptWindow(transcript);
 	parentPort?.postMessage({
 		type: "history",
 		history: {
@@ -131,8 +124,8 @@ const load = async (): Promise<void> => {
 					? undefined
 					: {provider: context.model.provider, id: context.model.modelId},
 			thinkingLevel,
-			transcript: recent satisfies ReadonlyArray<TranscriptItem>,
-			hasMore: Number.isSafeInteger(before) && before > 0,
+			transcript: recent.transcript satisfies ReadonlyArray<TranscriptItem>,
+			hasMore: recent.sourceStart > 0,
 		},
 	});
 	setImmediate(() => parentPort?.postMessage({type: "entries", entries}));

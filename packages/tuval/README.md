@@ -116,12 +116,19 @@ runtime readiness follows independently. Each state can become reason-bearing `r
 controls stay disabled until runtime `ready`, while a refused runtime can be retried without
 discarding visible history.
 
-The later history snapshot carries a recent transcript window bounded by item count and encoded bytes. Its archive state
-is either complete, or has `hasMore: true` with the only valid cursor for the next older page; the
-union cannot represent a cursor without more history. Pages preserve chronological order and keep
-assistant tool calls with their results. Browser-loaded pages remain local while ordered Pi protocol
-progress updates the bounded live window by item identity, so an item present at the attach boundary
-is updated rather than duplicated. Prompt and control mutations
+The later history snapshot and every archive page carry at most 40 transcript items and at most
+256,000 bytes in the final UTF-8 JSON array encoding, counting array punctuation and bounded omission
+placeholders. Assistant tool calls and their results are one atomic candidate group: the entire group
+must fit both caps or none of its source items enter that window. A single item or atomic pair too
+large for an empty window is represented by an explicit `omission` entry with safe reason metadata and
+the original item count plus source-item encoded bytes (including inter-item commas, excluding the
+window's outer brackets). The chat renders that variant as an honest Turkish notice,
+and the opaque cursor advances before the represented source group so repeated paging cannot stall,
+split a tool interaction, or erase the fact that content was omitted. Archive state is either
+complete, or has `hasMore: true` with the only valid cursor for the next older page; the union cannot
+represent a cursor without more history. Pages preserve chronological order. Browser-loaded pages
+remain local while ordered Pi protocol progress updates the bounded live window by item identity, so
+an item present at the attach boundary is updated rather than duplicated. Prompt and control mutations
 require caller-supplied correlation ids and return `acknowledged` only after PiClient resolves the
 matching protocol result. Control projections derive phase and lease availability from the observed
 snapshot and expose only authenticated pi models plus the selected model's supported thinking

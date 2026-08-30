@@ -70,6 +70,39 @@ describe("ChatPane", () => {
 		expect(screen.getByRole("button", {name: "Gönder"}).getAttribute("data-scope")).toBe("button");
 	});
 
+	it("renders an honest Turkish notice for a bounded transcript omission", () => {
+		const view = render(
+			<ChatPane
+				selected={selected}
+				connection="attached"
+				session={{
+					...attached,
+					transcript: [
+						{
+							_tag: "omission",
+							id: "tuval-omission:4:6:2:300000:oversized-tool-pair",
+							role: "user",
+							content: [],
+							timestamp: 4,
+							status: "complete",
+							reason: "oversized-tool-pair",
+							omittedItemCount: 2,
+							omittedByteCount: 300_000,
+						},
+					],
+				}}
+				onClose={vi.fn()}
+				onSend={async () => ({ok: true, message: "onaylandı"})}
+			/>,
+		);
+
+		expect(screen.getByText("Araç çağrısı ve sonucu")).toBeTruthy();
+		expect(screen.getByText("Gösterilmedi")).toBeTruthy();
+		expect(screen.getByText(/2 ileti gösterilmedi/)).toBeTruthy();
+		expect(screen.getByText(/300[\s.]000 bayttı/)).toBeTruthy();
+		expect(view.container.querySelector('[data-role="omission"]')).toBeTruthy();
+	});
+
 	it("renders ownership, initial history, and runtime loading as separate truths", () => {
 		const view = render(
 			<ChatPane

@@ -1,5 +1,6 @@
 import type {TranscriptItem} from "@earendil-works/pi-protocol";
 import type {LiveTranscriptEntry, TranscriptArchiveState} from "../shared/live-session.js";
+import {transcriptOmissionMetadata} from "./coding-agent-transcript.js";
 
 interface ArchiveCursorPayload {
 	readonly version: 1;
@@ -31,13 +32,29 @@ export const decodeArchiveCursor = (cursor: string): ArchiveCursorPayload | unde
 	}
 };
 
-export const archiveEntryOf = (item: TranscriptItem): LiveTranscriptEntry => ({
-	id: item.id,
-	role: item.role,
-	content: [...item.content],
-	timestamp: item.timestamp,
-	status: item.role === "user" ? "complete" : item.status,
-});
+export const archiveEntryOf = (item: TranscriptItem): LiveTranscriptEntry => {
+	const omission = transcriptOmissionMetadata(item);
+	if (omission !== undefined) {
+		return {
+			_tag: "omission",
+			id: item.id,
+			role: "user",
+			content: [],
+			timestamp: item.timestamp,
+			status: "complete",
+			reason: omission.reason,
+			omittedItemCount: omission.omittedItemCount,
+			omittedByteCount: omission.omittedByteCount,
+		};
+	}
+	return {
+		id: item.id,
+		role: item.role,
+		content: [...item.content],
+		timestamp: item.timestamp,
+		status: item.role === "user" ? "complete" : item.status,
+	};
+};
 
 export const archiveStateBefore = (
 	sessionId: string,

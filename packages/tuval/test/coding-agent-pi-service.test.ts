@@ -576,14 +576,24 @@ describe("coding-agent Pi session index", () => {
 			const firstPage = await transport.loadOlder(archive.cursor);
 			assert.equal(firstPage._tag, "loaded");
 			if (firstPage._tag !== "loaded") return;
-			const toolIndex = firstPage.transcript.findIndex((entry) => entry.role === "assistant");
+			assert.ok(firstPage.transcript.length <= 40);
+			let pairPage = firstPage;
+			while (
+				!pairPage.transcript.some((entry) => entry.role === "assistant") &&
+				pairPage.archive._tag === "more"
+			) {
+				const nextPage = await transport.loadOlder(pairPage.archive.cursor);
+				assert.equal(nextPage._tag, "loaded");
+				if (nextPage._tag !== "loaded") return;
+				pairPage = nextPage;
+			}
+			const toolIndex = pairPage.transcript.findIndex((entry) => entry.role === "assistant");
 			assert.ok(toolIndex >= 0);
-			assert.equal(firstPage.transcript[toolIndex + 1]?.role, "tool");
+			assert.equal(pairPage.transcript[toolIndex + 1]?.role, "tool");
 			assert.deepEqual(
-				firstPage.transcript.slice(toolIndex, toolIndex + 2).map(({id: entryId}) => entryId),
+				pairPage.transcript.slice(toolIndex, toolIndex + 2).map(({id: entryId}) => entryId),
 				[`${id}:1`, `${id}:2`],
 			);
-			assert.equal(firstPage.archive._tag, "more");
 			const stale = await transport.loadOlder(`${archive.cursor}broken`);
 			assert.equal(stale._tag, "refused");
 			if (stale._tag === "refused") assert.equal(stale.code, "invalid-cursor");
@@ -607,6 +617,127 @@ describe("coding-agent Pi session index", () => {
 			});
 			unsubscribe();
 			assert.ok(Buffer.byteLength(JSON.stringify(progressEvents[0]), "utf8") < 50_000);
+			await lease.detach();
+		} finally {
+			await client.dispose();
+		}
+	});
+
+	it("advances opaque cursors across oversized items and tool pairs on repeated bounded pages", async () => {
+		const root = await mkdtemp(join(tmpdir(), "tuval-coding-agent-adversarial-pages-"));
+		temporaryRoots.push(root);
+		const sessions = join(root, "sessions");
+		const id = "adversarial-pages";
+		const path = join(sessions, `2026-08-29T10-00-00-000Z_${id}.jsonl`);
+		await mkdir(dirname(path), {recursive: true});
+		const timestamp = "2026-08-29T10:00:00.000Z";
+		const usage = {
+			input: 1,
+			output: 1,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 2,
+			cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0},
+		};
+		const entries: Array<Record<string, unknown>> = [
+			{type: "session", version: 3, id, timestamp, cwd: `/work/${id}`},
+			{
+				type: "model_change",
+				id: `${id}-model`,
+				parentId: null,
+				timestamp,
+				provider: "tuval-faux",
+				modelId: "daily-driver",
+			},
+		];
+		let parentId = `${id}-model`;
+		const addUser = (entryId: string, text: string): void => {
+			entries.push({
+				type: "message",
+				id: entryId,
+				parentId,
+				timestamp,
+				message: {role: "user", content: text, timestamp: entries.length},
+			});
+			parentId = entryId;
+		};
+		for (let index = 0; index < 45; index += 1) addUser(`${id}-before-${index}`, `before-${index}`);
+		addUser(`${id}-oversized`, "ş".repeat(128_050));
+		entries.push({
+			type: "message",
+			id: `${id}-call`,
+			parentId,
+			timestamp,
+			message: {
+				role: "assistant",
+				content: [{type: "toolCall", id: "large-call", name: "read", arguments: {}}],
+				api: "openai-completions",
+				provider: "tuval-faux",
+				model: "daily-driver",
+				usage,
+				stopReason: "toolUse",
+				timestamp: entries.length,
+			},
+		});
+		parentId = `${id}-call`;
+		entries.push({
+			type: "message",
+			id: `${id}-result`,
+			parentId,
+			timestamp,
+			message: {
+				role: "toolResult",
+				toolCallId: "large-call",
+				toolName: "read",
+				content: [{type: "text", text: "ş".repeat(128_050)}],
+				details: {},
+				isError: false,
+				timestamp: entries.length,
+			},
+		});
+		parentId = `${id}-result`;
+		for (let index = 0; index < 45; index += 1) addUser(`${id}-after-${index}`, `after-${index}`);
+		await writeFile(path, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+		await writeProductionSettings(root);
+
+		const transport = makeCodingAgentPiTransport({
+			agentDir: root,
+			cwd: "/work/project",
+			sessionRoots: [sessions],
+		});
+		const client = await PiClient.connect({transportFactory: transport});
+		try {
+			const lease = await client.acquireSession(id, {mode: "exclusive"});
+			await waitFor(() => (lease.snapshot?.transcript.length ?? 0) > 0, "initial bounded page");
+			const initial = lease.snapshot?.transcript ?? [];
+			assert.ok(initial.length <= 40);
+			assert.ok(Buffer.byteLength(JSON.stringify(initial), "utf8") <= 256_000);
+			let archive = transport.archiveState(id, initial);
+			const cursors = new Set<string>();
+			const loadedIds = new Set<string>();
+			let omissionCount = 0;
+			while (archive._tag === "more") {
+				assert.isFalse(cursors.has(archive.cursor), "archive cursor stalled");
+				cursors.add(archive.cursor);
+				const outcome = await transport.loadOlder(archive.cursor);
+				assert.equal(outcome._tag, "loaded");
+				if (outcome._tag !== "loaded") break;
+				assert.ok(outcome.transcript.length <= 40);
+				assert.ok(Buffer.byteLength(JSON.stringify(outcome.transcript), "utf8") <= 256_000);
+				for (let index = 0; index < outcome.transcript.length; index += 1) {
+					const item = outcome.transcript[index];
+					assert.ok(item !== undefined);
+					assert.isFalse(loadedIds.has(item.id), `duplicate archive item ${item.id}`);
+					loadedIds.add(item.id);
+					if ("_tag" in item && item._tag === "omission") omissionCount += 1;
+					if (item.role !== "tool") continue;
+					const call = outcome.transcript[index - 1];
+					assert.equal(call?.role, "assistant", "orphan tool result crossed a page boundary");
+				}
+				archive = outcome.archive;
+			}
+			assert.ok(cursors.size >= 2);
+			assert.equal(omissionCount, 2);
 			await lease.detach();
 		} finally {
 			await client.dispose();

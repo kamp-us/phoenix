@@ -187,43 +187,254 @@ export const transcriptOfMessages = (
 export const transcriptOf = (session: AgentSession): Array<TranscriptItem> =>
 	transcriptOfMessages(session.sessionId, session.messages);
 
-const toolCallIds = (item: TranscriptItem): ReadonlyArray<string> =>
-	item.role === "assistant"
-		? item.content.flatMap((part) => (part.type === "toolCall" ? [part.toolCallId] : []))
-		: [];
+type AssistantTranscriptItem = Extract<TranscriptItem, {role: "assistant"}>;
+type ToolTranscriptItem = Extract<TranscriptItem, {role: "tool"}>;
+type NonToolTranscriptItem = Exclude<TranscriptItem, {role: "tool"}>;
 
-const pairedWindowStart = (
-	transcript: ReadonlyArray<TranscriptItem>,
-	candidateStart: number,
-): number => {
-	let start = Math.max(0, candidateStart);
-	while (transcript[start]?.role === "tool") {
-		const tool = transcript[start];
-		if (tool?.role !== "tool") break;
-		const call = transcript.findLastIndex(
-			(item, index) => index < start && toolCallIds(item).includes(tool.toolCallId),
-		);
-		if (call < 0) break;
-		start = call;
+type NonEmptyArray<A> = readonly [A, ...Array<A>];
+
+type TranscriptCandidate =
+	| {
+			readonly _tag: "single";
+			readonly start: number;
+			readonly end: number;
+			readonly item: NonToolTranscriptItem;
+	  }
+	| {
+			readonly _tag: "tool-call";
+			readonly start: number;
+			readonly end: number;
+			readonly call: AssistantTranscriptItem;
+	  }
+	| {
+			readonly _tag: "tool-pair";
+			readonly start: number;
+			readonly end: number;
+			readonly call: AssistantTranscriptItem;
+			readonly results: NonEmptyArray<ToolTranscriptItem>;
+	  }
+	| {
+			readonly _tag: "invalid-tool-group";
+			readonly start: number;
+			readonly end: number;
+			readonly items: NonEmptyArray<TranscriptItem>;
+	  };
+
+export type TranscriptOmissionReason =
+	| "oversized-item"
+	| "oversized-tool-pair"
+	| "invalid-tool-group";
+
+export interface TranscriptWindowPlan {
+	readonly transcript: ReadonlyArray<TranscriptItem>;
+	readonly sourceStart: number;
+	readonly sourceEnd: number;
+	readonly encodedBytes: number;
+}
+
+const toolCallIds = (item: AssistantTranscriptItem): ReadonlyArray<string> =>
+	item.content.flatMap((part) => (part.type === "toolCall" ? [part.toolCallId] : []));
+
+const candidatesOf = (transcript: ReadonlyArray<TranscriptItem>): Array<TranscriptCandidate> => {
+	const candidates: Array<TranscriptCandidate> = [];
+	let index = 0;
+	while (index < transcript.length) {
+		const item = transcript[index];
+		if (item === undefined) break;
+		if (item.role === "tool") {
+			candidates.push({
+				_tag: "invalid-tool-group",
+				start: index,
+				end: index + 1,
+				items: [item],
+			});
+			index += 1;
+			continue;
+		}
+		if (item.role !== "assistant" || toolCallIds(item).length === 0) {
+			candidates.push({_tag: "single", start: index, end: index + 1, item});
+			index += 1;
+			continue;
+		}
+
+		const callIds = toolCallIds(item);
+		const results: Array<ToolTranscriptItem> = [];
+		let end = index + 1;
+		while (transcript[end]?.role === "tool") {
+			results.push(transcript[end] as ToolTranscriptItem);
+			end += 1;
+		}
+		const resultIds = results.map(({toolCallId}) => toolCallId);
+		const validCallIds = new Set(callIds).size === callIds.length;
+		const validPair =
+			validCallIds &&
+			results.length > 0 &&
+			resultIds.length === callIds.length &&
+			new Set(resultIds).size === resultIds.length &&
+			callIds.every((id) => resultIds.includes(id));
+		if (validCallIds && results.length === 0) {
+			candidates.push({_tag: "tool-call", start: index, end, call: item});
+		} else if (validPair) {
+			candidates.push({
+				_tag: "tool-pair",
+				start: index,
+				end,
+				call: item,
+				results: results as [ToolTranscriptItem, ...Array<ToolTranscriptItem>],
+			});
+		} else {
+			candidates.push({
+				_tag: "invalid-tool-group",
+				start: index,
+				end,
+				items: transcript.slice(index, end) as [TranscriptItem, ...Array<TranscriptItem>],
+			});
+		}
+		index = end;
 	}
-	return start;
+	return candidates;
 };
 
-export const boundedWindowStart = (
-	transcript: ReadonlyArray<TranscriptItem>,
-	before: number,
-): number => {
-	let start = before;
-	let bytes = 0;
-	while (start > 0 && before - start < TRANSCRIPT_WINDOW_LIMIT) {
-		const nextBytes = Buffer.byteLength(JSON.stringify(transcript[start - 1]), "utf8");
-		if (start < before && bytes + nextBytes > TRANSCRIPT_WINDOW_BYTE_LIMIT) break;
-		bytes += nextBytes;
-		start -= 1;
+const itemsOf = (candidate: TranscriptCandidate): NonEmptyArray<TranscriptItem> => {
+	if (candidate._tag === "single") return [candidate.item];
+	if (candidate._tag === "tool-call") return [candidate.call];
+	if (candidate._tag === "tool-pair") return [candidate.call, ...candidate.results];
+	return candidate.items;
+};
+
+const encodedBytesOf = (items: ReadonlyArray<TranscriptItem>): number =>
+	Buffer.byteLength(JSON.stringify(items), "utf8");
+
+const omissionNotice = (
+	reason: TranscriptOmissionReason,
+	itemCount: number,
+	encodedBytes: number,
+): string => {
+	if (reason === "oversized-tool-pair") {
+		return `${itemCount} iletilik araç çağrısı ve sonucu (${encodedBytes} bayt) pencere sınırını birlikte aştığı için gösterilmedi.`;
 	}
-	return pairedWindowStart(transcript, start);
+	if (reason === "invalid-tool-group") {
+		return `${itemCount} iletilik araç etkileşimi eşleşmesi korunamadığı için gösterilmedi (${encodedBytes} bayt).`;
+	}
+	return `Bu ileti (${encodedBytes} bayt) pencere sınırını aştığı için gösterilmedi.`;
+};
+
+export const transcriptOmissionMetadata = (
+	item: TranscriptItem,
+):
+	| {
+			readonly sourceStart: number;
+			readonly sourceEnd: number;
+			readonly omittedItemCount: number;
+			readonly omittedByteCount: number;
+			readonly reason: TranscriptOmissionReason;
+	  }
+	| undefined => {
+	const match =
+		/^tuval-omission:(\d+):(\d+):(\d+):(\d+):(oversized-item|oversized-tool-pair|invalid-tool-group)$/.exec(
+			item.id,
+		);
+	if (match === null) return undefined;
+	const [, startText, endText, itemCountText, byteCountText, reason] = match;
+	const values = [startText, endText, itemCountText, byteCountText].map(Number);
+	if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) return undefined;
+	const [sourceStart, sourceEnd, omittedItemCount, omittedByteCount] = values as [
+		number,
+		number,
+		number,
+		number,
+	];
+	if (sourceEnd <= sourceStart || omittedItemCount !== sourceEnd - sourceStart) return undefined;
+	return {
+		sourceStart,
+		sourceEnd,
+		omittedItemCount,
+		omittedByteCount,
+		reason: reason as TranscriptOmissionReason,
+	};
+};
+
+const omissionOf = (
+	candidate: TranscriptCandidate,
+	reason: TranscriptOmissionReason,
+): TranscriptItem => {
+	const original = itemsOf(candidate);
+	const encodedBytes = encodedBytesOf(original) - Buffer.byteLength("[]", "utf8");
+	return {
+		id: `tuval-omission:${candidate.start}:${candidate.end}:${original.length}:${encodedBytes}:${reason}`,
+		role: "user",
+		content: [{type: "text", text: omissionNotice(reason, original.length, encodedBytes)}],
+		timestamp: original[0].timestamp,
+	};
+};
+
+const outputOf = (candidate: TranscriptCandidate): NonEmptyArray<TranscriptItem> => {
+	if (candidate._tag === "invalid-tool-group") {
+		return [omissionOf(candidate, "invalid-tool-group")];
+	}
+	const original = itemsOf(candidate);
+	if (
+		original.length <= TRANSCRIPT_WINDOW_LIMIT &&
+		encodedBytesOf(original) <= TRANSCRIPT_WINDOW_BYTE_LIMIT
+	) {
+		return original;
+	}
+	return [
+		omissionOf(
+			candidate,
+			candidate._tag === "tool-pair" ? "oversized-tool-pair" : "oversized-item",
+		),
+	];
+};
+
+export const planTranscriptWindow = (
+	transcript: ReadonlyArray<TranscriptItem>,
+	before = transcript.length,
+): TranscriptWindowPlan => {
+	if (!Number.isSafeInteger(before) || before < 0 || before > transcript.length) {
+		throw new RangeError("Transcript window boundary is outside the source transcript");
+	}
+	const candidates = candidatesOf(transcript);
+	const boundary = candidates.findIndex(({end}) => end === before);
+	if (before !== 0 && boundary < 0) {
+		throw new RangeError("Transcript window boundary splits an atomic candidate group");
+	}
+	let sourceStart = before;
+	let output: Array<TranscriptItem> = [];
+	for (let index = before === 0 ? -1 : boundary; index >= 0; index -= 1) {
+		const candidate = candidates[index];
+		if (candidate === undefined) break;
+		const candidateOutput = outputOf(candidate);
+		const proposed = [...candidateOutput, ...output];
+		if (
+			proposed.length > TRANSCRIPT_WINDOW_LIMIT ||
+			encodedBytesOf(proposed) > TRANSCRIPT_WINDOW_BYTE_LIMIT
+		) {
+			break;
+		}
+		output = proposed;
+		sourceStart = candidate.start;
+	}
+	return {
+		transcript: output,
+		sourceStart,
+		sourceEnd: before,
+		encodedBytes: encodedBytesOf(output),
+	};
+};
+
+export const transcriptSourceIndex = (
+	sessionId: string,
+	item: TranscriptItem,
+): number | undefined => {
+	const omission = transcriptOmissionMetadata(item);
+	if (omission !== undefined) return omission.sourceStart;
+	const prefix = `${sessionId}:`;
+	if (!item.id.startsWith(prefix)) return undefined;
+	const index = Number(item.id.slice(prefix.length));
+	return Number.isSafeInteger(index) && index >= 0 ? index : undefined;
 };
 
 export const recentTranscriptOf = (
 	transcript: ReadonlyArray<TranscriptItem>,
-): Array<TranscriptItem> => transcript.slice(boundedWindowStart(transcript, transcript.length));
+): Array<TranscriptItem> => [...planTranscriptWindow(transcript).transcript];

@@ -48,13 +48,29 @@ export const TranscriptContent = Schema.Union([
 ]);
 export type TranscriptContent = (typeof TranscriptContent)["Type"];
 
-export const LiveTranscriptEntry = Schema.Struct({
+export const LiveTranscriptMessage = Schema.Struct({
 	id: Schema.String,
 	role: Schema.Literals(["user", "assistant", "tool"]),
 	content: Schema.Array(TranscriptContent),
 	timestamp: Schema.Number,
 	status: Schema.Literals(["complete", "streaming", "running", "error", "aborted"]),
 });
+export type LiveTranscriptMessage = (typeof LiveTranscriptMessage)["Type"];
+
+export const LiveTranscriptOmission = Schema.Struct({
+	_tag: Schema.Literal("omission"),
+	id: Schema.String,
+	role: Schema.Literal("user"),
+	content: Schema.Array(TranscriptContent),
+	timestamp: Schema.Number,
+	status: Schema.Literal("complete"),
+	reason: Schema.Literals(["oversized-item", "oversized-tool-pair", "invalid-tool-group"]),
+	omittedItemCount: Schema.Number,
+	omittedByteCount: Schema.Number,
+});
+export type LiveTranscriptOmission = (typeof LiveTranscriptOmission)["Type"];
+
+export const LiveTranscriptEntry = Schema.Union([LiveTranscriptMessage, LiveTranscriptOmission]);
 export type LiveTranscriptEntry = (typeof LiveTranscriptEntry)["Type"];
 
 export const LiveSessionCompletion = Schema.Literals([

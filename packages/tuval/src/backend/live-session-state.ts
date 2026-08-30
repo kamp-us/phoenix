@@ -15,7 +15,6 @@ import type {
 	ModelRef,
 	ServerEvent,
 	SessionSnapshot,
-	TranscriptItem,
 	TranscriptProgress,
 } from "@earendil-works/pi-protocol";
 import type {
@@ -47,6 +46,7 @@ import type {
 	RuntimeLifecycle,
 	RuntimeLifecycleSource,
 } from "./runtime-lifecycle.js";
+import {archiveEntryOf} from "./transcript-archive.js";
 
 const EVENT_HISTORY_LIMIT = 500;
 const CORRELATED_PROMPT_LIMIT = 100;
@@ -195,14 +195,6 @@ const completionOf = (
 	return "idle";
 };
 
-const entryOf = (item: TranscriptItem): LiveTranscriptEntry => ({
-	id: item.id,
-	role: item.role,
-	content: [...item.content],
-	timestamp: item.timestamp,
-	status: item.role === "user" ? "complete" : item.status,
-});
-
 const replaceOrAppend = (
 	transcript: Array<LiveTranscriptEntry>,
 	entry: LiveTranscriptEntry,
@@ -279,7 +271,7 @@ const reduceProgress = (
 			if (key.startsWith(`${progress.item.id}:`)) toolCallBuffers.delete(key);
 		}
 	}
-	replaceOrAppend(transcript, entryOf(progress.item));
+	replaceOrAppend(transcript, archiveEntryOf(progress.item));
 	return undefined;
 };
 
@@ -1211,7 +1203,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			lease,
 			generation: ++this.#generation,
 			snapshot,
-			transcript: snapshot.transcript.map(entryOf),
+			transcript: snapshot.transcript.map(archiveEntryOf),
 			toolCallBuffers: new Map(),
 			archive: this.#options.transcriptArchive?.archiveState(snapshot.id, snapshot.transcript) ?? {
 				_tag: "complete",
@@ -1483,7 +1475,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		const attachment = this.#attachment;
 		if (attachment === undefined || attachment.generation !== generation) return;
 		attachment.snapshot = snapshot;
-		attachment.transcript = snapshot.transcript.map(entryOf);
+		attachment.transcript = snapshot.transcript.map(archiveEntryOf);
 		attachment.archive =
 			this.#options.transcriptArchive?.archiveState(snapshot.id, snapshot.transcript) ??
 			attachment.archive;

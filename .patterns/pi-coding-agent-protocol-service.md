@@ -28,11 +28,19 @@ uses pi's public `createAgentSession` SDK surface with the selected `SessionMana
 Prompt, steer, abort, model, and thinking commands delegate to that session. A prompt response waits
 for pi's preflight acceptance, not for the whole model turn. Attach acknowledgement carries no
 transcript bytes. The later history snapshot and live snapshots carry only a recent transcript window
-bounded by both item count and encoded bytes; the window boundary moves back when necessary so a tool
-result never loses its assistant tool call. Older pages use an opaque, session-bound cursor and keep
-the same pairing rule. Once runtime construction has cached the validated projection, older pages
-slice that cache; before then a worker computes one requested page. Live progress and acknowledgements
-therefore never serialize pages the browser already loaded.
+whose final UTF-8 JSON array encoding, including brackets, commas, and any omission placeholder, is at
+most 256,000 bytes and whose rendered array is at most 40 items. The planner first constructs either a
+single message (including a call with no retained result yet) or a complete assistant-tool-call plus
+result candidate, so an orphan result is not a representable window state. A candidate enters only when the complete group fits both caps.
+A source item or atomic tool group that cannot fit an otherwise empty window becomes one explicit
+`omission` transcript variant carrying only its original item count, source-item encoded byte count
+(inter-item commas included, outer window brackets excluded), and a bounded reason; its Turkish notice
+is rendered in place of content. The opaque cursor advances to the source
+position before that represented group, so omission neither stalls paging nor silently loses the
+existence of content. Older pages use the same planner and cursor rule. Once runtime construction has
+cached the validated projection, older pages plan against that cache; before then a worker computes one
+requested page. Live progress and acknowledgements therefore never serialize pages the browser already
+loaded.
 
 Pi 0.84.3 exposes only synchronous `SessionManager.open`, although its pinned implementation accepts
 preloaded file entries at construction. Tuval confines that version-specific constructor seam to

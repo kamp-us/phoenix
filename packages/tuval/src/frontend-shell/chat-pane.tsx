@@ -100,23 +100,59 @@ const renderContent = (content: TranscriptContent, index: number): ReactNode => 
 	return <p key={index}>Görsel · {content.mimeType}</p>;
 };
 
-const TranscriptEntry = ({entry}: {readonly entry: LiveTranscriptEntry}) => (
-	<Card
-		as="article"
-		tone={entry.role === "user" ? "raised" : "default"}
-		className="transcript-entry"
-		data-role={entry.role}
-		aria-label={`${roleLabel[entry.role]} iletisi`}
-	>
-		<header>
-			<strong>{roleLabel[entry.role]}</strong>
-			<span>{transcriptStatus[entry.status]}</span>
-		</header>
-		<div className="transcript-entry__content">
-			{entry.content.map((content, index) => renderContent(content, index))}
-		</div>
-	</Card>
-);
+const TranscriptEntry = ({entry}: {readonly entry: LiveTranscriptEntry}) => {
+	if ("_tag" in entry && entry._tag === "omission") {
+		const subject =
+			entry.reason === "oversized-tool-pair"
+				? "Araç çağrısı ve sonucu"
+				: entry.reason === "invalid-tool-group"
+					? "Eşleşmemiş araç etkileşimi"
+					: "Büyük ileti";
+		const reason =
+			entry.reason === "oversized-item"
+				? "Pencere sınırını aşmamak için"
+				: entry.reason === "oversized-tool-pair"
+					? "Araç çağrısı ile sonucunu bölmeden pencere sınırını korumak için"
+					: "Araç çağrısı ile sonucunu eşleşmeden göstermemek için";
+		return (
+			<Card
+				as="article"
+				className="transcript-entry transcript-entry--omission"
+				data-role="omission"
+				aria-label="Gösterilmeyen konuşma içeriği"
+			>
+				<header>
+					<strong>{subject}</strong>
+					<span>Gösterilmedi</span>
+				</header>
+				<div className="transcript-entry__content">
+					<p>
+						{reason} {entry.omittedItemCount} ileti gösterilmedi. Özgün içerik{" "}
+						{entry.omittedByteCount.toLocaleString("tr-TR")} bayttı; arşiv imleci bu içeriğin
+						ötesine ilerledi.
+					</p>
+				</div>
+			</Card>
+		);
+	}
+	return (
+		<Card
+			as="article"
+			tone={entry.role === "user" ? "raised" : "default"}
+			className="transcript-entry"
+			data-role={entry.role}
+			aria-label={`${roleLabel[entry.role]} iletisi`}
+		>
+			<header>
+				<strong>{roleLabel[entry.role]}</strong>
+				<span>{transcriptStatus[entry.status]}</span>
+			</header>
+			<div className="transcript-entry__content">
+				{entry.content.map((content, index) => renderContent(content, index))}
+			</div>
+		</Card>
+	);
+};
 
 const connectionCopy = (
 	connection: PaneConnection,

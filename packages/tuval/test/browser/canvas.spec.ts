@@ -1985,6 +1985,58 @@ test("slow runtime attach paints bounded history, refusal, retry, and eventual c
 	expect(errors).toEqual([]);
 });
 
+test("bounded transcript omissions render without exposing oversized source content", async ({
+	page,
+}) => {
+	const errors = pageErrors(page);
+	await installEventSource(page);
+	const retained = session("bounded-omission", "/work/bounded-omission");
+	const omission: AttachedLiveSession["transcript"][number] = {
+		_tag: "omission",
+		id: "tuval-omission:4:6:2:300000:oversized-tool-pair",
+		role: "user",
+		content: [],
+		timestamp: 4,
+		status: "complete",
+		reason: "oversized-tool-pair",
+		omittedItemCount: 2,
+		omittedByteCount: 300_000,
+	};
+	await page.route("**/fate", async (route) => {
+		const body = route.request().postDataJSON() as {
+			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
+		};
+		const operation = body.operations?.[0];
+		const id = typeof operation?.id === "string" ? operation.id : "unknown";
+		if (operation?.name === "discovery") {
+			await fulfill(route, id, {_tag: "ready", sessions: [retained]});
+			return;
+		}
+		if (operation?.name === "lineage") {
+			await fulfill(route, id, lineageProjection([retained]));
+			return;
+		}
+		if (operation?.name === "liveSession.attach") {
+			await fulfill(route, id, {
+				_tag: "attached",
+				session: liveSession(retained.piSessionId, 2, [omission]),
+			});
+			return;
+		}
+		await fulfill(route, id, {_tag: "released", sessionId: retained.piSessionId});
+	});
+	await page.goto(tuvalUrl);
+
+	await selectNode(page, retained.identity);
+	const notice = page.getByRole("article", {name: "Gösterilmeyen konuşma içeriği"});
+	await expect(notice).toBeVisible();
+	await expect(notice).toContainText("Araç çağrısı ve sonucu");
+	await expect(notice).toContainText("2 ileti gösterilmedi");
+	await expect(notice).toContainText(/300[\s.]000 bayttı/);
+	await expect(notice).toContainText("arşiv imleci bu içeriğin ötesine ilerledi");
+	expect(errors).toEqual([]);
+});
+
 test("one chat pane swaps sessions, restores focus, and streams Composer prompts", async ({
 	page,
 }) => {

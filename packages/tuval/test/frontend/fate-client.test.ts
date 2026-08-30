@@ -27,7 +27,7 @@ const attachedSession = (sessionId: string): AttachedLiveSession => ({
 	ownership: "exclusive",
 });
 
-const sessionEvent = (toolCall: Readonly<Record<string, unknown>>): unknown => ({
+const sessionEventWithTranscript = (transcript: ReadonlyArray<unknown>): unknown => ({
 	_tag: "session",
 	sequence: 5,
 	session: {
@@ -38,15 +38,7 @@ const sessionEvent = (toolCall: Readonly<Record<string, unknown>>): unknown => (
 		model: {provider: "anthropic", id: "claude-sonnet"},
 		thinkingLevel: "high",
 		completion: "running",
-		transcript: [
-			{
-				id: "tool-1",
-				role: "assistant",
-				content: [toolCall],
-				timestamp: 1,
-				status: "running",
-			},
-		],
+		transcript,
 		archive: {_tag: "complete", hasMore: false},
 		lastEventSequence: 5,
 		history: {_tag: "ready"},
@@ -55,6 +47,17 @@ const sessionEvent = (toolCall: Readonly<Record<string, unknown>>): unknown => (
 		ownership: "exclusive",
 	},
 });
+
+const sessionEvent = (toolCall: Readonly<Record<string, unknown>>): unknown =>
+	sessionEventWithTranscript([
+		{
+			id: "tool-1",
+			role: "assistant",
+			content: [toolCall],
+			timestamp: 1,
+			status: "running",
+		},
+	]);
 
 describe("Tuval live event decoder", () => {
 	it("rejects a tool call whose required input field is absent", () => {
@@ -74,6 +77,25 @@ describe("Tuval live event decoder", () => {
 					input: null,
 				}),
 			),
+			undefined,
+		);
+	});
+
+	it("accepts only complete bounded omission metadata", () => {
+		const omission = {
+			_tag: "omission",
+			id: "tuval-omission:4:6:2:300000:oversized-tool-pair",
+			role: "user",
+			content: [],
+			timestamp: 4,
+			status: "complete",
+			reason: "oversized-tool-pair",
+			omittedItemCount: 2,
+			omittedByteCount: 300_000,
+		};
+		assert.notEqual(decodeLiveEvent(sessionEventWithTranscript([omission])), undefined);
+		assert.equal(
+			decodeLiveEvent(sessionEventWithTranscript([{...omission, omittedItemCount: 0}])),
 			undefined,
 		);
 	});

@@ -108,15 +108,33 @@ const isTranscriptContent = (value: unknown): value is TranscriptContent => {
 	return false;
 };
 
-const isTranscriptEntry = (value: unknown): value is LiveTranscriptEntry =>
-	isRecord(value) &&
-	typeof value.id === "string" &&
-	(value.role === "user" || value.role === "assistant" || value.role === "tool") &&
-	Array.isArray(value.content) &&
-	value.content.every(isTranscriptContent) &&
-	typeof value.timestamp === "number" &&
-	typeof value.status === "string" &&
-	transcriptStatuses.has(value.status);
+const isTranscriptEntry = (value: unknown): value is LiveTranscriptEntry => {
+	if (
+		!isRecord(value) ||
+		typeof value.id !== "string" ||
+		(value.role !== "user" && value.role !== "assistant" && value.role !== "tool") ||
+		!Array.isArray(value.content) ||
+		!value.content.every(isTranscriptContent) ||
+		typeof value.timestamp !== "number" ||
+		typeof value.status !== "string" ||
+		!transcriptStatuses.has(value.status)
+	) {
+		return false;
+	}
+	if (value._tag === undefined) return true;
+	return (
+		value._tag === "omission" &&
+		value.role === "user" &&
+		value.status === "complete" &&
+		(value.reason === "oversized-item" ||
+			value.reason === "oversized-tool-pair" ||
+			value.reason === "invalid-tool-group") &&
+		Number.isSafeInteger(value.omittedItemCount) &&
+		(value.omittedItemCount as number) > 0 &&
+		Number.isSafeInteger(value.omittedByteCount) &&
+		(value.omittedByteCount as number) > 0
+	);
+};
 
 const isLiveSessionBase = (value: Readonly<Record<string, unknown>>): boolean =>
 	typeof value.sessionId === "string" &&
