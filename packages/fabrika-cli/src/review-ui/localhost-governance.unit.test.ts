@@ -238,7 +238,7 @@ describe("localhost evidence governance floor", () => {
 		assert.include(extraction, "--pids-limit");
 
 		const volume = subjectVolumeCreateArgs("subject-workspace");
-		assert.deepStrictEqual(volume.slice(-2), ["o=size=2g", "subject-workspace"]);
+		assert.deepStrictEqual(volume.slice(-2), ["o=size=4g", "subject-workspace"]);
 		assert.include(volume, "type=tmpfs");
 	});
 

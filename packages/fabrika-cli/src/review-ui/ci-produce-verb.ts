@@ -113,7 +113,7 @@ const boundedVolumeCreateArgs = (name: string, size: string): readonly string[] 
 ];
 
 export const subjectVolumeCreateArgs = (name: string): readonly string[] =>
-	boundedVolumeCreateArgs(name, "2g");
+	boundedVolumeCreateArgs(name, "4g");
 
 export const subjectInstallAndTestContainerArgs = (
 	image: string,

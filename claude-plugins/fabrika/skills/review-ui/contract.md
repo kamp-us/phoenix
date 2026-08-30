@@ -397,9 +397,10 @@ version-matched behavior is grounded in pnpm's
 and [root lifecycle gate](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/core/src/install/index.ts#L1521-L1531).
 The offline PR-controlled install and governed test run under a read-only root filesystem,
 `--cap-drop ALL`, `no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap
-headroom, 256 PIDs, and a 2 GiB tmpfs-backed disposable test workspace. The 4 GiB ceiling is the
-measured bound needed by Tuval's existing `test:browser` journey; the prior 2 GiB ceiling was proven
-insufficient by Docker's OOM event for that exact command. The journey's own dynamic-port servers
+headroom, 256 PIDs, and a 4 GiB tmpfs-backed disposable test workspace. The 4 GiB memory and
+workspace ceilings are the measured bounds needed by Tuval's existing `test:browser` journey; the
+prior 2 GiB ceilings were proven insufficient by Docker OOM and no-space results for that exact
+command. The journey's own dynamic-port servers
 exit with their Playwright cases before the later fixed capture server starts, so the producer never
 runs two conflicting Tuval servers concurrently. Capture output uses a
 separate 256 MiB tmpfs volume and a fixed base-owned extraction container, so the artifact-directory
