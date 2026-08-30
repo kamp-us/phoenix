@@ -219,8 +219,11 @@ graph the one carrier of "do not start this yet", so a rewrite saying "Blocked. 
 #N" over a graph with no such edge ships an issue `build pick` admits and no lane can build — #6663
 did exactly that and cost a lane a claim. `enrich` scans the region it composed and refuses on `20`,
 writing nothing. **There is no override**, and the refusal names both ways out: wire the edge in step
-7 with `--blocked-by`, then re-send, or reword so the body states no ordering it does not own. What
-counts as a statement — and why it is narrow — is that verb's section
+7 with `--blocked-by`, then re-send, or reword so the body states no ordering it does not own. Two
+things it deliberately does not red on: a phrase in a third-person voice ("it is already blocked on
+#N" reports another issue's prerequisite), and a `#N` that is a **pull request** — ADR 0301 names a
+blocking PR by the issue its merge closes, so there is no edge to wire. What counts as a statement —
+and why it is narrow — is that verb's section
 (`… --heading "A stated ordering must be an edge, and 20 is the refusal"`).
 **No invention**: enrich from what you found, keep
 the uncertainty the original had, and mark your own reads `Triage note:`. On a **re-type, rewrite the
@@ -246,8 +249,15 @@ lane-exempt issue is banned outright.
 route to them, and where an ordering belongs. Pass one per issue this one waits on
 (`--blocked-by 6661 --blocked-by 6662`); the verb resolves each target's internal id, skips the edges
 already live so a re-run is safe, and reads the whole set back as the machine line's last column. A
-target that does not exist refuses on `7` before any label is written. This is the escape step 6's
-`20` names, so an ordered slice set is stamped edges-first and its rewrite then passes.
+target that does not exist refuses on `7` before any label is written, and a target that is a **pull
+request** refuses on `21` — ADR 0301 names a blocking PR by the issue its merge closes, so pass that
+issue's number. This is the escape step 6's `20` names, so an ordered slice set is stamped
+edges-first and its rewrite then passes.
+
+**That last column reports this run, not the graph.** It is empty on every call that passed no
+`--blocked-by`, whatever the issue actually waits on, because the verb reads the dependency endpoint
+only when the flag is there. Read prerequisites with `fabrika build eligible <n>`, never off an empty
+column here.
 
 Which facets this verb owns and may remove, and the label
 vocabulary it treats as a precondition, are its own sections

@@ -17,6 +17,7 @@ import {
 	CRITERIA_REQUIRED,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	PULL_REQUEST_TARGET,
 	READBACK_MISMATCH,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
@@ -628,6 +629,31 @@ describe("runApply", () => {
 			const shell = guardedShell(happy());
 			await Effect.runPromise(Effect.provide(runApply(options), triageContext(shell)));
 			expect(shell.requests.some((line) => /dependencies/.test(line))).toBe(false);
+		});
+
+		/**
+		 * `repos/{o}/{r}/issues/<n>` serves pull requests, so a PR number resolves Present and the
+		 * proven-absent arm above never fires for it. ADR 0301 rules the case rather than the POST.
+		 */
+		it("refuses a target that is a pull request on its own seat, writing nothing", async () => {
+			const shell = guardedShell(
+				withEdges(
+					[EDGES, edgeList()],
+					[TARGET, {status: 200, body: JSON.stringify({id: 9911, pull_request: {url: "u"}})}],
+					[EDGE_WRITE, ACCEPTED],
+				),
+			);
+			const out = await Effect.runPromise(
+				Effect.provide(runApply({...options, blockedBy: [4311]}), triageContext(shell)),
+			);
+			expect(out.code).toBe(PULL_REQUEST_TARGET);
+			expect(out.stderr.at(-1)).toContain("names a pull request, not an issue");
+			expect(out.stderr.at(-1)).toContain("the issue its merge closes");
+			expect(
+				shell.requests.some(
+					(c) => EDGE_WRITE.test(c) || ADD.test(c) || REMOVE.test(c) || PATCH.test(c),
+				),
+			).toBe(false);
 		});
 	});
 

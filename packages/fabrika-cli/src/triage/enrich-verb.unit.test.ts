@@ -563,26 +563,38 @@ describe("runEnrich — the stated-ordering gate", () => {
 	 * The read-back echoes what was PATCHed, on the same two-pass shape `run` uses above: a fixed
 	 * read-back body would make every `code` assertion here a statement about the fixture.
 	 */
-	const gate = async (rewrite: string, edges: Scripted, before = ORIGINAL) => {
+	/**
+	 * Every number a stated ordering names is read, to settle issue-versus-PR (ADR 0301). The default
+	 * answers "an ordinary issue", so a case that is not about that distinction reads as it did before.
+	 */
+	const AS_ISSUE: Scripted = [
+		/GET .*\/repos\/o\/r\/issues\/(?!4312$)\d+$/,
+		{status: 200, body: JSON.stringify({id: 9911})},
+	];
+
+	const gate = async (
+		rewrite: string,
+		edges: Scripted,
+		before = ORIGINAL,
+		ref: Scripted = AS_ISSUE,
+	) => {
+		const rows = (): ReadonlyArray<Scripted> => [
+			[once(READ), issue(before)],
+			edges,
+			ref,
+			[PATCH, ACCEPTED],
+		];
 		const stdin = Effect.succeed<StdinRead>({_tag: "Text", text: rewrite});
-		const shell = guardedShell([[once(READ), issue(before)], edges, [PATCH, ACCEPTED]]);
+		const shell = guardedShell(rows());
 		await Effect.runPromise(Effect.provide(runEnrich({...options, stdin}), shell.layer));
 		const patched = written(shell);
 		if (patched === null) {
 			const outcome = await Effect.runPromise(
-				Effect.provide(
-					runEnrich({...options, stdin}),
-					guardedShell([[once(READ), issue(before)], edges, [PATCH, ACCEPTED]]).layer,
-				),
+				Effect.provide(runEnrich({...options, stdin}), guardedShell(rows()).layer),
 			);
 			return {outcome, patched: false, requests: shell.requests};
 		}
-		const echoing = guardedShell([
-			[once(READ), issue(before)],
-			edges,
-			[PATCH, ACCEPTED],
-			[READ, issue(patched)],
-		]);
+		const echoing = guardedShell([...rows(), [READ, issue(patched)]]);
 		const outcome = await Effect.runPromise(
 			Effect.provide(runEnrich({...options, stdin}), echoing.layer),
 		);
@@ -630,5 +642,55 @@ describe("runEnrich — the stated-ordering gate", () => {
 		const {outcome, patched} = await gate(ORDERED, [EDGES, UNREADABLE]);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(patched).toBe(false);
+	});
+
+	/**
+	 * ADR 0301 names a blocking pull request by the issue its merge closes, so there is no edge to
+	 * wire and the refusal's own escape could not clear one — 5 of the 6 bodies this gate refused
+	 * across the 150 most recent issues named a PR (#6728 round 1).
+	 */
+	describe("a reference that is a pull request", () => {
+		const REF = /GET .*\/repos\/o\/r\/issues\/4311$/;
+		const asPull: HttpReply = {
+			status: 200,
+			body: JSON.stringify({id: 9911, pull_request: {url: "u"}}),
+		};
+		const asIssue: HttpReply = {status: 200, body: JSON.stringify({id: 9911})};
+
+		it("passes, and says why it did not read the PR as a prerequisite", async () => {
+			const {outcome, patched} = await gate(ORDERED, [EDGES, edgeList()], ORIGINAL, [REF, asPull]);
+			expect(outcome.code).toBe(0);
+			expect(patched).toBe(true);
+			expect(outcome.stderr.join(" ")).toContain("the issue its merge closes");
+		});
+
+		/** #7223 verbatim: a wired prerequisite beside a courtesy link to the PR implementing it. */
+		it("passes a wired issue named beside a PR link (#7223, verbatim)", async () => {
+			const line =
+				"Blocked on #7035 / [#4311](https://github.com/kamp-us/phoenix/pull/4311). The shared derivation this";
+			const {outcome, patched} = await gate(
+				`## What to build\n\n${line}`,
+				[EDGES, edgeList(7035)],
+				ORIGINAL,
+				[REF, asPull],
+			);
+			expect(outcome.code).toBe(0);
+			expect(patched).toBe(true);
+		});
+
+		it("still reds when the same number is an issue", async () => {
+			const {outcome, patched} = await gate(ORDERED, [EDGES, edgeList()], ORIGINAL, [REF, asIssue]);
+			expect(outcome.code).toBe(UNWIRED_ORDERING);
+			expect(patched).toBe(false);
+		});
+
+		it("is PRECONDITION_UNKNOWN when issue-versus-PR could not be settled", async () => {
+			const {outcome, patched} = await gate(ORDERED, [EDGES, edgeList()], ORIGINAL, [
+				REF,
+				UNREADABLE,
+			]);
+			expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+			expect(patched).toBe(false);
+		});
 	});
 });

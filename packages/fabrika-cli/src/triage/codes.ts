@@ -199,6 +199,18 @@ export const CLAIM_NOT_HELD = 19;
  * the *graph*, which a re-send alone can never fix.
  */
 export const UNWIRED_ORDERING = 20;
+/**
+ * Refused: a `--blocked-by` target is a **pull request**, and ADR 0301 says to name an issue instead.
+ *
+ * "a blocking pull request is named in the graph by the issue its merge closes" — so the edge the
+ * caller wants exists, addressed by another number. The remedy is a different argument, which is why
+ * this is a refusal rather than a POST the API is left to judge.
+ *
+ * Its own seat rather than {@link ZERO_SCOPE}'s: `repos/{o}/{r}/issues/<n>` serves pull requests, so
+ * a PR number resolves `Present` and the proven-absent arm can never fire for one. Fusing the two
+ * would tell a caller "no such issue" about a number that exists and is on their screen.
+ */
+export const PULL_REQUEST_TARGET = 21;
 
 /** The verb never ran (unresolved binary). The shell's, not this process's — no constant owns it. */
 const NEVER_RAN = 127;
@@ -278,6 +290,11 @@ export const TRIAGE_EXIT_TABLE: ReadonlyArray<ExitCodeRow> = [
 		code: UNWIRED_ORDERING,
 		meaning:
 			"refused: the composed body states an ordering the live blocked_by graph carries no edge for",
+	},
+	{
+		code: PULL_REQUEST_TARGET,
+		meaning:
+			"refused: a --blocked-by target is a pull request — ADR 0301 names a blocking PR by the issue its merge closes",
 	},
 	{code: NO_IMPLEMENTATION, meaning: "no implementation could be resolved"},
 	{code: NEVER_RAN, meaning: "the verb never ran (unresolved binary)"},

@@ -166,6 +166,7 @@ or the search index could not be read
 | `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
 | `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for (ADR 0301) | — | — | — | — | — | ✓ | — | — | — | — |
+| `21` | refused: a `--blocked-by` target is a **pull request** — ADR 0301 names a blocking PR by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -1535,8 +1536,22 @@ blockquote — those are somebody else's words being reported. The bar is delibe
 a red on a body that owns no prerequisite could not be cleared by wiring an edge, so it would leave
 only the reword escape on a body that is already correct.
 
+**The phrase must be in the issue's own voice.** A body states its own prerequisite as "Blocked on
+#N"; a bare third-person subject — "it is already blocked on #N", "they depend on #N" — is a report
+about something the body just mentioned, and no edge on *this* issue could clear it. #7238 says
+verbatim "Not folded into #7223: its criteria are scoped to … and it is already blocked on #7035"
+and owns no prerequisite at all. `This work is blocked until #N` is not covered: a named subject
+reads as self-reference.
+
+**A `#N` that is a pull request is not a prerequisite here.** ADR 0301 names a blocking PR by the
+issue its merge closes, and `--blocked-by` refuses a PR on `21`, so reding on one would leave the
+reword escape alone on a body that is often already right — over the 150 most recently created
+issues, 5 of the 6 bodies this gate refused named a PR. The verb reads each number the ordering names
+and drops the pull requests, printing which ones it dropped and why.
+
 **The refusal reads the issue's own live `blocked_by` set** and reds when a number a stated ordering
-names is absent from it, writing nothing. A read that failed is `11`, never a pass.
+names is absent from it, writing nothing. A read that failed is `11`, never a pass — and so is a
+number whose issue-versus-PR question could not be settled.
 
 **There is no override flag, and that is deliberate.** The refusal names the two escapes the ruling
 allows — **wire the edge** with `fabrika triage apply <n> --blocked-by <m>` and re-send, or
@@ -1553,7 +1568,7 @@ moves; a bypass costs a builder a claim on unstartable work.
 | `7` | the issue is proven absent (404), is closed, or it was read and its body is empty — a read that succeeded over nothing |
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
-| `11` | the issue body could not be read, so there is no original to preserve — or its comments, the claim on them, or its `blocked_by` edges could not be read |
+| `11` | the issue body could not be read, so there is no original to preserve — or its comments, the claim on them, its `blocked_by` edges, or a number a stated ordering names could not be read |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
 | `20` | the composed body's **authored region** states an ordering the issue's live `blocked_by` graph carries no edge for |
@@ -1666,7 +1681,7 @@ fabrika triage apply 6663 --type bug --priority p1 --ready-for agent --home 47 -
 | `--ready-for` | enum | yes | — | who picks it up: `human` or `agent` |
 | `--home` | integer | one of | — | the **number** of an open milestone to home the issue in |
 | `--lane` | enum | one of | — | a standing lane, taking its values from the `lane` rows `triage homes` prints |
-| `--blocked-by` | integer | no | none | an issue this one waits on, written as a native `blocked_by` edge; **repeatable**, and idempotent |
+| `--blocked-by` | integer | no | none | an issue this one waits on, written as a native `blocked_by` edge; **repeatable**, idempotent, and never a pull request (`21`) |
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
@@ -1697,6 +1712,13 @@ Three properties, each a refusal rather than a hope:
 `--blocked-by <this issue>` is refused on `7`: a self-edge makes the issue permanently unbuildable and
 `build eligible` would report it as a real blocker.
 
+**A target that is a pull request is refused on `21`, and the message says where the edge belongs.**
+`GET /repos/{o}/{r}/issues/<n>` serves pull requests — a PR number answers 200 with an `id` — so one
+resolves `Present` and the proven-absent `7` arm above can never fire for it. ADR 0301 already rules
+the case: *a blocking pull request is named in the graph by the issue its merge closes*, so pass that
+issue's number. Its own seat rather than `7`'s, because "no such issue" is false about a number the
+caller is looking at.
+
 **Exactly one of `--home` / `--lane` is required.** Supplying both, or neither, is a usage error. This
 is the whole design: an un-homed `status:triaged` issue is **unrepresentable** rather than detected
 afterwards, so the verb never needs to judge homing — a question already enforced by a CI guard
@@ -1724,10 +1746,15 @@ backs is the one made to an agent.
 
 **Output** — machine channel. One tab-separated line: `triaged`, `<number>`, `<type>`, `<priority>`,
 `<ready-for>`, `<home>`, `<blocked-by>` — where `<home>` is the milestone number or the lane label,
-and `<blocked-by>` is the read-back edge set rendered `#a,#b`, **empty when the issue waits on
-nothing**. The column is always present, `--blocked-by` or not. With `--json`, an object with those
-keys plus `removed` (the labels superseded), `blockedBy` (that same edge set, as numbers) and
-`readBack`, an object of `{labels, milestone}` observed after the write.
+and `<blocked-by>` is the edge set **this run read back**, rendered `#a,#b`. With `--json`, an object
+with those keys plus `removed` (the labels superseded), `blockedBy` (that same edge set, as numbers)
+and `readBack`, an object of `{labels, milestone}` observed after the write.
+
+**The column is always present, and on a run passing no `--blocked-by` it is always empty** —
+whatever the live graph holds. This verb reads the dependency endpoint only when the flag is there,
+so an empty column means *this run wrote no edge*, never *the issue waits on nothing*. Read the
+graph with `fabrika build eligible <n>` or the issue's own dependency list; concluding "no
+prerequisites" from an empty column here is the same false safety `20` exists to close.
 
 **`readBack` carries the milestone, not only the labels.** A labels-only read-back cannot evidence a
 `--home` at all — the flag's entire effect is a milestone — so it reported success over the one facet
@@ -1808,6 +1835,7 @@ for drift, not because they are currently absent.)
 | Code | Trigger |
 |---|---|
 | `7` | a label this invocation would write does not exist in the repository, the issue is closed, a `--blocked-by` target is **proven absent (404)**, or `--blocked-by` names this issue itself — nothing written |
+| `21` | a `--blocked-by` target is a **pull request** — pass the issue its merge closes (ADR 0301); nothing written |
 | `8` | a label, milestone or `blocked_by` edge write failed — UNKNOWN which changes landed |
 | `9` | the writes landed but the read-back does not show the required end state, or a requested `blocked_by` edge is absent from the edge read-back |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
@@ -1875,6 +1903,15 @@ triage apply: scanned 34 labels in kamp-us/phoenix.
 triage apply: scanned 6 open milestones in kamp-us/phoenix.
 triage apply: read back #6663 blocked_by #6662.
 triaged	6663	bug	p1	agent	47	#6662
+```
+
+```
+$ fabrika triage apply 7283 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 7271
+triage apply: --blocked-by 7271 names a pull request, not an issue — ADR 0301: a blocking pull
+request is named in the graph by the issue its merge closes, so pass that issue's number instead.
+No edge was written.
+$ echo $?
+21
 ```
 
 ```

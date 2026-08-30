@@ -17,6 +17,15 @@
  * **Quotations are mentions.** An inline-code span or a double-quoted span is somebody else's
  * words being reported, which is why the scan reads a line with those spans blanked — #6728 quotes
  * #6663's `"**Blocked. Do not start until #6662 has merged**"` while stating no ordering of its own.
+ *
+ * **A third-person subject is somebody else's prerequisite.** A body states its own ordering as
+ * "Blocked on #N"; "it is already blocked on #N" is a report about another issue, and no edge on
+ * *this* issue could ever clear it. #7238 says verbatim "Not folded into #7223: its criteria are
+ * scoped to … and it is already blocked on #7035" and owns no prerequisite at all (#6728 round 1).
+ *
+ * Both narrowings trade a missed red for a red nobody can clear, and that trade is the right one
+ * here because the refusal has **no override**: a false negative leaves an issue the old, pre-gate
+ * world already tolerated, while a false red strands a correct body on the reword escape.
  */
 import {contractRegionLines} from "../wire/acceptance-criteria.ts";
 
@@ -66,6 +75,22 @@ const sentenceFrom = (text: string, start: number): string => {
 	return end === -1 ? text.slice(start) : text.slice(start, end);
 };
 
+/**
+ * A bare third-person pronoun in the subject seat, optionally trailed by a copula and its adverbs.
+ *
+ * `this` is deliberately absent: "This work is blocked until #N" is a body naming itself, while
+ * "it is blocked on #N" is a body naming something it just mentioned.
+ */
+const THIRD_PERSON_SUBJECT =
+	/\b(?:it|its|they|their|which|that)\b(?:\s+(?:is|are|was|were|remains?|stays?|already|still|now|therefore))*\s*$/i;
+
+/** Does the text running up to the phrase hand its subject to somebody other than this issue? */
+const attributedElsewhere = (text: string, start: number): boolean => {
+	const before = text.slice(0, start);
+	const sentence = before.slice(before.lastIndexOf(". ") + 1);
+	return THIRD_PERSON_SUBJECT.test(sentence);
+};
+
 /** Where the earliest ordering phrase starts on this line, or `null` if none binds a reference. */
 const phraseStart = (text: string): number | null => {
 	let earliest: number | null = null;
@@ -91,6 +116,7 @@ export const statedOrderings = (text: string): ReadonlyArray<StatedOrdering> => 
 		const readable = blankQuotations(raw);
 		const start = phraseStart(readable);
 		if (start === null) continue;
+		if (attributedElsewhere(readable, start)) continue;
 		const references = new Set<number>();
 		for (const match of sentenceFrom(readable, start).matchAll(REFERENCE)) {
 			references.add(Number(match[1]));

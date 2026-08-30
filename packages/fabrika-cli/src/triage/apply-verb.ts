@@ -11,7 +11,9 @@
  *
  * `--blocked-by` rides the same verb and prints as the machine line's last column
  * (`triaged\t<n>\t<type>\t<priority>\t<ready-for>\t<home>\t<blocked-by>`); its reads, writes and
- * read-back are `./blocked-by.ts`.
+ * read-back are `./blocked-by.ts`. **That column reports this run, not the graph**: the dependency
+ * endpoint is read only when the flag is present, so a flagless run prints it empty whatever the
+ * issue waits on — reading it as "no prerequisites" is the false safety `20` exists to close (#6728).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";

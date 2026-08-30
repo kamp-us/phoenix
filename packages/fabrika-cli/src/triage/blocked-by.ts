@@ -7,16 +7,29 @@
  * The founder ruling at
  * https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763 seats the write here.
  *
- * Two shapes carry the weight. **Every target is resolved before any edge is written**, so a typo'd
- * number refuses over a graph nobody touched rather than half-way through one. And **the edges
- * already live are read first and skipped**, which is what makes the flag idempotent for a resumed
- * lane without resting on an unverified claim about how the API answers a duplicate POST.
+ * Three shapes carry the weight. **Every target is resolved before any edge is written**, so a typo'd
+ * number refuses over a graph nobody touched rather than half-way through one. **The edges already
+ * live are read first and skipped**, which is what makes the flag idempotent for a resumed lane
+ * without resting on an unverified claim about how the API answers a duplicate POST. And **a target
+ * that is a pull request is refused on its own seat**, because `repos/{o}/{r}/issues/<n>` serves PRs
+ * — so one resolves `Present` and the proven-absent arm never fires for it (see `edgeTarget`).
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {addBlockedBy, blockedBy, internalId} from "../io/edges.ts";
+import {addBlockedBy, blockedBy, edgeTarget} from "../io/edges.ts";
+import {type Existence, present, unknown} from "../io/issues.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
-import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
+import {
+	PRECONDITION_UNKNOWN,
+	PULL_REQUEST_TARGET,
+	READBACK_MISMATCH,
+	WRITE_UNKNOWN,
+	ZERO_SCOPE,
+} from "./codes.ts";
+
+/** What ADR 0301 says to do with a pull request that blocks something — quoted on both refusals. */
+const PR_RULE =
+	"ADR 0301: a blocking pull request is named in the graph by the issue its merge closes";
 
 /** What the write phase will do, decided entirely from reads. */
 export interface EdgePlan {
@@ -71,8 +84,8 @@ export const planEdges = (
 		const toWrite: {number: number; id: number}[] = [];
 		for (const number of requested) {
 			if (live.value.includes(number)) continue;
-			const id = yield* internalId(repo, number);
-			if (id._tag === "Absent") {
+			const target = yield* edgeTarget(repo, number);
+			if (target._tag === "Absent") {
 				return refused(
 					refuse(
 						ZERO_SCOPE,
@@ -80,15 +93,23 @@ export const planEdges = (
 					),
 				);
 			}
-			if (id._tag === "Unknown") {
+			if (target._tag === "Unknown") {
 				return refused(
 					refuse(
 						PRECONDITION_UNKNOWN,
-						`${verb}: cannot resolve #${number}'s internal id in ${repo}: ${id.reason} — no edge was written.`,
+						`${verb}: cannot resolve #${number}'s internal id in ${repo}: ${target.reason} — no edge was written.`,
 					),
 				);
 			}
-			toWrite.push({number, id: id.value});
+			if (target.value.pullRequest) {
+				return refused(
+					refuse(
+						PULL_REQUEST_TARGET,
+						`${verb}: --blocked-by ${number} names a pull request, not an issue — ${PR_RULE}, so pass that issue's number instead. No edge was written.`,
+					),
+				);
+			}
+			toWrite.push({number, id: target.value.id});
 		}
 		return resolved({requested, toWrite});
 	});
@@ -144,6 +165,37 @@ export const landEdges = (
 			);
 		}
 		return resolved(back.value);
+	});
+
+/**
+ * Which of the numbers a body's stated ordering names are pull requests — the ones the gate must not
+ * red on.
+ *
+ * ADR 0301 names a blocking PR by the issue its merge closes, so a body writing "blocked on #7271"
+ * about a PR states no edge that could exist, and the `--blocked-by` escape cannot clear it: over the
+ * 150 most recently created issues, 5 of the 6 bodies the gate refused named a PR (#6728 round 1).
+ * A target proven absent is **not** dropped — an ordering naming an issue nobody can find is still a
+ * red — and a read that failed refuses, because a gate that passed on an unread target would be
+ * fail-open.
+ */
+export const pullRequestReferences = (
+	repo: string,
+	numbers: ReadonlyArray<number>,
+): Effect.Effect<
+	Existence<ReadonlyArray<number>>,
+	never,
+	ChildProcessSpawner.ChildProcessSpawner
+> =>
+	Effect.gen(function* () {
+		const pulls: number[] = [];
+		for (const number of numbers) {
+			const target = yield* edgeTarget(repo, number);
+			if (target._tag === "Unknown") {
+				return unknown<ReadonlyArray<number>>(`#${number} could not be read: ${target.reason}`);
+			}
+			if (target._tag === "Present" && target.value.pullRequest) pulls.push(number);
+		}
+		return present<ReadonlyArray<number>>(pulls);
 	});
 
 /** The diagnostic line the verb prints for the edges it landed. */

@@ -22,6 +22,7 @@ import {renderLeaks, scanBody} from "../report/leaks.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
 import {leakRefusal, readAuthored} from "./authored.ts";
+import {pullRequestReferences} from "./blocked-by.ts";
 import {
 	MALFORMED_CRITERIA,
 	PRECONDITION_UNKNOWN,
@@ -173,7 +174,38 @@ export const runEnrich = (
 					diagnostics,
 				);
 			}
-			const unwired = unwiredReferences(orderings, live.value);
+			const stated = unwiredReferences(orderings, live.value);
+
+			// ADR 0301 names a blocking pull request by the issue its merge closes, so a PR is an edge
+			// `--blocked-by` refuses to write, and reding on one would leave the reword escape alone on a
+			// body that is often already right — 5 of the 6 bodies this gate refused across the 150 most
+			// recent issues named a PR (#6728 round 1).
+			const pulls = yield* pullRequestReferences(
+				repo,
+				stated.flatMap((ordering) => ordering.references),
+			);
+			if (pulls._tag !== "Present") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`triage enrich: ${surface.noun} states an ordering and it could not be settled whether every number it names is an issue or a pull request (${
+						pulls._tag === "Absent" ? "a target is absent" : pulls.reason
+					}) — nothing was written.`,
+					diagnostics,
+				);
+			}
+			if (pulls.value.length > 0) {
+				diagnostics.push(
+					`triage enrich: ${pulls.value
+						.map((n) => `#${n}`)
+						.join(", ")} named by a stated ordering ${
+						pulls.value.length === 1 ? "is a pull request" : "are pull requests"
+					} — ADR 0301 names a blocking pull request by the issue its merge closes, so ${
+						pulls.value.length === 1 ? "it is" : "they are"
+					} not read as a prerequisite.`,
+				);
+			}
+
+			const unwired = unwiredReferences(stated, pulls.value);
 			if (unwired.length > 0) {
 				const named = [...new Set(unwired.flatMap((o) => o.references))];
 				const numbers = named.map((n) => `#${n}`).join(", ");

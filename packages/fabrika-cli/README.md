@@ -1137,7 +1137,8 @@ drifted in a way no mechanical repair covers · `15` the composed body's authore
 `Malformed` criteria block · `16` `--ready-for agent` over a body whose criteria block does not
 read `Found` · `17` a live claim marker names another session · `18` no value of `.fabrika.jsonc`
 may be used · `19` the asking lane holds no live claim on the target · `20` the composed body states
-an ordering the live `blocked_by` graph carries no edge for. `4` is a deliberate gap.
+an ordering the live `blocked_by` graph carries no edge for · `21` a `--blocked-by` target is a pull
+request. `4` is a deliberate gap.
 
 **`triage apply --blocked-by` is the one triage route to the dependency graph.** ADR 0301 makes the
 native `blocked_by` graph the one carrier of "do not start this yet", and until this flag only
@@ -1145,8 +1146,12 @@ native `blocked_by` graph the one carrier of "do not start this yet", and until 
 build gates admitted work nobody could start (#6728). The flag is repeatable, resolves each target's
 internal `id` (never the issue number the POST would silently misread), skips the edges already live
 so a re-run is idempotent, and proves the result by re-reading the graph rather than by trusting the
-POST. `triage enrich` is the other half: it refuses on `20` when the body it composed states an
-ordering the graph has no edge for, with no override — wire the edge or reword.
+POST. Its last column reports what *that run* read back, so it is empty on any call without the flag
+— an empty column is never "the issue waits on nothing". A target that is a pull request refuses on
+`21`, because ADR 0301 names a blocking PR by the issue its merge closes. `triage enrich` is the
+other half: it refuses on `20` when the body it composed states an ordering the graph has no edge
+for, with no override — wire the edge or reword. It reds only on the issue's own voice and only on
+issue references; a third-person report ("it is already blocked on #N") and a PR number are neither.
 
 Two repairs are worth spelling out, because they are what `repair-criteria` will and will not do.
 It rewrites a level-drifted `## Acceptance criteria` heading to the conforming `###`, and, when the
