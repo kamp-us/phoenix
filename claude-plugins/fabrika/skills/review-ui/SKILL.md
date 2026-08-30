@@ -14,8 +14,8 @@ pillars, via the typed prohibition registry or manifest prose) — and land
 one verdict in the `review-ui` namespace. You are a **calibrated judge of this repo's law, never a
 general taste model**: every blocking call cites a law row; feels-wrong without a row is at most
 advisory. You construct nothing (`build-ui`), judge no text (`review`), and never compute a second
-answer to a question CI enforces. **A verb's non-zero exit is UNKNOWN** — read the code, never
-resolve it to the permissive reading.
+answer to a question CI enforces. **A verb's non-zero exit produced no answer** — route the typed
+code through that verb's contract, never infer evidence from refusal diagnostics.
 
 <!-- anchor: UNSEEN-NEVER-PLAUSIBLE --> **A gate that cannot see must never emit a plausible
 verdict.** A surface you did not render is not a surface you judged; an unreadable capture is
@@ -105,11 +105,12 @@ all three reads succeed, fetch the trusted exact-head CI artifact:
 fabrika review-ui fetch $pr_number --harness tuval --out judged
 ```
 
-**Do not execute the PR locally and do not consume builder captures.** Inspect every materialized
-capture and its recorded page/console errors. Proven uncaught page errors are FAIL ground: post the
-ordinary FAIL with `--evidence judged`, never CANT-SEE. An unresolved evidence set emits no marker;
-on an open subject, route CANT-SEE through `review-ui note`. After an accepted clean fetch, post the
-ordinary judged verdict with `--evidence judged`. The reviewer sequence and the operator-owned
+**Do not execute the PR locally and do not consume builder captures.** Exit `0` prints the complete
+typed fetch answer; inspect every listed capture and its recorded page/console errors. A
+`render:"red"` answer is proven FAIL ground: post the ordinary FAIL with `--evidence judged`, never
+CANT-SEE. A `render:"clean"` answer is the accepted clean set. Every non-zero is a typed refusal with
+no evidence answer; on an open subject, route unresolved evidence through `review-ui note`. The
+reviewer sequence and the operator-owned
 producer-recovery route live in
 [`ops/runbook-review-ui-localhost-evidence.md`](../../../../ops/runbook-review-ui-localhost-evidence.md).
 

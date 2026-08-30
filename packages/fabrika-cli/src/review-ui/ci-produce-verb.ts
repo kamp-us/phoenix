@@ -224,6 +224,41 @@ export const subjectCaptureContainerArgs = (
 	harness,
 ];
 
+export const captureVolumeKeeperContainerArgs = (
+	image: string,
+	volume: string,
+	name: string,
+): readonly string[] => [
+	"run",
+	"--detach",
+	"--network",
+	"none",
+	"--name",
+	name,
+	"--read-only",
+	"--cap-drop",
+	"ALL",
+	"--security-opt",
+	"no-new-privileges",
+	"--cpus",
+	"0.1",
+	"--memory",
+	"64m",
+	"--memory-swap",
+	"64m",
+	"--pids-limit",
+	"16",
+	"--tmpfs",
+	"/tmp:rw,nosuid,nodev,size=4m",
+	"--mount",
+	`type=volume,src=${volume},dst=/capture-output`,
+	"--entrypoint",
+	"node",
+	image,
+	"--eval",
+	"setInterval(() => {}, 2147483647)",
+];
+
 export const captureOutputContainerArgs = (
 	image: string,
 	volume: string,
@@ -485,6 +520,7 @@ export const runCiProduce = (
 		const prepareContainer = `${image}-server-prepare`;
 		const container = `${image}-server`;
 		const captureContainer = `${image}-capture`;
+		const captureKeeperContainer = `${image}-capture-keeper`;
 		const extractContainer = `${image}-capture-extract`;
 		const testVolume = `${image}-test-workspace`;
 		const serverVolume = `${image}-server-workspace`;
@@ -503,6 +539,7 @@ export const runCiProduce = (
 				prepareContainer,
 				container,
 				captureContainer,
+				captureKeeperContainer,
 				extractContainer,
 			]) {
 				yield* ran("docker", ["rm", "--force", name], options.authorityRoot, env, 30).pipe(
@@ -711,6 +748,52 @@ export const runCiProduce = (
 						`${VERB}: the bounded capture workspace could not be created.`,
 					);
 				}
+				const captureKeeper = yield* ran(
+					"docker",
+					captureVolumeKeeperContainerArgs(image, captureVolume, captureKeeperContainer),
+					options.authorityRoot,
+					env,
+					30,
+				);
+				const captureKeeperId =
+					captureKeeper._tag === "Ran" && captureKeeper.exitCode === 0
+						? decode(captureKeeper.stdout)
+						: "";
+				const keeperRunning = () =>
+					ran(
+						"docker",
+						["inspect", "--format", "{{.State.Running}}", captureKeeperId],
+						options.authorityRoot,
+						env,
+						10,
+					).pipe(
+						Effect.map(
+							(result) =>
+								result._tag === "Ran" &&
+								result.exitCode === 0 &&
+								!result.timedOut &&
+								!result.truncated &&
+								decode(result.stdout) === "true",
+						),
+					);
+				if (
+					captureKeeper._tag !== "Ran" ||
+					captureKeeper.exitCode !== 0 ||
+					captureKeeper.timedOut ||
+					captureKeeper.truncated ||
+					captureKeeperId === ""
+				) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the bounded capture workspace could not be kept alive.`,
+					);
+				}
+				if (!(yield* keeperRunning())) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the bounded capture workspace could not be kept alive.`,
+					);
+				}
 				const sidecar = yield* ran(
 					"docker",
 					subjectCaptureContainerArgs(
@@ -735,6 +818,12 @@ export const runCiProduce = (
 					return refuse(
 						PRECONDITION_UNKNOWN,
 						`${VERB}: the trusted isolated capture sidecar failed (${sidecar._tag === "Ran" ? decode(sidecar.stderr) || `exit ${sidecar.exitCode}` : sidecar.reason}).`,
+					);
+				}
+				if (!(yield* keeperRunning())) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the bounded capture workspace could not be kept alive.`,
 					);
 				}
 				const extracted = yield* ran(

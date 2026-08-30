@@ -4,8 +4,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN npm install --global pnpm@10.27.0 playwright@1.62.1 \
 	&& playwright install --with-deps chromium \
-	&& mkdir /subject /subject-source \
-	&& chown node:node /subject /subject-source \
+	&& mkdir /subject /subject-source /capture-output \
+	&& chown node:node /subject /subject-source /capture-output \
 	&& chmod -R a+rX /ms-playwright
 
 WORKDIR /subject-source

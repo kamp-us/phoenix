@@ -252,13 +252,14 @@ describe("trusted localhost producer flow", () => {
 			"docker rm --force fabrika-review-ui-subject-42-server-prepare",
 			"docker rm --force fabrika-review-ui-subject-42-server",
 			"docker rm --force fabrika-review-ui-subject-42-capture",
+			"docker rm --force fabrika-review-ui-subject-42-capture-keeper",
 			"docker rm --force fabrika-review-ui-subject-42-capture-extract",
 		]);
 		await expect(readFile(join(outputDir, "manifest.json"), "utf8")).rejects.toThrow();
 		await rm(root, {recursive: true, force: true});
 	});
 
-	it("force-removes every named container after the Docker client times out", async () => {
+	it("force-removes the capture keeper and every named container after the sidecar times out", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ci-produce-timeout-cleanup-"));
 		const authorityRoot = join(root, "authority");
 		const subjectRoot = join(root, "subject");
@@ -283,13 +284,21 @@ describe("trusted localhost producer flow", () => {
 					truncated: false,
 				});
 			}
-			const timedOut =
-				line.includes("docker run --rm --network none") && line.includes("test-workspace");
+			const timedOut = line.startsWith("docker run --rm --network container:container-id");
+			const stdout = line.startsWith("docker run --detach")
+				? line.includes("capture-keeper")
+					? "keeper-id"
+					: "container-id"
+				: line === "docker logs container-id"
+					? "ready"
+					: line.startsWith("docker inspect --format") && line.endsWith(" keeper-id")
+						? "true"
+						: "";
 			return Effect.succeed({
 				_tag: "Ran" as const,
 				exitCode: timedOut ? null : 0,
 				timedOut,
-				stdout: bytes(""),
+				stdout: bytes(stdout),
 				stderr: bytes(""),
 				truncated: false,
 			});
@@ -308,7 +317,6 @@ describe("trusted localhost producer flow", () => {
 					authorityRoot,
 					outputDir,
 					env: {PATH: "/bin"},
-					capture,
 					runner,
 				}),
 				seams.layer,
@@ -320,8 +328,12 @@ describe("trusted localhost producer flow", () => {
 			"docker rm --force fabrika-review-ui-subject-42-server-prepare",
 			"docker rm --force fabrika-review-ui-subject-42-server",
 			"docker rm --force fabrika-review-ui-subject-42-capture",
+			"docker rm --force fabrika-review-ui-subject-42-capture-keeper",
 			"docker rm --force fabrika-review-ui-subject-42-capture-extract",
 		]);
+		expect(
+			calls.some((call) => call.startsWith("docker run") && call.includes("capture-extract")),
+		).toBe(false);
 		await rm(root, {recursive: true, force: true});
 	});
 
@@ -447,6 +459,8 @@ describe("trusted localhost producer flow", () => {
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ready")],
 			[/^docker volume create .*o=size=256m .*capture-output$/, okOut("capture-output")],
+			[/^docker run --detach --network none .*capture-keeper/, okOut("keeper-id")],
+			[/^docker inspect --format .* keeper-id$/, okOut("true")],
 			[/^docker run --rm --network container:container-id /, okOut("")],
 			[/^docker run --rm --network none .*capture-extract/, okOut("")],
 			[/^docker rm /, okOut("")],
@@ -503,6 +517,9 @@ describe("trusted localhost producer flow", () => {
 				call.startsWith("docker run --rm --network none") && call.includes("server-workspace"),
 		);
 		const server = seams.calls.find((call) => call.startsWith("docker run --detach"));
+		const keeper = seams.calls.find((call) =>
+			call.startsWith("docker run --detach --network none"),
+		);
 		const sidecar = seams.calls.find((call) =>
 			call.startsWith("docker run --rm --network container:container-id"),
 		);
@@ -523,6 +540,16 @@ describe("trusted localhost producer flow", () => {
 		expect(server).not.toContain("--publish");
 		expect(server).toContain("server-workspace,dst=/subject,readonly");
 		expect(server).not.toContain("test-workspace");
+		expect(keeper).toContain("--cpus 0.1 --memory 64m --memory-swap 64m --pids-limit 16");
+		expect(keeper).toContain("--network none");
+		expect(keeper).toContain("capture-output,dst=/capture-output");
+		expect(keeper).not.toContain("authority");
+		expect(keeper).not.toContain("GITHUB_TOKEN");
+		expect(
+			seams.calls.filter(
+				(call) => call.startsWith("docker inspect") && call.endsWith(" keeper-id"),
+			),
+		).toHaveLength(2);
 		expect(sidecar).toContain("/authority,dst=/authority,readonly");
 		expect(sidecar).toContain("capture-output,dst=/capture-output");
 		expect(sidecar).toContain("ci-capture-sidecar.ts 4173 /capture-output tuval");

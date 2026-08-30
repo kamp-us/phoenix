@@ -10,39 +10,40 @@ Read the required sections through the wire reader before invoking `review-ui fe
 Markdown-anchor reads are not the contract-ingestion surface.
 
 ```bash
-skill_base=claude-plugins/fabrika/skills/review-ui
-fabrika wire doc-section --heading "review-ui fetch" < "$skill_base/contract.md"
-fabrika wire doc-section --heading "review-ui post" < "$skill_base/contract.md"
-fabrika wire doc-section --heading "The shared exit matrix" < "$skill_base/contract.md"
+fabrika wire doc-section --heading "review-ui fetch" < claude-plugins/fabrika/skills/review-ui/contract.md
+fabrika wire doc-section --heading "review-ui post" < claude-plugins/fabrika/skills/review-ui/contract.md
+fabrika wire doc-section --heading "The shared exit matrix" < claude-plugins/fabrika/skills/review-ui/contract.md
 ```
 
 ## Fetch and judge #7190
 
 1. Confirm #7190 is open. Record its full live head and the current default-branch authority
    revision.
-2. In an independent `review-ui` session, fetch the governed set and derive the exact head from the
-   verb's validated output:
+2. In an independent `review-ui` session, fetch the governed set. The verb prints one typed answer
+   containing the exact full `head`, `render` state, capture paths, and bounded error evidence:
 
    ```bash
-   fetch_json=$(fabrika review-ui fetch 7190 --harness tuval --out judged)
-   printf '%s\n' "$fetch_json"
-   live_head=$(node -e 'const row=JSON.parse(process.argv[1]); if(row.answer!=="fetched"||typeof row.head!=="string"||!/^[0-9a-f]{40}$/.test(row.head)) process.exit(1); process.stdout.write(row.head)' "$fetch_json")
+   fabrika review-ui fetch 7190 --harness tuval --out judged
    ```
 
 3. Inspect both `tuval-cockpit-desktop` and `tuval-cockpit-mobile`, including each capture's bounded
-   page/console-error evidence, against the design law. Exit `13` means the validated set was
-   materialized with an uncaught page error: stderr names every materialized capture path, so inspect
-   those pixels, treat the set as a red render, and post FAIL. Do not route proven red evidence to
-   CANT-SEE.
+   page/console-error evidence, against the design law. A successful answer with `render:"red"` is a
+   validated set with an uncaught page error: inspect its listed pixels, treat the set as a red
+   render, and post FAIL. Do not route proven red evidence to CANT-SEE. Any non-zero produced no
+   fetch answer; route its typed code through the contract before taking a terminal.
 4. Write the row-by-row judgment to exactly one of `verdict-pass.md` or `verdict-fail.md`, then run
    exactly one matching literal command:
 
+   The following literal examples are bound to #7190's recorded head at this revision. If the fetch
+   answer names another full head, type that exact literal into `--sha`; do not use a shell variable
+   or command substitution.
+
    ```bash
-   fabrika review-ui post 7190 --polarity PASS --sha "$live_head" --clause "accepted" --evidence judged < verdict-pass.md
+   fabrika review-ui post 7190 --polarity PASS --sha d293fe694bfd740475753bad3b00c630a9835122 --clause "accepted" --evidence judged < verdict-pass.md
    ```
 
    ```bash
-   fabrika review-ui post 7190 --polarity FAIL --sha "$live_head" --clause "changes-requested" --evidence judged < verdict-fail.md
+   fabrika review-ui post 7190 --polarity FAIL --sha d293fe694bfd740475753bad3b00c630a9835122 --clause "changes-requested" --evidence judged < verdict-fail.md
    ```
 
 5. Re-read the landed marker through the normal review/ship flow. There is no localhost-specific
@@ -54,8 +55,7 @@ exit into CANT-SEE:
 - Fix caller, invocation, or installation failures and retry before making any claim.
 - If #7190 is absent or closed, end at CANT-SEE without a marker or note; there is no open subject on
   which to land one.
-- If the head moved, restart at the new live head. If trusted red evidence was materialized, follow
-  the inspect-then-FAIL route above.
+- If the head moved, restart at the new live head; that refusal produced no evidence answer.
 - For any other trust or evidence refusal on an open, unmoved #7190, post CANT-SEE with
   `review-ui note` and stop. A reviewer never changes PR state to manufacture another producer
   event.
@@ -66,8 +66,11 @@ Close/reopen recovery belongs to the `ship` capability set, not `review-ui`. Han
 its recorded full head to an operator. The operator reads the `ship nudge` contract and may invoke
 the sanctioned, self-guarding route:
 
+The literal example below is bound to #7190's recorded head at this revision. If the operator's
+fresh read names another full head, the operator types that exact literal into `--sha`.
+
 ```bash
-fabrika ship nudge 7190 --sha "$live_head"
+fabrika ship nudge 7190 --sha d293fe694bfd740475753bad3b00c630a9835122
 ```
 
 `ship nudge` re-derives the dropped-trigger precondition, enforces at-most-once recovery for the

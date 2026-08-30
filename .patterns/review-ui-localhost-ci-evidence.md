@@ -41,8 +41,18 @@ disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
 Every foreground container is named before it starts, so the producer's unconditional cleanup can
 force-remove it after a client timeout. The test and server workspaces are named volumes backed by a
 2 GiB tmpfs rather than unbounded writable storage; capture output has a separate 256 MiB tmpfs
-ceiling, and cleanup force-removes every volume. That
-workspace is never served. A separate server
+ceiling, and cleanup force-removes every volume. The local driver's tmpfs is kept mounted from
+sidecar write through read-only extraction by one named keeper container. This is required because
+tmpfs data does not survive an unmount
+([Linux tmpfs](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)); sequential ephemeral
+containers otherwise leave no capture bytes for extraction. The authority Dockerfile owns the
+volume destination as `node:node` before its first mount, so the unprivileged sidecar has write access
+and extraction needs only read access. The keeper receives no authority, credential, subject, Docker
+socket, or host-output mount; it uses Docker `none`, a read-only root, dropped capabilities,
+`no-new-privileges`, 0.1 CPU, 64 MiB memory with no swap headroom, 16 PIDs, and a 4 MiB temporary
+filesystem. It is force-removed on every outcome, including a sidecar timeout.
+
+That workspace is never served. A separate server
 workspace is freshly copied from the image's immutable exact-head source, installed offline with
 both install-time execution-disabling flags, and built by the declaration's fixed
 `serverBuildCommand` under the same no-network restrictions. The resulting workspace is mounted
@@ -66,9 +76,11 @@ The
 [producer implementation](../packages/fabrika-cli/src/review-ui/ci-produce-verb.ts) proves the full
 subject and authority heads and the absence of a subject root `.dockerignore` before building. Its
 [flow tests](../packages/fabrika-cli/src/review-ui/ci-produce-flow.test.ts) replay the isolation,
-server-build, readiness/crash, head, navigation-response, and manifest boundaries. The
+server-build, readiness/crash, keeper lifetime and bounds, timeout cleanup, head,
+navigation-response, and manifest boundaries. The
 [Docker integration test](../packages/fabrika-cli/src/review-ui/ci-produce-docker.integration.test.ts)
-also builds and serves a real read-only volume when a Docker daemon is available.
+builds and serves a real read-only volume and proves the exact sidecar PNG bytes survive the kept
+capture tmpfs through extraction into an artifact-ready manifest when a Docker daemon is available.
 
 The resulting positive record binds the PR source, governed authority, producer identity, declared
 journey, captures, integrity measurements, and readable browser-error evidence. That binding lets a

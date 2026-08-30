@@ -143,7 +143,13 @@ describe("runCiFetch", () => {
 		);
 		expect(outcome.code).toBe(0);
 		const answer = JSON.parse(outcome.stdout);
-		expect(answer).toMatchObject({answer: "fetched", run: 42, artifact: 61, check: 51});
+		expect(answer).toMatchObject({
+			answer: "fetched",
+			render: "clean",
+			run: 42,
+			artifact: 61,
+			check: 51,
+		});
 		const receipt = JSON.parse(
 			await readFile(
 				join(root, "fabrika-review-ui/7190-03135b91/judged", CI_PROVENANCE_RECEIPT),
@@ -180,7 +186,7 @@ describe("runCiFetch", () => {
 			bytes?: Uint8Array | null;
 			bundleFailure?: string;
 			bundleFailureKind?: "malformed-members";
-			materializedOnRefusal?: boolean;
+			materializedRed?: boolean;
 		}> = [
 			...producerMismatchCases,
 			{
@@ -281,8 +287,8 @@ describe("runCiFetch", () => {
 						pageErrors: {rows: [{kind: "pageerror", text: "boom"}], more: 0},
 					},
 				),
-				expected: 13,
-				materializedOnRefusal: true,
+				expected: 0,
+				materializedRed: true,
 			},
 		];
 
@@ -335,11 +341,17 @@ describe("runCiFetch", () => {
 				"fabrika-review-ui/7190-03135b91/judged",
 				CI_PROVENANCE_RECEIPT,
 			);
-			if (row.materializedOnRefusal === true) {
+			if (row.materializedRed === true) {
 				expect(await readFile(receiptPath, "utf8"), row.name).toContain('"runId":42');
-				expect(outcome.stderr.join("\n"), row.name).toContain(
-					join(root, "fabrika-review-ui/7190-03135b91/judged/captures/desktop.png"),
-				);
+				expect(JSON.parse(outcome.stdout), row.name).toMatchObject({
+					answer: "fetched",
+					render: "red",
+					captures: [
+						{
+							path: join(root, "fabrika-review-ui/7190-03135b91/judged/captures/desktop.png"),
+						},
+					],
+				});
 			} else {
 				await expect(readFile(receiptPath, "utf8"), row.name).rejects.toThrow();
 			}

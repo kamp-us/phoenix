@@ -131,10 +131,10 @@ section.
 - **GitHub access** per [skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql);
   every list read paginates and reports its scanned count on stderr. The evidence-upload
   endpoint sits outside §11's porcelain scope exactly as `ui evidence`'s attachment tier states.
-- **A non-zero exit is not success; read its code before routing.** Proven typed outcomes occupy
-  `12`–`17`; UNKNOWN/read failures never expose a partial answer. `fetch` exit `13` is the one
-  complete materialized red-evidence result: stderr names every capture path so the caller can
-  inspect it and post FAIL. A partial capture set or upload is never a smaller success.
+- **A non-zero exit produced no answer; read its code before routing.** Proven refusals occupy
+  `12`–`17`; UNKNOWN/read failures never expose a partial answer. `fetch` returns every complete
+  materialized set on `0` and types it as `render: "clean" | "red"`, so a proven red set cannot be
+  confused with a failed invocation. A partial capture set or upload is never a smaller success.
 - **Head-bound where a head matters.** `render` and `post` resolve the PR's live head and carry
   it; `render` binds the preview to it, `post` refuses when it moved. A verdict formed over one
   tree must be unrepresentable over another (ADR 0058; #3769's class). `note` carries no head:
@@ -178,7 +178,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `10` | a semantic refusal on an operand or body: a supplied value is off its closed vocabulary, a CI identity/root/output operand is invalid, or a `note` body starts with a verdict carrier |
 | `11` | a required read or execution failed — no outcome is proven: PR/head/preview, default-branch authority, workflow run/check/artifact/download, producer workspace/build/server/readiness/sidecar, materialization, capture validity, provenance write, or upload-target state |
 | `12` | refused, proven: pixels or a marker would bind the wrong tree — a live head moved, a preview is stale, or a producer checkout does not match its named subject/authority revision |
-| `13` | proven red render: trusted evidence records an uncaught page error; `render`/`fetch` expose FAIL ground and `post` refuses PASS |
+| `13` | proven red render or invalid PASS attempt: `render` records an uncaught page error, and `post` refuses PASS over red evidence; `fetch` instead returns a complete typed `render: "red"` answer on `0` |
 | `14` | proven: at least one surface is unreachable — missing HTTP response, status ≥ 400, or failed navigation; each named on stderr |
 | `15` | proven: produced or fetched capture bytes are invalid — zero bytes, undecodable, zero area, hash/dimension mismatch, or bad set membership |
 | `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
@@ -262,7 +262,7 @@ default path; this verb selects only a declared localhost exception.
 **Output** — machine channel. One newline-terminated JSON object on complete success:
 
 ```
-{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0}}]}
+{"answer":"fetched","render":"clean","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 Paths are outputs, never inputs. Their directory is derived as
@@ -294,23 +294,22 @@ bytes into reviewer-owned scratch. It writes a receipt carrying the observed run
 and manifest hash. The artifact allowlist excludes that receipt, but the receipt is not authority by
 itself: `post` re-downloads the selected artifact and byte-compares the members.
 
-There is no empty successful answer. An accepted artifact containing an uncaught page error is
-materialized with its receipt and exits `13` without printing a success object. Its stderr refusal
-then prints one `materialized capture <surface>: <path>` row for every validated PNG, so the caller
-can inspect those exact pixels before posting the proven red render as FAIL.
+There is no empty successful answer. Every accepted artifact prints one typed JSON answer with
+`render` equal to `clean` or `red`. An uncaught page error therefore remains proven red evidence on
+exit `0`; it cannot be confused with a refusal that produced no answer. Every capture path and its
+bounded error evidence are present in that answer for inspection before posting FAIL.
 
 **Exit status**
 
 | Code | Trigger |
 |---|---|
-| `0` | the validated set and receipt were materialized and the JSON answer was printed |
+| `0` | the validated set and receipt were materialized and the JSON answer was printed with `render: "clean" | "red"` |
 | `1` | invocation/flag parsing failed, or `<pr>` is not a positive pull-request number |
 | `4` | default-branch declaration, artifact manifest, producer binding, members, surface cardinality, or receipt materialization schema is malformed |
 | `7` | PR is proven absent or closed — zero scope |
 | `10` | `--harness` or `--out` is off vocabulary |
 | `11` | repo/default branch/exact authority revision/declaration/run/check/artifact/download/scratch read is UNKNOWN; zero, ambiguous, pending, failed, cancelled, action-required, missing-expiry, expired, or otherwise untrusted producer evidence is unresolved |
 | `12` | live head moved before materialization |
-| `13` | the accepted, integrity-validated set was materialized and its manifest records an uncaught page error — proven red-render/FAIL ground, never CANT-SEE |
 | `15` | capture bytes fail PNG, hash, or dimension validation |
 
 **Errors**
@@ -337,7 +336,6 @@ can inspect those exact pixels before posting the proven red render as FAIL.
 | `review-ui fetch: capture <surface> fails its hash or dimensions.` | `15` | refusal |
 | `review-ui fetch: PR #<n> moved from <old> to <new> before the evidence set was accepted.` | `12` | refusal |
 | `review-ui fetch: cannot materialize reviewer-owned evidence scratch (<reason>).` | `11` | refusal |
-| `review-ui fetch: the accepted artifact records <n> uncaught page error(s); the materialized render is red and must be posted as FAIL.` followed by one `review-ui fetch: materialized capture <surface>: <path>` row per capture | `13` | refusal |
 
 **Scope** — one open PR, one default-branch declaration, one declared harness, one
 exact-head run/check/artifact tuple, and one output set. A missing or closed PR is `7`; no harnesses,
@@ -349,19 +347,12 @@ With the committed Tuval declaration, a live head `03135b91aa04f7e2c9d8b1640a5c2
 
 ```
 $ fabrika review-ui fetch 7190 --harness tuval --out judged
-{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0}}]}
+{"answer":"fetched","render":"clean","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pageErrors":{"rows":[],"more":0}},{"surface":"tuval-cockpit-mobile","path":"/tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0}}]}
 ```
 
-With the same validated tuple and one recorded uncaught page error:
-
-```
-$ fabrika review-ui fetch 7190 --harness tuval --out judged
-review-ui fetch: the accepted artifact records 1 uncaught page error(s); the materialized render is red and must be posted as FAIL.
-review-ui fetch: materialized capture tuval-cockpit-desktop: /tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-desktop.png
-review-ui fetch: materialized capture tuval-cockpit-mobile: /tmp/fabrika-review-ui/7190-03135b91/judged/captures/tuval-cockpit-mobile.png
-```
-
-This refusal exits with status `13`.
+With the same validated tuple and one recorded uncaught page error, the answer keeps the same
+shape but prints `"render":"red"` and the page-error row in its capture. This accepted red set exits
+with status `0`; the reviewer inspects it and posts FAIL.
 
 **Grounding**
 
@@ -487,6 +478,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the isolated subject server did not report readiness.` | `11` | refusal |
 | `review-ui ci-produce: the trusted capture output could not be prepared (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the bounded capture workspace could not be created.` | `11` | refusal |
+| `review-ui ci-produce: the bounded capture workspace could not be kept alive.` | `11` | refusal |
 | `review-ui ci-produce: the trusted isolated capture sidecar failed (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the bounded capture output could not be materialized.` | `11` | refusal |
 | `review-ui ci-produce: the trusted localhost capture failed (<reason>).` | `11` | refusal |

@@ -100,7 +100,7 @@ USER node
 	);
 
 	it.runIf(dockerAvailable)(
-		"carries a trusted sidecar capture through Docker materialization to artifact-ready manifest bytes",
+		"keeps tmpfs capture bytes alive from the trusted sidecar through artifact materialization",
 		async () => {
 			const root = await mkdtemp(join(tmpdir(), "review-ui-docker-producer-integration-"));
 			const subjectRoot = join(root, "subject");
@@ -125,7 +125,7 @@ createServer((_request, response) => {
 				`FROM node:26-alpine
 COPY --chown=node:node . /subject-source
 COPY pnpm /usr/local/bin/pnpm
-RUN chmod 0755 /usr/local/bin/pnpm && mkdir /subject && chown node:node /subject
+RUN chmod 0755 /usr/local/bin/pnpm && mkdir /subject /capture-output && chown node:node /subject /capture-output
 USER node
 `,
 			);
@@ -142,7 +142,7 @@ USER node
 							artifact: "review-ui-localhost-fixture",
 							captureCommand: ["sh", "-c", "test -f server-source.mjs"],
 							serverBuildCommand: ["cp", "server-source.mjs", "server.mjs"],
-							serverCommand: ["node", "/subject-source/server-source.mjs"],
+							serverCommand: ["node", "server.mjs"],
 							containerPort: 4173,
 							readinessPattern: "fixture ready",
 							captureReadySelector: "main",

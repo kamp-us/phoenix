@@ -4,6 +4,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {
 	boundedBrowserErrors,
 	captureOutputContainerArgs,
+	captureVolumeKeeperContainerArgs,
 	isolatedEnvironment,
 	subjectCaptureContainerArgs,
 	subjectInstallAndTestContainerArgs,
@@ -103,6 +104,7 @@ describe("localhost evidence governance floor", () => {
 		const dockerfile = read(".github/review-ui-localhost-subject.Dockerfile");
 		assert.include(dockerfile, "pnpm fetch --frozen-lockfile --ignore-scripts --ignore-pnpmfile");
 		assert.notInclude(dockerfile, "pnpm install --frozen-lockfile");
+		assert.include(dockerfile, "chown node:node /subject /subject-source /capture-output");
 		assert.include(dockerfile, "USER node");
 		const test = subjectInstallAndTestContainerArgs("subject", "subject-workspace", [
 			"pnpm",
@@ -184,6 +186,25 @@ describe("localhost evidence governance floor", () => {
 		assert.include(capture, "--memory");
 		assert.include(capture, "--pids-limit");
 
+		const keeper = captureVolumeKeeperContainerArgs(
+			"subject",
+			"capture-output",
+			"subject-capture-keeper",
+		);
+		assert.include(keeper.join(" "), "--detach --network none");
+		assert.include(keeper, "--read-only");
+		assert.include(keeper, "--cap-drop");
+		assert.include(keeper, "no-new-privileges");
+		assert.include(keeper, "--cpus");
+		assert.include(keeper, "0.1");
+		assert.include(keeper, "--memory");
+		assert.include(keeper, "64m");
+		assert.include(keeper, "--pids-limit");
+		assert.include(keeper, "16");
+		assert.include(keeper, "type=volume,src=capture-output,dst=/capture-output");
+		assert.notInclude(keeper.join(" "), "authority");
+		assert.notInclude(keeper.join(" "), "GITHUB_TOKEN");
+
 		const extraction = captureOutputContainerArgs(
 			"subject",
 			"capture-output",
@@ -236,9 +257,16 @@ describe("localhost evidence governance floor", () => {
 			assert.isBelow(contractRead, fetchInvocation);
 		}
 		const runbook = read("ops/runbook-review-ui-localhost-evidence.md");
-		assert.include(runbook, 'fabrika ship nudge 7190 --sha "$live_head"');
+		assert.include(
+			runbook,
+			"fabrika ship nudge 7190 --sha d293fe694bfd740475753bad3b00c630a9835122",
+		);
+		for (const fence of runbook.matchAll(/```bash\n([\s\S]*?)```/g)) {
+			assert.notMatch(fence[1] ?? "", /\$(?:\(|[A-Za-z_{])/);
+		}
 		assert.notInclude(runbook, "Close #7190 without merging it");
 		const contract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
+		assert.include(contract, "`render` equal to `clean` or `red`");
 		assert.notInclude(contract, "has no readable preview manifest");
 	});
 
