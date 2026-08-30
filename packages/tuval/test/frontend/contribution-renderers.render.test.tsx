@@ -60,9 +60,10 @@ afterEach(cleanup);
 afterAll(() => vi.restoreAllMocks());
 
 const assets = {
-	node: "/api/contribution-assets/v1-0.js",
-	edge: "/api/contribution-assets/v1-1.js",
-	panel: "/api/contribution-assets/v1-2.js",
+	node: "/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js",
+	edge: "/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js",
+	panel:
+		"/api/contribution-assets/v1-2222222222222222222222222222222222222222222222222222222222222222.js",
 } as const;
 
 const catalog = {

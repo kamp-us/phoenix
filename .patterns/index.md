@@ -71,6 +71,7 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 | Doc | Topic | Read when |
 |---|---|---|
 | [pi-native-tuval-packages.md](./pi-native-tuval-packages.md) | Pi-owned package resolution with optional versioned Tuval backend and headless frontend contributions | Adding a Tuval contribution kind, package capability, or package-loading behavior |
+| [pi-coding-agent-protocol-service.md](./pi-coding-agent-protocol-service.md) | Production coding-agent-backed framed-CBOR service, lease truth, cancellation, and black-box proof boundary | Changing Tuval's default Pi transport, protocol commands, or daily-driver acceptance journey |
 | [pi-rpc-extension-ui-bridge.md](./pi-rpc-extension-ui-bridge.md) | Exhaustive pinned RPC UI method outcomes, portable package/session binding, exactly-once settlement, and replay limits | Bridging a pi extension UI method or changing reconnect/unload behavior |
 
 ## Index — UI / components layer

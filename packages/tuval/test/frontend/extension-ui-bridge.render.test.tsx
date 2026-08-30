@@ -25,8 +25,14 @@ class FakeClient implements ExtensionUIBrowserClient {
 	emit(event: ExtensionUIEvent): void {
 		this.handlers?.event(event);
 	}
+	open(): void {
+		this.handlers?.open();
+	}
 	snapshot(snapshots: Parameters<NonNullable<typeof this.handlers>["snapshot"]>[0]): void {
 		this.handlers?.snapshot(snapshots);
+	}
+	snapshotFailure(reason: string): void {
+		this.handlers?.snapshotFailure(reason);
 	}
 }
 
@@ -253,6 +259,30 @@ describe("ExtensionUIBridge", () => {
 		client.snapshot([]);
 		await waitFor(() => expect(screen.queryByText("sunucudan geri yüklendi")).toBeNull());
 		expect(screen.queryByText("kalıcı widget")).toBeNull();
+	});
+
+	it("keeps retained projection visibly stale until an authoritative snapshot succeeds", async () => {
+		const client = new FakeClient();
+		render(
+			<ExtensionUIBridge
+				client={client}
+				initialSnapshots={[
+					{scope, statuses: [{key: "phase", text: "son doğrulanmış"}], widgets: []},
+				]}
+			/>,
+		);
+		client.open();
+		expect(screen.getByText("Extension UI · connecting")).toBeTruthy();
+		client.snapshotFailure("HTTP 500");
+		expect(await screen.findByText("Extension UI · stale")).toBeTruthy();
+		expect(screen.getByRole("region", {name: "Son doğrulanmış paket durumu"})).toBeTruthy();
+		expect(screen.getByText("son doğrulanmış")).toBeTruthy();
+		expect(screen.getByRole("alert").textContent).toContain("gösterilen durum eski");
+		client.snapshot([{scope, statuses: [{key: "phase", text: "yetkili yeni"}], widgets: []}]);
+		expect(await screen.findByText("Extension UI · connected")).toBeTruthy();
+		expect(screen.getByRole("region", {name: "Güncel paket durumu"})).toBeTruthy();
+		expect(screen.queryByText("son doğrulanmış")).toBeNull();
+		expect(screen.getByText("yetkili yeni")).toBeTruthy();
 	});
 
 	it("replaces hydrated state atomically when an authoritative snapshot arrives", async () => {

@@ -47,7 +47,8 @@ const transport = (
 
 describe("ContributionRegistry", () => {
 	it("rejects catalog entries and diagnostics outside the closed versioned shape", async () => {
-		const asset = "/api/contribution-assets/v1-0.js";
+		const asset =
+			"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js";
 		const malformedCatalogs: ReadonlyArray<unknown> = [
 			{
 				contractVersion: 1,
@@ -86,15 +87,33 @@ describe("ContributionRegistry", () => {
 	it("registers contract-compatible node, edge, and panel modules with package attribution", async () => {
 		const registry = await ContributionRegistry.load(
 			catalog([
-				entry("fixture-package", "node", "fixture.node", "/api/contribution-assets/v1-0.js"),
-				entry("fixture-package", "edge", "fixture.edge", "/api/contribution-assets/v1-1.js"),
-				entry("fixture-package", "panel", "fixture.panel", "/api/contribution-assets/v1-2.js"),
+				entry(
+					"fixture-package",
+					"node",
+					"fixture.node",
+					"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js",
+				),
+				entry(
+					"fixture-package",
+					"edge",
+					"fixture.edge",
+					"/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js",
+				),
+				entry(
+					"fixture-package",
+					"panel",
+					"fixture.panel",
+					"/api/contribution-assets/v1-2222222222222222222222222222222222222222222222222222222222222222.js",
+				),
 			]),
 			ContributionRegistry.empty(),
 			transport({
-				"/api/contribution-assets/v1-0.js": moduleFor("node"),
-				"/api/contribution-assets/v1-1.js": moduleFor("edge"),
-				"/api/contribution-assets/v1-2.js": moduleFor("panel"),
+				"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js":
+					moduleFor("node"),
+				"/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js":
+					moduleFor("edge"),
+				"/api/contribution-assets/v1-2222222222222222222222222222222222222222222222222222222222222222.js":
+					moduleFor("panel"),
 			}),
 		);
 		expect([...registry.nodes]).toHaveLength(1);
@@ -115,15 +134,25 @@ describe("ContributionRegistry", () => {
 		["HTML response", moduleFor("node"), "text/html; charset=utf-8", "asset-not-javascript"],
 		["module load failure", new Error("syntax error"), "text/javascript", "module-load-failed"],
 	] as const)("fails a package closed on %s", async (_name, module, contentType, code) => {
-		const asset = "/api/contribution-assets/v1-0.js";
+		const asset =
+			"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js";
 		const registry = await ContributionRegistry.load(
 			catalog([
 				entry("broken-package", "node", "broken.node", asset),
-				entry("broken-package", "panel", "broken.panel", "/api/contribution-assets/v1-1.js"),
+				entry(
+					"broken-package",
+					"panel",
+					"broken.panel",
+					"/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js",
+				),
 			]),
 			ContributionRegistry.empty(),
 			transport(
-				{[asset]: module, "/api/contribution-assets/v1-1.js": moduleFor("panel")},
+				{
+					[asset]: module,
+					"/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js":
+						moduleFor("panel"),
+				},
 				{[asset]: contentType},
 			),
 		);
@@ -133,15 +162,33 @@ describe("ContributionRegistry", () => {
 
 	it("keeps built-in keys unoverrideable and isolates duplicate package keys", async () => {
 		const modules = {
-			"/api/contribution-assets/v1-0.js": moduleFor("node"),
-			"/api/contribution-assets/v1-1.js": moduleFor("node"),
-			"/api/contribution-assets/v1-2.js": moduleFor("node"),
+			"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js":
+				moduleFor("node"),
+			"/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js":
+				moduleFor("node"),
+			"/api/contribution-assets/v1-2222222222222222222222222222222222222222222222222222222222222222.js":
+				moduleFor("node"),
 		};
 		const registry = await ContributionRegistry.load(
 			catalog([
-				entry("override-package", "node", "session", "/api/contribution-assets/v1-0.js"),
-				entry("healthy-package", "node", "healthy.node", "/api/contribution-assets/v1-1.js"),
-				entry("duplicate-package", "node", "healthy.node", "/api/contribution-assets/v1-2.js"),
+				entry(
+					"override-package",
+					"node",
+					"session",
+					"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js",
+				),
+				entry(
+					"healthy-package",
+					"node",
+					"healthy.node",
+					"/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js",
+				),
+				entry(
+					"duplicate-package",
+					"node",
+					"healthy.node",
+					"/api/contribution-assets/v1-2222222222222222222222222222222222222222222222222222222222222222.js",
+				),
 			]),
 			ContributionRegistry.empty(),
 			transport(modules),
@@ -151,7 +198,8 @@ describe("ContributionRegistry", () => {
 	});
 
 	it("commits package renderers and diagnostics under one stable registry revision", async () => {
-		const asset = "/api/contribution-assets/v1-0.js";
+		const asset =
+			"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js";
 		const loaded = await ContributionRegistry.load(
 			catalog([entry("fixture-package", "edge", "fixture.edge", asset)]),
 			ContributionRegistry.empty(),
@@ -170,7 +218,8 @@ describe("ContributionRegistry", () => {
 	});
 
 	it("surfaces missing assets, backend diagnostics, and unload without retaining stale renderers", async () => {
-		const asset = "/api/contribution-assets/v1-0.js";
+		const asset =
+			"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js";
 		const first = await ContributionRegistry.load(
 			catalog([entry("fixture-package", "node", "fixture.node", asset)]),
 			ContributionRegistry.empty(),

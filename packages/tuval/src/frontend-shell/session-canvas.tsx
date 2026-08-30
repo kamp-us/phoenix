@@ -29,7 +29,7 @@ import {
 	ZoomIn,
 	ZoomOut,
 } from "lucide-react";
-import {useLayoutEffect, useMemo, useRef} from "react";
+import {useMemo} from "react";
 import {Badge} from "../../../../apps/web/src/components/ui/Badge.js";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card} from "../../../../apps/web/src/components/ui/Card.js";
@@ -306,12 +306,6 @@ export function SessionCanvas({
 	contributions = ContributionRegistry.empty(),
 	onContributionFailure = () => undefined,
 }: SessionCanvasProps) {
-	const keyboardSelection = useRef<string | null>(nodes.find(({selected}) => selected)?.id ?? null);
-	const keyboardFocus = useRef<string | null>(null);
-	const externallySelected = nodes.find(({selected}) => selected)?.id;
-	if (externallySelected !== undefined) keyboardSelection.current = externallySelected;
-	const keyboardContext = useRef({nodes, edges, onNodesChange, onEdgesChange, onSelect});
-	keyboardContext.current = {nodes, edges, onNodesChange, onEdgesChange, onSelect};
 	const horizontal = nodes.map(({position}) => position.x);
 	const vertical = nodes.map(({position}) => position.y);
 	const contributionOrigin = {
@@ -399,162 +393,33 @@ export function SessionCanvas({
 			}) satisfies EdgeTypes,
 		[contributions.revision, onContributionFailure],
 	);
-	useLayoutEffect(() => {
-		const handleKeyboard = (event: KeyboardEvent): void => {
-			if (event.key === "Tab") {
-				keyboardFocus.current = null;
-				return;
-			}
-			if (!(document.activeElement instanceof Element)) return;
-			const focused = document.activeElement;
-			const directId = focused.closest<HTMLElement>(".react-flow__node-session")?.dataset.id;
-			const id =
-				directId ??
-				(focused.matches(".react-flow__nodesselection-rect") || focused === document.body
-					? (keyboardFocus.current ?? undefined)
-					: undefined);
-			const context = keyboardContext.current;
-			const stop = (): void => {
-				event.preventDefault();
-				event.stopImmediatePropagation();
-			};
-			const edgeId = focused.closest<SVGGElement>(".react-flow__edge")?.dataset.id;
-			if (
-				edgeId !== undefined &&
-				(event.key === "Enter" || event.key === " " || event.key === "Escape")
-			) {
-				stop();
-				context.onEdgesChange(
-					context.edges.map((edge) => ({
-						type: "select" as const,
-						id: edge.id,
-						selected: event.key === "Escape" ? false : edge.id === edgeId,
-					})),
-				);
-				return;
-			}
-			const node =
-				id === undefined ? undefined : context.nodes.find((candidate) => candidate.id === id);
-			if (node === undefined) return;
-			if (event.key === "Enter" || event.key === " ") {
-				stop();
-				keyboardSelection.current = node.id;
-				keyboardFocus.current = null;
-				context.onNodesChange(
-					context.nodes.map((candidate) => ({
-						type: "select" as const,
-						id: candidate.id,
-						selected: candidate.id === node.id,
-					})),
-				);
-				context.onSelect(node.data.session);
-				return;
-			}
-			if (event.key === "Escape") {
-				stop();
-				keyboardSelection.current = null;
-				keyboardFocus.current = null;
-				context.onNodesChange(
-					context.nodes.map((candidate) => ({
-						type: "select" as const,
-						id: candidate.id,
-						selected: false,
-					})),
-				);
-				context.onSelect(null);
-				return;
-			}
-			const direction = {
-				ArrowLeft: {x: -1, y: 0},
-				ArrowRight: {x: 1, y: 0},
-				ArrowUp: {x: 0, y: -1},
-				ArrowDown: {x: 0, y: 1},
-			}[event.key];
-			if (direction === undefined || keyboardSelection.current !== node.id) return;
-			stop();
-			const factor = event.shiftKey ? 4 : 1;
-			context.onNodesChange([
-				{
-					type: "position",
-					id: node.id,
-					position: {
-						x: node.position.x + direction.x * factor,
-						y: node.position.y + direction.y * factor,
-					},
-				},
-			]);
-		};
-		const clearKeyboardFocus = (event: PointerEvent): void => {
-			if (
-				event.target instanceof HTMLElement &&
-				event.target.closest(".react-flow__node-session") === null
-			) {
-				keyboardFocus.current = null;
-			}
-		};
-		const preserveKeyboardFocus = (event: FocusEvent): void => {
-			const id = keyboardFocus.current;
-			if (
-				id === null ||
-				!(event.target instanceof HTMLElement) ||
-				event.target.closest(".react-flow__node-session") !== null ||
-				document.querySelector('[role="dialog"]') !== null
-			) {
-				return;
-			}
-			queueMicrotask(() => {
-				if (keyboardFocus.current !== id) return;
-				document
-					.querySelector<HTMLElement>(`.react-flow__node-session[data-id="${CSS.escape(id)}"]`)
-					?.focus({preventScroll: true});
-			});
-		};
-		window.addEventListener("keydown", handleKeyboard, {capture: true});
-		window.addEventListener("pointerdown", clearKeyboardFocus, {capture: true});
-		window.addEventListener("focusin", preserveKeyboardFocus, {capture: true});
-		return () => {
-			window.removeEventListener("keydown", handleKeyboard, {capture: true});
-			window.removeEventListener("pointerdown", clearKeyboardFocus, {capture: true});
-			window.removeEventListener("focusin", preserveKeyboardFocus, {capture: true});
-		};
-	}, []);
-	useLayoutEffect(() => {
-		const frame = requestAnimationFrame(() => {
-			const id = keyboardFocus.current;
-			if (id === null || document.querySelector('[role="dialog"]') !== null) return;
-			if (
-				document.activeElement instanceof HTMLElement &&
-				document.activeElement.closest<HTMLElement>(".react-flow__node-session")?.dataset.id === id
-			) {
-				return;
-			}
-			document
-				.querySelector<HTMLElement>(`.react-flow__node-session[data-id="${CSS.escape(id)}"]`)
-				?.focus({preventScroll: true});
-		});
-		return () => cancelAnimationFrame(frame);
-	});
 	return (
 		<ReactFlow<CanvasNode, CanvasEdge>
 			nodes={[...nodes, ...packageNodes, ...packageEdgeNodes]}
 			edges={[...edges, ...packageEdges]}
-			onFocusCapture={(event) => {
-				if (!(event.target instanceof HTMLElement)) return;
-				const id = event.target.closest<HTMLElement>(".react-flow__node-session")?.dataset.id;
-				if (id === undefined) return;
-				keyboardFocus.current = id;
+			onNodesChange={(changes) => {
+				const sessionChanges = changes.filter(isSessionNodeChange);
+				onNodesChange(sessionChanges);
+				const selectedChange = sessionChanges.findLast(
+					(change) => change.type === "select" && change.selected,
+				);
+				if (selectedChange?.type === "select") {
+					const selectedNode = nodes.find(({id}) => id === selectedChange.id);
+					if (selectedNode !== undefined) onSelect(selectedNode.data.session);
+					return;
+				}
+				const clearedSelectedNode = sessionChanges.some(
+					(change) =>
+						change.type === "select" &&
+						!change.selected &&
+						nodes.some(({id, selected}) => id === change.id && selected),
+				);
+				if (clearedSelectedNode) onSelect(null);
 			}}
-			onNodesChange={(changes) => onNodesChange(changes.filter(isSessionNodeChange))}
 			onEdgesChange={(changes) => onEdgesChange(changes.filter(isSessionEdgeChange))}
-			onNodeClick={(_, node) => {
-				if (!isSessionCanvasNode(node)) return;
-				keyboardSelection.current = node.id;
-				onSelect(node.data.session);
-			}}
 			nodeTypes={allNodeTypes}
 			edgeTypes={allEdgeTypes}
 			ariaLabelConfig={ariaLabelConfig}
-			disableKeyboardA11y
 			nodesConnectable={false}
 			deleteKeyCode={null}
 			fitView

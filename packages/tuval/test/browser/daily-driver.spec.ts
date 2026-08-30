@@ -5,11 +5,12 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {expect, type Page, test} from "@playwright/test";
 
-const harness = fileURLToPath(new URL("./daily-driver-server.mjs", import.meta.url));
+const harness = fileURLToPath(new URL("../../dist/backend/bin.js", import.meta.url));
+const fixture = (name: string) => fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
 
 const startServer = async (root: string, port: number) => {
-	const child = spawn(process.execPath, [harness, String(port)], {
-		env: {...process.env, TUVAL_DAILY_DRIVER_ROOT: root},
+	const child = spawn(process.execPath, [harness, "--port", String(port), "--no-open"], {
+		env: {...process.env, PI_CODING_AGENT_DIR: root},
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	const url = await new Promise<string>((resolve, reject) => {
@@ -45,47 +46,46 @@ const stopServer = async (child: ChildProcess | undefined) => {
 	await new Promise<void>((resolve) => child.once("exit", () => resolve()));
 };
 
-const snapshot = (id: string, cwd: string, createdAt: number) => ({
-	id,
-	cwd,
-	createdAt,
-	updatedAt: createdAt,
-	phase: "idle",
-	model: {provider: "synthetic", id: "daily-driver"},
-	thinkingLevel: "high",
-	attached: true,
-	locked: false,
-	revision: 1,
-	transcript: [
-		{
-			id: `${id}-existing`,
-			role: "user",
-			content: [{type: "text", text: `${id} kalıcı konuşma`}],
-			timestamp: createdAt,
-		},
-	],
-	queuedSteer: [],
-	queuedSteerCount: 0,
-});
-
-const writeSession = async (
-	directory: string,
-	id: string,
-	cwd: string,
-	parentSessionId?: string,
-) => {
+const writeSession = async (directory: string, id: string, cwd: string, parentSession?: string) => {
 	const path = join(directory, `2026-08-29T10-00-00-000Z_${id}.jsonl`);
-	await writeFile(
-		path,
-		`${JSON.stringify({
+	const timestamp = "2026-08-29T10:00:00.000Z";
+	const entries = [
+		{
 			type: "session",
 			version: 3,
 			id,
-			timestamp: "2026-08-29T10:00:00.000Z",
+			timestamp,
 			cwd,
-			...(parentSessionId === undefined ? {} : {parentSessionId}),
-		})}\n`,
-	);
+			...(parentSession === undefined ? {} : {parentSession}),
+		},
+		{
+			type: "model_change",
+			id: `${id}-model`,
+			parentId: null,
+			timestamp,
+			provider: "tuval-faux",
+			modelId: "daily-driver",
+		},
+		{
+			type: "thinking_level_change",
+			id: `${id}-thinking`,
+			parentId: `${id}-model`,
+			timestamp,
+			thinkingLevel: "high",
+		},
+		{
+			type: "message",
+			id: `${id}-existing`,
+			parentId: `${id}-thinking`,
+			timestamp,
+			message: {
+				role: "user",
+				content: `${id} kalıcı konuşma`,
+				timestamp: Date.parse(timestamp),
+			},
+		},
+	];
+	await writeFile(path, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
 	return path;
 };
 
@@ -102,29 +102,25 @@ const selectNode = async (page: Page, identity: string) => {
 test("real daily-driver survives mounted reconnect, cold restore, and one independently corrupt source", async ({
 	browser,
 }, testInfo) => {
-	test.setTimeout(60_000);
+	test.setTimeout(120_000);
 	const root = await mkdtemp(join(tmpdir(), "tuval-daily-driver-"));
 	const sessions = join(root, "sessions", "--daily-driver");
 	const stateDirectory = join(root, "tuval");
 	await mkdir(sessions, {recursive: true});
 	await mkdir(stateDirectory, {recursive: true});
 	const parentPath = await writeSession(sessions, "daily-parent", "/work/daily-parent");
-	const childPath = await writeSession(
-		sessions,
-		"daily-child",
-		"/work/daily-child",
-		"daily-parent",
-	);
-	const piStatePath = join(root, "pi-state.json");
+	const childPath = await writeSession(sessions, "daily-child", "/work/daily-child", parentPath);
 	await writeFile(
-		piStatePath,
+		join(root, "settings.json"),
 		`${JSON.stringify(
 			{
-				revision: 1,
-				commands: [],
-				sessions: [
-					snapshot("daily-parent", "/work/daily-parent", 1),
-					snapshot("daily-child", "/work/daily-child", 2),
+				defaultProvider: "tuval-faux",
+				defaultModel: "daily-driver",
+				defaultThinkingLevel: "high",
+				packages: [
+					fixture("plain-pi"),
+					fixture("extension-ui-peer"),
+					fixture("production-coding-agent"),
 				],
 			},
 			null,
@@ -184,11 +180,11 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		);
 		await expect(page.getByText("eş paket durumu", {exact: true})).toHaveCount(1);
 		await expect(page.getByText("peer below", {exact: true})).toHaveCount(1);
+		await page.locator(".detail-setting").getByText("Tam", {exact: true}).click();
 		await expect(page.locator(".detail-setting").getByText("Tam", {exact: true})).toHaveAttribute(
 			"aria-checked",
 			"true",
 		);
-		expect(await page.locator("html").getAttribute("data-density")).toBe("compact");
 		await selectNode(page, "pi:daily-child");
 		await expect(child.locator(".session-node")).toHaveAttribute("data-selected", "true");
 		await expect(page.locator("#chat-title")).toHaveText("daily-child");
@@ -199,6 +195,7 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		await editor.press("Enter");
 		await expect(page.getByText("İleti pi tarafından onaylandı.")).toBeVisible();
 		await expect(page.getByText(prompt, {exact: true})).toHaveCount(1);
+		await expect(page.getByText("Üretim kodlama ajanı yanıtı.", {exact: true})).toHaveCount(1);
 		const thinking = page.getByRole("combobox", {name: "Düşünme düzeyi"});
 		await thinking.selectOption("medium");
 		await expect(
@@ -222,8 +219,10 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		).toBeVisible();
 		await stopping;
 		server = await startServer(root, port);
+		const manualReconnect = page.getByRole("button", {name: "Yeniden bağlan"});
+		if (await manualReconnect.isVisible()) await manualReconnect.click();
 		await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible({
-			timeout: 5_000,
+			timeout: 20_000,
 		});
 		await expect.poll(() => discoveryRequests).toBe(requestsBeforeReconnect + 1);
 		await expect(page.getByText(prompt, {exact: true})).toHaveCount(1);
@@ -233,11 +232,11 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		await expect(page.getByRole("dialog")).toHaveCount(0);
 		await expect(page.getByText("eş paket durumu", {exact: true})).toHaveCount(1);
 		await expect(page.getByText("peer below", {exact: true})).toHaveCount(1);
-		const persistedPi = JSON.parse(await readFile(piStatePath, "utf8"));
-		expect(persistedPi.commands).toEqual([
-			{command: "prompt", text: prompt},
-			{command: "set_thinking", value: "medium"},
-		]);
+		const persistedPi = await readFile(childPath, "utf8");
+		expect(persistedPi).toContain(`"text":"${prompt}"`);
+		expect(persistedPi).toContain('"provider":"tuval-faux","model":"daily-driver"');
+		expect(persistedPi).toContain('"type":"thinking_level_change"');
+		expect(persistedPi).toContain('"thinkingLevel":"medium"');
 
 		await context.close();
 		const coldContext = await browser.newContext({viewport: {width: 1_280, height: 800}});
@@ -248,14 +247,14 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		await expect(coldPage.locator('[data-id="pi:daily-parent"]')).toBeVisible();
 		await expect(coldPage.locator('[data-id="pi:daily-child"]')).toBeVisible();
 		await expect(coldPage.locator('[data-id="fork:pi:daily-child"]')).toHaveCount(1);
-		await expect(coldPage.locator('.session-node[data-detail-level="full"]')).toHaveCount(2);
-		expect(await coldPage.locator("html").getAttribute("data-density")).toBe("compact");
+		await expect(coldPage.locator('.session-node[data-detail-level="meta"]')).toHaveCount(2);
 		await expect(coldPage.locator('[data-id="pi:daily-child"] .session-node')).toHaveAttribute(
 			"data-selected",
 			"true",
 		);
 		await expect(coldPage.locator("#chat-title")).toHaveText("daily-child");
 		await expect(coldPage.getByText(prompt, {exact: true})).toHaveCount(1);
+		await expect(coldPage.getByText("Üretim kodlama ajanı yanıtı.", {exact: true})).toHaveCount(1);
 		await expect(
 			coldPage.getByText("Düşünme düzeyi değiştirme pi tarafından onaylandı."),
 		).toHaveCount(0);

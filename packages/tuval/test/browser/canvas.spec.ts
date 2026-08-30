@@ -550,7 +550,9 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 		"flow-root oturumundan flow-child oturumuna dallanma ilişkisi, kaynak protocol",
 	);
 	await expect(rootNode).toHaveAttribute("tabindex", "0");
+	await expect(rootNode).toHaveAttribute("aria-describedby", /react-flow__node-desc/);
 	await expect(edge).toHaveAttribute("tabindex", "0");
+	await expect(page.locator('[aria-live="assertive"][id^="react-flow__aria-live"]')).toHaveCount(1);
 	await expect(
 		page.locator('[data-nodeid="pi:flow-root"][data-handleid="relation-out"]'),
 	).toHaveCount(1);
@@ -598,18 +600,23 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 
 	await rootNode.focus();
 	await expect(rootNode).toBeFocused();
-	await page.keyboard.press("Enter");
+	await rootNode.press("Enter");
 	await expect(page.locator("aside")).toHaveCount(1);
 	await expect(page.getByRole("alert")).toContainText("Bağlantı kesildi");
-	await page.keyboard.press("Escape");
+	await expect(rootNode).toBeFocused();
+	await rootNode.press("Escape");
 	await expect(page.locator("aside")).toHaveCount(0);
 	await expect(rootNode).not.toHaveClass(/selected/);
 
-	await childNode.focus();
+	await page.reload();
+	await expect(page.getByText("Çalışma alanı geri yüklendi")).toBeVisible();
+	await expect(page.locator(".contribution-status")).toHaveAttribute("aria-busy", "false");
+	await expect(childNode).toBeVisible();
+	await childNode.press("Enter");
+	await expect(childNode).toHaveClass(/selected/);
 	await expect(childNode).toBeFocused();
-	await page.keyboard.press("Enter");
 	const beforeMove = await childNode.getAttribute("style");
-	await page.keyboard.press("ArrowRight");
+	await childNode.press("ArrowRight");
 	await expect(childNode).not.toHaveAttribute("style", beforeMove ?? "");
 	await expect(page.locator(".react-flow__edge")).toHaveCount(1);
 	expect(errors).toEqual([]);
@@ -1820,6 +1827,8 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 	const alpha = session("error-alpha", "/work/alpha");
 	const beta = session("error-beta", "/work/beta");
 	let promptFails = false;
+	let releaseFails = false;
+	let releaseCalls = 0;
 	await page.route("**/fate", async (route) => {
 		const body = route.request().postDataJSON() as {
 			readonly operations?: ReadonlyArray<Readonly<Record<string, unknown>>>;
@@ -1858,6 +1867,22 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 			});
 			return;
 		}
+		if (operation?.name === "liveSession.release") {
+			releaseCalls += 1;
+			await fulfill(
+				route,
+				id,
+				releaseFails
+					? {
+							_tag: "failed",
+							sessionId: "error-alpha",
+							code: "persistence",
+							reason: "Sahiplik kaydı bırakılamadı.",
+						}
+					: {_tag: "released", sessionId: "error-alpha"},
+			);
+			return;
+		}
 		await fulfill(route, id, {_tag: "released", sessionId: null});
 	});
 	await page.goto(tuvalUrl);
@@ -1885,7 +1910,19 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 			lastEventSequence: 9,
 		},
 	});
-	await expect(page.getByRole("alert")).toContainText("Canlı akış okunamadı");
+	await expect(page.getByRole("alert")).toContainText("Bağlantı kesildi · yeniden bağlanıyor");
+	await expect(page.getByRole("alert")).toContainText("Canlı akış olayı doğrulanamadı");
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const state = Reflect.get(window, "__tuvalEventSourceState") as
+					| (() => {count: number; closed: Array<boolean>})
+					| undefined;
+				return state?.().count ?? 0;
+			}),
+		)
+		.toBeGreaterThan(1);
+	await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
 
 	await selectNode(page, "pi:error-beta");
 	await expect(page.getByRole("alert")).toContainText("Oturum açılamadı");
@@ -1903,6 +1940,18 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 	await editor.fill("başarısız gönderim");
 	await editor.press("Enter");
 	await expect(page.getByRole("alert")).toContainText("İleti gönderilemedi");
+
+	releaseFails = true;
+	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
+	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-connection")).toContainText("Sahiplik bırakılamadı");
+	await expect(page.locator(".chat-connection")).toContainText(
+		"Seçim ve sahiplik doğrusu korunuyor",
+	);
+	releaseFails = false;
+	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
+	await expect(page.locator("aside")).toHaveCount(0);
+	expect(releaseCalls).toBeGreaterThanOrEqual(2);
 	expect(errors).toEqual([]);
 });
 

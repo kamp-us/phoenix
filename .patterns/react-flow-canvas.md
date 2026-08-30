@@ -167,7 +167,11 @@ into view.
 Do not add `tabIndex` to `SessionNodeCard`'s root: React Flow's wrapper is the graph-item focus
 target. Real controls inside the card remain separate native focus targets and carry the interaction
 classes above. Keep `disableKeyboardA11y` false so the wrapper descriptions and live movement
-announcements remain wired through `A11yDescriptions`.
+announcements remain wired through `A11yDescriptions`. Product effects such as opening Tuval's chat
+pane observe React Flow's emitted node-selection changes; they do not replace the wrapper's keyboard
+handling. Edge selection stays inside React Flow and never clears a selected session as a side effect.
+If mounting the product surface can move focus, restore the selected wrapper after that mount so the same
+keyboard interaction can continue with arrow movement.
 
 Because Tuval sets `deleteKeyCode={null}`, provide a stable Turkish `ariaLabelConfig` that removes
 the default node and edge instructions to press Delete. Override both node-description variants,

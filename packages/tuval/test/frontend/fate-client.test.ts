@@ -4,6 +4,7 @@ import {
 	bindAttachOutcome,
 	bindControlOutcome,
 	bindPromptOutcome,
+	bindReleaseOutcome,
 	decodeLineageProjection,
 	decodeLiveEvent,
 } from "../../src/frontend-shell/fate-client.js";
@@ -160,6 +161,24 @@ describe("Tuval fate request identity", () => {
 			assert.equal(outcome.code, "protocol");
 			assert.equal(outcome.session, null);
 		}
+	});
+
+	it("preserves a failed release and refuses a release for another session", () => {
+		const failed = bindReleaseOutcome("alpha", {
+			_tag: "failed",
+			sessionId: "alpha",
+			code: "persistence",
+			reason: "checkpoint refused",
+		});
+		assert.deepEqual(failed, {
+			_tag: "failed",
+			sessionId: "alpha",
+			code: "persistence",
+			reason: "checkpoint refused",
+		});
+		const mismatched = bindReleaseOutcome("alpha", {_tag: "released", sessionId: "beta"});
+		assert.equal(mismatched._tag, "failed");
+		if (mismatched._tag === "failed") assert.equal(mismatched.code, "protocol");
 	});
 
 	it("drops a mismatched refusal snapshot instead of replacing truthful shown state", () => {

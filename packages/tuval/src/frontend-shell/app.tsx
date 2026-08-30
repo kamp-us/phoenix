@@ -288,6 +288,7 @@ export function TuvalApp() {
 	const selectedRef = useRef<DiscoveredSession | null>(null);
 	const streamCursor = useRef<StreamCursor | null>(null);
 	const reconnectState = useRef({identity: "", attempts: 0, recovering: false});
+	const releasePending = useRef(false);
 	const selected = paneSelection._tag === "open" ? paneSelection.selected : null;
 	const view = discoveryView(outcome);
 	const lineageProblems = lineage?.problems ?? [];
@@ -348,6 +349,11 @@ export function TuvalApp() {
 	}, [restoration]);
 
 	const openSession = useCallback((session: DiscoveredSession): void => {
+		const focusedNode =
+			document.activeElement instanceof HTMLElement
+				? document.activeElement.closest<HTMLElement>(".react-flow__node-session")?.dataset.id
+				: undefined;
+		const preserveGraphFocus = focusedNode === session.identity;
 		const current = selectedRef.current;
 		if (session.identity === current?.identity) return;
 		const generation = selectionGeneration.current + 1;
@@ -360,6 +366,21 @@ export function TuvalApp() {
 		setNodes((currentNodes) =>
 			currentNodes.map((node) => ({...node, selected: node.id === session.identity})),
 		);
+		queueMicrotask(() => {
+			let userInteracted = false;
+			const markInteraction = () => {
+				userInteracted = true;
+			};
+			window.addEventListener("pointerdown", markInteraction, {capture: true});
+			window.addEventListener("keydown", markInteraction, {capture: true});
+			window.addEventListener("input", markInteraction, {capture: true});
+			requestAnimationFrame(() => {
+				window.removeEventListener("pointerdown", markInteraction, {capture: true});
+				window.removeEventListener("keydown", markInteraction, {capture: true});
+				window.removeEventListener("input", markInteraction, {capture: true});
+				if (preserveGraphFocus && !userInteracted) focusCanvasNode(session.identity);
+			});
+		});
 	}, []);
 
 	const clearUnavailableSelection = useCallback((identity?: string): void => {
@@ -412,7 +433,16 @@ export function TuvalApp() {
 				selectedRef.current?.identity === target.identity;
 
 			try {
-				await releaseLiveSession();
+				const released = await releaseLiveSession(target.piSessionId);
+				if (released._tag === "failed") {
+					if (!isCurrentTarget()) return;
+					updatePaneForSelection(target.identity, targetGeneration, (current) => ({
+						...current,
+						connection: "release-failed",
+						message: `Sahiplik bırakılamadı (${released.code}): ${released.reason} Seçim korunuyor.`,
+					}));
+					return;
+				}
 			} catch (error) {
 				if (!isCurrentTarget()) return;
 				updatePaneForSelection(target.identity, targetGeneration, (current) => ({
@@ -597,7 +627,7 @@ export function TuvalApp() {
 			setCurrentPane((current) => ({
 				...current,
 				connection: "reconnecting",
-				message: `Canlı bağlantı yenileniyor · ${reconnect.attempts}/3. Son doğrulanmış görünüm korunuyor.`,
+				message: `${message === undefined ? "Canlı bağlantı kesildi." : message} Yeniden bağlanma ${reconnect.attempts}/3; son doğrulanmış görünüm korunuyor.`,
 			}));
 			const delay = [250, 500, 1_000][reconnect.attempts - 1] ?? 1_000;
 			reconnectTimer = setTimeout(() => setStreamCycle((current) => current + 1), delay);
@@ -667,22 +697,22 @@ export function TuvalApp() {
 					try {
 						raw = JSON.parse(message.data);
 					} catch {
-						setCurrentPane((current) => ({
-							...current,
-							connection: "malformed",
-							message: "Canlı akış geçerli JSON taşımadı.",
-						}));
-						eventSource?.close();
+						scheduleReconnect("Canlı akış geçerli JSON taşımadı.");
 						return;
 					}
 					const event = decodeLiveEvent(raw);
 					if (event === undefined) {
-						setCurrentPane((current) => ({
-							...current,
-							connection: "malformed",
-							message: "Canlı akış olayı doğrulanamadı.",
-						}));
-						eventSource?.close();
+						if (
+							typeof raw === "object" &&
+							raw !== null &&
+							"sequence" in raw &&
+							Number.isSafeInteger(raw.sequence) &&
+							Number(raw.sequence) >= 0
+						) {
+							lastSequence = Math.max(lastSequence, Number(raw.sequence));
+							advanceCursor(lastSequence);
+						}
+						scheduleReconnect("Canlı akış olayı doğrulanamadı.");
 						return;
 					}
 					if (event.sequence <= lastSequence) return;
@@ -782,22 +812,79 @@ export function TuvalApp() {
 		[],
 	);
 
-	const closePane = (): void => {
-		if (selected === null) return;
-		const identity = selected.identity;
-		ignoreSelectionChange.current = true;
-		selectionGeneration.current += 1;
-		selectedRef.current = null;
-		streamCursor.current = null;
-		setNodes((current) => current.map((node) => ({...node, selected: false})));
-		setPaneSelection({_tag: "closed"});
-		setMobileLayer("canvas");
-		setSelectionRestoration({_tag: "idle"});
-		void releaseLiveSession().catch(() => undefined);
-		requestAnimationFrame(() => {
+	const closePane = async (): Promise<void> => {
+		const target = selectedRef.current;
+		if (target === null || releasePending.current) return;
+		releasePending.current = true;
+		const generation = selectionGeneration.current;
+		setPaneSelection((current) =>
+			current._tag === "open"
+				? {
+						...current,
+						pane: {
+							...current.pane,
+							connection: "pending",
+							message: "Oturum sahipliği bırakılıyor.",
+						},
+					}
+				: current,
+		);
+		try {
+			const outcome = await releaseLiveSession(target.piSessionId);
+			if (
+				generation !== selectionGeneration.current ||
+				selectedRef.current?.identity !== target.identity
+			) {
+				return;
+			}
+			if (outcome._tag === "failed") {
+				setPaneSelection((current) =>
+					current._tag === "open"
+						? {
+								...current,
+								pane: {
+									...current.pane,
+									connection: "release-failed",
+									message: `Sahiplik bırakılamadı (${outcome.code}): ${outcome.reason} Seçim ve sahiplik doğrusu korunuyor; kapatmayı yeniden dene.`,
+								},
+							}
+						: current,
+				);
+				return;
+			}
+			ignoreSelectionChange.current = true;
+			selectionGeneration.current += 1;
+			selectedRef.current = null;
+			streamCursor.current = null;
+			setNodes((current) => current.map((node) => ({...node, selected: false})));
+			setPaneSelection({_tag: "closed"});
+			setMobileLayer("canvas");
+			setSelectionRestoration({_tag: "idle"});
 			ignoreSelectionChange.current = false;
-			if (document.activeElement === document.body) focusCanvasNode(identity);
-		});
+			requestAnimationFrame(() => {
+				if (document.activeElement === document.body) focusCanvasNode(target.identity);
+			});
+		} catch (error) {
+			if (
+				generation === selectionGeneration.current &&
+				selectedRef.current?.identity === target.identity
+			) {
+				setPaneSelection((current) =>
+					current._tag === "open"
+						? {
+								...current,
+								pane: {
+									...current.pane,
+									connection: "release-failed",
+									message: `Sahiplik bırakma yanıtı alınamadı: ${error instanceof Error ? error.message : "Bilinmeyen hata"}. Seçim korunuyor; kapatmayı yeniden dene.`,
+								},
+							}
+						: current,
+				);
+			}
+		} finally {
+			releasePending.current = false;
+		}
 	};
 
 	useEffect(() => {
@@ -817,7 +904,7 @@ export function TuvalApp() {
 			) {
 				return;
 			}
-			setTimeout(closePane, 0);
+			setTimeout(() => void closePane(), 0);
 		};
 		document.addEventListener("keydown", onEscape, {capture: true});
 		return () => document.removeEventListener("keydown", onEscape, {capture: true});
@@ -1169,11 +1256,7 @@ export function TuvalApp() {
 								if (session?.identity === current?.identity) return;
 								setSelectionRestoration({_tag: "idle"});
 								if (session === null) {
-									if (current !== null) void releaseLiveSession().catch(() => undefined);
-									selectionGeneration.current += 1;
-									selectedRef.current = null;
-									streamCursor.current = null;
-									setPaneSelection({_tag: "closed"});
+									if (current !== null) void closePane();
 								} else {
 									openSession(session);
 								}

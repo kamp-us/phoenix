@@ -112,6 +112,9 @@ class SyntheticPiProtocol {
 	readonly locked = new Set<string>();
 	readonly pendingPrompts = new Map<string, {id: string; sessionId: string; text: string}>();
 	readonly eventsOnAttach = new Map<string, ReadonlyArray<ServerEvent>>();
+	readonly pendingAttaches = new Map<string, {id: string; session: SessionSnapshot}>();
+	holdAttach = false;
+	failDetach = false;
 	#handlers: ByteTransportHandlers | undefined;
 	#closed = false;
 
@@ -136,6 +139,18 @@ class SyntheticPiProtocol {
 
 	emit(event: ServerEvent): void {
 		this.#deliver({type: "event", event});
+	}
+
+	acknowledgeAttach(sessionId: string): void {
+		const pending = this.pendingAttaches.get(sessionId);
+		if (pending === undefined) throw new Error(`No pending attach ${sessionId}`);
+		this.pendingAttaches.delete(sessionId);
+		this.#deliver({
+			type: "response",
+			id: pending.id,
+			ok: true,
+			result: {command: "attach", session: pending.session},
+		});
 	}
 
 	acknowledgePrompt(correlation: string, next: SessionSnapshot): void {
@@ -233,6 +248,8 @@ class SyntheticPiProtocol {
 					ok: false,
 					error: {code: "not_found", message: "missing session"},
 				});
+			} else if (this.holdAttach) {
+				this.pendingAttaches.set(command.sessionId, {id: message.id, session});
 			} else {
 				this.#deliver({
 					type: "response",
@@ -246,12 +263,21 @@ class SyntheticPiProtocol {
 		}
 		if (command.command === "detach") {
 			this.detached.push(command.sessionId);
-			this.#deliver({
-				type: "response",
-				id: message.id,
-				ok: true,
-				result: {command: "detach", sessionId: command.sessionId},
-			});
+			this.#deliver(
+				this.failDetach
+					? {
+							type: "response",
+							id: message.id,
+							ok: false,
+							error: {code: "internal_error", message: "detach fixture failed"},
+						}
+					: {
+							type: "response",
+							id: message.id,
+							ok: true,
+							result: {command: "detach", sessionId: command.sessionId},
+						},
+			);
 			return;
 		}
 		if (command.command === "create") {
@@ -379,6 +405,30 @@ describe("PiLiveSession", () => {
 				yield* service.release();
 				assert.deepEqual(protocol.detached, [initial.id]);
 			}),
+	);
+
+	it.effect("surfaces detach failure while preserving selected ownership truth", () =>
+		Effect.gen(function* () {
+			const initial = snapshot("release-failure", 1);
+			const protocol = new SyntheticPiProtocol(initial);
+			const service = yield* connect(protocol);
+			yield* service.attach(initial.id);
+			protocol.failDetach = true;
+			const failed = yield* service.release();
+			assert.deepInclude(failed, {
+				_tag: "failed",
+				sessionId: initial.id,
+				code: "protocol",
+			});
+			assert.deepInclude(yield* service.current(), {
+				sessionId: initial.id,
+				ownership: "exclusive",
+			});
+			protocol.failDetach = false;
+			assert.deepEqual(yield* service.release(), {_tag: "released", sessionId: initial.id});
+			assert.deepEqual(protocol.detached, [initial.id, initial.id]);
+			assert.strictEqual(yield* service.current(), null);
+		}),
 	);
 
 	it.effect("keeps release invisible and attached when its checkpoint is refused", () =>
@@ -601,6 +651,56 @@ describe("PiLiveSession", () => {
 				correlationId: "prompt-2",
 				code: "lease-refused",
 			});
+		}),
+	);
+
+	it.effect("bounds attach acknowledgement without committing a lease", () =>
+		Effect.gen(function* () {
+			const initial = snapshot("attach-timeout", 1);
+			const protocol = new SyntheticPiProtocol(initial);
+			protocol.holdAttach = true;
+			let expire = () => {};
+			const service = yield* connect(protocol, {
+				acknowledgementTimeoutMs: 25,
+				makeAcknowledgementDeadline: () => ({
+					elapsed: new Promise<void>((resolve) => {
+						expire = resolve;
+					}),
+					cancel: () => {},
+				}),
+			});
+			const timedOut = yield* service.attach(initial.id).pipe(Effect.forkChild);
+			for (
+				let attempt = 0;
+				attempt < 100 && !protocol.pendingAttaches.has(initial.id);
+				attempt += 1
+			) {
+				yield* Effect.yieldNow;
+			}
+			assert.isTrue(protocol.pendingAttaches.has(initial.id));
+			expire();
+			assert.deepInclude(yield* Fiber.join(timedOut), {_tag: "refused", code: "timeout"});
+			assert.strictEqual(yield* service.current(), null);
+		}),
+	);
+
+	it.effect("cancels attach with the interrupted Fate request", () =>
+		Effect.gen(function* () {
+			const initial = snapshot("attach-interruption", 1);
+			const protocol = new SyntheticPiProtocol(initial);
+			protocol.holdAttach = true;
+			const service = yield* connect(protocol, {acknowledgementTimeoutMs: 60_000});
+			const interrupted = yield* service.attach(initial.id).pipe(Effect.forkChild);
+			for (
+				let attempt = 0;
+				attempt < 100 && !protocol.pendingAttaches.has(initial.id);
+				attempt += 1
+			) {
+				yield* Effect.yieldNow;
+			}
+			assert.isTrue(protocol.pendingAttaches.has(initial.id));
+			yield* Fiber.interrupt(interrupted);
+			assert.strictEqual(yield* service.current(), null);
 		}),
 	);
 

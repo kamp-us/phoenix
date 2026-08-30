@@ -80,7 +80,7 @@ const BUILT_IN_KEYS: Readonly<Record<ContributionKind, ReadonlySet<string>>> = {
 
 const publicName = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 const publicKey = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
-const assetPath = /^\/api\/contribution-assets\/v1-\d+\.js$/;
+const assetPath = /^\/api\/contribution-assets\/v1-[a-f0-9]{64}\.js$/;
 const isContributionKind = (value: unknown): value is ContributionKind =>
 	value === "node" || value === "edge" || value === "panel";
 

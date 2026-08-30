@@ -11,6 +11,7 @@ import {makeExtensionUI, PackageExtensionUI} from "../src/backend/extension-ui.j
 import {
 	buildPackageBackendLayers,
 	ContributionStartupFailure,
+	contributionAssetUrl,
 	emitContributionCatalog,
 	loadPackageContributions,
 	PublicPackageIdentity,
@@ -139,7 +140,7 @@ describe("pi-native Tuval package contributions", () => {
 				],
 			);
 			const asset = emitted.frontend[0]?.asset ?? "";
-			assert.match(asset, /^\/api\/contribution-assets\/v1-\d+\.js$/);
+			assert.match(asset, /^\/api\/contribution-assets\/v1-[a-f0-9]{64}\.js$/);
 			assert.isFalse(JSON.stringify(emitted).includes(fixtures));
 			assert.include(
 				new TextDecoder().decode(catalog.assetFiles.get(asset)),
@@ -149,6 +150,15 @@ describe("pi-native Tuval package contributions", () => {
 			assert.strictEqual(reloaded.frontend[0]?.asset, asset);
 		}),
 	);
+
+	it("content-versions contribution module URLs", () => {
+		const first = contributionAssetUrl(new TextEncoder().encode("export default 1"));
+		const same = contributionAssetUrl(new TextEncoder().encode("export default 1"));
+		const changed = contributionAssetUrl(new TextEncoder().encode("export default 2"));
+		assert.strictEqual(first, same);
+		assert.notStrictEqual(first, changed);
+		assert.match(first, /^\/api\/contribution-assets\/v1-[a-f0-9]{64}\.js$/);
+	});
 
 	it.effect("binds the resolved package name into each server-loaded backend Layer", () =>
 		Effect.gen(function* () {

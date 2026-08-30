@@ -155,6 +155,7 @@ export interface ExtensionUIBrowserClient {
 	readonly subscribe: (handlers: {
 		readonly open: () => void;
 		readonly snapshot: (snapshots: ReadonlyArray<ExtensionUISnapshot>) => void;
+		readonly snapshotFailure: (reason: string) => void;
 		readonly event: (event: ExtensionUIEvent) => void;
 		readonly disconnect: () => void;
 		readonly malformed: () => void;
@@ -193,20 +194,30 @@ export const extensionUIBrowserClient: ExtensionUIBrowserClient = {
 			awaitingSnapshot = true;
 			queuedEvents = [];
 			handlers.open();
-			void readCurrentSnapshots()
-				.then((snapshots) => {
-					if (!active || currentGeneration !== generation) return;
-					handlers.snapshot(snapshots);
-					awaitingSnapshot = false;
-					for (const event of queuedEvents) handlers.event(event);
-					queuedEvents = [];
-				})
-				.catch(() => {
-					if (!active || currentGeneration !== generation) return;
-					awaitingSnapshot = false;
-					for (const event of queuedEvents) handlers.event(event);
-					queuedEvents = [];
-				});
+			const restore = (attempt: number): void => {
+				void readCurrentSnapshots()
+					.then((snapshots) => {
+						if (!active || currentGeneration !== generation) return;
+						handlers.snapshot(snapshots);
+						awaitingSnapshot = false;
+						for (const event of queuedEvents) handlers.event(event);
+						queuedEvents = [];
+					})
+					.catch((error) => {
+						if (!active || currentGeneration !== generation) return;
+						if (attempt < 3) {
+							setTimeout(() => restore(attempt + 1), [250, 500][attempt - 1] ?? 500);
+							return;
+						}
+						queuedEvents = [];
+						handlers.snapshotFailure(
+							error instanceof Error
+								? error.message
+								: "Extension UI yetkili görünümü geri yüklenemedi",
+						);
+					});
+			};
+			restore(1);
 		};
 		source.onerror = () => {
 			generation += 1;
@@ -225,8 +236,10 @@ export const extensionUIBrowserClient: ExtensionUIBrowserClient = {
 			}
 			const event = decodeExtensionUIEvent(raw);
 			if (event === undefined) handlers.malformed();
-			else if (awaitingSnapshot) queuedEvents.push(event);
-			else handlers.event(event);
+			else if (awaitingSnapshot) {
+				queuedEvents.push(event);
+				if (queuedEvents.length > 500) queuedEvents.shift();
+			} else handlers.event(event);
 		};
 		return () => {
 			active = false;

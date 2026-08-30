@@ -1,6 +1,6 @@
 import {Composer, useComposerEditor} from "@kampus/composer";
 import type {FormEvent, KeyboardEvent as ReactKeyboardEvent} from "react";
-import {useEffect, useMemo, useRef, useState} from "react";
+import {useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card, Surface} from "../../../../apps/web/src/components/ui/Card.js";
 import type {
@@ -46,7 +46,7 @@ interface WidgetView {
 }
 
 interface BridgeState {
-	readonly connection: "connecting" | "connected" | "disconnected" | "malformed";
+	readonly connection: "connecting" | "connected" | "disconnected" | "malformed" | "stale";
 	readonly dialogs: ReadonlyArray<PendingDialog>;
 	readonly notices: ReadonlyArray<Notice>;
 	readonly statuses: ReadonlyMap<string, StatusView>;
@@ -221,7 +221,6 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 	const editor = useComposerEditor();
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const restoreFocus = useRef<HTMLElement | null>(null);
-	const editorWasEdited = useRef(false);
 	const settleRef = useRef(settle);
 	settleRef.current = settle;
 
@@ -237,7 +236,7 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 		return () => restoreFocus.current?.focus();
 	}, []);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const cancelOnEscape = (event: KeyboardEvent): void => {
 			if (event.key !== "Escape") return;
 			event.preventDefault();
@@ -251,15 +250,10 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 	useEffect(() => {
 		if (dialog.request.method !== "editor" || editor === null) return;
 		editor.setContent(dialog.request.prefill ?? "");
-		editorWasEdited.current = false;
 		setValue(editor.getMarkdown());
 		setEditorReady(true);
 		const sync = () => setValue(editor.getMarkdown());
-		const markEdited = () => {
-			editorWasEdited.current = true;
-		};
 		editor.editor.on("update", sync);
-		editor.editor.view.dom.addEventListener("input", markEdited);
 		editor.editor.setOptions({
 			editorProps: {
 				attributes: {role: "textbox", "aria-label": dialog.request.title, "aria-multiline": "true"},
@@ -267,7 +261,6 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 		});
 		return () => {
 			editor.editor.off("update", sync);
-			editor.editor.view.dom.removeEventListener("input", markEdited);
 		};
 	}, [dialog.request, editor]);
 
@@ -286,7 +279,7 @@ const DialogForm = ({dialog, settle}: DialogProps) => {
 		} else {
 			const submittedValue =
 				dialog.request.method === "editor" && editor !== null
-					? editorWasEdited.current && editor.editor.view.dom.textContent === ""
+					? editor.editor.view.dom.textContent === ""
 						? ""
 						: editor.getMarkdown()
 					: value;
@@ -447,12 +440,27 @@ export function ExtensionUIBridge({
 				open: () =>
 					setState((current) => ({
 						...current,
+						connection: "connecting",
+						dialogs: [],
+					})),
+				snapshot: (snapshots) =>
+					setState((current) => ({
+						...applyAuthoritativeSnapshots(current, snapshots),
 						connection: "connected",
 						dialogs: [],
 						notices: [],
 					})),
-				snapshot: (snapshots) =>
-					setState((current) => applyAuthoritativeSnapshots(current, snapshots)),
+				snapshotFailure: (reason) =>
+					setState((current) =>
+						appendNotice(
+							{...current, connection: "stale", dialogs: []},
+							{
+								key: "snapshot:failed",
+								tone: "error",
+								text: `Yetkili Extension UI görünümü geri yüklenemedi; gösterilen durum eski. ${reason}`,
+							},
+						),
+					),
 				event: (event) => setState((current) => reduceExtensionUIEvent(current, event)),
 				disconnect: () =>
 					setState((current) =>
@@ -542,7 +550,15 @@ export function ExtensionUIBridge({
 				Extension UI · {state.connection}
 			</div>
 			{statuses.length === 0 && widgets.length === 0 ? null : (
-				<Card as="section" className="extension-ui__current" aria-label="Güncel paket durumu">
+				<Card
+					as="section"
+					className="extension-ui__current"
+					aria-label={
+						state.connection === "connected"
+							? "Güncel paket durumu"
+							: "Son doğrulanmış paket durumu"
+					}
+				>
 					{aboveWidgets.length === 0 ? null : (
 						<section
 							className="extension-ui__widget-zone"

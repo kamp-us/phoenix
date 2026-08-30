@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import {constants as fsConstants} from "node:fs";
 import {open} from "node:fs/promises";
 import {pathToFileURL} from "node:url";
@@ -214,7 +215,8 @@ const manifestFrontend = (manifest: TuvalManifest) => [
 	...(manifest.frontend?.panels ?? []).map((entry) => ({kind: "panel" as const, entry})),
 ];
 
-const contributionAssetUrl = (index: number) => `/api/contribution-assets/v1-${index}.js`;
+export const contributionAssetUrl = (bytes: Uint8Array) =>
+	`/api/contribution-assets/v1-${createHash("sha256").update(bytes).digest("hex")}.js`;
 
 const fallbackPackageIdentity = (metadata: PathMetadata, index: number) =>
 	Schema.decodeSync(PublicPackageIdentity)(`unidentified-${metadata.scope}-package-${index + 1}`);
@@ -361,7 +363,7 @@ export const loadPackageContributions = Effect.fn("TuvalPackages.load")(function
 				invalid = {reason: "asset-unavailable", ...context};
 				break;
 			}
-			const assetUrl = contributionAssetUrl(frontend.length + packageFrontend.length);
+			const assetUrl = contributionAssetUrl(authorizedBytes.value);
 			packageKeys.add(key);
 			packageAssetFiles.set(assetUrl, authorizedBytes.value);
 			packageFrontend.push({kind, key: entry.key, asset: assetUrl, packageName, source});

@@ -19,19 +19,26 @@ name nine methods:
 | `setTitle` | fire-and-forget | unavailable | never |
 | `set_editor_text` | fire-and-forget | deferred to the rendered bridge | never |
 
-The installed `dist/modes/rpc/rpc-mode.js.map` source for `createExtensionUIContext()` is the
-behavioral pin: pi allocates request ids, keeps pending dialog resolvers, removes them on response,
-timeout, or abort, maps cancellation to `undefined`/`false`, accepts only string-array widgets, and
-emits title/editor-text frames without waiting. Tuval's table in
-[`shared/extension-ui.ts`](../packages/tuval/src/shared/extension-ui.ts) is keyed by the exported
-method union with `satisfies Record<...>`, so a pin bump that adds a method fails compilation until
-its outcome is chosen.
+The pinned source defines the closed
+[`RpcExtensionUIRequest` union](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/modes/rpc/rpc-types.ts#L233-L283).
+For `select`, `confirm`, and `input`, pi owns the pending resolver, timeout, `AbortSignal`, cleanup,
+and cancellation defaults
+([source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L79-L150)).
+`editor` is response-only and has no timeout or signal option
+([source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L254-L270));
+response settlement is centralized in the same runtime
+([source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L764-L776)).
+Tuval's table in [`shared/extension-ui.ts`](../packages/tuval/src/shared/extension-ui.ts) is keyed by
+the exported method union with `satisfies Record<...>`, so a pin bump that adds a method fails
+compilation until its outcome is chosen.
 
 ## Scope binding
 
 Pi 0.84.3's frame has no extension or package field. Its RPC runner constructs one UI context and
-hands that shared context to the session extension runner. A request id, status/widget key, or
-absolute extension path is therefore not portable package identity.
+binds that shared context to the session extension runner
+([source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/modes/rpc/rpc-mode.ts#L313-L325)).
+A request id, status/widget key, or absolute extension path is therefore not portable package
+identity.
 
 Bind package identity out of band from pi's resolved package contribution metadata. When Tuval
 builds a backend contribution Layer, it provides `PackageExtensionUI` using that catalog entry's
@@ -54,12 +61,20 @@ current state. Unload settles pending dialogs and removes that scope's current s
 markers.
 
 Process restoration persists that current projection by package name plus session id, never by an
-extension path. The binding is portable because pi's installed 0.84.3 source makes the boundary
-explicit: `pi-client/README.md` says the application supplies a fresh transport and calls
-`reconnect()` itself; `pi-client/dist/client.js` invalidates leases on disconnect; and
-`pi-coding-agent/docs/extensions.md` distinguishes durable custom entries from imperative UI
-surfaces. Tuval therefore reacquires selected-session intent, binds one fresh lease subscription,
-and restores package-scoped current status/widgets. It does not persist or replay transport leases,
+extension path. Pi makes the lifecycle boundaries inspectable: applications supply a fresh transport
+and reconnect explicitly
+([README](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/client/README.md#L26-L32),
+[implementation](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/client/src/client.ts#L107-L119));
+lease release preserves retry ownership until acknowledgement
+([source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/client/src/client.ts#L209-L291));
+and disconnect invalidates leases
+([source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/client/src/client.ts#L321-L327)).
+Pi separately exposes durable custom entries
+([source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/docs/extensions.md#L1453-L1469))
+while imperative dialog/status APIs remain runtime surfaces with their own timeout and signal contract
+([source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/docs/extensions.md#L2534-L2571)).
+Tuval's policy is therefore to reacquire selected-session intent, bind one fresh lease subscription,
+and restore package-scoped current status/widgets. It does not persist or replay transport leases,
 prompts, controls, notifications, dialog requests/responses, or machine-local package paths.
 
 The implementation is [`backend/extension-ui.ts`](../packages/tuval/src/backend/extension-ui.ts)

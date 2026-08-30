@@ -50,7 +50,8 @@ export type NodeAttachmentConnection =
 	| "stopped"
 	| "refused"
 	| "disconnected"
-	| "malformed";
+	| "malformed"
+	| "release-failed";
 
 export interface NodeAttachment {
 	readonly connection: NodeAttachmentConnection;
@@ -122,6 +123,7 @@ export const nodeStatus = (node: LineageNode, attachment: NodeAttachment | null)
 		liveSession !== undefined &&
 		(attachment?.connection === "disconnected" ||
 			attachment?.connection === "stopped" ||
+			attachment?.connection === "release-failed" ||
 			liveSession._tag === "disconnected" ||
 			liveSession.completion === "disconnected")
 	) {

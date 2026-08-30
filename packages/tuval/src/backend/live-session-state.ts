@@ -2,6 +2,7 @@ import {
 	type ByteTransportFactory,
 	PiClient,
 	PiDisconnectedError,
+	PiRequestCancelledError,
 	PiServerError,
 	PiSessionDetachedError,
 	type PiSessionHandle,
@@ -120,6 +121,7 @@ export interface LiveSessionState {
 	readonly attach: (
 		sessionId: string,
 		checkpoint?: LiveSelectionCheckpoint,
+		signal?: AbortSignal,
 	) => Promise<AttachLiveSessionOutcome>;
 	readonly prompt: (
 		request: PromptLiveSessionRequest,
@@ -274,9 +276,12 @@ const immediateCheckpoint: LiveSelectionCheckpoint = async (_candidateSessionId,
 	return true;
 };
 
+class AttachmentTimedOut extends Error {}
+
 const refusalCode = (
 	error: unknown,
-): "lease-refused" | "disconnected" | "not-found" | "persistence" | "protocol" => {
+): "lease-refused" | "disconnected" | "not-found" | "persistence" | "timeout" | "protocol" => {
+	if (error instanceof AttachmentTimedOut) return "timeout";
 	if (error instanceof SelectionCheckpointRefused) return "persistence";
 	if (error instanceof PiDisconnectedError) return "disconnected";
 	if (error instanceof PiSessionOwnershipError || error instanceof PiSessionDetachedError) {
@@ -414,7 +419,8 @@ export class PiLiveSessionState implements LiveSessionState {
 	attach = (
 		sessionId: string,
 		checkpoint: LiveSelectionCheckpoint = immediateCheckpoint,
-	): Promise<AttachLiveSessionOutcome> => this.#attach(sessionId, checkpoint);
+		signal?: AbortSignal,
+	): Promise<AttachLiveSessionOutcome> => this.#attach(sessionId, checkpoint, signal);
 
 	prompt = (
 		request: PromptLiveSessionRequest,
@@ -502,16 +508,12 @@ export class PiLiveSessionState implements LiveSessionState {
 			const attachment = this.#attachment;
 			const sessionId = attachment?.snapshot.id ?? null;
 			if (attachment === undefined) return {_tag: "released", sessionId};
+			let checkpointApproved = false;
 			const committed = await checkpoint(null, () => {
-				this.#clearPrompts();
+				checkpointApproved = true;
 				if (this.#attachment === attachment) this.#attachment = undefined;
-				this.#publish({
-					_tag: "released",
-					sequence: this.#nextSequence(),
-					sessionId: attachment.snapshot.id,
-				});
 			});
-			if (!committed) {
+			if (!committed || !checkpointApproved) {
 				return {
 					_tag: "failed",
 					sessionId,
@@ -519,7 +521,24 @@ export class PiLiveSessionState implements LiveSessionState {
 					reason: "Release was not committed because its durable checkpoint was refused",
 				};
 			}
-			await this.#releaseLease(attachment);
+			try {
+				await this.#releaseLease(attachment, false);
+			} catch (error) {
+				if (this.#attachment === undefined) this.#attachment = attachment;
+				await checkpoint(sessionId, () => undefined).catch(() => false);
+				return {
+					_tag: "failed",
+					sessionId,
+					code: "protocol",
+					reason: `Pi ownership release failed: ${messageOf(error)}`,
+				};
+			}
+			this.#clearPrompts();
+			this.#publish({
+				_tag: "released",
+				sequence: this.#nextSequence(),
+				sessionId: attachment.snapshot.id,
+			});
 			return {_tag: "released", sessionId};
 		});
 
@@ -545,6 +564,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	async #attach(
 		sessionId: string,
 		checkpoint: LiveSelectionCheckpoint,
+		signal?: AbortSignal,
 	): Promise<AttachLiveSessionOutcome> {
 		return this.#serialize(async () => {
 			if (this.#disposed) {
@@ -562,8 +582,28 @@ export class PiLiveSessionState implements LiveSessionState {
 			const pending: PendingAttachment = {sessionId, eventsAfterSnapshot: []};
 			this.#pendingAttachment = pending;
 			let lease: PiSessionHandle;
+			const cancellation = new AbortController();
+			const cancelFromCaller = () => cancellation.abort();
+			signal?.addEventListener("abort", cancelFromCaller, {once: true});
+			if (signal?.aborted) cancellation.abort();
+			const deadline = this.#makeAcknowledgementDeadline(this.#acknowledgementTimeoutMs);
+			let timedOut = false;
 			try {
-				lease = await this.#client.acquireSession(sessionId, {mode: "exclusive"});
+				const acquisition = this.#client
+					.acquireSession(sessionId, {mode: "exclusive", signal: cancellation.signal})
+					.then(async (candidate) => {
+						if (!timedOut && !cancellation.signal.aborted) return candidate;
+						await candidate.dispose().catch(() => undefined);
+						throw new PiRequestCancelledError();
+					});
+				const timeout = deadline.elapsed.then(() => {
+					timedOut = true;
+					cancellation.abort();
+					throw new AttachmentTimedOut(
+						`Pi attach acknowledgement exceeded ${this.#acknowledgementTimeoutMs}ms`,
+					);
+				});
+				lease = await Promise.race([acquisition, timeout]);
 			} catch (error) {
 				if (this.#pendingAttachment === pending) this.#pendingAttachment = undefined;
 				return {
@@ -572,6 +612,9 @@ export class PiLiveSessionState implements LiveSessionState {
 					code: refusalCode(error),
 					reason: messageOf(error),
 				};
+			} finally {
+				deadline.cancel();
+				signal?.removeEventListener("abort", cancelFromCaller);
 			}
 			const snapshot = lease.snapshot;
 			if (snapshot === undefined) {
@@ -1338,15 +1381,12 @@ export class PiLiveSessionState implements LiveSessionState {
 		}
 	}
 
-	async #releaseLease(attachment: Attachment): Promise<void> {
+	async #releaseLease(attachment: Attachment, relinquishOnFailure = true): Promise<void> {
 		if (attachment.leaseReleased) return;
+		if (relinquishOnFailure) await attachment.lease.dispose();
+		else await attachment.lease.detach();
 		attachment.leaseReleased = true;
 		for (const unsubscribe of attachment.unsubscribes) unsubscribe();
-		await attachment.lease.dispose().catch(() => {
-			if (attachment.disconnectedReason === undefined) {
-				this.#publishDiagnostic("PiClient lease cleanup failed", attachment.snapshot.id);
-			}
-		});
 	}
 
 	async #releaseAttachment(): Promise<void> {

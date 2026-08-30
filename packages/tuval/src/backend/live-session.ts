@@ -108,7 +108,7 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 	),
 	restoreSelectionIntent: Effect.fn("LiveSession.restoreSelectionIntent")((sessionId) =>
 		Effect.tryPromise({
-			try: () => state.attach(sessionId),
+			try: (signal) => state.attach(sessionId, undefined, signal),
 			catch: (cause) => new LiveSessionAdapterError({cause}),
 		}).pipe(
 			Effect.catch(() =>
@@ -123,7 +123,7 @@ const fromState = (state: LiveSessionState): LiveSessionService => ({
 	),
 	attach: Effect.fn("LiveSession.attach")((sessionId, checkpoint) =>
 		Effect.tryPromise({
-			try: () => state.attach(sessionId, checkpoint),
+			try: (signal) => state.attach(sessionId, checkpoint, signal),
 			catch: (cause) => new LiveSessionAdapterError({cause}),
 		}).pipe(
 			Effect.catch(() =>

@@ -131,6 +131,7 @@ export const AttachLiveSessionOutcome = Schema.Union([
 			"disconnected",
 			"not-found",
 			"persistence",
+			"timeout",
 			"protocol",
 		]),
 		reason: Schema.String,

@@ -18,17 +18,20 @@ The process prints its selected URL after the server is ready and opens it in th
 
 ## Launch with live pi sessions
 
-1. Start pi's experimental server on a Unix socket:
+The default command runs Tuval's in-process production coding-agent protocol service. It reads pi's
+ordinary settings, packages, credentials, and session files from `PI_CODING_AGENT_DIR` (or the
+standard pi agent directory when the variable is absent):
 
-   ```bash
-   pi --experimental server --listen unix:///tmp/pi.sock
-   ```
+```bash
+node packages/tuval/dist/backend/bin.js
+```
 
-2. Launch Tuval against that socket:
+To use a separately managed Pi protocol service instead, pass its explicit Unix socket. The override
+stays local to the filesystem; it never opens a network listener:
 
-   ```bash
-   node packages/tuval/dist/backend/bin.js --pi-socket /tmp/pi.sock
-   ```
+```bash
+node packages/tuval/dist/backend/bin.js --pi-socket /tmp/pi.sock
+```
 
 ## Launch headless on a fixed port
 
@@ -48,5 +51,6 @@ The process prints its selected URL after the server is ready and opens it in th
 
 ```bash
 pnpm --filter tuval typecheck
-pnpm --filter tuval test
+pnpm --filter tuval test:unit
+pnpm --filter tuval test:browser
 ```

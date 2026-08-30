@@ -22,7 +22,8 @@ export type PaneConnection =
 	| "stopped"
 	| "refused"
 	| "disconnected"
-	| "malformed";
+	| "malformed"
+	| "release-failed";
 
 export interface SendResult {
 	readonly ok: boolean;
@@ -139,6 +140,13 @@ const connectionCopy = (
 			tone: "danger",
 			title: "Oturum açılamadı",
 			detail: message ?? "Bu oturum başka bir çalışma alanı tarafından kullanılıyor.",
+		};
+	}
+	if (connection === "release-failed") {
+		return {
+			tone: "danger",
+			title: "Sahiplik bırakılamadı",
+			detail: message ?? "Seçim ve olası sahiplik korunuyor; kapatmayı yeniden dene.",
 		};
 	}
 	if (connection === "malformed") {
@@ -289,6 +297,7 @@ export function ChatPane({
 	): Promise<ControlLiveSessionOutcome | undefined> => {
 		if (pendingControl !== null || !attached) return undefined;
 		const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		const triggerLabel = trigger?.getAttribute("aria-label");
 		setPendingControl(action);
 		setControlStatus({danger: false, text: `${controlActionLabel[action]} onayı bekleniyor.`});
 		try {
@@ -312,7 +321,16 @@ export function ChatPane({
 			return undefined;
 		} finally {
 			setPendingControl(null);
-			requestAnimationFrame(() => requestAnimationFrame(() => trigger?.focus()));
+			requestAnimationFrame(() =>
+				requestAnimationFrame(() => {
+					if (trigger?.isConnected) trigger.focus();
+					else if (triggerLabel !== null && triggerLabel !== undefined) {
+						[...document.querySelectorAll<HTMLElement>("[aria-label]")]
+							.find((candidate) => candidate.getAttribute("aria-label") === triggerLabel)
+							?.focus();
+					}
+				}),
+			);
 		}
 	};
 

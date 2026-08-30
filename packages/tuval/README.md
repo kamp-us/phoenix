@@ -26,10 +26,12 @@ then opens that URL in the default browser unless browser opening is disabled.
 | `GET /fate/live?afterSequence=<n>` | Stream ordered live-session events over SSE |
 | `--port <port>` | Bind a fixed port instead of selecting an available port |
 | `--no-open` | Start without opening a browser |
-| `--pi-socket <path>` | Connect live sessions to a pi server Unix socket |
+| `--pi-socket <path>` | Override the built-in coding-agent service with a Pi protocol Unix socket |
 
-Live attachment requires a pi server Unix socket supplied through `--pi-socket`. Session discovery
-reads `PI_CODING_AGENT_SESSION_DIR` when set. Otherwise it reads the `sessions` directory beneath
+Live attachment uses Tuval's in-process production coding-agent protocol service by default. The
+explicit `--pi-socket` path selects a separately managed Unix-socket service instead; neither mode
+opens a non-loopback network listener. Session discovery reads `PI_CODING_AGENT_SESSION_DIR` when
+set. Otherwise it reads the `sessions` directory beneath
 `PI_CODING_AGENT_DIR`, falling back to `~/.pi/agent/sessions`. Lineage reads pi-subagents lifecycle
 artifacts from the sibling `async-subagent-runs` and `nested-subagent-runs` directories beneath
 `PI_SUBAGENTS_TEMP_ROOT` when set. Otherwise it uses pi-subagents' scoped temp root: uid first, then
@@ -63,8 +65,7 @@ A generic nested `run-0/session.jsonl` is admitted only when a complete lifecycl
 that exact path; an unmatched generic file is diagnosed instead of guessed. A sole step session may
 complete a top-level run identity; multiple steps without run ids remain unpaired.
 Completed workflow return values are opaque and never interpreted as lineage. Each malformed run
-entry is reported independently without discarding complete siblings in the same status. With
-`--pi-socket`, fork parents prefer the server's durable `SessionMetadata.parentSessionId`; when a
+entry is reported independently without discarding complete siblings in the same status. Fork parents prefer the selected protocol service's durable `SessionMetadata.parentSessionId`; when a
 successful metadata read has no parent, lineage reads only the child's bounded first header line.
 A failed metadata read remains a `protocol-unavailable` problem even when that fallback succeeds.
 An unresolved protocol or run parent is reported and does not become a spawn or continuity
@@ -158,9 +159,11 @@ manifest beside its ordinary `pi` manifest:
 }
 ```
 
-Backend exports are zero-argument factories returning Effect Layers. Tuval builds them during server
-startup and fails startup when layer construction fails. Public package identities accept npm-style
-unscoped names and `@scope/name` only; path, URL, dot-segment, control-character, and encoded-separator
+Backend exports are zero-argument factories returning Effect Layers. Tuval builds each package's
+backend Layers in an isolated child scope. A construction failure rolls back that package's backend
+and frontend registrations plus retained Extension UI projection; healthy packages remain active.
+Public package identities accept npm-style unscoped names and `@scope/name` only; path, URL,
+dot-segment, control-character, and encoded-separator
 forms are rejected, and nameless-package fallbacks pass through that same schema. Public diagnostics
 contain a closed reason code plus only validated package identities and contribution keys; manifest
 paths, module/export values, pi source metadata, and filesystem paths are never included.
@@ -182,6 +185,7 @@ built-in package capability through this same manifest.
 | --- | --- |
 | `pnpm --filter tuval build` | Build the executable and copy static files |
 | `pnpm --filter tuval typecheck` | Check TypeScript types |
-| `pnpm --filter tuval test` | Build and run Tuval unit tests (Vitest and local Playwright) |
+| `pnpm --filter tuval test` | Build and run browserless Tuval unit tests |
+| `pnpm --filter tuval test:browser` | Build and run local Playwright journeys |
 
 See [DEVELOPMENT.md](./DEVELOPMENT.md) for local workflows.

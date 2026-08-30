@@ -807,7 +807,7 @@ describe("Tuval local server", () => {
 				);
 
 				for (const refused of [
-					"/api/contribution-assets/v1-1.js",
+					"/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js",
 					"/api/contribution-assets/../package.json",
 					"/api/contribution-assets/%2e%2e%2fpackage.json",
 				]) {

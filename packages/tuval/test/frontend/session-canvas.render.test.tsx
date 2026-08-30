@@ -377,7 +377,8 @@ describe("SessionCanvas", () => {
 	});
 
 	it("renders a package-attributed custom React Flow node without replacing built-ins", async () => {
-		const asset = "/api/contribution-assets/v1-0.js";
+		const asset =
+			"/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js";
 		const registry = await ContributionRegistry.load(
 			{
 				contractVersion: 1,
@@ -425,9 +426,10 @@ describe("SessionCanvas", () => {
 
 	it("instantiates healthy package edges and panels without replacing domain graph identities", async () => {
 		const assets = {
-			node: "/api/contribution-assets/v1-0.js",
-			edge: "/api/contribution-assets/v1-1.js",
-			panel: "/api/contribution-assets/v1-2.js",
+			node: "/api/contribution-assets/v1-0000000000000000000000000000000000000000000000000000000000000000.js",
+			edge: "/api/contribution-assets/v1-1111111111111111111111111111111111111111111111111111111111111111.js",
+			panel:
+				"/api/contribution-assets/v1-2222222222222222222222222222222222222222222222222222222222222222.js",
 		};
 		const kinds: ReadonlyArray<ContributionKind> = ["node", "edge", "panel"];
 		const registry = await ContributionRegistry.load(

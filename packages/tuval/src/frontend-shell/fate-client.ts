@@ -15,6 +15,8 @@ import {
 	type LiveTranscriptEntry,
 	type ModelRef,
 	type PromptLiveSessionOutcome,
+	type ReleaseLiveSessionOutcome,
+	ReleaseLiveSessionOutcome as ReleaseLiveSessionOutcomeSchema,
 	type ThinkingLevel,
 	type TranscriptContent,
 } from "../shared/live-session.js";
@@ -150,7 +152,14 @@ export const decodeLiveSession = (value: unknown): LiveSessionView | undefined =
 	return undefined;
 };
 
-const attachCodes = new Set(["lease-refused", "disconnected", "not-found", "protocol"]);
+const attachCodes = new Set([
+	"lease-refused",
+	"disconnected",
+	"not-found",
+	"persistence",
+	"timeout",
+	"protocol",
+]);
 export const decodeAttachOutcome = (value: unknown): AttachLiveSessionOutcome | undefined => {
 	if (!isRecord(value)) return undefined;
 	if (value._tag === "attached") {
@@ -392,6 +401,27 @@ export const setThinkingLiveSession = (
 		sessionId,
 	);
 
-export const releaseLiveSession = async (): Promise<void> => {
-	await runFate({id: "release", kind: "mutation", name: "liveSession.release", input: {}});
+export const decodeReleaseOutcome = (value: unknown): ReleaseLiveSessionOutcome | undefined =>
+	Option.getOrUndefined(Schema.decodeUnknownOption(ReleaseLiveSessionOutcomeSchema)(value));
+
+export const bindReleaseOutcome = (
+	expectedSessionId: string,
+	outcome: ReleaseLiveSessionOutcome,
+): ReleaseLiveSessionOutcome =>
+	outcome.sessionId === expectedSessionId ||
+	(outcome._tag === "released" && outcome.sessionId === null)
+		? outcome
+		: {
+				_tag: "failed",
+				sessionId: expectedSessionId,
+				code: "protocol",
+				reason: "Bırakma yanıtı seçili oturumla eşleşmedi.",
+			};
+
+export const releaseLiveSession = async (sessionId: string): Promise<ReleaseLiveSessionOutcome> => {
+	const outcome = decodeReleaseOutcome(
+		await runFate({id: "release", kind: "mutation", name: "liveSession.release", input: {}}),
+	);
+	if (outcome === undefined) throw new Error("Bırakma yanıtı okunamadı");
+	return bindReleaseOutcome(sessionId, outcome);
 };

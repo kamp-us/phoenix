@@ -4,6 +4,7 @@ import {getAgentDir, SettingsManager} from "@earendil-works/pi-coding-agent";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect, Option, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
+import {makeCodingAgentPiTransport} from "./coding-agent-pi-service.js";
 import {makeFileWorkspaceStateStore, makePiOperationalWorkspaceSettings} from "./resilience.js";
 import {startTuval} from "./server.js";
 
@@ -23,7 +24,9 @@ const openFlag = Flag.boolean("open").pipe(
 
 const piSocketFlag = Flag.string("pi-socket").pipe(
 	Flag.optional,
-	Flag.withDescription("Unix socket exposed by `pi --experimental server --listen unix:///path`"),
+	Flag.withDescription(
+		"Use an external Pi protocol Unix socket instead of Tuval's built-in coding-agent service",
+	),
 );
 
 export const tuvalCommand = Command.make(
@@ -42,6 +45,15 @@ export const tuvalCommand = Command.make(
 				const workspaceStatePath = `${agentDir}/tuval/workspace-state.json`;
 				const workspaceStateStore = yield* makeFileWorkspaceStateStore(workspaceStatePath);
 				const settingsManager = SettingsManager.create(process.cwd(), agentDir);
+				const liveSessionTransport =
+					socketPath === undefined
+						? makeCodingAgentPiTransport({
+								agentDir,
+								cwd: process.cwd(),
+								sessionRoots: [sessionRoot],
+								settingsManager,
+							})
+						: createUnixTransportFactory({path: socketPath});
 				yield* startTuval({
 					workspaceStateStore,
 					operationalWorkspaceSettings: makePiOperationalWorkspaceSettings(settingsManager),
@@ -53,9 +65,7 @@ export const tuvalCommand = Command.make(
 					},
 					...(selectedPort === undefined ? {} : {port: selectedPort}),
 					...(open ? {} : {openBrowser: () => Effect.void}),
-					...(socketPath === undefined
-						? {}
-						: {liveSessionTransport: createUnixTransportFactory({path: socketPath})}),
+					liveSessionTransport,
 					log: (line) => console.log(line),
 				});
 				return yield* Effect.never;

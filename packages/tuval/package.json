@@ -44,8 +44,9 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json && node scripts/build-frontend.mjs",
 		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.frontend.json --noEmit && tsc -p tsconfig.browser.json",
-		"test": "pnpm run build && vitest run && pnpm run test:browser",
-		"test:browser": "playwright test --config playwright.config.ts"
+		"test": "pnpm run test:unit",
+		"test:unit": "pnpm run build && vitest run",
+		"test:browser": "pnpm run build && playwright test --config playwright.config.ts"
 	},
 	"dependencies": {
 		"@earendil-works/pi-client": "catalog:",
@@ -64,6 +65,7 @@
 		"react-dom": "catalog:"
 	},
 	"devDependencies": {
+		"@earendil-works/pi-ai": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@playwright/test": "catalog:",
