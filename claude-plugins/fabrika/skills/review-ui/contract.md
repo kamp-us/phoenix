@@ -196,8 +196,8 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   package (#5063) driving a headless browser at the **preview deployment's URL**. The browser
   dependency ships with the verb package (founder preference: default-available beats
   install-a-thing); a missing or broken provision at run time is `11` with the remediation in
-  the message. This path is the only source of evidence captures — its validation is what makes
-  a PNG a record.
+  the message. This is the ordinary preview evidence producer. The governed localhost exception
+  below is the other sanctioned capture producer.
 - **Interactive path (optional): the connected Chrome browser.** When the session's tool surface
   carries the `claude-in-chrome` tools, the *skill* may inspect the preview live. Detection is
   tool presence, decided by the model; no verb probes for Chrome, no env var, and no `review-ui`
@@ -268,14 +268,18 @@ artifact whose `expired` field is present, boolean, and false. GitHub's authorit
 types it as boolean, and defines it as whether the artifact has expired
 ([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
 [required list](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141602-L141612)).
-The consumer rejects unsafe or duplicate zip
-members; validates the positive manifest and every declared surface exactly once *before* any set
-comparison can collapse duplicates; rejects unreadable error coverage and bad dimensions or hashes;
-re-reads the live head; then materializes the captures and a consumer-authored receipt binding the
-manifest hash to the observed run, check, and artifact ids. The artifact allowlist excludes that
-receipt. There is no empty successful answer. An accepted artifact containing an uncaught page error
-is materialized with its receipt and exits `13` on stderr instead of printing the success object, so
-the caller can post the proven red render as FAIL.
+The consumer rejects unsafe or duplicate zip members. It validates the positive manifest and every
+declared surface exactly once *before* any set comparison can collapse duplicates. Unreadable error
+coverage, bad dimensions, and hash mismatches all refuse.
+
+After re-reading the live head, `fetch` copies the captures and the artifact's original manifest
+bytes into reviewer-owned scratch. It writes a receipt carrying the observed run, check, artifact,
+and manifest hash. The artifact allowlist excludes that receipt, but the receipt is not authority by
+itself: `post` re-downloads the selected artifact and byte-compares the members.
+
+There is no empty successful answer. An accepted artifact containing an uncaught page error is
+materialized with its receipt and exits `13` on stderr instead of printing the success object. The
+caller can therefore post the proven red render as FAIL.
 
 **Exit status**
 
@@ -299,16 +303,21 @@ the caller can post the proven red render as FAIL.
 | `review-ui fetch: --out "<value>" is not a kebab-case set name.` | `10` | refusal |
 | `review-ui fetch: "<id>" is not a governed localhost-only harness.` | `10` | refusal |
 | `review-ui fetch: PR #<n> not found...` / `is closed...` | `7` | refusal |
-| `review-ui fetch: cannot read the governed localhost declaration...` | `11` | refusal |
-| `review-ui fetch: the governed localhost declaration is malformed...` | `4` | refusal |
+| `review-ui fetch: cannot read PR #<n>: <reason>.` | `11` | refusal |
+| `review-ui fetch: cannot resolve the repository default branch (<reason>).` | `11` | refusal |
+| `review-ui fetch: cannot read the governed localhost declaration (<reason>).` | `11` | refusal |
+| `review-ui fetch: .github/review-ui-localhost-harnesses.json is absent on <branch>.` | `4` | refusal |
+| `review-ui fetch: the governed localhost declaration is malformed (<reason>).` | `4` | refusal |
 | `review-ui fetch: trusted CI evidence is unresolved (<reason>).` | `11` | refusal |
-| `review-ui fetch: the CI capture manifest is malformed...` | `4` | refusal |
+| `review-ui fetch: the CI capture manifest is malformed (<reason>).` | `4` | refusal |
+| `review-ui fetch: the artifact manifest does not bind the governed producer, declaration, repository, PR, and exact live head.` | `4` | refusal |
 | `review-ui fetch: the artifact contains a surface more than once.` | `4` | refusal |
-| `review-ui fetch: the artifact does not contain every declared ... exactly once.` | `4` | refusal |
-| `review-ui fetch: the accepted artifact records <n> uncaught page error(s); the materialized render is red and must be posted as FAIL.` | `13` | refusal |
+| `review-ui fetch: the artifact does not contain every declared <harness> surface/state exactly once.` | `4` | refusal |
+| `review-ui fetch: capture <surface> is unreadable (<reason>).` | `11` | refusal |
 | `review-ui fetch: capture <surface> fails its hash or dimensions.` | `15` | refusal |
-| `review-ui fetch: PR #<n> moved from <old> to <new>...` | `12` | refusal |
-| `review-ui fetch: cannot materialize reviewer-owned evidence scratch...` | `11` | refusal |
+| `review-ui fetch: PR #<n> moved from <old> to <new> before the evidence set was accepted.` | `12` | refusal |
+| `review-ui fetch: cannot materialize reviewer-owned evidence scratch (<reason>).` | `11` | refusal |
+| `review-ui fetch: the accepted artifact records <n> uncaught page error(s); the materialized render is red and must be posted as FAIL.` | `13` | refusal |
 
 **Scope** — one open PR, one default-branch declaration, one declared harness, one
 exact-head run/check/artifact tuple, and one output set. A missing or closed PR is `7`; no harnesses,
@@ -691,11 +700,11 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    The receipt's app, URL, and head must still match the live preview announcement before posting. A
    route-shaped local manifest without that producer provenance refuses on `4`. Any CI source must
    parse as the positive CI manifest and carry the consumer receipt whose repository, PR, live full
-   head, harness, run, check, artifact and manifest hash agree. Post then rereads the default-branch
-   declaration and independently re-resolves the exact successful workflow/run/check/artifact tuple
-   through GitHub; copied or edited receipt ids refuse before upload. Thus neither a route-shaped
-   arbitrary local manifest nor a preview-shaped manifest naming a governed localhost surface can
-   bypass provenance. A CI manifest carrying any uncaught
+   head, harness, run, check, artifact, and manifest hash agree. Post then rereads the default-branch
+   declaration and re-downloads the exact artifact selected by the successful live-head
+   workflow/run/check/artifact tuple. The local manifest and every capture must byte-match the
+   re-downloaded members. Copied public ids plus attacker-chosen local bytes therefore refuse before
+   upload. A CI manifest carrying any uncaught
    `pageerror` cannot be posted with PASS (`13`); the materialized set is FAIL ground. **Refuse on
    `12` when the set's recorded head is not `--sha`**:
    stale captures under a new head are re-rendered or re-fetched, never rebound.
@@ -730,14 +739,14 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing — an empty verdict body would read as ungated |
-| `4` | the `--evidence` set's manifest/receipt is absent, malformed, declaration-mismatched, or its receipt ids differ from the trusted GitHub tuple; or `design-harness.json` violates its schema |
+| `4` | the `--evidence` set's manifest/receipt is absent, malformed, declaration-mismatched, differs from the exact re-downloaded CI artifact, or its receipt ids differ from the trusted GitHub tuple; or `design-harness.json` violates its schema |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference — the body never arrived |
 | `7` | the PR is proven absent (404) or closed |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
 | `9` | the comment landed but the read-back does not yield this marker |
 | `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum |
-| `11` | a precondition read failed — the PR, live head, default-branch declaration, trusted GitHub workflow/check/artifact resolution, evidence files, or upload target; nothing was posted |
+| `11` | a precondition read failed — the PR, live head, default-branch declaration, trusted GitHub artifact re-download, evidence files, or upload target; nothing was posted |
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
 | `13` | proven: CI evidence records an uncaught page error and the caller requested PASS — the materialized set must post FAIL |
 | `15` | proven: a capture is invalid or fails its manifest SHA-256 or dimensions |
@@ -747,32 +756,50 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
+| `review-ui post: <n> is not a pull-request number.` | 1 | usage error |
 | `review-ui post: no body on stdin — an empty verdict reads as ungated; pipe the verdict body in.` | 3 | refusal |
 | `review-ui post: the body is a bare "@" path reference — the body never arrived. Send its bytes on stdin.` | 6 | refusal |
 | `review-ui post: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui post: PR #<n> is closed — a verdict on a closed PR gates nothing.` | 7 | refusal |
+| `review-ui post: cannot read the PR for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
 | `review-ui post: --polarity must be PASS or FAIL — got "<v>".` | 10 | refusal |
+| `review-ui post: --carrier must be marker or advisory — got "<v>".` | 10 | refusal |
 | `review-ui post: --carrier advisory is a PASS path only — post the FAIL marker instead.` | 10 | refusal |
-| `review-ui post: cannot read <what> for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
-| `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run the sanctioned producer (review-ui render or review-ui fetch).` | 4 | refusal |
+| `review-ui post: --sha "<value>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
+| `review-ui post: --clause is blank — a verdict with no clause says nothing to a human.` | 10 | refusal |
+| `review-ui post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
+| `review-ui post: evidence set "<set>" has no readable manifest.json (<reason>) — a set without its manifest is not a set; re-run the sanctioned producer (review-ui render or review-ui fetch).` | 4 | refusal |
+| `review-ui post: evidence set "<set>" has no readable manifest.json.` | 4 | refusal |
+| `review-ui post: preview evidence set "<set>" has no readable preview manifest.` | 4 | refusal |
 | `review-ui post: preview evidence set "<set>" has no review-ui render provenance receipt — route-shaped local captures are not evidence.` | 4 | refusal |
 | `review-ui post: preview evidence set "<set>" does not match its review-ui render provenance receipt.` | 4 | refusal |
-| `review-ui post: preview capture "<surface>" resolves outside its review-ui render set.` | 4 | refusal |
-| `review-ui post: preview evidence set "<set>" no longer matches the live preview announcement.` | 12 | refusal |
-| `review-ui post: CI evidence set "<set>" has no consumer-validated provenance receipt...` | 4 | refusal |
+| `review-ui post: CI evidence set "<set>" has no consumer-validated provenance receipt — a builder-authored manifest is not evidence.` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" does not match its consumer-validated provenance receipt.` | 4 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the default branch is unreadable (<reason>).` | 11 | refusal |
-| `review-ui post: cannot revalidate CI provenance because the governed declaration is <absent|unreadable|malformed>.` | 4/11 | refusal |
+| `review-ui post: cannot revalidate CI provenance because the governed declaration is absent.` | 4 | refusal |
+| `review-ui post: cannot revalidate CI provenance because the governed declaration is unreadable (<reason>).` | 11 | refusal |
+| `review-ui post: cannot revalidate CI provenance because the governed declaration is malformed (<reason>).` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" no longer matches the governed producer declaration.` | 4 | refusal |
-| `review-ui post: trusted CI provenance could not be revalidated (<reason>).` | 11 | refusal |
+| `review-ui post: trusted CI artifact could not be re-downloaded (<reason>).` | 11 | refusal |
 | `review-ui post: CI evidence set "<set>" receipt does not match the trusted run, check, and artifact identities.` | 4 | refusal |
-| `review-ui post: design-harness.json exists but does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
-| `review-ui post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
+| `review-ui post: CI evidence set "<set>" manifest does not byte-match the exact re-downloaded GitHub artifact.` | 4 | refusal |
+| `review-ui post: CI evidence set "<set>" capture "<surface>" does not byte-match the exact re-downloaded GitHub artifact.` | 4 | refusal |
 | `review-ui post: CI evidence records an uncaught page error — the materialized render is FAIL ground and cannot carry PASS.` | 13 | refusal |
 | `review-ui post: evidence set "<set>" was rendered at <set-head7>, you are posting at <sha7> — stale pixels; re-render at the live head.` | 12 | refusal |
+| `review-ui post: preview capture "<surface>" resolves outside its review-ui render set.` | 4 | refusal |
+| `review-ui post: cannot read capture "<surface>" in set "<set>" for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
+| `review-ui post: cannot read capture "<surface>" while byte-comparing the exact CI artifact for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
 | `review-ui post: capture "<id>" in set "<set>" is invalid or fails its manifest hash/dimensions (recorded <hash12>, read <hash12>).` | 15 | refusal |
+| `review-ui post: design-harness.json exists but does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
+| `review-ui post: cannot read design-harness.json for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
+| `review-ui post: design-harness.json declares the "<kind>" evidence store, and this delivery layer wires no store leg for it — the upload target's state is UNKNOWN; nothing was uploaded or posted.` | 11 | refusal |
 | `review-ui post: upload failed for <k> of <m> captures (<first surface>: <reason>) — refusing to post a verdict over a broken evidence channel (#3925).` | 17 | refusal |
+| `review-ui post: cannot re-read the PR for #<n>: <reason> — nothing was posted.` | 11 | refusal |
+| `review-ui post: the live head moved from <old> to <new> before posting — the tree you judged is gone.` | 12 | refusal |
 | `review-ui post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
+| `review-ui post: cannot read the authenticated user for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
+| `review-ui post: cannot read the comments for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
+| `review-ui post: preview evidence set "<set>" no longer matches the live preview announcement.` | 12 | refusal |
 | `review-ui post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review-ui post: posted, but the read-back does not yield this marker (<wire reason>) — inspect comment <id>.` | 9 | refusal |
 
@@ -1011,7 +1038,7 @@ EOF
 
 ## Completeness self-test
 
-Per the [interface convention](../../docs/cli-interface-convention.md) Part 2: every flag
+Per the [contract-spec format](../../docs/contract-spec-format.md#completeness-test): every flag
 carries a type and default; every stdout shape has a literal example; every non-zero code is
 enumerated with its trigger (per-verb tables own the group-local rows; the universal `0/1/126/127`
 live once in the shared matrix, which owns every code's single meaning); every error names

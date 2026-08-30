@@ -49,6 +49,8 @@ const MANIFEST_PATH = `${SET_DIR}/manifest.json`;
 const PREVIEW_RECEIPT_PATH = `${SET_DIR}/${PREVIEW_PROVENANCE_RECEIPT}`;
 const CI_CAPTURE_PATH = `${SET_DIR}/captures/desktop.png`;
 const CI_RECEIPT_PATH = `${SET_DIR}/${CI_PROVENANCE_RECEIPT}`;
+const REMOTE_CI_DIR = "/tmp/re-downloaded-ci-artifact";
+const REMOTE_CI_CAPTURE_PATH = `${REMOTE_CI_DIR}/captures/desktop.png`;
 const HARNESS = "/repo/design-harness.json";
 const HOSTED = "https://github.com/user-attachments/assets/9c41";
 const URL = "https://example.test/pull/4321#issuecomment-5154902211";
@@ -164,7 +166,7 @@ const fs = (shape: FsShape): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
 				return text === undefined ? notFound("readFileString", path) : Effect.succeed(text);
 			},
 			readFile: (path: string) => {
-				const bytes = shape.bytes?.[path];
+				const bytes = shape.bytes?.[path] ?? (path === REMOTE_CI_CAPTURE_PATH ? BYTES : undefined);
 				return bytes === undefined ? notFound("readFile", path) : Effect.succeed(bytes);
 			},
 			exists: (path: string) => Effect.succeed(shape.strings?.[path] !== undefined),
@@ -185,7 +187,11 @@ const world = (overrides: FsShape = {}): Layer.Layer<FileSystem.FileSystem | Pat
 			[provenance.keyPath]: provenance.key,
 			...overrides.strings,
 		},
-		bytes: {[CAPTURE_PATH]: BYTES, ...overrides.bytes},
+		bytes: {
+			[CAPTURE_PATH]: BYTES,
+			[REMOTE_CI_CAPTURE_PATH]: BYTES,
+			...overrides.bytes,
+		},
 	});
 };
 
@@ -255,11 +261,30 @@ const options = {
 	tmpRoot: "/tmp",
 	harnessPath: HARNESS,
 	upload: hostingLeg,
-	resolveCiIdentity: () =>
+	fetchCiBundle: () =>
 		Effect.succeed(
-			ok({runId: 42, checkId: 9, artifactId: 10, artifactName: "review-ui-localhost-tuval"}),
+			ok({
+				runId: 42,
+				checkId: 9,
+				artifactId: 10,
+				artifactName: "review-ui-localhost-tuval",
+				directory: REMOTE_CI_DIR,
+				manifestText: JSON.stringify(ciManifest()),
+			}),
 		),
 };
+
+const fetchedBundle = (manifestText: string) => () =>
+	Effect.succeed(
+		ok({
+			runId: 42,
+			checkId: 9,
+			artifactId: 10,
+			artifactName: "review-ui-localhost-tuval",
+			directory: REMOTE_CI_DIR,
+			manifestText,
+		}),
+	);
 
 /** The comment as the verb will have posted it, echoed back by the read-back read. */
 const posted = (body: string): HttpReply => ({status: 200, body: JSON.stringify({body})});
@@ -378,7 +403,7 @@ describe("runPost", () => {
 		expect(gate.stdout).toContain("ns\treview-ui\tpass\tmarker");
 	});
 
-	it("revalidates receipt check and artifact ids against trusted GitHub identity", async () => {
+	it("revalidates receipt check and artifact ids against the re-downloaded artifact", async () => {
 		const document = JSON.stringify(ciManifest());
 		for (const ids of [
 			{checkId: 90, artifactId: 10},
@@ -447,10 +472,54 @@ describe("runPost", () => {
 				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 				[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
 			],
-			{polarity: "PASS"},
+			{polarity: "PASS", fetchCiBundle: fetchedBundle(document)},
 			layer,
 		);
 		expect(outcome.code).toBe(RENDER_CRASHED);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("rejects a forged receipt with valid public identities and attacker-chosen captures", async () => {
+		const forgedBytes = Uint8Array.from([...BYTES, 0x41]);
+		const forgedManifest = ciManifest({
+			captures: [
+				{
+					...ciManifest().captures[0]!,
+					sha256: sha256Hex(forgedBytes),
+				},
+			],
+		});
+		const document = JSON.stringify(forgedManifest);
+		const layer = fs({
+			strings: {
+				[MANIFEST_PATH]: document,
+				[CI_RECEIPT_PATH]: JSON.stringify({
+					schemaVersion: 1,
+					repository: "o/r",
+					pr: 4321,
+					head: HEAD,
+					harness: "tuval",
+					runId: 42,
+					checkId: 9,
+					artifactId: 10,
+					manifestSha256: sha256Hex(new TextEncoder().encode(document)),
+				}),
+			},
+			bytes: {[CI_CAPTURE_PATH]: forgedBytes},
+		});
+		const {outcome, requests} = await run(
+			[
+				[once(PULL), pull()],
+				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
+			],
+			{},
+			layer,
+		);
+		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+		expect(outcome.stderr.join("\n")).toContain(
+			"does not byte-match the exact re-downloaded GitHub artifact",
+		);
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 

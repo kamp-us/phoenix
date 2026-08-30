@@ -70,24 +70,28 @@ Member names are checked for traversal
 and duplicates before extraction. Capture surfaces are checked for duplicates before any `Set`
 comparison, then matched exactly against the declaration.
 
-The consumer re-derives hashes and dimensions, rejects unreadable error coverage, re-reads the live
-head, copies the validated set into reviewer-owned scratch, and writes a receipt binding the manifest
-hash to the observed run, check, and artifact ids. The artifact cannot supply that receipt because
-its member allowlist excludes it. An accepted artifact containing an uncaught page error is still
-materialized, then `fetch` exits `13`: this is a proven red render that must be posted as FAIL, not an
-unresolved CANT-SEE.
+The consumer re-derives hashes and dimensions, rejects unreadable error coverage, and re-reads the
+live head. It preserves the artifact's manifest bytes when it copies the validated set into
+reviewer-owned scratch. Its receipt records the manifest hash and the observed run, check, and
+artifact ids; the artifact member allowlist excludes that receipt.
+
+An accepted artifact containing an uncaught page error is still materialized. `fetch` then exits
+`13`: this is a proven red render that must be posted as FAIL, not an unresolved CANT-SEE.
 
 `review-ui post` accepts route-shaped preview sets only with the separate `review-ui render`
-provenance receipt binding repository, PR, head, app, preview URL, and manifest hash. The receipt is
-HMAC-signed by a random capability key held outside the set in reviewer-owned scratch, so set-local
-JSON cannot nominate preview provenance. Every preview capture must remain inside that deterministic
-set directory, and the receipt must still match the
-live preview announcement before posting. Route shape alone does not select this arm. A CI source
-must carry the positive CI manifest and matching consumer receipt, so neither an arbitrary
-route-shaped manifest nor a preview-shaped local manifest can bypass provenance. The verb revalidates
-every capture and the live head, reads the governed declaration again, re-resolves
-the exact run/check/artifact ids through GitHub, verified-uploads the pixels, records the workflow,
-event, run, check and artifact provenance plus browser-error coverage, and refuses a PASS over any
-recorded uncaught page error before it emits the ordinary
-`review-ui` marker. `ship` has no alternate marker or
-bypass: missing or invalid CI evidence leaves the namespace empty.
+provenance receipt. That receipt binds repository, PR, head, app, preview URL, and manifest hash. A
+random capability key outside the evidence set signs it, so set-local JSON cannot nominate preview
+provenance. Every preview capture remains inside the deterministic set directory, and the receipt
+must still match the live preview announcement. Route shape alone does not select this arm.
+
+For CI evidence, the set-local receipt is only an index into GitHub identity. `post` reads the
+governed declaration, resolves the successful live-head run/check/artifact tuple, and re-downloads
+that exact artifact. The local manifest and every local capture must byte-match the re-downloaded
+members before upload. This rejects a forged receipt even when it copies valid public GitHub ids and
+hashes attacker-chosen local bytes.
+
+After provenance succeeds, `post` validates each capture and re-reads the live head. It refuses a
+PASS over a recorded uncaught page error, verified-uploads the pixels, and records the workflow,
+event, run, check, artifact, and browser-error coverage before emitting the ordinary `review-ui`
+marker. `ship` has no alternate marker or bypass: missing or invalid evidence leaves the namespace
+empty.

@@ -101,7 +101,7 @@ describe("runCiFetch", () => {
 		const artifact = join(root, "artifact");
 		await mkdir(join(artifact, "captures"), {recursive: true});
 		await writeFile(join(artifact, "captures/desktop.png"), PNG);
-		const manifest = ciManifest();
+		const manifest = `${ciManifest()}\n`;
 		const script: ReadonlyArray<Scripted> = [
 			[once(PULL), pull()],
 			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
@@ -143,6 +143,9 @@ describe("runCiFetch", () => {
 			),
 		);
 		expect(receipt).toMatchObject({runId: 42, checkId: 51, artifactId: 61, head: HEAD});
+		expect(
+			await readFile(join(root, "fabrika-review-ui/7190-03135b91/judged/manifest.json"), "utf8"),
+		).toBe(manifest);
 		await rm(root, {recursive: true, force: true});
 	});
 

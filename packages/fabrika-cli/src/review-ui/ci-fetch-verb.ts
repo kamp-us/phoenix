@@ -205,7 +205,7 @@ export const runCiFetch = (
 					await mkdir(dirname(to), {recursive: true});
 					await copyFile(join(bundle.value.directory, capture.path), to);
 				}
-				const manifestDocument = JSON.stringify(manifest);
+				const manifestDocument = bundle.value.manifestText;
 				await writeFile(manifestPath(staging), manifestDocument);
 				await writeFile(
 					join(staging, CI_PROVENANCE_RECEIPT),

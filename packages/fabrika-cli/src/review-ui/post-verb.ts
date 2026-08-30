@@ -2,9 +2,9 @@
  * `review-ui post` — the single sanctioned `review-ui` verdict emit.
  *
  * Eight steps, each gating the next: re-resolve the live head, read the evidence set through its
- * manifest, require a `render` receipt for preview evidence or re-resolve a CI receipt's
- * workflow/run/check/artifact tuple through GitHub, re-validate every capture, **verify-upload every
- * capture before anything posts**, compose through the wire
+ * manifest, require a `render` receipt for preview evidence or re-download the exact CI artifact
+ * selected by the governed workflow/run/check/artifact tuple, byte-compare every CI member,
+ * re-validate every capture, **verify-upload every capture before anything posts**, compose through the wire
  * format with complete provenance, leak-scan the assembled comment, upsert one
  * comment for this namespace under this carrier, and read it back from live PR state.
  *
@@ -40,7 +40,7 @@ import {
 	read as readMarker,
 	clause as toClause,
 } from "../wire/verdict-marker.ts";
-import {resolveCiIdentity} from "./ci-github.ts";
+import {fetchCiBundle} from "./ci-github.ts";
 import {
 	INVALID_CAPTURE,
 	MALFORMED_DOCUMENT,
@@ -136,11 +136,14 @@ export interface PostOptions {
 	 */
 	readonly harnessPath: string;
 	readonly upload: UploadLeg;
-	readonly resolveCiIdentity?: typeof resolveCiIdentity;
+	readonly fetchCiBundle?: typeof fetchCiBundle;
 }
 
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
 const prefixMatch = (a: string, b: string): boolean => a.startsWith(b) || b.startsWith(a);
+
+const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
+	a.byteLength === b.byteLength && a.every((value, index) => value === b[index]);
 
 const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
 	refuse(
@@ -469,28 +472,64 @@ export const runPost = (
 					`${VERB}: CI evidence set "${options.evidence}" no longer matches the governed producer declaration.`,
 				);
 			}
-			const identity = yield* (options.resolveCiIdentity ?? resolveCiIdentity)(
+			const bundle = yield* (options.fetchCiBundle ?? fetchCiBundle)(
 				repo,
 				pr,
 				live,
 				harness,
+				options.tmpRoot,
 			);
-			if (identity._tag === "Failure") {
+			if (bundle._tag === "Failure") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: trusted CI provenance could not be revalidated (${identity.reason}).`,
+					`${VERB}: trusted CI artifact could not be re-downloaded (${bundle.reason}).`,
 				);
 			}
 			if (
-				identity.value.runId !== receipt.runId ||
-				identity.value.checkId !== receipt.checkId ||
-				identity.value.artifactId !== receipt.artifactId ||
-				identity.value.artifactName !== harness.artifact
+				bundle.value.runId !== receipt.runId ||
+				bundle.value.checkId !== receipt.checkId ||
+				bundle.value.artifactId !== receipt.artifactId ||
+				bundle.value.artifactName !== harness.artifact
 			) {
 				return refuse(
 					MALFORMED_DOCUMENT,
 					`${VERB}: CI evidence set "${options.evidence}" receipt does not match the trusted run, check, and artifact identities.`,
 				);
+			}
+			if (
+				!sameBytes(
+					new TextEncoder().encode(bundle.value.manifestText),
+					new TextEncoder().encode(document.success),
+				)
+			) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: CI evidence set "${options.evidence}" manifest does not byte-match the exact re-downloaded GitHub artifact.`,
+				);
+			}
+			for (const capture of ciManifest.captures) {
+				const remote = yield* readCaptureBytes(`${bundle.value.directory}/${capture.path}`);
+				const local = yield* readCaptureBytes(`${setDir}/${capture.path}`);
+				if (remote._tag === "Unreadable") {
+					return unreadable(
+						`capture "${capture.surface}" while byte-comparing the exact CI artifact`,
+						pr,
+						remote.reason,
+					);
+				}
+				if (local._tag === "Unreadable") {
+					return unreadable(
+						`capture "${capture.surface}" while byte-comparing the exact CI artifact`,
+						pr,
+						local.reason,
+					);
+				}
+				if (!sameBytes(remote.value, local.value)) {
+					return refuse(
+						MALFORMED_DOCUMENT,
+						`${VERB}: CI evidence set "${options.evidence}" capture "${capture.surface}" does not byte-match the exact re-downloaded GitHub artifact.`,
+					);
+				}
 			}
 			trustedCiProvenance = receipt;
 		}
