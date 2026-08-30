@@ -31,11 +31,14 @@ const defined = <T>(value: T | undefined): T => {
 	return value;
 };
 
+/** One driven event: a bare name, or one carrying the waits its own line grants (ADR 0313). */
+type Step = string | {readonly event: string; readonly waitGrant: number};
+
 /** Drive one task's events through `applyEvent`, returning the leaf state each one folded to. */
 const leaves = (
 	lane: CompiledLane,
 	task: string,
-	events: ReadonlyArray<string>,
+	events: ReadonlyArray<Step>,
 	classes: ReadonlyArray<string> | null = null,
 ): ReadonlyArray<string> => {
 	const log: LogEntry[] = [];
@@ -44,7 +47,8 @@ const leaves = (
 		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
 		return fold.states;
 	};
-	return events.map((event, index) => {
+	return events.map((step, index) => {
+		const event = typeof step === "string" ? step : step.event;
 		// Only the first event carries the classes, so these tests also prove they stand afterwards.
 		const applied = applyEvent(
 			lane,
@@ -53,6 +57,7 @@ const leaves = (
 			event,
 			"2026-08-17T00:00:00.000Z",
 			index === 0 ? classes : null,
+			typeof step === "string" ? null : step.waitGrant,
 		);
 		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
 		log.push(applied.entry);
@@ -462,22 +467,31 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 		]);
 	});
 
-	// A spent wait carries no park cause — `report.ts` refuses one on any non-BLOCKED event — so
-	// landing it in `human:cp-approval` would key `parks.ts`'s `cause: null` §CP row and clear it by
-	// reading an approval nobody was waiting on. Its own leaf is what makes the sweep read it novel.
-	it("escalates to a park the recipe table reads as novel, never as the §CP row", () => {
+	// A spent wait carries no park cause — `report.ts` refuses one on any non-BLOCKED event — so it
+	// keys `parks.ts` on its leaf alone. Landing it in `human:cp-approval` would key the `cause: null`
+	// §CP row and clear it by reading an approval nobody was waiting on; its own leaf is what seats it
+	// on the queue-moved recipe instead (#6717).
+	it("escalates to a park the recipe table seats on its own row, never the §CP one", () => {
 		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
 		const leaf = defined(leaves(compiled(coderWorkflow()), "issue", stalled).at(-1));
+		const seated = classifyPark(leaf, null);
 
 		expect(isPark(leaf)).toBe(true);
-		expect(classifyPark(leaf, null)._tag).toBe("Novel");
-		expect(classifyPark("human:cp-approval", null)._tag).toBe("Known");
+		expect(seated).toMatchObject({_tag: "Known", recipe: {clearance: "queue-moved"}});
+		expect(classifyPark("human:cp-approval", null)).toMatchObject({
+			_tag: "Known",
+			recipe: {clearance: "cp-approval"},
+		});
 	});
 
-	it("lets a human clear the stall back into the wait cell", () => {
+	it("clears the stall back into the wait cell only on a resume that grants the waits", () => {
 		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
+		const lane = compiled(coderWorkflow());
 
-		expect(leaves(compiled(coderWorkflow()), "issue", [...stalled, "UNBLOCKED"]).at(-1)).toBe(
+		expect(() => leaves(lane, "issue", [...stalled, "UNBLOCKED"])).toThrow(
+			/the state comes back and the wait budget does not/,
+		);
+		expect(leaves(lane, "issue", [...stalled, {event: "UNBLOCKED", waitGrant: 1}]).at(-1)).toBe(
 			"ship:queued",
 		);
 	});

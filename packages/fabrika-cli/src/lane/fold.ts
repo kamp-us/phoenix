@@ -27,9 +27,11 @@ import {
  * `BLOCKED`, the closed-set cause of the park (#6480), and the lane classes the recorder observed
  * at that moment (ADR 0317). Those three refs are evidence carried verbatim.
  *
- * `round` and `classes` are not evidence — they are the two payloads the fold reads. A `CLEARED`
- * line without a `round` names no round to clear (ADR 0312), and `classes` is what a `class:<name>`
- * guard routes on (ADR 0317).
+ * `round`, `classes` and `waitGrant` are not evidence — they are the payloads the fold reads. A
+ * `CLEARED` line without a `round` names no round to clear (ADR 0312), `classes` is what a
+ * `class:<name>` guard routes on (ADR 0317), and `waitGrant` is the waits a resume buys, which rides
+ * the `UNBLOCKED` line so one recorded event both clears a queue stall and pays for the read the
+ * lane resumes to take (ADR 0313).
  *
  * `deferred` is the fourth kind: not evidence and not a payload the fold reads, but the disclosure
  * that this `PASS` was proven over a set short the namespaces named — the routed `review-ui` an
@@ -46,6 +48,7 @@ export interface LogEntry {
 	readonly round?: number;
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
+	readonly waitGrant?: number;
 }
 
 export type ParseLogResult =
@@ -76,6 +79,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			round?: unknown;
 			classes?: unknown;
 			deferred?: unknown;
+			waitGrant?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -103,6 +107,15 @@ export const parseLog = (text: string): ParseLogResult => {
 		// the failure mode ADR 0312 exists to delete, so it is a defect at the parse.
 		if (bareEvent(record.event) === CLEARED_EVENT && record.round === undefined) {
 			defects.push(`line ${index + 1} is a ${CLEARED_EVENT} event carrying no \`round\``);
+			continue;
+		}
+		// Same failure mode on the wait axis: a grant of nothing raises `maxWaits` by nothing and folds
+		// as a silent no-op, so the entry that names one is a defect rather than an event (ADR 0313).
+		if (
+			record.waitGrant !== undefined &&
+			!(Number.isInteger(record.waitGrant) && (record.waitGrant as number) > 0)
+		) {
+			defects.push(`line ${index + 1} carries a \`waitGrant\` that names no whole grant of waits`);
 			continue;
 		}
 		if (
@@ -137,6 +150,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.deferred === undefined
 				? {}
 				: {deferred: record.deferred as ReadonlyArray<string>}),
+			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -184,6 +198,7 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
 				type: bareEvent(entry.event),
 				...(entry.round === undefined ? {} : {round: entry.round}),
 				...(entry.classes === undefined ? {} : {classes: entry.classes}),
+				...(entry.waitGrant === undefined ? {} : {waitGrant: entry.waitGrant}),
 			}));
 		try {
 			states[taskId] = foldMsgs(task.machine, task.initial, msgs);
@@ -371,12 +386,17 @@ const refuseEvent = (reason: string): ApplyResult => ({_tag: "Refused", reason, 
  * BEFORE anything would touch the log, which is what lets a verb prove refuse-without-append. The
  * no-cell refusal is tea's own dispatch guard (`applyCell` → `NoCellError`), surfaced verbatim.
  *
- * One refusal is this function's own rather than the machine table's: an `UNBLOCKED` walking the
- * door out of an error final back into a state whose only non-`PASS` route is guarded, with the
- * budget already spent. The cell exists and the fold would succeed — it would restore the state and
- * not the budget, advertise `active`, and re-freeze on the next `FAIL` (#6570). Under ADR 0312 the
- * budget comes from a recorded `CLEARED` and from nothing else, so the resume is refused loudly with
- * the log unappended instead of resolving to a lane that reads walkable and is not.
+ * Two refusals are this function's own rather than the machine table's, one per budget, and both are
+ * the same defect: a resume that restores the state and not the budget it needs, so the lane
+ * advertises `active`, is not walkable, and nobody is told (#6570).
+ *
+ * On the **retry** axis it is an `UNBLOCKED` out of an error final into a state whose only non-`PASS`
+ * route is `retries`-guarded and spent; under ADR 0312 the budget comes from a recorded `CLEARED` and
+ * from nothing else. On the **wait** axis it is a resume out of a wait park back into the very state
+ * whose spent `waits` guard produced that park. The wait one cannot key on `errorFinals` the way the
+ * retry one does — `human:queue-stall` carries no `type: "final"` and structurally cannot be in that
+ * set — so it keys on the wait counter and on the guarded state's own park pairing, and its grant
+ * rides the resume rather than arriving as a separate line (ADR 0313).
  */
 export const applyEvent = (
 	lane: CompiledLane,
@@ -385,6 +405,7 @@ export const applyEvent = (
 	event: string,
 	at: string,
 	classes: ReadonlyArray<string> | null = null,
+	waitGrant: number | null = null,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
 		return refuseEvent(
@@ -423,6 +444,7 @@ export const applyEvent = (
 		[next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {
 			type: event,
 			...(classes === null ? {} : {classes}),
+			...(waitGrant === null ? {} : {waitGrant}),
 		});
 	} catch (error) {
 		if (error instanceof NoCellError) {
@@ -452,11 +474,19 @@ export const applyEvent = (
 			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.retries}/${next.maxRetries} retries — the state comes back and the repair budget does not, so every guarded route out of "${next.type}" falls straight back to "${from.type}". Record the founder's cleared round first (\`build clear\`); the two may land in either order.${stale}`,
 		};
 	}
+	if (task.waitParks.get(next.type)?.has(from.type) === true && next.waits >= next.maxWaits) {
+		return {
+			_tag: "Refused",
+			kind: "unbudgeted-resume",
+			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.waits}/${next.maxWaits} waits — the state comes back and the wait budget does not, so the next guarded route out of "${next.type}" falls straight back to "${from.type}". Grant the waits on this same resume: \`recipe unpark\` grants them once it has proven the queue moved, and \`lane transition … UNBLOCKED --grant-wait <n>\` is the fallback when that read cannot run. \`build clear\` buys a repair round and never a longer wait (ADR 0313).`,
+		};
+	}
 	const entry: LogEntry = {
 		task: taskId,
 		event: `${taskId.toUpperCase()}.${event}`,
 		at,
 		...(classes === null ? {} : {classes}),
+		...(waitGrant === null ? {} : {waitGrant}),
 	};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
 	return {_tag: "Applied", entry, previous, current};

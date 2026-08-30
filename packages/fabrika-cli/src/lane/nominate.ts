@@ -1,15 +1,15 @@
 /**
- * The one place a lane verb asks "which open PR is this issue's".
+ * The one place a lane verb asks "which PR is this issue's".
  *
  * Two nomination reads, unioned, because neither alone answers the question. The closing-issue edge
- * (`openPullsClosing`) is authoritative and lag-free but blind to `Part of #N`, the shape
+ * (`pullsClosing`) is authoritative and lag-free but blind to `Part of #N`, the shape
  * `build --partial` emits and the shape a builder writes when it honestly declines to close its
  * issue; the search index sees any body but lags a fresh PR. Reading the edge first means a lagging
  * index can only fail to add a candidate, never hide the closing one.
  *
  * Both reads only nominate; the body's links decide, through `issueRefsOf` and the set membership
- * `tracePulls` applies (#6797). A candidate that has closed since it was nominated, or that only
- * mentions the number in prose, drops out here rather than counting — so unioning in the looser read
+ * `tracePulls` applies (#6797). A candidate outside the caller's `PullScope`, or one that only
+ * mentions the number in prose, drops out there rather than counting — so unioning in the looser read
  * widens candidates without widening what counts.
  *
  * **Why it is shared rather than copied.** `lane prove` unioned both reads while `lane brief` read
@@ -20,7 +20,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {getPullRequest, openPullsClosing, searchOpenPulls} from "../io/pulls.ts";
+import {getPullRequest, type PullScope, pullsClosing, searchOpenPulls} from "../io/pulls.ts";
 import {issueRefsOf} from "../review/classes.ts";
 import type {PullFact} from "./prove.ts";
 
@@ -35,19 +35,26 @@ export type Nomination =
 	| {readonly _tag: "Unreadable"; readonly what: string; readonly reason: string};
 
 /** What the union searched, for a refusal that has to name its own scope rather than half of it. */
-export const nominationScope = (issue: number): string =>
-	`the closing-issue edge and the open PRs whose body names #${issue}`;
+export const nominationScope = (issue: number, scope: PullScope = "open"): string =>
+	`the ${scope === "open" ? "" : "open-or-merged "}closing-issue edge and the open PRs whose body names #${issue}`;
 
-export const nominateOpenPulls = (
+/**
+ * Nominate this issue's pull requests. `scope` widens the closing edge alone, and deliberately: the
+ * search half is the `Part of #N` reader and GitHub's index has no merged-PR question to ask that
+ * the edge does not answer better, so widening it would add stale candidates without adding the one
+ * candidate a wider caller is after — the merged PR that closed the issue (#6717).
+ */
+export const nominatePulls = (
 	repo: string,
 	issue: number,
+	scope: PullScope = "open",
 ): Effect.Effect<Nomination, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
-		const closing = yield* openPullsClosing(repo, issue);
+		const closing = yield* pullsClosing(repo, issue, scope);
 		if (closing._tag === "Failure") {
 			return {
 				_tag: "Unreadable" as const,
-				what: `the open pull requests closing #${issue}`,
+				what: `the ${scope === "open" ? "open " : ""}pull requests closing #${issue}`,
 				reason: closing.reason,
 			};
 		}
@@ -70,6 +77,7 @@ export const nominateOpenPulls = (
 			pulls.push({
 				number: pull.value.number,
 				open: pull.value.state === "open",
+				merged: pull.value.merged,
 				linkedIssues: issueRefsOf(pull.value.body).numbers,
 				htmlUrl: pull.value.htmlUrl,
 			});

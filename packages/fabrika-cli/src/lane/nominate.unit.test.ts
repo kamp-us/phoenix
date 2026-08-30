@@ -10,7 +10,7 @@ import {fakeFs, fakeSeams, type HttpReply, type Scripted} from "../fakes.test-su
 import {RULES} from "../wire/lane-brief.ts";
 import {runBrief} from "./brief-verb.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
-import {nominateOpenPulls} from "./nominate.ts";
+import {nominatePulls} from "./nominate.ts";
 import {tracePulls} from "./prove.ts";
 import {runProve} from "./prove-verb.ts";
 
@@ -119,7 +119,7 @@ describe("the shared candidate nominator", () => {
 	for (const [shape, script] of shapes) {
 		it(`nominates the same one candidate from a ${shape} board`, async () => {
 			const nomination = await Effect.runPromise(
-				Effect.provide(nominateOpenPulls("o/r", ISSUE), fakeSeams(script).layer),
+				Effect.provide(nominatePulls("o/r", ISSUE), fakeSeams(script).layer),
 			);
 
 			expect(nomination).toMatchObject({_tag: "Nominated"});
@@ -133,7 +133,7 @@ describe("the shared candidate nominator", () => {
 	it("is UNKNOWN rather than an empty set when the body search cannot be read", async () => {
 		const nomination = await Effect.runPromise(
 			Effect.provide(
-				nominateOpenPulls("o/r", ISSUE),
+				nominatePulls("o/r", ISSUE),
 				fakeSeams([
 					[CLOSERS, closingEdge()],
 					[SEARCH, {status: 502, body: '{"message":"Bad gateway"}'}],

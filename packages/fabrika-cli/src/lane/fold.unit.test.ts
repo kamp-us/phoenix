@@ -795,4 +795,79 @@ describe("the parse defects that keep a grant from folding as a silent no-op (AD
 			entries: [{task: "issue", event: `ISSUE.${CLEARED_EVENT}`, at: "t", round: 3}],
 		});
 	});
+
+	/** The same failure mode on the wait axis: a grant of nothing raises the budget by nothing. */
+	it("refuses a waitGrant that names no whole grant, and parses one that does (ADR 0313)", () => {
+		const resume = (fields: string) =>
+			`{"task":"issue","event":"ISSUE.UNBLOCKED","at":"t"${fields}}\n`;
+		const defect = ["line 1 carries a `waitGrant` that names no whole grant of waits"];
+
+		expect(parseLog(resume(`,"waitGrant":0`))).toMatchObject({_tag: "Malformed", defects: defect});
+		expect(parseLog(resume(`,"waitGrant":1.5`))).toMatchObject({
+			_tag: "Malformed",
+			defects: defect,
+		});
+		expect(parseLog(resume(`,"waitGrant":"one"`))).toMatchObject({
+			_tag: "Malformed",
+			defects: defect,
+		});
+		expect(parseLog(resume(`,"waitGrant":1`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.UNBLOCKED", at: "t", waitGrant: 1}],
+		});
+	});
+});
+
+/**
+ * The wait axis's own unbudgeted resume (#6717). It cannot key on `errorFinals` the way the retry
+ * axis does: `human:queue-stall` is a plain state carrying no `type: "final"`, so it structurally
+ * cannot be in that set, and the refusal keys on the wait counter and `ship:queued`'s own park
+ * pairing instead.
+ */
+describe("the queue stall — a resume out of it needs the waits granted on the same line", () => {
+	const stalled = () => {
+		const compiled = lane(coderWorkflow());
+		const dwell: ReadonlyArray<readonly [string, string]> = Array.from(
+			{length: WAIT_BUDGET + 2},
+			() => ["issue", "WIP"] as const,
+		);
+		const log = drive(compiled, [["issue", "WIP"], ["issue", "DONE"], ["issue", "PASS"], ...dwell]);
+		const states = statesOf(compiled, log);
+		expect(states.issue).toMatchObject({type: "human:queue-stall", waits: WAIT_BUDGET});
+		return {compiled, log, states};
+	};
+
+	it("refuses a bare UNBLOCKED with the log unappended, naming the grant route and not `build clear`", () => {
+		const {compiled, states} = stalled();
+
+		const applied = applyEvent(compiled, states, "issue", "UNBLOCKED", "2026-08-29T00:00:00.000Z");
+
+		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
+		const reason = applied._tag === "Refused" ? applied.reason : "";
+		expect(reason).toMatch(/the state comes back and the wait budget does not/);
+		expect(reason).toMatch(/recipe unpark/);
+		expect(reason).not.toMatch(/Record the founder's cleared round first/);
+	});
+
+	it("applies the same UNBLOCKED when it carries the grant, resuming one read below the budget", () => {
+		const {compiled, log, states} = stalled();
+
+		const applied = applyEvent(
+			compiled,
+			states,
+			"issue",
+			"UNBLOCKED",
+			"2026-08-29T00:00:00.000Z",
+			null,
+			1,
+		);
+
+		expect(applied).toMatchObject({_tag: "Applied", entry: {waitGrant: 1}});
+		if (applied._tag !== "Applied") return;
+		expect(statesOf(compiled, [...log, applied.entry]).issue).toMatchObject({
+			type: "ship:queued",
+			waits: WAIT_BUDGET,
+			maxWaits: WAIT_BUDGET + 1,
+		});
+	});
 });

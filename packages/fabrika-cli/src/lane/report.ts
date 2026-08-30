@@ -257,3 +257,30 @@ export const causeForEvent = (raw: string | null, event: OperatorEvent): CauseRe
 				reason: `"${raw}" is no park cause this repo's recipes key on (known: ${PARK_CAUSE_TOKENS.join(", ")})`,
 			};
 };
+
+export type GrantResolution =
+	| {readonly _tag: "Granted"; readonly grant: number | null}
+	| {readonly _tag: "Rejected"; readonly reason: string};
+
+/**
+ * Resolve one `--grant-wait` against the event it rides on. Absent grants nothing and is the
+ * ordinary case: every resume out of a park that has waits left records exactly as it always did.
+ *
+ * Both refusals keep a grant that buys nothing from reading as one that bought something. A grant on
+ * a non-`UNBLOCKED` event is a caller that misunderstood the field — only a resume can be short the
+ * budget it lands on — and would silently inflate `maxWaits` on a line no reader is looking at. A
+ * grant of zero or less raises the budget by nothing while the resume reads as granted, which is the
+ * silent no-op ADR 0313's wait axis exists to make loud.
+ */
+export const grantForEvent = (raw: number | null, event: OperatorEvent): GrantResolution => {
+	if (raw === null) return {_tag: "Granted", grant: null};
+	if (event !== "UNBLOCKED") {
+		return {
+			_tag: "Rejected",
+			reason: `waits are granted on the resume that spends them, and this token maps to ${event}, not UNBLOCKED — drop --grant-wait ${raw}`,
+		};
+	}
+	return Number.isInteger(raw) && raw > 0
+		? {_tag: "Granted", grant: raw}
+		: {_tag: "Rejected", reason: `--grant-wait ${raw} is no whole grant of at least one wait`};
+};

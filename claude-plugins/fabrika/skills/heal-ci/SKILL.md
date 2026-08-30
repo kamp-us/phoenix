@@ -211,6 +211,17 @@ approve, and you do not resolve another person's thread. An *unresolved review t
 this class's signals — resolution state is GraphQL-only and the contract rules it out of scope, so a
 PR blocked solely by an open thread lands in another class.
 
+**One park in this class is not a person's, and it is a verb away.** A lane parked at
+`human:queue-stall` is only saying its merge queue outlasted the lane's wait budget, so it is
+recipe-clearable: `fabrika recipe unpark <lane-key> --task <task>` proves whether the queue actually
+moved — it relays `ship reconcile`, so only `landed` or `ejected` clears — and on a clear it records
+the `UNBLOCKED` and the fresh conclusive read in one event. Exit `13` is the queue genuinely not
+having moved, and the park stands. Run it when you work the row rather than routing a human, and a
+stall self-heals on the next scheduled pass (ADR
+[0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)). `sweep` itself still
+writes nothing on its own authority — the verb is yours to run on the row you are working, never the
+sweep's to run over the board.
+
 ## Sweep — the scheduled surface
 
 ```bash
