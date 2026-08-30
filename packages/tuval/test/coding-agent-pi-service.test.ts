@@ -1,4 +1,4 @@
-import {mkdir, mkdtemp, rm, utimes, writeFile} from "node:fs/promises";
+import {mkdir, mkdtemp, rm, stat, utimes, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -170,33 +170,33 @@ afterEach(async () => {
 });
 
 describe("coding-agent Pi session index", () => {
-	it("acknowledges bounded history before slow runtime construction and publishes readiness", async () => {
+	it("acknowledges a real multi-megabyte session before background history and runtime work", async () => {
 		const root = await mkdtemp(join(tmpdir(), "tuval-coding-agent-slow-"));
 		temporaryRoots.push(root);
 		const sessions = join(root, "sessions");
 		const id = "slow-runtime";
-		await writePagedSession(
-			join(sessions, `2026-08-29T10-00-00-000Z_${id}.jsonl`),
-			id,
-			450,
-			10_000,
-		);
+		const sessionPath = join(sessions, `2026-08-29T10-00-00-000Z_${id}.jsonl`);
+		await writePagedSession(sessionPath, id, 450, 10_000);
+		assert.ok((await stat(sessionPath)).size > 4_000_000, "fixture is not multi-megabyte");
 		await writeProductionSettings(root);
 		let releaseConstruction: () => void = () => undefined;
 		const constructionGate = new Promise<void>((resolve) => {
 			releaseConstruction = resolve;
 		});
+		let constructionCalls = 0;
 		const transport = makeCodingAgentPiTransport({
 			agentDir: root,
 			cwd: "/work/project",
 			sessionRoots: [sessions],
 			createAgentSession: async (options) => {
+				constructionCalls += 1;
 				await constructionGate;
 				return createAgentSession(options);
 			},
 		});
 		const state = await PiLiveSessionState.connect(transport, {
 			transcriptArchive: transport,
+			historyLifecycle: transport,
 			runtimeLifecycle: transport,
 		});
 		try {
@@ -205,13 +205,28 @@ describe("coding-agent Pi session index", () => {
 			assert.ok(performance.now() - startedAt < 750, "attach acknowledgement exceeded 750ms");
 			assert.equal(attached._tag, "attached");
 			if (attached._tag !== "attached") return;
+			assert.deepEqual(attached.session.history, {_tag: "loading"});
 			assert.deepEqual(attached.session.runtime, {_tag: "loading"});
-			assert.ok(attached.session.transcript.length <= 40);
-			assert.ok(Buffer.byteLength(JSON.stringify(attached), "utf8") < 300_000);
-			assert.equal(attached.session.archive._tag, "more");
+			assert.equal(constructionCalls, 0, "background construction started before acknowledgement");
+			assert.equal(attached.session.transcript.length, 0);
+			assert.ok(Buffer.byteLength(JSON.stringify(attached), "utf8") < 10_000);
 			assert.equal(attached.session.controls?.create, false);
 			assert.equal(attached.session.controls?.open, false);
 			assert.equal(attached.session.controls?.setModel, false);
+
+			let eventLoopTicks = 0;
+			const heartbeat = setInterval(() => {
+				eventLoopTicks += 1;
+			}, 5);
+			await waitFor(() => state.current()?.history._tag === "ready", "bounded history");
+			clearInterval(heartbeat);
+			const history = state.current();
+			assert.ok(eventLoopTicks > 0, "background history load starved the event loop");
+			assert.ok((history?.transcript.length ?? 0) > 0);
+			assert.ok((history?.transcript.length ?? 0) <= 40);
+			assert.equal(history?.archive._tag, "more");
+			assert.equal(history?.runtime._tag, "loading");
+			await waitFor(() => constructionCalls === 1, "runtime construction start");
 
 			releaseConstruction();
 			await waitFor(() => state.current()?.runtime._tag === "ready", "runtime readiness");
@@ -291,12 +306,14 @@ describe("coding-agent Pi session index", () => {
 		const constructionGate = new Promise<void>((resolve) => {
 			releaseConstruction = resolve;
 		});
+		let attempts = 0;
 		let disposed = 0;
 		const transport = makeCodingAgentPiTransport({
 			agentDir: root,
 			cwd: "/work/project",
 			sessionRoots: [sessions],
 			createAgentSession: async (options) => {
+				attempts += 1;
 				await constructionGate;
 				const result = await createAgentSession(options);
 				const dispose = result.session.dispose.bind(result.session);
@@ -312,14 +329,17 @@ describe("coding-agent Pi session index", () => {
 		const disconnected = await PiLiveSessionState.connect(transport, {runtimeLifecycle: transport});
 		try {
 			assert.equal((await first.attach(id))._tag, "attached");
+			await waitFor(() => attempts === 1, "first runtime construction");
 			assert.deepInclude(await first.release(), {_tag: "released", sessionId: id});
 			const reattached = await second.attach(id);
 			assert.equal(reattached._tag, "attached");
 			if (reattached._tag === "attached") {
 				assert.deepEqual(reattached.session.runtime, {_tag: "loading"});
 			}
+			await waitFor(() => attempts === 2, "second runtime construction");
 			assert.deepInclude(await second.release(), {_tag: "released", sessionId: id});
 			assert.equal((await disconnected.attach(id))._tag, "attached");
+			await waitFor(() => attempts === 3, "disconnected runtime construction");
 			await disconnected.dispose();
 			releaseConstruction();
 			await waitFor(() => disposed === 3, "late runtime disposal");
@@ -372,7 +392,9 @@ describe("coding-agent Pi session index", () => {
 		});
 		const original = await PiLiveSessionState.connect(transport, {runtimeLifecycle: transport});
 		assert.equal((await original.attach(firstId))._tag, "attached");
+		await waitFor(() => attempts === 1, "first swapped runtime construction");
 		assert.equal((await original.attach(secondId))._tag, "attached");
+		await waitFor(() => attempts === 2, "second swapped runtime construction");
 		assert.equal(original.current()?.sessionId, secondId);
 		await original.dispose();
 
@@ -383,7 +405,7 @@ describe("coding-agent Pi session index", () => {
 			if (attached._tag === "attached") {
 				assert.deepEqual(attached.session.runtime, {_tag: "loading"});
 			}
-			assert.equal(attempts, 3);
+			await waitFor(() => attempts === 3, "replacement runtime constructions");
 			releaseConstruction();
 			await waitFor(() => reconnected.current()?.runtime._tag === "ready", "reconnected runtime");
 			await waitFor(() => disposed === 2, "superseded runtime disposal");
@@ -406,6 +428,7 @@ describe("coding-agent Pi session index", () => {
 		const constructionGate = new Promise<void>((resolve) => {
 			releaseConstruction = resolve;
 		});
+		let attempts = 0;
 		let disposed = 0;
 		const transport = makeCodingAgentPiTransport({
 			agentDir: root,
@@ -413,6 +436,7 @@ describe("coding-agent Pi session index", () => {
 			sessionRoots: [sessions],
 			operationTimeoutMs: 50,
 			createAgentSession: async (options) => {
+				attempts += 1;
 				await constructionGate;
 				const result = await createAgentSession(options);
 				const dispose = result.session.dispose.bind(result.session);
@@ -431,6 +455,7 @@ describe("coding-agent Pi session index", () => {
 			const refusal = timedOut.current()?.runtime;
 			assert.match(refusal?._tag === "refused" ? refusal.reason : "", /exceeded 50ms/);
 			assert.equal((await next.attach(id))._tag, "attached");
+			await waitFor(() => attempts === 2, "retry runtime construction");
 			await next.release();
 			releaseConstruction();
 			await waitFor(() => disposed === 2, "timed-out runtime disposal");
@@ -540,6 +565,7 @@ describe("coding-agent Pi session index", () => {
 		const client = await PiClient.connect({transportFactory: transport});
 		try {
 			const lease = await client.acquireSession(id, {mode: "exclusive"});
+			await waitFor(() => (lease.snapshot?.transcript.length ?? 0) > 0, "bounded transcript");
 			const snapshot = lease.snapshot;
 			assert.ok(snapshot !== undefined);
 			assert.ok(snapshot.transcript.length <= 40);

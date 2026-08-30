@@ -103,6 +103,13 @@ export const LiveSessionRuntime = Schema.Union([
 ]);
 export type LiveSessionRuntime = (typeof LiveSessionRuntime)["Type"];
 
+export const LiveSessionHistory = Schema.Union([
+	Schema.Struct({_tag: Schema.Literal("loading")}),
+	Schema.Struct({_tag: Schema.Literal("ready")}),
+	Schema.Struct({_tag: Schema.Literal("refused"), reason: Schema.String}),
+]);
+export type LiveSessionHistory = (typeof LiveSessionHistory)["Type"];
+
 const LiveSessionBase = {
 	sessionId: Schema.String,
 	revision: Schema.Number,
@@ -113,6 +120,7 @@ const LiveSessionBase = {
 	transcript: Schema.Array(LiveTranscriptEntry),
 	archive: TranscriptArchiveState,
 	lastEventSequence: Schema.Number,
+	history: LiveSessionHistory,
 	runtime: LiveSessionRuntime,
 	controls: Schema.optionalKey(LiveSessionControls),
 };

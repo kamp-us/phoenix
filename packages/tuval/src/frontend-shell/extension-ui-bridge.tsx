@@ -1,6 +1,7 @@
 import {Composer, useComposerEditor} from "@kampus/composer";
 import type {FormEvent, KeyboardEvent as ReactKeyboardEvent} from "react";
 import {useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
+import {createPortal} from "react-dom";
 import {Button} from "../../../../apps/web/src/components/ui/Button.js";
 import {Card, Surface} from "../../../../apps/web/src/components/ui/Card.js";
 import type {
@@ -414,9 +415,11 @@ const Widget = ({widget}: {readonly widget: WidgetView}) => (
 export function ExtensionUIBridge({
 	client = extensionUIBrowserClient,
 	initialSnapshots = [],
+	panelVisible = true,
 }: {
 	readonly client?: ExtensionUIBrowserClient;
 	readonly initialSnapshots?: ReadonlyArray<ExtensionUISnapshot>;
+	readonly panelVisible?: boolean;
 }) {
 	const [state, setState] = useState<BridgeState>(initialState);
 	const submitted = useRef(new Set<string>());
@@ -488,6 +491,13 @@ export function ExtensionUIBridge({
 		[client],
 	);
 
+	const dismissNotice = (key: string): void => {
+		setState((current) => ({
+			...current,
+			notices: current.notices.filter((notice) => notice.key !== key),
+		}));
+	};
+
 	const settle = async (dialog: PendingDialog, response?: ExtensionUIResponse): Promise<void> => {
 		if (submitted.current.has(dialog.key)) return;
 		submitted.current.add(dialog.key);
@@ -536,86 +546,94 @@ export function ExtensionUIBridge({
 	};
 
 	return (
-		<section
-			className="extension-ui"
-			data-mobile-panel="extensions"
-			aria-label="Paket extension UI"
-		>
-			<div
-				className="extension-ui__connection"
-				data-state={state.connection}
-				role="status"
-				aria-live="polite"
-			>
-				Extension UI · {state.connection}
-			</div>
-			{statuses.length === 0 && widgets.length === 0 ? null : (
-				<Card
-					as="section"
-					className="extension-ui__current"
-					aria-label={
-						state.connection === "connected"
-							? "Güncel paket durumu"
-							: "Son doğrulanmış paket durumu"
-					}
-				>
-					{aboveWidgets.length === 0 ? null : (
-						<section
-							className="extension-ui__widget-zone"
-							data-placement="aboveEditor"
-							aria-label="Editörün üstündeki paket widget'ları"
-						>
-							<h3>Editörün üstü</h3>
-							{aboveWidgets.map((widget) => (
-								<Widget key={stateKey(widget.scope, widget.key)} widget={widget} />
-							))}
-						</section>
-					)}
-					{statuses.length === 0 ? null : (
-						<section className="extension-ui__status-zone" aria-label="Paket durumları">
-							{statuses.map((status) => (
-								<p key={stateKey(status.scope, status.key)}>
-									<ScopeAttribution scope={status.scope} />
-									<strong>{status.key}</strong>
-									<span>{status.text}</span>
-								</p>
-							))}
-						</section>
-					)}
-					{belowWidgets.length === 0 ? null : (
-						<section
-							className="extension-ui__widget-zone"
-							data-placement="belowEditor"
-							aria-label="Editörün altındaki paket widget'ları"
-						>
-							<h3>Editörün altı</h3>
-							{belowWidgets.map((widget) => (
-								<Widget key={stateKey(widget.scope, widget.key)} widget={widget} />
-							))}
-						</section>
-					)}
-				</Card>
-			)}
-			<div className="extension-ui__notices" aria-live="polite">
-				{state.notices.map((notice) => (
-					<Card
-						as="section"
-						key={notice.key}
-						data-tone={notice.tone}
-						role={notice.tone === "error" ? "alert" : "status"}
+		<div className="extension-ui-bridge">
+			{panelVisible ? (
+				<section className="extension-ui" aria-label="Paket extension UI">
+					<div
+						className="extension-ui__connection"
+						data-state={state.connection}
+						role="status"
+						aria-live="polite"
 					>
-						{notice.scope === undefined ? null : <ScopeAttribution scope={notice.scope} />}
-						<p>{notice.text}</p>
-					</Card>
-				))}
-			</div>
-			{active === undefined ? null : (
-				<DialogForm
-					key={active.key}
-					dialog={active}
-					settle={(response) => settle(active, response)}
-				/>
+						Extension UI · {state.connection}
+					</div>
+					{statuses.length === 0 && widgets.length === 0 ? null : (
+						<Card
+							as="section"
+							className="extension-ui__current"
+							aria-label={
+								state.connection === "connected"
+									? "Güncel paket durumu"
+									: "Son doğrulanmış paket durumu"
+							}
+						>
+							{aboveWidgets.length === 0 ? null : (
+								<section
+									className="extension-ui__widget-zone"
+									data-placement="aboveEditor"
+									aria-label="Editörün üstündeki paket widget'ları"
+								>
+									<h3>Editörün üstü</h3>
+									{aboveWidgets.map((widget) => (
+										<Widget key={stateKey(widget.scope, widget.key)} widget={widget} />
+									))}
+								</section>
+							)}
+							{statuses.length === 0 ? null : (
+								<section className="extension-ui__status-zone" aria-label="Paket durumları">
+									{statuses.map((status) => (
+										<p key={stateKey(status.scope, status.key)}>
+											<ScopeAttribution scope={status.scope} />
+											<strong>{status.key}</strong>
+											<span>{status.text}</span>
+										</p>
+									))}
+								</section>
+							)}
+							{belowWidgets.length === 0 ? null : (
+								<section
+									className="extension-ui__widget-zone"
+									data-placement="belowEditor"
+									aria-label="Editörün altındaki paket widget'ları"
+								>
+									<h3>Editörün altı</h3>
+									{belowWidgets.map((widget) => (
+										<Widget key={stateKey(widget.scope, widget.key)} widget={widget} />
+									))}
+								</section>
+							)}
+						</Card>
+					)}
+				</section>
+			) : null}
+			{createPortal(
+				<>
+					<div className="extension-ui__notices" aria-live="polite">
+						{state.notices.map((notice) => (
+							<Card
+								as="section"
+								key={notice.key}
+								data-tone={notice.tone}
+								role={notice.tone === "error" ? "alert" : "status"}
+							>
+								{notice.scope === undefined ? null : <ScopeAttribution scope={notice.scope} />}
+								<p>{notice.text}</p>
+								<Button type="button" variant="secondary" onClick={() => dismissNotice(notice.key)}>
+									Bildirimi kapat
+								</Button>
+							</Card>
+						))}
+					</div>
+					{active === undefined ? null : (
+						<DialogForm
+							key={active.key}
+							dialog={active}
+							settle={(response) => settle(active, response)}
+						/>
+					)}
+				</>,
+				document.body,
 			)}
-		</section>
+		</div>
 	);
 }

@@ -14,19 +14,32 @@ authoritative server/session snapshots, and transport-neutral framing
 Tuval owns connection-level exclusive leases and rejects a second owner. Closing a connection aborts
 active work, disposes every coding-agent session, and releases those leases.
 
-Attach reserves exclusive ownership and returns a bounded recent transcript projected directly from
-`SessionManager`; it does not wait for `AgentSession` construction. The live-session wire therefore
-states runtime `loading`, `ready`, or a reason-bearing `refused` separately from connection and
-ownership. Transcript paging remains available while loading, but prompt and control availability is
-false until `ready`. Construction then uses pi's public `createAgentSession` SDK surface with the
-selected `SessionManager`, `SettingsManager`, and shared `ModelRuntime`
+Attach reserves exclusive ownership from the bounded session-file index and immediately returns an
+empty loading snapshot. It does not call `SessionManager.open`, build session context, or construct an
+`AgentSession` before the protocol response. The live-session wire states recent-history `loading`,
+`ready`, or reason-bearing `refused` independently from runtime `loading`, `ready`, or `refused`.
+A worker thread then reads and parses the retained JSONL, publishes only the bounded recent window,
+and hands the preloaded entries to the runtime adapter; archive pages are emitted only when requested
+and are never folded back into later live snapshots. Transcript paging remains available while the
+runtime loads, but prompt and control availability is false until runtime `ready`. Construction then
+uses pi's public `createAgentSession` SDK surface with the selected `SessionManager`,
+`SettingsManager`, and shared `ModelRuntime`
 ([SDK source](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/core/sdk.ts)).
 Prompt, steer, abort, model, and thinking commands delegate to that session. A prompt response waits
-for pi's preflight acceptance, not for the whole model turn. Attach and later snapshots carry only a
-recent transcript window bounded by both item count and encoded bytes; the window boundary moves back
-when necessary so a tool result never loses its assistant tool call. Older pages use an opaque,
-session-bound cursor and keep the same pairing rule. Live progress and acknowledgements therefore
-never serialize pages the browser already loaded.
+for pi's preflight acceptance, not for the whole model turn. Attach acknowledgement carries no
+transcript bytes. The later history snapshot and live snapshots carry only a recent transcript window
+bounded by both item count and encoded bytes; the window boundary moves back when necessary so a tool
+result never loses its assistant tool call. Older pages use an opaque, session-bound cursor and keep
+the same pairing rule. Once runtime construction has cached the validated projection, older pages
+slice that cache; before then a worker computes one requested page. Live progress and acknowledgements
+therefore never serialize pages the browser already loaded.
+
+Pi 0.84.3 exposes only synchronous `SessionManager.open`, although its pinned implementation accepts
+preloaded file entries at construction. Tuval confines that version-specific constructor seam to
+`session-manager-background.ts`: JSON parsing stays in the worker, while the main thread only builds
+pi's indexes from already parsed entries before calling the public SDK. This is pinned to pi's
+[`session-manager.ts`](https://github.com/earendil-works/pi/blob/4e58f324fae8ebfa98a3d45181fb248072a2afac/packages/coding-agent/src/core/session-manager.ts)
+until pi exposes an asynchronous public loader.
 
 ## Session file index
 
@@ -59,9 +72,10 @@ acceptance journey starts the built `tuval` executable without `--pi-socket`, us
 EventSource in the browser, crosses Tuval into PiClient and this service, and drives a real
 `AgentSession`. Its retained-session fixture has a multi-megabyte transcript and proves a bounded
 attach response, bounded initial mount, ordered older-page loading, prompt updates, mounted reconnect,
-and cold restoration. Focused production-service integration also holds real construction behind a
-gate to prove a sub-second ownership/history acknowledgement, eventual readiness, reason-bearing
-refusal and retry, reconnect while loading, and late-runtime disposal. The browser test renders the
+and cold restoration. Focused production-service integration measures a real 4.5 MB retained JSONL and proves sub-750 ms
+ownership acknowledgement, a responsive event-loop heartbeat during worker history loading, a later
+bounded window, eventual readiness, reason-bearing refusal and retry, reconnect while loading, and
+late-runtime disposal. The browser test renders the
 same loading/refused/ready transitions and keeps Composer and controls disabled until ready. Its
 deterministic model is pi-ai's production `fauxProvider`; only the provider is scripted, not the
 protocol or browser transport. The provider is the dependency's documented test surface

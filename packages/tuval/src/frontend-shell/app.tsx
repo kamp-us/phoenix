@@ -43,6 +43,7 @@ import {
 	setThinkingLiveSession,
 	steerLiveSession,
 } from "./fate-client.js";
+import {ManagedTray, type ManagedTrayPanel, type ManagedTrayPanelId} from "./managed-tray.js";
 import {
 	decodeNodeDetailLevel,
 	NODE_DETAIL_LEVELS,
@@ -111,7 +112,7 @@ const mergeLiveSession = (
 	return {
 		...incoming,
 		transcript: [...retained, ...incoming.transcript],
-		archive: current.archive,
+		archive: current.history._tag === "loading" ? incoming.archive : current.archive,
 	};
 };
 
@@ -304,6 +305,7 @@ export function TuvalApp() {
 	const [nodes, setNodes] = useState<ReadonlyArray<SessionCanvasNode>>([]);
 	const [edges, setEdges] = useState<ReadonlyArray<SessionRelationshipEdge>>([]);
 	const [paneSelection, setPaneSelection] = useState<PaneSelection>({_tag: "closed"});
+	const [trayPanel, setTrayPanel] = useState<ManagedTrayPanelId | null>(null);
 	const [mobileLayer, setMobileLayer] = useState<"canvas" | "chat" | "extensions">("canvas");
 	const [discovering, setDiscovering] = useState(false);
 	const [streamCycle, setStreamCycle] = useState(0);
@@ -427,6 +429,7 @@ export function TuvalApp() {
 		streamCursor.current = null;
 		reconnectState.current = {identity: session.identity, attempts: 0, recovering: false};
 		setPaneSelection({_tag: "open", selected: session, generation, pane: pendingPane()});
+		setTrayPanel("chat");
 		setMobileLayer("chat");
 		setNodes((currentNodes) =>
 			currentNodes.map((node) => ({...node, selected: node.id === session.identity})),
@@ -461,6 +464,7 @@ export function TuvalApp() {
 		streamCursor.current = null;
 		setNodes((current) => current.map((node) => ({...node, selected: false})));
 		setPaneSelection({_tag: "closed"});
+		setTrayPanel(null);
 		setMobileLayer("canvas");
 		requestAnimationFrame(() => document.querySelector<HTMLElement>("#canvas")?.focus());
 	}, []);
@@ -534,6 +538,7 @@ export function TuvalApp() {
 			streamCursor.current = null;
 			setNodes((current) => current.map((node) => ({...node, selected: false})));
 			setPaneSelection({_tag: "closed"});
+			setTrayPanel(null);
 			setMobileLayer("canvas");
 			setSelectionRestoration({
 				_tag: "unavailable",
@@ -953,6 +958,7 @@ export function TuvalApp() {
 			streamCursor.current = null;
 			setNodes((current) => current.map((node) => ({...node, selected: false})));
 			setPaneSelection({_tag: "closed"});
+			setTrayPanel(null);
 			setMobileLayer("canvas");
 			setSelectionRestoration({_tag: "idle"});
 			ignoreSelectionChange.current = false;
@@ -982,28 +988,26 @@ export function TuvalApp() {
 		}
 	};
 
+	const dismissTray = useCallback((): void => {
+		const dismissed = trayPanel;
+		setTrayPanel(null);
+		setMobileLayer("canvas");
+		if (dismissed !== null) {
+			requestAnimationFrame(() =>
+				document.querySelector<HTMLElement>(`#tray-open-${dismissed}`)?.focus(),
+			);
+		}
+	}, [trayPanel]);
+
 	useEffect(() => {
-		if (selected === null) return;
+		if (trayPanel === null) return;
 		const onEscape = (event: KeyboardEvent): void => {
-			if (
-				event.key !== "Escape" ||
-				document.querySelector('[role="dialog"]') !== null ||
-				(event.target instanceof HTMLElement && event.target.closest(".react-flow__node") !== null)
-			) {
-				return;
-			}
-			const workspace = document.querySelector<HTMLElement>(".workspace");
-			if (
-				window.matchMedia("(max-width: 720px)").matches &&
-				workspace?.dataset.mobileLayer !== "canvas"
-			) {
-				return;
-			}
-			setTimeout(() => void closePane(), 0);
+			if (event.key !== "Escape" || document.querySelector('[role="dialog"]') !== null) return;
+			dismissTray();
 		};
-		document.addEventListener("keydown", onEscape, {capture: true});
-		return () => document.removeEventListener("keydown", onEscape, {capture: true});
-	}, [selected]);
+		document.addEventListener("keydown", onEscape);
+		return () => document.removeEventListener("keydown", onEscape);
+	}, [dismissTray, trayPanel]);
 
 	const acceptReplacement = (
 		controlOutcome: ControlLiveSessionOutcome,
@@ -1292,6 +1296,193 @@ export function TuvalApp() {
 				}
 			: undefined;
 
+	const useFirstAvailableSession = (): void => {
+		const refusedSessionId =
+			selectionRestoration._tag === "unavailable" ? selectionRestoration.sessionId : null;
+		const fallback = sessionsOf(outcome).find(({piSessionId}) => piSessionId !== refusedSessionId);
+		if (fallback === undefined) {
+			clearUnavailableSelection();
+			return;
+		}
+		setSelectionRestoration({_tag: "restored", sessionId: fallback.piSessionId});
+		openSession(fallback);
+	};
+	const trayPanels: ReadonlyArray<ManagedTrayPanel> = [
+		{
+			id: "chat",
+			label: "Sohbet",
+			available: paneSelection._tag === "open",
+			content:
+				paneSelection._tag === "closed" ? null : (
+					<ChatPane
+						key={`${paneSelection.selected.identity}:${paneSelection.generation}`}
+						selected={paneSelection.selected}
+						connection={paneSelection.pane.connection}
+						session={paneSelection.pane.session}
+						historyLoading={paneSelection.pane.historyLoading === true}
+						{...(paneSelection.pane.historyMessage === undefined
+							? {}
+							: {historyMessage: paneSelection.pane.historyMessage})}
+						{...(paneSelection.pane.message === undefined
+							? {}
+							: {message: paneSelection.pane.message})}
+						onClose={closePane}
+						onReconnect={rearmReconnect}
+						onLoadOlder={loadOlder}
+						onSend={sendPrompt}
+						onSteer={(text) =>
+							runSelectedControl((correlationId, sessionId) =>
+								steerLiveSession(sessionId, correlationId, text),
+							)
+						}
+						onAbort={() =>
+							runSelectedControl((correlationId, sessionId) =>
+								abortLiveSession(sessionId, correlationId),
+							)
+						}
+						onSetModel={(model: ModelRef) =>
+							runSelectedControl((correlationId, sessionId) =>
+								setModelLiveSession(sessionId, correlationId, model),
+							)
+						}
+						onSetThinking={(level: ThinkingLevel) =>
+							runSelectedControl((correlationId, sessionId) =>
+								setThinkingLiveSession(sessionId, correlationId, level),
+							)
+						}
+					/>
+				),
+		},
+		{
+			id: "sessions",
+			label: "Oturum",
+			available: true,
+			content: (
+				<SessionLaunchControls
+					createAvailable={
+						paneSelection._tag !== "open" || paneSelection.pane.session?.controls?.create !== false
+					}
+					openAvailable={
+						paneSelection._tag !== "open" || paneSelection.pane.session?.controls?.open !== false
+					}
+					onCreate={(cwd) =>
+						createLiveSession(crypto.randomUUID(), cwd).then((result) =>
+							acceptReplacement(result, cwd),
+						)
+					}
+					onOpen={(sessionId) =>
+						openLiveSession(crypto.randomUUID(), sessionId).then((result) => {
+							const known = sessionsOf(outcome).find(
+								(session) => session.piSessionId === sessionId,
+							);
+							return acceptReplacement(result, known?.cwd ?? `Oturum ${sessionId}`);
+						})
+					}
+				/>
+			),
+		},
+		{
+			id: "contributions",
+			label: "Paketler",
+			available: true,
+			content: <ContributionStatus state={contributions} />,
+		},
+		{
+			id: "restoration",
+			label: "Geri yükleme",
+			available: restoration !== null || restorationFailure !== null,
+			content: (
+				<RestorationStatus
+					snapshot={restoration}
+					failure={restorationFailure}
+					selection={selectionRestoration}
+					onUseFirstSession={useFirstAvailableSession}
+				/>
+			),
+		},
+		{
+			id: "lineage",
+			label: "Bağ sorunları",
+			available: lineageFailure !== null || lineageProblems.length > 0,
+			content:
+				lineageFailure === null && lineageProblems.length === 0 ? null : (
+					<Card as="section" className="lineage-problems" role="status" aria-live="polite">
+						<p className="lineage-problems__eyebrow">Oturum bağları</p>
+						<h2>Bilinen geçmiş korunuyor</h2>
+						<p>Yeni bağların bazıları katılamadı; kayıtlı oturumlar tuvalde kalır.</p>
+						<ul>
+							{lineageFailure === null ? null : (
+								<li>
+									<strong>Çakışan veya okunamayan bağ verisi</strong>
+									<span>{lineageFailure}</span>
+								</li>
+							)}
+							{lineageProblems.map((problem, index) => (
+								<li key={`${problem.code}:${problem.source}:${index}`}>
+									<strong>{lineageProblemLabel(problem)}</strong>
+									<span>{problem.message}</span>
+								</li>
+							))}
+						</ul>
+					</Card>
+				),
+		},
+		{
+			id: "discovery",
+			label: "Durum",
+			available: view.state !== undefined,
+			content:
+				view.state === undefined ? null : (
+					<Surface
+						as="section"
+						id="discovery-state"
+						className="state-panel"
+						data-tone={view.tone}
+						aria-labelledby="state-title"
+						tone="default"
+						elevation="flat"
+						radius="lg"
+						padding="lg"
+						border
+					>
+						<p className="state-panel__eyebrow">{view.state.eyebrow}</p>
+						<h2 id="state-title">{view.state.title}</h2>
+						<p>{view.state.description}</p>
+						{view.state.details.length === 0 ? null : (
+							<ul className="state-panel__details">
+								{view.state.details.map((detail) => (
+									<li key={detail}>{detail}</li>
+								))}
+							</ul>
+						)}
+						<Button
+							id="state-action"
+							variant="primary"
+							type="button"
+							disabled={discovering}
+							onClick={() => {
+								void discover();
+								void contributions.reload();
+							}}
+						>
+							{view.state.action}
+						</Button>
+					</Surface>
+				),
+		},
+		{
+			id: "extensions",
+			label: "Extension UI",
+			available: true,
+			content: (
+				<ExtensionUIBridge
+					initialSnapshots={restoration?.extensionUI ?? []}
+					panelVisible={trayPanel === "extensions"}
+				/>
+			),
+		},
+	];
+
 	return (
 		<div className="tuval-shell">
 			<header className="topbar">
@@ -1352,7 +1543,7 @@ export function TuvalApp() {
 					if (event.defaultPrevented) return;
 					if (event.key === "Escape" && mobileLayer !== "canvas") {
 						event.preventDefault();
-						setMobileLayer("canvas");
+						dismissTray();
 						requestAnimationFrame(() =>
 							document.querySelector<HTMLElement>("#mobile-layer-canvas")?.focus(),
 						);
@@ -1388,7 +1579,10 @@ export function TuvalApp() {
 						type="button"
 						variant={mobileLayer === "canvas" ? "primary" : "secondary"}
 						aria-pressed={mobileLayer === "canvas"}
-						onClick={() => setMobileLayer("canvas")}
+						onClick={() => {
+							setTrayPanel(null);
+							setMobileLayer("canvas");
+						}}
 					>
 						Tuval
 					</Button>
@@ -1398,7 +1592,10 @@ export function TuvalApp() {
 						variant={mobileLayer === "chat" ? "primary" : "secondary"}
 						aria-pressed={mobileLayer === "chat"}
 						disabled={paneSelection._tag === "closed"}
-						onClick={() => setMobileLayer("chat")}
+						onClick={() => {
+							setTrayPanel("chat");
+							setMobileLayer("chat");
+						}}
 					>
 						Sohbet
 					</Button>
@@ -1407,7 +1604,10 @@ export function TuvalApp() {
 						type="button"
 						variant={mobileLayer === "extensions" ? "primary" : "secondary"}
 						aria-pressed={mobileLayer === "extensions"}
-						onClick={() => setMobileLayer("extensions")}
+						onClick={() => {
+							setTrayPanel("extensions");
+							setMobileLayer("extensions");
+						}}
 					>
 						Extension UI
 					</Button>
@@ -1429,6 +1629,7 @@ export function TuvalApp() {
 							onNodesChange={onNodesChange}
 							onEdgesChange={onEdgesChange}
 							{...(archiveControls === undefined ? {} : {archive: archiveControls})}
+							fitRevision={trayPanel === null ? 0 : 1}
 							contributions={contributions.registry}
 							onContributionFailure={contributions.reportFailure}
 							onSelect={(lineageSession) => {
@@ -1456,156 +1657,21 @@ export function TuvalApp() {
 						/>
 					</div>
 
-					<ContributionStatus state={contributions} />
-
-					<RestorationStatus
-						snapshot={restoration}
-						failure={restorationFailure}
-						selection={selectionRestoration}
-						onUseFirstSession={() => {
-							const refusedSessionId =
-								selectionRestoration._tag === "unavailable" ? selectionRestoration.sessionId : null;
-							const fallback = sessionsOf(outcome).find(
-								({piSessionId}) => piSessionId !== refusedSessionId,
-							);
-							if (fallback === undefined) {
-								clearUnavailableSelection();
-								return;
-							}
-							setSelectionRestoration({_tag: "restored", sessionId: fallback.piSessionId});
-							openSession(fallback);
-						}}
-					/>
-
-					<SessionLaunchControls
-						createAvailable={
-							paneSelection._tag !== "open" ||
-							paneSelection.pane.session?.controls?.create !== false
-						}
-						openAvailable={
-							paneSelection._tag !== "open" || paneSelection.pane.session?.controls?.open !== false
-						}
-						onCreate={(cwd) =>
-							createLiveSession(crypto.randomUUID(), cwd).then((result) =>
-								acceptReplacement(result, cwd),
-							)
-						}
-						onOpen={(sessionId) =>
-							openLiveSession(crypto.randomUUID(), sessionId).then((result) => {
-								const known = sessionsOf(outcome).find(
-									(session) => session.piSessionId === sessionId,
-								);
-								return acceptReplacement(result, known?.cwd ?? `Oturum ${sessionId}`);
-							})
-						}
-					/>
-
-					{lineageFailure === null && lineageProblems.length === 0 ? null : (
-						<Card as="section" className="lineage-problems" role="status" aria-live="polite">
-							<p className="lineage-problems__eyebrow">Oturum bağları</p>
-							<h2>Bilinen geçmiş korunuyor</h2>
-							<p>Yeni bağların bazıları katılamadı; kayıtlı oturumlar tuvalde kalır.</p>
-							<ul>
-								{lineageFailure === null ? null : (
-									<li>
-										<strong>Çakışan veya okunamayan bağ verisi</strong>
-										<span>{lineageFailure}</span>
-									</li>
-								)}
-								{lineageProblems.map((problem, index) => (
-									<li key={`${problem.code}:${problem.source}:${index}`}>
-										<strong>{lineageProblemLabel(problem)}</strong>
-										<span>{problem.message}</span>
-									</li>
-								))}
-							</ul>
-						</Card>
-					)}
-
-					{view.state === undefined ? null : (
-						<Surface
-							as="section"
-							id="discovery-state"
-							className="state-panel"
-							data-tone={view.tone}
-							aria-labelledby="state-title"
-							tone="default"
-							elevation="overlay"
-							radius="lg"
-							padding="lg"
-							border
-						>
-							<p className="state-panel__eyebrow">{view.state.eyebrow}</p>
-							<h2 id="state-title">{view.state.title}</h2>
-							<p>{view.state.description}</p>
-							{view.state.details.length === 0 ? null : (
-								<ul className="state-panel__details">
-									{view.state.details.map((detail) => (
-										<li key={detail}>{detail}</li>
-									))}
-								</ul>
-							)}
-							<Button
-								id="state-action"
-								variant="primary"
-								type="button"
-								disabled={discovering}
-								onClick={() => {
-									void discover();
-									void contributions.reload();
-								}}
-							>
-								{view.state.action}
-							</Button>
-						</Surface>
-					)}
-
 					<p className="canvas-help">
 						Sürükleyerek kaydır · tekerlekle yakınlaştır · <kbd>Tab</kbd> ile oturumlara geç
 					</p>
 				</section>
 
 				<div className="workspace-side-stack">
-					{paneSelection._tag === "closed" ? null : (
-						<ChatPane
-							key={`${paneSelection.selected.identity}:${paneSelection.generation}`}
-							selected={paneSelection.selected}
-							connection={paneSelection.pane.connection}
-							session={paneSelection.pane.session}
-							historyLoading={paneSelection.pane.historyLoading === true}
-							{...(paneSelection.pane.historyMessage === undefined
-								? {}
-								: {historyMessage: paneSelection.pane.historyMessage})}
-							{...(paneSelection.pane.message === undefined
-								? {}
-								: {message: paneSelection.pane.message})}
-							onClose={closePane}
-							onReconnect={rearmReconnect}
-							onLoadOlder={loadOlder}
-							onSend={sendPrompt}
-							onSteer={(text) =>
-								runSelectedControl((correlationId, sessionId) =>
-									steerLiveSession(sessionId, correlationId, text),
-								)
-							}
-							onAbort={() =>
-								runSelectedControl((correlationId, sessionId) =>
-									abortLiveSession(sessionId, correlationId),
-								)
-							}
-							onSetModel={(model: ModelRef) =>
-								runSelectedControl((correlationId, sessionId) =>
-									setModelLiveSession(sessionId, correlationId, model),
-								)
-							}
-							onSetThinking={(level: ThinkingLevel) =>
-								runSelectedControl((correlationId, sessionId) =>
-									setThinkingLiveSession(sessionId, correlationId, level),
-								)
-							}
-						/>
-					)}
-					<ExtensionUIBridge initialSnapshots={restoration?.extensionUI ?? []} />
+					<ManagedTray
+						active={trayPanel}
+						panels={trayPanels}
+						onSelect={(panel) => {
+							setTrayPanel(panel);
+							setMobileLayer(panel === "extensions" ? "extensions" : "chat");
+						}}
+						onClose={dismissTray}
+					/>
 				</div>
 			</main>
 		</div>

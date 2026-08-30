@@ -350,10 +350,16 @@ function WorkingSetFit({
 	const {fitView} = useReactFlow();
 	useEffect(() => {
 		if (revision === 0) return;
-		const frame = requestAnimationFrame(
-			() => void fitView({padding: 0.1, minZoom: minFitZoom, maxZoom: 1}),
-		);
-		return () => cancelAnimationFrame(frame);
+		let fitFrame: number | undefined;
+		const layoutFrame = requestAnimationFrame(() => {
+			fitFrame = requestAnimationFrame(
+				() => void fitView({padding: 0.1, minZoom: minFitZoom, maxZoom: 1}),
+			);
+		});
+		return () => {
+			cancelAnimationFrame(layoutFrame);
+			if (fitFrame !== undefined) cancelAnimationFrame(fitFrame);
+		};
 	}, [fitView, minFitZoom, revision]);
 	return null;
 }
@@ -365,6 +371,7 @@ export interface SessionCanvasProps {
 	readonly onEdgesChange: OnEdgesChange<SessionRelationshipEdge>;
 	readonly onSelect: (session: LineageNode | null) => void;
 	readonly archive?: SessionArchiveControls;
+	readonly fitRevision?: number;
 	readonly contributions?: ContributionRegistry;
 	readonly onContributionFailure?: (failure: ContributionDiagnostic) => void;
 }
@@ -399,6 +406,7 @@ export function SessionCanvas({
 	onEdgesChange,
 	onSelect,
 	archive,
+	fitRevision = 0,
 	contributions = ContributionRegistry.empty(),
 	onContributionFailure = () => undefined,
 }: SessionCanvasProps) {
@@ -537,9 +545,10 @@ export function SessionCanvas({
 				>
 					<Background color="var(--border-faint)" gap={24} size={1} />
 					<CanvasControls minFitZoom={minFitZoom} />
-					{archive === undefined ? null : (
-						<WorkingSetFit revision={archive.viewRevision} minFitZoom={minFitZoom} />
-					)}
+					<WorkingSetFit
+						revision={Math.max(fitRevision, archive?.viewRevision ?? 0)}
+						minFitZoom={minFitZoom}
+					/>
 					<CanvasLegend />
 					<ContributionPanels registry={contributions} onFailure={onContributionFailure} />
 				</ReactFlow>

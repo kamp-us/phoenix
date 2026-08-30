@@ -37,6 +37,7 @@ export interface ChatPaneProps {
 	readonly message?: string;
 	readonly historyLoading?: boolean;
 	readonly historyMessage?: string;
+	readonly showClose?: boolean;
 	readonly onClose: () => void;
 	readonly onReconnect?: () => void;
 	readonly onLoadOlder?: () => void;
@@ -120,12 +121,27 @@ const TranscriptEntry = ({entry}: {readonly entry: LiveTranscriptEntry}) => (
 const connectionCopy = (
 	connection: PaneConnection,
 	message: string | undefined,
+	history: LiveSessionView["history"] | undefined,
 	runtime: LiveSessionView["runtime"] | undefined,
 ): {readonly tone: string; readonly title: string; readonly detail: string} => {
+	if (connection === "attached" && history?._tag === "loading") {
+		return {
+			tone: "loading",
+			title: "Oturum bağlandı · geçmiş yükleniyor",
+			detail: "Sahiplik alındı; yakın konuşma arka planda hazırlanıyor.",
+		};
+	}
+	if (connection === "attached" && history?._tag === "refused") {
+		return {
+			tone: "danger",
+			title: "Oturum bağlandı · geçmiş okunamadı",
+			detail: history.reason,
+		};
+	}
 	if (connection === "attached" && runtime?._tag === "loading") {
 		return {
 			tone: "loading",
-			title: "Geçmiş bağlandı · çalışma zamanı yükleniyor",
+			title: "Geçmiş hazır · çalışma zamanı yükleniyor",
 			detail: "Son konuşma hazır; denetimler Pi çalışma zamanı hazır olunca açılacak.",
 		};
 	}
@@ -198,6 +214,7 @@ export function ChatPane({
 	message,
 	historyLoading = false,
 	historyMessage,
+	showClose = true,
 	onClose,
 	onReconnect = () => undefined,
 	onLoadOlder = () => undefined,
@@ -225,7 +242,12 @@ export function ChatPane({
 	const composer = useComposerEditor();
 	const attachedSession =
 		connection === "attached" && session?._tag === "attached" ? session : null;
-	const connectionStatus = connectionCopy(connection, message, attachedSession?.runtime);
+	const connectionStatus = connectionCopy(
+		connection,
+		message,
+		attachedSession?.history,
+		attachedSession?.runtime,
+	);
 	const attached = attachedSession?.runtime._tag === "ready";
 	const runtimeUnavailable = attachedSession !== null && !attached;
 	const runtimeControlReason =
@@ -400,9 +422,11 @@ export function ChatPane({
 					<h2 id="chat-title">{sessionTitle(selected.cwd)}</h2>
 					<p className="chat-pane__path">{selected.cwd}</p>
 				</div>
-				<Button variant="secondary" type="button" onClick={onClose}>
-					Sohbeti kapat
-				</Button>
+				{showClose ? (
+					<Button variant="secondary" type="button" onClick={onClose}>
+						Sohbeti kapat
+					</Button>
+				) : null}
 			</header>
 
 			<Surface
@@ -423,6 +447,27 @@ export function ChatPane({
 					</Button>
 				) : null}
 			</Surface>
+
+			{attachedSession === null ? null : (
+				<div className="session-loading-states" role="status" aria-label="Oturum yükleme durumları">
+					<span data-state={attachedSession.history._tag}>
+						Geçmiş:{" "}
+						{attachedSession.history._tag === "loading"
+							? "yükleniyor"
+							: attachedSession.history._tag === "ready"
+								? "hazır"
+								: "okunamadı"}
+					</span>
+					<span data-state={attachedSession.runtime._tag}>
+						Çalışma zamanı:{" "}
+						{attachedSession.runtime._tag === "loading"
+							? "yükleniyor"
+							: attachedSession.runtime._tag === "ready"
+								? "hazır"
+								: "başlatılamadı"}
+					</span>
+				</div>
+			)}
 
 			{session === null ? (
 				<EmptyState

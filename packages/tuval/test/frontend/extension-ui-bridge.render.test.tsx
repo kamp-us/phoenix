@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {act, cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {ExtensionUIBridge} from "../../src/frontend-shell/extension-ui-bridge.js";
 import type {ExtensionUIBrowserClient} from "../../src/frontend-shell/extension-ui-client.js";
@@ -134,6 +134,33 @@ describe("ExtensionUIBridge", () => {
 		fireEvent.keyDown(editor, {key: "Escape"});
 		await waitFor(() => expect(client.cancel).toHaveBeenCalledTimes(1));
 		expect(client.cancel).toHaveBeenCalledWith({scope, id: "editor-one"});
+	});
+
+	it("bounds transient notices and dismisses each one independently", async () => {
+		const client = new FakeClient();
+		render(<ExtensionUIBridge client={client} panelVisible={false} />);
+		for (let index = 0; index < 10; index += 1) {
+			act(() =>
+				client.emit({
+					_tag: "notify",
+					sequence: index + 1,
+					scope,
+					request: {
+						type: "extension_ui_request",
+						id: `notice-${index}`,
+						method: "notify",
+						message: `Bildirim ${index}`,
+						notifyType: "info",
+					},
+				}),
+			);
+		}
+		expect(screen.queryByText("Bildirim 0")).toBeNull();
+		expect(screen.queryByText("Bildirim 1")).toBeNull();
+		expect(screen.getAllByRole("button", {name: "Bildirimi kapat"})).toHaveLength(8);
+		fireEvent.click(screen.getAllByRole("button", {name: "Bildirimi kapat"})[0]!);
+		expect(screen.queryByText("Bildirim 2")).toBeNull();
+		expect(screen.getAllByRole("button", {name: "Bildirimi kapat"})).toHaveLength(7);
 	});
 
 	it("isolates same-key current state across packages and renders stable widget placement", async () => {

@@ -34,6 +34,7 @@ const session: AttachedLiveSession = {
 	transcript: [],
 	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 1,
+	history: {_tag: "ready"},
 	runtime: {_tag: "ready"},
 	connection: "connected",
 	ownership: "exclusive",

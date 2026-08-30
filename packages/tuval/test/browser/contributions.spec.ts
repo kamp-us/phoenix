@@ -69,6 +69,7 @@ test("real Tuval server loads, isolates, reports, and unloads package canvas con
 		await expect(page.getByRole("region", {name: "Fixture paket paneli"})).toContainText(
 			"fixture.panel sağlıklı",
 		);
+		await page.locator("#tray-open-contributions").click();
 		await expect(page.getByRole("list", {name: "Etkin paket katkıları"})).toContainText(
 			"fixture-plain-pi",
 		);
@@ -120,6 +121,7 @@ test("real Tuval server loads, isolates, reports, and unloads package canvas con
 		await stop(server.child);
 		server = await start(0, ["../fixtures/render-throw"]);
 		await page.goto(server.url);
+		await page.locator("#tray-open-contributions").click();
 		await expect(isolated).toContainText(
 			"fixture-render-throwKatkı throw.node çizilirken durduruldu",
 		);
@@ -157,20 +159,21 @@ test("narrow Tuval contribution surfaces use one scroll flow without overlap", a
 		const status = page.locator(".contribution-status");
 		const stage = page.locator(".canvas-stage");
 		const launch = page.locator(".session-launch");
+		await page.locator("#tray-open-discovery").focus();
+		await page.locator("#tray-open-discovery").press("Enter");
 		await expect(state).toBeVisible();
+		await expect(page.locator("[data-tray-panel]:not([hidden])")).toHaveCount(1);
+		await page.locator("#tray-open-contributions").focus();
+		await page.locator("#tray-open-contributions").press("Enter");
+		await expect(state).toBeHidden();
 		await expect(status).toBeVisible();
-		await expect(stage).toBeVisible();
+		await expect(page.locator("[data-tray-panel]:not([hidden])")).toHaveCount(1);
+		await page.locator("#tray-open-sessions").focus();
+		await page.locator("#tray-open-sessions").press("Enter");
+		await expect(status).toBeHidden();
 		await expect(launch).toBeVisible();
-		const boxes = await Promise.all(
-			[state, status, stage, launch].map((locator) => locator.boundingBox()),
-		);
-		for (let index = 0; index < boxes.length - 1; index += 1) {
-			const current = boxes[index];
-			const next = boxes[index + 1];
-			expect(current).not.toBeNull();
-			expect(next).not.toBeNull();
-			expect((current?.y ?? 0) + (current?.height ?? 0)).toBeLessThanOrEqual(next?.y ?? 0);
-		}
+		await page.getByRole("button", {name: "Paneli kapat"}).click();
+		await expect(stage).toBeVisible();
 		const canvasControls = page.locator(".canvas-controls");
 		const packagePanels = page.locator(".package-panels");
 		const canvasLegend = page.locator(".canvas-legend");
@@ -195,9 +198,7 @@ test("narrow Tuval contribution surfaces use one scroll flow without overlap", a
 			left.y + left.height > right.y;
 		expect(overlaps(packagePanelsBox, controlsBox)).toBe(false);
 		expect(overlaps(packagePanelsBox, legendBox)).toBe(false);
-		for (const button of await page
-			.locator(".canvas-controls .kp-btn, .session-launch .kp-btn")
-			.all()) {
+		for (const button of await page.locator(".canvas-controls .kp-btn").all()) {
 			const box = await button.boundingBox();
 			expect(box?.height).toBeGreaterThanOrEqual(36);
 			expect(box?.width).toBeGreaterThanOrEqual(36);

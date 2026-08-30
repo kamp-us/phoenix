@@ -26,7 +26,7 @@ import {
 	PiLiveSessionState,
 } from "./live-session-state.js";
 import {resilienceDiagnostic} from "./resilience.js";
-import type {RuntimeLifecycleSource} from "./runtime-lifecycle.js";
+import type {HistoryLifecycleSource, RuntimeLifecycleSource} from "./runtime-lifecycle.js";
 
 export type {
 	AcknowledgementDeadline,
@@ -487,6 +487,10 @@ export const makeResilientPiLiveSession = Effect.fn("LiveSession.resilientConnec
 		"archiveState" in transportFactory && "loadOlder" in transportFactory
 			? (transportFactory as ByteTransportFactory & TranscriptArchiveSource)
 			: undefined;
+	const historyLifecycle =
+		"currentHistory" in transportFactory && "subscribeHistory" in transportFactory
+			? (transportFactory as ByteTransportFactory & HistoryLifecycleSource)
+			: undefined;
 	const runtimeLifecycle =
 		"currentRuntime" in transportFactory && "subscribeRuntime" in transportFactory
 			? (transportFactory as ByteTransportFactory & RuntimeLifecycleSource)
@@ -494,6 +498,7 @@ export const makeResilientPiLiveSession = Effect.fn("LiveSession.resilientConnec
 	const stateOptions: LiveSessionStateOptions = {
 		...options,
 		...(transcriptArchive === undefined ? {} : {transcriptArchive}),
+		...(historyLifecycle === undefined ? {} : {historyLifecycle}),
 		...(runtimeLifecycle === undefined ? {} : {runtimeLifecycle}),
 		onDisconnected: () => {
 			options.onDisconnected?.();

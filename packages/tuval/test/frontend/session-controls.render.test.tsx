@@ -33,6 +33,7 @@ const attached: AttachedLiveSession = {
 	transcript: [],
 	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 8,
+	history: {_tag: "ready"},
 	runtime: {_tag: "ready"},
 	connection: "connected",
 	ownership: "exclusive",

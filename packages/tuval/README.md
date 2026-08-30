@@ -109,12 +109,14 @@ The package exports the schema-backed live-session wire types from `tuval/live-s
 mutations. `GET /fate/live` streams the service's ordered events directly, starting after the
 optional sequence cursor; clients do not poll a query. Attachments hold one exclusive PiClient lease
 at a time. Replacing or disconnecting a session releases its subscription and lease before more work
-can use it. Attach acknowledges that ownership
-with bounded `SessionManager` history before the controllable `AgentSession` is constructed. The
-required runtime state is `loading`, `ready`, or reason-bearing `refused`; Composer and controls stay
-disabled until `ready`, while a refused runtime can be retried without discarding visible history.
+can use it. Attach acknowledges ownership from bounded indexed header metadata before
+`SessionManager` or `AgentSession` construction. The acknowledgement has separate history-loading and
+runtime-loading states and no transcript payload. A worker later publishes the bounded recent window;
+runtime readiness follows independently. Each state can become reason-bearing `refused`. Composer and
+controls stay disabled until runtime `ready`, while a refused runtime can be retried without
+discarding visible history.
 
-Attach returns a recent transcript window bounded by item count and encoded bytes. Its archive state
+The later history snapshot carries a recent transcript window bounded by item count and encoded bytes. Its archive state
 is either complete, or has `hasMore: true` with the only valid cursor for the next older page; the
 union cannot represent a cursor without more history. Pages preserve chronological order and keep
 assistant tool calls with their results. Browser-loaded pages remain local while ordered Pi protocol
@@ -130,6 +132,20 @@ the caller immediately, then detaches the bounded late acknowledgement because p
 cancel frame. Any `AgentSession` that finishes after cancellation or timeout is disposed. Reconnect
 starts one new attempt token, so an older construction cannot replace it. A malformed protocol event
 produces a diagnostic and a disconnected snapshot while retaining the last validated transcript.
+
+## Managed workspace tray
+
+Desktop and narrow workspaces use one fixed right tray for chat, session launch, package
+contributions, restoration diagnostics, lineage/discovery problems, and persistent Extension UI
+state. Exactly one tray panel is visible. The shared switcher opens or replaces that panel; every
+panel has the same close action, `Escape` dismisses it, and focus returns to its opener. Closing the
+chat panel hides it without releasing the selected Pi lease; the chat's own “Sohbeti kapat” action is
+the explicit ownership release.
+
+Transient Extension UI notices do not compete for the tray. They live in a separate stack capped at
+eight newest notices, each with its own dismissal action. At narrow widths the notice stack reserves
+space above the tray instead of covering chat or session controls. The React Flow canvas remains the
+workspace owner and yields right-side room only while a tray panel is open.
 
 ## Extension UI contract
 

@@ -14,6 +14,22 @@ export interface RuntimeLifecycleSource {
 	subscribeRuntime: (listener: (event: RuntimeLifecycle) => void) => () => void;
 }
 
+export type HistoryState =
+	| {readonly _tag: "loading"}
+	| {readonly _tag: "ready"}
+	| {readonly _tag: "refused"; readonly reason: string};
+
+export interface HistoryLifecycle {
+	readonly sessionId: string;
+	readonly attempt: number;
+	readonly state: HistoryState;
+}
+
+export interface HistoryLifecycleSource {
+	currentHistory: (sessionId: string) => HistoryLifecycle | undefined;
+	subscribeHistory: (listener: (event: HistoryLifecycle) => void) => () => void;
+}
+
 export class RuntimeOwnership implements RuntimeLifecycleSource {
 	readonly #owners = new Map<string, string>();
 	readonly #lifecycles = new Map<string, RuntimeLifecycle>();
@@ -82,6 +98,47 @@ export class RuntimeOwnership implements RuntimeLifecycleSource {
 	};
 
 	#publish(lifecycle: RuntimeLifecycle): void {
+		this.#lifecycles.set(lifecycle.sessionId, lifecycle);
+		for (const listener of this.#listeners) listener(lifecycle);
+	}
+}
+
+export class HistoryLifecycleStore implements HistoryLifecycleSource {
+	readonly #lifecycles = new Map<string, HistoryLifecycle>();
+	readonly #listeners = new Set<(event: HistoryLifecycle) => void>();
+	#nextAttempt = 0;
+
+	begin(sessionId: string): HistoryLifecycle {
+		const lifecycle: HistoryLifecycle = {
+			sessionId,
+			attempt: ++this.#nextAttempt,
+			state: {_tag: "loading"},
+		};
+		this.#publish(lifecycle);
+		return lifecycle;
+	}
+
+	ready(lifecycle: HistoryLifecycle): boolean {
+		if (this.#lifecycles.get(lifecycle.sessionId) !== lifecycle) return false;
+		this.#publish({...lifecycle, state: {_tag: "ready"}});
+		return true;
+	}
+
+	refuse(lifecycle: HistoryLifecycle, reason: string): boolean {
+		if (this.#lifecycles.get(lifecycle.sessionId) !== lifecycle) return false;
+		this.#publish({...lifecycle, state: {_tag: "refused", reason}});
+		return true;
+	}
+
+	currentHistory = (sessionId: string): HistoryLifecycle | undefined =>
+		this.#lifecycles.get(sessionId);
+
+	subscribeHistory = (listener: (event: HistoryLifecycle) => void): (() => void) => {
+		this.#listeners.add(listener);
+		return () => this.#listeners.delete(listener);
+	};
+
+	#publish(lifecycle: HistoryLifecycle): void {
 		this.#lifecycles.set(lifecycle.sessionId, lifecycle);
 		for (const listener of this.#listeners) listener(lifecycle);
 	}

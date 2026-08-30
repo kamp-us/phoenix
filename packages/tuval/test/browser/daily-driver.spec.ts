@@ -255,8 +255,10 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		await expect(page.getByRole("region", {name: "Fixture paket paneli"})).toContainText(
 			"fixture.panel sağlıklı",
 		);
+		await page.locator("#tray-open-extensions").click();
 		await expect(page.getByText("eş paket durumu", {exact: true})).toHaveCount(1);
 		await expect(page.getByText("peer below", {exact: true})).toHaveCount(1);
+		await page.getByRole("button", {name: "Paneli kapat"}).click();
 		await page.locator(".detail-setting").getByText("Tam", {exact: true}).click();
 		await expect(page.locator(".detail-setting").getByText("Tam", {exact: true})).toHaveAttribute(
 			"aria-checked",
@@ -275,9 +277,14 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		const attachBytes = (await attachResponse.body()).byteLength;
 		await expect(child.locator(".session-node")).toHaveAttribute("data-selected", "true");
 		await expect(page.locator("#chat-title")).toHaveText("daily-child");
+		await expect(page.getByText("Oturum bağlandı · geçmiş yükleniyor")).toBeVisible();
+		expect(Date.now() - attachStartedAt).toBeLessThan(750);
+		expect(attachBytes).toBeLessThan(20_000);
+		const healthStartedAt = Date.now();
+		const health = await page.request.get(`${server.url}/health`);
+		expect(health.ok()).toBe(true);
+		expect(Date.now() - healthStartedAt).toBeLessThan(250);
 		await expect(page.locator(".chat-pane").getByText("Canlı", {exact: true})).toBeVisible();
-		expect(Date.now() - attachStartedAt).toBeLessThan(5_000);
-		expect(attachBytes).toBeLessThan(500_000);
 		const mountedBeforeOlder = await page.locator(".transcript-entry").count();
 		expect(mountedBeforeOlder).toBeGreaterThan(0);
 		expect(mountedBeforeOlder).toBeLessThanOrEqual(40);
@@ -351,6 +358,7 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 			1,
 		);
 		await expect(page.getByRole("dialog")).toHaveCount(0);
+		await page.locator("#tray-open-extensions").click();
 		await expect(page.getByText("eş paket durumu", {exact: true})).toHaveCount(1);
 		await expect(page.getByText("peer below", {exact: true})).toHaveCount(1);
 		const persistedPi = await readFile(childPath, "utf8");
@@ -380,37 +388,31 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 			coldPage.getByText("Düşünme düzeyi değiştirme pi tarafından onaylandı."),
 		).toHaveCount(0);
 		await expect(coldPage.getByRole("dialog")).toHaveCount(0);
+		await coldPage.locator("#tray-open-extensions").click();
 		await expect(coldPage.getByText("eş paket durumu", {exact: true})).toHaveCount(1);
 		await expect(coldPage.getByText("peer below", {exact: true})).toHaveCount(1);
+		await coldPage.locator("#tray-open-chat").click();
 
 		const desktopChat = coldPage.locator(".chat-pane");
 		const desktopTranscript = coldPage.locator(".transcript");
 		const desktopComposer = coldPage.locator(".composer-shell");
-		const desktopExtension = coldPage.locator(".extension-ui");
-		const [desktopChatBox, desktopTranscriptBox, desktopComposerBox, desktopExtensionBox] =
+		const desktopTray = coldPage.locator(".managed-tray__panel");
+		const [desktopChatBox, desktopTranscriptBox, desktopComposerBox, desktopTrayBox] =
 			await Promise.all([
 				desktopChat.boundingBox(),
 				desktopTranscript.boundingBox(),
 				desktopComposer.boundingBox(),
-				desktopExtension.boundingBox(),
+				desktopTray.boundingBox(),
 			]);
 		expect(desktopChatBox).not.toBeNull();
 		expect(desktopTranscriptBox).not.toBeNull();
 		expect(desktopComposerBox).not.toBeNull();
-		expect(desktopExtensionBox).not.toBeNull();
-		expect((desktopChatBox?.y ?? 0) + (desktopChatBox?.height ?? 0)).toBeLessThanOrEqual(
-			desktopExtensionBox?.y ?? 0,
-		);
-		expect(
-			(desktopTranscriptBox?.y ?? 0) + (desktopTranscriptBox?.height ?? 0),
-		).toBeLessThanOrEqual(desktopExtensionBox?.y ?? 0);
-		expect((desktopComposerBox?.y ?? 0) + (desktopComposerBox?.height ?? 0)).toBeLessThanOrEqual(
-			desktopExtensionBox?.y ?? 0,
-		);
-		expect(desktopChatBox?.width ?? 0).toBeGreaterThanOrEqual(455.5);
-		expect(desktopChatBox?.width ?? 0).toBeLessThanOrEqual(456.5);
-		expect(desktopExtensionBox?.width ?? 0).toBeGreaterThanOrEqual(359.5);
-		expect(desktopExtensionBox?.width ?? 0).toBeLessThanOrEqual(360.5);
+		expect(desktopTrayBox).not.toBeNull();
+		for (const box of [desktopChatBox, desktopTranscriptBox, desktopComposerBox]) {
+			expect(box?.x ?? 0).toBeGreaterThanOrEqual(desktopTrayBox?.x ?? 0);
+			expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(1_280);
+		}
+		await expect(coldPage.locator("[data-tray-panel]:not([hidden])")).toHaveCount(1);
 		expect(await desktopTranscript.evaluate((element) => getComputedStyle(element).overflowY)).toBe(
 			"auto",
 		);
@@ -433,7 +435,7 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		await expect(desktopEditor).toBeFocused();
 		await expect(
 			coldPage.getByText("fixture-extension-ui-peer · session-peer").first(),
-		).toBeVisible();
+		).toHaveCount(0);
 		await expect(coldPage.locator(".react-flow")).toBeVisible();
 		await expect(coldPage.getByRole("button", {name: "Yakınlaştır"})).toBeEnabled();
 
@@ -472,10 +474,10 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 			),
 		).toBe(true);
 		await coldPage.keyboard.press("Escape");
-		await expect(coldPage.locator("#mobile-layer-canvas")).toBeFocused();
+		await expect(coldPage.locator("#tray-open-chat")).toBeFocused();
 		await expect(coldPage.locator("#canvas")).toBeVisible();
 		await expect(coldPage.locator(".chat-pane")).toBeHidden();
-		await expect(coldPage.getByRole("button", {name: "Sohbet", exact: true})).toBeEnabled();
+		await expect(coldPage.locator("#mobile-layer-chat")).toBeEnabled();
 		await expect(coldPage.locator('[data-id="pi:daily-child"] .session-node')).toHaveAttribute(
 			"data-selected",
 			"true",
@@ -483,12 +485,10 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		await expect(coldPage.getByRole("button", {name: "Yakınlaştır"})).toBeEnabled();
 		const controlsBox = await coldPage.locator(".canvas-controls").boundingBox();
 		const packagePanelBox = await coldPage.locator(".package-panels").boundingBox();
-		const contributionBox = await coldPage.locator(".contribution-status").boundingBox();
 		const canvasStageBox = await coldPage.locator(".canvas-stage").boundingBox();
 		const canvasLegendBox = await coldPage.locator(".canvas-legend").boundingBox();
 		expect(controlsBox).not.toBeNull();
 		expect(packagePanelBox).not.toBeNull();
-		expect(contributionBox).not.toBeNull();
 		expect(canvasStageBox).not.toBeNull();
 		expect(canvasLegendBox).not.toBeNull();
 		expect((controlsBox?.y ?? 0) + (controlsBox?.height ?? 0)).toBeLessThanOrEqual(
@@ -496,9 +496,6 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		);
 		expect((packagePanelBox?.y ?? 0) + (packagePanelBox?.height ?? 0)).toBeLessThanOrEqual(
 			canvasLegendBox?.y ?? 0,
-		);
-		expect((contributionBox?.y ?? 0) + (contributionBox?.height ?? 0)).toBeLessThanOrEqual(
-			canvasStageBox?.y ?? 0,
 		);
 		for (const control of await coldPage.locator(".canvas-controls button").all()) {
 			const box = await control.boundingBox();
@@ -513,7 +510,7 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 			contentType: "image/png",
 		});
 
-		await coldPage.getByRole("button", {name: "Extension UI", exact: true}).click();
+		await coldPage.locator("#mobile-layer-extensions").click();
 		await expect(coldPage.locator(".extension-ui")).toBeVisible();
 		await expect(coldPage.locator("#canvas")).toBeHidden();
 		await expect(coldPage.locator(".chat-pane")).toBeHidden();
@@ -535,7 +532,7 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 			contentType: "image/png",
 		});
 
-		await coldPage.getByRole("button", {name: "Sohbet", exact: true}).click();
+		await coldPage.locator("#mobile-layer-chat").click();
 		const mobileChatPane = coldPage.locator(".chat-pane");
 		await expect(mobileChatPane).toBeVisible();
 		await expect(coldPage.getByRole("textbox", {name: "İstem"})).toBeVisible();
@@ -548,7 +545,7 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 			path: mobileChat,
 			contentType: "image/png",
 		});
-		await coldPage.getByRole("button", {name: "Tuval", exact: true}).click();
+		await coldPage.locator("#mobile-layer-canvas").click();
 		await expect(coldPage.locator("#canvas")).toBeVisible();
 		await expect(coldPage.locator(".chat-pane")).toBeHidden();
 
@@ -568,6 +565,7 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 		attachErrors(degradedPage, errors);
 		await degradedPage.goto(server.url);
 		await expect(degradedPage.locator('[data-id="pi:daily-parent"]')).toBeVisible();
+		await degradedPage.locator("#tray-open-restoration").click();
 		await expect(degradedPage.getByRole("heading", {name: "Geri yükleme durumu"})).toBeVisible();
 		await expect(
 			degradedPage.getByText("Önceki sohbet kullanılamıyor", {exact: true}),
@@ -581,11 +579,15 @@ test("real daily-driver survives mounted reconnect, cold restore, and one indepe
 			"data-selected",
 			"false",
 		);
+		await degradedPage.getByRole("button", {name: "Paneli kapat"}).click();
+		await expect(degradedPage.locator("#tray-open-restoration")).toBeFocused();
 		const focusedParent = degradedPage.locator('[data-id="pi:daily-parent"]');
+		await focusedParent.focus();
 		await expect(focusedParent).toBeFocused();
 		await focusedParent.press("Enter");
 		await expect(degradedPage.locator("#chat-title")).toHaveText("daily-parent");
 		await expect(focusedParent.locator(".session-node")).toHaveAttribute("data-selected", "true");
+		await degradedPage.locator("#tray-open-extensions").click();
 		await expect(degradedPage.getByText("eş paket durumu", {exact: true})).toHaveCount(1);
 		await expect(degradedPage.getByRole("dialog")).toHaveCount(0);
 		await expect(degradedPage.locator(".react-flow")).toBeVisible();

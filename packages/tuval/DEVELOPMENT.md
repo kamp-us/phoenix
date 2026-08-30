@@ -20,9 +20,10 @@ The process prints its selected URL after the server is ready and opens it in th
 
 The default command runs Tuval's in-process production coding-agent protocol service. It reads pi's
 ordinary settings, packages, credentials, and session files from `PI_CODING_AGENT_DIR` (or the
-standard pi agent directory when the variable is absent). Selecting a retained session should show
-its recent history immediately with “çalışma zamanı yükleniyor”; Composer and controls become
-available only after runtime readiness:
+standard pi agent directory when the variable is absent). Selecting a retained session first shows
+acknowledged ownership with “geçmiş yükleniyor”. A bounded recent window then appears while the
+separate Pi runtime may still say “çalışma zamanı yükleniyor”; Composer and controls become available
+only after runtime readiness:
 
 ```bash
 node packages/tuval/dist/backend/bin.js

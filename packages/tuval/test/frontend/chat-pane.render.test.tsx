@@ -41,6 +41,7 @@ const attached: AttachedLiveSession = {
 	],
 	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 8,
+	history: {_tag: "ready"},
 	runtime: {_tag: "ready"},
 	connection: "connected",
 	ownership: "exclusive",
@@ -67,6 +68,40 @@ describe("ChatPane", () => {
 		expect(view.container.querySelector(".chat-pane.kp-surface")).toBeTruthy();
 		expect(view.container.querySelectorAll(".transcript-entry.kp-card")).toHaveLength(2);
 		expect(screen.getByRole("button", {name: "Gönder"}).getAttribute("data-scope")).toBe("button");
+	});
+
+	it("renders ownership, initial history, and runtime loading as separate truths", () => {
+		const view = render(
+			<ChatPane
+				selected={selected}
+				connection="attached"
+				session={{
+					...attached,
+					transcript: [],
+					history: {_tag: "loading"},
+					runtime: {_tag: "loading"},
+				}}
+				onClose={vi.fn()}
+				onSend={async () => ({ok: true, message: "onaylandı"})}
+			/>,
+		);
+		expect(screen.getByText("Oturum bağlandı · geçmiş yükleniyor")).toBeTruthy();
+		expect(screen.getByText("Geçmiş: yükleniyor")).toBeTruthy();
+		expect(screen.getByText("Çalışma zamanı: yükleniyor")).toBeTruthy();
+		expect(screen.queryByText("Oturum sahipliği doğrulanıyor.")).toBeNull();
+
+		view.rerender(
+			<ChatPane
+				selected={selected}
+				connection="attached"
+				session={{...attached, runtime: {_tag: "loading"}}}
+				onClose={vi.fn()}
+				onSend={async () => ({ok: true, message: "onaylandı"})}
+			/>,
+		);
+		expect(screen.getByText("Geçmiş hazır · çalışma zamanı yükleniyor")).toBeTruthy();
+		expect(screen.getByText("Geçmiş: hazır")).toBeTruthy();
+		expect(screen.getByText("Çalışma zamanı: yükleniyor")).toBeTruthy();
 	});
 
 	it("distinguishes attached archive loading from ownership verification", () => {

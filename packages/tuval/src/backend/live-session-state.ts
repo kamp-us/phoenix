@@ -26,6 +26,7 @@ import type {
 	CreateLiveSessionRequest,
 	LiveSessionControls,
 	LiveSessionEvent,
+	LiveSessionHistory,
 	LiveSessionRuntime,
 	LiveSessionView,
 	LiveTranscriptEntry,
@@ -40,7 +41,12 @@ import type {
 } from "../shared/live-session.js";
 import type {TranscriptArchiveSource} from "./coding-agent-pi-service.js";
 import {resilienceDiagnostic} from "./resilience.js";
-import type {RuntimeLifecycle, RuntimeLifecycleSource} from "./runtime-lifecycle.js";
+import type {
+	HistoryLifecycle,
+	HistoryLifecycleSource,
+	RuntimeLifecycle,
+	RuntimeLifecycleSource,
+} from "./runtime-lifecycle.js";
 
 const EVENT_HISTORY_LIMIT = 500;
 const CORRELATED_PROMPT_LIMIT = 100;
@@ -60,7 +66,8 @@ interface Attachment {
 	snapshot: SessionSnapshot;
 	transcript: Array<LiveTranscriptEntry>;
 	readonly toolCallBuffers: Map<string, string>;
-	readonly archive: LiveSessionView["archive"];
+	archive: LiveSessionView["archive"];
+	readonly history: {readonly attempt?: number; view: LiveSessionHistory};
 	readonly runtime: AttachmentRuntime;
 	disconnectedReason?: string;
 	leaseReleased: boolean;
@@ -110,6 +117,7 @@ export interface LiveSessionStateOptions {
 	readonly onDisconnected?: () => void;
 	readonly onSessionSubscriptionBound?: (sessionId: string) => void;
 	readonly transcriptArchive?: TranscriptArchiveSource;
+	readonly historyLifecycle?: HistoryLifecycleSource;
 	readonly runtimeLifecycle?: RuntimeLifecycleSource;
 }
 
@@ -363,6 +371,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	readonly #unsubscribeConnection: Unsubscribe;
 	readonly #unsubscribeEvents: Unsubscribe;
 	readonly #unsubscribeServer: Unsubscribe;
+	readonly #unsubscribeHistory: Unsubscribe;
 	readonly #unsubscribeRuntime: Unsubscribe;
 	readonly #acknowledgementTimeoutMs: number;
 	readonly #makeAcknowledgementDeadline: (timeoutMs: number) => AcknowledgementDeadline;
@@ -416,6 +425,9 @@ export class PiLiveSessionState implements LiveSessionState {
 				else pending.eventsAfterSnapshot.push(event);
 			}
 		});
+		this.#unsubscribeHistory =
+			options.historyLifecycle?.subscribeHistory((event) => this.#acceptHistory(event)) ??
+			(() => undefined);
 		this.#unsubscribeRuntime =
 			options.runtimeLifecycle?.subscribeRuntime((event) => this.#acceptRuntime(event)) ??
 			(() => undefined);
@@ -602,6 +614,7 @@ export class PiLiveSessionState implements LiveSessionState {
 		this.#unsubscribeConnection();
 		this.#unsubscribeServer();
 		this.#unsubscribeEvents();
+		this.#unsubscribeHistory();
 		this.#unsubscribeRuntime();
 		this.#listeners.clear();
 		await this.#client.dispose();
@@ -1192,6 +1205,7 @@ export class PiLiveSessionState implements LiveSessionState {
 	}
 
 	#candidateAttachment(lease: PiSessionHandle, snapshot: SessionSnapshot): Attachment {
+		const history = this.#options.historyLifecycle?.currentHistory(snapshot.id);
 		const runtime = this.#options.runtimeLifecycle?.currentRuntime(snapshot.id);
 		return {
 			lease,
@@ -1202,6 +1216,10 @@ export class PiLiveSessionState implements LiveSessionState {
 			archive: this.#options.transcriptArchive?.archiveState(snapshot.id, snapshot.transcript) ?? {
 				_tag: "complete",
 				hasMore: false,
+			},
+			history: {
+				...(history === undefined ? {} : {attempt: history.attempt}),
+				view: this.#historyViewOf(history),
 			},
 			runtime:
 				runtime === undefined
@@ -1219,6 +1237,10 @@ export class PiLiveSessionState implements LiveSessionState {
 		attachment.unsubscribes.push(unsubscribe);
 		this.#clearPrompts();
 		this.#attachment = attachment;
+		const history = this.#options.historyLifecycle?.currentHistory(attachment.snapshot.id);
+		if (history !== undefined && history.attempt === attachment.history.attempt) {
+			attachment.history.view = this.#historyViewOf(history);
+		}
 		const runtime = this.#options.runtimeLifecycle?.currentRuntime(attachment.snapshot.id);
 		if (
 			runtime !== undefined &&
@@ -1416,6 +1438,26 @@ export class PiLiveSessionState implements LiveSessionState {
 		this.#promptGeneration = undefined;
 	}
 
+	#historyViewOf(history: HistoryLifecycle | undefined): LiveSessionHistory {
+		if (history === undefined || history.state._tag === "ready") return {_tag: "ready"};
+		if (history.state._tag === "loading") return {_tag: "loading"};
+		return {_tag: "refused", reason: history.state.reason};
+	}
+
+	#acceptHistory(event: HistoryLifecycle): void {
+		const attachment = this.#attachment;
+		if (
+			attachment === undefined ||
+			attachment.snapshot.id !== event.sessionId ||
+			attachment.history.attempt !== event.attempt ||
+			attachment.disconnectedReason !== undefined
+		) {
+			return;
+		}
+		attachment.history.view = this.#historyViewOf(event);
+		this.#publishSession(attachment);
+	}
+
 	#runtimeViewOf(runtime: RuntimeLifecycle | undefined): LiveSessionRuntime {
 		if (runtime === undefined || runtime.state._tag === "ready") return {_tag: "ready"};
 		if (runtime.state._tag === "loading") return {_tag: "loading"};
@@ -1442,6 +1484,9 @@ export class PiLiveSessionState implements LiveSessionState {
 		if (attachment === undefined || attachment.generation !== generation) return;
 		attachment.snapshot = snapshot;
 		attachment.transcript = snapshot.transcript.map(entryOf);
+		attachment.archive =
+			this.#options.transcriptArchive?.archiveState(snapshot.id, snapshot.transcript) ??
+			attachment.archive;
 		attachment.toolCallBuffers.clear();
 		this.#publishSession(attachment);
 	}
@@ -1566,6 +1611,7 @@ export class PiLiveSessionState implements LiveSessionState {
 			transcript: [...attachment.transcript],
 			archive: attachment.archive,
 			lastEventSequence: sequence,
+			history: attachment.history.view,
 			runtime: attachment.runtime.view,
 			controls: this.#controlsOf(attachment),
 		};

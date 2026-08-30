@@ -95,6 +95,7 @@ test("real server preserves correlation, placement, scoped isolation, and mounte
 	let server = await start();
 	try {
 		await page.goto(server.url);
+		await page.locator("#tray-open-extensions").click();
 		await expect(page.getByText("eş paket durumu")).toBeVisible();
 		await writeFile(server.handshake, "browser attached\n", "utf8");
 

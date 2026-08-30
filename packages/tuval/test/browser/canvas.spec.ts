@@ -45,6 +45,7 @@ const liveSession = (
 	transcript,
 	archive: {_tag: "complete", hasMore: false},
 	lastEventSequence: 4,
+	history: {_tag: "ready"},
 	runtime: {_tag: "ready"},
 	connection: "connected",
 	ownership: "exclusive",
@@ -255,6 +256,12 @@ const selectNode = async (page: Page, identity: string): Promise<void> => {
 		node.focus();
 		node.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", code: "Enter", bubbles: true}));
 	});
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+			),
+	);
 };
 
 const pageErrors = (page: Page): Array<string> => {
@@ -403,7 +410,7 @@ test("the existing tuval process renders the React Flow pan and zoom canvas", as
 	const nodes = page.locator('[data-id="pi:session-alpha"], [data-id="pi:session-beta"]');
 	await expect(nodes).toHaveCount(2);
 	await expect(page.locator("#status-label")).toHaveText("Bağlı");
-	await expect(page.locator("aside")).toHaveCount(0);
+	await expect(page.locator(".chat-pane")).toHaveCount(0);
 	const firstNodeStatus = nodes.first().getByRole("status");
 	await expect(firstNodeStatus).toHaveText(/Kayıtlı görünüm/);
 	await expect(firstNodeStatus).toHaveAttribute("aria-live", "polite");
@@ -428,7 +435,7 @@ test("the existing tuval process renders the React Flow pan and zoom canvas", as
 
 	await nodes.first().focus();
 	await page.keyboard.press("Enter");
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.getByRole("alert")).toContainText("Bağlantı kesildi");
 	await expect(firstNodeStatus).toHaveText(/Kayıtlı görünüm/);
 	await expect(firstNodeStatus).not.toContainText("Bağlantı kesildi");
@@ -583,7 +590,7 @@ test("a 1,000-plus archive keeps a bounded useful canvas with complete progressi
 		"data-selected",
 		"true",
 	);
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.locator("#chat-title")).toHaveText("project-3");
 	await expect.poll(() => attachCalls).toBe(1);
 
@@ -623,7 +630,7 @@ test("a 1,000-plus archive keeps a bounded useful canvas with complete progressi
 	await expect(page.locator(`[data-id="${child.identity}"]`)).toBeVisible();
 
 	await selectNode(page, child.identity);
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.locator("#chat-title")).toHaveText("project-4");
 	await expect.poll(() => attachCalls).toBe(2);
 
@@ -676,7 +683,10 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 		});
 	});
 	await page.goto(tuvalUrl);
+	await page.locator("#tray-open-restoration").click();
 	await expect(page.getByText("Çalışma alanı geri yüklendi")).toBeVisible();
+	await page.getByRole("button", {name: "Paneli kapat"}).click();
+	await expect(page.locator("#tray-open-restoration")).toBeFocused();
 	await expect(page.locator(".contribution-status")).toHaveAttribute("aria-busy", "false");
 
 	const rootNode = page.locator('[data-id="pi:flow-root"]');
@@ -743,15 +753,18 @@ test("React Flow renders and operates the complete keyboard relationship contrac
 	await rootNode.focus();
 	await expect(rootNode).toBeFocused();
 	await rootNode.press("Enter");
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.getByRole("alert")).toContainText("Bağlantı kesildi");
 	await expect(rootNode).toBeFocused();
 	await rootNode.press("Escape");
-	await expect(page.locator("aside")).toHaveCount(0);
+	await expect(page.locator(".chat-pane")).toHaveCount(0);
 	await expect(rootNode).not.toHaveClass(/selected/);
 
 	await page.reload();
+	await page.locator("#tray-open-restoration").click();
 	await expect(page.getByText("Çalışma alanı geri yüklendi")).toBeVisible();
+	await page.getByRole("button", {name: "Paneli kapat"}).click();
+	await expect(page.locator("#tray-open-restoration")).toBeFocused();
 	await expect(page.locator(".contribution-status")).toHaveAttribute("aria-busy", "false");
 	await expect(childNode).toBeVisible();
 	await childNode.press("Enter");
@@ -987,9 +1000,26 @@ test("typed lineage stays readable and durable across dense problems and a confl
 	);
 	await expect(page.getByText("1 devam")).toBeVisible();
 	await expect(page.locator('[data-id^="resume:"]')).toHaveCount(0);
+	await page.locator("#tray-open-lineage").click();
 	await expect(page.getByText("Birleşmemiş oturum")).toBeVisible();
 	await expect(page.getByText("Bozuk kayıt")).toBeVisible();
 	await expect(page.getByText("Kaynağı artık yok")).toBeVisible();
+	for (const width of [800, 721]) {
+		await page.setViewportSize({width, height: 800});
+		const [canvasBox, stageBox, trayBox] = await Promise.all([
+			page.locator(".canvas").boundingBox(),
+			page.locator(".canvas-stage").boundingBox(),
+			page.locator(".managed-tray__panel").boundingBox(),
+		]);
+		expect(canvasBox).not.toBeNull();
+		expect(stageBox).not.toBeNull();
+		expect(trayBox).not.toBeNull();
+		expect(canvasBox?.width ?? 0).toBeGreaterThan(0);
+		expect(Math.abs((stageBox?.x ?? 0) - (canvasBox?.x ?? 0))).toBeLessThanOrEqual(1);
+		expect(Math.abs((stageBox?.width ?? 0) - (canvasBox?.width ?? 0))).toBeLessThanOrEqual(1);
+		expect((canvasBox?.x ?? 0) + (canvasBox?.width ?? 0)).toBeLessThanOrEqual(trayBox?.x ?? 0);
+	}
+	await page.setViewportSize({width: 1_280, height: 800});
 	const edgeNodeIntersections = await page.evaluate(
 		(relationships) => {
 			const collisions: Array<string> = [];
@@ -1028,17 +1058,13 @@ test("typed lineage stays readable and durable across dense problems and a confl
 	);
 	expect(edgeNodeIntersections).toEqual([]);
 	const stageBox = await page.locator("#canvas-stage").boundingBox();
-	const problemBox = await page.locator(".lineage-problems").boundingBox();
+	const problemBox = await page.locator(".managed-tray__panel").boundingBox();
 	if (stageBox === null || problemBox === null)
 		throw new Error("dense canvas regions did not render");
 	expect(stageBox.x + stageBox.width).toBeLessThanOrEqual(problemBox.x);
-	for (const nodeElement of await page.locator(".react-flow__node").all()) {
-		const nodeBox = await nodeElement.boundingBox();
-		if (nodeBox === null) throw new Error("dense lineage node did not render");
-		expect(
-			nodeBox.x + nodeBox.width <= problemBox.x || nodeBox.x >= problemBox.x + problemBox.width,
-		).toBe(true);
-	}
+	expect(
+		await page.locator(".canvas").evaluate((element) => getComputedStyle(element).overflow),
+	).toBe("hidden");
 	const capturePath = testInfo.outputPath("lineage-canvas.png");
 	await page.screenshot({path: capturePath, fullPage: true});
 	await testInfo.attach("lineage-canvas", {path: capturePath, contentType: "image/png"});
@@ -1103,6 +1129,7 @@ test("an initial lineage failure keeps discovered sessions as truthful nodes wit
 	await expect(page.locator('[data-id="pi:known-root"]')).toBeVisible();
 	await expect(page.locator('[data-id="pi:known-child"]')).toBeVisible();
 	await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+	await page.locator("#tray-open-lineage").click();
 	await expect(page.getByText("Çakışan veya okunamayan bağ verisi")).toBeVisible();
 	expect(errors).toEqual([]);
 });
@@ -1264,7 +1291,7 @@ test("all four persisted detail levels preserve the live React Flow interaction 
 		/detail-stalled oturumu, detail-stalled, Bağlantı kesildi, Canlı bağlantı yok/,
 	);
 	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
-	await expect(page.locator("aside")).toHaveCount(0);
+	await expect(page.locator(".chat-pane")).toHaveCount(0);
 	await page.locator(".detail-setting").getByText("Tam", {exact: true}).click();
 
 	await page.reload();
@@ -1351,6 +1378,7 @@ test("loading is explicit while discovery is in flight", async ({page}) => {
 		300,
 	);
 	await page.goto(tuvalUrl);
+	await page.locator("#tray-open-discovery").click();
 	const retryAction = page.locator("#state-action");
 	await expect(page.locator("#status-label")).toHaveText("Oturumlar aranıyor");
 	await expect(page.locator("#state-title")).toHaveText("Etkin çalışmalar bulunuyor");
@@ -1528,12 +1556,12 @@ for (const refreshCase of clearingRefreshCases) {
 		await page.getByRole("button", {name: "Oturumları yenile"}).click();
 		await releaseRequest;
 		expect(releaseCalls).toBe(1);
-		await expect(page.locator("aside")).toHaveCount(1);
+		await expect(page.locator(".chat-pane")).toHaveCount(1);
 		await expect(page.locator("#chat-title")).toHaveText("selected");
 		await expect(page.locator("#status-label")).toHaveText("Bağlı");
 
 		finishRelease?.();
-		await expect(page.locator("aside")).toHaveCount(0);
+		await expect(page.locator(".chat-pane")).toHaveCount(0);
 		await expect(page.locator("#status-label")).toHaveText(refreshCase.status);
 		await expect(page.locator("#canvas")).toBeFocused();
 		expect(errors).toEqual([]);
@@ -1633,7 +1661,7 @@ test("discovery remains serialized through a stateful release and its live event
 	await expect(page.getByRole("alert")).toContainText("Oturum sahipliği bırakıldı.");
 
 	finishRelease?.();
-	await expect(page.locator("aside")).toHaveCount(0);
+	await expect(page.locator(".chat-pane")).toHaveCount(0);
 	await expect(page.locator("#status-label")).toHaveText("Oturum yok");
 	await expect(refresh).toBeEnabled();
 	expect(discoveryResponses).toBe(2);
@@ -1672,6 +1700,12 @@ test("Composer keeps its keyboard focus ring visible while the editor scrolls", 
 	await selectNode(page, "pi:focus-selected");
 
 	const editor = page.getByRole("textbox", {name: "İstem"});
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+			),
+	);
 	await editor.focus();
 	await expect(editor).toBeFocused();
 	const focusPaint = await editor.evaluate((element) => {
@@ -1728,6 +1762,104 @@ test("Composer keeps its keyboard focus ring visible while the editor scrolls", 
 	expect(errors).toEqual([]);
 });
 
+test("managed right tray opens, switches, dismisses, scrolls, and returns focus on desktop", async ({
+	page,
+}) => {
+	const problems = Array.from({length: 36}, (_, index) => ({
+		source: `/fixtures/broken-${index}.jsonl`,
+		message: `header ${index} is not valid JSON`,
+	}));
+	await routeOutcome(page, () => ({
+		_tag: "partial-source",
+		sessions: [session("tray-session", "/work/tray")],
+		problems,
+	}));
+	await page.setViewportSize({width: 1_280, height: 640});
+	await page.goto(tuvalUrl);
+
+	await page.getByRole("button", {name: "Oturum", exact: true}).click();
+	await expect(page.locator(".managed-tray__panel")).toBeVisible();
+	await expect(page.getByRole("region", {name: "Oturum oluşturma ve açma"})).toBeVisible();
+	await expect(page.getByRole("button", {name: "Paneli kapat"})).toBeFocused();
+	await expect(page.locator("[data-tray-panel]:not([hidden])")).toHaveCount(1);
+
+	await page.getByRole("button", {name: "Durum", exact: true}).click();
+	await expect(page.getByRole("heading", {name: "Bir kaynak okunamadı"})).toBeVisible();
+	await expect(page.locator("[data-tray-panel]:not([hidden])")).toHaveCount(1);
+	const bodyOverflow = await page.locator(".state-panel__details").evaluate((element) => ({
+		scrollHeight: element.scrollHeight,
+		clientHeight: element.clientHeight,
+	}));
+	expect(bodyOverflow.scrollHeight).toBeGreaterThan(bodyOverflow.clientHeight);
+	const [switcherBox, panelBox] = await Promise.all([
+		page.locator(".managed-tray__switcher").boundingBox(),
+		page.locator(".managed-tray__panel").boundingBox(),
+	]);
+	expect(switcherBox).not.toBeNull();
+	expect(panelBox).not.toBeNull();
+	expect((switcherBox?.y ?? 0) + (switcherBox?.height ?? 0)).toBeLessThanOrEqual(panelBox?.y ?? 0);
+
+	await page.setViewportSize({width: 800, height: 640});
+	const [mediumCanvas, mediumPanel] = await Promise.all([
+		page.locator(".canvas").boundingBox(),
+		page.locator(".managed-tray__panel").boundingBox(),
+	]);
+	expect(mediumCanvas).not.toBeNull();
+	expect(mediumPanel).not.toBeNull();
+	expect(mediumCanvas?.width ?? 0).toBeGreaterThan(0);
+	expect((mediumCanvas?.x ?? 0) + (mediumCanvas?.width ?? 0)).toBeLessThanOrEqual(
+		mediumPanel?.x ?? 0,
+	);
+	const zoom = page.getByRole("button", {name: "Yakınlaştır"});
+	await zoom.focus();
+	await zoom.press("Escape");
+	await expect(page.locator(".managed-tray__panel")).toBeHidden();
+	await expect(page.getByRole("button", {name: "Durum", exact: true})).toBeFocused();
+});
+
+test("managed tray reserves narrow controls while switching and dismissing", async ({page}) => {
+	const problems = Array.from({length: 24}, (_, index) => ({
+		source: `/fixtures/narrow-${index}.jsonl`,
+		message: `narrow diagnostic ${index}`,
+	}));
+	await routeOutcome(page, () => ({
+		_tag: "partial-source",
+		sessions: [session("narrow-tray", "/work/narrow")],
+		problems,
+	}));
+	await page.setViewportSize({width: 390, height: 844});
+	await page.goto(tuvalUrl);
+
+	await page.getByRole("button", {name: "Oturum", exact: true}).click();
+	const panel = page.locator(".managed-tray__panel");
+	await expect(panel).toBeVisible();
+	const [mobileNavigation, switcher, panelBox] = await Promise.all([
+		page.getByRole("navigation", {name: "Mobil çalışma alanı katmanları"}).boundingBox(),
+		page.locator(".managed-tray__switcher").boundingBox(),
+		panel.boundingBox(),
+	]);
+	expect(mobileNavigation).not.toBeNull();
+	expect(switcher).not.toBeNull();
+	expect(panelBox).not.toBeNull();
+	expect((mobileNavigation?.y ?? 0) + (mobileNavigation?.height ?? 0)).toBeLessThanOrEqual(
+		switcher?.y ?? 0,
+	);
+	expect((switcher?.y ?? 0) + (switcher?.height ?? 0)).toBeLessThanOrEqual(panelBox?.y ?? 0);
+	for (const control of await panel.locator("input, button").all()) {
+		const box = await control.boundingBox();
+		if (box === null) continue;
+		expect(box.x).toBeGreaterThanOrEqual(panelBox?.x ?? 0);
+		expect(box.x + box.width).toBeLessThanOrEqual((panelBox?.x ?? 0) + (panelBox?.width ?? 0));
+	}
+
+	await page.getByRole("button", {name: "Durum", exact: true}).click();
+	await expect(page.locator('[data-tray-panel="discovery"]')).toBeVisible();
+	await expect(page.locator("[data-tray-panel]:not([hidden])")).toHaveCount(1);
+	await page.getByRole("button", {name: "Paneli kapat"}).click();
+	await expect(panel).toBeHidden();
+	await expect(page.getByRole("button", {name: "Durum", exact: true})).toBeFocused();
+});
+
 test("slow runtime attach paints bounded history, refusal, retry, and eventual controls", async ({
 	page,
 }) => {
@@ -1777,7 +1909,11 @@ test("slow runtime attach paints bounded history, refusal, retry, and eventual c
 			attachCalls += 1;
 			await fulfill(route, id, {
 				_tag: "attached",
-				session: runtimeSession({_tag: "loading"}, false),
+				session: {
+					...runtimeSession({_tag: "loading"}, false),
+					history: {_tag: "loading"},
+					transcript: [],
+				},
 			});
 			return;
 		}
@@ -1788,8 +1924,26 @@ test("slow runtime attach paints bounded history, refusal, retry, and eventual c
 
 	const startedAt = Date.now();
 	await selectNode(page, retained.identity);
-	await expect(page.getByText("Geçmiş bağlandı · çalışma zamanı yükleniyor")).toBeVisible();
+	await expect(page.getByText("Oturum bağlandı · geçmiş yükleniyor")).toBeVisible();
 	expect(Date.now() - startedAt).toBeLessThan(1_000);
+	await expect(page.getByText("Geçmiş: yükleniyor")).toBeVisible();
+	await expect(page.getByText("Çalışma zamanı: yükleniyor")).toBeVisible();
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const state = Reflect.get(window, "__tuvalEventSourceState") as
+					| (() => {count: number})
+					| undefined;
+				return state?.().count ?? 0;
+			}),
+		)
+		.toBe(1);
+	await emitLive(page, {
+		_tag: "session",
+		sequence: 5,
+		session: runtimeSession({_tag: "loading"}, false),
+	});
+	await expect(page.getByText("Geçmiş hazır · çalışma zamanı yükleniyor")).toBeVisible();
 	await expect(page.getByText("runtime-loading mevcut konuşma")).toBeVisible();
 	const editor = page.getByRole("textbox", {name: "İstem"});
 	await expect(editor).toHaveAttribute("contenteditable", "false");
@@ -1805,18 +1959,18 @@ test("slow runtime attach paints bounded history, refusal, retry, and eventual c
 
 	await emitLive(page, {
 		_tag: "session",
-		sequence: 5,
+		sequence: 6,
 		session: runtimeSession({_tag: "refused", reason: "fixture extension failed"}, false),
 	});
 	await expect(page.getByText("Çalışma zamanı başlatılamadı")).toBeVisible();
 	await expect(page.getByText("fixture extension failed", {exact: true})).toBeVisible();
 	await page.getByRole("button", {name: "Yeniden bağlan"}).click();
 	await expect.poll(() => attachCalls).toBe(2);
-	await expect(page.getByText("Geçmiş bağlandı · çalışma zamanı yükleniyor")).toBeVisible();
+	await expect(page.getByText("Oturum bağlandı · geçmiş yükleniyor")).toBeVisible();
 
 	await emitLive(page, {
 		_tag: "session",
-		sequence: 6,
+		sequence: 7,
 		session: runtimeSession({_tag: "ready"}, true),
 	});
 	await expect(page.locator(".chat-pane")).toHaveAttribute("data-runtime", "ready");
@@ -1903,12 +2057,12 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 	await page.goto(tuvalUrl);
 
 	await selectNode(page, "pi:chat-alpha");
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.locator("#chat-title")).toHaveText("alpha");
 	await expect(page.getByText("chat-alpha mevcut konuşma")).toBeVisible();
 
 	await selectNode(page, "pi:chat-beta");
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.locator("#chat-title")).toHaveText("beta");
 	await expect(page.getByText("Bağlanıyor", {exact: true})).toBeVisible();
 	await expect(page.getByText("chat-alpha mevcut konuşma")).toHaveCount(0);
@@ -1917,16 +2071,16 @@ test("one chat pane swaps sessions, restores focus, and streams Composer prompts
 
 	await page.getByRole("button", {name: "Oturumları yenile"}).click();
 	await expect.poll(() => discoveryCalls).toBe(2);
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.locator("#chat-title")).toHaveText("beta");
 	expect(releaseCalls).toBe(0);
 	finishRefresh?.();
 	await expect.poll(() => discoveryResponses).toBe(2);
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.locator("#chat-title")).toHaveText("beta");
 
 	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
-	await expect(page.locator("aside")).toHaveCount(0);
+	await expect(page.locator(".chat-pane")).toHaveCount(0);
 	await expect(page.locator('[data-id="pi:chat-beta"]')).toBeFocused();
 	await expect.poll(() => releaseCalls).toBe(1);
 
@@ -2188,14 +2342,14 @@ test("ownership, disconnect, malformed stream, and send failures are accessible"
 
 	releaseFails = true;
 	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
-	await expect(page.locator("aside")).toHaveCount(1);
+	await expect(page.locator(".chat-pane")).toHaveCount(1);
 	await expect(page.locator(".chat-connection")).toContainText("Sahiplik bırakılamadı");
 	await expect(page.locator(".chat-connection")).toContainText(
 		"Seçim ve sahiplik doğrusu korunuyor",
 	);
 	releaseFails = false;
 	await page.getByRole("button", {name: "Sohbeti kapat"}).click();
-	await expect(page.locator("aside")).toHaveCount(0);
+	await expect(page.locator(".chat-pane")).toHaveCount(0);
 	expect(releaseCalls).toBeGreaterThanOrEqual(2);
 	expect(errors).toEqual([]);
 });
@@ -2334,6 +2488,7 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 	});
 
 	await page.goto(tuvalUrl);
+	await page.locator("#tray-open-sessions").click();
 	const cwd = page.getByRole("textbox", {name: "Çalışma dizini"});
 	await cwd.fill("/work/created");
 	await page.getByRole("button", {name: "Yeni oturum"}).click();
@@ -2358,7 +2513,7 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 	await selectNode(page, "pi:control-alpha");
 	const model = page.getByRole("combobox", {name: "Model"});
 	await expect(model).toHaveValue("anthropic/claude-sonnet");
-	await model.focus();
+	await model.click();
 	await model.selectOption("openai/gpt-5");
 	await expect(page.getByText("Model değiştirme onayı bekleniyor.")).toBeVisible();
 	await expect(model).toHaveValue("anthropic/claude-sonnet");
@@ -2367,7 +2522,7 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 	await expect(model).toBeFocused();
 
 	const thinking = page.getByRole("combobox", {name: "Düşünme düzeyi"});
-	await thinking.focus();
+	await thinking.click();
 	await thinking.selectOption("medium");
 	await expect(page.getByText("Düşünme düzeyi değiştirme onayı bekleniyor.")).toBeVisible();
 	await expect(thinking).toHaveValue("high");
@@ -2394,6 +2549,8 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 	await expect(abort).toBeFocused();
 	await expect(page.locator(".session-phase strong", {hasText: "Hazır"})).toBeVisible();
 
+	await page.locator("#tray-open-sessions").focus();
+	await page.locator("#tray-open-sessions").press("Enter");
 	for (const width of [800, 721]) {
 		await page.setViewportSize({width, height: 900});
 		for (const field of [cwd, sessionId]) {
@@ -2409,6 +2566,8 @@ test("the cockpit reconciles all six controls without optimistic state", async (
 		});
 	}
 
+	await page.locator("#tray-open-chat").focus();
+	await page.locator("#tray-open-chat").press("Enter");
 	await page.setViewportSize({width: 390, height: 844});
 	const topbarBox = await page.locator(".topbar").boundingBox();
 	const chatBox = await page.locator(".chat-pane").boundingBox();
