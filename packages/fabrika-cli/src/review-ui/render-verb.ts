@@ -37,7 +37,7 @@ import {
 	parseFlagOperands,
 } from "../capture/flag-override.ts";
 import {isRealizedState, provesSession, REALIZED_STATES, stateOf} from "../capture/states.ts";
-import {writeFile, writePrivateFile} from "../io/fs.ts";
+import {writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
@@ -55,13 +55,8 @@ import {
 	type CaptureManifest,
 	isKebabSetName,
 	manifestPath,
-	mintPreviewProvenance,
-	newPreviewCapability,
-	PREVIEW_PROVENANCE_RECEIPT,
-	previewProvenanceCapabilityPath,
 	serializeManifest,
 	setDirectory,
-	sha256Hex,
 } from "./manifest.ts";
 import {resolvePreview} from "./preview.ts";
 
@@ -351,47 +346,23 @@ export const runRender = (
 		}
 
 		const manifest: CaptureManifest = {
+			schemaVersion: 2,
+			source: "review-ui-render",
+			repository: repo,
 			set: options.out,
 			pr,
 			head,
+			app: announced.app,
 			previewUrl: announced.url,
+			flags: options.flags,
 			captures: renders.map((render) => (render as {entry: CaptureEntry}).entry),
 		};
 		const document = serializeManifest(manifest);
-		const capability = newPreviewCapability();
-		const provenance = mintPreviewProvenance(
-			{
-				repository: repo,
-				pr,
-				head,
-				app: announced.app,
-				previewUrl: announced.url,
-				manifestSha256: sha256Hex(new TextEncoder().encode(document)),
-			},
-			capability,
-		);
-		const receipt = JSON.stringify(provenance);
-		const capabilityPath = previewProvenanceCapabilityPath(
-			options.tmpRoot,
-			repo,
-			pr,
-			head,
-			options.out,
-		);
-		const written = yield* Effect.result(
-			Effect.all(
-				[
-					writeFile(manifestPath(setDir), document),
-					writeFile(`${setDir}/${PREVIEW_PROVENANCE_RECEIPT}`, receipt),
-					writePrivateFile(capabilityPath, capability),
-				],
-				{concurrency: 3},
-			),
-		);
+		const written = yield* Effect.result(writeFile(manifestPath(setDir), document));
 		if (Result.isFailure(written)) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot write the set manifest and preview provenance for #${pr}: ${written.failure.reason} — the captures exist but the set does not.`,
+				`${VERB}: cannot write the set manifest for #${pr}: ${written.failure.reason} — the captures exist but the set does not.`,
 				enumerated,
 			);
 		}

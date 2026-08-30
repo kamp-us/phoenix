@@ -29,15 +29,7 @@ import {
 	type CiCaptureManifest,
 	declarationDigest,
 } from "./localhost-evidence.ts";
-import {
-	type CaptureManifest,
-	mintPreviewProvenance,
-	PREVIEW_PROVENANCE_RECEIPT,
-	parseManifest,
-	previewProvenanceCapabilityPath,
-	serializeManifest,
-	sha256Hex,
-} from "./manifest.ts";
+import {type CaptureManifest, serializeManifest, sha256Hex} from "./manifest.ts";
 import {runPost, type UploadLeg} from "./post-verb.ts";
 import {classifyProbe} from "./upload-leg.ts";
 
@@ -48,7 +40,7 @@ const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 const SET_DIR = "/tmp/fabrika-review-ui/4321-03135b91/judged";
 const CAPTURE_PATH = `${SET_DIR}/pano.png`;
 const MANIFEST_PATH = `${SET_DIR}/manifest.json`;
-const PREVIEW_RECEIPT_PATH = `${SET_DIR}/${PREVIEW_PROVENANCE_RECEIPT}`;
+const VERIFY_PATH = "/tmp/fabrika-review-ui-post-verification/pano.png";
 const CI_CAPTURE_PATH = `${SET_DIR}/captures/desktop.png`;
 const CI_RECEIPT_PATH = `${SET_DIR}/${CI_PROVENANCE_RECEIPT}`;
 const REMOTE_CI_DIR = "/tmp/re-downloaded-ci-artifact";
@@ -82,10 +74,15 @@ const BYTES = Uint8Array.from([
 ]);
 
 const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => ({
+	schemaVersion: 2,
+	source: "review-ui-render",
+	repository: "o/r",
 	set: "judged",
 	pr: 4321,
 	head: HEAD,
+	app: "web",
 	previewUrl: "https://pr-4321.example.test",
+	flags: [],
 	captures: [
 		{
 			surface: "/pano",
@@ -98,32 +95,6 @@ const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => 
 	],
 	...overrides,
 });
-
-const previewProvenance = (document: string, capability = "a".repeat(64)) => {
-	const parsed = JSON.parse(document) as CaptureManifest;
-	const receipt = mintPreviewProvenance(
-		{
-			repository: "o/r",
-			pr: parsed.pr,
-			head: parsed.head,
-			app: "web",
-			previewUrl: parsed.previewUrl,
-			manifestSha256: sha256Hex(new TextEncoder().encode(document)),
-		},
-		capability,
-	);
-	return {
-		receipt: JSON.stringify(receipt),
-		capabilityPath: previewProvenanceCapabilityPath(
-			"/tmp",
-			"o/r",
-			parsed.pr,
-			parsed.head,
-			parsed.set,
-		),
-		capability,
-	};
-};
 
 const ciManifest = (overrides: Partial<CiCaptureManifest> = {}): CiCaptureManifest => ({
 	schemaVersion: 1,
@@ -191,19 +162,11 @@ const fs = (shape: FsShape): Layer.Layer<FileSystem.FileSystem | Path.Path> =>
 
 const world = (overrides: FsShape = {}): Layer.Layer<FileSystem.FileSystem | Path.Path> => {
 	const document = overrides.strings?.[MANIFEST_PATH] ?? serializeManifest(manifest());
-	const provenance =
-		parseManifest(document)._tag === "Manifest"
-			? previewProvenance(document)
-			: {receipt: "{}", capabilityPath: "/absent", capability: ""};
 	return fs({
-		strings: {
-			[MANIFEST_PATH]: document,
-			[PREVIEW_RECEIPT_PATH]: provenance.receipt,
-			[provenance.capabilityPath]: provenance.capability,
-			...overrides.strings,
-		},
+		strings: {[MANIFEST_PATH]: document, ...overrides.strings},
 		bytes: {
 			[CAPTURE_PATH]: BYTES,
+			[VERIFY_PATH]: BYTES,
 			[REMOTE_CI_CAPTURE_PATH]: BYTES,
 			...overrides.bytes,
 		},
@@ -277,6 +240,18 @@ const options = {
 	tmpRoot: "/tmp",
 	harnessPath: HARNESS,
 	upload: hostingLeg,
+	renderPreview: (request: {readonly surface: string}) =>
+		Effect.succeed({
+			_tag: "Rendered" as const,
+			entry: {
+				surface: request.surface,
+				path: VERIFY_PATH,
+				width: 1280,
+				height: 2140,
+				sha256: sha256Hex(BYTES),
+				pageErrors: {rows: [], more: 0},
+			},
+		}),
 	fetchCiBundle: () =>
 		Effect.succeed(
 			ok({
@@ -629,24 +604,28 @@ describe("runPost", () => {
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
-	it("rejects a forged preview receipt plus the caller-nominated matching key", async () => {
-		const document = serializeManifest(manifest());
-		const forged = previewProvenance(document, "f".repeat(64));
-		const keyId = "1".repeat(32);
-		const layer = fs({
+	it("rejects forged preview bytes even when the caller writes the former production key and receipt", async () => {
+		const forgedBytes = Uint8Array.from([...BYTES, 0x41]);
+		const forgedManifest = manifest({
+			captures: [
+				{
+					...manifest().captures[0]!,
+					sha256: sha256Hex(forgedBytes),
+				},
+			],
+		});
+		const legacyKeyPath = `/tmp/fabrika-review-ui-capabilities/${sha256Hex(new TextEncoder().encode("o/r"))}/4321-${HEAD}/judged.key`;
+		const layer = world({
 			strings: {
-				[MANIFEST_PATH]: document,
-				[PREVIEW_RECEIPT_PATH]: JSON.stringify({
-					...(JSON.parse(forged.receipt) as Record<string, unknown>),
-					keyId,
-				}),
-				[`/tmp/fabrika-review-ui-provenance/${keyId}.key`]: forged.capability,
+				[MANIFEST_PATH]: serializeManifest(forgedManifest),
+				[`${SET_DIR}/preview-provenance.json`]: JSON.stringify({signature: "f".repeat(64)}),
+				[legacyKeyPath]: "f".repeat(64),
 			},
-			bytes: {[CAPTURE_PATH]: BYTES},
+			bytes: {[CAPTURE_PATH]: forgedBytes},
 		});
 		const {outcome, requests} = await run(happy(), {}, layer);
 		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
-		expect(outcome.stderr.join("\n")).toContain("does not match its review-ui render provenance");
+		expect(outcome.stderr.join("\n")).toContain("independent live-preview recapture");
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
@@ -655,13 +634,8 @@ describe("runPost", () => {
 			captures: [{...manifest().captures[0]!, path: "/tmp/arbitrary.png"}],
 		});
 		const document = serializeManifest(outside);
-		const provenance = previewProvenance(document);
-		const layer = fs({
-			strings: {
-				[MANIFEST_PATH]: document,
-				[PREVIEW_RECEIPT_PATH]: provenance.receipt,
-				[provenance.capabilityPath]: provenance.capability,
-			},
+		const layer = world({
+			strings: {[MANIFEST_PATH]: document},
 			bytes: {"/tmp/arbitrary.png": BYTES},
 		});
 		const {outcome, requests} = await run(happy(), {}, layer);
@@ -746,16 +720,12 @@ describe("runPost", () => {
 
 	it("keeps an unreadable capture UNKNOWN (11) rather than calling it invalid", async () => {
 		const document = serializeManifest(manifest());
-		const provenance = previewProvenance(document);
 		const {outcome} = await run(
 			happy(),
 			{},
 			fs({
-				strings: {
-					[MANIFEST_PATH]: document,
-					[PREVIEW_RECEIPT_PATH]: provenance.receipt,
-					[provenance.capabilityPath]: provenance.capability,
-				},
+				strings: {[MANIFEST_PATH]: document},
+				bytes: {[VERIFY_PATH]: BYTES},
 			}),
 		);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);

@@ -5,6 +5,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {CapturedSurface} from "../capture/capture.ts";
 import {errOut, fakeSeams, okOut, once, type Scripted} from "../fakes.test-support.ts";
+import type {ChildRunner} from "../io/exec.ts";
 import {createFixture, readSidecarCaptures, runCiProduce} from "./ci-produce-verb.ts";
 import {LOCALHOST_DECLARATIONS_PATH, parseCiCaptureManifest} from "./localhost-evidence.ts";
 
@@ -246,7 +247,81 @@ describe("trusted localhost producer flow", () => {
 
 		expect(outcome.code).toBe(11);
 		expect(seams.calls.some((call) => call.includes("server-workspace,dst=/subject"))).toBe(false);
+		expect(seams.calls.filter((call) => call.startsWith("docker rm --force "))).toEqual([
+			"docker rm --force fabrika-review-ui-subject-42-test",
+			"docker rm --force fabrika-review-ui-subject-42-server-prepare",
+			"docker rm --force fabrika-review-ui-subject-42-server",
+			"docker rm --force fabrika-review-ui-subject-42-capture",
+			"docker rm --force fabrika-review-ui-subject-42-capture-extract",
+		]);
 		await expect(readFile(join(outputDir, "manifest.json"), "utf8")).rejects.toThrow();
+		await rm(root, {recursive: true, force: true});
+	});
+
+	it("force-removes every named container after the Docker client times out", async () => {
+		const root = await mkdtemp(join(tmpdir(), "ci-produce-timeout-cleanup-"));
+		const authorityRoot = join(root, "authority");
+		const subjectRoot = join(root, "subject");
+		const outputDir = join(root, "output");
+		await mkdir(join(authorityRoot, ".github"), {recursive: true});
+		await mkdir(subjectRoot, {recursive: true});
+		await writeFile(join(authorityRoot, LOCALHOST_DECLARATIONS_PATH), authority);
+		const calls: string[] = [];
+		let gitRead = 0;
+		const bytes = (text: string) => new TextEncoder().encode(text);
+		const runner: ChildRunner = (request) => {
+			const line = `${request.file} ${request.args.join(" ")}`;
+			calls.push(line);
+			if (request.file === "git") {
+				gitRead += 1;
+				return Effect.succeed({
+					_tag: "Ran" as const,
+					exitCode: 0,
+					timedOut: false,
+					stdout: bytes(gitRead === 1 ? HEAD : AUTHORITY_HEAD),
+					stderr: bytes(""),
+					truncated: false,
+				});
+			}
+			const timedOut =
+				line.includes("docker run --rm --network none") && line.includes("test-workspace");
+			return Effect.succeed({
+				_tag: "Ran" as const,
+				exitCode: timedOut ? null : 0,
+				timedOut,
+				stdout: bytes(""),
+				stderr: bytes(""),
+				truncated: false,
+			});
+		};
+		const seams = fakeSeams([]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(
+				runCiProduce({
+					pr: 7190,
+					head: HEAD,
+					authorityHead: AUTHORITY_HEAD,
+					harness: "tuval",
+					runId: 42,
+					repository: "kamp-us/phoenix",
+					subjectRoot,
+					authorityRoot,
+					outputDir,
+					env: {PATH: "/bin"},
+					capture,
+					runner,
+				}),
+				seams.layer,
+			),
+		);
+		expect(outcome.code).toBe(11);
+		expect(calls.filter((call) => call.startsWith("docker rm --force "))).toEqual([
+			"docker rm --force fabrika-review-ui-subject-42-test",
+			"docker rm --force fabrika-review-ui-subject-42-server-prepare",
+			"docker rm --force fabrika-review-ui-subject-42-server",
+			"docker rm --force fabrika-review-ui-subject-42-capture",
+			"docker rm --force fabrika-review-ui-subject-42-capture-extract",
+		]);
 		await rm(root, {recursive: true, force: true});
 	});
 
@@ -371,10 +446,13 @@ describe("trusted localhost producer flow", () => {
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ready")],
+			[/^docker volume create .*o=size=256m .*capture-output$/, okOut("capture-output")],
 			[/^docker run --rm --network container:container-id /, okOut("")],
+			[/^docker run --rm --network none .*capture-extract/, okOut("")],
 			[/^docker rm /, okOut("")],
 			[/^docker volume rm .*test-workspace$/, okOut("")],
 			[/^docker volume rm .*server-workspace$/, okOut("")],
+			[/^docker volume rm .*capture-output$/, okOut("")],
 			[/^docker image rm /, okOut("")],
 		];
 		const seams = fakeSeams(script);
@@ -428,6 +506,10 @@ describe("trusted localhost producer flow", () => {
 		const sidecar = seams.calls.find((call) =>
 			call.startsWith("docker run --rm --network container:container-id"),
 		);
+		const extraction = seams.calls.find(
+			(call) =>
+				call.startsWith("docker run --rm --network none") && call.includes("capture-extract"),
+		);
 		expect(subjectRun).toContain("--read-only --cap-drop ALL");
 		expect(subjectRun).toContain("no-new-privileges");
 		expect(subjectRun).toContain("pnpm install --offline --frozen-lockfile");
@@ -442,8 +524,10 @@ describe("trusted localhost producer flow", () => {
 		expect(server).toContain("server-workspace,dst=/subject,readonly");
 		expect(server).not.toContain("test-workspace");
 		expect(sidecar).toContain("/authority,dst=/authority,readonly");
-		expect(sidecar).toContain("/output,dst=/capture-output");
+		expect(sidecar).toContain("capture-output,dst=/capture-output");
 		expect(sidecar).toContain("ci-capture-sidecar.ts 4173 /capture-output tuval");
+		expect(extraction).toContain("capture-output,dst=/capture,readonly");
+		expect(extraction).toContain(`${outputDir},dst=/output`);
 		await rm(root, {recursive: true, force: true});
 	});
 });

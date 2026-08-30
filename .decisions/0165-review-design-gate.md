@@ -161,8 +161,10 @@ Keeping that shape outside this decision lets the implementation change without 
 into a second contract.
 
 The consequence is one verdict grammar and one fail-closed namespace. Preview evidence and governed
-CI evidence both produce the ordinary SHA-bound `review-ui` marker. Missing, pending, stale,
-invalid, or untrusted evidence produces no marker and no bypass.
+CI evidence both produce the ordinary SHA-bound `review-ui` marker. Preview files are caller-owned,
+so `post` independently re-renders the live announced preview and byte-compares every surface;
+local receipts or keys establish no authority. Missing, pending, stale, invalid, or untrusted
+evidence produces no marker and no bypass.
 
 An uncaught browser `pageerror` from a sanctioned, readable render is mandatory FAIL ground. It is an
 objective runtime failure independently of the six visual prohibitions, not a holistic or taste-based

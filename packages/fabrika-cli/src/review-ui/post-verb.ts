@@ -2,9 +2,9 @@
  * `review-ui post` — the single sanctioned `review-ui` verdict emit.
  *
  * Eight steps, each gating the next: re-resolve the live head, read the evidence set through its
- * manifest, require a `render` receipt for preview evidence or re-download the exact CI artifact
- * selected by the governed workflow/run/check/artifact tuple, byte-compare every CI member,
- * re-validate every capture, **verify-upload every capture before anything posts**, compose through the wire
+ * manifest, independently re-render and byte-compare preview evidence or re-download the exact CI
+ * artifact selected by the governed workflow/run/check/artifact tuple, re-validate every capture,
+ * **verify-upload every capture before anything posts**, compose through the wire
  * format with complete provenance, leak-scan the assembled comment, upsert one
  * comment for this namespace under this carrier, and read it back from live PR state.
  *
@@ -18,10 +18,14 @@
  * There is no `--namespace`. This group emits `review-ui` and nothing else, so a
  * misdirected-namespace write is unrepresentable rather than refused.
  */
-import {Effect, type FileSystem, Path, Result} from "effect";
+import {randomUUID} from "node:crypto";
+import {Effect, FileSystem, Path, Result} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readIdentity, sessionCookies} from "../capture/auth.ts";
+import {overrideCookies, parseFlagOperands} from "../capture/flag-override.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
+import {provesSession, stateOf} from "../capture/states.ts";
 import {exists, readFile} from "../io/fs.ts";
 import {createComment, getComment, listComments} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
@@ -64,19 +68,16 @@ import {
 } from "./localhost-evidence.ts";
 import {
 	type CaptureEntry,
+	type CaptureManifest,
 	isKebabSetName,
 	manifestPath,
-	PREVIEW_PROVENANCE_RECEIPT,
-	type PreviewProvenance,
 	parseManifest,
-	parsePreviewProvenance,
-	previewProvenanceCapabilityPath,
 	readCaptureBytes,
 	setDirectory,
 	sha256Hex,
-	verifyPreviewProvenance,
 } from "./manifest.ts";
 import {resolvePreview} from "./preview.ts";
+import type {RenderLeg} from "./render-verb.ts";
 
 const VERB = "review-ui post";
 
@@ -138,6 +139,8 @@ export interface PostOptions {
 	 */
 	readonly harnessPath: string;
 	readonly upload: UploadLeg;
+	/** Independent trusted preview capture used to authenticate caller-owned local bytes. */
+	readonly renderPreview: RenderLeg;
 	readonly fetchCiBundle?: typeof fetchCiBundle;
 }
 
@@ -152,6 +155,81 @@ const unreadable = (what: string, pr: number, reason: string): VerbOutcome =>
 		PRECONDITION_UNKNOWN,
 		`${VERB}: cannot read ${what} for #${pr}: ${reason} — nothing was uploaded or posted.`,
 	);
+
+type PreviewRevalidation =
+	| {readonly _tag: "Verified"}
+	| {readonly _tag: "Mismatch"; readonly reason: string}
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+const revalidatePreview = (
+	manifest: CaptureManifest,
+	options: PostOptions,
+): Effect.Effect<PreviewRevalidation, never, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const flags = parseFlagOperands(manifest.flags);
+		if (flags._tag === "Malformed") {
+			return {_tag: "Mismatch", reason: `flag operand ${flags.token} is malformed`} as const;
+		}
+		const wantsAuth = manifest.captures.some((capture) => provesSession(stateOf(capture.surface)));
+		const identity = readIdentity(options.env);
+		if (wantsAuth && identity._tag === "Missing") {
+			return {
+				_tag: "Unknown",
+				reason: `authenticated recapture credentials are incomplete (unset: ${identity.names.join(", ")})`,
+			} as const;
+		}
+		const cookies = [
+			...(identity._tag === "Identity"
+				? sessionCookies(manifest.previewUrl, identity.token, identity.secret)
+				: []),
+			...overrideCookies(manifest.previewUrl, flags.flags),
+		];
+		const verificationDir = `${options.tmpRoot}/fabrika-review-ui-post-${randomUUID()}`;
+		const fs = yield* FileSystem.FileSystem;
+		return yield* Effect.gen(function* () {
+			for (const expected of manifest.captures) {
+				const rendered = yield* options.renderPreview({
+					surface: expected.surface,
+					previewUrl: manifest.previewUrl,
+					outDir: verificationDir,
+					cookies: provesSession(stateOf(expected.surface)) ? cookies : [],
+					forcedFlags: flags.flags,
+				});
+				if (rendered._tag !== "Rendered") {
+					return {
+						_tag: "Unknown",
+						reason: `independent recapture of ${expected.surface} returned ${rendered._tag}`,
+					} as const;
+				}
+				const actual = rendered.entry;
+				const bytes = yield* readCaptureBytes(actual.path);
+				if (bytes._tag === "Unreadable") {
+					return {
+						_tag: "Unknown",
+						reason: `independent recapture of ${expected.surface} is unreadable (${bytes.reason})`,
+					} as const;
+				}
+				if (
+					actual.surface !== expected.surface ||
+					actual.width !== expected.width ||
+					actual.height !== expected.height ||
+					actual.sha256 !== expected.sha256 ||
+					JSON.stringify(actual.pageErrors) !== JSON.stringify(expected.pageErrors) ||
+					sha256Hex(bytes.value) !== expected.sha256
+				) {
+					return {
+						_tag: "Mismatch",
+						reason: `capture ${expected.surface} does not byte-match an independent live-preview recapture`,
+					} as const;
+				}
+			}
+			return {_tag: "Verified"} as const;
+		}).pipe(
+			Effect.ensuring(
+				fs.remove(verificationDir, {recursive: true, force: true}).pipe(Effect.ignore),
+			),
+		);
+	});
 
 const governedCiAuthority = (repo: string, manifest: CiCaptureManifest, evidence: string) =>
 	Effect.gen(function* () {
@@ -450,13 +528,19 @@ export const runPost = (
 			);
 		}
 		let trustedCiProvenance: ValidatedCiProvenance | null = null;
-		let trustedPreviewProvenance: PreviewProvenance | null = null;
+		let trustedPreviewManifest: CaptureManifest | null = null;
 		if (!requiresCiProvenance) {
 			const previewManifest = previewRead?._tag === "Manifest" ? previewRead.value : null;
-			if (previewManifest === null) {
+			if (
+				previewManifest === null ||
+				previewManifest.repository !== repo ||
+				previewManifest.pr !== pr ||
+				previewManifest.set !== options.evidence ||
+				previewManifest.captures.some((capture) => !capture.surface.startsWith("/"))
+			) {
 				return refuse(
 					MALFORMED_DOCUMENT,
-					`${VERB}: preview evidence set "${options.evidence}" has no readable preview manifest.`,
+					`${VERB}: preview evidence set "${options.evidence}" does not match its render request.`,
 				);
 			}
 			if (!prefixMatch(previewManifest.head, inspected)) {
@@ -465,39 +549,29 @@ export const runPost = (
 					`${VERB}: evidence set "${options.evidence}" was rendered at ${previewManifest.head.slice(0, 7)}, you are posting at ${inspected.slice(0, 7)} — stale pixels; re-render at the live head.`,
 				);
 			}
-			const receiptRead = yield* Effect.result(readFile(`${setDir}/${PREVIEW_PROVENANCE_RECEIPT}`));
-			if (Result.isFailure(receiptRead)) {
-				return refuse(
-					MALFORMED_DOCUMENT,
-					`${VERB}: preview evidence set "${options.evidence}" has no review-ui render provenance receipt — route-shaped local captures are not evidence.`,
-				);
+			const previewComments = yield* listComments(repo, pr);
+			if (previewComments._tag === "Failure") {
+				return unreadable("the live preview announcement", pr, previewComments.reason);
 			}
-			const receipt = parsePreviewProvenance(receiptRead.success);
-			const capabilityRead = yield* Effect.result(
-				readFile(
-					previewProvenanceCapabilityPath(options.tmpRoot, repo, pr, live, options.evidence),
-				),
-			);
-			const manifestHash = sha256Hex(new TextEncoder().encode(document.success));
+			const preview = resolvePreview(previewComments.value, previewManifest.app);
 			if (
-				receipt === null ||
-				Result.isFailure(capabilityRead) ||
-				!verifyPreviewProvenance(receipt, capabilityRead.success) ||
-				receipt.repository !== repo ||
-				receipt.pr !== pr ||
-				receipt.head !== previewManifest.head ||
-				receipt.previewUrl !== previewManifest.previewUrl ||
-				receipt.manifestSha256 !== manifestHash ||
-				previewManifest.pr !== pr ||
-				previewManifest.set !== options.evidence ||
-				previewManifest.captures.some((capture) => !capture.surface.startsWith("/"))
+				preview._tag !== "Resolved" ||
+				preview.value.url !== previewManifest.previewUrl ||
+				!prefixMatch(live, preview.value.deployedSha)
 			) {
 				return refuse(
-					MALFORMED_DOCUMENT,
-					`${VERB}: preview evidence set "${options.evidence}" does not match its review-ui render provenance receipt.`,
+					STALE_TREE,
+					`${VERB}: preview evidence set "${options.evidence}" no longer matches the live preview announcement.`,
 				);
 			}
-			trustedPreviewProvenance = receipt;
+			const revalidated = yield* revalidatePreview(previewManifest, options);
+			if (revalidated._tag !== "Verified") {
+				return refuse(
+					revalidated._tag === "Mismatch" ? MALFORMED_DOCUMENT : PRECONDITION_UNKNOWN,
+					`${VERB}: preview evidence set "${options.evidence}" was not authenticated by an independent live-preview recapture (${revalidated.reason}).`,
+				);
+			}
+			trustedPreviewManifest = previewManifest;
 		}
 		if (requiresCiProvenance) {
 			const receiptRead = yield* Effect.result(readFile(`${setDir}/${CI_PROVENANCE_RECEIPT}`));
@@ -748,11 +822,11 @@ export const runPost = (
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
 		const comments = yield* listComments(repo, pr);
 		if (comments._tag === "Failure") return unreadable("the comments", pr, comments.reason);
-		if (trustedPreviewProvenance !== null) {
-			const preview = resolvePreview(comments.value, trustedPreviewProvenance.app);
+		if (trustedPreviewManifest !== null) {
+			const preview = resolvePreview(comments.value, trustedPreviewManifest.app);
 			if (
 				preview._tag !== "Resolved" ||
-				preview.value.url !== trustedPreviewProvenance.previewUrl ||
+				preview.value.url !== trustedPreviewManifest.previewUrl ||
 				!prefixMatch(live, preview.value.deployedSha)
 			) {
 				return refuse(

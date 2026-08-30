@@ -3,11 +3,13 @@ import {resolve} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {
 	boundedBrowserErrors,
+	captureOutputContainerArgs,
 	isolatedEnvironment,
 	subjectCaptureContainerArgs,
 	subjectInstallAndTestContainerArgs,
 	subjectPrepareServerContainerArgs,
 	subjectServerContainerArgs,
+	subjectVolumeCreateArgs,
 } from "./ci-produce-verb.ts";
 import {
 	BROWSER_ERROR_TEXT_CAP,
@@ -110,6 +112,11 @@ describe("localhost evidence governance floor", () => {
 		assert.include(test, "--read-only");
 		assert.include(test, "--cap-drop");
 		assert.include(test, "no-new-privileges");
+		assert.include(test, "--name");
+		assert.include(test, "subject-test");
+		assert.include(test, "--cpus");
+		assert.include(test, "--memory");
+		assert.include(test, "--pids-limit");
 		assert.include(
 			test,
 			'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile && exec "$@"',
@@ -125,6 +132,11 @@ describe("localhost evidence governance floor", () => {
 		assert.include(serverPreparation, "none");
 		assert.include(serverPreparation, "--read-only");
 		assert.include(serverPreparation, "no-new-privileges");
+		assert.include(serverPreparation, "--name");
+		assert.include(serverPreparation, "subject-server-prepare");
+		assert.include(serverPreparation, "--cpus");
+		assert.include(serverPreparation, "--memory");
+		assert.include(serverPreparation, "--pids-limit");
 		assert.include(
 			serverPreparation,
 			'cp -a /subject-source/. /subject/ && pnpm install --offline --frozen-lockfile --ignore-scripts --ignore-pnpmfile && exec "$@"',
@@ -145,6 +157,9 @@ describe("localhost evidence governance floor", () => {
 		assert.include(server, "--read-only");
 		assert.include(server, "--cap-drop");
 		assert.include(server, "no-new-privileges");
+		assert.include(server, "--cpus");
+		assert.include(server, "--memory");
+		assert.include(server, "--pids-limit");
 		assert.include(server, "type=volume,src=fresh-server-workspace,dst=/subject,readonly");
 		assert.include(server, "type=bind,src=/trusted-fixture,dst=/review-ui-fixture,readonly");
 		assert.notInclude(server.join(" "), "authority");
@@ -154,15 +169,43 @@ describe("localhost evidence governance floor", () => {
 			"subject",
 			"subject-server",
 			"/authority",
-			"/trusted-output",
+			"capture-output",
 			4173,
 			"tuval",
 		);
 		assert.include(capture.join(" "), "--network container:subject-server");
 		assert.include(capture, "type=bind,src=/authority,dst=/authority,readonly");
-		assert.include(capture, "type=bind,src=/trusted-output,dst=/capture-output");
+		assert.include(capture, "type=volume,src=capture-output,dst=/capture-output");
 		assert.include(capture, "--read-only");
 		assert.include(capture, "no-new-privileges");
+		assert.include(capture, "--name");
+		assert.include(capture, "subject-server-capture");
+		assert.include(capture, "--cpus");
+		assert.include(capture, "--memory");
+		assert.include(capture, "--pids-limit");
+
+		const extraction = captureOutputContainerArgs(
+			"subject",
+			"capture-output",
+			"/trusted-output",
+			"subject-capture-extract",
+		);
+		assert.include(extraction, "type=volume,src=capture-output,dst=/capture,readonly");
+		assert.include(extraction, "type=bind,src=/trusted-output,dst=/output");
+		assert.include(extraction, "--cpus");
+		assert.include(extraction, "--memory");
+		assert.include(extraction, "--pids-limit");
+
+		const volume = subjectVolumeCreateArgs("subject-workspace");
+		assert.deepStrictEqual(volume.slice(-2), ["o=size=2g", "subject-workspace"]);
+		assert.include(volume, "type=tmpfs");
+	});
+
+	it("documents the complete Tuval desktop and mobile fetch success", () => {
+		const command = read("packages/fabrika-cli/src/review-ui/command.ts");
+		assert.include(command, '"surfaces":2');
+		assert.include(command, '"surface":"tuval-cockpit-desktop"');
+		assert.include(command, '"surface":"tuval-cockpit-mobile"');
 	});
 
 	it("bounds every browser-error row while preserving deterministic priority and overflow", () => {

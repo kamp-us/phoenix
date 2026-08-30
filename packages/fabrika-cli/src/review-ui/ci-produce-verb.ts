@@ -6,7 +6,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type CapturedSurface, captureShots} from "../capture/capture.ts";
 import type {Shot} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
-import {execRecord} from "../io/exec.ts";
+import {type ChildRunner, execRecord} from "../io/exec.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -63,6 +63,8 @@ export interface CiProduceOptions {
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly capture?: typeof captureLocalhost;
 	readonly readSidecar?: typeof readSidecarCaptures;
+	/** Process seam for timeout/cleanup tests; production uses execRecord. */
+	readonly runner?: ChildRunner;
 }
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes).trim();
@@ -84,19 +86,47 @@ const containerGuardArgs = (): readonly string[] => [
 	"ALL",
 	"--security-opt",
 	"no-new-privileges",
+	"--cpus",
+	"2",
+	"--memory",
+	"2g",
+	"--memory-swap",
+	"2g",
+	"--pids-limit",
+	"256",
 	"--tmpfs",
 	"/tmp:rw,nosuid,nodev,size=64m",
 ];
+
+const boundedVolumeCreateArgs = (name: string, size: string): readonly string[] => [
+	"volume",
+	"create",
+	"--driver",
+	"local",
+	"--opt",
+	"type=tmpfs",
+	"--opt",
+	"device=tmpfs",
+	"--opt",
+	`o=size=${size}`,
+	name,
+];
+
+export const subjectVolumeCreateArgs = (name: string): readonly string[] =>
+	boundedVolumeCreateArgs(name, "2g");
 
 export const subjectInstallAndTestContainerArgs = (
 	image: string,
 	volume: string,
 	command: readonly string[],
+	name = `${image}-test`,
 ): readonly string[] => [
 	"run",
 	"--rm",
 	"--network",
 	"none",
+	"--name",
+	name,
 	...containerGuardArgs(),
 	"--mount",
 	`type=volume,src=${volume},dst=/subject`,
@@ -115,11 +145,14 @@ export const subjectPrepareServerContainerArgs = (
 	image: string,
 	volume: string,
 	buildCommand: readonly string[],
+	name = `${image}-server-prepare`,
 ): readonly string[] => [
 	"run",
 	"--rm",
 	"--network",
 	"none",
+	"--name",
+	name,
 	...containerGuardArgs(),
 	"--mount",
 	`type=volume,src=${volume},dst=/subject`,
@@ -164,19 +197,22 @@ export const subjectCaptureContainerArgs = (
 	image: string,
 	server: string,
 	authorityRoot: string,
-	outputDir: string,
+	outputVolume: string,
 	containerPort: number,
 	harness: string,
+	name = `${server}-capture`,
 ): readonly string[] => [
 	"run",
 	"--rm",
 	"--network",
 	`container:${server}`,
+	"--name",
+	name,
 	...containerGuardArgs(),
 	"--mount",
 	`type=bind,src=${authorityRoot},dst=/authority,readonly`,
 	"--mount",
-	`type=bind,src=${outputDir},dst=/capture-output`,
+	`type=volume,src=${outputVolume},dst=/capture-output`,
 	"--workdir",
 	"/authority",
 	"--entrypoint",
@@ -188,21 +224,29 @@ export const subjectCaptureContainerArgs = (
 	harness,
 ];
 
-const ran = (
-	file: string,
-	args: readonly string[],
-	cwd: string,
-	env: Readonly<Record<string, string>>,
-	timeoutSeconds: number,
-) =>
-	execRecord({
-		file,
-		args,
-		cwd,
-		env,
-		timeoutSeconds,
-		captureBytes: 1_048_576,
-	});
+export const captureOutputContainerArgs = (
+	image: string,
+	volume: string,
+	outputDir: string,
+	name: string,
+): readonly string[] => [
+	"run",
+	"--rm",
+	"--network",
+	"none",
+	"--name",
+	name,
+	...containerGuardArgs(),
+	"--mount",
+	`type=volume,src=${volume},dst=/capture,readonly`,
+	"--mount",
+	`type=bind,src=${outputDir},dst=/output`,
+	"--entrypoint",
+	"sh",
+	image,
+	"-c",
+	"cp -a /capture/. /output/",
+];
 
 export const createFixture = (): Promise<string> =>
 	mkdtemp(join(tmpdir(), "fabrika-review-ui-localhost-")).then(async (root) => {
@@ -310,6 +354,21 @@ export const runCiProduce = (
 	options: CiProduceOptions,
 ): Effect.Effect<VerbOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
+		const ran = (
+			file: string,
+			args: readonly string[],
+			cwd: string,
+			env: Readonly<Record<string, string>>,
+			timeoutSeconds: number,
+		) =>
+			(options.runner ?? execRecord)({
+				file,
+				args,
+				cwd,
+				env,
+				timeoutSeconds,
+				captureBytes: 1_048_576,
+			});
 		if (!Number.isInteger(options.pr) || options.pr <= 0) {
 			return refuse(FAILED, `${VERB}: ${options.pr} is not a pull-request number.`);
 		}
@@ -422,9 +481,14 @@ export const runCiProduce = (
 		}
 
 		const image = `fabrika-review-ui-subject-${options.runId}`;
+		const testContainer = `${image}-test`;
+		const prepareContainer = `${image}-server-prepare`;
 		const container = `${image}-server`;
+		const captureContainer = `${image}-capture`;
+		const extractContainer = `${image}-capture-extract`;
 		const testVolume = `${image}-test-workspace`;
 		const serverVolume = `${image}-server-workspace`;
+		const captureVolume = `${image}-capture-output`;
 		const fixtureRead = yield* Effect.tryPromise({
 			try: createFixture,
 			catch: (cause) => String(cause),
@@ -434,10 +498,18 @@ export const runCiProduce = (
 		}
 		const fixtureRoot = fixtureRead.success;
 		const cleanup = Effect.gen(function* () {
-			yield* ran("docker", ["rm", "--force", container], options.authorityRoot, env, 30).pipe(
-				Effect.ignore,
-			);
-			for (const volume of [testVolume, serverVolume]) {
+			for (const name of [
+				testContainer,
+				prepareContainer,
+				container,
+				captureContainer,
+				extractContainer,
+			]) {
+				yield* ran("docker", ["rm", "--force", name], options.authorityRoot, env, 30).pipe(
+					Effect.ignore,
+				);
+			}
+			for (const volume of [testVolume, serverVolume, captureVolume]) {
 				yield* ran(
 					"docker",
 					["volume", "rm", "--force", volume],
@@ -488,7 +560,7 @@ export const runCiProduce = (
 			for (const volume of [testVolume, serverVolume]) {
 				const volumeCreated = yield* ran(
 					"docker",
-					["volume", "create", volume],
+					subjectVolumeCreateArgs(volume),
 					options.authorityRoot,
 					env,
 					30,
@@ -503,7 +575,12 @@ export const runCiProduce = (
 
 			const tested = yield* ran(
 				"docker",
-				subjectInstallAndTestContainerArgs(image, testVolume, harness.captureCommand),
+				subjectInstallAndTestContainerArgs(
+					image,
+					testVolume,
+					harness.captureCommand,
+					testContainer,
+				),
 				options.authorityRoot,
 				env,
 				1_200,
@@ -517,7 +594,12 @@ export const runCiProduce = (
 
 			const preparedServer = yield* ran(
 				"docker",
-				subjectPrepareServerContainerArgs(image, serverVolume, harness.serverBuildCommand),
+				subjectPrepareServerContainerArgs(
+					image,
+					serverVolume,
+					harness.serverBuildCommand,
+					prepareContainer,
+				),
 				options.authorityRoot,
 				env,
 				1_200,
@@ -616,15 +698,29 @@ export const runCiProduce = (
 						`${VERB}: the trusted capture output could not be prepared (${outputReady.failure}).`,
 					);
 				}
+				const captureVolumeCreated = yield* ran(
+					"docker",
+					boundedVolumeCreateArgs(captureVolume, "256m"),
+					options.authorityRoot,
+					env,
+					30,
+				);
+				if (captureVolumeCreated._tag !== "Ran" || captureVolumeCreated.exitCode !== 0) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the bounded capture workspace could not be created.`,
+					);
+				}
 				const sidecar = yield* ran(
 					"docker",
 					subjectCaptureContainerArgs(
 						image,
 						containerId,
 						options.authorityRoot,
-						options.outputDir,
+						captureVolume,
 						harness.containerPort,
 						harness.id,
+						captureContainer,
 					),
 					options.authorityRoot,
 					env,
@@ -639,6 +735,24 @@ export const runCiProduce = (
 					return refuse(
 						PRECONDITION_UNKNOWN,
 						`${VERB}: the trusted isolated capture sidecar failed (${sidecar._tag === "Ran" ? decode(sidecar.stderr) || `exit ${sidecar.exitCode}` : sidecar.reason}).`,
+					);
+				}
+				const extracted = yield* ran(
+					"docker",
+					captureOutputContainerArgs(image, captureVolume, options.outputDir, extractContainer),
+					options.authorityRoot,
+					env,
+					60,
+				);
+				if (
+					extracted._tag !== "Ran" ||
+					extracted.exitCode !== 0 ||
+					extracted.timedOut ||
+					extracted.truncated
+				) {
+					return refuse(
+						PRECONDITION_UNKNOWN,
+						`${VERB}: the bounded capture output could not be materialized.`,
 					);
 				}
 				captures = yield* Effect.tryPromise({

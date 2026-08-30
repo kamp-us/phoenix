@@ -37,7 +37,12 @@ neither package lifecycle scripts nor the PR's pnpmfile hooks.
 
 An offline `pnpm install` then runs every PR-controlled lifecycle script and the governed test in a
 disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
-`no-new-privileges`, and `--network none`. That workspace is never served. A separate server
+`no-new-privileges`, `--network none`, two CPUs, 2 GiB memory with no swap headroom, and 256 PIDs.
+Every foreground container is named before it starts, so the producer's unconditional cleanup can
+force-remove it after a client timeout. The test and server workspaces are named volumes backed by a
+2 GiB tmpfs rather than unbounded writable storage; capture output has a separate 256 MiB tmpfs
+ceiling, and cleanup force-removes every volume. That
+workspace is never served. A separate server
 workspace is freshly copied from the image's immutable exact-head source, installed offline with
 both install-time execution-disabling flags, and built by the declaration's fixed
 `serverBuildCommand` under the same no-network restrictions. The resulting workspace is mounted
@@ -48,10 +53,12 @@ uses `--network container:<server>` to share that isolated network stack
 ([container networks](https://docs.docker.com/engine/network/#container-networks)), reaching the
 server on loopback without external network. The PR server receives no Actions credentials,
 authority checkout, Docker socket, or artifact-output mount. The trusted sidecar receives the
-authority checkout read-only and prepared output mount only; the host validates its captures and
-alone writes the manifest. Docker documents the remaining root, capability, security, and mount
-controls in the [`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/)
-and [bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/).
+authority checkout read-only and a 256 MiB tmpfs output volume only. A fixed base-owned extraction
+container copies at most that bounded volume into the artifact directory; the host validates those
+captures and alone writes the manifest. Docker documents the remaining root, capability, CPU, memory, PID, tmpfs, named-container, and
+mount controls in the [`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/),
+[`docker volume create` reference](https://docs.docker.com/reference/cli/docker/volume/create/), and
+[bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/).
 
 ## Producer record
 
@@ -92,7 +99,12 @@ integrity validation, materialization, and exit meanings. In particular, a trust
 uncaught page error is materialized for inspection and remains proven FAIL evidence, not an
 unresolved CANT-SEE.
 
-The local receipt is only an index into GitHub identity. Before posting, `review-ui post` resolves
+Preview manifests are also indexes, never local authority. Before posting preview evidence,
+`review-ui post` resolves the live preview announcement and independently re-renders every recorded
+surface with its recorded state and flags; the fresh dimensions and bytes must match the reviewed
+set. A caller-written receipt or key is ignored and cannot import arbitrary local captures.
+
+The CI local receipt is only an index into GitHub identity. Before posting, `review-ui post` resolves
 the governed authority and exact run/check/artifact tuple again, re-downloads the artifact, and
 requires the local manifest and captures to byte-match it. A forged receipt therefore cannot bless
 attacker-chosen local bytes. The full provenance and receipt rules live in the [`review-ui post`

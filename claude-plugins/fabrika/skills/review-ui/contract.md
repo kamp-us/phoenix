@@ -405,8 +405,13 @@ version-matched behavior is grounded in pnpm's
 [dependency-build gate](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/core/src/install/index.ts#L1342-L1376),
 and [root lifecycle gate](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager/core/src/install/index.ts#L1521-L1531).
 The offline PR-controlled install and governed test run under a read-only root filesystem,
-`--cap-drop ALL`, `no-new-privileges`, `--network none`, and a disposable test workspace. That
-workspace is never served. A separate server workspace is freshly copied from the image's immutable
+`--cap-drop ALL`, `no-new-privileges`, `--network none`, two CPUs, 2 GiB memory with no swap
+headroom, 256 PIDs, and a 2 GiB tmpfs-backed disposable test workspace. Capture output uses a
+separate 256 MiB tmpfs volume and a fixed base-owned extraction container, so the artifact-directory
+copy cannot exceed that bound. Every foreground container has a deterministic run-scoped name, and
+unconditional cleanup force-removes all names and bounded volumes after success, failure, or client
+timeout. That workspace is never served. A
+separate server workspace is freshly copied from the image's immutable
 exact-head source, installed offline with both install-time execution-disabling flags, and then run
 through the declaration's fixed `serverBuildCommand` under the same no-network isolation. The
 resulting built workspace is mounted read-only into the server, which also has no network beyond
@@ -575,8 +580,9 @@ still refuses every `:state`.
 **Output** — machine. One JSON object on full success only:
 
 ```
-{"set": "judged", "pr": 4321, "head": "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c",
- "previewUrl": "https://phoenix-pr-4321.kampus.workers.dev",
+{"schemaVersion": 2, "source": "review-ui-render", "repository": "kamp-us/phoenix",
+ "set": "judged", "pr": 4321, "head": "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c",
+ "app": "web", "previewUrl": "https://phoenix-pr-4321.kampus.workers.dev", "flags": [],
  "captures": [
    {"surface": "/pano", "path": "<abs>/judged/pano.png", "width": 1280, "height": 2140,
     "sha256": "…", "pageErrors": {"rows": [], "more": 0}}
@@ -600,15 +606,13 @@ evidence-array and prints collapsed (ADR 0308): `{"rows": [<first 3>], "more": <
 `more` always present so a list capped at exactly its length reads as whole. The stderr
 per-surface line counts the **whole** tally, not the kept rows. **Write the set manifest** `<set>/manifest.json`,
 byte-identical to the stdout JSON — `post` reads the set through it, and a set without its
-manifest is not a set. Render also writes `<set>/preview-provenance.json`, whose signed fields are
-`repository`, `pr`, `head`, `app`, `previewUrl`, and the manifest SHA-256. Signing uses a random
-32-byte capability encoded as 64 lowercase hex characters and HMAC-SHA256 over the exact JSON of
-the unsigned receipt (`schemaVersion`, `source`, then those fields in receipt order). The capability
-is not a set member: it is written at
-`<tmp>/fabrika-review-ui-capabilities/<sha256(repository)>/<pr>-<head>/<set>.key`, with its parent
-forced to mode `0700` and the key to `0600`. Exit `0` requires all three writes; stdout remains the
-manifest only. If any write fails, partial files may remain but
-are not an accepted set and `post` rejects them.
+manifest is not a set. Schema 2 records the fixed source, repository, app, preview URL, and exact
+flag operands needed to reproduce the request. The manifest is an index, not authority: every local
+file belongs to the caller. Before posting, `post` resolves the live preview announcement and
+independently re-renders every recorded surface with the recorded state and flags, requiring the
+fresh dimensions and bytes to match. A local key or receipt therefore authenticates nothing. Exit
+`0` requires the manifest write; stdout remains the same manifest. If the write fails, partial
+captures may remain but are not an accepted set and `post` rejects them.
 
 Exit 0 requires **every** requested surface captured and valid. `12` and `16` are run-level
 refusals decided before the per-surface loop and never mix with its outcomes. When per-surface
@@ -622,7 +626,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
 | `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`); a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the preview comment is malformed or ambiguous; browser provision, capture validity, auth/flag proof, manifest write, provenance receipt write, or private capability write is UNKNOWN |
+| `11` | the PR/head/comment read failed; the preview comment is malformed or ambiguous; browser provision, capture validity, auth/flag proof, or manifest write is UNKNOWN |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -649,7 +653,7 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: surface "<id>" threw during render: <first page error> — the render is red; a broken page is not composition to judge.` | 13 | refusal |
 | `review-ui render: surface "<id>" is unreachable at the preview (<reason>) — judge what renders, and hold the gap against the PR's Deviations (#4305).` | 14 | refusal |
 | `review-ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
-| `review-ui render: cannot write the set manifest and preview provenance for #<n>: <reason> — the captures exist but the set does not.` | 11 | refusal |
+| `review-ui render: cannot write the set manifest for #<n>: <reason> — the captures exist but the set does not.` | 11 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
 **Scope** — exactly the `--surface` operands against one PR's announced preview. Zero operands
@@ -744,14 +748,14 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 1. **Resolve the PR and re-resolve the live head.** `--sha` not prefix-matching it is the `12`
    refusal: a verdict formed over a moved-past tree is re-reviewed, never re-bound.
 2. **Read the evidence set through its manifest** (`<set>/manifest.json`; a named set with no
-   manifest or one that does not parse is `4`). Preview evidence must carry route-shaped surface ids
-   (`/...`), keep every capture inside its deterministic set directory, and carry the separate
-   `review-ui render` receipt binding repository, PR, head, app, preview URL, and manifest hash. The
-   receipt is HMAC-signed by a random capability stored outside the evidence set in reviewer-owned
-   scratch. `post` derives its path from trusted repository, live-head, PR, and set inputs rather
-   than from the receipt, so set-local JSON plus a caller-owned key cannot select the preview arm.
-   The receipt's app, URL, and head must still match the live preview announcement before posting. A
-   route-shaped local manifest without that producer provenance refuses on `4`. Any CI source must
+   manifest or one that does not parse is `4`). Preview evidence uses schema 2, must bind the
+   repository, PR, head, app, preview URL, exact flag operands, and route-shaped surface ids
+   (`/...`), and must keep every capture inside its deterministic set directory. Local files are
+   never producer authority: `post` resolves the live preview announcement, independently
+   re-renders every recorded surface with its state and flags, and requires the fresh dimensions and
+   bytes to match before accepting the reviewed set. A caller writing a manifest, receipt, and key
+   therefore cannot import arbitrary local captures. An unresolved recapture is `11`; a mismatch is
+   `4`. Any CI source must
    parse as the positive CI manifest and carry the consumer receipt whose repository, PR, live full
    head, harness, run, check, artifact, and manifest hash agree. Post then rereads the default-branch
    declaration and re-downloads the exact artifact selected by the successful live-head
@@ -792,14 +796,14 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing — an empty verdict body would read as ungated |
-| `4` | the `--evidence` set's manifest/receipt is absent, malformed, declaration-mismatched, differs from the exact re-downloaded CI artifact, or its receipt ids differ from the trusted GitHub tuple; or `design-harness.json` violates its schema |
+| `4` | the `--evidence` set's manifest is absent or malformed; preview bytes differ from the independent live-preview recapture; CI evidence is declaration-mismatched, differs from the exact re-downloaded artifact, or its receipt ids differ from the trusted GitHub tuple; or `design-harness.json` violates its schema |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference — the body never arrived |
 | `7` | the PR is proven absent (404) or closed |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
 | `9` | the comment landed but the read-back does not yield this marker |
 | `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum; or an `--evidence` name outside kebab-case set vocabulary |
-| `11` | a precondition read failed — the PR, live head, default-branch declaration, trusted GitHub artifact re-download, evidence files, or upload target; nothing was posted |
+| `11` | a precondition read failed — the PR, live head, independent preview recapture, default-branch declaration, trusted GitHub artifact re-download, evidence files, or upload target; nothing was posted |
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
 | `13` | proven: CI evidence records an uncaught page error and the caller requested PASS — the materialized set must post FAIL |
 | `15` | proven: a capture is invalid or fails its manifest SHA-256 or dimensions |
@@ -825,8 +829,8 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: evidence set "<set>" has no readable manifest.json (<reason>) — a set without its manifest is not a set; re-run the sanctioned producer (review-ui render or review-ui fetch).` | 4 | refusal |
 | `review-ui post: evidence set "<set>" has no readable manifest.json.` | 4 | refusal |
 | `review-ui post: preview evidence set "<set>" has no readable preview manifest.` | 4 | refusal |
-| `review-ui post: preview evidence set "<set>" has no review-ui render provenance receipt — route-shaped local captures are not evidence.` | 4 | refusal |
-| `review-ui post: preview evidence set "<set>" does not match its review-ui render provenance receipt.` | 4 | refusal |
+| `review-ui post: preview evidence set "<set>" does not match its render request.` | 4 | refusal |
+| `review-ui post: preview evidence set "<set>" was not authenticated by an independent live-preview recapture (<reason>).` | 4 / 11 | refusal |
 | `review-ui post: CI evidence set "<set>" has no consumer-validated provenance receipt — a builder-authored manifest is not evidence.` | 4 | refusal |
 | `review-ui post: CI evidence set "<set>" does not match its consumer-validated provenance receipt.` | 4 | refusal |
 | `review-ui post: cannot revalidate CI provenance because the default branch is unreadable (<reason>).` | 11 | refusal |

@@ -11,14 +11,7 @@ import {
 	SURFACE_UNREACHABLE,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {
-	PREVIEW_PROVENANCE_RECEIPT,
-	parseManifest,
-	parsePreviewProvenance,
-	previewProvenanceCapabilityPath,
-	sha256Hex,
-	verifyPreviewProvenance,
-} from "./manifest.ts";
+import {parseManifest} from "./manifest.ts";
 import {type RenderLeg, runRender, type SurfaceRender} from "./render-verb.ts";
 
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
@@ -103,47 +96,30 @@ const happy = (): ReadonlyArray<Scripted> => [
 ];
 
 describe("runRender", () => {
-	it("captures the surface and writes the manifest plus render provenance", async () => {
+	it("captures the surface and writes the reproducible preview manifest", async () => {
 		const {outcome, written} = await run(happy());
 		expect(outcome.code).toBe(0);
 		const manifest = parseManifest(outcome.stdout);
-		expect(manifest._tag).toBe("Manifest");
+		expect(manifest).toMatchObject({
+			_tag: "Manifest",
+			value: {
+				schemaVersion: 2,
+				source: "review-ui-render",
+				repository: "o/r",
+				app: "web",
+				flags: [],
+			},
+		});
 		const document = outcome.stdout.trimEnd();
 		expect(written.get("/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json")).toBe(document);
-		const receipt = parsePreviewProvenance(
-			written.get(`/tmp/fabrika-review-ui/4321-03135b91/judged/${PREVIEW_PROVENANCE_RECEIPT}`) ??
-				"",
-		);
-		expect(receipt).toMatchObject({
-			source: "review-ui-render",
-			repository: "o/r",
-			pr: 4321,
-			head: HEAD,
-			app: "web",
-			previewUrl: PREVIEW,
-			manifestSha256: sha256Hex(new TextEncoder().encode(document)),
-		});
-		expect(receipt).not.toBeNull();
-		if (receipt !== null) {
-			const capability = written.get(
-				previewProvenanceCapabilityPath("/tmp", "o/r", 4321, HEAD, "judged"),
-			);
-			expect(capability).toBeDefined();
-			expect(verifyPreviewProvenance(receipt, capability ?? "")).toBe(true);
-		}
 	});
 
-	it.each([
-		"/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json",
-		`/tmp/fabrika-review-ui/4321-03135b91/judged/${PREVIEW_PROVENANCE_RECEIPT}`,
-		previewProvenanceCapabilityPath("/tmp", "o/r", 4321, HEAD, "judged"),
-	])("refuses when required render output cannot be written: %s", async (path) => {
+	it("refuses when the required render manifest cannot be written", async () => {
+		const path = "/tmp/fabrika-review-ui/4321-03135b91/judged/manifest.json";
 		const {outcome} = await run(happy(), {}, {unwritable: [path]});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
-		expect(outcome.stderr.join("\n")).toContain(
-			"cannot write the set manifest and preview provenance",
-		);
+		expect(outcome.stderr.join("\n")).toContain("cannot write the set manifest");
 	});
 
 	it("prints the capped page errors on both channels, so the file reader cannot desync (ADR 0308)", async () => {

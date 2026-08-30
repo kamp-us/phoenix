@@ -1,20 +1,18 @@
 /**
  * The capture set: where its bytes live, what its manifest says, and how a later verb re-reads it.
  *
- * `review-ui render` writes the manifest and producer receipt, then signs the receipt with a
- * reviewer-owned capability at a deterministic path outside the evidence set. `review-ui post`
- * derives that path from trusted inputs rather than from the receipt, so set-local bytes cannot
- * nominate their own verification key. A set without those readable records is not a set. The
- * manifest bytes are byte-identical to `render`'s
- * stdout object for the same reason: one document, two channels, so nothing can be true on one and
- * not the other.
+ * `review-ui render` writes one self-describing manifest. `review-ui post` treats every local byte
+ * as caller-owned and independently re-renders the manifest's preview request before accepting it;
+ * no local key or receipt can authenticate another local file. The manifest bytes are
+ * byte-identical to `render`'s stdout object: one document, two channels, so nothing can be true on
+ * one and not the other.
  *
  * The set path is **deterministic from the PR and the head**, never a `mktemp -d` nobody recorded
  * (v1 S4: a PASS whose evidence upload failed was unauditable). The `--out` set name is the run's
  * own key inside that directory — two concurrent reviews of one head name different sets and never
  * write each other's bytes (the run-keyed rule #5111 states; a session is not a run).
  */
-import {createHash, createHmac, randomBytes, timingSafeEqual} from "node:crypto";
+import {createHash} from "node:crypto";
 import {Effect, FileSystem} from "effect";
 import type {PageError} from "../capture/page-errors.ts";
 import type {CapAndCount} from "../evidence.ts";
@@ -53,99 +51,19 @@ export interface CaptureEntry {
 }
 
 export interface CaptureManifest {
+	readonly schemaVersion: 2;
+	readonly source: "review-ui-render";
+	readonly repository: string;
 	readonly set: string;
 	readonly pr: number;
 	/** The live head the preview was bound to — what `post` refuses to post stale pixels against. */
 	readonly head: string;
-	readonly previewUrl: string;
-	readonly captures: readonly CaptureEntry[];
-}
-
-/** Written only by `review-ui render`; an arbitrary route-shaped manifest does not select preview. */
-export const PREVIEW_PROVENANCE_RECEIPT = "preview-provenance.json";
-
-export interface PreviewProvenance {
-	readonly schemaVersion: 1;
-	readonly source: "review-ui-render";
-	readonly repository: string;
-	readonly pr: number;
-	readonly head: string;
 	readonly app: string;
 	readonly previewUrl: string;
-	readonly manifestSha256: string;
-	readonly signature: string;
+	/** Exact flag operands needed to reproduce the render before posting. */
+	readonly flags: readonly string[];
+	readonly captures: readonly CaptureEntry[];
 }
-
-export type UnsignedPreviewProvenance = Omit<PreviewProvenance, "signature">;
-
-const previewProvenancePayload = (value: UnsignedPreviewProvenance): string =>
-	JSON.stringify(value);
-
-export const newPreviewCapability = (): string => randomBytes(32).toString("hex");
-
-export const mintPreviewProvenance = (
-	fields: Omit<UnsignedPreviewProvenance, "schemaVersion" | "source">,
-	capability: string,
-): PreviewProvenance => {
-	const unsigned: UnsignedPreviewProvenance = {
-		schemaVersion: 1,
-		source: "review-ui-render",
-		...fields,
-	};
-	return {
-		...unsigned,
-		signature: createHmac("sha256", capability)
-			.update(previewProvenancePayload(unsigned))
-			.digest("hex"),
-	};
-};
-
-export const previewProvenanceCapabilityPath = (
-	tmpRoot: string,
-	repository: string,
-	pr: number,
-	head: string,
-	set: string,
-): string =>
-	`${tmpRoot}/fabrika-review-ui-capabilities/${sha256Hex(new TextEncoder().encode(repository))}/${pr}-${head}/${set}.key`;
-
-export const verifyPreviewProvenance = (receipt: PreviewProvenance, key: string): boolean => {
-	const {signature, ...unsigned} = receipt;
-	const expected = createHmac("sha256", key).update(previewProvenancePayload(unsigned)).digest();
-	return (
-		/^[0-9a-f]{64}$/.test(signature) && timingSafeEqual(expected, Buffer.from(signature, "hex"))
-	);
-};
-
-export const parsePreviewProvenance = (text: string): PreviewProvenance | null => {
-	const value = parseJson(text);
-	if (
-		!isRecord(value) ||
-		value.schemaVersion !== 1 ||
-		value.source !== "review-ui-render" ||
-		typeof value.repository !== "string" ||
-		typeof value.pr !== "number" ||
-		typeof value.head !== "string" ||
-		typeof value.app !== "string" ||
-		typeof value.previewUrl !== "string" ||
-		typeof value.manifestSha256 !== "string" ||
-		typeof value.signature !== "string" ||
-		!/^[0-9a-f]{64}$/.test(value.signature)
-	) {
-		return null;
-	}
-	return {
-		schemaVersion: 1,
-		source: "review-ui-render",
-		repository: value.repository,
-		pr: value.pr,
-		head: value.head,
-		app: value.app,
-		previewUrl: value.previewUrl,
-		manifestSha256: value.manifestSha256,
-		signature: value.signature,
-	};
-};
 
 /** A kebab-case set name: the grammar `--out` is held to, so a set name is a safe path segment. */
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -214,15 +132,22 @@ export const parseManifest = (text: string): ManifestRead => {
 	}
 	const record = parsed;
 	if (
+		record.schemaVersion !== 2 ||
+		record.source !== "review-ui-render" ||
+		typeof record.repository !== "string" ||
 		typeof record.set !== "string" ||
 		typeof record.pr !== "number" ||
 		typeof record.head !== "string" ||
+		typeof record.app !== "string" ||
 		typeof record.previewUrl !== "string" ||
+		!Array.isArray(record.flags) ||
+		!record.flags.every((flag) => typeof flag === "string") ||
 		!Array.isArray(record.captures)
 	) {
 		return {
 			_tag: "Malformed",
-			reason: "the manifest names no set, pr, head, previewUrl and captures",
+			reason:
+				"the preview manifest does not name its schema, source, repository, set, pr, head, app, previewUrl, flags, and captures",
 		};
 	}
 	const captures: CaptureEntry[] = [];
@@ -242,10 +167,15 @@ export const parseManifest = (text: string): ManifestRead => {
 	return {
 		_tag: "Manifest",
 		value: {
+			schemaVersion: 2,
+			source: "review-ui-render",
+			repository: record.repository,
 			set: record.set,
 			pr: record.pr,
 			head: record.head,
+			app: record.app,
 			previewUrl: record.previewUrl,
+			flags: record.flags,
 			captures,
 		},
 	};

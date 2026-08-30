@@ -13,10 +13,15 @@ import {
 const HEAD = "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c";
 
 const manifest: CaptureManifest = {
+	schemaVersion: 2,
+	source: "review-ui-render",
+	repository: "o/r",
 	set: "judged",
 	pr: 4321,
 	head: HEAD,
+	app: "web",
 	previewUrl: "https://pr-4321.example.test",
+	flags: [],
 	captures: [
 		{
 			surface: "/pano",
