@@ -1,7 +1,7 @@
 ---
 id: 0165
 title: "The review-design gate — a 4th reviewer skill that drives an agent vision-gate over the PR preview deploy against the four-pillars design law"
-status: proposed
+status: accepted
 date: 2026-07-06
 tags: [design, pipeline, review, accessibility, control-plane]
 ---
@@ -133,16 +133,29 @@ that guards the design law is guarded by the same control-plane rule it embodies
 
 ## Amendment — governed localhost-only CI evidence (2026-08-29, #7306)
 
+The shipped skill and marker are named `review-ui`. That vocabulary supersedes the historical
+`review-design` name in the original decision above; those passages remain as the record of the
+ruling's earlier name, not a second live namespace.
+
 The preview producer remains the default, but it is not the only lawful producer. A rendered product
 whose containment contract intentionally permits loopback only may use an exact-head CI producer
 when, and only when, the harness is declared under the repository's governed `.github` authority.
 The declaration fixes the workflow, check, event, artifact, commands, and surfaces; neither PR text
 nor a caller can nominate them.
 
-The trusted workflow executes from the base branch with read-only permissions, checks out the PR at
-its full live head in a separate directory, runs the declared journey and loopback server in
-isolation, and records bounded `pageerror` and `console.error` evidence. An uncaught page error makes
-the producer red. Its versioned manifest binds repository, PR, exact head, declaration digest,
+GitHub documents that `pull_request_target` runs in the context of the pull request's base and warns
+that running untrusted code directly in that trigger can compromise the repository
+([GitHub Actions event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)).
+The trusted workflow therefore checks out the PR's full live head only as an inert Docker build
+context. The base-owned producer installs on the host, while every PR-controlled install, test, and
+server process runs in a read-only, capability-dropped container with no authority checkout, Docker
+socket, or artifact-output mount. Docker's own storage documentation states that bind mounts grant
+host-path access and that read-only mounts prevent writes; omitting those mounts is the filesystem
+boundary used here
+([Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/),
+[Docker security](https://docs.docker.com/engine/security/)). The trusted host alone drives capture
+and writes bounded `pageerror` and `console.error` evidence. An uncaught page error makes the
+producer red. Its versioned manifest binds repository, PR, exact head, declaration digest,
 harness, workflow, check, run, artifact name, every surface, dimensions, and SHA-256.
 
 The reviewer consumes the artifact only through GitHub. The consumer independently proves the

@@ -236,46 +236,142 @@ anchor at all is the proven `16`.
 
 ## `review-ui fetch`
 
+**Invocation**
+
 ```
 fabrika review-ui fetch <pr> --harness <declared-id> --out <kebab-set> [--repo <owner/name>]
 ```
 
-Preview deployment remains the default. This verb exists only for a localhost-only harness named in
-`.github/review-ui-localhost-harnesses.json` on the repository default branch. There are deliberately
-no workflow, check, run, artifact, manifest, or local-path operands.
+**Inputs**
 
-The consumer requires one `pull_request_target` run from the declared workflow whose repository, PR
-association, and full head equal the open PR's live state; its status/conclusion and declared check
-must be `completed/success`. It requires one named, non-expired artifact. Zero and more-than-one are
-both refusals. The zip member set rejects duplicates, traversal, absolute paths, and members outside
-`manifest.json` plus `captures/*.png`.
+| Input | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<pr>` | positive integer | yes | — | open pull request whose live full head the artifact must bind |
+| `--harness` | governed kebab-case id | yes | — | one id from the default branch's localhost declaration |
+| `--out` | kebab-case string | yes | — | capture-set key below reviewer-owned OS scratch |
+| `--repo` | `owner/name` | no | resolved | target repository |
 
-The version-1 positive manifest binds repository, PR, the full 40-character head, harness,
-declaration SHA-256, workflow, check, event, run id, artifact name, and a non-empty capture list.
-Each capture binds one relative member, surface/state id, dimensions, SHA-256, at most three bounded
-`pageerror`/`console.error` rows plus `more`, and positive readability for both error channels. The
-consumer requires every declared surface exactly once, rejects uncaught page errors, re-derives PNG
-dimensions and hashes, re-reads the live head, and only then materializes the set below the normal
-reviewer scratch root with a consumer-authored receipt binding its manifest hash to the observed
-run/check/artifact ids. The artifact member allowlist excludes that receipt, so a builder cannot
-supply it.
+There are no workflow, check, run, artifact, manifest, receipt, or local-path operands. Preview is the
+default path; this verb selects only a declared localhost exception.
 
-On success stdout is one object:
-`{"answer":"fetched","set":"judged","pr":7190,"head":"<40-hex>","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[...]}`.
-Each capture row names its reviewer-scratch path, dimensions, SHA-256 and bounded page errors so the
-reviewer can open exactly the bytes the consumer validated. These paths are outputs, never inputs.
+**Output** — one object on complete success:
 
-`ci-produce` is the workflow's internal counterpart. It reads the same governed declaration from the
-trusted base checkout, asserts the subject checkout's exact full Git head, runs the loopback server
-in isolation without passing Actions credentials into PR code, captures every declared state with
-both browser listeners attached, and writes the manifest only on success. The consumer performs the
-independent live-PR binding. It is not a reviewer import interface: a locally produced
-manifest has no matching GitHub run/check/artifact and `fetch` never accepts it.
+```
+{"answer":"fetched","set":"judged","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","run":42,"artifact":51,"check":61,"surfaces":2,"captures":[{"surface":"tuval-cockpit-desktop","path":"<reviewer scratch>/captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0}}]}
+```
 
-For PR #7190, a synchronize event after this authority reaches its head produces the Tuval artifact.
-The reviewer fetches `--harness tuval`, judges the fetched pixels and error evidence, and sends the
-set through ordinary `review-ui post`; `ship` consumes that ordinary marker without a second grammar.
-No apps/web, preview, Cloudflare, or production Tuval route is introduced.
+Paths are outputs, never inputs. The operation reads the declaration from the repository default
+branch; resolves exactly one successful completed `pull_request_target` run with matching workflow,
+repository, PR association, and full live head; resolves exactly one successful named check and one
+artifact whose `expired` field is present, boolean, and false; rejects unsafe or duplicate zip
+members; validates the positive manifest and every declared surface exactly once *before* any set
+comparison can collapse duplicates; rejects page errors, unreadable error coverage, bad dimensions or
+hashes; re-reads the live head; then materializes the captures and a consumer-authored receipt binding
+the manifest hash to the observed run, check, and artifact ids. The artifact allowlist excludes that
+receipt.
+
+**Exit status** (beyond the universal four)
+
+| Code | Trigger |
+|---|---|
+| `4` | default-branch declaration, artifact manifest, producer binding, members, surface cardinality, or receipt materialization schema is malformed |
+| `7` | PR is proven absent or closed — zero scope |
+| `10` | PR number, `--harness`, or `--out` is off vocabulary |
+| `11` | repo/default branch/declaration/run/check/artifact/download/scratch read is UNKNOWN; zero, ambiguous, pending, failed, cancelled, action-required, missing-expiry, expired, or otherwise untrusted producer evidence is unresolved |
+| `12` | live head moved before materialization |
+| `13` | manifest records an uncaught page error |
+| `15` | capture bytes fail PNG, hash, or dimension validation |
+
+**Errors**
+
+| Message class (stderr) | Code |
+|---|---|
+| `review-ui fetch: <n> is not a pull-request number.` | `1` |
+| `review-ui fetch: --out "<value>" is not a kebab-case set name.` | `10` |
+| `review-ui fetch: "<id>" is not a governed localhost-only harness.` | `10` |
+| `review-ui fetch: PR #<n> not found...` / `is closed...` | `7` |
+| `review-ui fetch: cannot read the governed localhost declaration...` | `11` |
+| `review-ui fetch: the governed localhost declaration is malformed...` | `4` |
+| `review-ui fetch: trusted CI evidence is unresolved (<reason>).` | `11` |
+| `review-ui fetch: the CI capture manifest is malformed...` | `4` |
+| `review-ui fetch: the artifact contains a surface more than once.` | `4` |
+| `review-ui fetch: the artifact does not contain every declared ... exactly once.` | `4` |
+| `review-ui fetch: the artifact records <n> uncaught page error(s)...` | `13` |
+| `review-ui fetch: capture <surface> fails its hash or dimensions.` | `15` |
+| `review-ui fetch: PR #<n> moved from <old> to <new>...` | `12` |
+| `review-ui fetch: cannot materialize reviewer-owned evidence scratch...` | `11` |
+
+**Scope and zero scope.** One open PR, one default-branch declaration, one declared harness, one
+exact-head run/check/artifact tuple, and one output set. A missing or closed PR is `7`; no harnesses,
+no matching run, no matching check, or no matching artifact is never success and never an empty set.
+
+**Example**
+
+```
+fabrika review-ui fetch 7190 --harness tuval --out judged
+```
+
+---
+
+## `review-ui ci-produce`
+
+**Invocation**
+
+```
+fabrika review-ui ci-produce <pr> --head <40-hex> --harness <id> --run-id <positive-int> \
+  --repository <owner/name> --subject-root <exact-head-checkout> \
+  --authority-root <trusted-base-checkout> --output-dir <trusted-host-output>
+```
+
+| Input | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `<pr>` | positive integer | yes | — | PR identity bound into the manifest |
+| `--head` | lowercase 40-hex | yes | — | exact checked-out subject head |
+| `--harness` | governed id | yes | — | declaration row to execute |
+| `--run-id` | positive integer | yes | — | Actions run identity bound into the manifest |
+| `--repository` | `owner/name` | yes | — | repository identity bound into the manifest |
+| `--subject-root` | absolute path | yes | — | inert exact-head Docker build context |
+| `--authority-root` | absolute path | yes | — | trusted base checkout containing producer and declaration |
+| `--output-dir` | absolute path | yes | — | trusted host output outside both checkouts |
+
+This is an internal workflow interface, not a reviewer import. The base-owned producer reads the
+governed declaration, proves the inert subject
+checkout's full head, builds it with the base-owned Dockerfile, and runs every PR-controlled install,
+test, and server process in a read-only, capability-dropped container. The container receives no
+Actions credentials, authority checkout, Docker socket, or output-directory mount. The trusted host
+alone drives Playwright and writes captures and the manifest.
+
+On success stdout is the complete version-1 CI manifest, for example:
+
+```
+{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"<64-hex>","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval"},"captures":[{"surface":"tuval-cockpit-desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"<64-hex>","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
+```
+
+Exit `4` means the trusted declaration is
+malformed; `10` means head, run id, repository, or harness is off vocabulary; `11` means checkout,
+Docker image/server, trusted capture, or output state is unreadable; `12` means the checkout is not
+the named head; `13` means the governed journey failed or an uncaught page error made the render red;
+`15` means a captured PNG is invalid. The trusted output must be outside both checkouts; an output
+inside either is `10`. Zero scope is impossible: every invocation names one PR and one
+harness, and an unknown harness refuses on `10`.
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review-ui ci-produce: --head must be one full lowercase 40-character SHA.` | `10` | refusal |
+| `review-ui ci-produce: --run-id must be a positive Actions run id.` | `10` | refusal |
+| `review-ui ci-produce: --repository must be one owner/name.` | `10` | refusal |
+| `review-ui ci-produce: "<id>" is not a governed localhost harness.` | `10` | refusal |
+| `review-ui ci-produce: --output-dir must be outside both ... checkouts.` | `10` | refusal |
+| `review-ui ci-produce: the subject checkout is <read>, not <expected>.` | `12` | refusal |
+| `review-ui ci-produce: the isolated subject image could not be built...` | `11` | refusal |
+| `review-ui ci-produce: the governed browser journey failed...` | `13` | refusal |
+| `review-ui ci-produce: the isolated subject server ...` | `11` | refusal |
+| `review-ui ci-produce: the trusted localhost capture failed...` | `11` | refusal |
+| `review-ui ci-produce: <surface> is not a valid capture...` | `15` | refusal |
+| `review-ui ci-produce: cannot write the capture manifest...` | `11` | refusal |
+
+The workflow invocation is the example and sole caller; see
+[the localhost evidence runbook](../../../../ops/runbook-review-ui-localhost-evidence.md).
 
 ---
 
@@ -480,7 +576,7 @@ poster reads success.
 | `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
 | `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
-| `--evidence` | string | yes | — | the `review-ui render` capture-set name whose verified upload is this verdict's evidence |
+| `--evidence` | string | yes | — | a `review-ui render` route-surface set or a provenance-validated `review-ui fetch` set whose verified upload is this verdict's evidence |
 | `--carrier` | enum | no | `marker` | `marker` (first-line SHA-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` body line). `advisory` is a PASS path only |
 | `--repo` | string | no | resolved | the repository |
 | stdin | markdown | yes | — | the verdict body below the first line: per-row findings with pixel evidence, the coverage table, advisories |
@@ -498,9 +594,12 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 1. **Resolve the PR and re-resolve the live head.** `--sha` not prefix-matching it is the `12`
    refusal: a verdict formed over a moved-past tree is re-reviewed, never re-bound.
 2. **Read the evidence set through its manifest** (`<set>/manifest.json`; a named set with no
-   manifest or one that does not parse is `4` — a set without its readable manifest is not a
-   set, the `ui evidence` whole-file rule; an evidence-less verdict must not land). **Refuse on `12` when the set's recorded head is not `--sha`**: stale
-   captures under a new head are the stale-note class; re-render, then re-post.
+   manifest or one that does not parse is `4`). Preview evidence must carry route-shaped surface ids
+   (`/...`). Any CI source or non-route surface is CI-shaped and must parse as the positive CI
+   manifest and carry the consumer receipt whose repository, PR, live full head, harness, run and
+   manifest hash agree. Thus a preview-shaped local manifest cannot present a governed localhost
+   surface to bypass provenance. **Refuse on `12` when the set's recorded head is not `--sha`**:
+   stale captures under a new head are re-rendered or re-fetched, never rebound.
 3. **Re-validate every capture against its manifest sha** (`15` on mismatch or invalidity).
 4. **Upload every capture and verify each upload individually, before anything posts** — the
    two-tier store exactly as `ui evidence` specifies it (store tier when the repo declares one;
@@ -553,7 +652,9 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: --polarity must be PASS or FAIL — got "<v>".` | 10 | refusal |
 | `review-ui post: --carrier advisory is a PASS path only — post the FAIL marker instead.` | 10 | refusal |
 | `review-ui post: cannot read <what> for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
-| `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run review-ui render.` | 4 | refusal |
+| `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run the sanctioned producer.` | 4 | refusal |
+| `review-ui post: CI evidence set "<set>" has no consumer-validated provenance receipt...` | 4 | refusal |
+| `review-ui post: CI evidence set "<set>" does not match its consumer-validated provenance receipt.` | 4 | refusal |
 | `review-ui post: design-harness.json exists but does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
 | `review-ui post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
 | `review-ui post: evidence set "<set>" was rendered at <set-head7>, you are posting at <sha7> — stale pixels; re-render at the live head.` | 12 | refusal |
@@ -803,15 +904,17 @@ carries a type and default; every stdout shape has a literal example; every non-
 enumerated with its trigger (per-verb tables own the group-local rows; the universal `0/1/126/127`
 live once in the shared matrix, which owns every code's single meaning); every error names
 message, stream, and code; every verb states scope and zero-scope behavior (`render` refuses
-zero surfaces at `1`; `post` refuses an empty body at `3` and an unreadable evidence set at
-`4`/`11`; `note` refuses an empty body at `3` and a verdict-shaped body at `10`; `route` refuses an
-empty body at `3` and a diff raising no `ui` class at `7`); and no clause
+zero surfaces at `1`; `fetch` refuses an absent/closed PR at `7` and every zero producer scope at
+`11`; `ci-produce` requires one PR and harness and refuses an unknown harness at `10`; `post`
+refuses an empty body at `3` and an unreadable evidence set at `4`/`11`; `note` refuses an empty
+body at `3` and a verdict-shaped body at `10`; `route` refuses an empty body at `3` and a diff
+raising no `ui` class at `7`); and no clause
 defers to a v1 script, another skill's prose, or the authoring session —
 the `review` and `build-ui` references are to sibling fabrika contracts, the sanctioned
 cross-contract shape, with the `build-ui` reference flagged as pre-merge in the authoring PR.
 The three hand-checks: every reachable outcome walked per verb (mixed render outcomes route by
-smallest code with full stderr enumeration; the post protocol's eight steps each name their
-refusal); every example value derives from stated rules (the set path from the deterministic
+smallest code with full stderr enumeration; fetch and ci-produce enumerate their provenance,
+isolation, schema and zero-scope refusals; the post protocol's eight steps each name their refusal); every example value derives from stated rules (the set path from the deterministic
 `<OS temp>/fabrika-review-ui/<pr>-<head8>/` rule, `previewUrl` from the comment's app sub-line);
 sibling verbs guard shared preconditions identically (`render` and `post` resolve PR + live head
 on the same `7`/`11` and treat capture invalidity as `15`; `render` binds preview-to-head and

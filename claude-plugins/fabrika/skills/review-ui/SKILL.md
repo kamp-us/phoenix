@@ -41,7 +41,7 @@ criteria, ci, verdicts, deviations, each addressed in that group's contract by i
 likewise `--heading "review diff"`, `"review criteria"`, `"review ci"`, `"review verdicts"`,
 `"review deviations"`). §5's named-gate read is `heal-ci surface`, addressed the same way
 (`fabrika wire doc-section --heading "heal-ci surface" < <heal-ci skill's base dir>/contract.md`).
-This skill adds only the `review-ui` group, whose four verbs are listed at
+This skill adds only the `review-ui` group, whose six verbs are listed at
 `fabrika wire doc-section --heading "Verb inventory" < <skill-base>/contract.md`. **You owe a verdict only when the PR
 changes a rendered-visual surface** — a page, component, screen, state, or style a user sees. Read
 the diff (`fabrika review diff $pr_number`) and decide. The decision is yours, formed from verb-served bytes: the diff verb refuses truncation, so
@@ -98,19 +98,13 @@ localhost declaration. For that declared harness, fetch the trusted exact-head C
 fabrika review-ui fetch $pr_number --harness tuval --out judged
 ```
 
-`fetch` reads the declaration from the repository default branch, resolves the workflow, check, run
-and artifact through GitHub, validates the exact live head, manifest, browser-error coverage and
-every PNG, then downloads into reviewer-owned scratch. It takes no local path, workflow, check, run,
-artifact or manifest flag. **Do not execute the PR locally and do not consume builder captures.** A
-missing, pending, failed, stale, ambiguous, expired, malformed or tampered producer leaves the
-namespace empty and routes CANT-SEE; name that blocker through `review-ui note`. Inspect the fetched
-pixels and recorded page/console errors exactly as you inspect preview captures, then post the same
-ordinary verdict with `--evidence judged`.
-
-The Tuval path for PR #7190 is therefore: its exact-head `review-ui localhost evidence / tuval` CI
-check publishes the governed artifact; you fetch and judge it; `review-ui post` lands the normal
-head-bound marker; `ship` reads that marker unchanged. No Tuval preview, worker route, production
-route or reviewer-local server exists in that flow.
+Read the exact inputs, producer-resolution refusals, provenance receipt, output, and exit mapping at
+`fabrika wire doc-section --heading "review-ui fetch" < <skill-base>/contract.md`. **Do not execute
+the PR locally and do not consume builder captures.** A refused fetch leaves the namespace empty and
+routes CANT-SEE; name the blocker through `review-ui note`. Inspect the fetched pixels and recorded
+page/console errors, then post the ordinary verdict with `--evidence judged`. The operator sequence,
+including the Tuval #7190 recovery, lives in
+[`ops/runbook-review-ui-localhost-evidence.md`](../../../../ops/runbook-review-ui-localhost-evidence.md).
 
 ```bash
 fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni
@@ -154,8 +148,8 @@ namespace fail-closes the ship gate — and name the blocker on the PR through `
 note` (stdin body, never a marker); never a "plausible" partial PASS. Each per-surface outcome, each
 run-level refusal and what makes a capture valid are the verb's section
 (`fabrika wire doc-section --heading "review-ui render" < <skill-base>/contract.md`; the note verb is
-`--heading "review-ui note"`). The two render paths this needs are
-`--heading "Required environment — the two render paths"`.
+`--heading "review-ui note"`). The three render paths this needs are
+`--heading "Required environment — the three render paths"`.
 
 **A surface that renders cleanly is not yet a judged surface.** By default the verb captures as an
 anonymous visitor with every flag at its default, and under ADR

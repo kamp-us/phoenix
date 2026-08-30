@@ -144,8 +144,12 @@ export const runCiFetch = (
 				`${VERB}: the artifact manifest does not bind the governed producer, declaration, repository, PR, and exact live head.`,
 			);
 		}
+		const captureSurfaces = manifest.captures.map((capture) => capture.surface);
+		if (new Set(captureSurfaces).size !== captureSurfaces.length) {
+			return refuse(MALFORMED_DOCUMENT, `${VERB}: the artifact contains a surface more than once.`);
+		}
 		const expected = new Set(harness.surfaces.map((surface) => surface.id));
-		const actual = new Set(manifest.captures.map((capture) => capture.surface));
+		const actual = new Set(captureSurfaces);
 		if (expected.size !== actual.size || [...expected].some((surface) => !actual.has(surface))) {
 			return refuse(
 				MALFORMED_DOCUMENT,

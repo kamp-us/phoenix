@@ -1,7 +1,11 @@
 import {readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
-import {isolatedEnvironment} from "./ci-produce-verb.ts";
+import {
+	isolatedEnvironment,
+	subjectServerContainerArgs,
+	subjectTestContainerArgs,
+} from "./ci-produce-verb.ts";
 import {LOCALHOST_DECLARATIONS_PATH, parseLocalhostDeclarations} from "./localhost-evidence.ts";
 
 const root = resolve(import.meta.dirname, "../../../..");
@@ -23,6 +27,7 @@ describe("localhost evidence governance floor", () => {
 			assert.include(workflow, `name: ${harness.artifact}`);
 			assert.include(workflow, `--harness ${harness.id}`);
 			assert.include(workflow, "persist-credentials: false");
+			assert.notInclude(workflow, "working-directory: subject");
 			assert.notInclude(workflow, "GITHUB_TOKEN:");
 		}
 	});
@@ -39,6 +44,33 @@ describe("localhost evidence governance floor", () => {
 			}),
 			{PATH: "/bin", CI: "true"},
 		);
+	});
+
+	it("gives PR execution no authority or artifact-output filesystem mount", () => {
+		assert.include(
+			read("packages/fabrika-cli/src/review-ui/ci-produce-verb.ts"),
+			".github/review-ui-localhost-subject.Dockerfile",
+		);
+		const dockerfile = read(".github/review-ui-localhost-subject.Dockerfile");
+		assert.include(dockerfile, "pnpm install --frozen-lockfile");
+		assert.include(dockerfile, "USER node");
+		const test = subjectTestContainerArgs("subject", ["pnpm", "test"]);
+		assert.include(test, "none");
+		assert.include(test, "--read-only");
+		assert.notInclude(test.join(" "), "authority");
+		assert.notInclude(test.join(" "), "review-ui-localhost-tuval");
+
+		const server = subjectServerContainerArgs(
+			"subject",
+			"subject-server",
+			"/trusted-fixture",
+			4173,
+			["node", "server.mjs", "4173"],
+		);
+		assert.include(server, "--read-only");
+		assert.include(server, "type=bind,src=/trusted-fixture,dst=/review-ui-fixture,readonly");
+		assert.notInclude(server.join(" "), "authority");
+		assert.notInclude(server.join(" "), "review-ui-localhost-tuval");
 	});
 
 	it("keeps the governance namespace rooted over .github", () => {

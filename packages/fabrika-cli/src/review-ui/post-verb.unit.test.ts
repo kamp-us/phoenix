@@ -272,6 +272,20 @@ describe("runPost", () => {
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
+	it("rejects a preview-shaped local manifest for a CI-shaped surface without provenance", async () => {
+		const preview = manifest();
+		const local = manifest({
+			captures: [{...preview.captures[0]!, surface: "desktop"}],
+		});
+		const layer = fs({
+			strings: {[MANIFEST_PATH]: serializeManifest(local)},
+			bytes: {[CAPTURE_PATH]: BYTES},
+		});
+		const {outcome, requests} = await run(happy(), {}, layer);
+		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
 	it("refuses an empty verdict body on 3 — an empty verdict reads as ungated", async () => {
 		const {outcome} = await run(happy(), {
 			stdin: Effect.succeed<StdinRead>({_tag: "NoStdin", reason: "nothing was piped in"}),

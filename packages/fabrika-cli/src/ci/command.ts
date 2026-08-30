@@ -76,7 +76,7 @@ const prBody = leafCommand(
 ).pipe(
 	Command.withShortDescription("Neutralize stray HTML tags in a Release PR body, on stdin."),
 	Command.withDescription(
-		"Read a standing Release PR body on stdin and print one release-please can parse back. release-please copies each commit subject verbatim into the body's changelog and then reads that body back through an HTML parser, so a subject carrying a literal <details> froze every run after it (#5946); escaping one body by hand does not hold, because the next green run rebuilds it from the same subject. Every HTML-looking tag loses its brackets EXCEPT the two lines release-please writes as structure itself. Empty stdout means the body already parses — write back exactly when there is something to write. Exit 0 on any completed read, repaired or not: this is a repair, not a gate. Exits 3 (nothing was piped in, or the body is empty), 11 (fd 0 could not be read, so the body is UNKNOWN). Example: gh api repos/o/r/pulls/42 --jq .body | fabrika ci pr-body",
+		"Read a standing Release PR body on stdin and print one release-please can parse back. release-please copies each commit subject verbatim into the body's changelog and reads that body back through an HTML parser, so a subject carrying a literal <details> makes the body unparseable, and every green run rebuilds it from the same subject. Every HTML-looking tag loses its brackets EXCEPT the two lines release-please writes as structure itself. Empty stdout means the body already parses — write back exactly when there is something to write. Exit 0 on any completed read, repaired or not: this is a repair, not a gate. Exits 3 (nothing was piped in, or the body is empty), 11 (fd 0 could not be read, so the body is UNKNOWN). Example: gh api repos/o/r/pulls/42 --jq .body | fabrika ci pr-body",
 	),
 );
 
@@ -102,7 +102,7 @@ const annotate = leafCommand(
 ).pipe(
 	Command.withShortDescription("Echo a typecheck through, annotating each tsc diagnostic."),
 	Command.withDescription(
-		"A pass-through filter for the CI typecheck step (#3873): echo stdin to stdout byte-for-byte, then re-emit each tsc/tsgo diagnostic as a ::error file=,line=,col= workflow command so a failed typecheck renders inline on the PR diff. tsc ships no annotations reporter. Paths are re-rooted from package-relative to repo-relative using the workspace member map, reading BOTH of turbo's package attributions — the per-line prefix and the grouped-header form CI actually gets. Annotations are CI-only unless --force. It ALWAYS exits 0 and never swallows a line: the typecheck's redness rides on the producer's exit code through `set -o pipefail`, and a reporter that failed the step it reports on would only mask which side broke. Example: pnpm typecheck | fabrika ci annotate",
+		"A pass-through filter for the CI typecheck step: echo stdin to stdout byte-for-byte, then re-emit each tsc/tsgo diagnostic as a ::error file=,line=,col= workflow command so a failed typecheck renders inline on the PR diff. tsc ships no annotations reporter. Paths are re-rooted from package-relative to repo-relative using the workspace member map, reading BOTH of turbo's package attributions — the per-line prefix and the grouped-header form CI actually gets. Annotations are CI-only unless --force. It ALWAYS exits 0 and never swallows a line: the typecheck's redness rides on the producer's exit code through `set -o pipefail`. Example: pnpm typecheck | fabrika ci annotate",
 	),
 );
 

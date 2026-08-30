@@ -134,13 +134,27 @@ const ciProduce = leafCommand(
 	"ci-produce",
 	{
 		pr: prArg,
-		head: Flag.string("head"),
-		harness: Flag.string("harness"),
-		runId: Flag.integer("run-id"),
-		repository: Flag.string("repository"),
-		subjectRoot: Flag.string("subject-root"),
-		authorityRoot: Flag.string("authority-root"),
-		outputDir: Flag.string("output-dir"),
+		head: Flag.string("head").pipe(
+			Flag.withDescription("the exact lowercase 40-character PR head checked out as the subject"),
+		),
+		harness: Flag.string("harness").pipe(
+			Flag.withDescription("the localhost harness id from the trusted declaration"),
+		),
+		runId: Flag.integer("run-id").pipe(
+			Flag.withDescription("the positive GitHub Actions run id bound into the manifest"),
+		),
+		repository: Flag.string("repository").pipe(
+			Flag.withDescription("the owner/name repository identity bound into the manifest"),
+		),
+		subjectRoot: Flag.string("subject-root").pipe(
+			Flag.withDescription("the inert exact-head checkout used only as the isolated image context"),
+		),
+		authorityRoot: Flag.string("authority-root").pipe(
+			Flag.withDescription("the trusted base checkout containing the declaration and producer"),
+		),
+		outputDir: Flag.string("output-dir").pipe(
+			Flag.withDescription("the trusted host directory where captures and manifest are written"),
+		),
 	},
 	Effect.fn(function* (options) {
 		yield* emit(yield* runCiProduce({...options, env: process.env}));
@@ -150,7 +164,7 @@ const ciProduce = leafCommand(
 		"Produce the governed localhost capture artifact inside trusted CI.",
 	),
 	Command.withDescription(
-		"Internal trusted-workflow leg: run the governed browser journey against the exact PR head, independently capture every declared surface with both browser error channels, re-read the live head, and write the versioned artifact manifest. This is not an evidence import path; review-ui fetch accepts only the matching GitHub run/check/artifact.",
+		"Internal trusted-workflow leg: build the exact PR checkout with the trusted Dockerfile, run all PR-controlled install/test/server work in a read-only no-credential container with no authority or output mount, capture from the trusted host, and write the versioned artifact manifest only from that host. Prints the manifest on success. Exits 4 (trusted declaration malformed), 10 (head/run/repository/harness off vocabulary), 11 (checkout/image/server/capture/output state unreadable), 12 (subject checkout is not the named exact head), 13 (journey or uncaught page error made the render red), 15 (capture invalid). This is not an evidence import path.",
 	),
 );
 
@@ -169,7 +183,7 @@ const post = leafCommand(
 		),
 		evidence: Flag.string("evidence").pipe(
 			Flag.withDescription(
-				"the review-ui render capture-set name whose verified upload is this verdict's evidence",
+				"the review-ui render or provenance-validated review-ui fetch set whose verified upload is this verdict's evidence",
 			),
 		),
 		carrier: Flag.string("carrier").pipe(
@@ -232,7 +246,7 @@ const note = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post a blocker note when the surfaces cannot be seen."),
 	Command.withDescription(
-		"Post the blocker note on STDIN as one new comment — the typed non-verdict write for a proven can't-see or escalation state. Append-only (a dated fact is never edited in place), leak-scanned, and read back. A body whose first line parses as a verdict marker or an advisory carrier is refused: a verdict goes through review-ui post. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent or closed), 8 (the post failed — UNKNOWN), 9 (the comment does not read back as sent), 10 (the body is verdict-shaped), 11 (a precondition read failed — nothing was posted). Example: fabrika review-ui note 4321 < blocker.md",
+		"Post the blocker note on STDIN as one new comment — the typed non-verdict write for a proven can't-see or escalation state. Append-only, leak-scanned, and read back. A body whose first line parses as a verdict marker or an advisory carrier is refused: a verdict goes through review-ui post. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent or closed), 8 (the post failed — UNKNOWN), 9 (the comment does not read back as sent), 10 (the body is verdict-shaped), 11 (a precondition read failed — nothing was posted). Example: fabrika review-ui note 4321 < blocker.md",
 	),
 );
 
@@ -263,7 +277,7 @@ const route = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record that this PR renders nothing, so no verdict is owed."),
 	Command.withDescription(
-		"Record, bound to the head whose diff you read, that this PR moves no pixels — so review-ui owes it no verdict and ship gate resolves the namespace as routed instead of blocking on an absence no sanctioned path could fill (ADR 0316). The reasoning arrives on STDIN, the record's first line is composed through the `routed-elsewhere` wire format, and both are leak-scanned, upserted as one comment and read back. It is not a verdict: the format carries no polarity, the record is head-bound so any push voids it, and no capture evidence is involved either way. Whether the diff renders anything is your judgment over `review diff`, never a verb's. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent, closed, empty, or its diff raises no ui class — nothing to route), 8 (the post failed — UNKNOWN), 9 (the record does not read back as sent), 10 (bad --sha or a blank --clause), 11 (a precondition read failed or the file list was truncated — nothing was posted), 12 (the live head moved past --sha). Example: fabrika review-ui route 6326 --sha 6c6fe226 --clause \"no rendered delta; both files are prose only\" < why.md",
+		"Record, bound to the head whose diff you read, that this PR moves no pixels — so review-ui owes it no verdict and ship's gate resolves the namespace as routed (ADR 0316). The reasoning arrives on STDIN, the record's first line is composed through the `routed-elsewhere` wire format, and both are leak-scanned, upserted as one comment and read back. It is not a verdict: the format carries no polarity, the record is head-bound so any push voids it, and no capture evidence is involved either way. Whether the diff renders anything is your judgment over `review diff`, never a verb's. Prints one JSON object. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (PR absent, closed, empty, or its diff raises no ui class — nothing to route), 8 (the post failed — UNKNOWN), 9 (the record does not read back as sent), 10 (bad --sha or a blank --clause), 11 (a precondition read failed or the file list was truncated — nothing was posted), 12 (the live head moved past --sha). Example: fabrika review-ui route 6326 --sha 6c6fe226 --clause \"no rendered delta; both files are prose only\" < why.md",
 	),
 );
 

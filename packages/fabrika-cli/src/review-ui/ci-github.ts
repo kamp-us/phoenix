@@ -119,8 +119,11 @@ export const selectUniqueCompleted = (
 	if (kind === "check" && (selected.status !== "completed" || selected.conclusion !== "success")) {
 		return fail(`the ${name} check is not completed/success`);
 	}
-	if (kind === "artifact" && selected.expired === true) {
-		return fail(`the ${name} artifact is expired`);
+	if (kind === "artifact") {
+		if (typeof selected.expired !== "boolean") {
+			return fail(`the ${name} artifact has no valid expiration state`);
+		}
+		if (selected.expired) return fail(`the ${name} artifact is expired`);
 	}
 	return ok(selected);
 };

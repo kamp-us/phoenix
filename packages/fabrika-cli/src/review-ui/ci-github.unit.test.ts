@@ -15,7 +15,8 @@ const harness: LocalhostHarnessDeclaration = {
 	event: "pull_request_target",
 	artifact: "review-ui-localhost-tuval",
 	captureCommand: ["pnpm", "--filter", "tuval", "test"],
-	serverCommand: ["node", "server.mjs", "0"],
+	serverCommand: ["node", "server.mjs", "4173"],
+	containerPort: 4173,
 	readinessPattern: "ready (http://127.0.0.1:[0-9]+)",
 	captureReadySelector: ".react-flow__node",
 	surfaces: [{id: "desktop", route: "/", state: "desktop", width: 1280, height: 800}],
@@ -102,12 +103,22 @@ describe("trusted localhost Actions provenance", () => {
 		);
 		assert.strictEqual(
 			selectUniqueCompleted(
-				[{id: 1, name: harness.artifact, expired: true}],
+				[{id: 1, name: harness.artifact, expired: false}],
 				harness.artifact,
 				"artifact",
 			)._tag,
-			"Failure",
+			"Ok",
 		);
+		for (const expired of [true, undefined, "false", 0]) {
+			assert.strictEqual(
+				selectUniqueCompleted(
+					[{id: 1, name: harness.artifact, ...(expired === undefined ? {} : {expired})}],
+					harness.artifact,
+					"artifact",
+				)._tag,
+				"Failure",
+			);
+		}
 	});
 
 	it("rejects missing, duplicate and traversal artifact members", () => {

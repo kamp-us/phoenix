@@ -119,14 +119,14 @@ describe("fabrika guard, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () 
 	// is the whole reason to spawn them: a leaf mis-registered under the wrong name is invisible to
 	// every in-process test and shows up only as an unknown-subcommand refusal in CI.
 	it.each([
-		["path-filter-guard", "check", "#2372"],
-		["change-detect-guard", "check", "#3245"],
-		["codeowners-cp", "check", "#955"],
+		["path-filter-guard", "check", "Example: fabrika guard path-filter-guard check"],
+		["change-detect-guard", "check", "Example: fabrika guard change-detect-guard check"],
+		["codeowners-cp", "check", "Example: fabrika guard codeowners-cp check"],
 		["decisions-index", "validate", "ADR 0074"],
 		["design-token-guard", "check", "ADR 0162"],
 		["design-inventory", "check", "ADR 0194"],
 		["design-inventory", "generate", "ADR 0194"],
-		["no-gh", "check", "#6629"],
+		["no-gh", "check", "Example: fabrika guard no-gh check"],
 	])("reaches %s's %s leaf by its registration alone", (guard, leaf, marker) => {
 		const run = fabrika(["guard", guard, leaf, "--help"]);
 		expect(run.code).toBe(0);

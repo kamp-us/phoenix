@@ -18,7 +18,8 @@ const declarations = {
 			event: "pull_request_target",
 			artifact: "review-ui-localhost-tuval",
 			captureCommand: ["pnpm", "--filter", "tuval", "test"],
-			serverCommand: ["node", "server.mjs", "0"],
+			serverCommand: ["node", "server.mjs", "4173"],
+			containerPort: 4173,
 			readinessPattern: "ready (http://127.0.0.1:[0-9]+)",
 			captureReadySelector: ".react-flow__node",
 			surfaces: [{id: "desktop", route: "/", state: "desktop", width: 1280, height: 800}],
@@ -99,6 +100,15 @@ describe("localhost evidence authority", () => {
 		);
 		assert.strictEqual(
 			parseCiCaptureManifest(JSON.stringify({...manifest, captures: []}))._tag,
+			"Malformed",
+		);
+		assert.strictEqual(
+			parseCiCaptureManifest(
+				JSON.stringify({
+					...manifest,
+					captures: [manifest.captures[0], {...manifest.captures[0], path: "captures/mobile.png"}],
+				}),
+			)._tag,
 			"Malformed",
 		);
 		assert.strictEqual(

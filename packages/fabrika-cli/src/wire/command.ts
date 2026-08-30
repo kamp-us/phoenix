@@ -63,7 +63,7 @@ const formats = leafCommand(
 ).pipe(
 	Command.withShortDescription("List the registered wire formats, from the registry."),
 	Command.withDescription(
-		"List the registered wire formats, derived from the registry rather than from a hand-written list. First stdout line is `formats\\t<n>`, then one `<key>\\t<purpose>\\t<producers>\\t<consumers>` line per format. Exits 7 (no format is registered — a listing over zero rows is not an answer). Example: fabrika wire formats",
+		"List the registered wire formats, derived from the registry rather than from a hand-written list. First stdout line is `formats\\t<n>`, then one `<key>\\t<purpose>\\t<producers>\\t<consumers>` line per format. Exits 7 (no format is registered — zero scope, never a vacuous listing). Example: fabrika wire formats",
 	),
 );
 
@@ -102,7 +102,7 @@ const check = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether the artifact on stdin carries a conforming block."),
 	Command.withDescription(
-		"Say whether the artifact on STDIN carries a conforming block for this format, without printing its fields. The scope judged — lines, bytes and format — is on stderr on every path, so a verdict is never reported over unstated scope. Stdout is the single line `conforms\\t<format>\\t<count>`. Exits 3 (proven absent), 4 (present and malformed), 5 (stdin was read and held nothing), 6 (the artifact could not be read — UNKNOWN), 7 (--format names no registered format — zero scope, never a vacuous pass). Example: fabrika wire check --format acceptance-criteria < issue-body.md",
+		"Say whether the artifact on STDIN carries a conforming block for this format, without printing its fields. The scope judged — lines, bytes and format — is on stderr on every path. Stdout is the single line `conforms\\t<format>\\t<count>`. Exits 3 (proven absent), 4 (present and malformed), 5 (stdin was read and held nothing), 6 (the artifact could not be read — UNKNOWN), 7 (--format names no registered format — zero scope, never a vacuous pass). Example: fabrika wire check --format acceptance-criteria < issue-body.md",
 	),
 );
 
@@ -136,7 +136,7 @@ const docSection = leafCommand(
 ).pipe(
 	Command.withShortDescription("Print one markdown section of a document by heading."),
 	Command.withDescription(
-		'Print the one section of the markdown document on STDIN (or --file) sitting under the ATX heading whose text equals --heading — from the heading to the next heading of equal or shallower depth, headings inside code fences ignored. Stdout is the section body. Exits 3 (no heading outside a fence carries that text — proven absent), 4 (the heading occurs more than once — two sections with one name have no single meaning), 5 (the document was read and held nothing), 6 (the document could not be read — UNKNOWN, never absent). Example: fabrika wire doc-section --heading "build claim" < contract.md',
+		'Print the one section of the markdown document on STDIN (or --file) sitting under the ATX heading whose text equals --heading — from the heading to the next heading of equal or shallower depth, headings inside code fences ignored. Stdout is the section body. Exits 3 (no heading outside a fence carries that text — proven absent), 4 (the heading occurs more than once — proven ambiguous), 5 (the document was read and held nothing), 6 (the document could not be read — UNKNOWN, never absent). Example: fabrika wire doc-section --heading "build claim" < contract.md',
 	),
 );
 

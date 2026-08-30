@@ -120,4 +120,6 @@ broken: the global runs and the warning names the gap. So a consumer repo does n
 one invoked from a different repository.
 
 Verb-by-verb behaviour and exit codes live in
-[`packages/fabrika-cli/README.md`](../../../packages/fabrika-cli/README.md).
+[`packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md);
+the delegation-outcome table and the environment variables are in
+[`packages/fabrika-cli/docs/packaging.md`](../../../packages/fabrika-cli/docs/packaging.md).

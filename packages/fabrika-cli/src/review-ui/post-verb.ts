@@ -317,9 +317,17 @@ export const runPost = (
 			);
 		}
 		const raw = parseJson(document.success);
+		const captures = isRecord(raw) && Array.isArray(raw.captures) ? raw.captures : [];
+		const previewShaped =
+			captures.length > 0 &&
+			captures.every(
+				(entry) =>
+					isRecord(entry) && typeof entry.surface === "string" && entry.surface.startsWith("/"),
+			);
 		const ciDocument = isRecord(raw) && raw.source === "github-actions";
-		const ciRead = ciDocument ? parseCiCaptureManifest(document.success) : null;
-		const previewRead = ciDocument ? null : parseManifest(document.success);
+		const requiresCiProvenance = ciDocument || !previewShaped;
+		const ciRead = requiresCiProvenance ? parseCiCaptureManifest(document.success) : null;
+		const previewRead = requiresCiProvenance ? null : parseManifest(document.success);
 		const malformed =
 			ciRead?._tag === "Malformed"
 				? ciRead.reason
@@ -344,7 +352,7 @@ export const runPost = (
 				`${VERB}: evidence set "${options.evidence}" has no readable manifest.json.`,
 			);
 		}
-		if (ciDocument) {
+		if (requiresCiProvenance) {
 			const receiptRead = yield* Effect.result(readFile(`${setDir}/${CI_PROVENANCE_RECEIPT}`));
 			if (Result.isFailure(receiptRead)) {
 				return refuse(
@@ -371,7 +379,7 @@ export const runPost = (
 				);
 			}
 		}
-		const manifestMatches = ciDocument
+		const manifestMatches = requiresCiProvenance
 			? manifest.head === live && inspected === live
 			: prefixMatch(manifest.head, inspected);
 		if (!manifestMatches) {
@@ -384,7 +392,7 @@ export const runPost = (
 		// Step 3 — re-validate every capture against the manifest that claims it.
 		const bytesByEntry: Array<readonly [CaptureEntry, Uint8Array]> = [];
 		for (const entry of manifest.captures) {
-			const capturePath = ciDocument ? `${setDir}/${entry.path}` : entry.path;
+			const capturePath = requiresCiProvenance ? `${setDir}/${entry.path}` : entry.path;
 			const bytes = yield* readCaptureBytes(capturePath);
 			if (bytes._tag === "Unreadable") {
 				return unreadable(

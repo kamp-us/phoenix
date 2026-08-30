@@ -21,6 +21,7 @@ export interface LocalhostHarnessDeclaration {
 	readonly artifact: string;
 	readonly captureCommand: readonly string[];
 	readonly serverCommand: readonly string[];
+	readonly containerPort: number;
 	readonly readinessPattern: string;
 	readonly captureReadySelector: string;
 	readonly surfaces: readonly LocalhostSurface[];
@@ -89,6 +90,10 @@ const toHarness = (value: unknown): LocalhostHarnessDeclaration | null => {
 		!SAFE_ID.test(value.artifact) ||
 		!strings(value.captureCommand) ||
 		!strings(value.serverCommand) ||
+		typeof value.containerPort !== "number" ||
+		!Number.isInteger(value.containerPort) ||
+		value.containerPort < 1024 ||
+		value.containerPort > 65535 ||
 		typeof value.readinessPattern !== "string" ||
 		!isRegularExpression(value.readinessPattern) ||
 		typeof value.captureReadySelector !== "string" ||
@@ -108,6 +113,7 @@ const toHarness = (value: unknown): LocalhostHarnessDeclaration | null => {
 		artifact: value.artifact,
 		captureCommand: value.captureCommand,
 		serverCommand: value.serverCommand,
+		containerPort: value.containerPort,
 		readinessPattern: value.readinessPattern,
 		captureReadySelector: value.captureReadySelector,
 		surfaces: surfaces as readonly LocalhostSurface[],
@@ -310,6 +316,10 @@ export const parseCiCaptureManifest = (text: string): CiManifestRead => {
 	const paths = captures.map((capture) => (capture as CaptureEntry).path);
 	if (new Set(paths).size !== paths.length) {
 		return {_tag: "Malformed", reason: "two captures name the same artifact member"};
+	}
+	const surfaces = captures.map((capture) => (capture as CaptureEntry).surface);
+	if (new Set(surfaces).size !== surfaces.length) {
+		return {_tag: "Malformed", reason: "two captures name the same surface"};
 	}
 	return {
 		_tag: "Manifest",
