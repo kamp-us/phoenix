@@ -212,6 +212,16 @@ writing anything, naming the defect the reader found — so write the criteria a
 A rewrite carrying **no** criteria block is still accepted, where none is warranted. The stdin
 grammar, the epic pitch's five fields and every exit the verb refuses on live in its section
 (`fabrika wire doc-section --heading "triage enrich" < <skill-base>/contract.md`).
+
+**An ordering you state must already be an edge.** ADR
+[0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes the native `blocked_by`
+graph the one carrier of "do not start this yet", so a rewrite saying "Blocked. Do not start until
+#N" over a graph with no such edge ships an issue `build pick` admits and no lane can build — #6663
+did exactly that and cost a lane a claim. `enrich` scans the region it composed and refuses on `20`,
+writing nothing. **There is no override**, and the refusal names both ways out: wire the edge in step
+7 with `--blocked-by`, then re-send, or reword so the body states no ordering it does not own. What
+counts as a statement — and why it is narrow — is that verb's section
+(`… --heading "A stated ordering must be an edge, and 20 is the refusal"`).
 **No invention**: enrich from what you found, keep
 the uncertainty the original had, and mark your own reads `Triage note:`. On a **re-type, rewrite the
 body's criteria to the new type** — stale criteria under a re-scoped comment ship a misleading spec.
@@ -230,7 +240,16 @@ fabrika triage apply $issue_number --type bug --priority p2 --ready-for agent --
 
 A standing lane takes `--lane wayfinder:backlog` (or `axis:pipeline-hardening`) **instead of**
 `--home`, never both — a lane label is not a milestone number, and putting a milestone on a
-lane-exempt issue is banned outright. Which facets this verb owns and may remove, and the label
+lane-exempt issue is banned outright.
+
+**Repeatable `--blocked-by <n>` writes the prerequisites as native graph edges** — the only triage
+route to them, and where an ordering belongs. Pass one per issue this one waits on
+(`--blocked-by 6661 --blocked-by 6662`); the verb resolves each target's internal id, skips the edges
+already live so a re-run is safe, and reads the whole set back as the machine line's last column. A
+target that does not exist refuses on `7` before any label is written. This is the escape step 6's
+`20` names, so an ordered slice set is stamped edges-first and its rewrite then passes.
+
+Which facets this verb owns and may remove, and the label
 vocabulary it treats as a precondition, are its own sections
 (`fabrika wire doc-section --heading "triage apply" < <skill-base>/contract.md`, then
 `--heading "The owned facets — what apply may remove"`).
@@ -262,7 +281,8 @@ child from the plan ledger, and `--ready-for human` is never asked for one.
 **Do not assert control-plane scope.** `cp-classify` routes it and CODEOWNERS enforces it at merge;
 asserting it here routes a lane around an approval that never fires.
 
-Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `ready-for:`, a home.
+Done when the verb read back exactly one `type:`, one `p`, `status:triaged`, `ready-for:`, a home,
+and every `--blocked-by` edge you asked for.
 
 ## 8 — The two outcomes that are not "triaged"
 

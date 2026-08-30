@@ -165,6 +165,7 @@ or the search index could not be read
 | `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
+| `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for (ADR 0301) | — | — | — | — | — | ✓ | — | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -1514,6 +1515,34 @@ Two boundaries carry the weight:
 `Absent` is **not** a refusal. An epic pitch, a decision, a parked ticket may legitimately carry no
 criteria block; a verb that demanded one would be a different verb.
 
+### A stated ordering must be an edge, and `20` is the refusal
+
+ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes the native
+`blocked_by` graph the one carrier of "do not start this yet", so an ordering that lives only in
+prose produces an issue `build pick` admits and no lane can build: #6663 said verbatim
+"**Blocked. Do not start until #6662 has merged**" over a graph with zero edges, and a build lane
+spent a claim, a read pass and a back-off on it. The founder ruling on
+[#6728](https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763) makes this verb
+fail-closed over it, on the same idiom as `fanout-guard` and `catalog-guard`.
+
+**What counts as a stated ordering.** The scan runs over the **authored region only** — the same
+contract region the criteria reader scans, so the preserved original inside `<details>` and any
+fenced block are out of reach — and a line states an ordering when an **ordering phrase binds an
+issue reference**: `blocked by/on/until/behind #N`, `do not start until/before #N`,
+`depends on #N`, `dependent on #N`, or `order is … #N`. A keyword merely co-present with a `#N` is
+not one, and neither is an ordering inside an inline-code span, a double-quoted span, or a
+blockquote — those are somebody else's words being reported. The bar is deliberately this narrow:
+a red on a body that owns no prerequisite could not be cleared by wiring an edge, so it would leave
+only the reword escape on a body that is already correct.
+
+**The refusal reads the issue's own live `blocked_by` set** and reds when a number a stated ordering
+names is absent from it, writing nothing. A read that failed is `11`, never a pass.
+
+**There is no override flag, and that is deliberate.** The refusal names the two escapes the ruling
+allows — **wire the edge** with `fabrika triage apply <n> --blocked-by <m>` and re-send, or
+**reword** the body so it states no ordering it does not own. A false red costs one of those two
+moves; a bypass costs a builder a claim on unstartable work.
+
 **Exit status**
 
 | Code | Trigger |
@@ -1524,9 +1553,10 @@ criteria block; a verb that demanded one would be a different verb.
 | `7` | the issue is proven absent (404), is closed, or it was read and its body is empty — a read that succeeded over nothing |
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
-| `11` | the issue body could not be read, so there is no original to preserve — or its comments, or the claim on them, could not be read |
+| `11` | the issue body could not be read, so there is no original to preserve — or its comments, the claim on them, or its `blocked_by` edges could not be read |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
+| `20` | the composed body's **authored region** states an ordering the issue's live `blocked_by` graph carries no edge for |
 
 **Errors**
 
@@ -1578,6 +1608,17 @@ $ fabrika triage enrich 4312 --json < enriched.md
 {"outcome":"enriched","number":4312,"redactions":0,"mode":"rewrite"}
 ```
 
+```
+$ fabrika triage enrich 6663 < enriched.md
+triage enrich: the rewrite states an ordering on #6662 that #6663's live blocked_by graph carries no
+edge for (line 7: "**Blocked. Do not start until #6662 has merged** — it adds the invalidate arm.").
+ADR 0301 makes that graph the one carrier, so a builder reads the edges and never this sentence.
+There is no override: either wire the edge — `fabrika triage apply 6663 --blocked-by 6662` — and
+re-send, or reword the body so it states no ordering it does not own. Nothing was written.
+$ echo $?
+20
+```
+
 **Grounding**
 
 - #3019 / #2393 — a verbatim re-emit re-committed a machine-local path into a public issue. Fidelity
@@ -1612,6 +1653,7 @@ $ fabrika triage enrich 4312 --json < enriched.md
 fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
 fabrika triage apply 4312 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening
 fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
+fabrika triage apply 6663 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 6662
 ```
 
 **Inputs**
@@ -1624,9 +1666,36 @@ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 -
 | `--ready-for` | enum | yes | — | who picks it up: `human` or `agent` |
 | `--home` | integer | one of | — | the **number** of an open milestone to home the issue in |
 | `--lane` | enum | one of | — | a standing lane, taking its values from the `lane` rows `triage homes` prints |
+| `--blocked-by` | integer | no | none | an issue this one waits on, written as a native `blocked_by` edge; **repeatable**, and idempotent |
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
+
+### `--blocked-by` — the one triage route to the dependency graph
+
+ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes the native
+`blocked_by` graph the one carrier of "do not start this yet", and until this flag no triage verb
+could write one: `map ticket` was `addBlockedBy`'s only caller, and only for a wayfinding map's own
+tickets. So a triager filing an ordered slice set had the graph API one import away and no sanctioned
+way to reach it, and wrote the ordering as prose — [#6728](https://github.com/kamp-us/phoenix/issues/6728),
+ruled at [this comment](https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763).
+
+Three properties, each a refusal rather than a hope:
+
+- **Every target is resolved before any edge — or any label — is written.** The POST body takes the
+  target's **internal `id`**, never its issue number (passing a number silently addresses a different
+  issue), so each value is resolved through `internalId` first. A target **proven absent (404)** is
+  `7` with nothing written anywhere; a resolve that merely failed is `11`.
+- **The edges already live are read first and skipped**, so re-running leaves exactly one edge and
+  exits `0`. That is what makes a resumed lane safe, and it rests on a read this verb performs rather
+  than on an assumption about how the API answers a duplicate POST.
+- **The read-back is over the graph, not over the POST responses.** After the writes the verb re-reads
+  `blocked_by` and proves every requested number is in it: a write it believes landed and a graph that
+  carries the edge are different facts, and only the second gates a build lane. A requested edge absent
+  from that read is `9`; a write that failed outright is `8`.
+
+`--blocked-by <this issue>` is refused on `7`: a self-edge makes the issue permanently unbuildable and
+`build eligible` would report it as a real blocker.
 
 **Exactly one of `--home` / `--lane` is required.** Supplying both, or neither, is a usage error. This
 is the whole design: an un-homed `status:triaged` issue is **unrepresentable** rather than detected
@@ -1654,9 +1723,11 @@ make an epic unstampable. `--ready-for human` is unaffected on every type: the p
 backs is the one made to an agent.
 
 **Output** — machine channel. One tab-separated line: `triaged`, `<number>`, `<type>`, `<priority>`,
-`<ready-for>`, `<home>` — where `<home>` is the milestone number or the lane label. With `--json`, an
-object with those keys plus `removed` (the labels superseded) and `readBack`, an object of
-`{labels, milestone}` observed after the write.
+`<ready-for>`, `<home>`, `<blocked-by>` — where `<home>` is the milestone number or the lane label,
+and `<blocked-by>` is the read-back edge set rendered `#a,#b`, **empty when the issue waits on
+nothing**. The column is always present, `--blocked-by` or not. With `--json`, an object with those
+keys plus `removed` (the labels superseded), `blockedBy` (that same edge set, as numbers) and
+`readBack`, an object of `{labels, milestone}` observed after the write.
 
 **`readBack` carries the milestone, not only the labels.** A labels-only read-back cannot evidence a
 `--home` at all — the flag's entire effect is a milestone — so it reported success over the one facet
@@ -1736,11 +1807,11 @@ for drift, not because they are currently absent.)
 
 | Code | Trigger |
 |---|---|
-| `7` | a label this invocation would write does not exist in the repository, or the issue is closed |
-| `8` | a label or milestone write failed — UNKNOWN which changes landed |
-| `9` | the writes landed but the read-back does not show the required end state |
+| `7` | a label this invocation would write does not exist in the repository, the issue is closed, a `--blocked-by` target is **proven absent (404)**, or `--blocked-by` names this issue itself — nothing written |
+| `8` | a label, milestone or `blocked_by` edge write failed — UNKNOWN which changes landed |
+| `9` | the writes landed but the read-back does not show the required end state, or a requested `blocked_by` edge is absent from the edge read-back |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
-| `11` | the issue, its comments, the claim on it, the repository's label set, or its milestone set could not be read |
+| `11` | the issue, its comments, the claim on it, the repository's label set, its milestone set, the issue's live `blocked_by` edges, or a `--blocked-by` target's internal id could not be read |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
 | `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the issue is even read |
@@ -1795,7 +1866,15 @@ failure is `11` and never a silent pass.
 
 ```
 $ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
-triaged	4312	bug	p2	agent	47
+triaged	4312	bug	p2	agent	47	
+```
+
+```
+$ fabrika triage apply 6663 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 6662
+triage apply: scanned 34 labels in kamp-us/phoenix.
+triage apply: scanned 6 open milestones in kamp-us/phoenix.
+triage apply: read back #6663 blocked_by #6662.
+triaged	6663	bug	p1	agent	47	#6662
 ```
 
 ```
@@ -1814,12 +1893,12 @@ $ echo $?
 
 ```
 $ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --json
-{"outcome":"triaged","number":4312,"type":"bug","priority":"p2","readyFor":"agent","home":47,"removed":["status:needs-triage"],"readBack":{"labels":["type:bug","p2","status:triaged","ready-for:agent"],"milestone":47}}
+{"outcome":"triaged","number":4312,"type":"bug","priority":"p2","readyFor":"agent","home":47,"removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:bug","p2","status:triaged","ready-for:agent"],"milestone":47}}
 ```
 
 ```
 $ fabrika triage apply 4290 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening --json
-{"outcome":"triaged","number":4290,"type":"chore","priority":"p2","readyFor":"agent","home":"axis:pipeline-hardening","removed":["status:needs-triage"],"readBack":{"labels":["type:chore","p2","status:triaged","ready-for:agent","axis:pipeline-hardening"],"milestone":null}}
+{"outcome":"triaged","number":4290,"type":"chore","priority":"p2","readyFor":"agent","home":"axis:pipeline-hardening","removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:chore","p2","status:triaged","ready-for:agent","axis:pipeline-hardening"],"milestone":null}}
 ```
 
 **Grounding**

@@ -14,6 +14,7 @@
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {blockedBy} from "../io/edges.ts";
 import {getIssue, patchIssueBody, resolveRepo} from "../io/issues.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -25,11 +26,13 @@ import {
 	MALFORMED_CRITERIA,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
+	UNWIRED_ORDERING,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {authoredRegion, composeBody, detect, type EnrichMode, wrapOriginal} from "./enrich.ts";
 import {legacyPreserved} from "./enrich-legacy.ts";
+import {statedOrderings, unwiredReferences} from "./ordering.ts";
 import {guardTarget} from "./target-guard.ts";
 
 export interface EnrichOptions {
@@ -153,6 +156,37 @@ export const runEnrich = (
 				MALFORMED_CRITERIA,
 				`triage enrich: ${surface.noun} composes an acceptance-criteria block the wire reader rejects — ${criteria.reason} (${criteria.evidence}). The grammar is owned by packages/fabrika-cli/src/wire/acceptance-criteria.ts; fix the block or drop it.`,
 			);
+		}
+
+		// ADR 0301: the graph is the one carrier of "do not start this yet", so an ordering stated only
+		// in prose produces an issue `build pick` admits and no lane can build (#6663). The read is
+		// deferred to here because it is only owed by a body that states one.
+		const orderings = statedOrderings(authoredRegion(mode, authored.text));
+		if (orderings.length > 0) {
+			const live = yield* blockedBy(repo, issue);
+			if (live._tag !== "Present") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`triage enrich: ${surface.noun} states an ordering and #${issue}'s blocked_by edges could not be read (${
+						live._tag === "Absent" ? "the issue is absent" : live.reason
+					}) — nothing was written.`,
+					diagnostics,
+				);
+			}
+			const unwired = unwiredReferences(orderings, live.value);
+			if (unwired.length > 0) {
+				const named = [...new Set(unwired.flatMap((o) => o.references))];
+				const numbers = named.map((n) => `#${n}`).join(", ");
+				const lines = unwired.map((o) => o.line).join(", ");
+				const wire = named
+					.map((n) => `\`fabrika triage apply ${issue} --blocked-by ${n}\``)
+					.join(", ");
+				return refuse(
+					UNWIRED_ORDERING,
+					`triage enrich: ${surface.noun} states an ordering on ${numbers} that #${issue}'s live blocked_by graph carries no edge for (line ${lines}: "${unwired[0]?.text.trim()}"). ADR 0301 makes that graph the one carrier, so a builder reads the edges and never this sentence. There is no override: either wire the edge — ${wire} — and re-send, or reword the body so it states no ordering it does not own. Nothing was written.`,
+					diagnostics,
+				);
+			}
 		}
 
 		const written = yield* patchIssueBody(repo, issue, composed);

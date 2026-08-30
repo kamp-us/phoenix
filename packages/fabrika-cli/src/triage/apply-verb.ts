@@ -8,12 +8,17 @@
  *
  * The reconcile itself — which labels are owned, what is removed, what is preserved, and the shape
  * the read-back asserts — lives in `./facets.ts` and is shared with `triage park`.
+ *
+ * `--blocked-by` rides the same verb and prints as the machine line's last column
+ * (`triaged\t<n>\t<type>\t<priority>\t<ready-for>\t<home>\t<blocked-by>`); its reads, writes and
+ * read-back are `./blocked-by.ts`.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {getIssue, listLabels, listOpenMilestones, resolveRepo} from "../io/issues.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readCriteria} from "../wire/acceptance-criteria.ts";
+import {edgeLine, landEdges, planEdges} from "./blocked-by.ts";
 import {
 	CRITERIA_REQUIRED,
 	OFF_VOCABULARY,
@@ -41,6 +46,8 @@ export interface ApplyOptions {
 	readonly readyFor: string;
 	readonly home: number | null;
 	readonly lane: string | null;
+	/** Repeatable `--blocked-by`: the issues this one waits on, written as native graph edges. */
+	readonly blockedBy: ReadonlyArray<number>;
 	readonly repo: string | null;
 	readonly json: boolean;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -184,6 +191,15 @@ export const runApply = (
 		const refusal = criteriaRefusal(issue, type, readyFor, target.value.body);
 		if (refusal !== null) return refusal;
 
+		const badEdge = options.blockedBy.find((n) => !Number.isInteger(n) || n <= 0);
+		if (badEdge !== undefined) {
+			return refuse(FAILED, `triage apply: --blocked-by ${badEdge} is not an issue number.`);
+		}
+		// Resolved before the labels are touched, so a mistyped number refuses over a board this run
+		// never wrote to rather than over one it half-stamped.
+		const edges = yield* planEdges("triage apply", repo, issue, options.blockedBy);
+		if (edges._tag === "Refused") return edges.outcome;
+
 		const vocabulary = yield* listLabels(repo);
 		if (vocabulary._tag === "Failure") return unreadable("the label set", repo, vocabulary.reason);
 		const diagnostics = [scannedLine("triage apply", repo, vocabulary.value.length, "label")];
@@ -253,7 +269,14 @@ export const runApply = (
 			);
 		}
 
+		const landed = yield* landEdges("triage apply", repo, issue, edges.value);
+		if (landed._tag === "Refused") return landed.outcome;
+		if (edges.value.requested.length > 0) {
+			diagnostics.push(edgeLine("triage apply", issue, landed.value));
+		}
+
 		const homeColumn = home === null ? (lane as string) : String(home);
+		const edgeColumn = landed.value.map((n) => `#${n}`).join(",");
 		return json
 			? answer(
 					JSON.stringify({
@@ -264,9 +287,13 @@ export const runApply = (
 						readyFor,
 						home: home === null ? lane : home,
 						removed: plan.removed,
+						blockedBy: landed.value,
 						readBack: {labels: observed.labels, milestone: observed.milestone},
 					}),
 					diagnostics,
 				)
-			: answer(`triaged\t${issue}\t${type}\t${priority}\t${readyFor}\t${homeColumn}`, diagnostics);
+			: answer(
+					`triaged\t${issue}\t${type}\t${priority}\t${readyFor}\t${homeColumn}\t${edgeColumn}`,
+					diagnostics,
+				);
 	});

@@ -208,11 +208,28 @@ const apply = leafCommand(
 				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}`,
 			),
 		),
+		blockedBy: Flag.integer("blocked-by").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				"an issue this one waits on, written as a native blocked_by edge; repeatable, idempotent",
+			),
+		),
 		token: laneTokenFlag,
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, type, priority, readyFor, home, lane, token, repo, json}) {
+	Effect.fn(function* ({
+		issue,
+		type,
+		priority,
+		readyFor,
+		home,
+		lane,
+		blockedBy,
+		token,
+		repo,
+		json,
+	}) {
 		yield* emit(
 			yield* runApply({
 				issue,
@@ -221,6 +238,7 @@ const apply = leafCommand(
 				readyFor,
 				home: Option.getOrNull(home),
 				lane: Option.getOrNull(lane),
+				blockedBy,
 				token: Option.getOrNull(token),
 				repo: Option.getOrNull(repo),
 				json,
@@ -230,9 +248,11 @@ const apply = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Stamp the whole triaged transition as one reconcile."),
+	Command.withShortDescription(
+		"Stamp the triaged transition and its blocked_by edges as one reconcile.",
+	),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Repeatable --blocked-by writes the issue's native blocked_by edges (ADR 0301), resolving each target's internal id, skipping the edges already live so a re-run is idempotent, and reading the whole set back. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>\\t<blocked-by>`, where the last column is the read-back edge set as `#a,#b` and is empty when there is none. Exits 7 (no such issue, it is closed, a label this run would write does not exist, or a --blocked-by target is proven absent — no edge written), 8 (a write failed — UNKNOWN), 9 (read-back mismatch, including a requested edge absent from the edge read-back), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue and the blocked_by read), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 4311",
 	),
 );
 
@@ -428,7 +448,7 @@ const enrich = leafCommand(
 ).pipe(
 	Command.withShortDescription("Replace an issue body with the rewrite on stdin."),
 	Command.withDescription(
-		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, or the claim on it, could not be read), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage enrich 4312 < enriched.md",
+		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. The authored region is scanned for a stated ordering — an ordering phrase binding a #N — and refused when the live blocked_by graph carries no edge for a number it names (ADR 0301); there is no override, so wire the edge with `triage apply <n> --blocked-by <m>` or reword. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, the claim on it, or its blocked_by edges could not be read), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 20 (the authored region states an ordering the graph carries no edge for — nothing written). Example: fabrika triage enrich 4312 < enriched.md",
 	),
 );
 

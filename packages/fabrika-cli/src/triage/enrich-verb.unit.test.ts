@@ -18,6 +18,7 @@ import {
 	MALFORMED_CRITERIA,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
+	UNWIRED_ORDERING,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
@@ -540,5 +541,94 @@ describe("runEnrich — the target guard", () => {
 			[READ, issue(ORIGINAL)],
 		]);
 		expect(patched).toBe(true);
+	});
+});
+
+/**
+ * ADR 0301 makes the native `blocked_by` graph the one carrier of "do not start this yet", so a
+ * rewrite stating an ordering the graph does not carry produces an issue `build pick` admits and no
+ * lane can build — #6663 shipped exactly that. Founder ruling on #6728: fail-closed, no override.
+ */
+describe("runEnrich — the stated-ordering gate", () => {
+	const EDGES = /GET .*\/repos\/o\/r\/issues\/4312\/dependencies\/blocked_by/;
+
+	const edgeList = (...numbers: ReadonlyArray<number>): HttpReply => ({
+		status: 200,
+		body: JSON.stringify(numbers.map((number) => ({number}))),
+	});
+
+	const ORDERED = "## What to build\n\nBlocked. Do not start until #4311 has merged.";
+
+	/**
+	 * The read-back echoes what was PATCHed, on the same two-pass shape `run` uses above: a fixed
+	 * read-back body would make every `code` assertion here a statement about the fixture.
+	 */
+	const gate = async (rewrite: string, edges: Scripted, before = ORIGINAL) => {
+		const stdin = Effect.succeed<StdinRead>({_tag: "Text", text: rewrite});
+		const shell = guardedShell([[once(READ), issue(before)], edges, [PATCH, ACCEPTED]]);
+		await Effect.runPromise(Effect.provide(runEnrich({...options, stdin}), shell.layer));
+		const patched = written(shell);
+		if (patched === null) {
+			const outcome = await Effect.runPromise(
+				Effect.provide(
+					runEnrich({...options, stdin}),
+					guardedShell([[once(READ), issue(before)], edges, [PATCH, ACCEPTED]]).layer,
+				),
+			);
+			return {outcome, patched: false, requests: shell.requests};
+		}
+		const echoing = guardedShell([
+			[once(READ), issue(before)],
+			edges,
+			[PATCH, ACCEPTED],
+			[READ, issue(patched)],
+		]);
+		const outcome = await Effect.runPromise(
+			Effect.provide(runEnrich({...options, stdin}), echoing.layer),
+		);
+		return {outcome, patched: true, requests: echoing.requests};
+	};
+
+	it("refuses on 20 and writes nothing when the graph carries no edge for the number", async () => {
+		const {outcome, patched} = await gate(ORDERED, [EDGES, edgeList()]);
+		expect(outcome.code).toBe(UNWIRED_ORDERING);
+		expect(patched).toBe(false);
+	});
+
+	it("names both escapes the ruling allows, and states there is no override", async () => {
+		const {outcome} = await gate(ORDERED, [EDGES, edgeList()]);
+		const said = outcome.stderr.join(" ");
+		expect(said).toContain("fabrika triage apply 4312 --blocked-by 4311");
+		expect(said).toContain("reword");
+		expect(said).toContain("no override");
+	});
+
+	it("passes the same ordering once the edge is live", async () => {
+		const {outcome, patched} = await gate(ORDERED, [EDGES, edgeList(4311)]);
+		expect(outcome.code).toBe(0);
+		expect(patched).toBe(true);
+	});
+
+	/** The preserved original is foreign bytes this verb redacts rather than judges. */
+	it("passes an ordering that lives only in the preserved original", async () => {
+		const {outcome, patched} = await gate(
+			REWRITE,
+			[EDGES, edgeList()],
+			"Blocked. Do not start until #4311 has merged.",
+		);
+		expect(outcome.code).toBe(0);
+		expect(patched).toBe(true);
+	});
+
+	it("passes a rewrite that states no ordering, and never reads the graph", async () => {
+		const {outcome, requests} = await gate(REWRITE, [EDGES, edgeList()]);
+		expect(outcome.code).toBe(0);
+		expect(requests.some((line) => /dependencies/.test(line))).toBe(false);
+	});
+
+	it("is PRECONDITION_UNKNOWN when the graph could not be read, and writes nothing", async () => {
+		const {outcome, patched} = await gate(ORDERED, [EDGES, UNREADABLE]);
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(patched).toBe(false);
 	});
 });
