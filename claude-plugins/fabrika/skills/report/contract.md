@@ -17,8 +17,8 @@ instead — but no clause defers to one, and none is invoked.
 **The bare binary name resolves, and this spec assumes it.** The skill's fences invoke `fabrika` as
 a plain literal name, which is what the harness's isolation verifier requires — that check is
 *syntactic*, on the command string. The name then resolves through the delivery
-[`packages/fabrika-cli/README.md`](../../../../packages/fabrika-cli/README.md) documents under
-*How it is delivered*: one global install whose binary finds the repo root above the working
+[`packages/fabrika-cli/docs/packaging.md`](../../../../packages/fabrika-cli/docs/packaging.md)
+documents under *Which copy serves an invocation*: one global install whose binary finds the repo root above the working
 directory, asks Node's resolver what copy that root installed, and hands the invocation to it —
 including from a git worktree, which resolves to that worktree's own copy.
 [#4650](https://github.com/kamp-us/phoenix/issues/4650) landed that mechanism. What an eval run

@@ -21,6 +21,6 @@ These pages are written for a person. Each holds one Diátaxis mode.
 - **[`../docs/`](../docs/README.md)** — the agent-facing convention and contract docs.
 - **[`.decisions/`](../../../.decisions/)** — the why, and the history including superseded
   approaches.
-- **[`packages/fabrika-cli/README.md`](../../../packages/fabrika-cli/README.md)** — the verb
-  reference: what each command does and its exit codes.
+- **[`packages/fabrika-cli/docs/verb-reference.md`](../../../packages/fabrika-cli/docs/verb-reference.md)**
+  — the verb reference: what each command does and its exit codes.
 - **[`../skills/`](../skills/)** — one `SKILL.md` per skill: the contracts agents execute.
