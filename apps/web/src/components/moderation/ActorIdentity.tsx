@@ -33,7 +33,9 @@ export function ActorIdentity({
 
 	return (
 		<span className={identityClassName}>
-			<span className={handleClassName}>{label}</span>
+			<span className={handleClassName} title={label}>
+				{label}
+			</span>
 			{showKarma ? (
 				<Karma
 					value={totalKarma}
