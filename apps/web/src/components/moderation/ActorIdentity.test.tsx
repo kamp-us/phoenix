@@ -22,6 +22,22 @@ describe("ActorIdentity — the shared actor row", () => {
 		expect(karma.textContent).toContain("42");
 	});
 
+	it("carries the full label in a title, so a truncated handle stays readable", () => {
+		const long = "Bir Hayli Uzun Bir Çaylak Görünen Adı";
+		render(
+			<ActorIdentity
+				authorId="a3"
+				displayName={long}
+				username="uzun"
+				totalKarma={0}
+				fallbackLabel="çaylak"
+				handleClassName="kp-divan__handle"
+				karmaTestIdPrefix="divan-karma-"
+			/>,
+		);
+		expect(screen.getByText(long).getAttribute("title")).toBe(long);
+	});
+
 	it("degrades to the fallback noun and hides karma when showKarma is false", () => {
 		render(
 			<ActorIdentity
