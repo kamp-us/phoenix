@@ -9,8 +9,11 @@ import {
 	promoteOutcomeMessage,
 	promoteVisible,
 	shouldProbeDivanRoster,
+	vouchLanded,
 	vouchOutcome,
 	vouchOutcomeMessage,
+	vouchTriggerLabel,
+	vouchTriggerState,
 	vouchVisible,
 } from "./divanGating";
 
@@ -197,5 +200,39 @@ describe("vouchOutcome — the user.vouch receipt/code → outcome", () => {
 			expect(msg).toBe(msg.toLowerCase());
 			expect(msg.length).toBeGreaterThan(0);
 		}
+	});
+});
+
+describe("vouchTriggerState — the trigger's honesty about an already-held vouch (#7373)", () => {
+	it("a non-yazar sees no trigger at all, vouched or not", () => {
+		expect(vouchTriggerState("çaylak", false)).toBe("hidden");
+		expect(vouchTriggerState("çaylak", true)).toBe("hidden");
+		expect(vouchTriggerState(undefined, true)).toBe("hidden");
+	});
+
+	it("a yazar who has not vouched is offered the action", () => {
+		expect(vouchTriggerState("yazar", false)).toBe("offer");
+	});
+
+	it("a yazar who already vouched for this çaylak is done", () => {
+		expect(vouchTriggerState("yazar", true)).toBe("done");
+	});
+
+	it("labels the done state as the past tense, so the button reports rather than invites", () => {
+		expect(vouchTriggerLabel("done")).toBe("kefil oldun");
+		expect(vouchTriggerLabel("offer")).toBe("kefil ol");
+	});
+});
+
+describe("vouchLanded — which confirm outcomes leave the viewer holding a vouch (#7373)", () => {
+	it("a recorded vouch and a tandem-promoting one both landed", () => {
+		expect(vouchLanded("recorded")).toBe(true);
+		expect(vouchLanded("promoted")).toBe(true);
+	});
+
+	it("a cap denial, an authority denial and a transport error landed nothing", () => {
+		expect(vouchLanded("limit")).toBe(false);
+		expect(vouchLanded("denied")).toBe(false);
+		expect(vouchLanded("error")).toBe(false);
 	});
 });

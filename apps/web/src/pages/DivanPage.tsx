@@ -31,7 +31,14 @@ export function DivanPage() {
 
 function DivanWorkspace() {
 	const {me} = useMe();
-	const [selectedId, setSelectedId] = useState<string | null>(null);
+	// The open çaylak carries the roster row's viewer-scoped `viewerVouched` with it, so the
+	// detail's "kefil oldun" state comes off the roster's batched read rather than a second
+	// by-id read of that çaylak (#7373, ADR 0021).
+	const [selected, setSelected] = useState<{
+		readonly authorId: string;
+		readonly viewerVouched: boolean;
+	} | null>(null);
+	const selectedId = selected?.authorId ?? null;
 	// Gate raporlar on the server-side isModerator signal, never on tier.
 	const raporlarVisible = me?.isModerator ?? false;
 	const [section, setSection] = useState<"caylaklar" | "raporlar">("caylaklar");
@@ -140,12 +147,15 @@ function DivanWorkspace() {
 								fallback={<p className="kp-divan__loading">yükleniyor…</p>}
 								error={({code}) => <AccessError code={code} />}
 							>
-								<DivanRoster selectedId={selectedId} onSelect={setSelectedId} />
+								<DivanRoster
+									selectedId={selectedId}
+									onSelect={(authorId, viewerVouched) => setSelected({authorId, viewerVouched})}
+								/>
 							</Screen>
 						</section>
 
 						<section className="kp-divan__detail-pane" aria-label="çaylak incelemesi">
-							{selectedId === null ? (
+							{selected === null ? (
 								<p className="kp-divan__hint" data-testid="divan-detail-hint">
 									incelemek için bir çaylak seç.
 								</p>
@@ -156,9 +166,10 @@ function DivanWorkspace() {
 									error={({code}) => <AccessError code={code} />}
 								>
 									<CaylakDetail
-										authorId={selectedId}
+										authorId={selected.authorId}
 										viewerTier={me?.tier}
 										viewerIsModerator={me?.isModerator ?? false}
+										viewerVouched={selected.viewerVouched}
 									/>
 								</Screen>
 							)}

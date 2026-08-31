@@ -16,6 +16,7 @@ const die =
 const failOnContact: VouchLedgerShape = {
 	castVouch: die("castVouch"),
 	has: die("has"),
+	candidatesVouchedBy: die("candidatesVouchedBy"),
 	activeCountFor: die("activeCountFor"),
 	hasActiveFor: die("hasActiveFor"),
 	withdraw: die("withdraw"),

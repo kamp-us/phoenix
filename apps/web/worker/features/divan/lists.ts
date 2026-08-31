@@ -5,13 +5,14 @@
  *
  * Both are single-page private reads, so the `ConnectionResult` is `hasNext: false`.
  */
-import {Fate} from "@kampus/fate-effect";
+import {CurrentUser, Fate} from "@kampus/fate-effect";
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {targetKey} from "../../db/target-kind.ts";
 import {UserId} from "../../lib/ids.ts";
 import {Denied} from "../kunye/errors.ts";
+import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {Divan} from "./Divan.ts";
 import {requireDivanAccess, ViewDivan} from "./gate.ts";
 import type {DivanItem, DivanRosterRow} from "./roster.ts";
@@ -33,7 +34,7 @@ const BacklogArgs = Schema.Struct({
 
 // The handler stamps `__typename` itself: an inline-resolved entity has no source
 // that would stamp it.
-const toCaylak = (e: DivanRosterRow): DivanCaylak => ({
+const toCaylak = (e: DivanRosterRow, viewerVouched: boolean): DivanCaylak => ({
 	__typename: "DivanCaylak",
 	id: e.authorId,
 	authorId: e.authorId,
@@ -44,6 +45,20 @@ const toCaylak = (e: DivanRosterRow): DivanCaylak => ({
 	postCount: e.postCount,
 	commentCount: e.commentCount,
 	totalCount: e.totalCount,
+	viewerVouched,
+});
+
+/**
+ * The reading actor's whole vouch set in ONE ledger read, so `viewerVouched` costs the
+ * roster a single extra statement rather than a per-row probe (ADR 0021). An anonymous or
+ * moderator-only reader simply has none: the yazar floor lives in `user.vouch`, and this
+ * read only reports what already exists.
+ */
+const vouchedByViewer = Effect.fn("divan.vouchedByViewer")(function* () {
+	const {user} = yield* CurrentUser;
+	if (!user) return new Set<string>();
+	const ledger = yield* VouchLedger;
+	return new Set(yield* ledger.candidatesVouchedBy(user.id));
 });
 
 const toItem = (i: DivanItem): DivanBacklogItem => ({
@@ -59,9 +74,10 @@ const rosterGated = Effect.fn("divan.rosterGated")(function* () {
 	yield* ViewDivan;
 	const divan = yield* Divan;
 	const roster = yield* divan.roster();
+	const vouched = yield* vouchedByViewer();
 	return {
 		items: roster.map((e) => {
-			const node = toCaylak(e);
+			const node = toCaylak(e, vouched.has(e.authorId));
 			return {cursor: node.id, node};
 		}),
 		pagination: {hasNext: false, hasPrevious: false},
