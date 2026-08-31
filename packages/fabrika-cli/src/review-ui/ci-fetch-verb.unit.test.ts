@@ -161,6 +161,27 @@ describe("runCiFetch", () => {
 		expect(absent.code).toBe(EVIDENCE_UNAVAILABLE);
 		expect(absent.stdout).toBe("");
 
+		const unreadableSeams = fakeSeams([
+			...common,
+			[WORKFLOW_RUNS, {status: 500, body: "producer inventory unavailable"}],
+		]);
+		const unreadable = await Effect.runPromise(
+			Effect.provide(
+				runCiFetch({
+					pr: 7190,
+					harness: "tuval",
+					out: "judged",
+					repo: "o/r",
+					env: {},
+					tmpRoot: tmpdir(),
+				}),
+				unreadableSeams.layer,
+			),
+		);
+		expect(unreadable.code).toBe(11);
+		expect(unreadable.stdout).toBe("");
+		expect(unreadable.stderr.join("\n")).toContain("TransportUnknown");
+
 		const runRow = {
 			id: 42,
 			status: "completed",

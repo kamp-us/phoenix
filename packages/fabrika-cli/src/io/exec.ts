@@ -15,7 +15,7 @@
  * fault (`gh` absent from `PATH`) arrives as a `PlatformError` and folds into the same record, so
  * `E` is `never` and the status lives in `ok`.
  */
-import {Duration, Effect, Stream} from "effect";
+import {Duration, Effect, Fiber, Stream} from "effect";
 import {ChildProcess, type ChildProcessSpawner} from "effect/unstable/process";
 
 export interface ExecResult {
@@ -145,12 +145,14 @@ export const execRecord: ChildRunner = (request) =>
 			const exit = handle.exitCode.pipe(
 				Effect.map((code): number | null => code),
 				Effect.orElseSucceed((): number | null => null),
-				Effect.timeoutOption(Duration.seconds(request.timeoutSeconds)),
 			);
-			const [captured, status] = yield* Effect.all([streams, exit], {concurrency: "unbounded"});
-			const [out, err] = captured;
-			if (status._tag === "None") {
+			const streamsFiber = yield* Effect.forkScoped(streams);
+			const completed = yield* Effect.all([Fiber.join(streamsFiber), exit], {
+				concurrency: "unbounded",
+			}).pipe(Effect.timeoutOption(Duration.seconds(request.timeoutSeconds)));
+			if (completed._tag === "None") {
 				yield* killGroup;
+				const [out, err] = yield* Fiber.join(streamsFiber);
 				return {
 					_tag: "Ran" as const,
 					exitCode: null,
@@ -160,9 +162,10 @@ export const execRecord: ChildRunner = (request) =>
 					truncated: out.truncated || err.truncated,
 				};
 			}
+			const [[out, err], exitCode] = completed.value;
 			return {
 				_tag: "Ran" as const,
-				exitCode: status.value,
+				exitCode,
 				timedOut: false,
 				stdout: out.bytes,
 				stderr: err.bytes,

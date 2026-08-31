@@ -70,8 +70,19 @@ both install-time execution-disabling flags, and built by the declaration's fixe
 `serverBuildCommand` under the same no-network restrictions. The resulting workspace is mounted
 read-only into the server; the server publishes no host port and receives only the
 read-only fixture. Docker's `none` driver leaves only loopback
-([none driver](https://docs.docker.com/engine/network/drivers/none/)). A base-owned capture sidecar
-uses `--network container:<server>` to share that isolated network stack
+([none driver](https://docs.docker.com/engine/network/drivers/none/)). Readiness uses bounded
+snapshot polling rather than assuming the first log read is populated: Docker documents
+[`docker logs`](https://docs.docker.com/reference/cli/docker/container/logs/) as fetching the logs
+present when the command runs and reserves `--follow` for streaming new output. Every poll pairs
+that snapshot with [`docker inspect`](https://docs.docker.com/reference/cli/docker/inspect/) state
+and exact identity. Empty logs while the inspected container is running are therefore pending, not
+failure; exit, observation error, and the 20-second readiness deadline retain the last log bytes,
+command stdout/stderr, state, exit code, and identity before cleanup. The state machine takes one
+final snapshot at the deadline; each of its two Docker reads has a one-second timeout, so diagnostic
+collection has a bounded two-second command budget after the readiness window. Earlier reads split
+and clamp their command budgets to the time remaining. The 250 ms poll interval, readiness window,
+and diagnostic budget are producer policy within the workflow budget, not Docker timing guarantees.
+A base-owned capture sidecar uses `--network container:<server>` to share that isolated network stack
 ([container networks](https://docs.docker.com/engine/network/#container-networks)), reaching the
 server on loopback without external network. The PR server receives no Actions credentials,
 authority checkout, Docker socket, or artifact-output mount. The trusted sidecar receives the

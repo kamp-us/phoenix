@@ -5,6 +5,8 @@ import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {execRecord} from "../io/exec.ts";
+import {formatDockerReadinessFailure, waitForDockerReadiness} from "./ci-produce-readiness.ts";
 import {
 	runCiProduce,
 	subjectPrepareServerContainerArgs,
@@ -46,7 +48,7 @@ describe("trusted localhost producer Docker boundary", () => {
 				`import {writeFileSync} from "node:fs";
 import {createServer} from "node:http";
 try { writeFileSync("/subject/must-stay-read-only", "bad"); process.exit(2); } catch {}
-createServer((_request, response) => response.end("ok")).listen(4173, "127.0.0.1", () => console.log("Tuval ready at http://127.0.0.1:4173"));
+setTimeout(() => createServer((_request, response) => response.end("ok")).listen(4173, "127.0.0.1", () => console.log("Tuval ready at http://127.0.0.1:4173")), 300);
 `,
 			);
 			await writeFile(
@@ -78,21 +80,41 @@ USER node
 				docker(
 					subjectPrepareServerContainerArgs(image, volume, ["pnpm", "--filter", "tuval", "build"]),
 				);
-				docker(
+				const containerId = docker(
 					subjectServerContainerArgs(image, container, volume, fixture, [
 						"node",
 						"dist/server.mjs",
 					]),
 				);
 
-				let logs = "";
-				for (let attempt = 0; attempt < 40; attempt += 1) {
-					logs = docker(["logs", container]);
-					if (logs.includes("Tuval ready at")) break;
-					await new Promise((resolve) => setTimeout(resolve, 100));
+				const readiness = await Effect.runPromise(
+					Effect.provide(
+						waitForDockerReadiness({
+							containerId,
+							containerName: container,
+							readinessPattern: /Tuval ready at http:\/\/127\.0\.0\.1:4173/,
+							run: (args, timeoutSeconds) =>
+								execRecord({
+									file: "docker",
+									args,
+									cwd: root,
+									env: {PATH: process.env.PATH ?? ""},
+									timeoutSeconds,
+									captureBytes: 1_048_576,
+								}),
+						}),
+						NodeServices.layer,
+					),
+				);
+				if (readiness._tag !== "Ready") {
+					throw new Error(formatDockerReadinessFailure(readiness));
 				}
-				expect(logs).toContain("Tuval ready at http://127.0.0.1:4173");
-				expect(docker(["inspect", "--format", "{{.State.Running}}", container])).toBe("true");
+				expect(readiness.observation.state).toMatchObject({
+					id: containerId,
+					name: `/${container}`,
+					running: true,
+					exitCode: 0,
+				});
 			} finally {
 				spawnSync("docker", ["rm", "--force", container], {stdio: "ignore"});
 				spawnSync("docker", ["rm", "--force", keeper], {stdio: "ignore"});

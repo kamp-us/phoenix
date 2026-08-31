@@ -495,8 +495,7 @@ itself fails stops before server start, capture, manifest creation, and artifact
 | `review-ui ci-produce: the fresh exact-head server workspace could not be prepared.` | `11` | refusal |
 | `review-ui ci-produce: the isolated subject server could not start.` | `11` | refusal |
 | `review-ui ci-produce: Docker returned no subject container id.` | `11` | refusal |
-| `review-ui ci-produce: the isolated subject server exited before readiness (<state>; <bounded logs>).` | `11` | refusal |
-| `review-ui ci-produce: the isolated subject server did not report readiness.` | `11` | refusal |
+| `review-ui ci-produce: the isolated subject server did not reach readiness (<terminal state>; <requested and observed identity>; <inspect state and exit code>; <bounded log/command stdout and stderr bytes>).` | `11` | refusal |
 | `review-ui ci-produce: the trusted capture output could not be prepared (<reason>).` | `11` | refusal |
 | `review-ui ci-produce: the bounded capture workspace could not be created.` | `11` | refusal |
 | `review-ui ci-produce: the bounded capture workspace could not be kept alive.` | `11` | refusal |
@@ -1120,8 +1119,9 @@ carries a type and default; every stdout shape has a literal example; every non-
 enumerated with its trigger (per-verb tables own the group-local rows; the universal `0/1/126/127`
 live once in the shared matrix, which owns every code's single meaning); every error names
 message, stream, and code; every verb states scope and zero-scope behavior (`render` refuses
-zero surfaces at `1`; `fetch` refuses an absent/closed PR at `7` and every zero producer scope at
-`11`; `ci-produce` requires one PR and harness and refuses an unknown harness at `10`; `post`
+zero surfaces at `1`; `fetch` refuses an absent/closed PR at `7` and every proven zero producer
+scope at `18`, while UNKNOWN reads and execution refuse at `11`; `ci-produce` requires one PR and
+harness and refuses an unknown harness at `10`; `post`
 refuses an empty body at `3` and an unreadable evidence set at `4`/`11`; `note` refuses an empty
 body at `3` and a verdict-shaped body at `10`; `route` refuses an empty body at `3` and a diff
 raising no `ui` class at `7`); and no clause

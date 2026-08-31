@@ -69,6 +69,21 @@ const captureWithStatus = (status?: number) => (_url: string, outputDir: string)
 
 const capture = captureWithStatus(200);
 
+const serverInspect = (running = true, exitCode = 0) =>
+	okOut(
+		JSON.stringify({
+			id: "container-id",
+			name: "/fabrika-review-ui-subject-42-server",
+			image: "fabrika-review-ui-subject-42",
+			state: {
+				Status: running ? "running" : "exited",
+				Running: running,
+				ExitCode: exitCode,
+				Error: "",
+			},
+		}),
+	);
+
 describe("trusted localhost producer flow", () => {
 	it("makes the bind-mounted fixture traversable and readable by the unprivileged subject", async () => {
 		const root = await createFixture();
@@ -524,6 +539,7 @@ describe("trusted localhost producer flow", () => {
 				[/^docker run --rm --network none .*server-workspace/, okOut("")],
 				[/^docker run --detach .*server-workspace/, okOut("container-id")],
 				[/^docker logs container-id$/, okOut("ready")],
+				[/^docker inspect --format .* container-id$/, serverInspect()],
 				[/^docker rm --force .*server-keeper$/, cleanupFailure],
 				[/^docker rm /, okOut("")],
 				[/^docker volume rm /, okOut("")],
@@ -605,7 +621,7 @@ describe("trusted localhost producer flow", () => {
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ERR_MODULE_NOT_FOUND: dist/backend/server.js")],
-			[/^docker inspect --format .* container-id$/, okOut("false 1")],
+			[/^docker inspect --format .* container-id$/, serverInspect(false, 1)],
 			[/^docker rm /, okOut("")],
 			[/^docker volume rm .*test-workspace$/, okOut("")],
 			[/^docker volume rm .*server-workspace$/, okOut("")],
@@ -631,7 +647,8 @@ describe("trusted localhost producer flow", () => {
 			),
 		);
 		expect(outcome.code).toBe(11);
-		expect(outcome.stderr.join("\n")).toContain("exited before readiness (false 1");
+		expect(outcome.stderr.join("\n")).toContain("readiness=Exited");
+		expect(outcome.stderr.join("\n")).toContain("exitCode=1");
 		expect(outcome.stderr.join("\n")).toContain("ERR_MODULE_NOT_FOUND");
 		expect(seams.calls.filter((call) => call === "docker logs container-id")).toHaveLength(1);
 		await rm(root, {recursive: true, force: true});
@@ -662,6 +679,7 @@ describe("trusted localhost producer flow", () => {
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ready")],
+			[/^docker inspect --format .* container-id$/, serverInspect()],
 			[/^docker rm /, okOut("")],
 			[/^docker volume rm .*test-workspace$/, okOut("")],
 			[/^docker volume rm .*server-workspace$/, okOut("")],
@@ -714,6 +732,7 @@ describe("trusted localhost producer flow", () => {
 			[/^docker run --rm --network none .*server-workspace/, okOut("")],
 			[/^docker run --detach .*server-workspace/, okOut("container-id")],
 			[/^docker logs container-id$/, okOut("ready")],
+			[/^docker inspect --format .* container-id$/, serverInspect()],
 			[/^docker volume create .*o=size=256m .*capture-output$/, okOut("capture-output")],
 			[/^docker run --detach --network none .*capture-keeper/, okOut("keeper-id")],
 			[/^docker inspect --format .* keeper-id$/, okOut("true")],

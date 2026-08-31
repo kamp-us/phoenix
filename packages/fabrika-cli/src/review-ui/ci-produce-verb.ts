@@ -9,6 +9,7 @@ import {validateCaptureBytes} from "../capture/png.ts";
 import {type ChildRunner, execRecord} from "../io/exec.ts";
 import {isRecord, parseJson} from "../io/json.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
+import {formatDockerReadinessFailure, waitForDockerReadiness} from "./ci-produce-readiness.ts";
 import {
 	INVALID_CAPTURE,
 	MALFORMED_DOCUMENT,
@@ -838,37 +839,17 @@ export const runCiProduce = (
 				);
 			}
 
-			let ready = false;
-			for (let attempt = 0; attempt < 80; attempt += 1) {
-				const logs = yield* ran("docker", ["logs", containerId], options.authorityRoot, env, 10);
-				const logText = logs._tag === "Ran" ? `${decode(logs.stdout)}\n${decode(logs.stderr)}` : "";
-				if (new RegExp(harness.readinessPattern).test(logText)) {
-					ready = true;
-					break;
-				}
-				const inspected = yield* ran(
-					"docker",
-					["inspect", "--format", "{{.State.Running}} {{.State.ExitCode}}", containerId],
-					options.authorityRoot,
-					env,
-					10,
-				);
-				if (
-					inspected._tag === "Ran" &&
-					inspected.exitCode === 0 &&
-					decode(inspected.stdout).startsWith("false ")
-				) {
-					return refuse(
-						PRECONDITION_UNKNOWN,
-						`${VERB}: the isolated subject server exited before readiness (${decode(inspected.stdout)}${logText.trim() === "" ? "" : `; ${logText.trim()}`}).`,
-					);
-				}
-				yield* Effect.sleep("250 millis");
-			}
-			if (!ready) {
+			const readiness = yield* waitForDockerReadiness({
+				containerId,
+				containerName: container,
+				readinessPattern: new RegExp(harness.readinessPattern),
+				run: (args, timeoutSeconds) =>
+					ran("docker", args, options.authorityRoot, env, timeoutSeconds),
+			});
+			if (readiness._tag !== "Ready") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: the isolated subject server did not report readiness.`,
+					`${VERB}: the isolated subject server did not reach readiness (${formatDockerReadinessFailure(readiness)}).`,
 				);
 			}
 			let captures: Result.Result<readonly CapturedSurface[], string>;
