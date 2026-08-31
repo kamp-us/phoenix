@@ -18,6 +18,7 @@ import {
 	LOCALHOST_DECLARATIONS_PATH,
 	parseLocalhostDeclarations,
 } from "./localhost-evidence.ts";
+import {parseManifest} from "./manifest.ts";
 
 const root = resolve(import.meta.dirname, "../../../..");
 const read = (path: string): string => readFileSync(resolve(root, path), "utf8");
@@ -35,8 +36,10 @@ describe("localhost evidence governance floor", () => {
 			"ship/review-ui-request-verb.ts",
 			"capture/capture.ts",
 			"capture/png.ts",
+			"capture/page-errors.ts",
 			"ui/png.ts",
 			"capture/upload.ts",
+			"io/exec.ts",
 		]) {
 			assert.match(
 				owners,
@@ -53,9 +56,13 @@ describe("localhost evidence governance floor", () => {
 		]) {
 			assert.include(read(decision), "`src/ui/png.ts`");
 			assert.include(read(decision), "`src/ship/review-ui-request-verb.ts`");
+			assert.include(read(decision), "`src/capture/page-errors.ts`");
+			assert.include(read(decision), "`src/io/exec.ts`");
 		}
 		for (const harness of authority.value.harnesses) {
 			assert.match(harness.workflow, /^\.github\/workflows\/[a-z0-9-]+\.yml$/);
+			assert.isTrue(harness.readinessPattern.startsWith("^"));
+			assert.isTrue(harness.readinessPattern.endsWith("$"));
 			const workflow = read(harness.workflow);
 			assert.include(workflow, "pull_request_target:");
 			assert.include(
@@ -302,13 +309,18 @@ describe("localhost evidence governance floor", () => {
 			assert.notMatch(fence[1] ?? "", /\$(?:\(|[A-Za-z_{])/);
 		}
 		assert.notInclude(runbook, "Close #7190 without merging it");
-		assert.include(skill, "note exit `8` or `9` ends");
+		assert.include(skill, "note exit `7` ends");
+		assert.include(skill, "**ESCALATED (closed-subject)**");
+		assert.include(skill, "note exit `8` or `9` ends ESCALATED");
 		assert.include(skill, "note exit `11` ends UNKNOWN");
-		assert.include(skill, "No `8`, `9`, or `11` route may claim");
+		assert.include(skill, "No `7`, `8`, `9`, or `11` note route may claim CANT-SEE");
 		assert.include(runbook, "Route that write only by its numeric exit");
 		assert.include(runbook, "code, never stderr");
-		assert.include(runbook, "Never claim CANT-SEE from note exit `8`, `9`, or `11`");
+		assert.include(runbook, "Never claim CANT-SEE from note exit `7`, `8`,");
+		assert.include(runbook, "`9`, or `11`");
 		const contract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
+		assert.include(contract, "**ESCALATED\n(closed-subject)**");
+		assert.include(contract, "no CANT-SEE claim");
 		assert.include(contract, "`render` equal to `clean` or `red`");
 		assert.notInclude(contract, "has no readable preview manifest");
 	});
@@ -339,6 +351,50 @@ describe("localhost evidence governance floor", () => {
 			}
 			assert.include(section, `$ fabrika review-ui ${verb}`, `review-ui ${verb} literal example`);
 		}
+	});
+
+	it("keeps literal success examples executable and schema-complete", () => {
+		const reviewContract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
+		const renderExamples = reviewContract
+			.split("\n")
+			.filter((line) => line.startsWith('{"schemaVersion":2,"source":"review-ui-render"'));
+		assert.isAtLeast(renderExamples.length, 2);
+		for (const line of renderExamples) {
+			assert.strictEqual(parseManifest(line)._tag, "Manifest");
+			const output = JSON.parse(line) as Record<string, unknown>;
+			for (const field of [
+				"schemaVersion",
+				"source",
+				"repository",
+				"set",
+				"pr",
+				"head",
+				"app",
+				"previewUrl",
+				"flags",
+				"captures",
+			]) {
+				assert.property(output, field);
+			}
+		}
+
+		const shipContract = read("claude-plugins/fabrika/skills/ship/contract.md");
+		assert.include(
+			shipContract,
+			"$ fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval --json",
+		);
+		const jsonOutput = shipContract
+			.split("\n")
+			.find((line) => line.startsWith('{"outcome":"requested","sha":'));
+		assert.isDefined(jsonOutput);
+		assert.deepStrictEqual(JSON.parse(jsonOutput ?? "{}"), {
+			outcome: "requested",
+			sha: "d293fe694bfd740475753bad3b00c630a9835122",
+			harness: "tuval",
+			checks: 43,
+			statuses: 0,
+			runs: 8,
+		});
 	});
 
 	it("pins fetch and ci-produce contract inputs to their shipped flag help", () => {

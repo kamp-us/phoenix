@@ -118,10 +118,11 @@ CANT-SEE. A `render:"clean"` answer is the accepted clean set. Every non-zero ha
 - exit `4`, `15`, or `18`: the producer evidence is proven malformed, invalid, or unavailable. Post
   a non-marker `review-ui note` naming that evidence state and route the note **only by its numeric
   exit code, never stderr**: note exit `0` is the successful read-back proof, after which follow the
-  operator-owned recovery handoff in the runbook below and end CANT-SEE; note exit `8` or `9` ends
-  ESCALATED with no marker (the blocker write is unproven or mismatched); note exit `11` ends UNKNOWN
-  with no marker (the note precondition is unreadable). No `8`, `9`, or `11` route may claim
-  CANT-SEE;
+  operator-owned recovery handoff in the runbook below and end CANT-SEE; note exit `7` ends
+  **ESCALATED (closed-subject)** with no marker or CANT-SEE claim (the PR closed after fetch, so the
+  attempted blocker write has no open subject); note exit `8` or `9` ends ESCALATED with no marker
+  (the blocker write is unproven or mismatched); note exit `11` ends UNKNOWN with no marker (the note
+  precondition is unreadable). No `7`, `8`, `9`, or `11` note route may claim CANT-SEE;
 - exit `7`: the PR is proven absent or closed, so end CANT-SEE without posting;
 - exit `11`, `1`, `126`, `127`, or any code the fetch contract does not list: end UNKNOWN. There is
   no evidence answer, marker, or blocker note; route the invocation and its typed code to the
@@ -289,9 +290,11 @@ read back exactly; an absent or closed subject also ends here, with no note atte
 (a transport, token, authority-read, scratch, unzip, installation, runtime, or note-precondition path
 proved no closed evidence/write answer; no marker exists, and the typed code routes to the
 supervisor) · **ESCALATED** (a verdict or proven evidence blocker could not land and read back — the
-evidence upload or write path failed; the state is named on the PR through `review-ui note` where
-that write still lands, and in the session report when the note itself returns `8` or `9`; the empty
-namespace fail-closes either way; never a hand-posted marker and never CANT-SEE on note `8`/`9`) ·
+evidence upload or write path failed; this includes **closed-subject** when an attempted blocker note
+returns `7` because the PR closed after fetch; the state is named on the PR through `review-ui note`
+where that write still lands, and in the session report when the note itself returns `7`, `8`, or
+`9`; the empty namespace fail-closes either way; never a hand-posted marker and never CANT-SEE on
+note `7`/`8`/`9`) ·
 **BLOCKED-NO-MANIFEST** (no
 design law — routed to front-door, nothing posted) · **ROUTED-ELSEWHERE** (no rendered delta —
 `review`'s lane; the `routed-elsewhere` record posted, or nothing posted when the diff raised no

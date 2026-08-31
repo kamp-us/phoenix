@@ -679,7 +679,7 @@ per-surface outcome enumeration goes to stderr on every path, success included.
 
 ```
 $ fabrika review-ui render --pr 4321 --out judged --surface /pano
-{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}}]}
+{"schemaVersion":2,"source":"review-ui-render","repository":"kamp-us/phoenix","set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","app":"web","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","flags":[],"captures":[{"surface":"/pano","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png","width":1280,"height":2140,"sha256":"9c41000000000000000000000000000000000000000000000000000000000000","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```
@@ -693,7 +693,7 @@ $ echo $?
 ```
 $ fabrika review-ui render --pr 4321 --out forced --surface /hosgeldin:auth --flag phoenix-welcome=on
 review-ui render: surface "/hosgeldin:auth" captured: 1280x1640, 0 page errors
-{"set":"forced","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/hosgeldin:auth","path":"/tmp/fabrika-review-ui/4321-03135b91/forced/hosgeldin-auth.png","width":1280,"height":1640,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
+{"schemaVersion":2,"source":"review-ui-render","repository":"kamp-us/phoenix","set":"forced","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","app":"web","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","flags":["phoenix-welcome=on"],"captures":[{"surface":"/hosgeldin:auth","path":"/tmp/fabrika-review-ui/4321-03135b91/forced/hosgeldin-auth.png","width":1280,"height":1640,"sha256":"1f7b000000000000000000000000000000000000000000000000000000000000","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```
@@ -948,7 +948,11 @@ verdict; a marker smuggled through it would be an un-read-back gate emission (v1
 off-ramps were invisible to the ship layer precisely because nothing typed them, and the cure is
 a typed non-verdict, not a second marker path). Leak-scan (`5`/`6`). Post one new comment
 (append-only — a blocker note is a dated fact, never edited in place). Read it back through
-`normalizeForReadback` (`9` on mismatch; `8` on an unproven write).
+`normalizeForReadback` (`9` on mismatch; `8` on an unproven write). When a caller reached `note`
+after an exact-head fetch refusal, exit `7` is the closed-subject race: the PR closed after fetch and
+before this precondition read. The review-ui skill routes that attempted write to **ESCALATED
+(closed-subject)** with no marker and no CANT-SEE claim; only a fetch that itself returns `7` may end
+CANT-SEE without a note attempt.
 
 **Exit status** (beyond the universal four)
 

@@ -39,10 +39,9 @@ An offline `pnpm install` then runs every PR-controlled lifecycle script and the
 disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
 `no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap headroom, and 256 PIDs.
 A separate 64 MiB unprivileged tmpfs gives pnpm only the writable home-state path its project
-registry needs; the rest of the root stays read-only. Those measured memory/workspace ceilings plus
-a 1 GiB bounded browser temporary filesystem let Tuval's existing `test:browser` journey execute
-without infrastructure crashes; Docker proved the former 2 GiB and 64 MiB bounds OOM-killed, ran out
-of space, or crashed Chromium on the exact command. The journey's
+registry needs; the rest of the root stays read-only. The browser-bearing containers receive a 1 GiB
+bounded temporary filesystem; the exact container arguments and ceilings are pinned by the
+[governance tests](../packages/fabrika-cli/src/review-ui/localhost-governance.unit.test.ts). The journey's
 dynamic-port test servers finish before the
 producer starts its separate fixed capture server, so there is no conflicting concurrent server.
 Every foreground container is named before it starts, so cleanup can attempt force-removal after a

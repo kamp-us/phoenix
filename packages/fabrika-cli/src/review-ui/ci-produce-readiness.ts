@@ -86,12 +86,16 @@ const parseContainerState = (outcome: ChildOutcome): DockerContainerState | null
 	};
 };
 
+const normalizedLines = (bytes: Uint8Array): readonly string[] =>
+	decodeBytes(bytes).replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n");
+
 const hasReadiness = (pattern: RegExp, outcome: ChildOutcome): boolean => {
 	if (!commandSucceeded(outcome)) return false;
-	pattern.lastIndex = 0;
-	if (pattern.test(decodeBytes(outcome.stdout))) return true;
-	pattern.lastIndex = 0;
-	return pattern.test(decodeBytes(outcome.stderr));
+	const flags = pattern.flags.replaceAll("g", "").replaceAll("y", "");
+	const fullLine = new RegExp(`^(?:${pattern.source})$`, flags);
+	return [...normalizedLines(outcome.stdout), ...normalizedLines(outcome.stderr)].some((line) =>
+		fullLine.test(line),
+	);
 };
 
 export const waitForDockerReadiness = <R>(

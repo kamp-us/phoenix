@@ -55,6 +55,8 @@ export type ChildOutcome =
 			readonly stderr: Uint8Array;
 			/** Either stream reached the capture bound and the remainder was discarded. */
 			readonly truncated: boolean;
+			/** Present on timeout: process-group termination and bounded stream-drain disposition. */
+			readonly timeoutDiagnostic?: string;
 	  }
 	| {readonly _tag: "Unstartable"; readonly reason: string};
 
@@ -74,39 +76,49 @@ export type ChildRunner = (
 	request: ChildRequest,
 ) => Effect.Effect<ChildOutcome, never, ChildProcessSpawner.ChildProcessSpawner>;
 
+interface CaptureState {
+	readonly parts: Uint8Array[];
+	total: number;
+	truncated: boolean;
+}
+
+const captureState = (): CaptureState => ({parts: [], total: 0, truncated: false});
+
 const captureBounded = (
 	stream: Stream.Stream<Uint8Array, unknown>,
 	bound: number,
-): Effect.Effect<{readonly bytes: Uint8Array; readonly truncated: boolean}> =>
-	Effect.gen(function* () {
-		const parts: Uint8Array[] = [];
-		let total = 0;
-		let truncated = false;
-		yield* Stream.runForEach(stream, (chunk) =>
-			Effect.sync(() => {
-				const room = bound - total;
-				if (room <= 0) {
-					truncated = chunk.length > 0 || truncated;
-					return;
-				}
-				if (chunk.length > room) {
-					parts.push(chunk.subarray(0, room));
-					total = bound;
-					truncated = true;
-					return;
-				}
-				parts.push(chunk);
-				total += chunk.length;
-			}),
-		).pipe(Effect.orElseSucceed(() => undefined));
-		const bytes = new Uint8Array(total);
-		let at = 0;
-		for (const part of parts) {
-			bytes.set(part, at);
-			at += part.length;
-		}
-		return {bytes, truncated};
-	});
+	state: CaptureState,
+): Effect.Effect<void> =>
+	Stream.runForEach(stream, (chunk) =>
+		Effect.sync(() => {
+			const room = bound - state.total;
+			if (room <= 0) {
+				state.truncated = chunk.length > 0 || state.truncated;
+				return;
+			}
+			if (chunk.length > room) {
+				state.parts.push(chunk.subarray(0, room));
+				state.total = bound;
+				state.truncated = true;
+				return;
+			}
+			state.parts.push(chunk);
+			state.total += chunk.length;
+		}),
+	).pipe(Effect.orElseSucceed(() => undefined));
+
+const captureSnapshot = (state: CaptureState): Uint8Array => {
+	const bytes = new Uint8Array(state.total);
+	let at = 0;
+	for (const part of state.parts) {
+		bytes.set(part, at);
+		at += part.length;
+	}
+	return bytes;
+};
+
+/** After SIGKILL, inherited pipes get this long to close before their readers are interrupted. */
+export const POST_KILL_STREAM_DRAIN_GRACE_MS = 250;
 
 /**
  * Execute one command in `cwd` under exactly `env`, capturing both streams to a byte bound.
@@ -135,10 +147,12 @@ export const execRecord: ChildRunner = (request) =>
 				),
 				Effect.asVoid,
 			);
+			const stdout = captureState();
+			const stderr = captureState();
 			const streams = Effect.all(
 				[
-					captureBounded(handle.stdout, request.captureBytes),
-					captureBounded(handle.stderr, request.captureBytes),
+					captureBounded(handle.stdout, request.captureBytes, stdout),
+					captureBounded(handle.stderr, request.captureBytes, stderr),
 				],
 				{concurrency: "unbounded"},
 			);
@@ -152,24 +166,33 @@ export const execRecord: ChildRunner = (request) =>
 			}).pipe(Effect.timeoutOption(Duration.seconds(request.timeoutSeconds)));
 			if (completed._tag === "None") {
 				yield* killGroup;
-				const [out, err] = yield* Fiber.join(streamsFiber);
+				const drained = yield* Fiber.join(streamsFiber).pipe(
+					Effect.timeoutOption(Duration.millis(POST_KILL_STREAM_DRAIN_GRACE_MS)),
+				);
+				if (drained._tag === "None") {
+					yield* Fiber.interrupt(streamsFiber).pipe(Effect.asVoid);
+				}
 				return {
 					_tag: "Ran" as const,
 					exitCode: null,
 					timedOut: true,
-					stdout: out.bytes,
-					stderr: err.bytes,
-					truncated: out.truncated || err.truncated,
+					stdout: captureSnapshot(stdout),
+					stderr: captureSnapshot(stderr),
+					truncated: stdout.truncated || stderr.truncated,
+					timeoutDiagnostic:
+						drained._tag === "None"
+							? `process group killed after ${request.timeoutSeconds}s; stream drain exceeded ${POST_KILL_STREAM_DRAIN_GRACE_MS}ms and readers were interrupted`
+							: `process group killed after ${request.timeoutSeconds}s; streams drained within ${POST_KILL_STREAM_DRAIN_GRACE_MS}ms grace`,
 				};
 			}
-			const [[out, err], exitCode] = completed.value;
+			const [, exitCode] = completed.value;
 			return {
 				_tag: "Ran" as const,
 				exitCode,
 				timedOut: false,
-				stdout: out.bytes,
-				stderr: err.bytes,
-				truncated: out.truncated || err.truncated,
+				stdout: captureSnapshot(stdout),
+				stderr: captureSnapshot(stderr),
+				truncated: stdout.truncated || stderr.truncated,
 			};
 		}),
 	).pipe(

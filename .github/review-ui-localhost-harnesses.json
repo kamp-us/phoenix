@@ -11,7 +11,7 @@
 			"serverBuildCommand": ["pnpm", "--filter", "tuval", "build"],
 			"serverCommand": ["node", "packages/tuval/test/browser/tuval-server.mjs", "4173"],
 			"containerPort": 4173,
-			"readinessPattern": "Tuval ready at (http://127\\.0\\.0\\.1:4173)",
+			"readinessPattern": "^Tuval ready at http://127\\.0\\.0\\.1:4173$",
 			"captureReadySelector": ".react-flow__node",
 			"surfaces": [
 				{

@@ -2102,8 +2102,9 @@ fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a98351
 **Output** — machine channel. One line:
 `requested\t<sha>\t<harness>\tchecks:<n>\tstatuses:<n>\truns:<n>`. The counts are the
 exhaustively enumerated check runs, legacy commit statuses, and declared-workflow runs whose bytes
-were inspected before the targeted absence proof. With `--json`:
-`{"outcome":"requested","sha":<sha>,"harness":<id>,"checks":<n>,"statuses":<n>,"runs":<n>}`.
+were inspected before the targeted absence proof. With `--json`, the same result is one literal JSON
+object, for example:
+`{"outcome":"requested","sha":"d293fe694bfd740475753bad3b00c630a9835122","harness":"tuval","checks":43,"statuses":0,"runs":8}`.
 
 **Operator ownership and the narrow precondition.** This mutation is in the `ship` capability set,
 not the `review-ui` reviewer capability set. A reviewer may hand an exact typed failure to an
@@ -2180,6 +2181,11 @@ check; it proves only targeted absence. It is not a reviewer capability.
 ```
 $ fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval
 requested	d293fe694bfd740475753bad3b00c630a9835122	tuval	checks:43	statuses:0	runs:8
+```
+
+```
+$ fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval --json
+{"outcome":"requested","sha":"d293fe694bfd740475753bad3b00c630a9835122","harness":"tuval","checks":43,"statuses":0,"runs":8}
 ```
 
 ```

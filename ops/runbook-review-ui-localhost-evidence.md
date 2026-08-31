@@ -57,9 +57,10 @@ Route a fetch refusal only by the typed code from the three wire sections above,
 - Exit `4`, `15`, or `18`: the producer evidence is proven malformed, invalid, or unavailable. On an
   open PR, post a non-marker blocker with `review-ui note`. Route that write only by its numeric exit
   code, never stderr: note exit `0` proves the exact read-back, so hand the recovery below to an
-  operator and stop CANT-SEE; note exit `8` or `9` stops ESCALATED with no marker; note exit `11`
-  stops UNKNOWN with no marker. Never claim CANT-SEE from note exit `8`, `9`, or `11`. A reviewer
-  never changes PR state to manufacture another producer event.
+  operator and stop CANT-SEE; note exit `7` proves the PR closed after fetch, so stop **ESCALATED
+  (closed-subject)** with no marker or CANT-SEE claim; note exit `8` or `9` stops ESCALATED with no
+  marker; note exit `11` stops UNKNOWN with no marker. Never claim CANT-SEE from note exit `7`, `8`,
+  `9`, or `11`. A reviewer never changes PR state to manufacture another producer event.
 - Exit `7`: #7190 is proven absent or closed. End CANT-SEE without a marker or note; there is no open
   subject on which to land one.
 - Exit `11`, `1`, `126`, `127`, or an unlisted code: end UNKNOWN. The invocation produced no evidence

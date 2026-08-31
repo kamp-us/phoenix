@@ -34,7 +34,11 @@ const inspect = (running: boolean, exitCode = 0): ChildOutcome =>
 
 const wait = (
 	outcomes: ChildOutcome[],
-	timing: {readonly deadlineMs?: number; readonly pollIntervalMs?: number} = {},
+	timing: {
+		readonly deadlineMs?: number;
+		readonly pollIntervalMs?: number;
+		readonly readinessPattern?: RegExp;
+	} = {},
 ) => {
 	let now = 0;
 	const calls: string[] = [];
@@ -44,7 +48,7 @@ const wait = (
 		waitForDockerReadiness({
 			containerId: "container-id",
 			containerName: "container-name",
-			readinessPattern: /fixture ready/,
+			readinessPattern: timing.readinessPattern ?? /fixture ready/,
 			run: (args, timeoutSeconds) =>
 				Effect.sync(() => {
 					calls.push(args[0] ?? "");
@@ -59,7 +63,8 @@ const wait = (
 					sleeps.push(milliseconds);
 					now += milliseconds;
 				}),
-			...timing,
+			...(timing.deadlineMs === undefined ? {} : {deadlineMs: timing.deadlineMs}),
+			...(timing.pollIntervalMs === undefined ? {} : {pollIntervalMs: timing.pollIntervalMs}),
 		}),
 	);
 	return {result, calls, timeouts, sleeps, remaining: outcomes};
@@ -80,6 +85,25 @@ describe("Docker readiness state machine", () => {
 				running: true,
 			});
 		}
+	});
+
+	it.each([
+		{name: "prefix", logs: "not ready: fixture ready\n"},
+		{name: "suffix", logs: "fixture ready eventually\n"},
+		{
+			name: "same-buffer substring",
+			logs: "booting\nnot ready: fixture ready eventually\nstill booting\n",
+		},
+	])("rejects a $name instead of finding readiness inside a log buffer", ({logs}) => {
+		const observed = wait([ran(logs), inspect(true), ran(), inspect(true)], {
+			deadlineMs: 0,
+		});
+		expect(observed.result._tag).toBe("TimedOut");
+	});
+
+	it("normalizes line endings but still requires one exact declared line", () => {
+		const observed = wait([ran("booting\rfixture ready\r\nserving\r\n"), inspect(true)]);
+		expect(observed.result._tag).toBe("Ready");
 	});
 
 	it("records empty logs, exact identity, and exit code when the container exits", () => {
