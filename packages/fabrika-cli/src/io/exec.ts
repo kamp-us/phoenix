@@ -138,14 +138,17 @@ export const execRecord: ChildRunner = (request) =>
 				extendEnv: false,
 				detached: true,
 			});
-			const killGroup: Effect.Effect<void> = Effect.try({
+			const terminate: Effect.Effect<string> = Effect.try({
 				try: () => globalThis.process.kill(-handle.pid, "SIGKILL"),
 				catch: () => "the process group could not be signalled" as const,
 			}).pipe(
+				Effect.as("process-group SIGKILL sent"),
 				Effect.catchCause(() =>
-					handle.kill({killSignal: "SIGKILL"}).pipe(Effect.orElseSucceed(() => undefined)),
+					handle.kill({killSignal: "SIGKILL"}).pipe(
+						Effect.as("process-group SIGKILL failed; direct-child SIGKILL sent"),
+						Effect.orElseSucceed(() => "process-group and direct-child SIGKILL both failed"),
+					),
 				),
-				Effect.asVoid,
 			);
 			const stdout = captureState();
 			const stderr = captureState();
@@ -165,7 +168,7 @@ export const execRecord: ChildRunner = (request) =>
 				concurrency: "unbounded",
 			}).pipe(Effect.timeoutOption(Duration.seconds(request.timeoutSeconds)));
 			if (completed._tag === "None") {
-				yield* killGroup;
+				const termination = yield* terminate;
 				const drained = yield* Fiber.join(streamsFiber).pipe(
 					Effect.timeoutOption(Duration.millis(POST_KILL_STREAM_DRAIN_GRACE_MS)),
 				);
@@ -181,8 +184,8 @@ export const execRecord: ChildRunner = (request) =>
 					truncated: stdout.truncated || stderr.truncated,
 					timeoutDiagnostic:
 						drained._tag === "None"
-							? `process group killed after ${request.timeoutSeconds}s; stream drain exceeded ${POST_KILL_STREAM_DRAIN_GRACE_MS}ms and readers were interrupted`
-							: `process group killed after ${request.timeoutSeconds}s; streams drained within ${POST_KILL_STREAM_DRAIN_GRACE_MS}ms grace`,
+							? `${termination} after ${request.timeoutSeconds}s; stream drain exceeded ${POST_KILL_STREAM_DRAIN_GRACE_MS}ms and readers were interrupted`
+							: `${termination} after ${request.timeoutSeconds}s; streams drained within ${POST_KILL_STREAM_DRAIN_GRACE_MS}ms grace`,
 				};
 			}
 			const [, exitCode] = completed.value;
