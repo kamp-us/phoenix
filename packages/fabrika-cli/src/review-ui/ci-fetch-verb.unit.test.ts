@@ -28,6 +28,11 @@ const PULL = /GET .*\/repos\/o\/r\/pulls\/7190\b/;
 const REPO = /GET .*\/repos\/o\/r$/;
 const AUTHORITY_COMMIT = /GET .*\/repos\/o\/r\/commits\/main$/;
 const AUTHORITY = /GET .*\/repos\/o\/r\/contents\/\.github\/review-ui-localhost-harnesses\.json/;
+const WORKFLOW_RUNS =
+	/GET .*\/repos\/o\/r\/actions\/workflows\/review-ui-localhost-evidence\.yml\/runs/;
+const SUITE_CHECKS = /GET .*\/repos\/o\/r\/check-suites\/7\/check-runs/;
+const RUN_ARTIFACTS = /GET .*\/repos\/o\/r\/actions\/runs\/42\/artifacts/;
+const ARTIFACT_ZIP = /GET .*\/repos\/o\/r\/actions\/artifacts\/61\/zip/;
 const PNG = encodePng(1280, 800, solid(1280, 800, [12, 34, 56, 255]));
 const CRC_CORRUPT_PNG = PNG.slice();
 CRC_CORRUPT_PNG[29] = (CRC_CORRUPT_PNG[29] ?? 0) ^ 0xff;
@@ -127,6 +132,122 @@ describe("runCiFetch", () => {
 			expect(outcome.code, failure._tag).toBe(11);
 			expect(outcome.stdout, failure._tag).toBe("");
 		}
+	});
+
+	it("drives the real GitHub resolver through final producer-unavailable and UNKNOWN fetch mappings", async () => {
+		const common: ReadonlyArray<Scripted> = [
+			[PULL, pull()],
+			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+			[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
+			[AUTHORITY, {status: 200, body: authority}],
+		];
+		const absentSeams = fakeSeams([
+			...common,
+			[WORKFLOW_RUNS, {status: 200, body: JSON.stringify({total_count: 0, workflow_runs: []})}],
+		]);
+		const absent = await Effect.runPromise(
+			Effect.provide(
+				runCiFetch({
+					pr: 7190,
+					harness: "tuval",
+					out: "judged",
+					repo: "o/r",
+					env: {},
+					tmpRoot: tmpdir(),
+				}),
+				absentSeams.layer,
+			),
+		);
+		expect(absent.code).toBe(EVIDENCE_UNAVAILABLE);
+		expect(absent.stdout).toBe("");
+
+		const runRow = {
+			id: 42,
+			status: "completed",
+			conclusion: "success",
+			event: "pull_request_target",
+			path: ".github/workflows/review-ui-localhost-evidence.yml",
+			repository: {full_name: "o/r"},
+			head_sha: HEAD,
+			display_title: `review-ui localhost evidence / tuval / PR #7190 / subject ${HEAD} / authority ${AUTHORITY_HEAD}`,
+			check_suite_id: 7,
+		};
+		const identity: ReadonlyArray<Scripted> = [
+			...common,
+			[
+				WORKFLOW_RUNS,
+				{status: 200, body: JSON.stringify({total_count: 1, workflow_runs: [runRow]})},
+			],
+			[
+				SUITE_CHECKS,
+				{
+					status: 200,
+					body: JSON.stringify({
+						total_count: 1,
+						check_runs: [
+							{
+								id: 51,
+								name: "review-ui localhost evidence / tuval",
+								status: "completed",
+								conclusion: "success",
+							},
+						],
+					}),
+				},
+			],
+			[
+				RUN_ARTIFACTS,
+				{
+					status: 200,
+					body: JSON.stringify({
+						total_count: 1,
+						artifacts: [{id: 61, name: "review-ui-localhost-tuval", expired: false}],
+					}),
+				},
+			],
+			[ARTIFACT_ZIP, {status: 200, body: "PK-not-a-real-archive"}],
+		];
+
+		const missingScratch = join(tmpdir(), `missing-ci-fetch-${Date.now()}`, "child");
+		const scratchSeams = fakeSeams(identity);
+		const scratch = await Effect.runPromise(
+			Effect.provide(
+				runCiFetch({
+					pr: 7190,
+					harness: "tuval",
+					out: "judged",
+					repo: "o/r",
+					env: {},
+					tmpRoot: missingScratch,
+				}),
+				scratchSeams.layer,
+			),
+		);
+		expect(scratch.code).toBe(11);
+		expect(scratch.stderr.join("\n")).toContain("ScratchUnknown");
+
+		const root = await mkdtemp(join(tmpdir(), "ci-fetch-adapter-test-"));
+		const unzipSeams = fakeSeams([
+			...identity,
+			[/^unzip -Z1 /, {ok: false, stdout: "", reason: "unzip refused fixture"}],
+		]);
+		const unzip = await Effect.runPromise(
+			Effect.provide(
+				runCiFetch({
+					pr: 7190,
+					harness: "tuval",
+					out: "judged",
+					repo: "o/r",
+					env: {},
+					tmpRoot: root,
+				}),
+				unzipSeams.layer,
+			),
+		);
+		expect(unzip.code).toBe(11);
+		expect(unzip.stderr.join("\n")).toContain("UnzipUnknown");
+		expect(unzipSeams.calls.some((call) => call.startsWith("unzip -Z1 "))).toBe(true);
+		await rm(root, {recursive: true, force: true});
 	});
 
 	it("materializes only a provenance-bound exact-head artifact and writes the consumer receipt", async () => {

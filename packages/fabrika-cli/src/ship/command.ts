@@ -28,6 +28,7 @@ import {runNudge} from "./nudge-verb.ts";
 import {runReconcile} from "./reconcile-verb.ts";
 import {runRelease} from "./release-verb.ts";
 import {runResolve} from "./resolve-verb.ts";
+import {runReviewUiRequest} from "./review-ui-request-verb.ts";
 import {runScope} from "./scope-verb.ts";
 import {runThreads} from "./threads-verb.ts";
 
@@ -49,6 +50,12 @@ const prArg = Argument.integer("pr").pipe(
 const shaFlag = Flag.string("sha").pipe(
 	Flag.withDescription(
 		"the head this answer binds to (7-40 lowercase hex); an empty or malformed value is a usage error, never a pattern matching every head",
+	),
+);
+
+const fullShaFlag = Flag.string("sha").pipe(
+	Flag.withDescription(
+		"the full exact lowercase 40-character head whose governed review-ui evidence event is requested",
 	),
 );
 
@@ -387,6 +394,38 @@ const nudge = leafCommand(
 	),
 );
 
+const reviewUiRequest = leafCommand(
+	"review-ui-request",
+	{
+		pr: prArg,
+		sha: fullShaFlag,
+		harness: Flag.string("harness").pipe(
+			Flag.withDescription(
+				"the localhost-only harness id from the governed default-branch declaration",
+			),
+		),
+		repo: repoFlag,
+		json: jsonFlag,
+	},
+	Effect.fn(function* ({pr, sha, harness, repo, json}) {
+		yield* emit(
+			yield* runReviewUiRequest({
+				pr,
+				sha,
+				harness,
+				repo: Option.getOrNull(repo),
+				json,
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Request one missing governed review-ui evidence run, once."),
+	Command.withDescription(
+		"Operator-owned targeted recovery for a governed localhost review-ui producer. Requires the full exact live head and a harness from the current default-branch declaration; exhaustively enumerates all check runs, commit statuses, and runs of the declared workflow; refuses pending, successful, failed, or ambiguous rows for the exact governed producer while ignoring unrelated checks; claims one durable head+harness request marker, rejects marker races, then close→reopens the PR and reads both legs back. Prints `requested\\t<sha>\\t<harness>\\tchecks:<n>\\tstatuses:<n>\\truns:<n>`. Exits 1 (bad PR or non-full --sha), 7 (PR absent), 8 (request-marker write/read outcome unknown, or close was not proven closed but a safe-open read-back is confirmed), 9 (request marker read-back mismatch), 10 (unknown harness), 11 (a PR, authority, check, status, workflow-run, or marker-list read failed), 12 (the live head is stale or moved during the event; a moved-during-event answer confirms the reopen), 13 (check/status enumeration is incomplete), 16 (PR not open, declaration absent/malformed, governed check/status/run present in any state, ambiguous current-head evidence, or this head was already requested), 17 (THE CLOSE LANDED AND THE REOPEN IS UNCONFIRMED — the PR may be closed). Example: fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval",
+	),
+);
+
 const note = leafCommand(
 	"note",
 	{pr: prArg, repo: repoFlag, json: jsonFlag},
@@ -438,6 +477,7 @@ export const shipCommand = Command.make("ship").pipe(
 		reconcile,
 		disarm,
 		nudge,
+		reviewUiRequest,
 		note,
 		release,
 	]),

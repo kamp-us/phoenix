@@ -224,6 +224,8 @@ export interface ShipCheckRun {
 export interface CheckRunSet {
 	readonly declared: number;
 	readonly runs: ReadonlyArray<ShipCheckRun>;
+	/** A terminal page carried no `rel="next"`; targeted absence callers must also reconcile count. */
+	readonly exhausted: boolean;
 }
 
 /**
@@ -236,7 +238,7 @@ export interface CheckRunSet {
 export const listShipCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRunSet>> =>
 	authed((token) =>
 		Effect.map(
-			envelopeOverHttp(token, `repos/${repo}/commits/${sha}/check-runs`, "check_runs"),
+			envelopeOverHttp(token, `repos/${repo}/commits/${sha}/check-runs?filter=all`, "check_runs"),
 			(enveloped) => {
 				if (enveloped._tag === "Failure") return enveloped;
 				const runs: ShipCheckRun[] = [];
@@ -263,7 +265,11 @@ export const listShipCheckRuns = (repo: string, sha: string): Shell<Attempt<Chec
 						checkSuiteId: value.check_suite.id,
 					});
 				}
-				return ok({declared: enveloped.value.declared, runs});
+				return ok({
+					declared: enveloped.value.declared,
+					runs,
+					exhausted: enveloped.value.exhausted,
+				});
 			},
 		),
 	);
@@ -422,7 +428,42 @@ export const countWorkflowRuns = (repo: string, sha: string): Shell<Attempt<numb
 		),
 	);
 
-/** The combined commit-status count at a head — the nudge's second zero-signal. */
+export interface CommitStatus {
+	readonly context: string;
+	readonly state: string;
+	readonly sha: string;
+}
+
+/**
+ * Every legacy commit status at a head, with exhausted-pagination proof.
+ *
+ * The combined `/status` endpoint is sufficient for a count but not for a targeted absence proof:
+ * a caller must inspect every context before it may say one governed context is missing.
+ */
+export const listCommitStatuses = (
+	repo: string,
+	sha: string,
+): Shell<Attempt<{readonly statuses: ReadonlyArray<CommitStatus>; readonly exhausted: boolean}>> =>
+	authed((token) =>
+		Effect.map(linkProofOverHttp(token, `repos/${repo}/commits/${sha}/statuses`), (paged) => {
+			if (paged._tag === "Failure") return paged;
+			const statuses: CommitStatus[] = [];
+			for (const value of paged.value.entries) {
+				if (
+					!isRecord(value) ||
+					typeof value.context !== "string" ||
+					typeof value.state !== "string" ||
+					typeof value.sha !== "string"
+				) {
+					return fail("GitHub answered 200 but one commit status is incomplete");
+				}
+				statuses.push({context: value.context, state: value.state, sha: value.sha});
+			}
+			return ok({statuses, exhausted: paged.value.exhausted});
+		}),
+	);
+
+/** The combined commit-status count at a head — the generic nudge's second zero-signal. */
 export const countCommitStatuses = (repo: string, sha: string): Shell<Attempt<number>> =>
 	authed((token) =>
 		Effect.map(restRead(token, "GET", `repos/${repo}/commits/${sha}/status`), (outcome) =>
@@ -575,6 +616,59 @@ export const fetchManifest = (
 		const manifest = yield* execCapture("sh", ["-c", `unzip -p '${zip}' manifest.json`]);
 		return manifest.ok ? ok(manifest.stdout) : fail(manifest.reason);
 	});
+
+export interface ShipComment {
+	readonly id: number;
+	readonly body: string;
+}
+
+/** Every PR comment, with the terminal-page proof consumed before an at-most-once marker is trusted. */
+export const listShipComments = (
+	repo: string,
+	pr: number,
+): Shell<Attempt<ReadonlyArray<ShipComment>>> =>
+	authed((token) =>
+		Effect.map(linkProofOverHttp(token, `repos/${repo}/issues/${pr}/comments`), (paged) => {
+			if (paged._tag === "Failure") return paged;
+			if (!paged.value.exhausted) return fail("comment pagination did not reach a terminal page");
+			const comments: ShipComment[] = [];
+			for (const value of paged.value.entries) {
+				if (!isRecord(value) || typeof value.id !== "number" || typeof value.body !== "string") {
+					return fail("GitHub answered 200 but one entry is not a comment");
+				}
+				comments.push({id: value.id, body: value.body});
+			}
+			return ok(comments);
+		}),
+	);
+
+/** Create the operator request marker; only a later GET and complete list are proof it won. */
+export const createShipComment = (
+	repo: string,
+	pr: number,
+	body: string,
+): Shell<Attempt<{readonly id: number}>> =>
+	authed((token) =>
+		Effect.map(restWrite(token, "POST", `repos/${repo}/issues/${pr}/comments`, {body}), (outcome) =>
+			attemptOf(outcome, (value) =>
+				isRecord(value) && typeof value.id === "number"
+					? ok({id: value.id})
+					: fail("GitHub answered 2xx but its body is not a created comment"),
+			),
+		),
+	);
+
+/** Read one request marker back by id. */
+export const getShipComment = (repo: string, id: number): Shell<Attempt<string>> =>
+	authed((token) =>
+		Effect.map(restRead(token, "GET", `repos/${repo}/issues/comments/${id}`), (outcome) => {
+			const body = bodyOf(outcome);
+			if (body._tag === "Failure") return body;
+			return isRecord(body.value) && typeof body.value.body === "string"
+				? ok(body.value.body)
+				: fail("GitHub answered 200 but its body is not a comment");
+		}),
+	);
 
 /** A per-run scratch directory, so two racing shippers never read each other's bundle. */
 export const makeScratchDirectory: Shell<Attempt<string>> = Effect.gen(function* () {

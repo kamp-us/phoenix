@@ -132,7 +132,8 @@ export const completeEnvelope = (
 	return ciOk(read.entries);
 };
 
-const runsForWorkflow = (
+/** Exhaustively enumerate one governed workflow's runs without selecting an evidence state. */
+export const runsForWorkflow = (
 	repo: string,
 	workflow: string,
 ): Shell<CiEvidenceAttempt<readonly RunRecord[]>> =>

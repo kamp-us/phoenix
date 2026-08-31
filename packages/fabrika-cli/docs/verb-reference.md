@@ -878,13 +878,14 @@ record it. Contract:
 | `ship reconcile` | the bounded post-enqueue watch — `landed` / `ejected` / `unresolved` / `parked` |
 | `ship disarm` | the four-site merge-intent lifecycle (ADR 0198), read-back-verified |
 | `ship nudge` | the at-most-once dropped-trigger remedy, precondition re-derived here |
+| `ship review-ui-request` | operator-owned close/reopen request for one full-head governed localhost evidence tuple, only after exhaustive proof that its exact check/run is absent; ordinary checks do not refuse it |
 | `ship note` | the durable stop-path comment, leak-scanned and read back |
 | `ship release` | dark-ship detection and the `status:awaiting-release` label |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13` a
 read completed and its scope is provably incomplete · `16` proven not in the state this write acts
-on, nothing mutated · `17` the nudge's close landed and its reopen is unconfirmed — the PR may be
-left closed · `18` a governance-root diff has no head-bound `governance` PASS · `19` the repository
+on, nothing mutated · `17` a close/reopen verb's close landed and its reopen is unconfirmed — the
+PR may be left closed · `18` a governance-root diff has no head-bound `governance` PASS · `19` the repository
 permits no merge method at all · `23` a label this run would POST is absent from the taxonomy.
 `4` is a deliberate gap.
 

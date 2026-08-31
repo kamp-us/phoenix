@@ -66,10 +66,12 @@ export const INCOMPLETE_SCAN = REVIEW_INCOMPLETE_SCAN;
  */
 export const PROVEN_NOT_IN_STATE = 16;
 /**
- * Refused: the nudge's close landed and the reopen is **unconfirmed — the PR may be left closed**.
+ * Refused: a guarded close/reopen's close landed and the reopen is **unconfirmed — the PR may be
+ * left closed**.
  *
- * The group's one two-legged mutation, and the one state so much worse than a failed write that
- * folding it into {@link WRITE_UNKNOWN} would hide the fact the operator must act on immediately.
+ * Both the generic dropped-trigger nudge and the targeted review-ui evidence request share this
+ * state. It is so much worse than a failed write that folding it into {@link WRITE_UNKNOWN} would
+ * hide the fact the operator must act on immediately.
  */
 export const NUDGE_REOPEN_UNCONFIRMED = 17;
 

@@ -53,6 +53,7 @@ Named because a spec that leaves the substrate open makes the implementer guess 
 | `ship reconcile` | the bounded post-enqueue watch: `landed` / `ejected` / `unresolved` / `parked`, each a proven answer at exit 0 — and, at `--polls 1`, the one read the driver's `ship:queued` wait cell relays | multi-signal terminal classification against timeline + base-branch evidence is mechanical; what ejection means for the lane is judgment |
 | `ship disarm` | the four-site merge-intent lifecycle (ADR 0198): `kept` / `disarmed`, read-back-verified | the site policy table and the verified write are mechanical |
 | `ship nudge` | the at-most-once dropped-trigger remedy: re-derive the zero-runs state, close→reopen, verify both legs | the precondition re-derivation and the guarded PATCH pair are mechanical; the verb refuses rather than trusting its dispatch (#4816) |
+| `ship review-ui-request` | operator-owned at-most-once event request for one missing governed localhost review-ui evidence tuple | full-head/declaration binding, exhaustive targeted-absence proof, and the guarded PATCH pair are mechanical; unrelated checks are not its subject |
 | `ship note` | the durable stop-path comment: stdin body, leak-scanned, read back | posting with the sibling groups' write protocol is mechanical; what the note says is the skill's |
 | `ship release` | dark-ship detection and the `status:awaiting-release` label, read-back-verified | the three ground-truth signals and the label write are mechanical; the flip is a human's (ADR 0083) |
 
@@ -2077,6 +2078,124 @@ $ echo $?
   unit tests.
 - v1's unguarded PATCH pair — close-succeeded-reopen-failed reported "nudged" with the PR
   left closed; `17` exists so that state is unmissable.
+
+---
+
+## `ship review-ui-request`
+
+**Invocation**
+
+```
+fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval [--repo <owner/name>] [--json]
+```
+
+**Inputs**
+
+| Flag | Type | Required | Default | Description |
+|---|---|---|---|---|
+| *(positional)* | integer | yes | — | the open pull-request number whose governed evidence event is requested |
+| `--sha` | string | yes | — | the full exact lowercase 40-character live head; abbreviations are refused |
+| `--harness` | string | yes | — | the localhost-only harness id from the current default-branch governed declaration |
+| `--repo` | string | no | resolved | the repository |
+| `--json` | boolean | no | `false` | emit the result object |
+
+**Output** — machine channel. One line:
+`requested\t<sha>\t<harness>\tchecks:<n>\tstatuses:<n>\truns:<n>`. The counts are the
+exhaustively enumerated check runs, legacy commit statuses, and declared-workflow runs whose bytes
+were inspected before the targeted absence proof. With `--json`:
+`{"outcome":"requested","sha":<sha>,"harness":<id>,"checks":<n>,"statuses":<n>,"runs":<n>}`.
+
+**Operator ownership and the narrow precondition.** This mutation is in the `ship` capability set,
+not the `review-ui` reviewer capability set. A reviewer may hand an exact typed failure to an
+operator, but cannot invoke, reproduce, or substitute the close/reopen writes. The operator reads
+this exact section with `fabrika wire doc-section --heading "ship review-ui-request"` before use.
+The generic `ship nudge` remains the zero-CI remedy and is deliberately not widened.
+
+The verb trusts no dispatch summary. In order it:
+
+1. Requires an open PR whose live head equals the **full** `--sha` and reads the repository's exact
+   current default-branch revision plus `.github/review-ui-localhost-harnesses.json`; `--harness`
+   must select one complete governed declaration.
+2. Exhaustively enumerates every check run (`filter=all`, never GitHub's default latest-only view)
+   and every legacy commit status at the head, plus every run of the declaration's fixed workflow. Unrelated checks and statuses are counted and ignored.
+   Any check/status with the declared check identity, any exact PR/head/authority workflow run in
+   pending, successful, failed, or other state, duplicate exact runs, or a current-head governed
+   workflow run with a non-binding title refuses on `16`. Only positive absence of this exact
+   governed evidence check/run opens the mutation; malformed, truncated, or failed reads never do.
+3. Exhaustively reads the PR's comments for a durable marker bound to the exact head+harness. A
+   prior marker refuses. Otherwise it writes one marker, reads those exact bytes back, re-lists the
+   complete marker set, and proceeds only when exactly one matching marker exists and it is the
+   comment this invocation wrote. Concurrent marker races therefore stop before PR state changes;
+   the durable marker consumes the one request even if the later event needs escalation.
+4. Re-reads the default branch, exact authority revision, open PR, and full live head both before
+   the marker claim and again **after its complete race-proof read, immediately before mutation**.
+   That final seam also re-runs the complete checks/statuses/workflow-run absence scan, so evidence
+   that appeared while the marker was being claimed refuses before the PR state changes. It then closes, reads back closed, reopens, and reads back open. The write
+   response is never proof: an ambiguous close response still follows the read-back; an unreadable
+   or non-open/non-closed close read-back triggers a safety reopen and returns `8` only when open is
+   confirmed. Otherwise exit `17` retains the loud invariant: the PR may be closed. A head move
+   during the pair is returned only after a confirmed reopen and claims no request for the new head.
+
+**Exit status**
+
+| Code | Trigger |
+|---|---|
+| `1` | the PR operand is invalid, or `--sha` is not exactly 40 lowercase hexadecimal characters |
+| `7` | the PR is proven absent |
+| `8` | the marker write/read or post-write marker-set proof is UNKNOWN before PR-state mutation; or the close was not proven closed but the PR is positively read back open |
+| `9` | the request marker reads back with bytes this invocation did not write; no PR-state mutation was attempted |
+| `10` | `--harness` is not in the governed declaration |
+| `11` | a PR, authority, check, status, workflow-run, or pre-write marker-list read failed |
+| `12` | the live head differs from `--sha`, or the head moved during the pair; the moved-during-pair case confirms reopen first |
+| `13` | check-run count/exhaustion proof is incomplete, or status pagination did not reach a terminal page |
+| `16` | the PR is not open; the declaration is absent/malformed; governed check/status/run evidence is pending, successful, failed, present, duplicate, or ambiguous; this head already has a marker; or a concurrent marker race is proven |
+| `17` | the close landed and the reopen is unconfirmed — **the PR may be closed; reopen it by hand now** |
+
+**Errors** — diagnostics are not routing; callers route only by the numeric code.
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `ship review-ui-request: --sha must be the full lowercase 40-character head.` | 1 | refusal |
+| `ship review-ui-request: cannot read <what>: <reason> — targeted evidence absence is UNKNOWN; nothing was touched.` | 11 | refusal |
+| `ship review-ui-request: the live head is <live>, not <sha> — the requested evidence belongs to another tree.` | 12 | refusal |
+| `ship review-ui-request: #<n> is not in the targeted review-ui evidence-request state (<why>) — refusing to touch it.` | 16 | refusal |
+| `ship review-ui-request: check-run enumeration returned <received> of <declared> row(s), exhausted:<bool> — refusing targeted absence over an incomplete scan.` | 13 | refusal |
+| `ship review-ui-request: commit-status pagination never reached a terminal page — refusing targeted absence over a truncated history.` | 13 | refusal |
+| `ship review-ui-request: the at-most-once request marker write is UNKNOWN (<reason>) — no PR-state mutation was attempted.` | 8 | refusal |
+| `ship review-ui-request: request marker <id> does not read back as written — no PR-state mutation was attempted.` | 9 | refusal |
+| `ship review-ui-request: the <harness> request marker race resolved to <n> marker(s), not this one exclusively — no PR-state mutation was attempted.` | 16 | refusal |
+| `ship review-ui-request: the close did not read back closed; PR #<n> is confirmed open and no request is claimed.` | 8 | refusal |
+| `ship review-ui-request: the close outcome is UNKNOWN, but the safety reopen is confirmed — no evidence request is claimed.` | 8 | refusal |
+| `ship review-ui-request: the close outcome is UNKNOWN and the safety reopen is UNCONFIRMED: <reason> — PR #<n> may be CLOSED. Reopen it by hand now.` | 17 | refusal |
+| `ship review-ui-request: the close landed and the reopen is UNCONFIRMED: <reason> — PR #<n> may be CLOSED. Reopen it by hand now.` | 17 | refusal |
+| `ship review-ui-request: PR #<n> moved away from <sha> during the close/reopen event; the reopen is confirmed, but no evidence request is claimed for the new head.` | 12 | refusal |
+
+**Scope** — one open PR, its full head, the exact default-branch governed harness declaration, all
+check runs and statuses at that head, all runs of the one declared workflow, the durable
+head+harness marker claim with complete pre/post reads, and the guarded close/reopen pair. It does not evaluate, rerun, cancel, or accept any
+check; it proves only targeted absence. It is not a reviewer capability.
+
+**Examples**
+
+```
+$ fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval
+requested	d293fe694bfd740475753bad3b00c630a9835122	tuval	checks:43	statuses:0	runs:8
+```
+
+```
+$ fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval
+ship review-ui-request: #7190 is not in the targeted review-ui evidence-request state (1 exact governed workflow run(s) already exist at d293fe694bfd740475753bad3b00c630a9835122: queued/null) — refusing to touch it.
+$ echo $?
+16
+```
+
+**Grounding**
+
+- #7306 / PR #7351 — localhost review evidence needs a narrow producer-event recovery even when
+  ordinary CI rows already exist; widening generic `ship nudge` would erase its zero-CI contract.
+- #4816 — every mutation re-derives its own precondition rather than trusting caller routing.
+- The declaration and resolver in `packages/fabrika-cli/src/review-ui/` remain the one governed
+  evidence identity; this verb imports that identity and proves only its absence.
 
 ---
 

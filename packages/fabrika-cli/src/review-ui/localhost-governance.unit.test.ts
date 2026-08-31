@@ -32,6 +32,7 @@ describe("localhost evidence governance floor", () => {
 		for (const authorityPath of [
 			"review-ui/",
 			"ship/github.ts",
+			"ship/review-ui-request-verb.ts",
 			"capture/capture.ts",
 			"capture/png.ts",
 			"ui/png.ts",
@@ -45,11 +46,13 @@ describe("localhost evidence governance floor", () => {
 				),
 			);
 		}
+		assert.include(owners, "/packages/fabrika-cli/src/ship/review-ui-request-verb.ts");
 		for (const decision of [
 			".decisions/0299-cp-fence-covers-fabrika-ci-core.md",
 			".decisions/0330-codeowners-is-the-cp-boundary.md",
 		]) {
 			assert.include(read(decision), "`src/ui/png.ts`");
+			assert.include(read(decision), "`src/ship/review-ui-request-verb.ts`");
 		}
 		for (const harness of authority.value.harnesses) {
 			assert.match(harness.workflow, /^\.github\/workflows\/[a-z0-9-]+\.yml$/);
@@ -278,7 +281,12 @@ describe("localhost evidence governance floor", () => {
 		const fetchInvocation = skill.indexOf(
 			"fabrika review-ui fetch $pr_number --harness tuval --out judged",
 		);
-		for (const heading of ["review-ui fetch", "review-ui post", "The shared exit matrix"]) {
+		for (const heading of [
+			"review-ui fetch",
+			"review-ui post",
+			"review-ui note",
+			"The shared exit matrix",
+		]) {
 			const contractRead = skill.indexOf(`--heading "${heading}"`);
 			assert.isAtLeast(contractRead, 0);
 			assert.isBelow(contractRead, fetchInvocation);
@@ -286,12 +294,20 @@ describe("localhost evidence governance floor", () => {
 		const runbook = read("ops/runbook-review-ui-localhost-evidence.md");
 		assert.include(
 			runbook,
-			"fabrika ship nudge 7190 --sha d293fe694bfd740475753bad3b00c630a9835122",
+			"fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval",
 		);
+		assert.include(runbook, 'fabrika wire doc-section --heading "ship review-ui-request"');
+		assert.notInclude(runbook, "fabrika ship nudge 7190");
 		for (const fence of runbook.matchAll(/```bash\n([\s\S]*?)```/g)) {
 			assert.notMatch(fence[1] ?? "", /\$(?:\(|[A-Za-z_{])/);
 		}
 		assert.notInclude(runbook, "Close #7190 without merging it");
+		assert.include(skill, "note exit `8` or `9` ends");
+		assert.include(skill, "note exit `11` ends UNKNOWN");
+		assert.include(skill, "No `8`, `9`, or `11` route may claim");
+		assert.include(runbook, "Route that write only by its numeric exit");
+		assert.include(runbook, "code, never stderr");
+		assert.include(runbook, "Never claim CANT-SEE from note exit `8`, `9`, or `11`");
 		const contract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
 		assert.include(contract, "`render` equal to `clean` or `red`");
 		assert.notInclude(contract, "has no readable preview manifest");

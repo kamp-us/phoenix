@@ -34,6 +34,7 @@
 # can satisfy the merge-blocking review-ui namespace; unrelated fabrika-cli paths stay ordinary.
 /packages/fabrika-cli/src/review-ui/ @kamp-us/control-plane
 /packages/fabrika-cli/src/ship/github.ts @kamp-us/control-plane
+/packages/fabrika-cli/src/ship/review-ui-request-verb.ts @kamp-us/control-plane
 /packages/fabrika-cli/src/capture/capture.ts @kamp-us/control-plane
 /packages/fabrika-cli/src/capture/png.ts @kamp-us/control-plane
 /packages/fabrika-cli/src/ui/png.ts @kamp-us/control-plane

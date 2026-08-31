@@ -97,7 +97,7 @@ describe("the envelope proof", () => {
 	it("hands back page one's total_count beside the entries", async () => {
 		const http = fakeHttp([
 			[
-				/check-runs\?per_page=100&page=1$/,
+				/check-runs\?filter=all&per_page=100&page=1$/,
 				json(
 					{
 						total_count: 3,
@@ -118,6 +118,7 @@ describe("the envelope proof", () => {
 		expect(read.declared).toBe(3);
 		expect(read.runs).toHaveLength(2);
 		expect(read.runs.map((entry) => entry.checkSuiteId)).toEqual([91, 91]);
+		expect(http.calls[0]).toContain("filter=all");
 	});
 
 	// The join key onto the workflow run is what tells a concurrency-cancel from a failure (#6834),

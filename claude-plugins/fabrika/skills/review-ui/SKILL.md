@@ -96,10 +96,11 @@ only localhost exception this skill can execute is **Tuval**, whose base-owned d
 fetch`, read the fetch interface and its proven outcomes at
 `fabrika wire doc-section --heading "review-ui fetch" < <skill-base>/contract.md`, the posting
 interface and evidence checks at
-`fabrika wire doc-section --heading "review-ui post" < <skill-base>/contract.md`, and the shared
-code-to-meaning lookup at
+`fabrika wire doc-section --heading "review-ui post" < <skill-base>/contract.md`, the typed blocker
+write at `fabrika wire doc-section --heading "review-ui note" < <skill-base>/contract.md`, and the
+shared code-to-meaning lookup at
 `fabrika wire doc-section --heading "The shared exit matrix" < <skill-base>/contract.md`. Only after
-all three reads succeed, fetch the trusted exact-head Tuval artifact:
+all four reads succeed, fetch the trusted exact-head Tuval artifact:
 
 ```bash
 fabrika review-ui fetch $pr_number --harness tuval --out judged
@@ -114,9 +115,13 @@ CANT-SEE. A `render:"clean"` answer is the accepted clean set. Every non-zero ha
   is still available;
 - exit `12`: discard the stale attempt, re-read scope, and refetch the new exact head; no terminal is
   reached while that refetch is still available;
-- exit `4`, `15`, or `18`: the producer evidence is proven malformed, invalid, or unavailable; post a
-  non-marker `review-ui note` naming that evidence state, follow the operator-owned recovery in the
-  runbook below, and end CANT-SEE;
+- exit `4`, `15`, or `18`: the producer evidence is proven malformed, invalid, or unavailable. Post
+  a non-marker `review-ui note` naming that evidence state and route the note **only by its numeric
+  exit code, never stderr**: note exit `0` is the successful read-back proof, after which follow the
+  operator-owned recovery handoff in the runbook below and end CANT-SEE; note exit `8` or `9` ends
+  ESCALATED with no marker (the blocker write is unproven or mismatched); note exit `11` ends UNKNOWN
+  with no marker (the note precondition is unreadable). No `8`, `9`, or `11` route may claim
+  CANT-SEE;
 - exit `7`: the PR is proven absent or closed, so end CANT-SEE without posting;
 - exit `11`, `1`, `126`, `127`, or any code the fetch contract does not list: end UNKNOWN. There is
   no evidence answer, marker, or blocker note; route the invocation and its typed code to the
@@ -279,14 +284,15 @@ it holds a shell, a repo-scoped token, a headless browser pointed at the repo's 
 or reviewer-owned scratch containing a governed CI artifact, and **uses** three writes — the verdict comment (with its verified evidence), the
 can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (the subject or required evidence is proven
-unavailable, malformed, or invalid; no verdict posted, blocker named on the open PR where one exists;
-an absent or closed subject also ends here, with no note attempted) · **UNKNOWN** (a transport,
-token, authority-read, scratch, unzip, installation, or runtime path proved no evidence state; no
-evidence answer, marker, or note exists, and the typed code routes to the supervisor) · **ESCALATED** (a verdict was
-formed but provably could not land — the evidence upload or the write path failed; the state named
-on the PR through `review-ui note` where that write still lands, and
-in the session report when even the note cannot — the empty namespace fail-closes either way;
-never a hand-posted marker) · **BLOCKED-NO-MANIFEST** (no
+unavailable, malformed, or invalid; no verdict posted, and on an open PR the blocker note landed and
+read back exactly; an absent or closed subject also ends here, with no note attempted) · **UNKNOWN**
+(a transport, token, authority-read, scratch, unzip, installation, runtime, or note-precondition path
+proved no closed evidence/write answer; no marker exists, and the typed code routes to the
+supervisor) · **ESCALATED** (a verdict or proven evidence blocker could not land and read back — the
+evidence upload or write path failed; the state is named on the PR through `review-ui note` where
+that write still lands, and in the session report when the note itself returns `8` or `9`; the empty
+namespace fail-closes either way; never a hand-posted marker and never CANT-SEE on note `8`/`9`) ·
+**BLOCKED-NO-MANIFEST** (no
 design law — routed to front-door, nothing posted) · **ROUTED-ELSEWHERE** (no rendered delta —
 `review`'s lane; the `routed-elsewhere` record posted, or nothing posted when the diff raised no
 `ui` class to route). Success is a *landed, read-back verdict*; a judgment formed but

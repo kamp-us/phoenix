@@ -160,6 +160,13 @@ proof, the `--wait` budget and the nudge's own refusals are their sections
 (`fabrika wire doc-section --heading "ship checks" < <skill-base>/contract.md`, then
 `--heading "ship nudge"`).
 
+**The localhost review-ui producer is a different, operator-owned recovery.** A `review-ui` reviewer
+may hand off a proven exact-head producer absence, but carries no PR-state mutation capability. The
+operator first section-reads `ship review-ui-request`, then may run the dedicated full-head +
+governed-harness verb named there. It exhaustively ignores unrelated ordinary checks while refusing
+any pending, successful, failed, or ambiguous row for the exact governed evidence producer. Never
+substitute generic `ship nudge`, and never give this close/reopen capability to the reviewer.
+
 ## 5 — Run-evidence
 
 ```bash

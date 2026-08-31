@@ -1,5 +1,5 @@
 import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
-import {describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {
 	fakeSeams,
 	type HttpReply,
@@ -7,6 +7,7 @@ import {
 	type Scripted,
 	unconfigured,
 } from "../fakes.test-support.ts";
+import {forgetAmbientToken} from "../io/gh-api.ts";
 import {ok} from "../io/git.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {runGate} from "../ship/gate-verb.ts";
@@ -14,6 +15,7 @@ import {encodePng, solid} from "../ui/fakes.test-support.ts";
 import {read as readMarker} from "../wire/verdict-marker.ts";
 import {
 	EMPTY_STDIN,
+	EVIDENCE_UNAVAILABLE,
 	INVALID_CAPTURE,
 	MALFORMED_DOCUMENT,
 	OFF_VOCABULARY,
@@ -175,6 +177,11 @@ const PULL = /GET .*\/repos\/o\/r\/pulls\/4321\b/;
 const REPO = /GET .*\/repos\/o\/r$/;
 const AUTHORITY_COMMIT = /GET .*\/repos\/o\/r\/commits\/main$/;
 const AUTHORITY = /GET .*\/repos\/o\/r\/contents\/\.github\/review-ui-localhost-harnesses\.json/;
+const WORKFLOW_RUNS =
+	/GET .*\/repos\/o\/r\/actions\/workflows\/review-ui-localhost-evidence\.yml\/runs/;
+const SUITE_CHECKS = /GET .*\/repos\/o\/r\/check-suites\/7\/check-runs/;
+const RUN_ARTIFACTS = /GET .*\/repos\/o\/r\/actions\/runs\/42\/artifacts/;
+const ARTIFACT_ZIP = /GET .*\/repos\/o\/r\/actions\/artifacts\/10\/zip/;
 const USER = /GET .*api\.github\.com\/user$/;
 const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4321\/comments/;
 const CREATE = /POST .*\/repos\/o\/r\/issues\/4321\/comments/;
@@ -299,6 +306,16 @@ const ciWorld = (document: string = JSON.stringify(ciManifest())) =>
 /** The comment as the verb will have posted it, echoed back by the read-back read. */
 const posted = (body: string): HttpReply => ({status: 200, body: JSON.stringify({body})});
 
+beforeEach(() => {
+	forgetAmbientToken();
+	vi.stubEnv("GITHUB_TOKEN", "token");
+});
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+	forgetAmbientToken();
+});
+
 const run = (
 	script: ReadonlyArray<Scripted>,
 	overrides: Partial<typeof options> = {},
@@ -417,6 +434,82 @@ describe("runPost", () => {
 			`gate\tsatisfied\t${HEAD}`,
 		);
 		expect(gate.stdout).toContain("ns\treview-ui\tpass\tmarker");
+	});
+
+	it("drives real CI re-resolution through ProducerUnavailable versus UNKNOWN post mappings", async () => {
+		const {fetchCiBundle: _injected, ...realOptions} = options;
+		const runRow = {
+			id: 42,
+			status: "completed",
+			conclusion: "success",
+			event: "pull_request_target",
+			path: ".github/workflows/review-ui-localhost-evidence.yml",
+			repository: {full_name: "o/r"},
+			head_sha: HEAD,
+			display_title: `review-ui localhost evidence / tuval / PR #4321 / subject ${HEAD} / authority ${AUTHORITY_HEAD}`,
+			check_suite_id: 7,
+		};
+		const identity: ReadonlyArray<Scripted> = [
+			[
+				WORKFLOW_RUNS,
+				{status: 200, body: JSON.stringify({total_count: 1, workflow_runs: [runRow]})},
+			],
+			[
+				SUITE_CHECKS,
+				{
+					status: 200,
+					body: JSON.stringify({
+						total_count: 1,
+						check_runs: [
+							{
+								id: 9,
+								name: "review-ui localhost evidence / tuval",
+								status: "completed",
+								conclusion: "success",
+							},
+						],
+					}),
+				},
+			],
+		];
+		const executeReal = async (tail: ReadonlyArray<Scripted>) => {
+			const seams = fakeSeams([
+				[once(PULL), pull()],
+				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
+				[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
+				...identity,
+				...tail,
+			]);
+			const outcome = await Effect.runPromise(
+				Effect.provide(runPost(realOptions), Layer.merge(seams.layer, ciWorld())),
+			);
+			return {outcome, seams};
+		};
+
+		const unavailable = await executeReal([
+			[RUN_ARTIFACTS, {status: 200, body: JSON.stringify({total_count: 0, artifacts: []})}],
+		]);
+		expect(unavailable.outcome.code).toBe(EVIDENCE_UNAVAILABLE);
+		expect(unavailable.outcome.stdout).toBe("");
+		expect(unavailable.seams.requests.some((request) => CREATE.test(request))).toBe(false);
+
+		const unknown = await executeReal([
+			[
+				RUN_ARTIFACTS,
+				{
+					status: 200,
+					body: JSON.stringify({
+						total_count: 1,
+						artifacts: [{id: 10, name: "review-ui-localhost-tuval", expired: false}],
+					}),
+				},
+			],
+			[ARTIFACT_ZIP, {status: 503, body: "{}"}],
+		]);
+		expect(unknown.outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(unknown.outcome.stdout).toBe("");
+		expect(unknown.seams.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 
 	it("refuses when the default-branch authority moves during verified upload", async () => {
