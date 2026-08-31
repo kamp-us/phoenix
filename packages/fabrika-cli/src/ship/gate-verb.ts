@@ -43,7 +43,7 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
 import {INCOMPLETE_SCAN, OFF_VOCABULARY, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
-import {listReviews, type ReviewRecord} from "./github.ts";
+import {commitShaAtRef, defaultBranch, listReviews, type ReviewRecord} from "./github.ts";
 import {
 	badNumber,
 	inspectedSha,
@@ -107,6 +107,8 @@ interface Candidate {
 	readonly sha: string;
 	/** The content the claim binds, or `null` for a carrier that emits none (ADR 0276). */
 	readonly content: string | null;
+	/** Present only on governed CI review-ui markers; preview markers carry no authority subject. */
+	readonly authority?: string | null;
 	readonly carrier: Carrier;
 	readonly stamp: string;
 	readonly commentId: number;
@@ -115,11 +117,13 @@ interface Candidate {
 const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 	const marker = readMarker(comment.body);
 	if (marker._tag === "Found") {
+		const authority = /^- Authority revision: ([0-9a-f]{40})$/m.exec(comment.body)?.[1] ?? null;
 		return {
 			namespace: marker.value.namespace,
 			polarity: marker.value.polarity,
 			sha: marker.value.sha,
 			content: marker.value.content,
+			authority: marker.value.namespace === ROUTABLE ? authority : null,
 			carrier: "marker",
 			stamp: comment.updatedAt,
 			commentId: comment.id,
@@ -136,6 +140,7 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 					// Head-bound, never content-bound: a route attests a diff nobody has to re-render, but
 					// it also attests the *reader's* judgment of that diff, so a push re-opens the question.
 					content: null,
+					authority: null,
 					carrier: "routed-elsewhere",
 					stamp: comment.updatedAt,
 					commentId: comment.id,
@@ -155,6 +160,7 @@ const candidateOf = (comment: CommentRecord, cp: boolean): Candidate | null => {
 				// binding question is #3769's, and ADR 0276 carries its answer from there rather than
 				// deciding it here. So an advisory stays head-bound, exactly as before.
 				content: null,
+				authority: null,
 				carrier: "advisory",
 				stamp: comment.updatedAt,
 				commentId: comment.id,
@@ -219,6 +225,7 @@ const foldedReview = (reviews: ReadonlyArray<ReviewRecord>, sha: string): Candid
 				sha: latest.commitId,
 				// GitHub re-binds its own review objects; that layer is untouched (ADR 0276).
 				content: null,
+				authority: null,
 				carrier: "review-fold",
 				stamp: latest.submittedAt,
 				commentId: 0,
@@ -379,6 +386,27 @@ export const runGate = (
 			return {name, winner: inForce(pool, bound)};
 		});
 
+		let currentAuthority: string | null = null;
+		if (winners.some(({winner}) => winner?.authority !== null && winner?.authority !== undefined)) {
+			const base = yield* defaultBranch(repo);
+			if (base._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					unreadable("the default branch for governed review-ui authority", base.reason),
+					diagnostics,
+				);
+			}
+			const authority = yield* commitShaAtRef(repo, base.value);
+			if (authority._tag === "Failure") {
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					unreadable("the current governed review-ui authority", authority.reason),
+					diagnostics,
+				);
+			}
+			currentAuthority = authority.value;
+		}
+
 		// The head digest is read ONLY when a content-bound claim has already failed the head test,
 		// which is the whole cost story: the common path — every claim at this head — never touches
 		// git. It also makes the read non-regressive. A checkout that cannot answer leaves
@@ -403,6 +431,13 @@ export const runGate = (
 		const verdicts: NamespaceVerdict[] = winners.map(({name, winner}) => {
 			if (winner === null) return {name, state: "absent", carrier: "-", commentId: null};
 			const commentId = winner.carrier === "review-fold" ? null : winner.commentId;
+			const recordedAuthority = winner.authority ?? null;
+			if (recordedAuthority !== null && recordedAuthority !== currentAuthority) {
+				diagnostics.push(
+					`${VERB}: ${name}: marker authority ${recordedAuthority} is not current authority ${currentAuthority ?? "unreadable"} — resolved stale.`,
+				);
+				return {name, state: "stale", carrier: winner.carrier, commentId};
+			}
 			const binding = bindToContent(winner, bound, headDigest);
 			if (binding._tag !== "Current") {
 				if (binding._tag === "Unbindable") {

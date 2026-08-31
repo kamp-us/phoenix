@@ -41,6 +41,7 @@
 /packages/fabrika-cli/src/capture/upload.ts @kamp-us/control-plane
 /packages/fabrika-cli/src/capture/page-errors.ts @kamp-us/control-plane
 /packages/fabrika-cli/src/io/exec.ts @kamp-us/control-plane
+/packages/fabrika-cli/src/io/gh-api.ts @kamp-us/control-plane
 # Control-plane: the local hook-wiring config — `lefthook.yml` wires the pre-commit/pre-push guard
 # legs, and `.lefthookrc` is sourced by every generated hook wrapper.
 # The §CP `([^/]+/)*(lefthook|\.lefthook)[^/]+$` branch (founder ruling on #3402); `**/` is the

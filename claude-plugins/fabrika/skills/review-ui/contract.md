@@ -285,9 +285,12 @@ and one artifact whose `expired` field is present, boolean, and false. GitHub's 
 types it as boolean, and defines it as whether the artifact has expired
 ([property](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141550-L141553),
 [required list](https://github.com/github/rest-api-description/blob/3fa67306b30ebd736a08604ff8b8932a34f68ddf/descriptions/api.github.com/api.github.com.json#L141602-L141612)).
-The consumer rejects unsafe or duplicate zip members, then requires the complete member set to equal
-`manifest.json` plus every manifest-declared PNG. It validates every declared surface, route, and
-state exactly once *before* any set comparison can collapse duplicates. Unreadable error coverage,
+Before extraction, the consumer reads central-directory type metadata and rejects every symlink,
+directory, device, or other non-regular entry even when its name is allowed. It also rejects unsafe
+or duplicate names. After extraction it `lstat`s and `realpath`s every expected member, proves each
+regular file remains contained in the fresh artifact directory, and only then reads bytes. The
+complete member set must equal `manifest.json` plus every manifest-declared PNG. It validates every
+declared surface, route, and state exactly once *before* any set comparison can collapse duplicates. Unreadable error coverage,
 bad dimensions, and hash mismatches all refuse.
 
 After re-reading the live head, `fetch` copies the captures and the artifact's original manifest
@@ -401,11 +404,8 @@ and [root lifecycle gate](https://github.com/pnpm/pnpm/blob/v10.27.0/pkg-manager
 The offline PR-controlled install and governed test run under a read-only root filesystem,
 `--cap-drop ALL`, `no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap
 headroom, 256 PIDs, a 4 GiB tmpfs-backed disposable test workspace, and a 64 MiB unprivileged
-tmpfs for pnpm's project-state symlink under its otherwise read-only home. The 4 GiB memory and
-workspace ceilings and a 1 GiB browser temporary-filesystem ceiling are the measured bounds needed
-by Tuval's existing `test:browser` journey; the prior 2 GiB memory/workspace and 64 MiB browser
-filesystem bounds produced Docker OOM, no-space, and Chromium crash results for that exact command. The
-journey's own dynamic-port servers
+tmpfs for pnpm's project-state symlink under its otherwise read-only home. The 4 GiB memory and workspace ceilings and a 1 GiB browser temporary-filesystem ceiling are the
+governed bounds for Tuval's existing `test:browser` journey. The journey's own dynamic-port servers
 exit with their Playwright cases before the later fixed capture server starts, so the producer never
 runs two conflicting Tuval servers concurrently. Capture output uses a
 separate 256 MiB tmpfs volume and a fixed base-owned extraction container, so the artifact-directory
@@ -453,7 +453,7 @@ fetch` materializes that evidence and returns a typed `render: "red"` answer on 
 itself fails stops before server start, capture, manifest creation, and artifact upload:
 
 ```
-{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","route":"/","state":"desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
+{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","route":"/","state":"desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}},{"surface":"tuval-cockpit-mobile","route":"/","state":"mobile","path":"captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
 ```
 
 **Exit status**
@@ -517,12 +517,12 @@ outside both checkouts. A subject root `.dockerignore` is refused before Docker 
 
 **Examples**
 
-Given a fixed authority declaration whose digest is 64 `a` characters and one fixed 1280×800 capture
-whose digest is 64 `b` characters, the literal workflow call and stdout are:
+Given a fixed authority declaration whose digest is 64 `a` characters and fixed desktop/mobile
+captures whose digest is 64 `b` characters, the literal workflow call and stdout are:
 
 ```
 $ fabrika review-ui ci-produce 7190 --head 03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c --authority-head cccccccccccccccccccccccccccccccccccccccc --harness tuval --run-id 42 --repository kamp-us/phoenix --subject-root /github/workspace/subject --authority-root /github/workspace/authority --output-dir /github/workspace/review-ui-localhost-tuval
-{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","route":"/","state":"desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
+{"schemaVersion":1,"source":"github-actions","repository":"kamp-us/phoenix","pr":7190,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","harness":"tuval","declarationSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","producer":{"workflow":".github/workflows/review-ui-localhost-evidence.yml","check":"review-ui localhost evidence / tuval","event":"pull_request_target","runId":42,"artifact":"review-ui-localhost-tuval","authorityHead":"cccccccccccccccccccccccccccccccccccccccc"},"captures":[{"surface":"tuval-cockpit-desktop","route":"/","state":"desktop","path":"captures/tuval-cockpit-desktop.png","width":1280,"height":800,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}},{"surface":"tuval-cockpit-mobile","route":"/","state":"mobile","path":"captures/tuval-cockpit-mobile.png","width":390,"height":844,"sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","pageErrors":{"rows":[],"more":0},"errorCoverage":{"pageerror":"readable","consoleError":"readable"}}]}
 ```
 
 **Grounding**
@@ -795,23 +795,26 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    `--polarity`, `--sha`, `--clause`), or with `--carrier advisory` the fixed advisory line plus
    the `Reviewed-head: @ <sha>` body line; `advisory` with FAIL is a `10` refusal (a §CP FAIL
    posts the ordinary FAIL marker). Below it, the stdin body, then for CI evidence the repository,
-   workflow/event, linked run id, linked check name/id, artifact name/id, harness and browser-error
-   coverage, then the evidence gallery — per surface, the verified hosted URL.
+   workflow/event, linked run id, linked check name/id, artifact name/id, exact authority revision,
+   harness and browser-error coverage, then the evidence gallery — per surface, the verified hosted URL.
 6. **Leak-scan the assembled comment** (`5` / `6` — the imported predicates; a finding that must
    cite a leak cites it by class root or repo-relative form).
 7. **Upsert one comment for this namespace under this carrier** (the disjoint marker/advisory
    match keys, exactly as `review post` step 5 specifies them); a second stacked marker is
    un-anchored and fail-closes a passing PR.
 8. **Read it back, unconditionally, from live PR state** — the format's `read` (or the advisory
-   anchors), then the whole comment through `normalizeForReadback` (`9` on mismatch). A
-   read-back that trusts a carried variable re-ships the false-PASS class.
+   anchors), then the whole comment through `normalizeForReadback` (`9` on mismatch). After that
+   read-back, re-read the live PR head and, for CI evidence, the default-branch authority and
+   declaration. A moved subject returns `12`; moved/revoked authority returns the typed `4`/`11`
+   authority outcome. Success is impossible from the pre-write reads alone. A read-back that trusts
+   a carried variable re-ships the false-PASS class.
 
 **Exit status** (beyond the universal four)
 
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing — an empty verdict body would read as ungated |
-| `4` | the `--evidence` set's manifest is absent or malformed; preview bytes differ from the independent live-preview recapture; CI evidence is declaration-mismatched, differs from the exact re-downloaded artifact, or its receipt ids differ from the trusted GitHub tuple; or `design-harness.json` violates its schema |
+| `4` | the `--evidence` set's manifest is absent or malformed; preview bytes differ from the independent live-preview recapture; CI evidence is declaration-mismatched, differs from the exact re-downloaded artifact, its receipt ids differ from the trusted GitHub tuple, or its recorded authority is no longer current after comment read-back; or `design-harness.json` violates its schema |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference — the body never arrived |
 | `7` | the PR is proven absent (404) or closed |
@@ -819,7 +822,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `9` | the comment landed but the read-back does not yield this marker |
 | `10` | a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`; a `--carrier` off its enum; or an `--evidence` name outside kebab-case set vocabulary |
 | `11` | a precondition read failed — the PR, live head, independent preview recapture, default-branch declaration, trusted GitHub artifact re-download, evidence files, or upload target; nothing was posted |
-| `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
+| `12` | refused: the live head moved past `--sha`, the evidence set was rendered at a different head, or the head moved during comment mutation/read-back — the verdict or its pixels would bind a tree that is not the PR |
 | `13` | proven: CI evidence records an uncaught page error and the caller requested PASS — the materialized set must post FAIL |
 | `15` | proven: a capture is invalid or fails its manifest SHA-256 or dimensions |
 | `17` | proven: at least one evidence upload or its verification failed — nothing was posted |

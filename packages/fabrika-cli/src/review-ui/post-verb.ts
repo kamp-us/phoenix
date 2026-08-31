@@ -529,6 +529,7 @@ export const runPost = (
 			);
 		}
 		let trustedCiProvenance: ValidatedCiProvenance | null = null;
+		let trustedCiAuthority: string | null = null;
 		let trustedPreviewManifest: CaptureManifest | null = null;
 		if (!requiresCiProvenance) {
 			const previewManifest = previewRead?._tag === "Manifest" ? previewRead.value : null;
@@ -603,6 +604,7 @@ export const runPost = (
 
 			const authority = yield* governedCiAuthority(repo, ciManifest, options.evidence);
 			if (authority._tag === "Refused") return authority.outcome;
+			trustedCiAuthority = authority.revision;
 			const bundle = yield* (options.fetchCiBundle ?? fetchCiBundle)(
 				repo,
 				pr,
@@ -665,13 +667,13 @@ export const runPost = (
 				);
 			}
 			for (const capture of ciManifest.captures) {
-				const remote = yield* readCaptureBytes(`${bundle.value.directory}/${capture.path}`);
+				const remote = bundle.value.memberBytes[capture.path];
 				const local = yield* readCaptureBytes(`${setDir}/${capture.path}`);
-				if (remote._tag === "Unreadable") {
+				if (remote === undefined) {
 					return unreadable(
 						`capture "${capture.surface}" while byte-comparing the exact CI artifact`,
 						pr,
-						remote.reason,
+						"the contained artifact read has no such member",
 					);
 				}
 				if (local._tag === "Unreadable") {
@@ -681,7 +683,7 @@ export const runPost = (
 						local.reason,
 					);
 				}
-				if (!sameBytes(remote.value, local.value)) {
+				if (!sameBytes(remote, local.value)) {
 					return refuse(
 						MALFORMED_DOCUMENT,
 						`${VERB}: CI evidence set "${options.evidence}" capture "${capture.surface}" does not byte-match the exact re-downloaded GitHub artifact.`,
@@ -830,6 +832,7 @@ export const runPost = (
 						`- GitHub Actions run: [${trustedCiProvenance.runId}](https://github.com/${repo}/actions/runs/${trustedCiProvenance.runId})`,
 						`- Check: ${manifest.producer.check} ([${trustedCiProvenance.checkId}](https://github.com/${repo}/runs/${trustedCiProvenance.checkId}))`,
 						`- Artifact: ${manifest.producer.artifact} (id ${trustedCiProvenance.artifactId})`,
+						`- Authority revision: ${manifest.producer.authorityHead}`,
 						`- Governed harness: ${manifest.harness}`,
 						`- Browser error coverage: pageerror and console.error readable for ${manifest.captures.length}/${manifest.captures.length} captures`,
 					].join("\n")
@@ -905,6 +908,35 @@ export const runPost = (
 				`${VERB}: posted, but the read-back does not yield this marker (${mismatch}) — inspect comment ${landed.id}.`,
 				diagnostics,
 			);
+		}
+
+		// The comment mutation and read-back are not the end of the proof: both governed subjects may
+		// move during that window. Re-read them after the landed bytes are known before reporting success.
+		const landedTarget = yield* openPull(VERB, repo, pr, {
+			requireOpen: true,
+			closedReason: "a verdict on a closed PR gates nothing.",
+			requireFiles: false,
+			unknownMessage: (reason) =>
+				`${VERB}: cannot re-read the PR after posting for #${pr}: ${reason} — the landed marker is not claimed current.`,
+		});
+		if (landedTarget._tag === "Refused") return landedTarget.outcome;
+		if (landedTarget.pull.headSha !== live) {
+			return refuse(
+				STALE_TREE,
+				`${VERB}: the live head moved from ${live} to ${landedTarget.pull.headSha} during comment mutation/read-back — the landed marker is stale.`,
+				diagnostics,
+			);
+		}
+		if (ciRead?._tag === "Manifest") {
+			const landedAuthority = yield* governedCiAuthority(repo, ciRead.value, options.evidence);
+			if (landedAuthority._tag === "Refused") return landedAuthority.outcome;
+			if (landedAuthority.revision !== trustedCiAuthority) {
+				return refuse(
+					MALFORMED_DOCUMENT,
+					`${VERB}: the governed authority moved from ${trustedCiAuthority ?? "unreadable"} to ${landedAuthority.revision} during comment mutation/read-back — the landed marker is not current.`,
+					diagnostics,
+				);
+			}
 		}
 
 		return answer(

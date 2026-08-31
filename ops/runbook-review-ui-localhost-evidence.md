@@ -86,16 +86,10 @@ another full head, the operator types that exact literal into `--sha`.
 fabrika ship review-ui-request 7190 --sha d293fe694bfd740475753bad3b00c630a9835122 --harness tuval
 ```
 
-`ship review-ui-request` binds the open PR, full exact head, and current default-branch governed
-harness declaration; exhaustively enumerates checks, statuses, and declared-workflow runs; and
-proceeds only when this exact governed evidence check/run is absent. Unrelated ordinary checks do
-not block it. Pending, successful, failed, or ambiguous governed evidence refuses. The verb enforces
-at most one request with a durable exact-head+harness marker and race read-back, performs both
-PR-state writes, reads both legs back, and
-retains the loud exit `17` when the close landed but reopening is unconfirmed. A refusal is not
-permission for the reviewer to reproduce the writes manually; the operator resolves or escalates it
-under the ship contract. After a confirmed request and a successful exact-head producer run, start a
-fresh independent review-ui session at the contract reads above.
+Read the command's answer and exit only against the `ship review-ui-request` contract section just
+loaded. On success, wait for the replacement producer run, then start a fresh independent
+`review-ui` session at the contract reads above. On refusal, follow the contract's operator action;
+do not reproduce either PR-state write manually.
 
 Do not add an `apps/web` route, preview deployment, Cloudflare binding, production endpoint, or
 reviewer-local server to unblock Tuval.

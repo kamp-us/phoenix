@@ -35,64 +35,23 @@ gates dependency builds on `ignoreScripts` while its
 is under the inverse condition. Those version-matched paths establish that this fetch executes
 neither package lifecycle scripts nor the PR's pnpmfile hooks.
 
-An offline `pnpm install` then runs every PR-controlled lifecycle script and the governed test in a
-disposable test workspace under a read-only root filesystem, `--cap-drop ALL`,
-`no-new-privileges`, `--network none`, two CPUs, 4 GiB memory with no swap headroom, and 256 PIDs.
-A separate 64 MiB unprivileged tmpfs gives pnpm only the writable home-state path its project
-registry needs; the rest of the root stays read-only. The browser-bearing containers receive a 1 GiB
-bounded temporary filesystem; the exact container arguments and ceilings are pinned by the
-[governance tests](../packages/fabrika-cli/src/review-ui/localhost-governance.unit.test.ts). The journey's
-dynamic-port test servers finish before the
-producer starts its separate fixed capture server, so there is no conflicting concurrent server.
-Every foreground container is named before it starts, so cleanup can attempt force-removal after a
-client timeout. The test and server workspaces are named volumes backed by a 4 GiB tmpfs rather than
-unbounded writable storage; capture output has a separate 256 MiB tmpfs ceiling. Cleanup attempts
-every named container, volume, image, and fixture sequentially on every outcome. Only an exact
-Docker absence response bound to that resource kind and name is ignored. Any other cleanup failure
-turns an otherwise successful run into UNKNOWN; an already-red operation keeps its original code and
-diagnostics and appends the cleanup failure. Fixture ownership begins at temporary-root creation, so
-a partial directory/write/permission failure also attempts removal and preserves both diagnostics
-when setup and cleanup fail. The local driver's tmpfs is kept mounted from
-sidecar write through read-only extraction by one named keeper container. This is required because
-tmpfs data does not survive an unmount
-([Linux tmpfs](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html)); sequential ephemeral
-containers otherwise leave no capture bytes for extraction. The authority Dockerfile owns the
-volume destination as `node:node` before its first mount, so the unprivileged sidecar has write access
-and extraction needs only read access. The keeper receives no authority, credential, subject, Docker
-socket, or host-output mount; it uses Docker `none`, a read-only root, dropped capabilities,
-`no-new-privileges`, 0.1 CPU, 64 MiB memory with no swap headroom, 16 PIDs, and a 4 MiB temporary
-filesystem. It is force-removed on every outcome, including a sidecar timeout.
+The producer separates the untrusted subject from the authority checkout because a base-owned event
+may safely *name* a PR head without granting that head authority over credentials, workflow policy,
+or artifact metadata. The governed journey, built server, and capture sidecar therefore run in
+distinct isolation roles: subject code can affect the rendered product, while only trusted code can
+select the declaration, inspect the resulting bytes, and emit the record. Bounded resources and
+cleanup make a failed or hostile subject terminate as a typed UNKNOWN rather than inherit host
+state from another attempt.
 
-That workspace is never served. A separate server
-workspace is freshly copied from the image's immutable exact-head source, installed offline with
-both install-time execution-disabling flags, and built by the declaration's fixed
-`serverBuildCommand` under the same no-network restrictions. The resulting workspace is mounted
-read-only into the server; the server publishes no host port and receives only the
-read-only fixture. Docker's `none` driver leaves only loopback
-([none driver](https://docs.docker.com/engine/network/drivers/none/)). Readiness uses bounded
-snapshot polling rather than assuming the first log read is populated: Docker documents
-[`docker logs`](https://docs.docker.com/reference/cli/docker/container/logs/) as fetching the logs
-present when the command runs and reserves `--follow` for streaming new output. Every poll pairs
-that snapshot with [`docker inspect`](https://docs.docker.com/reference/cli/docker/inspect/) state
-and exact identity. Empty logs while the inspected container is running are therefore pending, not
-failure; exit, observation error, and the 20-second readiness deadline retain the last log bytes,
-command stdout/stderr, state, exit code, and identity before cleanup. The state machine takes one
-final snapshot at the deadline; each of its two Docker reads has a one-second timeout, so diagnostic
-collection has a bounded two-second command budget after the readiness window. Earlier reads split
-and clamp their command budgets to the time remaining. The 250 ms poll interval, readiness window,
-and diagnostic budget are producer policy within the workflow budget, not Docker timing guarantees.
-A base-owned capture sidecar uses `--network container:<server>` to share that isolated network stack
-([container networks](https://docs.docker.com/engine/network/#container-networks)), reaching the
-server on loopback without external network. The PR server receives no Actions credentials,
-authority checkout, Docker socket, or artifact-output mount. The trusted sidecar receives the
-authority checkout read-only and a 256 MiB tmpfs output volume only. It and the governed journey are
-the only browser-bearing containers and each has a 1 GiB bounded `/tmp` plus a 64 MiB unprivileged
-font/browser cache; non-browser foreground containers keep a 64 MiB `/tmp`. A fixed base-owned extraction
-container copies at most that bounded volume into the artifact directory; the host validates those
-captures and alone writes the manifest. Docker documents the remaining root, capability, CPU, memory, PID, tmpfs, named-container, and
-mount controls in the [`docker run` reference](https://docs.docker.com/reference/cli/docker/container/run/),
-[`docker volume create` reference](https://docs.docker.com/reference/cli/docker/volume/create/), and
-[bind-mount reference](https://docs.docker.com/engine/storage/bind-mounts/).
+The exact container arguments, resource ceilings, readiness state machine, cleanup order, manifest
+schema, and refusal codes are reference material. They live in the
+[`review-ui ci-produce` contract](../claude-plugins/fabrika/skills/review-ui/contract.md#review-ui-ci-produce)
+and are pinned by the
+[governance tests](../packages/fabrika-cli/src/review-ui/localhost-governance.unit.test.ts). This
+pattern intentionally does not duplicate those values. Docker's documented
+[`none` network](https://docs.docker.com/engine/network/drivers/none/) and
+[container network sharing](https://docs.docker.com/engine/network/#container-networks) ground the
+reason the sidecar can reach only the isolated server loopback.
 
 ## Producer record
 

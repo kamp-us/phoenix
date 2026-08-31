@@ -3,8 +3,9 @@
  * proven missing/unusable producer tuple from transport, token, authority, scratch, unzip, and
  * runtime states that prove nothing about evidence availability.
  */
-import {mkdtemp, readFile, writeFile} from "node:fs/promises";
-import {join} from "node:path";
+import {isUtf8} from "node:buffer";
+import {lstat, mkdtemp, readFile, realpath, writeFile} from "node:fs/promises";
+import {join, sep} from "node:path";
 import {Effect} from "effect";
 import {execCapture} from "../io/exec.ts";
 import {
@@ -41,6 +42,8 @@ export interface CiIdentity {
 export interface CiBundle extends CiIdentity {
 	readonly directory: string;
 	readonly manifestText: string;
+	/** Bytes read only after every central-directory member passed lstat/realpath containment. */
+	readonly memberBytes: Readonly<Record<string, Uint8Array>>;
 }
 
 export type CiEvidenceFailure =
@@ -235,6 +238,55 @@ export const safeArtifactMembers = (listing: string): readonly string[] | null =
 		: null;
 };
 
+const u16 = (bytes: Uint8Array, offset: number): number =>
+	(bytes[offset] ?? 0) | ((bytes[offset + 1] ?? 0) << 8);
+const u32 = (bytes: Uint8Array, offset: number): number =>
+	(u16(bytes, offset) | (u16(bytes, offset + 2) << 16)) >>> 0;
+
+/** Names only regular central-directory entries; symlinks/devices/directories refuse pre-extract. */
+export const safeCentralDirectoryMembers = (archive: Uint8Array): readonly string[] | null => {
+	const minimum = Math.max(0, archive.length - 22 - 65_535);
+	let eocd = -1;
+	for (let offset = archive.length - 22; offset >= minimum; offset -= 1) {
+		if (u32(archive, offset) === 0x06054b50) {
+			eocd = offset;
+			break;
+		}
+	}
+	if (eocd < 0 || u16(archive, eocd + 4) !== 0 || u16(archive, eocd + 6) !== 0) return null;
+	const entries = u16(archive, eocd + 10);
+	if (entries === 0 || entries !== u16(archive, eocd + 8)) return null;
+	const centralSize = u32(archive, eocd + 12);
+	const centralOffset = u32(archive, eocd + 16);
+	if (centralOffset + centralSize !== eocd || centralOffset > archive.length) return null;
+	const decoder = new TextDecoder();
+	const names: string[] = [];
+	let offset = centralOffset;
+	for (let index = 0; index < entries; index += 1) {
+		if (offset + 46 > eocd || u32(archive, offset) !== 0x02014b50) return null;
+		const madeBy = u16(archive, offset + 4) >>> 8;
+		const nameLength = u16(archive, offset + 28);
+		const extraLength = u16(archive, offset + 30);
+		const commentLength = u16(archive, offset + 32);
+		const external = u32(archive, offset + 38);
+		const end = offset + 46 + nameLength + extraLength + commentLength;
+		if (nameLength === 0 || end > eocd) return null;
+		const nameBytes = archive.subarray(offset + 46, offset + 46 + nameLength);
+		if (!isUtf8(nameBytes)) return null;
+		const name = decoder.decode(nameBytes);
+		const unixType = (external >>> 16) & 0xf000;
+		const regular =
+			madeBy === 3 || madeBy === 19
+				? unixType === 0x8000
+				: !name.endsWith("/") && (external & 0x10) === 0;
+		if (!regular) return null;
+		names.push(name);
+		offset = end;
+	}
+	if (offset !== eocd) return null;
+	return safeArtifactMembers(`${names.join("\n")}\n`);
+};
+
 export const hasExactManifestMembers = (
 	members: readonly string[],
 	manifestText: string,
@@ -338,25 +390,66 @@ export const fetchCiBundle = (
 			catch: (cause) => scratchUnknown(`cannot write the artifact: ${String(cause)}`),
 		}).pipe(Effect.result);
 		if (written._tag === "Failure") return written.failure;
-		const list = yield* execCapture("unzip", ["-Z1", zip]);
-		if (!list.ok) return unzipUnknown(`cannot enumerate the artifact: ${list.reason}`);
-		const members = safeArtifactMembers(list.stdout);
+		const members = safeCentralDirectoryMembers(downloaded.value);
 		if (members === null || !members.includes("manifest.json")) {
-			return malformedArtifact("the artifact has unsafe, duplicate, or incomplete members");
+			return malformedArtifact(
+				"the artifact central directory has unsafe, duplicate, incomplete, symlink, or non-regular members",
+			);
 		}
 		const extracted = yield* execCapture("unzip", ["-qq", zip, "-d", directory.success]);
 		if (!extracted.ok) return unzipUnknown(`cannot extract the artifact: ${extracted.reason}`);
-		const manifest = yield* Effect.tryPromise({
-			try: () => readFile(join(directory.success, "manifest.json"), "utf8"),
+		const inspected = yield* Effect.tryPromise({
+			try: async () => {
+				const root = await realpath(directory.success);
+				const paths: Record<string, string> = {};
+				for (const member of members) {
+					const candidate = join(directory.success, member);
+					const stat = await lstat(candidate);
+					if (!stat.isFile() || stat.isSymbolicLink()) {
+						return {_tag: "Unsafe" as const, reason: `${member} is not a regular extracted file`};
+					}
+					const resolved = await realpath(candidate);
+					if (!resolved.startsWith(`${root}${sep}`)) {
+						return {_tag: "Unsafe" as const, reason: `${member} resolves outside artifact scratch`};
+					}
+					paths[member] = resolved;
+				}
+				return {_tag: "Safe" as const, paths};
+			},
+			catch: (cause) =>
+				malformedArtifact(`cannot prove extracted member containment: ${String(cause)}`),
+		}).pipe(Effect.result);
+		if (inspected._tag === "Failure") return inspected.failure;
+		if (inspected.success._tag === "Unsafe") {
+			return malformedArtifact(inspected.success.reason);
+		}
+		const paths = inspected.success.paths;
+		const manifestBytes = yield* Effect.tryPromise({
+			try: () => readFile(paths["manifest.json"] ?? ""),
 			catch: (cause) => scratchUnknown(`cannot read the artifact manifest: ${String(cause)}`),
 		}).pipe(Effect.result);
-		if (manifest._tag === "Failure") return manifest.failure;
-		if (hasExactManifestMembers(members, manifest.success) !== true) {
+		if (manifestBytes._tag === "Failure") return manifestBytes.failure;
+		if (!isUtf8(manifestBytes.success)) {
+			return malformedArtifact("the artifact manifest is not UTF-8");
+		}
+		const manifestText = new TextDecoder().decode(manifestBytes.success);
+		if (hasExactManifestMembers(members, manifestText) !== true) {
 			return malformedArtifact("the artifact has extra, unmanifested, or malformed members");
+		}
+		const memberBytes: Record<string, Uint8Array> = {"manifest.json": manifestBytes.success};
+		for (const member of members) {
+			if (member === "manifest.json") continue;
+			const bytes = yield* Effect.tryPromise({
+				try: () => readFile(paths[member] ?? ""),
+				catch: (cause) => scratchUnknown(`cannot read artifact member ${member}: ${String(cause)}`),
+			}).pipe(Effect.result);
+			if (bytes._tag === "Failure") return bytes.failure;
+			memberBytes[member] = bytes.success;
 		}
 		return ciOk({
 			...identity.value,
 			directory: directory.success,
-			manifestText: manifest.success,
+			manifestText,
+			memberBytes,
 		});
 	});

@@ -423,6 +423,17 @@ export const captureLocalhost = (
 	}).pipe(Effect.mapError((cause) => cause.message));
 };
 
+export const decodeSidecarPageErrors = (value: unknown): CapturedSurface["pageErrors"] | null =>
+	Array.isArray(value) &&
+	value.every(
+		(error) =>
+			isRecord(error) &&
+			(error.kind === "pageerror" || error.kind === "console.error") &&
+			typeof error.text === "string",
+	)
+		? (value as CapturedSurface["pageErrors"])
+		: null;
+
 export const readSidecarCaptures = async (
 	outputDir: string,
 ): Promise<readonly CapturedSurface[]> => {
@@ -435,6 +446,7 @@ export const readSidecarCaptures = async (
 	}
 	const captures: CapturedSurface[] = [];
 	for (const row of value) {
+		const pageErrors = isRecord(row) ? decodeSidecarPageErrors(row.pageErrors) : null;
 		if (
 			!isRecord(row) ||
 			typeof row.surface !== "string" ||
@@ -442,11 +454,7 @@ export const readSidecarCaptures = async (
 			(row.state !== null && typeof row.state !== "string") ||
 			typeof row.fileName !== "string" ||
 			!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.png$/.test(row.fileName) ||
-			!Array.isArray(row.pageErrors) ||
-			!row.pageErrors.every(
-				(error) =>
-					isRecord(error) && typeof error.kind === "string" && typeof error.text === "string",
-			)
+			pageErrors === null
 		) {
 			throw new Error("the capture sidecar returned a malformed capture row");
 		}
@@ -458,7 +466,7 @@ export const readSidecarCaptures = async (
 			fileName: row.fileName,
 			localPath,
 			pngBytes: await readFile(localPath),
-			pageErrors: row.pageErrors,
+			pageErrors,
 			...(typeof row.status === "number" ? {status: row.status} : {}),
 		});
 	}

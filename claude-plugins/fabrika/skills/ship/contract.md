@@ -2118,13 +2118,17 @@ The verb trusts no dispatch summary. In order it:
    current default-branch revision plus `.github/review-ui-localhost-harnesses.json`; `--harness`
    must select one complete governed declaration.
 2. Exhaustively enumerates every check run (`filter=all`, never GitHub's default latest-only view)
-   and every legacy commit status at the head, plus every run of the declaration's fixed workflow. Unrelated checks and statuses are counted and ignored.
-   Any check/status with the declared check identity, any exact PR/head/authority workflow run in
-   pending, successful, failed, or other state, duplicate exact runs, or a current-head governed
-   workflow run with a non-binding title refuses on `16`. Only positive absence of this exact
-   governed evidence check/run opens the mutation; malformed, truncated, or failed reads never do.
-3. Exhaustively reads the PR's comments for a durable marker bound to the exact head+harness. A
-   prior marker refuses. Otherwise it writes one marker, reads those exact bytes back, re-lists the
+   and every legacy commit status at the head, plus every run of the declaration's fixed workflow.
+   It classifies governed evidence by both subjects: the exact PR head and current default-branch
+   authority revision. A well-formed run and its joined check suite from an older authority stay
+   unusable to fetch but do not block one replacement request. Unrelated checks and statuses are
+   counted and ignored. Current-authority pending, successful, failed, duplicate, or ambiguous
+   evidence refuses on `16`; an unbound declared check/status or malformed current-head run is
+   ambiguity, not absence. Only positive absence for the exact subject+authority opens mutation;
+   malformed, truncated, or failed reads never do.
+3. Exhaustively reads the PR's comments for a durable marker bound to exact subject head + authority
+   revision + harness. A prior marker for that identity refuses; an older-authority marker does not
+   spend the replacement request. Otherwise it writes one marker, reads those exact bytes back, re-lists the
    complete marker set, and proceeds only when exactly one matching marker exists and it is the
    comment this invocation wrote. Concurrent marker races therefore stop before PR state changes;
    the durable marker consumes the one request even if the later event needs escalation.
@@ -2149,7 +2153,7 @@ The verb trusts no dispatch summary. In order it:
 | `11` | a PR, authority, check, status, workflow-run, or pre-write marker-list read failed |
 | `12` | the live head differs from `--sha`, or the head moved during the pair; the moved-during-pair case confirms reopen first |
 | `13` | check-run count/exhaustion proof is incomplete, or status pagination did not reach a terminal page |
-| `16` | the PR is not open; the declaration is absent/malformed; governed check/status/run evidence is pending, successful, failed, present, duplicate, or ambiguous; this head already has a marker; or a concurrent marker race is proven |
+| `16` | the PR is not open; the declaration is absent/malformed; current-authority governed check/status/run evidence is pending, successful, failed, present, duplicate, or ambiguous; this subject+authority already has a marker; or a concurrent marker race is proven |
 | `17` | the close landed and the reopen is unconfirmed — **the PR may be closed; reopen it by hand now** |
 
 **Errors** — diagnostics are not routing; callers route only by the numeric code.
@@ -2173,7 +2177,7 @@ The verb trusts no dispatch summary. In order it:
 
 **Scope** — one open PR, its full head, the exact default-branch governed harness declaration, all
 check runs and statuses at that head, all runs of the one declared workflow, the durable
-head+harness marker claim with complete pre/post reads, and the guarded close/reopen pair. It does not evaluate, rerun, cancel, or accept any
+subject+authority+harness marker claim with complete pre/post reads, and the guarded close/reopen pair. It does not evaluate, rerun, cancel, or accept any
 check; it proves only targeted absence. It is not a reviewer capability.
 
 **Examples**

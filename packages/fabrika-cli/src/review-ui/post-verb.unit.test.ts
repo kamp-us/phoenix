@@ -267,6 +267,7 @@ const options = {
 				authorityHead: AUTHORITY_HEAD,
 				directory: REMOTE_CI_DIR,
 				manifestText: JSON.stringify(ciManifest()),
+				memberBytes: {"captures/desktop.png": BYTES},
 			}),
 		),
 };
@@ -281,6 +282,7 @@ const fetchedBundle = (manifestText: string) => () =>
 			authorityHead: AUTHORITY_HEAD,
 			directory: REMOTE_CI_DIR,
 			manifestText,
+			memberBytes: {"captures/desktop.png": BYTES},
 		}),
 	);
 
@@ -328,6 +330,7 @@ const run = (
 };
 
 const COMPOSED = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence\n\n### /pano\n\n![/pano](${HOSTED})`;
+const CI_COMPOSED = `review-ui: PASS @ 03135b91 — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence provenance\n\n- Repository: o/r\n- Workflow: .github/workflows/review-ui-localhost-evidence.yml (pull_request_target)\n- GitHub Actions run: [42](https://github.com/o/r/actions/runs/42)\n- Check: review-ui localhost evidence / tuval ([9](https://github.com/o/r/runs/9))\n- Artifact: review-ui-localhost-tuval (id 10)\n- Authority revision: ${AUTHORITY_HEAD}\n- Governed harness: tuval\n- Browser error coverage: pageerror and console.error readable for 1/1 captures\n\n## Evidence\n\n### desktop\n\n![desktop](${HOSTED})`;
 
 const happy = (): ReadonlyArray<Scripted> => [
 	[once(PULL), pull()],
@@ -360,8 +363,22 @@ describe("runPost", () => {
 		expect(body).not.toContain(CAPTURE_PATH);
 	});
 
+	it("returns stale when the subject moves during comment mutation/read-back", async () => {
+		const {outcome} = await run([
+			[once(PULL), pull()],
+			[once(PULL), pull()],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[COMMENTS, comments()],
+			[CREATE, {status: 201, body: JSON.stringify({id: 5154902211, html_url: URL})}],
+			[READBACK, posted(COMPOSED)],
+			[PULL, pull("open", OLD_HEAD)],
+		]);
+		expect(outcome.code).toBe(STALE_TREE);
+		expect(outcome.stderr.join("\n")).toContain("during comment mutation/read-back");
+	});
+
 	it("carries the documented abbreviated CI invocation through the exact comment into ship", async () => {
-		const ciComposed = `review-ui: PASS @ 03135b91 — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence provenance\n\n- Repository: o/r\n- Workflow: .github/workflows/review-ui-localhost-evidence.yml (pull_request_target)\n- GitHub Actions run: [42](https://github.com/o/r/actions/runs/42)\n- Check: review-ui localhost evidence / tuval ([9](https://github.com/o/r/runs/9))\n- Artifact: review-ui-localhost-tuval (id 10)\n- Governed harness: tuval\n- Browser error coverage: pageerror and console.error readable for 1/1 captures\n\n## Evidence\n\n### desktop\n\n![desktop](${HOSTED})`;
+		const ciComposed = CI_COMPOSED;
 		const script: ReadonlyArray<Scripted> = [
 			[once(PULL), pull()],
 			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
@@ -414,6 +431,8 @@ describe("runPost", () => {
 			[COMMENTS, comments({id: 5154902211, body, author: "kampus-bot"})],
 			[ACL, {status: 200, body: JSON.stringify({permission: "write"})}],
 			[REVIEWS, {status: 200, body: "[]"}],
+			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+			[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
 		]);
 		const gate = await Effect.runPromise(
 			Effect.provide(
@@ -434,6 +453,32 @@ describe("runPost", () => {
 			`gate\tsatisfied\t${HEAD}`,
 		);
 		expect(gate.stdout).toContain("ns\treview-ui\tpass\tmarker");
+
+		const staleGateSeams = fakeSeams([
+			[once(PULL), pull()],
+			[FILES, {status: 200, body: JSON.stringify([{filename: "apps/web/src/a.ts"}])}],
+			[COMMENTS, comments({id: 5154902211, body, author: "kampus-bot"})],
+			[ACL, {status: 200, body: JSON.stringify({permission: "write"})}],
+			[REVIEWS, {status: 200, body: "[]"}],
+			[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+			[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: MOVED_AUTHORITY_HEAD})}],
+		]);
+		const staleGate = await Effect.runPromise(
+			Effect.provide(
+				runGate({
+					pr: 4321,
+					sha: HEAD,
+					require: ["review-ui"],
+					cp: false,
+					repo: null,
+					json: false,
+					cwd: "/repo",
+					env: {CLAUDE_PIPELINE_REPO: "o/r"},
+				}),
+				Layer.merge(staleGateSeams.layer, unconfigured),
+			),
+		);
+		expect(staleGate.stdout).toContain("ns\treview-ui\tstale\tmarker");
 	});
 
 	it("drives real CI re-resolution through ProducerUnavailable versus UNKNOWN post mappings", async () => {
@@ -536,6 +581,33 @@ describe("runPost", () => {
 			"no longer matches the governed producer declaration",
 		);
 		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+	});
+
+	it("returns the typed authority refusal when authority moves during comment read-back", async () => {
+		const document = JSON.stringify(ciManifest());
+		const {outcome, requests} = await run(
+			[
+				[once(PULL), pull()],
+				[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
+				[once(AUTHORITY_COMMIT), {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
+				[AUTHORITY, {status: 200, body: CI_AUTHORITY}],
+				[once(PULL), pull()],
+				[once(AUTHORITY_COMMIT), {status: 200, body: JSON.stringify({sha: AUTHORITY_HEAD})}],
+				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+				[COMMENTS, comments()],
+				[CREATE, {status: 201, body: JSON.stringify({id: 5154902211, html_url: URL})}],
+				[READBACK, posted(CI_COMPOSED)],
+				[PULL, pull()],
+				[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: MOVED_AUTHORITY_HEAD})}],
+			],
+			{polarity: "PASS", sha: "03135b91", fetchCiBundle: fetchedBundle(document)},
+			ciWorld(document),
+		);
+		expect(requests.some((request) => CREATE.test(request))).toBe(true);
+		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
+		expect(outcome.stderr.join("\n")).toContain(
+			"no longer matches the governed producer declaration",
+		);
 	});
 
 	it("refuses when the governed declaration is revoked during verified upload", async () => {

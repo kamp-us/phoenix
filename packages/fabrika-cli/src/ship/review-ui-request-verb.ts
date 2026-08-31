@@ -62,6 +62,18 @@ type TargetedEvidenceScan =
 	| {readonly _tag: "Incomplete"; readonly reason: string}
 	| {readonly _tag: "Present"; readonly reason: string};
 
+const runTitleIdentity = (
+	title: string,
+	harness: string,
+): {readonly pr: number; readonly subject: string; readonly authority: string} | null => {
+	const escaped = harness.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = new RegExp(
+		`^review-ui localhost evidence / ${escaped} / PR #(\\d+) / subject ([0-9a-f]{40}) / authority ([0-9a-f]{40})$`,
+	).exec(title);
+	if (match === null) return null;
+	return {pr: Number(match[1]), subject: match[2] ?? "", authority: match[3] ?? ""};
+};
+
 const scanTargetedEvidence = (
 	repo: string,
 	pr: number,
@@ -70,6 +82,55 @@ const scanTargetedEvidence = (
 	harness: LocalhostHarnessDeclaration,
 ): Effect.Effect<TargetedEvidenceScan, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
+		const runs = yield* runsForWorkflow(repo, harness.workflow);
+		if (runs._tag !== "Ok") {
+			return {
+				_tag: "Unknown",
+				what: `every ${harness.workflow} workflow run`,
+				reason: `${runs._tag}: ${runs.reason}`,
+			};
+		}
+		const governedHeadRuns = runs.value.filter(
+			(row) =>
+				row.path === harness.workflow &&
+				row.event === harness.event &&
+				row.repository === repo &&
+				row.subjectHead === bound,
+		);
+		const ambiguousHeadRuns = governedHeadRuns.filter(
+			(row) => runTitleIdentity(row.title, harness.id) === null,
+		);
+		if (ambiguousHeadRuns.length > 0) {
+			return {
+				_tag: "Present",
+				reason: `${ambiguousHeadRuns.length} governed current-head workflow run(s) have no classifiable subject+authority identity`,
+			};
+		}
+		const currentAuthorityRuns = governedHeadRuns.filter(
+			(row) => runTitleIdentity(row.title, harness.id)?.authority === authorityHead,
+		);
+		if (currentAuthorityRuns.length > 0) {
+			const exact = currentAuthorityRuns.filter((row) => {
+				const identity = runTitleIdentity(row.title, harness.id);
+				return identity?.pr === pr && identity.subject === bound;
+			});
+			return {
+				_tag: "Present",
+				reason:
+					exact.length === currentAuthorityRuns.length && exact.length === 1
+						? `one exact current-authority governed workflow run already exists at ${bound}: ${exact[0]?.status}/${exact[0]?.conclusion ?? "null"}`
+						: `${currentAuthorityRuns.length} current-authority governed workflow run(s) are ambiguous for PR #${pr} at ${bound}`,
+			};
+		}
+		const staleSuiteIds = new Set(
+			governedHeadRuns
+				.filter((row) => {
+					const identity = runTitleIdentity(row.title, harness.id);
+					return identity !== null && identity.authority !== authorityHead;
+				})
+				.map((row) => row.checkSuiteId),
+		);
+
 		const checks = yield* listShipCheckRuns(repo, bound);
 		if (checks._tag === "Failure") {
 			return {
@@ -84,14 +145,16 @@ const scanTargetedEvidence = (
 				reason: `check-run enumeration returned ${checks.value.runs.length} of ${checks.value.declared} row(s), exhausted:${checks.value.exhausted} — refusing targeted absence over an incomplete scan`,
 			};
 		}
-		const governedChecks = checks.value.runs.filter((row) => row.name === harness.check);
+		const governedChecks = checks.value.runs.filter(
+			(row) => row.name === harness.check && !staleSuiteIds.has(row.checkSuiteId),
+		);
 		if (governedChecks.length > 0) {
 			const states = governedChecks
 				.map((row) => `${row.status}/${row.conclusion ?? "null"}`)
 				.join(", ");
 			return {
 				_tag: "Present",
-				reason: `${governedChecks.length} ${harness.check} check row(s) already exist at ${bound}: ${states}`,
+				reason: `${governedChecks.length} unbound or current-authority ${harness.check} check row(s) already exist at ${bound}: ${states}`,
 			};
 		}
 
@@ -118,35 +181,6 @@ const scanTargetedEvidence = (
 			};
 		}
 
-		const runs = yield* runsForWorkflow(repo, harness.workflow);
-		if (runs._tag !== "Ok") {
-			return {
-				_tag: "Unknown",
-				what: `every ${harness.workflow} workflow run`,
-				reason: `${runs._tag}: ${runs.reason}`,
-			};
-		}
-		const currentHeadRuns = runs.value.filter(
-			(row) =>
-				row.path === harness.workflow &&
-				row.event === harness.event &&
-				row.repository === repo &&
-				row.subjectHead === bound,
-		);
-		const expectedTitle = `review-ui localhost evidence / ${harness.id} / PR #${pr} / subject ${bound} / authority ${authorityHead}`;
-		const exactRuns = currentHeadRuns.filter((row) => row.title === expectedTitle);
-		if (exactRuns.length > 0) {
-			return {
-				_tag: "Present",
-				reason: `${exactRuns.length} exact governed workflow run(s) already exist at ${bound}: ${exactRuns.map((row) => `${row.status}/${row.conclusion ?? "null"}`).join(", ")}`,
-			};
-		}
-		if (currentHeadRuns.length > 0) {
-			return {
-				_tag: "Present",
-				reason: `${currentHeadRuns.length} current-head governed-workflow run(s) do not bind the exact PR/head/authority title — evidence is ambiguous`,
-			};
-		}
 		return {
 			_tag: "Absent",
 			checks: checks.value.declared,
@@ -234,14 +268,14 @@ export const runReviewUiRequest = (
 		const initialRefusal = routeScan(initialScan);
 		if (initialRefusal !== null) return initialRefusal;
 
-		const requestMarker = `<!-- fabrika:ship-review-ui-request head=${bound} harness=${harness.id} -->`;
+		const requestMarker = `<!-- fabrika:ship-review-ui-request head=${bound} authority=${authorityHead.value} harness=${harness.id} -->`;
 		const priorComments = yield* listShipComments(repo, pr);
 		if (priorComments._tag === "Failure") {
 			return unreadable("the at-most-once request markers", priorComments.reason);
 		}
 		if (priorComments.value.some((comment) => comment.body.split("\n")[0] === requestMarker)) {
 			return notInState(
-				`head ${bound} already carries the ${harness.id} evidence-request marker — a second request is escalation, not retry`,
+				`subject ${bound} at authority ${authorityHead.value} already carries the ${harness.id} evidence-request marker — a second request is escalation, not retry`,
 			);
 		}
 

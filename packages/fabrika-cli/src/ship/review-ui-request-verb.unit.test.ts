@@ -26,7 +26,7 @@ const COMMENTS = /GET .*\/repos\/o\/r\/issues\/4321\/comments/;
 const CREATE_COMMENT = /POST .*\/repos\/o\/r\/issues\/4321\/comments/;
 const READ_COMMENT = /GET .*\/repos\/o\/r\/issues\/comments\/99/;
 const AUTHORITY_HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-const REQUEST_MARKER = `<!-- fabrika:ship-review-ui-request head=${HEAD} harness=tuval -->`;
+const REQUEST_MARKER = `<!-- fabrika:ship-review-ui-request head=${HEAD} authority=${AUTHORITY_HEAD} harness=tuval -->`;
 const REQUEST_BODY = `${REQUEST_MARKER}\n\nOperator-owned governed review-ui evidence request.\n\n- Authority: ${AUTHORITY_HEAD}\n- Workflow: .github/workflows/review-ui-localhost-evidence.yml\n- Check: review-ui localhost evidence / tuval`;
 
 const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
@@ -91,7 +91,7 @@ const beforeMutation = (
 	],
 	workflowRows: readonly Record<string, unknown>[] = [],
 	finalAuthorityHead = AUTHORITY_HEAD,
-	priorRequest = false,
+	priorRequest: boolean | string = false,
 	mutationHead = HEAD,
 	mutationCheckRows = checkRows,
 	mutationWorkflowRows = workflowRows,
@@ -103,7 +103,14 @@ const beforeMutation = (
 	[once(CHECKS), served(checkRuns(checkRows.length, checkRows))],
 	[once(STATUSES), statusRows([{context: "ordinary/status", state: "success", sha: HEAD}])],
 	[once(RUNS), runs(workflowRows)],
-	[once(COMMENTS), comments(priorRequest ? [{id: 88, body: REQUEST_BODY}] : [])],
+	[
+		once(COMMENTS),
+		comments(
+			priorRequest
+				? [{id: 88, body: typeof priorRequest === "string" ? priorRequest : REQUEST_BODY}]
+				: [],
+		),
+	],
 	[REPO, {status: 200, body: JSON.stringify({default_branch: "main"})}],
 	[AUTHORITY_COMMIT, {status: 200, body: JSON.stringify({sha: finalAuthorityHead})}],
 	[once(PULL), served(pull())],
@@ -157,6 +164,39 @@ describe("runReviewUiRequest", () => {
 		expect(outcome.code).toBe(PROVEN_NOT_IN_STATE);
 		expect(outcome.stderr.join("\n")).toContain("a second request is escalation, not retry");
 		expect(seams.requests.some((request) => request.startsWith("PATCH"))).toBe(false);
+	});
+
+	it("allows one replacement request for a stale-authority run, check, and request marker", async () => {
+		const staleAuthority = OTHER_HEAD;
+		const staleRun = exactRun({
+			check_suite_id: 7,
+			display_title: `review-ui localhost evidence / tuval / PR #4321 / subject ${HEAD} / authority ${staleAuthority}`,
+		});
+		const staleMarker = `<!-- fabrika:ship-review-ui-request head=${HEAD} authority=${staleAuthority} harness=tuval -->\n\nold request`;
+		const governedCheck = [
+			{
+				name: "review-ui localhost evidence / tuval",
+				status: "completed",
+				conclusion: "success",
+				check_suite_id: 7,
+			},
+		];
+		const {outcome} = await execute([
+			...beforeMutation(
+				governedCheck,
+				[staleRun],
+				AUTHORITY_HEAD,
+				staleMarker,
+				HEAD,
+				governedCheck,
+				[staleRun],
+			),
+			[once(PATCH_PULL), {status: 200, body: "{}"}],
+			[once(PULL), served(pull({state: "closed"}))],
+			[PATCH_PULL, {status: 200, body: "{}"}],
+			[PULL, served(pull())],
+		]);
+		expect(outcome.code).toBe(0);
 	});
 
 	it("refuses a stale caller head before reading authority or writing", async () => {

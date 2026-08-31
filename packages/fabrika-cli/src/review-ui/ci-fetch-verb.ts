@@ -6,7 +6,7 @@
  * the red state, not a refusal code that can be mistaken for missing evidence. The closed GitHub
  * failure algebra maps only proven producer unavailability to exit 18; every UNKNOWN tag stays 11.
  */
-import {copyFile, mkdir, readFile, rename, rm, writeFile} from "node:fs/promises";
+import {mkdir, rename, rm, writeFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -212,17 +212,14 @@ export const runCiFetch = (
 		const red = manifest.captures.flatMap((capture) =>
 			capture.pageErrors.rows.filter((error) => error.kind === "pageerror"),
 		);
+		const validatedMembers: Array<readonly [(typeof manifest.captures)[number], Uint8Array]> = [];
 		for (const capture of manifest.captures) {
-			const bytesRead = yield* Effect.tryPromise({
-				try: () => readFile(join(bundle.value.directory, capture.path)),
-				catch: (cause) => String(cause),
-			}).pipe(Effect.result);
-			if (bytesRead._tag === "Failure") {
+			const bytes = bundle.value.memberBytes[capture.path];
+			if (bytes === undefined) {
 				return evidenceFailureOutcome(
-					scratchUnknown(`capture ${capture.surface} is unreadable: ${bytesRead.failure}`),
+					scratchUnknown(`capture ${capture.surface} is absent after contained artifact read`),
 				);
 			}
-			const bytes = bytesRead.success;
 			const valid = validateCaptureBytes(bytes);
 			if (
 				valid._tag === "Invalid" ||
@@ -235,6 +232,7 @@ export const runCiFetch = (
 					`${VERB}: capture ${capture.surface} fails its hash or dimensions.`,
 				);
 			}
+			validatedMembers.push([capture, bytes]);
 		}
 		const still = yield* pull(repo, options.pr);
 		if (still._tag === "Refused") return still.outcome;
@@ -251,10 +249,10 @@ export const runCiFetch = (
 			try: async () => {
 				await rm(staging, {recursive: true, force: true});
 				await mkdir(join(staging, "captures"), {recursive: true});
-				for (const capture of manifest.captures) {
+				for (const [capture, bytes] of validatedMembers) {
 					const to = join(staging, capture.path);
 					await mkdir(dirname(to), {recursive: true});
-					await copyFile(join(bundle.value.directory, capture.path), to);
+					await writeFile(to, bytes);
 				}
 				const manifestDocument = bundle.value.manifestText;
 				await writeFile(manifestPath(staging), manifestDocument);

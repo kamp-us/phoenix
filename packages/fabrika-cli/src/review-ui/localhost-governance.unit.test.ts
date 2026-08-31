@@ -5,6 +5,7 @@ import {
 	boundedBrowserErrors,
 	captureOutputContainerArgs,
 	captureVolumeKeeperContainerArgs,
+	decodeSidecarPageErrors,
 	isolatedEnvironment,
 	subjectCaptureContainerArgs,
 	subjectInstallAndTestContainerArgs,
@@ -16,6 +17,7 @@ import {
 import {
 	BROWSER_ERROR_TEXT_CAP,
 	LOCALHOST_DECLARATIONS_PATH,
+	parseCiCaptureManifest,
 	parseLocalhostDeclarations,
 } from "./localhost-evidence.ts";
 import {parseManifest} from "./manifest.ts";
@@ -40,6 +42,7 @@ describe("localhost evidence governance floor", () => {
 			"ui/png.ts",
 			"capture/upload.ts",
 			"io/exec.ts",
+			"io/gh-api.ts",
 		]) {
 			assert.match(
 				owners,
@@ -58,6 +61,7 @@ describe("localhost evidence governance floor", () => {
 			assert.include(read(decision), "`src/ship/review-ui-request-verb.ts`");
 			assert.include(read(decision), "`src/capture/page-errors.ts`");
 			assert.include(read(decision), "`src/io/exec.ts`");
+			assert.include(read(decision), "`src/io/gh-api.ts`");
 		}
 		for (const harness of authority.value.harnesses) {
 			assert.match(harness.workflow, /^\.github\/workflows\/[a-z0-9-]+\.yml$/);
@@ -266,6 +270,13 @@ describe("localhost evidence governance floor", () => {
 		assert.include(command, '"surface":"tuval-cockpit-mobile"');
 	});
 
+	it("decodes sidecar browser-error kind as a closed vocabulary", () => {
+		assert.deepStrictEqual(decodeSidecarPageErrors([{kind: "pageerror", text: "boom"}]), [
+			{kind: "pageerror", text: "boom"},
+		]);
+		assert.isNull(decodeSidecarPageErrors([{kind: "warning", text: "silently lost before"}]));
+	});
+
 	it("bounds every browser-error row while preserving deterministic priority and overflow", () => {
 		const oversized = "x".repeat(BROWSER_ERROR_TEXT_CAP + 500);
 		const bounded = boundedBrowserErrors([
@@ -355,6 +366,26 @@ describe("localhost evidence governance floor", () => {
 
 	it("keeps literal success examples executable and schema-complete", () => {
 		const reviewContract = read("claude-plugins/fabrika/skills/review-ui/contract.md");
+		const authority = parseLocalhostDeclarations(read(LOCALHOST_DECLARATIONS_PATH));
+		assert.strictEqual(authority._tag, "Declarations");
+		if (authority._tag !== "Declarations") return;
+		const tuval = authority.value.harnesses.find((harness) => harness.id === "tuval");
+		assert.isDefined(tuval);
+		const governedSurfaces = new Set(tuval?.surfaces.map((surface) => surface.id) ?? []);
+		const producerExamples = reviewContract
+			.split("\n")
+			.filter((line) => line.startsWith('{"schemaVersion":1,"source":"github-actions"'));
+		assert.isAtLeast(producerExamples.length, 2);
+		for (const line of producerExamples) {
+			const parsed = parseCiCaptureManifest(line);
+			assert.strictEqual(parsed._tag, "Manifest");
+			if (parsed._tag !== "Manifest") continue;
+			assert.deepStrictEqual(
+				new Set(parsed.value.captures.map((capture) => capture.surface)),
+				governedSurfaces,
+			);
+		}
+
 		const renderExamples = reviewContract
 			.split("\n")
 			.filter((line) => line.startsWith('{"schemaVersion":2,"source":"review-ui-render"'));

@@ -248,10 +248,7 @@ describe("runCiFetch", () => {
 		expect(scratch.stderr.join("\n")).toContain("ScratchUnknown");
 
 		const root = await mkdtemp(join(tmpdir(), "ci-fetch-adapter-test-"));
-		const unzipSeams = fakeSeams([
-			...identity,
-			[/^unzip -Z1 /, {ok: false, stdout: "", reason: "unzip refused fixture"}],
-		]);
+		const unzipSeams = fakeSeams(identity);
 		const unzip = await Effect.runPromise(
 			Effect.provide(
 				runCiFetch({
@@ -265,9 +262,9 @@ describe("runCiFetch", () => {
 				unzipSeams.layer,
 			),
 		);
-		expect(unzip.code).toBe(11);
-		expect(unzip.stderr.join("\n")).toContain("UnzipUnknown");
-		expect(unzipSeams.calls.some((call) => call.startsWith("unzip -Z1 "))).toBe(true);
+		expect(unzip.code).toBe(4);
+		expect(unzip.stderr.join("\n")).toContain("unsafe, duplicate, extra, incomplete, or malformed");
+		expect(unzipSeams.calls.some((call) => call.startsWith("unzip "))).toBe(false);
 		await rm(root, {recursive: true, force: true});
 	});
 
@@ -304,6 +301,7 @@ describe("runCiFetch", () => {
 								authorityHead: AUTHORITY_HEAD,
 								directory: artifact,
 								manifestText: manifest,
+								memberBytes: {"captures/desktop.png": PNG},
 							}),
 						),
 				}),
@@ -511,6 +509,7 @@ describe("runCiFetch", () => {
 											authorityHead: AUTHORITY_HEAD,
 											directory: artifact,
 											manifestText: row.manifest,
+											memberBytes: {"captures/desktop.png": row.bytes ?? PNG},
 										})
 									: row.bundleFailure === "malformed"
 										? malformedArtifact("unsafe members")

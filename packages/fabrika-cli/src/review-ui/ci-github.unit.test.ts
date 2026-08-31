@@ -10,6 +10,7 @@ import {
 	type RunRecord,
 	resolveCiIdentity,
 	safeArtifactMembers,
+	safeCentralDirectoryMembers,
 	selectTrustedRun,
 	selectUniqueCompleted,
 } from "./ci-github.ts";
@@ -62,6 +63,37 @@ const runEnvelope = {
 const RUNS = /GET .*\/actions\/workflows\/review-ui-localhost-evidence\.yml\/runs/;
 const CHECKS = /GET .*\/check-suites\/7\/check-runs/;
 const ARTIFACTS = /GET .*\/actions\/runs\/42\/artifacts/;
+
+const centralDirectory = (
+	entries: ReadonlyArray<{readonly name: string; readonly mode: number}>,
+): Uint8Array => {
+	const encoder = new TextEncoder();
+	const records = entries.map((entry) => {
+		const name = encoder.encode(entry.name);
+		const record = new Uint8Array(46 + name.length);
+		const view = new DataView(record.buffer);
+		view.setUint32(0, 0x02014b50, true);
+		view.setUint16(4, 3 << 8, true);
+		view.setUint16(28, name.length, true);
+		view.setUint32(38, entry.mode << 16, true);
+		record.set(name, 46);
+		return record;
+	});
+	const centralSize = records.reduce((sum, record) => sum + record.length, 0);
+	const archive = new Uint8Array(centralSize + 22);
+	let offset = 0;
+	for (const record of records) {
+		archive.set(record, offset);
+		offset += record.length;
+	}
+	const eocd = new DataView(archive.buffer, centralSize);
+	eocd.setUint32(0, 0x06054b50, true);
+	eocd.setUint16(8, entries.length, true);
+	eocd.setUint16(10, entries.length, true);
+	eocd.setUint32(12, centralSize, true);
+	eocd.setUint32(16, 0, true);
+	return archive;
+};
 
 beforeEach(() => {
 	forgetAmbientToken();
@@ -328,6 +360,36 @@ describe("trusted localhost Actions provenance", () => {
 				"RuntimeUnknown",
 			);
 		}
+	});
+
+	it("rejects allowed-name symlinks and chained symlink entries from central-directory types", () => {
+		const regular = 0o100644;
+		const symlink = 0o120777;
+		assert.deepStrictEqual(
+			safeCentralDirectoryMembers(
+				centralDirectory([
+					{name: "manifest.json", mode: regular},
+					{name: "captures/desktop.png", mode: regular},
+				]),
+			),
+			["manifest.json", "captures/desktop.png"],
+		);
+		assert.isNull(
+			safeCentralDirectoryMembers(
+				centralDirectory([
+					{name: "manifest.json", mode: regular},
+					{name: "captures/desktop.png", mode: symlink},
+				]),
+			),
+		);
+		assert.isNull(
+			safeCentralDirectoryMembers(
+				centralDirectory([
+					{name: "manifest.json", mode: symlink},
+					{name: "captures/desktop.png", mode: symlink},
+				]),
+			),
+		);
 	});
 
 	it("rejects missing, duplicate and traversal artifact members", () => {
