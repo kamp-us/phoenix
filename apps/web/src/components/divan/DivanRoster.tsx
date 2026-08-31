@@ -15,7 +15,7 @@ export function DivanRoster({
 	onSelect,
 }: {
 	readonly selectedId: string | null;
-	readonly onSelect: (authorId: string) => void;
+	readonly onSelect: (authorId: string, viewerVouched: boolean) => void;
 }) {
 	const result = useRequest(divanRosterRequest());
 	const [items] = useListView(RosterConnectionView, result["divan.roster"]);
@@ -44,7 +44,7 @@ function RosterRow({
 }: {
 	readonly node: ViewRef<"DivanCaylak">;
 	readonly selectedId: string | null;
-	readonly onSelect: (authorId: string) => void;
+	readonly onSelect: (authorId: string, viewerVouched: boolean) => void;
 }) {
 	const data = useView(RosterRowView, node);
 	const selected = selectedId === data.authorId;
@@ -56,7 +56,7 @@ function RosterRow({
 				variant="tertiary"
 				block
 				className="kp-divan__roster-row"
-				onClick={() => onSelect(data.authorId)}
+				onClick={() => onSelect(data.authorId, data.viewerVouched)}
 				aria-current={selected ? "true" : undefined}
 				data-testid={`divan-caylak-${data.authorId}`}
 			>

@@ -89,7 +89,14 @@ afterEach(() => {
 });
 
 function renderDetail() {
-	return render(<CaylakDetail authorId="u-1" viewerTier={undefined} viewerIsModerator={true} />);
+	return render(
+		<CaylakDetail
+			authorId="u-1"
+			viewerTier={undefined}
+			viewerIsModerator={true}
+			viewerVouched={false}
+		/>,
+	);
 }
 
 describe("CaylakDetail promote refresh (#7036)", () => {

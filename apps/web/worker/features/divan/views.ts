@@ -27,6 +27,12 @@ export type DivanCaylakViewRow = ViewRow<
 		postCount: number;
 		commentCount: number;
 		totalCount: number;
+		/**
+		 * Viewer-scoped, like `DivanVoteReceipt.myVote`: TRUE iff the READING yazar already
+		 * holds a vouch row for this çaylak. Resolved in the roster's own batch, never a
+		 * per-row `VouchLedger.has` (ADR 0021's no-waterfalls contract).
+		 */
+		viewerVouched: boolean;
 	}
 >;
 
@@ -38,6 +44,7 @@ export class DivanCaylakView extends FateDataView<DivanCaylakViewRow>()("DivanCa
 	postCount: true,
 	commentCount: true,
 	totalCount: true,
+	viewerVouched: true,
 } as const satisfies {[K in keyof DivanCaylakViewRow]: true}) {}
 
 export const divanCaylakDataView = DivanCaylakView.view;

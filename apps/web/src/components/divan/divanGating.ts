@@ -38,6 +38,25 @@ export function canVouch(tier: Tier | undefined, detailOpened: boolean): boolean
 	return vouchVisible(tier) && detailOpened;
 }
 
+/**
+ * The vouch trigger's three states (#7373). `done` is the honest end state — the viewer
+ * already holds this çaylak's vouch — and it stays a disabled label, never a withdraw
+ * control: whether withdrawal gets a surface is a separate product call.
+ */
+export type VouchTriggerState = "hidden" | "offer" | "done";
+
+export function vouchTriggerState(
+	tier: Tier | undefined,
+	alreadyVouched: boolean,
+): VouchTriggerState {
+	if (!vouchVisible(tier)) return "hidden";
+	return alreadyVouched ? "done" : "offer";
+}
+
+export function vouchTriggerLabel(state: VouchTriggerState): string {
+	return state === "done" ? "kefil oldun" : "kefil ol";
+}
+
 // Keyed off `isModerator`, never `tier`: a dual-role yazar+moderator reads `tier: "yazar"`
 // (#1320), so a tier check wrongly hid promote from them.
 export function promoteVisible(isModerator: boolean): boolean {
@@ -116,6 +135,16 @@ export function vouchOutcome(
 	if (code === "FORBIDDEN" || code === "UNAUTHORIZED") return "denied";
 	if (failed) return "error";
 	return promoted ? "promoted" : "recorded";
+}
+
+/**
+ * Which confirm outcomes leave the viewer holding a vouch row. `recorded` covers the
+ * idempotent re-vouch too (the server answers `alreadyVouched` with `vouchRecorded: false`
+ * and no promotion), so both mean "you are this çaylak's kefil" — which is what the trigger
+ * reports. A cap denial, an authority denial and a transport error say nothing landed.
+ */
+export function vouchLanded(outcome: VouchOutcome): boolean {
+	return outcome === "recorded" || outcome === "promoted";
 }
 
 export function vouchOutcomeMessage(outcome: VouchOutcome): string {

@@ -28,7 +28,10 @@ import {
 	promoteOutcomeMessage,
 	promoteRefreshWarranted,
 	promoteVisible,
-	vouchVisible,
+	type VouchOutcome,
+	vouchLanded,
+	vouchTriggerLabel,
+	vouchTriggerState,
 } from "./divanGating";
 import {
 	BacklogConnectionView,
@@ -61,10 +64,16 @@ export function CaylakDetail({
 	authorId,
 	viewerTier,
 	viewerIsModerator,
+	viewerVouched,
 }: {
 	readonly authorId: string;
 	readonly viewerTier: Tier | undefined;
 	readonly viewerIsModerator: boolean;
+	/**
+	 * Off the roster row this detail was opened from, so the durable "already a kefil"
+	 * state rides the roster's own batched read — no by-id read of this çaylak (ADR 0021).
+	 */
+	readonly viewerVouched: boolean;
 }) {
 	const result = useRequest(divanBacklogRequest(authorId));
 	const [items] = useListView(BacklogConnectionView, result["divan.backlog"]);
@@ -83,6 +92,7 @@ export function CaylakDetail({
 					authorId={authorId}
 					viewerTier={viewerTier}
 					viewerIsModerator={viewerIsModerator}
+					viewerVouched={viewerVouched}
 				/>
 			</header>
 
@@ -104,13 +114,18 @@ function ReviewerActions({
 	authorId,
 	viewerTier,
 	viewerIsModerator,
+	viewerVouched,
 }: {
 	readonly authorId: string;
 	readonly viewerTier: Tier | undefined;
 	readonly viewerIsModerator: boolean;
+	readonly viewerVouched: boolean;
 }) {
 	const fate = useFateClient();
 	const [vouchOpen, setVouchOpen] = useState(false);
+	// OR-ed with the prop rather than seeded from it, so a landed confirm shows immediately
+	// AND a refreshed roster row still wins after this component remounts on re-selection.
+	const [justVouched, setJustVouched] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState("");
 
@@ -145,8 +160,17 @@ function ReviewerActions({
 		}
 	}
 
+	function onVouchResolved(outcome: VouchOutcome) {
+		if (!vouchLanded(outcome)) return;
+		setJustVouched(true);
+		// Fire-and-forget, as the promote path does: the vouch DID land, so a failed
+		// re-pull must leave the surface alone — the local flag already told the truth.
+		void refreshDivanReview(fate, authorId).catch(() => undefined);
+	}
+
 	const showPromote = promoteVisible(viewerIsModerator);
-	const showVouch = vouchVisible(viewerTier);
+	const vouchState = vouchTriggerState(viewerTier, viewerVouched || justVouched);
+	const showVouch = vouchState !== "hidden";
 
 	if (!showPromote && !showVouch) return null;
 
@@ -169,9 +193,10 @@ function ReviewerActions({
 						variant="secondary"
 						size="sm"
 						onClick={() => setVouchOpen(true)}
+						disabled={vouchState === "done"}
 						data-testid="vouch-button"
 					>
-						kefil ol
+						{vouchTriggerLabel(vouchState)}
 					</Button>
 				) : null}
 			</div>
@@ -186,7 +211,12 @@ function ReviewerActions({
 				</Alert>
 			) : null}
 			{showVouch ? (
-				<VouchSheet open={vouchOpen} onOpenChange={setVouchOpen} candidateId={authorId} />
+				<VouchSheet
+					open={vouchOpen}
+					onOpenChange={setVouchOpen}
+					candidateId={authorId}
+					onResolved={onVouchResolved}
+				/>
 			) : null}
 		</div>
 	);
