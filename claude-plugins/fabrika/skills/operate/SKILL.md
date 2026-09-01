@@ -942,6 +942,14 @@ show. Name the terminal state in the comment. End `LANE-TERMINAL`. On a chore la
 issue to land on: print the same two verbs and hand their bytes to your caller, who owns where a
 chore's transcript is posted.
 
+**A `complete` fold over an issue the board still calls buildable is a defect, and it has a repair.**
+It means the merge behind the ship's `DONE` carried `Part of #N` and the recorded line never said so,
+so the lane folded past the arm that would have sent it round again (ADR 0343). Report the terminal
+as it reads — nothing here is yours to change — and name the two verbs that fix it:
+`fabrika lane migrate` where the lane's machine predates the guard, then
+`fabrika lane reconcile --check`, which says which lanes are in this state and appends the correcting
+line when re-run without the flag (ADR 0344).
+
 **A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
 `frozen` and on `human:epic-review` the run ends `LANE-PARKED` with the transcript and the need
 posted (the founder-cleared round above, which both of them need); every other error final has no

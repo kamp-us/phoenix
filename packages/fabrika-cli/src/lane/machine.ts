@@ -59,6 +59,17 @@ export const isOperatorEvent = (event: string): event is OperatorEvent =>
 export const CLEARED_EVENT = "CLEARED";
 
 /**
+ * The eighth event, and the only line that names another line: a correction, appended by
+ * `lane reconcile` to say what a recorded event's routing payload should have been (ADR 0344).
+ *
+ * It reaches no machine at all — no state holds a cell for it, and the fold consumes it before any
+ * message is dispatched. That is the design rather than an omission: a correction is a fact about
+ * the log, not about the task, so it amends a line the machine has long since folded past without
+ * needing a door out of the terminal that fold reached.
+ */
+export const CORRECTED_EVENT = "CORRECTED";
+
+/**
  * One task's folded state: the leaf, its two budgets, the state it left (`was`), and the grants
  * applied so far — `cleared` is the fold's own tally of {@link CLEARED_EVENT} rounds, which is what
  * makes `maxRetries` a function of the log's prefix rather than of a document anyone can edit.
@@ -138,6 +149,16 @@ export interface CompiledTask {
 	 * a differently-caused park happens to share (ADR 0313).
 	 */
 	readonly waitParks: ReadonlyMap<string, ReadonlySet<string>>;
+	/**
+	 * Per state holding a {@link PARTIAL_GUARD}-guarded cell, the events that cell reads — the places
+	 * where a recorded line's `partial` payload is the whole difference between two targets.
+	 *
+	 * Carried so a reader can locate a misrouted line off the machine instead of off a state-name
+	 * list: which state ships, and which event lands the merge, is the document's call. An epic
+	 * tail's emitted region declares no partial arm, so it yields nothing here — ADR 0343's carve-out
+	 * falls out of the compilation rather than being restated as a special case.
+	 */
+	readonly partialStates: ReadonlyMap<string, ReadonlySet<string>>;
 	/**
 	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours
 	 * (ADR 0312). Carried so a refusal can name the repair — re-record each as a `CLEARED` event —
@@ -243,6 +264,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const errorFinals = new Set<string>();
 	const guardedStates = new Set<string>();
 	const waitParks = new Map<string, Set<string>>();
+	const partialStates = new Map<string, Set<string>>();
 	for (const [name, node] of Object.entries(states)) {
 		if (nodeType(node) === "final") finals.add(name);
 	}
@@ -301,6 +323,9 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					continue;
 				}
 				if (partialGuarded(transition[0])) {
+					const reads = partialStates.get(stateName) ?? new Set<string>();
+					reads.add(msg);
+					partialStates.set(stateName, reads);
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);
 						const target = m.partial === true ? taken : fallthrough;
@@ -419,6 +444,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			openFinals,
 			guardedStates,
 			waitParks,
+			partialStates,
 			staleGrants,
 			extras,
 		},

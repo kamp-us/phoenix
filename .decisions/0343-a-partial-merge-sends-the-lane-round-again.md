@@ -58,5 +58,6 @@ takes it without drift.
   here: its region starts at `review`, so there is no `queued` for a partial tail merge to return to,
   and where it should go is a separate question.
 - A lane that folded to `complete` on a partial merge before this shipped stays folded — the routing
-  fact is a payload on the recorded line, and no offline replay can invent one. Repairing such a
-  ledger needs a verb nobody has written yet.
+  fact is a payload on the recorded line, and no offline replay can invent one. That verb is now
+  written: ADR [0344](0344-a-correction-supersedes-a-recorded-line.md) adds an appended correction
+  line and the `lane reconcile` sweep that writes it (#7433).

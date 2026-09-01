@@ -31,6 +31,7 @@ import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
+import {closureReader, type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
@@ -762,6 +763,65 @@ const migrate = leafCommand(
 	),
 );
 
+const reconcile = leafCommand(
+	"reconcile",
+	{
+		root: rootFlag,
+		check: Flag.boolean("check").pipe(
+			Flag.withDescription("judge every lane and report, appending nothing"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the closure read uses (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({root, check, repo}) {
+		let roots: ReadonlyArray<ReconcileRoot>;
+		if (Option.isSome(root)) {
+			// A relocated root holds whatever was opened into it, so both templates are candidates and
+			// the lane's own machine id picks — never the root's position.
+			roots = [{root: root.value, templatePaths: [templatePath("Issue"), templatePath("Chore")]}];
+		} else {
+			const ground = yield* deriveRepoRoot(process.cwd());
+			if (ground._tag !== "Derived") {
+				yield* emit(repoGroundRefusal("fabrika lane reconcile", ground));
+				return;
+			}
+			roots = [
+				{
+					root: `${ground.repoRoot}/${DEFAULT_LANES_ROOT}`,
+					templatePaths: [templatePath("Issue")],
+				},
+				{
+					root: `${ground.repoRoot}/${DEFAULT_CHORES_ROOT}`,
+					templatePaths: [templatePath("Chore")],
+				},
+			];
+		}
+		yield* emit(
+			yield* onGround(
+				"reconcile",
+				roots.map((swept) => swept.root),
+				process.cwd(),
+				() =>
+					runReconcile({
+						roots,
+						check,
+						closures: closureReader(Option.getOrNull(repo), process.env),
+						now: new Date().toISOString(),
+					}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Which lanes folded on a merge the board says closed nothing."),
+	Command.withDescription(
+		'Sweep every lane on disk and answer which ones recorded a merge closure the board disagrees with, then append the line that corrects it. ADR 0343 sends a merged `Part of #N` back to `queued` instead of folding the lane to a terminal, but the routing fact rides the recorded event as a `partial` payload — so every lane shipped before that field existed replays through the guard\'s fallthrough and still folds to `complete` over an open, buildable issue, which is #7433. The log is append-only and no recorded line is ever rewritten: the repair is a `<TASK>.CORRECTED` line naming the earlier line\'s own `at` and carrying the payload it should have had, which the fold resolves before any message reaches the machine (ADR 0344). A lane is nominated OFFLINE — the latest recorded event that took a `merge:partial` cell\'s fallthrough carrying no answer, located off the compiled machine, so a region declaring no partial arm (an epic tail) nominates nothing — and only a nominated lane costs a board read, so a clean sweep makes no request. Each lane carries one verdict: "current" (no recorded event reached the guard without its answer), "misrouted" (the board proves the merge partial, --check withheld the append), "corrected" (judged and appended), "closes" (the merge closed the issue — untouched, and it still folds to complete), "unmigrated" (this lane\'s own machine declares no merge-closure guard and the committed template it booted from does, so nothing here can judge its merge — run `fabrika lane migrate` and re-run this sweep; an emitted epic machine and an epic tail declare none by design and read "current"), "unknown" (the board did not answer, or the lane drives no issue — never read as "closes"), "unreadable" (the lane record or its log could not be read, or the log does not replay — a row, since nothing here caused it and nothing here can fix it) or "unappended" (this run tried to append and could not). A misrouted or corrected row carries corrects: {task, at, state}, the merged prs proving it, and the from/to stateValue the correction moves the lane between. stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one, which is read as a relocated root whose lanes may have booted from either committed template; an absent root holds no lanes and is not a fault. Exits 8 (at least one append this run tried did not land, so whether that lane still needs a correction is UNKNOWN — those lanes are named on stderr and so are the ones that were corrected), 11 (a committed template could not be read, or a root is there and could not be listed — the lane set is UNKNOWN, never empty), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot). Examples: fabrika lane reconcile --check · fabrika lane reconcile',
+	),
+);
+
 const view = leafCommand(
 	"view",
 	{
@@ -815,6 +875,7 @@ export const laneCommand = Command.make("lane").pipe(
 		pushLane,
 		stale,
 		migrate,
+		reconcile,
 		claim,
 		release,
 		adopt,

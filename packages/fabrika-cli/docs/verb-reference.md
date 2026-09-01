@@ -574,6 +574,7 @@ snapshot. Lane state is local and never committed.
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
 | `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch to `ORIG_HEAD` and pushes nothing |
 | `lane stale` | which lanes have gone quiet with something owed on them — offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
+| `lane reconcile` | which lanes recorded a merge closure the board disagrees with, and the `<TASK>.CORRECTED` line that supersedes it — `--check` reports and appends nothing; ordered after `lane migrate`, which is what an `unmigrated` row names (ADR 0344) |
 | `lane claim` / `release` | who is driving this lane |
 
 **Exit codes.** `4` the lane read in full and is not the shape · `7` the lane is absent · `8` the
