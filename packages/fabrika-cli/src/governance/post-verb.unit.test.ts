@@ -13,6 +13,7 @@ import {
 import type {ExecResult} from "../io/exec.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {CONTENT, PATHS_AT} from "../review/fixtures.test-support.ts";
+import {FENCE, compose as supersedeWith} from "../review/supersede.ts";
 import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
 import {
 	BARE_AT_PATH,
@@ -23,6 +24,7 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_HEAD,
+	SUPERSEDES_VERDICT,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
@@ -40,6 +42,8 @@ const FLOOR = 31_863_008_185;
 
 const BODY = "The sweep found no contradiction; no anchored invariant is in reach.\n";
 const URL = "https://github.com/o/r/pull/4321#issuecomment-5154902211";
+/** The day the superseded heading is dated from — pinned so the envelope is a fixed string. */
+const ON = Date.parse("2026-09-01T00:00:00Z");
 
 /** A fixture's canned JSON, served as the 200 the REST read now parses. */
 const served = (result: ExecResult) => ({status: 200, body: result.stdout});
@@ -59,6 +63,8 @@ const options = {
 		string | undefined
 	>,
 	stdin: Effect.succeed({_tag: "Text", text: BODY} as StdinRead),
+	supersede: false,
+	now: Effect.succeed(ON),
 };
 
 const layerFor = (script: ReadonlyArray<Scripted>) => {
@@ -83,6 +89,38 @@ const governing = (...extra: ReadonlyArray<Scripted>): ReadonlyArray<Scripted> =
 	...extra,
 ];
 
+/**
+ * A standing verdict at the SAME head, plus the PATCH and the read-back an append lands.
+ *
+ * The read-back is composed through the real envelope rather than a hand-written string: the verb
+ * compares the comment it reads back against the bytes it sent, so a fixture assembled by hand would
+ * be asserting the test author's idea of the envelope instead of the module's.
+ */
+const reposting = (prior: string): ReadonlyArray<Scripted> => [
+	[PULL, served(pull())],
+	...binding(),
+	[PATHS_AT(), paths(".decisions/0240-x.md", "src/cart.ts")],
+	[VIEWER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+	[COMMENTS, served(comments({id: 77, body: prior}))],
+	[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
+	[
+		READ_BACK,
+		{
+			status: 200,
+			body: JSON.stringify({body: supersedeWith(prior, composed(), new Date(ON))}),
+		},
+	],
+];
+
+/** The body one write carried, as text. */
+const written = (
+	seams: {readonly requests: ReadonlyArray<string>; readonly bodies: ReadonlyArray<string>},
+	pattern: RegExp,
+): string => {
+	const index = seams.requests.findIndex((request) => pattern.test(request));
+	return index === -1 ? "" : String(JSON.parse(seams.bodies[index] ?? "{}").body ?? "");
+};
+
 describe("runPost", () => {
 	it("composes the marker, upserts one comment, reads it back, and prints the line", async () => {
 		const out = await run(
@@ -96,18 +134,52 @@ describe("runPost", () => {
 	});
 
 	// `composed()` defaults to HEAD, and that is load-bearing: the upsert key carries a head
-	// dimension, so only a re-post at the SAME head takes the edit path at all.
-	it("edits the namespace's own comment rather than stacking a second one", async () => {
-		const out = await run([
-			[PULL, served(pull())],
-			...binding(),
-			[PATHS_AT(), paths(".decisions/0240-x.md", "src/cart.ts")],
-			[VIEWER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-			[COMMENTS, served(comments({id: 77, body: composed("older\n")}))],
-			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READ_BACK, {status: 200, body: JSON.stringify({body: composed()})}],
-		]);
-		expect(out.stdout).toContain("\tedited\t");
+	// dimension, so only a re-post at the SAME head takes the append path at all.
+	it("appends into the namespace's own comment rather than stacking a second one", async () => {
+		const shell = fakeSeams(reposting(composed("older\n")));
+		const out = await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.mergeAll(shell.layer, unconfigured)),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tsuperseded\t");
+	});
+
+	it("leaves the retired verdict's bytes verbatim below the fence", async () => {
+		const shell = fakeSeams(reposting(composed("the sweep before this one\n")));
+		await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.mergeAll(shell.layer, unconfigured)),
+		);
+		const body = written(shell, PATCH);
+		expect(body.split("\n")[0]).toBe(composed().split("\n")[0]);
+		expect(body).toContain(FENCE);
+		expect(body).toContain("the sweep before this one");
+	});
+
+	// The flip is the one this refusal exists for: a FAIL PATCHed over by a PASS leaves nothing
+	// showing a gate ever blocked, and GitHub keeps no comment-body history to recover it from.
+	it("refuses a polarity flip at the same head without --supersede, writing nothing", async () => {
+		const standing = composed("the sweep that blocked\n").replace("PASS", "FAIL");
+		const shell = fakeSeams(reposting(standing));
+		const out = await Effect.runPromise(
+			Effect.provide(runPost(options), Layer.mergeAll(shell.layer, unconfigured)),
+		);
+		expect(out.code).toBe(SUPERSEDES_VERDICT);
+		expect(out.stderr.join("\n")).toContain(`a standing FAIL for governance at ${HEAD}`);
+		expect(shell.requests.some((call) => PATCH.test(call) || CREATE.test(call))).toBe(false);
+	});
+
+	it("appends over a flip once --supersede says so, and the retired FAIL survives", async () => {
+		const standing = composed("the sweep that blocked\n").replace("PASS", "FAIL");
+		const shell = fakeSeams(reposting(standing));
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runPost({...options, supersede: true}),
+				Layer.mergeAll(shell.layer, unconfigured),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tsuperseded\t");
+		expect(written(shell, PATCH)).toContain("the sweep that blocked");
 	});
 
 	// The head dimension of the upsert key. It shipped in v1 under #4007 and this tree did not carry

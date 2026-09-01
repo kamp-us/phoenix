@@ -292,13 +292,14 @@ Contract:
 | `governance sweep` | the uncited live-`accepted` records whose domain a subject touches, ranked |
 | `governance guards` | the anchored invariants the bound diff removes or modifies |
 | `governance base` | this skill's own text at the subject's merge base — the self fence's bytes |
-| `governance post` | the single sanctioned emit of the `governance` namespace verdict |
+| `governance post` | the single sanctioned emit of the `governance` namespace verdict — compose, bind, append into one comment per head or range, read back |
 | `governance digest` | the decision records that landed in a window, with each landing commit |
 | `governance readout` | the digest-publishing protocol: compose, upsert, read back |
 
 **Exit codes.** The shared table, plus `12` the `--sha` given is not the PR's head · `13` a read
-completed and its scope is provably incomplete · `14` this diff derives no governance namespace.
-`4` is a deliberate gap.
+completed and its scope is provably incomplete · `14` this diff derives no governance namespace ·
+`17` a standing verdict of the opposite polarity at this head, or over this range, would be retired
+and `--supersede` was not passed. `4` is a deliberate gap.
 
 Three behaviours are worth knowing:
 
