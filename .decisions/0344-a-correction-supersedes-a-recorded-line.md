@@ -39,11 +39,18 @@ Three pieces:
    is removed from the replayed log and its payload is written onto the entry it names, so the
    machine sees exactly the log that should have been recorded. Corrections apply in log order; a
    later one supersedes an earlier one over the same line.
-3. `lane reconcile` is the sweep that writes them. It nominates offline — the latest recorded event
-   that took a `merge:partial` cell's fallthrough carrying no answer, located off the compiled
-   machine rather than off a state-name list — then asks the board for that one lane's closure
-   through the same nominator and the same `traceClosure` `lane prove` uses, and appends only on
-   a proven `Partial`.
+3. `lane reconcile` is the sweep that writes them. It finds the candidate offline — the latest
+   recorded event that took a `merge:partial` cell's fallthrough carrying no answer, located off the
+   compiled machine rather than off a state-name list — then reads that one merge's closure through
+   `traceClosure`, `lane prove`'s own ship-stage judgement, and appends only on a proven `Partial`.
+
+**The closure is read off the pull request the recorded line already names, not off a nomination.**
+A nominator answers "which PR is this issue's", and the terminal being corrected answered that in
+writing. It would also answer wrongly: a **merged** `Part of #N` is invisible to both nomination
+reads, since the closing edge is built from closing keywords and the search half is `is:open`, so
+their union finds nothing for exactly the case this verb catches. Reading the named PR is one
+request, exact, and needs no widening of a read three other verbs depend on. A line naming no PR
+falls back to the nominator, which is the best answer available without evidence on the line.
 
 **A correction addresses its target by that target's own `at`, and ambiguity is a defect.** A line
 number would not survive a reader that skips blank lines; a position would not survive an append.

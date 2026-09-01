@@ -11,11 +11,16 @@ import {DEFAULT_LANES_ROOT} from "./store.ts";
 const NOW = "2026-09-01T12:00:00.000Z";
 const at = (n: number): string => `2026-08-29T23:1${n}:00.000Z`;
 
-const line = (event: string, when: string): string =>
-	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: when})}\n`;
+const SHIPPED_PR = "https://github.com/kamp-us/phoenix/pull/7328";
 
-/** The pre-0343 ledger #7433 reports: four events, the ship `DONE` carrying no `partial`. */
-const SHIPPED_LOG = `${line("WIP", at(0))}${line("DONE", at(1))}${line("PASS", at(2))}${line("DONE", at(3))}`;
+const line = (event: string, when: string, pr?: string): string =>
+	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: when, ...(pr === undefined ? {} : {pr})})}\n`;
+
+/**
+ * The pre-0343 ledger #7433 reports: four events, the ship `DONE` naming the PR it shipped and
+ * carrying no `partial`.
+ */
+const SHIPPED_LOG = `${line("WIP", at(0))}${line("DONE", at(1))}${line("PASS", at(2))}${line("DONE", at(3), SHIPPED_PR)}`;
 
 interface LaneFixture {
 	readonly lane: string;
@@ -71,22 +76,22 @@ const tree = (lanes: ReadonlyArray<LaneFixture>, extra: FakeFsOptions = {}) => {
 const partial = (prs: ReadonlyArray<number>): Closure => ({_tag: "Partial", prs});
 const closes = (why: string): Closure => ({_tag: "Closes", why});
 
-/** The sweep with a scripted closure reader, and the log of every issue it asked the board about. */
+/** The sweep with a scripted closure reader, and every `(issue, pr)` pair it asked the board about. */
 const sweep = (
 	fs: ReturnType<typeof fakeFs>,
 	closure: (issue: number) => ClosureRead,
 	check = false,
 ) => {
-	const asked: number[] = [];
+	const asked: Array<readonly [number, string | null]> = [];
 	return Effect.runPromise(
 		Effect.provide(
 			runReconcile({
 				roots: [{root: DEFAULT_LANES_ROOT, templatePaths: [TEMPLATE]}],
 				check,
 				now: NOW,
-				closures: (issue) =>
+				closures: (issue, pr) =>
 					Effect.sync(() => {
-						asked.push(issue);
+						asked.push([issue, pr]);
 						return closure(issue);
 					}),
 			}),
@@ -110,7 +115,7 @@ describe("runReconcile", () => {
 				key: "6980",
 				root: DEFAULT_LANES_ROOT,
 				verdict: "corrected",
-				corrects: {task: "issue", at: at(3), state: "ship"},
+				corrects: {task: "issue", at: at(3), state: "ship", pr: SHIPPED_PR},
 				prs: [7328],
 				from: "complete",
 				to: JSON.stringify({pipeline: {issue: "queued"}}),
@@ -173,7 +178,7 @@ describe("runReconcile", () => {
 		]);
 	});
 
-	it("asks the board only about a lane whose log nominates a correctable line", async () => {
+	it("asks only about a correctable lane, and hands the reader the PR its line names", async () => {
 		const {asked} = await sweep(
 			tree([
 				{lane: "6980", log: SHIPPED_LOG},
@@ -182,7 +187,7 @@ describe("runReconcile", () => {
 			]),
 			() => ({_tag: "Read", closure: partial([7328])}),
 		);
-		expect(asked).toEqual([6980]);
+		expect(asked).toEqual([[6980, SHIPPED_PR]]);
 	});
 
 	it("reads an unreadable board as unknown, never as a closing merge", async () => {

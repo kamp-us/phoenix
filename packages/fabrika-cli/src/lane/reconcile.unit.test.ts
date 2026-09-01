@@ -8,7 +8,7 @@ import {describe, expect, it} from "vitest";
 import {coderWorkflow} from "./fixtures.test-support.ts";
 import {applyCorrections, deriveStatus, foldLog, type LogEntry, parseLog} from "./fold.ts";
 import {type CompiledLane, compile} from "./machine.ts";
-import {correctionEntry, findMisroute} from "./reconcile.ts";
+import {correctionEntry, findMisroute, pullNumberIn} from "./reconcile.ts";
 
 const lane = (): CompiledLane => {
 	const result = compile(coderWorkflow());
@@ -45,14 +45,20 @@ const stateOf = (entries: ReadonlyArray<LogEntry>): string => {
 
 describe("findMisroute", () => {
 	it("nominates the ship DONE a pre-0343 ledger recorded with no closure answer", () => {
-		const found = findMisroute(lane(), shipped());
+		const pr = "https://github.com/kamp-us/phoenix/pull/7328";
+		const found = findMisroute(lane(), shipped({pr}));
 		expect(found).toEqual({
 			_tag: "Correctable",
 			task: "issue",
 			at: at(3),
 			state: "ship",
 			event: "DONE",
+			pr,
 		});
+	});
+
+	it("carries no PR where the line named none, rather than one from elsewhere in the log", () => {
+		expect(findMisroute(lane(), shipped())).toMatchObject({pr: null});
 	});
 
 	it("nominates nothing once that DONE carries its answer", () => {
@@ -124,6 +130,19 @@ describe("the correction line", () => {
 	it("makes an unresolvable correction a fold defect, never a silently skipped line", () => {
 		const folded = foldLog(lane(), [...shipped(), correctionEntry("issue", at(9), at(8))]);
 		expect(folded._tag).toBe("Unreplayable");
+	});
+});
+
+describe("pullNumberIn", () => {
+	it("reads the number off the ref a lane event carries", () => {
+		expect(pullNumberIn("https://github.com/kamp-us/phoenix/pull/7328")).toBe(7328);
+		expect(pullNumberIn("https://github.com/kamp-us/phoenix/pull/7328#issuecomment-1")).toBe(7328);
+	});
+
+	it("reads a ref that names no PR as no evidence rather than as a number to guess at", () => {
+		expect(pullNumberIn(null)).toBeNull();
+		expect(pullNumberIn("https://github.com/kamp-us/phoenix/issues/7328")).toBeNull();
+		expect(pullNumberIn("pull/seven")).toBeNull();
 	});
 });
 

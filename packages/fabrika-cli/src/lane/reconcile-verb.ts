@@ -20,6 +20,8 @@ import {Effect, FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {appendText, exists, readDir, readFile} from "../io/fs.ts";
 import {resolveRepo} from "../io/issues.ts";
+import {getPullRequest} from "../io/pulls.ts";
+import {issueRefsOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE} from "./codes.ts";
@@ -29,7 +31,7 @@ import {compileText} from "./machine.ts";
 import {graftContext} from "./migrate.ts";
 import {nominatePulls} from "./nominate.ts";
 import {type Closure, traceClosure} from "./prove.ts";
-import {correctionEntry, declaresClosureGuard, findMisroute} from "./reconcile.ts";
+import {correctionEntry, declaresClosureGuard, findMisroute, pullNumberIn} from "./reconcile.ts";
 import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane reconcile";
@@ -39,22 +41,32 @@ export type ClosureRead =
 	/** The board did not answer. Never read as `Closes` — that is the fold #7433 exists to stop. */
 	| {readonly _tag: "Unknown"; readonly reason: string};
 
-export type ClosureReader<R> = (issue: number) => Effect.Effect<ClosureRead, never, R>;
+export type ClosureReader<R> = (
+	issue: number,
+	pr: string | null,
+) => Effect.Effect<ClosureRead, never, R>;
 
 /**
- * The board-backed reader: one issue's merged pull requests, through the group's one nominator, read
- * for closure exactly as `lane prove` reads it at the ship stage (ADR 0343).
+ * The board-backed reader: what the merge behind this terminal actually closed, judged by
+ * `traceClosure` — `lane prove`'s own ship-stage read (ADR 0343).
  *
- * `open-or-merged`, because every candidate here is by definition a merge that already landed. A
- * nomination that failed is `Unknown` and never `Closes` — reading a failed read as a closing merge
- * is the permissive fold this verb exists to undo.
+ * **It reads the PR the recorded line already names, and nominates nothing.** That is not a shortcut
+ * past the group's one nominator but a different question: a nominator answers "which PR is this
+ * issue's", and the terminal being corrected already answered it in writing. Nominating here would
+ * also answer wrongly — a MERGED `Part of #N` is invisible to both nomination reads, since the
+ * closing edge is built from closing keywords and the search half is `is:open`, so the union finds
+ * nothing for exactly the case this verb exists to catch (#7433).
+ *
+ * A line naming no PR falls back to the nominator at `open-or-merged`, which is the best answer
+ * available without evidence on the line. Either way an unreadable answer is `Unknown` and never
+ * `Closes` — reading a failed read as a closing merge is the permissive fold this verb undoes.
  */
 export const closureReader = (
 	repo: string | null,
 	env: Readonly<Record<string, string | undefined>>,
 ): ClosureReader<ChildProcessSpawner.ChildProcessSpawner> => {
 	let resolved: string | null = null;
-	return (issue) =>
+	return (issue, pr) =>
 		Effect.gen(function* () {
 			if (resolved === null) {
 				const attempt = yield* resolveRepo(repo, env);
@@ -66,10 +78,36 @@ export const closureReader = (
 				}
 				resolved = attempt.value;
 			}
-			const nominated = yield* nominatePulls(resolved, issue, "open-or-merged");
-			return nominated._tag === "Unreadable"
-				? {_tag: "Unknown" as const, reason: `cannot read ${nominated.what}: ${nominated.reason}`}
-				: {_tag: "Read" as const, closure: traceClosure(issue, nominated.pulls)};
+			const number = pullNumberIn(pr);
+			if (number === null) {
+				const nominated = yield* nominatePulls(resolved, issue, "open-or-merged");
+				return nominated._tag === "Unreadable"
+					? {_tag: "Unknown" as const, reason: `cannot read ${nominated.what}: ${nominated.reason}`}
+					: {_tag: "Read" as const, closure: traceClosure(issue, nominated.pulls)};
+			}
+			const pull = yield* getPullRequest(resolved, number);
+			if (pull._tag === "Unknown") {
+				return {_tag: "Unknown" as const, reason: `cannot read PR #${number}: ${pull.reason}`};
+			}
+			if (pull._tag === "Absent") {
+				return {
+					_tag: "Unknown" as const,
+					reason: `the line names PR #${number}, which is not there`,
+				};
+			}
+			const refs = issueRefsOf(pull.value.body);
+			return {
+				_tag: "Read" as const,
+				closure: traceClosure(issue, [
+					{
+						number: pull.value.number,
+						open: pull.value.state === "open",
+						merged: pull.value.merged,
+						linkedIssues: refs.numbers,
+						linkKind: refs.kind,
+					},
+				]),
+			};
 		});
 };
 
@@ -118,8 +156,13 @@ interface LaneRow {
 	readonly verdict: Verdict;
 	/** Why this lane could not be corrected, or why it needed no correcting; absent on `current`. */
 	readonly reason?: string;
-	/** The recorded line the correction supersedes; absent unless one was nominated. */
-	readonly corrects?: {readonly task: string; readonly at: string; readonly state: string};
+	/** The recorded line the correction supersedes, and the PR it named; absent unless one was found. */
+	readonly corrects?: {
+		readonly task: string;
+		readonly at: string;
+		readonly state: string;
+		readonly pr: string | null;
+	};
 	/** The merged PRs whose `Part of #N` proves the closure partial. */
 	readonly prs?: ReadonlyArray<number>;
 	/** What the lane folds to now, and what it would fold to corrected. */
@@ -219,7 +262,12 @@ const reconcileLane = <R>(
 				: {key, root, verdict: "current"};
 		}
 
-		const corrects = {task: misroute.task, at: misroute.at, state: misroute.state};
+		const corrects = {
+			task: misroute.task,
+			at: misroute.at,
+			state: misroute.state,
+			pr: misroute.pr,
+		};
 		const issue = issueOf(root, name);
 		if (issue === null) {
 			return {
@@ -230,7 +278,7 @@ const reconcileLane = <R>(
 				reason: "this lane drives no issue, so no board read can say what its merge closed",
 			};
 		}
-		const read = yield* options.closures(issue);
+		const read = yield* options.closures(issue, misroute.pr);
 		if (read._tag === "Unknown") {
 			return {key, root, verdict: "unknown", corrects, reason: read.reason};
 		}

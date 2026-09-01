@@ -22,6 +22,16 @@ export type Misroute =
 			readonly at: string;
 			readonly state: string;
 			readonly event: string;
+			/**
+			 * The pull request the line names as its own evidence, or `null` where it named none.
+			 *
+			 * The whole reason a reader need not nominate: the recorded terminal already says which
+			 * merge it stands on, so what that merge closed is one read of one PR rather than a search
+			 * over an issue's candidates — and a merged `Part of #N` is invisible to both nomination
+			 * reads anyway, the closing edge carrying no `Part of` and the index searching open PRs
+			 * only (#7433).
+			 */
+			readonly pr: string | null;
 	  }
 	/** No recorded line reads the guard, or every one that does already carries its answer. */
 	| {readonly _tag: "Settled"; readonly why: string}
@@ -58,6 +68,7 @@ export const findMisroute = (lane: CompiledLane, entries: ReadonlyArray<LogEntry
 			at: entry.at,
 			state: state.type,
 			event: bareEvent(entry.event),
+			pr: entry.pr ?? null,
 		};
 	}
 	return (
@@ -79,6 +90,15 @@ export const findMisroute = (lane: CompiledLane, entries: ReadonlyArray<LogEntry
  */
 export const declaresClosureGuard = (lane: CompiledLane): boolean =>
 	Object.values(lane.tasks).some((task) => task.partialStates.size > 0);
+
+/**
+ * The pull request number a `pr` ref names, or `null` where the ref is not one this repo's verbs
+ * wrote — a ref that names no PR is read as no evidence, never as a number to guess at.
+ */
+export const pullNumberIn = (ref: string | null): number | null => {
+	const matched = ref === null ? null : /\/pull\/(\d+)(?:[/#?].*)?$/.exec(ref);
+	return matched?.[1] === undefined ? null : Number(matched[1]);
+};
 
 /** The line a proven-partial merge appends: it supersedes {@link Misroute} and moves no task. */
 export const correctionEntry = (task: string, corrects: string, at: string): LogEntry => ({
