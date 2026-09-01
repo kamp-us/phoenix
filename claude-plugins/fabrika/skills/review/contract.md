@@ -597,7 +597,8 @@ fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. Under `--wait`, a first line
-`settle\t<settled|budget-exhausted|head-moved|governance-owed>`; without it that line is absent. Then
+`settle\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>`; without it that
+line is absent. Then
 `ci\t<sha>\t<green|red|pending|no-producer>`, then `run\t<count>` — how many check runs were
 enumerated, so the line channel carries its own completeness proof. Then one line per status present
 —
@@ -677,11 +678,22 @@ a bound that ran out:
   — but unlike `budget-exhausted` the caller clears this itself: fire the governance skill, then
   re-read. The distinguishing read is the workflow run, never the check-run alone: a floor whose run
   is still in flight has not published yet and **is** waited on, unchanged (#7392).
+- `governance-stale` — the rollup is `red`, the only **failing** check at this head is `governance
+  floor at head`, its published verdict is `stale`, and a `governance-floor` run exists at this head
+  to vouch that the row is this repo's own. Same shape as `governance-owed` on ADR 0318's other
+  rollup: a verdict bound to an earlier head concludes `failure` rather than staying pending, so the
+  read returns at once with a red its own caller clears — which on a repair round is every round
+  after the first (#7441). Three reds it never covers: any other failing check beside the floor, a
+  floor whose verdict is a real `fail`, and a floor that is `unresolved`, which is UNKNOWN and so
+  nobody's to discount (ADR 0092). Unlike the `absent` half, an in-flight floor run does **not**
+  disqualify — that is the caller's own re-fire mid-republish. The published state is read off the
+  check-run's `output.title`, never re-derived here: `review ci` relays what the PR shows rather than
+  producing a second answer about the floor (ADR 0228).
 
 Every refusal and the `no-producer` answer are states no waiting changes, so `--wait` returns them
 on the **first** read rather than burning the budget: the `16` head has no gate of this repo's coming
-at all, and a repo with no producer has no run to wait for. `governance-owed` is the same principle
-reaching a state that only looks like an ordinary `pending`.
+at all, and a repo with no producer has no run to wait for. The two governance tokens are the same
+principle reaching states that only look like an ordinary `pending` and an ordinary `red`.
 
 If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
 the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
@@ -761,6 +773,18 @@ check	success	2
 check	in_progress	1
 ```
 
+The repair round of that same PR: the verdict is bound to the head before this one, so the floor
+concludes `failure` and the rollup is `red` — a red the caller clears with one governance post:
+
+```
+$ fabrika review ci 4321 --sha 03135b91 --wait
+settle	governance-stale
+ci	03135b91	red
+run	3
+check	success	2
+check	failure	1
+```
+
 **Grounding**
 
 - #4552 — the CI-at-head read was dispatch-prompt-dependent in v1; a gate ruled on a live RED
@@ -776,6 +800,10 @@ check	in_progress	1
   the governance floor, then posted the verdict that cleared it in one round. The waiting verb and
   the thing waited on were the same shell, so `budget-exhausted` sent a self-clearing condition to a
   human park.
+- #7441 — the other half of the same root cause, found reviewing #7392's own PR. A repair round's
+  floor is `stale`, not `absent`, so it concludes `failure` and `--wait` returns `red` on the first
+  read. A reviewer following this skill's rule that a red rollup is the code class's execution
+  evidence would FAIL a PR over a floor it had just cleared.
 
 ---
 

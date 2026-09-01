@@ -199,16 +199,25 @@ the rollup. Each token routes on its own:
   [0318](../../../../.decisions/0318-the-governance-floor-reports-through-a-check-run.md)). This is
   not a park: fire §6's governance skill, then call `review ci --wait` again and judge on the
   `settled` it returns. Reaching it means §6 was run late, not that anything is wrong with the PR.
+- `governance-stale` — the same floor on its other rollup, and **the red beside it is not a FAIL you
+  may act on**. On a repair round the governance verdict is bound to the previous head, so the floor
+  concludes `failure` rather than staying pending: the rollup is `red`, and the only failing check is
+  a floor whose verdict is **yours** to re-post (#7441). Route it exactly like `governance-owed` —
+  fire §6's governance skill, re-read, and judge on what comes back. The verb reaches this token only
+  when nothing else at the head is failing, so a `settled` red is still the execution evidence it
+  always was.
 
 The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
 so a `16` head, a repo with no producer, or a floor waiting on you never burns the budget.
 
 **On a `governance: required` diff, fire §6's governance skill before you wait on CI.** The floor
-check-run at the head cannot leave `in_progress` until a governance verdict binds there, and you are
-the shell that owes it — so a `--wait` run first is a wait on yourself. The verb now answers
-`governance-owed` instead of sleeping through the budget, but that answer costs you a second call
-where the right order costs none ([#7392](https://github.com/kamp-us/phoenix/issues/7392); §1's
-`governance` token is what tells you which order you are in).
+check-run at the head cannot go green until a governance verdict binds there, and you are the shell
+that owes it — so a `--wait` run first is a wait on yourself. The verb names that rather than
+misrouting it (`governance-owed` on a first round, `governance-stale` on a repair one), but either
+answer costs you a second call where the right order costs none
+([#7392](https://github.com/kamp-us/phoenix/issues/7392),
+[#7441](https://github.com/kamp-us/phoenix/issues/7441); §1's `governance` token is what tells you
+which order you are in).
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no
@@ -259,9 +268,9 @@ undisclosed that this gate could see"* — never "no deviations exist".
   reads `harness: false` and still owes the verdict — PR #5604 got a clean PASS that way and the
   ship gate then blocked on `ns governance absent` (#5607).
   **Fire it before the code class's `review ci --wait`, not after.** The floor check-run at the head
-  stays `in_progress` until your verdict binds there, so waiting first is waiting on yourself; the
-  verb answers `governance-owed` rather than sleeping through the budget, and this order avoids the
-  round entirely (#7392).
+  does not go green until your verdict binds there, so waiting first is waiting on yourself; the verb
+  answers `governance-owed` or `governance-stale` rather than misrouting the read, and this order
+  avoids the round entirely (#7392, #7441).
   **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
   arrival" is the deadlock ADR 0293 rules out: the third refusal guarding `operate`'s `FAIL` row —
   which owns that rule, this is only a pointer to it — records no FAIL until every derived
