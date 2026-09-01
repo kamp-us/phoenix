@@ -432,7 +432,7 @@ Relay its answer, never your own reading of the PR:
 
 | `reconcile` says | Record |
 | --- | --- |
-| `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped` |
+| `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below) |
 | `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
 | `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
@@ -665,6 +665,15 @@ back, so which cell still owes the rendered verdict is a fact in the ledger rath
 reconstruction. A child whose range renders nothing derives `review-ui` nowhere, carries no
 `deferred` field, and proves exactly as it always did (ADR
 [0340](../../../../.decisions/0340-an-epic-childs-review-ui-is-the-tails-by-construction.md)).
+
+**A merged PR that closed nothing sends the lane round rather than folding it.** A `LANDED` whose
+merge carried `Part of #N` records its `DONE` as always, and the machine takes it back to `queued`
+instead of to `shipped` — the criteria that PR left undischarged are still buildable, and the issue
+the board still calls open now has a lane that agrees. You record nothing extra and read nothing
+extra: `lane prove` reads the closure off the merged PR's own body and `lane report` lands it as
+`partial` on the event line, so what you do is route the leaf `lane status` prints next (ADR
+[0343](../../../../.decisions/0343-a-partial-merge-sends-the-lane-round-again.md)). A closing merge
+folds to `shipped` exactly as it always did.
 
 `lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
 of `review`, and a reviewer's park out of either review cell — and answers `not-required` at exit

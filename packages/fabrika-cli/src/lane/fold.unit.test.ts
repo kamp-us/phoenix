@@ -702,6 +702,29 @@ describe("the deferral a proven PASS carries (#7041)", () => {
 	});
 });
 
+/**
+ * The routing payload a ship's `DONE` carries (ADR 0343). Absent reads as a closing merge, so the
+ * whole ledger written before the field existed folds byte-for-byte as it did.
+ */
+describe("the partial merge a ship DONE carries (#7382)", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.DONE","at":"t"${fields}}\n`;
+
+	it("carries the flag back off the line, and refuses a shape that is not a boolean", () => {
+		expect(parseLog(line(`,"partial":true`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", partial: true}],
+		});
+		expect(parseLog(line(`,"partial":"yes"`))).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("leaves a closing merge's line without the field", () => {
+		expect(parseLog(line(""))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t"}],
+		});
+	});
+});
+
 describe("the park cause a BLOCKED carries (#6480)", () => {
 	const caused = (task: string, event: string, cause: string): LogEntry => ({
 		...entry(task, event),
