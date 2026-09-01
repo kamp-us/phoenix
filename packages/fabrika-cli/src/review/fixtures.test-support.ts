@@ -113,10 +113,27 @@ export const binding = (
 export const files = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(JSON.stringify(names.map((filename) => ({filename}))));
 
+/**
+ * The check-run envelope at a commit. `title` rides an `output` object, where the platform puts it —
+ * a run that publishes no output has no `output.title`, which is a different fact from an empty one.
+ */
 export const checkRuns = (
 	declared: number,
-	runs: ReadonlyArray<{name: string; status: string; conclusion: string | null}>,
-): ExecResult => okOut(JSON.stringify({total_count: declared, check_runs: runs}));
+	runs: ReadonlyArray<{
+		name: string;
+		status: string;
+		conclusion: string | null;
+		title?: string;
+	}>,
+): ExecResult =>
+	okOut(
+		JSON.stringify({
+			total_count: declared,
+			check_runs: runs.map(({title, ...run}) =>
+				title === undefined ? run : {...run, output: {title, summary: ""}},
+			),
+		}),
+	);
 
 /** The active workflow inventory, addressed the way the Actions API addresses one: by `path`. */
 export const inventory = (...paths: ReadonlyArray<string>): ExecResult =>
