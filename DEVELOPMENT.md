@@ -94,6 +94,20 @@ apps/web/
 
 Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
 
+## Rendering surfaces
+
+[`design-harness.json`](./design-harness.json) at the repo root is how `fabrika ui render` gets a headless browser onto a phoenix page. Without it every surface refuses on exit `19`, no capture is ever produced, and a rendered change ships judged only from reading CSS ([#7395](https://github.com/kamp-us/phoenix/issues/7395)).
+
+| Key | Value | Why |
+|---|---|---|
+| `command` | copy `apps/web/.env.example` to `.env` when none is there, then `pnpm dev` | Both dev legs. The copy is what makes a fresh worktree bootable — that file holds throwaway dev values only. Output is redirected to stderr, which is the stream a failed readiness probe quotes back. |
+| `url` | `http://localhost:3000` | Vite's port, which also proxies `/api` and `/fate` to the worker. |
+| `readyPath` | `/api/health` | 200 only once **both** legs answer. `/` would go green on Vite alone, and every capture would then show `şu an yüklenemedi` where the data belongs. |
+
+**Reachable today:** every route the SPA serves signed out — `/`, `/pano`, `/sozluk`, `/search`. **Not reachable:** anything behind a session. `storageState` is the schema's slot for that and filling it needs a minted preview session, tracked on [#7398](https://github.com/kamp-us/phoenix/issues/7398). A route the harness cannot reach refuses per surface (exit `15`) and names itself, so one gated route never drags the whole repo back to `19`.
+
+`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust.
+
 ## Conventions
 
 - **Effect is the backend control flow.** Services are `Context.Service` classes; methods are `Effect.fn("Service.method")` for free spans; errors are `Data.TaggedError`. Input validation lives in service methods, not the route layer (ADR [0013](./.decisions/0013-validation-in-service-methods.md)).
