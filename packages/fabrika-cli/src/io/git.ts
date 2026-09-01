@@ -618,6 +618,34 @@ export const isShallowClone: Shell<Attempt<boolean>> = Effect.gen(function* () {
 });
 
 /**
+ * Why a merge-base read named nothing, in the words that carry a remedy when there is one.
+ *
+ * A shallow clone's graft boundary is the one cause of this an operator can repair without touching
+ * a ref, a blocker or an issue: every traversal treats the boundary commit as a root, so a common
+ * ancestor beyond it is unreachable and {@link mergeBase} names nothing rather than erroring (the
+ * same split {@link traversedParents} documents, #6343). Reported as a generic reason it cost a
+ * supervisor round-trip diagnosing git history depth from outside the verb (#7292).
+ *
+ * **Git's own reason is never dropped, and the shallow clause is a hypothesis beside it.** The probe
+ * answers "is this clone shallow", which is a strictly weaker fact than "the shallowness is why
+ * merge-base named nothing" — an absent trunk ref and an unrelated-histories pair fail here too, and
+ * a shallow CI checkout is exactly where the first is likeliest. Asserting the cause would hand the
+ * operator a confident wrong diagnosis and lose the one piece of evidence that corrects it. A probe
+ * that itself fails drops the clause entirely: this names an unreadable read more precisely, and
+ * never turns one into a readable one.
+ *
+ * It lives here, beside the two reads it composes, so a third merge-base seam cannot be written
+ * without the diagnosis — the generic reason survived in `build reap` for exactly as long as the
+ * helper was private to one caller (#7407).
+ */
+export const noMergeBaseReason = (baseRef: string, reason: string): Shell<string> =>
+	Effect.map(isShallowClone, (shallow) =>
+		shallow._tag === "Ok" && shallow.value
+			? `no merge base with ${baseRef}: ${reason} — this clone is shallow, so if the common ancestor lies beyond its graft boundary git names none; \`git fetch --unshallow origin\` restores it, and no ref, blocker or issue needs changing`
+			: `no merge base with ${baseRef}: ${reason}`,
+	);
+
+/**
  * The parents git's *traversal* reports for one commit — the reading every ancestry answer rests on.
  *
  * Not the parents in the commit object: on a shallow clone's graft boundary the two disagree.
