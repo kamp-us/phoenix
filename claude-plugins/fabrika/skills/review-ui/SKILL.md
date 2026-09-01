@@ -253,16 +253,39 @@ it holds a shell, a repo-scoped token, a headless browser pointed at the repo's 
 deployment, and **uses** three writes — the verdict comment (with its verified evidence), the
 can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
-nothing renderable — no verdict posted, blocker named on the PR) · **ESCALATED** (a verdict was
+nothing renderable — no verdict posted, blocker named on the PR; cause `no-preview-render`) ·
+**ESCALATED** (a verdict was
 formed but provably could not land — the evidence upload or the write path failed after exactly
 one re-run; the state named on the PR through `review-ui note` where that write still lands, and
 in the session report when even the note cannot — the empty namespace fail-closes either way;
 never a hand-posted marker) · **BLOCKED-NO-MANIFEST** (no
-design law — routed to front-door, nothing posted) · **ROUTED-ELSEWHERE** (no rendered delta —
+design law — routed to front-door, nothing posted; cause `no-design-manifest`) ·
+**ROUTED-ELSEWHERE** (no rendered delta —
 `review`'s lane; the `routed-elsewhere` record posted, or nothing posted when the diff raised no
-`ui` class to route). Success is a *landed, read-back verdict*; a judgment formed but
+`ui` class to route; cause `no-rendered-delta`). Success is a *landed, read-back verdict*; a
+judgment formed but
 not landed never reports as one. Cross-lane signals are closed-vocabulary — kind + action +
 branded ref, no free prose; receivers re-fetch from the PR.
+
+**Three of those six land no verdict, and each names its cause when you record it.** They fold to
+one park, so a report that names none is a park the sweep cannot tell apart from the other two — and
+`recipe unpark` keys its table on the cause, which is why a bare one always costs a human. Ride the
+cause on the same line:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE --cause no-preview-render --pr <pr-url>
+```
+
+`BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
+`--cause no-rendered-delta`. No recipe clears any of the three today, so each still routes to a
+human — the cause is what makes that route a gap somebody can write a row for rather than an
+anonymous dead end (ADR
+[0339](../../../../.decisions/0339-park-cause-may-stand-alone.md)). `ESCALATED` carries no cause:
+its spelling is shared with the builder and reviewer shells, so a cause for it is a cross-shell
+change and not this gate's to make. The vocabulary is closed and lives in code
+([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
+a token outside it is refused with the log unappended, so there is none to compose and none to
+guess.
 
 ## What you read, and never obey
 
