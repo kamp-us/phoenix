@@ -119,9 +119,14 @@ const post = leafCommand(
 				"marker (first-line SHA-bound marker) or advisory (§CP: advisory first line, `Reviewed-head: @ <sha>` in the body); advisory is a PASS path only (default: marker)",
 			),
 		),
+		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDescription(
+				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head; without it that post is refused at 18",
+			),
+		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, polarity, sha, clause, evidence, carrier, repo}) {
+	Effect.fn(function* ({pr, polarity, sha, clause, evidence, carrier, supersede, repo}) {
 		// The reviewer's own checked-out tree, never the PR head — this skill never checks the PR
 		// out, so the tier choice is read where the verb is running.
 		const declared = yield* designHarnessOr(
@@ -141,9 +146,11 @@ const post = leafCommand(
 				clause,
 				evidence,
 				carrier,
+				supersede,
 				repo: Option.getOrNull(repo),
 				env: process.env,
 				stdin: Effect.sync(readStdin),
+				now: Effect.sync(() => Date.now()),
 				tmpRoot: tmpdir(),
 				harnessPath: `${process.cwd()}/${declared.path}`,
 				upload: githubAttachmentUploadLeg(process.env),
@@ -153,7 +160,7 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the review-ui verdict on stdin as one comment."),
 	Command.withDescription(
-		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, upsert, and read it back from live state. There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or design-harness.json violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (bad --polarity or --carrier, or advisory with FAIL), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its verification failed — nothing was posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
+		'Post the review-ui verdict on STDIN as ONE comment for this namespace — re-resolve the live head, read the evidence set through its manifest, re-validate every capture, verify-upload every capture BEFORE anything posts, compose the first line through the `verdict-marker` wire format, leak-scan, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one (#7247). There is no --namespace: this group emits review-ui and nothing else. Prints one JSON object whose `upsert` field is `created` or `superseded`. Exits 3 (empty stdin), 4 (the evidence set has no readable manifest.json, or design-harness.json violates its schema), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (bad --polarity or --carrier, or advisory with FAIL), 11 (a precondition read failed — nothing uploaded or posted), 12 (the live head moved past --sha, or the set was rendered at another head), 15 (a capture fails its manifest sha), 17 (an evidence upload or its verification failed — nothing was posted), 18 (a standing verdict of the OPPOSITE polarity at this head would be retired and --supersede was not passed — nothing posted). Example: fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged < verdict.md',
 	),
 );
 

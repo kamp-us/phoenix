@@ -75,6 +75,8 @@ The acceptance-criteria block arrives through the registered wire format, never 
 `absent` and `malformed` are findings about the issue, not licence to invent criteria — and not a
 terminal either, so carry them into the verdict you reach at the end rather than reporting one here
 (§ Terminal vocabulary). Read the binding column as printed — the three-outcome type, not a boolean.
+The sixth column is `standing` or `superseded`: only a `standing` row is a verdict in force, and a
+`superseded` one is a round already answered, printed so the record shows it (#7247).
 
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of
@@ -277,7 +279,7 @@ undisclosed that this gate could see"* — never "no deviations exist".
   itself by its own new rules: re-read this `SKILL.md` and the rubrics at the **merge-base**
   revision (`git show` — a bytes read that loads no instructions) and judge by those.
 
-## 7 — Emit: one comment per namespace, read back, bound to what you saw
+## 7 — Emit: append into one comment per namespace, read back, bound to what you saw
 
 ```bash
 fabrika review post $pr_number --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" <<'EOF'
@@ -289,7 +291,14 @@ EOF
 refuses when it moved — re-review, never re-bind. One invocation per namespace: a stacked second
 marker is un-anchored, resolves its namespace empty, and fail-closes a passing PR. **The verb is the
 only emit path** — a hand-posted marker is how a false PASS ships — and it reads its own comment
-back. On a control-plane PR pass `--carrier advisory` (head bound in the body as `Reviewed-head:`,
+back.
+
+**A re-post appends; it never replaces.** The fresh verdict takes the comment's first line and the
+one it retires survives verbatim below, under a dated `## Superseded verdict` heading — GitHub keeps
+no comment-body history, so a replaced verdict is a verdict gone (#7247). When your new polarity is
+the opposite of the one standing at this head — the ordinary FAIL-then-PASS of a body-only repair
+round — the post is exit `17` until you pass `--supersede`. That is not a fence against the flip,
+which is legitimate and routine; it is the flip that decides the merge, so it is said out loud. On a control-plane PR pass `--carrier advisory` (head bound in the body as `Reviewed-head:`,
 no first-line marker, the human approval stays the gate); the advisory is a **PASS path only** — a
 failing control-plane criterion posts the ordinary FAIL marker.
 

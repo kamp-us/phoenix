@@ -824,9 +824,9 @@ back. Contract:
 | `review diff` | the diff bytes at the bound commit, with truncation refused rather than passed through |
 | `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format |
 | `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved>` |
-| `review verdicts` | every verdict marker on the PR, each with its `current` / `stale` / `unbindable` binding |
+| `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
-| `review post` | the single sanctioned verdict emit — compose, bind, one comment per namespace, read back |
+| `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
@@ -861,7 +861,7 @@ Judge a UI pull request over its preview deployment. Contract:
 | Verb | Answers |
 |---|---|
 | `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized tier state (`/pano:auth` renders as the yazar test account, `/pano:auth-caylak` as the çaylak one), refusing on `11` unless the preview's own session read proves the shot came back signed in *and* at the tier the surface named. `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface names a tier state and on `11` unless the preview's own evaluation says the key took |
-| `review-ui post` | the `review-ui` verdict on stdin, posted as one comment |
+| `review-ui post` | the `review-ui` verdict on stdin, appended into this namespace's one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
 | `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |
 
