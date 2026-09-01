@@ -15,11 +15,17 @@
  * could not fire in the pre-plan window #7024 was filed from; the `type:epic` label is what covers
  * it. The refusal says which case it is, because their remedies differ: plan the epic, or emit its
  * machine.
+ *
+ * **The parent edge is asked for too, and it is the mirror those two facts cannot see.** An epic's
+ * child carries neither of them, so it booted a coder-template ledger of its own while the parent's
+ * lane already held the same number as a task — two ledgers over one piece of work, reconciled by
+ * nothing (#7381). That refusal is {@link LANE_IS_CHILD} and names the parent's lane as the one to
+ * drive. Epic wins the precedence, so a sub-epic still routes to `lane emit`.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {readFile} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
-import {LANE_UNREADABLE, SHAPE_MISMATCH} from "./codes.ts";
+import {LANE_IS_CHILD, LANE_UNREADABLE, SHAPE_MISMATCH} from "./codes.ts";
 import type {ExpectationReader} from "./expectation.ts";
 import {placementRefusal} from "./refusals.ts";
 import {type LaneRef, placeMachine} from "./store.ts";
@@ -65,6 +71,15 @@ export const runOpen = <R = never>(
 					children === 0
 						? `${VERB}: #${issue} is typed \`type:epic\` and carries no sub-issue links, so it has no plan yet and this template's one task cannot represent it — plan the epic first, then boot it with \`fabrika lane emit ${issue}\`. Nothing was written.`
 						: `${VERB}: #${issue} carries ${children} sub-issue link(s), and this template has one task — boot it with \`fabrika lane emit ${issue}\`, which reads the epic's \`## Dependencies\` topology; plan the epic first if it has none. Nothing was written.`,
+				);
+			}
+			if (read.expectation._tag === "Child") {
+				const {parent} = read.expectation;
+				return refuse(
+					LANE_IS_CHILD,
+					parent === null
+						? `${VERB}: #${issue} hangs under a parent issue, whose lane already carries it as a task — the board carried the edge and no number that reads, so find the parent and drive its lane instead. A child gets no lane of its own. Nothing was written.`
+						: `${VERB}: #${issue} hangs under #${parent}, whose lane already carries it as a task — drive that lane (\`fabrika lane status ${parent}\`), never a second ledger for the child. Nothing was written.`,
 				);
 			}
 		}

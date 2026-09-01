@@ -375,3 +375,15 @@ export const SHAPE_MISMATCH = 46;
  * loud (the parse refuses the same shape on a log line already).
  */
 export const GRANT_REFUSED = 47;
+
+/**
+ * The issue a boot was pointed at hangs under a parent, whose lane already carries it as a task —
+ * the mirror of {@link SHAPE_MISMATCH}, and the one #7024's guard could not reach, since both facts
+ * that guard reads are facts about the issue itself. A child booted its own coder-template ledger
+ * while the parent epic's lane held the same number, and nothing reconciled the two (#7381).
+ *
+ * Its own seat rather than {@link SHAPE_MISMATCH}'s, because the remedies are opposite: an epic
+ * needs a machine of its own and is booted with `lane emit`, while a child needs no lane at all —
+ * the parent's is the one to drive, and a second boot is exactly the harm.
+ */
+export const LANE_IS_CHILD = 48;

@@ -1,6 +1,11 @@
 /**
- * The board read [`shape.ts`](shape.ts)'s judgement needs: is this issue an epic, and how many
- * sub-issue links does it carry?
+ * The board read [`shape.ts`](shape.ts)'s judgement needs: is this issue an epic, how many sub-issue
+ * links does it carry, and does it hang under a parent?
+ *
+ * The parent edge rides the `getIssue` call already made — `IssueRecord.parent` is populated from
+ * the single read's own payload — so the third fact costs no further request (#7381). Epic wins the
+ * precedence: a sub-epic routes to `lane emit` like any other epic, and its parenthood changes
+ * nothing about which machine it needs.
  *
  * Two reads rather than one, because an epic's two halves of life answer differently and the window
  * between them is #7024's whole incident. A planned epic carries children. An epic nobody has
@@ -64,12 +69,22 @@ export const expectationReader = (
 				};
 			}
 			const typed = record.value.labels.includes(EPIC_TYPE_LABEL);
+			if (typed || listed.value.length > 0) {
+				return {
+					_tag: "Read" as const,
+					expectation: {_tag: "Epic", children: listed.value.length} as const,
+				};
+			}
+			const {parent} = record.value;
 			return {
 				_tag: "Read" as const,
 				expectation:
-					typed || listed.value.length > 0
-						? ({_tag: "Epic", children: listed.value.length} as const)
-						: ({_tag: "Single"} as const),
+					parent._tag === "None"
+						? ({_tag: "Single"} as const)
+						: ({
+								_tag: "Child",
+								parent: parent._tag === "Parent" ? parent.number : null,
+							} as const),
 			};
 		});
 };

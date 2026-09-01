@@ -18,6 +18,7 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_HEAD,
+	SUPERSEDES_VERDICT,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
@@ -34,6 +35,7 @@ import {
 	pull,
 } from "./fixtures.test-support.ts";
 import {runPost} from "./post-verb.ts";
+import {FENCE, compose as supersedeWith} from "./supersede.ts";
 
 const PULL = /GET .*\/repos\/o\/r\/pulls\/4321$/;
 /**
@@ -79,9 +81,22 @@ const STAMP = "Verdict-written: 2026-08-09T06:30:00Z";
  * A read-back of `body` as the verb will have posted it — stamped, since the stamp is part of the
  * bytes the verb sends and therefore part of what its whole-comment comparison expects back.
  */
+const composedFor = (body: string): string => `${body.replace(/\s+$/, "")}\n\n${STAMP}`;
+
 const commentBody = (body: string): HttpReply => ({
 	status: 200,
-	body: JSON.stringify({body: `${body.replace(/\s+$/, "")}\n\n${STAMP}`}),
+	body: JSON.stringify({body: composedFor(body)}),
+});
+
+/**
+ * The read-back of a re-post: the fresh verdict on top, `prior`'s bytes retired below the fence.
+ *
+ * Built through the shipped envelope rather than a hand-typed expectation, so this fixture cannot
+ * drift from the composer and turn a real read-back mismatch into a green.
+ */
+const supersededBody = (prior: string, fresh: string): HttpReply => ({
+	status: 200,
+	body: JSON.stringify({body: supersedeWith(prior, composedFor(fresh), new Date(NOW))}),
 });
 
 const options = {
@@ -98,6 +113,7 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 	now: Effect.succeed(NOW),
+	supersede: false,
 };
 
 const happy = (): ReadonlyArray<Scripted> => [
@@ -131,7 +147,7 @@ describe("runPost", () => {
 
 	// The prior comment is bound to HEAD, not OLD_HEAD, and that is load-bearing: the upsert key
 	// carries a head dimension, so only a re-post at the SAME head takes the edit path at all.
-	it("edits this namespace's existing comment instead of stacking a second one", async () => {
+	it("appends into this namespace's existing comment, keeping the prior verdict verbatim", async () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
@@ -149,12 +165,68 @@ describe("runPost", () => {
 				),
 			],
 			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+			[
+				READBACK,
+				supersededBody(
+					`review-doc: PASS @ ${HEAD} — earlier round at this head`,
+					`${MARKER}\n\n${BODY}`,
+				),
+			],
 		]);
 		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("\tedited\t");
+		expect(out.stdout).toContain("\tsuperseded\t");
 		expect(shell.requests.some((request) => CREATE.test(request))).toBe(false);
+		const write = written(shell, PATCH);
+		expect(write).toContain(FENCE);
+		expect(write).toContain("earlier round at this head");
+	});
+
+	// The #7247 instance: a PASS landing over a standing FAIL at one head is the write that erased
+	// PR #7081's blocking verdict, and GitHub keeps no comment-body history to recover it from.
+	it("refuses on 17 a post that would retire the opposite polarity at this head", async () => {
+		const shell = fakeSeams([
+			[PULL, served(pull({comments: 1}))],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, served(files("skills/deploy/SKILL.md"))],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[
+				COMMENTS,
+				served(comments({id: 42, body: `review-doc: FAIL @ ${HEAD} — the round-1 blocker`})),
+			],
+		]);
+		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		expect(out.code).toBe(SUPERSEDES_VERDICT);
+		expect(out.stdout).toBe("");
+		expect(out.stderr.at(-1)).toBe(
+			`review post: a standing FAIL for review-doc at ${HEAD} would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.`,
+		);
+		expect(shell.requests.some((request) => PATCH.test(request) || CREATE.test(request))).toBe(
+			false,
+		);
+	});
+
+	it("appends the flip and keeps the retired FAIL verbatim once --supersede is passed", async () => {
+		const prior = `review-doc: FAIL @ ${HEAD} — the round-1 blocker\n\nthe Deviations entry is malformed.`;
+		const shell = fakeSeams([
+			[PULL, served(pull({comments: 1}))],
+			...binding(),
+			[PATHS_AT(), paths("src/cart.ts", "README.md")],
+			[FILES, served(files("skills/deploy/SKILL.md"))],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[COMMENTS, served(comments({id: 42, body: prior}))],
+			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
+			[READBACK, supersededBody(prior, `${MARKER}\n\n${BODY}`)],
+		]);
+		const out = await Effect.runPromise(
+			Effect.provide(runPost({...options, supersede: true}), shell.layer),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tsuperseded\t");
+		const write = written(shell, PATCH);
+		expect(write.split("\n")[0]).toBe(MARKER);
+		expect(write).toContain("the Deviations entry is malformed.");
 	});
 
 	// The head dimension of the upsert key. It shipped in v1 under #4007 and this tree did not carry
@@ -218,21 +290,19 @@ describe("runPost", () => {
 		expect(write).toContain(STAMP);
 	});
 
-	it("stamps the write-recency line on the comment it edits, too", async () => {
+	it("stamps the write-recency line on the comment it supersedes, too", async () => {
+		const prior = `review-doc: FAIL @ ${HEAD} — earlier round at this head`;
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 1}))],
 			...binding(),
 			[PATHS_AT(), paths("src/cart.ts", "README.md")],
 			[FILES, served(files("skills/deploy/SKILL.md"))],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-			[
-				COMMENTS,
-				served(comments({id: 42, body: `review-doc: FAIL @ ${HEAD} — earlier round at this head`})),
-			],
+			[COMMENTS, served(comments({id: 42, body: prior}))],
 			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+			[READBACK, supersededBody(prior, `${MARKER}\n\n${BODY}`)],
 		]);
-		await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		await Effect.runPromise(Effect.provide(runPost({...options, supersede: true}), shell.layer));
 		const write = written(shell, PATCH);
 		expect(write).toContain(STAMP);
 	});
@@ -240,7 +310,7 @@ describe("runPost", () => {
 	// The pre-#5048 upsert took the FIRST match, and the list arrives oldest-first — so on a namespace
 	// that already holds two of this author's comments it edited the one the resolver is least likely
 	// to be reading, and reported success.
-	it("edits the NEWEST comment in the namespace when two of this author's already exist", async () => {
+	it("supersedes the NEWEST comment in the namespace when two of this author's already exist", async () => {
 		const shell = fakeSeams([
 			[PULL, served(pull({comments: 2}))],
 			...binding(),
@@ -265,11 +335,16 @@ describe("runPost", () => {
 				),
 			],
 			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+			[
+				READBACK,
+				supersededBody(`review-doc: FAIL @ ${HEAD} — the newer duplicate`, `${MARKER}\n\n${BODY}`),
+			],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runPost({...options, supersede: true}), shell.layer),
+		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("\tedited\t");
+		expect(out.stdout).toContain("\tsuperseded\t");
 		expect(shell.requests.find((request) => PATCH.test(request))).toContain("/issues/comments/77");
 		expect(shell.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
@@ -302,9 +377,17 @@ describe("runPost", () => {
 				),
 			],
 			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
+			[
+				READBACK,
+				supersededBody(
+					`review-doc: FAIL @ ${HEAD} — re-posted in place\n\nVerdict-written: 2026-08-09T05:10:00Z`,
+					`${MARKER}\n\n${BODY}`,
+				),
+			],
 		]);
-		const out = await Effect.runPromise(Effect.provide(runPost(options), shell.layer));
+		const out = await Effect.runPromise(
+			Effect.provide(runPost({...options, supersede: true}), shell.layer),
+		);
 		expect(out.code).toBe(0);
 		expect(shell.requests.find((request) => PATCH.test(request))).toContain("/issues/comments/42");
 	});
@@ -518,11 +601,11 @@ describe("runPost", () => {
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
 			[COMMENTS, served(comments({id: 42, body: advisoryFor(HEAD), author: "kampus-bot"}))],
 			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READBACK, commentBody(advisoryFor(HEAD))],
+			[READBACK, supersededBody(advisoryFor(HEAD), advisoryFor(HEAD))],
 		]);
 		const repost = await Effect.runPromise(Effect.provide(runPost(advisoryOptions), again.layer));
 		expect(repost.code).toBe(0);
-		expect(repost.stdout).toContain("\tedited\t");
+		expect(repost.stdout).toContain("\tsuperseded\t");
 		expect(again.requests.some((request) => CREATE.test(request))).toBe(false);
 	});
 

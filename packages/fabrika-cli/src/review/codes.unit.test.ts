@@ -49,7 +49,8 @@ describe("the review exit table", () => {
 			review.ACL_DENIED,
 			review.APPEND_ONLY,
 			review.NO_GATE_COVERAGE,
-		]).toEqual([3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+			review.SUPERSEDES_VERDICT,
+		]).toEqual([3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
 	});
 
 	it("leaves 4 a gap, and collides no two meanings on one code", () => {
@@ -68,6 +69,7 @@ describe("the review exit table", () => {
 			review.ACL_DENIED,
 			review.APPEND_ONLY,
 			review.NO_GATE_COVERAGE,
+			review.SUPERSEDES_VERDICT,
 		];
 		expect(new Set(allocated).size).toBe(allocated.length);
 		expect(allocated).not.toContain(review.DELIBERATE_GAP);

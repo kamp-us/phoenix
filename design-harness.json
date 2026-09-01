@@ -1,0 +1,5 @@
+{
+	"command": "[ -f apps/web/.env ] || cp apps/web/.env.example apps/web/.env; pnpm dev 1>&2",
+	"url": "http://localhost:3000",
+	"readyPath": "/api/health"
+}

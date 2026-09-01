@@ -385,6 +385,7 @@ diff --git a/README.md b/README.md
 		env: ENV,
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
 		now: NOW,
+		supersede: false,
 	};
 	const postScript: ReadonlyArray<Scripted> = [
 		[PULL, served(pull({changedFiles: 1}))],
@@ -443,6 +444,7 @@ describe("the leak predicate over the assembled verdict", () => {
 		env: ENV,
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: LEAKY}),
 		now: NOW,
+		supersede: false,
 	};
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull())],
@@ -500,6 +502,7 @@ describe("normalizeForReadback's trailing-newline step", () => {
 		env: ENV,
 		stdin: Effect.succeed<StdinRead>({_tag: "Text", text: "the table\n"}),
 		now: NOW,
+		supersede: false,
 	};
 	const script: ReadonlyArray<Scripted> = [
 		[PULL, served(pull())],
