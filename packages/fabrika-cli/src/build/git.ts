@@ -313,6 +313,20 @@ export const upstreamOf = (branch: string): Shell<{remote: string; ref: string} 
 		return split === null ? null : {remote: split.remote, ref: split.ref};
 	});
 
+/**
+ * The remote branch a lane publishes to: its tracked upstream, else `origin/<branch>`.
+ *
+ * Resume mode's local name is `build/pr-<pr>-<nonce>`, which by construction is never the PR's head
+ * ref, so any check that reads the local name back calls every repair round a foreign lane —
+ * `build push`'s false `17` (#5222) and `ui evidence`'s false `LANE_NOT_MINE` (#7402) are the same
+ * bug found twice. The fallback keeps a fresh lane, whose branch carries no upstream until its first
+ * push, answering its own name.
+ */
+export const publishTarget = (branch: string): Shell<{remote: string; ref: string}> =>
+	Effect.gen(function* () {
+		return (yield* upstreamOf(branch)) ?? {remote: "origin", ref: branch};
+	});
+
 /** The SHA a remote's ref points at, read from the remote itself — the push's independent witness. */
 export const remoteSha = (remote: string, ref: string): Shell<Attempt<string | null>> =>
 	Effect.gen(function* () {

@@ -18,10 +18,11 @@ import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {requireSession} from "../build/claim.ts";
 import {contentOf, gate} from "../build/content-gate.ts";
+import {publishTarget} from "../build/git.ts";
 import {laneScratchDir} from "../build/scratch-verb.ts";
 import {resolveTargetRepo} from "../build/target.ts";
 import {designHarnessOr} from "../config/paths.ts";
-import {createComment, currentBranch, getComment} from "../io/issues.ts";
+import {createComment, getComment} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {isBareAtReference, renderLeaks, scanBody} from "../report/leaks.ts";
@@ -217,7 +218,7 @@ export const runEvidence = (
 				lane.notes,
 			);
 		}
-		const branch = yield* currentBranch;
+		const target = yield* publishTarget(lane.branch);
 		const headBranch = yield* pullHeadRef(options.env, resolved.repo, options.pr);
 		if (headBranch._tag === "Unknown") {
 			return refuse(
@@ -226,10 +227,13 @@ export const runEvidence = (
 				lane.notes,
 			);
 		}
-		if (headBranch.ref !== branch) {
+		// The lane publishes to its branch's tracked upstream, so that is what the PR's head is
+		// compared against; the checked-out name is a repair round's `build/pr-<pr>-<nonce>`, which
+		// never equals the head ref (#7402).
+		if (headBranch.ref !== target.ref) {
 			return refuse(
 				LANE_NOT_MINE,
-				`${VERB}: this session does not hold the claim on #${options.pr} (PR #${options.pr} is on "${headBranch.ref}", not the checked-out "${branch ?? "detached HEAD"}") — the lane is not yours.`,
+				`${VERB}: this session does not hold the claim on #${options.pr} (PR #${options.pr} is on "${headBranch.ref}", but "${lane.branch}" publishes to "${target.remote}/${target.ref}") — the lane is not yours.`,
 				lane.notes,
 			);
 		}
