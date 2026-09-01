@@ -60,7 +60,7 @@ this contract (one registry-side enum addition; flagged in the implementation ti
 | Verb | Purpose | Split test |
 |---|---|---|
 | `review-ui render` | capture named surfaces from the PR's preview deployment at the inspected head, one validated PNG per surface, each surface's outcome proven | preview resolution, head-binding, capture and per-surface outcome typing are mechanical; *choosing the surfaces and looking at the pixels* stays in the skill |
-| `review-ui post` | the single sanctioned `review-ui` verdict emit: verify-upload the evidence set, compose through the wire format, bind to the inspected head at post time, post one comment, read it back | upload-verify-compose-post-readback is a protocol; *the polarity and every finding behind it* are judgment |
+| `review-ui post` | the single sanctioned `review-ui` verdict emit: verify-upload the evidence set, compose through the wire format, bind to the inspected head at post time, append into this namespace's one comment, read it back | upload-verify-compose-post-readback is a protocol; *the polarity and every finding behind it* are judgment |
 | `review-ui note` | the single sanctioned non-verdict write: post one plain comment naming a proven blocker state (can't-see, escalation), leak-scanned, read back — never a marker | compose-scan-post-readback is a protocol; *whether the state warrants a note* is judgment |
 | `review-ui route` | the single sanctioned way to resolve this namespace with no verdict: post one head-bound `routed-elsewhere` record stating that the PR renders nothing, leak-scanned, upserted, read back | binding, upsert and read-back are a protocol; *whether the diff renders anything* is judgment, and no verb may take it |
 
@@ -176,6 +176,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `15` | proven: a capture was produced but is invalid — zero bytes, undecodable, zero area, or a set member fails its manifest sha |
 | `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
+| `18` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing posted (#7247) |
 | `127` | the verb never ran at all (unresolved binary) |
 
 **`7` versus `11`** is the package's spine: a 404 is a fact about the repository, an unreachable
@@ -415,7 +416,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged [--carrier marker|advisory] [--repo <owner/name>]
+fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged [--carrier marker|advisory] [--supersede] [--repo <owner/name>]
 ```
 
 The verdict body arrives on **stdin only** — no `--body`, no `--body-file`, for the sibling
@@ -432,6 +433,7 @@ poster reads success.
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
 | `--evidence` | string | yes | — | the `review-ui render` capture-set name whose verified upload is this verdict's evidence |
 | `--carrier` | enum | no | `marker` | `marker` (first-line SHA-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` body line). `advisory` is a PASS path only |
+| `--supersede` | boolean | no | `false` | acknowledge that this verdict retires a standing one of the **opposite** polarity at this head; without it that post is the `18` refusal |
 | `--repo` | string | no | resolved | the repository |
 | stdin | markdown | yes | — | the verdict body below the first line: per-row findings with pixel evidence, the coverage table, advisories |
 
@@ -440,8 +442,9 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 `review post` makes at runtime is unrepresentable here.
 
 **Output** — machine. One JSON object:
-`{"answer":"posted","namespace":"review-ui","polarity":"FAIL","sha":"03135b91","upsert":"created","carrier":"marker","surfaces":1,"commentUrl":"…"}`
-— `surfaces` is the count of captures in the `--evidence` set's manifest.
+`{"answer":"posted","namespace":"review-ui","polarity":"FAIL","sha":"03135b91","upsert":"created"|"superseded","carrier":"marker","surfaces":1,"commentUrl":"…"}`
+— `surfaces` is the count of captures in the `--evidence` set's manifest, and `upsert` is
+`superseded` whenever the write appended into a comment that already carried this namespace.
 
 **What the operation does, in order — each step gates the next.**
 
@@ -468,9 +471,16 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    surface, the verified hosted URL.
 6. **Leak-scan the assembled comment** (`5` / `6` — the imported predicates; a finding that must
    cite a leak cites it by class root or repo-relative form).
-7. **Upsert one comment for this namespace under this carrier** (the disjoint marker/advisory
+7. **Append into one comment for this namespace under this carrier** (the disjoint marker/advisory
    match keys, exactly as `review post` step 5 specifies them); a second stacked marker is
-   un-anchored and fail-closes a passing PR.
+   un-anchored and fail-closes a passing PR. **The prior verdict is never replaced**: it is retired
+   verbatim below the `<!-- fabrika:superseded -->` fence under a dated `## Superseded verdict —
+   YYYY-MM-DD` heading, and the fresh verdict takes the first line so every marker reader resolves
+   the newest one. GitHub keeps no comment-body history, so a PATCH over a verdict is that verdict
+   gone: on PR #7081 a FAIL became a PASS at an unchanged head and nothing showed a gate had ever
+   blocked (#7247). When the write would retire a standing verdict of the **opposite** polarity at
+   this head, it is the `18` refusal unless `--supersede` is passed, and nothing is posted — the
+   flip is legitimate and routine, but it is the one the merge gate reads.
 8. **Read it back, unconditionally, from live PR state** — the format's `read` (or the advisory
    anchors), then the whole comment through `normalizeForReadback` (`9` on mismatch). A
    read-back that trusts a carried variable re-ships the false-PASS class.
@@ -491,6 +501,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
 | `15` | proven: a capture in the evidence set is invalid or fails its manifest sha |
 | `17` | proven: at least one evidence upload or its verification failed — nothing was posted |
+| `18` | refused: a standing verdict of the opposite polarity at this head would be retired and `--supersede` was not passed — nothing posted |
 
 **Errors**
 
@@ -512,6 +523,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
 | `review-ui post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review-ui post: posted, but the read-back does not yield this marker (<wire reason>) — inspect comment <id>.` | 9 | refusal |
+| `review-ui post: a standing <PASS\|FAIL> for review-ui at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 18 | refusal |
 
 **Scope** — one PR (its live head, its comments), one evidence set (its manifest and every
 capture in it), the caller's stdin. Steps 1–4 failing on a read is `11` — nothing written,
@@ -529,6 +541,18 @@ $ fabrika review-ui post 4321 --polarity PASS --sha 03135b91 --clause "ok" --evi
 review-ui post: the live head is a1b2c3d4, not 03135b91 — the tree you judged is gone; re-review at a1b2c3d4 (ADR 0058).
 $ echo $?
 12
+```
+
+```
+$ fabrika review-ui post 7081 --polarity PASS --sha 77f61ce9 --clause "merge-ready" --evidence judged < verdict.md
+review-ui post: a standing FAIL for review-ui at 77f61ce9 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
+$ echo $?
+18
+```
+
+```
+$ fabrika review-ui post 7081 --polarity PASS --sha 77f61ce9 --clause "merge-ready" --evidence judged --supersede < verdict.md
+{"answer":"posted","namespace":"review-ui","polarity":"PASS","sha":"77f61ce9","upsert":"superseded","carrier":"marker","surfaces":1,"commentUrl":"https://github.com/kamp-us/phoenix/pull/7081#issuecomment-5460446728"}
 ```
 
 **Grounding**

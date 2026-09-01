@@ -231,7 +231,9 @@ The namespace is fixed — this group emits `review-ui` and nothing else. The ve
 live head and refuses when it moved (12 — re-review, never re-bind); **uploads and verifies every
 capture in `--evidence` before anything posts** (17 on any failure, nothing posted — evidence is
 load-bearing); composes through the registered verdict-marker format; scans for machine-local
-paths; upserts one comment; reads it back from live state. On a control-plane PR pass
+paths; appends into this namespace's one comment, retiring the verdict already there below a
+`## Superseded verdict` heading rather than replacing it (18 refuses a polarity flip at one head
+until `--supersede` says so); reads it back from live state. On a control-plane PR pass
 `--carrier advisory` (PASS path only — a failing control-plane criterion posts the ordinary FAIL
 marker). Control-plane membership is an **input**: this skill computes no control-plane
 classification, the carrier is explicit, and the gate's authority stays at the merge check.
