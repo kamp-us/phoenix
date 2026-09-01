@@ -149,6 +149,12 @@ diff itself edits. Take each heading the judgment touches with
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`, never the whole file (ADR
 [0296](../../../../.decisions/0296-contracts-are-read-by-section.md)).
 
+<!-- anchor: GOVERNANCE-BEFORE-THE-WAIT --> **Read §1's `governance` token before you run the next
+fence: on `required`, fire §6's governance skill first, then come back here.** The reason is stated
+once at the end of this section and once in §6, both below — this line exists only so a reader
+running fences in order meets the order before the fence rather than after it. On `not-required`
+there is nothing to fire: run the fence.
+
 **No class re-executes what CI enforces** — a local re-run can report another checkout's cached
 green as this PR's. The code class's execution evidence is the structural CI-at-head read, refusing
 incomplete enumerations:
