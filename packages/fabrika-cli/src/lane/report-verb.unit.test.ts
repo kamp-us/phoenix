@@ -20,13 +20,16 @@ const ROOT = ".fabrika/lanes";
 const WORKFLOW = `${ROOT}/42/workflow.json`;
 const LOG = `${ROOT}/42/events.jsonl`;
 
-const logLine = (event: string): string =>
-	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: "2026-08-16T00:00:00.000Z"})}\n`;
+const logLine = (event: string, classes?: ReadonlyArray<string>): string =>
+	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: "2026-08-16T00:00:00.000Z", ...(classes === undefined ? {} : {classes})})}\n`;
 
 /** The log prefix that folds the coder lane's task into the state each shell reports out of. */
-const LOG_AT: Readonly<Record<"build" | "review" | "ship", string>> = {
+const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>> = {
 	build: logLine("WIP"),
 	review: logLine("WIP") + logLine("DONE"),
+	// The same path as `review` with `ui` standing from the `WIP`, so the `PASS` out of `review`
+	// takes the class-guarded arm into the rendered gate's own cell.
+	"review:ui": logLine("WIP", ["ui"]) + logLine("DONE") + logLine("PASS"),
 	ship: logLine("WIP") + logLine("DONE") + logLine("PASS"),
 };
 
@@ -91,9 +94,10 @@ const appendedLine = (fs: ReturnType<typeof fakeFs>): string =>
 	fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "";
 
 describe("lane report — every shell terminal token maps to one operator event", () => {
-	const stateFor: Readonly<Record<keyof typeof SHELL_VOCABULARIES, "build" | "review" | "ship">> = {
+	const stateFor: Readonly<Record<keyof typeof SHELL_VOCABULARIES, keyof typeof LOG_AT>> = {
 		builder: "build",
 		reviewer: "review",
+		"ui-reviewer": "review:ui",
 		shipper: "ship",
 	};
 
