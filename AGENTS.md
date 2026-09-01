@@ -37,7 +37,7 @@ pnpm install
 cp apps/web/.env.example apps/web/.env   # first run only — local dev env (gitignored)
 pnpm dev          # turbo-driven; two processes: `vite` (SPA/HMR) + `alchemy dev` (worker)
 pnpm dev:web      # just the Vite SPA dev server
-pnpm dev:worker   # just `alchemy dev` (the worker on a local workerd, offline)
+pnpm dev:worker   # just `alchemy dev` (the worker on a local workerd, real CF resources)
 pnpm build
 pnpm deploy       # pnpm build && alchemy deploy (use --stage <name> for isolation)
 pnpm typecheck
@@ -50,7 +50,11 @@ pnpm format       # biome check --write
 Deploy is alchemy-managed (ADR 0026–0031): `alchemy.run.ts` is the stack, there is
 no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker + D1
 + DOs per stage; CI uses the Cloudflare-hosted state store, local dev uses
-`Alchemy.localState()` (offline).
+`Alchemy.localState()`. Only the *state store* is local — the resources it binds
+(D1, the DO namespaces) are real Cloudflare resources in your personal dev stage,
+so `alchemy dev` needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in your
+environment. There is no offline emulator (ADR
+[0032](.decisions/0032-alchemy-beta45-and-dev-model.md)).
 
 ## pnpm over npm
 
