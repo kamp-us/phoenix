@@ -1064,7 +1064,7 @@ Take one intake-queue issue from arrival to triaged. Contract:
 | `triage enrich` | an issue body replaced with the rewrite on stdin, refused when it states an unwired ordering |
 | `triage apply` | type, priority, audience, status, home and `--blocked-by` edges stamped as one owned-facet reconcile, read back |
 | `triage park` | an issue demoted to needs-info with the questions on stdin |
-| `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason |
+| `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason, carrying `closed-by-triage` and no triage status label |
 | `triage repair-criteria` | an acceptance-criteria block's shape repaired mechanically |
 | `triage scratch` | the per-lane directory a triager's working files go under |
 
