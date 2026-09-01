@@ -21,7 +21,7 @@
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {mergeBase, rangeCommits, resolveCommit} from "../io/git.ts";
+import {isShallowClone, mergeBase, rangeCommits, resolveCommit, type Shell} from "../io/git.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {issueRefsIn} from "./commit-message.ts";
 import {defaultBranch} from "./github.ts";
@@ -48,6 +48,25 @@ export type Assembly =
 			readonly commits: number;
 	  }
 	| {readonly _tag: "Unreadable"; readonly branch: string; readonly reason: string};
+
+/**
+ * Why a merge-base read named nothing, in the words that carry a remedy when there is one.
+ *
+ * A shallow clone's graft boundary is the one cause of this that the operator can repair without
+ * touching a ref, a blocker or an issue: every traversal treats the boundary commit as a root, so a
+ * common ancestor beyond it is unreachable and `git merge-base` names nothing rather than erroring
+ * (the same split `traversedParents` documents, #6343). Reported as a generic unreadable reason it
+ * cost a supervisor round-trip diagnosing git history depth from outside the verb (#7292).
+ *
+ * A shallow probe that itself fails keeps the generic reason: this names an unreadable read more
+ * precisely, and never turns one into a readable one.
+ */
+const noMergeBaseReason = (baseRef: string, reason: string): Shell<string> =>
+	Effect.map(isShallowClone, (shallow) =>
+		shallow._tag === "Ok" && shallow.value
+			? `no merge base with ${baseRef}: this clone is shallow, so a common ancestor beyond its graft boundary is unreachable and git names none — \`git fetch --unshallow origin\` restores it, and nothing about the epic run needs changing`
+			: `no merge base with ${baseRef}: ${reason}`,
+	);
 
 /**
  * Read epic `epic`'s assembly branch in this tree, bounded to the commits the run put on it.
@@ -82,7 +101,7 @@ export const readAssembly = (
 			return {
 				_tag: "Unreadable" as const,
 				branch,
-				reason: `no merge base with ${baseRef}: ${base.reason}`,
+				reason: yield* noMergeBaseReason(baseRef, base.reason),
 			};
 		const walked = yield* rangeCommits(base.value, tip.value);
 		if (walked._tag === "Failure")
