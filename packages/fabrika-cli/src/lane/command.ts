@@ -22,7 +22,7 @@ import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
 import {expectationReader} from "./expectation.ts";
-import {deriveRepoRoot, onGround, repoGroundRefusal} from "./ground.ts";
+import {deriveRepoRoot, onGround, repoGroundRefusal, resolveRootOrRefuse} from "./ground.ts";
 import {runHistory} from "./history-verb.ts";
 import {runIntegrate} from "./integrate-verb.ts";
 import {defaultRoot, type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
@@ -83,26 +83,6 @@ const onKey = <R>(
 		return yield* onGround(verb, [ref.root], process.cwd(), () => run(parsed.key, ref));
 	});
 };
-
-/**
- * The lanes root one verb invocation resolves when `--root` is absent: derived off the repository
- * the cwd belongs to (#5815), with the leaf joined under its primary checkout. An explicit `--root`
- * wins over whatever would be derived.
- */
-const resolveRootOrRefuse = (
-	verb: string,
-	root: Option.Option<string>,
-	leaf: string,
-): Effect.Effect<string | VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
-	Option.isSome(root)
-		? Effect.succeed(root.value)
-		: Effect.gen(function* () {
-				const path = yield* Path.Path;
-				const ground = yield* deriveRepoRoot(process.cwd());
-				return ground._tag === "Derived"
-					? path.join(ground.repoRoot, leaf)
-					: repoGroundRefusal(`fabrika lane ${verb}`, ground);
-			});
 
 /**
  * Resolve the `lane` argument for a verb whose ground is the **board**, not the disk — `claim` and
@@ -385,7 +365,12 @@ const emitLane = leafCommand(
 		),
 	},
 	Effect.fn(function* ({epic, root, repo}) {
-		const resolvedRoot = yield* resolveRootOrRefuse("fabrika lane emit", root, DEFAULT_LANES_ROOT);
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika lane emit",
+			root,
+			DEFAULT_LANES_ROOT,
+			process.cwd(),
+		);
 		if (typeof resolvedRoot !== "string") {
 			yield* emit(resolvedRoot);
 			return;
@@ -424,6 +409,7 @@ const assembly = leafCommand(
 			"fabrika lane assembly",
 			root,
 			DEFAULT_LANES_ROOT,
+			process.cwd(),
 		);
 		if (typeof resolvedRoot !== "string") {
 			yield* emit(resolvedRoot);
@@ -460,6 +446,7 @@ const integrate = leafCommand(
 			"fabrika lane integrate",
 			root,
 			DEFAULT_LANES_ROOT,
+			process.cwd(),
 		);
 		if (typeof resolvedRoot !== "string") {
 			yield* emit(resolvedRoot);
@@ -489,7 +476,12 @@ const pushLane = leafCommand(
 		root: rootFlag,
 	},
 	Effect.fn(function* ({epic, root}) {
-		const resolvedRoot = yield* resolveRootOrRefuse("fabrika lane push", root, DEFAULT_LANES_ROOT);
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika lane push",
+			root,
+			DEFAULT_LANES_ROOT,
+			process.cwd(),
+		);
 		if (typeof resolvedRoot !== "string") {
 			yield* emit(resolvedRoot);
 			return;
@@ -781,7 +773,12 @@ const view = leafCommand(
 	},
 	Effect.fn(function* ({root, port}) {
 		const chosen = Option.getOrElse(port, () => DEFAULT_VIEW_PORT);
-		const resolvedRoot = yield* resolveRootOrRefuse("fabrika lane view", root, DEFAULT_LANES_ROOT);
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika lane view",
+			root,
+			DEFAULT_LANES_ROOT,
+			process.cwd(),
+		);
 		if (typeof resolvedRoot !== "string") {
 			yield* emit(resolvedRoot);
 			return;

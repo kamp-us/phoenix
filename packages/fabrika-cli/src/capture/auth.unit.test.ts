@@ -72,29 +72,54 @@ describe("sessionCookies", () => {
 
 describe("readIdentity", () => {
 	it("names both unset halves rather than reading as a complete anonymous default", () => {
-		expect(readIdentity({})).toEqual({
+		expect(readIdentity({}, ["yazar"])).toEqual({
 			_tag: "Missing",
 			names: ["PREVIEW_TEST_SESSION_TOKEN", "BETTER_AUTH_SECRET"],
 		});
 	});
 
 	it("names the one missing half", () => {
-		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN})).toEqual({
+		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN}, ["yazar"])).toEqual({
 			_tag: "Missing",
 			names: ["BETTER_AUTH_SECRET"],
 		});
-		expect(readIdentity({BETTER_AUTH_SECRET: SECRET})).toEqual({
+		expect(readIdentity({BETTER_AUTH_SECRET: SECRET}, ["yazar"])).toEqual({
 			_tag: "Missing",
 			names: ["PREVIEW_TEST_SESSION_TOKEN"],
 		});
 	});
 
 	it("reads a complete pair", () => {
-		expect(readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN, BETTER_AUTH_SECRET: SECRET})).toEqual({
+		expect(
+			readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN, BETTER_AUTH_SECRET: SECRET}, ["yazar"]),
+		).toEqual({_tag: "Identity", tokens: {yazar: TOKEN}, secret: SECRET});
+	});
+
+	/**
+	 * A tier with no token of its own is a tier `preview-seed test-account` did not seed on this
+	 * preview. Reading it as satisfied by the yazar's token is the exact fallback #7398 exists to
+	 * refuse — the shot would come back clean as the audience the surface said it was not.
+	 */
+	it("names the çaylak token when a çaylak surface is asked for and only the yazar's is set", () => {
+		expect(
+			readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN, BETTER_AUTH_SECRET: SECRET}, ["çaylak"]),
+		).toEqual({_tag: "Missing", names: ["PREVIEW_TEST_CAYLAK_SESSION_TOKEN"]});
+	});
+
+	it("reads a token per asked-for tier, and asks for none of a tier no surface named", () => {
+		const env = {
+			PREVIEW_TEST_SESSION_TOKEN: TOKEN,
+			PREVIEW_TEST_CAYLAK_SESSION_TOKEN: `${TOKEN}-caylak`,
+			BETTER_AUTH_SECRET: SECRET,
+		};
+		expect(readIdentity(env, ["çaylak", "yazar"])).toEqual({
 			_tag: "Identity",
-			token: TOKEN,
+			tokens: {yazar: TOKEN, çaylak: `${TOKEN}-caylak`},
 			secret: SECRET,
 		});
+		expect(
+			readIdentity({PREVIEW_TEST_SESSION_TOKEN: TOKEN, BETTER_AUTH_SECRET: SECRET}, []),
+		).toEqual({_tag: "Identity", tokens: {}, secret: SECRET});
 	});
 });
 
@@ -109,10 +134,23 @@ describe("readSessionProof", () => {
 		expect(readSessionProof(200, "null")).toEqual({_tag: "Anonymous"});
 	});
 
-	it("reads a session payload as signed in, naming the user", () => {
-		expect(readSessionProof(200, JSON.stringify({session: {id: "s1"}, user: {id: "u1"}}))).toEqual({
-			_tag: "SignedIn",
-			userId: "u1",
+	it("reads a session payload as signed in, naming the user and its tier", () => {
+		expect(
+			readSessionProof(
+				200,
+				JSON.stringify({session: {id: "s1"}, user: {id: "u1", tier: "çaylak"}}),
+			),
+		).toEqual({_tag: "SignedIn", userId: "u1", tier: "çaylak"});
+	});
+
+	/**
+	 * A signed-in answer carrying no tier is UNKNOWN, not "the default tier": guessing here would
+	 * hand the caller a tier fact nobody read, which is the shape #7398 was filed about.
+	 */
+	it("reads a tier-less user as unreadable, never as a tier", () => {
+		expect(readSessionProof(200, JSON.stringify({user: {id: "u1"}}))).toEqual({
+			_tag: "Unreadable",
+			reason: "probe named a user with no tier",
 		});
 	});
 

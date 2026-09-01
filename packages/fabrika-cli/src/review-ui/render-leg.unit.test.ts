@@ -132,7 +132,7 @@ describe("captureRenderLeg — the :auth session proof", () => {
 		const asked: Array<string | undefined> = [];
 		const spy: CaptureShots = (_plan, _outDir, options) => {
 			asked.push(options?.sessionProbeUrl);
-			return authShot({sessionProof: {_tag: "SignedIn", userId: "u1"}})([], "", {});
+			return authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"}})([], "", {});
 		};
 		runAuth(spy);
 		run(spy);
@@ -141,9 +141,9 @@ describe("captureRenderLeg — the :auth session proof", () => {
 	});
 
 	it("records the shot only when the proof came back signed in", () => {
-		expect(runAuth(authShot({sessionProof: {_tag: "SignedIn", userId: "u1"}}))._tag).toBe(
-			"Rendered",
-		);
+		expect(
+			runAuth(authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "yazar"}}))._tag,
+		).toBe("Rendered");
 	});
 
 	it("refuses a visitor's render under the :auth name", () => {
@@ -162,6 +162,51 @@ describe("captureRenderLeg — the :auth session proof", () => {
 });
 
 /**
+ * The tier half of the same proof (#7398). Every arm here IS signed in and decodes fine — the whole
+ * defect is that a yazar's render of a çaylak-only surface is a clean, valid capture of the audience
+ * the feature is designed never to show.
+ */
+describe("captureRenderLeg — the rendered actor's tier", () => {
+	const caylakRequest = {...request, surface: "/hosgeldin:auth-caylak"};
+	const caylakShot =
+		(tier: string): CaptureShots =>
+		() =>
+			Effect.succeed([
+				{
+					surface: "/hosgeldin:auth-caylak",
+					route: "/hosgeldin",
+					state: "auth-caylak",
+					localPath: "/tmp/shots/hosgeldin-auth-caylak.png",
+					fileName: "hosgeldin-auth-caylak.png",
+					pngBytes: pngHeader(),
+					pageErrors: [],
+					status: 200,
+					sessionProof: {_tag: "SignedIn" as const, userId: "u1", tier},
+				},
+			]);
+	const runCaylak = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(caylakRequest));
+
+	it("records the shot when the preview reports the tier the surface named", () => {
+		expect(runCaylak(caylakShot("çaylak"))._tag).toBe("Rendered");
+	});
+
+	it("refuses a yazar's render under the çaylak name — a clean capture of the wrong audience", () => {
+		expect(runCaylak(caylakShot("yazar"))).toEqual({
+			_tag: "WrongTier",
+			wanted: "çaylak",
+			rendered: "yazar",
+		});
+	});
+
+	it("refuses a çaylak's render under the yazar-tier :auth name too — the fence runs both ways", () => {
+		expect(
+			runAuth(authShot({sessionProof: {_tag: "SignedIn", userId: "u1", tier: "çaylak"}})),
+		).toEqual({_tag: "WrongTier", wanted: "yazar", rendered: "çaylak"});
+	});
+});
+
+/**
  * One layer over the session proof and for the same reason: a preview that dropped the override
  * cookie renders the flag-off page, and that page is a valid PNG under the flag-on name (#7218).
  */
@@ -170,7 +215,7 @@ describe("captureRenderLeg — the forced-flag proof", () => {
 	const forcedRequest = {...authRequest, forcedFlags: FORCED};
 	const runForced = (capture: CaptureShots): SurfaceRender =>
 		Effect.runSync(makeCaptureRenderLeg(capture)(forcedRequest));
-	const signedIn = {_tag: "SignedIn", userId: "u1"} as const;
+	const signedIn = {_tag: "SignedIn", userId: "u1", tier: "yazar"} as const;
 
 	it("asks the preview's own evaluation seam, and asks nothing when no flag is forced", () => {
 		const asked: Array<unknown> = [];

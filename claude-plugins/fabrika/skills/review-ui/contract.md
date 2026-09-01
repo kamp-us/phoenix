@@ -203,19 +203,26 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
-- **`:auth` surfaces need two environment values**, both unset by default: `PREVIEW_TEST_SESSION_TOKEN`
-  (the session token `preview-seed test-account` wrote onto the preview D1) and `BETTER_AUTH_SECRET`
-  (the preview worker's, so the cookie signature verifies). With neither or one set, an `:auth`
-  request refuses `11` rather than substituting the anonymous render; with no `:auth` surface asked
-  for, every surface renders anonymously as before. Setting both is necessary and not sufficient —
-  whether the cookie authenticated is the per-shot session proof's answer, also an `11`.
-- **`--flag` needs those same two values plus one grant on the preview D1.** The override cookie is
+- **A tier-naming surface needs `BETTER_AUTH_SECRET` plus that tier's own session token**, all unset
+  by default. `BETTER_AUTH_SECRET` is the preview worker's, so the cookie signature verifies; the
+  token is the one `preview-seed test-account` wrote onto the preview D1 for that tier —
+  `PREVIEW_TEST_SESSION_TOKEN` for `:auth` (yazar), `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for
+  `:auth-caylak` (çaylak). **One variable per tier, and an unset one is never satisfied by
+  another's**: an unset tier token means that tier was not seeded on this preview, and falling back
+  to a seeded identity would render the audience the surface said it was not (#7398). With any of
+  them unset the request refuses `11` rather than substituting; with no tier-naming surface asked
+  for, every surface renders anonymously as before. Setting them is necessary and not sufficient —
+  whether the cookie authenticated, and at which tier, is the per-shot session proof's answer, also
+  an `11`.
+- **`--flag` needs those same values plus one grant on the preview D1.** The override cookie is
   honored only for a platform admin (`flagship/override-authz.ts`, unchanged by #7218), and
-  `preview-seed test-account` provisions moderation authority, not admin. So a forced run is
-  preceded by `node packages/admin-grant/src/bin.ts grant --user-id preview-test-moderator
-  --database-id <preview-d1>` — offline and direct-D1, on a throwaway preview only, never against a
-  database holding real accounts. The grant is what makes the forced capture an admin's view as well
-  as a moderator's, which is the trade the operand asks for and the reason it is not the default.
+  `preview-seed test-account` provisions moderation authority to the yazar identity and nothing at
+  all to the çaylak one. So a forced run is preceded by `node packages/admin-grant/src/bin.ts grant
+  --user-id <the tier's account id> --database-id <preview-d1>` — offline and direct-D1, on a
+  throwaway preview only, never against a database holding real accounts. Admin is a relation tuple,
+  not a tier, so granting it to `preview-test-caylak` leaves that identity a çaylak and the tier
+  proof still binds. The grant is what makes the forced capture an admin's view as well, which is
+  the trade the operand asks for and the reason it is not the default.
 
 **The preview-deploy convention.** The repo announces each PR's preview as a sticky PR comment
 carrying the anchor `<!-- preview-deploy:<app> -->`, whose body names, per app: the deployed URL
@@ -244,33 +251,43 @@ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/
 |---|---|---|---|---|
 | `--pr` | integer | yes | — | the pull request whose preview is judged |
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under `<OS temp>/fabrika-review-ui/<pr>-<head8>/<set>/` |
-| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/pano`), or a route plus a realized state (`/pano:auth`); zero operands is `1` — no tool guesses surfaces from a diff |
+| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/pano`), or a route plus a realized tier state (`/pano:auth`, `/pano:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve |
 | `--repo` | string | no | resolved | the repository |
 
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
-refused on `10` otherwise. The realized set is `auth` and nothing else (#7051): an `:auth` surface
-renders with the moderator-tier test account's better-auth session cookie seeded into the capture
-context. The account is provisioned direct-D1 by `preview-seed test-account`, never by a worker
-route.
+refused on `10` otherwise. The realized set is `auth` and `auth-caylak` (#7051, #7398), and **each
+one names the tier it renders at**: `:auth` is the yazar+moderator identity, `:auth-caylak` the
+çaylak one. Each seeds that identity's own better-auth session cookie into the capture context, and
+each account is provisioned direct-D1 by `preview-seed test-account`, never by a worker route.
 
-Seeding a cookie is not the same as being signed in, so the shot proves it rather than assuming it.
-From the same browser context, before the shot is classified, the verb reads the preview's own
-`/api/auth/get-session` and requires a user back; anything else — a bare `null`, a non-200, an
-unreadable body — refuses the surface on `11` and records no capture. This is what makes the pixels a
-signed-in yazar+moderator's: a cookie that did not authenticate renders the visitor's page, and that
-page is a perfectly valid PNG no byte check can tell from the real one.
+The tier is an axis of the surface id because a tier is an audience. A surface whose whole point is
+that it renders *below* yazar — a çaylak nudge, a pre-promotion prompt, an onboarding ask — is
+suppressed for anyone clearing the floor, so a yazar's shot of it comes back valid, decodable and
+showing the state the PR did not add. That is the dangerous failure this axis closes: a clean-looking
+capture of the wrong audience.
+
+Seeding a cookie is not the same as being signed in, and being signed in is not the same as being
+signed in *as that tier*, so the shot proves both rather than assuming either. From the same browser
+context, before the shot is classified, the verb reads the preview's own `/api/auth/get-session` and
+requires a user back **whose `tier` is the one the surface named**; anything else — a bare `null`, a
+non-200, an unreadable body, a user with no tier, a user at another tier — refuses the surface on
+`11` and records no capture under that surface id. A cookie that did not authenticate renders the
+visitor's page and one that authenticated as the wrong identity renders somebody else's, and both are
+perfectly valid PNGs no byte check can tell from the real one.
 
 **`--flag` forces a dark-shipped flag on, so the state the PR adds paints** (ADR 0336, #7218). It
 rides the worker's existing `phoenix_flag_overrides` cookie — no route is added and
 `flagship/override-authz.ts` is untouched — and that gate is why the operand carries a fence of its
 own: on a deployed stage the cookie is honored only for a request whose actor holds platform
 `Admin`, so an anonymous surface would drop it and render the default state cleanly under the
-forced name. Every `--surface` in a forced run must therefore name `:auth`, and a bare route beside
-a `--flag` is `10`. The preview test account holds moderation authority, not admin, so a forced run
-also needs `admin-grant grant --user-id preview-test-moderator --database-id <preview-d1>` against
-that throwaway preview D1 — offline, direct-D1, the same sanctioned path ADR 0107 already names.
+forced name. Every `--surface` in a forced run must therefore name a tier state, and a bare route
+beside a `--flag` is `10`. Neither preview test account holds admin, so a forced run also needs
+`admin-grant grant --user-id <that tier's account id> --database-id <preview-d1>` against that
+throwaway preview D1 — offline, direct-D1, the same sanctioned path ADR 0107 already names. Admin is
+a relation tuple and not a tier, so a granted `preview-test-caylak` is still a çaylak and still
+passes the tier proof.
 
 Seeding an override is not the same as the override taking, so — like the session — the shot proves
 it. From the same context, before the shot is classified, the verb POSTs the preview's own
@@ -327,8 +344,8 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`); a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
-| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; an `:auth` surface was requested while `PREVIEW_TEST_SESSION_TOKEN` / `BETTER_AUTH_SECRET` is unset; an `:auth` surface's session proof did not come back signed in; or a forced flag evaluated at its default anyway |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
+| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token or `BETTER_AUTH_SECRET` is unset; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
@@ -341,11 +358,12 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|---|
 | `review-ui render: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
-| `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth; render the bare route.` | 10 | refusal |
-| `review-ui render: an :auth surface was requested but its credentials are incomplete (unset: <names>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
+| `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth, auth-caylak; render the bare route.` | 10 | refusal |
+| `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
 | `review-ui render: surface "<id>" did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
+| `review-ui render: surface "<id>" named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |
-| `review-ui render: --flag was passed with the anonymous surface "<id>" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name every surface :auth.` | 10 | refusal |
+| `review-ui render: --flag was passed with the anonymous surface "<id>" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.` | 10 | refusal |
 | `review-ui render: surface "<id>" did not render with its forced flags (<reason>) — the forced render is UNKNOWN, never the default one.` | 11 | refusal |
 | `review-ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `review-ui render: cannot read <what> for #<n>: <reason> — the render is UNKNOWN.` | 11 | refusal |
@@ -383,8 +401,28 @@ review-ui render: surface "/hosgeldin:auth" captured: 1280x1640, 0 page errors
 ```
 
 ```
+$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
+review-ui render: surface "/hosgeldin:auth-caylak" captured: 1280x1640, 0 page errors
+{"set":"caylak","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/hosgeldin:auth-caylak","path":"/tmp/fabrika-review-ui/4321-03135b91/caylak/hosgeldin-auth-caylak.png","width":1280,"height":1640,"sha256":"4d02…","pageErrors":{"rows":[],"more":0}}]}
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
+review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: PREVIEW_TEST_CAYLAK_SESSION_TOKEN) — the named tier's render is UNKNOWN, never a seeded substitute.
+$ echo $?
+11
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
+review-ui render: surface "/hosgeldin:auth-caylak" named tier çaylak and rendered as yazar — the named tier's render is UNKNOWN, never another tier's.
+$ echo $?
+11
+```
+
+```
 $ fabrika review-ui render --pr 4321 --out forced --surface /hosgeldin --flag phoenix-welcome=on
-review-ui render: --flag was passed with the anonymous surface "/hosgeldin" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name every surface :auth.
+review-ui render: --flag was passed with the anonymous surface "/hosgeldin" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.
 $ echo $?
 10
 ```
@@ -408,6 +446,10 @@ $ echo $?
 - #6541 / ADR 0336 — the verb captured every flag at its default, so under the dark-ship norm the
   gate judged the off-path and said PASS. `--flag` is that ruling's implementation (#7218), and its
   own proof exists because an override the preview dropped is the same clean-but-wrong capture.
+- #7398 — one identity at one tier meant a çaylak-only surface could not be rendered at all, and the
+  yazar's shot of it came back `captured`, valid and decodable, showing the state the PR did not add.
+  The tier rides the surface id, one seeded identity per tier, and the session proof reads the tier
+  back — the third instance of the same class the two bullets above name.
 
 ---
 

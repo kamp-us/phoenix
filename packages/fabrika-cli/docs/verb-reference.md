@@ -530,6 +530,17 @@ created and arrived dep-less.
   loser's spawn died on `fatal: invalid reference: FETCH_HEAD`. The fetch lands in a per-spawn ref
   under `refs/fabrika/worktree-base/`, which is resolved to a commit id and dropped before the slow
   `git worktree add` runs at that id ([#6081](https://github.com/kamp-us/phoenix/issues/6081)).
+- **Two sibling-worktree faults are recovered from, and only those two.** A `git worktree add`
+  registers `.git/worktrees/<name>/` before it checks out, and while that entry is half-built any
+  concurrent command against the clone can die on it — a fetch's connectivity check on the null-oid
+  `worktrees/<name>/HEAD`, or another add on `worktrees/<name>/commondir`. An entry a *failed* add
+  left behind may not heal on its own — on git 2.40.1 it never does and every later fetch in that
+  clone fails identically, while on git 2.55.0 the next fetch succeeds — so the fetch and the add
+  each answer both sources by pruning the dead entries and re-attempting, bounded to five attempts
+  and up to 3s of delay per command, holding no lock across the slow add
+  ([#7331](https://github.com/kamp-us/phoenix/issues/7331)). Any other diagnostic refuses on the
+  first attempt, an exhausted one still refuses at `16`/`17` naming git's own line, and a recovered
+  add is still held to the tree existing and its virtual store landing.
 - **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
   `PreToolUse` — is retired, decision and declaration both (ADR
   [0331](../../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human
@@ -755,7 +766,8 @@ precondition read failed · `12` the park's cause is outside the known-recipe se
 recipe whose clearing condition is not met yet · `14` the task's leaf state is not a park · `15`
 the task could not be resolved · `16`–`18` the `governance` verdict is absent, stale, or FAIL ·
 `19` no run at the head concluded in failure · `20` the machine refused the `UNBLOCKED` · `21` the
-rerun was requested and its outcome could not be re-read · `22` the state applies no recipe.
+rerun was requested and its outcome could not be re-read · `22` the state applies no recipe · `39`
+the cwd is not in a repository, so `unpark` has none to derive its default lanes root off.
 
 **Known clears, novel escalates, and both are exit codes.** `12` is nothing-written, route it to a
 human; `13` is wait. `recipe route --exit` folds the first to `BLOCKED` and the second to `WIP`, so
@@ -848,7 +860,7 @@ Judge a UI pull request over its preview deployment. Contract:
 
 | Verb | Answers |
 |---|---|
-| `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized state (`/pano:auth` renders signed in as the test moderator, refusing on `11` unless the session proves it took). `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface is `:auth` and on `11` unless the preview's own evaluation says the key took |
+| `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized tier state (`/pano:auth` renders as the yazar test account, `/pano:auth-caylak` as the çaylak one), refusing on `11` unless the preview's own session read proves the shot came back signed in *and* at the tier the surface named. `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface names a tier state and on `11` unless the preview's own evaluation says the key took |
 | `review-ui post` | the `review-ui` verdict on stdin, appended into this namespace's one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
 | `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |

@@ -12,7 +12,7 @@
  * An **absolute** root resolves against nothing, so no drift is expressible and no probe is owed —
  * `lane brief` hands a shell its driver's root absolute for exactly that reason.
  */
-import {Effect, type FileSystem, Path, Result} from "effect";
+import {Effect, type FileSystem, Option, Path, Result} from "effect";
 import {repositoryOf} from "../delegate/repository.ts";
 import {exists} from "../io/fs.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
@@ -125,6 +125,32 @@ export const repoGroundRefusal = (
 				LANE_UNREADABLE,
 				`${verb}: whether ${ground.cwd} belongs to a repository is UNKNOWN (${ground.reason}) — the lanes root stays unresolved rather than guessed from the cwd (#5815).`,
 			);
+
+/**
+ * The lanes root one verb invocation resolves when `--root` is absent: derived off the repository
+ * the cwd belongs to (#5815), with the leaf joined under its primary checkout. An explicit `--root`
+ * wins over whatever would be derived.
+ *
+ * Shared rather than private to the `lane` adapter, because a verb in another group resolving the
+ * same root its own way is how one lane key comes to name two directories: `recipe unpark` defaulted
+ * to a bare cwd-relative leaf and proved every worktree-driven lane absent (#7380). The verb label
+ * arrives whole, so a caller outside `lane` names itself.
+ */
+export const resolveRootOrRefuse = (
+	verb: string,
+	root: Option.Option<string>,
+	leaf: string,
+	cwd: string,
+): Effect.Effect<string | VerbOutcome, never, FileSystem.FileSystem | Path.Path> =>
+	Option.isSome(root)
+		? Effect.succeed(root.value)
+		: Effect.gen(function* () {
+				const path = yield* Path.Path;
+				const ground = yield* deriveRepoRoot(cwd);
+				return ground._tag === "Derived"
+					? path.join(ground.repoRoot, leaf)
+					: repoGroundRefusal(verb, ground);
+			});
 
 /**
  * Run a rooted verb on ground it proved. The group-level guard ahead of every read and every boot,

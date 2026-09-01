@@ -94,29 +94,34 @@ you render independently or you have not looked.
 fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni
 ```
 
-**A surface behind login is named, not skipped.** A surface id may carry a realized state, and
-`auth` is the one realized today: `--surface /pano:auth` renders the same route as the moderator-tier
-test account instead of a visitor, so a delta that only exists signed in is judged rather than
-missed. Anything else after the colon is refused on `10` — a state nothing renders would shoot the
-default pixels under a variant's name.
+**A surface behind login is named, not skipped, and the name carries the tier.** A surface id may
+carry a realized state, and there are two: `--surface /pano:auth` renders the route as the
+yazar+moderator test account, `--surface /pano:auth-caylak` as the çaylak one. **Pick the tier the
+composition is for.** A nudge, a vouch prompt or an onboarding ask that a yazar never sees is
+suppressed for `:auth` by the product rule, so an `:auth` shot of it comes back clean showing nothing
+— the failure that reads as a judged surface (#7398). Anything else after the colon is refused on
+`10`, because a state nothing renders would shoot the default pixels under a variant's name.
 
-Two environment values make `:auth` work, and both come from somewhere specific:
-`PREVIEW_TEST_SESSION_TOKEN` is the token an operator passed to
-`node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>`, which is what puts
-the account and its session row on this PR's preview D1; `BETTER_AUTH_SECRET` is the **preview
-worker's** secret, not your local one, because it is the worker that verifies the cookie's signature.
-Neither is yours to mint — if you do not have them, you have not been handed the account, and
-`review-ui note` is the honest route. A `--flag` run needs one thing more: that account holding
-platform admin on this preview's D1, granted offline with
-`node packages/admin-grant/src/bin.ts grant --user-id preview-test-moderator --database-id <preview-d1>`.
+The values that make a tier state work come from somewhere specific. `BETTER_AUTH_SECRET` is the
+**preview worker's** secret, not your local one, because it is the worker that verifies the cookie's
+signature. Each tier's session token is what an operator passed to
+`node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>` —
+`PREVIEW_TEST_SESSION_TOKEN` for yazar, `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for çaylak — which is
+what puts that account and its session row on this PR's preview D1. **One tier's token never stands
+in for another's**: an unset one means that tier was not seeded here, and the verb refuses on `11`
+rather than shooting the tier it does hold. None of them is yours to mint — if you do not have them,
+you have not been handed the account, and `review-ui note` is the honest route. A `--flag` run needs
+one thing more: that tier's account holding platform admin on this preview's D1, granted offline with
+`node packages/admin-grant/src/bin.ts grant --user-id <preview-test-moderator|preview-test-caylak> --database-id <preview-d1>`.
 That is an operator's act against a throwaway preview, never yours and never against a database
 holding real accounts.
 
-**You never have to judge whether the shot came back signed in.** The verb hits the preview's own
-session endpoint from the same browser context before it records anything, and refuses `11` when the
-answer is not a user — an unset credential, a wrong or expired token, an account absent from this
-preview's D1 all land there. So a `:auth` capture in a manifest is a proven signed-in render, and a
-missing one is a refusal you read, never a silent anonymous shot.
+**You never have to judge whether the shot came back signed in, or as whom.** The verb hits the
+preview's own session endpoint from the same browser context before it records anything, and refuses
+`11` when the answer is not a user at the tier the surface named — an unset credential, a wrong or
+expired token, an account absent from this preview's D1, a shot that came back at another tier all
+land there. So a tier-state capture in a manifest is a proven render of that tier, and a missing one
+is a refusal you read, never a silent shot of the wrong audience.
 
 The verb captures the PR's **preview deployment** at the inspected head — never a checkout, never
 the PR's code run on your machine. Every surface returns a proven outcome — captured, crashed
