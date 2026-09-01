@@ -833,14 +833,15 @@ back. Contract:
 | `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved\|governance-owed\|governance-stale>` |
 | `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
-| `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back |
+| `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13`
 the read completed and its scope is provably incomplete · `14` the invoking token is below `write`,
 or the ACL lookup failed (ADR 0055) · `15` the write is not provably the prior rows plus one — the
-append-only fence. `4` is a deliberate gap.
+append-only fence · `17` a standing verdict of the opposite polarity at this head, or over this
+range, would be retired and `--supersede` was not passed. `4` is a deliberate gap.
 
 - **A check that cannot see what it is looking for does not return a plausible value.** An
   unreadable response, a provably short read and a non-conforming payload each resolve to their own
