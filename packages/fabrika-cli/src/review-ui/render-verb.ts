@@ -14,10 +14,13 @@
  * A surface may name a state (`/pano:auth`), but only one this repo can actually put on screen —
  * the vocabulary and its mechanism live in `capture/states.ts`. Anything else is refused rather
  * than shot, because a state nothing renders captures the default pixels under a variant's name,
- * which is coverage claimed and not held (#7051). An `:auth` surface is refused twice over: on `11`
- * before a browser launches when the credentials are incomplete, and on `11` again when the shot's
- * own session proof does not come back signed in — a cookie that failed to authenticate produces a
- * perfectly valid PNG of the visitor's page, which no byte check can tell from the real thing.
+ * which is coverage claimed and not held (#7051). Every realized state names the **tier** it renders
+ * at, and a tier-naming surface is refused three times over, all on `11`: before a browser launches
+ * when that tier's credentials are incomplete — an unset tier token is a tier `preview-seed
+ * test-account` did not seed, and falling back to the seeded one would shoot the wrong audience
+ * clean (#7398); when the shot's own session proof does not come back signed in; and when that proof
+ * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
+ * page nobody asked for, which no byte check can tell from the real thing.
  *
  * `--flag <key>=<on|off>` forces a dark-shipped flag for the run (ADR 0336, #7218), and it is
  * refused twice over on the same shape: on `10` when an operand is unreadable or names an anonymous
@@ -36,7 +39,14 @@ import {
 	overrideCookies,
 	parseFlagOperands,
 } from "../capture/flag-override.ts";
-import {isRealizedState, provesSession, REALIZED_STATES, stateOf} from "../capture/states.ts";
+import {
+	type CaptureTier,
+	isRealizedState,
+	provesSession,
+	REALIZED_STATES,
+	stateOf,
+	tierOf,
+} from "../capture/states.ts";
 import {writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
@@ -88,6 +98,7 @@ export type SurfaceRender =
 	| {readonly _tag: "Crashed"; readonly firstError: string}
 	| {readonly _tag: "Invalid"; readonly detail: string}
 	| {readonly _tag: "Unauthenticated"; readonly reason: string}
+	| {readonly _tag: "WrongTier"; readonly wanted: CaptureTier; readonly rendered: string}
 	| {readonly _tag: "OverrideInert"; readonly reason: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
@@ -147,6 +158,8 @@ const outcomeLine = (surface: string, render: SurfaceRender): string => {
 			return `${VERB}: surface "${surface}" captured invalid bytes (${render.detail}) — a capture nobody can open is not evidence (#3925's class).`;
 		case "Unauthenticated":
 			return `${VERB}: surface "${surface}" did not render signed in (${render.reason}) — the authenticated render is UNKNOWN, never the anonymous one.`;
+		case "WrongTier":
+			return `${VERB}: surface "${surface}" named tier ${render.wanted} and rendered as ${render.rendered} — the named tier's render is UNKNOWN, never another tier's.`;
 		case "OverrideInert":
 			return `${VERB}: surface "${surface}" did not render with its forced flags (${render.reason}) — the forced render is UNKNOWN, never the default one.`;
 		case "Failed":
@@ -209,7 +222,7 @@ export const runRender = (
 			if (anonymous !== undefined) {
 				return refuse(
 					OFF_VOCABULARY,
-					`${VERB}: --flag was passed with the anonymous surface "${anonymous}" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name every surface :auth.`,
+					`${VERB}: --flag was passed with the anonymous surface "${anonymous}" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (${REALIZED_STATES.join(", ")}) on every surface.`,
 				);
 			}
 		}
@@ -266,38 +279,44 @@ export const runRender = (
 			);
 		}
 
-		// An `:auth` surface rendered without credentials would come back as the visitor's page under
-		// the signed-in name — the "unseen ground reading as clean" this whole axis exists to stop —
-		// so an incomplete pair is UNKNOWN here, before a browser launches.
-		const wantsAuth = options.surfaces.some((surface) => provesSession(stateOf(surface)));
-		const identity = readIdentity(options.env);
-		if (wantsAuth && identity._tag === "Missing") {
+		// A tier-naming surface rendered without that tier's credentials would come back as the
+		// visitor's page — or worse, as the one tier this preview did seed — under the named tier's
+		// name. That is the "unseen ground reading as clean" this whole axis exists to stop, so an
+		// incomplete credential set is UNKNOWN here, before a browser launches. A tier whose token is
+		// unset is a tier `preview-seed test-account` did not seed on this preview (#7398).
+		const wantedTiers = options.surfaces.flatMap((surface) => {
+			const tier = tierOf(stateOf(surface));
+			return tier === null ? [] : [tier];
+		});
+		const identity = readIdentity(options.env, wantedTiers);
+		if (wantedTiers.length > 0 && identity._tag === "Missing") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: an :auth surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}) — the authenticated render is UNKNOWN, never the anonymous one.`,
+				`${VERB}: a tier-naming surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}) — the named tier's render is UNKNOWN, never a seeded substitute.`,
 				[scanned],
 			);
 		}
-		const authCookies: readonly CaptureCookie[] =
-			identity._tag === "Identity"
-				? sessionCookies(announced.url, identity.token, identity.secret)
-				: [];
+		const cookiesFor = (tier: CaptureTier): readonly CaptureCookie[] => {
+			if (identity._tag !== "Identity") return [];
+			const token = identity.tokens[tier];
+			return token === undefined ? [] : sessionCookies(announced.url, token, identity.secret);
+		};
 		const forcedCookies = overrideCookies(announced.url, forcedFlags);
 
 		const setDir = setDirectory(options.tmpRoot, pr, head, options.out);
 		const renders: SurfaceRender[] = [];
 		for (const surface of options.surfaces) {
-			// Only the `:auth` variant carries the session and the override; a bare route stays the
-			// visitor's render at every flag's default, so the two are genuinely different pixels
-			// rather than one shot twice.
-			const authenticated = provesSession(stateOf(surface));
+			// Only a tier-naming variant carries a session and the override, and it carries ITS OWN
+			// tier's session: a bare route stays the visitor's render at every flag's default, so each
+			// is genuinely different pixels rather than one shot repeated.
+			const tier = tierOf(stateOf(surface));
 			renders.push(
 				yield* options.render({
 					surface,
 					previewUrl: announced.url,
 					outDir: setDir,
-					cookies: authenticated ? [...authCookies, ...forcedCookies] : [],
-					forcedFlags: authenticated ? forcedFlags : NO_FORCED_FLAGS,
+					cookies: tier === null ? [] : [...cookiesFor(tier), ...forcedCookies],
+					forcedFlags: tier === null ? NO_FORCED_FLAGS : forcedFlags,
 				}),
 			);
 		}
@@ -316,9 +335,12 @@ export const runRender = (
 		}
 		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
 		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
-		// The two arms are one class — wrong session, wrong flag state — and route alike.
+		// The three arms are one class — wrong session, wrong tier, wrong flag state — and route alike.
 		const wrongPage = renders.findIndex(
-			(render) => render._tag === "Unauthenticated" || render._tag === "OverrideInert",
+			(render) =>
+				render._tag === "Unauthenticated" ||
+				render._tag === "WrongTier" ||
+				render._tag === "OverrideInert",
 		);
 		if (wrongPage !== -1) {
 			return refuse(

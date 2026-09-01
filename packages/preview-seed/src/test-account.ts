@@ -1,10 +1,18 @@
 /**
- * Provision the single moderator-tier test account a `review-ui` capture authenticates as,
- * and the session row whose token becomes that capture's cookie (issue #7051).
+ * Provision the tier-keyed test accounts a `review-ui` capture authenticates as, and the session
+ * row whose token becomes that capture's cookie (issues #7051, #7398).
+ *
+ * **One account per tier, because a tier is an audience.** A surface whose whole point is that it
+ * renders *below* yazar — a çaylak nudge, a pre-promotion prompt — cannot be rendered by an
+ * identity that clears the floor, and the shot comes back clean showing the state the PR did not
+ * add (#7398). So the identity set is keyed by {@link PREVIEW_TIERS} and a caller provisions
+ * whichever tiers it holds a token for; a tier with no token is left unseeded, and the capture verb
+ * refuses a surface naming it rather than falling back to a seeded one.
  *
  * Direct-D1 like the rest of this package — never a runtime worker route (CLAUDE.md, "Sözlük
  * seed"). Moderation authority is the `(id, "moderates", key(platform))` tuple, not `user.role`
- * (ADR 0107 §4); the vestigial column is written beside it only so a coarse role read agrees.
+ * (ADR 0107 §4); the vestigial column is written beside it only so a coarse role read agrees. Only
+ * the yazar identity carries that tuple: a çaylak with moderation authority is not a çaylak.
  *
  * The throwaway fence is the load-bearing part. A caller-asserted "this is a preview" proves
  * nothing, so the refusal is grounded in the database itself: a preview/stage D1 is deployed
@@ -20,7 +28,8 @@
  * carries credentials for signing IN, which this path skips by construction.
  */
 import {key, platform} from "@kampus/authz";
-import {and, eq, ne} from "drizzle-orm";
+import {and, eq, notInArray} from "drizzle-orm";
+import type {BatchItem} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
 import {relationTuple, seedSchema, session, user} from "./schema.ts";
@@ -38,26 +47,62 @@ export const PLATFORM = key(platform);
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * The one test identity. Fixed so every provision is an upsert on the same row rather than a new
- * account per run, and `.invalid` per RFC 2606 so the address can never reach a mailbox.
+ * The authorship tiers a preview identity can be provisioned at — the `user.tier` enum's own
+ * values, so a tier that does not exist in the schema cannot be named here.
  */
-export const TEST_ACCOUNT = {
-	id: "preview-test-moderator",
-	email: "preview-test-moderator@preview.invalid",
-	username: "onizleme-mod",
-	name: "Önizleme Moderatörü",
-	role: "moderator",
-	tier: "yazar",
-	sessionId: "preview-test-moderator-session",
-} as const;
+export const PREVIEW_TIERS = ["yazar", "çaylak"] as const;
+export type PreviewTier = (typeof PREVIEW_TIERS)[number];
+
+export interface TestAccount {
+	readonly id: string;
+	readonly email: string;
+	readonly username: string;
+	readonly name: string;
+	readonly role: "member" | "moderator";
+	readonly tier: PreviewTier;
+	readonly sessionId: string;
+	/** Whether this identity is granted the platform `moderates` tuple. */
+	readonly moderates: boolean;
+}
+
+/**
+ * The test identities, one per tier. Each is fixed so every provision is an upsert on the same row
+ * rather than a new account per run, and `.invalid` per RFC 2606 so no address can reach a mailbox.
+ * The yazar's id is the one #7051 shipped and is unchanged — `admin-grant` invocations and preview
+ * D1s in flight name it.
+ */
+export const TEST_ACCOUNTS = {
+	yazar: {
+		id: "preview-test-moderator",
+		email: "preview-test-moderator@preview.invalid",
+		username: "onizleme-mod",
+		name: "Önizleme Moderatörü",
+		role: "moderator",
+		tier: "yazar",
+		sessionId: "preview-test-moderator-session",
+		moderates: true,
+	},
+	çaylak: {
+		id: "preview-test-caylak",
+		email: "preview-test-caylak@preview.invalid",
+		username: "onizleme-caylak",
+		name: "Önizleme Çaylağı",
+		role: "member",
+		tier: "çaylak",
+		sessionId: "preview-test-caylak-session",
+		moderates: false,
+	},
+} as const satisfies Record<PreviewTier, TestAccount>;
+
+const TEST_ACCOUNT_IDS = PREVIEW_TIERS.map((tier) => TEST_ACCOUNTS[tier].id);
 
 declare const SessionTokenBrand: unique symbol;
 /** A session token that has passed {@link parseSessionToken} — the only thing provisioning accepts. */
 export type SessionToken = string & {readonly [SessionTokenBrand]: true};
 
 /**
- * better-auth mints a 32-byte session token, and this one is the whole credential for a moderator
- * on a live preview, so a short one is refused rather than written.
+ * better-auth mints a 32-byte session token, and each one here is the whole credential for a live
+ * preview identity, so a short one is refused rather than written.
  */
 export const MIN_SESSION_TOKEN_LEN = 32;
 
@@ -66,80 +111,118 @@ export const parseSessionToken = (raw: string): SessionToken | null =>
 		? (raw.trim() as SessionToken)
 		: null;
 
+/**
+ * One token per tier to provision. A tier absent here is a tier this run does not seed — the
+ * record shape is what makes "the same tier twice" unrepresentable.
+ */
+export type PreviewCredentials = Partial<Readonly<Record<PreviewTier, SessionToken>>>;
+
 export interface ProvisionReport {
-	/** `user` rows written — always 1 (the upsert reports the row it touched). */
-	readonly account: number;
-	/** `session` rows written — always 1; the token is refreshed to the one just supplied. */
-	readonly session: number;
-	/** `moderates` tuples newly minted — `0` on a re-run. */
+	/** The tiers provisioned, in {@link PREVIEW_TIERS} order — one `user` + one `session` row each. */
+	readonly tiers: readonly PreviewTier[];
+	/** `moderates` tuples newly minted — `0` on a re-run, and `0` when no moderating tier was seeded. */
 	readonly tuples: number;
 	readonly expiresAt: Date;
 }
 
 /**
- * Two arms, never one: a refusal must not read as a provision that wrote nothing. `NotThrowaway`
- * names how many foreign accounts were found, which is the fact the operator acts on.
+ * Three arms, never one: a refusal must not read as a provision that wrote nothing. `NotThrowaway`
+ * names how many foreign accounts were found, which is the fact the operator acts on, and
+ * `NoCredentials` says the run named no tier at all rather than seeding a default one.
  */
 export type ProvisionOutcome =
 	| {readonly _tag: "Provisioned"; readonly report: ProvisionReport}
-	| {readonly _tag: "NotThrowaway"; readonly foreignAccounts: number};
+	| {readonly _tag: "NotThrowaway"; readonly foreignAccounts: number}
+	| {readonly _tag: "NoCredentials"};
 
 /**
- * Accounts on this database that are not the test identity and not the `@[silinen]` migration
+ * Accounts on this database that are none of the test identities and not the `@[silinen]` migration
  * sentinel (ADR 0097) — the evidence the target is somebody's real world.
  */
 export const countForeignAccounts = async (db: SeedDb): Promise<number> => {
 	const rows = await db
 		.select({id: user.id})
 		.from(user)
-		.where(and(ne(user.id, TEST_ACCOUNT.id), eq(user.type, "human")))
+		.where(and(notInArray(user.id, TEST_ACCOUNT_IDS), eq(user.type, "human")))
 		.all();
 	return rows.length;
 };
 
-export const provisionTestAccount = async (
-	db: SeedDb,
-	token: SessionToken,
-	now: Date = new Date(),
-): Promise<ProvisionOutcome> => {
-	const foreignAccounts = await countForeignAccounts(db);
-	if (foreignAccounts > 0) return {_tag: "NotThrowaway", foreignAccounts};
+type Statement = BatchItem<"sqlite">;
 
-	const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+const accountRows = (
+	db: SeedDb,
+	tier: PreviewTier,
+	token: SessionToken,
+	now: Date,
+	expiresAt: Date,
+): readonly [Statement, Statement] => {
+	const account = TEST_ACCOUNTS[tier];
 	const accountRow = {
-		id: TEST_ACCOUNT.id,
-		name: TEST_ACCOUNT.name,
-		email: TEST_ACCOUNT.email,
+		id: account.id,
+		name: account.name,
+		email: account.email,
 		type: "human",
-		role: TEST_ACCOUNT.role,
-		tier: TEST_ACCOUNT.tier,
+		role: account.role,
+		tier: account.tier,
 		emailVerified: true,
-		username: TEST_ACCOUNT.username,
+		username: account.username,
 		createdAt: now,
 		updatedAt: now,
 	} as const;
 	const sessionRow = {
-		id: TEST_ACCOUNT.sessionId,
-		userId: TEST_ACCOUNT.id,
+		id: account.sessionId,
+		userId: account.id,
 		token,
 		expiresAt,
 		createdAt: now,
 		updatedAt: now,
 	};
-
-	// One `batch` so the account, its session and its moderation tuple land together or not at all
-	// — a session pointing at an unpromoted account renders a çaylak's view and reads as a defect.
-	const [, , tuple] = await db.batch([
+	return [
 		db.insert(user).values(accountRow).onConflictDoUpdate({target: user.id, set: accountRow}),
 		db.insert(session).values(sessionRow).onConflictDoUpdate({target: session.id, set: sessionRow}),
-		db
-			.insert(relationTuple)
-			.values({subject: TEST_ACCOUNT.id, relation: MODERATES, object: PLATFORM})
-			.onConflictDoNothing(),
-	]);
+	];
+};
+
+export const provisionTestAccounts = async (
+	db: SeedDb,
+	credentials: PreviewCredentials,
+	now: Date = new Date(),
+): Promise<ProvisionOutcome> => {
+	const requested = PREVIEW_TIERS.flatMap((tier) => {
+		const token = credentials[tier];
+		return token === undefined ? [] : [{tier, token}];
+	});
+	const [head, ...rest] = requested;
+	if (head === undefined) return {_tag: "NoCredentials"};
+
+	const foreignAccounts = await countForeignAccounts(db);
+	if (foreignAccounts > 0) return {_tag: "NotThrowaway", foreignAccounts};
+
+	const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+	const rows = [
+		...accountRows(db, head.tier, head.token, now, expiresAt),
+		...rest.flatMap(({tier, token}) => accountRows(db, tier, token, now, expiresAt)),
+	] as const;
+	const tuples = requested
+		.filter(({tier}) => TEST_ACCOUNTS[tier].moderates)
+		.map(({tier}) =>
+			db
+				.insert(relationTuple)
+				.values({subject: TEST_ACCOUNTS[tier].id, relation: MODERATES, object: PLATFORM})
+				.onConflictDoNothing(),
+		);
+
+	// One `batch` so every account, its session and its moderation tuple land together or not at all
+	// — a session pointing at an unpromoted account renders a çaylak's view under the yazar's name.
+	const results = await db.batch([...rows, ...tuples]);
 
 	return {
 		_tag: "Provisioned",
-		report: {account: 1, session: 1, tuples: tuple.meta.changes, expiresAt},
+		report: {
+			tiers: requested.map(({tier}) => tier),
+			tuples: results.slice(rows.length).reduce((total, result) => total + result.meta.changes, 0),
+			expiresAt,
+		},
 	};
 };
