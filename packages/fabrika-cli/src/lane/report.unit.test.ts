@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {EPIC_RULES} from "../wire/lane-brief.ts";
 import {eventForToken, flattenVocabularies, SHELL_VOCABULARIES} from "./report.ts";
@@ -104,5 +106,47 @@ describe("flattening the per-shell vocabularies", () => {
 			_tag: "Collision",
 			collisions: ["ROUTED: shipper reports FAIL, reviewer reports BLOCKED"],
 		});
+	});
+});
+
+describe("the UI reviewer's vocabulary against the skill that owns it", () => {
+	// Parsing the skill rather than restating it is what makes a seventh terminal fail here instead
+	// of stranding the next lane that ends on it — three of these six named no event at all, so an
+	// unrenderable lane's report hit the refusal and the lane stayed `active` forever (#7403).
+	const SKILL = fileURLToPath(
+		new URL("../../../../claude-plugins/fabrika/skills/review-ui/SKILL.md", import.meta.url),
+	);
+	const section = /\n## Terminal vocabulary\n([\s\S]*?)(?=\n## )/.exec(
+		readFileSync(SKILL, "utf8"),
+	)?.[1];
+	const declared = [...(section ?? "").matchAll(/\*\*(?:verdict )?([A-Z][A-Z-]+)\*\*/g)].flatMap(
+		(match) => (match[1] === undefined ? [] : [match[1]]),
+	);
+
+	it("reads the section and the six terminals it names", () => {
+		expect(section).toBeDefined();
+		expect(new Set(declared)).toEqual(
+			new Set(["PASS", "FAIL", "CANT-SEE", "ESCALATED", "BLOCKED-NO-MANIFEST", "ROUTED-ELSEWHERE"]),
+		);
+	});
+
+	it("resolves every terminal the skill declares, none to the refusal", () => {
+		for (const token of declared) {
+			expect(eventForToken(token)).toMatchObject({_tag: "Mapped", token});
+		}
+	});
+
+	it("holds exactly those terminals in the ui-reviewer group", () => {
+		expect(new Set(Object.keys(SHELL_VOCABULARIES["ui-reviewer"]))).toEqual(new Set(declared));
+	});
+
+	it("parks the three terminals that land no verdict and owe a human something", () => {
+		expect(eventForToken("CANT-SEE")).toEqual({
+			_tag: "Mapped",
+			token: "CANT-SEE",
+			event: "BLOCKED",
+		});
+		expect(eventForToken("BLOCKED-NO-MANIFEST")).toMatchObject({event: "BLOCKED"});
+		expect(eventForToken("ROUTED-ELSEWHERE")).toMatchObject({event: "BLOCKED"});
 	});
 });

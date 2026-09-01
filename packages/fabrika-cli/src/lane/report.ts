@@ -14,7 +14,8 @@ import type {OperatorEvent} from "./machine.ts";
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
  * builder's (`build/SKILL.md`), the reviewer's (`review/SKILL.md`), the shipper's
- * (`ship/SKILL.md`). Documentation and test surface; the lookup below flattens it.
+ * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`). Documentation and test surface; the
+ * lookup below flattens it.
  */
 export const SHELL_VOCABULARIES = {
 	builder: {
@@ -36,6 +37,20 @@ export const SHELL_VOCABULARIES = {
 		STALE: "BLOCKED",
 		UNBINDABLE: "BLOCKED",
 		ROUTED: "BLOCKED",
+	},
+	// The rendered gate's six terminals (#7403). Three of them named no event at all until this
+	// group existed, so an unrenderable `review:ui` lane hit the refusal and stayed `active` with no
+	// live shell — the park it actually was reached nobody. Each of the three is the reviewer
+	// group's own BLOCKED shape: no verdict landed and a human is owed the render, the manifest or
+	// the route. The three that re-spell the reviewer's agree with it, which is why flattening still
+	// reports `Flat`.
+	"ui-reviewer": {
+		PASS: "PASS",
+		FAIL: "FAIL",
+		"CANT-SEE": "BLOCKED",
+		ESCALATED: "BLOCKED",
+		"BLOCKED-NO-MANIFEST": "BLOCKED",
+		"ROUTED-ELSEWHERE": "BLOCKED",
 	},
 	shipper: {
 		"ALREADY-MERGED": "DONE",
