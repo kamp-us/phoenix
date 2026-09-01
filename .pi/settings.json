@@ -1,3 +1,4 @@
 {
-	"packages": ["npm:@kampus/fabrika-pi"]
+	"packages": ["npm:@kampus/fabrika-pi"],
+	"npmCommand": ["pnpm", "--ignore-workspace", "--config.catalog-mode=manual"]
 }
