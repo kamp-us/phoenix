@@ -55,7 +55,7 @@ import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 const VERB = "fabrika recipe unpark";
 
 export interface UnparkOptions {
-	/** The lanes root — `.fabrika/lanes` unless a caller relocates it. */
+	/** The lanes root, already resolved by the adapter — the caller's `--root`, else the derived one. */
 	readonly root: string;
 	/** The lane id under the root — by convention the issue number the lane drives. */
 	readonly lane: string;
