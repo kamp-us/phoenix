@@ -144,6 +144,15 @@ Children but a `15` out of `lane emit` means the plan is there and its `## Depen
 missing or unparseable, which is `plan-epic`'s too — same `STOPPED`, different repair. Either way you
 never fall through to the template.
 
+**Exit `48` is the mirror: the issue is an epic's *child*, so the lane to drive is the parent's.**
+The parent epic's lane already carries this number as one of its tasks, and a second ledger booted
+over it is two documents describing one piece of work with nothing reconciling them
+([#7381](https://github.com/kamp-us/phoenix/issues/7381)). #7024's guard could not see this case —
+both facts it reads are facts about the issue itself, and a child carries neither. The refusal names
+the parent, so end `STOPPED` and drive that lane instead; never boot the child. An issue that is
+both an epic and a child still routes to `lane emit` on `46`, because the machine it needs has not
+changed.
+
 A lane already booted on the coder template before this refusal existed is not repaired in place: a
 lane on disk is never re-emitted over (ADR
 [0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)'s 2026-08-20 amendment),
