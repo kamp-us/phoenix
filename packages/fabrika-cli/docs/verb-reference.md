@@ -534,9 +534,10 @@ created and arrived dep-less.
   registers `.git/worktrees/<name>/` before it checks out, and while that entry is half-built any
   concurrent command against the clone can die on it — a fetch's connectivity check on the null-oid
   `worktrees/<name>/HEAD`, or another add on `worktrees/<name>/commondir`. An entry a *failed* add
-  left behind never heals, so every later fetch in that clone fails identically; the fetch and the
-  add each answer both sources by pruning the dead entries and re-attempting, bounded to five
-  attempts and under 3s of delay, holding no lock across the slow add
+  left behind may not heal on its own — on git 2.40.1 it never does and every later fetch in that
+  clone fails identically, while on git 2.55.0 the next fetch succeeds — so the fetch and the add
+  each answer both sources by pruning the dead entries and re-attempting, bounded to five attempts
+  and up to 3s of delay per command, holding no lock across the slow add
   ([#7331](https://github.com/kamp-us/phoenix/issues/7331)). Any other diagnostic refuses on the
   first attempt, an exhausted one still refuses at `16`/`17` naming git's own line, and a recovered
   add is still held to the tree existing and its virtual store landing.

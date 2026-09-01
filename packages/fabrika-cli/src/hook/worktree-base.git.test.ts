@@ -24,7 +24,7 @@
 import {execFile, execFileSync} from "node:child_process";
 import {promisify} from "node:util";
 import {afterAll, describe, expect, it} from "vitest";
-import {GIT_ENV, openClone, removeClones} from "./throwaway-clone.ts";
+import {GIT_ENV, openClone, removeClones} from "./throwaway-clone.test-support.ts";
 import {
 	baseRefFor,
 	dropBaseRefArgs,

@@ -290,19 +290,25 @@ visibly a `git fetch`, whose connectivity check reds with `fatal: bad object wor
 and `did not send all necessary objects`. The name in the message is the **sibling's** worktree, not
 the failing command's own, which is the tell.
 
-**The trap is that the entry does not always heal.** Two sources look identical in the diagnostic
-and behave oppositely (both measured on git 2.40.1 in
-[`packages/fabrika-cli/src/hook/worktree-concurrency.git.test.ts`](../packages/fabrika-cli/src/hook/worktree-concurrency.git.test.ts)):
+**The trap is that the entry may not heal.** Two sources look identical in the diagnostic and behave
+differently (measured in
+[`packages/fabrika-cli/src/hook/worktree-concurrency.git.test.ts`](../packages/fabrika-cli/src/hook/worktree-concurrency.git.test.ts),
+each with the git it was measured on):
 
-- A **live** add closes its own window — one sample in 161 across a ~320ms creation, and it closes
-  *before* `post-checkout`, so it never spans the ~10s dependency install. Waiting works.
-- An add that **died** mid-creation leaves the entry forever. Re-running the identical fetch fails
-  identically, for as long as the directory is there, and this is the shape that shows up in
-  production: every failing fetch naming one worktree — the first spawn's, whose own add had already
-  failed ([#7331](https://github.com/kamp-us/phoenix/issues/7331)).
+- A **live** add closes its own window — on git 2.40.1, one sample in 161 across a ~320ms creation,
+  and it closes *before* `post-checkout`, so it never spans the ~10s dependency install. Waiting
+  works.
+- An add that **died** mid-creation leaves the entry behind, and whether it clears on its own
+  depends on your git. On git 2.40.1 it never does: re-running the identical fetch fails
+  identically, for as long as the directory is there. On git 2.55.0 the next fetch succeeds. This is
+  the shape that shows up in production: every failing fetch naming one worktree — the first
+  spawn's, whose own add had already failed
+  ([#7331](https://github.com/kamp-us/phoenix/issues/7331)).
 
-So **`git worktree prune` is the fix for a mystery `bad object worktrees/*/HEAD`, and a bare retry is
-not.** Prune is safe to run while siblings are adding: `git worktree add` writes
+So **`git worktree prune` is the fix for a mystery `bad object worktrees/*/HEAD` on every git
+measured, where a bare retry only fixes it on some.** If you are on 2.55 and your retry worked, that
+is your git healing the entry, not the entry having been harmless. Prune is safe to run while
+siblings are adding: `git worktree add` writes
 `worktrees/<name>/locked` = `initializing` as the first file in the entry and removes it only once
 the checkout is done, and prune skips a locked entry; independently, the worktree directory itself
 exists at every instant the entry does, and prune only drops an entry whose directory is missing.

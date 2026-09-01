@@ -91,19 +91,22 @@ export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
  * what separates these from a genuine failure naming the tree it was asked to build. #6081's
  * per-spawn base ref fixed neither, because neither is about what the base is named.
  *
- * **Each arm has two sources, and only one of them passes by itself** — measured on git 2.40.1, both
- * in `worktree-concurrency.git.test.ts`:
+ * **Each arm has two sources** — both measured in `worktree-concurrency.git.test.ts`, each with the
+ * git it was measured on:
  *
  *  - A **live** sibling add, which holds the state for the length of its creation window and then
- *    replaces it. Short: one sample in 161 over a ~320ms creation, and it closes *before* the
- *    `post-checkout` install, so it never spans that ~10s.
- *  - A **dead** sibling add, which left its administrative directory behind. This one never closes:
- *    a re-run of the identical fetch fails identically, for as long as the directory is there. It is
- *    the shape the #7331 report measured in production, where every failing fetch named one
- *    worktree — the first spawn's, whose own add had failed earlier in the same run.
+ *    replaces it. Short, on git 2.40.1: one sample in 161 over a ~320ms creation, and it closes
+ *    *before* the `post-checkout` install, so it never spans that ~10s.
+ *  - A **dead** sibling add, which left its administrative directory behind. Whether that entry
+ *    heals on its own is git's own business and moves between versions: on git 2.40.1 it never does
+ *    — a re-run of the identical fetch fails identically for as long as the directory is there —
+ *    while on git 2.55.0, this repo's CI runner, the second fetch succeeds. It is the shape the
+ *    #7331 report measured in production, where every failing fetch named one worktree — the first
+ *    spawn's, whose own add had failed earlier in the same run.
  *
  * So the recovery is {@link pruneWorktreesArgs} *and* a bounded re-attempt, never a re-attempt
- * alone: the prune clears the dead sibling's leftover, and the backoff waits out the live one.
+ * alone: prune clears the dead sibling's leftover on both gits measured, where a bare re-attempt
+ * clears it on only one of them, and the backoff waits out the live one.
  */
 export type ConcurrencyArm = "PlaceholderHead" | "IncompleteAdminDir";
 
@@ -152,7 +155,10 @@ export const RECOVERY_ATTEMPTS = 5;
 const FIRST_DELAY_MS = 200;
 const MAX_DELAY_MS = 1_600;
 
-/** Doubling from 200ms, capped — so the whole recovery adds at most 3s to a spawn's 600s budget. */
+/**
+ * Doubling from 200ms, capped — so one wrapped command's recovery waits at most 3s. The verb wraps
+ * two, so a spawn that loses at both spends up to 6s of its 600s budget.
+ */
 export const recoveryBackoffMs = (attempt: number): number =>
 	Math.min(FIRST_DELAY_MS * 2 ** Math.max(0, attempt - 1), MAX_DELAY_MS);
 

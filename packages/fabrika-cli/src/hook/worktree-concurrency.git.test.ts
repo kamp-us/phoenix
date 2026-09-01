@@ -17,33 +17,59 @@
  * **The demonstration is injected, not raced for, and that is the point.** The report behind #7331
  * read the arm out of a timing race, and a test that waits for one is a test that hangs on the
  * machine where it never fires. The state is reproduced directly instead — the exact
- * administrative directory a failed `git worktree add` leaves — which is deterministic, is what
- * production actually hit, and is a strictly harder case than the race: it does not pass on its own.
- * The timing race is still driven, at a declared bound, and asserts nothing when it does not open.
+ * administrative directory a failed `git worktree add` leaves — so the fault fires on every git
+ * measured without waiting for anything. The timing race is still driven, at a declared bound, and
+ * asserts nothing when it does not open.
  *
- * **Measured on git 2.40.1, macOS** (`gitVersion()` is printed into every skip):
- *  - the leftover administrative directory fails every subsequent fetch, identically, forever;
- *  - a live add holds `worktrees/<name>/locked` = `initializing` across its creation window, so
- *    `git worktree prune` cannot deregister it;
- *  - the placeholder HEAD closes before `post-checkout`, so the live window never spans the install.
+ * **One thing about that planted state is version-dependent, and it is asserted as a choice between
+ * the two behaviours measured rather than as the one this machine has.** Whether a *bare* re-run
+ * clears the leftover entry is git's own business: on git 2.40.1 it never does, and on git 2.55.0
+ * the second identical fetch succeeds. Pinning either reds the other machine, and asserting nothing
+ * would let an unmeasured third behaviour through, so the test below admits exactly those two and
+ * names `gitVersion()` in its failure message. What holds on both — and is what the recovery rests
+ * on — is that pruning then re-attempting clears it.
+ *
+ * **Measured in this file** (`gitVersion()` is printed into every skip and into the version-split
+ * assertion); the version each measurement holds on is named with it:
+ *  - a leftover administrative directory fails the next fetch on both gits measured; a *bare*
+ *    re-run keeps failing on git 2.40.1 and succeeds on git 2.55.0;
+ *  - on git 2.40.1, macOS: a live add holds `worktrees/<name>/locked` = `initializing` across its
+ *    creation window, so `git worktree prune` cannot deregister it;
+ *  - on git 2.40.1, macOS: the placeholder HEAD closes before `post-checkout`, so the live window
+ *    never spans the install.
  *
  * **What the production trace can retain (acceptance criterion 7).** Nothing here confirms the six
- * `fail: git fetch origin main` entries the #7331 report read out of the hook trace, and after this
- * change nothing can: the harness shows a non-zero hook's stderr and discards a zero-exit hook's
- * entirely (`claude-plugins/fabrika/docs/hook-surface.md`, *The harness exit-code contract*), so a
- * recovered arm — the case this change creates — leaves no diagnostic anywhere by construction.
- * What is retained is the exhausted arm: the refusal keeps git's own line plus the cause it lost to,
- * so a future `BASE_FETCH_FAILED` that really is this fault says so in its own text. The six old
- * entries stay what the report called them, an inference from shape. This PR reclassifies none of
- * them, and the shape it measured — every failing fetch naming one worktree, the first spawn's,
- * whose own add had already failed — is consistent with that inference without proving it.
+ * `fail: git fetch origin main` entries the #7331 report read out of the hook trace, and what this
+ * change can promise is bounded by the `WorktreeCreate` contract — quoted verbatim in
+ * `claude-plugins/fabrika/docs/hook-surface.md` under *`WorktreeCreate` — a provider hook, left
+ * undeclared*. That entry gives stdout one meaning, the worktree path, and says of the rest only
+ * `Exit code 0 - worktree created successfully` / `Other exit codes - worktree creation failed`. It
+ * makes no statement about a hook's stderr, unlike the `WorktreeRemove` entry beside it, which does.
+ * So nothing in the contract retains a *recovered* arm's diagnostic — the case this change creates —
+ * and that is left unclaimed rather than inferred from the `PreToolUse` exit-code table, which the
+ * same doc warns carries different meanings per event.
+ *
+ * What is retained is the *exhausted* arm, and on fabrika's own surface rather than the harness's:
+ * the refusal keeps git's own line plus the cause it lost to, and the same doc reproduces the
+ * harness surfacing a failed `WorktreeCreate` hook's output live (`Error creating worktree:
+ * WorktreeCreate hook failed: …`). So a future `BASE_FETCH_FAILED` that really is this fault says so
+ * in its own text. The six old entries stay what the report called them, an inference from shape.
+ * This PR reclassifies none of them, and the shape it measured — every failing fetch naming one
+ * worktree, the first spawn's, whose own add had already failed — is consistent with that inference
+ * without proving it.
  */
 import {execFile} from "node:child_process";
 import {mkdirSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
 import {promisify} from "node:util";
 import {afterAll, describe, expect, it} from "vitest";
-import {GIT_ENV, gitSync, gitVersion, openClone, removeClones} from "./throwaway-clone.ts";
+import {
+	GIT_ENV,
+	gitSync,
+	gitVersion,
+	openClone,
+	removeClones,
+} from "./throwaway-clone.test-support.ts";
 import {
 	baseRefFor,
 	type ConcurrencyArm,
@@ -134,9 +160,18 @@ const provision = async (
 
 	const lost = {base: "", created: false, failures};
 	if ((await recovered(fetchBaseArgs("main", ref))) === null) return lost;
-	const base = await recovered(resolveBaseArgs(ref));
+	// Plain, not `recovered`: the verb does not wrap the resolve either, because `rev-parse` reads
+	// one ref by name and walks no worktree entry. A recovery only the model has would hide a lost
+	// spawn production would take.
+	const base = await git(resolveBaseArgs(ref)).then(
+		(done) => done.stdout.trim(),
+		(cause) => {
+			failures.push(stderrOf(cause).split("\n").join(" | "));
+			return "";
+		},
+	);
 	await git(dropBaseRefArgs(ref)).catch(() => undefined);
-	if (base === null || base === "") return lost;
+	if (base === "") return lost;
 
 	const added = await recovered(["worktree", "add", "--detach", join(scratch, name), base]);
 	return {base, created: added !== null, failures};
@@ -177,7 +212,7 @@ const armsIn = (spawns: ReadonlyArray<Spawn>): ReadonlySet<ConcurrencyArm> => {
 afterAll(removeClones);
 
 describe("a dead sibling's leftover administrative directory", () => {
-	it("fails the pre-fix sequence, and keeps failing it — the fault does not pass on its own", async () => {
+	it("fails the pre-fix sequence — the fault fires with no race to wait for", async () => {
 		const {clone, scratch} = openClone();
 		plantDeadSibling(clone, "wt-0-0");
 
@@ -185,11 +220,29 @@ describe("a dead sibling's leftover administrative directory", () => {
 
 		expect(spawn.created).toBe(false);
 		expect(armsIn([spawn])).toEqual(new Set(["PlaceholderHead"]));
+	}, 120_000);
 
-		// The whole reason a bare retry is not the fix: the identical command fails identically.
+	/**
+	 * Whether a *bare* re-run clears the leftover is version-dependent, so this admits both measured
+	 * behaviours and names the git it saw. Pinning either reds the other machine — git 2.40.1 keeps
+	 * failing, git 2.55.0 heals — and asserting nothing would let an unmeasured third through.
+	 */
+	it("keeps failing a bare re-run, or heals it, according to this machine's git", async () => {
+		const {clone, scratch} = openClone();
+		plantDeadSibling(clone, "wt-0-0");
+		expect((await provision(clone, scratch, "pre", 1)).created).toBe(false);
+
 		const again = await provision(clone, scratch, "pre-again", 1);
-		expect(again.created).toBe(false);
-		expect(armsIn([again])).toEqual(new Set(["PlaceholderHead"]));
+		const outcome = again.created
+			? "healed"
+			: armsIn([again]).has("PlaceholderHead")
+				? "still-failing"
+				: `failed on something else: ${again.failures.join(" / ")}`;
+
+		expect(
+			["still-failing", "healed"],
+			`a bare re-run on ${gitVersion()} — neither behaviour this fault has been measured to have`,
+		).toContain(outcome);
 	}, 120_000);
 
 	it("is cleared by the recovery, so the same spawn provisions on a later attempt", async () => {
@@ -279,9 +332,11 @@ describe("classifying a git diagnostic as one of the two named arms", () => {
 });
 
 describe("the recovery's bounds", () => {
-	it("doubles the wait and then caps it, so the whole recovery stays inside the hook's budget", () => {
+	it("doubles the wait and then caps it, so one command waits at most 3s", () => {
 		const waits = Array.from({length: RECOVERY_ATTEMPTS - 1}, (_, i) => recoveryBackoffMs(i + 1));
 		expect(waits).toEqual([200, 400, 800, 1600]);
-		expect(waits.reduce((a, b) => a + b, 0)).toBeLessThan(5_000);
+		// Per wrapped command, and the verb wraps two — so a spawn losing at both waits up to 6s of
+		// its 600s budget, not 3s.
+		expect(waits.reduce((a, b) => a + b, 0)).toBe(3_000);
 	});
 });

@@ -4,7 +4,8 @@
  *
  * Not a test itself and not under `__fixtures__/`, which holds captured payloads rather than code.
  * It lives here because both concurrency files need the identical clone: a fixture that differs
- * between them would let one file's green rest on a repo shape the other never exercises.
+ * between them would let one file's green rest on a repo shape the other never exercises. The
+ * `.test-support.ts` suffix is what `tsconfig.build.json` excludes, so it stays out of `dist/`.
  */
 import {execFileSync} from "node:child_process";
 import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
