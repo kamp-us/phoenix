@@ -68,10 +68,32 @@ describe("the meter reads the aggregate-only standing selection and nothing more
 		expect(Object.keys(meter).sort()).toEqual(["bar", "karma", "kind", "vouchFact", "vouchNeeded"]);
 	});
 
-	// "a second standing source appears" is a SOURCE fact, not a value one: a new
-	// `useImperativeView("myAuthorshipStanding", …)` anywhere in the SPA would read the same
-	// view through a second selection nothing here constrains. One call site, in the one module
-	// that owns `STANDING_FIELDS` — the same tripwire idiom Topbar.test.tsx uses for CSS.
+	// "a second standing source appears" is a SOURCE fact, not a value one: a new reader anywhere
+	// in the SPA would read the same view through a second selection nothing here constrains. One
+	// call site, in the one module that owns `STANDING_FIELDS` — the tripwire idiom Topbar.test.tsx
+	// uses for CSS.
+	//
+	// The guard names the VIEW, not one call shape: matching `useImperativeView(\s*"…"` let a
+	// single-quoted, backticked or const-named root walk straight past it. A second reader has to
+	// name the view in a string literal somewhere, so that is what is scanned — over code with
+	// comments removed, since every docblock here quotes the name in prose.
+	const codeOnly = (source: string): string =>
+		source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+	const NAMES_THE_VIEW = /(["'`])myAuthorshipStanding\1/;
+
+	it("the guard matches every spelling of the root, and no prose mention of it", () => {
+		for (const spelling of [
+			'useImperativeView("myAuthorshipStanding", V, o)',
+			"useImperativeView('myAuthorshipStanding', V, o)",
+			"useImperativeView(`myAuthorshipStanding`, V, o)",
+			'const ROOT = "myAuthorshipStanding";\nuseImperativeView(ROOT, V, o)',
+		]) {
+			expect(NAMES_THE_VIEW.test(codeOnly(spelling))).toBe(true);
+		}
+		expect(NAMES_THE_VIEW.test(codeOnly("// reads `myAuthorshipStanding`"))).toBe(false);
+		expect(NAMES_THE_VIEW.test(codeOnly("/* the `myAuthorshipStanding` read */"))).toBe(false);
+	});
+
 	it("exactly one module in apps/web/src reads the myAuthorshipStanding view", () => {
 		const src = fileURLToPath(new URL("../../", import.meta.url));
 		// Yields paths RELATIVE to `src`, so the assertion below reads as a repo path.
@@ -84,7 +106,7 @@ describe("the meter reads the aggregate-only standing selection and nothing more
 						: [],
 			);
 		const readers = sources("").filter((f) =>
-			/useImperativeView\(\s*"myAuthorshipStanding"/.test(readFileSync(`${src}${f}`, "utf8")),
+			NAMES_THE_VIEW.test(codeOnly(readFileSync(`${src}${f}`, "utf8"))),
 		);
 		expect(readers).toEqual(["components/profile/CaylakStatusBlock.tsx"]);
 	});

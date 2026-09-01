@@ -496,9 +496,20 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 			caylakMeter: caylakMeter({karma: 9, bar: 15, vouchExists: false}),
 		});
 		expect(container.querySelectorAll("progress")).toHaveLength(0);
-		expect(screen.getByTestId("topbar-caylak-meter").getAttribute("title")).toBe(
+		expect(screen.getByTestId("topbar-caylak-vouch-needed").textContent).toContain(
 			VOUCH_NEEDED_COPY.message,
 		);
+	});
+
+	// A `title` is the delivery this rejects: it never opens on touch and takes no keyboard
+	// focus, so the mobile çaylak criterion 3 is written for would be told nothing at all.
+	it("delivers the vouch-needed copy as rendered text, reachable with no hover", () => {
+		renderMeter({caylakMeter: caylakMeter({karma: 9, bar: 15, vouchExists: false})});
+		const meter = screen.getByTestId("topbar-caylak-meter");
+		expect(meter.textContent).toContain(VOUCH_NEEDED_COPY.message);
+		for (const el of [meter, ...meter.querySelectorAll("*")]) {
+			expect(el.getAttribute("title")).toBeNull();
+		}
 	});
 
 	it("draws exactly one bar once a kefil exists, against the reduced target", () => {
@@ -510,7 +521,7 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 		expect(bars[0]?.getAttribute("max")).toBe("15");
 		expect(bars[0]?.getAttribute("value")).toBe("9");
 		expect(screen.getByTestId("topbar-caylak-kefil").textContent).toContain("kefil: var");
-		expect(screen.getByTestId("topbar-caylak-meter").getAttribute("title")).toBeNull();
+		expect(screen.queryByTestId("topbar-caylak-vouch-needed")).toBeNull();
 	});
 
 	// Criterion 2's "no badges, streaks or second standing readout anywhere in the chrome".

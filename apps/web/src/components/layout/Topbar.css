@@ -227,6 +227,14 @@
 	white-space: nowrap;
 }
 
+/* The unvouched çaylak's settled copy. No `text-overflow: ellipsis` and no width-gated
+   `display: none`: either one puts it back out of reach on the narrow viewport it is here for. */
+.kp-topbar__caylak-vouch-needed {
+	color: var(--text-muted);
+	font: var(--t-meta);
+	min-width: 0;
+}
+
 /* The meter's bar rides the karma atom, whose fill is `--accent` (Karma.css). That fill is
    unlawful inside the topbar under the accent-scarcity law below, so it is stripped to a
    neutral role token here — the same override shape the law's own two treatments use. */

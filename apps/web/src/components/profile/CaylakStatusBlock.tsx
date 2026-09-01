@@ -7,7 +7,7 @@
  * touch the wire at all unless the gates pass — `myAuthorshipStanding` throws
  * `UNAUTHORIZED` for an anonymous viewer.
  */
-import {useId} from "react";
+import {createContext, useContext, useId} from "react";
 import {view} from "react-fate";
 import type {AuthorshipStanding} from "../../../worker/features/fate/views";
 import type {Tier} from "../../../worker/features/kunye/standing";
@@ -63,7 +63,7 @@ export const STANDING_FIELDS = {
 const StandingView = view<AuthorshipStanding>()(STANDING_FIELDS);
 
 // See ADR 0022
-type Standing = Pick<AuthorshipStanding, "karma" | "bar" | "vouchExists" | "inReviewCount">;
+export type Standing = Pick<AuthorshipStanding, "karma" | "bar" | "vouchExists" | "inReviewCount">;
 
 // A failed read resolves to `null` on purpose — the safe/off path, so an error
 // degrades to "no block" rather than throwing the whole header.
@@ -75,6 +75,26 @@ export function useAuthorshipStanding(enabled: boolean): Standing | null {
 	return state.status === "ok" ? state.data : null;
 }
 
+/**
+ * `null` ⇒ nothing upstream holds a standing read, so a consumer below issues its own.
+ * Non-null ⇒ the chrome's ambient meter is already reading this view (its `standing` may still
+ * be settling), so a read here would duplicate a request rather than fetch a second fact.
+ */
+export type AuthorshipStandingChannel = {readonly standing: Standing | null} | null;
+
+export const AuthorshipStandingContext = createContext<AuthorshipStandingChannel>(null);
+
+/**
+ * The standing read for a consumer below the chrome. `useImperativeView` has no dedupe — every
+ * instance fires its own `fate.request` in an effect — so `enabled` is ANDed with "nothing
+ * upstream is reading": two live requests for one view are unreachable, not merely untested.
+ */
+export function useSharedAuthorshipStanding(enabled: boolean): Standing | null {
+	const upstream = useContext(AuthorshipStandingContext);
+	const own = useAuthorshipStanding(enabled && upstream === null);
+	return upstream ? upstream.standing : own;
+}
+
 export interface CaylakStatusBlockProps {
 	readonly profileUserId: string;
 }
@@ -83,7 +103,7 @@ export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
 	const {me} = useMe();
 	const headingId = useId();
 	const show = shouldShowCaylakStatus(me?.tier, me?.id === profileUserId);
-	const standing = useAuthorshipStanding(show);
+	const standing = useSharedAuthorshipStanding(show);
 
 	if (!show || !standing) return null;
 

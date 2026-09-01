@@ -153,11 +153,7 @@ export function Topbar({
 	// The meter wins over the bare chip only where it exists — a yazar (and every flag-off
 	// çaylak) reaches the same `<Karma>` call this file has always rendered.
 	const karmaChip = caylakMeter ? (
-		<span
-			className="kp-topbar__caylak-meter"
-			data-testid="topbar-caylak-meter"
-			{...(caylakMeter.kind === "vouch-needed" ? {title: caylakMeter.vouchNeeded} : {})}
-		>
+		<span className="kp-topbar__caylak-meter" data-testid="topbar-caylak-meter">
 			<Karma
 				value={caylakMeter.karma}
 				target={caylakMeter.bar}
@@ -169,6 +165,13 @@ export function Topbar({
 			<span className="kp-topbar__caylak-kefil" data-testid="topbar-caylak-kefil">
 				· {caylakMeter.vouchFact}
 			</span>
+			{/* Rendered, not a `title`: a tooltip on a non-interactive span never opens on touch
+			    and takes no keyboard focus, so it would leave the mobile çaylak told nothing. */}
+			{caylakMeter.kind === "vouch-needed" ? (
+				<span className="kp-topbar__caylak-vouch-needed" data-testid="topbar-caylak-vouch-needed">
+					· {caylakMeter.vouchNeeded}
+				</span>
+			) : null}
 		</span>
 	) : typeof karma === "number" ? (
 		<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />

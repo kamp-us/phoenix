@@ -36,7 +36,7 @@ export type CaylakMeter =
 			readonly karma: number;
 			readonly bar: number;
 			readonly vouchFact: string;
-			/** `CaylakStatusBlock`'s settled copy, carried as the chip's hover title. */
+			/** `CaylakStatusBlock`'s settled copy, rendered as visible chip text — never a tooltip. */
 			readonly vouchNeeded: string;
 	  };
 

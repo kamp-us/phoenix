@@ -25,7 +25,10 @@ import {EmailDeliveryNoticeMount} from "./components/membrane/EmailDeliveryNotic
 import {actorLabel} from "./components/moderation/actor-identity";
 import {hasSeenWelcome, welcomeStorage} from "./components/onboarding/welcomeSeen";
 import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
-import {useAuthorshipStanding} from "./components/profile/CaylakStatusBlock";
+import {
+	AuthorshipStandingContext,
+	useAuthorshipStanding,
+} from "./components/profile/CaylakStatusBlock";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
 import {SozlukSubnavLayout} from "./components/sozluk/SozlukSubnavLayout";
@@ -345,14 +348,24 @@ function LayoutContent() {
 		return () => setChips?.(null);
 	}, [chips, setChips]);
 
+	// Publishing the chrome's live read is what keeps `CaylakStatusBlock` and `WelcomePage` from
+	// issuing a second `myAuthorshipStanding` request under the meter (#7045). A non-null channel
+	// means "already reading", so it must be published while the read is still settling too.
+	const standingChannel = useMemo(
+		() => (meterEligible ? {standing: meterStanding} : null),
+		[meterEligible, meterStanding],
+	);
+
 	return (
 		<>
 			<EmailDeliveryNoticeMount me={me} />
-			{needsBootstrap && sessionUser ? (
-				<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
-			) : (
-				<Outlet />
-			)}
+			<AuthorshipStandingContext.Provider value={standingChannel}>
+				{needsBootstrap && sessionUser ? (
+					<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
+				) : (
+					<Outlet />
+				)}
+			</AuthorshipStandingContext.Provider>
 		</>
 	);
 }

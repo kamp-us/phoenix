@@ -26,7 +26,7 @@ import {
 } from "../components/onboarding/welcomeSeen";
 import {
 	caylakPromotionPath,
-	useAuthorshipStanding,
+	useSharedAuthorshipStanding,
 	vouchExistsLabel,
 } from "../components/profile/CaylakStatusBlock";
 import {Button} from "../components/ui/Button";
@@ -74,7 +74,7 @@ export function WelcomePage() {
 	}, [gate, userId]);
 
 	const addressing = welcomeAddressing(me?.tier);
-	const standing = useAuthorshipStanding(gate === "ready");
+	const standing = useSharedAuthorshipStanding(gate === "ready");
 
 	if (gate === "loading") {
 		return (
