@@ -180,7 +180,7 @@ const verdicts = leafCommand(
 ).pipe(
 	Command.withShortDescription("Every verdict marker on a PR, bound to the live head."),
 	Command.withDescription(
-		"Sweep every verdict marker on a PR and bind each to the live head as one of three outcomes — current / stale / unbindable, never folded (ADR 0058). First stdout line is `verdicts\\t<live-head>\\t<count>`; a count of 0 is a proven answer. Then one `<namespace>\\t<polarity>\\t<sha>\\t<binding>\\t<comment-id>` line per marker, newest first; a marker that fails the format prints as a `malformed` row rather than being dropped. An unresolvable head prints unbindable on every row. Exits 7 (PR proven absent), 11 (the comment list could not be read — never zero), 13 (the sweep is provably short). Example: fabrika review verdicts 4321",
+		"Sweep every verdict marker on a PR and bind each to the live head as one of three outcomes — current / stale / unbindable, never folded (ADR 0058). First stdout line is `verdicts\\t<live-head>\\t<count>`; a count of 0 is a proven answer. Then one `<namespace>\\t<polarity>\\t<sha>\\t<binding>\\t<comment-id>\\t<standing|superseded>` line per marker, newest first; a marker that fails the format prints as a `malformed` row rather than being dropped, and a verdict retired below a comment's supersede fence prints its own `superseded` row rather than being hidden by the one that replaced it (#7247). An unresolvable head prints unbindable on every row. Exits 7 (PR proven absent), 11 (the comment list could not be read — never zero), 13 (the sweep is provably short). Example: fabrika review verdicts 4321",
 	),
 );
 
@@ -251,10 +251,27 @@ const post = leafCommand(
 			Flag.optional,
 			Flag.withDescription("the range's tip revision — the other half of --base"),
 		),
+		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDescription(
+				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head; without it that post is refused at 17",
+			),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, namespace, polarity, sha, clause, carrier, base, tip, repo, json}) {
+	Effect.fn(function* ({
+		pr,
+		namespace,
+		polarity,
+		sha,
+		clause,
+		carrier,
+		base,
+		tip,
+		supersede,
+		repo,
+		json,
+	}) {
 		yield* emit(
 			yield* runPost({
 				pr,
@@ -265,6 +282,7 @@ const post = leafCommand(
 				carrier,
 				base: Option.getOrNull(base),
 				tip: Option.getOrNull(tip),
+				supersede,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -276,7 +294,7 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the verdict on stdin as this namespace's one comment."),
 	Command.withDescription(
-		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, upsert, and read it back from live state. With --base and --tip the verdict is RANGE-scoped instead (ADR 0285): the positional names the child issue, the class set is recomputed over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha and --carrier advisory are refused in this mode. Prints `posted\\t<namespace>\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|edited>\\t<comment-url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace the diff or range did not derive, bad polarity, advisory with FAIL or with a range, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind). Examples: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md; fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md',
+		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one (#7247). With --base and --tip the verdict is RANGE-scoped instead (ADR 0285): the positional names the child issue, the class set is recomputed over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha and --carrier advisory are refused in this mode. Prints `posted\\t<namespace>\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|superseded>\\t<comment-url>`, where `<content>` is the content digest the verdict binds (ADR 0276); the ranged path still upserts in place and prints `edited` there. Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace the diff or range did not derive, bad polarity, advisory with FAIL or with a range, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind), 17 (a standing verdict of the OPPOSITE polarity at this head would be retired and --supersede was not passed — nothing posted). Examples: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md; fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md',
 	),
 );
 

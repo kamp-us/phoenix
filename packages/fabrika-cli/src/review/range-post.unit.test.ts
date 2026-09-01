@@ -84,6 +84,7 @@ const reviewOptions: ReviewPostOptions = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 	now: Effect.succeed(0),
+	supersede: false,
 };
 
 const governanceOptions: GovernancePostOptions = {

@@ -78,3 +78,14 @@ export const INVALID_CAPTURE = 15;
 export const NO_PREVIEW = 16;
 /** Proven: at least one evidence upload or its verification failed — **nothing was posted**. */
 export const UPLOAD_FAILED = 17;
+/**
+ * Refused: this post would retire a standing verdict of the OPPOSITE polarity at the same head, and
+ * `--supersede` was not passed.
+ *
+ * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
+ * vocabulary — the write is legitimate and one flag away. What it costs is the record: on PR #7081 a
+ * FAIL became a PASS with nothing showing a gate had blocked, and GitHub keeps no comment-body
+ * history to recover it from (#7247). Nothing is posted on this refusal — the evidence uploads of
+ * step 4 have already run by then, which is a spent upload rather than a landed verdict.
+ */
+export const SUPERSEDES_VERDICT = 18;
