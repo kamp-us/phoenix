@@ -29,6 +29,7 @@ const STATUS = /^git -C \S+ status --porcelain$/;
 const ADD = /^git -C \S+ add --all$/;
 const SALVAGE = /^git -C \S+ commit --no-verify/;
 const SELF = /^git rev-parse --path-format=absolute/;
+const REVLIST = /^git rev-list --count /;
 
 /**
  * A clean tree needs no salvage — the common case, appended LAST so a test scripting a dirty one
@@ -185,6 +186,90 @@ describe("runRetire — the adopted-session license", () => {
 
 		expect(out.code).toBe(WORKTREE_HELD);
 		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+});
+
+describe("runRetire — the unclaimed-lane license", () => {
+	/** The board after `build release` consumed the dead builder's marker: nothing holds this lane. */
+	const RELEASED: ReadonlyArray<Scripted> = [[COMMENTS, comments()]];
+
+	it("retires an unclaimed tree that is clean and level with the base — the #7027 residue", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[once(TREES), trees({path: ORPHAN, branch: BRANCH})],
+			[ISSUE, issue()],
+			...RELEASED,
+			[SELF, here],
+			[REVLIST, okOut("0\n")],
+			[REMOVE, okOut("")],
+			[TREES, trees()],
+		]);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			answer: "retired",
+			retired: [{path: ORPHAN, branch: BRANCH, license: "lane-unclaimed", salvaged: false}],
+		});
+		expect(calls).toContain(`git rev-list --count origin/main..${BRANCH}`);
+	});
+
+	it("holds an unclaimed tree with uncommitted work, naming what blocks the removal", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[TREES, trees({path: ORPHAN, branch: BRANCH})],
+			[ISSUE, issue()],
+			...RELEASED,
+			[SELF, here],
+			[STATUS, okOut(" M a.ts\n?? b.ts")],
+			[REVLIST, okOut("0\n")],
+		]);
+
+		expect(out.code).toBe(WORKTREE_HELD);
+		expect(out.stderr.join("\n")).toMatch(/2 uncommitted path\(s\)/);
+		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+
+	it("holds an unclaimed tree whose branch carries commits past the base", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[TREES, trees({path: ORPHAN, branch: BRANCH})],
+			[ISSUE, issue()],
+			...RELEASED,
+			[SELF, here],
+			[REVLIST, okOut("3\n")],
+		]);
+
+		expect(out.code).toBe(WORKTREE_HELD);
+		expect(out.stderr.join("\n")).toMatch(/3 commit\(s\) past origin\/main/);
+		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+
+	it("is UNKNOWN when what the branch carries cannot be counted — never 'it carries nothing'", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[TREES, trees({path: ORPHAN, branch: BRANCH})],
+			[ISSUE, issue()],
+			...RELEASED,
+			[SELF, here],
+			[REVLIST, errOut("unknown revision origin/main")],
+		]);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(out.stderr.join("\n")).toMatch(/UNKNOWN/);
+		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+
+	it("holds a tree whose lane a live claim still carries, without reading the tree at all", async () => {
+		const {out, calls} = await run([
+			[PRUNE, okOut("")],
+			[TREES, trees({path: ORPHAN, branch: BRANCH})],
+			[ISSUE, issue()],
+			...CLAIMED,
+			[SELF, here],
+		]);
+
+		expect(out.code).toBe(WORKTREE_HELD);
+		expect(calls.some((line) => REVLIST.test(line))).toBe(false);
 	});
 });
 

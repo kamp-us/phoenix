@@ -465,7 +465,8 @@ const treesFreedOf = (
  * The two halves are the residue ADR 0321 makes the driver's to clear: a build claim the dead shell
  * stranded, which is a hold until `build release` or a `build adopt` succession retracts it (ADR
  * 0295 — this verb evicts nothing from absence), and a working tree still holding its lane branch,
- * which the row's `build retire` remedy takes back where the board licenses it.
+ * which the row's `build retire` remedy takes back where a license reaches it — and after the
+ * release above, that is ADR 0342's unclaimed-lane arm rather than either board license.
  *
  * A lane carrying no branch for the issue clears on the claim read alone, and that holds for all
  * three shell roles rather than only the two that cut nothing. A dead reviewer or shipper never cut

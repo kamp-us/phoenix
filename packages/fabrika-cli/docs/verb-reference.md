@@ -112,6 +112,15 @@ git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the
 from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
 every read that failed, is KEEP.
 
+The one place `retire` borrows that polarity is ADR
+[0342](../../../.decisions/0342-unclaimed-lane-worktree-retirement.md)'s third license, for the lane
+**nobody** holds — no authorized claim marker on the number carries the branch's lane nonce, because
+the claim was released, which is the state `build release` leaves behind and the state that used to
+deadlock. With no board statement to lean on, that arm reads the tree the way a reap does: it goes
+only on proof it carries nothing — clean, and its branch level with `origin/main` — and anything
+short of both is `33` with the blocking count named. A branch a live claim still carries holds before
+the tree is read at all.
+
 `build retire-branch` is the recovery ADR [0324](../../../.decisions/0324-retire-superseded-lane-branch.md)
 rules for a clone already in the two-branch state, where `lane prove` refuses because two branches
 carry one child's commits. It **renames** the superseded ones into `retired/` and deletes nothing, so
@@ -129,7 +138,7 @@ outside all three surfaces' validators · `23` the local head would drop publish
 quoted authorization is empty or undated · `29` the grant is on the PR and the local lane did not
 take it · `30` the deliverable is not a pull request a build lane produces · `31` the claim's mode
 and the child's standing verdict disagree · `32` the issue body carries no readable acceptance
-criteria · `33` a working tree holds the lane branch and the board licenses no release · `34` the
+criteria · `33` a working tree holds the lane branch and no license releases it · `34` the
 board attests no single survivor among a child's lane branches. `12` is a retired seat.
 
 ## The `campaign` group
