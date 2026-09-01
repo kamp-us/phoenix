@@ -57,7 +57,7 @@ const VERB = "fabrika hook worktree-create";
 const EVENT = "WorktreeCreate";
 
 /** The hook's own budget is 600s; each child gets most of it, so a slow install is not a timeout. */
-const GIT_TIMEOUT_SECONDS = 540;
+export const GIT_TIMEOUT_SECONDS = 540;
 const CAPTURE_BYTES = 64 * 1024;
 
 /** The proof deps landed. `bootstrap-deps` writes the virtual store; a clean SKIP writes nothing. */
@@ -81,7 +81,7 @@ const firstLine = (bytes: Uint8Array): string => {
 	return (text.split("\n").find((line) => line.trim() !== "") ?? "").trim();
 };
 
-const describe = (outcome: ChildOutcome): string => {
+export const describeOutcome = (outcome: ChildOutcome): string => {
 	if (outcome._tag === "Unstartable") return `could not run git — ${outcome.reason}`;
 	if (outcome.timedOut) return `git did not finish within ${GIT_TIMEOUT_SECONDS}s`;
 	return firstLine(outcome.stderr) || `git exited ${outcome.exitCode}`;
@@ -91,14 +91,21 @@ const succeeded = (outcome: ChildOutcome): boolean =>
 	outcome._tag === "Ran" && !outcome.timedOut && outcome.exitCode === 0;
 
 /**
- * A command's whole stderr, for classification — not {@link describe}'s one quotable line.
+ * A command's whole stderr, for classification — not {@link describeOutcome}'s one quotable line.
  *
  * git prints the connectivity-check failure across two lines, and which line is first is not
  * something this verb should depend on. An unstartable git carries no git diagnostic at all, so it
  * classifies as nothing and refuses at once, which is right: a missing binary is not transient.
+ *
+ * A timed-out run classifies as nothing for the same reason, and it is the arm that pays worst for
+ * getting this wrong: one timed-out command spends {@link GIT_TIMEOUT_SECONDS} of the hook's 600s
+ * budget, so a second attempt cannot finish inside what is left and the hook is killed partway
+ * through it, losing the refusal it would have emitted at once (#7408). Whatever stderr it captured
+ * before the clock ran out, a command that never exited is not evidence of a transient sibling
+ * window. {@link describeOutcome} renders it as the timeout it was.
  */
 const diagnostics = (outcome: ChildOutcome): string =>
-	outcome._tag === "Ran" ? new TextDecoder().decode(outcome.stderr) : "";
+	outcome._tag === "Ran" && !outcome.timedOut ? new TextDecoder().decode(outcome.stderr) : "";
 
 const git = (
 	args: ReadonlyArray<string>,
@@ -114,7 +121,7 @@ const git = (
 		captureBytes: CAPTURE_BYTES,
 	});
 
-interface Attempted {
+export interface Attempted {
 	readonly outcome: ChildOutcome;
 	readonly attempts: number;
 	/** Non-null only when every attempt lost to that arm — the recovery ran out, not a pass. */
@@ -133,8 +140,11 @@ interface Attempted {
  * Nothing is locked and nothing is serialised (see `RECOVERY_ATTEMPTS`). Any diagnostic
  * {@link concurrencyArm} does not recognise returns on the first attempt, so a genuine failure is
  * never delayed and never retried into looking like one of these.
+ *
+ * Exported for the unit test beside this file: the command is already this function's parameter, so
+ * a test hands it an outcome the spawner cannot express — a timed-out run — and counts the attempts.
  */
-const withConcurrencyRecovery = (
+export const withConcurrencyRecovery = (
 	command: Effect.Effect<ChildOutcome, never, ChildProcessSpawner.ChildProcessSpawner>,
 	repoRoot: string,
 	env: Record<string, string>,
@@ -219,7 +229,7 @@ const provision = (
 		if (!succeeded(fetched.outcome)) {
 			return refuse(
 				BASE_FETCH_FAILED,
-				`${VERB}: could not fetch origin/${base}${spent(fetched)} — refusing to branch from a possibly stale base: ${describe(fetched.outcome)}`,
+				`${VERB}: could not fetch origin/${base}${spent(fetched)} — refusing to branch from a possibly stale base: ${describeOutcome(fetched.outcome)}`,
 			);
 		}
 
@@ -232,7 +242,7 @@ const provision = (
 		if (!succeeded(resolved) || !isCommitId(baseCommit)) {
 			return refuse(
 				BASE_FETCH_FAILED,
-				`${VERB}: fetched origin/${base} and ${baseRef} named no commit — refusing to branch from a base this verb cannot prove: ${describe(resolved)}`,
+				`${VERB}: fetched origin/${base} and ${baseRef} named no commit — refusing to branch from a base this verb cannot prove: ${describeOutcome(resolved)}`,
 			);
 		}
 
@@ -246,7 +256,7 @@ const provision = (
 		if (!succeeded(added.outcome)) {
 			return refuse(
 				WORKTREE_ADD_FAILED,
-				`${VERB}: git worktree add --detach ${plan.worktreePath} ${baseCommit} failed${spent(added)}: ${describe(added.outcome)}`,
+				`${VERB}: git worktree add --detach ${plan.worktreePath} ${baseCommit} failed${spent(added)}: ${describeOutcome(added.outcome)}`,
 			);
 		}
 
