@@ -596,7 +596,7 @@ fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. Under `--wait`, a first line
-`settle\t<settled|budget-exhausted|head-moved>`; without it that line is absent. Then
+`settle\t<settled|budget-exhausted|head-moved|governance-owed>`; without it that line is absent. Then
 `ci\t<sha>\t<green|red|pending|no-producer>`, then `run\t<count>` — how many check runs were
 enumerated, so the line channel carries its own completeness proof. Then one line per status present
 —
@@ -668,10 +668,19 @@ a bound that ran out:
   it.
 - `head-moved` — the PR left the head this answer binds during the wait. The last read still binds
   what it inspected; the caller re-reads at the new head rather than trusting a stale `settled`.
+- `governance-owed` — the only unfinished check at this head is `governance floor at head`, and the
+  `governance-floor` workflow run at this head has completed. Per ADR
+  [0318](../../../../.decisions/0318-the-governance-floor-reports-through-a-check-run.md) that
+  check-run stays `in_progress` while no governance verdict is bound at the head, so what the wait is
+  waiting for is a verdict its own caller owes. Nothing was proven — the rollup still reads `pending`
+  — but unlike `budget-exhausted` the caller clears this itself: fire the governance skill, then
+  re-read. The distinguishing read is the workflow run, never the check-run alone: a floor whose run
+  is still in flight has not published yet and **is** waited on, unchanged (#7392).
 
 Every refusal and the `no-producer` answer are states no waiting changes, so `--wait` returns them
 on the **first** read rather than burning the budget: the `16` head has no gate of this repo's coming
-at all, and a repo with no producer has no run to wait for.
+at all, and a repo with no producer has no run to wait for. `governance-owed` is the same principle
+reaching a state that only looks like an ordinary `pending`.
 
 If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
 the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
@@ -739,6 +748,18 @@ check	success	1
 check	queued	2
 ```
 
+A `governance: required` diff whose floor is the last thing pending — the budget is not spent,
+because the caller is the one who owes the verdict:
+
+```
+$ fabrika review ci 4321 --sha 03135b91 --wait
+settle	governance-owed
+ci	03135b91	pending
+run	3
+check	success	2
+check	in_progress	1
+```
+
 **Grounding**
 
 - #4552 — the CI-at-head read was dispatch-prompt-dependent in v1; a gate ruled on a live RED
@@ -750,6 +771,10 @@ check	queued	2
   keeps reporting on its own trigger. The verb read `green` over four CodeQL runs at an epic
   assembly head that `ci.yml`, `migrations-guard` and `design-token-guard` had never seen. `green`
   and "no gate ran" were one word, and the second is the dangerous one.
+- #7392 — on PR #7384 a reviewer burned a full 600s budget on a head whose only pending check was
+  the governance floor, then posted the verdict that cleared it in one round. The waiting verb and
+  the thing waited on were the same shell, so `budget-exhausted` sent a self-clearing condition to a
+  human park.
 
 ---
 

@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {workflows} from "../ship/fixtures.test-support.ts";
+import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
 import {runCi} from "./ci-verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {checkRuns, HEAD, inventory, OLD_HEAD, pull, runsAtHead} from "./fixtures.test-support.ts";
@@ -497,6 +498,70 @@ describe("the bounded --wait", () => {
 		);
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
+	});
+
+	/**
+	 * #7392: the floor check-run stays `in_progress` until a governance verdict binds at the head
+	 * (ADR 0318), and the shell running this wait is the shell that owes that verdict. A cadence no
+	 * test could sit through proves the answer comes on the first read.
+	 */
+	describe("a governance floor that is waiting on its own caller", () => {
+		const FLOOR_PENDING = runs(3, [
+			{name: "lint / format / typecheck", status: "completed", conclusion: "success"},
+			{name: "unit tests", status: "completed", conclusion: "success"},
+			{name: CHECK_RUN_NAME, status: "in_progress", conclusion: null},
+		]);
+		const FLOOR_YML = ".github/workflows/governance-floor.yml";
+		const floorRuns = (status: string): ReadonlyArray<Scripted> => [
+			[WORKFLOWS, served(inventory(CI_YML, FLOOR_YML))],
+			[AT_HEAD, served(runsAtHead(CI_YML, {path: FLOOR_YML, name: "governance-floor", status}))],
+		];
+
+		it("answers governance-owed at once when the floor's workflow run has completed", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, FLOOR_PENDING],
+				],
+				floorRuns("completed"),
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+				"settle\tgovernance-owed",
+				`ci\t${HEAD}\tpending`,
+			]);
+			expect(out.stderr.join("\n")).toContain("a governance verdict bound at this head");
+		});
+
+		/** The floor has not published yet, so this one does clear on its own and is waited on. */
+		it("waits on a floor whose own workflow run is still in flight, unchanged", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[once(RUNS), FLOOR_PENDING],
+					[RUNS, GREEN],
+				],
+				[...floorRuns("in_progress"), ...GATED],
+				{wait: true, cadenceSeconds: 0},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tgreen`]);
+			expect(out.stderr.join("\n")).not.toContain("governance verdict");
+		});
+
+		it("keeps waiting when something other than the floor is also pending", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, PENDING],
+				],
+				floorRuns("completed"),
+				{wait: true, cadenceSeconds: 0, budgetSeconds: 0},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe("settle\tbudget-exhausted");
+		});
 	});
 
 	it("returns no-producer at once — a caller must not wait for a run that will never start", async () => {
