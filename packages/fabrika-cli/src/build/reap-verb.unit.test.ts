@@ -1,6 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {errOut, fakeShell, okOut, once, type Scripted} from "../fakes.test-support.ts";
+import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {runReap} from "./reap-verb.ts";
 
@@ -14,6 +15,7 @@ const NAMES = /^git diff .*--name-only/;
 const MERGE_BASE = /^git merge-base origin\/main /;
 const LOG = /^git log --no-merges -p /;
 const PATCH_ID = /^git patch-id --stable$/;
+const SHALLOW = /^git rev-parse --is-shallow-repository$/;
 const REMOVE = /^git worktree remove /;
 
 const HERE = "/repo/.claude/worktrees/agent-self";
@@ -182,6 +184,57 @@ describe("runReap — what the trunk proves", () => {
 		expect(JSON.parse(out.stdout).kept).toMatchObject([{path: DEAD}]);
 		expect(out.stderr.join("\n")).toMatch(/UNKNOWN/);
 		expect(calls.some((line) => REMOVE.test(line))).toBe(false);
+	});
+});
+
+/**
+ * The merge base bounds the trunk scan, so a shallow clone's graft boundary stops the landing read
+ * before it starts. The tree is KEEP either way — the finding this seam was repaired for is that its
+ * reason names the one cause an operator can fix locally (#7407), the way the assembly read already
+ * did (#7292).
+ */
+describe("runReap — an unreachable merge base names its remedy when there is one", () => {
+	const beyondBoundary = (shallow: ExecResult): ReadonlyArray<Scripted> => [
+		...GROUND,
+		[TREES, trees(PRIMARY, {path: DEAD, head: AHEAD})],
+		[STATUS, okOut("")],
+		[ANCESTOR, errOut("exit 1")],
+		[DIFF, okOut("diff --git a/x b/x\n@@\n+x\n")],
+		[PATCH_ID, okOut("ffff 0000\n")],
+		[NAMES, okOut("x\0")],
+		[MERGE_BASE, errOut("git merge-base exited 1")],
+		[SHALLOW, shallow],
+	];
+
+	const keptReason = (out: {readonly stdout: string}): string =>
+		JSON.parse(out.stdout).kept[0]?.reason ?? "";
+
+	it("names the shallow clone and `git fetch --unshallow origin`", async () => {
+		const {out} = await run(beyondBoundary(okOut("true\n")));
+
+		const reason = keptReason(out);
+		expect(reason).toContain("this clone is shallow");
+		expect(reason).toContain("git fetch --unshallow origin");
+		// The probe proves shallowness, not causation — git's own words are the evidence that
+		// corrects the hypothesis when the cause is an absent ref or an unrelated history.
+		expect(reason).toContain("git merge-base exited 1");
+	});
+
+	it("carries git's reason alone when the clone is not shallow", async () => {
+		const {out} = await run(beyondBoundary(okOut("false\n")));
+
+		expect(keptReason(out)).toBe(
+			"whether its work landed is UNKNOWN: it shares no merge base with origin/main: git merge-base exited 1",
+		);
+	});
+
+	// A probe that cannot answer names an unreadable read no more precisely — and never less.
+	it("carries git's reason alone when the shallow probe itself fails", async () => {
+		const {out} = await run(beyondBoundary(errOut("rev-parse blew up")));
+
+		expect(keptReason(out)).toBe(
+			"whether its work landed is UNKNOWN: it shares no merge base with origin/main: git merge-base exited 1",
+		);
 	});
 });
 
