@@ -20,9 +20,15 @@
  * what a pre-plan epic has, the children are what a planned one has, and #7024's lane was booted in
  * the window where only the first was true. `children` is the link count, so `0` is exactly that
  * pre-plan case.
+ *
+ * `Child` is the mirror #7024's guard could not reach, because both facts it reads are facts about
+ * the issue itself: an epic's child carries no `type:epic` label and no children of its own, so it
+ * resolved `Single` and a second lane ledger booted over work the parent's lane already owned
+ * (#7381). `parent` is `null` when the board carried the edge and no number that parses.
  */
 export type Expectation =
 	| {readonly _tag: "Epic"; readonly children: number}
+	| {readonly _tag: "Child"; readonly parent: number | null}
 	| {readonly _tag: "Single"};
 
 /**
@@ -52,6 +58,10 @@ export type ShapeVerdict =
  * Judge one lane's machine against its issue. Every combination seats, because a mismatch the other
  * way — an emitted epic machine on an issue the board says has no children — strands a driver just as
  * completely, and costs nothing to catch here.
+ *
+ * `Child` judges as `Single` does, and deliberately: a child's lane is refused at boot, so one
+ * already on disk is a ledger to reconcile rather than a machine to swap, and calling it mismatched
+ * here would send `lane migrate` at a fix it does not have (#7381).
  */
 export const judgeShape = (
 	issue: number,
