@@ -1,8 +1,26 @@
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {classifyPark} from "../recipe/parks.ts";
 import {EPIC_RULES} from "../wire/lane-brief.ts";
-import {eventForToken, flattenVocabularies, SHELL_VOCABULARIES} from "./report.ts";
+import {
+	causeForEvent,
+	eventForToken,
+	flattenVocabularies,
+	PARK_CAUSE_TOKENS,
+	SHELL_VOCABULARIES,
+} from "./report.ts";
+
+/**
+ * The rendered gate's three no-verdict terminals and the park cause each one reports with (#7423).
+ * Every one folds to `BLOCKED`, and until these causes existed none could name why — so a rendered
+ * park read as the bare-`BLOCKED` Novel and cost a human `UNBLOCKED` by construction.
+ */
+const RENDERED_PARKS = [
+	["CANT-SEE", "no-preview-render"],
+	["BLOCKED-NO-MANIFEST", "no-design-manifest"],
+	["ROUTED-ELSEWHERE", "no-rendered-delta"],
+] as const;
 
 describe("the builder's no-PR terminals", () => {
 	it("routes an epic child's BUILT-NO-PR to DONE, not to the BLOCKED a clean build never earned", () => {
@@ -148,5 +166,45 @@ describe("the UI reviewer's vocabulary against the skill that owns it", () => {
 		});
 		expect(eventForToken("BLOCKED-NO-MANIFEST")).toMatchObject({event: "BLOCKED"});
 		expect(eventForToken("ROUTED-ELSEWHERE")).toMatchObject({event: "BLOCKED"});
+	});
+
+	// The emitting half of #7423: a cause the skill never tells the gate to pass is a cause nobody
+	// names, so the rows would sit in code while every rendered park still landed bare.
+	it.each(RENDERED_PARKS)("pairs %s with the --cause token %s", (token, cause) => {
+		expect(section).toMatch(new RegExp(`${token}[\\s\\S]*?\`${cause}\``));
+	});
+
+	// The fourth park terminal, `ESCALATED`, is deliberately uncaused: the builder and reviewer
+	// groups spell it the same way, so seating a cause for it is a cross-shell change.
+	it("names those three causes and no fourth", () => {
+		const named = PARK_CAUSE_TOKENS.filter((cause) => (section ?? "").includes(cause));
+
+		expect(new Set(named)).toEqual(new Set(RENDERED_PARKS.map(([, cause]) => cause)));
+	});
+});
+
+describe("the rendered gate's three parks name a cause instead of landing bare (#7423)", () => {
+	it.each(RENDERED_PARKS)("takes %s's cause on the BLOCKED it maps to", (token, cause) => {
+		const resolved = eventForToken(token);
+		if (resolved._tag !== "Mapped") throw new Error(resolved.reason);
+
+		expect(resolved.event).toBe("BLOCKED");
+		expect(causeForEvent(cause, resolved.event)).toEqual({_tag: "Caused", cause});
+	});
+
+	it.each(RENDERED_PARKS)("refuses %2$s on an event that is not a park", (_token, cause) => {
+		expect(causeForEvent(cause, "PASS")).toMatchObject({_tag: "Rejected"});
+		expect(causeForEvent(cause, "DONE")).toMatchObject({_tag: "Rejected"});
+	});
+
+	// ADR 0339: a cause is payable on naming alone. No `KNOWN_PARKS` row covers any of the three, so
+	// the sweep still routes them to a human — it now says which gap it routed on.
+	it.each(RENDERED_PARKS)("is Novel naming %2$s, not the anonymous reason", (_token, cause) => {
+		const parked = classifyPark("blocked", cause);
+
+		expect(parked._tag).toBe("Novel");
+		if (parked._tag !== "Novel") return;
+		expect(parked.reason).toContain(cause);
+		expect(parked.reason).not.toContain("records the event and not its cause");
 	});
 });
