@@ -70,6 +70,9 @@ describe("readAssembly", () => {
 		const reason = read._tag === "Unreadable" ? read.reason : "";
 		expect(reason).toContain("this clone is shallow");
 		expect(reason).toContain("git fetch --unshallow origin");
+		// The probe proves shallowness, not causation — git's own words stay, or a non-boundary
+		// failure loses the one piece of evidence that corrects the hypothesis.
+		expect(reason).toContain("git merge-base exited 1");
 		expect(seams.calls.some((line) => line.startsWith("git log"))).toBe(false);
 	});
 

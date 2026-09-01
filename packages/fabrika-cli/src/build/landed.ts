@@ -58,13 +58,18 @@ export type Assembly =
  * (the same split `traversedParents` documents, #6343). Reported as a generic unreadable reason it
  * cost a supervisor round-trip diagnosing git history depth from outside the verb (#7292).
  *
- * A shallow probe that itself fails keeps the generic reason: this names an unreadable read more
- * precisely, and never turns one into a readable one.
+ * **Git's own reason is never dropped, and the shallow clause is a hypothesis beside it.** The probe
+ * answers "is this clone shallow", which is a strictly weaker fact than "the shallowness is why
+ * merge-base named nothing" — an absent `origin/<trunk>` ref and an unrelated-histories pair fail
+ * here too, and a shallow CI checkout is exactly where the first is likeliest. Asserting the cause
+ * would hand the operator a confident wrong diagnosis and lose the one piece of evidence that
+ * corrects it. A shallow probe that itself fails drops the clause entirely: this names an unreadable
+ * read more precisely, and never turns one into a readable one.
  */
 const noMergeBaseReason = (baseRef: string, reason: string): Shell<string> =>
 	Effect.map(isShallowClone, (shallow) =>
 		shallow._tag === "Ok" && shallow.value
-			? `no merge base with ${baseRef}: this clone is shallow, so a common ancestor beyond its graft boundary is unreachable and git names none — \`git fetch --unshallow origin\` restores it, and nothing about the epic run needs changing`
+			? `no merge base with ${baseRef}: ${reason} — this clone is shallow, so if the common ancestor lies beyond its graft boundary git names none; \`git fetch --unshallow origin\` restores it, and nothing about the epic run needs changing`
 			: `no merge base with ${baseRef}: ${reason}`,
 	);
 
