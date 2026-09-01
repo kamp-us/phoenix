@@ -12,6 +12,12 @@
  * mentions the number in prose, drops out there rather than counting — so unioning in the looser read
  * widens candidates without widening what counts.
  *
+ * `issueRefsOf` answers with a *kind* beside the numbers, and this module carries it rather than
+ * dropping it: a merged PR that closed its issue and one that carried `Part of #N` are the same
+ * merge to every reader that keeps only the numbers, which is how a partial ship folded its lane to
+ * a terminal over an issue still open and still buildable (#7382). `traceClosure` in `./prove.ts`
+ * is the one reader of that field, and it reads it from here so the question keeps one nominator.
+ *
  * **Why it is shared rather than copied.** `lane prove` unioned both reads while `lane brief` read
  * the edge alone, so a `Part of #N` PR proved a `DONE`, folded the lane to `review`, and then had no
  * reviewer dispatchable against it — a park no event could clear, because the divergence was a
@@ -74,11 +80,13 @@ export const nominatePulls = (
 				return {_tag: "Unreadable" as const, what: `PR #${candidate}`, reason: pull.reason};
 			}
 			if (pull._tag === "Absent") continue;
+			const refs = issueRefsOf(pull.value.body);
 			pulls.push({
 				number: pull.value.number,
 				open: pull.value.state === "open",
 				merged: pull.value.merged,
-				linkedIssues: issueRefsOf(pull.value.body).numbers,
+				linkedIssues: refs.numbers,
+				linkKind: refs.kind,
 				htmlUrl: pull.value.htmlUrl,
 			});
 		}

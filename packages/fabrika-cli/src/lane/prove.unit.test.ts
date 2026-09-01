@@ -9,6 +9,7 @@ import {
 	issueOf,
 	judgeVerdicts,
 	roleOf,
+	traceClosure,
 	traceDiagnosis,
 	tracePulls,
 	traceRange,
@@ -329,7 +330,13 @@ describe("traceRange", () => {
 });
 
 describe("tracePulls", () => {
-	const linking = {number: 4318, open: true, merged: false, linkedIssues: [4312]};
+	const linking = {
+		number: 4318,
+		open: true,
+		merged: false,
+		linkedIssues: [4312],
+		linkKind: "fixes" as const,
+	};
 
 	it("traces the one open PR whose body links the issue", () => {
 		expect(tracePulls(4312, [linking])).toEqual({_tag: "One", pr: 4318});
@@ -341,14 +348,22 @@ describe("tracePulls", () => {
 	 * left the tail unproven against the epic it closes.
 	 */
 	it("proves the epic tail against the epic whose reference is last among N+1", () => {
-		const tail = {number: 6690, open: true, merged: false, linkedIssues: [6642, 6643, 6648, 6629]};
+		const tail = {
+			number: 6690,
+			open: true,
+			merged: false,
+			linkedIssues: [6642, 6643, 6648, 6629],
+			linkKind: "fixes" as const,
+		};
 		expect(tracePulls(6629, [tail])).toEqual({_tag: "One", pr: 6690});
 		expect(tracePulls(6642, [tail])).toEqual({_tag: "One", pr: 6690});
 	});
 
 	it("does not count a PR that only mentions the number, or one that has closed", () => {
 		expect(
-			tracePulls(4312, [{number: 4400, open: true, merged: false, linkedIssues: []}]),
+			tracePulls(4312, [
+				{number: 4400, open: true, merged: false, linkedIssues: [], linkKind: "none" as const},
+			]),
 		).toMatchObject({
 			_tag: "None",
 		});
@@ -369,7 +384,7 @@ describe("tracePulls", () => {
 	it("keeps several linking PRs as their own answer rather than picking the first", () => {
 		const trace = tracePulls(4312, [
 			linking,
-			{number: 4319, open: true, merged: false, linkedIssues: [4312]},
+			{number: 4319, open: true, merged: false, linkedIssues: [4312], linkKind: "fixes" as const},
 		]);
 		expect(trace).toEqual({_tag: "Many", prs: [4318, 4319]});
 	});
@@ -377,7 +392,7 @@ describe("tracePulls", () => {
 	it("tells a candidate that was read and discarded from one that was never nominated", () => {
 		const nothing = tracePulls(4312, []);
 		const read = tracePulls(4312, [
-			{number: 4400, open: true, merged: false, linkedIssues: [4000]},
+			{number: 4400, open: true, merged: false, linkedIssues: [4000], linkKind: "fixes" as const},
 		]);
 		const closed = tracePulls(4312, [{...linking, open: false}]);
 		expect(nothing).toEqual({_tag: "None", why: "no open PR links #4312"});
@@ -386,6 +401,56 @@ describe("tracePulls", () => {
 			_tag: "None",
 			why: "read #4318 — every candidate has closed since it was nominated",
 		});
+	});
+});
+
+describe("traceClosure", () => {
+	const merged = (linkKind: "fixes" | "part-of") => ({
+		number: 7328,
+		open: false,
+		merged: true,
+		linkedIssues: [6980],
+		linkKind,
+	});
+
+	it("reads a closing merge as the discharge it is", () => {
+		expect(traceClosure(6980, [merged("fixes")])).toEqual({
+			_tag: "Closes",
+			why: "#7328 closes #6980 on merge",
+		});
+	});
+
+	/** The #7382 shape: PR #7328 merged as `Part of #6980`, and the lane folded to `complete`. */
+	it("reads a `Part of #N` merge as leaving the issue open", () => {
+		expect(traceClosure(6980, [merged("part-of")])).toEqual({_tag: "Partial", prs: [7328]});
+	});
+
+	// Only positive evidence diverts, so every reading short of one answers what the machine already
+	// did — an unread board never reaches here, because the nominator refuses first.
+	it("answers Closes on an open PR, a merge linking elsewhere, and nothing nominated", () => {
+		const open = {...merged("part-of"), open: true, merged: false};
+		const elsewhere = {...merged("part-of"), linkedIssues: [6979]};
+
+		expect(traceClosure(6980, [open])._tag).toBe("Closes");
+		expect(traceClosure(6980, [elsewhere])._tag).toBe("Closes");
+		expect(traceClosure(6980, [])).toEqual({
+			_tag: "Closes",
+			why: "no merged PR's body links #6980",
+		});
+	});
+
+	// Where `tracePulls` keeps `Many` because picking one PR is underivable, nothing is picked here:
+	// every candidate says the same thing about the issue, so one closing merge among them settles it.
+	it("takes one closing merge over any number of partials", () => {
+		const second = {...merged("part-of"), number: 7400};
+
+		expect(traceClosure(6980, [merged("part-of"), second])).toEqual({
+			_tag: "Partial",
+			prs: [7328, 7400],
+		});
+		expect(
+			traceClosure(6980, [merged("part-of"), {...second, linkKind: "fixes" as const}]),
+		).toEqual({_tag: "Closes", why: "#7400 closes #6980 on merge"});
 	});
 });
 

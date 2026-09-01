@@ -65,6 +65,8 @@ import {
 	type NamespaceRow,
 	type Proof,
 	roleOf,
+	SHIP_STATES,
+	traceClosure,
 	traceDiagnosis,
 	tracePulls,
 	type VerdictFact,
@@ -118,10 +120,22 @@ const unreadable = (what: string, reason: string): VerbOutcome =>
  * still owes the rendered verdict (#7041). It is what was *actually* subtracted — the claim's
  * candidate set intersected with what the diff or the range derives — so it is empty on every event
  * whose bar was whole, and the field is absent from the log line there.
+ *
+ * `partial` rides it for the same reason and answers a different question: whether the merge behind a
+ * ship's `DONE` left its issue undischarged. It is a routing fact rather than a proof — the `DONE`
+ * still claims no artifact — so it refuses nothing and only tells the caller which arm of the
+ * `merge:partial` guard this event takes (ADR 0343). `false` on every other event.
  */
 export interface ProofOutcome extends VerbOutcome {
 	readonly deferred: ReadonlyArray<string>;
+	readonly partial: boolean;
 }
+
+/** What one arm answers with before {@link runProve} normalises each absent field, once, for all. */
+type ProofAnswer = VerbOutcome & {
+	readonly deferred?: ReadonlyArray<string>;
+	readonly partial?: boolean;
+};
 
 const seat = (proof: Exclude<Proof, {_tag: "Proven"}>, diagnostics: ReadonlyArray<string>) => {
 	const code = {
@@ -139,16 +153,22 @@ export const runProve = (
 	ProofOutcome,
 	never,
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
-> => Effect.map(prove(options), (outcome) => ({...outcome, deferred: outcome.deferred ?? []}));
+> =>
+	Effect.map(prove(options), (outcome) => ({
+		...outcome,
+		deferred: outcome.deferred ?? [],
+		partial: outcome.partial ?? false,
+	}));
 
 /**
  * The proof itself. Only the two verdict arms can subtract anything, so they are the only returns
- * that carry `deferred`; {@link runProve} normalises the absent field to the empty list once.
+ * that carry `deferred`, and only the ship-closure read carries `partial`; {@link runProve}
+ * normalises each absent field once.
  */
 const prove = (
 	options: ProveOptions,
 ): Effect.Effect<
-	VerbOutcome & {readonly deferred?: ReadonlyArray<string>},
+	ProofAnswer,
 	never,
 	ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > =>
@@ -167,6 +187,9 @@ const prove = (
 		const routing = nextLeaf(loaded.lane, fold.states, taskId, event, options.classes);
 		const claim = claimOf(event, leaf, role, routing);
 		if (claim._tag === "None") {
+			if (event === "DONE" && role._tag !== "Child" && SHIP_STATES.includes(leaf)) {
+				return yield* readClosure(options, taskId, leaf, event, claim.why);
+			}
 			return answer(
 				JSON.stringify({proof: "not-required", event, task: taskId, state: leaf}, null, 2),
 				[`${VERB}: ${claim.why} — nothing to prove, record it.`],
@@ -337,6 +360,64 @@ const prove = (
 			governed.roots,
 			claim.defers,
 		);
+	});
+
+/**
+ * The ship stage's closure read: did the merge behind this `DONE` discharge the issue, or land part
+ * of it?
+ *
+ * It is not a proof and cannot refuse on the artifact — a `DONE` out of `ship` claims nothing a read
+ * could falsify, and refusing one would leave a shipper with no legal terminal over a merge that
+ * really did land. What it can refuse is being *unable to read*: an unread board leaves the arm
+ * UNKNOWN, and the permissive reading is the exact fold this arm exists to stop (#7382).
+ *
+ * The scope is `open-or-merged`, because the subject is a merge and the closing edge is the half
+ * that sees one (`./nominate.ts`).
+ */
+const readClosure = (
+	options: ProveOptions,
+	taskId: string,
+	leaf: string,
+	event: string,
+	why: string,
+): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const issue = issueOf(taskId, options.lane);
+		if (issue === null) {
+			return refuse(
+				TASK_UNKNOWN,
+				`${VERB}: neither task "${taskId}" nor lane "${options.lane}" names an issue number, so whether the merge behind this ${event} closed one is unreadable.`,
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return resolved.outcome;
+		const nominated = yield* nominatePulls(resolved.repo, issue, "open-or-merged");
+		if (nominated._tag === "Unreadable") {
+			return unreadable(nominated.what, nominated.reason);
+		}
+		const closure = traceClosure(issue, nominated.pulls);
+		const note =
+			closure._tag === "Partial"
+				? `${VERB}: ${closure.prs.map((pr) => `#${pr}`).join(", ")} merged carrying "Part of #${issue}" and no closing keyword, so #${issue} is not discharged — the lane goes round rather than folding to its terminal (ADR 0343).`
+				: `${VERB}: ${closure.why}, so this ${event} folds the lane exactly as it always did.`;
+		return {
+			...answer(
+				JSON.stringify(
+					{
+						proof: "not-required",
+						event,
+						task: taskId,
+						state: leaf,
+						issue,
+						closure: closure._tag === "Partial" ? "partial" : "closes",
+					},
+					null,
+					2,
+				),
+				[`${VERB}: ${why} — nothing to prove, record it.`, note],
+			),
+			partial: closure._tag === "Partial",
+		};
 	});
 
 interface Traced {
@@ -671,7 +752,7 @@ const proveVerdicts = (
 	diagnostics: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
-): Effect.Effect<ProofOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const read = yield* readNamespaceRows(repo, pr, diagnostics, roots, defers);
 		if (read._tag === "Unread") return {...unreadable(read.what, read.reason), deferred: []};
@@ -853,7 +934,7 @@ const proveRangeVerdicts = (
 	event: string,
 	roots: ReadonlyArray<string>,
 	defers: ReadonlyArray<string>,
-): Effect.Effect<ProofOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<ProofAnswer, never, ChildProcessSpawner.ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const read = yield* located(epic, issue);
 		if (read._tag === "Refused") return {...read.outcome, deferred: []};

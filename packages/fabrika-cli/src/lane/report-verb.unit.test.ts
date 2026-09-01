@@ -41,6 +41,7 @@ const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>
 const fakeProver = (
 	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
 	deferred: ReadonlyArray<string> = [],
+	partial = false,
 ) => {
 	const asked: ProveOptions[] = [];
 	return {
@@ -48,7 +49,7 @@ const fakeProver = (
 		prove: (options: ProveOptions) =>
 			Effect.sync(() => {
 				asked.push(options);
-				return {...outcome, deferred};
+				return {...outcome, deferred, partial};
 			}),
 	};
 };
@@ -354,6 +355,33 @@ describe("lane report — the deferral a proven PASS discloses", () => {
 		expect(out.code).toBe(0);
 		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "deferred")).toBe(false);
 		expect(Object.hasOwn(JSON.parse(out.stdout), "deferred")).toBe(false);
+	});
+});
+
+/**
+ * The #7382 shape: a merged `Part of #N` PR drove its lane to `complete` exactly as a closing merge
+ * did, because nothing between the nominator and the ledger carried the difference (ADR 0343).
+ */
+describe("lane report — the partial merge a shipped lane discloses", () => {
+	it("records the prover's partial and lands the lane back in `queued`", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const prover = fakeProver(answer(JSON.stringify({proof: "not-required"})), [], true);
+
+		const out = await run(fs, "LANDED", {prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE", partial: true});
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "queued"}}});
+	});
+
+	it("leaves a closing merge the line and the terminal it always had", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "LANDED");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "partial")).toBe(false);
+		expect(JSON.parse(out.stdout).current).toBe("complete");
 	});
 });
 
