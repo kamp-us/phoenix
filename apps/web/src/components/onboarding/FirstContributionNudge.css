@@ -32,7 +32,10 @@
 }
 
 .kp-first-katki__go {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--tap-min);
 	font: var(--t-body-sm);
 	font-weight: 600;
-	color: var(--accent-11);
+	color: var(--link);
 }
