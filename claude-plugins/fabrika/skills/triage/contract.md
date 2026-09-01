@@ -2154,8 +2154,8 @@ location, with the leak matcher literally named for comments.
 | `5` | the reason text carries a machine-local path |
 | `6` | the reason is a bare `@` path reference — it never arrived |
 | `7` | the issue is proven absent or already closed; `--duplicate-of` is proven absent or closed; or `closed-by-triage` does not exist in the repository |
-| `8` | one of the four writes failed — the message names what did and did not land |
-| `9` | the writes landed but the read-back does not show a not-planned close |
+| `8` | one of the four steps failed — the message names what did and did not land |
+| `9` | the writes landed but the read-back does not show a not-planned close, or still shows a triage status label |
 | `11` | the issue body, its comments, the claim on it, the duplicate, or the label set could not be read — no kill was attempted |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `12` | refused: the issue is human-filed — no agent footer and no operator author — and no `--duplicate-of` was named (the fold exception, above) |
@@ -2183,15 +2183,15 @@ location, with the leak matcher literally named for comments.
 | `triage kill: #<n> is human-filed and would be folded into #<m>, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
 | `triage kill: the fold comment on #<m> failed: <reason> — #<n> is NOT closed, carries no reason and no label; nothing was lost. Re-run.` | 8 | refusal |
 | `triage kill: the reason comment on #<n> failed: <reason> — #<n> is NOT closed and carries no label, but the fold on #<m> DID land; delete that comment before re-running, or the fold posts twice.` | 8 | refusal |
-| `triage kill: applying closed-by-triage to #<n> failed: <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply the label by hand, or delete the landed comments and re-run.` | 8 | refusal |
+| `triage kill: the label step on #<n> failed after <k> of <m> change(s): <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply closed-by-triage by hand and strip any triage status label, or delete the landed comments and re-run.` | 8 | refusal |
 | `triage kill: closing #<n> failed: <reason> — the fold, the reason and closed-by-triage all landed; #<n> is still OPEN and fully annotated. Close it by hand with state_reason=not_planned, or delete the landed comments and re-run.` | 8 | refusal |
 | `triage kill: closed, but the read-back shows state_reason=<observed>, not not_planned — #<n> reads as done rather than killed.` | 9 | refusal |
+| `triage kill: closed not-planned, but the read-back shows status=[<observed>], milestone=<home> — expected every triage status label stripped from #<n>.` | 9 | refusal |
 | `triage kill: no operator accounts are configured (FABRIKA_OPERATOR_ACCOUNTS is unset), so a footerless filing reads human whoever authored it.` | 12 | notice |
 | `triage kill: redacted <k> machine-local path(s) from the folded duplicate body.` | 0 | notice |
 
 **Write order is the auditability guarantee.** Fold the duplicate content, post the reason comment,
-apply `closed-by-triage`, then close with `state_reason=not_planned` — and **each step gates the
-next**. v1 ran three unguarded sequential writes under `set -uo pipefail` with no `-e`, so a failed
+write the labels, then close with `state_reason=not_planned` — and **each step gates the next**. v1 ran three unguarded sequential writes under `set -uo pipefail` with no `-e`, so a failed
 reason comment did not stop the close: the issue landed closed, unexplained, and invisible to the
 kill audit. Here a failure before the close leaves the issue **open**, which is the recoverable
 direction.
@@ -2202,6 +2202,20 @@ generic "a write failed" would leave a caller unable to tell "nothing happened, 
 comments are live, re-running duplicates them". An earlier revision covered only the fold. The
 read-back asserts `state` is `closed` **and** `state_reason` is `not_planned`, because a plain
 `closed` reads as "done", not "killed".
+
+**The label step strips every triage status, through the same reconcile `apply` and `park` write
+through.** A killed issue carrying `status:needs-triage` makes any count over that label that is not
+filtered to open issues over-report the queue, and a kill after an earlier `apply` leaves
+`status:triaged` saying the same false thing
+([#6710](https://github.com/kamp-us/phoenix/issues/6710)). The removals are planned by
+`planReconcile` off a `killedFacets` table naming the **status facet alone**, so the strip and the
+two reconciling exits cannot disagree about which statuses a triage transition owns, and every other
+label — the type, priority, audience and lane the issue was read under — is preserved as the history
+that makes a closed issue legible. The strip rides in the label step rather than after the close,
+which is what keeps the order's guarantee: a failure there leaves the issue open. And the read-back
+asserts the status facet's end state alongside `state`/`state_reason`, because the
+`closed-by-triage` add lands whether or not the removals did — a read-back blind to the labels would
+pass the exact defect this fixes.
 
 **`closed-by-triage` is provenance, and the refusal on its absence stands for a different reason
 (ADR [0256](https://github.com/kamp-us/phoenix/blob/main/.decisions/0256-kill-audit-keys-on-the-not-planned-close.md)).**
