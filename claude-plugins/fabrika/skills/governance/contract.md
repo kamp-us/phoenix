@@ -899,6 +899,7 @@ $ echo $?
 
 ```
 fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" [--supersede] [--repo <owner/name>] [--json]
+fabrika governance post 5830 --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "no contradiction, no weakening" [--supersede] [--repo <owner/name>] [--json]
 ```
 
 The verdict body arrives on **stdin only** — no `--body`, no `--body-file`, for the reason the
@@ -909,9 +910,11 @@ poster reads success.
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| *(positional)* | integer | yes | — | the pull-request number |
+| *(positional)* | integer | yes | — | the pull-request number — with `--base`/`--tip`, the child issue instead |
 | `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
-| `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
+| `--sha` | string | unless ranged | — | the head the reviewer actually inspected (7–40 lowercase hex); required only for the PR-scoped form, and refused beside a range |
+| `--base` | string | with `--tip` | — | the range's base end, 7–40 lowercase hex — the epic-child form (#5935) |
+| `--tip` | string | with `--base` | — | the range's tip end |
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
 | `--supersede` | boolean | no | `false` | acknowledge that this verdict retires a standing one of the **opposite** polarity at this head — ranged, over this range; without it that post is the `17` refusal |
 | `--repo` | string | no | resolved | the repository |
@@ -919,13 +922,28 @@ poster reads success.
 | stdin | markdown | yes | — | the verdict body below the first line: the questions swept, the sweep outcome, the domain read by hand, the anchored invariants in reach and their disposition |
 
 **Output** — machine channel. One line:
-`posted\tgovernance\t<polarity>\t<sha>\t<content>\t<created|superseded>\t<comment-url>`, where
-`<content>` is the content digest the verdict binds (ADR 0276) and the sixth field says whether the
-write opened a fresh comment or appended into this namespace's existing comment at this head,
-retiring the verdict that was there.
+`posted\tgovernance\t<polarity>\t<sha|base..tip>\t<content>\t<created|superseded>\t<comment-url>` —
+the fourth field names the subject the verdict binds, the head in PR mode and `<base>..<tip>` in
+range mode, `<content>` is the content digest the verdict binds (ADR 0276), and the sixth field says
+whether the write opened a fresh comment or appended into this namespace's existing comment at that
+same subject, retiring the verdict that was there.
 With `--json`:
 `{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"superseded","floor":"refired"|"restarting"|"green"|"in-flight"|"no-run"|"unknown","commentUrl":…}`.
-The tab line does not carry `floor` — the floor's outcome is on stderr, one line, always.
+Ranged, the `sha` field gives way to a `range` object and there is no `floor`, because step 7 is
+PR-scoped and does not run:
+`{"outcome":"posted","namespace":"governance","polarity":…,"range":{"base":…,"tip":…},"content":…,"upsert":"created"|"superseded","commentUrl":…}`.
+The tab line does not carry `floor` — in PR mode the floor's outcome is on stderr, one line, always.
+
+**Range mode — `--base`/`--tip`, the epic-child form (#5935, ADR 0285).** An epic child opens no PR
+mid-run, so there is no head to bind to and no PR surface to post on: the positional names the
+**child issue**, the requirement is re-derived over what `<base>...<tip>` changed in this checkout,
+and the first line goes through the `range-verdict-marker` format `lane prove` folds rather than the
+head-bound one. `--sha` is a head-scoped idea and is refused here rather than ignored. The six steps
+below hold with the range in the head's place: step 1 becomes the target proof — the positional must
+be an open issue and not a pull request — step 2 derives over the range's changed paths, and step 5's
+upsert key is the range, prefix-matched on **both** ends. Step 7 has no run to assert. The write path
+is [`packages/fabrika-cli/src/review/range-post.ts`](../../../../packages/fabrika-cli/src/review/range-post.ts),
+which `review post --base/--tip` also runs.
 
 **The namespace is fixed.** There is no `--namespace` flag: this verb emits exactly one namespace and
 composing another is not a mode it has. That is the disjointness guarantee made structural in the
@@ -1016,13 +1034,13 @@ clothes.
 | `3` | stdin was read and held nothing — an empty verdict body would read as UNGATED |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference — the body never arrived |
-| `7` | the PR is proven absent (404) or closed |
+| `7` | the PR is proven absent (404) or closed; ranged, the positional issue is proven absent, is closed, or is a pull request |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
 | `9` | the comment landed but the read-back does not yield this marker |
-| `10` | a bad `--polarity`, a `--sha` that is not a head SHA, or a blank `--clause` |
-| `11` | a precondition read failed — the PR, the live head, or the commit binding the re-derivation rests on |
+| `10` | a bad `--polarity`, a `--sha` that is not a head SHA, or a blank `--clause`; a lone `--base`/`--tip`; `--sha` beside a range; a range end that is not a revision; neither `--sha` nor a range |
+| `11` | a precondition read failed — the PR, the live head, or the commit binding the re-derivation rests on; ranged, the issue, the comments, or the content `<base>..<tip>` changes |
 | `12` | the live head moved past `--sha` — re-review at the new head, never re-bind |
-| `14` | this PR's diff derives no governance namespace — refusing to fill a namespace it did not require |
+| `14` | this PR's diff derives no governance namespace — refusing to fill a namespace it did not require; ranged, `<base>..<tip>` touches no governance root |
 | `17` | a standing verdict of the opposite polarity at this head — ranged, over this range — would be retired and `--supersede` was not passed; nothing written |
 
 **Errors**
@@ -1045,10 +1063,28 @@ clothes.
 | `governance post: a standing <PASS\|FAIL> for governance at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
 | `governance post: a standing <PASS\|FAIL> for governance over <base>..<tip> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
 
+Ranged, the same steps produce their own text — the target is an issue, the subject is the range. The
+`17` rows above already state both scopes; the `3`, `5`, `6`, `8` and `11` messages are byte-identical
+in either mode, so they are not repeated here:
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `governance post: --base and --tip come together — a range has two ends.` | 10 | refusal |
+| `governance post: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).` | 10 | refusal |
+| `governance post: --sha is required for a PR-scoped verdict — for a range-scoped one pass --base and --tip.` | 10 | refusal |
+| `governance post: --<base\|tip> "<v>" is not a revision — expected 7–40 lowercase hex characters.` | 10 | refusal |
+| `governance post: #<n> is proven absent in <repo>.` | 7 | refusal |
+| `governance post: #<n> is a pull request — a range-scoped verdict lands on the child issue; a PR's verdict is head-bound, so drop --base/--tip and pass --sha.` | 7 | refusal |
+| `governance post: #<n> is <state> — a verdict on a closed issue gates nothing.` | 7 | refusal |
+| `governance post: <base>..<tip> touches no governance root (<roots>) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.` | 14 | refusal |
+| `governance post: posted, but the read-back does not yield this marker (<wire reason>) — #<n> may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
+
 **Scope** — one PR: its live head, the bound commit's file list for the re-derivation, its comments,
 and the caller's stdin, plus the workflow runs at the bound head for step 7. A read failing at any of
 the first four is `11` — nothing written, outcome known-unwritten; a read failing at the fifth is the
-`unknown` floor, because by then the verdict is written.
+`unknown` floor, because by then the verdict is written. Ranged, it is one issue and one range
+instead: the issue's state and comments, what `<base>...<tip>` changes in this checkout, and the
+caller's stdin — no PR is resolved, because there is none, and no floor is asserted.
 
 **Examples**
 
@@ -1060,6 +1096,13 @@ posted	governance	PASS	03135b91	2f1a9c4e0b7d	created	https://github.com/kamp-us/
 ```
 $ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" --json < verdict.md
 {"outcome":"posted","namespace":"governance","polarity":"PASS","sha":"03135b91","content":"2f1a9c4e0b7d","upsert":"created","floor":"refired","commentUrl":"https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211"}
+```
+
+Ranged, the positional is the child issue and the fourth field is the range:
+
+```
+$ fabrika governance post 5830 --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "no contradiction, no weakening" < verdict.md
+posted	governance	PASS	9f2c1ab..03135b9	2f1a9c4e0b7d	created	https://github.com/kamp-us/phoenix/issues/5830#issuecomment-5154902211
 ```
 
 ```
