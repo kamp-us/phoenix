@@ -530,6 +530,16 @@ created and arrived dep-less.
   loser's spawn died on `fatal: invalid reference: FETCH_HEAD`. The fetch lands in a per-spawn ref
   under `refs/fabrika/worktree-base/`, which is resolved to a commit id and dropped before the slow
   `git worktree add` runs at that id ([#6081](https://github.com/kamp-us/phoenix/issues/6081)).
+- **Two sibling-worktree faults are recovered from, and only those two.** A `git worktree add`
+  registers `.git/worktrees/<name>/` before it checks out, and while that entry is half-built any
+  concurrent command against the clone can die on it — a fetch's connectivity check on the null-oid
+  `worktrees/<name>/HEAD`, or another add on `worktrees/<name>/commondir`. An entry a *failed* add
+  left behind never heals, so every later fetch in that clone fails identically; the fetch and the
+  add each answer both sources by pruning the dead entries and re-attempting, bounded to five
+  attempts and under 3s of delay, holding no lock across the slow add
+  ([#7331](https://github.com/kamp-us/phoenix/issues/7331)). Any other diagnostic refuses on the
+  first attempt, an exhausted one still refuses at `16`/`17` naming git's own line, and a recovered
+  add is still held to the tree existing and its virtual store landing.
 - **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
   `PreToolUse` — is retired, decision and declaration both (ADR
   [0331](../../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human

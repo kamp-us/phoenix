@@ -280,6 +280,38 @@ into workspace source, so a shared `node_modules` resolves every `@kampus/*` dep
 which then check the wrong tree (ADR 0109's rejected-share trap). A real `pnpm install` is the only
 correct provision; the symlink is a correctness bug, not an optimization.
 
+## A half-built `.git/worktrees/<name>/` entry breaks every OTHER command on the clone
+
+`git worktree add` registers its administrative directory under `.git/worktrees/<name>/` **before**
+it checks the tree out, and for that window the entry is not yet readable as a worktree: `HEAD`
+holds the null oid, and `commondir` may not be written. Every git command against that clone walks
+those entries, so the half-built one takes down commands that have nothing to do with it — most
+visibly a `git fetch`, whose connectivity check reds with `fatal: bad object worktrees/<name>/HEAD`
+and `did not send all necessary objects`. The name in the message is the **sibling's** worktree, not
+the failing command's own, which is the tell.
+
+**The trap is that the entry does not always heal.** Two sources look identical in the diagnostic
+and behave oppositely (both measured on git 2.40.1 in
+[`packages/fabrika-cli/src/hook/worktree-concurrency.git.test.ts`](../packages/fabrika-cli/src/hook/worktree-concurrency.git.test.ts)):
+
+- A **live** add closes its own window — one sample in 161 across a ~320ms creation, and it closes
+  *before* `post-checkout`, so it never spans the ~10s dependency install. Waiting works.
+- An add that **died** mid-creation leaves the entry forever. Re-running the identical fetch fails
+  identically, for as long as the directory is there, and this is the shape that shows up in
+  production: every failing fetch naming one worktree — the first spawn's, whose own add had already
+  failed ([#7331](https://github.com/kamp-us/phoenix/issues/7331)).
+
+So **`git worktree prune` is the fix for a mystery `bad object worktrees/*/HEAD`, and a bare retry is
+not.** Prune is safe to run while siblings are adding: `git worktree add` writes
+`worktrees/<name>/locked` = `initializing` as the first file in the entry and removes it only once
+the checkout is done, and prune skips a locked entry; independently, the worktree directory itself
+exists at every instant the entry does, and prune only drops an entry whose directory is missing.
+Neither the harness's internal path nor a hand-run `git worktree add` recovers from this — only
+`fabrika hook worktree-create` does it for you, by pruning and re-attempting, bounded.
+
+Do **not** reach for a lock. Serialising `git worktree add` serialises every parallel spawn behind
+one ~10s `bootstrap-deps` install, which is the whole reason the hook owns creation.
+
 ## Sanctioned bulk-cleanup of accumulated worktrees
 
 The harness does not auto-remove a worktree that made commits, so agent worktrees
