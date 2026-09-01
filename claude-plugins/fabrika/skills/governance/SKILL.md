@@ -209,6 +209,13 @@ it is; this namespace rides the same channel as every other.
 the head you actually inspected; the verb re-resolves the live head at post time and refuses a moved
 one. Re-review, never re-bind.
 
+**A re-post appends; it never replaces.** The prior verdict is retired verbatim below the comment's
+`<!-- fabrika:superseded -->` fence while yours takes the first line, so the sixth field of the
+answer reads `superseded` rather than `edited` and the record of what the gate said before survives
+(#7411). Flipping the polarity at one head is the one case you must say out loud: without
+`--supersede` it is exit `17` with **nothing written**, so pass the flag when your verdict really
+does retire the opposite one — never re-post under a different clause to get around it.
+
 **`post` also re-fires the floor check at that head.** The `governance-floor` job runs on
 `pull_request`, so it judged the PR before your verdict existed and nothing else re-fires it. The verb
 re-runs that job, which re-derives `ship floor` against your verdict — it never writes a check-run
@@ -254,6 +261,11 @@ What the verb refuses here is what tells you the shape is not the PR one:
   form cannot attest a scope nobody derived either.
 - **No floor line comes back.** `governance-floor` runs on `pull_request` and a child has no PR, so
   there is nothing to re-fire; the tail PR carries that check when it opens.
+- **The append and its `17` refusal key on the range, not a head.** A child's comment is the whole
+  record of that child's review — there is no PR surface holding a second copy, and `lane prove`
+  derives a refusal from it — so a re-post over the same `<base>..<tip>` retires the prior verdict
+  below the fence, and a polarity flip over that range needs `--supersede` exactly as the PR path's
+  flip does (#7411).
 
 **Done when** `post` prints `posted` over the range you judged and its read-back conformed. Which
 namespaces a child owes at all — governance among them — is `review`'s §6, and it defers nothing to

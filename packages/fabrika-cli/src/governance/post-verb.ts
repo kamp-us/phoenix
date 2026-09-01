@@ -18,9 +18,16 @@
  * diff is a refusal downstream, presence of one on a non-required diff is a refusal here. Both
  * directions exist so the namespace means exactly one thing.
  *
+ * **A re-post appends; it never replaces.** The prior verdict survives verbatim below
+ * `../review/supersede.ts`'s fence and the fresh one takes the first line, because GitHub keeps no
+ * comment-body history: a FAIL PATCHed over by a PASS at one head leaves nothing showing a gate ever
+ * blocked (#7247, #7411). Retiring a standing verdict of the opposite polarity is
+ * {@link SUPERSEDES_VERDICT} until `--supersede` says so out loud.
+ *
  * With `--base`/`--tip` the verb runs the range-scoped path instead (`../review/range-post.ts`,
  * #5935): the positional is the child issue, the marker is `../wire/range-verdict-marker.ts`'s, and
- * the same harness-touching rule is asked of the range's own changed paths.
+ * the same harness-touching rule is asked of the range's own changed paths. That path appends and
+ * refuses the same way, keyed on the range rather than a head it does not have.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -35,6 +42,7 @@ import {touchesGovernanceRoot} from "../review/classes.ts";
 import {contentDigestAt} from "../review/content-binding.ts";
 import {readRangeFlags} from "../review/range-flags.ts";
 import {runRangePost} from "../review/range-post.ts";
+import {compose as supersedeWith} from "../review/supersede.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {latestByWriteRecency} from "../review/write-recency.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -55,6 +63,7 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_HEAD,
+	SUPERSEDES_VERDICT,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {assertFloorAt, floorLine, floorToken} from "./floor-assert.ts";
@@ -89,6 +98,10 @@ export interface PostOptions {
 	readonly cwd: string;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly stdin: Effect.Effect<StdinRead>;
+	/** The explicit acknowledgement that this verdict retires a standing one of the other polarity. */
+	readonly supersede: boolean;
+	/** The wall clock the superseded heading is dated from — a port so a test can pin the day. */
+	readonly now: Effect.Effect<number>;
 }
 
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
@@ -109,6 +122,17 @@ const carriesNamespaceAt = (body: string, sha: HeadSha): boolean => {
 		parsed.value.namespace === NAMESPACE &&
 		sameHead(parsed.value.sha, sha)
 	);
+};
+
+/**
+ * The polarity a standing comment's marker carries, or `null` when it carries none to compare.
+ *
+ * Read off the comment's first line through the format's own reader, so a verdict already retired
+ * below the fence is not what the flip is judged against — the live one is.
+ */
+const polarityOfMarker = (body: string): Polarity | null => {
+	const parsed = readMarker(body);
+	return parsed._tag === "Found" ? parsed.value.polarity : null;
 };
 
 /**
@@ -237,6 +261,8 @@ export const runPost = (
 					body: authored.text,
 					repo,
 					json,
+					supersede: options.supersede,
+					now: options.now,
 				},
 			);
 		}
@@ -325,14 +351,30 @@ export const runPost = (
 			),
 		);
 
+		// The prior verdict is never replaced, only pushed below the fence — GitHub keeps no
+		// comment-body history, so a PATCH over it is the record gone (#7247, #7411). A polarity flip
+		// is the one case that also needs saying out loud: it is the flip that decides the merge.
+		const standing = mine === undefined ? null : polarityOfMarker(mine.body);
+		if (standing !== null && standing !== polarity && !options.supersede) {
+			return refuse(
+				SUPERSEDES_VERDICT,
+				`${VERB}: a standing ${standing} for ${NAMESPACE} at ${inspected} would be superseded by this ${polarity} — pass --supersede to retire it on the record. Nothing was posted.`,
+				diagnostics,
+			);
+		}
+		const envelope =
+			mine === undefined
+				? composed
+				: supersedeWith(mine.body, composed, new Date(yield* options.now));
+
 		let landed: {readonly id: number; readonly url: string} | null = null;
 		let failure: string | null = null;
 		if (mine === undefined) {
-			const created = yield* createComment(repo, pr, composed);
+			const created = yield* createComment(repo, pr, envelope);
 			if (created._tag === "Failure") failure = created.reason;
 			else landed = {id: created.value.id, url: created.value.url};
 		} else {
-			const edited = yield* patchComment(repo, mine.id, composed);
+			const edited = yield* patchComment(repo, mine.id, envelope);
 			if (edited._tag === "Failure") failure = edited.reason;
 			else landed = {id: mine.id, url: edited.value};
 		}
@@ -343,9 +385,12 @@ export const runPost = (
 				diagnostics,
 			);
 		}
-		const upsert = mine === undefined ? "created" : "edited";
+		const upsert = mine === undefined ? "created" : "superseded";
 
-		// Step 6 — read it back from live state. The write call's own echo is not evidence (#3173).
+		// Step 6 — read it back from live state. The write call's own echo is not evidence (#3173). The
+		// comparand is the ENVELOPE, not the composed verdict: on a re-post the bytes that were sent
+		// carry the retired verdict below the fence, and comparing the fresh half alone reds every
+		// append.
 		const back = yield* getComment(repo, landed.id);
 		const mismatch =
 			back._tag === "Failure"
@@ -353,7 +398,7 @@ export const runPost = (
 				: mismatchOf(
 						back.value,
 						{polarity, sha: inspected, content: content.value, clause},
-						composed,
+						envelope,
 					);
 		if (mismatch !== null) {
 			return refuse(

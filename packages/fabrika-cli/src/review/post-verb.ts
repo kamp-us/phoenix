@@ -327,6 +327,8 @@ export const runPost = (
 					body: authored.text,
 					repo,
 					json,
+					supersede: options.supersede,
+					now: options.now,
 				},
 			);
 		}

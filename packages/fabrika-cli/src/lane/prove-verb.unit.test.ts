@@ -11,6 +11,7 @@ import {
 import {readGoldenFixture} from "../golden-fixture.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {contentDigest, parseRaw} from "../review/content-binding.ts";
+import {compose as supersedeWith} from "../review/supersede.ts";
 import {
 	LANE_UNREADABLE,
 	PROOF_ABSENT,
@@ -1279,6 +1280,38 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 
 		expect(out.code).toBe(PROOF_IN_FLIGHT);
 		expect(out.stderr.join("\n")).toContain("review-code (absent)");
+	});
+
+	// The append the range path lands (#7411) is the shape this reader meets on every repair round:
+	// one comment carrying the live verdict on its first line and every retired one below the fence.
+	// The marker walk takes the first non-blank line, so the fresh verdict is the one in force — a
+	// reader that scanned the whole body would find the archived FAIL and contradict a passing child.
+	it("reads the live verdict off a comment carrying a superseded archive, not the retired one", async () => {
+		const retired = `${rangeMarker("FAIL", CHILD_DIGEST)}\n\nthe round that blocked\n`;
+		const fresh = `${rangeMarker("PASS", CHILD_DIGEST)}\n\nevery criterion met now\n`;
+		const seams = proving({
+			id: 1,
+			body: supersedeWith(retired, fresh, new Date("2026-09-01T00:00:00Z")),
+		});
+
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven", event: "PASS", issue: 4301});
+	});
+
+	it("still contradicts when the appended verdict is the FAIL and the archive holds the PASS", async () => {
+		const retired = `${rangeMarker("PASS", CHILD_DIGEST)}\n\nthe round that passed\n`;
+		const fresh = `${rangeMarker("FAIL", CHILD_DIGEST)}\n\na criterion regressed\n`;
+		const seams = proving({
+			id: 1,
+			body: supersedeWith(retired, fresh, new Date("2026-09-01T00:00:00Z")),
+		});
+
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stderr.join("\n")).toContain("FAIL");
 	});
 
 	it("refuses a child PASS whose verdict binds a digest the range has moved past", async () => {

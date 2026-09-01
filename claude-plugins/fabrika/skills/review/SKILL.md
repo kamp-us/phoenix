@@ -265,7 +265,11 @@ undisclosed that this gate could see"* — never "no deviations exist".
   derives over that range, on the child issue, with `--base`/`--tip` in place of `--sha`: yours
   through `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
   through the `governance` skill's own range form (its §5). What binds is content, not a head (ADR
-  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)). Deferring the
+  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)). **A re-post over the
+  same range appends exactly as the PR path does** — the prior verdict is retired below the fence,
+  the answer's sixth field reads `superseded`, and a polarity flip over that range is exit `17`
+  until `--supersede` says so (#7411). It matters more here than on a PR: a child's comment is the
+  whole record of that child's review, with no PR surface holding a second copy. Deferring the
   namespace strands the lane whichever polarity you reached: a claimed `PASS` reds at `lane prove`
   exit `23`, and a `FAIL` is recorded only once every derived namespace is terminal against the
   range (`operate`'s `FAIL` row). The every-round rule above is unchanged here — a child's FAIL
