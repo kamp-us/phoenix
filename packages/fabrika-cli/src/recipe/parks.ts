@@ -75,7 +75,8 @@ export const QUEUE_MOVED_GRANT = 1;
  * the #6395 shape, and its clearance is the inverse of the very read that refuses the build:
  * `build branch --resume-lane` refuses while a working tree holds the child's lane branch, so the
  * park is clear exactly when no working tree holds it — and since #6610 the clearance first runs
- * `build retire`, which takes that checkout back when the board licenses it (ADR 0323). Without the
+ * `build retire`, which takes that checkout back where a license reaches it — the board's (ADR 0323),
+ * or, on the lane no claim marker holds any more, proof the tree carries nothing (ADR 0342). Without the
  * remedy the row read the pin and could never remove it, so every lane parked on this cause sat at
  * exit 13 until a human ran `git worktree remove` by hand.
  *

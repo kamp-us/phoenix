@@ -537,9 +537,14 @@ this order:
   [0321](../../../../.decisions/0321-dead-spawn-worktree-ownership.md)'s two steps in its order —
   salvage the tree's uncommitted work onto its own branch, then `git worktree remove` **without
   `--force`**, and a remove that still refuses is an incident to file through
-  [`report`](../report/SKILL.md), never a force — and it removes nothing the board does not license:
+  [`report`](../report/SKILL.md), never a force — and it removes nothing it holds no license for:
   the ticket is terminal, or an adopt marker names the holding lane's session as gone (ADR
-  [0323](../../../../.decisions/0323-board-licensed-worktree-retirement.md)). **Run it from wherever
+  [0323](../../../../.decisions/0323-board-licensed-worktree-retirement.md)), or **no claim marker
+  holds that lane at all** — which is the state the release above just created, so the two steps
+  compose in this order (ADR
+  [0342](../../../../.decisions/0342-unclaimed-lane-worktree-retirement.md)). That last arm is the
+  one that reads the tree, having no board statement to lean on: it retires a tree carrying nothing
+  and refuses `33` naming the uncommitted paths or the commits past `origin/main` that block it. **Run it from wherever
   you are.** The harness rule that refuses a *typed* cross-worktree `git` reads the command you
   type, so it does not bind the verb's own child process — which is why this obligation is no longer
   the primary checkout's alone.
