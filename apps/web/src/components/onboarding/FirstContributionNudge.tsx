@@ -5,6 +5,7 @@
  */
 import {Link} from "react-router";
 import {Button} from "../ui/Button";
+import {Surface} from "../ui/Card";
 import type {FirstContributionNudge as Nudge} from "./firstContribution";
 import "./FirstContributionNudge.css";
 
@@ -16,7 +17,15 @@ export interface FirstContributionNudgeProps {
 export function FirstContributionNudge({nudge, onDismiss}: FirstContributionNudgeProps) {
 	const addEntry = nudge.kind === "add-entry";
 	return (
-		<section className="kp-first-katki" data-testid="first-contribution-nudge">
+		<Surface
+			as="section"
+			tone="raised"
+			radius="sm"
+			padding="md"
+			border
+			className="kp-first-katki"
+			data-testid="first-contribution-nudge"
+		>
 			<h2 className="kp-first-katki__heading">ilk katkını yaz</h2>
 			<p className="kp-first-katki__line" data-testid="first-contribution-copy">
 				{addEntry
@@ -37,6 +46,6 @@ export function FirstContributionNudge({nudge, onDismiss}: FirstContributionNudg
 					şimdi değil
 				</Button>
 			</div>
-		</section>
+		</Surface>
 	);
 }

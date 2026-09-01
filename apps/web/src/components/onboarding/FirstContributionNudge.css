@@ -1,15 +1,12 @@
 /* The welcome moment's exit ask (#7044, epic #4304) — soft by design: a raised panel,
-   not a banner, and its dismissal sits at the same weight as its action. Role tokens
-   only — no color literal. */
+   not a banner, and its dismissal sits at the same weight as its action. The shell
+   itself is `Surface`'s (tone/radius/padding/border are props on the primitive); only
+   the inner stack lives here. Role tokens only — no color literal. */
 
 .kp-first-katki {
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-2);
-	padding: var(--s-3);
-	border: 1px solid var(--border);
-	border-radius: var(--r-sm);
-	background: var(--surface-raised);
 }
 
 .kp-first-katki__heading {
