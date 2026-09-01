@@ -529,8 +529,14 @@ created and arrived dep-less.
 - **Its base never travels through `FETCH_HEAD`.** That name is one file in the shared `.git` dir and
   every parallel spawn fetches the same clone, so a sibling's fetch truncated it mid-read and the
   loser's spawn died on `fatal: invalid reference: FETCH_HEAD`. The fetch lands in a per-spawn ref
-  under `refs/fabrika/worktree-base/`, which is resolved to a commit id and dropped before the slow
-  `git worktree add` runs at that id ([#6081](https://github.com/kamp-us/phoenix/issues/6081)).
+  named `refs/fabrika/worktree-base-<slug>-<nonce>`, which is resolved to a commit id and dropped
+  before the slow `git worktree add` runs at that id
+  ([#6081](https://github.com/kamp-us/phoenix/issues/6081)). That leaf sits *directly* in
+  `refs/fabrika/` rather than one level down, because `git update-ref -d` removes every parent
+  directory its deletion empties and stops two components in — so a nested prefix was a directory the
+  last spawn to finish rmdir'd out from under a sibling's in-flight fetch, which then died on
+  `cannot lock ref … No such file or directory`
+  ([#7428](https://github.com/kamp-us/phoenix/issues/7428)).
 - **Two sibling-worktree faults are recovered from, and only those two.** A `git worktree add`
   registers `.git/worktrees/<name>/` before it checks out, and while that entry is half-built any
   concurrent command against the clone can die on it — a fetch's connectivity check on the null-oid

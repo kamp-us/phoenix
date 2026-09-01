@@ -40,7 +40,8 @@ export const worktreePathFor = (repoRoot: string, name: string): string =>
 	`${repoRoot}/.claude/worktrees/${name}`;
 
 /**
- * Where this spawn's fetched base lands — a ref **no sibling spawn can write**.
+ * Where this spawn's fetched base lands — a ref **no sibling spawn can write**, under a directory
+ * **no sibling spawn can remove**.
  *
  * `FETCH_HEAD` is one file in the shared `.git` dir and every parallel spawn fetches against the same
  * clone, so one spawn reads it while a sibling's fetch has it truncated and the read returns nothing.
@@ -48,12 +49,29 @@ export const worktreePathFor = (repoRoot: string, name: string): string =>
  * fetch-then-resolve pairs lost the base that way (#6081). Serializing the pair would fix it too, but
  * a per-spawn name removes the shared write instead of taking turns at it.
  *
+ * A per-spawn *name* left a shared *directory*, which is a second race (#7428). `git update-ref -d`
+ * deletes the loose ref and then walks upward removing every parent it just emptied — but its walk
+ * has a floor: `try_remove_empty_parents` in git's `refs/files-backend.c` advances its pointer past
+ * the refname's first **two** components — the `for (i = 0; i < 2; i++)` loop commented
+ * `refs/{heads,tags,...}` — before pruning anything, identical on v2.40.1 and v2.51.0. So the
+ * deepest directory it can ever remove is the third
+ * component's. The leaf therefore sits directly in `refs/fabrika/`, which is component two and out of
+ * reach; a nested `refs/fabrika/worktree-base/<leaf>` put the shared directory one level lower, where
+ * the last spawn to finish rmdir'd it out from under a sibling's in-flight `git fetch` — between that
+ * fetch's mkdir and its `<leaf>.lock` create — and the sibling died on `cannot lock ref … No such file
+ * or directory`. Measured across 720 concurrent spawns against one clone on git 2.40.1: nested, the
+ * shared directory was absent in 363 of 4635 polls; flat under `refs/fabrika/`, 0 of 4894.
+ *
+ * `concurrencyArm` deliberately does not classify that diagnostic: this shape removes the race rather
+ * than recovering from it, and prune-and-backoff would not have helped a fetch whose parent directory
+ * was gone.
+ *
  * The slug is folded to `[A-Za-z0-9-]` so it cannot carry a `..` or a `.lock` suffix into a refname,
  * and the nonce — not the slug — is what makes the name unique: two slugs that differ only in
  * punctuation fold together, which would put the shared write straight back.
  */
 export const baseRefFor = (name: string, nonce: string): string =>
-	`refs/fabrika/worktree-base/${name.replace(/[^A-Za-z0-9]+/g, "-")}-${nonce}`;
+	`refs/fabrika/worktree-base-${name.replace(/[^A-Za-z0-9]+/g, "-")}-${nonce}`;
 
 /** The fully-qualified source is deliberate: an unqualified `main` also matches a tag named `main`. */
 export const fetchBaseArgs = (base: string, baseRef: string): ReadonlyArray<string> => [
