@@ -7,6 +7,7 @@
  * çaylak gets the karma delta but NO promotion bar, because `resolveTandem` short-circuits on
  * the vouch half and no amount of karma promotes them (#1323).
  */
+import {VOUCH_PROMOTION_KARMA_BAR} from "../../../worker/features/kunye/standing";
 import {
 	caylakPromotionPath,
 	VOUCH_NEEDED_COPY,
@@ -23,18 +24,22 @@ export interface CaylakMeterStanding {
 /**
  * The chip's shape. The bar's presence is carried by the variant rather than a boolean beside
  * the copy, so "unvouched with a promotion bar" — the state #1323 forbids — is unrepresentable.
+ *
+ * `target` is the number the delta reads against, and each variant derives its own, because the
+ * wire's `bar` carries two different meanings: `promotionBarFor` sends the reduced bar to a
+ * vouched çaylak and the unassisted `KARMA_THRESHOLDS.yazar` to an unvouched one.
  */
 export type CaylakMeter =
 	| {
 			readonly kind: "karma-bar";
 			readonly karma: number;
-			readonly bar: number;
+			readonly target: number;
 			readonly vouchFact: string;
 	  }
 	| {
 			readonly kind: "vouch-needed";
 			readonly karma: number;
-			readonly bar: number;
+			readonly target: number;
 			readonly vouchFact: string;
 			/** `CaylakStatusBlock`'s settled copy, rendered as visible chip text — never a tooltip. */
 			readonly vouchNeeded: string;
@@ -49,10 +54,17 @@ export function caylakMeter(standing: CaylakMeterStanding): CaylakMeter {
 	const path = caylakPromotionPath(standing.vouchExists);
 	const shared = {
 		karma: standing.karma,
-		bar: standing.bar,
 		vouchFact: vouchFactLabel(standing.vouchExists),
 	} as const;
+	// Vouched reads the wire's own bar and never re-derives it (#1316). Unvouched cannot: the
+	// wire's 100 is the goal #1323 calls unlivable, so the chip names the reduced bar the kefil
+	// buys down to, read from the module that owns it so the two can never drift apart.
 	return path.kind === "karma-bar"
-		? {kind: "karma-bar", ...shared}
-		: {kind: "vouch-needed", ...shared, vouchNeeded: VOUCH_NEEDED_COPY.message};
+		? {kind: "karma-bar", ...shared, target: standing.bar}
+		: {
+				kind: "vouch-needed",
+				...shared,
+				target: VOUCH_PROMOTION_KARMA_BAR,
+				vouchNeeded: VOUCH_NEEDED_COPY.message,
+			};
 }

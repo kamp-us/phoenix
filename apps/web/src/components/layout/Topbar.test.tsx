@@ -3,6 +3,7 @@ import {fileURLToPath} from "node:url";
 import {fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it, vi} from "vitest";
+import {promotionBarFor, VOUCH_PROMOTION_KARMA_BAR} from "../../../worker/features/kunye/standing";
 import {VOUCH_NEEDED_COPY} from "../profile/CaylakStatusBlock";
 import {caylakMeter} from "./caylakMeter";
 import {Topbar} from "./Topbar";
@@ -470,6 +471,12 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 		);
 	}
 
+	// Fixtures off the wire's own producer, never a literal — an unvouched standing carries the
+	// unassisted bar the backend actually sends, so the rendered target is asserted against what
+	// a çaylak receives rather than a shape only a test can produce.
+	const unvouched = (karma: number) => ({karma, bar: promotionBarFor(false), vouchExists: false});
+	const vouched = (karma: number) => ({karma, bar: promotionBarFor(true), vouchExists: true});
+
 	// Criteria 1 and 5 share this assertion: with no meter prop the chip is today's bare karma
 	// readout, bar-free — which is exactly the flag-off path and every yazar.
 	it("renders today's bare karma chip with no meter (flag off, and every yazar)", () => {
@@ -482,18 +489,29 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 	});
 
 	it("names the karma delta and the unmet kefil condition for an unvouched çaylak", () => {
-		renderMeter({caylakMeter: caylakMeter({karma: 9, bar: 15, vouchExists: false})});
+		renderMeter({caylakMeter: caylakMeter(unvouched(9))});
 		const meter = screen.getByTestId("topbar-caylak-meter");
 		expect(screen.getByTestId("topbar-zone-status-signal").contains(meter)).toBe(true);
 		expect(meter.textContent).toContain("9");
-		expect(meter.textContent).toContain("15");
+		expect(meter.textContent).toContain(String(VOUCH_PROMOTION_KARMA_BAR));
 		expect(screen.getByTestId("topbar-caylak-kefil").textContent).toContain("kefil: yok");
+	});
+
+	// The unassisted 100 reaches assistive tech too — `karmaAriaLabel` builds the target into the
+	// visually-hidden span — so the reduced bar is asserted on both the visible readout and the
+	// announced one.
+	it("renders and announces the reduced bar while unvouched, never the wire's 100", () => {
+		renderMeter({caylakMeter: caylakMeter(unvouched(9))});
+		const karma = screen.getByTestId("topbar-karma");
+		expect(karma.textContent).toContain("/ 15");
+		expect(karma.textContent).not.toContain("100");
+		expect(karma.querySelector(".kp-karma__sr")?.textContent).toBe("karma: 9 / 15");
 	});
 
 	// Criterion 3, inherited from `CaylakStatusBlock`'s #1323 rule rather than re-derived.
 	it("draws NO promotion bar while unvouched, and carries the settled vouch-needed copy", () => {
 		const {container} = renderMeter({
-			caylakMeter: caylakMeter({karma: 9, bar: 15, vouchExists: false}),
+			caylakMeter: caylakMeter(unvouched(9)),
 		});
 		expect(container.querySelectorAll("progress")).toHaveLength(0);
 		expect(screen.getByTestId("topbar-caylak-vouch-needed").textContent).toContain(
@@ -504,7 +522,7 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 	// A `title` is the delivery this rejects: it never opens on touch and takes no keyboard
 	// focus, so the mobile çaylak criterion 3 is written for would be told nothing at all.
 	it("delivers the vouch-needed copy as rendered text, reachable with no hover", () => {
-		renderMeter({caylakMeter: caylakMeter({karma: 9, bar: 15, vouchExists: false})});
+		renderMeter({caylakMeter: caylakMeter(unvouched(9))});
 		const meter = screen.getByTestId("topbar-caylak-meter");
 		expect(meter.textContent).toContain(VOUCH_NEEDED_COPY.message);
 		for (const el of [meter, ...meter.querySelectorAll("*")]) {
@@ -514,7 +532,7 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 
 	it("draws exactly one bar once a kefil exists, against the reduced target", () => {
 		const {container} = renderMeter({
-			caylakMeter: caylakMeter({karma: 9, bar: 15, vouchExists: true}),
+			caylakMeter: caylakMeter(vouched(9)),
 		});
 		const bars = container.querySelectorAll("progress");
 		expect(bars).toHaveLength(1);
@@ -526,14 +544,14 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 
 	// Criterion 2's "no badges, streaks or second standing readout anywhere in the chrome".
 	it("adds no second standing readout to the chrome", () => {
-		renderMeter({caylakMeter: caylakMeter({karma: 9, bar: 15, vouchExists: true})});
+		renderMeter({caylakMeter: caylakMeter(vouched(9))});
 		const zone = screen.getByTestId("topbar-zone-status-signal");
 		expect(zone.querySelectorAll('[data-testid="topbar-karma"]')).toHaveLength(1);
 		expect(zone.querySelectorAll('[data-testid="topbar-caylak-meter"]')).toHaveLength(1);
 	});
 
 	it("the meter stays a read-only status glyph — no button/link affordance", () => {
-		renderMeter({caylakMeter: caylakMeter({karma: 9, bar: 15, vouchExists: true})});
+		renderMeter({caylakMeter: caylakMeter(vouched(9))});
 		const meter = screen.getByTestId("topbar-caylak-meter");
 		expect(meter.tagName).toBe("SPAN");
 		expect(meter.closest("button")).toBeNull();

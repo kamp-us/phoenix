@@ -156,7 +156,7 @@ export function Topbar({
 		<span className="kp-topbar__caylak-meter" data-testid="topbar-caylak-meter">
 			<Karma
 				value={caylakMeter.karma}
-				target={caylakMeter.bar}
+				target={caylakMeter.target}
 				showBar={caylakMeter.kind === "karma-bar"}
 				variant="inline"
 				testId="topbar-karma"

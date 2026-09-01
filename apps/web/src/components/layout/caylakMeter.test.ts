@@ -3,38 +3,57 @@
 import {readdirSync, readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
+import {promotionBarFor, VOUCH_PROMOTION_KARMA_BAR} from "../../../worker/features/kunye/standing";
 import {STANDING_FIELDS, VOUCH_NEEDED_COPY} from "../profile/CaylakStatusBlock";
 import {caylakMeter, vouchFactLabel} from "./caylakMeter";
 
+// Fixtures built from `promotionBarFor`, not from literals: `bar` is whatever the wire's own
+// producer sends for that vouch state, so an unvouched case can never drift back to a standing
+// the backend cannot emit (`{bar: 15, vouchExists: false}`).
+const unvouched = (karma: number) => ({karma, bar: promotionBarFor(false), vouchExists: false});
+const vouched = (karma: number) => ({karma, bar: promotionBarFor(true), vouchExists: true});
+
 describe("caylakMeter — the next unmet condition, with its delta", () => {
 	it("names the karma delta and the kefil fact for an unvouched çaylak", () => {
-		const meter = caylakMeter({karma: 9, bar: 15, vouchExists: false});
+		const meter = caylakMeter(unvouched(9));
 		expect(meter.kind).toBe("vouch-needed");
 		expect(meter.karma).toBe(9);
-		expect(meter.bar).toBe(15);
 		expect(meter.vouchFact).toBe("kefil: yok");
 	});
 
 	it("carries CaylakStatusBlock's settled vouch-needed copy, never a second wording", () => {
-		const meter = caylakMeter({karma: 9, bar: 15, vouchExists: false});
+		const meter = caylakMeter(unvouched(9));
 		expect(meter.kind === "vouch-needed" && meter.vouchNeeded).toBe(VOUCH_NEEDED_COPY.message);
 	});
 
 	it("becomes the honest karma bar once a kefil exists", () => {
-		const meter = caylakMeter({karma: 9, bar: 15, vouchExists: true});
+		const meter = caylakMeter(vouched(9));
 		expect(meter.kind).toBe("karma-bar");
 		expect(meter.vouchFact).toBe("kefil: var");
 	});
 
 	it("inherits the #1323 honesty rule: no karma-bar variant is reachable while unvouched", () => {
 		for (const karma of [-3, 0, 9, 15, 99]) {
-			expect(caylakMeter({karma, bar: 15, vouchExists: false}).kind).toBe("vouch-needed");
+			expect(caylakMeter(unvouched(karma)).kind).toBe("vouch-needed");
 		}
 	});
 
-	it("reports the delta against the bar it was handed, never a re-derived target", () => {
+	// The wire sends the unassisted 100 while unvouched, and that is the goal #1323 calls
+	// unlivable. Naming it in the chip would move the dishonesty out of the bar and into a
+	// string, so the delta reads against the reduced bar the kefil buys down to.
+	it("names the reduced bar for an unvouched çaylak, never the 100 the wire sends", () => {
+		const standing = unvouched(9);
+		expect(standing.bar).toBe(100);
+		const meter = caylakMeter(standing);
+		expect(meter.target).toBe(VOUCH_PROMOTION_KARMA_BAR);
+		expect(`karma ${meter.karma}/${meter.target} · ${meter.vouchFact}`).toBe(
+			"karma 9/15 · kefil: yok",
+		);
+	});
+
+	it("reports a vouched delta against the bar it was handed, never a re-derived target", () => {
 		const meter = caylakMeter({karma: 40, bar: 100, vouchExists: true});
-		expect(`karma ${meter.karma}/${meter.bar} · ${meter.vouchFact}`).toBe(
+		expect(`karma ${meter.karma}/${meter.target} · ${meter.vouchFact}`).toBe(
 			"karma 40/100 · kefil: var",
 		);
 	});
@@ -62,10 +81,16 @@ describe("the meter reads the aggregate-only standing selection and nothing more
 	});
 
 	it("the meter's own input names only karma, bar and vouchExists", () => {
-		const meter = caylakMeter({karma: 9, bar: 15, vouchExists: false});
+		const meter = caylakMeter(unvouched(9));
 		// Structurally: extra keys on the standing argument cannot reach the output, because
 		// every field of the result is derived from those three.
-		expect(Object.keys(meter).sort()).toEqual(["bar", "karma", "kind", "vouchFact", "vouchNeeded"]);
+		expect(Object.keys(meter).sort()).toEqual([
+			"karma",
+			"kind",
+			"target",
+			"vouchFact",
+			"vouchNeeded",
+		]);
 	});
 
 	// "a second standing source appears" is a SOURCE fact, not a value one: a new reader anywhere
