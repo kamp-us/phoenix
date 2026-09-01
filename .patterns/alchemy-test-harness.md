@@ -246,10 +246,12 @@ class):
 `Cloudflare.state()` vs `Alchemy.localState()` from the **dev-vs-deploy** signal
 alone — **not** `CI`, and (since ADR 0082) **not** `VITEST`. Only `alchemy dev`
 (its `ALCHEMY_EXEC_OPTIONS.dev` flag, or the coarser `ALCHEMY_DEV` override)
-resolves to offline `localState()`. A Vitest integration run resolves to the
-shared Cloudflare store exactly like a real deploy, because it deploys to real
-remote Cloudflare. The Stack's baked state and `Test.make`'s `state` option
-therefore agree on `Cloudflare.state()`.
+resolves to `Alchemy.localState()` — the *state store*, not the loop: the
+worker still binds real Cloudflare D1 and DO namespaces in your personal stage
+(ADR [0032](../.decisions/0032-alchemy-beta45-and-dev-model.md)). A Vitest
+integration run resolves to the shared Cloudflare store exactly like a real
+deploy, because it deploys to real remote Cloudflare. The Stack's baked state
+and `Test.make`'s `state` option therefore agree on `Cloudflare.state()`.
 
 ## The harness contract (`tests/integration/_harness.ts`)
 
