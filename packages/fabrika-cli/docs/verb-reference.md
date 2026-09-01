@@ -766,7 +766,8 @@ precondition read failed · `12` the park's cause is outside the known-recipe se
 recipe whose clearing condition is not met yet · `14` the task's leaf state is not a park · `15`
 the task could not be resolved · `16`–`18` the `governance` verdict is absent, stale, or FAIL ·
 `19` no run at the head concluded in failure · `20` the machine refused the `UNBLOCKED` · `21` the
-rerun was requested and its outcome could not be re-read · `22` the state applies no recipe.
+rerun was requested and its outcome could not be re-read · `22` the state applies no recipe · `39`
+the cwd is not in a repository, so `unpark` has none to derive its default lanes root off.
 
 **Known clears, novel escalates, and both are exit codes.** `12` is nothing-written, route it to a
 human; `13` is wait. `recipe route --exit` folds the first to `BLOCKED` and the second to `WIP`, so
