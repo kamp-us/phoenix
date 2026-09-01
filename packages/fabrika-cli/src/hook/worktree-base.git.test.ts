@@ -9,6 +9,11 @@
  * FETCH_HEAD`. Measured here on git 2.40.1 before the fix, 12 of 320 concurrent fetch-then-resolve
  * pairs came back empty; point {@link fetchBaseArgs} back at `FETCH_HEAD` and this file goes red.
  *
+ * The per-spawn ref that fixed it left a second, rarer race on the directory those names *shared*,
+ * which surfaced here as an intermittent `cannot lock ref` (#7428). That one is settled by where
+ * {@link baseRefFor} puts its leaf, so it is pinned in the last describe rather than raced for: the
+ * observed rate was one loss in 320 pairs, far below what this file's load would catch reliably.
+ *
  * What is exercised is the derivation the verb performs — the argv from {@link fetchBaseArgs},
  * {@link resolveBaseArgs} and {@link dropBaseRefArgs}, and the guard in {@link isCommitId}. The
  * Effect wrapper around them folds the same pieces over a scripted spawner elsewhere; running it
@@ -22,6 +27,8 @@
  * subject (#7331), over the same {@link openClone} fixture.
  */
 import {execFile, execFileSync} from "node:child_process";
+import {existsSync} from "node:fs";
+import {join} from "node:path";
 import {promisify} from "node:util";
 import {afterAll, describe, expect, it} from "vitest";
 import {GIT_ENV, openClone, removeClones} from "./throwaway-clone.test-support.ts";
@@ -100,5 +107,25 @@ describe("the per-spawn base ref", () => {
 				execFileSync("git", ["check-ref-format", ref], {env: GIT_ENV, stdio: "ignore"}),
 			).not.toThrow();
 		}
+	});
+
+	// #7428: a per-spawn *name* still left a shared *directory* for `update-ref -d` to rmdir out from
+	// under a sibling's in-flight fetch. What makes the leaf safe is which component it sits in, so
+	// that is what is pinned — a future nesting that reintroduces the race reds here.
+	it("puts its leaf directly in `refs/fabrika/`, the deepest directory `update-ref -d` cannot prune", () => {
+		const ref = baseRefFor("agent", "0123456789ab");
+		expect(ref.startsWith("refs/fabrika/")).toBe(true);
+		expect(ref.split("/")).toHaveLength(3);
+	});
+
+	it("leaves the directory its leaf lived in behind, so a sibling's fetch can still lock a ref there", async () => {
+		const {clone, tip} = openClone();
+		expect(await resolveBase(clone, "agent-alone", "0123456789ab")).toBe(tip);
+
+		// `update-ref -d` prunes every parent it empties, floored two components in. That leaf was the
+		// only ref under its directory, so a prunable directory would be gone by now.
+		const ref = baseRefFor("agent-alone", "0123456789ab");
+		const leafDir = join(clone, ".git", ref.slice(0, ref.lastIndexOf("/")));
+		expect(existsSync(leafDir)).toBe(true);
 	});
 });
