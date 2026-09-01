@@ -194,9 +194,21 @@ the rollup. Each token routes on its own:
   `heal-ci` is the lane that moves a stalled PR.
 - `head-moved` — the PR left the head you are judging. Re-read at the new head; a verdict binds only
   what was inspected.
+- `governance-owed` — the only unfinished check is `governance floor at head`, and its workflow run
+  has already completed, so what the floor is waiting for is **your** governance verdict (ADR
+  [0318](../../../../.decisions/0318-the-governance-floor-reports-through-a-check-run.md)). This is
+  not a park: fire §6's governance skill, then call `review ci --wait` again and judge on the
+  `settled` it returns. Reaching it means §6 was run late, not that anything is wrong with the PR.
 
 The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
-so a `16` head or a repo with no producer never burns the budget.
+so a `16` head, a repo with no producer, or a floor waiting on you never burns the budget.
+
+**On a `governance: required` diff, fire §6's governance skill before you wait on CI.** The floor
+check-run at the head cannot leave `in_progress` until a governance verdict binds there, and you are
+the shell that owes it — so a `--wait` run first is a wait on yourself. The verb now answers
+`governance-owed` instead of sleeping through the budget, but that answer costs you a second call
+where the right order costs none ([#7392](https://github.com/kamp-us/phoenix/issues/7392); §1's
+`governance` token is what tells you which order you are in).
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no
@@ -246,6 +258,10 @@ undisclosed that this gate could see"* — never "no deviations exist".
   `harness`**: that flag counts three roots and `.decisions/` is not one, so a decision-record PR
   reads `harness: false` and still owes the verdict — PR #5604 got a clean PASS that way and the
   ship gate then blocked on `ns governance absent` (#5607).
+  **Fire it before the code class's `review ci --wait`, not after.** The floor check-run at the head
+  stays `in_progress` until your verdict binds there, so waiting first is waiting on yourself; the
+  verb answers `governance-owed` rather than sleeping through the budget, and this order avoids the
+  round entirely (#7392).
   **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
   arrival" is the deadlock ADR 0293 rules out: the third refusal guarding `operate`'s `FAIL` row —
   which owns that rule, this is only a pointer to it — records no FAIL until every derived

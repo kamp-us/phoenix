@@ -17,19 +17,23 @@
  * on a human to offer for a condition that clears itself (#7282). The verb owns the loop so no skill
  * ever sleeps — `claude-plugins/fabrika/docs/skill-conventions.md` §14 — and it loops on `pending`
  * alone: every refusal and the `no-producer` answer are states no amount of waiting changes, so they
- * return on the first read rather than burning the budget.
+ * return on the first read rather than burning the budget. A `pending` whose only unfinished check is
+ * the governance floor is such a state too, and answers `governance-owed` (`./governance-owed.ts`).
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
+import {FLOOR_WORKFLOW_NAME} from "../governance/floor-assert.ts";
 import {type CheckRun, commitExists, listCheckRuns} from "../io/pulls.ts";
 // The workflow inventory is read through the `ship` group's reader for the same reason `ship checks`
 // rolls up through this group's `rollup.ts`: one read, so the two verbs cannot drift on the fact.
+import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
 import {listRunsAtHead, listWorkflowPaths, listWorkflows} from "../ship/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {gateCoverageOf} from "./gate-coverage.ts";
+import {governanceOwed} from "./governance-owed.ts";
 import {isFailing, type Rollup, rollupOf, statusOf} from "./rollup.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
@@ -41,8 +45,12 @@ const VERB = "review ci";
  * `budget-exhausted` is the one a caller must not read as a verdict: the rollup beside it is still
  * `pending`, so nothing about the head was proven, and the answer says the wait ran out rather than
  * that CI concluded.
+ *
+ * `governance-owed` is the one the caller can clear itself — see {@link governanceOwed}. It is its
+ * own word rather than a `budget-exhausted` reached faster, because the two route differently: one
+ * is a stuck queue a human should see, the other is a verdict the reader still owes (#7392).
  */
-export type Settle = "settled" | "budget-exhausted" | "head-moved";
+export type Settle = "settled" | "budget-exhausted" | "head-moved" | "governance-owed";
 
 export interface CiOptions {
 	readonly pr: number;
@@ -66,6 +74,8 @@ type Sample =
 			readonly runs: ReadonlyArray<CheckRun>;
 			readonly declared: number;
 			readonly gates: {readonly declared: number; readonly covered: number} | null;
+			/** This head's only unfinished check is a floor whose run is done — nothing else can move it. */
+			readonly owedGovernance: boolean;
 			readonly notes: ReadonlyArray<string>;
 	  };
 
@@ -237,6 +247,7 @@ export const runCi = (
 			// only where it changes one: `green` and `pending` are the two words that read as "nothing to
 			// do here", and both are wrong over bytes no gate inspected.
 			let gates: {readonly declared: number; readonly covered: number} | null = null;
+			let owedGovernance = false;
 			if (rollup !== "red") {
 				const inventory = yield* listWorkflowPaths(repo);
 				if (inventory._tag === "Failure") {
@@ -283,8 +294,14 @@ export const runCi = (
 						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha}.`,
 					);
 				}
+				owedGovernance = governanceOwed(runs, atHead.value.runs);
+				if (owedGovernance) {
+					notes.push(
+						`${VERB}: the only unfinished check at ${sha} is "${CHECK_RUN_NAME}", and its ${FLOOR_WORKFLOW_NAME} run has completed — what is still owed is a governance verdict bound at this head (ADR 0318), which no wait produces. Fire the governance skill, then re-read.`,
+					);
+				}
 			}
-			return {_tag: "Read", rollup, runs, declared, gates, notes} satisfies Sample;
+			return {_tag: "Read", rollup, runs, declared, gates, owedGovernance, notes} satisfies Sample;
 		});
 
 		const render = (read: Extract<Sample, {_tag: "Read"}>, settle: Settle | null): VerbOutcome => {
@@ -324,6 +341,9 @@ export const runCi = (
 		let read = first;
 		for (;;) {
 			if (read.rollup !== "pending") return render(read, "settled");
+			// Checked before the budget, on every poll including the first: the caller owes this one
+			// itself, so a sleep here spends the whole horizon on a check nothing external can move.
+			if (read.owedGovernance) return render(read, "governance-owed");
 			const now = yield* Clock.currentTimeMillis;
 			if (now - startedAt >= options.budgetSeconds * 1000) {
 				return render(read, "budget-exhausted");

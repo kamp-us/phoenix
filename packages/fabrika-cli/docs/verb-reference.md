@@ -830,7 +830,7 @@ back. Contract:
 | `review scope` | head SHA, linked issue, the code / doc / skill partition of the changed files, and the `self` / `harness` flags |
 | `review diff` | the diff bytes at the bound commit, with truncation refused rather than passed through |
 | `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format |
-| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved>` |
+| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved\|governance-owed>` |
 | `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
 | `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back |
