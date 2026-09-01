@@ -24,7 +24,7 @@ import {
 	parseSurfaceSpec,
 } from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
-import {provesSession} from "../capture/states.ts";
+import {tierOf} from "../capture/states.ts";
 import {capAndCount} from "../evidence.ts";
 import {PAGE_ERROR_CAP, sha256Hex} from "./manifest.ts";
 import type {RenderLeg, SurfaceRender} from "./render-verb.ts";
@@ -69,13 +69,13 @@ export const makeCaptureRenderLeg =
 
 			// A seeded session is asked to prove itself, because pixels cannot: a cookie that does not
 			// authenticate renders the visitor's page, and that is a valid PNG under the `:auth` name.
-			const probing = provesSession(plan[0]?.surface.state ?? null);
+			const wantedTier = tierOf(plan[0]?.surface.state ?? null);
 			// Same reason one layer over: an override the preview dropped renders the flag-off page,
 			// and that page is a valid PNG under the flag-on name.
 			const forcing = isForcing(request.forcedFlags);
 			const captured = yield* capture(plan, request.outDir, {
 				cookies: request.cookies,
-				...(probing
+				...(wantedTier !== null
 					? {sessionProbeUrl: joinPreviewUrl(request.previewUrl, SESSION_PROBE_PATH)}
 					: {}),
 				...(forcing
@@ -104,7 +104,7 @@ export const makeCaptureRenderLeg =
 			}
 			// Classified before the bytes: an anonymous shot under a signed-in name is a valid PNG of
 			// the wrong page, so validating it first would answer a question nobody asked.
-			if (probing) {
+			if (wantedTier !== null) {
 				const proof = shot.sessionProof;
 				if (proof === undefined || proof._tag !== "SignedIn") {
 					return {
@@ -115,6 +115,16 @@ export const makeCaptureRenderLeg =
 								: proof._tag === "Anonymous"
 									? "the preview answered the seeded cookie as a visitor"
 									: proof.reason,
+					} satisfies SurfaceRender;
+				}
+				// Signed in is not the whole question. A surface whose audience is defined by NOT
+				// clearing a floor renders perfectly for somebody above it, so the tier the preview
+				// itself reports back decides whether these are the pixels the surface id named.
+				if (proof.tier !== wantedTier) {
+					return {
+						_tag: "WrongTier",
+						wanted: wantedTier,
+						rendered: proof.tier,
 					} satisfies SurfaceRender;
 				}
 			}
