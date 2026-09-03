@@ -9,6 +9,7 @@ import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
+import {useT} from "../../i18n/LocaleProvider";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
@@ -72,6 +73,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	const t = useT();
 	const [editing, setEditing] = React.useState(false);
 	const [editBody, setEditBody] = React.useState(definition.body);
 	const [confirmDelete, setConfirmDelete] = React.useState(false);
@@ -127,11 +129,11 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		e.preventDefault();
 		const trimmed = editBody.trim();
 		if (trimmed.length === 0) {
-			setEditError(messageForCode("BODY_REQUIRED", DEFINITION_OVERRIDES));
+			setEditError(messageForCode(t, "BODY_REQUIRED", DEFINITION_OVERRIDES));
 			return;
 		}
 		if (editBody.length > BODY_MAX) {
-			setEditError(messageForCode("BODY_TOO_LONG", DEFINITION_OVERRIDES));
+			setEditError(messageForCode(t, "BODY_TOO_LONG", DEFINITION_OVERRIDES));
 			return;
 		}
 		await runEdit(

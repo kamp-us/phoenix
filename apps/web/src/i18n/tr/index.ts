@@ -1,4 +1,5 @@
 import {layout} from "./layout";
+import {wire} from "./wire";
 
 /**
  * The Turkish catalog — every surface file merged into one flat record. This is the key set
@@ -7,4 +8,5 @@ import {layout} from "./layout";
  */
 export const tr = {
 	...layout,
+	...wire,
 };

@@ -41,6 +41,7 @@ import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
+import {type Translate, useT} from "../i18n/LocaleProvider";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
@@ -138,18 +139,25 @@ function readDeleteError(state: unknown): string | null {
 	return typeof value === "string" ? value : null;
 }
 
-const validateCommentBody = (trimmed: string, body: string): string | null => {
-	if (trimmed.length === 0) return messageForCode("BODY_REQUIRED", COMMENT_OVERRIDES);
-	if (body.length > COMMENT_BODY_MAX) return messageForCode("BODY_TOO_LONG", COMMENT_OVERRIDES);
-	return null;
-};
+// Curried on the bound translate: these are module-level rules, but the copy they resolve is
+// locale-bound, so the caller (a component) supplies the `t` it read from context.
+const validateCommentBody =
+	(t: Translate) =>
+	(trimmed: string, body: string): string | null => {
+		if (trimmed.length === 0) return messageForCode(t, "BODY_REQUIRED", COMMENT_OVERRIDES);
+		if (body.length > COMMENT_BODY_MAX)
+			return messageForCode(t, "BODY_TOO_LONG", COMMENT_OVERRIDES);
+		return null;
+	};
 
-const validatePostFields = (trimmedTitle: string, body: string): string | null => {
-	if (trimmedTitle.length === 0) return messageForCode("TITLE_REQUIRED", POST_OVERRIDES);
-	if (trimmedTitle.length > TITLE_MAX) return messageForCode("TITLE_TOO_LONG", POST_OVERRIDES);
-	if (body.length > BODY_MAX) return messageForCode("BODY_TOO_LONG", POST_OVERRIDES);
-	return null;
-};
+const validatePostFields =
+	(t: Translate) =>
+	(trimmedTitle: string, body: string): string | null => {
+		if (trimmedTitle.length === 0) return messageForCode(t, "TITLE_REQUIRED", POST_OVERRIDES);
+		if (trimmedTitle.length > TITLE_MAX) return messageForCode(t, "TITLE_TOO_LONG", POST_OVERRIDES);
+		if (body.length > BODY_MAX) return messageForCode(t, "BODY_TOO_LONG", POST_OVERRIDES);
+		return null;
+	};
 
 export function PanoPostDetail() {
 	const {id} = useParams<{id: string}>();
@@ -200,6 +208,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	const navigate = useNavigate();
 	const location = useLocation();
 	const report = useReportHandler();
+	const t = useT();
 
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
@@ -242,7 +251,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	async function onEditSubmit(e: React.SyntheticEvent) {
 		e.preventDefault();
 		const trimmedTitle = editTitle.trim();
-		const validationError = validatePostFields(trimmedTitle, editBody);
+		const validationError = validatePostFields(t)(trimmedTitle, editBody);
 		if (validationError != null) {
 			setEditError(validationError);
 			return;
@@ -281,7 +290,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 			return;
 		}
 		navigate(path, {
-			state: {[DELETE_ERROR_STATE_KEY]: messageForCode(outcome.code, POST_OVERRIDES)},
+			state: {[DELETE_ERROR_STATE_KEY]: messageForCode(t, outcome.code, POST_OVERRIDES)},
 		});
 	}
 
@@ -754,6 +763,7 @@ function CommentComposer({
 	const navigate = useNavigate();
 	const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const createdId = React.useRef<string | null>(null);
+	const t = useT();
 
 	React.useEffect(() => {
 		if (autoFocus) textareaRef.current?.focus();
@@ -761,7 +771,7 @@ function CommentComposer({
 
 	const {body, setBody, error, inFlight, submit} = useDraft({
 		initialBody: "",
-		validate: validateCommentBody,
+		validate: validateCommentBody(t),
 		redirectPath: currentLocationPath,
 		run: async (value) => {
 			const optimisticRecord = optimistic
@@ -903,10 +913,11 @@ function CommentEditComposer({
 }) {
 	const fate = useFateClient();
 	const localId = commentId;
+	const t = useT();
 
 	const {body, setBody, error, inFlight, submit} = useDraft({
 		initialBody,
-		validate: validateCommentBody,
+		validate: validateCommentBody(t),
 		redirectPath: currentLocationPath,
 		run: (value) =>
 			fate.mutations.comment.edit({

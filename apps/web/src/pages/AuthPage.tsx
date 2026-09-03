@@ -4,6 +4,7 @@ import type {User} from "../../worker/features/fate/views";
 import {authClient} from "../auth/client";
 import {Alert, Button, Form, Input} from "../components/ui";
 import {codeOf} from "../fate/wire";
+import {useT} from "../i18n/LocaleProvider";
 import {validateEmail, validateName, validatePassword, validateSignIn} from "./authValidation";
 import {beginUsernameResolution, endUsernameResolution} from "./signupUsernameGate";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
@@ -32,6 +33,7 @@ export function AuthPage() {
 	const [stuckUsername, setStuckUsername] = useState<string | null>(null);
 	const isSignIn = mode === "sign-in";
 	const fate = useFateClient();
+	const t = useT();
 
 	// A separate mutation because `username` is better-auth `input: false`, so it can't
 	// ride `signUp.email`. Both fate failure shapes reach here: a returned `{error}` and
@@ -42,10 +44,10 @@ export function AuthPage() {
 				input: {value: handle},
 				view: SetUsernameView,
 			});
-			if (callError) return messageForCode(codeOf(callError));
+			if (callError) return messageForCode(t, codeOf(callError));
 			return null;
 		} catch (caught) {
-			return messageForCode(codeOf(caught as SetUsernameError));
+			return messageForCode(t, codeOf(caught as SetUsernameError));
 		}
 	}
 
@@ -112,7 +114,7 @@ export function AuthPage() {
 		const fieldError =
 			validateName(name) ??
 			validateEmail(email) ??
-			(username ? localRuleMessage(username) : null) ??
+			(username ? localRuleMessage(t, username) : null) ??
 			validatePassword(password, "sign-up");
 		if (fieldError) {
 			setError(fieldError);

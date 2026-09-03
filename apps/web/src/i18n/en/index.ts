@@ -1,5 +1,6 @@
 import type {CatalogKey} from "../keys";
 import {layout} from "./layout";
+import {wire} from "./wire";
 
 /**
  * The English catalog. Reached only through `catalog.ts`'s dynamic `import("./en")`, so a
@@ -11,4 +12,5 @@ import {layout} from "./layout";
  */
 export const en = {
 	...layout,
+	...wire,
 } satisfies Record<CatalogKey, string>;
