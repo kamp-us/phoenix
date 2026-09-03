@@ -6,6 +6,8 @@ node_modules
 
 # alchemy local state store (Alchemy.localState() — offline dev, per-machine)
 .alchemy
+# Tuval's process checkpoints (apps/tuval/src/boot.ts defaultStateDir — per-machine)
+apps/tuval/.tuval
 
 dist
 build
