@@ -10,8 +10,16 @@ import {type Catalog, loadCatalog, trCatalog} from "./catalog";
 import {interpolate, type MessageParams} from "./interpolate";
 import type {CatalogKey} from "./keys";
 import {DEFAULT_LOCALE, type Locale} from "./locale";
+import {type PluralForms, plural} from "./plural";
 
 export type Translate = (key: CatalogKey, params?: MessageParams) => string;
+
+/** Picks one of a counted noun's two keys and passes `count` in as a placeholder. */
+export type TranslatePlural = (
+	count: number,
+	keys: PluralForms<CatalogKey>,
+	params?: MessageParams,
+) => string;
 
 export interface LocaleContextValue {
 	readonly locale: Locale;
@@ -83,4 +91,12 @@ export function useLocale(): LocaleContextValue {
 
 export function useT(): Translate {
 	return React.useContext(LocaleContext).t;
+}
+
+export function useTPlural(): TranslatePlural {
+	const {locale, t} = React.useContext(LocaleContext);
+	return React.useCallback(
+		(count, keys, params) => t(plural(locale, count, keys), {count, ...params}),
+		[locale, t],
+	);
 }

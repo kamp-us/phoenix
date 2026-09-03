@@ -22,7 +22,7 @@ apps/web/src/i18n/
 ├── plural.ts            `plural(locale, n, {one, other})` on `Intl.PluralRules`
 ├── locale.ts            the `Locale` type, the default, the endonym labels
 ├── brandNouns.ts        the nouns that never translate
-└── LocaleProvider.tsx   the React face: `LocaleProvider`, `useLocale`, `useT`
+└── LocaleProvider.tsx   the React face: `LocaleProvider`, `useLocale`, `useT`, `useTPlural`
 ```
 
 `apps/web/src/lib/localeStorage.ts` persists the choice under `kampus.locale`, mirroring
@@ -98,6 +98,27 @@ number of times in `en` as in `tr`, matched **whole-word**. Turkish is agglutina
 `other` for both `tr` and `en`, and `plural.unit.test.ts` asserts that against the running engine —
 if a runtime ever reports a third category, that test is what says so. A third locale, or an ICU
 `select`/gender need, is the point ADR 0347 names for re-opening the library question.
+
+A **counted noun** — a number followed by a word that inflects — is two keys, `<thing>.one` and
+`<thing>.other`, read through `useTPlural()`:
+
+```tsx
+const tp = useTPlural();
+tp(term.count, {one: "sozluk.entryCount.one", other: "sozluk.entryCount.other"});
+```
+
+The hook picks the arm off the live locale and passes `count` in as a placeholder, so each message
+carries its own `{count}`. Turkish takes no plural agreement after a numeral, so its two arms are
+usually identical text — write both anyway, because the key set is shared and `en` needs the split.
+`plural` is generic in its arm for exactly this: it picks between two catalog KEYS here and two
+rendered strings elsewhere, and a key-picking `as` cast would trip Biome's `no-type-assertions`.
+
+## One file per surface, and what counts as a surface
+
+A surface is a set of screens that ship and change together, not one component. `tr/sozluk.ts`
+carries `components/sozluk/*` plus the sözlük pages **and** `SearchPage`, under a `search.` prefix:
+search renders sözlük's own term rows and shares its counted nouns, so splitting them would put one
+surface's keys in two files. Prefixes stay per-screen inside the file.
 
 ## The flag
 

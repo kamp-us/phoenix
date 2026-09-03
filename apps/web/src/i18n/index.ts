@@ -6,8 +6,10 @@ export {
 	type LocaleContextValue,
 	LocaleProvider,
 	type Translate,
+	type TranslatePlural,
 	useLocale,
 	useT,
+	useTPlural,
 } from "./LocaleProvider";
 export {
 	DEFAULT_LOCALE,

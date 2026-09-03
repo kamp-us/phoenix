@@ -10,6 +10,7 @@ import {TermRow, TermRowView} from "../components/sozluk/TermRow";
 import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
+import {useT, useTPlural} from "../i18n";
 import "./SearchPage.css";
 
 const MIN_QUERY_LENGTH = 2;
@@ -21,26 +22,30 @@ const PostConnectionView = {items: {node: PanoPostCardView}} as const;
 
 export function SearchPage() {
 	const [params] = useSearchParams();
+	const t = useT();
 	const query = (params.get("q") ?? "").trim();
 
 	return (
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<header className="kp-search__masthead">
-					<h1 className="kp-search__title">arama{query ? <small>"{query}"</small> : null}</h1>
+					<h1 className="kp-search__title">
+						{t("search.title")}
+						{query ? <small>"{query}"</small> : null}
+					</h1>
 				</header>
 
 				{query.length < MIN_QUERY_LENGTH ? (
 					<SearchPrompt />
 				) : (
 					<Screen
-						fallback={<p className="kp-search__rail">aranıyor…</p>}
+						fallback={<p className="kp-search__rail">{t("search.searching")}</p>}
 						error={({code}) => (
 							<Alert
 								variant="danger"
 								className="kp-alert--inline kp-search__rail kp-search__rail--error"
 							>
-								arama yapılamadı: {code.toLowerCase()}
+								{t("search.failed", {code: code.toLowerCase()})}
 							</Alert>
 						)}
 					>
@@ -53,7 +58,8 @@ export function SearchPage() {
 }
 
 function SearchPrompt() {
-	return <p className="kp-search__rail">aramak için en az {MIN_QUERY_LENGTH} harf girin.</p>;
+	const t = useT();
+	return <p className="kp-search__rail">{t("search.minLength", {min: MIN_QUERY_LENGTH})}</p>;
 }
 
 const searchRequest = (query: string) =>
@@ -63,25 +69,29 @@ const searchRequest = (query: string) =>
 	}) as const;
 
 function SearchResults({query}: {query: string}) {
+	const t = useT();
+	const tp = useTPlural();
 	const {searchTerms, searchPosts} = useRequest(searchRequest(query));
 	const [termItems, loadMoreTerms] = useListView(TermConnectionView, searchTerms);
 	const [postItems, loadMorePosts] = useListView(PostConnectionView, searchPosts);
 
-	// Both roots returning zero rows is the legible zero-match state — one message,
-	// not two empty sections, so a no-result query reads as "sonuç yok" not blank.
+	// Both roots returning zero rows is the legible zero-match state — one message, not two empty
+	// sections, so a no-result query reads as "no results" rather than blank.
 	if (termItems.length === 0 && postItems.length === 0) {
-		return <p className="kp-search__rail kp-search__empty">"{query}" için sonuç yok.</p>;
+		return <p className="kp-search__rail kp-search__empty">{t("search.noResults", {query})}</p>;
 	}
 
 	return (
 		<div className="kp-search__results">
 			<section className="kp-search__section">
 				<header className="kp-search__section-head">
-					<span className="title">sözlük</span>
-					<span>{termItems.length} terim</span>
+					<span className="title">{t("search.sozluk")}</span>
+					<span>
+						{tp(termItems.length, {one: "search.termCount.one", other: "search.termCount.other"})}
+					</span>
 				</header>
 				{termItems.length === 0 ? (
-					<p className="kp-search__section-empty">terim bulunamadı.</p>
+					<p className="kp-search__section-empty">{t("search.noTerms")}</p>
 				) : (
 					<div className="kp-sozluk-list">
 						{termItems.map(({node}) => (
@@ -98,11 +108,13 @@ function SearchResults({query}: {query: string}) {
 
 			<section className="kp-search__section">
 				<header className="kp-search__section-head">
-					<span className="title">pano</span>
-					<span>{postItems.length} gönderi</span>
+					<span className="title">{t("search.pano")}</span>
+					<span>
+						{tp(postItems.length, {one: "search.postCount.one", other: "search.postCount.other"})}
+					</span>
 				</header>
 				{postItems.length === 0 ? (
-					<p className="kp-search__section-empty">gönderi bulunamadı.</p>
+					<p className="kp-search__section-empty">{t("search.noPosts")}</p>
 				) : (
 					<div className="kp-pano-list">
 						{postItems.map(({node}, i) => (
