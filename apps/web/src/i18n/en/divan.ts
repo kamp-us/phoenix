@@ -24,13 +24,21 @@ export const divan = {
 	"divan.report.count.one": "{count} report",
 	"divan.report.count.other": "{count} reports",
 
+	"divan.count.items.one": "{count} item",
+	"divan.count.items.other": "{count} items",
+	"divan.count.definitions.one": "{count} definition",
+	"divan.count.definitions.other": "{count} definitions",
+	"divan.count.posts.one": "{count} post",
+	"divan.count.posts.other": "{count} posts",
+	"divan.count.comments.one": "{count} comment",
+	"divan.count.comments.other": "{count} comments",
+
 	"divan.caylak.fallback": "çaylak",
 
 	"divan.roster.paneLabel": "çaylak list",
 	"divan.roster.label": "çaylaklar under review",
 	"divan.roster.empty": "no çaylak waiting for review.",
-	"divan.roster.counts":
-		"{total} items · {definitions} definitions, {posts} posts, {comments} comments",
+	"divan.roster.counts": "{items} · {definitions}, {posts}, {comments}",
 
 	"divan.detail.label": "çaylak review",
 	"divan.detail.hint": "pick a çaylak to review.",
@@ -81,9 +89,11 @@ export const divan = {
 	"divan.decision.wave.one": "{count} target · wave",
 	"divan.decision.wave.other": "{count} targets · wave",
 
-	"divan.triage.diversity": "{count} reports · {distinct} different people",
+	"divan.triage.diversity.one": "{count} reports · {distinct} different person",
+	"divan.triage.diversity.other": "{count} reports · {distinct} different people",
 	"divan.triage.reputation": "{tier} · {karma} karma",
-	"divan.triage.reputationRemovals": "{tier} · {karma} karma · {removals} removals",
+	"divan.triage.reputationRemovals.one": "{tier} · {karma} karma · {removals} removal",
+	"divan.triage.reputationRemovals.other": "{tier} · {karma} karma · {removals} removals",
 	"divan.triage.excerptHidden": "content hidden · press O to show",
 	"divan.triage.drained": "reports are clear",
 	"divan.triage.drainedToday.one": "reports are clear · {count} decision today",
@@ -121,7 +131,7 @@ export const divan = {
 	"divan.actor.tell.bildiren": "reported by",
 	"divan.actor.tell.kefil": "kefil",
 	"divan.actor.tell.buAktor": "this actor",
-	"divan.actor.uretim": "{definitions} definitions · {posts} posts · {comments} comments",
+	"divan.actor.uretim": "{definitions} · {posts} · {comments}",
 	"divan.actor.record.clean": "clean",
 	"divan.actor.record.removed": "{count} removed",
 	"divan.actor.reporters.one": "{count} person",

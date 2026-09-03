@@ -64,8 +64,24 @@ describe("the divan renders English for an `en` reader", () => {
 		await waitFor(() =>
 			expect(screen.getByRole("list").getAttribute("aria-label")).toBe("çaylaklar under review"),
 		);
-		expect(screen.getByText("3 items · 1 definitions, 1 posts, 1 comments")).toBeTruthy();
+		expect(screen.getByText("3 items · 1 definition, 1 post, 1 comment")).toBeTruthy();
 		expect(screen.getByTestId("divan-caylak-a-1").textContent).toContain("çaylak");
+	});
+
+	// Each count in the roster line inflects on its own value, so a row mixing 1, 0 and 2 is
+	// what catches a frame pluralized on one count for all four.
+	it("inflects every count in the roster line on its own value", async () => {
+		listItems = [{node: {id: "n-1"}}];
+		viewData = {...ROSTER_ROW, totalCount: 1, definitionCount: 1, postCount: 0, commentCount: 2};
+		render(
+			<LocaleProvider>
+				<DivanRoster selectedId={null} onSelect={() => {}} />
+			</LocaleProvider>,
+		);
+
+		await waitFor(() =>
+			expect(screen.getByText("1 item · 1 definition, 0 posts, 2 comments")).toBeTruthy(),
+		);
 	});
 
 	it("swaps raporlar's copy", async () => {

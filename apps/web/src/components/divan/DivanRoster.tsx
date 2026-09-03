@@ -9,6 +9,7 @@ import {useListView, useRequest, useView, type ViewRef} from "react-fate";
 import {useT} from "../../i18n";
 import {Button} from "../ui/Button";
 import {CaylakIdentity} from "./CaylakIdentity";
+import {type CountKind, countClause} from "./divanGating";
 import {divanRosterRequest, RosterConnectionView, RosterRowView} from "./divanReads";
 
 export function DivanRoster({
@@ -51,6 +52,10 @@ function RosterRow({
 	const t = useT();
 	const data = useView(RosterRowView, node);
 	const selected = selectedId === data.authorId;
+	const count = (kind: CountKind, n: number) => {
+		const clause = countClause(kind, n);
+		return t(clause.key, clause.params);
+	};
 
 	return (
 		<li className="kp-divan__roster-item">
@@ -71,10 +76,10 @@ function RosterRow({
 				/>
 				<span className="kp-divan__counts">
 					{t("divan.roster.counts", {
-						total: data.totalCount,
-						definitions: data.definitionCount,
-						posts: data.postCount,
-						comments: data.commentCount,
+						items: count("items", data.totalCount),
+						definitions: count("definitions", data.definitionCount),
+						posts: count("posts", data.postCount),
+						comments: count("comments", data.commentCount),
 					})}
 				</span>
 			</Button>

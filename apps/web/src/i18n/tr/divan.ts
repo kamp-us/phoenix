@@ -24,6 +24,18 @@ export const divan = {
 	"divan.report.count.one": "{count} rapor",
 	"divan.report.count.other": "{count} rapor",
 
+	// The shared count clauses. Turkish does not inflect a noun after a numeral, so both arms
+	// read alike here; the English side is where the arms differ, and the frames below
+	// interpolate a resolved clause per count rather than pluralizing on one of several.
+	"divan.count.items.one": "{count} içerik",
+	"divan.count.items.other": "{count} içerik",
+	"divan.count.definitions.one": "{count} tanım",
+	"divan.count.definitions.other": "{count} tanım",
+	"divan.count.posts.one": "{count} gönderi",
+	"divan.count.posts.other": "{count} gönderi",
+	"divan.count.comments.one": "{count} yorum",
+	"divan.count.comments.other": "{count} yorum",
+
 	// The handle a since-deleted profile degrades to — a brand noun, so both locales read it
 	// identically, and it lives here rather than inline so no surface carries loose copy.
 	"divan.caylak.fallback": "çaylak",
@@ -31,7 +43,7 @@ export const divan = {
 	"divan.roster.paneLabel": "çaylak listesi",
 	"divan.roster.label": "incelemedeki çaylaklar",
 	"divan.roster.empty": "incelemede bekleyen çaylak yok.",
-	"divan.roster.counts": "{total} içerik · {definitions} tanım, {posts} gönderi, {comments} yorum",
+	"divan.roster.counts": "{items} · {definitions}, {posts}, {comments}",
 
 	"divan.detail.label": "çaylak incelemesi",
 	"divan.detail.hint": "incelemek için bir çaylak seç.",
@@ -82,9 +94,11 @@ export const divan = {
 	"divan.decision.wave.one": "{count} hedef · dalga",
 	"divan.decision.wave.other": "{count} hedef · dalga",
 
-	"divan.triage.diversity": "{count} rapor · {distinct} farklı kişi",
+	"divan.triage.diversity.one": "{count} rapor · {distinct} farklı kişi",
+	"divan.triage.diversity.other": "{count} rapor · {distinct} farklı kişi",
 	"divan.triage.reputation": "{tier} · {karma} karma",
-	"divan.triage.reputationRemovals": "{tier} · {karma} karma · {removals} kaldırma",
+	"divan.triage.reputationRemovals.one": "{tier} · {karma} karma · {removals} kaldırma",
+	"divan.triage.reputationRemovals.other": "{tier} · {karma} karma · {removals} kaldırma",
 	"divan.triage.excerptHidden": "içerik gizli · O ile göster",
 	"divan.triage.drained": "raporlar temiz",
 	"divan.triage.drainedToday.one": "raporlar temiz · bugün {count} karar",
@@ -122,7 +136,7 @@ export const divan = {
 	"divan.actor.tell.bildiren": "bildiren",
 	"divan.actor.tell.kefil": "kefil",
 	"divan.actor.tell.buAktor": "bu aktör",
-	"divan.actor.uretim": "{definitions} tanım · {posts} gönderi · {comments} yorum",
+	"divan.actor.uretim": "{definitions} · {posts} · {comments}",
 	"divan.actor.record.clean": "temiz",
 	"divan.actor.record.removed": "{count} kaldırıldı",
 	"divan.actor.reporters.one": "{count} kişi",

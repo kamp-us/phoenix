@@ -3,7 +3,7 @@
  * DOM-free because `apps/web/src` has no jsdom.
  */
 
-import type {Message} from "./divanGating";
+import {countClause, type Message} from "./divanGating";
 
 export type Chamber = "raporlar" | "kefil";
 
@@ -67,7 +67,18 @@ export function actorIdentityLabel(handle: string | null, standing: ActorStandin
 	return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-export function uretimLabel(standing: ActorStanding): Message | null {
+/**
+ * Three independent counts in one line, so each is its own clause and the component
+ * interpolates the resolved three into the frame — `.patterns/i18n-catalog.md` under Plurals.
+ */
+export interface UretimLabel {
+	readonly frame: Message;
+	readonly definitions: Message;
+	readonly posts: Message;
+	readonly comments: Message;
+}
+
+export function uretimLabel(standing: ActorStanding): UretimLabel | null {
 	if (
 		standing.definitionCount === null ||
 		standing.postCount === null ||
@@ -76,12 +87,10 @@ export function uretimLabel(standing: ActorStanding): Message | null {
 		return null;
 	}
 	return {
-		key: "divan.actor.uretim",
-		params: {
-			definitions: standing.definitionCount,
-			posts: standing.postCount,
-			comments: standing.commentCount,
-		},
+		frame: {key: "divan.actor.uretim"},
+		definitions: countClause("definitions", standing.definitionCount),
+		posts: countClause("posts", standing.postCount),
+		comments: countClause("comments", standing.commentCount),
 	};
 }
 

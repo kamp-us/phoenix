@@ -15,6 +15,22 @@ import type {CatalogKey, MessageParams} from "../../i18n";
 export type Message = {readonly key: CatalogKey; readonly params?: MessageParams};
 
 /**
+ * The countable nouns the divan interpolates into a frame. A line carrying more than one of
+ * them pluralizes each on its own count, never the whole line on one of them — the rule and
+ * the defect it prevents are in `.patterns/i18n-catalog.md` under Plurals.
+ */
+export type CountKind = "items" | "definitions" | "posts" | "comments";
+
+// The `one` arm is exactly `count === 1` in both catalogs (see `i18n/plural.ts`), which is why
+// a DOM-free module can pick the arm without a locale.
+export function countClause(kind: CountKind, count: number): Message {
+	return {
+		key: count === 1 ? `divan.count.${kind}.one` : `divan.count.${kind}.other`,
+		params: {count},
+	};
+}
+
+/**
  * Denial is provable only when BOTH arms are KNOWN-false. An `undefined` tier (`me` not
  * yet read) is the ambiguous case ⇒ `false`, so the server probe still runs and stays the
  * authority. The short-circuit is layered ON the server gate, never a replacement.

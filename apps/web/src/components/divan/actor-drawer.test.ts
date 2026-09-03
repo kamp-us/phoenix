@@ -86,17 +86,21 @@ describe("actorIdentityLabel — @handle · tier · karma", () => {
 });
 
 describe("uretimLabel — the actor's live content footprint", () => {
-	it("renders N tanım · N gönderi · N yorum", () => {
+	it("gives each count its own clause, singular where the count is 1", () => {
 		expect(uretimLabel(standing())).toEqual({
-			key: "divan.actor.uretim",
-			params: {definitions: 4, posts: 1, comments: 7},
+			frame: {key: "divan.actor.uretim"},
+			definitions: {key: "divan.count.definitions.other", params: {count: 4}},
+			posts: {key: "divan.count.posts.one", params: {count: 1}},
+			comments: {key: "divan.count.comments.other", params: {count: 7}},
 		});
 	});
 
 	it("renders faithful zeros for a real newcomer — 0 is not absence", () => {
 		expect(uretimLabel(standing({definitionCount: 0, postCount: 0, commentCount: 0}))).toEqual({
-			key: "divan.actor.uretim",
-			params: {definitions: 0, posts: 0, comments: 0},
+			frame: {key: "divan.actor.uretim"},
+			definitions: {key: "divan.count.definitions.other", params: {count: 0}},
+			posts: {key: "divan.count.posts.other", params: {count: 0}},
+			comments: {key: "divan.count.comments.other", params: {count: 0}},
 		});
 	});
 

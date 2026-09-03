@@ -80,7 +80,11 @@ export function ActorDrawer({
 					<div className="kp-actor__tell">
 						<dt className="kp-actor__tell-key">{t("divan.actor.tell.uretim")}</dt>
 						<dd className="kp-actor__tell-val" data-testid="actor-uretim">
-							{t(uretim.key, uretim.params)}
+							{t(uretim.frame.key, {
+								definitions: t(uretim.definitions.key, uretim.definitions.params),
+								posts: t(uretim.posts.key, uretim.posts.params),
+								comments: t(uretim.comments.key, uretim.comments.params),
+							})}
 						</dd>
 					</div>
 				)}

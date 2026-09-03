@@ -125,11 +125,23 @@ number of times in `en` as in `tr`, matched **whole-word**. Turkish is agglutina
 
 ## Plurals
 
-**One sentence carrying two independent counts needs two messages.** The wave confirm counts
-targets and reports, and pluralizing the whole line on either one renders "1 target · closes 1
-reports" in English. So `blastRadiusLabel` returns a frame message plus a clause message, and the
-component interpolates the resolved clause into the frame. Turkish is unaffected either way,
-which is exactly why this is easy to miss.
+**A sentence carrying N independent counts needs N clause messages plus a frame.** The wave
+confirm counts targets and reports, and pluralizing the whole line on either one renders "1
+target · closes 1 reports" in English. So `blastRadiusLabel` returns a frame message plus a
+clause message, and the component interpolates the resolved clause into the frame. The roster
+line and the actor drawer's üretim line do the same over four and three counts. Turkish is
+unaffected either way, which is exactly why this is easy to miss.
+
+The countable nouns the divan reuses across those lines live once, as
+`divan.count.{items,definitions,posts,comments}.{one,other}`, and `countClause(kind, count)` in
+`divanGating.ts` picks the arm. The frame then holds only the separators — `divan.actor.uretim`
+is `"{definitions} · {posts} · {comments}"` in both locales, with every inflected word in a
+clause.
+
+**A count that is provably never 1 needs no arm of its own.** `reporterDiversityLabel` returns
+early below two reports, so `count` is at least 2 on the diversity arm and only `distinct` moves
+between the arms — one pair of keys, not a frame. Rely on this only where the code proves the
+floor at the return site.
 
 `plural(locale, n, {one, other})` and nothing more. `Intl.PluralRules` reports exactly `one` and
 `other` for both `tr` and `en`, and `plural.unit.test.ts` asserts that against the running engine —

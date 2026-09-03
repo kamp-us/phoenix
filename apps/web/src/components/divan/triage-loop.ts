@@ -108,8 +108,12 @@ export function reporterDiversityLabel(reportCount: number, distinctReporters: n
 			params: {count},
 		};
 	}
+	// `count` is >= 2 on this arm, so only `distinct` can be 1 and only it needs an arm.
 	const distinct = Math.max(1, Math.min(Math.floor(distinctReporters), count));
-	return {key: "divan.triage.diversity", params: {count, distinct}};
+	return {
+		key: distinct === 1 ? "divan.triage.diversity.one" : "divan.triage.diversity.other",
+		params: {count, distinct},
+	};
 }
 
 export function authorReputationLabel(
@@ -119,7 +123,13 @@ export function authorReputationLabel(
 ): Message | null {
 	if (tier === null || karma === null) return null;
 	if (priorRemovals !== null && priorRemovals > 0) {
-		return {key: "divan.triage.reputationRemovals", params: {tier, karma, removals: priorRemovals}};
+		return {
+			key:
+				priorRemovals === 1
+					? "divan.triage.reputationRemovals.one"
+					: "divan.triage.reputationRemovals.other",
+			params: {tier, karma, removals: priorRemovals},
+		};
 	}
 	return {key: "divan.triage.reputation", params: {tier, karma}};
 }

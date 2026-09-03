@@ -129,11 +129,14 @@ describe("escapeTo — the Esc de-escalation ladder (one rung per press)", () =>
 describe("reporterDiversityLabel — the pile-on shape (a real wave vs a grudge)", () => {
 	it("surfaces the diversity contrast for a multi-report target", () => {
 		expect(reporterDiversityLabel(9, 7)).toEqual({
-			key: "divan.triage.diversity",
+			key: "divan.triage.diversity.other",
 			params: {count: 9, distinct: 7},
 		});
+	});
+
+	it("takes the singular arm when one person filed every report", () => {
 		expect(reporterDiversityLabel(9, 1)).toEqual({
-			key: "divan.triage.diversity",
+			key: "divan.triage.diversity.one",
 			params: {count: 9, distinct: 1},
 		});
 	});
@@ -147,7 +150,7 @@ describe("reporterDiversityLabel — the pile-on shape (a real wave vs a grudge)
 
 	it("clamps distinct to [1, count] so it never exceeds the report count", () => {
 		expect(reporterDiversityLabel(3, 9)).toEqual({
-			key: "divan.triage.diversity",
+			key: "divan.triage.diversity.other",
 			params: {count: 3, distinct: 3},
 		});
 	});
@@ -156,8 +159,13 @@ describe("reporterDiversityLabel — the pile-on shape (a real wave vs a grudge)
 describe("authorReputationLabel — the reputation-in-row copy", () => {
 	it("renders tier · karma · removals for a repeat offender", () => {
 		expect(authorReputationLabel("çaylak", 3, 2)).toEqual({
-			key: "divan.triage.reputationRemovals",
+			key: "divan.triage.reputationRemovals.other",
 			params: {tier: "çaylak", karma: 3, removals: 2},
+		});
+
+		expect(authorReputationLabel("çaylak", 3, 1)).toEqual({
+			key: "divan.triage.reputationRemovals.one",
+			params: {tier: "çaylak", karma: 3, removals: 1},
 		});
 	});
 
