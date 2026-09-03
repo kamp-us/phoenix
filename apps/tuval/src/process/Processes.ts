@@ -9,7 +9,7 @@
 
 import {randomUUID} from "node:crypto";
 import type {Cmd, Store, Sub, Subscribe} from "@demlik/tea";
-import {Context, Effect, Exit, Layer, Option, Scope} from "effect";
+import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Stream} from "effect";
 import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
 import {type ActorHandle, make as makeActor} from "../host/actor.ts";
 import type {ActorDefinition, CoreMachine, Dispatch} from "../host/definition.ts";
@@ -22,6 +22,7 @@ import {ProcessTable} from "./ProcessTable.ts";
 import {
 	type Lifecycle,
 	type Message,
+	type ProcessChange,
 	type ProcessHandle,
 	ProcessId,
 	type ProcessRow,
@@ -98,6 +99,7 @@ const toDefinition = (
 	program: AnyProgram,
 	store: Store<unknown>,
 	services: Context.Context<never>,
+	onCommit: (state: unknown) => Effect.Effect<void>,
 ): ErasedDefinition => {
 	const handlers: Record<string, ErasedHandlers[string]> = {};
 	for (const [type, handler] of Object.entries(program.handlers)) {
@@ -124,6 +126,7 @@ const toDefinition = (
 		ctx: {},
 		interpret: handlers,
 		subscribe: subscribeDisposerBridge(core.subscribe ?? {}) as ErasedSubscribe,
+		onCommit,
 	};
 };
 
@@ -134,6 +137,9 @@ function makeServices() {
 		const root = yield* Effect.scope;
 		const services = yield* Effect.context<never>();
 		const live = new Map<ProcessId, Entry>();
+		const changes = yield* PubSub.unbounded<ProcessChange>();
+		yield* Scope.addFinalizer(root, PubSub.shutdown(changes));
+		const publish = (change: ProcessChange) => Effect.asVoid(PubSub.publish(changes, change));
 
 		const lookup = (id: ProcessId) =>
 			Effect.suspend(() => {
@@ -151,11 +157,24 @@ function makeServices() {
 			const parentId = Option.fromNullishOr(parent?.row.id);
 			const scope = yield* Scope.fork(parent?.scope ?? root);
 			let lifecycle: Lifecycle = "running";
+			let revision = 0;
+			// Assigned once the actor is up; a commit before then (boot's own) is not the row's.
+			let row: ProcessRow | undefined;
 
+			yield* Scope.addFinalizer(
+				scope,
+				Effect.suspend(() => (row === undefined ? Effect.void : publish({kind: "stopped", row}))),
+			);
 			yield* Scope.addFinalizer(
 				scope,
 				Effect.sync(() => void live.delete(id)),
 			);
+			const onCommit = () =>
+				Effect.suspend(() => {
+					if (row === undefined) return Effect.void;
+					revision++;
+					return publish({kind: "state-changed", row});
+				});
 			const actor: ActorHandle<unknown, Message, HandlerFailed> = yield* Effect.gen(function* () {
 				const checkpoint = yield* checkpoints.open({
 					id,
@@ -163,7 +182,7 @@ function makeServices() {
 					parentId,
 					version: program.identity.version,
 				});
-				return yield* makeActor(toDefinition(program, checkpoint.store, services));
+				return yield* makeActor(toDefinition(program, checkpoint.store, services, onCommit));
 			}).pipe(
 				Effect.provideService(Scope.Scope, scope),
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
@@ -175,14 +194,15 @@ function makeServices() {
 				}),
 			);
 
-			const row: ProcessRow = {
+			row = {
 				id,
 				programId,
 				parentId,
 				ports: program.ports,
-				stateSummary: () => ({lifecycle, state: actor.getState()}),
+				stateSummary: () => ({lifecycle, revision, state: actor.getState()}),
 			};
 			live.set(id, {row, scope});
+			yield* publish({kind: "spawned", row});
 
 			const handle: ProcessHandle = {
 				id,
@@ -204,6 +224,7 @@ function makeServices() {
 		const table = ProcessTable.of({
 			list: Effect.sync(() => [...live.values()].map((entry) => entry.row)),
 			get: (id) => Effect.map(lookup(id), (entry) => entry.row),
+			changes: Stream.fromPubSub(changes),
 		});
 
 		return Context.make(Processes, {spawn, stop}).pipe(Context.add(ProcessTable, table));

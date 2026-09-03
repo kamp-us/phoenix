@@ -169,4 +169,36 @@ describe("host actor", () => {
 		>();
 		expectTypeOf<Effect.Services<Dispatched>>().toEqualTypeOf<never>();
 	});
+
+	it.effect("onCommit runs once per commit, boot included, after that commit's Cmds", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const log: string[] = [];
+				const actor = yield* make(
+					defineActor({
+						machine: counterMachine([]),
+						interpret: {
+							notify: (cmd) =>
+								Effect.sync(() => {
+									log.push(`notify:${cmd.count}`);
+									return {type: "acked"} as const;
+								}),
+						},
+						subscribe: {},
+						onCommit: (state) => Effect.sync(() => void log.push(`commit:${state.type}`)),
+					}),
+				);
+				assert.deepStrictEqual(log, ["commit:idle"]);
+				yield* actor.dispatch({type: "start", runId: "r1"});
+				yield* actor.dispatch({type: "tick"});
+				assert.deepStrictEqual(log, [
+					"commit:idle",
+					"commit:running",
+					"notify:1",
+					"commit:running",
+					"commit:running",
+				]);
+			}),
+		),
+	);
 });
