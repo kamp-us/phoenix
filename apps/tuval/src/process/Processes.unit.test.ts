@@ -323,10 +323,12 @@ describe("Processes", () => {
 				assert.strictEqual(row.ports, ports);
 				assert.deepStrictEqual(row.stateSummary(), {
 					lifecycle: "running",
+					revision: 1,
 					state: {type: "running", runId: "c", count: 0, acks: 0},
 				});
 				yield* child.dispatch({type: "tick"});
 				assert.strictEqual((row.stateSummary().state as State).count, 1);
+				assert.strictEqual(row.stateSummary().revision, 3);
 			}),
 		);
 	});

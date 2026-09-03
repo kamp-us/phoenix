@@ -70,8 +70,10 @@ finalizers, then the row leaves the table. A dispatch after stop is refused with
 `ActorStoppedError`; it never reaches the machine. Two processes of one program share nothing.
 
 `Processes.layer` provides `Processes` and `ProcessTable` together over one live map and needs the
-`Registry` and `Checkpoints`. The table is in-memory and read-only from outside; publishing it as a
-port is a later slice.
+`Registry` and `Checkpoints`. The table is in-memory and read-only from outside. Its `changes` stream reports every
+spawn, stop and committed transition; a row's `stateSummary().revision` counts those transitions,
+so a reader can tell the summary moved without reading the state.
+
 
 ## Durability
 
@@ -94,6 +96,22 @@ tuval: refusing to boot — snapshot for process "p-1" refused: written by count
 ```
 
 Not here: crash-window exactly-once, schema evolution between versions, remote nodes.
+
+## The process-table port
+
+`src/table/` publishes the table as an ordinary out-port, so a projection is an ordinary consumer.
+`processTablePort` is the declaration (`{kind: "tuval/process-table/v1", direction: "out",
+accepts}`), typed like any port a program declares; a projection declares an in-port of that kind
+and routes to it through a graph like any other route. `ProcessTablePort.layer` (needs
+`ProcessTable`) reads `rows`, streams `changes`, and `feed(wiring, from)` emits every change on the
+out-port `from` until interrupted.
+
+The row is program-blind: `id`, `programId`, `parentId`, `ports` as `{kind, direction}` per name,
+and `stateSummary` as `{lifecycle, revision}`. No machine state and no program-specific payload
+ride it, so a consumer tells a Pi process from a Claude one by `programId` and by nothing else, and
+a `ps`-style list or an engine view renders every row from the port alone. Nothing on the port
+mutates the table: spawning, stopping and rewiring are not reachable through it.
+
 
 ## Ports
 

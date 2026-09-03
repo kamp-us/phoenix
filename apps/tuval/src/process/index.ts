@@ -4,6 +4,7 @@ export {ProcessTable} from "./ProcessTable.ts";
 export {
 	type Lifecycle,
 	type Message,
+	type ProcessChange,
 	type ProcessHandle,
 	ProcessId,
 	type ProcessRow,

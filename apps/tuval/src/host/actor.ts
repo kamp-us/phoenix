@@ -103,6 +103,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 	const ctx = ((definition as {ctx?: Ctx}).ctx ?? {}) as Ctx;
 	const supervision = normalizeSupervision(definition.supervision);
 	const onError = definition.onError ?? defaultOnError;
+	const onCommit = definition.onCommit;
 
 	let state: S;
 	let gate: Gate = "open";
@@ -259,6 +260,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		if (store) yield* storeSave(store, next);
 		yield* reconcile();
 		yield* runInterpret(cmds);
+		if (onCommit) yield* onCommit(state);
 	});
 
 	const isMisaddressed = (msg: M): boolean => {
@@ -347,6 +349,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		Effect.gen(function* () {
 			yield* reconcile();
 			yield* runInterpret(initCmds);
+			if (onCommit) yield* onCommit(state);
 		}),
 	);
 

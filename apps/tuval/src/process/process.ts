@@ -23,8 +23,16 @@ export type Lifecycle = "running" | "stopping";
 
 export interface StateSummary {
 	readonly lifecycle: Lifecycle;
+	/** Committed transitions since spawn. Moves on every commit and says nothing about the state's shape. */
+	readonly revision: number;
 	/** The machine's current state — plain data by Demlik's invariant 1, never an Effect value. */
 	readonly state: unknown;
+}
+
+/** One change to the table: a row arrived, left, or its state summary moved. `row` reads live. */
+export interface ProcessChange {
+	readonly kind: "spawned" | "stopped" | "state-changed";
+	readonly row: ProcessRow;
 }
 
 /** One live row of the `ProcessTable`. `stateSummary` reads live; everything else is fixed at spawn. */

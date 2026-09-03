@@ -101,6 +101,11 @@ export type ActorDefinition<
 	readonly store?: Store<S>;
 	readonly supervision?: Supervision<S, M>;
 	readonly onError?: OnError;
+	/**
+	 * Runs on the tail after each commit's Cmds, boot's included — Demlik's `subscribe` listener
+	 * fanout, as an Effect the commit awaits. Infallible by type: a commit has no failure to report.
+	 */
+	readonly onCommit?: (state: S) => Effect.Effect<void>;
 };
 
 /**
