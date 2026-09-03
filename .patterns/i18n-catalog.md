@@ -40,6 +40,21 @@ apps/web/src/i18n/
 **Keys are technical, so they are English** and dotted, prefixed by their surface —
 `layout.userMenu.logout`. The key never changes when the copy does.
 
+## When the key set comes from a vocabulary, not from the copy
+
+`i18n/tr/wire.ts` is the exception to step 1: its keys are `` `wire.${FateWireCode}` ``, a template
+literal over the wire-error vocabulary, so the key set is *derived* rather than authored. Both
+locales then declare their record under a `Record<WireCodeKey, string>` **annotation** instead of
+`satisfies`, which is what makes a code with no message and a message naming no code each a compile
+error — in `tr` too, where `satisfies` would have made `tr` its own source of truth and let a code
+go unmessaged. That coverage guarantee used to live in `fate/wireMessages.ts`'s
+`Record<FateWireCode, string>` (#1422); it moved here with the copy.
+
+The consumer takes the bound `Translate`, never a `Locale`: `en` is reachable only through
+`catalog.ts`'s dynamic import, so a module outside a `LocaleProvider` subtree cannot resolve
+English synchronously. A module-level rule that needs copy is curried on `t` and the component
+supplies it — see `validateCommentBody` in `pages/PanoPostDetail.tsx`.
+
 ## The two type checks, and why they are in different files
 
 `tr` is the source of truth for the key set. A key missing from `en` is caught by the index's

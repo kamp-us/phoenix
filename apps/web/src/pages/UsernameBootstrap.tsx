@@ -9,6 +9,7 @@ import type {User} from "../../worker/features/fate/views";
 import {deriveUsernameFromEmail} from "../../worker/features/pasaport/username-rule";
 import {Alert, Button, Form, Input} from "../components/ui";
 import {codeOf} from "../fate/wire";
+import {useT} from "../i18n/LocaleProvider";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";
 
@@ -32,6 +33,7 @@ export function UsernameBootstrap({
 	onComplete: () => Promise<void> | void;
 }) {
 	const fate = useFateClient();
+	const t = useT();
 	const prefill = deriveUsernameFromEmail(email);
 	const [value, setValue] = useState(() => prefill);
 	const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function UsernameBootstrap({
 
 	async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
 		e.preventDefault();
-		const local = localRuleMessage(value);
+		const local = localRuleMessage(t, value);
 		if (local) {
 			setError(local);
 			return;
@@ -65,12 +67,12 @@ export function UsernameBootstrap({
 				view: SetUsernameView,
 			});
 			if (callError) {
-				setError(messageForCode(codeOf(callError)));
+				setError(messageForCode(t, codeOf(callError)));
 				return;
 			}
 			await onComplete();
 		} catch (caught) {
-			setError(messageForCode(codeOf(caught as SetUsernameError)));
+			setError(messageForCode(t, codeOf(caught as SetUsernameError)));
 		} finally {
 			setPending(false);
 		}
