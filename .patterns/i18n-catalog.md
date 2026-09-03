@@ -68,9 +68,12 @@ function panoSubmitOverrides(t: Translate): WireMessageOverrides {
 const overrides = React.useMemo(() => panoSubmitOverrides(t), [t]);
 ```
 
-`useMemo` on `t` is what keeps the identity stable across renders, because these tables are
-passed into hooks (`useDraftSubmit`) that treat them as dependencies. A helper that took the
-table at module scope takes it as a parameter instead — `validatePostFields(t, overrides, …)`.
+The `useMemo` is a cheap guard, not a correctness requirement. `LocaleProvider` memoizes its
+context value on `[locale, setLocale, catalog]`, so `t` is stable until the locale swaps and the
+table is rebuilt only then. Nothing downstream reads the table's identity: `useDraftSubmit` and
+`useDraft` declare no dependency array and read `options.overrides` inside their own closures at
+call time. A helper that took the table at module scope takes it as a parameter instead —
+`validatePostFields(t, overrides, …)`.
 
 ## Plurals pick a message, not a key
 
