@@ -54,6 +54,37 @@ The consumer takes the bound `Translate`, never a `Locale`: `en` is reachable on
 `catalog.ts`'s dynamic import, so a module outside a `LocaleProvider` subtree cannot resolve
 English synchronously. A module-level rule that needs copy is curried on `t` and the component
 supplies it — see `validateCommentBody` in `pages/PanoPostDetail.tsx`.
+## A DOM-free module returns a key, never copy
+
+Much of the decision logic behind these surfaces lives in plain `.ts` modules beside the
+component — `divanGating.ts`, `flag-overrides.ts`, `remove-the-wave.ts` — because `apps/web/src`
+has no jsdom and those decisions are unit-tested. Such a module cannot call `useT`, so **it
+returns a `CatalogKey` and the component translates it**:
+
+```ts
+export function itemKindLabel(kind: TargetKind): CatalogKey { … }
+```
+
+When the copy interpolates, the module returns the key plus its params. `divanGating.ts` exports
+the shape the other divan modules import:
+
+```ts
+export type Message = {readonly key: CatalogKey; readonly params?: MessageParams};
+```
+
+Three consequences worth knowing before you write one:
+
+- **A module that only composed two Turkish strings loses its reason to exist.** The composed
+  form becomes one flat key, so the helper goes. Only reach back for composition when English
+  needs an arm the Turkish does not — see the plural note below.
+- **A caller-supplied noun stays a prop, not a literal.** `ActorIdentity` takes `fallbackLabel`
+  as a string; divan passes `t("divan.caylak.fallback")`. The shared module still holds no copy.
+- **The unit test then asserts the key**, not the Turkish. Where the test's point is that the
+  copy reads a certain way, it resolves the key through `trCatalog` and asserts that.
+
+Formatting a date or a number is the same rule seen from the other side: the module takes the
+`Locale` and formats with it (`createdAtLabel(createdAt, locale)`), so no surface hardcodes
+`tr-TR`.
 
 ## The two type checks, and why they are in different files
 
@@ -93,6 +124,12 @@ number of times in `en` as in `tr`, matched **whole-word**. Turkish is agglutina
 `bildirimler` contains `bildir` and a substring match would call every suffixed word a brand noun.
 
 ## Plurals
+
+**One sentence carrying two independent counts needs two messages.** The wave confirm counts
+targets and reports, and pluralizing the whole line on either one renders "1 target · closes 1
+reports" in English. So `blastRadiusLabel` returns a frame message plus a clause message, and the
+component interpolates the resolved clause into the frame. Turkish is unaffected either way,
+which is exactly why this is easy to miss.
 
 `plural(locale, n, {one, other})` and nothing more. `Intl.PluralRules` reports exactly `one` and
 `other` for both `tr` and `en`, and `plural.unit.test.ts` asserts that against the running engine —

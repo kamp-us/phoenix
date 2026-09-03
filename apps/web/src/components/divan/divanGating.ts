@@ -6,7 +6,13 @@
  */
 import {TARGET_KINDS, type TargetKind} from "../../../worker/db/target-kind";
 import type {Tier} from "../../../worker/features/kunye/standing";
-import {actorLabel} from "../moderation/actor-identity";
+import type {CatalogKey, MessageParams} from "../../i18n";
+
+/**
+ * A rendered message a DOM-free module resolves to: the catalog key plus whatever the copy
+ * interpolates. The module picks the key, the component calls `t` — see ADR 0347.
+ */
+export type Message = {readonly key: CatalogKey; readonly params?: MessageParams};
 
 /**
  * Denial is provable only when BOTH arms are KNOWN-false. An `undefined` tier (`me` not
@@ -53,19 +59,14 @@ export function vouchTriggerState(
 	return alreadyVouched ? "done" : "offer";
 }
 
-export function vouchTriggerLabel(state: VouchTriggerState): string {
-	return state === "done" ? "kefil oldun" : "kefil ol";
+export function vouchTriggerLabel(state: VouchTriggerState): CatalogKey {
+	return state === "done" ? "divan.vouch.done" : "divan.vouch.offer";
 }
 
 // Keyed off `isModerator`, never `tier`: a dual-role yazar+moderator reads `tier: "yazar"`
 // (#1320), so a tier check wrongly hid promote from them.
 export function promoteVisible(isModerator: boolean): boolean {
 	return isModerator;
-}
-
-// See ADR 0147 — one shared handle resolver across the mod surfaces; divan supplies its noun.
-export function caylakLabel(displayName: string | null, username: string | null): string {
-	return actorLabel(displayName, username, "çaylak");
 }
 
 export function parseBacklogItemId(
@@ -78,14 +79,14 @@ export function parseBacklogItemId(
 	return {targetKind: kind as TargetKind, targetId: id.slice(sep + 1)};
 }
 
-export function itemKindLabel(kind: TargetKind): string {
+export function itemKindLabel(kind: TargetKind): CatalogKey {
 	switch (kind) {
 		case "definition":
-			return "tanım";
+			return "divan.kind.definition";
 		case "post":
-			return "gönderi";
+			return "divan.kind.post";
 		case "comment":
-			return "yorum";
+			return "divan.kind.comment";
 	}
 }
 
@@ -101,16 +102,16 @@ export function promoteOutcome(
 	return promoted ? "promoted" : "alreadyYazar";
 }
 
-export function promoteOutcomeMessage(outcome: PromoteOutcome): string {
+export function promoteOutcomeMessage(outcome: PromoteOutcome): CatalogKey {
 	switch (outcome) {
 		case "promoted":
-			return "çaylak yazar oldu.";
+			return "divan.promote.promoted";
 		case "alreadyYazar":
-			return "kullanıcı zaten yazar.";
+			return "divan.promote.alreadyYazar";
 		case "denied":
-			return "bunu yapma yetkin yok.";
+			return "divan.promote.denied";
 		case "error":
-			return "işlem başarısız oldu.";
+			return "divan.action.failed";
 	}
 }
 
@@ -147,17 +148,17 @@ export function vouchLanded(outcome: VouchOutcome): boolean {
 	return outcome === "recorded" || outcome === "promoted";
 }
 
-export function vouchOutcomeMessage(outcome: VouchOutcome): string {
+export function vouchOutcomeMessage(outcome: VouchOutcome): CatalogKey {
 	switch (outcome) {
 		case "promoted":
-			return "kefil oldun ve çaylak yazar oldu.";
+			return "divan.vouch.promoted";
 		case "recorded":
-			return "kefil oldun. çaylak yeterli karmaya ulaşınca yazar olacak.";
+			return "divan.vouch.recorded";
 		case "limit":
-			return "en fazla üç kişiye aynı anda kefil olabilirsin.";
+			return "divan.vouch.limit";
 		case "denied":
-			return "kefil olmak için yazar olmalısın.";
+			return "divan.vouch.denied";
 		case "error":
-			return "işlem başarısız oldu.";
+			return "divan.action.failed";
 	}
 }

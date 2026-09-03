@@ -1,3 +1,5 @@
+import {admin} from "./admin";
+import {divan} from "./divan";
 import {layout} from "./layout";
 import {wire} from "./wire";
 
@@ -7,6 +9,8 @@ import {wire} from "./wire";
  * then checked against it (ADR 0347).
  */
 export const tr = {
+	...admin,
+	...divan,
 	...layout,
 	...wire,
 };
