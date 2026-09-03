@@ -51,6 +51,7 @@ flowchart TD
 		camp_di_taxis_readme_passes["Diátaxis README passes"]:::active
 		camp_tuval["Tuval"]:::done
 		camp_tuval_first_slice["Tuval first slice"]:::active
+		camp_phoenix_i18n["phoenix i18n"]:::active
 	end
 	ext_3642["#3642"]:::external
 	ext_3833["#3833"]:::external
