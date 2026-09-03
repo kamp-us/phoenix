@@ -1,5 +1,5 @@
+import {Card} from "@kampus/design";
 import type * as React from "react";
-import {Card} from "../../../components/ui/Card";
 import {defineExhibit} from "../exhibit";
 
 export const cardExhibit = defineExhibit<React.ComponentProps<typeof Card>>({

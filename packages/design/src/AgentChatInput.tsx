@@ -27,61 +27,64 @@ import {
 	useRef,
 	useState,
 } from "react";
-import {Icon} from "../Icon";
-import {Alert} from "../ui/Alert";
-import {Kbd} from "../ui/atoms";
-import {Button} from "../ui/Button";
-import {Card} from "../ui/Card";
-import {Collapsible} from "../ui/Collapsible";
-import {Dialog} from "../ui/Dialog";
-import {Form, Input, Textarea} from "../ui/Form";
-import {Menu, type MenuItem} from "../ui/Menu";
-import {Select, type SelectItem} from "../ui/Select";
-import {
-	abortPi,
-	answerPiExtension,
-	loadPiCommands,
-	loadPiFiles,
-	loadPiModels,
-	loadPiState,
-	loadPiThinkingLevels,
-	type PiCommand,
-	type PiDeliveryMode,
-	type PiEvent,
-	type PiExtensionAnswer,
-	type PiImage,
-	type PiModel,
-	type PiProjectTrust,
-	type PiThinkingLevel,
-	sendPiPrompt,
-	setPiModel,
-	setPiProjectTrust,
-	setPiThinkingLevel,
-	subscribeToPiEvents,
-} from "./piHarness";
+import {Alert} from "./Alert";
+import type {
+	AgentChatInputBridge,
+	PiCommand,
+	PiDeliveryMode,
+	PiEvent,
+	PiExtensionAnswer,
+	PiImage,
+	PiModel,
+	PiProjectTrust,
+	PiThinkingLevel,
+} from "./agent-chat-bridge";
+import {Kbd} from "./atoms";
+import {Button} from "./Button";
+import {Card} from "./Card";
+import {Collapsible} from "./Collapsible";
+import {Dialog} from "./Dialog";
+import {Form, Input, Textarea} from "./Form";
+import {Menu, type MenuItem} from "./Menu";
+import {Select, type SelectItem} from "./Select";
 import "./AgentChatInput.css";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+const unavailableBridge: AgentChatInputBridge = {
+	loadPiState: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	loadPiCommands: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	loadPiModels: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	loadPiThinkingLevels: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	loadPiFiles: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	setPiModel: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	setPiThinkingLevel: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	setPiProjectTrust: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	sendPiPrompt: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	abortPi: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	answerPiExtension: () => Promise.reject(new Error("Pi harness is unavailable.")),
+	subscribeToPiEvents: () => () => undefined,
+};
+
 const deliveryModes: SelectItem[] = [
-	{value: "prompt", label: "gönder"},
-	{value: "steer", label: "yönlendir"},
-	{value: "follow_up", label: "sonraya al"},
+	{value: "prompt", label: "send"},
+	{value: "steer", label: "steer"},
+	{value: "follow_up", label: "follow up"},
 ];
 
 const projectTrustModes: SelectItem[] = [
-	{value: "approve", label: "güven"},
-	{value: "no-approve", label: "yoksay"},
+	{value: "approve", label: "load resources"},
+	{value: "no-approve", label: "skip resources"},
 ];
 
 const thinkingLevelLabels: Readonly<Record<PiThinkingLevel, string>> = {
-	off: "kapalı",
+	off: "off",
 	minimal: "minimal",
-	low: "düşük",
-	medium: "orta",
-	high: "yüksek",
-	xhigh: "çok yüksek",
-	max: "maksimum",
+	low: "low",
+	medium: "medium",
+	high: "high",
+	xhigh: "extra high",
+	max: "maximum",
 };
 
 const thinkingLevelIcons: Readonly<Record<PiThinkingLevel, LucideIcon>> = {
@@ -110,11 +113,11 @@ const mockThinkingLevels: readonly PiThinkingLevel[] = [
 ];
 
 const mockCommands: readonly PiCommand[] = [
-	{name: "review", description: "Değişiklikleri gözden geçir."},
-	{name: "compact", description: "Oturum bağlamını sıkıştır."},
+	{name: "review", description: "Review the changes."},
+	{name: "compact", description: "Compact the session context."},
 ];
 
-const mockFiles = ["apps/web/src/App.tsx", "apps/web/src/components/agent/AgentChatInput.tsx"];
+const mockFiles = ["apps/web/src/App.tsx", "packages/design/src/AgentChatInput.tsx"];
 
 type ConnectionState = "loading" | "ready" | "unavailable" | "working";
 
@@ -148,6 +151,30 @@ interface ExtensionRequest {
 	readonly options?: readonly string[];
 	readonly placeholder?: string;
 	readonly prefill?: string;
+}
+
+type IconSize = 12 | 14 | 16 | 20 | 24;
+
+function Icon({
+	icon: Glyph,
+	size = 20,
+	className,
+	label,
+}: {
+	readonly icon: LucideIcon;
+	readonly size?: IconSize;
+	readonly className?: string;
+	readonly label?: string;
+}) {
+	return (
+		<Glyph
+			className={className ? `kp-icon ${className}` : "kp-icon"}
+			size={size}
+			aria-hidden={label ? undefined : true}
+			aria-label={label}
+			role={label ? "img" : undefined}
+		/>
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -229,7 +256,7 @@ function extensionRequest(event: PiEvent): ExtensionRequest | undefined {
 	if (event.type !== "extension_ui_request") return undefined;
 	const id = stringValue(event, "id");
 	const rawMethod = stringValue(event, "method");
-	const title = stringValue(event, "title") ?? "Pi eklentisi";
+	const title = stringValue(event, "title") ?? "Pi extension";
 	if (!id || !rawMethod) return undefined;
 	if (
 		rawMethod !== "select" &&
@@ -256,15 +283,15 @@ function extensionRequest(event: PiEvent): ExtensionRequest | undefined {
 function fileAsImage(file: File): Promise<PiImage> {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
-		reader.onerror = () => reject(new Error("Görsel okunamadı."));
+		reader.onerror = () => reject(new Error("Unable to read the image."));
 		reader.onload = () => {
 			if (typeof reader.result !== "string") {
-				reject(new Error("Görsel okunamadı."));
+				reject(new Error("Unable to read the image."));
 				return;
 			}
 			const data = reader.result.split(",", 2)[1];
 			if (!data) {
-				reject(new Error("Görsel okunamadı."));
+				reject(new Error("Unable to read the image."));
 				return;
 			}
 			resolve({data, mimeType: file.type, name: file.name});
@@ -274,6 +301,7 @@ function fileAsImage(file: File): Promise<PiImage> {
 }
 
 export interface AgentChatInputProps {
+	readonly bridge?: AgentChatInputBridge;
 	readonly initialValue?: string;
 	readonly disabled?: boolean;
 	readonly variant?: "harness" | "focused";
@@ -281,12 +309,15 @@ export interface AgentChatInputProps {
 }
 
 export function AgentChatInput({
+	bridge,
 	initialValue = "",
 	disabled = false,
 	variant = "harness",
 	mockWhenUnavailable = false,
 }: AgentChatInputProps) {
+	const activeBridge = bridge ?? unavailableBridge;
 	const inputId = useId();
+	const suggestionsId = `${inputId}-suggestions`;
 	const imageInputRef = useRef<HTMLInputElement>(null);
 	const [draft, setDraft] = useState(initialValue);
 	const [delivery, setDelivery] = useState<PiDeliveryMode>("prompt");
@@ -328,7 +359,12 @@ export function AgentChatInput({
 			});
 			setError(undefined);
 		};
-		void Promise.all([loadPiState(), loadPiCommands(), loadPiModels(), loadPiThinkingLevels()])
+		void Promise.all([
+			activeBridge.loadPiState(),
+			activeBridge.loadPiCommands(),
+			activeBridge.loadPiModels(),
+			activeBridge.loadPiThinkingLevels(),
+		])
 			.then(([nextState, nextCommands, nextModels, nextThinkingLevels]) => {
 				if (!current) return;
 				const selectableThinkingLevels = nextThinkingLevels.filter((level) => level !== "off");
@@ -343,7 +379,7 @@ export function AgentChatInput({
 				setCommands(nextCommands);
 				setModels(nextModels);
 				setThinkingLevels(selectableThinkingLevels);
-				unsubscribe = subscribeToPiEvents(
+				unsubscribe = activeBridge.subscribeToPiEvents(
 					(event) => {
 						if (current) handleEvent(event);
 					},
@@ -359,13 +395,13 @@ export function AgentChatInput({
 					return;
 				}
 				setConnection("unavailable");
-				setError(cause instanceof Error ? cause.message : "Pi harness'a bağlanılamadı.");
+				setError(cause instanceof Error ? cause.message : "Unable to connect to the Pi harness.");
 			});
 		return () => {
 			current = false;
 			unsubscribe();
 		};
-	}, [mockWhenUnavailable]);
+	}, [activeBridge, mockWhenUnavailable]);
 
 	function applyState(nextState: Record<string, unknown>) {
 		setState(nextState);
@@ -387,7 +423,8 @@ export function AgentChatInput({
 				setFiles(mockFiles.filter((path) => path.toLocaleLowerCase().includes(query)));
 				return;
 			}
-			void loadPiFiles(completion.query)
+			void activeBridge
+				.loadPiFiles(completion.query)
 				.then((nextFiles) => {
 					if (current) setFiles(nextFiles);
 				})
@@ -399,7 +436,7 @@ export function AgentChatInput({
 			current = false;
 			window.clearTimeout(timer);
 		};
-	}, [completion, completionDismissed, usingMockHarness]);
+	}, [activeBridge, completion, completionDismissed, usingMockHarness]);
 
 	const suggestions = useMemo<readonly Suggestion[]>(() => {
 		if (!completion || completionDismissed) return [];
@@ -410,6 +447,8 @@ export function AgentChatInput({
 			.slice(0, 8)
 			.map((command) => ({kind: "command", command}));
 	}, [commands, completion, completionDismissed, files]);
+	const activeSuggestionId =
+		suggestions.length > 0 ? `${suggestionsId}-${activeSuggestion}` : undefined;
 
 	useEffect(() => setActiveSuggestion(0), [completion?.kind, completion?.query]);
 
@@ -420,12 +459,12 @@ export function AgentChatInput({
 	function handleEvent(event: PiEvent) {
 		if (event.type === "agent_start") {
 			setConnection("working");
-			addActivity("Pi çalışmaya başladı.");
+			addActivity("Pi started working.");
 			return;
 		}
 		if (event.type === "agent_settled") {
 			setConnection("ready");
-			addActivity("Pi turu tamamlandı.");
+			addActivity("Pi turn completed.");
 			return;
 		}
 		if (event.type === "message_update") {
@@ -444,8 +483,8 @@ export function AgentChatInput({
 			return;
 		}
 		if (event.type === "tool_execution_start") {
-			const tool = stringValue(event, "toolName") ?? "araç";
-			addActivity(`Pi ${tool} kullanıyor.`);
+			const tool = stringValue(event, "toolName") ?? "tool";
+			addActivity(`Pi is using ${tool}.`);
 			return;
 		}
 		if (event.type === "harness_status") {
@@ -505,8 +544,8 @@ export function AgentChatInput({
 		if ((!message && images.length === 0) || disabled || connection === "unavailable") return;
 		setError(undefined);
 		if (usingMockHarness) {
-			addActivity("Deploy preview istemi mock harness'a gönderildi.");
-			setAssistantText("Bu, Agent Chat Input görünümünü denemek için üretilen mock yanıttır.");
+			addActivity("Deploy preview prompt sent to the mock harness.");
+			setAssistantText("This is a mock response for previewing the Agent Chat Input.");
 			setDraft("");
 			setImages([]);
 			return;
@@ -521,40 +560,40 @@ export function AgentChatInput({
 						: "prompt"
 					: delivery;
 			const streamedPrompt = connection === "working" && requestedDelivery === "prompt";
-			await sendPiPrompt({
+			await activeBridge.sendPiPrompt({
 				type: requestedDelivery,
-				message: message || "Bu görseli incele.",
+				message: message || "Inspect this image.",
 				...(images.length > 0 ? {images} : {}),
 				...(streamedPrompt ? {streamingBehavior: "steer"} : {}),
 			});
 			addActivity(
 				streamedPrompt
-					? "İstem, çalışan tur için yönlendirme olarak kuyruğa alındı."
+					? "Prompt queued as steering for the active turn."
 					: requestedDelivery === "prompt"
-						? "İstem Pi'ye gönderildi."
+						? "Prompt sent to Pi."
 						: requestedDelivery === "steer"
-							? "Yönlendirme Pi kuyruğuna alındı."
-							: "Sonraki istem Pi kuyruğuna alındı.",
+							? "Steering queued for Pi."
+							: "Follow-up queued for Pi.",
 			);
 			setDraft("");
 			setImages([]);
 			setAssistantText("");
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "İstem gönderilemedi.");
+			setError(cause instanceof Error ? cause.message : "Unable to send the prompt.");
 		}
 	}
 
 	async function stop() {
 		if (usingMockHarness) {
 			setConnection("ready");
-			addActivity("Mock tur durduruldu.");
+			addActivity("Mock turn stopped.");
 			return;
 		}
 		try {
-			await abortPi();
-			addActivity("Pi durdurma isteğini aldı.");
+			await activeBridge.abortPi();
+			addActivity("Pi accepted the stop request.");
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Pi durdurulamadı.");
+			setError(cause instanceof Error ? cause.message : "Unable to stop Pi.");
 		}
 	}
 
@@ -563,22 +602,22 @@ export function AgentChatInput({
 		if (!nextModel || value === selectedModelValue(state)) return;
 		if (usingMockHarness) {
 			setState((current) => ({...(current ?? {}), model: nextModel}));
-			addActivity(`Mock Pi modeli ${nextModel.name} olarak değiştirildi.`);
+			addActivity(`Mock Pi model changed to ${nextModel.name}.`);
 			return;
 		}
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
-			await setPiModel(nextModel);
+			await activeBridge.setPiModel(nextModel);
 			const [nextState, nextThinkingLevels] = await Promise.all([
-				loadPiState(),
-				loadPiThinkingLevels(),
+				activeBridge.loadPiState(),
+				activeBridge.loadPiThinkingLevels(),
 			]);
 			applyState(nextState);
 			setThinkingLevels(nextThinkingLevels);
-			addActivity(`Pi modeli ${nextModel.name} olarak değiştirildi.`);
+			addActivity(`Pi model changed to ${nextModel.name}.`);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Pi modeli değiştirilemedi.");
+			setError(cause instanceof Error ? cause.message : "Unable to change the Pi model.");
 		} finally {
 			setSettingsChanging(false);
 		}
@@ -589,17 +628,17 @@ export function AgentChatInput({
 		if (!nextLevel || nextLevel === thinkingLevelValue(state?.thinkingLevel)) return;
 		if (usingMockHarness) {
 			setState((current) => ({...(current ?? {}), thinkingLevel: nextLevel}));
-			addActivity(`Mock düşünme eforu ${thinkingLevelLabels[nextLevel]} olarak değiştirildi.`);
+			addActivity(`Mock Pi thinking effort changed to ${thinkingLevelLabels[nextLevel]}.`);
 			return;
 		}
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
-			await setPiThinkingLevel(nextLevel);
-			applyState(await loadPiState());
-			addActivity(`Pi düşünme eforu ${thinkingLevelLabels[nextLevel]} olarak değiştirildi.`);
+			await activeBridge.setPiThinkingLevel(nextLevel);
+			applyState(await activeBridge.loadPiState());
+			addActivity(`Pi thinking effort changed to ${thinkingLevelLabels[nextLevel]}.`);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Pi düşünme eforu değiştirilemedi.");
+			setError(cause instanceof Error ? cause.message : "Unable to change Pi thinking effort.");
 		} finally {
 			setSettingsChanging(false);
 		}
@@ -612,21 +651,21 @@ export function AgentChatInput({
 			setProjectTrust(nextProjectTrust);
 			addActivity(
 				nextProjectTrust === "approve"
-					? "Mock proje kaynakları yüklendi."
-					: "Mock proje kaynakları yoksayıldı.",
+					? "Mock project resources loaded."
+					: "Mock project resources skipped.",
 			);
 			return;
 		}
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
-			await setPiProjectTrust(nextProjectTrust);
+			await activeBridge.setPiProjectTrust(nextProjectTrust);
 			setProjectTrust(nextProjectTrust);
 			const [nextState, nextCommands, nextModels, nextThinkingLevels] = await Promise.all([
-				loadPiState(),
-				loadPiCommands(),
-				loadPiModels(),
-				loadPiThinkingLevels(),
+				activeBridge.loadPiState(),
+				activeBridge.loadPiCommands(),
+				activeBridge.loadPiModels(),
+				activeBridge.loadPiThinkingLevels(),
 			]);
 			applyState(nextState);
 			setCommands(nextCommands);
@@ -634,11 +673,11 @@ export function AgentChatInput({
 			setThinkingLevels(nextThinkingLevels.filter((level) => level !== "off"));
 			addActivity(
 				nextProjectTrust === "approve"
-					? "Pi proje kaynaklarını yükleyecek şekilde yeniden başlatıldı."
-					: "Pi proje kaynaklarını yoksayacak şekilde yeniden başlatıldı.",
+					? "Pi restarted with project resources enabled."
+					: "Pi restarted with project resources disabled.",
 			);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Pi proje izni değiştirilemedi.");
+			setError(cause instanceof Error ? cause.message : "Unable to change Pi project trust.");
 		} finally {
 			setSettingsChanging(false);
 		}
@@ -647,11 +686,11 @@ export function AgentChatInput({
 	async function addImage(file: File | undefined) {
 		if (!file) return;
 		if (!file.type.startsWith("image/")) {
-			setError("Pi RPC prototipi yalnızca görsel eklerini kabul ediyor.");
+			setError("The Pi RPC prototype accepts image attachments only.");
 			return;
 		}
 		if (file.size > MAX_IMAGE_BYTES) {
-			setError("Görsel 5 MB'dan küçük olmalı.");
+			setError("The image must be smaller than 5 MB.");
 			return;
 		}
 		try {
@@ -659,7 +698,7 @@ export function AgentChatInput({
 			setImages((current) => [...current, image]);
 			setError(undefined);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Görsel eklenemedi.");
+			setError(cause instanceof Error ? cause.message : "Unable to add the image.");
 		}
 	}
 
@@ -679,13 +718,14 @@ export function AgentChatInput({
 	async function answerExtension(answer: PiExtensionAnswer) {
 		setExtension(undefined);
 		try {
-			await answerPiExtension(answer);
+			await activeBridge.answerPiExtension(answer);
 		} catch (cause) {
-			setError(cause instanceof Error ? cause.message : "Pi eklentisine yanıt verilemedi.");
+			setError(cause instanceof Error ? cause.message : "Unable to answer the Pi extension.");
 		}
 	}
 
 	function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+		if (event.nativeEvent.isComposing) return;
 		if (suggestions.length > 0) {
 			if (event.key === "ArrowDown") {
 				event.preventDefault();
@@ -754,18 +794,18 @@ export function AgentChatInput({
 			? [
 					{
 						type: "group" as const,
-						label: "çalışırken gönderme",
+						label: "delivery while working",
 						items: [
 							{
 								type: "radio" as const,
 								value: "delivery:steer",
-								label: "yönlendir",
+								label: "steer",
 								checked: focusedDelivery === "steer",
 							},
 							{
 								type: "radio" as const,
 								value: "delivery:follow_up",
-								label: "sonraya al",
+								label: "follow up",
 								checked: focusedDelivery === "follow_up",
 							},
 						],
@@ -775,19 +815,19 @@ export function AgentChatInput({
 			: []),
 		{
 			type: "group",
-			label: "proje kaynakları",
+			label: "project resources",
 			items: [
 				{
 					type: "radio",
 					value: "trust:approve",
-					label: "kaynakları yükle",
+					label: "load resources",
 					checked: projectTrust === "approve",
 					disabled: settingsDisabled,
 				},
 				{
 					type: "radio",
 					value: "trust:no-approve",
-					label: "kaynakları yükleme",
+					label: "skip resources",
 					checked: projectTrust === "no-approve",
 					disabled: settingsDisabled,
 				},
@@ -796,14 +836,14 @@ export function AgentChatInput({
 	];
 	const status =
 		connection === "loading"
-			? "Pi aranıyor…"
+			? "Looking for Pi…"
 			: connection === "working"
-				? "Pi çalışıyor"
+				? "Pi is working"
 				: connection === "ready"
 					? model
-						? `Pi hazır · ${model}`
-						: "Pi hazır"
-					: "Pi yerelde kullanılamıyor";
+						? `Pi ready · ${model}`
+						: "Pi ready"
+					: "Pi is unavailable locally";
 
 	return (
 		<section className={`kp-agent-chat kp-agent-chat--${variant}`} aria-label="Agent chat input">
@@ -815,7 +855,7 @@ export function AgentChatInput({
 							{status}
 							{extensionStatus ? ` · ${extensionStatus}` : ""}
 						</p>
-						<p className="kp-agent-chat__scope">yalnızca yerel atölye</p>
+						<p className="kp-agent-chat__scope">local workshop only</p>
 					</div>
 				) : null}
 
@@ -827,7 +867,7 @@ export function AgentChatInput({
 					}}
 				>
 					{images.length > 0 ? (
-						<ul className="kp-agent-chat__attachments" aria-label="Görsel ekleri">
+						<ul className="kp-agent-chat__attachments" aria-label="Image attachments">
 							{images.map((image) => (
 								<li key={image.name} className="kp-agent-chat__attachment">
 									<Icon icon={FileImage} size={16} />
@@ -840,7 +880,7 @@ export function AgentChatInput({
 										onClick={() => setImages((current) => current.filter((item) => item !== image))}
 									>
 										<Icon icon={X} size={16} />
-										<span className="kp-visually-hidden">{image.name} görselini kaldır</span>
+										<span className="kp-visually-hidden">Remove {image.name} image</span>
 									</Button>
 								</li>
 							))}
@@ -851,8 +891,13 @@ export function AgentChatInput({
 						<Textarea
 							id={inputId}
 							className="kp-agent-chat__textarea"
-							label={<span className="kp-visually-hidden">Pi'ye mesaj yaz</span>}
-							placeholder="Pi'ye ne yapmak istediğini söyle…"
+							role="combobox"
+							aria-autocomplete="list"
+							aria-expanded={suggestions.length > 0}
+							aria-controls={suggestions.length > 0 ? suggestionsId : undefined}
+							aria-activedescendant={activeSuggestionId}
+							label={<span className="kp-visually-hidden">Write a message to Pi</span>}
+							placeholder="Tell Pi what you want to do…"
 							value={draft}
 							onChange={(event) => {
 								setDraft(event.currentTarget.value);
@@ -868,12 +913,14 @@ export function AgentChatInput({
 						/>
 						{suggestions.length > 0 ? (
 							<Card
+								id={suggestionsId}
 								className="kp-agent-chat__suggestions"
 								role="listbox"
-								aria-label="Pi tamamlamaları"
+								aria-label="Pi completions"
 							>
 								{suggestions.map((suggestion, index) => (
 									<SuggestionRow
+										id={`${suggestionsId}-${index}`}
 										key={suggestion.kind === "command" ? suggestion.command.name : suggestion.path}
 										suggestion={suggestion}
 										active={index === activeSuggestion}
@@ -891,7 +938,7 @@ export function AgentChatInput({
 									<Input
 										ref={imageInputRef}
 										className="kp-visually-hidden"
-										label="Görsel ekle"
+										label="Add image"
 										type="file"
 										accept="image/*"
 										tabIndex={-1}
@@ -905,7 +952,7 @@ export function AgentChatInput({
 										variant="tertiary"
 										size="sm"
 										className="kp-agent-chat__icon-button"
-										aria-label="Görsel ekle"
+										aria-label="Add image"
 										onClick={() => imageInputRef.current?.click()}
 										disabled={disabled}
 									>
@@ -914,7 +961,7 @@ export function AgentChatInput({
 								</>
 							) : null}
 							<fieldset className="kp-agent-chat__settings">
-								<legend className="kp-visually-hidden">Pi ayarları</legend>
+								<legend className="kp-visually-hidden">Pi settings</legend>
 								{variant === "focused" ? (
 									<>
 										<SettingMenu
@@ -925,7 +972,7 @@ export function AgentChatInput({
 											disabled={settingsDisabled || focusedModelItems.length < 2}
 										/>
 										<SettingMenu
-											label="düşünme eforu"
+											label="thinking effort"
 											items={focusedThinkingItems}
 											value={selectedThinking}
 											onValueChange={(value) => void changeThinkingLevel(value)}
@@ -938,7 +985,7 @@ export function AgentChatInput({
 											<Icon icon={Bot} size={14} />
 											<Select
 												className="kp-agent-chat__setting-select kp-agent-chat__setting-select--model"
-												label={<span className="kp-visually-hidden">Pi modeli</span>}
+												label={<span className="kp-visually-hidden">Pi model</span>}
 												items={modelItems}
 												value={selectedModel ? [selectedModel] : []}
 												onValueChange={(values) => void changeModel(values[0])}
@@ -951,7 +998,7 @@ export function AgentChatInput({
 											<Icon icon={Brain} size={14} />
 											<Select
 												className="kp-agent-chat__setting-select"
-												label={<span className="kp-visually-hidden">Pi düşünme eforu</span>}
+												label={<span className="kp-visually-hidden">Pi thinking effort</span>}
 												items={thinkingItems}
 												value={[selectedThinking]}
 												onValueChange={(values) => void changeThinkingLevel(values[0])}
@@ -966,8 +1013,8 @@ export function AgentChatInput({
 												className="kp-agent-chat__setting-select"
 												label={
 													<span className="kp-visually-hidden">
-														Pi proje izni. Güven, yerel proje kaynaklarını yükler; yoksay bunları
-														devre dışı bırakır.
+														Pi project trust. Load enables local project resources; skip disables
+														them.
 													</span>
 												}
 												items={projectTrustModes}
@@ -984,17 +1031,17 @@ export function AgentChatInput({
 							{variant === "focused" ? (
 								<Menu
 									placement="top-start"
-									ariaLabel="Pi ayarları"
+									ariaLabel="Pi settings"
 									trigger={
 										<Button
 											type="button"
 											variant="tertiary"
 											size="sm"
 											className="kp-agent-chat__resources-button"
-											aria-label="Proje kaynakları ve gönderme ayarları"
+											aria-label="Project resources and delivery settings"
 										>
 											<Icon icon={ShieldCheck} size={14} />
-											kaynaklar
+											resources
 										</Button>
 									}
 									items={focusedMenuItems}
@@ -1011,7 +1058,7 @@ export function AgentChatInput({
 							{variant === "harness" ? (
 								<Select
 									className="kp-agent-chat__delivery"
-									label={<span className="kp-visually-hidden">Pi teslim modu</span>}
+									label={<span className="kp-visually-hidden">Pi delivery mode</span>}
 									items={deliveryModes}
 									value={[delivery]}
 									onValueChange={(values) => {
@@ -1024,7 +1071,7 @@ export function AgentChatInput({
 							) : null}
 							{connection === "working" ? (
 								<Button type="button" variant="tertiary" size="sm" onClick={() => void stop()}>
-									<Icon icon={Square} size={16} /> durdur
+									<Icon icon={Square} size={16} /> stop
 								</Button>
 							) : null}
 							<Button
@@ -1035,11 +1082,11 @@ export function AgentChatInput({
 							>
 								{variant === "focused" && connection === "working"
 									? focusedDelivery === "steer"
-										? "yönlendir"
-										: "sonraya al"
+										? "steer"
+										: "follow up"
 									: connection === "working"
-										? "kuyruğa al"
-										: "gönder"}{" "}
+										? "queue"
+										: "send"}{" "}
 								<Icon icon={SendHorizontal} size={16} />
 							</Button>
 						</div>
@@ -1048,12 +1095,12 @@ export function AgentChatInput({
 
 				{variant === "harness" ? (
 					<p className="kp-agent-chat__hint">
-						<Kbd>Enter</Kbd> gönder · <Kbd>Shift+Enter</Kbd> satır ekle · <Kbd>/</Kbd> komut ·{" "}
-						<Kbd>@</Kbd> dosya · görseli yapıştır
+						<Kbd>Enter</Kbd> send · <Kbd>Shift+Enter</Kbd> add a line · <Kbd>/</Kbd> command ·{" "}
+						<Kbd>@</Kbd> file · paste an image
 					</p>
 				) : (
 					<p className="kp-agent-chat__hint">
-						<Kbd>/</Kbd> komut · <Kbd>@</Kbd> dosya · görsel ekle veya yapıştır
+						<Kbd>/</Kbd> command · <Kbd>@</Kbd> file · add or paste an image
 					</p>
 				)}
 				{error ? (
@@ -1072,7 +1119,7 @@ export function AgentChatInput({
 					trigger={
 						<span className="kp-agent-chat__inspector-trigger">
 							<span className="kp-agent-chat__inspector-title">
-								Pi denetçisi
+								Pi inspector
 								{activities.length > 0 ? <span>{activities.length}</span> : null}
 							</span>
 							<Icon icon={inspectorOpen ? ChevronUp : ChevronDown} size={16} />
@@ -1120,7 +1167,7 @@ function SettingMenu({
 					variant="tertiary"
 					size="sm"
 					className="kp-agent-chat__picker-trigger"
-					aria-label={`${label}: ${selected?.label ?? "yükleniyor"}`}
+					aria-label={`${label}: ${selected?.label ?? "loading"}`}
 					disabled={disabled}
 				>
 					{selected?.icon ? <Icon icon={selected.icon} size={14} /> : null}
@@ -1150,10 +1197,12 @@ function SettingMenu({
 }
 
 function SuggestionRow({
+	id,
 	suggestion,
 	active,
 	onSelect,
 }: {
+	readonly id: string;
 	readonly suggestion: Suggestion;
 	readonly active: boolean;
 	readonly onSelect: () => void;
@@ -1161,6 +1210,7 @@ function SuggestionRow({
 	const command = suggestion.kind === "command" ? suggestion.command : undefined;
 	return (
 		<Button
+			id={id}
 			type="button"
 			variant="tertiary"
 			block
@@ -1183,7 +1233,7 @@ function SuggestionRow({
 function HarnessWidget({lines}: {readonly lines: readonly string[]}) {
 	return (
 		<Card className="kp-agent-chat__widget" role="status">
-			<p className="kp-agent-chat__widget-title">Pi eklentisi</p>
+			<p className="kp-agent-chat__widget-title">Pi extension</p>
 			<pre>{lines.join("\n")}</pre>
 		</Card>
 	);
@@ -1198,11 +1248,11 @@ function AgentActivity({
 }) {
 	return (
 		<Card className="kp-agent-chat__activity" aria-live="polite">
-			<p className="kp-agent-chat__activity-title">harness etkinliği</p>
+			<p className="kp-agent-chat__activity-title">harness activity</p>
 			{assistantText ? (
 				<pre className="kp-agent-chat__assistant-text">{assistantText}</pre>
 			) : (
-				<p className="kp-agent-chat__empty">Pi yanıtı ve araç etkinlikleri burada görünür.</p>
+				<p className="kp-agent-chat__empty">Pi responses and tool activity appear here.</p>
 			)}
 			{activities.length > 0 ? (
 				<ul className="kp-agent-chat__activity-list">
@@ -1238,23 +1288,23 @@ function PiExtensionDialog({
 				request.method === "confirm" ? (
 					<>
 						<Button variant="tertiary" onClick={cancel}>
-							vazgeç
+							Cancel
 						</Button>
 						<Button variant="primary" onClick={() => answer({confirmed: true})}>
-							onayla
+							Confirm
 						</Button>
 					</>
 				) : request.method === "select" ? (
 					<Button variant="tertiary" onClick={cancel}>
-						vazgeç
+						Cancel
 					</Button>
 				) : (
 					<>
 						<Button variant="tertiary" onClick={cancel}>
-							vazgeç
+							Cancel
 						</Button>
 						<Button variant="primary" onClick={() => answer({value})}>
-							gönder
+							Send
 						</Button>
 					</>
 				)
@@ -1270,7 +1320,7 @@ function PiExtensionDialog({
 				</div>
 			) : request.method === "input" ? (
 				<Input
-					label={<span className="kp-visually-hidden">Pi eklentisi yanıtı</span>}
+					label={<span className="kp-visually-hidden">Pi extension response</span>}
 					placeholder={request.placeholder}
 					value={value}
 					onChange={(event) => setValue(event.currentTarget.value)}
@@ -1278,7 +1328,7 @@ function PiExtensionDialog({
 				/>
 			) : request.method === "editor" ? (
 				<Textarea
-					label={<span className="kp-visually-hidden">Pi eklentisi metni</span>}
+					label={<span className="kp-visually-hidden">Pi extension text</span>}
 					placeholder={request.placeholder}
 					value={value}
 					onChange={(event) => setValue(event.currentTarget.value)}

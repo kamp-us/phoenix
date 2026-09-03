@@ -16,12 +16,10 @@
  * (aria-haspopup/expanded on the trigger, Escape-to-close, outside-dismiss).
  */
 
+import {Avatar, Button, Popover} from "@kampus/design";
 import {useState} from "react";
 import {Link} from "react-router";
 import type {ThemeChoice} from "../../lib/theme";
-import {Avatar} from "../ui/Avatar";
-import {Button} from "../ui/Button";
-import {Popover} from "../ui/Popover";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import "./UserMenu.css";
 

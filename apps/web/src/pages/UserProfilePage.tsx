@@ -2,6 +2,8 @@
  * Public user profile page. The nested `contributions` connection switches on a `kind`
  * discriminant (ADR 0018); see `.patterns/fate-connections.md` for the masking rules.
  */
+
+import {EmptyState} from "@kampus/design";
 import {useCallback} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef} from "react-fate";
 import {useParams} from "react-router";
@@ -19,7 +21,6 @@ import {
 	UserProfileView,
 } from "../components/profile/profileReads";
 import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
-import {EmptyState} from "../components/ui/EmptyState";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {NotFoundPage} from "./NotFoundPage";

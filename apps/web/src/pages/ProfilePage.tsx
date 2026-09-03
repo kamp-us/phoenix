@@ -1,3 +1,4 @@
+import {Alert, Button, Input, ToggleGroup} from "@kampus/design";
 import {useEffect, useRef, useState} from "react";
 import {useFateClient, view} from "react-fate";
 import {Link, Navigate} from "react-router";
@@ -10,7 +11,6 @@ import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
 import {ProfileHeader} from "../components/profile/ProfileHeader";
 import {profileStandingLabel} from "../components/profile/profileStanding";
-import {Alert, Button, Input, ToggleGroup} from "../components/ui";
 import {PHOENIX_CAYLAK_VISIBILITY} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {type Density, useDensity} from "../lib/density";

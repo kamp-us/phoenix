@@ -1,5 +1,5 @@
+import {Button} from "@kampus/design";
 import {Suspense, useState} from "react";
-import {Button} from "../components/ui/Button";
 import {consoleRegistry} from "./app-modules.ts";
 import {type ConsoleRegistry, selectActiveModule} from "./module-registry.ts";
 

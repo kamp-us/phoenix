@@ -1,8 +1,8 @@
+import {Alert, Button, Form, Input} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {authClient} from "../auth/client";
-import {Alert, Button, Form, Input} from "../components/ui";
 import {codeOf} from "../fate/wire";
 import {validateEmail, validateName, validatePassword, validateSignIn} from "./authValidation";
 import {beginUsernameResolution, endUsernameResolution} from "./signupUsernameGate";

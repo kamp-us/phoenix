@@ -1,5 +1,18 @@
 // Mutations throw their boundary-class wire errors, so every call site catches.
 // See `.patterns/fate-mutations-client.md`.
+
+import {
+	Alert,
+	Button,
+	CopyLinkButton,
+	Dialog,
+	EditedIndicator,
+	MetaRow,
+	ReportButton,
+	type ReportOutcome,
+	SandboxMarker,
+	Textarea,
+} from "@kampus/design";
 import * as React from "react";
 import {toEntityId, useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
@@ -17,15 +30,6 @@ import {actorLabel} from "../moderation/actor-identity";
 import {useVoteToggle} from "../pano/useVoteToggle";
 import {DefinitionReactionBar} from "../reaction/DefinitionReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
-import {Alert} from "../ui/Alert";
-import {Button} from "../ui/Button";
-import {CopyLinkButton} from "../ui/CopyLinkButton";
-import {Dialog} from "../ui/Dialog";
-import {EditedIndicator} from "../ui/EditedIndicator";
-import {Textarea} from "../ui/Form";
-import {MetaRow} from "../ui/MetaRow";
-import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {SandboxMarker} from "../ui/SandboxMarker";
 import {useVoteFlash} from "../useVoteFlash";
 import {VoteTriangle} from "../VoteTriangle";
 

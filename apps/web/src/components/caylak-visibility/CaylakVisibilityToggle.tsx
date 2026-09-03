@@ -13,11 +13,11 @@
  * either return `{error}` or throw (`.patterns/fate-mutations-client.md`) — both branches
  * land in the same revert.
  */
+
+import {Alert, Switch} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, useRequest, useView, view} from "react-fate";
 import type {CaylakVisibilityPreference} from "../../../worker/features/fate/views";
-import {Alert} from "../ui/Alert";
-import {Switch} from "../ui/Switch";
 import "./CaylakVisibilityToggle.css";
 
 const PreferenceView = view<CaylakVisibilityPreference>()({

@@ -3,6 +3,8 @@
  * definitions (see `.patterns/fate-connections.md`). The page has two branches: an
  * existing term, and a slug with no term yet, where the first definition creates it.
  */
+
+import {Alert, Button, DraftRestoreBanner, Kbd, Skeleton, Textarea} from "@kampus/design";
 import * as React from "react";
 import {
 	toEntityId,
@@ -20,11 +22,6 @@ import {FirstContributionOnramp} from "../components/authorship/FirstContributio
 import {actorLabel} from "../components/moderation/actor-identity";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
-import {Alert} from "../components/ui/Alert";
-import {Kbd, Skeleton} from "../components/ui/atoms";
-import {Button} from "../components/ui/Button";
-import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
-import {Textarea} from "../components/ui/Form";
 import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";

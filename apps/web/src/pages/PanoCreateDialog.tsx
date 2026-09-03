@@ -1,8 +1,5 @@
+import {Button, Dialog, Form, Input, Tabs, Textarea} from "@kampus/design";
 import * as React from "react";
-import {Button} from "../components/ui/Button";
-import {Dialog} from "../components/ui/Dialog";
-import {Form, Input, Textarea} from "../components/ui/Form";
-import {Tabs} from "../components/ui/Tabs";
 import {prefillIfEmpty, useLinkMetadata} from "../lib/useLinkMetadata";
 
 export function PanoCreateDialog({

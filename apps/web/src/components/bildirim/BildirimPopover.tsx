@@ -5,16 +5,13 @@
  * unread count as its accessible name, and the separate visually-hidden `role="status"`
  * span preserves the announcement the old display-only bell gave (#2613).
  */
+
+import {Alert, Badge, Button, Popover, ScrollArea} from "@kampus/design";
 import {Bell} from "lucide-react";
 import {useState} from "react";
 import {Link} from "react-router";
 import {Screen} from "../../fate/Screen";
 import {Icon} from "../Icon";
-import {Alert} from "../ui/Alert";
-import {Badge} from "../ui/Badge";
-import {Button} from "../ui/Button";
-import {Popover} from "../ui/Popover";
-import {ScrollArea} from "../ui/ScrollArea";
 import {BildirimList} from "./BildirimList";
 import {formatUnreadBadge} from "./bildirim";
 import "./Bildirim.css";

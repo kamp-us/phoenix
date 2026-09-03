@@ -9,13 +9,13 @@
  * imperatively above any Suspense boundary; the boundary is what lets this child
  * suspend on its own batched `useRequest`.
  */
+
+import {Alert, EmptyState} from "@kampus/design";
 import type {ReactNode} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Profile} from "../../../worker/features/fate/views";
 import {Screen} from "../../fate/Screen";
-import {Alert} from "../ui/Alert";
-import {EmptyState} from "../ui/EmptyState";
 import {ContributionRow, ContributionView} from "./ContributionRow";
 import {CONTRIBUTIONS_EMPTY, CONTRIBUTIONS_HEADING} from "./profileContributions";
 import "./ProfileContributionSignal.css";

@@ -1,5 +1,5 @@
+import {Avatar} from "@kampus/design";
 import type * as React from "react";
-import {Avatar} from "../../../components/ui/Avatar";
 import {defineExhibit} from "../exhibit";
 
 export const avatarExhibit = defineExhibit<React.ComponentProps<typeof Avatar>>({

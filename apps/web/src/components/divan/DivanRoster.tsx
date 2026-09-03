@@ -5,8 +5,9 @@
  * per-row by-id `Profile` read and no per-row Suspense boundary (ADR 0021's no-waterfalls
  * contract); a since-deleted profile degrades to the bare "çaylak" label.
  */
+
+import {Button} from "@kampus/design";
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
-import {Button} from "../ui/Button";
 import {CaylakIdentity} from "./CaylakIdentity";
 import {divanRosterRequest, RosterConnectionView, RosterRowView} from "./divanReads";
 

@@ -9,10 +9,13 @@ import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {runDesignTokenGuard} from "./design-token-verb.ts";
 
 const ROOT = "/repo";
-const SRC = `${ROOT}/apps/web/src`;
-const STYLES = `${SRC}/styles`;
+const APP_SRC = `${ROOT}/apps/web/src`;
+const DESIGN_SRC = `${ROOT}/packages/design/src`;
+const STYLES = `${ROOT}/packages/design`;
 const CONFIG = `${STYLES}/design-token-lint.config.json`;
-const TOKENS = `${STYLES}/tokens.css`;
+const TOKENS = `${DESIGN_SRC}/tokens.css`;
+const APP_COMPONENT_CSS = `${APP_SRC}/components/App.css`;
+const DESIGN_COMPONENT_CSS = `${DESIGN_SRC}/Alert.css`;
 
 const run = (options: FakeFsOptions, writeBaseline = false) =>
 	Effect.runPromise(
@@ -30,18 +33,20 @@ const config = (over: Readonly<Record<string, unknown>> = {}): string =>
 		...over,
 	});
 
-/** A tree with `tokens.css` plus one component stylesheet under `components/`. */
+/** A tree with the package raw layer plus CSS in both the app and design package. */
 const tree = (componentCss: string, configText = config()): FakeFsOptions => ({
-	directories: [SRC, STYLES, `${SRC}/components`],
+	directories: [APP_SRC, `${APP_SRC}/components`, STYLES, DESIGN_SRC],
 	dirs: {
-		[SRC]: ["styles", "components"],
-		[STYLES]: ["tokens.css", "design-token-lint.config.json"],
-		[`${SRC}/components`]: ["Alert.css"],
+		[APP_SRC]: ["components"],
+		[`${APP_SRC}/components`]: ["App.css"],
+		[STYLES]: ["design-token-lint.config.json"],
+		[DESIGN_SRC]: ["tokens.css", "Alert.css"],
 	},
 	files: {
 		[CONFIG]: configText,
 		[TOKENS]: ":root {\n  --surface: #101010;\n}\n",
-		[`${SRC}/components/Alert.css`]: componentCss,
+		[APP_COMPONENT_CSS]: ".app { color: var(--surface); }\n",
+		[DESIGN_COMPONENT_CSS]: componentCss,
 	},
 });
 
@@ -81,15 +86,19 @@ describe("runDesignTokenGuard", () => {
 		);
 		expect(
 			outcome.stderr.some((l) =>
-				l.startsWith("::error file=apps/web/src/components/Alert.css,line=2::"),
+				l.startsWith("::error file=packages/design/src/Alert.css,line=2::"),
 			),
 		).toBe(true);
 	});
 
 	it("fails closed when no CSS file is in scope", async () => {
 		const outcome = await run({
-			directories: [SRC, STYLES],
-			dirs: {[SRC]: ["styles"], [STYLES]: ["design-token-lint.config.json"]},
+			directories: [APP_SRC, STYLES, DESIGN_SRC],
+			dirs: {
+				[APP_SRC]: [],
+				[STYLES]: ["design-token-lint.config.json"],
+				[DESIGN_SRC]: [],
+			},
 			files: {[CONFIG]: config()},
 		});
 		expect(outcome.code).toBe(ZERO_SCOPE);
@@ -111,7 +120,7 @@ describe("runDesignTokenGuard", () => {
 	it("is UNKNOWN when a CSS file exists and cannot be read", async () => {
 		const outcome = await run({
 			...tree(".a {}\n"),
-			unreadable: [`${SRC}/components/Alert.css`],
+			unreadable: [DESIGN_COMPONENT_CSS],
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 	});
@@ -122,11 +131,11 @@ describe("runDesignTokenGuard", () => {
 		const unlistable = tree(".a {\n  background: var(--surface);\n}\n");
 		const outcome = await run({
 			...unlistable,
-			dirs: {...unlistable.dirs, [`${SRC}/components`]: null},
+			dirs: {...unlistable.dirs, [DESIGN_SRC]: null},
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stdout).toBe("");
-		expect(outcome.stderr.join("\n")).toContain(`${SRC}/components`);
+		expect(outcome.stderr.join("\n")).toContain(DESIGN_SRC);
 	});
 });
 
@@ -146,7 +155,7 @@ describe("--write-baseline", () => {
 		);
 		expect(outcome.code).toBe(0);
 		const written = JSON.parse(fake.written.get(CONFIG) ?? "{}");
-		expect(written.rawPxCeilings).toEqual({"apps/web/src/components/Alert.css": 1});
+		expect(written.rawPxCeilings).toEqual({"packages/design/src/Alert.css": 1});
 		expect(written.externalProperties).toEqual(["--injected"]);
 		expect(written.note).toBe("keep me");
 	});

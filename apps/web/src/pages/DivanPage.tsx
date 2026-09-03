@@ -6,6 +6,8 @@
  * - It reads ONLY the `sandboxBacklogWhere` destination, never the inline `{mod, author}`
  *   filter, so çaylak work stays visible only inside the divan.
  */
+
+import {Alert, Button} from "@kampus/design";
 import {useEffect, useState} from "react";
 import {useMe} from "../auth/useMe";
 import {CaylakDetail} from "../components/divan/CaylakDetail";
@@ -15,8 +17,6 @@ import {useSetDivanSubnavContent} from "../components/divan/DivanSubnavLayout";
 import {Raporlar} from "../components/divan/Raporlar";
 import {TriageLoop} from "../components/divan/TriageLoop";
 import type {SubnavFilter} from "../components/layout/Subnav";
-import {Alert} from "../components/ui/Alert";
-import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
 import "../components/divan/Divan.css";
 

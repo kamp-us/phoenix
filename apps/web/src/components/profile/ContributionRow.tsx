@@ -1,13 +1,13 @@
 // `Contribution` is one discriminant view carrying every variant's fields as
 // nullables, so this row switches on `kind` with no union type. See ADR 0018.
+
+import {Badge, SandboxMarker} from "@kampus/design";
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
-import {Badge} from "../ui/Badge";
-import {SandboxMarker} from "../ui/SandboxMarker";
 import "./ContributionRow.css";
 
 export const ContributionView = view<Contribution>()({

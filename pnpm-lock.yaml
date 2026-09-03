@@ -256,6 +256,9 @@ importers:
       '@kampus/db-schema':
         specifier: workspace:*
         version: link:../../packages/db-schema
+      '@kampus/design':
+        specifier: workspace:*
+        version: link:../../packages/design
       '@kampus/fate-effect':
         specifier: workspace:*
         version: link:../../packages/fate-effect
@@ -326,12 +329,6 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.92(effect@4.0.0-beta.92(patch_hash=9557e68464da6a36ba3f9156d4a74af640d8c56091d612b87e392d7339434922))(vitest@4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
-      '@fontsource/ibm-plex-sans':
-        specifier: 'catalog:'
-        version: 5.2.8
-      '@fontsource/jetbrains-mono':
-        specifier: 'catalog:'
-        version: 5.2.8
       '@kampus/admin-grant':
         specifier: workspace:*
         version: link:../../packages/admin-grant
@@ -362,15 +359,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: 'catalog:'
         version: 6.0.2(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
-      axe-core:
-        specifier: 'catalog:'
-        version: 4.12.1
       drizzle-kit:
         specifier: 'catalog:'
         version: 1.0.0-rc.4
-      fast-check:
-        specifier: 'catalog:'
-        version: 3.23.2
       jsdom:
         specifier: 'catalog:'
         version: 26.1.0
@@ -693,6 +684,61 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/design:
+    dependencies:
+      '@fontsource/ibm-plex-sans':
+        specifier: 'catalog:'
+        version: 5.2.8
+      '@fontsource/jetbrains-mono':
+        specifier: 'catalog:'
+        version: 5.2.8
+      '@manti-ui/react':
+        specifier: 'catalog:'
+        version: 0.9.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      lucide-react:
+        specifier: 'catalog:'
+        version: 1.23.0(react@19.2.6)
+      react:
+        specifier: 'catalog:'
+        version: 19.2.6
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.6(react@19.2.6)
+    devDependencies:
+      '@testing-library/react':
+        specifier: 'catalog:'
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.2
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-react':
+        specifier: 'catalog:'
+        version: 6.0.2(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      axe-core:
+        specifier: 'catalog:'
+        version: 4.12.1
+      fast-check:
+        specifier: 'catalog:'
+        version: 3.23.2
+      jsdom:
+        specifier: 'catalog:'
+        version: 26.1.0
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vite:
+        specifier: 'catalog:'
+        version: 8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.2)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))

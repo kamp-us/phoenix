@@ -4,11 +4,11 @@
  * ONE entry whose `Geri getir` restores the batch as a unit; a lone removal keeps its single
  * `report.restore`. A restored row/wave drops from the feed — it is no longer resolved.
  */
+
+import {Alert, Button} from "@kampus/design";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {ResolvedReport, ResolveReceipt} from "../../../worker/features/report/views";
-import {Alert} from "../ui/Alert";
-import {Button} from "../ui/Button";
 import {
 	decisionLabel,
 	groupDecisionFeed,

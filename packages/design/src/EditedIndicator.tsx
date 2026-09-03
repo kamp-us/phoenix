@@ -1,4 +1,4 @@
-import {editedAfter, formatEditedTooltipTR} from "../../lib/datetime";
+import {editedAfter, formatEditedTooltipTR} from "./edited-indicator-datetime";
 import {Tooltip} from "./Tooltip";
 
 /**

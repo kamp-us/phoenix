@@ -500,7 +500,7 @@
 }
 
 /* Shell (surface-raised · border · r-sm · pad-lg) is the shared Surface primitive
-   (ui/Card.css, #2163); only the card's own column layout stays here. */
+   (packages/design/src/Card.css, #2163); only the card's own column layout stays here. */
 .kp-triage__card {
 	display: flex;
 	flex-direction: column;
@@ -645,7 +645,7 @@
 	}
 }
 
-/* Shell is the shared Surface primitive (ui/Card.css, #2163); layout stays here. */
+/* Shell is the shared Surface primitive (packages/design/src/Card.css, #2163); layout stays here. */
 .kp-actor {
 	display: flex;
 	flex-direction: column;
@@ -716,7 +716,7 @@
 
 /* remove-the-wave (#1855): the same-author batch manifest, docked over the loop when
    the mod grabs a flood with Shift-X. */
-/* Shell is the shared Surface primitive (ui/Card.css, #2163); layout stays here. */
+/* Shell is the shared Surface primitive (packages/design/src/Card.css, #2163); layout stays here. */
 .kp-wave {
 	display: flex;
 	flex-direction: column;
@@ -767,12 +767,12 @@
 	background: var(--surface);
 }
 
-.kp-wave__row[data-selected="true"] .kp-wave__check {
-	color: var(--danger);
-}
-
 .kp-wave__check {
 	color: var(--text-muted);
+}
+
+.kp-wave__row[data-selected="true"] .kp-wave__check {
+	color: var(--danger);
 }
 
 .kp-wave__kind {

@@ -6,14 +6,11 @@
  * actionable rather than dropping it. The pure decisions live DOM-free in `triage-loop.ts`;
  * this component is the thin React shell over them.
  */
+
+import {Alert, Badge, Button, Kbd, Surface} from "@kampus/design";
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport, ResolveReceipt} from "../../../worker/features/report/views";
-import {Alert} from "../ui/Alert";
-import {Kbd} from "../ui/atoms";
-import {Badge} from "../ui/Badge";
-import {Button} from "../ui/Button";
-import {Surface} from "../ui/Card";
 import {ActorDrawer} from "./ActorDrawer";
 import {type Chamber, drawerDefaultOpen, drawerKeyToAction, hopTarget} from "./actor-drawer";
 import {itemKindLabel, parseBacklogItemId} from "./divanGating";

@@ -1,3 +1,4 @@
+import {Button, ToastProvider, TooltipProvider} from "@kampus/design";
 import {createContext, lazy, Suspense, useContext, useEffect, useMemo, useState} from "react";
 import {
 	Navigate,
@@ -27,9 +28,6 @@ import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
 import {SozlukSubnavLayout} from "./components/sozluk/SozlukSubnavLayout";
-import {Button} from "./components/ui/Button";
-import {ToastProvider} from "./components/ui/Toast";
-import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {readBootUser} from "./flags/boot";

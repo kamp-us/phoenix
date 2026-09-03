@@ -2,11 +2,12 @@
  * `/bildirimler` — ships dark behind the default-off `phoenix-bildirim` flag. The gate's shape is
  * `.patterns/flag-dark-page-gate.md`.
  */
+
+import {Alert} from "@kampus/design";
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
 import {BildirimList} from "../components/bildirim/BildirimList";
 import {shouldRenderBildirimPage} from "../components/bildirim/bildirim";
-import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {PHOENIX_BILDIRIM} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";

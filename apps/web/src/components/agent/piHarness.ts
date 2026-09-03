@@ -1,3 +1,5 @@
+import type {AgentChatInputBridge} from "@kampus/design";
+
 export type PiDeliveryMode = "prompt" | "steer" | "follow_up";
 export type PiStreamingBehavior = "steer" | "followUp";
 export type PiProjectTrust = "approve" | "no-approve";
@@ -208,3 +210,19 @@ export function subscribeToPiEvents(
 	};
 	return () => source.close();
 }
+
+/** The local browser transport stays app-owned; the shared composer receives it explicitly. */
+export const agentChatInputBridge: AgentChatInputBridge = {
+	loadPiState,
+	loadPiCommands,
+	loadPiModels,
+	loadPiThinkingLevels,
+	loadPiFiles,
+	setPiModel,
+	setPiThinkingLevel,
+	setPiProjectTrust,
+	sendPiPrompt,
+	abortPi,
+	answerPiExtension,
+	subscribeToPiEvents,
+};

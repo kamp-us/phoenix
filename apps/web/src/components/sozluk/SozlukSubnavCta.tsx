@@ -1,9 +1,7 @@
+import {Button, Dialog, Form, Input} from "@kampus/design";
 import * as React from "react";
 import {useNavigate} from "react-router";
 import {slugifyTerm} from "../../lib/slugifyTerm";
-import {Button} from "../ui/Button";
-import {Dialog} from "../ui/Dialog";
-import {Form, Input} from "../ui/Form";
 import {useSozlukCreateDialog} from "./SozlukCreateDialogState";
 
 // sözlük's create CTA — never a second search surface; the "go to a term" search folded

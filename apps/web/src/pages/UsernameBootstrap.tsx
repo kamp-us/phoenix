@@ -3,11 +3,12 @@
  * has `username === null`. The mutation THROWS for some failures and returns `{error}`
  * for others, so both paths are handled below — see `.patterns/fate-mutations-client.md`.
  */
+
+import {Alert, Button, Form, Input} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {deriveUsernameFromEmail} from "../../worker/features/pasaport/username-rule";
-import {Alert, Button, Form, Input} from "../components/ui";
 import {codeOf} from "../fate/wire";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";

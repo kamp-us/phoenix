@@ -1,5 +1,7 @@
 // Gating mirrors the mutations: signed-in only, NOT tier-gated (a çaylak may follow),
 // unlike publishing. Dark until a human flips `MECMUA_FEED` at release (ADR 0083).
+
+import {Alert, Button} from "@kampus/design";
 import {useMemo, useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {MecmuaSubscriptionReceipt} from "../../../worker/features/fate/views";
@@ -8,8 +10,6 @@ import {useMe} from "../../auth/useMe";
 import {useImperativeView} from "../../fate/useImperativeView";
 import {MECMUA_FEED} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
-import {Alert} from "../ui/Alert";
-import {Button} from "../ui/Button";
 import "./MecmuaSubscribeButton.css";
 
 const SubscriptionView = view<MecmuaSubscriptionReceipt>()({

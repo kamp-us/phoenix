@@ -1,5 +1,5 @@
+import {Button} from "@kampus/design";
 import {Link} from "react-router";
-import {Button} from "../ui/Button";
 import "./EmailDeliveryNotice.css";
 
 // The failing state is carried by text, never color alone — four-pillars a11y (ADR 0162).

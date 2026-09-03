@@ -4,10 +4,11 @@
  * can't re-diverge (the raw-markdown bug #2578). Client-only; SEO/prerender is deferred.
  * Ships dark behind `MECMUA_PUBLIC_READ` (default-off; `.patterns/flag-dark-page-gate.md`).
  */
+
+import {Alert} from "@kampus/design";
 import {lazy, Suspense, useEffect, useState} from "react";
 import {useParams} from "react-router";
 import {MecmuaSubscribeButton} from "../components/mecmua/MecmuaSubscribeButton";
-import {Alert} from "../components/ui/Alert";
 import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {NotFoundPage} from "./NotFoundPage";

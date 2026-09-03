@@ -1,5 +1,5 @@
+import {CopyLinkButton} from "@kampus/design";
 import type * as React from "react";
-import {CopyLinkButton} from "../../../components/ui/CopyLinkButton";
 import {defineExhibit} from "../exhibit";
 
 export const copyLinkButtonExhibit = defineExhibit<React.ComponentProps<typeof CopyLinkButton>>({

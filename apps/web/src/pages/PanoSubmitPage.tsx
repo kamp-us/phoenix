@@ -1,3 +1,4 @@
+import {Alert, Button, DraftRestoreBanner, Input, Textarea, ToggleGroup} from "@kampus/design";
 import {ArrowLeft} from "lucide-react";
 import * as React from "react";
 import {useFateClient} from "react-fate";
@@ -7,11 +8,6 @@ import {FirstContributionOnramp} from "../components/authorship/FirstContributio
 import {Icon} from "../components/Icon";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
-import {Alert} from "../components/ui/Alert";
-import {Button} from "../components/ui/Button";
-import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
-import {Input, Textarea} from "../components/ui/Form";
-import {ToggleGroup} from "../components/ui/ToggleGroup";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import type {WireMessageOverrides} from "../fate/wireMessages";
 import {panoSubmitGate} from "../lib/panoSubmitGate";

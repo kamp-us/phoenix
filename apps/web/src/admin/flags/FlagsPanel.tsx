@@ -1,6 +1,5 @@
+import {Alert, Button} from "@kampus/design";
 import {useState} from "react";
-import {Alert} from "../../components/ui/Alert";
-import {Button} from "../../components/ui/Button";
 import {DECLARED_FLAGS} from "../../flags/keys";
 import "./FlagsPanel.css";
 import {

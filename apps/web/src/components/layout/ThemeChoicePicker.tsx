@@ -1,5 +1,5 @@
+import {ToggleGroup} from "@kampus/design";
 import type {ThemeChoice} from "../../lib/theme";
-import {ToggleGroup} from "../ui/ToggleGroup";
 import "./ThemeChoicePicker.css";
 
 // The three-way theme control that replaces the topbar tema toggle (#2612). The

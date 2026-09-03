@@ -1,8 +1,8 @@
 /* Global reset + body defaults.
    Everything else lives in component CSS modules.            */
 
-@import "./fonts.css";
-@import "./tokens.css";
+@import "@kampus/design/fonts.css";
+@import "@kampus/design/tokens.css";
 
 *,
 *::before,

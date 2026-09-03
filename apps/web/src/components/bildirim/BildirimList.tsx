@@ -1,11 +1,12 @@
 /** `BildirimList` — the notification center's list (#1694), with per-row and mark-all read actions. */
+
+import {Button} from "@kampus/design";
 import {useEffect, useRef, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Notification, NotificationMarkReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {LoadMoreButton} from "../../fate/wire";
-import {Button} from "../ui/Button";
 import {bildirimCopy, bildirimTarget, rowUnread, targetLinkLabel} from "./bildirim";
 import {useBildirimUnread} from "./useBildirimUnread";
 
