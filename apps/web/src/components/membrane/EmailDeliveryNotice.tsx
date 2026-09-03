@@ -1,4 +1,5 @@
 import {Link} from "react-router";
+import {useT} from "../../i18n";
 import {Button} from "../ui/Button";
 import "./EmailDeliveryNotice.css";
 
@@ -10,19 +11,17 @@ export function EmailDeliveryNotice({
 	recoveryHref: string;
 	onDismiss?: () => void;
 }) {
+	const t = useT();
 	return (
 		<section
 			className="kp-email-notice"
 			role="status"
-			aria-label="e-posta teslimat uyarısı"
+			aria-label={t("membrane.emailNotice.label")}
 			data-testid="email-delivery-notice"
 		>
 			<div className="kp-email-notice__body">
-				<p className="kp-email-notice__title">e-postana ulaşamıyoruz</p>
-				<p className="kp-email-notice__text">
-					adresine gönderdiğimiz e-postalar geri dönüyor — giriş bağlantıların ve doğrulama
-					e-postaların sana ulaşmıyor olabilir. adresini güncelle ya da yeniden doğrula.
-				</p>
+				<p className="kp-email-notice__title">{t("membrane.emailNotice.title")}</p>
+				<p className="kp-email-notice__text">{t("membrane.emailNotice.text")}</p>
 			</div>
 			<div className="kp-email-notice__actions">
 				<Link
@@ -30,7 +29,7 @@ export function EmailDeliveryNotice({
 					className="kp-btn kp-btn--primary kp-email-notice__cta"
 					data-testid="email-delivery-notice-cta"
 				>
-					e-postanı güncelle
+					{t("membrane.emailNotice.cta")}
 				</Link>
 				{onDismiss ? (
 					<Button
@@ -40,7 +39,7 @@ export function EmailDeliveryNotice({
 						onClick={onDismiss}
 						data-testid="email-delivery-notice-dismiss"
 					>
-						kapat
+						{t("membrane.emailNotice.dismiss")}
 					</Button>
 				) : null}
 			</div>

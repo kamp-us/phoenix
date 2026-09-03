@@ -54,6 +54,18 @@ The consumer takes the bound `Translate`, never a `Locale`: `en` is reachable on
 `catalog.ts`'s dynamic import, so a module outside a `LocaleProvider` subtree cannot resolve
 English synchronously. A module-level rule that needs copy is curried on `t` and the component
 supplies it — see `validateCommentBody` in `pages/PanoPostDetail.tsx`.
+A catalog file may carry a **cluster** of sub-surfaces rather than one, each keeping its own key
+prefix — `i18n/tr/account.ts` holds `profile.*`, `bildirim.*`, `mute.*`, `ui.*` and the rest of the
+identity-facing copy. Split a file per component directory only when the directories move
+independently; nine files nothing else distinguishes are nine merge targets, not nine surfaces.
+
+## Copy a pure helper decides
+
+A helper outside a component picks the **key**, never the string: `bildirimCopy`,
+`profileStandingLabelKey`, `shareFeedbackLabelKey`. It returns a `CatalogKey` (or takes a
+`Translate` when it also has to interpolate), so the one catalog read stays at the render site and
+the helper's unit test asserts against `tr[key]` instead of a literal. `plural` is generic in its
+form type, so `t(plural(locale, n, {one: "…", other: "…"}))` type-checks with two keys.
 
 ## The two type checks, and why they are in different files
 
@@ -91,6 +103,11 @@ unchanged.
 `brandNouns.ts` is the list, and `brandNouns.unit.test.ts` grades every key: a noun appears the same
 number of times in `en` as in `tr`, matched **whole-word**. Turkish is agglutinative, so
 `bildirimler` contains `bildir` and a substring match would call every suffixed word a brand noun.
+
+That whole-word rule constrains the English side: where the Turkish message carries only a
+**suffixed** form (`divandaki`, `yazarsın`, `çaylakların`) the noun's count for that key is zero,
+so the English must not reach for the bare noun either — write around it (`up for review`, `one of
+the yazars`) rather than reintroduce it and red the test.
 
 ## Plurals
 

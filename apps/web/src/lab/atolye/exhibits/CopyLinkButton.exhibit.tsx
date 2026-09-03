@@ -9,6 +9,5 @@ export const copyLinkButtonExhibit = defineExhibit<React.ComponentProps<typeof C
 	component: CopyLinkButton,
 	knobs: {
 		path: {kind: "string", label: "Path", default: "/pano/ornek"},
-		label: {kind: "string", label: "Label", default: "paylaş"},
 	},
 });

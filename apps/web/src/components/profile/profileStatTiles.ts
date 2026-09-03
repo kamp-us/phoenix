@@ -4,6 +4,7 @@
  * `karma` tile is appended by `ProfileHeader` and deliberately stays out of this
  * reorderable set.
  */
+import type {CatalogKey} from "../../i18n/keys";
 
 export interface ProfileActivityCounts {
 	readonly definitionCount: number;
@@ -16,13 +17,23 @@ export interface ProfileStatTile {
 	/** The `data-testid` the profile e2e keys on. */
 	readonly testId: string;
 	readonly value: number;
-	readonly label: string;
+	readonly labelKey: CatalogKey;
 }
 
 export function profileStatTiles(counts: ProfileActivityCounts): ProfileStatTile[] {
 	return [
-		{key: "definitions", testId: "stat-definitions", value: counts.definitionCount, label: "tanım"},
-		{key: "posts", testId: "stat-posts", value: counts.postCount, label: "başlık"},
-		{key: "comments", testId: "stat-comments", value: counts.commentCount, label: "yorum"},
+		{
+			key: "definitions",
+			testId: "stat-definitions",
+			value: counts.definitionCount,
+			labelKey: "profile.stat.definitions",
+		},
+		{key: "posts", testId: "stat-posts", value: counts.postCount, labelKey: "profile.stat.posts"},
+		{
+			key: "comments",
+			testId: "stat-comments",
+			value: counts.commentCount,
+			labelKey: "profile.stat.comments",
+		},
 	];
 }

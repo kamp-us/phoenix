@@ -1,5 +1,7 @@
 /** The bildirim surface's render decisions (#1694), factored out so they test without a DOM. */
 import type {NotificationKind} from "../../../worker/features/bildirim/kind";
+import type {CatalogKey, Locale, Translate} from "../../i18n";
+import {plural} from "../../i18n";
 
 /** Flag off (and every flag failure mode) renders the 404 — the dark ship, ADR 0083. */
 export function shouldRenderBildirimPage(flagOn: boolean): boolean {
@@ -29,45 +31,63 @@ export function rowUnread(
 	return readAt == null && !markedThisSession && !allMarkedThisSession;
 }
 
-// R1.1 on #7049 ruled the count into the backlog-release copy, with a distinct zero arm
-// for a sweep that published nothing. Both arms are required fields, so shipping the kind
-// with either arm missing is a compile error — "0 yazınız…" stays unrepresentable.
-const BACKLOG_RELEASE_COPY: {zero: string; some: (count: number) => string} = {
-	zero: "bundan sonra yazılarınız herkese açık",
-	some: (count) => `${count} yazınız artık herkese açık`,
+/** The catalog and the locale the count pluralizes under, threaded in from the render site. */
+export interface BildirimCopyContext {
+	readonly t: Translate;
+	readonly locale: Locale;
+	readonly count: number;
+}
+
+const pluralCopy =
+	(one: CatalogKey, other: CatalogKey) =>
+	({t, locale, count}: BildirimCopyContext) =>
+		t(plural(locale, count, {one, other}), {count});
+
+const fixedCopy =
+	(key: CatalogKey) =>
+	({t}: BildirimCopyContext) =>
+		t(key);
+
+// R1.1 on #7049 ruled the count into the backlog-release copy, with a distinct zero arm for a
+// sweep that published nothing. Zero is not an `Intl.PluralRules` category in either locale, so
+// it is a branch rather than a plural form; both arms are required fields, so shipping the kind
+// with either missing is a compile error — "0 yazınız…" stays unrepresentable.
+const BACKLOG_RELEASE_KEYS: {zero: CatalogKey; some: CatalogKey} = {
+	zero: "bildirim.kind.backlogRelease.zero",
+	some: "bildirim.kind.backlogRelease.some",
 };
 
 // `satisfies Record<NotificationKind, …>` keeps the map exhaustive over the shared kind
 // union (#2016): a new emitter kind without its copy is a compile error, not a raw wire
 // identifier rendered to a reader.
 const KIND_COPY = {
-	"divan-vote": (count) =>
-		count > 1 ? `divandaki içeriğin ${count} oy aldı` : "divandaki içeriğin oy aldı",
-	kefil: () => "bir yazar sana kefil oldu",
-	terfi: () => "tebrikler, artık bir yazarsın!",
-	reply: (count) => (count > 1 ? `gönderine ${count} yanıt geldi` : "gönderine yanıt geldi"),
-	vote: (count) => (count > 1 ? `içeriğin ${count} yeni oy aldı` : "içeriğin 1 yeni oy aldı"),
-	"report-filed": (count) =>
-		count > 1 ? `${count} yeni içerik bildirildi` : "yeni bir içerik bildirildi",
-	"caylak-pending": () => "yeni bir çaylak divanda incelenmeyi bekliyor",
-	"backlog-release": (count) =>
-		count > 0 ? BACKLOG_RELEASE_COPY.some(count) : BACKLOG_RELEASE_COPY.zero,
-} satisfies Record<NotificationKind, (count: number) => string>;
+	"divan-vote": pluralCopy("bildirim.kind.divanVote.one", "bildirim.kind.divanVote.other"),
+	kefil: fixedCopy("bildirim.kind.kefil"),
+	terfi: fixedCopy("bildirim.kind.terfi"),
+	reply: pluralCopy("bildirim.kind.reply.one", "bildirim.kind.reply.other"),
+	vote: pluralCopy("bildirim.kind.vote.one", "bildirim.kind.vote.other"),
+	"report-filed": pluralCopy("bildirim.kind.reportFiled.one", "bildirim.kind.reportFiled.other"),
+	"caylak-pending": fixedCopy("bildirim.kind.caylakPending"),
+	"backlog-release": (ctx: BildirimCopyContext) =>
+		ctx.count > 0
+			? ctx.t(BACKLOG_RELEASE_KEYS.some, {count: ctx.count})
+			: ctx.t(BACKLOG_RELEASE_KEYS.zero),
+} satisfies Record<NotificationKind, (ctx: BildirimCopyContext) => string>;
 
 /** An unknown kind — a future emitter's, read by an older client — degrades to the raw kind. */
-export function bildirimCopy(kind: string, count: number): string {
-	const copy = (KIND_COPY as Record<string, (count: number) => string>)[kind];
-	if (copy) return copy(count);
-	return count > 1 ? `${kind} ×${count}` : kind;
+export function bildirimCopy(kind: string, ctx: BildirimCopyContext): string {
+	const copy = (KIND_COPY as Record<string, (ctx: BildirimCopyContext) => string>)[kind];
+	if (copy) return copy(ctx);
+	return ctx.count > 1 ? ctx.t("bildirim.kind.unknown", {kind, count: ctx.count}) : kind;
 }
 
-const TARGET_LINK_LABELS: Record<string, string> = {
-	post: "gönderiye git",
-	comment: "yoruma git",
-	definition: "tanıma git",
-	user: "profile git",
+const TARGET_LINK_KEYS: Record<string, CatalogKey> = {
+	post: "bildirim.target.post",
+	comment: "bildirim.target.comment",
+	definition: "bildirim.target.definition",
+	user: "bildirim.target.user",
 };
 
-export function targetLinkLabel(targetKind: string): string {
-	return TARGET_LINK_LABELS[targetKind] ?? "içeriğe git";
+export function targetLinkLabelKey(targetKind: string): CatalogKey {
+	return TARGET_LINK_KEYS[targetKind] ?? "bildirim.target.fallback";
 }

@@ -1,4 +1,6 @@
+import {account} from "./account";
 import {layout} from "./layout";
+import {mecmua} from "./mecmua";
 import {wire} from "./wire";
 
 /**
@@ -7,6 +9,8 @@ import {wire} from "./wire";
  * then checked against it (ADR 0347).
  */
 export const tr = {
+	...account,
 	...layout,
+	...mecmua,
 	...wire,
 };

@@ -27,11 +27,12 @@ import {
 import {
 	caylakPromotionPath,
 	useAuthorshipStanding,
-	vouchExistsLabel,
+	vouchExistsLabelKey,
 } from "../components/profile/CaylakStatusBlock";
 import {Button} from "../components/ui/Button";
 import {PHOENIX_WELCOME} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {authRedirectPath} from "../lib/returnTo";
 import {NotFoundPage} from "./NotFoundPage";
 import {welcomeAddressing, welcomeGate, welcomeReturnTo} from "./welcomeGating";
@@ -43,6 +44,7 @@ export function WelcomePage() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const {me} = useMe();
+	const t = useT();
 
 	const returnTo = welcomeReturnTo(location.search);
 	const userId = session.data?.user.id ?? null;
@@ -121,8 +123,8 @@ export function WelcomePage() {
 							<p className="kp-welcome__line">hesabın yeni açıldı; henüz bir çaylaksın.</p>
 							{promotionPath?.kind === "vouch-needed" ? (
 								<div className="kp-welcome__vouch-needed" data-testid="welcome-vouch-needed">
-									<p className="kp-welcome__vouch-message">{promotionPath.message}</p>
-									<p className="kp-welcome__vouch-hint">{promotionPath.hint}</p>
+									<p className="kp-welcome__vouch-message">{t(promotionPath.messageKey)}</p>
+									<p className="kp-welcome__vouch-hint">{t(promotionPath.hintKey)}</p>
 								</div>
 							) : null}
 							{promotionPath?.kind === "karma-bar" && standing ? (
@@ -138,7 +140,7 @@ export function WelcomePage() {
 									<div className="kp-welcome__fact">
 										<dt className="kp-welcome__term">kefil</dt>
 										<dd className="kp-welcome__value" data-testid="welcome-vouch">
-											{vouchExistsLabel(standing.vouchExists)}
+											{t(vouchExistsLabelKey(standing.vouchExists))}
 										</dd>
 									</div>
 								</dl>

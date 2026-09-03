@@ -6,11 +6,13 @@
  */
 import type {Locale} from "./locale";
 
-export interface PluralForms {
-	readonly one: string;
-	readonly other: string;
+export interface PluralForms<T extends string = string> {
+	readonly one: T;
+	readonly other: T;
 }
 
-export function plural(locale: Locale, count: number, forms: PluralForms): string {
+// Generic in the form type so a caller passing two `CatalogKey`s gets a `CatalogKey` back and
+// can feed it straight to `t` — the arms are picked, never concatenated.
+export function plural<T extends string>(locale: Locale, count: number, forms: PluralForms<T>): T {
 	return new Intl.PluralRules(locale).select(count) === "one" ? forms.one : forms.other;
 }
