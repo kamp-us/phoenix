@@ -83,6 +83,14 @@ catalog:
   yaml: 2.9.0
   zod: 4.4.3
 
+# apps/tuval's own Effect pin. The kernel epic (#7496) runs on 4.0.0-rc.112 while everything else
+# sits on beta.92; a named catalog keeps one declared version per consumer set, so the rc never
+# leaks into apps/web or the CLIs and the beta never leaks into Tuval.
+catalogs:
+  tuval:
+    '@effect/vitest': 4.0.0-rc.112
+    effect: 4.0.0-rc.112
+
 cleanupUnusedCatalogs: true
 
 onlyBuiltDependencies:
