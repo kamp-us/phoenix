@@ -401,6 +401,29 @@ delete authority a property of **loaded data** rather than of source: it is comp
 `boardVocabulary`, so a repo that renames a status cannot end up with a facet that deletes labels
 nobody declared.
 
+### Tuval: program, process, window
+
+Tuval's three nouns, ruled by [#7484 R1.1](https://github.com/kamp-us/phoenix/issues/7484#issuecomment-5505745671)
+("let's be boring and choose program and process for now") and first used in code by the registry
+slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `apps/tuval` (ADR
+[0345](../.decisions/0345-tuval-lives-under-apps.md)). English technical terms, per §3.
+
+- **program** — one registry row: a stable id, a private Demlik core machine, public typed port
+  schemas, host handlers, a capability request list, an optional renderer reference, and the
+  #7467 identity / capability / placement records as inert data. A program is *exactly* one row;
+  there is no second species and no view-only exemption. Source:
+  [`apps/tuval/src/registry/program.ts`](../apps/tuval/src/registry/program.ts).
+- **process** — one running instance of a program: a stable id, a parent, ports, a lifecycle.
+  Always say **"OS process"** for the operating-system kind; a bare "process" in Tuval prose is
+  this one.
+- **window** — a view onto a process, the Vim-buffer model: many windows may show one process at
+  once, all sharing the process state, each window owning its own view state (scroll, selection).
+
+"Widget" and "actor" are **retired** for Tuval's own surfaces — an older doc that says either
+means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
+noted as a future-feeling alternative and is not adopted.
+
+
 ---
 
 ## 3. Product / brand nouns (Turkish surface)
