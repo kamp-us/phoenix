@@ -52,6 +52,7 @@ import {
 	Flagship,
 	funnelCohortFlag,
 	karmaGatesFlag,
+	localeFlag,
 	mecmuaFeedFlag,
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
@@ -153,6 +154,10 @@ export default Alchemy.Stack(
 		// seam the post-auth redirect intercept in App.tsx and the /hosgeldin welcome surface
 		// gate behind, so the new-user arrival ships dark until a human release.
 		yield* welcomeFlag(flagship.appId);
+		// The locale-choice dark-ship flag, default-off (#7527, epic #7519) — the seam the
+		// UserMenu `dil` row gates behind, so every reader stays on the Turkish default until
+		// a human release. The catalog under it serves `tr` either way (ADR 0347).
+		yield* localeFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

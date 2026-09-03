@@ -36,6 +36,7 @@ import {readBootUser} from "./flags/boot";
 import {EdgeShellBootMarker} from "./flags/EdgeShellBoot";
 import {MECMUA_PUBLIC_READ, PHOENIX_BILDIRIM, PHOENIX_WELCOME} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
+import {LocaleProvider} from "./i18n";
 import {AtolyeExhibitPage} from "./lab/atolye/AtolyeExhibitPage";
 import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
 import {DensityProvider} from "./lib/density";
@@ -415,56 +416,58 @@ export function App() {
 	const divanRoutes = [<Route key="divan" path="/divan" element={<DivanPage />} />];
 	return (
 		<ThemeProvider>
-			<DensityProvider>
-				<Routes>
-					<Route element={<Layout />}>
-						<Route path="/" element={<LandingPage />} />
-						<Route key="pano-zone" element={<PanoSubnavLayout />}>
-							{panoRoutes}
-						</Route>
-						<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
-							{mecmuaRoutes}
-						</Route>
-						<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
-							{sozlukRoutes}
-						</Route>
-						<Route key="divan-zone" element={<DivanSubnavLayout />}>
-							{divanRoutes}
-						</Route>
-						<Route path="/search" element={<SearchPage />} />
-						<Route path="/auth" element={<AuthPage />} />
-						{/* The welcome moment (#7043) — dark behind phoenix-welcome; the page owns
+			<LocaleProvider>
+				<DensityProvider>
+					<Routes>
+						<Route element={<Layout />}>
+							<Route path="/" element={<LandingPage />} />
+							<Route key="pano-zone" element={<PanoSubnavLayout />}>
+								{panoRoutes}
+							</Route>
+							<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
+								{mecmuaRoutes}
+							</Route>
+							<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
+								{sozlukRoutes}
+							</Route>
+							<Route key="divan-zone" element={<DivanSubnavLayout />}>
+								{divanRoutes}
+							</Route>
+							<Route path="/search" element={<SearchPage />} />
+							<Route path="/auth" element={<AuthPage />} />
+							{/* The welcome moment (#7043) — dark behind phoenix-welcome; the page owns
 						    its own visibility per `.patterns/flag-dark-page-gate.md`. */}
-						<Route path={WELCOME_PATH} element={<WelcomePage />} />
-						<Route path="/funnel" element={<FunnelPage />} />
-						<Route path="/bildirimler" element={<BildirimlerPage />} />
-						{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
+							<Route path={WELCOME_PATH} element={<WelcomePage />} />
+							<Route path="/funnel" element={<FunnelPage />} />
+							<Route path="/bildirimler" element={<BildirimlerPage />} />
+							{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
 						    no nav entry; deletable when the rich-composer phase begins. */}
-						<Route
-							path="/lab/composer"
-							element={
-								<Suspense fallback={<ComposerRouteFallback />}>
-									<LabComposerPage />
-								</Suspense>
-							}
-						/>
-						<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
-						<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
-						<Route path="/profile" element={<ProfilePage />} />
-						<Route path="/susturduklarim" element={<MutesPage />} />
-						{/* The yazar's çaylak in-place visibility setting (#6426) — beside the other
+							<Route
+								path="/lab/composer"
+								element={
+									<Suspense fallback={<ComposerRouteFallback />}>
+										<LabComposerPage />
+									</Suspense>
+								}
+							/>
+							<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
+							<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
+							<Route path="/profile" element={<ProfilePage />} />
+							<Route path="/susturduklarim" element={<MutesPage />} />
+							{/* The yazar's çaylak in-place visibility setting (#6426) — beside the other
 						    per-member preference routes; self-404s behind phoenix-caylak-visibility. */}
-						<Route path={CAYLAK_VISIBILITY_PATH} element={<CaylakVisibilityPage />} />
-						<Route path="/u/:username" element={<UserProfilePage />} />
-						{/* The admin console (#2740, epic #2711) — the route element self-gates on
+							<Route path={CAYLAK_VISIBILITY_PATH} element={<CaylakVisibilityPage />} />
+							<Route path="/u/:username" element={<UserProfilePage />} />
+							{/* The admin console (#2740, epic #2711) — the route element self-gates on
 						    the server-authoritative admin probe (denied ⇒ the ordinary not-found
 						    page, invisible-denial), and the console chunk is lazy-imported only past
 						    the gate, so the route ships no console code to a non-admin. */}
-						<Route path="/admin" element={<AdminConsoleRoute />} />
-						<Route path="*" element={<NotFoundPage />} />
-					</Route>
-				</Routes>
-			</DensityProvider>
+							<Route path="/admin" element={<AdminConsoleRoute />} />
+							<Route path="*" element={<NotFoundPage />} />
+						</Route>
+					</Routes>
+				</DensityProvider>
+			</LocaleProvider>
 		</ThemeProvider>
 	);
 }

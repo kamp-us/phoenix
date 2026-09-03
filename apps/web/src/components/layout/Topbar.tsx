@@ -2,6 +2,7 @@ import {Gavel, Search} from "lucide-react";
 import type * as React from "react";
 import {useEffect} from "react";
 import {Link, NavLink} from "react-router";
+import {useT} from "../../i18n";
 import {isSearchShortcut} from "../../lib/searchShortcut";
 import type {ThemeChoice} from "../../lib/theme";
 import {BildirimPopover} from "../bildirim/BildirimPopover";
@@ -53,6 +54,7 @@ export function Topbar({
 	// also renders a sign-in CTA must derive that CTA from this flag's negation (#6660).
 	reserveSignedInSlots?: boolean;
 }) {
+	const t = useT();
 	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <Kbd>⌘K</Kbd> hint below.
 	// preventDefault overrides the browser's own ⌘/Ctrl+K (address-bar) binding.
 	useEffect(() => {
@@ -90,8 +92,8 @@ export function Topbar({
 			to={divanTo}
 			data-testid="topbar-divan-link"
 			className="kp-topbar__signal-link"
-			aria-label="divan"
-			title="divan"
+			aria-label={t("layout.divan")}
+			title={t("layout.divan")}
 		>
 			<Icon icon={Gavel} size={16} />
 			{/* The bildirim bell's exact badge grammar (#6760): the same Badge + the same two
@@ -127,8 +129,8 @@ export function Topbar({
 				className="kp-topbar__search-field"
 				name="q"
 				defaultValue={searchQuery}
-				placeholder="ara…"
-				aria-label="Ara"
+				placeholder={t("layout.search.placeholder")}
+				aria-label={t("layout.search.label")}
 				fullWidth
 				left={<Icon icon={Search} size={12} />}
 				right={<Kbd>⌘K</Kbd>}
