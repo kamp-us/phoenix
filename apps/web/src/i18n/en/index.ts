@@ -1,4 +1,5 @@
 import type {CatalogKey} from "../keys";
+import {auth} from "./auth";
 import {layout} from "./layout";
 import {wire} from "./wire";
 
@@ -11,6 +12,7 @@ import {wire} from "./wire";
  * runs excess-property checks on a plain object literal and not on spread members.
  */
 export const en = {
+	...auth,
 	...layout,
 	...wire,
 } satisfies Record<CatalogKey, string>;
