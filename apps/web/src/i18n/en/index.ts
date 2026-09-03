@@ -1,5 +1,6 @@
 import type {CatalogKey} from "../keys";
 import {layout} from "./layout";
+import {pano} from "./pano";
 import {wire} from "./wire";
 
 /**
@@ -12,5 +13,6 @@ import {wire} from "./wire";
  */
 export const en = {
 	...layout,
+	...pano,
 	...wire,
 } satisfies Record<CatalogKey, string>;

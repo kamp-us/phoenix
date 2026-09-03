@@ -17,6 +17,7 @@ import {FEED_SNAPSHOT_ENABLED} from "../fate/snapshot";
 import {LoadMoreButton} from "../fate/wire";
 import {MEMBER_MUTE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {type CatalogKey, plural, useLocale} from "../i18n";
 import {markFeedPaintOnce} from "../lib/feedPerf";
 import {
 	PANO_FEED_PAGE_SIZE,
@@ -43,7 +44,21 @@ const SavedConnectionView = {
 
 type Chrome = (children: React.ReactNode, meta: React.ReactNode) => React.ReactNode;
 
+/**
+ * The chip copy per filter id. `PANO_FILTERS` still owns the ids, the sorts and their order —
+ * this only names the catalog key for each, because the Turkish `label` it carries predates the
+ * catalog (#7530). A filter added there without a row here falls back to that label, so a new
+ * chip renders rather than vanishing.
+ */
+const FILTER_LABEL_KEYS: Readonly<Record<string, CatalogKey>> = {
+	sicak: "pano.filter.hot",
+	yeni: "pano.filter.new",
+	"en-iyi": "pano.filter.top",
+	tartisma: "pano.filter.discuss",
+};
+
 export function PanoFeed({host}: {host?: string}) {
+	const {t} = useLocale();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const session = useSession();
 	const variant = panoVariantFromParam(searchParams.get(PANO_SORT_PARAM));
@@ -88,8 +103,10 @@ export function PanoFeed({host}: {host?: string}) {
 			error={({code}) =>
 				chrome(
 					<p style={{font: "var(--t-meta)", color: "var(--danger)"}}>
-						{variant.kind === "saved" ? "kaydedilenler" : "başlıklar"} yüklenemedi:{" "}
-						{code.toLowerCase()}
+						{t("pano.feed.loadFailed", {
+							what: t(variant.kind === "saved" ? "pano.filter.saved" : "pano.feed.posts"),
+							code: code.toLowerCase(),
+						})}
 					</p>,
 					"",
 				)
@@ -154,6 +171,7 @@ function FeedRows({
 	chrome: Chrome;
 	muteEnabled: boolean;
 }) {
+	const {locale, t} = useLocale();
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
 	// First-feed-paint instrumentation: latches once per tab, no-op when off. See `feedPerf.ts`.
@@ -161,7 +179,16 @@ function FeedRows({
 		if (items.length > 0) markFeedPaintOnce();
 	}, [items.length]);
 
-	const meta = host ? `${items.length} başlık · ${host}` : `${items.length} başlık`;
+	const count = items.length;
+	const meta = host
+		? plural(locale, count, {
+				one: t("pano.feed.postCountHost.one", {count, host}),
+				other: t("pano.feed.postCountHost.other", {count, host}),
+			})
+		: plural(locale, count, {
+				one: t("pano.feed.postCount.one", {count}),
+				other: t("pano.feed.postCount.other", {count}),
+			});
 
 	return chrome(
 		<>
@@ -204,6 +231,7 @@ type SavedConnection = ReturnType<
 >["savedPosts"];
 
 function SavedRows({connection, chrome}: {connection: SavedConnection; chrome: Chrome}) {
+	const {locale, t} = useLocale();
 	const [items, loadNext] = useLiveListView(SavedConnectionView, connection);
 
 	// Each row reads its `isSaved` via its own `useLiveView` hook, and lifting that read
@@ -246,7 +274,10 @@ function SavedRows({connection, chrome}: {connection: SavedConnection; chrome: C
 				</div>
 			) : null}
 		</>,
-		count === 0 ? "0 kayıt" : `${count} kayıt`,
+		plural(locale, count, {
+			one: t("pano.feed.savedCount.one", {count}),
+			other: t("pano.feed.savedCount.other", {count}),
+		}),
 	);
 }
 
@@ -267,6 +298,7 @@ function SavedRow({
 }
 
 function SavedEmptyState() {
+	const {t} = useLocale();
 	return (
 		<div
 			style={{
@@ -293,14 +325,15 @@ function SavedEmptyState() {
 			</svg>
 			<div style={{display: "flex", flexDirection: "column", gap: "var(--s-1)"}}>
 				<p style={{font: "var(--t-body)", color: "var(--text-primary)", margin: 0}}>
-					henüz kaydedilen yok
+					{t("pano.feed.savedEmpty.title")}
 				</p>
 				<p style={{font: "var(--t-meta)", color: "var(--text-muted)", margin: 0}}>
-					bir başlığı <strong>kaydet</strong> ile saklayabilirsin.
+					{t("pano.feed.savedEmpty.hintBefore")} <strong>{t("pano.save.save")}</strong>
+					{t("pano.feed.savedEmpty.hintAfter")}
 				</p>
 			</div>
 			<Link to="/pano" className="kp-btn kp-btn--primary kp-btn--sm">
-				pano'yu keşfet
+				{t("pano.feed.savedEmpty.cta")}
 			</Link>
 		</div>
 	);
@@ -316,13 +349,15 @@ interface ChromeProps {
 }
 
 function FeedChrome({host, filterId, setFilterId, signedIn, meta, children}: ChromeProps) {
-	const filters = React.useMemo<SubnavFilter[]>(
-		() =>
-			signedIn
-				? [...PANO_FILTERS, {id: SAVED_PANO_FILTER_ID, label: "kaydedilenler"}]
-				: PANO_FILTERS,
-		[signedIn],
-	);
+	const {t} = useLocale();
+	const filters = React.useMemo<SubnavFilter[]>(() => {
+		const chips: SubnavFilter[] = PANO_FILTERS.map((f) => {
+			const key = FILTER_LABEL_KEYS[f.id];
+			return {id: f.id, label: key ? t(key) : f.label};
+		});
+		if (signedIn) chips.push({id: SAVED_PANO_FILTER_ID, label: t("pano.filter.saved")});
+		return chips;
+	}, [signedIn, t]);
 	// Pano's Subnav lives in the persistent zone (`PanoSubnavLayout`), so this feed publishes UP
 	// into it rather than painting its own. `inZone` is false only for the eager public paint
 	// above the router (App.tsx has no zone ancestor), which keeps the local Subnav fallback.
@@ -337,9 +372,20 @@ function FeedChrome({host, filterId, setFilterId, signedIn, meta, children}: Chr
 			activeFilter: filterId,
 			onFilterChange: setFilterId,
 			meta,
-			...(host ? {crumb: {label: <>site / {host}</>, onClear: () => navigate("/pano")}} : {}),
+			...(host
+				? {
+						crumb: {
+							label: (
+								<>
+									{t("pano.crumb.site")} / {host}
+								</>
+							),
+							onClear: () => navigate("/pano"),
+						},
+					}
+				: {}),
 		});
-	}, [inZone, setPanoSubnav, filters, filterId, setFilterId, meta, host, navigate]);
+	}, [inZone, setPanoSubnav, filters, filterId, setFilterId, meta, host, navigate, t]);
 	// Clear the zone's content when this feed leaves for a non-feed `/pano/*` route, so the
 	// persistent zone falls back to just its CTA. Keyed on the stable setter, so it fires on
 	// unmount only — not on every filter/meta change (which the publish effect above tracks).

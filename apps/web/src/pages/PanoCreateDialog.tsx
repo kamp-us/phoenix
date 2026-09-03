@@ -3,7 +3,10 @@ import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {Form, Input, Textarea} from "../components/ui/Form";
 import {Tabs} from "../components/ui/Tabs";
+import {useT} from "../i18n";
 import {prefillIfEmpty, useLinkMetadata} from "../lib/useLinkMetadata";
+
+const TITLE_MIN = 5;
 
 export function PanoCreateDialog({
 	open,
@@ -14,6 +17,7 @@ export function PanoCreateDialog({
 	onOpenChange: (v: boolean) => void;
 	onSubmit?: (data: {mode: "link" | "text"; title: string; url?: string; text?: string}) => void;
 }) {
+	const t = useT();
 	const [mode, setMode] = React.useState<"link" | "text">("link");
 	const {fetchMetadata} = useLinkMetadata();
 
@@ -34,8 +38,8 @@ export function PanoCreateDialog({
 		<Dialog
 			open={open}
 			onOpenChange={onOpenChange}
-			title="Yeni Pano Girdisi"
-			description="pano'yu zenginleştir :)"
+			title={t("pano.createDialog.title")}
+			description={t("pano.createDialog.description")}
 		>
 			<Tabs
 				variant="pill"
@@ -44,7 +48,7 @@ export function PanoCreateDialog({
 				items={[
 					{
 						value: "link",
-						label: "bağlantı",
+						label: t("pano.mode.link"),
 						content: (
 							<Form
 								onSubmit={(event) => {
@@ -60,15 +64,15 @@ export function PanoCreateDialog({
 							>
 								<Input
 									name="title"
-									label="Başlık"
+									label={t("pano.createDialog.titleLabel")}
 									required
-									minLength={5}
+									minLength={TITLE_MIN}
 									fullWidth
-									hint="En az 5 karakter"
+									hint={t("pano.createDialog.titleHint", {min: TITLE_MIN})}
 								/>
 								<Input
 									name="url"
-									label="URL"
+									label={t("pano.field.url")}
 									type="url"
 									required
 									fullWidth
@@ -76,10 +80,10 @@ export function PanoCreateDialog({
 								/>
 								<div className="kp-dialog-actions">
 									<Button variant="tertiary" type="button" onClick={() => onOpenChange(false)}>
-										vazgeç
+										{t("pano.action.cancel")}
 									</Button>
 									<Button variant="primary" type="submit">
-										gönder
+										{t("pano.action.submit")}
 									</Button>
 								</div>
 							</Form>
@@ -87,7 +91,7 @@ export function PanoCreateDialog({
 					},
 					{
 						value: "text",
-						label: "yazı",
+						label: t("pano.mode.text"),
 						content: (
 							<Form
 								onSubmit={(event) => {
@@ -101,14 +105,26 @@ export function PanoCreateDialog({
 									onOpenChange(false);
 								}}
 							>
-								<Input name="title" label="Başlık" required minLength={5} fullWidth />
-								<Textarea name="text" label="Metin" rows={6} hint="markdown destekli" fullWidth />
+								<Input
+									name="title"
+									label={t("pano.createDialog.titleLabel")}
+									required
+									minLength={TITLE_MIN}
+									fullWidth
+								/>
+								<Textarea
+									name="text"
+									label={t("pano.createDialog.textLabel")}
+									rows={6}
+									hint={t("pano.createDialog.textHint")}
+									fullWidth
+								/>
 								<div className="kp-dialog-actions">
 									<Button variant="tertiary" type="button" onClick={() => onOpenChange(false)}>
-										vazgeç
+										{t("pano.action.cancel")}
 									</Button>
 									<Button variant="primary" type="submit">
-										gönder
+										{t("pano.action.submit")}
 									</Button>
 								</div>
 							</Form>
