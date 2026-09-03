@@ -3,7 +3,7 @@
  * "refused before boot" means. Nothing here spawns, opens a queue, or touches `src/process/`.
  */
 
-import {Effect} from "effect";
+import {Effect, Option} from "effect";
 import type {InPort, OutPort, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {
@@ -12,6 +12,7 @@ import {
 	InvalidBound,
 	UndeclaredPort,
 	UnknownNode,
+	UnknownParent,
 } from "./errors.ts";
 import type {
 	CompiledGraph,
@@ -31,6 +32,9 @@ export const compile = Effect.fn("Tuval.ports.compile")(function* (graph: Graph)
 		if (nodes.has(node.id)) {
 			return yield* new DuplicateNodeId({node: node.id});
 		}
+		if (node.parent !== undefined && !nodes.has(node.parent)) {
+			return yield* new UnknownParent({node: node.id, parent: node.parent});
+		}
 		const row = yield* registry.resolve(node.program);
 		const inPorts: Record<string, InPort> = {};
 		const outs: Record<string, OutPort> = {};
@@ -42,7 +46,12 @@ export const compile = Effect.fn("Tuval.ports.compile")(function* (graph: Graph)
 				outs[name] = port;
 			}
 		}
-		nodes.set(node.id, {id: node.id, program: node.program, inPorts});
+		nodes.set(node.id, {
+			id: node.id,
+			program: node.program,
+			parent: Option.fromNullishOr(node.parent),
+			inPorts,
+		});
 		outPorts.set(node.id, outs);
 	}
 

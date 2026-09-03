@@ -19,33 +19,85 @@ Tuval lives under `apps/` because a person runs it, not because Cloudflare hosts
 ```bash
 pnpm install          # from the repo root, once
 cd apps/tuval
-pnpm dev              # boots under Node and reports the registered program count
+pnpm dev              # boots the two demo programs; Ctrl-C stops and checkpoints them
 pnpm test             # the unit tier (vitest)
 pnpm typecheck
 ```
 
-`pnpm dev` runs `node src/bin.ts`. Node strips the TypeScript itself, so there is no build step.
-Boot registers the config's programs, then restores every checkpointed process from `.tuval/`
-(gitignored) and reports both counts; `node src/bin.ts <config> <state-dir>` points either
-elsewhere.
+`pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
+Node strips the TypeScript itself, so there is no build step. Boot loads your config layers (see
+"Your config"), registers their programs, launches the processes the graph plans, restores any
+other checkpointed process from the project's `.tuval/`, prints the process table, and stays up
+until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits 0; a config
+that plans no process exits right after the report.
+
+```
+tuval [flags]
+  --config file          Global config module (default: ~/.tuval/tuval.config.ts)
+  --project directory    Project dir whose .tuval/ holds the project config and state (default: cwd)
+  --help, --version
+```
+
+`node src/bin.ts --config <module>` swaps the global layer, which is how the tests exercise the
+refusals; `--project <dir>` runs against another project's `.tuval/`. A path named by either flag
+must exist.
+
+```
+tuval: booted — 2 program(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 2 process(es) live, 0 restored from …/apps/tuval/.tuval
+tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
+tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
+tuval: running — Ctrl-C stops and checkpoints
+count 1
+count 2
+```
+
+The two programs in the box are the demo counter and log (`src/demo/`, #7517): the counter ticks
+once a second and announces each count on its `ticks` out-port, the log records what arrives on
+its `ticks` in-port and prints it. They are boring on purpose — they exist to prove the kernel
+routes, checkpoints and restores, not to anticipate the real programs — and they are ordinary
+rows registered by the config like any other. Stop and run again: both come back at their saved
+state, the counter picks up where it left off, and `restored` counts them.
 
 ## Your config
 
-Configuration is code you own, the Neovim model. Boot imports `tuval.config.ts` at the app root
-and registers every program row in the list it default-exports. A row is a `Program`
-(`src/registry/program.ts`): one stable id, a private Demlik core machine, public typed ports, host
-handlers, a capability request list, an optional renderer reference, and the identity / capability /
-placement records as inert data — the kernel enforces nothing on them, local code is fully trusted.
-The list is empty today; the in-the-box programs land with their own slices.
+Configuration is code you own, the Neovim model, in two layers: a global module at
+`~/.tuval/tuval.config.ts` and an optional project module at `.tuval/tuval.config.ts` in the
+project dir (the cwd, or `--project`). Either may be absent — an absent layer is empty, and a
+boot with neither registers nothing. The two merge project-over-global: a program row or a graph
+node in the project layer replaces the global one with the same id, in place; the rest append.
+This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against, and
+the checkpoints land beside it (that dir is gitignored except for the config).
 
-Loading is fail-closed. A config module that throws, has no default export, or default-exports
-something that is not a list refuses boot with a message naming the module and the reason:
+A config module default-exports one versioned object, `TuvalConfigInput` from `src/config.ts`:
+`version: 1`, `programs`, and an optional `graph`. A row is a `Program` (`src/registry/program.ts`):
+one stable id, a private Demlik core machine, public typed ports, a `receive` map that turns what
+arrives on each in-port into the program's own Msg, host handlers, a capability request list, an
+optional renderer reference, and the identity / capability / placement records as inert data — the
+kernel enforces nothing on them, local code is fully trusted. The graph names the processes to run
+and the routes between them (see "Ports" and "Launch" below); a config without one registers its
+programs and runs nothing.
+
+```ts
+import {Console} from "effect";
+import type {TuvalConfigInput} from "../src/config.ts";
+import {demoGraph, demoPrograms} from "../src/demo/index.ts";
+
+export default {
+	version: 1,
+	programs: demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
+	graph: demoGraph,
+} satisfies TuvalConfigInput;
+```
+
+Loading is fail-closed. The shape is one Effect `Schema` (`TuvalConfig`), so a module that throws,
+has no default export, or exports something the schema rejects — a version other than 1, a row
+without an id, a `graph` that is not a graph — refuses boot with a message naming the module, the
+place and the reason:
 
 ```
 tuval: refusing to boot — config module /path/to/tuval.config.ts: module threw while loading: boom
+tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 config at graph: Expected object
 ```
-
-`node src/bin.ts <path>` boots from another module, which is how the tests exercise the refusals.
 
 ## The host
 
@@ -74,6 +126,10 @@ finalizers, then the row leaves the table. A dispatch after stop is refused with
 spawn, stop and committed transition; a row's `stateSummary().revision` counts those transitions,
 so a reader can tell the summary moved without reading the state.
 
+A spawn takes `services`, a `Context` provided to that process's handlers and to nothing else: a
+program whose handlers require a service says so in its row's `R`, and whoever spawns it supplies
+one per process. The launcher uses this to hand each process its own `ProcessPorts`.
+
 
 ## Durability
 
@@ -87,7 +143,8 @@ wrote it; the manifest lists every checkpointed process in spawn order, parents 
 
 On boot, `restore` spawns every manifest entry back at its saved id and parent link, at its
 checkpointed state; a clean stop and reload replays nothing, and one new input after it produces
-exactly one new effect. A snapshot written under another program version (or another program) is
+exactly one new effect. An entry the launcher already brought back — a planned process spawns at
+its node's id, and opening that checkpoint is its restore — is left alone. A snapshot written under another program version (or another program) is
 refused with `SnapshotRefused`, naming the process and both versions, and the boot stops there —
 nothing is ever fresh-booted over a refused snapshot:
 
@@ -123,13 +180,15 @@ the shape spike #7379 routed on — not a schema system. An in-port also declare
 strategy (`suspend`, `dropping`, `sliding`), so no port queue is ever unbounded.
 
 `src/ports/` compiles a graph and opens its queues. A graph is authored as nodes that own their
-outbound routes as `on` entries; there is no top-level edge list.
+outbound routes as `on` entries; there is no top-level edge list. A node is a planned process,
+so it may name a `parent` — a node declared before it, which is what makes authoring order the
+spawn order.
 
 ```ts
 const graph: Graph = {
 	nodes: [
 		{id: NodeId.make("p"), program: ProgramId.make("producer"), on: [{port: "ticks", to: {node: NodeId.make("c"), port: "ticks"}}]},
-		{id: NodeId.make("c"), program: ProgramId.make("consumer"), on: []},
+		{id: NodeId.make("c"), program: ProgramId.make("consumer"), parent: NodeId.make("p"), on: []},
 	],
 };
 const wiring = yield* open(yield* compile(graph)); // needs Registry; scoped
@@ -140,7 +199,27 @@ const inbox = yield* wiring.inbox({node: "c", port: "ticks"});
 `compile` runs over registry rows before any process exists and refuses the graph there: a route
 whose source kind does not match its target kind (`IncompatibleRoute`, naming both kinds and both
 program ids), a route naming a port a program does not declare in that direction
-(`UndeclaredPort`), a route to a node the graph does not declare, a duplicate node id, or an
-in-port whose capacity is not a positive integer. `open` builds one queue per in-port at its
-declared bound and delivers each `emit` to every routed target in authoring order, so a compatible
-route delivers in order. The slice never imports `src/process/`.
+(`UndeclaredPort`), a route to a node the graph does not declare, a parent the graph does not
+declare before the child (`UnknownParent`), a duplicate node id, or an in-port whose capacity is
+not a positive integer. `open` builds one queue per in-port at its declared bound and delivers
+each `emit` to every routed target in authoring order, so a compatible route delivers in order.
+The slice never imports `src/process/`.
+
+`ProcessPorts` is the wiring as one running process sees it: `emit(port, payload)` on its own
+out-ports by name. A program's Cmd handler requires it as a service and never learns which node
+it runs as; the launcher provides one per process.
+
+## Launch
+
+`src/launch/` runs a compiled graph: one process per node, spawned at the node's own id under the
+node's parent, with the wiring bound both ways — the process's handlers get its `ProcessPorts`,
+and every in-port gets a pump that takes from the port's queue, turns the payload into a Msg
+through the row's `receive` entry for that port, and dispatches it, in queue order, for as long
+as the process lives. A node whose id is already checkpointed comes back at its saved state,
+because the spawn opens that checkpoint like any other spawn does. A node whose program declares
+an in-port with no `receive` entry is refused (`NoReceiver`) before the first spawn.
+
+`start` in `src/boot.ts` is the whole app from rows and a graph: compile over the registry (a bad
+route refuses here, with nothing spawned and nothing written), open the wiring, build the kernel,
+launch, then `restore` whatever else the manifest names. `boot` is `start` from the layered
+config. `src/demo/e2e.unit.test.ts` is the proof that this holds across a stop and a second boot.

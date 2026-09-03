@@ -4,7 +4,7 @@
  * normalized form is `CompiledGraph`, never something an author writes.
  */
 
-import {Schema} from "effect";
+import {type Option, Schema} from "effect";
 import type {InPort, ProgramId} from "../registry/program.ts";
 
 export const NodeId = Schema.String.pipe(Schema.brand("tuval/NodeId"));
@@ -21,10 +21,14 @@ export interface OutboundRoute {
 	readonly to: PortRef;
 }
 
-/** A planned process: which program runs here, and where its output goes. */
+/**
+ * A planned process: which program runs here, where its output goes, and which planned process
+ * is its parent. A parent is declared before its child, so authoring order is spawn order.
+ */
 export interface GraphNode {
 	readonly id: NodeId;
 	readonly program: ProgramId;
+	readonly parent?: NodeId;
 	readonly on: ReadonlyArray<OutboundRoute>;
 }
 
@@ -35,6 +39,7 @@ export interface Graph {
 export interface CompiledNode {
 	readonly id: NodeId;
 	readonly program: ProgramId;
+	readonly parent: Option.Option<NodeId>;
 	readonly inPorts: Readonly<Record<string, InPort>>;
 }
 

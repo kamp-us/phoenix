@@ -11,6 +11,7 @@
 	},
 	"dependencies": {
 		"@demlik/tea": "catalog:",
+		"@effect/platform-node": "catalog:tuval",
 		"effect": "catalog:tuval"
 	},
 	"devDependencies": {
