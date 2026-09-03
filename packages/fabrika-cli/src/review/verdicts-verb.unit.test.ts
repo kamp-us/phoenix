@@ -4,6 +4,7 @@ import {fakeSeams, type HttpReply, type Scripted} from "../fakes.test-support.ts
 import type {ExecResult} from "../io/exec.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {comments, HEAD, OLD_HEAD, pull} from "./fixtures.test-support.ts";
+import {compose as supersedeWith} from "./supersede.ts";
 import {runVerdicts} from "./verdicts-verb.ts";
 
 const PULL = /GET .*\/repos\/o\/r\/pulls\/4321\b/;
@@ -38,8 +39,38 @@ describe("runVerdicts", () => {
 		expect(out.stdout).toBe(
 			[
 				`verdicts\t${HEAD}\t2`,
-				`review-doc\tPASS\t${HEAD}\tcurrent\t5154902211`,
-				`review-code\tPASS\t${OLD_HEAD}\tstale\t5154891644`,
+				`review-doc\tPASS\t${HEAD}\tcurrent\t5154902211\tstanding`,
+				`review-code\tPASS\t${OLD_HEAD}\tstale\t5154891644\tstanding`,
+				"",
+			].join("\n"),
+		);
+	});
+
+	// The erasure #7247 records: a PASS that retired a FAIL at one head used to print one row, and
+	// nothing anywhere said a gate had blocked. Both rows now, told apart by the sixth field.
+	it("prints a retired verdict as its own superseded row, not only the survivor", async () => {
+		const out = await run([
+			[PULL, served(pull({comments: 1}))],
+			[
+				COMMENTS,
+				served(
+					comments({
+						id: 5460446728,
+						body: supersedeWith(
+							`review-doc: FAIL @ ${HEAD} — the round-1 blocker`,
+							CURRENT,
+							new Date("2026-08-29T00:00:00Z"),
+						),
+					}),
+				),
+			],
+		]);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toBe(
+			[
+				`verdicts\t${HEAD}\t2`,
+				`review-doc\tPASS\t${HEAD}\tcurrent\t5460446728\tstanding`,
+				`review-doc\tFAIL\t${HEAD}\tcurrent\t5460446728\tsuperseded`,
 				"",
 			].join("\n"),
 		);
@@ -82,7 +113,7 @@ describe("runVerdicts", () => {
 			[COMMENTS, served(comments({id: 77, body: "review-code: PASS — merge-ready"}))],
 		]);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("malformed\t-\t-\t-\t77");
+		expect(out.stdout).toContain("malformed\t-\t-\t-\t77\t-");
 		expect(out.stderr.at(-1)).toContain("comment 77 reaches for a marker and fails the format");
 	});
 
@@ -91,7 +122,9 @@ describe("runVerdicts", () => {
 			[PULL, served(pull({comments: 1}))],
 			[COMMENTS, served(comments({id: 9, body: ADVISORY}))],
 		]);
-		expect(out.stdout).toBe(`verdicts\t${HEAD}\t1\nreview-skill\tADVISORY\t${HEAD}\tcurrent\t9\n`);
+		expect(out.stdout).toBe(
+			`verdicts\t${HEAD}\t1\nreview-skill\tADVISORY\t${HEAD}\tcurrent\t9\tstanding\n`,
+		);
 	});
 
 	it("refuses a PR proven absent on 7", async () => {

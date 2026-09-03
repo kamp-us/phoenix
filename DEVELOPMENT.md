@@ -94,6 +94,24 @@ apps/web/
 
 Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
 
+## Rendering surfaces
+
+[`design-harness.json`](./design-harness.json) at the repo root is how `fabrika ui render` gets a headless browser onto a phoenix page. Without it every surface refuses on exit `19`, no capture is ever produced, and a rendered change ships judged only from reading CSS ([#7395](https://github.com/kamp-us/phoenix/issues/7395)).
+
+| Key | Value | Why |
+|---|---|---|
+| `command` | copy `apps/web/.env.example` to `.env` when none is there, then `pnpm dev` | Both dev legs. The copy is what makes a fresh worktree bootable — that file holds throwaway dev values only. Output is redirected to stderr, which is the stream a failed readiness probe quotes back. |
+| `url` | `http://localhost:3000` | Vite's port, which also proxies `/api` and `/fate` to the worker. |
+| `readyPath` | `/api/health` | 200 only once **both** legs answer. `/` would go green on Vite alone, and every capture would then show `şu an yüklenemedi` where the data belongs. |
+
+**Reachable today:** the routes a signed-out visitor can actually see — `/`, `/pano`, `/sozluk`, `/mecmua`, `/divan`, `/search`, `/auth` and `/lab/atolye` among them. Point the harness at one of those and the capture is what a visitor sees.
+
+**A session-gated route does not refuse — it captures the signed-out view and exits `0`.** [`apps/web/src/App.tsx`](./apps/web/src/App.tsx) routes entirely client-side, and Vite serves `index.html` at 200 for any path it does not otherwise own, so the navigation always succeeds; [`browser.ts`](./packages/fabrika-cli/src/ui/browser.ts) calls a surface unreachable only on a navigation failure, status `0`, or status `>= 400`. There is no route-level auth wrapper either — each page gates itself, so what lands in the PNG differs per page: `/profile` client-redirects to `/auth`, `/bildirimler` renders its `giriş yapmalısın` prompt, a flag-dark page self-404s. Each is a valid, non-empty capture that `ui evidence` accepts. **The harness cannot tell you it showed you the wrong thing**, so a gated surface is only judgeable with a real session — `storageState` is the schema's slot for that, and minting one is tracked on [#7398](https://github.com/kamp-us/phoenix/issues/7398). Until then, treat a capture of a gated route as UNKNOWN however plausible it looks.
+
+Exit `15` is real but narrower than a UI route: it needs a response that is genuinely `>= 400`, which under this harness means an `/api/*` or `/fate/*` path proxied to a worker that is down. It refuses per surface, so that one path names itself while the rest of the repo still renders, rather than everything falling back to the repo-wide `19`. No SPA path produces it — not even one the router has no route for, which renders `NotFoundPage` at 200.
+
+`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust.
+
 ## Conventions
 
 - **Effect is the backend control flow.** Services are `Context.Service` classes; methods are `Effect.fn("Service.method")` for free spans; errors are `Data.TaggedError`. Input validation lives in service methods, not the route layer (ADR [0013](./.decisions/0013-validation-in-service-methods.md)).

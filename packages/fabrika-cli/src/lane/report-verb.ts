@@ -10,7 +10,9 @@
  * prover's rather than the caller's: `deferred`, relayed off the proof's own answer and never
  * recomposed here, says this `PASS` was proven over a set short the namespaces named — the routed
  * `review-ui` an epic child hands to its epic's tail, which nothing else in the ledger records
- * (#7041).
+ * (#7041). `partial` is the second of that kind and rides the ship stage's `DONE`: it says the merge
+ * behind this terminal carried `Part of #N` and left the issue open, which is the whole input to the
+ * machine's `merge:partial` arm (ADR 0343).
  *
  * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
  * operator into the shell must not move the bar: between the machine's acceptance and the append
@@ -144,6 +146,9 @@ export const runReport = <R>(
 				if (freshFold._tag !== "Folded") return replayRefusal(VERB, fresh.logPath, freshFold);
 
 				const now = yield* Effect.sync(() => new Date().toISOString());
+				// `partial` reaches only this pass: the pre-lock one runs before the proof that reads it,
+				// and it decides nothing — both arms of `merge:partial` hold a cell, so the arm taken
+				// cannot turn an acceptance into a refusal. This pass is the one that appends.
 				const reapplied = applyEvent(
 					fresh.lane,
 					freshFold.states,
@@ -151,6 +156,8 @@ export const runReport = <R>(
 					resolved.event,
 					now,
 					classed.classes,
+					null,
+					proved.partial,
 				);
 				if (reapplied._tag === "Refused") {
 					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${reapplied.reason}`);
@@ -182,6 +189,7 @@ export const runReport = <R>(
 							...(options.comment === null ? {} : {comment: options.comment}),
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
+							...(proved.partial ? {partial: true} : {}),
 						},
 						null,
 						2,

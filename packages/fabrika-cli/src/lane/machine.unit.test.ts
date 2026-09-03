@@ -31,23 +31,28 @@ const defined = <T>(value: T | undefined): T => {
 	return value;
 };
 
-/** One driven event: a bare name, or one carrying the waits its own line grants (ADR 0313). */
-type Step = string | {readonly event: string; readonly waitGrant: number};
+/**
+ * One driven event: a bare name, or one carrying a payload its own line records — the waits it
+ * grants (ADR 0313), or whether the merge it reports left the issue open (ADR 0343).
+ */
+type Step =
+	| string
+	| {readonly event: string; readonly waitGrant?: number; readonly partial?: boolean};
 
-/** Drive one task's events through `applyEvent`, returning the leaf state each one folded to. */
-const leaves = (
+/** Drive one task's events through `applyEvent`, answering with the leaf each one folded to. */
+const drive = (
 	lane: CompiledLane,
 	task: string,
 	events: ReadonlyArray<Step>,
 	classes: ReadonlyArray<string> | null = null,
-): ReadonlyArray<string> => {
+): {readonly leaves: ReadonlyArray<string>; readonly state: TaskState} => {
 	const log: LogEntry[] = [];
 	const statesOf = () => {
 		const fold = foldLog(lane, log);
 		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
 		return fold.states;
 	};
-	return events.map((step, index) => {
+	const reached = events.map((step, index) => {
 		const event = typeof step === "string" ? step : step.event;
 		// Only the first event carries the classes, so these tests also prove they stand afterwards.
 		const applied = applyEvent(
@@ -57,13 +62,22 @@ const leaves = (
 			event,
 			"2026-08-17T00:00:00.000Z",
 			index === 0 ? classes : null,
-			typeof step === "string" ? null : step.waitGrant,
+			typeof step === "string" ? null : (step.waitGrant ?? null),
+			typeof step === "string" ? false : (step.partial ?? false),
 		);
 		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
 		log.push(applied.entry);
 		return defined(statesOf()[task]).type;
 	});
+	return {leaves: reached, state: defined(statesOf()[task])};
 };
+
+const leaves = (
+	lane: CompiledLane,
+	task: string,
+	events: ReadonlyArray<Step>,
+	classes: ReadonlyArray<string> | null = null,
+): ReadonlyArray<string> => drive(lane, task, events, classes).leaves;
 
 /** Drive the same events as {@link leaves}, but answer with the task's folded state and budgets. */
 const budgets = (lane: CompiledLane, task: string, events: ReadonlyArray<string>): TaskState =>
@@ -435,6 +449,60 @@ describe("the compiler — refusals", () => {
 	it("refuses a document that is not machine-shaped at all", () => {
 		expect(defectsOf(null)).toContain("machine.states");
 		expect(defectsOf({})).toContain("machine.states");
+	});
+});
+
+describe("`merge:partial` — a merge that closed nothing sends the lane round (ADR 0343)", () => {
+	const toShip = ["WIP", "DONE", "PASS"] as const;
+	const reached = ["build", "review", "ship"] as const;
+	const lane = () => compiled(coderWorkflow());
+
+	it("folds a closing merge to `shipped` exactly as it always did", () => {
+		expect(leaves(lane(), "issue", [...toShip, "DONE"])).toEqual([...reached, "shipped"]);
+	});
+
+	it("sends a `Part of #N` merge back to `queued`, a state an operator can spawn against", () => {
+		expect(leaves(lane(), "issue", [...toShip, {event: "DONE", partial: true}])).toEqual([
+			...reached,
+			"queued",
+		]);
+	});
+
+	it("takes the same arm out of the queue dwell, where a partial merge also lands", () => {
+		expect(leaves(lane(), "issue", [...toShip, "WIP", {event: "DONE", partial: true}])).toEqual([
+			...reached,
+			"ship:queued",
+			"queued",
+		]);
+	});
+
+	// The whole point of the divert: the second round can close what the first only part-landed.
+	it("folds to `shipped` on the round whose merge does close the issue", () => {
+		const round: ReadonlyArray<Step> = [
+			...toShip,
+			{event: "DONE", partial: true},
+			...toShip,
+			"DONE",
+		];
+
+		expect(leaves(lane(), "issue", round).at(-1)).toBe("shipped");
+	});
+
+	// It is neither a repair round nor a wait: the work landed. Spending a counter here would let a
+	// lane that shipped three honest partials exhaust the budget its next FAIL draws on.
+	it("spends neither budget on the way round", () => {
+		const twice: ReadonlyArray<Step> = [
+			...toShip,
+			{event: "DONE", partial: true},
+			...toShip,
+			{event: "DONE", partial: true},
+		];
+
+		expect(drive(lane(), "issue", twice).state).toMatchObject({
+			type: "queued",
+			retries: 0,
+			waits: 0,
+		});
 	});
 });
 

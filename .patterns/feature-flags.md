@@ -172,7 +172,7 @@ outage looks like every flag being off, never like a broken request.
 
 ## 5. Flip a flag locally (dev-only override, #622)
 
-Under offline `pnpm dev` the Flagship binding has no live evaluator, so every read degrades to its
+Under `pnpm dev` the Flagship binding has no live evaluator, so every read degrades to its
 safe default — you can't see the flag-*on* path. A **dev-only override** closes that gap: it forces a
 boolean flag on/off *for your browser only*, short-circuiting the real read before it falls back.
 

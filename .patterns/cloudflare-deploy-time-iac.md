@@ -63,7 +63,7 @@ return domain === undefined ? props : {...props, domain};
 ```
 
 The second clause (`resolveStateMode(...) === "local"`) skips the derivation
-offline too: `alchemy dev` runs the props-Effect in `"plan"` but has no real CF
+in dev too: `alchemy dev` runs the props-Effect in `"plan"` but has no real CF
 zone, so it mirrors the same dev-vs-deploy signal the state-store selector uses
 (see [worker-environment-pattern.md](./worker-environment-pattern.md) for
 `resolveStateMode`).
@@ -149,8 +149,8 @@ gate.
 ## When you're adding a deploy-time resource
 
 - Does it derive a worker **prop** from a deploy-only service (`Stage`, …)? Put
-  the read in the props-Effect behind `ALCHEMY_PHASE === "plan"` (and the offline
-  `resolveStateMode` clause), returning plain props at runtime.
+  the read in the props-Effect behind `ALCHEMY_PHASE === "plan"` (and the
+  `resolveStateMode(...) === "local"` clause), returning plain props at runtime.
 - Does it **provision external/un-revokable state** (a domain, a cert, a
   reputation-bearing subdomain)? Attach it production-only via the
   `ENVIRONMENT === "production"` fail-closed test — never to `it-*`/`pr-*`.

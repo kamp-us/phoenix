@@ -14,15 +14,15 @@
  * parser-required flag's absence is a usage error, indistinguishable from a typo, while ADR 0159's
  * confirmation is a decision whose absence must be a proven refusal a caller can read as one.
  *
- * **Write order is the auditability guarantee.** Fold the duplicate content, post the reason, apply
- * `closed-by-triage`, then close — and each step gates the next, so a failure before the close
- * leaves the issue OPEN, which is the recoverable direction. The three unguarded sequential writes
- * this replaces landed a closed, unexplained, unlabelled issue whenever the middle one failed.
+ * **Write order is the auditability guarantee.** Fold the duplicate content, post the reason, write
+ * the labels — every triage status stripped through `./facets.ts`'s reconcile, `closed-by-triage`
+ * applied — then close, and each step gates the next, so a failure before the close leaves the issue
+ * OPEN, which is the recoverable direction. The three unguarded sequential writes this replaces
+ * landed a closed, unexplained, unlabelled issue whenever the middle one failed.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {
-	addLabels,
 	closeNotPlanned,
 	createComment,
 	getIssue,
@@ -42,6 +42,8 @@ import {
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
+import {applyChanges} from "./facet-writes.ts";
+import {type Change, killedFacets, planReconcile, renderShape, shapeViolations} from "./facets.ts";
 import {OPERATOR_ACCOUNTS_ENV, provenanceOf, resolveOperatorAccounts} from "./provenance.ts";
 import {scannedLine} from "./scope.ts";
 import {guardTarget} from "./target-guard.ts";
@@ -246,11 +248,23 @@ export const runKill = (
 			);
 		}
 
-		const labelled = yield* addLabels(repo, issue, [KILL_LABEL]);
-		if (labelled._tag === "Failure") {
+		// The strip rides in the label step rather than after the close, which is what keeps the write
+		// order's guarantee intact: a failure here leaves the issue OPEN, the recoverable direction.
+		// The removals are planned by the shared engine off `killedFacets`, so the kill exit and the
+		// two reconciling exits cannot disagree about which statuses a triage transition owns (#6710).
+		const facets = killedFacets();
+		const home = target.value.milestone;
+		const plan = planReconcile({labels: target.value.labels, milestone: home}, facets, home);
+		const labelChanges: ReadonlyArray<Change> = [
+			...plan.changes,
+			{_tag: "AddLabels", labels: [KILL_LABEL]},
+		];
+
+		const labelled = yield* applyChanges(repo, issue, labelChanges);
+		if (labelled._tag === "Failed") {
 			return refuse(
 				WRITE_UNKNOWN,
-				`triage kill: applying ${KILL_LABEL} to #${issue} failed: ${labelled.reason} — the fold and the reason comment landed; #${issue} is still OPEN and invisible to the kill audit. Apply the label by hand, or delete the landed comments and re-run.`,
+				`triage kill: the label step on #${issue} failed after ${labelled.applied} of ${labelChanges.length} change(s): ${labelled.reason} — the fold and the reason comment landed; #${issue} is still OPEN and invisible to the kill audit. Apply ${KILL_LABEL} by hand and strip any triage status label, or delete the landed comments and re-run.`,
 				diagnostics,
 			);
 		}
@@ -283,6 +297,20 @@ export const runKill = (
 				`triage kill: closed, but the read-back shows state=${after.value.state} state_reason=${
 					after.value.stateReason ?? "none"
 				}, not not_planned — #${issue} reads as done rather than killed.`,
+				diagnostics,
+			);
+		}
+
+		// The labels the step wrote are asserted too, or the strip is a fix nothing verifies: the
+		// `closed-by-triage` add lands whether or not the removals did, so a read-back reading only
+		// `state`/`state_reason` passes a killed issue still advertising `status:needs-triage` — the
+		// defect itself. `home` is the read-back's own milestone, so this asserts the status facet and
+		// makes no claim about a home the kill never touched.
+		const observed = {labels: after.value.labels, milestone: after.value.milestone};
+		if (shapeViolations(observed, facets, observed.milestone).length > 0) {
+			return refuse(
+				READBACK_MISMATCH,
+				`triage kill: closed not-planned, but the read-back shows ${renderShape(observed, facets)} — expected every triage status label stripped from #${issue}.`,
 				diagnostics,
 			);
 		}

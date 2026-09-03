@@ -180,6 +180,61 @@ describe("runRender", () => {
 		expect(seen.get("/pano:auth")).toBe(2);
 	});
 
+	// A tier with no token of its own is a tier `preview-seed test-account` did not seed on this
+	// preview. Reading it as satisfied by the yazar's token would render the audience the surface
+	// said it was not, and the capture would come back clean (#7398).
+	it("refuses a çaylak surface whose tier token is unset, naming it rather than falling back", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("PREVIEW_TEST_CAYLAK_SESSION_TOKEN");
+	});
+
+	it("seeds each tier's own session, so two tiers are two identities and not one shot twice", async () => {
+		const seen = new Map<string, string | undefined>();
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth", "/hosgeldin:auth-caylak"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				PREVIEW_TEST_CAYLAK_SESSION_TOKEN: "c".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: (request) => {
+				seen.set(request.surface, request.cookies[0]?.value);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen.get("/hosgeldin:auth")).not.toBe(seen.get("/hosgeldin:auth-caylak"));
+	});
+
+	// The credential check only proves each tier's token was SET. Which tier actually rendered is the
+	// shot's own answer, and a shot that came back above the named floor is UNKNOWN — the page
+	// rendered fine, it is just not the audience the surface id named (#7398).
+	it("refuses a wrong-tier shot on 11, recording no capture under that surface id", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_CAYLAK_SESSION_TOKEN: "c".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: legOf({
+				"/hosgeldin:auth-caylak": {_tag: "WrongTier", wanted: "çaylak", rendered: "yazar"},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("named tier çaylak and rendered as yazar");
+		expect(written.size).toBe(0);
+	});
+
 	// The credential check only proves the pair was SET. Whether the cookie actually authenticated is
 	// the shot's own answer, and a shot that came back a visitor's is UNKNOWN — never a red surface,
 	// because the page rendered fine, and never a Rendered entry under the `:auth` id (#7051).

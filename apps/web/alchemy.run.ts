@@ -19,13 +19,16 @@
  *
  * State selection follows ADR 0031 (local-first dev): `Alchemy.localState()` is
  * a file-based store needing only `FileSystem`/`Path` — no credentials, no
- * network — so `alchemy dev` boots fully offline. A real `alchemy deploy` uses
- * the Cloudflare-hosted store for reproducible shared state.
+ * network. That is the *store* only: the resources it tracks are still
+ * reconciled against the Cloudflare API, so `alchemy dev` needs
+ * `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and there is no offline
+ * emulator (ADR 0032). A real `alchemy deploy` uses the Cloudflare-hosted store
+ * for reproducible shared state.
  *
  * The store is selected from the **dev-vs-deploy** signal, not `CI` (see
  * `resolveStateMode` in `worker/env.ts`): `CI` is set for BOTH the deploy workflow
  * and the integration-test job, so it can't tell a real deploy from a test run.
- * Only `alchemy dev` resolves to `localState()` (offline); a real `alchemy deploy`
+ * Only `alchemy dev` resolves to `localState()`; a real `alchemy deploy`
  * — and the `Test.make` integration suite, which deploys to real remote Cloudflare
  * per ADR 0082 — uses the shared Cloudflare store. The selector runs synchronously
  * at module-eval, so it reads the dev signal off `process.env`

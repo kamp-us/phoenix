@@ -9,23 +9,29 @@
  * FETCH_HEAD`. Measured here on git 2.40.1 before the fix, 12 of 320 concurrent fetch-then-resolve
  * pairs came back empty; point {@link fetchBaseArgs} back at `FETCH_HEAD` and this file goes red.
  *
+ * The per-spawn ref that fixed it left a second, rarer race on the directory those names *shared*,
+ * which surfaced here as an intermittent `cannot lock ref` (#7428). That one is settled by where
+ * {@link baseRefFor} puts its leaf, so it is pinned in the last describe rather than raced for: the
+ * observed rate was one loss in 320 pairs, far below what this file's load would catch reliably.
+ *
  * What is exercised is the derivation the verb performs — the argv from {@link fetchBaseArgs},
  * {@link resolveBaseArgs} and {@link dropBaseRefArgs}, and the guard in {@link isCommitId}. The
  * Effect wrapper around them folds the same pieces over a scripted spawner elsewhere; running it
  * here would mean standing up a spawner layer per concurrent spawn to prove a property that is
  * git's, not Effect's.
  *
- * `git worktree add` is deliberately **not** in the loop. It carries concurrency faults of its own
- * that this change does not claim to fix — a sibling's null-oid `worktrees/<name>/HEAD` placeholder
- * breaking a concurrent fetch's connectivity check, and `failed to read …/commondir` between two
- * adds — so including it would make this file red for reasons it is not judging.
+ * `git worktree add` is deliberately **not** in the loop. It carries two concurrency faults of its
+ * own — a sibling's null-oid `worktrees/<name>/HEAD` placeholder breaking a concurrent fetch's
+ * connectivity check, and `failed to read …/commondir` between two adds — so including it would make
+ * this file red for reasons it is not judging. Those two are `worktree-concurrency.git.test.ts`'s
+ * subject (#7331), over the same {@link openClone} fixture.
  */
 import {execFile, execFileSync} from "node:child_process";
-import {mkdtempSync, rmSync, writeFileSync} from "node:fs";
-import {tmpdir} from "node:os";
+import {existsSync} from "node:fs";
 import {join} from "node:path";
 import {promisify} from "node:util";
 import {afterAll, describe, expect, it} from "vitest";
+import {GIT_ENV, openClone, removeClones} from "./throwaway-clone.test-support.ts";
 import {
 	baseRefFor,
 	dropBaseRefArgs,
@@ -36,54 +42,8 @@ import {
 
 const run = promisify(execFile);
 
-/** Pinned away from the developer's own config: a fixture that inherits it proves what this machine does. */
-const GIT_ENV = {
-	...process.env,
-	GIT_CONFIG_GLOBAL: "/dev/null",
-	GIT_CONFIG_SYSTEM: "/dev/null",
-	GIT_AUTHOR_NAME: "fixture",
-	GIT_AUTHOR_EMAIL: "fixture@example.invalid",
-	GIT_COMMITTER_NAME: "fixture",
-	GIT_COMMITTER_EMAIL: "fixture@example.invalid",
-};
-
-/**
- * Enough history that a fetch takes long enough for sibling fetches to genuinely overlap. With a
- * near-empty repo the fetches finish before each other start and the race never opens at all.
- */
-const COMMITS = 40;
 const SPAWNS = 16;
 const ROUNDS = 20;
-
-const roots: string[] = [];
-
-interface Fixture {
-	readonly clone: string;
-	readonly tip: string;
-}
-
-const openClone = (): Fixture => {
-	const root = mkdtempSync(join(tmpdir(), "fabrika-worktree-base-"));
-	roots.push(root);
-	const git = (cwd: string | undefined, ...args: ReadonlyArray<string>): string =>
-		execFileSync("git", [...args], {cwd, env: GIT_ENV, encoding: "utf8"});
-
-	const remote = join(root, "remote.git");
-	const seed = join(root, "seed");
-	const clone = join(root, "clone");
-	git(undefined, "init", "--quiet", "--bare", "-b", "main", remote);
-	git(undefined, "init", "--quiet", "-b", "main", seed);
-	for (let i = 0; i < COMMITS; i++) {
-		writeFileSync(join(seed, `f${i}.txt`), `${"x".repeat(20_000)}${i}`);
-		git(seed, "add", "-A");
-		git(seed, "commit", "--quiet", "-m", `c${i}`);
-	}
-	git(seed, "remote", "add", "origin", remote);
-	git(seed, "push", "--quiet", "origin", "main");
-	// `--no-local`: a local clone hardlinks its objects and skips the transfer the race lives in.
-	git(undefined, "clone", "--quiet", "--no-local", remote, clone);
-	return {clone, tip: git(seed, "rev-parse", "HEAD").trim()};
-};
 
 /** One spawn's base resolution: exactly the three commands the verb runs, in the verb's order. */
 const resolveBase = async (clone: string, name: string, nonce: string): Promise<string> => {
@@ -102,9 +62,7 @@ const resolveBase = async (clone: string, name: string, nonce: string): Promise<
 	}
 };
 
-afterAll(() => {
-	for (const root of roots) rmSync(root, {recursive: true, force: true});
-});
+afterAll(removeClones);
 
 describe("resolving the base under parallel spawns", () => {
 	it("gives every one of N concurrent spawns the same fetched tip, with no lost base", async () => {
@@ -149,5 +107,25 @@ describe("the per-spawn base ref", () => {
 				execFileSync("git", ["check-ref-format", ref], {env: GIT_ENV, stdio: "ignore"}),
 			).not.toThrow();
 		}
+	});
+
+	// #7428: a per-spawn *name* still left a shared *directory* for `update-ref -d` to rmdir out from
+	// under a sibling's in-flight fetch. What makes the leaf safe is which component it sits in, so
+	// that is what is pinned — a future nesting that reintroduces the race reds here.
+	it("puts its leaf directly in `refs/fabrika/`, the deepest directory `update-ref -d` cannot prune", () => {
+		const ref = baseRefFor("agent", "0123456789ab");
+		expect(ref.startsWith("refs/fabrika/")).toBe(true);
+		expect(ref.split("/")).toHaveLength(3);
+	});
+
+	it("leaves the directory its leaf lived in behind, so a sibling's fetch can still lock a ref there", async () => {
+		const {clone, tip} = openClone();
+		expect(await resolveBase(clone, "agent-alone", "0123456789ab")).toBe(tip);
+
+		// `update-ref -d` prunes every parent it empties, floored two components in. That leaf was the
+		// only ref under its directory, so a prunable directory would be gone by now.
+		const ref = baseRefFor("agent-alone", "0123456789ab");
+		const leafDir = join(clone, ".git", ref.slice(0, ref.lastIndexOf("/")));
+		expect(existsSync(leafDir)).toBe(true);
 	});
 });

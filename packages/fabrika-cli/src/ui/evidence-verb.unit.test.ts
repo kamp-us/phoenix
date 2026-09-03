@@ -366,3 +366,72 @@ describe("runEvidence", () => {
 		).toBe(false);
 	});
 });
+
+/**
+ * The repair round's ground: `build branch --resume` checks out `build/pr-<pr>-<nonce>` and points
+ * its upstream at the PR's head ref, so the local name and the head ref never agree (#7402).
+ */
+const RESUME_BRANCH = `build/pr-4318-${NONCE}`;
+const RESUME_SCRATCH = `/tmp/fabrika-build/s-9f2e/4318-${NONCE}`;
+
+const resumeFiles = (): Record<string, Uint8Array | string> =>
+	Object.fromEntries(
+		Object.entries(files()).map(([path, bytes]) => [
+			path.replace(SCRATCH, RESUME_SCRATCH),
+			// The manifests name their captures by absolute path, so the rehome is of the bytes too.
+			typeof bytes === "string" ? bytes.replaceAll(SCRATCH, RESUME_SCRATCH) : bytes,
+		]),
+	);
+
+/** `null` leaves `@{upstream}` unscripted, which is a branch that tracks nothing. */
+const resumeScript = (upstream: string | null): ReadonlyArray<Scripted> => [
+	[/^git rev-parse --path-format=absolute/, GIT_DIRS],
+	[/^git rev-parse --abbrev-ref HEAD$/, okOut(`${RESUME_BRANCH}\n`)],
+	...(upstream === null
+		? []
+		: ([
+				[/^git rev-parse --abbrev-ref --symbolic-full-name /, okOut(`origin/${upstream}\n`)],
+				[/^git remote$/, okOut("origin\n")],
+			] as ReadonlyArray<Scripted>)),
+	[/GET .*\/repos\/o\/r\/issues\/4318$/, issue({number: 4318})],
+	[
+		/GET .*\/repos\/o\/r\/issues\/4318\/comments/,
+		comments({id: 1, body: marker("s-9f2e", LANE_UUID)}),
+	],
+	[
+		/GET .*\/repos\/o\/r\/collaborators\/agent\/permission/,
+		{status: 200, body: '{"permission":"write"}'},
+	],
+	[/GET .*\/repos\/o\/r\/pulls\/4318$/, pull({head: {sha: HEAD, ref: LANE}})],
+	[
+		/POST .*\/repos\/o\/r\/issues\/4318\/comments/,
+		{
+			status: 201,
+			body: JSON.stringify({
+				id: POSTED_ID,
+				html_url: "https://github.com/o/r/pull/4318#issuecomment-1",
+			}),
+		},
+	],
+];
+
+describe("runEvidence over a repair round's resume branch", () => {
+	it("attaches when the branch tracks the PR's head ref under another name", async () => {
+		const outcome = await run(
+			withReadback(resumeScript(LANE), () => EXPECTED_BODY),
+			{files: resumeFiles()},
+		);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).commentId).toBe(POSTED_ID);
+	});
+
+	it("refuses a branch tracking some other lane's ref on 18", async () => {
+		const outcome = await run(resumeScript("build/9999-other-aaaaaaaa"), {files: resumeFiles()});
+		expect(outcome.code).toBe(LANE_NOT_MINE);
+	});
+
+	it("refuses a branch that tracks nothing on 18 — its own name is not the head ref", async () => {
+		const outcome = await run(resumeScript(null), {files: resumeFiles()});
+		expect(outcome.code).toBe(LANE_NOT_MINE);
+	});
+});

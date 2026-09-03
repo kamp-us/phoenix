@@ -64,6 +64,7 @@ const PRUNE = /^git worktree prune$/;
 const REMOVE = /^git worktree remove /;
 const STATUS = /^git -C \S+ status --porcelain$/;
 const SELF = /^git rev-parse --path-format=absolute/;
+const REVLIST = /^git rev-list --count /;
 const LANE_ISSUE = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}$`);
 const LANE_COMMENTS = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}/comments`);
 const REMOTES = /^git remote$/;
@@ -221,7 +222,7 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	it("is PARK_HOLDS while a working tree holds the branch and the board licenses no retirement", async () => {
+	it("is PARK_HOLDS while a working tree holds the branch and no license retires it", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
 		const out = await run(
@@ -231,6 +232,10 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 				[TREES, worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
 				[PRUNE, okOut("")],
 				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut("")],
+				// Unbuilt commits on the branch: no board license covers this tree and ADR 0342's arm
+				// refuses one carrying work, so the park still holds.
+				[REVLIST, okOut("2\n")],
 			],
 			[
 				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
@@ -269,6 +274,33 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout).mechanism).toMatch(/retired 1 working tree/);
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// #7027: the operator released the dead builder's claim first, which used to close this route.
+	it("clears the park on an OPEN issue when nothing claims the lane and the tree carries nothing", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH)],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[PRUNE, okOut("")],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut("")],
+				[REVLIST, okOut("0\n")],
+				[REMOVE, okOut("")],
+				[TREES, worktreeList()],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toMatch(/retired 1 working tree/);
 	});
 
 	it("is TARGET_ABSENT in a clone that never cut the branch — never a clear on an absent read", async () => {
@@ -377,6 +409,8 @@ describe("recipe unpark — a spawn-dead park clears once the dead shell's resid
 				[TREES, worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
 				[PRUNE, okOut("")],
 				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut(" M half-written.ts")],
+				[REVLIST, okOut("0\n")],
 			],
 			[
 				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],

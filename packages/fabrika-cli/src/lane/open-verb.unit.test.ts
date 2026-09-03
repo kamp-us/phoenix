@@ -3,7 +3,13 @@ import {Effect, type FileSystem, type Path} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import type {VerbOutcome} from "../verb.ts";
-import {APPEND_UNKNOWN, LANE_EXISTS, LANE_UNREADABLE, SHAPE_MISMATCH} from "./codes.ts";
+import {
+	APPEND_UNKNOWN,
+	LANE_EXISTS,
+	LANE_IS_CHILD,
+	LANE_UNREADABLE,
+	SHAPE_MISMATCH,
+} from "./codes.ts";
 import type {ExpectationRead} from "./expectation.ts";
 import {choreTemplateText, coderTemplateText} from "./fixtures.test-support.ts";
 import {runOpen} from "./open-verb.ts";
@@ -141,6 +147,45 @@ describe("lane open", () => {
 		expect(fs.written.size).toBe(0);
 		expect(out.stderr.join("\n")).toContain("plan the epic first");
 		expect(out.stderr.join("\n")).toContain("no sub-issue links");
+	});
+
+	it("refuses an epic's child, naming the parent's lane as the one to drive", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({
+				...OPTIONS,
+				expectation: reads({_tag: "Read", expectation: {_tag: "Child", parent: 4304}}),
+			}),
+		);
+
+		expect(out.code).toBe(LANE_IS_CHILD);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("#42 hangs under #4304");
+		expect(out.stderr.join("\n")).toContain("fabrika lane status 4304");
+	});
+
+	it("refuses a child whose parent number the board did not carry", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(
+			fs,
+			runOpen({
+				...OPTIONS,
+				expectation: reads({_tag: "Read", expectation: {_tag: "Child", parent: null}}),
+			}),
+		);
+
+		expect(out.code).toBe(LANE_IS_CHILD);
+		expect(fs.written.size).toBe(0);
+		expect(out.stderr.join("\n")).toContain("hangs under a parent issue");
+	});
+
+	it("boots a parentless issue, unchanged by the child guard", async () => {
+		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}});
+		const out = await run(fs, runOpen(OPTIONS));
+
+		expect(out.code).toBe(0);
+		expect(fs.written.get(WORKFLOW)).toBe(coderTemplateText());
 	});
 
 	it("refuses an unreadable child list — UNKNOWN, never a boot", async () => {

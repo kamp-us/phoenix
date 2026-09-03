@@ -97,7 +97,7 @@ const hydrate = (
 				number: record.number,
 				title: record.title,
 				labels: record.labels,
-				hasParent: record.isSubIssue,
+				hasParent: record.parent._tag !== "None",
 				body: record.body,
 				comments: resolved,
 			},

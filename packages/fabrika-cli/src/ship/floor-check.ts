@@ -81,6 +81,51 @@ export type CheckPlan =
 	  };
 
 /**
+ * The check-run titles, one per row of ADR 0318's table, named because they are also read back.
+ *
+ * A title is the only place the published check-run says *which* state it concluded on: `stale` and
+ * UNKNOWN both land on `completed`/`failure` under the one name a branch protection binds, and
+ * `review ci` has to tell them apart to know whether a red is its own caller's to clear (#7441).
+ */
+const UNBOUND_TITLE = "The floor does not bind";
+const UNRESOLVED_TITLE = "The floor could not be resolved";
+const SATISFIED_TITLE = "The floor is discharged at this head";
+const AWAITING_TITLE = "Waiting for a governance verdict at this head";
+const BLOCKED_TITLE_PREFIX = "The governance verdict at this head is ";
+
+/**
+ * What a published `governance floor at head` check-run says, recovered from its title.
+ *
+ * `Unreadable` is a sixth arm rather than a lenient default: a title this module did not write is
+ * one nobody can vouch for, and reading it as any row above is how a drifted string would quietly
+ * turn a floor off. {@link publishedFloorOf} is {@link planFor}'s inverse, and the round-trip over
+ * every branch of that function is what holds the two together.
+ */
+export type PublishedFloor =
+	/** `n/a` — the diff touches no governance root. */
+	| {readonly _tag: "Unbound"}
+	/** The floor could not be read. UNKNOWN, and so nobody's to clear (ADR 0092). */
+	| {readonly _tag: "Unresolved"}
+	/** A head-bound, authorized PASS. */
+	| {readonly _tag: "Satisfied"}
+	/** No verdict at this head yet — the one row that stays pending. */
+	| {readonly _tag: "Awaiting"}
+	/** A verdict exists and blocks; `state` is `ship gate`'s word for it, `stale` or `fail`. */
+	| {readonly _tag: "Blocked"; readonly state: string}
+	| {readonly _tag: "Unreadable"};
+
+export const publishedFloorOf = (title: string | null): PublishedFloor => {
+	if (title === null) return {_tag: "Unreadable"};
+	if (title === UNBOUND_TITLE) return {_tag: "Unbound"};
+	if (title === UNRESOLVED_TITLE) return {_tag: "Unresolved"};
+	if (title === SATISFIED_TITLE) return {_tag: "Satisfied"};
+	if (title === AWAITING_TITLE) return {_tag: "Awaiting"};
+	if (!title.startsWith(BLOCKED_TITLE_PREFIX)) return {_tag: "Unreadable"};
+	const state = title.slice(BLOCKED_TITLE_PREFIX.length);
+	return state === "" ? {_tag: "Unreadable"} : {_tag: "Blocked", state};
+};
+
+/**
  * The conclusion map, whole, in one pure function — the acceptance criteria of #6161 read as a
  * table, so a reader checks it against them without tracing control flow.
  *
@@ -95,7 +140,7 @@ export const planFor = (pr: number, resolution: FloorResolution): CheckPlan => {
 			_tag: "Concluded",
 			conclusion: "success",
 			floor: "n/a",
-			title: "The floor does not bind",
+			title: UNBOUND_TITLE,
 			summary: `#${pr}'s diff touches no governance root, so no ${NAMESPACE} verdict is owed. This is an answer about the diff, not a discharged verdict.`,
 		};
 	}
@@ -105,7 +150,7 @@ export const planFor = (pr: number, resolution: FloorResolution): CheckPlan => {
 			_tag: "Concluded",
 			conclusion: "failure",
 			floor: "unresolved",
-			title: "The floor could not be resolved",
+			title: UNRESOLVED_TITLE,
 			summary: `${reason}\n\nUNKNOWN never passes (ADR 0092), so this concludes failure rather than waiting.`,
 		};
 	}
@@ -114,7 +159,7 @@ export const planFor = (pr: number, resolution: FloorResolution): CheckPlan => {
 			_tag: "Concluded",
 			conclusion: "success",
 			floor: "satisfied",
-			title: "The floor is discharged at this head",
+			title: SATISFIED_TITLE,
 			summary: `#${pr} carries an authorized ${NAMESPACE} PASS bound to ${resolution.sha}.`,
 		};
 	}
@@ -122,7 +167,7 @@ export const planFor = (pr: number, resolution: FloorResolution): CheckPlan => {
 		return {
 			_tag: "Pending",
 			floor: "blocked",
-			title: "Waiting for a governance verdict at this head",
+			title: AWAITING_TITLE,
 			summary: `${floorRefusalLine(pr, resolution.state, resolution.sha)}\n\nNothing is wrong yet — this check stays pending until the verdict lands, and \`fabrika governance post\` re-fires the job that turns it green.`,
 		};
 	}
@@ -130,7 +175,7 @@ export const planFor = (pr: number, resolution: FloorResolution): CheckPlan => {
 		_tag: "Concluded",
 		conclusion: "failure",
 		floor: "blocked",
-		title: `The governance verdict at this head is ${resolution.state}`,
+		title: `${BLOCKED_TITLE_PREFIX}${resolution.state}`,
 		summary: floorRefusalLine(pr, resolution.state, resolution.sha),
 	};
 };

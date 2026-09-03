@@ -33,9 +33,9 @@ import {
 	ensureCommitPresent,
 	headSha,
 	isAncestor,
+	publishTarget,
 	push,
 	remoteSha,
-	upstreamOf,
 } from "./git.ts";
 import {requireLane} from "./lane-guard.ts";
 import {resolveTargetRepo} from "./target.ts";
@@ -77,12 +77,7 @@ export const runPush = (
 			);
 		}
 
-		// The push TARGET is the tracked upstream when there is one — resume mode's local name differs
-		// from the PR's remote head branch, and reading back the local name would call every repair
-		// push a false `17`.
-		const upstream = yield* upstreamOf(lane.branch);
-		const remote = upstream?.remote ?? "origin";
-		const ref = upstream?.ref ?? lane.branch;
+		const {remote, ref} = yield* publishTarget(lane.branch);
 
 		const before = yield* remoteSha(remote, ref);
 		if (before._tag === "Failure") {

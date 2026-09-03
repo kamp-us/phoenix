@@ -1,6 +1,7 @@
 /**
- * `build retire` — take back the checkout an orphaned build worktree is holding, when the board
- * licenses it.
+ * `build retire` — take back the checkout an orphaned build worktree is holding, where a license
+ * reaches it: the board's two (ADR 0323), or, on a lane no claim marker holds any more, proof the
+ * tree carries nothing (ADR 0342).
  *
  * The residue this clears is #6610: a session dies mid-round, its worktree stays registered holding
  * the lane branch, and `build branch --resume-lane` then refuses on `11` rather than rename the
@@ -14,7 +15,10 @@
  *      process is standing in is excluded — a checkout cannot be pulled out from under its own run.
  *   3. The board is read once: the ticket's state, and the ACL-checked claim and adopt markers.
  *   4. {@link classify} seats each subject. **Nothing is removed on a `Hold`**, and a read that
- *      failed refuses on `11` rather than resolve to either verdict.
+ *      failed refuses on `11` rather than resolve to either verdict. A subject the board licenses
+ *      nothing about and no live claim holds comes back `Unclaimed`, and {@link residue} then reads
+ *      what that one tree carries for ADR 0342's arm — only that one, so the two board licenses
+ *      still ask git nothing about the tree.
  *   5. Each released tree is **salvaged then removed**, in ADR 0321's order and under its ban on
  *      `--force`: uncommitted work goes onto the tree's own branch first, so ignoring dirtiness
  *      costs nobody their only copy, and a removal that still refuses is reported for a human.
@@ -41,13 +45,23 @@ import {
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {
+	commitsPastBase,
 	pruneWorktrees,
 	removeWorktree,
 	salvageWorktree,
 	worktreeCheckouts,
 	worktreeDirtyPaths,
 } from "./git.ts";
-import {type BoardState, classify, type Subject, sessionsByNonce, subjectsFor} from "./retire.ts";
+import {
+	type BoardState,
+	classify,
+	type Residue,
+	type Seated,
+	type Subject,
+	seatResidue,
+	sessionsByNonce,
+	subjectsFor,
+} from "./retire.ts";
 import {badNumber, resolveTargetRepo, scannedLine} from "./target.ts";
 import {readTree} from "./tree.ts";
 
@@ -106,10 +120,17 @@ export const runRetire = (options: RetireOptions): Effect.Effect<VerbOutcome, ne
 			);
 		}
 		const selfPaths = new Set([self.value.root]);
-		const verdicts = held.subjects.map((subject) => ({
-			subject,
-			verdict: classify(subject, read.board, selfPaths),
-		}));
+		const verdicts: Array<{subject: Subject; verdict: Seated}> = [];
+		for (const subject of held.subjects) {
+			const seated = classify(subject, read.board, selfPaths);
+			if (seated._tag !== "Unclaimed") {
+				verdicts.push({subject, verdict: seated});
+				continue;
+			}
+			const carried = yield* residue(subject);
+			if (carried._tag === "Refused") return carried.outcome;
+			verdicts.push({subject, verdict: seatResidue(subject, carried.residue)});
+		}
 
 		const retired: Array<{
 			path: string;
@@ -189,6 +210,48 @@ export const runRetire = (options: RetireOptions): Effect.Effect<VerbOutcome, ne
 					notes,
 				)
 			: answer(JSON.stringify(payload), notes);
+	});
+
+/** What a lane branch's commits are counted against, for the unclaimed arm. Every lane cuts off it. */
+const BASE = "origin/main";
+
+type Read =
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome}
+	| {readonly _tag: "Residue"; readonly residue: Residue};
+
+/**
+ * What one unclaimed subject carries — read only for the subjects a board license does not cover.
+ *
+ * Reading it for every subject would price the two board licenses at two more failure modes each: a
+ * closed ticket's tree would start refusing on `11` because a count could not be taken, and ADR 0323
+ * rules the tree's contents out of that verdict entirely.
+ */
+const residue = (subject: Subject): Effect.Effect<Read, never, Deps> =>
+	Effect.gen(function* () {
+		const dirty = yield* worktreeDirtyPaths(subject.path);
+		if (dirty._tag === "Failure") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: no board license covers ${subject.path}, and whether it holds uncommitted work is UNKNOWN: ${dirty.reason} — nothing was removed.`,
+				),
+			};
+		}
+		const ahead = yield* commitsPastBase(subject.branch, BASE);
+		if (ahead._tag === "Failure") {
+			return {
+				_tag: "Refused" as const,
+				outcome: refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: no board license covers ${subject.path}, and what ${subject.branch} carries past ${BASE} is UNKNOWN: ${ahead.reason} — nothing was removed.`,
+				),
+			};
+		}
+		return {
+			_tag: "Residue" as const,
+			residue: {uncommitted: dirty.value, commitsPastBase: ahead.value, base: BASE},
+		};
 	});
 
 type Salvaged =

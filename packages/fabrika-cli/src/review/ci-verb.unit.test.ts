@@ -3,6 +3,7 @@ import {describe, expect, it} from "vitest";
 import {fakeFs, fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {workflows} from "../ship/fixtures.test-support.ts";
+import {CHECK_RUN_NAME, planFor} from "../ship/floor-check.ts";
 import {runCi} from "./ci-verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {checkRuns, HEAD, inventory, OLD_HEAD, pull, runsAtHead} from "./fixtures.test-support.ts";
@@ -23,7 +24,7 @@ const NOT_FOUND = '{"message":"Not Found"}';
 /** The check-run envelope at a commit, as the platform serves it. */
 const runs = (
 	declared: number,
-	list: ReadonlyArray<{name: string; status: string; conclusion: string | null}>,
+	list: ReadonlyArray<{name: string; status: string; conclusion: string | null; title?: string}>,
 ): HttpReply => served(checkRuns(declared, list));
 
 const GREEN = runs(3, [
@@ -497,6 +498,168 @@ describe("the bounded --wait", () => {
 		);
 		expect(out.code).toBe(NO_GATE_COVERAGE);
 		expect(out.stdout).toBe("");
+	});
+
+	/**
+	 * #7392: the floor check-run stays `in_progress` until a governance verdict binds at the head
+	 * (ADR 0318), and the shell running this wait is the shell that owes that verdict. A cadence no
+	 * test could sit through proves the answer comes on the first read.
+	 */
+	describe("a governance floor that is waiting on its own caller", () => {
+		const FLOOR_PENDING = runs(3, [
+			{name: "lint / format / typecheck", status: "completed", conclusion: "success"},
+			{name: "unit tests", status: "completed", conclusion: "success"},
+			{name: CHECK_RUN_NAME, status: "in_progress", conclusion: null},
+		]);
+		const FLOOR_YML = ".github/workflows/governance-floor.yml";
+		const floorRuns = (status: string): ReadonlyArray<Scripted> => [
+			[WORKFLOWS, served(inventory(CI_YML, FLOOR_YML))],
+			[AT_HEAD, served(runsAtHead(CI_YML, {path: FLOOR_YML, name: "governance-floor", status}))],
+		];
+
+		it("answers governance-owed at once when the floor's workflow run has completed", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, FLOOR_PENDING],
+				],
+				floorRuns("completed"),
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+				"settle\tgovernance-owed",
+				`ci\t${HEAD}\tpending`,
+			]);
+			expect(out.stderr.join("\n")).toContain("a governance verdict bound at this head");
+		});
+
+		/** The floor has not published yet, so this one does clear on its own and is waited on. */
+		it("waits on a floor whose own workflow run is still in flight, unchanged", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[once(RUNS), FLOOR_PENDING],
+					[RUNS, GREEN],
+				],
+				[...floorRuns("in_progress"), ...GATED],
+				{wait: true, cadenceSeconds: 0},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tgreen`]);
+			expect(out.stderr.join("\n")).not.toContain("governance verdict");
+		});
+
+		it("keeps waiting when something other than the floor is also pending", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, PENDING],
+				],
+				floorRuns("completed"),
+				{wait: true, cadenceSeconds: 0, budgetSeconds: 0},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n")[0]).toBe("settle\tbudget-exhausted");
+		});
+
+		/**
+		 * #7441 is #7392's other half. On a repair round the verdict is bound to the previous head, so
+		 * the floor concludes `failure` rather than staying pending — the rollup is `red` and the verb
+		 * returns at once. That red belongs to the shell reading it, and a reviewer taking it as the
+		 * code class's execution evidence FAILs a PR over a floor it was about to clear.
+		 */
+		const floorRed = (title: string) =>
+			runs(3, [
+				{name: "lint / format / typecheck", status: "completed", conclusion: "success"},
+				{name: "unit tests", status: "completed", conclusion: "success"},
+				{name: CHECK_RUN_NAME, status: "completed", conclusion: "failure", title},
+			]);
+		// Off the writer, never hand-copied: a third copy of the title would be the drift the whole
+		// discriminator turns on, and it would drift silently green.
+		const publishedTitle = (state: string) =>
+			planFor(4321, {_tag: "Bound", state, sha: HEAD, scanned: 2, stderr: []}).title;
+		const STALE_TITLE = publishedTitle("stale");
+		const UNRESOLVED_TITLE = planFor(4321, {
+			_tag: "Unresolved",
+			outcome: {code: 11, stdout: "", stderr: ["unreadable"]},
+		}).title;
+
+		it("answers governance-stale on a red whose only failing check is a stale floor", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, floorRed(STALE_TITLE)],
+				],
+				floorRuns("completed"),
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual([
+				"settle\tgovernance-stale",
+				`ci\t${HEAD}\tred`,
+			]);
+			expect(out.stderr.join("\n")).toContain("This red is yours to clear");
+		});
+
+		/** The caller's own re-fire mid-republish — still its red, so still its token. */
+		it("answers governance-stale while the floor's own re-fire is still in flight", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, floorRed(STALE_TITLE)],
+				],
+				floorRuns("in_progress"),
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.stdout.split("\n")[0]).toBe("settle\tgovernance-stale");
+		});
+
+		it("stays a plain red when anything else is failing beside the floor", async () => {
+			const MIXED = runs(3, [
+				{name: "lint / format / typecheck", status: "completed", conclusion: "success"},
+				{name: "unit tests", status: "completed", conclusion: "failure"},
+				{name: CHECK_RUN_NAME, status: "completed", conclusion: "failure", title: STALE_TITLE},
+			]);
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, MIXED],
+				],
+				[],
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tred`]);
+			expect(out.stderr.join("\n")).not.toContain("yours to clear");
+		});
+
+		/** UNKNOWN never passes, so it is never the reader's to discount either (ADR 0092). */
+		it("stays a plain red when the floor could not be resolved at all", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, floorRed(UNRESOLVED_TITLE)],
+				],
+				[],
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.code).toBe(0);
+			expect(out.stdout.split("\n").slice(0, 2)).toEqual(["settle\tsettled", `ci\t${HEAD}\tred`]);
+			expect(out.stderr.join("\n")).not.toContain("yours to clear");
+		});
+
+		it("stays a plain red when no floor run at the head vouches for the check", async () => {
+			const out = await run(
+				[
+					[PULL, served(pull())],
+					[RUNS, floorRed(STALE_TITLE)],
+				],
+				[[AT_HEAD, served(runsAtHead(CI_YML))]],
+				{wait: true, cadenceSeconds: 86_400},
+			);
+			expect(out.stdout.split("\n")[0]).toBe("settle\tsettled");
+		});
 	});
 
 	it("returns no-producer at once — a caller must not wait for a run that will never start", async () => {

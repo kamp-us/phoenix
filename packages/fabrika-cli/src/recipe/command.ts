@@ -10,6 +10,7 @@ import {Effect, Option} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
+import {resolveRootOrRefuse} from "../lane/ground.ts";
 import {DEFAULT_LANES_ROOT} from "../lane/store.ts";
 import {runRerun} from "./rerun-verb.ts";
 import {runRoute} from "./route-verb.ts";
@@ -29,8 +30,10 @@ const unpark = leafCommand(
 			Argument.withDescription("the lane id under the root — by convention the issue number"),
 		),
 		root: Flag.string("root").pipe(
-			Flag.withDefault(DEFAULT_LANES_ROOT),
-			Flag.withDescription(`the lanes root directory (default: ${DEFAULT_LANES_ROOT})`),
+			Flag.optional,
+			Flag.withDescription(
+				`the lanes root directory (default: the owning repository's ${DEFAULT_LANES_ROOT}, derived off the primary checkout so every worktree reads the same ledger)`,
+			),
 		),
 		task: Flag.string("task").pipe(
 			Flag.optional,
@@ -39,13 +42,27 @@ const unpark = leafCommand(
 		repo: repoFlag,
 	},
 	Effect.fn(function* ({lane, root, task, repo}) {
+		const cwd = process.cwd();
+		// The lane verbs this one relays derive their root off the owning repository, so deriving it
+		// any other way here makes one lane key name two directories and strands every worktree
+		// driver on a lane the ledger holds (#7380).
+		const resolvedRoot = yield* resolveRootOrRefuse(
+			"fabrika recipe unpark",
+			root,
+			DEFAULT_LANES_ROOT,
+			cwd,
+		);
+		if (typeof resolvedRoot !== "string") {
+			yield* emit(resolvedRoot);
+			return;
+		}
 		yield* emit(
 			yield* runUnpark({
-				root,
+				root: resolvedRoot,
 				lane,
 				task: Option.getOrNull(task),
 				repo: Option.getOrNull(repo),
-				cwd: process.cwd(),
+				cwd,
 				env: process.env,
 			}),
 		);
@@ -53,7 +70,7 @@ const unpark = leafCommand(
 ).pipe(
 	Command.withShortDescription("Clear a parked lane when the park is a known recipe."),
 	Command.withDescription(
-		"Clear one parked lane when its park matches the known-recipe table, and refuse with the ledger untouched when it does not. The park is seated by its leaf state AND the cause its parking event named (`lane report`/`lane transition --cause`, a closed set in code) — a BLOCKED with no cause keys on nothing and is novel. The recipe's clearing condition is read off the verb that owns it: `ship cp-approval`'s ADR 0175 discharge at the PR's live head for the §CP park, for the worktree-holds-branch park the same working-tree read `build branch --resume-lane` refuses on, and for the campaign-paused park the lane milestone's `## Campaigns` State cell at origin/main, which ADR 0304 makes the whole dispatch permission — cleared only on `active`, and never resumed here. The spawn-dead park is the one whose read is the lane rather than the cause: no verb can spawn an agent to ask whether the provider is back, so it proves only that the dead shell left nothing that would refuse the same brief being dispatched again — no build claim standing on the issue, and no working tree holding its lane branch (ADR 0339). The queue-stall park is the one row whose clear also GRANTS: its read is `ship reconcile`'s answer relayed, where `landed` and `ejected` clear and `unresolved` is exit 13, and because the park IS a spent wait budget the clear records the waits it buys on the very same UNBLOCKED — one event, so the resumed lane comes back one conclusive read below its budget instead of re-parking (ADR 0313). The clear is recorded through `lane transition … UNBLOCKED`, and the answer is emitted only after a second fold reads the task out of the park. stdout is `{lane, task, park, clearance, mechanism, current}`, plus `waitGrant` on a clear that granted. Respawning what the lane parked out of is the operator's, not this verb's. Exits 4 (a lane record was read in full and is not the shape), 7 (no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the queue-stall row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no ## Campaigns row pins), 8 (the UNBLOCKED append did not land — it is NOT recorded), 9 (the append landed and the re-fold does not prove the clear — the lane needs a human), 11 (a precondition could not be read — UNKNOWN, never cleared), 12 (the park's cause is outside the recipe table — nothing was written; route it to a human), 13 (a known recipe whose clearing condition is not met yet — nothing was written), 14 (the task is not parked), 15 (the task is not in the active phase, --task was omitted where it is required, or no issue number can be resolved), 20 (the machine refused the UNBLOCKED, log unappended). Example: fabrika recipe unpark 5847",
+		"Clear one parked lane when its park matches the known-recipe table, and refuse with the ledger untouched when it does not. The park is seated by its leaf state AND the cause its parking event named (`lane report`/`lane transition --cause`, a closed set in code) — a BLOCKED with no cause keys on nothing and is novel. The recipe's clearing condition is read off the verb that owns it: `ship cp-approval`'s ADR 0175 discharge at the PR's live head for the §CP park, for the worktree-holds-branch park the same working-tree read `build branch --resume-lane` refuses on, and for the campaign-paused park the lane milestone's `## Campaigns` State cell at origin/main, which ADR 0304 makes the whole dispatch permission — cleared only on `active`, and never resumed here. The spawn-dead park is the one whose read is the lane rather than the cause: no verb can spawn an agent to ask whether the provider is back, so it proves only that the dead shell left nothing that would refuse the same brief being dispatched again — no build claim standing on the issue, and no working tree holding its lane branch (ADR 0339). The queue-stall park is the one row whose clear also GRANTS: its read is `ship reconcile`'s answer relayed, where `landed` and `ejected` clear and `unresolved` is exit 13, and because the park IS a spent wait budget the clear records the waits it buys on the very same UNBLOCKED — one event, so the resumed lane comes back one conclusive read below its budget instead of re-parking (ADR 0313). The clear is recorded through `lane transition … UNBLOCKED`, and the answer is emitted only after a second fold reads the task out of the park. stdout is `{lane, task, park, clearance, mechanism, current}`, plus `waitGrant` on a clear that granted. Respawning what the lane parked out of is the operator's, not this verb's. Exits 4 (a lane record was read in full and is not the shape), 7 (no lane there; the PR the park waits on is proven absent, or closed where the row needs it open — the queue-stall row nominates at open-or-merged scope, since a landed PR is closed; or the lane's issue is absent, homed on no milestone, or homed on one no ## Campaigns row pins), 8 (the UNBLOCKED append did not land — it is NOT recorded), 9 (the append landed and the re-fold does not prove the clear — the lane needs a human), 11 (a precondition could not be read — UNKNOWN, never cleared), 12 (the park's cause is outside the recipe table — nothing was written; route it to a human), 13 (a known recipe whose clearing condition is not met yet — nothing was written), 14 (the task is not parked), 15 (the task is not in the active phase, --task was omitted where it is required, or no issue number can be resolved), 20 (the machine refused the UNBLOCKED, log unappended), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a park). Example: fabrika recipe unpark 5847",
 	),
 );
 

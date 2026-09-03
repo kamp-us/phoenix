@@ -33,6 +33,7 @@ import {
 	diffRange,
 	diffRangePaths,
 	mergeBase,
+	noMergeBaseReason,
 	originHeadRef,
 	patchIdsIn,
 	patchIdsOf,
@@ -288,7 +289,7 @@ const landingOf = (head: string, trunk: string): Effect.Effect<Landing, never, D
 		if (base._tag === "Failure") {
 			return {
 				_tag: "Unknown" as const,
-				reason: `it shares no merge base with ${trunk}: ${base.reason}`,
+				reason: `it shares ${yield* noMergeBaseReason(trunk, base.reason)}`,
 			};
 		}
 		const landed = yield* patchIdsIn(base.value, trunk, paths.value, TRUNK_SCAN);

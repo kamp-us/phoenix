@@ -112,6 +112,15 @@ git instead: a tree goes only when it is clean, unlocked, and its HEAD is on the
 from `origin/HEAD`, or landed there as a squash, matched on patch identity. Every other case, and
 every read that failed, is KEEP.
 
+The one place `retire` borrows that polarity is ADR
+[0342](../../../.decisions/0342-unclaimed-lane-worktree-retirement.md)'s third license, for the lane
+**nobody** holds — no authorized claim marker on the number carries the branch's lane nonce, because
+the claim was released, which is the state `build release` leaves behind and the state that used to
+deadlock. With no board statement to lean on, that arm reads the tree the way a reap does: it goes
+only on proof it carries nothing — clean, and its branch level with `origin/main` — and anything
+short of both is `33` with the blocking count named. A branch a live claim still carries holds before
+the tree is read at all.
+
 `build retire-branch` is the recovery ADR [0324](../../../.decisions/0324-retire-superseded-lane-branch.md)
 rules for a clone already in the two-branch state, where `lane prove` refuses because two branches
 carry one child's commits. It **renames** the superseded ones into `retired/` and deletes nothing, so
@@ -129,7 +138,7 @@ outside all three surfaces' validators · `23` the local head would drop publish
 quoted authorization is empty or undated · `29` the grant is on the PR and the local lane did not
 take it · `30` the deliverable is not a pull request a build lane produces · `31` the claim's mode
 and the child's standing verdict disagree · `32` the issue body carries no readable acceptance
-criteria · `33` a working tree holds the lane branch and the board licenses no release · `34` the
+criteria · `33` a working tree holds the lane branch and no license releases it · `34` the
 board attests no single survivor among a child's lane branches. `12` is a retired seat.
 
 ## The `campaign` group
@@ -283,13 +292,14 @@ Contract:
 | `governance sweep` | the uncited live-`accepted` records whose domain a subject touches, ranked |
 | `governance guards` | the anchored invariants the bound diff removes or modifies |
 | `governance base` | this skill's own text at the subject's merge base — the self fence's bytes |
-| `governance post` | the single sanctioned emit of the `governance` namespace verdict |
+| `governance post` | the single sanctioned emit of the `governance` namespace verdict — compose, bind, append into one comment per head or range, read back |
 | `governance digest` | the decision records that landed in a window, with each landing commit |
 | `governance readout` | the digest-publishing protocol: compose, upsert, read back |
 
 **Exit codes.** The shared table, plus `12` the `--sha` given is not the PR's head · `13` a read
-completed and its scope is provably incomplete · `14` this diff derives no governance namespace.
-`4` is a deliberate gap.
+completed and its scope is provably incomplete · `14` this diff derives no governance namespace ·
+`17` a standing verdict of the opposite polarity at this head, or over this range, would be retired
+and `--supersede` was not passed. `4` is a deliberate gap.
 
 Three behaviours are worth knowing:
 
@@ -519,8 +529,25 @@ created and arrived dep-less.
 - **Its base never travels through `FETCH_HEAD`.** That name is one file in the shared `.git` dir and
   every parallel spawn fetches the same clone, so a sibling's fetch truncated it mid-read and the
   loser's spawn died on `fatal: invalid reference: FETCH_HEAD`. The fetch lands in a per-spawn ref
-  under `refs/fabrika/worktree-base/`, which is resolved to a commit id and dropped before the slow
-  `git worktree add` runs at that id ([#6081](https://github.com/kamp-us/phoenix/issues/6081)).
+  named `refs/fabrika/worktree-base-<slug>-<nonce>`, which is resolved to a commit id and dropped
+  before the slow `git worktree add` runs at that id
+  ([#6081](https://github.com/kamp-us/phoenix/issues/6081)). That leaf sits *directly* in
+  `refs/fabrika/` rather than one level down, because `git update-ref -d` removes every parent
+  directory its deletion empties and stops two components in — so a nested prefix was a directory the
+  last spawn to finish rmdir'd out from under a sibling's in-flight fetch, which then died on
+  `cannot lock ref … No such file or directory`
+  ([#7428](https://github.com/kamp-us/phoenix/issues/7428)).
+- **Two sibling-worktree faults are recovered from, and only those two.** A `git worktree add`
+  registers `.git/worktrees/<name>/` before it checks out, and while that entry is half-built any
+  concurrent command against the clone can die on it — a fetch's connectivity check on the null-oid
+  `worktrees/<name>/HEAD`, or another add on `worktrees/<name>/commondir`. An entry a *failed* add
+  left behind may not heal on its own — on git 2.40.1 it never does and every later fetch in that
+  clone fails identically, while on git 2.55.0 the next fetch succeeds — so the fetch and the add
+  each answer both sources by pruning the dead entries and re-attempting, bounded to five attempts
+  and up to 3s of delay per command, holding no lock across the slow add
+  ([#7331](https://github.com/kamp-us/phoenix/issues/7331)). Any other diagnostic refuses on the
+  first attempt, an exhausted one still refuses at `16`/`17` naming git's own line, and a recovered
+  add is still held to the tree existing and its virtual store landing.
 - **No verb here decides anything about a spawn.** `hook spawn` — the model-allowlist guard on
   `PreToolUse` — is retired, decision and declaration both (ADR
   [0331](../../../.decisions/0331-fabrika-spawn-hook-retired.md)). Model choice is a per-run human
@@ -542,7 +569,7 @@ snapshot. Lane state is local and never committed.
 | `lane prove` | whether the board agrees with a lane event, before it is recorded |
 | `lane history` | the log verbatim, one `{task, event, at}` per event |
 | `lane print` | the compiled topology: phases, terminals, and each state's legal events |
-| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run |
+| `lane open` / `emit` | boot a lane from a committed template, or generate an epic's machine from its board topology — `open` refuses an epic at `46`, typed `type:epic` or carrying sub-issue links, since the coder template has one task, and an epic's *child* at `48`, naming the parent whose lane already carries it as a task; `emit` refuses a lane already on disk at `14` and names the two-step remedy, retire the directory then re-run |
 | `lane brief` | the spawn prompt for one task's current leaf state |
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
 | `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch to `ORIG_HEAD` and pushes nothing |
@@ -746,7 +773,8 @@ precondition read failed · `12` the park's cause is outside the known-recipe se
 recipe whose clearing condition is not met yet · `14` the task's leaf state is not a park · `15`
 the task could not be resolved · `16`–`18` the `governance` verdict is absent, stale, or FAIL ·
 `19` no run at the head concluded in failure · `20` the machine refused the `UNBLOCKED` · `21` the
-rerun was requested and its outcome could not be re-read · `22` the state applies no recipe.
+rerun was requested and its outcome could not be re-read · `22` the state applies no recipe · `39`
+the cwd is not in a repository, so `unpark` has none to derive its default lanes root off.
 
 **Known clears, novel escalates, and both are exit codes.** `12` is nothing-written, route it to a
 human; `13` is wait. `recipe route --exit` folds the first to `BLOCKED` and the second to `WIP`, so
@@ -802,17 +830,18 @@ back. Contract:
 | `review scope` | head SHA, linked issue, the code / doc / skill partition of the changed files, and the `self` / `harness` flags |
 | `review diff` | the diff bytes at the bound commit, with truncation refused rather than passed through |
 | `review criteria` | the linked issue's acceptance-criteria block, through the registered wire format |
-| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved>` |
-| `review verdicts` | every verdict marker on the PR, each with its `current` / `stale` / `unbindable` binding |
+| `review ci` | the live check-run rollup at a head, fail-closed on incomplete enumeration; `--wait` bounds a `pending` one in-verb and prefixes `settle\t<settled\|budget-exhausted\|head-moved\|governance-owed\|governance-stale>` |
+| `review verdicts` | every verdict marker on the PR — standing and superseded alike — each with its `current` / `stale` / `unbindable` binding |
 | `review deviations` | the PR body's `## Deviations` state, its entries, and the Tier-M token scan |
-| `review post` | the single sanctioned verdict emit — compose, bind, one comment per namespace, read back |
+| `review post` | the single sanctioned verdict emit — compose, bind, append into one comment per namespace, read back; with `--base`/`--tip` the positional is the child issue and the marker binds the range instead of a head |
 | `review append-criterion` | one reviewer-authored criterion appended under ADR 0079's four fences |
 | `review scratch` | the per-lane directory a reviewer's staged files go under — `<temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>` |
 
 **Exit codes.** The shared table, plus `12` the live head moved past the inspected `--sha` · `13`
 the read completed and its scope is provably incomplete · `14` the invoking token is below `write`,
 or the ACL lookup failed (ADR 0055) · `15` the write is not provably the prior rows plus one — the
-append-only fence. `4` is a deliberate gap.
+append-only fence · `17` a standing verdict of the opposite polarity at this head, or over this
+range, would be retired and `--supersede` was not passed. `4` is a deliberate gap.
 
 - **A check that cannot see what it is looking for does not return a plausible value.** An
   unreadable response, a provably short read and a non-conforming payload each resolve to their own
@@ -839,8 +868,8 @@ Judge a UI pull request over its preview deployment. Contract:
 
 | Verb | Answers |
 |---|---|
-| `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized state (`/pano:auth` renders signed in as the test moderator, refusing on `11` unless the session proves it took). `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface is `:auth` and on `11` unless the preview's own evaluation says the key took |
-| `review-ui post` | the `review-ui` verdict on stdin, posted as one comment |
+| `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized tier state (`/pano:auth` renders as the yazar test account, `/pano:auth-caylak` as the çaylak one), refusing on `11` unless the preview's own session read proves the shot came back signed in *and* at the tier the surface named. `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface names a tier state and on `11` unless the preview's own evaluation says the key took |
+| `review-ui post` | the `review-ui` verdict on stdin, appended into this namespace's one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
 | `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |
 
@@ -1064,7 +1093,7 @@ Take one intake-queue issue from arrival to triaged. Contract:
 | `triage enrich` | an issue body replaced with the rewrite on stdin, refused when it states an unwired ordering |
 | `triage apply` | type, priority, audience, status, home and `--blocked-by` edges stamped as one owned-facet reconcile, read back |
 | `triage park` | an issue demoted to needs-info with the questions on stdin |
-| `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason |
+| `triage kill` | an agent-filed issue — or any issue folded into a survivor with `--duplicate-of` — closed not-planned, with a reason, carrying `closed-by-triage` and no triage status label |
 | `triage repair-criteria` | an acceptance-criteria block's shape repaired mechanically |
 | `triage scratch` | the per-lane directory a triager's working files go under |
 

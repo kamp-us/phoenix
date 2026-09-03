@@ -5,9 +5,19 @@
  * must not read green. An unrecognised conclusion string is red for the same reason — a conclusion
  * this module has never seen is the one case where a permissive default is guaranteed wrong (#4552).
  */
-import type {CheckRun} from "../io/pulls.ts";
-
 export type Rollup = "green" | "red" | "pending";
+
+/**
+ * The two fields a run must carry to be rolled up, and the whole of what these functions read.
+ *
+ * Structural rather than `CheckRun`, because `ship`'s own reader rolls up through here too
+ * (`ShipCheckRun`, which carries an id and a check-suite join `review` has no use for). A field one
+ * reader adds for itself would otherwise become a requirement on every other (#7441).
+ */
+export interface RollupRun {
+	readonly status: string;
+	readonly conclusion: string | null;
+}
 
 /** The two conclusions GitHub defines as non-blocking, plus the passing one. Every other is red. */
 const PASSING = new Set(["success", "neutral", "skipped"]);
@@ -18,18 +28,18 @@ const PASSING = new Set(["success", "neutral", "skipped"]);
  * A completed run carrying no conclusion prints `unknown` rather than a vocabulary word — it is red
  * in the rollup, and naming it with a token a caller could read as passing would hide that.
  */
-export const statusOf = (run: CheckRun): string =>
+export const statusOf = (run: RollupRun): string =>
 	run.status === "completed" ? (run.conclusion ?? "unknown") : run.status;
 
 /** A completed run that did not pass — the single test the `red` bucket is defined by. */
-export const isFailing = (run: CheckRun): boolean =>
+export const isFailing = (run: RollupRun): boolean =>
 	run.status === "completed" && !PASSING.has(run.conclusion ?? "");
 
 /**
  * `red` on any completed run outside {@link PASSING}; `pending` when none red and any run is still in
  * flight; `green` only when every run completed and each concluded passing.
  */
-export const rollupOf = (runs: ReadonlyArray<CheckRun>): Rollup => {
+export const rollupOf = (runs: ReadonlyArray<RollupRun>): Rollup => {
 	let inFlight = false;
 	for (const run of runs) {
 		if (run.status !== "completed") inFlight = true;

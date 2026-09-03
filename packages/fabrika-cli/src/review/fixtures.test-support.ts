@@ -113,10 +113,27 @@ export const binding = (
 export const files = (...names: ReadonlyArray<string>): ExecResult =>
 	okOut(JSON.stringify(names.map((filename) => ({filename}))));
 
+/**
+ * The check-run envelope at a commit. `title` rides an `output` object, where the platform puts it —
+ * a run that publishes no output has no `output.title`, which is a different fact from an empty one.
+ */
 export const checkRuns = (
 	declared: number,
-	runs: ReadonlyArray<{name: string; status: string; conclusion: string | null}>,
-): ExecResult => okOut(JSON.stringify({total_count: declared, check_runs: runs}));
+	runs: ReadonlyArray<{
+		name: string;
+		status: string;
+		conclusion: string | null;
+		title?: string;
+	}>,
+): ExecResult =>
+	okOut(
+		JSON.stringify({
+			total_count: declared,
+			check_runs: runs.map(({title, ...run}) =>
+				title === undefined ? run : {...run, output: {title, summary: ""}},
+			),
+		}),
+	);
 
 /** The active workflow inventory, addressed the way the Actions API addresses one: by `path`. */
 export const inventory = (...paths: ReadonlyArray<string>): ExecResult =>
@@ -127,21 +144,33 @@ export const inventory = (...paths: ReadonlyArray<string>): ExecResult =>
 		}),
 	);
 
-/** The workflow runs recorded at one head, each naming the workflow it came from. */
-export const runsAtHead = (...paths: ReadonlyArray<string>): ExecResult =>
+/**
+ * The workflow runs recorded at one head, each naming the workflow it came from.
+ *
+ * A bare path is the common case: a completed run whose `name` is its own path, which is all gate
+ * coverage reads. The object form is for a caller that needs the two fields coverage ignores — the
+ * workflow's `name:`, and a run still in flight (`review ci`'s governance-floor discriminator).
+ */
+export const runsAtHead = (
+	...entries: ReadonlyArray<string | {path: string; name?: string; status?: string}>
+): ExecResult =>
 	okOut(
 		JSON.stringify({
-			total_count: paths.length,
-			workflow_runs: paths.map((path, index) => ({
-				id: index + 1,
-				name: path,
-				path,
-				workflow_id: index + 1,
-				check_suite_id: index + 1,
-				status: "completed",
-				conclusion: "success",
-				completed_at: "2026-08-08T00:00:00Z",
-			})),
+			total_count: entries.length,
+			workflow_runs: entries.map((entry, index) => {
+				const row = typeof entry === "string" ? {path: entry} : entry;
+				const status = row.status ?? "completed";
+				return {
+					id: index + 1,
+					name: row.name ?? row.path,
+					path: row.path,
+					workflow_id: index + 1,
+					check_suite_id: index + 1,
+					status,
+					conclusion: status === "completed" ? "success" : null,
+					completed_at: status === "completed" ? "2026-08-08T00:00:00Z" : null,
+				};
+			}),
 		}),
 	);
 

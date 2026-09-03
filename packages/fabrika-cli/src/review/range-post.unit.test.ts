@@ -20,9 +20,10 @@ import {
 } from "../governance/post-verb.ts";
 import type {StdinRead} from "../io/stdin.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
-import {OFF_VOCABULARY, ZERO_SCOPE} from "./codes.ts";
+import {OFF_VOCABULARY, SUPERSEDES_VERDICT, ZERO_SCOPE} from "./codes.ts";
 import {BASE, CONTENT, comments, HEAD, RAW, RAW_AT} from "./fixtures.test-support.ts";
 import {type PostOptions as ReviewPostOptions, runPost as runReviewPost} from "./post-verb.ts";
+import {FENCE, compose as supersedeWith} from "./supersede.ts";
 
 const ISSUE = /GET .*\/repos\/o\/r\/issues\/5830$/;
 const USER = /GET .*api\.github\.com\/user$/;
@@ -34,6 +35,8 @@ const READBACK = /GET .*\/repos\/o\/r\/issues\/comments\/\d+/;
 const BODY = "| criterion | verdict |\n|---|---|\n| the first thing | PASS |\n";
 const URL = "https://example.test/issues/5830#issuecomment-6100000001";
 const RANGE = `${BASE}..${HEAD}`;
+/** The day the superseded heading is dated from — pinned so the envelope is a fixed string. */
+const ON = Date.parse("2026-09-01T00:00:00Z");
 const MARKER = `review-doc: PASS range:${RANGE} content:${CONTENT} — guide matches shipped behavior`;
 
 /** One `--raw -z` record under a governance root, and the digest that record serializes to. */
@@ -83,7 +86,8 @@ const reviewOptions: ReviewPostOptions = {
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
-	now: Effect.succeed(0),
+	now: Effect.succeed(ON),
+	supersede: false,
 };
 
 const governanceOptions: GovernancePostOptions = {
@@ -98,6 +102,8 @@ const governanceOptions: GovernancePostOptions = {
 	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
+	now: Effect.succeed(ON),
+	supersede: false,
 };
 
 const reviewHappy = (): ReadonlyArray<Scripted> => [
@@ -117,6 +123,30 @@ const governanceHappy = (): ReadonlyArray<Scripted> => [
 	[CREATE, created],
 	[READBACK, commentBody(`${GOV_MARKER}\n\n${BODY}`)],
 ];
+
+/**
+ * A standing verdict over the same range, plus the PATCH and the read-back an append lands.
+ *
+ * The read-back is composed through the real envelope rather than a hand-written string: the verb
+ * compares the comment it reads back against the bytes it sent, so a fixture assembled by hand would
+ * be asserting the test author's idea of the envelope instead of the module's.
+ */
+const reposting = (
+	standing: string,
+	priorText: string,
+	fresh = `${MARKER}\n\n${BODY}`,
+	raw = RAW,
+): ReadonlyArray<Scripted> => {
+	const prior = `${standing}\n\n${priorText}`;
+	return [
+		[ISSUE, issue()],
+		[RAW_AT(BASE, HEAD), okOut(raw)],
+		[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+		[COMMENTS, {status: 200, body: comments({id: 42, body: prior}).stdout}],
+		[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
+		[READBACK, commentBody(supersedeWith(prior, fresh, new Date(ON)))],
+	];
+};
 
 const runReview = (
 	script: ReadonlyArray<Scripted>,
@@ -164,20 +194,45 @@ describe("review post --base/--tip", () => {
 		}
 	});
 
-	it("edits this namespace's existing comment over the SAME range instead of stacking", async () => {
-		const out = await runReview([
-			[ISSUE, issue()],
-			[RAW_AT(BASE, HEAD), okOut(RAW)],
-			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-			[
-				COMMENTS,
-				{status: 200, body: comments({id: 42, body: `${MARKER}\n\nan earlier table\n`}).stdout},
-			],
-			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READBACK, commentBody(`${MARKER}\n\n${BODY}`)],
-		]);
+	it("appends into this namespace's comment over the SAME range, keeping the prior verdict verbatim", async () => {
+		const shell = fakeSeams(reposting(MARKER, "an earlier table\n"));
+		const out = await Effect.runPromise(
+			Effect.provide(runReviewPost(reviewOptions), Layer.merge(shell.layer, unconfigured)),
+		);
 		expect(out.code).toBe(0);
-		expect(out.stdout).toContain("\tedited\t");
+		expect(out.stdout).toContain("\tsuperseded\t");
+		const body = written(shell, PATCH);
+		expect(body.split("\n")[0]).toBe(MARKER);
+		expect(body).toContain(FENCE);
+		expect(body).toContain("an earlier table");
+	});
+
+	it("refuses a polarity flip over the same range without --supersede, writing nothing", async () => {
+		const standing = MARKER.replace("PASS", "FAIL");
+		const shell = fakeSeams(reposting(standing, "the round that blocked\n"));
+		const out = await Effect.runPromise(
+			Effect.provide(runReviewPost(reviewOptions), Layer.merge(shell.layer, unconfigured)),
+		);
+		expect(out.code).toBe(SUPERSEDES_VERDICT);
+		expect(out.stderr.join("\n")).toContain(`a standing FAIL for review-doc over ${RANGE}`);
+		expect(shell.requests.some((call) => PATCH.test(call) || CREATE.test(call))).toBe(false);
+	});
+
+	it("appends over a flip once --supersede says so, and the retired FAIL survives", async () => {
+		const standing = MARKER.replace("PASS", "FAIL");
+		const shell = fakeSeams(reposting(standing, "the round that blocked\n"));
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runReviewPost({...reviewOptions, supersede: true}),
+				Layer.merge(shell.layer, unconfigured),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tsuperseded\t");
+		const body = written(shell, PATCH);
+		expect(body.split("\n")[0]).toBe(MARKER);
+		expect(body).toContain(standing);
+		expect(body).toContain("the round that blocked");
 	});
 
 	it("refuses a namespace the range's own changes did not derive — the guard is not narrowed", async () => {
@@ -266,5 +321,46 @@ describe("governance post --base/--tip", () => {
 		expect(withSha.code).toBe(OFF_VOCABULARY);
 		const lone = await runGovernance([], {tip: null});
 		expect(lone.code).toBe(OFF_VOCABULARY);
+	});
+
+	it("appends over the same range, keeping the prior governance verdict verbatim", async () => {
+		const fresh = `${GOV_MARKER}\n\n${BODY}`;
+		const shell = fakeSeams(reposting(GOV_MARKER, "an earlier sweep\n", fresh, GOV_RAW));
+		const out = await Effect.runPromise(
+			Effect.provide(runGovernancePost(governanceOptions), Layer.merge(shell.layer, unconfigured)),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tsuperseded\t");
+		const body = written(shell, PATCH);
+		expect(body.split("\n")[0]).toBe(GOV_MARKER);
+		expect(body).toContain(FENCE);
+		expect(body).toContain("an earlier sweep");
+	});
+
+	it("refuses a governance flip over the same range without --supersede, writing nothing", async () => {
+		const standing = GOV_MARKER.replace("PASS", "FAIL");
+		const fresh = `${GOV_MARKER}\n\n${BODY}`;
+		const shell = fakeSeams(reposting(standing, "the sweep that blocked\n", fresh, GOV_RAW));
+		const out = await Effect.runPromise(
+			Effect.provide(runGovernancePost(governanceOptions), Layer.merge(shell.layer, unconfigured)),
+		);
+		expect(out.code).toBe(SUPERSEDES_VERDICT);
+		expect(out.stderr.join("\n")).toContain(`a standing FAIL for governance over ${RANGE}`);
+		expect(shell.requests.some((call) => PATCH.test(call) || CREATE.test(call))).toBe(false);
+	});
+
+	it("appends over a governance flip once --supersede says so", async () => {
+		const standing = GOV_MARKER.replace("PASS", "FAIL");
+		const fresh = `${GOV_MARKER}\n\n${BODY}`;
+		const shell = fakeSeams(reposting(standing, "the sweep that blocked\n", fresh, GOV_RAW));
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runGovernancePost({...governanceOptions, supersede: true}),
+				Layer.merge(shell.layer, unconfigured),
+			),
+		);
+		expect(out.code).toBe(0);
+		expect(out.stdout).toContain("\tsuperseded\t");
+		expect(written(shell, PATCH)).toContain(standing);
 	});
 });

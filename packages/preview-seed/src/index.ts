@@ -11,13 +11,21 @@ export type {SeedSchema} from "./schema.ts";
 export {seedSchema} from "./schema.ts";
 export type {SeedDb, SeedReport} from "./seed.ts";
 export {buildSeedStatements, makeSeedDb, seed} from "./seed.ts";
-export type {ProvisionOutcome, ProvisionReport, SessionToken} from "./test-account.ts";
+export type {
+	PreviewCredentials,
+	PreviewTier,
+	ProvisionOutcome,
+	ProvisionReport,
+	SessionToken,
+	TestAccount,
+} from "./test-account.ts";
 export {
 	countForeignAccounts,
 	MIN_SESSION_TOKEN_LEN,
 	makeTestAccountDb,
+	PREVIEW_TIERS,
 	parseSessionToken,
-	provisionTestAccount,
+	provisionTestAccounts,
 	SESSION_TTL_MS,
-	TEST_ACCOUNT,
+	TEST_ACCOUNTS,
 } from "./test-account.ts";

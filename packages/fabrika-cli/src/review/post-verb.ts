@@ -19,6 +19,11 @@
  * tree's — the two are separate reads, and a force-push that rewinds back onto `--sha` passes `12`
  * clean while the PR-number file endpoint serves some other head's list.
  *
+ * The upsert **appends**: a matched comment keeps its prior verdict verbatim below
+ * `./supersede.ts`'s fence and the fresh verdict takes the first line, because GitHub keeps no
+ * comment-body history and a PATCH over a verdict is that verdict gone (#7247). A post that would
+ * retire a standing verdict of the opposite polarity is `17` until `--supersede` says so out loud.
+ *
  * With `--base`/`--tip` the verb runs the range-scoped path instead (`./range-post.ts`, #5935): the
  * positional is the child issue, the marker is `../wire/range-verdict-marker.ts`'s, and the same
  * namespace rule is asked of the range's own changed paths.
@@ -49,11 +54,13 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_HEAD,
+	SUPERSEDES_VERDICT,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
 import {contentDigestAt} from "./content-binding.ts";
 import {bindHead, boundLine} from "./head.ts";
 import {runRangePost} from "./range-post.ts";
+import {compose as supersedeWith} from "./supersede.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 import {latestByWriteRecency, stampIso, withWrittenAt} from "./write-recency.ts";
 
@@ -87,6 +94,8 @@ export interface PostOptions {
 	readonly stdin: Effect.Effect<StdinRead>;
 	/** The wall clock the write-recency stamp is taken from — a port so a test can pin the instant. */
 	readonly now: Effect.Effect<number>;
+	/** The explicit acknowledgement that this verdict retires one of the opposite polarity. */
+	readonly supersede: boolean;
 }
 
 interface Posted {
@@ -192,6 +201,18 @@ const carriesNamespaceAt = (
 		parsed.value.namespace === namespace &&
 		sameHead(parsed.value.sha, sha)
 	);
+};
+
+/**
+ * The polarity a standing comment's marker carries, or `null` when it carries none to compare.
+ *
+ * `null` for the advisory carrier by construction: an advisory line withholds every field but the
+ * namespace (ADR 0151), and the carrier is a PASS-only path anyway, so there is no flip to announce.
+ */
+const polarityOfMarker = (body: string, carrier: Carrier): Polarity | null => {
+	if (carrier === "advisory") return null;
+	const parsed = readMarker(body);
+	return parsed._tag === "Found" ? parsed.value.polarity : null;
 };
 
 /** Steps 1, 2 and 5's reads failing is `11`: nothing was written, so the outcome is known-unwritten. */
@@ -306,6 +327,8 @@ export const runPost = (
 					body: authored.text,
 					repo,
 					json,
+					supersede: options.supersede,
+					now: options.now,
 				},
 			);
 		}
@@ -380,13 +403,15 @@ export const runPost = (
 		// The stamp goes on here, before the leak scan and before the body is used as the read-back
 		// comparand, so the bytes that are scanned, posted and compared are one string — and so both
 		// the create and the edit path carry it by construction rather than by remembering to.
-		const composed = withWrittenAt(`${firstLine}\n${below}`, stampIso(yield* options.now));
+		const wroteAt = yield* options.now;
+		const composed = withWrittenAt(`${firstLine}\n${below}`, stampIso(wroteAt));
 
 		// Step 4 — the scan runs over the ASSEMBLED comment, so nothing this verb appended escapes it.
 		const leaked = leakRefusal(SURFACE, composed);
 		if (leaked !== null) return leaked;
 
-		// Step 5 — one namespace at one head, one comment: edit this head's own comment, else create one.
+		// Step 5 — one namespace at one head, one comment: append into this head's own comment, else
+		// create one.
 		const me = yield* viewerLogin;
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
 		const comments = yield* listComments(repo, pr);
@@ -402,14 +427,28 @@ export const runPost = (
 			),
 		);
 
+		// The prior verdict is never replaced, only pushed below the fence — GitHub keeps no
+		// comment-body history, so a PATCH over it is the record gone (#7247). A polarity flip is the
+		// one case that also needs saying out loud, because it is the flip that decides the merge.
+		const standing = mine === undefined ? null : polarityOfMarker(mine.body, carrier);
+		if (standing !== null && standing !== polarity && !options.supersede) {
+			return refuse(
+				SUPERSEDES_VERDICT,
+				`${VERB}: a standing ${standing} for ${namespace} at ${inspected} would be superseded by this ${polarity} — pass --supersede to retire it on the record. Nothing was posted.`,
+				diagnostics,
+			);
+		}
+		const envelope =
+			mine === undefined ? composed : supersedeWith(mine.body, composed, new Date(wroteAt));
+
 		let landed: {readonly id: number; readonly url: string} | null = null;
 		let failure: string | null = null;
 		if (mine === undefined) {
-			const created = yield* createComment(repo, pr, composed);
+			const created = yield* createComment(repo, pr, envelope);
 			if (created._tag === "Failure") failure = created.reason;
 			else landed = {id: created.value.id, url: created.value.url};
 		} else {
-			const edited = yield* patchComment(repo, mine.id, composed);
+			const edited = yield* patchComment(repo, mine.id, envelope);
 			if (edited._tag === "Failure") failure = edited.reason;
 			else landed = {id: mine.id, url: edited.value};
 		}
@@ -420,7 +459,7 @@ export const runPost = (
 				diagnostics,
 			);
 		}
-		const upsert = mine === undefined ? "created" : "edited";
+		const upsert = mine === undefined ? "created" : "superseded";
 
 		// Step 6 — read it back from live state. The write call's own echo is not evidence (#3173).
 		const back = yield* getComment(repo, landed.id);
@@ -431,7 +470,7 @@ export const runPost = (
 						back.value,
 						{namespace, polarity, sha: inspected, content: content.value, clause},
 						carrier,
-						composed,
+						envelope,
 					);
 		if (mismatch !== null) {
 			return refuse(

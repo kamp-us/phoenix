@@ -14,7 +14,8 @@ import type {OperatorEvent} from "./machine.ts";
 /**
  * Every recognised terminal token, grouped by the shell skill that owns its vocabulary — the
  * builder's (`build/SKILL.md`), the reviewer's (`review/SKILL.md`), the shipper's
- * (`ship/SKILL.md`). Documentation and test surface; the lookup below flattens it.
+ * (`ship/SKILL.md`), the UI reviewer's (`review-ui/SKILL.md`). Documentation and test surface; the
+ * lookup below flattens it.
  */
 export const SHELL_VOCABULARIES = {
 	builder: {
@@ -36,6 +37,20 @@ export const SHELL_VOCABULARIES = {
 		STALE: "BLOCKED",
 		UNBINDABLE: "BLOCKED",
 		ROUTED: "BLOCKED",
+	},
+	// The rendered gate's six terminals (#7403). Three of them named no event at all until this
+	// group existed, so an unrenderable `review:ui` lane hit the refusal and stayed `active` with no
+	// live shell — the park it actually was reached nobody. Each of the three is the reviewer
+	// group's own BLOCKED shape: no verdict landed and a human is owed the render, the manifest or
+	// the route. The three that re-spell the reviewer's agree with it, which is why flattening still
+	// reports `Flat`.
+	"ui-reviewer": {
+		PASS: "PASS",
+		FAIL: "FAIL",
+		"CANT-SEE": "BLOCKED",
+		ESCALATED: "BLOCKED",
+		"BLOCKED-NO-MANIFEST": "BLOCKED",
+		"ROUTED-ELSEWHERE": "BLOCKED",
 	},
 	shipper: {
 		"ALREADY-MERGED": "DONE",
@@ -190,6 +205,36 @@ export const PARK_CAUSES = {
 	 */
 	"spawn-dead":
 		"the shell driving this lane's stage was killed by its provider before it recorded a terminal",
+	/**
+	 * The rendered gate's `CANT-SEE` (#7423): no preview deployment stands at the PR's head, or the
+	 * one that does is stale beyond repair, so there is no rendered surface to judge. It is the
+	 * routine outcome of the three, not the exceptional one — a PR whose preview has not finished
+	 * building hits it.
+	 *
+	 * Naming-only: a `KNOWN_PARKS` row would have to re-test the deployment and ADR 0302's proving
+	 * read is separate work, so the sweep routes this to a human by naming the cause.
+	 */
+	"no-preview-render":
+		"no preview deployment stands at the PR's head, so no rendered surface can be judged",
+	/**
+	 * The rendered gate's `BLOCKED-NO-MANIFEST` (#7423): the repo's design law covers no surface in
+	 * this diff, so the gate has nothing to judge against and routed to the front door.
+	 *
+	 * Naming-only: writing the manifest coverage is a human's act on the design law, and no verb
+	 * ships that can, exactly as `campaign-paused`'s resume stays a human's act on `ROADMAP.md`.
+	 */
+	"no-design-manifest":
+		"the repo's design law covers no surface in this diff, so the rendered gate has nothing to judge against",
+	/**
+	 * The rendered gate's `ROUTED-ELSEWHERE` (#7423): the diff raises no rendered delta, so the
+	 * verdict is `review`'s to give and never this gate's. The park is the route itself, which the
+	 * group's own mapping keeps as `BLOCKED` rather than a routing arm.
+	 *
+	 * Naming-only: clearing it means dispatching the other gate, which is the operator's act and not
+	 * a condition a recipe can read back.
+	 */
+	"no-rendered-delta":
+		"the diff raises no rendered delta, so the verdict is `review`'s to give and not the rendered gate's",
 } as const;
 
 export type ParkCause = keyof typeof PARK_CAUSES;

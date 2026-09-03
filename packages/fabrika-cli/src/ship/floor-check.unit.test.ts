@@ -11,7 +11,13 @@ import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.t
 import type {ExecResult} from "../io/exec.ts";
 import {PRECONDITION_UNKNOWN, READBACK_MISMATCH, WRITE_UNKNOWN} from "./codes.ts";
 import {checkRuns, comments, ENV, files, HEAD, OTHER_HEAD, pull} from "./fixtures.test-support.ts";
-import {CHECK_RUN_NAME, floorRunner, planFor, runFloorCheck} from "./floor-check.ts";
+import {
+	CHECK_RUN_NAME,
+	floorRunner,
+	planFor,
+	publishedFloorOf,
+	runFloorCheck,
+} from "./floor-check.ts";
 import {runFloor} from "./floor-verb.ts";
 
 const PULL = /^GET \S+\/repos\/o\/r\/pulls\/4321$/;
@@ -123,6 +129,37 @@ describe("planFor is the conclusion map, whole", () => {
 		});
 		expect(plan).toMatchObject({_tag: "Concluded", conclusion: "failure", floor: "unresolved"});
 		expect(plan.summary).toContain("cannot read the changed-file list");
+	});
+});
+
+// `review ci` tells a floor it can clear from one it cannot by reading this title back off the
+// published check-run, and the name/status/conclusion triple cannot make that distinction (#7441).
+// So the round-trip is the contract: every branch of `planFor` above has to come back as itself.
+describe("publishedFloorOf is planFor's inverse", () => {
+	const sha = HEAD;
+	const bound = (state: string) => ({_tag: "Bound" as const, state, sha, scanned: 2, stderr: []});
+	const readBack = (resolution: Parameters<typeof planFor>[1]) =>
+		publishedFloorOf(planFor(1, resolution).title);
+
+	it("recovers each row of the conclusion map", () => {
+		expect(readBack({_tag: "Unbound", sha, scanned: 2, stderr: []})).toEqual({_tag: "Unbound"});
+		expect(readBack(bound("pass"))).toEqual({_tag: "Satisfied"});
+		expect(readBack(bound("absent"))).toEqual({_tag: "Awaiting"});
+		expect(readBack(bound("stale"))).toEqual({_tag: "Blocked", state: "stale"});
+		expect(readBack(bound("fail"))).toEqual({_tag: "Blocked", state: "fail"});
+		expect(readBack(bound("something-new"))).toEqual({_tag: "Blocked", state: "something-new"});
+		expect(
+			readBack({_tag: "Unresolved", outcome: {code: 11, stdout: "", stderr: ["boom"]}}),
+		).toEqual({_tag: "Unresolved"});
+	});
+
+	it("refuses a title no floor of this repo wrote rather than guessing a row", () => {
+		expect(publishedFloorOf(null)).toEqual({_tag: "Unreadable"});
+		expect(publishedFloorOf("")).toEqual({_tag: "Unreadable"});
+		expect(publishedFloorOf("Some other check's title")).toEqual({_tag: "Unreadable"});
+		expect(publishedFloorOf("The governance verdict at this head is ")).toEqual({
+			_tag: "Unreadable",
+		});
 	});
 });
 

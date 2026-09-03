@@ -146,6 +146,15 @@ export interface CheckRun {
 	readonly name: string;
 	readonly status: string;
 	readonly conclusion: string | null;
+	/**
+	 * The check-run's `output.title`, which is how a run says *why* it concluded as it did.
+	 *
+	 * `null` for a run that published no output — most runs do not, and a title nobody wrote must not
+	 * read as an empty one. `ship floor --publish-check` writes a title per row of ADR 0318's table,
+	 * and `review/governance-owed.ts` reads that title back to tell a stale floor from an unresolved
+	 * one, which the name/status/conclusion triple cannot distinguish (#7441).
+	 */
+	readonly title: string | null;
 }
 
 export interface CheckRunPage {
@@ -178,10 +187,12 @@ export const listCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRun
 				) {
 					return fail("GitHub answered 200 but one entry is not a check run");
 				}
+				const output = isRecord(value.output) ? value.output : null;
 				runs.push({
 					name: value.name,
 					status: value.status,
 					conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
+					title: typeof output?.title === "string" ? output.title : null,
 				});
 			}
 			return ok({declared: page.value.declared, runs});
