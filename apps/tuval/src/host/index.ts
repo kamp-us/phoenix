@@ -12,5 +12,10 @@ export {
 	type OnError,
 	type SubscribeHandlers,
 } from "./definition.ts";
-export {interpretPromiseBridge, subDisposerBridge, toDemlikMachine} from "./demlik-bridges.ts";
+export {
+	interpretPromiseBridge,
+	subDisposerBridge,
+	subscribeDisposerBridge,
+	toDemlikMachine,
+} from "./demlik-bridges.ts";
 export {ActorStoppedError, StoreError, SubDisposeError} from "./errors.ts";
