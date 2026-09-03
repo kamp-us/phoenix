@@ -29,7 +29,7 @@ The founder ruled on 2026-09-02: "i think it can go apps/tuval yeah."
 
 **Binding constraints.**
 
-- CI fans out over `apps/` per 0057; a job that assumes every app has an `alchemy.run.ts` must skip an app without one rather than fail it.
+- Deploy fans out over the apps declared in `.github/app-roster.json`, not over directories. A local app is never added to the roster, so `deploy.yml` never sees it; no "skip if no stack" branch is needed.
 - `README`/`DEVELOPMENT.md` describe `apps/` as "one runnable app per directory; deployed apps own an alchemy stack, local apps do not." The "one worker per app" sentence in `CLAUDE.md` is amended to match when `apps/tuval` first lands.
 - Moving Tuval to its own repository is a later ADR, taken when the first slice ships and the tool has users outside this repo. It is not taken by a planner.
 
@@ -37,8 +37,7 @@ The founder ruled on 2026-09-02: "i think it can go apps/tuval yeah."
 
 - Five epics plan against one path. `plan-epic` on #7496 through #7500 writes children under `apps/tuval/...` with no invented location.
 - 0057's principle stands; only its definition of "app" widens. Its stack, stage and secret rules apply to every app that deploys and to none that does not.
-- The catalog, readme and fanout guards scope by `package.json`, so `apps/tuval` is a real workspace member under them from its first commit.
-- A deploy workflow that lists apps by directory needs the "no stack, skip" branch before `apps/tuval` exists, or the first Tuval PR reds CI on a job that has nothing to deploy.
+- Only `catalog-guard` covers `apps/tuval` from its first commit (it scans every workspace member). `readme-guard` scans `packages/*` alone and `fanout-guard` is wired to `apps/web/worker/features`, so neither applies. Widening `readme-guard` to `apps/*` is filed as [#7504](https://github.com/kamp-us/phoenix/issues/7504) and is not assumed by this ADR; until it lands, `apps/tuval`'s README is a review obligation, not a guard.
 
 ## Records
 
