@@ -21,18 +21,7 @@ import {
 	type Supervision,
 	structuralHash,
 } from "@demlik/tea";
-import {
-	Cause,
-	type Context,
-	Effect,
-	Exit,
-	Latch,
-	Layer,
-	Result,
-	Schema,
-	Scope,
-	Semaphore,
-} from "effect";
+import {Cause, type Context, Effect, Exit, Latch, Layer, Result, Scope, Semaphore} from "effect";
 import type {
 	ActorDefinition,
 	ErrorOf,
@@ -43,21 +32,7 @@ import type {
 	SubscribeHandlers,
 } from "./definition.ts";
 import {subDisposerBridge} from "./demlik-bridges.ts";
-
-export class ActorStoppedError extends Schema.TaggedError<ActorStoppedError>()(
-	"tuval/host/ActorStoppedError",
-	{msgType: Schema.String},
-) {
-	override get message(): string {
-		return `actor stopped; Msg "${this.msgType}" refused`;
-	}
-}
-
-/** A `Store` rejected. Demlik lets the rejection propagate to the dispatcher; here it is typed. */
-export class StoreError extends Schema.TaggedError<StoreError>()("tuval/host/StoreError", {
-	operation: Schema.Literals(["load", "save"]),
-	cause: Schema.Defect(),
-}) {}
+import {ActorStoppedError, StoreError, UserCodeThrew} from "./errors.ts";
 
 export type DispatchError<E> = E | StoreError | DispatchDiscardedError | ActorStoppedError;
 
@@ -98,11 +73,6 @@ const storeSave = <S>(store: Store<S>, state: S) =>
 		try: () => store.save(state),
 		catch: (cause) => new StoreError({operation: "save", cause}),
 	});
-
-/** User code — a reducer cell, an identity projection, a Sub's `deps` — threw; `cause` is the throw. */
-class UserCodeThrew extends Schema.TaggedError<UserCodeThrew>()("tuval/host/UserCodeThrew", {
-	cause: Schema.Defect(),
-}) {}
 
 type Reduced<S, C> =
 	| {readonly kind: "dropped"}

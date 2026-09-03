@@ -11,13 +11,14 @@
  */
 
 import type {Cmd, DepKeyedSub, Interpret, Machine, PortEmitter} from "@demlik/tea";
-import {type Context, Effect, Schema, type Scope} from "effect";
+import {type Context, Effect, type Scope} from "effect";
 import type {
 	ActorDefinition,
 	Dispatch,
 	InterpretHandlers,
 	SubscribeHandlers,
 } from "./definition.ts";
+import {SubDisposeError} from "./errors.ts";
 
 /**
  * Promise bridge for Interpret: Effect-valued Cmd handlers as the `Interpret` map Demlik 0.12's
@@ -44,12 +45,6 @@ export const interpretPromiseBridge =
 	};
 
 const noDispatch = (): void => {};
-
-/** A Demlik `Dispose` threw or rejected; surfaces from the Sub scope's close for the host to route. */
-export class SubDisposeError extends Schema.TaggedError<SubDisposeError>()(
-	"tuval/host/SubDisposeError",
-	{cause: Schema.Defect()},
-) {}
 
 /**
  * Synchronous disposer bridge for Sub: a Demlik 0.12 dep-keyed `source` — open now, hand back the

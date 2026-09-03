@@ -1,9 +1,10 @@
 import {type DispatchDiscardedError, type NoCtx, subId} from "@demlik/tea";
-import {describe, expect, it} from "@effect/vitest";
+import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Schema, type Scope} from "effect";
 import {expectTypeOf} from "vitest";
-import {type ActorHandle, type ActorStoppedError, layer, make, type StoreError} from "./actor.ts";
+import {type ActorHandle, layer, make} from "./actor.ts";
 import {type CoreMachine, defineActor} from "./definition.ts";
+import type {ActorStoppedError, StoreError} from "./errors.ts";
 import {counterMachine, type Msg, recordingStore, type State} from "./fixtures.ts";
 
 describe("host actor", () => {
@@ -37,8 +38,8 @@ describe("host actor", () => {
 					{concurrency: "unbounded"},
 				);
 				yield* actor.idle;
-				expect(actor.getState().applied).toEqual([1, 2, 3, 4, 5]);
-				expect(finished).toEqual([1, 2, 3, 4, 5]);
+				assert.deepStrictEqual(actor.getState().applied, [1, 2, 3, 4, 5]);
+				assert.deepStrictEqual(finished, [1, 2, 3, 4, 5]);
 			}),
 		),
 	);
@@ -71,10 +72,10 @@ describe("host actor", () => {
 				Effect.gen(function* () {
 					const actor = yield* make(definition);
 					yield* actor.dispatch({type: "toggle"});
-					expect(events).toEqual(["sub:start"]);
+					assert.deepStrictEqual(events, ["sub:start"]);
 				}),
 			);
-			expect(events).toEqual(["sub:start", "sub:stop"]);
+			assert.deepStrictEqual(events, ["sub:start", "sub:stop"]);
 
 			events.length = 0;
 			yield* Effect.scoped(
@@ -82,7 +83,7 @@ describe("host actor", () => {
 					const actor = yield* make(definition);
 					yield* actor.dispatch({type: "toggle"});
 					yield* actor.dispatch({type: "toggle"});
-					expect(events).toEqual(["sub:start", "sub:stop"]);
+					assert.deepStrictEqual(events, ["sub:start", "sub:stop"]);
 				}),
 			);
 		}),
@@ -109,10 +110,10 @@ describe("host actor", () => {
 				return counter;
 			}).pipe(Effect.provide(live));
 
-			expect(log).toEqual(["sub:start", "sub:stop"]);
-			expect(handle.getState()).toEqual({type: "running", runId: "r1", count: 1, acks: 1});
+			assert.deepStrictEqual(log, ["sub:start", "sub:stop"]);
+			assert.deepStrictEqual(handle.getState(), {type: "running", runId: "r1", count: 1, acks: 1});
 			const refused = yield* handle.dispatch({type: "tick"}).pipe(Effect.flip);
-			expect(refused._tag).toBe("tuval/host/ActorStoppedError");
+			assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
 		}),
 	);
 
@@ -131,12 +132,12 @@ describe("host actor", () => {
 					);
 					yield* actor.dispatch({type: "start", runId: "r1"});
 					yield* actor.dispatch({type: "tick"});
-					expect(JSON.parse(JSON.stringify(actor.getState()))).toEqual(actor.getState());
+					assert.deepStrictEqual(JSON.parse(JSON.stringify(actor.getState())), actor.getState());
 				}),
 			);
-			expect(saves.length).toBeGreaterThan(0);
+			assert.isAbove(saves.length, 0);
 			for (const snapshot of saves) {
-				expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
+				assert.deepStrictEqual(JSON.parse(JSON.stringify(snapshot)), snapshot);
 			}
 		}),
 	);

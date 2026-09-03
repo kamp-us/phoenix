@@ -1,11 +1,4 @@
-export {
-	type ActorHandle,
-	ActorStoppedError,
-	type DispatchError,
-	layer,
-	make,
-	StoreError,
-} from "./actor.ts";
+export {type ActorHandle, type DispatchError, layer, make} from "./actor.ts";
 export {
 	type ActorDefinition,
 	type CoreMachine,
@@ -19,9 +12,5 @@ export {
 	type OnError,
 	type SubscribeHandlers,
 } from "./definition.ts";
-export {
-	interpretPromiseBridge,
-	SubDisposeError,
-	subDisposerBridge,
-	toDemlikMachine,
-} from "./demlik-bridges.ts";
+export {interpretPromiseBridge, subDisposerBridge, toDemlikMachine} from "./demlik-bridges.ts";
+export {ActorStoppedError, StoreError, SubDisposeError} from "./errors.ts";
