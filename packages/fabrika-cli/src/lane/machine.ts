@@ -3,19 +3,23 @@
  * per task out, everything XState's nesting carried reduced to data (#5673; grounded in the
  * recorded spike runs on #5671/#5672).
  *
- * Structural recognitions replace every name-driven mechanism, and **one guard spelling is read**:
+ * Structural recognitions replace every name-driven mechanism, and **two guard spellings are read**:
  * a `guard`/`actions` string is otherwise inert data.
  *
  *   - An **array on an event** means guarded: `[taken-when-the-guard-holds, else-fallthrough]`, and
- *     the fallthrough target, when final, is the task's error final (`frozen`, `tripped`). The
- *     first arm's own spelling picks the guard, and only two spellings exist. `class:<name>` reads
- *     the lane class the event carried (see {@link TaskState}) and spends nothing: it picks which
- *     shell serves the round, and picking is not repairing (ADR 0317). Every other spelling is the
- *     budget guard, one inline counter comparison in the compiled cell, and **which counter it
- *     spends is the event's own polarity**: `FAIL` is a repair round and spends `retries`, every
- *     other event is a wait and spends `waits`. A queue dwell must not eat the budget a later
- *     repair draws on, and reading that off the event keeps it structural — beyond `class:`, no
- *     guard name is consulted (ADR 0313).
+ *     the fallthrough target, when final, is the task's error final (`frozen`, `tripped`) — except
+ *     under the two routing spellings below, whose fallthrough is the ordinary path and carries no
+ *     error. The first arm's own spelling picks the guard, and only three kinds exist.
+ *     `class:<name>` reads the lane class the event carried (see {@link TaskState}) and spends
+ *     nothing: it picks which shell serves the round, and picking is not repairing (ADR 0317).
+ *     {@link PARTIAL_GUARD} reads whether the merge this event reports closed its issue, and spends
+ *     nothing either: a `Part of #N` merge is real work landing, so the lane goes round again rather
+ *     than folding to a terminal over an issue the board still calls buildable (ADR 0343). Every
+ *     other spelling is the budget guard, one inline counter comparison in the compiled cell, and
+ *     **which counter it spends is the event's own polarity**: `FAIL` is a repair round and spends
+ *     `retries`, every other event is a wait and spends `waits`. A queue dwell must not eat the
+ *     budget a later repair draws on, and reading that off the event keeps it structural — beyond
+ *     the two routing spellings, no guard name is consulted (ADR 0313).
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
@@ -93,6 +97,15 @@ export interface LaneMsg {
 	 * human's `lane transition --grant-wait` is the fallback for when that read cannot run.
 	 */
 	readonly waitGrant?: number;
+	/**
+	 * Whether the merge this event reports left its issue undischarged — the `merge:partial` guard's
+	 * whole input, relayed off `lane prove`'s closure read (ADR 0343).
+	 *
+	 * Unlike {@link TaskState.classes} it is not sticky and folds into no state field: it is a fact
+	 * about *this* merge, so a lane that partially merged, went round and closed properly must read
+	 * the second merge's answer and not the first's.
+	 */
+	readonly partial?: boolean;
 }
 
 export type TaskMachine = Machine<TaskState, LaneMsg, never, never, unknown>;
@@ -155,10 +168,11 @@ export type CompileResult =
 type Cell = (state: TaskState, msg: LaneMsg) => readonly [TaskState, readonly never[]];
 
 /**
- * The one guard spelling the compiler reads: `class:<name>` takes the arm when `<name>` stands over
- * the task. Anything else — `retriesRemaining`, a per-task spelling, a name nobody defined — is the
- * budget guard, whose counter the event's polarity picks, which is what keeps every document
- * written before this shape existed compiling byte-for-byte the same.
+ * The first guard spelling the compiler reads: `class:<name>` takes the arm when `<name>` stands
+ * over the task. Anything the two routing spellings do not match — `retriesRemaining`, a per-task
+ * spelling, a name nobody defined — is the budget guard, whose counter the event's polarity picks,
+ * which is what keeps every document written before this shape existed compiling byte-for-byte the
+ * same.
  */
 const CLASS_GUARD = /^class:([a-z][a-z0-9-]*)$/;
 
@@ -166,6 +180,18 @@ const classGuardOf = (arm: unknown): string | undefined => {
 	if (!isRecord(arm) || typeof arm.guard !== "string") return undefined;
 	return CLASS_GUARD.exec(arm.guard)?.[1];
 };
+
+/**
+ * The second: the arm a merge that did not close its issue takes ({@link LaneMsg.partial}).
+ *
+ * Namespaced like `class:<name>` rather than spelled bare, because a bare word falls through to the
+ * budget guard: a typo would compile, match nothing, spend a wait, and fold the lane to the terminal
+ * this arm exists to divert it from — silently, which is the failure ADR 0317 named on the class
+ * axis and this axis inherits.
+ */
+export const PARTIAL_GUARD = "merge:partial";
+
+const partialGuarded = (arm: unknown): boolean => isRecord(arm) && arm.guard === PARTIAL_GUARD;
 
 /**
  * Fold the payloads an event carried into the state before any guard reads them — the classes a
@@ -270,6 +296,14 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 					cells[msg] = (s, m) => {
 						const c = withPayload(s, m);
 						const target = c.classes.includes(laneClass) ? taken : fallthrough;
+						return [{...c, type: target, was: c.type}, []];
+					};
+					continue;
+				}
+				if (partialGuarded(transition[0])) {
+					cells[msg] = (s, m) => {
+						const c = withPayload(s, m);
+						const target = m.partial === true ? taken : fallthrough;
 						return [{...c, type: target, was: c.type}, []];
 					};
 					continue;

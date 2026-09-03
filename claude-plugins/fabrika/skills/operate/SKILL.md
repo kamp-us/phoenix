@@ -144,6 +144,15 @@ Children but a `15` out of `lane emit` means the plan is there and its `## Depen
 missing or unparseable, which is `plan-epic`'s too — same `STOPPED`, different repair. Either way you
 never fall through to the template.
 
+**Exit `48` is the mirror: the issue is an epic's *child*, so the lane to drive is the parent's.**
+The parent epic's lane already carries this number as one of its tasks, and a second ledger booted
+over it is two documents describing one piece of work with nothing reconciling them
+([#7381](https://github.com/kamp-us/phoenix/issues/7381)). #7024's guard could not see this case —
+both facts it reads are facts about the issue itself, and a child carries neither. The refusal names
+the parent, so end `STOPPED` and drive that lane instead; never boot the child. An issue that is
+both an epic and a child still routes to `lane emit` on `46`, because the machine it needs has not
+changed.
+
 A lane already booted on the coder template before this refusal existed is not repaired in place: a
 lane on disk is never re-emitted over (ADR
 [0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)'s 2026-08-20 amendment),
@@ -423,7 +432,7 @@ Relay its answer, never your own reading of the PR:
 
 | `reconcile` says | Record |
 | --- | --- |
-| `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped` |
+| `landed` | `--token LANDED --pr <pr-url>` — the machine folds the lane to `shipped`, unless the merge carried `Part of #N` and closed nothing, and then it lands back in `queued` (below) |
 | `unresolved` | `--token UNRESOLVED` — still queued; the cell re-enters itself, and after its bounded re-folds escalates to `human:queue-stall` on its own |
 | `ejected` | `--token EJECTED` — the PR left the queue un-merged, which is repair work: the machine spends a retry back into `build` |
 | `parked` | `--token UNKNOWN` — the timeline shows a PR neither queued, ejected nor merged, and an unread queue state is UNKNOWN, never a wait to keep sitting in |
@@ -537,9 +546,14 @@ this order:
   [0321](../../../../.decisions/0321-dead-spawn-worktree-ownership.md)'s two steps in its order —
   salvage the tree's uncommitted work onto its own branch, then `git worktree remove` **without
   `--force`**, and a remove that still refuses is an incident to file through
-  [`report`](../report/SKILL.md), never a force — and it removes nothing the board does not license:
+  [`report`](../report/SKILL.md), never a force — and it removes nothing it holds no license for:
   the ticket is terminal, or an adopt marker names the holding lane's session as gone (ADR
-  [0323](../../../../.decisions/0323-board-licensed-worktree-retirement.md)). **Run it from wherever
+  [0323](../../../../.decisions/0323-board-licensed-worktree-retirement.md)), or **no claim marker
+  holds that lane at all** — which is the state the release above just created, so the two steps
+  compose in this order (ADR
+  [0342](../../../../.decisions/0342-unclaimed-lane-worktree-retirement.md)). That last arm is the
+  one that reads the tree, having no board statement to lean on: it retires a tree carrying nothing
+  and refuses `33` naming the uncommitted paths or the commits past `origin/main` that block it. **Run it from wherever
   you are.** The harness rule that refuses a *typed* cross-worktree `git` reads the command you
   type, so it does not bind the verb's own child process — which is why this obligation is no longer
   the primary checkout's alone.
@@ -651,6 +665,15 @@ back, so which cell still owes the rendered verdict is a fact in the ledger rath
 reconstruction. A child whose range renders nothing derives `review-ui` nowhere, carries no
 `deferred` field, and proves exactly as it always did (ADR
 [0340](../../../../.decisions/0340-an-epic-childs-review-ui-is-the-tails-by-construction.md)).
+
+**A merged PR that closed nothing sends the lane round rather than folding it.** A `LANDED` whose
+merge carried `Part of #N` records its `DONE` as always, and the machine takes it back to `queued`
+instead of to `shipped` — the criteria that PR left undischarged are still buildable, and the issue
+the board still calls open now has a lane that agrees. You record nothing extra and read nothing
+extra: `lane prove` reads the closure off the merged PR's own body and `lane report` lands it as
+`partial` on the event line, so what you do is route the leaf `lane status` prints next (ADR
+[0343](../../../../.decisions/0343-a-partial-merge-sends-the-lane-round-again.md)). A closing merge
+folds to `shipped` exactly as it always did.
 
 `lane prove` reads the three events a report can lie about — a `DONE` out of `build`, a `PASS` out
 of `review`, and a reviewer's park out of either review cell — and answers `not-required` at exit

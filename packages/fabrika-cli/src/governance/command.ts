@@ -280,10 +280,15 @@ const post = leafCommand(
 			Flag.optional,
 			Flag.withDescription("the range's tip revision — the other half of --base"),
 		),
+		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDescription(
+				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head, or ranged, over the same range; without it that post is refused at 17",
+			),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, polarity, sha, clause, base, tip, repo, json}) {
+	Effect.fn(function* ({pr, polarity, sha, clause, base, tip, supersede, repo, json}) {
 		yield* emit(
 			yield* runPost({
 				pr,
@@ -292,18 +297,20 @@ const post = leafCommand(
 				clause,
 				base: Option.getOrNull(base),
 				tip: Option.getOrNull(tip),
+				supersede,
 				repo: Option.getOrNull(repo),
 				cwd: process.cwd(),
 				json,
 				env: process.env,
 				stdin: Effect.sync(readStdin),
+				now: Effect.sync(() => Date.now()),
 			}),
 		);
 	}),
 ).pipe(
 	Command.withShortDescription("Post the governance verdict on stdin as one comment."),
 	Command.withDescription(
-		'Post the governance verdict read from STDIN: compose through the verdict-marker format, re-resolve the head, re-derive the namespace at the bound commit, leak-scan, upsert one comment, read it back. With --base and --tip the verdict is RANGE-scoped instead (ADR 0285): the positional names the child issue, the requirement is re-derived over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha is refused in this mode. The namespace is fixed — there is no --namespace, so this verb cannot be aimed at another gate\'s. Prints `posted\\tgovernance\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|edited>\\t<url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the PR is absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8/9 (the write was unproven, the read-back differs), 10 (a bad --polarity, --sha or blank --clause, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed — nothing was posted), 12 (the head moved past --sha), 14 (the diff or range derives no governance namespace). Examples: fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md; fabrika governance post 5830 --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "no contradiction, no weakening" < verdict.md',
+		'Post the governance verdict read from STDIN: compose through the verdict-marker format, re-resolve the head, re-derive the namespace at the bound commit, leak-scan, APPEND into this head\'s own comment, read it back. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one (#7411). With --base and --tip the verdict is RANGE-scoped instead (ADR 0285): the positional names the child issue, the requirement is re-derived over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha is refused in this mode. That path appends the same way, keyed on the range rather than a head. The namespace is fixed — there is no --namespace, so this verb cannot be aimed at another gate\'s. Prints `posted\\tgovernance\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|superseded>\\t<url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (stdin held nothing), 5/6 (a machine-local path, a bare @ reference), 7 (the PR is absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8/9 (the write was unproven, the read-back differs), 10 (a bad --polarity, --sha or blank --clause, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed — nothing was posted), 12 (the head moved past --sha), 14 (the diff or range derives no governance namespace), 17 (a standing verdict of the OPPOSITE polarity at this head — ranged, over this range — would be retired and --supersede was not passed; nothing posted). Examples: fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md; fabrika governance post 5830 --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "no contradiction, no weakening" < verdict.md',
 	),
 );
 

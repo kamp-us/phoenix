@@ -177,6 +177,50 @@ describe("getIssue carries the two facets a read-back cannot prove from labels",
 		);
 		expect(result._tag).toBe("Unknown");
 	});
+
+	it("names the parent off `parent`, the shape that carries the number outright", async () => {
+		const http = scripted([
+			[/issues\/7/, {status: 200, body: issue({parent: {number: 4304, title: "the epic"}})}],
+		]);
+		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		expect(result).toMatchObject({
+			_tag: "Present",
+			value: {parent: {_tag: "Parent", number: 4304}},
+		});
+	});
+
+	it("names the parent off `parent_issue_url`, the shape that carries it in the path", async () => {
+		const http = scripted([
+			[
+				/issues\/7/,
+				{
+					status: 200,
+					body: issue({
+						parent_issue_url: "https://api.github.com/repos/kamp-us/phoenix/issues/4304",
+					}),
+				},
+			],
+		]);
+		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		expect(result).toMatchObject({
+			_tag: "Present",
+			value: {parent: {_tag: "Parent", number: 4304}},
+		});
+	});
+
+	it("keeps an edge whose number does not read as an edge — a sub-issue, just an unnamed one", async () => {
+		const http = scripted([
+			[/issues\/7/, {status: 200, body: issue({parent_issue_url: "https://example.invalid/x"})}],
+		]);
+		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		expect(result).toMatchObject({_tag: "Present", value: {parent: {_tag: "Unnamed"}}});
+	});
+
+	it("reads an issue carrying neither key as parentless", async () => {
+		const http = scripted([[/issues\/7/, {status: 200, body: issue({})}]]);
+		const result = await against(getIssue("kamp-us/phoenix", 7), http);
+		expect(result).toMatchObject({_tag: "Present", value: {parent: {_tag: "None"}}});
+	});
 });
 
 describe("the list reads page, and refuse a shape that is not what they asked for", () => {

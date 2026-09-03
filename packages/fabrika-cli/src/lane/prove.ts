@@ -31,7 +31,7 @@
 import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
 import type {PullScope} from "../io/pulls.ts";
-import {ROUTED_NAMESPACES} from "../review/classes.ts";
+import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
@@ -59,6 +59,16 @@ export const REVIEW_STATE = "review";
  * its creditor is the tail. {@link claimOf} carries that reading.
  */
 export const REVIEW_UI_STATE = "review:ui";
+
+/**
+ * The two leaves a shipper runs in — `ship` and the queue dwell it re-enters (ADR 0313).
+ *
+ * A `DONE` out of either claims no artifact ({@link claimOf} answers `None` for both), and that is
+ * unchanged: what the merge closed is a *routing* question, not a proof, so it is read by
+ * {@link traceClosure} beside the proof rather than folded into it. A refused proof would strand the
+ * shipper with no legal terminal over a merge that really did land.
+ */
+export const SHIP_STATES: ReadonlyArray<string> = ["ship", "ship:queued"];
 
 /** The label a no-PR builder outcome is only legal under (`build`'s `SUCCESS-NO-PR`). */
 export const INVESTIGATION_LABEL = "type:investigation";
@@ -313,6 +323,12 @@ export interface PullFact {
 	 * scalar field there can only ever report one of them (#6797).
 	 */
 	readonly linkedIssues: ReadonlyArray<number>;
+	/**
+	 * Which kind of reference {@link linkedIssues} came off — a closing keyword, or the explicit
+	 * non-closing `Part of #N`. Only the closing kind discharges the issue on merge, so it is the one
+	 * fact that tells a ship's `DONE` whether the lane it folds is finished (#7382).
+	 */
+	readonly linkKind: IssueRefs["kind"];
 }
 
 export type PullTrace =
@@ -355,6 +371,36 @@ export const tracePulls = (
 	return matched.length === 1
 		? {_tag: "One", pr: first.number}
 		: {_tag: "Many", prs: matched.map((fact) => fact.number)};
+};
+
+/**
+ * Whether the merge a shipped lane stands on discharged its issue, or landed part of it.
+ *
+ * `Partial` is the arm that diverts the lane, and it is taken on positive evidence alone: a merged
+ * PR reaching this issue through `Part of #N` and through no closing keyword. Everything else — a
+ * closing merge, merges that link elsewhere, nothing nominated — answers `Closes`, which is what the
+ * machine did before this read existed, so the closing path cannot move on a read that saw less than
+ * it hoped. A read that *failed* is neither: the nominator answers `Unreadable` and never reaches
+ * here, so an unread board refuses the event rather than folding the lane on a guess.
+ *
+ * Several merged partials answer `Partial` together where {@link tracePulls} would answer `Many`.
+ * That arm exists there because picking one PR out of several is not derivable; here nothing is
+ * picked — every candidate says the same thing about the issue.
+ */
+export type Closure =
+	| {readonly _tag: "Closes"; readonly why: string}
+	| {readonly _tag: "Partial"; readonly prs: ReadonlyArray<number>};
+
+export const traceClosure = (issue: number, facts: ReadonlyArray<PullFact>): Closure => {
+	const landed = facts.filter((fact) => fact.merged && fact.linkedIssues.includes(issue));
+	if (landed.length === 0) return {_tag: "Closes", why: `no merged PR's body links #${issue}`};
+	const closing = landed.filter((fact) => fact.linkKind === "fixes");
+	return closing.length > 0
+		? {
+				_tag: "Closes",
+				why: `${closing.map((fact) => `#${fact.number}`).join(", ")} closes #${issue} on merge`,
+			}
+		: {_tag: "Partial", prs: landed.map((fact) => fact.number)};
 };
 
 /** One comment on the driven issue, as much of it as the diagnosis question needs. */

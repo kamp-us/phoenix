@@ -27,11 +27,13 @@ import {
  * `BLOCKED`, the closed-set cause of the park (#6480), and the lane classes the recorder observed
  * at that moment (ADR 0317). Those three refs are evidence carried verbatim.
  *
- * `round`, `classes` and `waitGrant` are not evidence — they are the payloads the fold reads. A
- * `CLEARED` line without a `round` names no round to clear (ADR 0312), `classes` is what a
- * `class:<name>` guard routes on (ADR 0317), and `waitGrant` is the waits a resume buys, which rides
+ * `round`, `classes`, `waitGrant` and `partial` are not evidence — they are the payloads the fold
+ * reads. A `CLEARED` line without a `round` names no round to clear (ADR 0312), `classes` is what a
+ * `class:<name>` guard routes on (ADR 0317), `waitGrant` is the waits a resume buys, which rides
  * the `UNBLOCKED` line so one recorded event both clears a queue stall and pays for the read the
- * lane resumes to take (ADR 0313).
+ * lane resumes to take (ADR 0313), and `partial` says the merge behind a ship's `DONE` left its
+ * issue open, which is what the `merge:partial` guard routes on (ADR 0343). Absent `partial` reads
+ * as a closing merge, so every line written before the field existed folds exactly as it did.
  *
  * `deferred` is the fourth kind: not evidence and not a payload the fold reads, but the disclosure
  * that this `PASS` was proven over a set short the namespaces named — the routed `review-ui` an
@@ -49,6 +51,7 @@ export interface LogEntry {
 	readonly classes?: ReadonlyArray<string>;
 	readonly deferred?: ReadonlyArray<string>;
 	readonly waitGrant?: number;
+	readonly partial?: boolean;
 }
 
 export type ParseLogResult =
@@ -80,6 +83,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			classes?: unknown;
 			deferred?: unknown;
 			waitGrant?: unknown;
+			partial?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -138,6 +142,12 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a \`deferred\` field that is not a list of names`);
 			continue;
 		}
+		// Only `true` is a routing fact; a `false` on the line says the merge closed, which is the
+		// absent field's own reading, so both spellings fold identically and neither is a defect.
+		if (record.partial !== undefined && typeof record.partial !== "boolean") {
+			defects.push(`line ${index + 1} carries a non-boolean \`partial\` field`);
+			continue;
+		}
 		entries.push({
 			task: record.task,
 			event: record.event,
@@ -151,6 +161,7 @@ export const parseLog = (text: string): ParseLogResult => {
 				? {}
 				: {deferred: record.deferred as ReadonlyArray<string>}),
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
+			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -199,6 +210,7 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
 				...(entry.round === undefined ? {} : {round: entry.round}),
 				...(entry.classes === undefined ? {} : {classes: entry.classes}),
 				...(entry.waitGrant === undefined ? {} : {waitGrant: entry.waitGrant}),
+				...(entry.partial === undefined ? {} : {partial: entry.partial}),
 			}));
 		try {
 			states[taskId] = foldMsgs(task.machine, task.initial, msgs);
@@ -406,6 +418,7 @@ export const applyEvent = (
 	at: string,
 	classes: ReadonlyArray<string> | null = null,
 	waitGrant: number | null = null,
+	partial = false,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
 		return refuseEvent(
@@ -445,6 +458,7 @@ export const applyEvent = (
 			type: event,
 			...(classes === null ? {} : {classes}),
 			...(waitGrant === null ? {} : {waitGrant}),
+			...(partial ? {partial} : {}),
 		});
 	} catch (error) {
 		if (error instanceof NoCellError) {
@@ -487,6 +501,7 @@ export const applyEvent = (
 		at,
 		...(classes === null ? {} : {classes}),
 		...(waitGrant === null ? {} : {waitGrant}),
+		...(partial ? {partial} : {}),
 	};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
 	return {_tag: "Applied", entry, previous, current};

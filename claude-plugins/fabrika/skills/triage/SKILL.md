@@ -319,7 +319,8 @@ EOF
 ```
 
 - **`agent`** and unsalvageable, duplicate, or failing the value bar below → kill it, which closes it
-  not-planned carrying `closed-by-triage`. **`--confirm` is you attesting that salvage was genuinely
+  not-planned carrying `closed-by-triage` and no triage status label — the verb strips the status it
+  arrived on, so you never hand-delete `status:needs-triage` after a kill. **`--confirm` is you attesting that salvage was genuinely
   attempted**: a human-invoked `/report` carries the same agent footer, so footer presence alone
   never licenses a close. Killing a duplicate takes `--duplicate-of <survivor>`, which folds this
   issue's content into that one before closing; without it the content is simply lost. What the fold

@@ -681,6 +681,93 @@ describe("runKill", () => {
 		expect(out.stderr.at(-1)).toContain("the close is unverified");
 	});
 
+	// --- the triage-status strip (#6710) -------------------------------------------------------
+
+	/** Any label delete on the target, for scripting; the assertions read the exact line back. */
+	const REMOVE_ANY = /DELETE .*\/repos\/o\/r\/issues\/4312\/labels\//;
+
+	const removalOf = (label: string): RegExp =>
+		new RegExp(`DELETE .*/repos/o/r/issues/4312/labels/${encodeURIComponent(label)}$`);
+
+	const carrying = (...names: ReadonlyArray<string>): HttpReply =>
+		issue({labels: names.map((name) => ({name}))});
+
+	/** The read-back, with whatever labels the kill is being scripted to have left behind. */
+	const killedWith = (...names: ReadonlyArray<string>): HttpReply => ({
+		status: 200,
+		body: JSON.stringify({...JSON.parse(killed.body), labels: names.map((name) => ({name}))}),
+	});
+
+	const stripping = (
+		before: ReadonlyArray<string>,
+		after: ReadonlyArray<string>,
+	): ReadonlyArray<Scripted> => [
+		[firstCallOnly(ISSUE), carrying(...before)],
+		[ISSUE, killedWith(...after)],
+		[LABELS, labelSet],
+		[REASON_COMMENT, comment],
+		[REMOVE_ANY, ACCEPTED],
+		[APPLY_LABEL, LABELLED],
+		[CLOSE, ACCEPTED],
+	];
+
+	it("strips status:needs-triage in the label step, before the close", async () => {
+		const {out, requests} = await runWith(stripping(["status:needs-triage"], [KILL_LABEL]));
+		expect(out.code).toBe(0);
+		const at = (re: RegExp) => requests.findIndex((c) => re.test(c));
+		expect(at(removalOf("status:needs-triage"))).toBeGreaterThan(-1);
+		expect(at(REASON_COMMENT)).toBeLessThan(at(removalOf("status:needs-triage")));
+		expect(at(removalOf("status:needs-triage"))).toBeLessThan(at(CLOSE));
+	});
+
+	it("strips status:triaged too — a kill after an earlier apply leaves no triage status", async () => {
+		const {out, requests} = await runWith(stripping(["status:triaged"], [KILL_LABEL]));
+		expect(out.code).toBe(0);
+		expect(requests.some((c) => removalOf("status:triaged").test(c))).toBe(true);
+	});
+
+	it("preserves every label no facet owns — the strip is the status, not the classification", async () => {
+		const kept = ["type:bug", "p1", "ready-for:agent", "axis:pipeline-hardening"];
+		const {out, requests} = await runWith(
+			stripping(["status:triaged", ...kept], [KILL_LABEL, ...kept]),
+		);
+		expect(out.code).toBe(0);
+		const deletes = requests.filter((c) => REMOVE_ANY.test(c));
+		expect(deletes).toHaveLength(1);
+		expect(deletes[0]).toContain(encodeURIComponent("status:triaged"));
+	});
+
+	it("issues no removal at all when the issue carries no triage status", async () => {
+		const {out, requests} = await runWith(happy());
+		expect(out.code).toBe(0);
+		expect(requests.some((c) => REMOVE_ANY.test(c))).toBe(false);
+	});
+
+	it("refuses on 9 when the read-back still shows a triage status — the strip is proven, not assumed", async () => {
+		const {out} = await runWith(
+			stripping(["status:needs-triage"], [KILL_LABEL, "status:needs-triage"]),
+		);
+		expect(out.code).toBe(READBACK_MISMATCH);
+		expect(out.stderr.at(-1)).toContain("status=[status:needs-triage]");
+		expect(out.stderr.at(-1)).toContain("expected every triage status label stripped");
+	});
+
+	it("stops at a failed removal: the issue stays OPEN and the message counts what landed", async () => {
+		const {out, requests} = await runWith([
+			[firstCallOnly(ISSUE), carrying("status:needs-triage")],
+			[ISSUE, killed],
+			[LABELS, labelSet],
+			[REASON_COMMENT, comment],
+			[REMOVE_ANY, WRITE_FAILED],
+			[APPLY_LABEL, LABELLED],
+			[CLOSE, ACCEPTED],
+		]);
+		expect(out.code).toBe(WRITE_UNKNOWN);
+		expect(out.stderr.at(-1)).toContain("failed after 0 of 2 change(s)");
+		expect(out.stderr.at(-1)).toContain("still OPEN and invisible to the kill audit");
+		expect(requests.some((c) => APPLY_LABEL.test(c) || CLOSE.test(c))).toBe(false);
+	});
+
 	// --- usage ---------------------------------------------------------------------------------
 
 	it("refuses folding an issue into itself", async () => {

@@ -18,6 +18,12 @@
  * A marker that reaches for the format and fails it prints as a `malformed` row with the wire reason
  * on stderr. It is never dropped from the sweep — a dropped row is how a FAIL'd PR reads as
  * unreviewed (#4103 / #4105, #4520).
+ *
+ * **A superseded verdict gets its own row too, marked `superseded` in the sixth field.** `review
+ * post` retires the prior verdict below `./supersede.ts`'s fence instead of over it, so those bytes
+ * are still on the PR; printing only the surviving one would report exactly the erasure the append
+ * exists to prevent (#7247). The sixth field is what tells the two apart — `standing` is the verdict
+ * in force, and it is the only kind `ship gate` reads.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -38,6 +44,7 @@ import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {contentDigestAt} from "./content-binding.ts";
 import {bindHead} from "./head.ts";
 import {NULL_TOKEN} from "./scope-verb.ts";
+import {archived as archivedVerdicts} from "./supersede.ts";
 import {badNumber, resolveTargetRepo, scannedLine} from "./target.ts";
 
 const VERB = "review verdicts";
@@ -55,6 +62,8 @@ interface MarkerRow {
 	readonly sha: string;
 	readonly binding: "current" | "stale" | "unbindable";
 	readonly commentId: number;
+	/** `false` for a verdict retired below its comment's supersede fence — see the sweep. */
+	readonly standing: boolean;
 }
 
 interface MalformedRow {
@@ -104,22 +113,37 @@ const sweep = (
 				sha: parsed.value.sha,
 				binding: bindingOf(parsed.value, head, digest),
 				commentId: comment.id,
+				standing: true,
 			});
-			continue;
+		} else {
+			const advisory = readAdvisory(comment.body);
+			if (advisory !== null) {
+				markers.push({
+					namespace: advisory.namespace,
+					polarity: "ADVISORY",
+					sha: advisory.sha,
+					binding: bindingOf(advisoryMarker(advisory.namespace, advisory.sha), head, digest),
+					commentId: comment.id,
+					standing: true,
+				});
+			} else if (parsed._tag === "Malformed") {
+				malformed.push({commentId: comment.id, reason: parsed.reason});
+			}
 		}
-		const advisory = readAdvisory(comment.body);
-		if (advisory !== null) {
+		// A superseded verdict is a row of its own, never a row dropped: `review post` retires the
+		// prior verdict below the fence rather than over it, and a sweep that printed only the
+		// surviving one would report exactly the erasure the append exists to prevent (#7247).
+		for (const retired of archivedVerdicts(comment.body)) {
+			const older = readMarker(retired);
+			if (older._tag !== "Found") continue;
 			markers.push({
-				namespace: advisory.namespace,
-				polarity: "ADVISORY",
-				sha: advisory.sha,
-				binding: bindingOf(advisoryMarker(advisory.namespace, advisory.sha), head, digest),
+				namespace: older.value.namespace,
+				polarity: older.value.polarity,
+				sha: older.value.sha,
+				binding: bindingOf(older.value, head, digest),
 				commentId: comment.id,
+				standing: false,
 			});
-			continue;
-		}
-		if (parsed._tag === "Malformed") {
-			malformed.push({commentId: comment.id, reason: parsed.reason});
 		}
 	}
 	return {markers, malformed};
@@ -232,10 +256,13 @@ export const runVerdicts = (
 				`verdicts\t${head ?? NULL_TOKEN}\t${markers.length + malformed.length}`,
 				...markers.map(
 					(row) =>
-						`${row.namespace}\t${row.polarity}\t${row.sha}\t${row.binding}\t${row.commentId}`,
+						`${row.namespace}\t${row.polarity}\t${row.sha}\t${row.binding}\t${row.commentId}\t${
+							row.standing ? "standing" : "superseded"
+						}`,
 				),
 				...malformed.map(
-					(row) => `malformed\t${NULL_TOKEN}\t${NULL_TOKEN}\t${NULL_TOKEN}\t${row.commentId}`,
+					(row) =>
+						`malformed\t${NULL_TOKEN}\t${NULL_TOKEN}\t${NULL_TOKEN}\t${row.commentId}\t${NULL_TOKEN}`,
 				),
 			].join("\n"),
 			diagnostics,

@@ -17,19 +17,24 @@
  * on a human to offer for a condition that clears itself (#7282). The verb owns the loop so no skill
  * ever sleeps — `claude-plugins/fabrika/docs/skill-conventions.md` §14 — and it loops on `pending`
  * alone: every refusal and the `no-producer` answer are states no amount of waiting changes, so they
- * return on the first read rather than burning the budget.
+ * return on the first read rather than burning the budget. The governance floor is such a state on
+ * both of its rollups — `governance-owed` on the `pending` one, `governance-stale` on the `red`
+ * (`./governance-owed.ts`).
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {producerFor, resolveCi} from "../config/ci-producer.ts";
 import {type ReasonHistogram, reasonHistogram} from "../evidence.ts";
+import {FLOOR_WORKFLOW_NAME} from "../governance/floor-assert.ts";
 import {type CheckRun, commitExists, listCheckRuns} from "../io/pulls.ts";
 // The workflow inventory is read through the `ship` group's reader for the same reason `ship checks`
 // rolls up through this group's `rollup.ts`: one read, so the two verbs cannot drift on the fact.
+import {CHECK_RUN_NAME} from "../ship/floor-check.ts";
 import {listRunsAtHead, listWorkflowPaths, listWorkflows} from "../ship/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, NO_GATE_COVERAGE, PRECONDITION_UNKNOWN, ZERO_SCOPE} from "./codes.ts";
 import {gateCoverageOf} from "./gate-coverage.ts";
+import {governanceOwed, governanceStale, staleFloorIsTheOnlyRed} from "./governance-owed.ts";
 import {isFailing, type Rollup, rollupOf, statusOf} from "./rollup.ts";
 import {badNumber, openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 
@@ -41,8 +46,18 @@ const VERB = "review ci";
  * `budget-exhausted` is the one a caller must not read as a verdict: the rollup beside it is still
  * `pending`, so nothing about the head was proven, and the answer says the wait ran out rather than
  * that CI concluded.
+ *
+ * `governance-owed` and `governance-stale` are the two the caller can clear itself — see
+ * {@link governanceOwed} and {@link governanceStale}. Each is its own word rather than a faster
+ * `budget-exhausted` or a plain `settled`, because they route differently from both: a stuck queue
+ * is a human's, while a verdict the reader still owes is the reader's (#7392, #7441).
  */
-export type Settle = "settled" | "budget-exhausted" | "head-moved";
+export type Settle =
+	| "settled"
+	| "budget-exhausted"
+	| "head-moved"
+	| "governance-owed"
+	| "governance-stale";
 
 export interface CiOptions {
 	readonly pr: number;
@@ -66,6 +81,10 @@ type Sample =
 			readonly runs: ReadonlyArray<CheckRun>;
 			readonly declared: number;
 			readonly gates: {readonly declared: number; readonly covered: number} | null;
+			/** This head's only unfinished check is a floor whose run is done — nothing else can move it. */
+			readonly owedGovernance: boolean;
+			/** This head's only failing check is a floor whose verdict is stale — the reader's to clear. */
+			readonly staleGovernance: boolean;
 			readonly notes: ReadonlyArray<string>;
 	  };
 
@@ -237,6 +256,29 @@ export const runCi = (
 			// only where it changes one: `green` and `pending` are the two words that read as "nothing to
 			// do here", and both are wrong over bytes no gate inspected.
 			let gates: {readonly declared: number; readonly covered: number} | null = null;
+			let owedGovernance = false;
+			let staleGovernance = false;
+			if (rollup === "red" && staleFloorIsTheOnlyRed(runs)) {
+				// The one red that is also asked: a floor concluded `failure` on a stale verdict is the
+				// reader's own to clear, and only the workflow runs say the row came from this repo's floor
+				// job. The cheap predicate above gates the read, so an ordinary red still pays nothing.
+				const atHead = yield* listRunsAtHead(repo, sha);
+				if (atHead._tag === "Failure") {
+					return done(
+						refuse(
+							PRECONDITION_UNKNOWN,
+							`${VERB}: cannot enumerate the workflow runs at ${sha}: ${atHead.reason} — whether this red is the caller's own floor is UNKNOWN.`,
+							notes,
+						),
+					);
+				}
+				staleGovernance = governanceStale(runs, atHead.value.runs);
+				if (staleGovernance) {
+					notes.push(
+						`${VERB}: the only failing check at ${sha} is "${CHECK_RUN_NAME}", and the governance verdict behind it is bound to another head (ADR 0318). This red is yours to clear: fire the governance skill, then re-read.`,
+					);
+				}
+			}
 			if (rollup !== "red") {
 				const inventory = yield* listWorkflowPaths(repo);
 				if (inventory._tag === "Failure") {
@@ -283,8 +325,23 @@ export const runCi = (
 						`${VERB}: ${coverage.covered} of ${coverage.declared} workflow(s) ${repo} authors produced a run at ${sha}.`,
 					);
 				}
+				owedGovernance = governanceOwed(runs, atHead.value.runs);
+				if (owedGovernance) {
+					notes.push(
+						`${VERB}: the only unfinished check at ${sha} is "${CHECK_RUN_NAME}", and its ${FLOOR_WORKFLOW_NAME} run has completed — what is still owed is a governance verdict bound at this head (ADR 0318), which no wait produces. Fire the governance skill, then re-read.`,
+					);
+				}
 			}
-			return {_tag: "Read", rollup, runs, declared, gates, notes} satisfies Sample;
+			return {
+				_tag: "Read",
+				rollup,
+				runs,
+				declared,
+				gates,
+				owedGovernance,
+				staleGovernance,
+				notes,
+			} satisfies Sample;
 		});
 
 		const render = (read: Extract<Sample, {_tag: "Read"}>, settle: Settle | null): VerbOutcome => {
@@ -323,7 +380,12 @@ export const runCi = (
 		const startedAt = yield* Clock.currentTimeMillis;
 		let read = first;
 		for (;;) {
-			if (read.rollup !== "pending") return render(read, "settled");
+			if (read.rollup !== "pending") {
+				return render(read, read.staleGovernance ? "governance-stale" : "settled");
+			}
+			// Checked before the budget, on every poll including the first: the caller owes this one
+			// itself, so a sleep here spends the whole horizon on a check nothing external can move.
+			if (read.owedGovernance) return render(read, "governance-owed");
 			const now = yield* Clock.currentTimeMillis;
 			if (now - startedAt >= options.budgetSeconds * 1000) {
 				return render(read, "budget-exhausted");

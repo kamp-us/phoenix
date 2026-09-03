@@ -620,8 +620,11 @@ never edited in place.
 Preconditions: the lane precondition of the shared conventions (`18`/`11`) — the claim is the
 one **the checked-out branch names** (the issue number in first-ship mode, the PR number in
 resume mode), never "a claim on `--pr`". Additionally the verb resolves `--pr`'s current head
-branch and refuses on `18` when it is not the checked-out lane branch — an evidence comment on
-another lane's PR is a cross-lane write. PR open (`7`).
+branch and refuses on `18` when the lane branch does not publish there — an evidence comment on
+another lane's PR is a cross-lane write. **Where the lane publishes is its branch's tracked
+upstream, else `origin/<branch>`** — the same resolution `build push` performs, so a repair round's
+`build/pr-<pr>-<nonce>` branch, whose local name is never the PR's head ref, passes on its upstream
+rather than refusing every time (#7402). PR open (`7`).
 
 **Exit status** (beyond the universal four)
 

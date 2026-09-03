@@ -68,7 +68,10 @@
 							},
 							"ship": {
 								"on": {
-									"ISSUE.DONE": "shipped",
+									"ISSUE.DONE": [
+										{ "target": "queued", "guard": "merge:partial" },
+										{ "target": "shipped" }
+									],
 									"ISSUE.WIP": "ship:queued",
 									"ISSUE.BLOCKED": "human:cp-approval",
 									"ISSUE.FAIL": [
@@ -83,7 +86,10 @@
 							},
 							"ship:queued": {
 								"on": {
-									"ISSUE.DONE": "shipped",
+									"ISSUE.DONE": [
+										{ "target": "queued", "guard": "merge:partial" },
+										{ "target": "shipped" }
+									],
 									"ISSUE.BLOCKED": "human:cp-approval",
 									"ISSUE.WIP": [
 										{

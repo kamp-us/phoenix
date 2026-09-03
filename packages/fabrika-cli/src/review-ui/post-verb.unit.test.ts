@@ -2,6 +2,7 @@ import {Effect, FileSystem, Layer, Path, PlatformError} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeSeams, type HttpReply, once, type Scripted} from "../fakes.test-support.ts";
 import type {StdinRead} from "../io/stdin.ts";
+import {compose as supersedeWith} from "../review/supersede.ts";
 import {
 	EMPTY_STDIN,
 	INVALID_CAPTURE,
@@ -10,6 +11,7 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_TREE,
+	SUPERSEDES_VERDICT,
 	UPLOAD_FAILED,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
@@ -26,6 +28,8 @@ const MANIFEST_PATH = `${SET_DIR}/manifest.json`;
 const HARNESS = "/repo/design-harness.json";
 const HOSTED = "https://github.com/user-attachments/assets/9c41";
 const URL = "https://example.test/pull/4321#issuecomment-5154902211";
+/** The instant every run below writes at, so the superseded heading's date is predictable. */
+const NOW_MILLIS = Date.parse("2026-08-29T05:11:17.000Z");
 
 const BYTES = new TextEncoder().encode("png bytes");
 
@@ -138,10 +142,19 @@ const options = {
 	tmpRoot: "/tmp",
 	harnessPath: HARNESS,
 	upload: hostingLeg,
+	supersede: false,
+	now: Effect.succeed(NOW_MILLIS),
 };
 
 /** The comment as the verb will have posted it, echoed back by the read-back read. */
 const posted = (body: string): HttpReply => ({status: 200, body: JSON.stringify({body})});
+
+/**
+ * The bytes a re-post lands: the fresh verdict on top, `prior` retired below the fence. Built
+ * through the shipped envelope so this fixture cannot drift from the composer under test.
+ */
+const supersededBody = (prior: string): string =>
+	supersedeWith(prior, COMPOSED, new Date(NOW_MILLIS));
 
 const run = (
 	script: ReadonlyArray<Scripted>,
@@ -265,7 +278,52 @@ describe("runPost", () => {
 		expect(outcome.stderr.join("\n")).toMatch(/probed back HTTP 404/);
 	});
 
-	it("edits this namespace's own comment instead of stacking a second marker", async () => {
+	it("appends into this namespace's own comment instead of stacking a second marker", async () => {
+		const prior = `review-ui: PASS @ ${OLD_HEAD} — older round`;
+		const {outcome, requests, bodies} = await run([
+			[PULL, pull()],
+			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+			[COMMENTS, comments({id: 42, body: prior, author: "kampus-bot"})],
+			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
+			[READBACK, posted(supersededBody(prior))],
+		]);
+		expect(outcome.code).toBe(0);
+		expect(JSON.parse(outcome.stdout).upsert).toBe("superseded");
+		expect(requests.some((request) => CREATE.test(request))).toBe(false);
+		expect(bodies[requests.findIndex((request) => PATCH.test(request))] ?? "").toContain(
+			"older round",
+		);
+	});
+
+	it("supersedes the NEWEST of two markers at one SHA, not whichever came back first (#4881)", async () => {
+		const prior = `review-ui: PASS @ ${HEAD} — after the body-only repair`;
+		const {outcome, requests} = await run(
+			[
+				[PULL, pull()],
+				[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
+				[
+					COMMENTS,
+					comments(
+						{
+							id: 41,
+							body: `review-ui: FAIL @ ${HEAD} — first round`,
+							updatedAt: "2026-08-09T09:56:43Z",
+						},
+						{id: 42, body: prior, updatedAt: "2026-08-09T10:10:48Z"},
+					),
+				],
+				[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
+				[READBACK, posted(supersededBody(prior))],
+			],
+			{supersede: true},
+		);
+		expect(outcome.code).toBe(0);
+		expect(requests.find((request) => PATCH.test(request))).toContain("issues/comments/42");
+	});
+
+	// The #7247 instance itself: a PASS landing over a standing FAIL at one head, which is the write
+	// that erased PR #7081's blocking verdict with nothing on the record.
+	it("refuses on 18 a post that would retire the opposite polarity at this head", async () => {
 		const {outcome, requests} = await run([
 			[PULL, pull()],
 			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
@@ -273,42 +331,15 @@ describe("runPost", () => {
 				COMMENTS,
 				comments({
 					id: 42,
-					body: `review-ui: PASS @ ${OLD_HEAD} — older round`,
+					body: `review-ui: PASS @ ${HEAD} — merge-ready`,
 					author: "kampus-bot",
 				}),
 			],
-			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READBACK, posted(COMPOSED)],
 		]);
-		expect(outcome.code).toBe(0);
-		expect(JSON.parse(outcome.stdout).upsert).toBe("edited");
-		expect(requests.some((request) => CREATE.test(request))).toBe(false);
-	});
-
-	it("edits the NEWEST of two markers at one SHA, not whichever came back first (#4881)", async () => {
-		const {outcome, requests} = await run([
-			[PULL, pull()],
-			[USER, {status: 200, body: JSON.stringify({login: "kampus-bot"})}],
-			[
-				COMMENTS,
-				comments(
-					{
-						id: 41,
-						body: `review-ui: FAIL @ ${HEAD} — first round`,
-						updatedAt: "2026-08-09T09:56:43Z",
-					},
-					{
-						id: 42,
-						body: `review-ui: PASS @ ${HEAD} — after the body-only repair`,
-						updatedAt: "2026-08-09T10:10:48Z",
-					},
-				),
-			],
-			[PATCH, {status: 200, body: JSON.stringify({html_url: URL})}],
-			[READBACK, posted(COMPOSED)],
-		]);
-		expect(outcome.code).toBe(0);
-		expect(requests.find((request) => PATCH.test(request))).toContain("issues/comments/42");
+		expect(outcome.code).toBe(SUPERSEDES_VERDICT);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.at(-1)).toContain("pass --supersede to retire it on the record");
+		expect(requests.some((request) => PATCH.test(request) || CREATE.test(request))).toBe(false);
 	});
 
 	it("refuses on 8 when the write itself failed — UNKNOWN, never 1", async () => {

@@ -1,6 +1,7 @@
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import {errOut, fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
+import type {ExecResult} from "../io/exec.ts";
 import {GATEWAY, GH_TOKEN_ENV, served} from "./fixtures.test-support.ts";
 import {landedRefs, readAssembly} from "./landed.ts";
 
@@ -47,6 +48,55 @@ describe("readAssembly", () => {
 		);
 		expect(read).toMatchObject({_tag: "Read", branch: "epic/4300", baseRef: "origin/main"});
 		expect(seams.calls.some((line) => line.endsWith(`${BASE}..${TIP}`))).toBe(true);
+	});
+
+	/**
+	 * The common ancestor lies beyond the graft boundary, so `git merge-base` names none. The read
+	 * stays Unreadable — the point is that its reason carries the remedy (#7292).
+	 */
+	const beyondBoundary = (shallow: ExecResult): ReadonlyArray<Scripted> => [
+		script[0] as Scripted,
+		[TRUNK, served({default_branch: "main"})],
+		[/^git merge-base origin\/main /, errOut("git merge-base exited 1")],
+		[/^git rev-parse --is-shallow-repository$/, shallow],
+	];
+
+	it("names the shallow clone and `git fetch --unshallow origin` when no merge base is reachable", async () => {
+		const seams = fakeSeams(beyondBoundary(okOut("true\n")));
+		const read = await Effect.runPromise(
+			Effect.provide(readAssembly(GH_TOKEN_ENV, "o/r", 4300), seams.layer),
+		);
+		expect(read).toMatchObject({_tag: "Unreadable", branch: "epic/4300"});
+		const reason = read._tag === "Unreadable" ? read.reason : "";
+		expect(reason).toContain("this clone is shallow");
+		expect(reason).toContain("git fetch --unshallow origin");
+		// The probe proves shallowness, not causation — git's own words stay, or a non-boundary
+		// failure loses the one piece of evidence that corrects the hypothesis.
+		expect(reason).toContain("git merge-base exited 1");
+		expect(seams.calls.some((line) => line.startsWith("git log"))).toBe(false);
+	});
+
+	it("keeps git's own reason when the clone is not shallow", async () => {
+		const seams = fakeSeams(beyondBoundary(okOut("false\n")));
+		const read = await Effect.runPromise(
+			Effect.provide(readAssembly(GH_TOKEN_ENV, "o/r", 4300), seams.layer),
+		);
+		expect(read).toMatchObject({
+			_tag: "Unreadable",
+			reason: "no merge base with origin/main: git merge-base exited 1",
+		});
+	});
+
+	// A probe that cannot answer names an unreadable read no more precisely — and never less.
+	it("keeps git's own reason when the shallow probe itself fails", async () => {
+		const seams = fakeSeams(beyondBoundary(errOut("rev-parse blew up")));
+		const read = await Effect.runPromise(
+			Effect.provide(readAssembly(GH_TOKEN_ENV, "o/r", 4300), seams.layer),
+		);
+		expect(read).toMatchObject({
+			_tag: "Unreadable",
+			reason: "no merge base with origin/main: git merge-base exited 1",
+		});
 	});
 
 	it("is Unreadable when the trunk cannot be named — never a partial discharge", async () => {
