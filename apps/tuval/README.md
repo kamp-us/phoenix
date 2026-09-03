@@ -69,3 +69,35 @@ finalizers, then the row leaves the table. A dispatch after stop is refused with
 `Processes.layer` provides `Processes` and `ProcessTable` together over one live map and needs the
 `Registry`. The table is in-memory and read-only from outside; publishing it as a port is a later
 slice.
+
+## Ports
+
+Ports are the only process-to-process protocol. A program's private Demlik `Msg` never crosses a
+process boundary; what another process may see of a program is its `ports` on the registry row.
+A port is a nominal runtime kind plus a payload predicate (`{kind: "tick/v1", direction, accepts}`),
+the shape spike #7379 routed on — not a schema system. An in-port also declares its `bound`
+(`{capacity, overflow}`), because only an in-port owns a queue: `overflow` is Effect's own queue
+strategy (`suspend`, `dropping`, `sliding`), so no port queue is ever unbounded.
+
+`src/ports/` compiles a graph and opens its queues. A graph is authored as nodes that own their
+outbound routes as `on` entries; there is no top-level edge list.
+
+```ts
+const graph: Graph = {
+	nodes: [
+		{id: NodeId.make("p"), program: ProgramId.make("producer"), on: [{port: "ticks", to: {node: NodeId.make("c"), port: "ticks"}}]},
+		{id: NodeId.make("c"), program: ProgramId.make("consumer"), on: []},
+	],
+};
+const wiring = yield* open(yield* compile(graph)); // needs Registry; scoped
+yield* wiring.emit({node: "p", port: "ticks"}, 1);
+const inbox = yield* wiring.inbox({node: "c", port: "ticks"});
+```
+
+`compile` runs over registry rows before any process exists and refuses the graph there: a route
+whose source kind does not match its target kind (`IncompatibleRoute`, naming both kinds and both
+program ids), a route naming a port a program does not declare in that direction
+(`UndeclaredPort`), a route to a node the graph does not declare, a duplicate node id, or an
+in-port whose capacity is not a positive integer. `open` builds one queue per in-port at its
+declared bound and delivers each `emit` to every routed target in authoring order, so a compatible
+route delivers in order. The slice never imports `src/process/`.

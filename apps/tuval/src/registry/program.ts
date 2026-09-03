@@ -13,12 +13,32 @@ export type ProgramId = typeof ProgramId.Type;
 
 /**
  * A public port: a nominal runtime kind plus a payload predicate, the shape spike #7379 routed on.
- * Not a schema system — the kind names the protocol, the predicate admits a payload.
+ * Not a schema system — the kind names the protocol, the predicate admits a payload. Only an
+ * in-port owns a queue, so only an in-port declares the bound (#7371: no unbounded queue by
+ * default); an out-port is a name routes leave from. The routing itself is `src/ports/`.
  */
-export interface PortSchema<T = unknown> {
+export type PortSchema<T = unknown> = InPort<T> | OutPort<T>;
+
+export interface InPort<T = unknown> {
 	readonly kind: string;
-	readonly direction: "in" | "out";
+	readonly direction: "in";
 	readonly accepts: (payload: unknown) => payload is T;
+	readonly bound: PortBound;
+}
+
+export interface OutPort<T = unknown> {
+	readonly kind: string;
+	readonly direction: "out";
+	readonly accepts: (payload: unknown) => payload is T;
+}
+
+/**
+ * The queue behind an in-port: `capacity` messages, then `overflow` — Effect's own queue
+ * strategies, so a bound is exactly the `Queue.make` option it becomes (`effect/Queue`, rc.112).
+ */
+export interface PortBound {
+	readonly capacity: number;
+	readonly overflow: "suspend" | "dropping" | "sliding";
 }
 
 /**
