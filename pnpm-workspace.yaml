@@ -88,6 +88,7 @@ catalog:
 # leaks into apps/web or the CLIs and the beta never leaks into Tuval.
 catalogs:
   tuval:
+    '@effect/platform-node': 4.0.0-rc.112
     '@effect/vitest': 4.0.0-rc.112
     effect: 4.0.0-rc.112
 

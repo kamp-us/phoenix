@@ -1,2 +1,1 @@
-export default [];
-export const graph = 42;
+export default {version: 1, programs: [], graph: 42};

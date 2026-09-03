@@ -7,5 +7,5 @@
 		"allowImportingTsExtensions": true,
 		"types": ["node"]
 	},
-	"include": ["src", "tuval.config.ts", "vitest.config.ts"]
+	"include": ["src", ".tuval/tuval.config.ts", "vitest.config.ts"]
 }

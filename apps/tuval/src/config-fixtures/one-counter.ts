@@ -24,4 +24,4 @@ const counter = {
 
 const programs: ReadonlyArray<AnyProgram> = [counter];
 
-export default programs;
+export default {version: 1, programs};

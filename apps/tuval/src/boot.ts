@@ -1,6 +1,7 @@
-import {fileURLToPath} from "node:url";
+import {homedir} from "node:os";
+import {join} from "node:path";
 import {type Context, Effect, Layer} from "effect";
-import {loadConfigModule} from "./config.ts";
+import {loadLayeredConfig} from "./config.ts";
 import {Checkpoints} from "./durability/Checkpoints.ts";
 import {restore} from "./durability/restore.ts";
 import {fileStores} from "./durability/stores.ts";
@@ -15,11 +16,14 @@ import type {AnyProgram} from "./registry/program.ts";
 import {Registry} from "./registry/Registry.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
-/** The config module Tuval boots from when nothing else is named: the app-root `tuval.config.ts`. */
-export const defaultConfigModule = fileURLToPath(new URL("../tuval.config.ts", import.meta.url));
+/** The global config module, `~/.tuval/tuval.config.ts`; the home dir is a parameter so a test can point it elsewhere. */
+export const defaultGlobalConfig = (home: string = homedir()): string =>
+	join(home, ".tuval", "tuval.config.ts");
 
-/** Where the local app checkpoints: `<app root>/.tuval`, through Demlik's `fileStore` (gitignored). */
-export const defaultStateDir = fileURLToPath(new URL("../.tuval", import.meta.url));
+/** A project's Tuval dir: its optional config module and, beside it, its checkpoints (gitignored). */
+export const projectDir = (project: string): string => join(project, ".tuval");
+export const projectConfig = (project: string): string =>
+	join(projectDir(project), "tuval.config.ts");
 
 export type Kernel = Registry | Checkpoints | Processes | ProcessTable | ProcessTablePort;
 
@@ -65,12 +69,15 @@ export const start = Effect.fn("Tuval.start")(function* ({
 });
 
 export interface BootOptions {
-	readonly configModule: string;
-	readonly stateDir: string;
+	/** The global config module's path. */
+	readonly global: string;
+	/** The project directory; its `.tuval/` holds the project config and the state. */
+	readonly project: string;
 }
 
 export interface BootReport {
-	readonly configModule: string;
+	/** The config modules that existed and were merged, global first. */
+	readonly sources: ReadonlyArray<string>;
 	readonly programCount: number;
 	readonly stateDir: string;
 	readonly processCount: number;
@@ -82,19 +89,23 @@ export interface Booted {
 	readonly kernel: Context.Context<Kernel>;
 }
 
-/** `start` from the config module: the `pnpm dev` path. */
+/** `start` from the layered config: the `pnpm dev` path. */
 export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
-	// Config rows are trusted local code (#7484 R1.1); the loader checks the list, not each row's shape.
-	const config = yield* loadConfigModule(options.configModule);
+	const config = yield* loadLayeredConfig({
+		global: options.global,
+		project: projectConfig(options.project),
+	});
+	// Config rows are trusted local code (#7484 R1.1); the loader checks each row's id, not its shape.
 	const programs = config.programs as ReadonlyArray<AnyProgram>;
-	const started = yield* start({programs, graph: config.graph, stateDir: options.stateDir});
+	const stateDir = projectDir(options.project);
+	const started = yield* start({programs, graph: config.graph, stateDir});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),
 	);
 	const report: BootReport = {
-		configModule: options.configModule,
+		sources: config.sources,
 		programCount: programs.length,
-		stateDir: options.stateDir,
+		stateDir,
 		processCount: live.length,
 		restoredCount:
 			started.launched.filter((process) => process.restored).length + started.restored.length,

@@ -24,14 +24,26 @@ pnpm test             # the unit tier (vitest)
 pnpm typecheck
 ```
 
-`pnpm dev` runs `node src/bin.ts`. Node strips the TypeScript itself, so there is no build step.
-Boot registers the config's programs, launches the processes its graph plans, restores any other
-checkpointed process from `.tuval/` (gitignored), prints the process table, and stays up until
-SIGINT or SIGTERM; a config that plans no process exits right after the report.
-`node src/bin.ts <config> <state-dir>` points either elsewhere.
+`pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
+Node strips the TypeScript itself, so there is no build step. Boot loads your config layers (see
+"Your config"), registers their programs, launches the processes the graph plans, restores any
+other checkpointed process from the project's `.tuval/`, prints the process table, and stays up
+until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits 0; a config
+that plans no process exits right after the report.
 
 ```
-tuval: booted — 2 program(s) registered from …/tuval.config.ts; 2 process(es) live, 0 restored from …/.tuval
+tuval [flags]
+  --config file          Global config module (default: ~/.tuval/tuval.config.ts)
+  --project directory    Project dir whose .tuval/ holds the project config and state (default: cwd)
+  --help, --version
+```
+
+`node src/bin.ts --config <module>` swaps the global layer, which is how the tests exercise the
+refusals; `--project <dir>` runs against another project's `.tuval/`. A path named by either flag
+must exist.
+
+```
+tuval: booted — 2 program(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 2 process(es) live, 0 restored from …/apps/tuval/.tuval
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
 tuval: running — Ctrl-C stops and checkpoints
@@ -48,32 +60,44 @@ state, the counter picks up where it left off, and `restored` counts them.
 
 ## Your config
 
-Configuration is code you own, the Neovim model. Boot imports `tuval.config.ts` at the app root,
-registers every program row in the list it default-exports, and launches the `graph` it exports
-beside it. A row is a `Program` (`src/registry/program.ts`): one stable id, a private Demlik core
-machine, public typed ports, a `receive` map that turns what arrives on each in-port into the
-program's own Msg, host handlers, a capability request list, an optional renderer reference, and
-the identity / capability / placement records as inert data — the kernel enforces nothing on them,
-local code is fully trusted. The graph names the processes to run and the routes between them
-(see "Ports" and "Launch" below); a config without one registers its programs and runs nothing.
+Configuration is code you own, the Neovim model, in two layers: a global module at
+`~/.tuval/tuval.config.ts` and an optional project module at `.tuval/tuval.config.ts` in the
+project dir (the cwd, or `--project`). Either may be absent — an absent layer is empty, and a
+boot with neither registers nothing. The two merge project-over-global: a program row or a graph
+node in the project layer replaces the global one with the same id, in place; the rest append.
+This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` runs against, and
+the checkpoints land beside it (that dir is gitignored except for the config).
+
+A config module default-exports one versioned object, `TuvalConfigInput` from `src/config.ts`:
+`version: 1`, `programs`, and an optional `graph`. A row is a `Program` (`src/registry/program.ts`):
+one stable id, a private Demlik core machine, public typed ports, a `receive` map that turns what
+arrives on each in-port into the program's own Msg, host handlers, a capability request list, an
+optional renderer reference, and the identity / capability / placement records as inert data — the
+kernel enforces nothing on them, local code is fully trusted. The graph names the processes to run
+and the routes between them (see "Ports" and "Launch" below); a config without one registers its
+programs and runs nothing.
 
 ```ts
 import {Console} from "effect";
-import {demoGraph, demoPrograms} from "./src/demo/index.ts";
+import type {TuvalConfigInput} from "../src/config.ts";
+import {demoGraph, demoPrograms} from "../src/demo/index.ts";
 
-export default demoPrograms({everyMs: 1000, write: (line) => Console.log(line)});
-export const graph = demoGraph;
+export default {
+	version: 1,
+	programs: demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
+	graph: demoGraph,
+} satisfies TuvalConfigInput;
 ```
 
-Loading is fail-closed. A config module that throws, has no default export, default-exports
-something that is not a list, or exports a `graph` that is not a graph refuses boot with a message
-naming the module and the reason:
+Loading is fail-closed. The shape is one Effect `Schema` (`TuvalConfig`), so a module that throws,
+has no default export, or exports something the schema rejects — a version other than 1, a row
+without an id, a `graph` that is not a graph — refuses boot with a message naming the module, the
+place and the reason:
 
 ```
 tuval: refusing to boot — config module /path/to/tuval.config.ts: module threw while loading: boom
+tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 config at graph: Expected object
 ```
-
-`node src/bin.ts <path>` boots from another module, which is how the tests exercise the refusals.
 
 ## The host
 
@@ -197,5 +221,5 @@ an in-port with no `receive` entry is refused (`NoReceiver`) before the first sp
 
 `start` in `src/boot.ts` is the whole app from rows and a graph: compile over the registry (a bad
 route refuses here, with nothing spawned and nothing written), open the wiring, build the kernel,
-launch, then `restore` whatever else the manifest names. `boot` is `start` from the config
-module. `src/demo/e2e.unit.test.ts` is the proof that this holds across a stop and a second boot.
+launch, then `restore` whatever else the manifest names. `boot` is `start` from the layered
+config. `src/demo/e2e.unit.test.ts` is the proof that this holds across a stop and a second boot.
