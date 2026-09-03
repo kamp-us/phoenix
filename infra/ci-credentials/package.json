@@ -9,6 +9,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@effect/platform-node": "catalog:",
 		"alchemy": "catalog:",
 		"effect": "catalog:"
 	},

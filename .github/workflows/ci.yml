@@ -1019,7 +1019,7 @@ jobs:
       - name: Run e2e specs (blocking — unauth + authed + flows)
         if: steps.preview.outputs.skipped != 'true'
         run: >-
-          pnpm --filter './apps/**' exec playwright test
+          pnpm --filter @kampus/web exec playwright test
           --reporter=html,list
           --project unauth --project authed --project flows
         env:
