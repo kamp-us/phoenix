@@ -25,6 +25,9 @@ pnpm typecheck
 ```
 
 `pnpm dev` runs `node src/bin.ts`. Node strips the TypeScript itself, so there is no build step.
+Boot registers the config's programs, then restores every checkpointed process from `.tuval/`
+(gitignored) and reports both counts; `node src/bin.ts <config> <state-dir>` points either
+elsewhere.
 
 ## Your config
 
@@ -67,8 +70,30 @@ finalizers, then the row leaves the table. A dispatch after stop is refused with
 `ActorStoppedError`; it never reaches the machine. Two processes of one program share nothing.
 
 `Processes.layer` provides `Processes` and `ProcessTable` together over one live map and needs the
-`Registry`. The table is in-memory and read-only from outside; publishing it as a port is a later
-slice.
+`Registry` and `Checkpoints`. The table is in-memory and read-only from outside; publishing it as a
+port is a later slice.
+
+## Durability
+
+Durability is the kernel's, not a program's (`src/durability/`). Every spawn opens the process's
+checkpoint through `Checkpoints.open`, an Effect acquire/release under the process Scope, and hands
+the host the `Store` it gets back; the host's own save-before-effects ordering does the rest, so
+the only persistence path is Demlik's stores — `fileStores(dir)` (Demlik's `fileStore`, the local
+app's, at `<dir>/manifest.json` + `<dir>/processes/<id>.json`) or `memoryStores()` (Demlik's
+`memoryStore`, the tests'). A snapshot is the machine state under the program id and version that
+wrote it; the manifest lists every checkpointed process in spawn order, parents first.
+
+On boot, `restore` spawns every manifest entry back at its saved id and parent link, at its
+checkpointed state; a clean stop and reload replays nothing, and one new input after it produces
+exactly one new effect. A snapshot written under another program version (or another program) is
+refused with `SnapshotRefused`, naming the process and both versions, and the boot stops there —
+nothing is ever fresh-booted over a refused snapshot:
+
+```
+tuval: refusing to boot — snapshot for process "p-1" refused: written by counter@0.9.0, the program is now counter@1.0.0
+```
+
+Not here: crash-window exactly-once, schema evolution between versions, remote nodes.
 
 ## Ports
 

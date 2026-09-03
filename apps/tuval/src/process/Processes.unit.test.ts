@@ -1,6 +1,8 @@
 import {type Cmd, defineMachine, type Sub, subId} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Option, Scope} from "effect";
+import {Checkpoints} from "../durability/Checkpoints.ts";
+import {memoryStores} from "../durability/stores.ts";
 import {ProgramNotFound} from "../registry/errors.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
@@ -125,7 +127,14 @@ const counter = ProgramId.make("counter");
 const withKernel = <A, E>(
 	rows: ReadonlyArray<AnyProgram>,
 	body: Effect.Effect<A, E, Processes | ProcessTable>,
-) => body.pipe(Effect.provide(Processes.layer.pipe(Layer.provide(Registry.layer(rows)))));
+) =>
+	body.pipe(
+		Effect.provide(
+			Processes.layer.pipe(
+				Layer.provide([Registry.layer(rows), Checkpoints.layer(memoryStores())]),
+			),
+		),
+	);
 
 describe("Processes", () => {
 	it.effect("spawn returns a handle with a stable id and records the row in ProcessTable", () => {
