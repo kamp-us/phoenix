@@ -1,6 +1,8 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, Layer, Option, Stream} from "effect";
 import {expectTypeOf} from "vitest";
+import {Checkpoints} from "../durability/Checkpoints.ts";
+import {memoryStores} from "../durability/stores.ts";
 import {compile} from "../ports/compile.ts";
 import {PortNotWired} from "../ports/errors.ts";
 import {bound, program} from "../ports/fixtures.ts";
@@ -34,7 +36,10 @@ const withKernel = <A, E>(
 	body: Effect.Effect<A, E, Processes | ProcessTable | ProcessTablePort | Registry>,
 ) => {
 	const registry = Registry.layer(rows);
-	const processes = Processes.layer.pipe(Layer.provideMerge(registry));
+	const processes = Processes.layer.pipe(
+		Layer.provideMerge(Checkpoints.layer(memoryStores())),
+		Layer.provideMerge(registry),
+	);
 	return body.pipe(Effect.provide(ProcessTablePort.layer.pipe(Layer.provideMerge(processes))));
 };
 
