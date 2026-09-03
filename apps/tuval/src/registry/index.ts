@@ -11,6 +11,7 @@ export type {
 	PortBound,
 	PortSchema,
 	Program,
+	Receiver,
 	RendererKind,
 	RendererRef,
 } from "./program.ts";

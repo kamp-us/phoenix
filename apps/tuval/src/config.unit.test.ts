@@ -13,9 +13,22 @@ const refusal = async (name: string): Promise<ConfigLoadError> => {
 };
 
 describe("loadConfigModule", () => {
-	it("returns the rows a well-formed module default-exports", async () => {
-		const rows = await Effect.runPromise(loadConfigModule(fixture("two-rows")));
-		expect(rows).toEqual([{id: "a"}, {id: "b"}]);
+	it("returns the rows a well-formed module default-exports, and an empty graph when it exports none", async () => {
+		const config = await Effect.runPromise(loadConfigModule(fixture("two-rows")));
+		expect(config).toEqual({programs: [{id: "a"}, {id: "b"}], graph: {nodes: []}});
+	});
+
+	it("returns the graph a module exports beside its rows", async () => {
+		const config = await Effect.runPromise(loadConfigModule(fixture("with-graph")));
+		expect(config).toEqual({
+			programs: [{id: "a"}],
+			graph: {nodes: [{id: "n", program: "a", on: []}]},
+		});
+	});
+
+	it("refuses a graph export that is not a graph, naming the shape it got", async () => {
+		const error = await refusal("bad-graph");
+		expect(error.reason).toBe("graph export is not a graph; export a {nodes: [...]} (got number)");
 	});
 
 	it("refuses a module that throws, naming the module and the thrown reason", async () => {

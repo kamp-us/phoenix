@@ -1,4 +1,4 @@
-import {Effect} from "effect";
+import {Effect, Option} from "effect";
 import {describe, expect, it} from "vitest";
 import {type AnyProgram, ProgramId, ProgramNotFound} from "../registry/index.ts";
 import {Registry} from "../registry/Registry.ts";
@@ -9,6 +9,7 @@ import {
 	InvalidBound,
 	UndeclaredPort,
 	UnknownNode,
+	UnknownParent,
 } from "./errors.ts";
 import {consumer, isNumber, judge, producer, program} from "./fixtures.ts";
 import type {Graph} from "./graph.ts";
@@ -129,5 +130,33 @@ describe("ports.compile", () => {
 		const error = await compileWith([unbounded], {nodes: [node("s", "sink")]});
 		expect(error).toBeInstanceOf(InvalidBound);
 		expect(error).toMatchObject({program: "sink", port: "ticks", capacity: 0});
+	});
+
+	it("carries a node's parent when it is declared earlier, as none when it has one", async () => {
+		const compiled = await Effect.runPromise(
+			Effect.provide(
+				compile({
+					nodes: [node("p", "producer"), {...node("c", "consumer"), parent: NodeId.make("p")}],
+				}),
+				Registry.layer([producer, consumer()]),
+			),
+		);
+		expect(compiled.nodes.map((n) => n.parent)).toEqual([Option.none(), Option.some("p")]);
+	});
+
+	it("refuses a parent the graph does not declare before the child, whether later or never", async () => {
+		const later = await compileWith([producer, consumer()], {
+			nodes: [{...node("c", "consumer"), parent: NodeId.make("p")}, node("p", "producer")],
+		});
+		expect(later).toBeInstanceOf(UnknownParent);
+		expect(later).toMatchObject({node: "c", parent: "p"});
+		expect(later.message).toBe(
+			'node "c" names parent "p", which the graph does not declare before it',
+		);
+
+		const never = await compileWith([consumer()], {
+			nodes: [{...node("c", "consumer"), parent: NodeId.make("ghost")}],
+		});
+		expect(never).toBeInstanceOf(UnknownParent);
 	});
 });

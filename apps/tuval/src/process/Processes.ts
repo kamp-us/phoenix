@@ -32,6 +32,8 @@ export interface SpawnOptions {
 	readonly parent?: ProcessId;
 	/** Restore's: the id the process was checkpointed under. A fresh spawn mints its own. */
 	readonly id?: ProcessId;
+	/** Provided to this process's handlers: the services its program's `R` names, per process. */
+	readonly services?: Context.Context<never>;
 }
 
 /**
@@ -135,7 +137,6 @@ function makeServices() {
 		const registry = yield* Registry;
 		const checkpoints = yield* Checkpoints;
 		const root = yield* Effect.scope;
-		const services = yield* Effect.context<never>();
 		const live = new Map<ProcessId, Entry>();
 		const changes = yield* PubSub.unbounded<ProcessChange>();
 		yield* Scope.addFinalizer(root, PubSub.shutdown(changes));
@@ -155,6 +156,7 @@ function makeServices() {
 			const parent = options?.parent === undefined ? undefined : yield* lookup(options.parent);
 			const id = options?.id ?? ProcessId.make(randomUUID());
 			const parentId = Option.fromNullishOr(parent?.row.id);
+			const services = options?.services ?? Context.empty();
 			const scope = yield* Scope.fork(parent?.scope ?? root);
 			let lifecycle: Lifecycle = "running";
 			let revision = 0;

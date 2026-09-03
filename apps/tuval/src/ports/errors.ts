@@ -22,6 +22,19 @@ export class UnknownNode extends Schema.TaggedError<UnknownNode>()("tuval/ports/
 	}
 }
 
+/** A parent is a node declared earlier in the graph; absent, itself, or later is this. */
+export class UnknownParent extends Schema.TaggedError<UnknownParent>()(
+	"tuval/ports/UnknownParent",
+	{
+		node: NodeId,
+		parent: NodeId,
+	},
+) {
+	override get message(): string {
+		return `node "${this.node}" names parent "${this.parent}", which the graph does not declare before it`;
+	}
+}
+
 /** The route names a port the program does not declare in that direction. */
 export class UndeclaredPort extends Schema.TaggedError<UndeclaredPort>()(
 	"tuval/ports/UndeclaredPort",

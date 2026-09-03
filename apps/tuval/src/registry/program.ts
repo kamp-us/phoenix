@@ -52,6 +52,12 @@ export type HostHandlers<M extends {readonly type: string}, C extends Cmd, E, R>
 	) => Effect.Effect<ReadonlyArray<M>, E, R>;
 };
 
+/**
+ * `never` so a program types its receiver at the port's payload (`(count: number) => Msg`); the
+ * wiring ran the port's `accepts` before enqueueing, so whatever it is called with passed it.
+ */
+export type Receiver<M> = (payload: never) => M;
+
 export type RendererKind = "host-native" | "host-declarative" | "isolated-frame";
 
 /** A reference only. Rendering is not this epic's; the kernel stores the reference and reports it. */
@@ -109,6 +115,13 @@ export interface Program<
 	readonly core: Machine<S, M, C, U, Ctx>;
 	/** Public: the only thing another process may see of this program. */
 	readonly ports: Readonly<Record<string, PortSchema>>;
+	/**
+	 * How a payload admitted on one of this program's in-ports becomes its private Msg, keyed by
+	 * port name. The payload crosses the wire as `unknown` and takes a Msg shape only here, so the
+	 * private vocabulary stays private. Launch refuses a planned process whose program declares
+	 * an in-port with no receiver (`src/launch/`).
+	 */
+	readonly receive?: Readonly<Record<string, Receiver<M>>>;
 	readonly handlers: HostHandlers<M, C, E, R>;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	readonly renderer?: RendererRef;
