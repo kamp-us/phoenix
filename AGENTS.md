@@ -2,17 +2,19 @@
 
 kamp.us, reborn.
 
-A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
-(`web` is the only app today), each its own package + stack + stage (ADR
-0057). React 19 + Effect + fate. HTTP via Effect `HttpRouter` / `HttpApiBuilder`
-(ADR 0027). Durable Objects authored on alchemy's Effect DO model (ADR 0028).
+A multi-app repo: one runnable app per directory under `apps/` (ADR 0345). A deployed
+app is a Cloudflare Worker owning its own package + stack + stage (ADR 0057; `web` is
+the only one today); a local app (`tuval`) has no stack and never deploys. React 19 +
+Effect + fate. HTTP via Effect `HttpRouter` / `HttpApiBuilder` (ADR 0027). Durable
+Objects authored on alchemy's Effect DO model (ADR 0028).
 
 ## Architecture
 
-- **One worker per app.** Each `apps/<app>` is its own pnpm package owning its own
-  `alchemy.run.ts` stack + per-app stage, reusing the account-global state store and
-  the four CI secrets — no second bootstrap (ADR 0057). `apps/web` is the only worker
-  today; the structure fans out as apps are added.
+- **One runnable app per directory.** Each `apps/<app>` is its own pnpm package. A
+  deployed app owns its own `alchemy.run.ts` stack + per-app stage, reusing the
+  account-global state store and the four CI secrets — no second bootstrap (ADR 0057);
+  `apps/web` is the only worker today. A local app carries no `alchemy.run.ts`, and that
+  absence is the marker that it never deploys (ADR 0345); `apps/tuval` is the only one.
 - **`apps/web`** serves both the SPA (via `assets` binding) and the API.
 - The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE. Other backend routes live under `/api/*`.
 - Frontend is React 19 + Vite, built into `dist/client`.
@@ -20,11 +22,12 @@ A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
 
 ```
 phoenix/
-├── apps/                    # one worker per app, each its own package + stack (ADR 0057)
-│   └── web/                 # @kampus/web — the only worker today
-│       ├── worker/          # worker entry + backend code
-│       ├── src/             # React frontend
-│       └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)
+├── apps/                    # one runnable app per directory (ADR 0345); deployed ones own a stack (ADR 0057)
+│   ├── web/                 # @kampus/web — the only worker today
+│   │   ├── worker/          # worker entry + backend code
+│   │   ├── src/             # React frontend
+│   │   └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)
+│   └── tuval/               # @kampus/tuval — local app, no stack, never deploys (epic #7496)
 ├── packages/                # shared internal packages
 ├── infra/                   # standalone stacks: ci-credentials (one-shot CI-token provisioner), depo (internal asset store/CDN — designed, ADR 0144)
 └── pnpm-workspace.yaml

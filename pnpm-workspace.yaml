@@ -39,7 +39,7 @@ catalog:
   '@sentry/react': 10.62.0
   '@testing-library/dom': ^10.4.1
   '@testing-library/react': ^16.3.0
-  '@tiptap/core': 3.27.3
+  '@tiptap/core': 3.30.4
   '@tiptap/markdown': 3.27.3
   '@tiptap/pm': 3.27.3
   '@tiptap/react': 3.27.3
@@ -82,6 +82,14 @@ catalog:
   vitest: ^4.1.5
   yaml: 2.9.0
   zod: 4.4.3
+
+# apps/tuval's own Effect pin. The kernel epic (#7496) runs on 4.0.0-rc.112 while everything else
+# sits on beta.92; a named catalog keeps one declared version per consumer set, so the rc never
+# leaks into apps/web or the CLIs and the beta never leaks into Tuval.
+catalogs:
+  tuval:
+    '@effect/vitest': 4.0.0-rc.112
+    effect: 4.0.0-rc.112
 
 cleanupUnusedCatalogs: true
 
