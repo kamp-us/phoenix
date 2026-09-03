@@ -43,3 +43,15 @@ tuval: refusing to boot — config module /path/to/tuval.config.ts: module threw
 ```
 
 `node src/bin.ts <path>` boots from another module, which is how the tests exercise the refusals.
+
+## The host
+
+`src/host/` runs a Demlik core machine as an Effect actor: `make(definition)` is a scoped Effect
+yielding an `ActorHandle`, and `layer(key, definition)` provides that handle as a service. A
+definition is `defineActor({machine, interpret, subscribe, store?})` — the machine is Demlik's pure
+core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
+Effect-valued, and their error and service requirements fall out onto the handle.
+
+It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The two places it still
+speaks Demlik 0.12's Promise and disposer shapes live in `src/host/demlik-bridges.ts`, which is the
+swap point; `parity.unit.test.ts` runs one machine through both hosts and asserts they agree.
