@@ -52,6 +52,20 @@ definition is `defineActor({machine, interpret, subscribe, store?})` — the mac
 core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
 Effect-valued, and their error and service requirements fall out onto the handle.
 
-It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The two places it still
+It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The places it still
 speaks Demlik 0.12's Promise and disposer shapes live in `src/host/demlik-bridges.ts`, which is the
 swap point; `parity.unit.test.ts` runs one machine through both hosts and asserts they agree.
+
+## Processes
+
+`src/process/` runs a program as a process: one running instance with a stable id, its own Effect
+Scope forked from its parent's, and a row in the `ProcessTable`. `Processes.spawn(programId,
+{parent?})` resolves the row from the `Registry`, builds the actor through the host, and hands back
+a `ProcessHandle`; `Processes.stop(id)` (or `handle.stop`) closes the process Scope, which is the
+whole shutdown protocol — descendants first, then the actor's drain, Demlik Sub disposers and Effect
+finalizers, then the row leaves the table. A dispatch after stop is refused with
+`ActorStoppedError`; it never reaches the machine. Two processes of one program share nothing.
+
+`Processes.layer` provides `Processes` and `ProcessTable` together over one live map and needs the
+`Registry`. The table is in-memory and read-only from outside; publishing it as a port is a later
+slice.

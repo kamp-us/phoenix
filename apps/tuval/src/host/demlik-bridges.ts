@@ -10,7 +10,7 @@
  * Promise or a `Dispose` on a handler's behalf.
  */
 
-import type {Cmd, DepKeyedSub, Interpret, Machine, PortEmitter} from "@demlik/tea";
+import type {Cmd, DepKeyedSub, Interpret, Machine, PortEmitter, Sub, Subscribe} from "@demlik/tea";
 import {type Context, Effect, type Scope} from "effect";
 import type {
 	ActorDefinition,
@@ -68,6 +68,33 @@ export const subDisposerBridge = <S, M, Ctx>(
 				catch: (cause) => new SubDisposeError({cause}),
 			}).pipe(Effect.orDie),
 	).pipe(Effect.asVoid);
+
+/**
+ * The same disposer bridge for the manual-Sub map: Demlik 0.12's `subscribe[type]` cells, each
+ * returning a `Dispose`, as the Effect-valued `SubscribeHandlers` the host forks into a Sub scope.
+ * The acquire opens the cell; the Scope the host provides awaits its `Dispose` on close.
+ */
+export const subscribeDisposerBridge = <M extends {type: string}, U extends Sub, Ctx>(
+	subscribe: Subscribe<M, U, Ctx>,
+): SubscribeHandlers<M, U, Ctx> => {
+	const cells: Partial<SubscribeHandlers<M, U, Ctx>> = {};
+	const bridge = <K extends U["type"]>(type: K): void => {
+		const open = subscribe[type];
+		cells[type] = (sub, ctx, dispatch) =>
+			Effect.acquireRelease(
+				Effect.sync(() => open(sub, ctx, dispatch)),
+				(dispose) =>
+					Effect.tryPromise({
+						try: async () => {
+							await dispose();
+						},
+						catch: (cause) => new SubDisposeError({cause}),
+					}).pipe(Effect.orDie),
+			).pipe(Effect.asVoid);
+	};
+	for (const type of Object.keys(subscribe)) bridge(type as U["type"]);
+	return cells as SubscribeHandlers<M, U, Ctx>;
+};
 
 /**
  * A definition on Demlik 0.12's own Promise runtime: its Cmd handlers crossed through the
