@@ -115,6 +115,7 @@ Campaigns are bounded, milestone-backed pushes that run *concurrently* with the 
 | Diátaxis README passes | #50 | active |
 | Tuval | #51 | done |
 | Tuval first slice | #52 | active |
+| phoenix i18n | #53 | paused |
 
 **The table is a parsed contract.** It is the single source whatever writes a campaign row (appending it `paused` and later flipping its state) and the lifecycle guard that reads it both bind to, so the grammar is pinned here rather than re-derived at either end:
 
