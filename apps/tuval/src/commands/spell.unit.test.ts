@@ -56,6 +56,15 @@ describe("defineSpell", () => {
 	});
 
 	it("is the identity function — the value it returns is the value it was given", async () => {
+		const spell = {
+			path: ["window", "close"],
+			describe: "Close the focused window.",
+			params: Schema.Struct({id: Schema.String}),
+			result: Schema.Struct({closed: Schema.Boolean}),
+			execute: () => Effect.succeed({closed: true}),
+			capabilities: [],
+		} as const;
+		expect(defineSpell(spell)).toBe(spell);
 		expect(await Effect.runPromise(closeWindow.execute({id: "w1"}, scope))).toEqual({closed: true});
 	});
 
@@ -81,9 +90,17 @@ describe("defineSpell", () => {
  * the code check runs over source with comments and string literals removed.
  */
 describe("commands vocabulary", () => {
-	const modules = readdirSync(import.meta.dirname)
-		.filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
-		.map((name) => [name, readFileSync(join(import.meta.dirname, name), "utf8")] as const);
+	// Recursive: `bindings/`, `bridge/`, `core/` and `parse/` are most of the slice, and a check
+	// that scanned only the top level would leave them unchecked.
+	const modulesUnder = (dir: string, prefix = ""): ReadonlyArray<readonly [string, string]> =>
+		readdirSync(dir, {withFileTypes: true}).flatMap((entry) => {
+			const path = join(dir, entry.name);
+			if (entry.isDirectory()) return modulesUnder(path, `${prefix}${entry.name}/`);
+			if (!entry.name.endsWith(".ts") || entry.name.endsWith(".test.ts")) return [];
+			return [[`${prefix}${entry.name}`, readFileSync(path, "utf8")] as const];
+		});
+
+	const modules = modulesUnder(import.meta.dirname);
 
 	const withoutProse = (source: string): string =>
 		source
@@ -91,16 +108,23 @@ describe("commands vocabulary", () => {
 			.replace(/\/\/.*$/gm, "")
 			.replace(/"(?:[^"\\]|\\.)*"/g, '""');
 
-	it("scans every module of the slice", () => {
-		expect(modules.map(([name]) => name)).toEqual([
-			"errors.ts",
-			"executor.ts",
-			"index.ts",
-			"registry.ts",
-			"scope.ts",
-			"spell-set.ts",
-			"spell.ts",
-		]);
+	it("scans every module of the slice, nested directories included", () => {
+		// Derived, not pinned: a new module must not red this guard, but the floor keeps it from
+		// silently scanning nothing, and each subdirectory is named so a lost one shows up.
+		const names = modules.map(([name]) => name);
+		expect(names).toEqual(
+			expect.arrayContaining([
+				"errors.ts",
+				"executor.ts",
+				"registry.ts",
+				"spell.ts",
+				"bindings/compile.ts",
+				"bridge/SpellBridge.ts",
+				"core/help.ts",
+				"parse/reading.ts",
+			]),
+		);
+		expect(names.filter((name) => name.endsWith(".test.ts"))).toEqual([]);
 	});
 
 	it("names the product in no identifier — only in prose and in tag namespaces", () => {
@@ -113,9 +137,9 @@ describe("commands vocabulary", () => {
 	it("names the product in a string only as a service tag or a span, the two conventions", () => {
 		// `tuval/<Name>` is the `Context.Service` / `Schema.TaggedError` id convention
 		// (`.patterns/effect-context-service.md`); `Tuval.<Service>.<method>` is the `Effect.fn`
-		// span convention (`.patterns/effect-fn-tracing.md`). Both are required, neither is an
-		// identifier, and no third form is allowed.
-		const sanctioned = /^(tuval\/[A-Za-z/]+|Tuval(\.[A-Za-z]+)+)$/;
+		// span convention (`.patterns/effect-fn-tracing.md`); `@kampus/tuval` is this workspace
+		// package's own name. All three are required, none is an identifier, and there is no fourth.
+		const sanctioned = /^(tuval\/[A-Za-z/]+|Tuval(\.[A-Za-z]+)+|@kampus\/tuval)$/;
 		const offenders = modules.flatMap(([name, source]) =>
 			[...source.matchAll(/"((?:[^"\\]|\\.)*)"/g)]
 				.map((match) => match[1] ?? "")
