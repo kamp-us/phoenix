@@ -10,6 +10,16 @@ export class ServerBindFailed extends Schema.TaggedError<ServerBindFailed>()(
 	}
 }
 
+/** Pi's model runtime could not be created, so the process has no model catalog and no auth. */
+export class ModelRuntimeUnavailable extends Schema.TaggedError<ModelRuntimeUnavailable>()(
+	"tuval/pi/ModelRuntimeUnavailable",
+	{agentDir: Schema.String, detail: Schema.String},
+) {
+	override get message(): string {
+		return `Pi's model runtime could not be created from "${this.agentDir}": ${this.detail}`;
+	}
+}
+
 /** Opening a Pi session failed — the model runtime, the agent session or the JSONL store refused. */
 export class SessionOpenFailed extends Schema.TaggedError<SessionOpenFailed>()(
 	"tuval/pi/SessionOpenFailed",

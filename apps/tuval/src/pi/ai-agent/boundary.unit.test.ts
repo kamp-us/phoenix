@@ -1,7 +1,6 @@
 /**
  * The three boundaries this layer keeps: it is ruling 4's `Layer<TuvalAiAgent, never, Scope>`
- * (#7570) over the one host a process provides, no Pi type reaches its public surface, and the
- * per-launch token reaches nothing at all.
+ * (#7570), no Pi type reaches its public surface, and the per-launch token reaches nothing at all.
  *
  * The surface probe states its expected answer on the right of an `=`, with a positive control
  * pinned to the opposite value, per `.patterns/unconditional-test-assertions.md`'s type-level
@@ -18,13 +17,13 @@ import type {PiServerService, PiSessionHost, ServerBindFailed} from "../server/i
 import {PiAiAgent} from "./index.ts";
 
 /**
- * Ruling 4's shape. `E` is `never` — a bind failure dies inside the layer — and `R` is the one
- * `PiSessionHost` the process provides; the ruled `Scope` is the scoped layer's own and is not a
- * requirement a `Layer` type carries.
+ * Ruling 4's shape. `E` is `never` — a bind failure dies inside the layer — and `R` is empty: the
+ * ruled `Scope` is the scoped layer's own and is not a requirement a `Layer` type carries, so a
+ * process provides this layer nothing and holds no Pi value of its own.
  */
 type RuledShape<L> =
 	L extends Layer.Layer<infer A, infer E, infer R>
-		? [A, E, R] extends [TuvalAiAgent, never, PiSessionHost]
+		? [A, E, R] extends [TuvalAiAgent, never, never]
 			? true
 			: false
 		: false;
@@ -32,21 +31,40 @@ type RuledShape<L> =
 const surface: RuledShape<ReturnType<typeof PiAiAgent.layer>> = true;
 
 /** The control: a layer that published the server would publish the token with it. */
-const leaksTheServer: RuledShape<
-	Layer.Layer<TuvalAiAgent | PiServerService, never, PiSessionHost>
-> = false;
+const leaksTheServer: RuledShape<Layer.Layer<TuvalAiAgent | PiServerService>> = false;
 
-/** The second control: the departure this test used to pin, now red on the error channel. */
-const raisesTheBindFailure: RuledShape<Layer.Layer<TuvalAiAgent, ServerBindFailed, PiSessionHost>> =
-	false;
+/** The second control: a departure this test used to pin, now red on the error channel. */
+const raisesTheBindFailure: RuledShape<Layer.Layer<TuvalAiAgent, ServerBindFailed>> = false;
+
+/**
+ * The third control: the departure round 1 shipped. A `PiSessionHost` in `R` is a Pi-typed
+ * requirement the process would have to satisfy, which is the model runtime standing outside the
+ * layer ruling 4 puts it inside.
+ */
+const requiresTheHost: RuledShape<Layer.Layer<TuvalAiAgent, never, PiSessionHost>> = false;
 
 describe("the Pi AI agent layer's surface", () => {
 	it("is the ruled shape and provides the interface and nothing else", () => {
-		expect([surface, leaksTheServer, raisesTheBindFailure]).toEqual([true, false, false]);
+		expect([surface, leaksTheServer, raisesTheBindFailure, requiresTheHost]).toEqual([
+			true,
+			false,
+			false,
+			false,
+		]);
 	});
 
 	it("publishes one layer and its own options", () => {
 		expect(Object.keys(PiAiAgent).sort()).toEqual(["layer"]);
+	});
+
+	it("names no Pi type on the options a process fills in", () => {
+		const declared = /export interface PiAiAgentOptions \{[\s\S]*?\n\}/.exec(
+			readFileSync(join(import.meta.dirname, "PiAiAgent.ts"), "utf8"),
+		);
+		expect(declared).not.toBeNull();
+		expect(stripComments(declared?.[0] ?? "")).not.toMatch(
+			/@earendil-works|ModelRuntime|PiSessionHost/,
+		);
 	});
 
 	it("re-exports no Pi type through its entry point", () => {

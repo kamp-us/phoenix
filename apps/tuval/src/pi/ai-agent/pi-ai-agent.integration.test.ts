@@ -25,8 +25,7 @@ import {
 } from "../../ai-agent/service/index.ts";
 import {PiClientService, webSocketTransportFactory} from "../client/index.ts";
 import {agentSessionHostLayer, PiServerService, SessionOpenFailed} from "../server/index.ts";
-import {PiAiAgent} from "./index.ts";
-import {aiAgentOverClient} from "./PiAiAgent.ts";
+import {aiAgentOverClient, aiAgentOverHost} from "./PiAiAgent.ts";
 
 const MODEL = {provider: "faux", id: "faux-1"} as const;
 
@@ -162,7 +161,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				assert.strictEqual(faux.state.callCount, 2, "the tool loop ran two model turns");
 			}).pipe(
 				Effect.scoped,
-				Effect.provide(PiAiAgent.layer({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),
+				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),
 			);
 		},
 		{timeout: 60_000},
@@ -206,7 +205,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				assert.isFalse(oldest.hasMore, "the walk reaches the beginning of the session");
 			}).pipe(
 				Effect.scoped,
-				Effect.provide(PiAiAgent.layer({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),
+				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),
 			);
 		},
 		{timeout: 60_000},

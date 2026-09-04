@@ -1,7 +1,9 @@
 /**
  * What closing the process's Scope has to do, and what the token must never reach — both driven
- * through the real layer over the scripted `PiSessionHost`, so a real server binds a real loopback
- * port and a real client dials it without a model or a second of wall clock.
+ * through `aiAgentOverHost` on the scripted `PiSessionHost`, so a real server binds a real loopback
+ * port and a real client dials it without a model or a second of wall clock. That door is
+ * `PiAiAgent.layer` minus the model runtime, which declares no `dispose` or `close` and so adds
+ * nothing to what closing the scope has to release.
  *
  * "Exactly once" is asserted two ways because the layer holds two different things. The session is
  * counted by the scripted host, which records every `dispose`. The server and the client are
@@ -15,7 +17,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer, Stream} from "effect";
 import {type AgentEvent, TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {makeScriptedHost} from "../server/fixtures.ts";
-import {PiAiAgent} from "./index.ts";
+import {aiAgentOverHost} from "./PiAiAgent.ts";
 
 const CWD = "/tuval/teardown";
 
@@ -70,7 +72,7 @@ describe("closing the process's scope", () => {
 		return Effect.gen(function* () {
 			const baseline = sockets();
 			const sessionId = yield* drive(collected).pipe(
-				Effect.provide(PiAiAgent.layer().pipe(Layer.provide(host.layer))),
+				Effect.provide(aiAgentOverHost().pipe(Layer.provide(host.layer))),
 				Effect.scoped,
 			);
 
@@ -99,7 +101,7 @@ describe("the per-launch token in flight", () => {
 
 		return Effect.gen(function* () {
 			yield* drive(collected).pipe(
-				Effect.provide(PiAiAgent.layer().pipe(Layer.provide(host.layer))),
+				Effect.provide(aiAgentOverHost().pipe(Layer.provide(host.layer))),
 				Effect.scoped,
 			);
 		}).pipe(

@@ -5,7 +5,12 @@ export {
 } from "./AgentSessionHost.ts";
 export {type ProtocolModelCost, projectModelCost, type SourceModelCost} from "./cost.ts";
 export {type Answer, type DispatchContext, dispatch} from "./dispatch.ts";
-export {ServerBindFailed, SessionCallFailed, SessionOpenFailed} from "./errors.ts";
+export {
+	ModelRuntimeUnavailable,
+	ServerBindFailed,
+	SessionCallFailed,
+	SessionOpenFailed,
+} from "./errors.ts";
 export {
 	authorizeUpgrade,
 	type HandshakeVerdict,

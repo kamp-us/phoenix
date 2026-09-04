@@ -404,12 +404,14 @@ not-found and the reacquire run against the loopback server on Pi's faux provide
 
 ## The Pi AI agent layer
 
-`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `TuvalAiAgent` over the
-loopback server and the client above it: building it stands up one server, dials one client and
-holds both against the scope it was built in, so closing that scope closes the client, the server
-and every session exactly once. Nothing on its surface is a Pi type, and the per-launch token is
-unwrapped once, into the transport factory's closure, and reaches no event, no method's answer and
-no log line.
+`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `Layer<TuvalAiAgent>` and
+requires nothing (founder ruling 4, [#7570](https://github.com/kamp-us/phoenix/issues/7570)):
+building it inside the process's scope stands up Pi's model runtime, the `PiSessionHost` over it,
+one loopback server and one client, and closing that scope closes the client, the server and every
+session exactly once. A process therefore holds no Pi value of its own — `PiAiAgentOptions` carries
+plain strings, and `agentDir` is the only path it usually sets. Nothing on that surface is a Pi
+type, and the per-launch token is unwrapped once, into the transport factory's closure, and reaches
+no event, no method's answer and no log line.
 
 `start({cwd, resume?})` is the caller's, not the layer's, so restore is "rebuild the layer, then
 `start({cwd, resume: sessionId})`" — and that same call is the only way back after a drop. A dropped

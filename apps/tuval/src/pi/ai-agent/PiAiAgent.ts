@@ -3,11 +3,12 @@
  * lease client (#7568). Pi's protocol stops at this file: everything it hands a caller is a port
  * value, and everything it takes is one.
  *
- * The layer is the transport's lifetime (founder ruling 4, #7570). Building it stands up one
- * loopback server on 127.0.0.1 port 0 with its own per-launch capability token, dials a client at
- * it, and leaves both acquired against the scope it was built in; closing that scope closes the
- * client, the server and every session exactly once. `start` is therefore the handler's call, not
- * the layer's — restore is "rebuild the layer, then `start({cwd, resume: sessionId})`".
+ * The layer is the transport's lifetime (founder ruling 4, #7570). Building it stands up Pi's
+ * model runtime and the session host over it, one loopback server on 127.0.0.1 port 0 with its own
+ * per-launch capability token, and a client dialled at that server — all acquired against the scope
+ * it was built in; closing that scope closes the client, the server and every session exactly once.
+ * `start` is therefore the handler's call, not the layer's — restore is "rebuild the layer, then
+ * `start({cwd, resume: sessionId})`".
  *
  * Reconnect is explicit and has one route. A dropped socket fails `events` once with a
  * `TransportError` and nothing dials again; the generic handlers decide to reconnect, and the way
@@ -21,7 +22,7 @@
 
 import {readdirSync} from "node:fs";
 import {join} from "node:path";
-import {SessionManager} from "@earendil-works/pi-coding-agent";
+import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
 import type {Mode, PermissionDecision} from "../../ai-agent/ports/index.ts";
@@ -37,7 +38,9 @@ import {
 } from "../../ai-agent/service/index.ts";
 import {PiClientService, type PiSessionRef} from "../client/index.ts";
 import {
+	agentSessionHostLayer,
 	defaultSessionDir,
+	ModelRuntimeUnavailable,
 	type PiServerLimits,
 	PiServerService,
 	type PiSessionHost,
@@ -61,6 +64,11 @@ export interface PiAiAgentOptions {
 	readonly model?: ModelSelection;
 	/** Where this session's JSONL lives, from its cwd. Defaults to the host's own convention. */
 	readonly sessionDir?: (cwd: string) => string;
+	/**
+	 * Pi's config directory for this process — its credentials and its model catalog. Defaults to
+	 * Pi's own (`$PI_AGENT_DIR`, else `~/.pi/agent`).
+	 */
+	readonly agentDir?: string;
 }
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -290,6 +298,37 @@ const transport = (
 };
 
 /**
+ * Pi's model runtime and the session host over it, created inside this layer's own Scope.
+ *
+ * This is what keeps ruling 4's `R` empty. `ModelRuntime.create` takes plain paths and flags and
+ * nothing else at 0.84.3 (`CreateModelRuntimeOptions`, `dist/core/model-runtime.d.ts:3-18`), so the
+ * strings on `PiAiAgentOptions` are the whole of what a process supplies and no Pi value ever
+ * crosses back out to it. The two paths are Pi's own, rebased on `agentDir` so an overridden
+ * directory moves the credentials and the catalog together (`getAuthPath`/`getModelsPath` are
+ * `join(getAgentDir(), …)`, `dist/config.js:432-438`). The runtime holds nothing to release — it
+ * declares no `dispose` or `close` — so it is created rather than acquired.
+ */
+const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
+	Layer.unwrap(
+		Effect.gen(function* () {
+			const agentDir = options.agentDir ?? getAgentDir();
+			const modelRuntime = yield* Effect.tryPromise({
+				try: () =>
+					ModelRuntime.create({
+						authPath: join(agentDir, "auth.json"),
+						modelsPath: join(agentDir, "models.json"),
+					}),
+				catch: (cause) => new ModelRuntimeUnavailable({agentDir, detail: String(cause)}),
+			}).pipe(Effect.orDie);
+			return agentSessionHostLayer({
+				modelRuntime,
+				agentDir,
+				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
+			});
+		}),
+	);
+
+/**
  * The mapping half alone, over a transport the caller already stood up.
  *
  * Not part of `PiAiAgent`: ruling 4 (#7570) gives this module one layer, and a second public one
@@ -301,14 +340,28 @@ export const aiAgentOverClient = (
 	options: PiAiAgentOptions = {},
 ): Layer.Layer<TuvalAiAgent, never, PiClientService> => Layer.effect(TuvalAiAgent, make(options));
 
+/**
+ * Everything but the model runtime, over a `PiSessionHost` the caller stood up.
+ *
+ * The same test-only door as `aiAgentOverClient` and out of `index.ts` for the same reason: a
+ * scripted or faux-provider host is the one injection a test cannot express in plain strings, since
+ * `registerNativeProvider` takes a Pi provider. A process uses `PiAiAgent.layer`.
+ */
+export const aiAgentOverHost = (
+	options: PiAiAgentOptions = {},
+): Layer.Layer<TuvalAiAgent, never, PiSessionHost> =>
+	Layer.effect(TuvalAiAgent, make(options)).pipe(Layer.provide(Layer.orDie(transport(options))));
+
 export const PiAiAgent = {
 	/**
-	 * `Layer<TuvalAiAgent, never, Scope>` over a `PiSessionHost` the process provides (ruling 4,
-	 * #7570). A bind failure dies rather than riding the error channel: the layer is built inside
-	 * the process's Scope before any handler runs, so there is no caller to hand a `ServerBindFailed`
-	 * to and nothing that could act on one — a loopback port this process cannot bind is a broken
-	 * host, not a case the row models.
+	 * Ruling 4's layer (#7570): building it inside the process's Scope stands up Pi's model runtime,
+	 * the session host, the loopback server and the client, and closing that Scope tears all four
+	 * down. `R` is empty and `E` is `never`, so a process hands this to `aiAgentProgram` and holds no
+	 * Pi value of its own. A bind failure dies rather than riding the error channel: the layer is
+	 * built before any handler runs, so there is no caller to hand a `ServerBindFailed` to and
+	 * nothing that could act on one — a loopback port this process cannot bind is a broken host, not
+	 * a case the row models.
 	 */
-	layer: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent, never, PiSessionHost> =>
-		Layer.effect(TuvalAiAgent, make(options)).pipe(Layer.provide(Layer.orDie(transport(options)))),
+	layer: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent> =>
+		aiAgentOverHost(options).pipe(Layer.provide(host(options))),
 } as const;
