@@ -42,7 +42,7 @@ import {
  * the same line, and nothing in the ledger says a rendered verdict is still owed anywhere.
  *
  * `corrects` is the fifth and rides one line only, a {@link CORRECTED_EVENT}: the `at` of the
- * earlier entry of this same task whose `partial` payload this line supersedes (ADR 0344). It is the
+ * earlier entry of this same task whose `partial` payload this line supersedes (ADR 0350). It is the
  * one field naming another line, and it is how a routing fact recorded before the field existed is
  * repaired without any recorded line changing — see {@link applyCorrections}.
  */
@@ -158,7 +158,7 @@ export const parseLog = (text: string): ParseLogResult => {
 		}
 		// A correction that names no target line, or names one with nothing to put on it, supersedes
 		// nothing and would fold as a silent no-op — the same failure mode a roundless `CLEARED` has,
-		// and the reason both are defects here rather than events (ADR 0344).
+		// and the reason both are defects here rather than events (ADR 0350).
 		const corrected = bareEvent(record.event) === CORRECTED_EVENT;
 		if (record.corrects !== undefined && typeof record.corrects !== "string") {
 			defects.push(`line ${index + 1} carries a non-string \`corrects\` field`);
@@ -203,7 +203,7 @@ export type CorrectionResult =
 /**
  * Resolve every {@link CORRECTED_EVENT} line against the entry it names, producing the log the fold
  * replays: corrections removed, and each corrected entry carrying the `partial` its correction
- * states (ADR 0344).
+ * states (ADR 0350).
  *
  * The log is append-only, so a routing fact recorded wrong can only be superseded, never edited —
  * and the supersession has to be resolvable offline, from the log alone, since the fold is total
@@ -319,7 +319,7 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
  * no task and clears no park, so a grant landing on a parked lane must leave that park's cause
  * standing (ADR 0312). A `CORRECTED` is skipped for the same reason — it amends an older line's
  * routing payload and parks nothing, so letting it stand as the latest entry would silently clear
- * the cause a repaired lane is still waiting under (ADR 0344).
+ * the cause a repaired lane is still waiting under (ADR 0350).
  */
 export const standingCauses = (
 	entries: ReadonlyArray<LogEntry>,
@@ -510,7 +510,7 @@ export const applyEvent = (
 		}
 		return refuseEvent(
 			event === CORRECTED_EVENT
-				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned (ADR 0344)`
+				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned (ADR 0350)`
 				: `"${event}" is outside the operator's six events (${OPERATOR_EVENTS.join("/")})`,
 		);
 	}

@@ -948,7 +948,7 @@ so the lane folded past the arm that would have sent it round again (ADR 0343). 
 as it reads — nothing here is yours to change — and name the two verbs that fix it:
 `fabrika lane migrate` where the lane's machine predates the guard, then
 `fabrika lane reconcile --check`, which says which lanes are in this state and appends the correcting
-line when re-run without the flag (ADR 0344).
+line when re-run without the flag (ADR 0350).
 
 **A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
 `frozen` and on `human:epic-review` the run ends `LANE-PARKED` with the transcript and the need

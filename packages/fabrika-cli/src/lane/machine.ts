@@ -60,7 +60,7 @@ export const CLEARED_EVENT = "CLEARED";
 
 /**
  * The eighth event, and the only line that names another line: a correction, appended by
- * `lane reconcile` to say what a recorded event's routing payload should have been (ADR 0344).
+ * `lane reconcile` to say what a recorded event's routing payload should have been (ADR 0350).
  *
  * It reaches no machine at all — no state holds a cell for it, and the fold consumes it before any
  * message is dispatched. That is the design rather than an omission: a correction is a fact about

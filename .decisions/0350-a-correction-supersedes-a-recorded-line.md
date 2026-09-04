@@ -1,5 +1,5 @@
 ---
-id: 0344
+id: 0350
 title: A correction supersedes a recorded line
 status: accepted
 date: 2026-09-01

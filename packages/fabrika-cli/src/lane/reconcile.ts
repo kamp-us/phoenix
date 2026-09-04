@@ -1,6 +1,6 @@
 /**
  * Which recorded line a lane's ledger got the merge closure wrong on, and the line that supersedes
- * it — the offline half of `lane reconcile` (ADR 0344).
+ * it — the offline half of `lane reconcile` (ADR 0350).
  *
  * ADR 0343 taught the machine to send a merged `Part of #N` back to `queued`, but the routing fact
  * rides the recorded event as a `partial` payload, so a `DONE` written before that field existed

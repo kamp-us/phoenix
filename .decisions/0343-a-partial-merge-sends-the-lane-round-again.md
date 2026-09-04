@@ -59,5 +59,5 @@ takes it without drift.
   and where it should go is a separate question.
 - A lane that folded to `complete` on a partial merge before this shipped stays folded — the routing
   fact is a payload on the recorded line, and no offline replay can invent one. That verb is now
-  written: ADR [0344](0344-a-correction-supersedes-a-recorded-line.md) adds an appended correction
+  written: ADR [0350](0350-a-correction-supersedes-a-recorded-line.md) adds an appended correction
   line and the `lane reconcile` sweep that writes it (#7433).
