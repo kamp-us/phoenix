@@ -297,6 +297,6 @@ describe("AgentChatInput", () => {
 		fireEvent.click(screen.getByRole("button", {name: "düşünme eforu: orta"}));
 
 		expect(await screen.findByRole("menuitemradio", {name: "minimal"})).toBeTruthy();
-		expect(screen.queryByRole("menuitemradio", {name: "off"})).toBeNull();
+		expect(screen.queryByRole("menuitemradio", {name: "kapalı"})).toBeNull();
 	});
 });
