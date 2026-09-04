@@ -244,6 +244,29 @@ describe("AgentChatInput", () => {
 		});
 	});
 
+	it("omits off effort returned by the bridge on load and model refresh", async () => {
+		const {fetch, bridge} = installHarnessFetch();
+		render(<AgentChatInput bridge={bridge} variant="focused" />);
+
+		fireEvent.click(await screen.findByRole("button", {name: "düşünme eforu: orta"}));
+		expect(await screen.findByRole("menuitemradio", {name: "minimal"})).toBeTruthy();
+		expect(screen.queryByRole("menuitemradio", {name: "kapalı"})).toBeNull();
+		fireEvent.click(screen.getByRole("menuitemradio", {name: "orta"}));
+
+		fireEvent.click(screen.getByRole("button", {name: "model: GPT-5"}));
+		fireEvent.click(await screen.findByRole("menuitemradio", {name: "GPT-5.6"}));
+		await waitFor(() => {
+			expect(fetch.mock.calls.filter(([path]) => path === "/__pi/thinking-levels")).toHaveLength(2);
+			expect(screen.getByRole("button", {name: "model: GPT-5.6"})).toBeTruthy();
+		});
+
+		const refreshedThinking = screen.getByRole("button", {name: "düşünme eforu: orta"});
+		await waitFor(() => expect(refreshedThinking.getAttribute("disabled")).toBeNull());
+		fireEvent.click(refreshedThinking);
+		expect(await screen.findByRole("menuitemradio", {name: "minimal"})).toBeTruthy();
+		expect(screen.queryByRole("menuitemradio", {name: "kapalı"})).toBeNull();
+	});
+
 	it("keeps secondary harness controls behind disclosure in the focused variant", async () => {
 		const {fetch, bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} variant="focused" />);

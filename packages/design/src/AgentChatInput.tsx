@@ -623,7 +623,7 @@ export function AgentChatInput({
 				activeBridge.loadPiThinkingLevels(),
 			]);
 			applyState(nextState);
-			setThinkingLevels(nextThinkingLevels);
+			setThinkingLevels(nextThinkingLevels.filter((level) => level !== "off"));
 			addActivity(t("admin.agent.activity.modelChanged", {model: nextModel.name}));
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : t("admin.agent.error.model"));

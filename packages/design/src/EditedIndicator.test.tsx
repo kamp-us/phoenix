@@ -4,8 +4,8 @@ import {EditedIndicator} from "./EditedIndicator";
 import {EDITED_GRACE_MS, editedAfter, formatEditedTooltipTR} from "./edited-indicator-datetime";
 
 describe("EditedIndicator", () => {
-	const createdAt = "2026-05-09T10:00:00.000Z";
-	const editedAt = new Date(Date.parse(createdAt) + EDITED_GRACE_MS + 1).toISOString();
+	const createdAt = "2026-01-15T10:00:00.000";
+	const editedAt = "2026-01-15T10:01:00.001";
 
 	it("keeps the grace window and invalid-date behavior", () => {
 		expect(
@@ -24,7 +24,7 @@ describe("EditedIndicator", () => {
 
 		const indicator = screen.getByTestId("edited-indicator");
 		expect(indicator.textContent).toBe("düzenlendi");
-		expect(indicator.getAttribute("title")).toBe(formatEditedTooltipTR(editedAt));
+		expect(indicator.getAttribute("title")).toBe("15 Oca 2026 10:01");
 	});
 
 	it("suppresses unedited, missing, and invalid dates", () => {
