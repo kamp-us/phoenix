@@ -96,10 +96,26 @@ const describeIssue = (error: Schema.SchemaError): string => {
 
 const decodeConfig = Schema.decodeUnknownEffect(TuvalConfig);
 
-export const loadConfigModule = Effect.fn("Tuval.loadConfigModule")(function* (modulePath: string) {
+/**
+ * Node caches an ES module by URL for the life of the process, so a second load of the same path
+ * would answer with the config the first one read and a reload could never see an edit. Each load
+ * stamps its own number on the URL to read the file as it stands now; the copy it replaces stays in
+ * Node's cache, which is what reading a config twice costs. The number is per load and not per
+ * module, so one load importing both layers imports a module they share exactly once.
+ */
+let loads = 0;
+const nextLoad = (): number => (loads += 1);
+
+const moduleUrl = (modulePath: string, load: number): string =>
+	`${pathToFileURL(modulePath).href}?tuval-load=${load}`;
+
+export const loadConfigModule = Effect.fn("Tuval.loadConfigModule")(function* (
+	modulePath: string,
+	load: number = nextLoad(),
+) {
 	const refuse = (reason: string) => new ConfigLoadError({module: modulePath, reason});
 	const loaded = yield* Effect.tryPromise({
-		try: (): Promise<Record<string, unknown>> => import(pathToFileURL(modulePath).href),
+		try: (): Promise<Record<string, unknown>> => import(moduleUrl(modulePath, load)),
 		catch: (cause) => refuse(`module threw while loading: ${thrownMessage(cause)}`),
 	});
 	if (!("default" in loaded)) {
@@ -153,18 +169,21 @@ const mergeById = <T>(base: ReadonlyArray<T>, over: ReadonlyArray<T>, key: (item
 	return [...merged, ...over.filter((item) => !baseKeys.has(key(item)))];
 };
 
-const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string) {
+const loadOptional = Effect.fn("Tuval.loadOptional")(function* (modulePath: string, load: number) {
 	const fs = yield* FileSystem.FileSystem;
 	const present = yield* fs.exists(modulePath).pipe(Effect.orElseSucceed(() => false));
-	return present ? Option.some(yield* loadConfigModule(modulePath)) : Option.none<TuvalConfig>();
+	return present
+		? Option.some(yield* loadConfigModule(modulePath, load))
+		: Option.none<TuvalConfig>();
 });
 
 /** Both layers, absent ones empty, merged project-over-global by program id and node id. */
 export const loadLayeredConfig = Effect.fn("Tuval.loadLayeredConfig")(function* (
 	layers: ConfigLayers,
 ) {
-	const global = yield* loadOptional(layers.global);
-	const project = yield* loadOptional(layers.project);
+	const load = nextLoad();
+	const global = yield* loadOptional(layers.global, load);
+	const project = yield* loadOptional(layers.project, load);
 	const empty: TuvalConfig = {version: 1, programs: [], graph: {nodes: []}, keys: {}};
 	const base = Option.getOrElse(global, () => empty);
 	const over = Option.getOrElse(project, () => empty);

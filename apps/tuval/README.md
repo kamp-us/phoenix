@@ -43,7 +43,7 @@ refusals; `--project <dir>` runs against another project's `.tuval/`. A path nam
 must exist.
 
 ```
-tuval: booted — 2 program(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 2 process(es) live, 0 restored from …/apps/tuval/.tuval
+tuval: booted — 2 program(s), 6 spell(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 2 process(es) live, 0 restored from …/apps/tuval/.tuval
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
 tuval: running — Ctrl-C stops and checkpoints
@@ -69,7 +69,8 @@ This repo's `apps/tuval/.tuval/tuval.config.ts` is the project layer `pnpm dev` 
 the checkpoints land beside it (that dir is gitignored except for the config).
 
 A config module default-exports one versioned object, `TuvalConfigInput` from `src/config.ts`:
-`version: 1`, `programs`, and an optional `graph`. A row is a `Program` (`src/registry/program.ts`):
+`version: 1`, `programs`, an optional `graph`, and an optional `keys` (see "Spells"). A row is a
+`Program` (`src/registry/program.ts`):
 one stable id, a private Demlik core machine, public typed ports, a `receive` map that turns what
 arrives on each in-port into the program's own Msg, host handlers, a capability request list, an
 optional renderer reference, and the identity / capability / placement records as inert data — the
@@ -98,6 +99,61 @@ place and the reason:
 tuval: refusing to boot — config module /path/to/tuval.config.ts: module threw while loading: boom
 tuval: refusing to boot — config module /path/to/tuval.config.ts: not a v1 config at graph: Expected object
 ```
+
+## Spells
+
+A spell is one command anything can call by path: `window close`, `spell list`, `process spawn`.
+It carries a sentence describing itself, an Effect `Schema` for its arguments, another for its
+result, and the Effect that runs it — so the same definition is what the command line completes
+against, what a key binding compiles to, and what a program calls over the wire. The kernel
+registers its own list at boot (`help`, `spell list`, `spell describe`, `process spawn`,
+`process send`, `process read`), and boot reports the total beside the program count.
+
+A program row declares its own in a `spells` field, and each one is registered under the program's
+id, so `echo`'s `repeat` is `echo repeat` and no program can collide with another or with the
+kernel's list:
+
+```ts
+import {Effect, Schema} from "effect";
+import {defineSpell} from "../src/commands/spell.ts";
+
+const repeat = defineSpell({
+	path: ["repeat"],
+	describe: "Answer with the word it was given, doubled.",
+	params: Schema.Struct({word: Schema.String}),
+	result: Schema.Struct({word: Schema.String}),
+	execute: (args) => Effect.succeed({word: `${args.word}${args.word}`}),
+	capabilities: [],
+});
+```
+
+A config's `keys` block binds a key to a command written the way a person types it. Each one is
+compiled against the registry at boot, so a mistake is reported while you are looking at the config
+rather than under a key you press hours later, and recovery is per binding: the ones that compile
+run, and the one that does not is named with the module, the key, where in the command string
+reading stopped, what was expected, and the nearest thing you may have meant.
+
+```ts
+export default {
+	version: 1,
+	programs: [...],
+	keys: {"ctrl-h": "help", "ctrl-x": {command: "workspace next", repeat: true}},
+} satisfies TuvalConfigInput;
+```
+
+`:help` lists every registered spell with its arguments and its own sentence — there is no help
+text written anywhere, because a row's description is the spell's own. An agent asks the same
+registry the same way: `spell list` describes every spell, `spell describe <path>` describes one,
+including its parameters as JSON Schema, and calling one is the same `SpellCall` message the
+command line sends. There is no second catalogue for programs to read, and
+`src/commands/agent-proof.unit.test.ts` is the proof: a scripted program enumerates the registry
+over the wire and calls every spell in it, generating each call's arguments from that spell's own
+parameter schema.
+
+Reading a config again replaces the registry and the compiled key bindings in one step, so a
+reader never sees new spells beside bindings compiled against the old ones
+(`src/reload-proof.unit.test.ts`). What a reload does not touch is the processes already running:
+they keep going under the rows they were spawned from.
 
 ## The host
 
