@@ -23,7 +23,9 @@
  * caller-asserted "this is a preview" proves nothing, so the fence reads a fact the deploy stack
  * sets and the caller cannot: Cloudflare's own record for the given `--database-id`. A per-PR
  * preview is `phoenix-phoenix-db-pr-<n>-…`; anything else — `…-prod-…`, a renamed stage, a name
- * the API declines to give — is refused before any write. It replaced an emptiness check that
+ * the API declines to give — is refused before any write. `ResolvedDatabaseName` holds that origin
+ * open in the type: `resolveDatabaseName` is its only mint, so the fence's own parameter refuses a
+ * name a caller composed before any rule about its shape is applied. It replaced an emptiness check that
  * could never pass in practice, because CI's e2e suite signs human users up on every preview it
  * tests — see ADR 0349 (#7740, founder ruling
  * https://github.com/kamp-us/phoenix/issues/7740#issuecomment-5535874078).
@@ -35,6 +37,7 @@
  * carries credentials for signing IN, which this path skips by construction.
  */
 import {key, platform} from "@kampus/authz";
+import type {ResolvedDatabaseName} from "@kampus/d1-rest";
 import {eq} from "drizzle-orm";
 import type {BatchItem} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
@@ -197,6 +200,10 @@ export const PREVIEW_NAME_MARKER = "-pr-";
  * Whether a D1 name is a throwaway per-PR preview's. Fail closed: only a name carrying
  * {@link PREVIEW_NAME_MARKER} is throwaway, and everything else — production, a renamed stage, an
  * empty string — is not.
+ *
+ * `string`, not {@link ResolvedDatabaseName}, and deliberately: this is the shape rule, total over
+ * any text, and it answers `false` for text no mint could ever produce. Where the name has to have
+ * come from Cloudflare is {@link provisionTestAccounts}'s parameter, which is the fence itself.
  */
 export const isThrowawayDatabaseName = (name: string): boolean =>
 	name.includes(PREVIEW_NAME_MARKER);
@@ -273,13 +280,15 @@ const standingRows = (
 };
 
 /**
- * `databaseName` is Cloudflare's record for the target id, resolved by the caller — never a label
- * the caller composed. The fence is decided first, so a run against a real database is refused on
- * the same answer whatever tokens it was handed.
+ * `databaseName` is Cloudflare's record for the target id, and {@link ResolvedDatabaseName} is what
+ * makes that a type fact rather than a docblock: `resolveDatabaseName` is the only mint, so a label
+ * the caller composed does not fit this parameter and cannot reach the fence. The fence is decided
+ * first, so a run against a real database is refused on the same answer whatever tokens it was
+ * handed.
  */
 export const provisionTestAccounts = async (
 	db: SeedDb,
-	databaseName: string,
+	databaseName: ResolvedDatabaseName,
 	credentials: PreviewCredentials,
 	standing: CaylakStanding | null = null,
 	now: Date = new Date(),
