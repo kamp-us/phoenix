@@ -97,7 +97,9 @@ const tuval = Command.make(
 		} else {
 			// A page that will not start does not take the kernel down with it: the processes are up
 			// and checkpointing, and a second `pnpm dev` can attach to the same socket.
-			yield* servePage({root: appRoot, launchUrl: transport.launchUrl, port: pagePort}).pipe(
+			// `servePage` admits its own port with the transport's fence before returning, so the URL
+			// printed here is one a browser can actually attach from (#7560).
+			yield* servePage({root: appRoot, transport, port: pagePort}).pipe(
 				Effect.flatMap((page) => Console.log(`tuval: desk at ${page.url}`)),
 				Effect.catch((error) => Console.error(`tuval: ${error.message}`)),
 			);

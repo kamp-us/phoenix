@@ -12,10 +12,19 @@
  * fall back to and nothing here reads `prefers-color-scheme`.
  */
 
+/*
+ * The document behind the desk. The scale and its role aliases are scoped to `.tuval-surface`, and
+ * `body` is not inside it, so the one role the page itself paints is declared here — off the same
+ * value `--surface-sunken` resolves to. Overscroll is the only place it shows (#7560).
+ */
+:root {
+	--gray-1: #0b0c0e;
+	--page-backdrop: var(--gray-1);
+}
+
 .tuval-surface {
 	color-scheme: dark;
 
-	--gray-1: #0b0c0e;
 	--gray-2: #111316;
 	--gray-3: #191c20;
 	--gray-5: #262a30;

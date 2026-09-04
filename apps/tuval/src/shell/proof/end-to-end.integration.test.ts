@@ -11,15 +11,18 @@
  * the very function the browser surface calls (`../picker/view.ts`, `../commands/line.ts`).
  */
 
+import {randomBytes} from "node:crypto";
 import {mkdtemp, rm} from "node:fs/promises";
+import {request} from "node:http";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {dirname, join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Queue, Result, Schema, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
 import {start} from "../../boot.ts";
 import {counterNode, demoGraph, demoPrograms} from "../../demo/index.ts";
 import {logId} from "../../demo/log.ts";
+import {LAUNCH_ENDPOINT, servePage} from "../../page/dev-server.ts";
 import {ProcessId} from "../../process/process.ts";
 import {readCommandLine} from "../commands/index.ts";
 import {activeWorkspace, type ShellMsg, type ShellState, windowIds} from "../core/index.ts";
@@ -78,6 +81,42 @@ const bootDesk = Effect.fn("proof.bootDesk")(function* (stateDir: string) {
 
 const openPage = (url: string) =>
 	attach(url).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal));
+
+/** `apps/tuval` — `index.html`'s home, and so the page server's root, as `bin.ts` computes it. */
+const appRoot = dirname(dirname(dirname(import.meta.dirname)));
+
+/**
+ * Replay the WebSocket upgrade by hand and answer with its status line: 101 admitted, 401 refused
+ * by `verifyClient` before any frame. Hand-rolled because a Node WebSocket client sends no `Origin`
+ * — the one input the fence lets through unconditionally — so nothing that attaches the way the
+ * other proofs do can exercise the check a browser actually meets (#7560).
+ */
+const upgradeStatus = (launchUrl: string, origin: string | undefined) =>
+	Effect.callback<number>((resume) => {
+		const target = new URL(launchUrl);
+		const attempt = request({
+			hostname: target.hostname,
+			port: Number(target.port),
+			path: `${target.pathname}${target.search}`,
+			headers: {
+				connection: "Upgrade",
+				upgrade: "websocket",
+				"sec-websocket-key": randomBytes(16).toString("base64"),
+				"sec-websocket-version": "13",
+				...(origin === undefined ? {} : {origin}),
+			},
+		});
+		attempt.on("upgrade", (response, socket) => {
+			socket.destroy();
+			resume(Effect.succeed(response.statusCode ?? 0));
+		});
+		attempt.on("response", (response) => {
+			response.resume();
+			resume(Effect.succeed(response.statusCode ?? 0));
+		});
+		attempt.on("error", (cause) => resume(Effect.die(cause)));
+		attempt.end();
+	});
 
 /** Every state the shell publishes, in order, so a read proves the subscription is live. */
 const watchDesk = Effect.fn("proof.watchDesk")(function* (
@@ -501,6 +540,41 @@ describe("the Tuval shell, end to end", () => {
 
 				yield* press(desk, "c");
 				assert.strictEqual(yield* nextLine(app.lines, "key c after re-attaching"), "key c");
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"the served page can attach: the launch endpoint answers the socket's URL and the upgrade carrying the page's own Origin is admitted, while a foreign one is refused",
+		() =>
+			Effect.gen(function* () {
+				const stateDir = yield* tempDir;
+				const app = yield* bootDesk(stateDir);
+				const page = yield* servePage({root: appRoot, transport: app.server, port: 0});
+				assert.notStrictEqual(page.port, app.server.port, "the page and the socket bind two ports");
+
+				const answered = yield* io(() =>
+					fetch(new URL(LAUNCH_ENDPOINT, page.url)).then(
+						(response) => response.json() as Promise<{readonly url: string}>,
+					),
+				);
+				assert.strictEqual(answered.url, app.server.launchUrl);
+
+				// The founder's browser sends the page's origin, never the socket's. Every proof above
+				// passes without this because a Node client sends no Origin at all (#7560).
+				const pageOrigin = new URL(page.url).origin;
+				assert.deepStrictEqual(
+					[
+						yield* upgradeStatus(answered.url, pageOrigin),
+						yield* upgradeStatus(answered.url, `http://localhost:${page.port}`),
+						yield* upgradeStatus(answered.url, `http://127.0.0.1:${app.server.port}`),
+						yield* upgradeStatus(answered.url, undefined),
+						yield* upgradeStatus(answered.url, "http://127.0.0.1:1"),
+						yield* upgradeStatus(answered.url, "https://evil.example"),
+					],
+					[101, 101, 101, 101, 401, 401],
+					"admitted: the page's own origin in every loopback spelling, the socket's, and a client sending none",
+				);
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

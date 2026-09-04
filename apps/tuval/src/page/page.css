@@ -12,8 +12,20 @@ body,
 }
 
 body {
-	background: #0b0c0e;
+	background: var(--page-backdrop);
 	color-scheme: dark;
+}
+
+/* The attach-failure panel (`./main.tsx`): a sentence, then the kernel's own words under it. */
+.tuval-attach-failed p {
+	margin: 0;
+}
+
+.tuval-attach-reason {
+	color: var(--text-faint);
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
 }
 
 .tuval-demo {

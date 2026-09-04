@@ -56,6 +56,9 @@ count 1
 count 2
 ```
 
+Those are two ports on purpose — the socket and the page bind separately — and the transport admits
+the page's origin as it starts, so the browser's attach goes through (#7560).
+
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
 zooms, and `<c-b> :` opens the command line — `window:open log` fills the focused window with a demo

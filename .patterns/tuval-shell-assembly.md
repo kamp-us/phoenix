@@ -109,6 +109,20 @@ and a token on disk outlives the boot that minted it.
 `vite` is a devDependency and is imported dynamically, so `node src/bin.ts --no-page` boots a kernel
 with no bundler present. A page that will not start is reported and the kernel keeps running.
 
+**One process, but two ports — and the handshake's origin fence has to be told the second one.** The
+socket and the page bind separately, so the `Origin` a browser puts on the WebSocket upgrade is the
+*page* server's, never the socket's. A fence derived from the socket's port alone refuses the very
+page it exists to admit, and every Node-client test still passes, because a Node WebSocket client
+sends no `Origin` at all — the one input `checkHandshake` lets through unconditionally. That
+combination shipped once and rendered a blank desk (#7560).
+
+The rule that keeps it fixed: **the fence's origin set must include the page server's origin.**
+`servePage` takes the `TransportServer` rather than its URL and calls `admitLoopbackPort` on it the
+moment Vite binds, so serving a page and admitting its origin are one act and no caller can do the
+first without the second. A change to either half owes the proof in
+`src/shell/proof/end-to-end.integration.test.ts` that replays the upgrade **with** an `Origin`
+header; nothing that attaches the ordinary way can fail when this breaks.
+
 ## The three proofs
 
 `src/shell/proof/end-to-end.integration.test.ts` is the shape to copy for anything driving the whole

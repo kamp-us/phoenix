@@ -26,11 +26,24 @@ export interface LogOptions {
 
 export const logId = ProgramId.make("log");
 
+/**
+ * Every cell filled, whatever the checkpoint held. `keys` was added after the first checkpoints were
+ * written, and a state decoded without it would spread `undefined` on the first forwarded key — a
+ * crash on the one path anyone who booted the older build takes (#7560).
+ *
+ * The parameter is `Partial` where the machine declares `LogState`: a checkpoint is whatever an
+ * older build wrote, so the declared type is a claim about new state, not about what decodes.
+ */
+const restore = (loaded: Partial<LogState> | null | undefined): LogState => ({
+	lines: loaded?.lines ?? [],
+	keys: loaded?.keys ?? [],
+});
+
 export const logProgram = ({write}: LogOptions): AnyProgram =>
 	({
 		id: logId,
 		core: defineMachine<LogState, LogMsg, Print, never, unknown>({
-			init: (loaded) => [loaded ?? {lines: [], keys: []}, []],
+			init: (loaded) => [restore(loaded), []],
 			update: {
 				record: (state, msg) => [
 					{...state, lines: [...state.lines, msg.count]},
