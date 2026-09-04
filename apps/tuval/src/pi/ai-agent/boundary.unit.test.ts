@@ -77,16 +77,22 @@ describe("the Pi AI agent layer's surface", () => {
 		expect(exportedNames(entry)).toEqual(["ModelSelection", "PiAiAgent", "PiAiAgentOptions"]);
 		// The control: each departure appended to the real entry text, so the set above is what reds
 		// on it. `aiAgentOverHost` and `aiAgentOverClient` both publish a Pi-typed `R`, and a star
-		// re-export publishes whatever `PiAiAgent.ts` grows next.
+		// re-export publishes whatever `PiAiAgent.ts` grows next. The last two are the type-only
+		// spellings — the form the rest of the repo uses, and the one the first cut of this case
+		// could not see at all (#7791).
 		expect(
 			[
 				'export {aiAgentOverHost} from "./PiAiAgent.ts";',
 				'export {aiAgentOverClient} from "./PiAiAgent.ts";',
 				'export * from "./PiAiAgent.ts";',
+				'export type {PiAiAgentOptions as Leaked} from "@earendil-works/pi";',
+				'export type * from "@earendil-works/pi";',
 			].map((departure) => exportedNames(`${entry}\n${departure}\n`)),
 		).toEqual([
 			["ModelSelection", "PiAiAgent", "PiAiAgentOptions", "aiAgentOverHost"],
 			["ModelSelection", "PiAiAgent", "PiAiAgentOptions", "aiAgentOverClient"],
+			["*", "ModelSelection", "PiAiAgent", "PiAiAgentOptions"],
+			["Leaked", "ModelSelection", "PiAiAgent", "PiAiAgentOptions"],
 			["*", "ModelSelection", "PiAiAgent", "PiAiAgentOptions"],
 		]);
 	});
@@ -115,11 +121,14 @@ const sources = (): ReadonlyArray<{name: string; text: string}> => {
  * Every name a module's text publishes, sorted. Two of the three names `index.ts` exports are types
  * and carry no runtime key, so the set is read off the text rather than off the imported module. A
  * star re-export enumerates nothing, so it reports the literal `*` — a name no ruled set carries,
- * which is what makes `export * from "./PiAiAgent.ts";` red rather than pass unseen.
+ * which is what makes `export * from "./PiAiAgent.ts";` red rather than pass unseen. The `type`
+ * prefix reaches both re-export forms, not just a declaration: `export type {X} from "…";` and
+ * `export type * from "…";` are how the rest of this repo writes a type re-export, and a clause
+ * regex that read `type` only as a declaration keyword saw neither line at all (#7791).
  */
 const exportedNames = (text: string): ReadonlyArray<string> => {
 	const clauses =
-		/^export\s+(?:(\*(?:\s+as\s+\w+)?)|\{([^}]*)\}|(default)\b|(?:declare\s+)?(?:async\s+)?(?:type|interface|const|let|var|function\*?|class|enum|namespace)\s+(\w+))/gm;
+		/^export\s+(?:(?:type\s+)?(?:(\*(?:\s+as\s+\w+)?)|\{([^}]*)\})|(default)\b|(?:declare\s+)?(?:async\s+)?(?:type|interface|const|let|var|function\*?|class|enum|namespace)\s+(\w+))/gm;
 	const names: Array<string> = [];
 	for (const [, star, clause, fallback, declared] of stripComments(text).matchAll(clauses)) {
 		if (star !== undefined) names.push("*");
