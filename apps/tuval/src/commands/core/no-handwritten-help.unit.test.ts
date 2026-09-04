@@ -47,11 +47,10 @@ describe("the core spell sources", () => {
 	});
 
 	it("reads the files it claims to read", () => {
-		expect(sources.map((source) => source.name)).toEqual([
-			"fixtures.ts",
-			"help.ts",
-			"index.ts",
-			"spell.ts",
-		]);
+		// Derived, not pinned: a sibling adding a spell file to core/ must not red this guard (#7642).
+		const names = sources.map((source) => source.name);
+		expect(names).toEqual(expect.arrayContaining(["help.ts", "spell.ts", "index.ts"]));
+		expect(names.filter((name) => name.endsWith(".test.ts"))).toEqual([]);
+		expect(names).toEqual([...names].sort());
 	});
 });
