@@ -21,7 +21,7 @@ moved.
 | [`scope.ts`](../apps/tuval/src/commands/scope.ts) | `WindowIndex`, `WindowPlacement`, `Client`, `resolveScope` |
 | [`executor.ts`](../apps/tuval/src/commands/executor.ts) | `SpellExecutor`: one `SpellCall` in, one `SpellReply` out |
 | [`errors.ts`](../apps/tuval/src/commands/errors.ts) | `DuplicateSpellPath`, `SpellNotFound`, `NoSuchWindow`, `UnknownSpell`, `BadArgs`, `BadResult` |
-| [`index.ts`](../apps/tuval/src/commands/index.ts) | the slice's public surface |
+| [`index.ts`](../apps/tuval/src/commands/index.ts) | a partial barrel: `bindings/`, `errors`, `executor`, `parse/`, `registry`, `scope` and `spell`, but not `core/` or `bridge/`, which are imported from their own directories |
 | [`parse/tokenize.ts`](../apps/tuval/src/commands/parse/tokenize.ts) | the command line's lexer |
 | [`parse/reading.ts`](../apps/tuval/src/commands/parse/reading.ts) | the single walk `parse` and `complete` share |
 | [`parse/parse.ts`](../apps/tuval/src/commands/parse/parse.ts) | `parse`, `ParseResult`, `SpellCallDraft` |
@@ -74,8 +74,8 @@ stores that, because one table holds spells of every shape.
 The `capabilities` list reuses the kernel's `CapabilityRequest` record from
 [`registry/program.ts`](../apps/tuval/src/registry/program.ts). Nothing grants it, nothing checks
 it, nothing denies it. It is not a security boundary. The only thing standing between a calling
-program and the registry today is the bridge's allowlist, and that is data the calling program's own
-row supplies rather than a check the kernel makes.
+program and the registry today is the bridge's allowlist, and that list is whatever the caller
+passed to `SpellBridge.layer({allow})`, not a check the kernel makes.
 
 ## A program declares its spells
 
@@ -85,8 +85,9 @@ kernel's own `Registry` never reads it; only the spell registry does. Each entry
 `[programId, ...spell.path]`, so a program's spells are namespaced by its id and cannot collide with
 the core list by accident.
 
-The import is type-only, so the runtime dependency between the two slices stays one-directional:
-`commands/` depends on `registry/`, never the reverse.
+`registry/program.ts` imports `AnySpell` with `import type`, so nothing crosses at runtime in that
+direction and the runtime dependency stays one way: `commands/` reaches into `registry/`, never the
+reverse.
 
 ## The registry
 
@@ -156,7 +157,7 @@ The steps are lookup, decode the args, resolve the scope, run, encode the result
 
 | Failure | Becomes |
 |---|---|
-| no spell at the path | `UnknownSpell`, carrying the nearest registered path when one is near enough (Levenshtein, budget one third of the candidate's length) |
+| no spell at the path | `UnknownSpell`, carrying the nearest registered path when one is near enough. The measure is Levenshtein and the budget is `Math.max(1, Math.ceil(path.length / 3))`, so a short path still tolerates one edit |
 | `params` refuses the args | `BadArgs`, carrying the offending argument and what was expected |
 | the window is unknown | `NoSuchWindow` |
 | the spell's own error | a failure whose `tag` and `message` come off the error |
@@ -191,8 +192,8 @@ from `describeFile` ([`bindings/file.ts`](../apps/tuval/src/commands/bindings/fi
 the layer plus the path *inside* that layer's directory and falls back to the bare file name rather
 than leaking an absolute path.
 
-The reading is the parser's own `parse`, so a binding is read by exactly the rules the palette reads
-a typed line by. Compilation is against the registry as it stands, so re-run it after a `swap`: a
+The reading is the parser's own `parse`, so a binding is read by exactly the rules a typed line will be read
+by. Compilation is against the registry as it stands, so re-run it after a `swap`: a
 spell that went away turns its binding into an error on the next compile.
 
 ## The parser
@@ -217,12 +218,13 @@ single walk `parse` and `complete` share. Two rules make it incremental:
    Positional arguments fill parameters in declaration order; a token shaped `name=value` whose
    `name` is an unbound parameter binds by name. Rule 1 outranks rule 2 where they meet.
 
-Arguments bind as text. The only value the parser refuses is one outside an enum parameter's
-literals, which is the check the kernel would make anyway, made here so the palette cannot accept
-what the kernel rejects.
+Arguments bind as text. The only *value* the parser refuses is one outside an enum parameter's
+literals, which is the check the kernel would make anyway, made here so a page running this parser cannot
+accept what the kernel rejects. It also refuses a token with no parameter left to bind to, with
+`no further arguments`.
 
-`parse(input, index, snapshot)` ([`parse/parse.ts`](../apps/tuval/src/commands/parse/parse.ts))
-answers one of three:
+`parse(input, registry, snapshot)` ([`parse/parse.ts`](../apps/tuval/src/commands/parse/parse.ts))
+answers one of three (the second parameter is named `registry` and its type is `SpellIndex`):
 
 | `_tag` | Carries |
 |---|---|
@@ -249,7 +251,7 @@ module is total.
 
 ## Completion
 
-`complete(input, index, snapshot)`
+`complete(input, registry, snapshot)`
 ([`parse/complete.ts`](../apps/tuval/src/commands/parse/complete.ts)) ranks the candidates for the
 token under the caret. Two rules, and they never mix:
 
@@ -264,8 +266,10 @@ Which live set a parameter draws from is decided by its own name: a parameter na
 process, a program or a workspace offers that set, and one named for none of them offers no live
 values.
 
-Ties fall back to snapshot order, and `Array.prototype.sort` does it: ECMA-262 requires the sort to
-be stable (§23.1.3.30), so two calls over one snapshot return one list.
+Only the fuzzy rule sorts. The prefix rule is a plain `.filter`, so it hands back the registry or
+snapshot order untouched. In the fuzzy rule, ties fall back to snapshot order because
+`Array.prototype.sort` is required to be stable (ECMA-262 §23.1.3.30), so two calls over one
+snapshot return one list.
 
 A `Candidate` carries `value` (the text that replaces the caret's token), a `kind`
 (`segment` / `program` / `literal` / `window` / `process` / `workspace`), and the spell's sentence on
@@ -282,11 +286,12 @@ spells as one list.
 - **`help [path]`** ([`core/help.ts`](../apps/tuval/src/commands/core/help.ts)) lists every spell, or
   only the ones under one path. There is no help text in the file: a row's `describe` is the
   registry's own, and `usage` is derived by running `readParams` and `describeExpected` over the
-  description. A prefix that matches nothing answers `UnknownSpell` with a suggestion.
-  `segmentsOf` accepts both separators, because the palette reads spaces and a refusal renders dots.
+  description. A prefix that matches nothing answers `UnknownSpell`, carrying a suggestion only when
+  one is near enough. `segmentsOf` accepts both separators, because a typed line uses spaces and a
+  refusal renders dots.
 - **`spell list`** and **`spell describe <path>`**
   ([`core/spell.ts`](../apps/tuval/src/commands/core/spell.ts)) hand the same table to a program.
-  An agent driving Tuval discovers what it can call over exactly the wire a human's palette uses.
+  An agent driving Tuval discovers what it can call over exactly the wire a human's command line uses.
 - **`process spawn` / `process send` / `process read`**
   ([`core/process.ts`](../apps/tuval/src/commands/core/process.ts)) are the generic tools an agent
   program calls, written once for every program. Nothing in the file names a program. A
@@ -302,9 +307,14 @@ so a second agent program costs an adapter and no new spell.
 
 `call(path, args, scope)` refuses a path outside the allowlist with `SpellNotAllowed`
 ([`bridge/errors.ts`](../apps/tuval/src/commands/bridge/errors.ts)) before the executor is reached.
-The allowlist comes from the calling program's own registry row at layer build, which is what makes
-the bridge program-blind. `call` puts only the scope's window on the wire, so the executor
-re-resolves the process exactly as it does for a page.
+`SpellBridge.layer({allow})` takes that allowlist from whoever builds the layer, and today the only
+caller in the tree is `bridge/bridge.unit.test.ts`: nothing wires a program row's field into `allow`
+yet. What makes the file program-blind is that no program id is written in it. The intent recorded
+in the module's own docblock is that a calling program's registry row will supply the list, and that
+wiring is a later child's.
+
+`call` puts only the scope's window on the wire, so the executor re-resolves the process exactly as
+it does for a page.
 
 `SpellBridge.scripted(table)` answers from a fixed table and runs nothing, so it has no allowlist to
 enforce.
@@ -330,11 +340,11 @@ one shape. `PageToKernel` is the union of that one; `KernelToPage` is the union 
 
 `SpellOutcome` holds `ok` and its payload together, so a reply carrying both a result and an error
 cannot be built or decoded. `SpellFailure` carries `tag`, `message`, and optionally `path`,
-`expected` and `didYouMean`, which is enough to render an error inline under the palette input.
+`expected` and `didYouMean`, which is enough for a client to render an error inline under its input.
 
 The registry rides in the `Snapshot` as a `RegistryDescription`
 ([`protocol/registry-description.ts`](../apps/tuval/src/protocol/registry-description.ts)), so the
-palette completes without a round trip.
+parser's index is built without a round trip.
 
 JSON text is the whole wire. There is no binary framing and there are no channels. A program that
 streams raw bytes is what reopens that.
@@ -359,8 +369,14 @@ string, so `"tuval/ProcessId"` here and in `src/process/process.ts` are one type
 `applyPatch(snapshot, patch)` ([`protocol/patch.ts`](../apps/tuval/src/protocol/patch.ts)) encodes,
 walks each replace path, then decodes the result back as a `Snapshot`. The decode is the point: a
 patch that would leave the desk in a shape the protocol does not admit is refused with
-`PatchRefused` rather than delivered. A replace never creates a key, and a patch whose `rev` does
-not follow the snapshot's is refused.
+`PatchRefused` rather than delivered. A replace never creates a key.
+
+The revision check is `patch.rev <= snapshot.rev` and nothing more, so a patch is refused only when
+its `rev` is not strictly ahead of the snapshot's. A gap is admitted: a patch at `rev + 7` applies
+over `rev`. The message on the refusal, and the comment on `Patch` in
+[`protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts), both say "follow", which reads as
+successor and is wider than the check.
+[#7689](https://github.com/kamp-us/phoenix/issues/7689) is filed on the gap.
 
 [`protocol/issue.ts`](../apps/tuval/src/protocol/issue.ts) turns an Effect `SchemaError` into
 `{expected, at}`, which is what every refusal in the slice interpolates.
@@ -372,6 +388,9 @@ a window's box, the way VS Code, Neovim and tmux do it. The focused window suppl
 spell run from the palette still targets the focused window, because scope comes from focus and not
 from where the palette sits.
 
-It is not built yet. [#7643](https://github.com/kamp-us/phoenix/issues/7643) owns it, and it waits
-on `packages/design`. What the parser and the completion engine above owe it is already here: a
+It is not built yet. [#7643](https://github.com/kamp-us/phoenix/issues/7643) owns it, and it lands
+once [#7556](https://github.com/kamp-us/phoenix/issues/7556) and
+[#7561](https://github.com/kamp-us/phoenix/issues/7561) close and the epic PR
+[#7687](https://github.com/kamp-us/phoenix/pull/7687) merges. What the parser and the completion
+engine above owe it is already here: a
 total per-keystroke read, ranked candidates, and a refusal that points at a character offset.
