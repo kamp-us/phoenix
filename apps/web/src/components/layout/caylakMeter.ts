@@ -8,11 +8,8 @@
  * the vouch half and no amount of karma promotes them (#1323).
  */
 import {VOUCH_PROMOTION_KARMA_BAR} from "../../../worker/features/kunye/standing";
-import {
-	caylakPromotionPath,
-	VOUCH_NEEDED_COPY,
-	vouchExistsLabel,
-} from "../profile/CaylakStatusBlock";
+import type {CatalogKey} from "../../i18n";
+import {caylakPromotionPath, VOUCH_NEEDED_KEYS} from "../profile/CaylakStatusBlock";
 
 /** The three aggregate scalars the chip reads — a subset of `STANDING_FIELDS`, never a widening. */
 export interface CaylakMeterStanding {
@@ -34,27 +31,27 @@ export type CaylakMeter =
 			readonly kind: "karma-bar";
 			readonly karma: number;
 			readonly target: number;
-			readonly vouchFact: string;
+			readonly vouchFactKey: CatalogKey;
 	  }
 	| {
 			readonly kind: "vouch-needed";
 			readonly karma: number;
 			readonly target: number;
-			readonly vouchFact: string;
+			readonly vouchFactKey: CatalogKey;
 			/** `CaylakStatusBlock`'s settled copy, rendered as visible chip text — never a tooltip. */
-			readonly vouchNeeded: string;
+			readonly vouchNeededKey: CatalogKey;
 	  };
 
 /** `kefil: var` / `kefil: yok` — the next unmet condition named beside the karma delta. */
-export function vouchFactLabel(vouchExists: boolean): string {
-	return `kefil: ${vouchExistsLabel(vouchExists)}`;
+export function vouchFactKey(vouchExists: boolean): CatalogKey {
+	return vouchExists ? "layout.caylakMeter.vouchFact.yes" : "layout.caylakMeter.vouchFact.no";
 }
 
 export function caylakMeter(standing: CaylakMeterStanding): CaylakMeter {
 	const path = caylakPromotionPath(standing.vouchExists);
 	const shared = {
 		karma: standing.karma,
-		vouchFact: vouchFactLabel(standing.vouchExists),
+		vouchFactKey: vouchFactKey(standing.vouchExists),
 	} as const;
 	// Vouched reads the wire's own bar and never re-derives it (#1316). Unvouched cannot: the
 	// wire's 100 is the goal #1323 calls unlivable, so the chip names the reduced bar the kefil
@@ -65,6 +62,6 @@ export function caylakMeter(standing: CaylakMeterStanding): CaylakMeter {
 				kind: "vouch-needed",
 				...shared,
 				target: VOUCH_PROMOTION_KARMA_BAR,
-				vouchNeeded: VOUCH_NEEDED_COPY.message,
+				vouchNeededKey: VOUCH_NEEDED_KEYS.message,
 			};
 }

@@ -1,12 +1,14 @@
 import type {UserAdminRole} from "../../../worker/features/user-admin/views";
+import type {CatalogKey, Locale} from "../../i18n";
 
-export const usernameLabel = (username: string | null): string => username ?? "belirlenmemiş";
+export const roleLabelKey = (role: UserAdminRole): CatalogKey =>
+	role === "moderator" ? "admin.kullanicilar.role.moderator" : "admin.kullanicilar.role.member";
 
-export const roleLabel = (role: UserAdminRole): string =>
-	role === "moderator" ? "moderatör" : "üye";
+export const banLabelKey = (banned: boolean): CatalogKey =>
+	banned ? "admin.kullanicilar.ban.banned" : "admin.kullanicilar.ban.active";
 
-export const banLabel = (banned: boolean): string => (banned ? "yasaklı" : "aktif");
+/** `createdAt` is epoch millis; 0 is the no-column sentinel the panel reads as unknown. */
+export const hasCreatedAt = (createdAt: number): boolean => createdAt > 0;
 
-/** `createdAt` is epoch millis; 0 is the no-column sentinel and reads as unknown. */
-export const createdAtLabel = (createdAt: number): string =>
-	createdAt > 0 ? new Date(createdAt).toLocaleDateString("tr-TR") : "bilinmiyor";
+export const createdAtLabel = (createdAt: number, locale: Locale): string =>
+	new Date(createdAt).toLocaleDateString(locale);

@@ -1,5 +1,7 @@
 import {describe, expect, it, vi} from "vitest";
-import {WIRE_MESSAGES} from "../../fate/wireMessages";
+import {en} from "../../i18n/en";
+import type {Translate} from "../../i18n/LocaleProvider";
+import {tr} from "../../i18n/tr";
 import {isAuthRedirectError, voteGateMessage} from "./useVoteToggle";
 
 /**
@@ -8,24 +10,34 @@ import {isAuthRedirectError, voteGateMessage} from "./useVoteToggle";
  * in an e2e.
  */
 
+const trT: Translate = (key) => tr[key];
+const enT: Translate = (key) => en[key];
+
 describe("voteGateMessage — the VOTE_REQUIRES_YAZAR ladder copy (real classifier)", () => {
 	it("maps a VOTE_REQUIRES_YAZAR throw to the ladder copy", () => {
-		expect(voteGateMessage({code: "VOTE_REQUIRES_YAZAR"})).toBe("yazar olunca oy verebilirsin");
+		expect(voteGateMessage(trT, {code: "VOTE_REQUIRES_YAZAR"})).toBe(
+			"yazar olunca oy verebilirsin",
+		);
 	});
 
-	it("resolves the copy from the shared WIRE_MESSAGES registry, not a hand-copied literal", () => {
-		expect(voteGateMessage({code: "VOTE_REQUIRES_YAZAR"})).toBe(WIRE_MESSAGES.VOTE_REQUIRES_YAZAR);
+	it("resolves the copy from the catalog, not a hand-copied literal", () => {
+		expect(voteGateMessage(trT, {code: "VOTE_REQUIRES_YAZAR"})).toBe(
+			tr["wire.VOTE_REQUIRES_YAZAR"],
+		);
+		expect(voteGateMessage(enT, {code: "VOTE_REQUIRES_YAZAR"})).toBe(
+			en["wire.VOTE_REQUIRES_YAZAR"],
+		);
 	});
 
 	it("returns null for UNAUTHORIZED — that code redirects, it is not toasted", () => {
-		expect(voteGateMessage({code: "UNAUTHORIZED"})).toBeNull();
+		expect(voteGateMessage(trT, {code: "UNAUTHORIZED"})).toBeNull();
 	});
 
 	it("returns null for every other code (stays silent)", () => {
-		expect(voteGateMessage({code: "FORBIDDEN"})).toBeNull();
-		expect(voteGateMessage({code: "INTERNAL_SERVER_ERROR"})).toBeNull();
-		expect(voteGateMessage(new Error("network"))).toBeNull();
-		expect(voteGateMessage(undefined)).toBeNull();
+		expect(voteGateMessage(trT, {code: "FORBIDDEN"})).toBeNull();
+		expect(voteGateMessage(trT, {code: "INTERNAL_SERVER_ERROR"})).toBeNull();
+		expect(voteGateMessage(trT, new Error("network"))).toBeNull();
+		expect(voteGateMessage(trT, undefined)).toBeNull();
 	});
 });
 
@@ -43,7 +55,7 @@ describe("the gate's dispatch catch — redirect vs toast vs silent (real classi
 				redirectToAuth();
 				return;
 			}
-			const message = voteGateMessage(error);
+			const message = voteGateMessage(trT, error);
 			if (message) show({id: "vote-gate", message});
 		}
 	};
@@ -74,9 +86,10 @@ describe("the gate's dispatch catch — redirect vs toast vs silent (real classi
 	});
 });
 
-describe("WIRE_MESSAGES exhaustiveness holds for the new code", () => {
-	it("carries a message for VOTE_REQUIRES_YAZAR", () => {
+describe("catalog coverage holds for the new code", () => {
+	it("carries a message for VOTE_REQUIRES_YAZAR in both locales", () => {
 		// A missing entry is already a compile error; this pins the runtime copy too.
-		expect(WIRE_MESSAGES.VOTE_REQUIRES_YAZAR).toBe("yazar olunca oy verebilirsin");
+		expect(tr["wire.VOTE_REQUIRES_YAZAR"]).toBe("yazar olunca oy verebilirsin");
+		expect(en["wire.VOTE_REQUIRES_YAZAR"]).toBeTruthy();
 	});
 });

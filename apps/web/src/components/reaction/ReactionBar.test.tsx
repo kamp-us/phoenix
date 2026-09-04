@@ -2,8 +2,12 @@ import {render} from "@testing-library/react";
 import {describe, expect, it, vi} from "vitest";
 import {REACTION_EMOJI} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
+import {tr} from "../../i18n/tr";
 import {ReactionBar} from "./ReactionBar";
-import {REACTION_GLOSS} from "./reactionModel";
+import {REACTION_GLOSS_KEYS} from "./reactionModel";
+
+/** No provider above the bar, so it renders the default `tr` catalog. */
+const gloss = (emoji: keyof typeof REACTION_GLOSS_KEYS) => tr[REACTION_GLOSS_KEYS[emoji]];
 
 describe("ReactionBar — on-brand controlled-asset render (#2165)", () => {
 	it("renders one inline-SVG line-icon per palette member, not the raw emoji glyph", () => {
@@ -30,7 +34,7 @@ describe("ReactionBar — on-brand controlled-asset render (#2165)", () => {
 		);
 		for (const emoji of REACTION_EMOJI) {
 			const btn = getByTestId(`reaction-${emoji}-t3`);
-			expect(btn.getAttribute("aria-label")).toBe(REACTION_GLOSS[emoji]);
+			expect(btn.getAttribute("aria-label")).toBe(gloss(emoji));
 		}
 	});
 
@@ -39,9 +43,7 @@ describe("ReactionBar — on-brand controlled-asset render (#2165)", () => {
 		const {getByTestId} = render(
 			<ReactionBar aggregate={aggregate} onReact={vi.fn()} testIdSuffix="t4" />,
 		);
-		expect(getByTestId("reaction-🔥-t4").getAttribute("aria-label")).toBe(
-			`${REACTION_GLOSS["🔥"]} (3)`,
-		);
+		expect(getByTestId("reaction-🔥-t4").getAttribute("aria-label")).toBe(`${gloss("🔥")} (3)`);
 	});
 
 	it("marks the glyph decorative (aria-hidden) — the name lives on the button", () => {

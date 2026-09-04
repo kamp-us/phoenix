@@ -4,6 +4,7 @@
  * behind one visually-hidden label, so a screen reader hears "karma" once
  * instead of twice.
  */
+import {useT} from "../../i18n";
 import "./Karma.css";
 
 export interface KarmaProps {
@@ -18,6 +19,7 @@ export interface KarmaProps {
 	 */
 	readonly showBar?: boolean;
 	readonly variant?: "inline" | "stat";
+	/** Defaults to the catalog's `karma.label`. */
 	readonly label?: string;
 	readonly testId?: string;
 	readonly className?: string;
@@ -33,21 +35,23 @@ export function Karma({
 	target,
 	showBar = true,
 	variant = "inline",
-	label = "karma",
+	label,
 	testId = "karma",
 	className = "",
 }: KarmaProps) {
+	const t = useT();
+	const resolvedLabel = label ?? t("karma.label");
 	const isProgress = target !== undefined;
 	const cls = ["kp-karma", `kp-karma--${variant}`, isProgress && "kp-karma--progress", className]
 		.filter(Boolean)
 		.join(" ");
 	return (
 		<span className={cls} data-testid={testId}>
-			<span className="kp-karma__sr">{karmaAriaLabel(value, target, label)}</span>
+			<span className="kp-karma__sr">{karmaAriaLabel(value, target, resolvedLabel)}</span>
 			<span className="kp-karma__readout" aria-hidden="true">
 				<span className="kp-karma__value">{value}</span>
 				{isProgress ? <span className="kp-karma__target">/ {target}</span> : null}
-				<span className="kp-karma__label">{label}</span>
+				<span className="kp-karma__label">{resolvedLabel}</span>
 			</span>
 			{isProgress && showBar ? (
 				<progress

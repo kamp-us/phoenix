@@ -154,6 +154,16 @@ export const PHOENIX_WELCOME = "phoenix-welcome";
  */
 export const PHOENIX_CAYLAK_METER = "phoenix-caylak-meter";
 
+/**
+ * The single seam for the reader-facing locale choice (#7527, epic #7519) — the `dil` row in the
+ * UserMenu that lets a reader pick English. Off ⇒ no toggle renders and every reader stays on the
+ * `tr` default, which is the copy the site always shipped (ADR 0347). Default-off, ADR 0083.
+ *
+ * The catalog itself is NOT behind this flag: `tr` strings are served from it either way, so the
+ * flag gates the choice, not the pipeline.
+ */
+export const PHOENIX_LOCALE = "phoenix-locale";
+
 /** A declared flag paired with its default variation — the row the flags console lists (#2742). */
 export interface FlagDeclaration {
 	readonly key: string;
@@ -183,4 +193,5 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_FUNNEL_COHORT, defaultValue: false},
 	{key: PHOENIX_WELCOME, defaultValue: false},
 	{key: PHOENIX_CAYLAK_METER, defaultValue: false},
+	{key: PHOENIX_LOCALE, defaultValue: false},
 ];

@@ -53,6 +53,7 @@ import {
 	Flagship,
 	funnelCohortFlag,
 	karmaGatesFlag,
+	localeFlag,
 	mecmuaFeedFlag,
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
@@ -158,6 +159,10 @@ export default Alchemy.Stack(
 		// seam the topbar karma chip's promotion readout gates behind, so the meter ships dark
 		// and the chip stays today's bare karma value until a human release.
 		yield* caylakMeterFlag(flagship.appId);
+		// The locale-choice dark-ship flag, default-off (#7527, epic #7519) — the seam the
+		// UserMenu `dil` row gates behind, so every reader stays on the Turkish default until
+		// a human release. The catalog under it serves `tr` either way (ADR 0347).
+		yield* localeFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

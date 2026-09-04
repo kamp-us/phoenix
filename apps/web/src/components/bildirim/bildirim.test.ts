@@ -1,4 +1,6 @@
 import {describe, expect, it} from "vitest";
+import {interpolate} from "../../i18n";
+import {tr} from "../../i18n/tr";
 import {
 	bildirimCopy,
 	bildirimTarget,
@@ -6,8 +8,14 @@ import {
 	rowUnread,
 	shouldRenderBildirimPage,
 	showUnreadBadge,
-	targetLinkLabel,
+	targetLinkLabelKey,
 } from "./bildirim";
+
+/** The Turkish catalog read the way `LocaleProvider` reads it, so the copy assertions stay literal. */
+const trCopy = (kind: string, count: number) =>
+	bildirimCopy(kind, {t: (key, params) => interpolate(tr[key], params), locale: "tr", count});
+
+const trLabel = (targetKind: string) => tr[targetLinkLabelKey(targetKind)];
 
 describe("shouldRenderBildirimPage — the dark-ship gate", () => {
 	it("renders only when the flag is on; off/loading/error (false) is the 404", () => {
@@ -60,45 +68,45 @@ describe("rowUnread — server stamp folded with this session's mark state", () 
 
 describe("targetLinkLabel — per-kind Turkish labels, generic fallback", () => {
 	it("maps the four kinds and falls back for an unknown one", () => {
-		expect(targetLinkLabel("post")).toBe("gönderiye git");
-		expect(targetLinkLabel("comment")).toBe("yoruma git");
-		expect(targetLinkLabel("definition")).toBe("tanıma git");
-		expect(targetLinkLabel("user")).toBe("profile git");
-		expect(targetLinkLabel("mystery")).toBe("içeriğe git");
+		expect(trLabel("post")).toBe("gönderiye git");
+		expect(trLabel("comment")).toBe("yoruma git");
+		expect(trLabel("definition")).toBe("tanıma git");
+		expect(trLabel("user")).toBe("profile git");
+		expect(trLabel("mystery")).toBe("içeriğe git");
 	});
 });
 
 describe("bildirimCopy — Turkish product voice per kind (#1695)", () => {
 	it("divan-vote reads as received attention, aggregate count inline", () => {
-		expect(bildirimCopy("divan-vote", 1)).toBe("divandaki içeriğin oy aldı");
-		expect(bildirimCopy("divan-vote", 3)).toBe("divandaki içeriğin 3 oy aldı");
+		expect(trCopy("divan-vote", 1)).toBe("divandaki içeriğin oy aldı");
+		expect(trCopy("divan-vote", 3)).toBe("divandaki içeriğin 3 oy aldı");
 	});
 
 	it("kefil reads as the vouch moment (no voucher identity drip)", () => {
-		expect(bildirimCopy("kefil", 1)).toBe("bir yazar sana kefil oldu");
+		expect(trCopy("kefil", 1)).toBe("bir yazar sana kefil oldu");
 	});
 
 	it("terfi carries the ceremony — the çaylak→yazar promotion is a moment (#1696)", () => {
-		expect(bildirimCopy("terfi", 1)).toBe("tebrikler, artık bir yazarsın!");
+		expect(trCopy("terfi", 1)).toBe("tebrikler, artık bir yazarsın!");
 	});
 
 	it("backlog-release carries the swept count — R1.1 on #7049 ruled the count in (#7061)", () => {
-		expect(bildirimCopy("backlog-release", 3)).toBe("3 yazınız artık herkese açık");
-		expect(bildirimCopy("backlog-release", 1)).toBe("1 yazınız artık herkese açık");
+		expect(trCopy("backlog-release", 3)).toBe("3 yazınız artık herkese açık");
+		expect(trCopy("backlog-release", 1)).toBe("1 yazınız artık herkese açık");
 	});
 
 	it('a zero-entry sweep renders the zero arm — never "0 yazınız…"', () => {
-		expect(bildirimCopy("backlog-release", 0)).toBe("bundan sonra yazılarınız herkese açık");
-		expect(bildirimCopy("backlog-release", 0)).not.toMatch(/^0/);
+		expect(trCopy("backlog-release", 0)).toBe("bundan sonra yazılarınız herkese açık");
+		expect(trCopy("backlog-release", 0)).not.toMatch(/^0/);
 	});
 
 	it("reply renders Turkish copy — the raw `reply` identifier no longer surfaces (#2016)", () => {
-		expect(bildirimCopy("reply", 1)).toBe("gönderine yanıt geldi");
-		expect(bildirimCopy("reply", 3)).toBe("gönderine 3 yanıt geldi");
+		expect(trCopy("reply", 1)).toBe("gönderine yanıt geldi");
+		expect(trCopy("reply", 3)).toBe("gönderine 3 yanıt geldi");
 	});
 
 	it("an unknown kind degrades to the raw kind + xN — never a blank row", () => {
-		expect(bildirimCopy("future-kind", 1)).toBe("future-kind");
-		expect(bildirimCopy("future-kind", 2)).toBe("future-kind ×2");
+		expect(trCopy("future-kind", 1)).toBe("future-kind");
+		expect(trCopy("future-kind", 2)).toBe("future-kind ×2");
 	});
 });

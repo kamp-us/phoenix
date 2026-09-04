@@ -14,10 +14,11 @@ import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Profile} from "../../../worker/features/fate/views";
 import {Screen} from "../../fate/Screen";
+import {useT} from "../../i18n";
 import {Alert} from "../ui/Alert";
 import {EmptyState} from "../ui/EmptyState";
 import {ContributionRow, ContributionView} from "./ContributionRow";
-import {CONTRIBUTIONS_EMPTY, CONTRIBUTIONS_HEADING} from "./profileContributions";
+import {CONTRIBUTIONS_EMPTY_KEYS, CONTRIBUTIONS_HEADING_KEYS} from "./profileContributions";
 import "./ProfileContributionSignal.css";
 
 const SIGNAL_SIZE = 5;
@@ -38,13 +39,14 @@ const SignalView = view<Profile>()({
 });
 
 function SignalShell({children}: {children: ReactNode}) {
+	const t = useT();
 	return (
 		<section
 			className="kp-profile__section kp-signal"
 			aria-labelledby="kp-signal-heading"
 			data-testid="contribution-signal"
 		>
-			<h3 id="kp-signal-heading">{CONTRIBUTIONS_HEADING.self}</h3>
+			<h3 id="kp-signal-heading">{t(CONTRIBUTIONS_HEADING_KEYS.self)}</h3>
 			{children}
 		</section>
 	);
@@ -55,10 +57,17 @@ function SignalShell({children}: {children: ReactNode}) {
 export function ProfileContributionSkeleton() {
 	return (
 		<SignalShell>
-			<p className="kp-signal__status" data-testid="signal-loading">
-				yükleniyor…
-			</p>
+			<ContributionLoading />
 		</SignalShell>
+	);
+}
+
+function ContributionLoading() {
+	const t = useT();
+	return (
+		<p className="kp-signal__status" data-testid="signal-loading">
+			{t("profile.contributions.loading")}
+		</p>
 	);
 }
 
@@ -73,6 +82,7 @@ export function EagerProfileContributionSkeleton() {
 }
 
 export function ProfileContributionSignal({username}: {username: string}) {
+	const t = useT();
 	return (
 		<Screen
 			fallback={<ProfileContributionSkeleton />}
@@ -82,7 +92,7 @@ export function ProfileContributionSignal({username}: {username: string}) {
 						variant="danger"
 						className="kp-alert--inline kp-signal__status kp-signal__status--error"
 					>
-						katkılar yüklenemedi: {code.toLowerCase()}
+						{t("profile.contributions.error", {code: code.toLowerCase()})}
 					</Alert>
 				</SignalShell>
 			)}
@@ -113,12 +123,17 @@ function SignalContent({username}: {username: string}) {
 }
 
 function EmptySignal() {
+	const t = useT();
 	return (
-		<EmptyState title={CONTRIBUTIONS_EMPTY.title} description={CONTRIBUTIONS_EMPTY.description} />
+		<EmptyState
+			title={t(CONTRIBUTIONS_EMPTY_KEYS.title)}
+			description={t(CONTRIBUTIONS_EMPTY_KEYS.description)}
+		/>
 	);
 }
 
 function SignalList({profile, username}: {profile: ViewRef<"Profile">; username: string}) {
+	const t = useT();
 	const data = useView(SignalView, profile);
 	const [items, loadNext] = useListView(ContributionsConnectionView, data.contributions);
 
@@ -133,7 +148,7 @@ function SignalList({profile, username}: {profile: ViewRef<"Profile">; username:
 			</ul>
 			{loadNext ? (
 				<Link to={`/u/${username}`} className="kp-signal__more" data-testid="signal-see-all">
-					tümünü gör
+					{t("profile.contributions.seeAll")}
 				</Link>
 			) : null}
 		</>

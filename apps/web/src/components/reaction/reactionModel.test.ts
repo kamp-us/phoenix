@@ -1,7 +1,17 @@
 import {describe, expect, it} from "vitest";
 import {REACTION_EMOJI} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
-import {nextReaction, REACTION_GLOSS, reactionOptimistic, reactionSlots} from "./reactionModel";
+import {tr} from "../../i18n/tr";
+import {
+	nextReaction,
+	REACTION_GLOSS_KEYS,
+	reactionOptimistic,
+	reactionSlots as slots,
+} from "./reactionModel";
+
+/** The Turkish catalog stands in for the provider the render site supplies. */
+const reactionSlots = (aggregate: Parameters<typeof slots>[0]) =>
+	slots(aggregate, (key) => tr[key]);
 
 describe("reactionSlots — the full curated palette, in order", () => {
 	it("renders every REACTION_EMOJI member exactly once, in palette order, at zero for an empty aggregate", () => {
@@ -42,7 +52,7 @@ describe("reactionSlots — the full curated palette, in order", () => {
 		expect(byEmoji.get("👍")).toBe("beğendim");
 		expect(byEmoji.get("🤔")).toBe("düşündürdü");
 		expect(byEmoji.get("🔥")).toBe("efsane");
-		expect(Object.keys(REACTION_GLOSS).sort()).toEqual([...REACTION_EMOJI].sort());
+		expect(Object.keys(REACTION_GLOSS_KEYS).sort()).toEqual([...REACTION_EMOJI].sort());
 	});
 });
 

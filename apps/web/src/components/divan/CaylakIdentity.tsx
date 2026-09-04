@@ -8,6 +8,7 @@
  */
 import {useFateClient, useView, view} from "react-fate";
 import type {Profile} from "../../../worker/features/fate/views";
+import {useT} from "../../i18n";
 import {ActorIdentity} from "../moderation/ActorIdentity";
 
 export function CaylakIdentity({
@@ -23,6 +24,7 @@ export function CaylakIdentity({
 	readonly totalKarma: number;
 	readonly showKarma?: boolean;
 }) {
+	const t = useT();
 	return (
 		<ActorIdentity
 			authorId={authorId}
@@ -30,7 +32,7 @@ export function CaylakIdentity({
 			username={username}
 			totalKarma={totalKarma}
 			showKarma={showKarma}
-			fallbackLabel="çaylak"
+			fallbackLabel={t("divan.caylak.fallback")}
 			identityClassName="kp-divan__identity"
 			handleClassName="kp-divan__handle"
 			karmaClassName="kp-divan__karma"
@@ -70,9 +72,10 @@ export function CaylakIdentityById({
 }
 
 export function IdentityFallback() {
+	const t = useT();
 	return (
 		<span className="kp-divan__identity">
-			<span className="kp-divan__handle">çaylak</span>
+			<span className="kp-divan__handle">{t("divan.caylak.fallback")}</span>
 		</span>
 	);
 }

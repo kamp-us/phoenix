@@ -5,6 +5,7 @@ import {VolumeX} from "lucide-react";
 import {useState} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {MutedMember} from "../../../worker/features/fate/views";
+import {useT} from "../../i18n";
 import {Icon} from "../Icon";
 import {actorLabel} from "../moderation/actor-identity";
 import {Button} from "../ui/Button";
@@ -24,6 +25,7 @@ const MutedMemberRowView = view<MutedMember>()({
 const MutedMemberConnectionView = {items: {node: MutedMemberRowView}} as const;
 
 export function MutedMembersList() {
+	const t = useT();
 	const result = useRequest({
 		"mute.listMine": {list: MutedMemberConnectionView, args: {first: MUTES_PAGE_SIZE}},
 	});
@@ -33,14 +35,14 @@ export function MutedMembersList() {
 		return (
 			<EmptyState
 				icon={<Icon icon={VolumeX} size={24} />}
-				title="henüz kimseyi susturmadın"
-				description="susturduğun üyeler burada listelenir; buradan sessizliği geri alabilirsin."
+				title={t("mute.empty.title")}
+				description={t("mute.empty.description")}
 			/>
 		);
 	}
 
 	return (
-		<ul className="kp-mute-list" aria-label="susturduğun üyeler" data-testid="mute-list">
+		<ul className="kp-mute-list" aria-label={t("mute.list.label")} data-testid="mute-list">
 			{items.map(({node}) => (
 				<MutedMemberRow key={node.id} node={node} />
 			))}
@@ -49,11 +51,16 @@ export function MutedMembersList() {
 }
 
 function MutedMemberRow({node}: {readonly node: ViewRef<"MutedMember">}) {
+	const t = useT();
 	const data = useView(MutedMemberRowView, node);
 	const {unmute} = useMemberMute();
 	const [busy, setBusy] = useState(false);
 	const [removed, setRemoved] = useState(false);
-	const label = actorLabel(data.displayName ?? null, data.username ?? null, "bir üye");
+	const label = actorLabel(
+		data.displayName ?? null,
+		data.username ?? null,
+		t("mute.member.fallback"),
+	);
 
 	if (removed) return null;
 
@@ -74,9 +81,9 @@ function MutedMemberRow({node}: {readonly node: ViewRef<"MutedMember">}) {
 				loading={busy}
 				onClick={onUnmute}
 				data-testid={`mute-unmute-${data.id}`}
-				aria-label={`${label} adlı üyenin sessizliğini geri al`}
+				aria-label={t("mute.unmute.label", {member: label})}
 			>
-				geri al
+				{t("mute.unmute")}
 			</Button>
 		</li>
 	);

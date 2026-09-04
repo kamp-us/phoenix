@@ -13,6 +13,7 @@ import type {AuthorshipStanding} from "../../../worker/features/fate/views";
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {useMe} from "../../auth/useMe";
 import {useImperativeView} from "../../fate/useImperativeView";
+import {type CatalogKey, useT} from "../../i18n";
 import {Karma} from "../karma/Karma";
 import "./CaylakStatusBlock.css";
 
@@ -20,14 +21,14 @@ export function shouldShowCaylakStatus(tier: Tier | undefined, isOwnProfile: boo
 	return tier === "çaylak" && isOwnProfile;
 }
 
-export function vouchExistsLabel(vouchExists: boolean): string {
-	return vouchExists ? "var" : "yok";
+export function vouchExistsLabelKey(vouchExists: boolean): CatalogKey {
+	return vouchExists ? "profile.caylakStatus.vouch.yes" : "profile.caylakStatus.vouch.no";
 }
 
-export const VOUCH_NEEDED_COPY = {
-	message: "bir yazar sana kefil olmalı",
-	hint: "ya da bir moderatör seni doğrudan yükseltebilir",
-} as const;
+export const VOUCH_NEEDED_KEYS = {
+	message: "profile.caylakStatus.vouchNeeded.message",
+	hint: "profile.caylakStatus.vouchNeeded.hint",
+} as const satisfies Record<"message" | "hint", CatalogKey>;
 
 /**
  * An unvouched çaylak deliberately gets NO karma bar: `resolveTandem` short-circuits
@@ -38,12 +39,16 @@ export const VOUCH_NEEDED_COPY = {
  */
 export type CaylakPromotionPath =
 	| {readonly kind: "karma-bar"}
-	| {readonly kind: "vouch-needed"; readonly message: string; readonly hint: string};
+	| {readonly kind: "vouch-needed"; readonly messageKey: CatalogKey; readonly hintKey: CatalogKey};
 
 export function caylakPromotionPath(vouchExists: boolean): CaylakPromotionPath {
 	return vouchExists
 		? {kind: "karma-bar"}
-		: {kind: "vouch-needed", message: VOUCH_NEEDED_COPY.message, hint: VOUCH_NEEDED_COPY.hint};
+		: {
+				kind: "vouch-needed",
+				messageKey: VOUCH_NEEDED_KEYS.message,
+				hintKey: VOUCH_NEEDED_KEYS.hint,
+			};
 }
 
 /**
@@ -101,6 +106,7 @@ export interface CaylakStatusBlockProps {
 
 export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
 	const {me} = useMe();
+	const t = useT();
 	const headingId = useId();
 	const show = shouldShowCaylakStatus(me?.tier, me?.id === profileUserId);
 	const standing = useSharedAuthorshipStanding(show);
@@ -116,32 +122,27 @@ export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
 			data-testid="caylak-status-block"
 		>
 			<h2 id={headingId} className="kp-caylak-status__heading">
-				yazarlığa giden yol
+				{t("profile.caylakStatus.heading")}
 			</h2>
 			{path.kind === "karma-bar" ? (
 				<div className="kp-caylak-status__karma">
-					<Karma
-						value={standing.karma}
-						target={standing.bar}
-						label="karma"
-						testId="caylak-status-karma"
-					/>
+					<Karma value={standing.karma} target={standing.bar} testId="caylak-status-karma" />
 				</div>
 			) : (
 				<div className="kp-caylak-status__vouch-needed" data-testid="caylak-status-vouch-needed">
-					<p className="kp-caylak-status__vouch-message">{path.message}</p>
-					<p className="kp-caylak-status__vouch-hint">{path.hint}</p>
+					<p className="kp-caylak-status__vouch-message">{t(path.messageKey)}</p>
+					<p className="kp-caylak-status__vouch-hint">{t(path.hintKey)}</p>
 				</div>
 			)}
 			<dl className="kp-caylak-status__facts">
 				<div className="kp-caylak-status__fact">
-					<dt className="kp-caylak-status__term">kefil</dt>
+					<dt className="kp-caylak-status__term">{t("profile.caylakStatus.term.kefil")}</dt>
 					<dd className="kp-caylak-status__value" data-testid="caylak-status-vouch">
-						{vouchExistsLabel(standing.vouchExists)}
+						{t(vouchExistsLabelKey(standing.vouchExists))}
 					</dd>
 				</div>
 				<div className="kp-caylak-status__fact">
-					<dt className="kp-caylak-status__term">incelemede</dt>
+					<dt className="kp-caylak-status__term">{t("profile.caylakStatus.term.inReview")}</dt>
 					<dd className="kp-caylak-status__value" data-testid="caylak-status-in-review">
 						{standing.inReviewCount}
 					</dd>

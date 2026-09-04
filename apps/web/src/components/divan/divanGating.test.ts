@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
+import {trCatalog} from "../../i18n/catalog";
 import {
 	canVouch,
-	caylakLabel,
 	divanAccessDefinitelyDenied,
 	itemKindLabel,
 	parseBacklogItemId,
@@ -105,27 +105,17 @@ describe("promoteVisible — the mod-only yazar-yap affordance, keyed on isModer
 	});
 });
 
-describe("caylakLabel — the çaylak's display handle", () => {
-	it("prefers the display name", () => {
-		expect(caylakLabel("Ada Lovelace", "ada")).toBe("Ada Lovelace");
+describe("itemKindLabel — the per-kind noun's catalog key", () => {
+	it("maps each kind to its key", () => {
+		expect(itemKindLabel("definition")).toBe("divan.kind.definition");
+		expect(itemKindLabel("post")).toBe("divan.kind.post");
+		expect(itemKindLabel("comment")).toBe("divan.kind.comment");
 	});
 
-	it("falls back to @username when there is no display name", () => {
-		expect(caylakLabel(null, "ada")).toBe("@ada");
-		expect(caylakLabel("   ", "ada")).toBe("@ada");
-	});
-
-	it("falls back to the lowercase-Turkish çaylak when there is neither", () => {
-		expect(caylakLabel(null, null)).toBe("çaylak");
-		expect(caylakLabel("", "  ")).toBe("çaylak");
-	});
-});
-
-describe("itemKindLabel — lowercase-Turkish per-kind noun", () => {
-	it("maps each kind to its Turkish noun", () => {
-		expect(itemKindLabel("definition")).toBe("tanım");
-		expect(itemKindLabel("post")).toBe("gönderi");
-		expect(itemKindLabel("comment")).toBe("yorum");
+	it("resolves each key to its lowercase-Turkish noun", () => {
+		expect(trCatalog[itemKindLabel("definition")]).toBe("tanım");
+		expect(trCatalog[itemKindLabel("post")]).toBe("gönderi");
+		expect(trCatalog[itemKindLabel("comment")]).toBe("yorum");
 	});
 });
 
@@ -166,9 +156,9 @@ describe("promoteOutcome — the user.promote receipt → outcome", () => {
 		expect(promoteOutcome(false, false, false)).toBe("alreadyYazar");
 	});
 
-	it("every outcome has lowercase-Turkish copy", () => {
+	it("every outcome keys lowercase-Turkish copy", () => {
 		for (const o of ["promoted", "alreadyYazar", "denied", "error"] as const) {
-			const msg = promoteOutcomeMessage(o);
+			const msg = trCatalog[promoteOutcomeMessage(o)];
 			expect(msg).toBe(msg.toLowerCase());
 			expect(msg.length).toBeGreaterThan(0);
 		}
@@ -194,9 +184,9 @@ describe("vouchOutcome — the user.vouch receipt/code → outcome", () => {
 		expect(vouchOutcome(false, null, false)).toBe("recorded");
 	});
 
-	it("every outcome has lowercase-Turkish copy", () => {
+	it("every outcome keys lowercase-Turkish copy", () => {
 		for (const o of ["promoted", "recorded", "limit", "denied", "error"] as const) {
-			const msg = vouchOutcomeMessage(o);
+			const msg = trCatalog[vouchOutcomeMessage(o)];
 			expect(msg).toBe(msg.toLowerCase());
 			expect(msg.length).toBeGreaterThan(0);
 		}
@@ -219,8 +209,8 @@ describe("vouchTriggerState — the trigger's honesty about an already-held vouc
 	});
 
 	it("labels the done state as the past tense, so the button reports rather than invites", () => {
-		expect(vouchTriggerLabel("done")).toBe("kefil oldun");
-		expect(vouchTriggerLabel("offer")).toBe("kefil ol");
+		expect(trCatalog[vouchTriggerLabel("done")]).toBe("kefil oldun");
+		expect(trCatalog[vouchTriggerLabel("offer")]).toBe("kefil ol");
 	});
 });
 

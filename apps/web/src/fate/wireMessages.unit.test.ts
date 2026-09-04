@@ -1,40 +1,64 @@
 /**
- * `WIRE_MESSAGES` exhaustiveness is already a compile error when broken; this pins it
- * at runtime too, so the closure of the #1422 class is asserted, not just type-checked.
+ * Wire-code coverage is already a compile error when broken — `wire.${FateWireCode}` is the
+ * catalog's key type — so this pins it at runtime in BOTH locales, which is what closes the
+ * #1422 class now that the copy lives in `i18n/{tr,en}/wire.ts`.
  */
 import {describe, expect, it} from "vitest";
-import {FATE_WIRE_CODES, messageForCode, WIRE_MESSAGES} from "./wireMessages";
+import {en} from "../i18n/en";
+import type {Translate} from "../i18n/LocaleProvider";
+import {tr} from "../i18n/tr";
+import {FATE_WIRE_CODES, messageForCode, wireMessageKey} from "./wireMessages";
 
-describe("WIRE_MESSAGES — exhaustive over FateWireCode (closes the #1422 class)", () => {
+const CATALOGS: ReadonlyArray<readonly [string, Readonly<Record<string, string>>]> = [
+	["tr", tr],
+	["en", en],
+];
+
+function translateWith(catalog: Readonly<Record<string, string>>): Translate {
+	return (key) => catalog[key] ?? "";
+}
+
+describe.each(CATALOGS)("the %s catalog covers every wire code", (_locale, catalog) => {
 	it("has a non-empty message for every declared wire code", () => {
 		for (const code of FATE_WIRE_CODES) {
-			expect(WIRE_MESSAGES[code], `missing base message for ${code}`).toBeTruthy();
+			expect(catalog[wireMessageKey(code)], `missing message for ${code}`).toBeTruthy();
 		}
 	});
 
-	it("declares exactly the codes in FATE_WIRE_CODES — no stray, no missing", () => {
-		expect(new Set(Object.keys(WIRE_MESSAGES))).toEqual(new Set(FATE_WIRE_CODES));
+	it("declares no wire key outside FATE_WIRE_CODES", () => {
+		const declared = Object.keys(catalog).filter(
+			(key) => key.startsWith("wire.") && !key.startsWith("wire.username."),
+		);
+		expect(new Set(declared)).toEqual(new Set(FATE_WIRE_CODES.map(wireMessageKey)));
 	});
 });
 
-describe("messageForCode — override wins over the shared base", () => {
-	it("returns the base message when no override is supplied", () => {
-		expect(messageForCode("POST_NOT_FOUND")).toBe(WIRE_MESSAGES.POST_NOT_FOUND);
+describe.each(CATALOGS)("messageForCode in %s — override wins over the catalog base", (_l, cat) => {
+	const t = translateWith(cat);
+
+	it("returns the catalog message when no override is supplied", () => {
+		expect(messageForCode(t, "POST_NOT_FOUND")).toBe(cat["wire.POST_NOT_FOUND"]);
 	});
 
 	it("returns the surface override for a code it names", () => {
-		expect(messageForCode("BODY_REQUIRED", {BODY_REQUIRED: "yorum boş olamaz"})).toBe(
+		expect(messageForCode(t, "BODY_REQUIRED", {BODY_REQUIRED: "yorum boş olamaz"})).toBe(
 			"yorum boş olamaz",
 		);
 	});
 
-	it("falls through to the base for a code the override map omits", () => {
-		expect(messageForCode("TAKEN", {BODY_REQUIRED: "yorum boş olamaz"})).toBe(WIRE_MESSAGES.TAKEN);
+	it("falls through to the catalog for a code the override map omits", () => {
+		expect(messageForCode(t, "TAKEN", {BODY_REQUIRED: "yorum boş olamaz"})).toBe(cat["wire.TAKEN"]);
 	});
 
 	it("always resolves to a real message — there is no undefined fallthrough", () => {
 		for (const code of FATE_WIRE_CODES) {
-			expect(typeof messageForCode(code)).toBe("string");
+			expect(messageForCode(t, code)).toBeTruthy();
 		}
+	});
+});
+
+describe("the two locales differ", () => {
+	it("does not ship the Turkish line as the English one", () => {
+		expect(en["wire.INTERNAL_SERVER_ERROR"]).not.toBe(tr["wire.INTERNAL_SERVER_ERROR"]);
 	});
 });

@@ -9,7 +9,8 @@ import type {RoleState, UserAdminRole} from "../../../worker/features/fate/views
 import {Alert} from "../../components/ui/Alert";
 import {Button} from "../../components/ui/Button";
 import {codeOf} from "../../fate/wire";
-import {nextRole, roleActionLabel, roleOutcomeMessage} from "./role-controls";
+import {type CatalogKey, useT} from "../../i18n";
+import {nextRole, roleActionLabelKey, roleOutcomeKey} from "./role-controls";
 
 const RoleStateSelect = view<RoleState>()({
 	id: true,
@@ -26,25 +27,26 @@ interface RoleControlsProps {
 }
 
 export function RoleControls({userId, platformRole, onRoleChanged}: RoleControlsProps) {
+	const t = useT();
 	const fate = useFateClient();
 	const [busy, setBusy] = useState(false);
-	const [message, setMessage] = useState("");
+	const [messageKey, setMessageKey] = useState<CatalogKey>();
 
 	async function onToggle() {
 		if (busy) return;
 		setBusy(true);
-		setMessage("");
+		setMessageKey(undefined);
 		try {
 			const {result, error} = await fate.mutations.user.setRole({
 				input: {userId, role: nextRole(platformRole)},
 				view: RoleStateSelect,
 			});
-			setMessage(
-				roleOutcomeMessage(error ? null : (result?.role ?? null), error ? codeOf(error) : null),
+			setMessageKey(
+				roleOutcomeKey(error ? null : (result?.role ?? null), error ? codeOf(error) : null),
 			);
 			if (!error) onRoleChanged();
 		} catch (caught) {
-			setMessage(roleOutcomeMessage(null, codeOf(caught)));
+			setMessageKey(roleOutcomeKey(null, codeOf(caught)));
 		} finally {
 			setBusy(false);
 		}
@@ -59,16 +61,16 @@ export function RoleControls({userId, platformRole, onRoleChanged}: RoleControls
 				disabled={busy}
 				data-testid={`role-toggle-${userId}`}
 			>
-				{roleActionLabel(platformRole, busy)}
+				{t(roleActionLabelKey(platformRole, busy))}
 			</Button>
-			{message ? (
+			{messageKey ? (
 				<Alert
 					variant="secondary"
 					className="kp-alert--inline kp-role__message"
 					aria-live="polite"
 					data-testid={`role-message-${userId}`}
 				>
-					{message}
+					{t(messageKey)}
 				</Alert>
 			) : null}
 		</div>

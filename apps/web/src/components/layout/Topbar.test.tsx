@@ -4,7 +4,8 @@ import {fireEvent, render, screen, waitFor, within} from "@testing-library/react
 import {MemoryRouter} from "react-router";
 import {describe, expect, it, vi} from "vitest";
 import {promotionBarFor, VOUCH_PROMOTION_KARMA_BAR} from "../../../worker/features/kunye/standing";
-import {VOUCH_NEEDED_COPY} from "../profile/CaylakStatusBlock";
+import {trCatalog} from "../../i18n";
+import {VOUCH_NEEDED_KEYS} from "../profile/CaylakStatusBlock";
 import {caylakMeter} from "./caylakMeter";
 import {Topbar} from "./Topbar";
 
@@ -515,7 +516,7 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 		});
 		expect(container.querySelectorAll("progress")).toHaveLength(0);
 		expect(screen.getByTestId("topbar-caylak-vouch-needed").textContent).toContain(
-			VOUCH_NEEDED_COPY.message,
+			trCatalog[VOUCH_NEEDED_KEYS.message],
 		);
 	});
 
@@ -524,7 +525,7 @@ describe("Topbar ambient çaylak meter (#7045)", () => {
 	it("delivers the vouch-needed copy as rendered text, reachable with no hover", () => {
 		renderMeter({caylakMeter: caylakMeter(unvouched(9))});
 		const meter = screen.getByTestId("topbar-caylak-meter");
-		expect(meter.textContent).toContain(VOUCH_NEEDED_COPY.message);
+		expect(meter.textContent).toContain(trCatalog[VOUCH_NEEDED_KEYS.message]);
 		for (const el of [meter, ...meter.querySelectorAll("*")]) {
 			expect(el.getAttribute("title")).toBeNull();
 		}

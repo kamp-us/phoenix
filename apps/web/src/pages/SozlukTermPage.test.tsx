@@ -1,7 +1,9 @@
-import {render, screen} from "@testing-library/react";
+import {render, screen, waitFor} from "@testing-library/react";
 import type {ViewRef} from "react-fate";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it, vi} from "vitest";
+import {LocaleProvider} from "../i18n";
+import {LOCALE_STORAGE_KEY} from "../lib/localeStorage";
 import {DefinitionsList} from "./SozlukTermPage";
 
 vi.mock("react-fate", async (importOriginal) => {
@@ -42,6 +44,17 @@ function renderList() {
 	);
 }
 
+function renderListInEnglish() {
+	window.localStorage.setItem(LOCALE_STORAGE_KEY, "en");
+	render(
+		<MemoryRouter>
+			<LocaleProvider>
+				<DefinitionsList term={{} as ViewRef<"Term">} slug="foo-bar" seedDefinitionId={null} />
+			</LocaleProvider>
+		</MemoryRouter>,
+	);
+}
+
 describe("DefinitionsList anon affordance (#2211)", () => {
 	it("logged-out: shows a sign-in prompt, not the live composer", () => {
 		sessionMock.data = null;
@@ -57,5 +70,27 @@ describe("DefinitionsList anon affordance (#2211)", () => {
 		renderList();
 		expect(screen.queryByTestId("sozluk-composer-signin")).toBeNull();
 		expect(screen.getByTestId("sozluk-composer-submit")).not.toBeNull();
+	});
+});
+
+describe("the term page's composer reads English at locale en (#7529)", () => {
+	it("logged-out: the sign-in prompt and its link are English", async () => {
+		sessionMock.data = null;
+		renderListInEnglish();
+		await waitFor(() =>
+			expect(screen.getByTestId("sozluk-composer-signin").textContent).toContain(
+				"to add an entry,",
+			),
+		);
+		expect(screen.getByRole("link", {name: "sign in"})).not.toBeNull();
+		expect(screen.getByText("how would you define it?")).toBeTruthy();
+	});
+
+	it("signed-in: the composer's label, placeholder and submit are English", async () => {
+		sessionMock.data = {user: {id: "u1", name: "yazar"}};
+		renderListInEnglish();
+		await waitFor(() => expect(screen.getByLabelText("entry")).toBeTruthy());
+		expect(screen.getByTestId("sozluk-composer-submit").textContent).toBe("add entry");
+		expect(screen.getByText("markdown ·", {exact: false})).toBeTruthy();
 	});
 });
