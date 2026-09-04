@@ -11,6 +11,7 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import type {Effect, Stream} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
+import type {AgentEvent} from "../events.ts";
 import type {Mode, PermissionDecision} from "../ports/index.ts";
 import type {
 	ModeUnsupported,
@@ -20,7 +21,6 @@ import type {
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
-import type {AgentEvent} from "./events.ts";
 import type {
 	StartedSession,
 	StartOptions,

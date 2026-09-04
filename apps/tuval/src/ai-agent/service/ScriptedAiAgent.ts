@@ -12,6 +12,7 @@
  */
 
 import {type Cause, Effect, Layer, Queue, Ref, type Scope, Stream} from "effect";
+import type {AgentEvent} from "../events.ts";
 import type {Mode, PermissionDecision, PermissionRequest} from "../ports/index.ts";
 import {
 	ModeUnsupported,
@@ -21,7 +22,6 @@ import {
 	type TransportError,
 	UnknownRequest,
 } from "./errors.ts";
-import type {AgentEvent} from "./events.ts";
 import type {AgentScript} from "./script.ts";
 import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 

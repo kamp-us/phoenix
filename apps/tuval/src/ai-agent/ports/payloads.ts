@@ -30,7 +30,7 @@ const reasons: ReadonlySet<string> = new Set<WindowOmission["reason"]>([
 	"byte-limit",
 ]);
 
-const isWindowOmission = (value: unknown): value is WindowOmission =>
+export const isWindowOmission = (value: unknown): value is WindowOmission =>
 	isRecord(value) &&
 	isNonNegativeInteger(value.items) &&
 	isNonNegativeInteger(value.bytes) &&
@@ -124,7 +124,7 @@ export type PermissionPayload =
 			readonly message?: string;
 	  };
 
-const isPermissionRequest = (value: unknown): value is PermissionRequest =>
+export const isPermissionRequest = (value: unknown): value is PermissionRequest =>
 	isRecord(value) &&
 	typeof value.title === "string" &&
 	typeof value.displayName === "string" &&
