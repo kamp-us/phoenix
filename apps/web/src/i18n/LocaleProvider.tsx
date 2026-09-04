@@ -5,6 +5,7 @@
  * `lib/localeStorage`, defaulting to `tr`.
  */
 import * as React from "react";
+import {browserStorage} from "../lib/browserStorage";
 import {readStoredLocale, writeStoredLocale} from "../lib/localeStorage";
 import {type Catalog, loadCatalog, trCatalog} from "./catalog";
 import {interpolate, type MessageParams} from "./interpolate";
@@ -39,10 +40,6 @@ const LocaleContext = React.createContext<LocaleContextValue>({
 	setLocale: () => {},
 	t: translateWith(trCatalog),
 });
-
-function browserStorage(): Storage | undefined {
-	return typeof window === "undefined" ? undefined : window.localStorage;
-}
 
 export function LocaleProvider({children}: {children: React.ReactNode}) {
 	const [locale, setLocaleState] = React.useState<Locale>(() =>
