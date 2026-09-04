@@ -13,8 +13,8 @@
  * a restored desk keeps minting where it left off.
  */
 
-import {type LayoutTree, type WindowId, windows} from "../layout/index.ts";
-import type {ViewState} from "../window/host.ts";
+import {isLayoutTree, type LayoutTree, type WindowId, windows} from "../layout/index.ts";
+import {isViewState, type ViewState} from "../window/host.ts";
 
 /** A workspace id. The shell mints it; nothing outside this module generates one. */
 export type WorkspaceId = string;
@@ -55,6 +55,48 @@ export interface ShellState {
 	/** The next mint. Every id the shell hands out is `<kind>-<n>` for one `n`, spent once. */
 	readonly nextId: number;
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+export const isPrefixSnapshot = (value: unknown): value is PrefixSnapshot => {
+	if (!isRecord(value)) return false;
+	if (value.armed === false) return true;
+	return (
+		value.armed === true &&
+		Array.isArray(value.pending) &&
+		value.pending.every((key) => typeof key === "string") &&
+		typeof value.timeoutMs === "number"
+	);
+};
+
+export const isWorkspace = (value: unknown): value is Workspace =>
+	isRecord(value) &&
+	typeof value.id === "string" &&
+	isLayoutTree(value.layout) &&
+	typeof value.focused === "string";
+
+/**
+ * Is this a whole shell state? Total over every field and through every workspace, view and order
+ * entry, because a checkpoint re-enters the program as `unknown` and this is the only place its
+ * shape is recovered — a check that stops at the top level hands a corrupt interior to the reducer
+ * typed as if it were sound (#7558 R1 F2).
+ *
+ * Structure only. It does not check that `activeWorkspace` and `order` name workspaces the map
+ * holds: those are the reducer's invariants, not the type's, and `activeWorkspace` below already
+ * answers `undefined` rather than throwing when a desk breaks them.
+ */
+export const isShellState = (value: unknown): value is ShellState =>
+	isRecord(value) &&
+	isRecord(value.workspaces) &&
+	Object.values(value.workspaces).every(isWorkspace) &&
+	Array.isArray(value.order) &&
+	value.order.every((id) => typeof id === "string") &&
+	typeof value.activeWorkspace === "string" &&
+	isRecord(value.views) &&
+	Object.values(value.views).every(isViewState) &&
+	isPrefixSnapshot(value.prefix) &&
+	typeof value.nextId === "number";
 
 /** The ids one mint spends. Distinct prefixes over one counter, so no two ids can collide. */
 export interface MintedIds {

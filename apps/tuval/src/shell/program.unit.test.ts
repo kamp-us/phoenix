@@ -78,7 +78,9 @@ const dispatched = (...msgs: ReadonlyArray<ShellMsg>) =>
 		const shell = yield* processes.spawn(shellId, {id: shellProcess});
 		for (const msg of msgs) yield* shell.dispatch(msg);
 		const state = shellStateOf(shell.getState());
-		if (state === null) throw new Error("the shell process did not hand back a shell state");
+		// `Effect.die`, not `throw`: a bare throw inside an `Effect.gen` escapes the E channel as an
+		// uncatchable defect (#2736, the repo's Effect lint plugin).
+		if (state === null) return yield* Effect.die("the shell handed back no shell state");
 		return state;
 	});
 
@@ -154,6 +156,39 @@ describe("the shell as a program row", () => {
 	it("answers Empty for a window with no process, so the surface shows the picker", () => {
 		const bindings = windowBindings(initialState(), new Set());
 		assert.deepStrictEqual([...bindings.values()], [{_tag: "Empty"}]);
+	});
+
+	it("refuses a version-matched snapshot whose interior is the wrong shape", () => {
+		const sound = initialState();
+		assert.deepStrictEqual(shellStateOf(structuredClone(sound)), sound);
+
+		const workspaceId = sound.order[0]!;
+		const workspace = sound.workspaces[workspaceId]!;
+		// Every corruption below keeps all eight top-level types intact, so each one is a snapshot
+		// the version check admits and only a total guard can refuse.
+		const corrupt: ReadonlyArray<readonly [string, unknown]> = [
+			["a workspace that is not one", {...sound, workspaces: {[workspaceId]: {id: workspaceId}}}],
+			[
+				"a layout node with an unknown orientation",
+				{
+					...sound,
+					workspaces: {
+						[workspaceId]: {
+							...workspace,
+							layout: {...workspace.layout, root: {...workspace.layout.root, orientation: "up"}},
+						},
+					},
+				},
+			],
+			["an order entry that is not an id", {...sound, order: [1]}],
+			["a view slot holding something JSON cannot", {...sound, views: {"window-0": () => 1}}],
+			["a prefix that is neither armed nor disarmed", {...sound, prefix: {armed: "yes"}}],
+		];
+
+		assert.deepStrictEqual(
+			corrupt.map(([name, snapshot]) => `${name}: ${shellStateOf(snapshot)}`),
+			corrupt.map(([name]) => `${name}: null`),
+		);
 	});
 
 	it.effect("refuses a snapshot from another definition and never fresh-boots over it", () => {

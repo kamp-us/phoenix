@@ -8,6 +8,7 @@ export {
 	empty,
 	isEmpty,
 	isProcessGone,
+	isViewState,
 	type ProcessGone,
 	type ProcessLive,
 	type ProcessView,

@@ -335,6 +335,11 @@ fresh — workspaces, layouts, focus and per-window view state come back byte-eq
 written under another definition version refuses the boot rather than fresh-booting over it. Nothing
 under `src/shell/` opens a store, and a test asserts that no file there ever will.
 
+The version is one of two checks a snapshot passes. The other is its shape: a checkpoint re-enters
+the program as `unknown`, so `shellStateOf` runs `isShellState` over it — total through every
+workspace, layout node, view slot and order entry — and a version-matched snapshot with a corrupt
+interior reads as `null` rather than as a desk.
+
 A restored window whose process id no longer resolves is **kept**: `windowBindings(state, live)`
 answers `ProcessGone` for it and `Empty` for a window with no process, so the surface renders a
 placeholder or the picker and never a window that silently vanished. That function is also where the

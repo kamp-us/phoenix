@@ -18,7 +18,13 @@ import {NodeId} from "../ports/graph.ts";
 import {ProcessId} from "../process/process.ts";
 import type {AnyProgram, HostHandlers, Program, RendererRef} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
-import {type ShellCmd, type ShellMsg, type ShellState, shellCore} from "./core/index.ts";
+import {
+	isShellState,
+	type ShellCmd,
+	type ShellMsg,
+	type ShellState,
+	shellCore,
+} from "./core/index.ts";
 import {defaultPrefixTable, type PrefixTable} from "./keys/index.ts";
 import {windows} from "./layout/index.ts";
 import {type Empty, empty, type ProcessGone, processGone, WindowId} from "./window/index.ts";
@@ -121,27 +127,14 @@ export type RestoredBinding =
 	{readonly _tag: "Live"; readonly processId: ProcessId} | ProcessGone | Empty;
 
 /**
- * The shape a checkpointed desk has, checked rather than asserted. The kernel erases every
- * program's state to `unknown` (`ProcessRow.stateSummary`), and this module owns the machine that
- * produced it, so this is the one place the shape is recovered — and it is recovered by a
- * predicate, never a cast, because a snapshot is persisted JSON crossing back over a trust boundary
- * (`.patterns/effect-schema-validation.md`).
+ * A checkpointed desk, or `null`. The kernel erases every program's state to `unknown`
+ * (`ProcessRow.stateSummary`), so this is the trust boundary a snapshot re-enters through
+ * (`.patterns/effect-schema-validation.md` names persisted JSON as exactly that) — and the check is
+ * `isShellState`, which is total over the state, so no cast stands between the answer and the type.
+ * A version-matched snapshot with a corrupt workspace, view or order entry is refused here.
  */
-export const shellStateOf = (state: unknown): ShellState | null => {
-	if (typeof state !== "object" || state === null) return null;
-	const candidate = state as Partial<ShellState>;
-	const shaped =
-		typeof candidate.workspaces === "object" &&
-		candidate.workspaces !== null &&
-		Array.isArray(candidate.order) &&
-		typeof candidate.activeWorkspace === "string" &&
-		typeof candidate.views === "object" &&
-		candidate.views !== null &&
-		typeof candidate.prefix === "object" &&
-		candidate.prefix !== null &&
-		typeof candidate.nextId === "number";
-	return shaped ? (candidate as ShellState) : null;
-};
+export const shellStateOf = (state: unknown): ShellState | null =>
+	isShellState(state) ? state : null;
 
 /**
  * Every window of every restored workspace, against the processes the kernel actually brought back.
