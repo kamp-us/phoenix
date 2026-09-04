@@ -1,5 +1,6 @@
 import {auth} from "./auth";
 import {layout} from "./layout";
+import {sozluk} from "./sozluk";
 import {wire} from "./wire";
 
 /**
@@ -10,5 +11,6 @@ import {wire} from "./wire";
 export const tr = {
 	...auth,
 	...layout,
+	...sozluk,
 	...wire,
 };

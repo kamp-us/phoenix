@@ -1,6 +1,7 @@
 import type {CatalogKey} from "../keys";
 import {auth} from "./auth";
 import {layout} from "./layout";
+import {sozluk} from "./sozluk";
 import {wire} from "./wire";
 
 /**
@@ -14,5 +15,6 @@ import {wire} from "./wire";
 export const en = {
 	...auth,
 	...layout,
+	...sozluk,
 	...wire,
 } satisfies Record<CatalogKey, string>;
