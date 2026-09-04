@@ -1,3 +1,5 @@
+import {readFileSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import {act, fireEvent, render} from "@testing-library/react";
 import {describe, expect, it, vi} from "vitest";
 import {Switch} from "./Switch";
@@ -69,5 +71,32 @@ describe("Switch — the hidden input's checked property (#6449)", () => {
 		input.checked = false;
 		rerender(<Switch defaultChecked>görünür</Switch>);
 		expect(input.checked).toBe(false);
+	});
+});
+
+describe("Switch — the track ring (#thumb-travel)", () => {
+	it("rings the control with an inset shadow so the border never eats the thumb's travel", () => {
+		// Held in a variable: Vite rewrites a literal `new URL("./x.css", import.meta.url)` into a
+		// bundled asset URL, which is no longer a file: URL by the time fileURLToPath sees it.
+		const stylesheet = "./Switch.css";
+		const css = readFileSync(fileURLToPath(new URL(stylesheet, import.meta.url)), "utf8");
+		const control = css.slice(
+			css.indexOf('[data-part="control"]'),
+			css.indexOf('[data-part="thumb"]'),
+		);
+		expect(control).toContain("box-shadow: inset 0 0 0 1px");
+		// Manti sizes the thumb and its travel off the raw track vars, so any painted border on
+		// the control (its reset is border-box) shifts the thumb off-centre by the border width.
+		expect(control.match(/border[a-z-]*:[^;]+/g)).toEqual(["border: 0"]);
+	});
+
+	it("squashes the pressed thumb with scale, never with a layout property", () => {
+		const stylesheet = "./Switch.css";
+		const css = readFileSync(fileURLToPath(new URL(stylesheet, import.meta.url)), "utf8");
+		const pressed = css.slice(css.indexOf('[data-part="control"]:active'));
+		expect(pressed).toContain("scale: 1 0.78");
+		// Manti's own press rule shrinks `height`, which moves the inline-flex root's baseline and
+		// drops the whole switch. Ours must pin the height back to the untouched thumb size.
+		expect(pressed).toContain("height: var(--_thumb-size)");
 	});
 });

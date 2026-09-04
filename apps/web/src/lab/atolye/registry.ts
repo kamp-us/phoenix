@@ -7,6 +7,7 @@ import {buttonExhibit} from "./exhibits/Button.exhibit";
 import {cardExhibit} from "./exhibits/Card.exhibit";
 import {caylakBadgeExhibit} from "./exhibits/CaylakBadge.exhibit";
 import {collapsibleExhibit} from "./exhibits/Collapsible.exhibit";
+import {commandPaletteExhibit} from "./exhibits/CommandPalette.exhibit";
 import {composerExhibit} from "./exhibits/Composer.exhibit";
 import {copyLinkButtonExhibit} from "./exhibits/CopyLinkButton.exhibit";
 import {countToggleExhibit} from "./exhibits/CountToggle.exhibit";
@@ -29,6 +30,7 @@ const exhibits: readonly AnyExhibit[] = [
 	// The composer leads the catalog — atölye's first feature-level exhibit (#3095), ahead of
 	// the UI primitives it is built from.
 	composerExhibit,
+	commandPaletteExhibit,
 	agentChatInputExhibit,
 	buttonExhibit,
 	avatarExhibit,

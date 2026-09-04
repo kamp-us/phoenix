@@ -224,6 +224,11 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	Skeleton: {kind: "presentational", arb: skeletonArb},
 
 	Collapsible: {kind: "deferred", reason: COMPOUND_REASON},
+	CommandPalette: {
+		kind: "deferred",
+		reason:
+			"Modal combobox composite — needs results, portal interaction and keyboard navigation; covered by composed usage tests.",
+	},
 	Dialog: {kind: "deferred", reason: COMPOUND_REASON},
 	EditedIndicator: {
 		kind: "deferred",

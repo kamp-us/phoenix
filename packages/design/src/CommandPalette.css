@@ -1,0 +1,270 @@
+[data-scope="dialog"][data-part="content"].kp-command-palette {
+	--manti-dialog-max-width: 38.75rem;
+	gap: 0;
+	padding: 0;
+	background: var(--surface-raised);
+	border-color: var(--border-strong);
+	box-shadow: var(--shadow-overlay);
+	overflow: visible;
+}
+
+.kp-command-palette [data-scope="dialog"][data-part="title"] {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.kp-command-palette [data-scope="dialog"][data-part="body"] {
+	display: contents;
+}
+
+.kp-command-palette__search[data-scope="field"][data-part="root"] {
+	gap: 0;
+}
+
+.kp-command-palette__header {
+	display: contents;
+}
+
+.kp-command-palette--inset .kp-command-palette__header {
+	display: block;
+	padding: var(--s-3) var(--s-3) var(--s-2);
+}
+
+.kp-command-palette__search [data-scope="field"][data-part="control"] {
+	--manti-field-padding-x: var(--s-4);
+	min-height: max(var(--tap-min), var(--s-8));
+	background: var(--surface-raised);
+	border: 0;
+	border-bottom: 1px solid var(--border);
+	border-radius: var(--r-lg) var(--r-lg) 0 0;
+	color: var(--text-secondary);
+}
+
+.kp-command-palette__search [data-scope="field"][data-part="control"]:hover {
+	border-bottom-color: var(--border);
+}
+
+[data-scope="dialog"][data-part="content"].kp-command-palette
+	.kp-command-palette__search[data-scope="field"][data-part="root"]:focus-within
+	[data-scope="field"][data-part="control"] {
+	border-bottom-color: var(--border);
+}
+
+.kp-command-palette__search [data-scope="field"][data-part="input"] {
+	min-width: 0;
+	height: max(var(--tap-min), var(--s-8));
+	padding: 0;
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+}
+
+.kp-command-palette__search [data-scope="field"][data-part="input"]::placeholder {
+	color: var(--text-faint);
+}
+
+/* Programmatic focus on open is useful for search, but it must not look like a Tab move.
+   The keyboard-focus variant leaves the shared global ring in charge. */
+[data-scope="dialog"][data-part="content"].kp-command-palette
+	.kp-command-palette__search:not(.kp-command-palette__search--keyboard-focus)
+	[data-scope="field"][data-part="control"] {
+	outline: none;
+	outline-offset: 0;
+}
+
+.kp-command-palette__results {
+	list-style: none;
+	margin: 0;
+	padding: var(--s-1);
+	max-height: min(26.25rem, 55vh);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.kp-command-palette__entry {
+	margin: 0;
+	padding: 0;
+}
+
+.kp-command-palette__group {
+	padding: var(--s-2) var(--s-2) var(--s-1);
+	font: var(--t-micro);
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.kp-command-palette__option {
+	display: flex;
+	align-items: center;
+	gap: var(--s-2);
+	min-height: var(--tap-min);
+	padding: var(--pop-row-y) var(--s-2);
+	border-radius: var(--r-md);
+	color: var(--text-primary);
+	cursor: pointer;
+	touch-action: manipulation;
+}
+
+.kp-command-palette__option[data-active] {
+	background: var(--accent-faint);
+}
+
+.kp-command-palette__option[aria-disabled="true"] {
+	color: var(--text-muted);
+	cursor: not-allowed;
+	opacity: 0.55;
+}
+
+.kp-command-palette__icon {
+	display: grid;
+	place-items: center;
+	flex: 0 0 var(--tap-min);
+	width: var(--tap-min);
+	height: var(--tap-min);
+	color: var(--text-secondary);
+}
+
+.kp-command-palette__copy {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+	flex: 1;
+}
+
+.kp-command-palette__label {
+	font: var(--t-body);
+	font-weight: 500;
+}
+
+.kp-command-palette__description {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.kp-command-palette__shortcut {
+	flex: none;
+	padding: 2px var(--s-1);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	font: var(--t-micro);
+	color: var(--text-muted);
+}
+
+.kp-command-palette__status {
+	display: grid;
+	place-items: center;
+	min-height: calc(var(--s-8) + var(--s-7) + var(--s-6));
+	padding: var(--s-4);
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	text-align: center;
+}
+
+.kp-command-palette__footer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--s-1) var(--s-3);
+	min-height: var(--tap-min);
+	padding: var(--s-1) var(--s-3);
+	border-top: 1px solid var(--border-faint);
+	font: var(--t-micro);
+	color: var(--text-muted);
+}
+
+.kp-command-palette__legend {
+	display: flex;
+	align-items: center;
+	gap: var(--s-1);
+	margin-left: auto;
+}
+
+@media (max-width: 40rem) {
+	[data-scope="dialog"][data-part="positioner"]:has(.kp-command-palette) {
+		align-items: flex-start;
+		padding-top: max(var(--s-3), env(safe-area-inset-top));
+	}
+
+	[data-scope="dialog"][data-part="content"].kp-command-palette {
+		--manti-dialog-max-width: calc(100vw - var(--s-4));
+	}
+
+	.kp-command-palette__results {
+		max-height: min(28.75rem, 60dvh);
+	}
+}
+
+/* The inset variant boxes the search field inside the dialog padding instead of
+   letting it span edge to edge, so the field reads as an object on the surface. */
+[data-scope="dialog"][data-part="content"].kp-command-palette.kp-command-palette--inset
+	.kp-command-palette__search
+	[data-scope="field"][data-part="control"] {
+	--manti-field-padding-x: var(--s-3);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-lg);
+}
+
+[data-scope="dialog"][data-part="content"].kp-command-palette.kp-command-palette--inset
+	.kp-command-palette__search[data-scope="field"][data-part="root"]:focus-within
+	[data-scope="field"][data-part="control"] {
+	border-color: var(--border-strong);
+}
+
+.kp-command-palette--inset .kp-command-palette__results {
+	padding: 0 var(--s-3) var(--s-3);
+}
+
+.kp-command-palette__scopes {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--s-1) var(--s-2);
+}
+
+.kp-command-palette__scopes-label {
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.kp-command-palette__scope {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-1);
+}
+
+.kp-command-palette__scope[data-active] {
+	color: var(--text-primary);
+}
+
+.kp-command-palette__scope-sigil {
+	display: inline-grid;
+	place-items: center;
+	min-width: 1.5em;
+	padding: 1px var(--s-1);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	font: var(--t-micro);
+	font-weight: 600;
+	color: var(--text-secondary);
+}
+
+.kp-command-palette__scope[data-active] .kp-command-palette__scope-sigil {
+	background: var(--accent-faint);
+	border-color: var(--border-strong);
+	color: var(--text-primary);
+}

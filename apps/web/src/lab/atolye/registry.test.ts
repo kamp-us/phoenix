@@ -25,6 +25,15 @@ describe("exhibit registry — headless enumeration", () => {
 		);
 	});
 
+	it("registers the command palette with its search-state knobs", () => {
+		const palette = getExhibit("command-palette");
+		expect(palette?.title).toBe("Command Palette");
+		expect(palette?.component).toBeTruthy();
+		expect(Object.keys(palette?.knobs ?? {})).toEqual(
+			expect.arrayContaining(["defaultQuery", "loading", "disabled", "maxResults"]),
+		);
+	});
+
 	it("resolves by id and returns undefined for an unknown slug", () => {
 		expect(getExhibit("button")?.id).toBe("button");
 		expect(getExhibit("does-not-exist")).toBeUndefined();
@@ -53,6 +62,7 @@ describe("exhibit registry — headless enumeration", () => {
 			"button",
 			"card",
 			"collapsible",
+			"command-palette",
 			"copy-link-button",
 			"count-toggle",
 			"dialog",
