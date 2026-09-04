@@ -142,7 +142,7 @@ a.kp-pano-post__site:hover {
 	gap: 4px;
 }
 
-/* The row shell + shared child treatment is the MetaRow primitive (ui/MetaRow.css,
+/* The row shell + shared child treatment is the MetaRow primitive (packages/design/src/MetaRow.css,
    #2163); only this feed row's own tuning stays here (its 6px gap outranks the
    primitive's default by specificity, so the fold is order-independent). */
 .kp-meta-row.kp-pano-post__meta {

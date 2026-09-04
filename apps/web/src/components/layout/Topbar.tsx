@@ -1,3 +1,4 @@
+import {Badge, Input, Kbd} from "@kampus/design";
 import {Gavel, Search} from "lucide-react";
 import type * as React from "react";
 import {useEffect} from "react";
@@ -9,9 +10,6 @@ import {BildirimPopover} from "../bildirim/BildirimPopover";
 import {formatUnreadBadge, showUnreadBadge} from "../bildirim/bildirim";
 import {Icon} from "../Icon";
 import {Karma} from "../karma/Karma";
-import {Kbd} from "../ui/atoms";
-import {Badge} from "../ui/Badge";
-import {Input} from "../ui/Form";
 import type {CaylakMeter} from "./caylakMeter";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import {UserMenu} from "./UserMenu";

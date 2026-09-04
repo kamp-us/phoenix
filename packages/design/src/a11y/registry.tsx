@@ -192,6 +192,11 @@ const COMPOUND_REASON =
 
 /** EVERY runtime export of `../index.ts` — the coverage test fails on any drift. */
 export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
+	AgentChatInput: {
+		kind: "deferred",
+		reason:
+			"Pi bridge-backed composite input — requires a runtime bridge and is covered by composed usage tests.",
+	},
 	Button: {kind: "interactive", selector: "button", arb: buttonArb},
 	CountToggle: {kind: "interactive", selector: "button", arb: countToggleArb},
 	NumberInput: {kind: "interactive", selector: "input", arb: numberInputArb},
@@ -200,8 +205,16 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},
 	MetaRow: {kind: "presentational", arb: metaRowArb},
+	SandboxMarker: {
+		kind: "deferred",
+		reason: "sandbox-state badge choice — covered by composed marker tests.",
+	},
 	Alert: {kind: "presentational", arb: alertArb},
 	Avatar: {kind: "presentational", arb: avatarArb},
+	CaylakBadge: {
+		kind: "deferred",
+		reason: "fixed-copy badge — covered by composed sandbox-marker tests.",
+	},
 	Badge: {kind: "presentational", arb: badgeArb},
 	ScrollArea: {kind: "presentational", arb: scrollAreaArb},
 	Tag: {kind: "presentational", arb: tagArb},
@@ -212,13 +225,26 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 
 	Collapsible: {kind: "deferred", reason: COMPOUND_REASON},
 	Dialog: {kind: "deferred", reason: COMPOUND_REASON},
+	EditedIndicator: {
+		kind: "deferred",
+		reason: "tooltip-backed status marker — covered by composed edit-state tests.",
+	},
 	Menu: {kind: "deferred", reason: COMPOUND_REASON},
 	Popover: {kind: "deferred", reason: COMPOUND_REASON},
 	Tabs: {kind: "deferred", reason: COMPOUND_REASON},
 	ToggleGroup: {kind: "deferred", reason: COMPOUND_REASON},
 	Switch: {kind: "deferred", reason: COMPOUND_REASON},
+	DesignTranslationProvider: {
+		kind: "deferred",
+		reason: "provider component — requires a composed localized primitive fixture.",
+	},
+	ToastProvider: {
+		kind: "deferred",
+		reason: "provider component — requires a composed toast fixture.",
+	},
 	Tooltip: {kind: "deferred", reason: COMPOUND_REASON},
 	TooltipProvider: {kind: "deferred", reason: COMPOUND_REASON},
+	useToast: {kind: "deferred", reason: "hook export — requires a mounted ToastProvider fixture."},
 
 	Form: {
 		kind: "deferred",
@@ -240,6 +266,10 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	ReportButton: {
 		kind: "deferred",
 		reason: "control driving a report mutation + callback props — needs a composed fixture.",
+	},
+	ReviewBadge: {
+		kind: "deferred",
+		reason: "fixed-copy status badge — covered by composed badge tests.",
 	},
 	DraftRestoreBanner: {
 		kind: "deferred",

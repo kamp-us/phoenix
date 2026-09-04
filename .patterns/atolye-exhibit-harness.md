@@ -8,7 +8,7 @@ route ([#3093](https://github.com/kamp-us/phoenix/issues/3093)), the primitive c
 ([#3094](https://github.com/kamp-us/phoenix/issues/3094)), and the composer fold-in
 ([#3095](https://github.com/kamp-us/phoenix/issues/3095)) all build against.
 
-It is a **client-only** surface: no worker, no fate, no DO. Every control is a `ui/` primitive
+It is a **client-only** surface: no worker, no fate, no DO. Every control is an `@kampus/design` primitive
 (Manti, `@manti-ui/react`) under the ADR-0162 role tokens (`design-system-manifest.md`) — atölye dogfoods the design law it
 showcases. No external storybook tool (Storybook/Ladle) — founder-ruled out, hard.
 
@@ -17,7 +17,7 @@ showcases. No external storybook tool (Storybook/Ladle) — founder-ruled out, h
 ### 1. The knob schema — soundness lives in the type layer (`knob.ts`)
 
 A **knob** is one on-screen control bound to one host-component prop. Four kinds:
-`string`→text · `number`→number · `boolean`→`ui/Switch` · `enum`→`ui/ToggleGroup` (both Manti).
+`string`→text · `number`→number · `boolean`→`Switch` from `@kampus/design` · `enum`→`ToggleGroup` from `@kampus/design` (both Manti).
 
 `KnobForType<T>` maps a prop's type to the one knob it admits, so **invalid states are
 unrepresentable at compile time, not caught at runtime**: a `boolean` prop takes only a
@@ -59,7 +59,7 @@ No route edits — the registry is the seam that keeps index/detail/catalog deco
 `useKnobs`; the knob-value → props seam is a single spread, `{...fixedProps, ...values}`.
 `useKnobs` is kept separate from the panel so #3093 can lift knob state into the URL
 (deep-linkable) without re-implementing the plumbing. `PropKnobs` is the presentational,
-controlled panel — one labelled `ui/` control per knob (every control carries an
+controlled panel — one labelled `@kampus/design` control per knob (every control carries an
 `aria-labelledby`, pillar 4).
 
 Enum knobs stringify their option values at the `ToggleGroup` boundary (Manti's `ToggleGroup` keys

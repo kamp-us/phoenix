@@ -33,8 +33,13 @@ export interface SpawnOptions {
 	readonly parent?: ProcessId;
 	/** Restore's: the id the process was checkpointed under. A fresh spawn mints its own. */
 	readonly id?: ProcessId;
-	/** Provided to this process's handlers: the services its program's `R` names, per process. */
-	readonly services?: Context.Context<never>;
+	/**
+	 * Provided to this process's handlers: the services its program's `R` names, per process.
+	 * Never optional — a spawner with nothing to give says so with `Context.empty()`. Omission
+	 * used to be silent, and `restore` took it, so a restored process's first handler died on a
+	 * missing service one boot later (#7789).
+	 */
+	readonly services: Context.Context<never>;
 }
 
 /**
@@ -49,7 +54,7 @@ export class Processes extends Context.Service<
 	{
 		readonly spawn: (
 			programId: ProgramId,
-			options?: SpawnOptions,
+			options: SpawnOptions,
 		) => Effect.Effect<ProcessHandle, SpawnError>;
 		readonly stop: (id: ProcessId) => Effect.Effect<void, ProcessNotFound>;
 	}
@@ -170,11 +175,11 @@ function makeServices() {
 
 		const spawn = Effect.fn("Tuval.Processes.spawn")(function* (
 			programId: ProgramId,
-			options?: SpawnOptions,
+			options: SpawnOptions,
 		) {
 			const program = yield* registry.resolve(programId);
-			const parent = options?.parent === undefined ? undefined : yield* lookup(options.parent);
-			const id = options?.id ?? ProcessId.make(randomUUID());
+			const parent = options.parent === undefined ? undefined : yield* lookup(options.parent);
+			const id = options.id ?? ProcessId.make(randomUUID());
 			const parentId = Option.fromNullishOr(parent?.row.id);
 			const scope = yield* Scope.fork(parent?.scope ?? root);
 			let lifecycle: Lifecycle = "running";
@@ -210,7 +215,9 @@ function makeServices() {
 					parentId,
 					version: program.identity.version,
 				});
-				return yield* makeActor(toDefinition(program, checkpoint.store, services, onCommit));
+				return yield* makeActor(
+					toDefinition(program, checkpoint.store, options.services, onCommit),
+				);
 			}).pipe(
 				Effect.provideService(Scope.Scope, scope),
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),

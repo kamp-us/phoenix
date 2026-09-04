@@ -3,10 +3,9 @@
  * katkını yaz" nudge (#4289). Presentation only: who sees it and what it points at is
  * `firstContribution.ts`'s call, and dismissal is the caller's to persist.
  */
+import {Button, Surface} from "@kampus/design";
 import {Link} from "react-router";
 import {useT} from "../../i18n";
-import {Button} from "../ui/Button";
-import {Surface} from "../ui/Card";
 import type {FirstContributionNudge as Nudge} from "./firstContribution";
 import "./FirstContributionNudge.css";
 

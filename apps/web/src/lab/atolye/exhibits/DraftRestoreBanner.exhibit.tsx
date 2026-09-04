@@ -1,5 +1,5 @@
+import {DraftRestoreBanner} from "@kampus/design";
 import type * as React from "react";
-import {DraftRestoreBanner} from "../../../components/ui/DraftRestoreBanner";
 import {defineExhibit} from "../exhibit";
 
 export const draftRestoreBannerExhibit = defineExhibit<

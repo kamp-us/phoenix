@@ -9,7 +9,7 @@ import {readFileSync} from "node:fs";
 import {join} from "node:path";
 import {describe, expect, it} from "vitest";
 
-const sourceRoot = join(import.meta.dirname, "../..");
+const sourceRoot = join(import.meta.dirname, "../../../apps/web/src");
 
 /**
  * The pano feed row, post detail, comment node, sözlük entry — plus the profile

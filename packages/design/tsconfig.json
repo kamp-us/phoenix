@@ -1,0 +1,14 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"composite": true,
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"exactOptionalPropertyTypes": false,
+		"jsx": "react-jsx",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"types": ["node", "vite/client"]
+	},
+	"include": ["src", "vitest.config.ts", "vitest.a11y.config.ts", "test-setup.ts"]
+}

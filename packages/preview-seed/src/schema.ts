@@ -82,6 +82,43 @@ export const relationTuple = sqliteTable(
 	],
 );
 
+/**
+ * The denormalized profile row the çaylak standing view reads `total_karma` off. In the worker that
+ * accumulator is maintained by `Vote.cast`'s batch; a preview has no votes, so the provisioner sets
+ * the value directly. `karma_event`, the per-bump provenance ledger, is deliberately not modeled —
+ * nothing rendered reads it, and a seeded ledger would have to invent votes that never happened.
+ */
+export const userProfile = sqliteTable(
+	"user_profile",
+	{
+		userId: text("user_id").primaryKey(),
+		username: text("username").unique(),
+		displayName: text("display_name"),
+		totalKarma: integer("total_karma").notNull().default(0),
+		updatedAt: timestamp("updated_at").notNull(),
+	},
+	(t) => [index("user_profile_username").on(t.username)],
+);
+
+/**
+ * The authorship-vouch ledger (migration `0013_authorship_vouch`, ADR 0107). Active-by-existence:
+ * the vouch IS the row, so dropping one is a delete. It carries **no foreign keys** by design, which
+ * is why `test-account.ts` refuses a vouched standing whose voucher this run does not seed — nothing
+ * in the database would catch the dangling `voucher_id`.
+ */
+export const authorshipVouch = sqliteTable(
+	"authorship_vouch",
+	{
+		voucherId: text("voucher_id").notNull(),
+		candidateId: text("candidate_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.voucherId, t.candidateId]}),
+		index("authorship_vouch_candidate").on(t.candidateId),
+	],
+);
+
 export const seedSchema = {
 	termRecord,
 	definitionRecord,
@@ -91,5 +128,7 @@ export const seedSchema = {
 	user,
 	session,
 	relationTuple,
+	userProfile,
+	authorshipVouch,
 };
 export type SeedSchema = typeof seedSchema;

@@ -13,7 +13,7 @@ const testable = (spec: PrimitiveSpec): spec is Exclude<PrimitiveSpec, {kind: "d
 	spec.kind !== "deferred";
 
 describe("ui/ primitive a11y coverage (auto-covers new primitives)", () => {
-	it("classifies every runtime export of ui/index.ts — a new primitive fails until classified", () => {
+	it("classifies every runtime export of @kampus/design — a new primitive fails until classified", () => {
 		// Runtime (value) exports only; `export type` is erased, so this is exactly
 		// the set of primitives that render. The symmetric diff must be empty:
 		// an unclassified new export, or a stale entry for a removed one, fails.

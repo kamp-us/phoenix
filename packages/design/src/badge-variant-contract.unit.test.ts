@@ -6,7 +6,8 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join, relative} from "node:path";
 import {describe, expect, it} from "vitest";
 
-const sourceRoot = join(import.meta.dirname, "../..");
+const repoRoot = join(import.meta.dirname, "../../..");
+const sourceRoots = [join(repoRoot, "apps/web/src"), join(repoRoot, "packages/design/src")];
 const badgeElementPattern = /<Badge\b[^>]*>/gs;
 const classNamePattern = /className=(?:"([^"]*)"|\{`([^`]*)`\})/;
 
@@ -25,16 +26,18 @@ function sourceFiles(directory: string, extension: string): string[] {
 function variantBadgeClasses(): Set<string> {
 	const classes = new Set<string>();
 
-	for (const path of sourceFiles(sourceRoot, ".tsx")) {
-		for (const element of readFileSync(path, "utf8").matchAll(badgeElementPattern)) {
-			if (!/\bvariant=/.test(element[0])) continue;
+	for (const sourceRoot of sourceRoots) {
+		for (const path of sourceFiles(sourceRoot, ".tsx")) {
+			for (const element of readFileSync(path, "utf8").matchAll(badgeElementPattern)) {
+				if (!/\bvariant=/.test(element[0])) continue;
 
-			const match = classNamePattern.exec(element[0]);
-			const value = match?.[1] ?? match?.[2];
-			if (!value) continue;
+				const match = classNamePattern.exec(element[0]);
+				const value = match?.[1] ?? match?.[2];
+				if (!value) continue;
 
-			for (const name of value.split(/\s+/)) {
-				if (name.startsWith("kp-")) classes.add(name);
+				for (const name of value.split(/\s+/)) {
+					if (name.startsWith("kp-")) classes.add(name);
+				}
 			}
 		}
 	}
@@ -45,12 +48,14 @@ function variantBadgeClasses(): Set<string> {
 type Rule = {file: string; selector: string; body: string};
 
 function cssRules(): Rule[] {
-	return sourceFiles(sourceRoot, ".css").flatMap((path) =>
-		[...readFileSync(path, "utf8").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((rule) => ({
-			file: relative(sourceRoot, path),
-			selector: (rule[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim(),
-			body: rule[2] ?? "",
-		})),
+	return sourceRoots.flatMap((sourceRoot) =>
+		sourceFiles(sourceRoot, ".css").flatMap((path) =>
+			[...readFileSync(path, "utf8").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((rule) => ({
+				file: relative(repoRoot, path),
+				selector: (rule[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim(),
+				body: rule[2] ?? "",
+			})),
+		),
 	);
 }
 
@@ -88,10 +93,11 @@ describe("Manti badge variant contract", () => {
 	});
 
 	it("renders the incelemede state through ReviewBadge alone", () => {
-		const offenders = sourceFiles(sourceRoot, ".tsx")
+		const offenders = sourceRoots
+			.flatMap((sourceRoot) => sourceFiles(sourceRoot, ".tsx"))
 			.filter((path) => !path.endsWith("ReviewBadge.tsx"))
 			.filter((path) => /<Badge\b[\s\S]*?incelemede/.test(readFileSync(path, "utf8")))
-			.map((path) => relative(sourceRoot, path));
+			.map((path) => relative(repoRoot, path));
 
 		expect(offenders).toEqual([]);
 	});

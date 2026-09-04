@@ -4,13 +4,13 @@
  * loop consumes, never a re-fetch. The render + hop decisions live DOM-free in
  * `actor-drawer.ts`; this is the thin shell.
  */
+
+import {Button, Surface} from "@kampus/design";
 import type {OpenReport} from "../../../worker/features/report/views";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_USER_BAN} from "../../flags/keys";
 import {useT} from "../../i18n";
 import {BanControls} from "../moderation/BanControls";
-import {Button} from "../ui/Button";
-import {Surface} from "../ui/Card";
 import {
 	type ActorStanding,
 	actorIdentityLabel,

@@ -1,8 +1,5 @@
+import {Input, NumberInput, Switch, ToggleGroup} from "@kampus/design";
 import {useId} from "react";
-import {Input} from "../../components/ui/Form";
-import {NumberInput} from "../../components/ui/NumberInput";
-import {Switch} from "../../components/ui/Switch";
-import {ToggleGroup} from "../../components/ui/ToggleGroup";
 import type {AnyKnob, AnyKnobSchema, KnobValue, KnobValues} from "./knob";
 import "./PropKnobs.css";
 

@@ -2,7 +2,8 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join, relative} from "node:path";
 import {describe, expect, it} from "vitest";
 
-const sourceRoot = join(import.meta.dirname, "../..");
+const repoRoot = join(import.meta.dirname, "../../..");
+const sourceRoots = [join(repoRoot, "apps/web/src"), join(repoRoot, "packages/design/src")];
 const nativeControlPattern = /<(button|input|select|textarea)\b/;
 const rawAlertRolePattern = /\brole\s*=\s*["']alert["']/;
 const genericNumberInputPattern = /\btype\s*=\s*["']number["']/;
@@ -22,12 +23,12 @@ function withoutComments(source: string): string {
 	return source.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/\/\/.*$/gm, "");
 }
 
-const files = productionTsxFiles(sourceRoot);
+const files = sourceRoots.flatMap((sourceRoot) => productionTsxFiles(sourceRoot));
 
 function offendersMatching(pattern: RegExp): string[] {
 	return files
 		.filter((path) => pattern.test(withoutComments(readFileSync(path, "utf8"))))
-		.map((path) => relative(sourceRoot, path));
+		.map((path) => relative(repoRoot, path));
 }
 
 describe("Manti UI adoption guard", () => {

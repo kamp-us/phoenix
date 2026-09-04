@@ -4,14 +4,12 @@
  * (default-off; `.patterns/flag-dark-page-gate.md`) — the route 404s server-side too, this gate
  * just saves a fetch.
  */
+
+import {Alert, Card, EmptyState, MetaRow} from "@kampus/design";
 import {BookOpenText} from "lucide-react";
 import {useEffect, useState} from "react";
 import {Link} from "react-router";
 import {Icon} from "../components/Icon";
-import {Alert} from "../components/ui/Alert";
-import {Card} from "../components/ui/Card";
-import {EmptyState} from "../components/ui/EmptyState";
-import {MetaRow} from "../components/ui/MetaRow";
 import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {useT} from "../i18n";

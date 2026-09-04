@@ -1,5 +1,5 @@
+import {Form, Input, Textarea} from "@kampus/design";
 import type * as React from "react";
-import {Form, Input, Textarea} from "../../../components/ui/Form";
 import {defineExhibit} from "../exhibit";
 
 function FormDemo({mono}: {mono?: boolean}) {

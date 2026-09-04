@@ -1,4 +1,4 @@
-import {MetaRow} from "../../../components/ui/MetaRow";
+import {MetaRow} from "@kampus/design";
 import {defineExhibit} from "../exhibit";
 
 function MetaRowDemo() {

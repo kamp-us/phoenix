@@ -7,7 +7,7 @@ import {Subnav} from "./Subnav";
 const readSource = (rel: string): string =>
 	readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const SUBNAV_CSS = readSource("./Subnav.css");
-const BUTTON_CSS = readSource("../ui/Button.css");
+const BUTTON_CSS = readSource("../../../../../packages/design/src/Button.css");
 
 describe("Subnav CTA slot (#2598)", () => {
 	it("renders the passed cta node in the dedicated primary-action slot", () => {

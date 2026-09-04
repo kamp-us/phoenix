@@ -1,5 +1,5 @@
+import {ToggleGroup} from "@kampus/design";
 import * as React from "react";
-import {ToggleGroup} from "../../../components/ui/ToggleGroup";
 import {defineExhibit} from "../exhibit";
 
 function ToggleGroupDemo({variant}: {variant?: "primary" | "secondary" | "tertiary"}) {

@@ -1,6 +1,6 @@
 import {type Cmd, defineMachine, type Sub, subId} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Option, Scope} from "effect";
+import {Context, Effect, Layer, Option, Scope} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
 import {ProgramNotFound} from "../registry/errors.ts";
@@ -144,7 +144,7 @@ describe("Processes", () => {
 			Effect.gen(function* () {
 				const processes = yield* Processes;
 				const table = yield* ProcessTable;
-				const handle = yield* processes.spawn(counter);
+				const handle = yield* processes.spawn(counter, {services: Context.empty()});
 				const again = yield* table.get(handle.id);
 				const listed = yield* table.list;
 				assert.strictEqual(again.id, handle.id);
@@ -165,8 +165,8 @@ describe("Processes", () => {
 			Effect.gen(function* () {
 				const processes = yield* Processes;
 				const table = yield* ProcessTable;
-				const a = yield* processes.spawn(counter);
-				const b = yield* processes.spawn(counter);
+				const a = yield* processes.spawn(counter, {services: Context.empty()});
+				const b = yield* processes.spawn(counter, {services: Context.empty()});
 				assert.notStrictEqual(a.id, b.id);
 
 				yield* a.dispatch({type: "start", runId: "a"});
@@ -189,14 +189,16 @@ describe("Processes", () => {
 			Effect.gen(function* () {
 				const processes = yield* Processes;
 				const table = yield* ProcessTable;
-				const root = yield* processes.spawn(counter);
-				const child = yield* processes.spawn(counter, {parent: root.id});
+				const root = yield* processes.spawn(counter, {services: Context.empty()});
+				const child = yield* processes.spawn(counter, {parent: root.id, services: Context.empty()});
 				assert.deepStrictEqual(child.parentId, Option.some(root.id));
 				assert.deepStrictEqual(root.parentId, Option.none());
 				assert.deepStrictEqual((yield* table.get(child.id)).parentId, Option.some(root.id));
 
 				const orphan = ProcessId.make("nobody");
-				const refused = yield* processes.spawn(counter, {parent: orphan}).pipe(Effect.flip);
+				const refused = yield* processes
+					.spawn(counter, {parent: orphan, services: Context.empty()})
+					.pipe(Effect.flip);
 				assert.instanceOf(refused, ProcessNotFound);
 				assert.strictEqual(refused.id, orphan);
 			}),
@@ -212,7 +214,7 @@ describe("Processes", () => {
 				Effect.gen(function* () {
 					const processes = yield* Processes;
 					const table = yield* ProcessTable;
-					const handle = yield* processes.spawn(counter);
+					const handle = yield* processes.spawn(counter, {services: Context.empty()});
 					let finalized = 0;
 					yield* Scope.addFinalizer(
 						handle.scope,
@@ -245,9 +247,12 @@ describe("Processes", () => {
 			Effect.gen(function* () {
 				const processes = yield* Processes;
 				const table = yield* ProcessTable;
-				const root = yield* processes.spawn(counter);
-				const child = yield* processes.spawn(counter, {parent: root.id});
-				const grandchild = yield* processes.spawn(counter, {parent: child.id});
+				const root = yield* processes.spawn(counter, {services: Context.empty()});
+				const child = yield* processes.spawn(counter, {parent: root.id, services: Context.empty()});
+				const grandchild = yield* processes.spawn(counter, {
+					parent: child.id,
+					services: Context.empty(),
+				});
 				yield* root.dispatch({type: "start", runId: "root"});
 				yield* child.dispatch({type: "start", runId: "child"});
 				yield* grandchild.dispatch({type: "start", runId: "grandchild"});
@@ -273,7 +278,7 @@ describe("Processes", () => {
 			[counterProgram(probe)],
 			Effect.gen(function* () {
 				const processes = yield* Processes;
-				const handle = yield* processes.spawn(counter);
+				const handle = yield* processes.spawn(counter, {services: Context.empty()});
 				yield* handle.dispatch({type: "start", runId: "r1"});
 				yield* handle.dispatch({type: "tick"});
 				assert.strictEqual(probe.reduced, 1);
@@ -298,7 +303,9 @@ describe("Processes", () => {
 			Effect.gen(function* () {
 				const processes = yield* Processes;
 				const missing = ProgramId.make("ghost");
-				const refused = yield* processes.spawn(missing).pipe(Effect.flip);
+				const refused = yield* processes
+					.spawn(missing, {services: Context.empty()})
+					.pipe(Effect.flip);
 				assert.instanceOf(refused, ProgramNotFound);
 				assert.strictEqual(refused.id, missing);
 			}),
@@ -312,8 +319,8 @@ describe("Processes", () => {
 			Effect.gen(function* () {
 				const processes = yield* Processes;
 				const table = yield* ProcessTable;
-				const root = yield* processes.spawn(counter);
-				const child = yield* processes.spawn(counter, {parent: root.id});
+				const root = yield* processes.spawn(counter, {services: Context.empty()});
+				const child = yield* processes.spawn(counter, {parent: root.id, services: Context.empty()});
 				yield* child.dispatch({type: "start", runId: "c"});
 
 				const row = yield* table.get(child.id);
@@ -341,7 +348,9 @@ describe("Processes", () => {
 				[tickerProgram(log)],
 				Effect.gen(function* () {
 					const processes = yield* Processes;
-					const handle = yield* processes.spawn(ProgramId.make("ticker"));
+					const handle = yield* processes.spawn(ProgramId.make("ticker"), {
+						services: Context.empty(),
+					});
 					yield* handle.dispatch({type: "toggle"});
 					assert.deepStrictEqual(log, ["ticker:open"]);
 					yield* handle.dispatch({type: "toggle"});

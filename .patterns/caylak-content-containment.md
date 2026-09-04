@@ -140,7 +140,7 @@ hazırlık-stage work". They are true for disjoint viewers on almost every row �
 çaylak promoted to yazar who opts in reads both true on their own not-yet-promoted content.
 
 So the client picks between them rather than rendering both. `sandboxMarker`
-(`apps/web/src/components/ui/sandbox-marker.ts`) is the pure rule — ownership first, the
+(`packages/design/src/sandbox-marker.ts`) is the pure rule — ownership first, the
 owner's `ReviewBadge` winning, the reader-facing `CaylakBadge` suppressed on an item you
 wrote — and `SandboxMarker` is the one slot every content surface renders. A surface that
 selects `sandboxedInPlace` and hand-rolls its own ternary is the drift

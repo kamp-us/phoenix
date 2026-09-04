@@ -1,5 +1,5 @@
+import {ReportButton} from "@kampus/design";
 import type * as React from "react";
-import {ReportButton} from "../../../components/ui/ReportButton";
 import {defineExhibit} from "../exhibit";
 
 export const reportButtonExhibit = defineExhibit<React.ComponentProps<typeof ReportButton>>({

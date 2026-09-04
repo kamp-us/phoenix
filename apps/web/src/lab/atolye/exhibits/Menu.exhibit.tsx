@@ -1,6 +1,5 @@
+import {Button, Menu} from "@kampus/design";
 import type * as React from "react";
-import {Button} from "../../../components/ui/Button";
-import {Menu} from "../../../components/ui/Menu";
 import {defineExhibit} from "../exhibit";
 
 function MenuDemo({

@@ -1,10 +1,11 @@
 // Presentational only — the parent owns the mutation and the auth gate. The palette set
 // and the accessible names are ADR 0139's; members render as line-icons rather
 // than raw OS emoji so they paint in `currentColor` and look the same on every OS.
+
+import {CountToggle} from "@kampus/design";
 import type {ReactionEmoji} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
 import {useT} from "../../i18n";
-import {CountToggle} from "../ui/CountToggle";
 import {ReactionGlyph} from "./ReactionGlyph";
 import {reactionSlots} from "./reactionModel";
 import "./ReactionBar.css";

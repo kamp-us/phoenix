@@ -1,5 +1,5 @@
+import {ToggleGroup} from "@kampus/design";
 import {LOCALE_LABELS, LOCALES, type Locale} from "../../i18n";
-import {ToggleGroup} from "../ui/ToggleGroup";
 import "./LocaleChoicePicker.css";
 
 /**

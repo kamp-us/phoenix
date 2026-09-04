@@ -5,8 +5,8 @@
  */
 
 import {Composer, renderTestMarkdown, useComposerEditor} from "@kampus/composer";
+import {Badge, Button, Textarea} from "@kampus/design";
 import {useState} from "react";
-import {Badge, Button, Textarea} from "../components/ui";
 import "./LabComposerPage.css";
 
 // Seeded from the base's own round-trip fixture so the playground can't drift from it.

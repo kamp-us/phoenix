@@ -2,7 +2,7 @@
  * `guard design-inventory check` / `generate` — ported off v1's `design-inventory` (epic
  * #5720).
  *
- * The verb is the IO boundary: read the annotated `components/ui` primitives, build the inventory
+ * The verb is the IO boundary: read the annotated `packages/design/src` primitives, build the inventory
  * through the pure core in `./design-inventory.ts`, then either compare it against the committed
  * artifact (`check`) or write it (`generate`).
  *
@@ -39,7 +39,7 @@ const CHECK_VERB = "guard design-inventory check";
 const GENERATE_VERB = "guard design-inventory generate";
 
 /** The primitives directory the inventory is extracted from (ADR 0194). */
-const COMPONENTS_DIR = "apps/web/src/components/ui";
+const COMPONENTS_DIR = "packages/design/src";
 
 export interface DesignInventoryOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */

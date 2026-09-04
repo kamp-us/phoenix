@@ -32,7 +32,7 @@
 	min-height: var(--reaction-bar-height);
 }
 
-/* Each palette button is the shared CountToggle count-pill (ui/CountToggle.css,
+/* Each palette button is the shared CountToggle count-pill (packages/design/src/CountToggle.css,
    #2163) — the pill shell, hover, [aria-pressed] accent tint, and count styling
    live there now, so the bar owns only its own layout + the on-brand glyph. */
 
