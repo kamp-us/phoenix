@@ -16,7 +16,7 @@
 
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Option} from "effect";
+import {Context, Effect, Layer, Option} from "effect";
 import {coreSpells} from "../../boot.ts";
 import {SpellBridge} from "../../commands/bridge/index.ts";
 import {SpawnedProcesses} from "../../commands/core/process.ts";
@@ -156,7 +156,7 @@ const kernel = Layer.mergeAll(
 const withCaller = <A, E>(body: Effect.Effect<A, E, KernelBridge | Processes | ProcessTable>) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
-		const caller = yield* processes.spawn(callerId, {id: callerProcess});
+		const caller = yield* processes.spawn(callerId, {id: callerProcess, services: Context.empty()});
 		const answer = yield* body.pipe(Effect.provide(KernelBridge.live(callerScope)));
 		return {caller, answer};
 	}).pipe(Effect.provide(kernel), Effect.scoped);
