@@ -9,7 +9,7 @@ This is the builder's door. For what kamp.us *is* — the products and the ethos
 ```bash
 pnpm install
 pnpm dev          # vite (SPA + HMR) + alchemy dev (worker on local workerd)
-pnpm typecheck    # tsc (Effect-patched) across project references
+pnpm typecheck    # tsc, then effect-tsgo diagnostics --strict, across project references
 pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolation)
 ```
 
@@ -108,7 +108,7 @@ apps/tuval/
 | `pnpm dev:worker` | Just `alchemy dev` (worker only). |
 | `pnpm build` | `vite build` into `dist/client`. |
 | `pnpm deploy` | `pnpm build && alchemy deploy`. Append `--stage <name>` for an isolated worker + D1 + DO. |
-| `pnpm typecheck` | `tsc` (Effect-patched) across project references. |
+| `pnpm typecheck` | `tsc`, then `effect-tsgo diagnostics --strict`, across project references. |
 | `pnpm test` | Integration suite — boots the stack on local workerd in `globalSetup`, runs the black-box HTTP suite against it. |
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
@@ -163,7 +163,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 
 | Guard | What it checks | What trips it |
 |---|---|---|
-| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (Effect-patched `tsc`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
+| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (`tsc`, then `effect-tsgo diagnostics --strict`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
 | [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, an absolute home path, a vault, or a sibling-repo path — or an operator email — in a changed doc or script. |
 | [`gitleaks`](./.github/workflows/gitleaks.yml) | The files this PR adds or edits, read at HEAD, for secrets (API keys, tokens, private keys) — the merge result, not the branch's commits (ADR 0338). | A credential standing in a changed file at HEAD. Removing it at head clears the gate; a secret added and reverted inside the PR is not caught. |
 | [`fanout-guard`](./.github/workflows/fanout-guard.yml) | Every `Fate.mutation` is classified fanned/not, and each fanned mutation's feature publishes the `/fate/live` invalidation (ADR 0155). | An unclassified mutation, or a fanned mutation whose feature omits the `WorkerLivePublisher` publish. |
