@@ -10,3 +10,4 @@ export {
 	type ProcessRow,
 	type StateSummary,
 } from "./process.ts";
+export {ProcessSelf} from "./self.ts";
