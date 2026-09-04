@@ -5,9 +5,10 @@
  * unit-tested selection logic the review-design gate (ADR 0165) reasons about;
  * `capture.ts` drives Playwright over the plan this produces.
  *
- * One record per surface (the contract #2246 codes against), NOT a viewport
- * cross-product: a surface is a route + an optional state variant, captured at a
- * single viewport.
+ * One record per surface per viewport: a surface is a route + an optional state
+ * variant, and a plan shoots that set at one viewport. A caller wanting several
+ * viewports builds a plan per viewport and concatenates them — the file name
+ * carries the viewport label, so the shots never collide (#7706).
  *
  * The grammar here parses ANY state token; which ones a capture can actually put
  * on screen is `states.ts`'s closed list (`auth` today), and `review-ui render`
@@ -59,6 +60,31 @@ export interface Viewport {
 export const DESKTOP_VIEWPORT: Viewport = {label: "desktop", width: 1280, height: 800};
 export const MOBILE_VIEWPORT: Viewport = {label: "mobile", width: 390, height: 844};
 export const DEFAULT_VIEWPORT: Viewport = DESKTOP_VIEWPORT;
+
+/**
+ * The closed set a `--viewport` operand names, keyed by the label a file name and
+ * a manifest entry carry. Closed for the reason `states.ts` is closed: a name
+ * nothing resolves would have to fall back to some width, and a shot at the
+ * fallback width recorded under the asked-for name is coverage claimed and not
+ * held. `review-ui render` refuses a name outside it on `10` (#7706).
+ *
+ * Both realized widths fall inside the repo's one narrow breakpoint
+ * (`@media (max-width: 640px)`), so a third row buys no new CSS branch today.
+ */
+export const VIEWPORTS = {
+	desktop: DESKTOP_VIEWPORT,
+	mobile: MOBILE_VIEWPORT,
+} as const satisfies Readonly<Record<string, Viewport>>;
+
+export type ViewportName = keyof typeof VIEWPORTS;
+export const VIEWPORT_NAMES = Object.keys(VIEWPORTS) as ReadonlyArray<ViewportName>;
+
+export const isViewportName = (name: string): name is ViewportName =>
+	Object.hasOwn(VIEWPORTS, name);
+
+/** The viewport a name resolves to, or `null` when the name is outside the set. */
+export const viewportOf = (name: string): Viewport | null =>
+	isViewportName(name) ? VIEWPORTS[name] : null;
 
 /** A crop rectangle in CSS pixels — the changed region the capture is narrowed to. */
 export interface CaptureClip {

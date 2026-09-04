@@ -1,5 +1,6 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
+	type CaptureEntry,
 	type CaptureManifest,
 	isKebabSetName,
 	manifestPath,
@@ -20,10 +21,20 @@ const manifest: CaptureManifest = {
 	captures: [
 		{
 			surface: "/pano",
-			path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png",
+			viewport: "desktop",
+			path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano@desktop.png",
 			width: 1280,
 			height: 2140,
 			sha256: "9c41",
+			pageErrors: {rows: [], more: 0},
+		},
+		{
+			surface: "/pano",
+			viewport: "mobile",
+			path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano@mobile.png",
+			width: 390,
+			height: 3200,
+			sha256: "1f7b",
 			pageErrors: {rows: [], more: 0},
 		},
 	],
@@ -51,9 +62,19 @@ describe("the set path", () => {
 });
 
 describe("the manifest round-trip", () => {
-	it("parses back exactly what it serialized", () => {
+	it("parses back exactly what it serialized, viewport label and all", () => {
 		const read = parseManifest(serializeManifest(manifest));
 		assert.deepStrictEqual(read, {_tag: "Manifest", value: manifest});
+	});
+
+	// Two shots of one surface differ only by the label, so an entry that lost it could not say what
+	// width its pixels are of — and the two would read as one capture recorded twice (#7706).
+	it("refuses an entry carrying no viewport label", () => {
+		const {viewport: _dropped, ...unlabelled} = manifest.captures[0] as CaptureEntry;
+		assert.strictEqual(
+			parseManifest(JSON.stringify({...manifest, captures: [unlabelled]}))._tag,
+			"Malformed",
+		);
 	});
 
 	it("refuses a document it cannot read whole, rather than defaulting a field", () => {

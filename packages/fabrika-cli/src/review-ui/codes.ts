@@ -89,3 +89,15 @@ export const UPLOAD_FAILED = 17;
  * step 4 have already run by then, which is a spent upload rather than a landed verdict.
  */
 export const SUPERSEDES_VERDICT = 18;
+/**
+ * Refused, proven: a shot's PNG width, read back from its own bytes, is not the width of the
+ * viewport that was asked for.
+ *
+ * Its own seat rather than the wrong-page `11`, because unlike a wrong tier or an inert override
+ * this one is decided against the recorded artifact rather than against a probe the preview
+ * answered — the readback is the same shape as `INVALID_CAPTURE`'s, one question further on. A shot
+ * at the wrong width is a valid PNG of a layout nobody asked about, and recording it under a
+ * viewport label would make the narrow half of the design law answerable from desktop pixels
+ * (#7706).
+ */
+export const WRONG_VIEWPORT = 19;
