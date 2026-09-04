@@ -33,6 +33,13 @@ class NoLaunchUrl extends Schema.TaggedError<NoLaunchUrl>()("tuval/page/NoLaunch
 	}
 }
 
+/** The kernel answered, but runs no shell — there is no desk to mount. The message is the answer. */
+class NoShellProcess extends Schema.TaggedError<NoShellProcess>()("tuval/page/NoShellProcess", {}) {
+	override get message(): string {
+		return "tuval: this kernel is running no shell process";
+	}
+}
+
 const launchUrl = Effect.tryPromise({
 	try: () =>
 		fetch(LAUNCH_ENDPOINT).then((response) => response.json() as Promise<{readonly url: string}>),
@@ -74,7 +81,7 @@ const desk = Effect.fn("tuval.page.desk")(function* () {
 	const page = yield* attach(url);
 	const shellProcess = yield* shellProcessOf(page.rows);
 	if (Option.isNone(shellProcess)) {
-		return yield* Effect.fail(new Error("this kernel is running no shell process"));
+		return yield* Effect.fail(new NoShellProcess());
 	}
 	const shell = yield* page.attachProcess<unknown, ShellMsg>(shellProcess.value as never);
 	const reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? true;

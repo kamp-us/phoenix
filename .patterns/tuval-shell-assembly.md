@@ -123,7 +123,7 @@ first without the second. A change to either half owes the proof in
 `src/shell/proof/end-to-end.integration.test.ts` that replays the upgrade **with** an `Origin`
 header; nothing that attaches the ordinary way can fail when this breaks.
 
-## The three proofs
+## The proofs
 
 `src/shell/proof/end-to-end.integration.test.ts` is the shape to copy for anything driving the whole
 app. Two rules make it a proof rather than a rehearsal:
