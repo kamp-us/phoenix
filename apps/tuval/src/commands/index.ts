@@ -1,5 +1,24 @@
 export {DuplicateSpellPath, SpellNotFound} from "./errors.ts";
 export {
+	buildSpellIndex,
+	type Candidate,
+	type CandidateKind,
+	complete,
+	describeExpected,
+	didYouMean,
+	type IndexedSpell,
+	type IndexNode,
+	type ParamSpec,
+	type ParseResult,
+	parse,
+	readParams,
+	type SpellCallDraft,
+	type SpellIndex,
+	type Token,
+	type Tokenization,
+	tokenize,
+} from "./parse/index.ts";
+export {
 	buildRegistry,
 	describeSource,
 	describeSpell,
