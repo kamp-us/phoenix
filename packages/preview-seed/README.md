@@ -51,8 +51,10 @@ node packages/preview-seed/src/bin.ts run --database-id <stage-d1-uuid>
   alchemy state store, or `@distilled.cloud/cloudflare/d1`'s `getDatabase`).
 - `--account-id` (optional) — defaults to `$CLOUDFLARE_ACCOUNT_ID`.
 - `$CLOUDFLARE_API_TOKEN` — the minted CI token (carries `D1 Write`); read by
-  `CredentialsFromEnv`. `test-account` also reads the database's name through it, so
-  the token needs `D1 Read` on the account as well.
+  `CredentialsFromEnv`. `test-account` also reads the database's name through it, and
+  `GET /accounts/{id}/d1/database/{id}` lists `D1 Read` and `D1 Write` under
+  ["Accepted Permissions (at least one required)"](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/get/),
+  so the existing grant already covers the lookup and no new permission group is needed.
 
 Transport is the Cloudflare D1 REST query API via alchemy's already-installed
 `@distilled.cloud/cloudflare` — the same primitive alchemy uses to apply
@@ -167,7 +169,10 @@ ruling of 2026-09-04 re-keyed it on the name —
 Say the reach exactly, because the argument against an override flag rests on it.
 The check is *the name Cloudflare has recorded for this database id contains `-pr-`*.
 It catches every production and stage database, because none of them carries that
-segment, and it is decided before the tokens are even read. It does **not** catch a
+segment. The verb decides it before it reads either tier token, so a run against a real
+database refuses on the target alone and no live preview credential is parsed into the
+process first (`src/bin.ts` resolves the name and refuses ahead of `readTierToken`; the
+same check runs again inside `provisionTestAccounts`, for every other caller). It does **not** catch a
 database somebody deliberately named to look like a per-PR preview, and it does not
 care what rows the target holds — a preview full of e2e sign-ups passes, which is the
 whole point. The operator still owns which `--database-id` they pass.

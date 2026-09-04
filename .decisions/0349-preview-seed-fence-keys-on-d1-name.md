@@ -2,7 +2,7 @@
 id: 0349
 title: preview-seed's throwaway fence keys on the D1 database name, not on human-row count
 status: accepted
-date: 2026-09-03
+date: 2026-09-04
 tags: [preview-seed, review-ui, security, ci, d1]
 ---
 
@@ -63,7 +63,12 @@ did not catch an empty non-throwaway. The operator still owns which `--database-
 - The refusal now names the database's name rather than a row count, so an operator reads why
   directly.
 - `countForeignAccounts` is gone from `@kampus/preview-seed`; the fence is
-  `isThrowawayDatabaseName`, a pure predicate, decided before any token is read.
-- `test-account` needs D1 *read* on the account token as well as write, for the name lookup.
+  `isThrowawayDatabaseName`, a pure predicate. The `test-account` bin resolves the name and
+  decides the fence before it reads either tier token, so a refused run never parses a live
+  preview credential; `provisionTestAccounts` re-decides it for any other caller.
+- No new permission group. `GET /accounts/{account_id}/d1/database/{id}` accepts `D1 Read`
+  *or* `D1 Write` ([Cloudflare API reference](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/get/),
+  "Accepted Permissions (at least one required)"), so the CI token's existing `D1 Write` grant
+  in `infra/ci-credentials/permission-groups.ts` covers the name lookup unchanged.
 - Seeding the identities in CI ahead of e2e (shape 2) is no longer needed for this wall, and is not
   taken here.

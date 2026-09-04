@@ -12,6 +12,7 @@ import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {seed} from "./seed.ts";
 import {
+	isThrowawayDatabaseName,
 	MIN_SESSION_TOKEN_LEN,
 	makeTestAccountDb,
 	PREVIEW_NAME_MARKER,
@@ -117,16 +118,27 @@ const testAccount = Command.make(
 		const resolvedAccount = Option.isSome(accountId)
 			? accountId.value
 			: yield* Config.string("CLOUDFLARE_ACCOUNT_ID");
+		const target = {accountId: resolvedAccount, databaseId, layer: restLayer};
+		const databaseName = yield* Effect.tryPromise({
+			try: () => resolveDatabaseName(target),
+			catch: (cause) => new D1RestError({cause}),
+		});
+		// The fence runs ahead of the token reads, not just ahead of the write: a run against a real
+		// database refuses on the target alone, so no live preview credential is parsed into this
+		// process first. `provisionTestAccounts` re-decides it for every other caller of the package.
+		if (!isThrowawayDatabaseName(databaseName)) {
+			return yield* new NotThrowawayError({databaseName, databaseId});
+		}
+
 		const credentials: PreviewCredentials = Object.fromEntries(
 			(yield* Effect.forEach(PREVIEW_TIERS, (tier) =>
 				readTierToken(tier).pipe(Effect.map((token) => [tier, token] as const)),
 			)).filter(([, token]) => token !== null),
 		);
 
-		const target = {accountId: resolvedAccount, databaseId, layer: restLayer};
 		const db = makeTestAccountDb(makeD1Rest(target));
 		const outcome = yield* Effect.tryPromise({
-			try: async () => provisionTestAccounts(db, await resolveDatabaseName(target), credentials),
+			try: () => provisionTestAccounts(db, databaseName, credentials),
 			catch: (cause) => new D1RestError({cause}),
 		});
 		if (outcome._tag === "NoCredentials") return yield* new NoCredentialsError();
