@@ -112,7 +112,15 @@ next sweep instead.
 
 Half 1's "`findMisroute` already skips a line at either polarity" is amended accordingly: it skips a
 recorded `true`, and skips a `false` recorded once the ship stage began reading off the named PR,
-but a `false` recorded between this record and that fix is nominated once. Bounding it by the
-recorded line's own timestamp keeps the saving this record bought — a lane shipped after the fix
-still costs zero recurring reads — while the correction appended on that single re-read is what
-settles the line, at either polarity, exactly as half 2 already specifies.
+but a `false` recorded between this record and that fix is nominated once.
+
+**The two are told apart by what the line names, never by when it was written.** An answered read
+now records the merged pull requests it stood on beside the polarity, as `landed`, so a `false` the
+fixed stage wrote names its evidence and a `false` the old nominator fell through to names none.
+Keying the skip on a wall-clock cutoff instead — the first shape this took — would have held only
+while the fix's own merge beat the instant the constant guessed at, and the assumption was nowhere
+enforced: every `DONE` the unfixed code recorded past that instant would have read as its own
+answer, folding its lane to a terminal over an open issue with no sweep left to reach it. Keying on
+the evidence keeps the saving this record bought — a lane shipped after the fix still costs zero
+recurring reads — while the correction appended on that single re-read is what settles the line, at
+either polarity, exactly as half 2 already specifies.

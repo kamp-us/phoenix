@@ -1524,6 +1524,7 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({issue: 5747, state: "ship", closure: "partial"});
 		expect(out.partial).toBe(true);
+		expect(out.landed).toEqual([4318]);
 	});
 
 	it("answers `closes` for a merged body carrying a closing keyword", async () => {
@@ -1534,6 +1535,7 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes"});
 		expect(out.partial).toBe(false);
+		expect(out.landed).toEqual([4318]);
 	});
 
 	it("answers `unknown` with no `partial` where the event names no PR", async () => {
@@ -1544,6 +1546,7 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({closure: "unknown"});
 		expect(out.partial).toBe(null);
+		expect(out.landed).toEqual([]);
 	});
 
 	/**
@@ -1559,5 +1562,6 @@ describe("lane prove — the ship stage's closure, read off the PR the event nam
 		expect(out.code).toBe(0);
 		expect(JSON.parse(out.stdout)).toMatchObject({closure: "unknown"});
 		expect(out.partial).toBe(null);
+		expect(out.landed).toEqual([]);
 	});
 });

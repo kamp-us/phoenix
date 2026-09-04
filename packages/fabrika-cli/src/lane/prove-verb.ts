@@ -137,16 +137,23 @@ const unreadable = (what: string, reason: string): VerbOutcome =>
  * is a board read that said the merge closed its issue, `null` is no read at all. Collapsing them
  * left `lane reconcile` unable to tell a confirmed closure from an unread one, so it re-read every
  * closing merge on every sweep (ADR 0351).
+ *
+ * `landed` is that `partial`'s evidence: the merged pull requests the read judged, empty on every
+ * event whose closure nobody read. It rides the line beside the polarity because the polarity alone
+ * cannot say which reader wrote it, and a `false` off the old nominator and a `false` off a real
+ * board read route a later sweep in opposite directions (#7457).
  */
 export interface ProofOutcome extends VerbOutcome {
 	readonly deferred: ReadonlyArray<string>;
 	readonly partial: boolean | null;
+	readonly landed: ReadonlyArray<number>;
 }
 
 /** What one arm answers with before {@link runProve} normalises each absent field, once, for all. */
 type ProofAnswer = VerbOutcome & {
 	readonly deferred?: ReadonlyArray<string>;
 	readonly partial?: boolean;
+	readonly landed?: ReadonlyArray<number>;
 };
 
 const seat = (proof: Exclude<Proof, {_tag: "Proven"}>, diagnostics: ReadonlyArray<string>) => {
@@ -170,6 +177,7 @@ export const runProve = (
 		...outcome,
 		deferred: outcome.deferred ?? [],
 		partial: outcome.partial ?? null,
+		landed: outcome.landed ?? [],
 	}));
 
 /**
@@ -392,6 +400,10 @@ const prove = (
  * built from closing keywords and the search half is `is:open` — so the `Partial` arm ADR 0343
  * added never once fired, and every partial merge still folded its lane to a terminal over an open
  * issue.
+ *
+ * An answered read names the merged PRs it stood on, and `lane report` records them beside the
+ * polarity. That is what lets a later sweep tell a `false` this reader wrote from a `false` the
+ * nominator fell through to, which the polarity alone cannot say and no timestamp can either.
  */
 const readClosure = (
 	options: ProveOptions,
@@ -439,6 +451,7 @@ const readClosure = (
 						state: leaf,
 						issue,
 						closure: closure._tag === "Partial" ? "partial" : "closes",
+						landed: read.landed,
 					},
 					null,
 					2,
@@ -446,6 +459,7 @@ const readClosure = (
 				[`${VERB}: ${why} — nothing to prove, record it.`, note],
 			),
 			partial: closure._tag === "Partial",
+			landed: read.landed,
 		};
 	});
 

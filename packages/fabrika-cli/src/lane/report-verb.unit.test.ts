@@ -42,6 +42,7 @@ const fakeProver = (
 	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
 	deferred: ReadonlyArray<string> = [],
 	partial: boolean | null = null,
+	landed: ReadonlyArray<number> = [],
 ) => {
 	const asked: ProveOptions[] = [];
 	return {
@@ -49,7 +50,7 @@ const fakeProver = (
 		prove: (options: ProveOptions) =>
 			Effect.sync(() => {
 				asked.push(options);
-				return {...outcome, deferred, partial};
+				return {...outcome, deferred, partial, landed};
 			}),
 	};
 };
@@ -391,24 +392,35 @@ describe("lane report — the partial merge a shipped lane discloses", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "queued"}}});
 	});
 
-	it("records a read closing merge as `partial: false`, on the terminal it always had", async () => {
+	/**
+	 * The evidence rides the line beside the polarity (#7457), and it is what a later sweep reads to
+	 * tell this `false` from the one the old nominator fell through to — a distinction no timestamp
+	 * on the line can make.
+	 */
+	it("records a read closing merge as `partial: false` naming the PRs it stood on", async () => {
 		const fs = laneAt(LOG_AT.ship);
-		const prover = fakeProver(answer(JSON.stringify({proof: "not-required"})), [], false);
+		const prover = fakeProver(answer(JSON.stringify({proof: "not-required"})), [], false, [7329]);
 
 		const out = await run(fs, "LANDED", {prover});
 
 		expect(out.code).toBe(0);
-		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE", partial: false});
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.DONE",
+			partial: false,
+			landed: [7329],
+		});
 		expect(JSON.parse(out.stdout).current).toBe("complete");
 	});
 
-	it("carries no `partial` where no closure was read, so absent still means unread", async () => {
+	it("carries no `partial` and no `landed` where no closure was read, so absent still means unread", async () => {
 		const fs = laneAt(LOG_AT.ship);
 
 		const out = await run(fs, "LANDED");
 
 		expect(out.code).toBe(0);
-		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "partial")).toBe(false);
+		const line = JSON.parse(appendedLine(fs));
+		expect(Object.hasOwn(line, "partial")).toBe(false);
+		expect(Object.hasOwn(line, "landed")).toBe(false);
 		expect(JSON.parse(out.stdout).current).toBe("complete");
 	});
 });

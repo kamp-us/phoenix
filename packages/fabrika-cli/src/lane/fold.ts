@@ -37,6 +37,10 @@ import {
  * polarities, so absent means "nobody read the closure", never "the merge closed it": the fold still
  * routes an absent one down the closing arm, and every line written before the field existed folds
  * exactly as it did, but a reader asking which lines were never confirmed can now tell (ADR 0351).
+ * `landed` is that `partial`'s evidence — the merged pull requests the closure read stood on — and
+ * it is what makes a recorded `false` legible after the fact: one naming its evidence was read off a
+ * PR, one naming none fell through a nominator that could not see the subject, and no timestamp on
+ * the line distinguishes them (#7457).
  *
  * `deferred` is the fourth kind: not evidence and not a payload the fold reads, but the disclosure
  * that this `PASS` was proven over a set short the namespaces named — the routed `review-ui` an
@@ -60,6 +64,7 @@ export interface LogEntry {
 	readonly deferred?: ReadonlyArray<string>;
 	readonly waitGrant?: number;
 	readonly partial?: boolean;
+	readonly landed?: ReadonlyArray<number>;
 	readonly corrects?: string;
 }
 
@@ -93,6 +98,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			deferred?: unknown;
 			waitGrant?: unknown;
 			partial?: unknown;
+			landed?: unknown;
 			corrects?: unknown;
 		};
 		if (
@@ -158,6 +164,21 @@ export const parseLog = (text: string): ParseLogResult => {
 			defects.push(`line ${index + 1} carries a non-boolean \`partial\` field`);
 			continue;
 		}
+		// An empty `landed` names no merged PR, so it attests nothing while reading as evidence — the
+		// same silent no-op a roundless `CLEARED` is, and a defect here for the same reason (#7457).
+		if (
+			record.landed !== undefined &&
+			!(
+				Array.isArray(record.landed) &&
+				record.landed.length > 0 &&
+				record.landed.every((number) => Number.isInteger(number) && (number as number) > 0)
+			)
+		) {
+			defects.push(
+				`line ${index + 1} carries a \`landed\` field that is not a non-empty list of pull request numbers`,
+			);
+			continue;
+		}
 		// A correction that names no target line, or names one with nothing to put on it, supersedes
 		// nothing and would fold as a silent no-op — the same failure mode a roundless `CLEARED` has,
 		// and the reason both are defects here rather than events (ADR 0350).
@@ -192,6 +213,7 @@ export const parseLog = (text: string): ParseLogResult => {
 				: {deferred: record.deferred as ReadonlyArray<string>}),
 			...(record.waitGrant === undefined ? {} : {waitGrant: record.waitGrant as number}),
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
+			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
 		});
 	}

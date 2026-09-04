@@ -723,6 +723,19 @@ describe("the partial merge a ship DONE carries (#7382)", () => {
 			entries: [{task: "issue", event: "ISSUE.DONE", at: "t"}],
 		});
 	});
+
+	it("carries the merged PRs that `partial` was read off (#7457)", () => {
+		expect(parseLog(line(`,"partial":false,"landed":[7329]`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", partial: false, landed: [7329]}],
+		});
+	});
+
+	it("refuses a `landed` naming no merged PR, which would read as evidence and attest nothing", () => {
+		expect(parseLog(line(`,"landed":[]`))).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line(`,"landed":["7329"]`))).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line(`,"landed":7329`))).toMatchObject({_tag: "Malformed"});
+	});
 });
 
 describe("the park cause a BLOCKED carries (#6480)", () => {
