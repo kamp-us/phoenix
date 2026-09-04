@@ -319,7 +319,7 @@ export const runMigrate = <R = never>(
 				options.check
 					? `${acted.length} other lane(s) are stale and safe to migrate.`
 					: `${acted.length} other lane(s) were migrated: ${acted.map((row) => row.key).join(", ") || "none"}.`
-			} Decide each unsafe lane's state by hand — re-run to sweep the rest.`,
+			} A lane whose issue is closed and whose log will never replay leaves this sweep's scope through \`fabrika lane archive <lane>\`, which moves its directory to the archived root and touches no log (ADR 0352); any other unsafe lane is a state to decide by hand. Re-run to sweep the rest.`,
 			stderr,
 		);
 	});
