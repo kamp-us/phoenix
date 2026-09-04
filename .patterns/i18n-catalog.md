@@ -246,3 +246,22 @@ surface's keys in two files. Prefixes stay per-screen inside the file.
 The reader-facing choice is dark behind `PHOENIX_LOCALE` (`phoenix-locale`): the `dil` row in the
 UserMenu only renders with the flag on. The catalog underneath is not gated — `tr` strings come out
 of it either way, so the flag gates the choice, not the pipeline.
+
+## The gate that keeps a literal from coming back
+
+`fabrika guard i18n-guard check` — the `i18n-guard.yml` job — reds on a Turkish character
+(`çğıöşüÇĞİÖŞÜ`) in a string literal or a run of JSX text in any non-test
+`apps/web/src/**/*.{ts,tsx}` outside `i18n/` and `lab/`. Three things it deliberately does not
+judge: a comment (prose here is bilingual by design), a regex literal (a character class over
+`çğıöşü` is a fold table, as in `lib/slugifyTerm.ts`), and an unquoted object key (an identifier
+position — `ç: "c"`).
+
+The exceptions live in `apps/web/src/i18n/i18n-guard.config.json`, as a per-file **ceiling** with a
+mandatory `why`, in two buckets. `exempt` is permanent: a wire value the component compares and
+never renders (`tier === "çaylak"`), the Turkish alphabet the sözlük indexes by, a `/lab` surface.
+`unmigrated` is debt, each entry naming the issue that clears it — drop the ceiling to zero as you
+migrate the file, and delete the row when it reaches zero. A ceiling is a count rather than a flag,
+so adding a literal to a listed file still reds.
+
+**Reach for `exempt` only when the text is not copy.** If a reader can see it, it belongs in the
+catalog; if the migration is somebody else's ticket, it is `unmigrated` with that ticket named.
