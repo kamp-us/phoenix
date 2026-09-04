@@ -24,6 +24,7 @@ describe("defaultPrefixTable", () => {
 			["<arrowdown>", "window:focus-down", false],
 			["<arrowup>", "window:focus-up", false],
 			["<arrowright>", "window:focus-right", false],
+			["z", "window:zoom", false],
 			["x", "window:close", false],
 			["N", "workspace:create", false],
 			["<c-h>", "workspace:previous", true],

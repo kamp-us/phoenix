@@ -34,6 +34,7 @@ export {
 } from "./intent.ts";
 export {type PickerOptions, runPickerIntent} from "./open.ts";
 export {
+	isPickerRefusal,
 	type PickerRefusal,
 	processGone,
 	programHeadless,

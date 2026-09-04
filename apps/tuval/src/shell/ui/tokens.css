@@ -1,0 +1,259 @@
+/*
+ * Tuval's role-token layer, dark only.
+ *
+ * `design-system-manifest.md` grounds the role names in `apps/web/src/styles/tokens.css`, and a
+ * component may reach for the role alias and nothing under it. Tuval cannot import that file — it
+ * is another app's stylesheet, and the shared `packages/design` (#7561) is not built — so the role
+ * names are re-declared here at the scale values a dark terminal-shaped surface needs. The names
+ * are the contract: `../picker/frame.ts` already emits `--surface`, `--border`, `--focus-ring` and
+ * the rest by name, and this file is what resolves them.
+ *
+ * Dark is the only scheme. Tuval is window chrome, not a document, so there is no light branch to
+ * fall back to and nothing here reads `prefers-color-scheme`.
+ */
+
+.tuval-surface {
+	color-scheme: dark;
+
+	--gray-1: #0b0c0e;
+	--gray-2: #111316;
+	--gray-3: #191c20;
+	--gray-5: #262a30;
+	--gray-6: #31363d;
+	--gray-7: #3f454e;
+	--gray-10: #6d757f;
+	--gray-11: #9aa3ae;
+	--gray-12: #eceef1;
+	--accent-3: #10202e;
+	--accent-5: #14384f;
+	--accent-9: #3b9eff;
+	--accent-11: #78c0ff;
+	--accent-contrast: #06131f;
+
+	--surface: var(--gray-2);
+	--surface-sunken: var(--gray-1);
+	--surface-raised: var(--gray-3);
+
+	--border-faint: var(--gray-5);
+	--border: var(--gray-6);
+	--border-strong: var(--gray-7);
+
+	--text-primary: var(--gray-12);
+	--text-secondary: color-mix(in oklab, var(--gray-11), var(--gray-12));
+	--text-muted: var(--gray-11);
+	--text-faint: var(--gray-10);
+
+	--accent: var(--accent-9);
+	--accent-soft: var(--accent-5);
+	--accent-faint: var(--accent-3);
+	--link: var(--accent-11);
+	--accent-fg: var(--accent-contrast);
+
+	/* The manifest's ring law: 2px ring plus a 2px transparent gap, so it clears 3:1 against a
+	   same-family dark surface. Painted once by the `:focus-visible` rule below, never per component. */
+	--focus-ring: 2px solid var(--accent-9);
+	--focus-ring-offset: 2px;
+
+	--t-body: 14px / 1.5;
+	--t-body-sm: 13px / 1.45;
+	--t-meta: 12px / 1.4;
+	--t-mono: 13px / 1.5;
+
+	--s-1: 4px;
+	--s-2: 8px;
+	--s-3: 12px;
+	--s-4: 16px;
+
+	/* One duration for every transition on this surface, so the reduced-motion answer below is one
+	   declaration rather than an `!important` sweep over every descendant. */
+	--motion-fast: 120ms;
+
+	--r-sm: 2px;
+	--r-md: 4px;
+
+	background: var(--surface-sunken);
+	color: var(--text-primary);
+	font:
+		var(--t-body) system-ui,
+		sans-serif;
+	display: flex;
+	flex-direction: column;
+	block-size: 100%;
+	inline-size: 100%;
+}
+
+.tuval-surface :focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: var(--focus-ring-offset);
+}
+
+.tuval-tiling {
+	flex: 1 1 auto;
+	min-block-size: 0;
+}
+
+.tuval-window {
+	display: flex;
+	flex-direction: column;
+	min-inline-size: 0;
+	min-block-size: 0;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	overflow: hidden;
+}
+
+/* The focused window is marked twice over: a heavier border and the `▸` in its own title row.
+   Pillar 4 forbids carrying state on colour alone, so the glyph is not decoration. */
+.tuval-window[data-focused="true"] {
+	border-color: var(--border-strong);
+	box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+
+.tuval-window-title {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	padding: var(--s-1) var(--s-2);
+	border-block-end: 1px solid var(--border-faint);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+	color: var(--text-muted);
+}
+
+.tuval-window-body {
+	flex: 1 1 auto;
+	min-block-size: 0;
+	overflow: auto;
+	padding: var(--s-2);
+}
+
+.tuval-separator {
+	flex: 0 0 auto;
+	background: var(--border-faint);
+	transition: background var(--motion-fast) ease;
+}
+
+.tuval-separator:hover,
+.tuval-separator[data-resize-handle-active] {
+	background: var(--accent);
+}
+
+.tuval-status {
+	display: flex;
+	gap: var(--s-4);
+	align-items: center;
+	padding: var(--s-1) var(--s-3);
+	min-block-size: 36px;
+	border-block-start: 1px solid var(--border);
+	background: var(--surface-raised);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+	color: var(--text-muted);
+}
+
+.tuval-status strong {
+	color: var(--text-primary);
+	font-weight: 600;
+}
+
+.tuval-kbd {
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
+	padding: 0 var(--s-1);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	color: var(--text-secondary);
+}
+
+.tuval-command-line {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	padding: var(--s-2) var(--s-3);
+	border-block-start: 1px solid var(--border);
+	background: var(--surface-raised);
+}
+
+.tuval-command-line input {
+	flex: 1 1 auto;
+	min-block-size: 36px;
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	color: var(--text-primary);
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
+	padding: 0 var(--s-2);
+}
+
+.tuval-command-line input::placeholder {
+	color: var(--text-faint);
+}
+
+.tuval-refusal {
+	color: var(--text-muted);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+}
+
+.tuval-picker {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.tuval-picker [role="option"] {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	min-block-size: 36px;
+	padding: var(--s-1) var(--s-2);
+	border-radius: var(--r-sm);
+	transition: background var(--motion-fast) ease;
+}
+
+.tuval-picker [role="option"][aria-selected="true"] {
+	background: var(--accent-soft);
+	color: var(--text-primary);
+}
+
+.tuval-picker-detail {
+	color: var(--text-muted);
+	font:
+		var(--t-meta) ui-monospace,
+		monospace;
+}
+
+.tuval-picker-group-label {
+	color: var(--text-muted);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.tuval-placeholder {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	justify-content: center;
+	align-items: flex-start;
+	block-size: 100%;
+	color: var(--text-muted);
+}
+
+/* Every transition collapses to an instant swap. Honouring this is part of the behavioural spine
+   the design manifest calls code-authoritative, and Pillar 4 forbids carrying meaning on motion in
+   the first place, so nothing is lost when it collapses. */
+@media (prefers-reduced-motion: reduce) {
+	.tuval-surface {
+		--motion-fast: 0ms;
+	}
+}

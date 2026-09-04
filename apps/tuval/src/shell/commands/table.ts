@@ -81,6 +81,12 @@ export const shellCommands: ReadonlyArray<AnyShellCommand> = [
 		toMsg: () => ({type: "window.split", orientation: "vertical"}),
 	}),
 	defineCommand({
+		path: ["window", "zoom"],
+		describe: "Render the focused window alone, or restore the split if one is already zoomed.",
+		params: noParams,
+		toMsg: () => ({type: "layout.zoom"}),
+	}),
+	defineCommand({
 		path: ["window", "close"],
 		describe: "Close the focused window. The process it was showing keeps running.",
 		params: noParams,

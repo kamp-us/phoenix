@@ -81,6 +81,8 @@ describe("shell core boundary", () => {
 			| "window.bind"
 			| "window.unbind"
 			| "window.setView"
+			| "layout.resize"
+			| "layout.zoom"
 			| "window.open"
 			| "window.attach"
 			| "workspace.create"

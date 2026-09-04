@@ -445,3 +445,47 @@ The core's four Cmds — forwarding a key, arming and cancelling the prefix time
 row — are handed in as `effects`, and this slice ships only `unwiredShellEffects`, which does none of
 them and logs each drop at debug. Until the command rows (#7555) and the browser surface (#7559)
 land, a booted desk answers Msgs and answers no key.
+
+## Shell: the browser surface
+
+`src/shell/ui/` is the desk as a page — React 19, dark, and the only slice under `src/shell/` where
+React or the DOM is allowed to appear. Every other slice forbids both in its own
+`boundary.unit.test.ts`, and this one asserts the inverse: nothing outside `ui/` may import it.
+
+```tsx
+<Desk state={snapshot} dispatch={send} resolveMount={mounts} entries={picker} />
+```
+
+`state` is the shell process's own state as the transport delivered it, and `dispatch` puts a Msg
+back on the wire. The surface stores nothing else — the command line being open, and the prefix
+countdown, are the whole of its tab-ephemeral state, which is why two tabs on one shell show one
+desk. A dropped socket does not clear the desk either: `useDeskAttachment` keeps the last snapshot
+on screen while the page re-attaches.
+
+The layout renders through `react-resizable-panels@4.12.3`: one `Group` per stack, one `Panel` per
+child keyed by node id, and a drag lands as exactly one `layout.resize` Msg on release. Sizes
+arriving from the kernel — another tab's drag — are pushed in through `setLayout`, because the
+library reads `defaultLayout` once and a prop alone would never mirror. Zoom (`prefix z`, the new
+`window:zoom` row) renders the one window alone and unzoom restores the split untouched. The rules
+and the reasons are
+[`.patterns/layout-tree-with-resizable-panels.md`](../../.patterns/layout-tree-with-resizable-panels.md).
+
+Each window shows one of the window contract's three arms and no fourth: a bound host's program
+renderer, the picker for an empty window, a placeholder for a gone process. The focused window is
+marked twice over — a heavier border, and a glyph plus `aria-current` in its title row — because no
+state here may be carried by colour alone.
+
+There is one **application-level** keyboard listener, on the document, and it is the only thing that
+dispatches `keys.press`. Two elements read their own keys and neither is a second shell listener:
+the command line's input, and each `Separator`, whose arrow-key resizing the library attaches per
+element.
+
+Two of the core's Cmds are the surface's work and never cross the wire, which carries no Cmd frame:
+opening the command line, and forwarding an unbound key to the focused window's renderer. The
+surface derives both by running the shell's own pure `route` over the prefix snapshot the kernel
+sent, so it cannot disagree with the core — an argument rather than a guard, tracked as
+[#7781](https://github.com/kamp-us/phoenix/issues/7781).
+
+Nothing yet serves this page: there is no bundle step and `serve` is never called, so the surface is
+reachable from its tests and not from a browser
+([#7780](https://github.com/kamp-us/phoenix/issues/7780)).
