@@ -94,8 +94,10 @@ describe("commands vocabulary", () => {
 	it("scans every module of the slice", () => {
 		expect(modules.map(([name]) => name)).toEqual([
 			"errors.ts",
+			"executor.ts",
 			"index.ts",
 			"registry.ts",
+			"scope.ts",
 			"spell.ts",
 		]);
 	});

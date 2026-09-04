@@ -1,4 +1,12 @@
-export {DuplicateSpellPath, SpellNotFound} from "./errors.ts";
+export {
+	BadArgs,
+	BadResult,
+	DuplicateSpellPath,
+	NoSuchWindow,
+	SpellNotFound,
+	UnknownSpell,
+} from "./errors.ts";
+export {SpellExecutor} from "./executor.ts";
 export {
 	buildRegistry,
 	describeSource,
@@ -10,6 +18,7 @@ export {
 	type SpellRow,
 	type SpellSource,
 } from "./registry.ts";
+export {type Client, resolveScope, WindowIndex, type WindowPlacement} from "./scope.ts";
 export {
 	type AnySpell,
 	ClientId,
