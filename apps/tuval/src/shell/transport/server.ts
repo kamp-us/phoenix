@@ -37,8 +37,13 @@ import {
 	toWireRow,
 } from "./wire.ts";
 
-/** Where a process handle comes from. The kernel hands out handles at launch; this reads them back. */
-export type Handles = (id: ProcessId) => Option.Option<ProcessHandle>;
+/**
+ * Where a process handle comes from. An Effect, because the answer moves: a process the picker
+ * spawned after this server started is dispatchable too, and a caller that had to hand over a
+ * snapshot map could only ever serve the processes that existed at boot. `Processes.handle` is what
+ * `boot` passes here.
+ */
+export type Handles = (id: ProcessId) => Effect.Effect<Option.Option<ProcessHandle>>;
 
 export interface ServeOptions {
 	readonly token: Redacted.Redacted<string>;
@@ -46,14 +51,19 @@ export interface ServeOptions {
 	readonly port: number;
 	readonly host?: string;
 	readonly handles: Handles;
-	/** The origins a browser may attach from; the loopback origins of the bound port by default. */
-	readonly origins?: ReadonlySet<string>;
 }
 
 export interface TransportServer {
 	readonly port: number;
 	/** The one URL the launch prints: the address plus the launch token, and nothing else secret. */
 	readonly launchUrl: string;
+	/**
+	 * Admit the loopback origins of one more port. The page server binds after the transport and on
+	 * its own port, so the `Origin` a browser carries on the upgrade is not knowable when the fence
+	 * is built; the launch admits it once Vite has listened (#7560). Only a port can be named, so
+	 * nothing widens this to a remote origin.
+	 */
+	readonly admitLoopbackPort: (port: number) => void;
 }
 
 /**
@@ -93,11 +103,12 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 		Context.add(Registry, registry),
 	);
 
-	// `verifyClient` runs after `listen`, so the port is bound by then. Until it is, an `Origin` the
-	// set cannot be built for is refused rather than admitted: the fence fails closed.
-	let bound: number | undefined;
-	const allowed = () =>
-		options.origins ?? (bound === undefined ? new Set<string>() : loopbackOrigins(bound));
+	// `verifyClient` runs after `listen`, so the bound port is in this set by the time an upgrade can
+	// reach it. Empty until then, which is the fence failing closed on a request that races the bind.
+	const admitted = new Set<string>();
+	const admitLoopbackPort = (port: number) => {
+		for (const origin of loopbackOrigins(port)) admitted.add(origin);
+	};
 
 	const host = options.host ?? "127.0.0.1";
 	const server: SocketServer.SocketServer["Service"] = yield* NodeSocketServer.makeWebSocket({
@@ -106,7 +117,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 		// `ws` runs this during the upgrade: a `false` answers 401 and no connection event fires, so
 		// a refused page never reaches a frame (`ws`'s `verifyClient`, the sync form).
 		verifyClient: (info: {readonly req: IncomingMessage}) =>
-			checkHandshake({url: info.req.url, origin: info.req.headers.origin}, options.token, allowed())
+			checkHandshake({url: info.req.url, origin: info.req.headers.origin}, options.token, admitted)
 				._tag === "Accepted",
 	});
 	const address = server.address;
@@ -116,7 +127,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 			new Error("tuval transport: the socket server did not bind a TCP port"),
 		);
 	}
-	bound = address.port;
+	admitLoopbackPort(address.port);
 
 	yield* Effect.forkScoped(
 		server.run((socket) =>
@@ -127,6 +138,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	return {
 		port: address.port,
 		launchUrl: launchUrl({port: address.port, token: options.token, host}),
+		admitLoopbackPort,
 	} satisfies TransportServer;
 });
 
@@ -183,7 +195,7 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 		processId: ProcessId,
 		msg: {readonly type: string},
 	) {
-		const handle = handles(processId);
+		const handle = yield* handles(processId);
 		if (handle._tag === "None") {
 			return yield* send({
 				kind: DISPATCHED_KIND,

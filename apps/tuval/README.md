@@ -19,22 +19,24 @@ Tuval lives under `apps/` because a person runs it, not because Cloudflare hosts
 ```bash
 pnpm install          # from the repo root, once
 cd apps/tuval
-pnpm dev              # boots the shell and the two demo programs; Ctrl-C stops and checkpoints them
-pnpm test             # the unit tier (vitest)
+pnpm dev              # boots the shell + the two demo programs, serves the desk; Ctrl-C stops and checkpoints
+pnpm test             # both tiers (vitest)
 pnpm typecheck
 ```
 
 `pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
-Node strips the TypeScript itself, so there is no build step. Boot loads your config layers (see
-"Your config"), registers their programs, launches the processes the graph plans, restores any
-other checkpointed process from the project's `.tuval/`, prints the process table, and stays up
-until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints every process and exits 0; a config
-that plans no process exits right after the report.
+Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers
+(see "Your config"), registers their programs, launches the processes the graph plans, restores any
+other checkpointed process from the project's `.tuval/`, prints the process table, binds the page
+socket, serves the desk, and stays up until Ctrl-C (SIGINT or SIGTERM), which stops and checkpoints
+every process and exits 0; a config that plans no process exits right after the report.
 
 ```
 tuval [flags]
   --config file          Global config module (default: ~/.tuval/tuval.config.ts)
   --project directory    Project dir whose .tuval/ holds the project config and state (default: cwd)
+  --no-page              Boot the kernel and the socket, but serve no page
+  --page-port integer    Port for the page (default: a free one)
   --help, --version
 ```
 
@@ -47,10 +49,20 @@ tuval: booted — 3 program(s), 6 spell(s) registered from …/apps/tuval/.tuval
 tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
+tuval: transport on 127.0.0.1:58319
+tuval: desk at http://127.0.0.1:5173/
 tuval: running — Ctrl-C stops and checkpoints
 count 1
 count 2
 ```
+
+Those are two ports on purpose — the socket and the page bind separately — and the transport admits
+the page's origin as it starts, so the browser's attach goes through (#7560).
+
+Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
+walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
+zooms, and `<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
+program. With the prefix unarmed every key belongs to the focused window's process.
 
 Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
 ticks once a second and announces each count on its `ticks` out-port, the log records what arrives on
@@ -83,12 +95,14 @@ programs and runs nothing.
 import {Console} from "effect";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
-import {shellGraphNode, shellProgram, unwiredShellEffects} from "../src/shell/program.ts";
+import {ProcessId} from "../src/process/process.ts";
+import {wiredShellEffects} from "../src/shell/host/index.ts";
+import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 
 export default {
 	version: 1,
 	programs: [
-		shellProgram({effects: unwiredShellEffects}),
+		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
 		...demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
 	],
 	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
@@ -420,8 +434,8 @@ counter is, registered through your own config module, and dropping its row and 
 without one.
 
 ```ts
-shellProgram({effects: unwiredShellEffects}); // id "shell", core from src/shell/core/, no ports
-shellGraphNode;                               // {id: "shell", program: "shell", on: []} — a root
+shellProgram({effects}); // id "shell", core from src/shell/core/, no ports
+shellGraphNode;          // {id: "shell", program: "shell", on: []} — a root
 ```
 
 Its durability is the kernel's, unchanged: boot spawns the node once, the spawn opens the checkpoint
@@ -441,10 +455,9 @@ placeholder or the picker and never a window that silently vanished. That functi
 layout tree's plain-string window ids meet the window contract's branded ones (#7700) — one
 conversion, through the brand's own constructor.
 
-The core's four Cmds — forwarding a key, arming and cancelling the prefix timer, running a command
-row — are handed in as `effects`, and this slice ships only `unwiredShellEffects`, which does none of
-them and logs each drop at debug. Until the command rows (#7555) and the browser surface (#7559)
-land, a booted desk answers Msgs and answers no key.
+The core's Cmds are handed in as `effects`. This slice ships only `unwiredShellEffects`, which does
+none of them and logs each drop at debug; the set that runs them against the kernel is
+`wiredShellEffects` in `src/shell/host/`, and that is what the config registers.
 
 ## Shell: the browser surface
 
@@ -486,6 +499,26 @@ surface derives both by running the shell's own pure `route` over the prefix sna
 sent, so it cannot disagree with the core — an argument rather than a guard, tracked as
 [#7781](https://github.com/kamp-us/phoenix/issues/7781).
 
-Nothing yet serves this page: there is no bundle step and `serve` is never called, so the surface is
-reachable from its tests and not from a browser
-([#7780](https://github.com/kamp-us/phoenix/issues/7780)).
+## Shell: the assembled app
+
+`src/shell/host/` runs the core's Cmds against the kernel and starts the socket, and `src/page/`
+mounts the desk in a browser. `pnpm dev` is the whole thing in one process: boot, then the WebSocket
+on an ephemeral port, then Vite through its Node API — which is why the launch token never touches
+disk, since the middleware answering `/__tuval/launch` closes over the URL in memory.
+
+Three of the eight Cmds are the kernel's: `openProgram` and `attachProcess` run the picker's one
+handler, and `forwardKey` dispatches `{type: "key", key}` into the focused window's process. The
+prefix countdown and the command line stay the surface's — a kernel handler returns its follow-ups
+and cannot dispatch one a second later — and `config:reload` is still unwired (#7743).
+
+`src/shell/proof/end-to-end.integration.test.ts` is the ticket's three proofs over the real socket
+and the real demo programs: a scripted key sequence that splits, walks focus, switches workspaces,
+opens a program from the picker and by `prefix :`, and shows one process in two windows with two view
+slots; a stop and a second boot that brings the desk back byte-equal, duplicates no effect and yields
+exactly one effect per new key; and a dropped socket whose re-attach shows the same desk and forwards
+a key that reaches its process. The shape and its two rules are
+[`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
+
+Two things the page cannot do yet, both because the wire carries rows and no registry listing: its
+picker offers running processes only (open by name through `prefix : window:open <program>`), and its
+renderer table is keyed by program id rather than by the `renderer` reference a row declares.

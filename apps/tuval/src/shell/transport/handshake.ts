@@ -24,8 +24,9 @@ export const mintLaunchToken = (): Redacted.Redacted<string> =>
 export const TOKEN_PARAM = "token";
 
 /**
- * The loopback origins a browser page served by this kernel can carry. A page is served from the
- * same port the socket listens on, so the set is derived from that port and never configured.
+ * The loopback origins a browser page served on `port` carries. One launch serves two ports — the
+ * socket's and the page server's — so a fence built from the socket's port alone refuses the page
+ * it was meant to admit; the launch admits the page's port too, once Vite has listened (#7560).
  */
 export const loopbackOrigins = (port: number): ReadonlySet<string> =>
 	new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, `http://[::1]:${port}`]);

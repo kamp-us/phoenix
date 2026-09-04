@@ -51,6 +51,13 @@ export class Processes extends Context.Service<
 			options?: SpawnOptions,
 		) => Effect.Effect<ProcessHandle, SpawnError>;
 		readonly stop: (id: ProcessId) => Effect.Effect<void, ProcessNotFound>;
+		/**
+		 * The live handle for one id, or none. `ProcessTable.get` answers with the public row; this
+		 * answers with the thing that can be dispatched into, which is what the shell's `forwardKey`
+		 * and the page transport's `handles` both need and neither can reach through the table.
+		 * Absence is a value, not a failure: a process that has stopped is the ordinary case.
+		 */
+		readonly handle: (id: ProcessId) => Effect.Effect<Option.Option<ProcessHandle>>;
 	}
 >()("tuval/Processes") {
 	/**
@@ -64,6 +71,8 @@ export class Processes extends Context.Service<
 interface Entry {
 	readonly row: ProcessRow;
 	readonly scope: Scope.Closeable;
+	/** The live actor behind the row. A row is what another process may see; this is what dispatches. */
+	readonly handle: ProcessHandle;
 }
 
 /**
@@ -203,9 +212,6 @@ function makeServices() {
 				ports: program.ports,
 				stateSummary: () => ({lifecycle, revision, state: actor.getState()}),
 			};
-			live.set(id, {row, scope});
-			yield* publish({kind: "spawned", row});
-
 			const handle: ProcessHandle = {
 				id,
 				programId,
@@ -215,6 +221,8 @@ function makeServices() {
 				getState: actor.getState,
 				stop: Scope.close(scope, Exit.void),
 			};
+			live.set(id, {row, scope, handle});
+			yield* publish({kind: "spawned", row});
 			return handle;
 		});
 
@@ -229,6 +237,11 @@ function makeServices() {
 			changes: Stream.fromPubSub(changes),
 		});
 
-		return Context.make(Processes, {spawn, stop}).pipe(Context.add(ProcessTable, table));
+		const handleOf = (id: ProcessId) =>
+			Effect.sync(() => Option.fromNullishOr(live.get(id)?.handle));
+
+		return Context.make(Processes, {spawn, stop, handle: handleOf}).pipe(
+			Context.add(ProcessTable, table),
+		);
 	});
 }

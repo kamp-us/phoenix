@@ -32,10 +32,12 @@ import {
 } from "./wire.ts";
 
 /**
- * The shell program's registry id. The shell is a program like any other, so the page locates its
- * process by reading the table for this id rather than by any frame the wire keeps for it.
+ * The shell program's registry id — `shellId` in `../program.ts`, spelled here rather than imported
+ * so the page bundle does not pull the kernel-side shell row in behind the transport. The shell is a
+ * program like any other, so the page locates its process by reading the table for this id rather
+ * than by any frame the wire keeps for it.
  */
-export const SHELL_PROGRAM_ID = "tuval/shell" as ProgramId;
+export const SHELL_PROGRAM_ID = "shell" as ProgramId;
 
 /** One attached process: the two `WindowHost` members a renderer is handed, bound to this process. */
 export interface AttachedProcess<S = unknown, M extends Message = Message> {

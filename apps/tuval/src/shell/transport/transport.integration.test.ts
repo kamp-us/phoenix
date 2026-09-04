@@ -95,7 +95,7 @@ const served = Effect.fn("test.served")(function* (stores: CheckpointStores) {
 	const server = yield* serve({
 		token,
 		port: 0,
-		handles: (id) => Option.fromNullishOr(built.handles.get(id)),
+		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
 	return {...built, token, server};
 });
