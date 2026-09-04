@@ -276,3 +276,38 @@ Two refusals and one absence carry the model. The last window of a workspace doe
 last workspace is not removed, for the same reason: a desk with nothing on it has no layout to
 render and no focus to hold. And there is no Cmd arm that stops a process, so closing the last
 window showing one cannot end it — a window is a view onto a process, not a container for it.
+
+## Shell: the page-to-kernel transport
+
+`src/shell/transport/` is the one WebSocket a page attaches over — the tmux server/client split, with
+the kernel and every process staying in Node and the page a view of them. The server accepts one
+socket per page, streams the process-table port to it, and streams the public state of each process
+that socket attaches to; the page side's `attach(url)` hands back exactly the `readProcess` and
+`dispatch` the window contract needs, plus `readShell`.
+
+```ts
+const server = yield* serve({token: mintLaunchToken(), port: 0, handles});
+console.log(server.launchUrl); // ws://127.0.0.1:<port>/?token=… — print this once
+
+const page = yield* attach(server.launchUrl);
+const shell = yield* page.attachProcess(shellProcessId);
+yield* shell.dispatch({type: "split", window: "w1"});
+```
+
+Two rules shape it. **The shell is not special on the wire**: its state travels as an ordinary
+process-state frame and the page finds it by reading the table for the shell program's row, so no
+frame kind is the shell's. And **the page keeps no state of its own** — workspaces, layout, focus and
+each window's view are fields of `ShellState` above, and every draft is its program's, which is why a
+second tab on the same URL shows the same desk and a split done in one appears in the other.
+
+Every frame is a nominal kind plus a predicate, like a port; one that does not decode closes the
+socket with its reason. A process placed anywhere but the node host is refused by name
+(`PlacementUnsupported`) rather than skipped. The kernel mints one random token per launch and the
+printed URL is the only place it appears — it is a `Redacted` everywhere else, so a log line or a
+snapshot cannot take it — and the upgrade is refused, before any frame, on a missing or wrong token
+or on an `Origin` that is not the kernel's own loopback origin. That is not a sandbox and not user
+auth: one user, one machine, other pages kept out. Re-attaching after a drop or a kernel restart
+replays current state, never a transcript.
+
+Its proof binds a real loopback socket, so it runs as this app's `integration` tier
+(`pnpm test:integration`) beside the `unit` one.

@@ -565,6 +565,14 @@ jobs:
       # closed, exactly as a `test:unit` failure does.
       - run: pnpm --filter './apps/**' test:client
 
+      # apps/tuval's `integration` project (#7556): the page-to-kernel transport over a real
+      # loopback WebSocket. Named for the socket it binds, not for ADR 0082's remote-D1 tier —
+      # it takes no creds and no service, which is why it can run in this creds-free job while
+      # `@kampus/web`'s `test:integration` (real remote D1) cannot. Scoped to the one app for
+      # exactly that reason: `--filter './apps/**' test:integration` would drag web's D1 suite
+      # into a job with no Cloudflare token.
+      - run: pnpm --filter @kampus/tuval test:integration
+
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
   # ships a `test` script (fabrika-cli — the single home for the consolidated guard/tooling
   # logic — plus ci-required, …) but CI ran only `@kampus/web`'s — so a

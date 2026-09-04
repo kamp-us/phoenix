@@ -96,9 +96,13 @@ export interface CapabilityRequest {
 	readonly detail?: string;
 }
 
-/** Where the program is placed. `local` is the only host today; the host chooses placement. */
+/**
+ * Where the program is placed. `local` means the Node kernel runs it, and it is the only host
+ * anything runs on today; `browser` is named so a transport can refuse it (#7556) rather than skip
+ * it silently, and nothing spawns one until the browser tier lands.
+ */
 export interface Placement {
-	readonly host: "local";
+	readonly host: "local" | "browser";
 }
 
 export interface Program<
