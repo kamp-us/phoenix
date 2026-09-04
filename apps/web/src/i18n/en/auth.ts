@@ -73,8 +73,16 @@ export const auth = {
 	"auth.welcome.standingLoading": "loading your standing.",
 	"auth.welcome.riteHeading": "the road ahead",
 	"auth.welcome.riteBody":
-		"write your first contribution — you can start by adding an entry to an existing term. as you contribute, a yazar becomes your kefil; once the vouch and the review are complete you become a yazar and what you write goes live directly.",
+		"as you contribute, a yazar becomes your kefil; once the vouch and the review are complete you become a yazar and what you write goes live directly.",
 	"auth.welcome.continue": "continue",
+
+	"auth.firstContribution.heading": "write your first contribution",
+	"auth.firstContribution.addEntry": 'you can start by adding an entry to the "{term}" başlık.',
+	"auth.firstContribution.browse":
+		"find a başlık that interests you in {sozlukNoun} and write your first entry.",
+	"auth.firstContribution.goAddEntry": "add an entry",
+	"auth.firstContribution.goBrowse": "browse {sozlukNoun}",
+	"auth.firstContribution.dismiss": "not now",
 
 	"auth.landing.tagline": "a slow corner where developers teach themselves.",
 	"auth.landing.manifesto.panoLead": "on {panoNoun}",

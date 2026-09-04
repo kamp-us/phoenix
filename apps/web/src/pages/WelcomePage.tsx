@@ -7,8 +7,9 @@
  *
  * Honest framing is inherited, never re-derived (#4261): an unvouched çaylak gets
  * `CaylakStatusBlock`'s settled vouch-needed copy and NO karma bar, off the same
- * aggregate-only `myAuthorshipStanding` read. The exit nudge is sibling slice #7044's
- * seam — this surface ends at "devam et".
+ * aggregate-only `myAuthorshipStanding` read. The exit is #7044's dismissible
+ * first-contribution ask, whose audience and target are `firstContribution.ts`'s call —
+ * the screen itself still ends at "devam et".
  *
  * Shown-once semantics: arrival itself writes the per-account marker
  * (`welcomeSeen.ts`), so a reload or repeat login lands in the gate's `return` state and
@@ -19,6 +20,13 @@ import {Navigate, useLocation, useNavigate} from "react-router";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {Karma} from "../components/karma/Karma";
+import {FirstContributionNudge} from "../components/onboarding/FirstContributionNudge";
+import {
+	dismissFirstContribution,
+	firstContributionNudge,
+	firstContributionStorage,
+	isFirstContributionDismissed,
+} from "../components/onboarding/firstContribution";
 import {
 	hasSeenWelcome,
 	markWelcomeSeen,
@@ -74,6 +82,25 @@ export function WelcomePage() {
 		if (gate !== "ready") return;
 		markWelcomeSeen(welcomeStorage(), userId);
 	}, [gate, userId]);
+
+	// Latched per account for the same reason `seenLatch` is: dismissing writes the marker
+	// mid-visit, and a live re-read would then vanish the nudge under the reader's own click
+	// with no state to explain it. Unlatched reads as dismissed, so a resolving session never
+	// flashes an ask it is about to suppress.
+	const [dismissLatch, setDismissLatch] = useState<{userId: string; dismissed: boolean} | null>(
+		null,
+	);
+	if (userId !== null && dismissLatch?.userId !== userId) {
+		setDismissLatch({
+			userId,
+			dismissed: isFirstContributionDismissed(firstContributionStorage(), userId),
+		});
+	}
+	const nudge = firstContributionNudge({
+		tier: me?.tier,
+		returnTo,
+		dismissed: dismissLatch?.userId !== userId || dismissLatch.dismissed,
+	});
 
 	const addressing = welcomeAddressing(me?.tier);
 	const standing = useAuthorshipStanding(gate === "ready");
@@ -163,6 +190,16 @@ export function WelcomePage() {
 						<h2 className="kp-welcome__heading">{t("auth.welcome.riteHeading")}</h2>
 						<p className="kp-welcome__line">{t("auth.welcome.riteBody")}</p>
 					</section>
+				) : null}
+
+				{nudge ? (
+					<FirstContributionNudge
+						nudge={nudge}
+						onDismiss={() => {
+							dismissFirstContribution(firstContributionStorage(), userId);
+							if (userId !== null) setDismissLatch({userId, dismissed: true});
+						}}
+					/>
 				) : null}
 
 				<Button

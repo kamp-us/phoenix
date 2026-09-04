@@ -6,6 +6,7 @@
  */
 import {Capability, type Principal} from "@kampus/authz";
 import {Effect} from "effect";
+import {AUTHORSHIP_FLOORS} from "./authorshipFloors.ts";
 import {RequiresLevel} from "./errors.ts";
 import {authorshipLadder, Kunye} from "./Kunye.ts";
 
@@ -14,14 +15,14 @@ const standingOf = (principal: Principal) =>
 
 export class OpenTerm extends Capability.Level<OpenTerm>()("kunye/OpenTerm", {
 	scale: authorshipLadder,
-	min: "yazar",
+	min: AUTHORSHIP_FLOORS["kunye/OpenTerm"],
 	read: standingOf,
 	deny: () => new RequiresLevel({message: "Başlık açmak için yazar olmalısın.", need: "yazar"}),
 }) {}
 
 export class AddEntry extends Capability.Level<AddEntry>()("kunye/AddEntry", {
 	scale: authorshipLadder,
-	min: "çaylak",
+	min: AUTHORSHIP_FLOORS["kunye/AddEntry"],
 	read: standingOf,
 	deny: () => new RequiresLevel({message: "Entry girmek için çaylak olmalısın.", need: "çaylak"}),
 }) {}

@@ -9,6 +9,7 @@ import {
 	RENDER_CRASHED,
 	STALE_TREE,
 	SURFACE_UNREACHABLE,
+	WRONG_VIEWPORT,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {parseManifest} from "./manifest.ts";
@@ -46,12 +47,18 @@ const announcement = (sha: string = HEAD.slice(0, 7)): HttpReply => ({
 	]),
 });
 
-const rendered = (surface: string, outDir: string): SurfaceRender => ({
+const rendered = (
+	surface: string,
+	outDir: string,
+	viewport = "desktop",
+	width = 1280,
+): SurfaceRender => ({
 	_tag: "Rendered",
 	entry: {
 		surface,
-		path: `${outDir}/${surface.replace(/^\//, "")}.png`,
-		width: 1280,
+		viewport,
+		path: `${outDir}/${surface.replace(/^\//, "")}@${viewport}.png`,
+		width,
 		height: 2140,
 		sha256: "9c41",
 		pageErrors: {rows: [], more: 0},
@@ -62,12 +69,16 @@ const rendered = (surface: string, outDir: string): SurfaceRender => ({
 const legOf =
 	(answers: Readonly<Record<string, SurfaceRender>>): RenderLeg =>
 	(request) =>
-		Effect.succeed(answers[request.surface] ?? rendered(request.surface, request.outDir));
+		Effect.succeed(
+			answers[request.surface] ??
+				rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+		);
 
 const options = {
 	pr: 4321,
 	out: "judged",
 	surfaces: ["/pano"],
+	viewports: [] as readonly string[],
 	flags: [] as readonly string[],
 	app: null,
 	repo: null,
@@ -107,7 +118,8 @@ describe("runRender", () => {
 			_tag: "Rendered",
 			entry: {
 				surface: "/pano",
-				path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png",
+				viewport: "desktop",
+				path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano@desktop.png",
 				width: 1280,
 				height: 2140,
 				sha256: "9c41",
@@ -127,7 +139,7 @@ describe("runRender", () => {
 		);
 		// The stderr tally is the whole list, not the kept rows — the collapse must not shrink the count.
 		expect(outcome.stderr).toContain(
-			'review-ui render: surface "/pano" captured: 1280x2140, 13 page error(s)',
+			'review-ui render: surface "/pano" at desktop captured: 1280x2140, 13 page error(s)',
 		);
 	});
 
@@ -424,7 +436,7 @@ describe("runRender", () => {
 		expect(outcome.stderr.some((line) => line.includes("unreachable"))).toBe(true);
 		expect(outcome.stderr.some((line) => line.includes("invalid bytes"))).toBe(true);
 		// The refusal names a surface the ROUTED code applies to, not merely the first bad one.
-		expect(outcome.stderr.at(-1)).toMatch(/surface "\/b" threw during render/);
+		expect(outcome.stderr.at(-1)).toMatch(/surface "\/b" at desktop threw during render/);
 	});
 
 	it("seats an unreachable-only set on 14 and an invalid-only set on 15", async () => {
@@ -436,6 +448,69 @@ describe("runRender", () => {
 			render: legOf({"/pano": {_tag: "Invalid", detail: "zero bytes"}}),
 		});
 		expect(invalid.outcome.code).toBe(INVALID_CAPTURE);
+	});
+
+	// Omitting the operand is what every invocation written before it did, so the default must stay
+	// the single desktop shot rather than becoming a cross-product nobody asked for (#7706).
+	it("renders at desktop alone when no --viewport is passed", async () => {
+		const seen: string[] = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/pano/yeni"],
+			render: (request) => {
+				seen.push(`${request.surface}@${request.viewport.label}`);
+				return Effect.succeed(
+					rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+				);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(["/pano@desktop", "/pano/yeni@desktop"]);
+	});
+
+	it("crosses viewports with surfaces: two of each is four captures under four file names", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/pano/yeni"],
+			viewports: ["desktop", "mobile"],
+		});
+		expect(outcome.code).toBe(0);
+		const read = parseManifest(outcome.stdout);
+		expect(read._tag).toBe("Manifest");
+		const captures = read._tag === "Manifest" ? read.value.captures : [];
+		expect(captures).toHaveLength(4);
+		expect(captures.map((entry) => `${entry.surface}@${entry.viewport}`)).toEqual([
+			"/pano@desktop",
+			"/pano@mobile",
+			"/pano/yeni@desktop",
+			"/pano/yeni@mobile",
+		]);
+		expect(new Set(captures.map((entry) => entry.path)).size).toBe(4);
+	});
+
+	it("refuses an off-vocabulary --viewport on 10, listing the names it does render", async () => {
+		const {outcome} = await run(happy(), {viewports: ["tablet"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain("the names are desktop, mobile");
+	});
+
+	it("refuses one --viewport passed twice on 10 — the second shot overwrites the first", async () => {
+		const {outcome} = await run(happy(), {viewports: ["mobile", "mobile"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain('--viewport "mobile" was passed twice');
+	});
+
+	// A desktop-width shot filed under `mobile` answers the narrow half of the law from the wrong
+	// pixels, which no byte check downstream can tell from the real thing (#7706).
+	it("refuses a shot whose bytes read back at another width on 19, recording no capture", async () => {
+		const {outcome, written} = await run(happy(), {
+			viewports: ["mobile"],
+			render: legOf({"/pano": {_tag: "WrongViewport", wanted: 390, rendered: 1280}}),
+		});
+		expect(outcome.code).toBe(WRONG_VIEWPORT);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toContain(
+			'surface "/pano" at mobile was asked for at 390px and its bytes read back 1280px wide',
+		);
 	});
 
 	it("keeps a render that never became answerable UNKNOWN (11), not a bad render", async () => {

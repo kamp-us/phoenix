@@ -33,7 +33,7 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 
 ## Architecture
 
-phoenix is a pnpm monorepo with effectively one app — the worker in `apps/web`. The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
+phoenix is a pnpm monorepo with one runnable app per directory under `apps/` (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). There are two today: `apps/web`, the Cloudflare Worker, and `apps/tuval`, a local app that carries no `alchemy.run.ts` and never deploys. The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
 
 One worker serves the React SPA (built to `dist/client`, served via the `assets` binding) and the API. It keeps precedence on its own paths — `/api/*`, `/fate`, `/fate/*` — and hands everything else to the SPA. The backend is one Effect program: it declares its bindings, hosts the Durable Object, and returns a `fetch` handler.
 
@@ -77,6 +77,25 @@ apps/web/
 
 **The live plane.** A single Durable Object, `LiveDO`, fans out SSE. One class plays both roles — it holds a tab's stream (`connection:<id>`) and owns a data key's subscriber registry and fan-out (`topic:<key>`), told apart by instance-name prefix. It reaches its sibling instances through its own namespace, resolved once at init, so every RPC method stays requirement-free. State is `state.storage` KV: subscriber rows plus a per-connection counter that invalidates dead instances. Mutations reach the DO through the per-request `LivePublisher` service, whose publish methods are `Effect<void>` — a failed publish cannot fail the committed mutation. Read [.patterns/effect-sse-externally-driven.md](./.patterns/effect-sse-externally-driven.md); ADRs [0037](./.decisions/0037-unified-void-aligned-live-do.md) (the DO) and [0039](./.decisions/0039-livebus-context-service.md) (the publish-capability service, since folded into `LivePublisher`) are the design.
 
+**The second app is local.** `apps/tuval` is a Node app you run on your machine: the program/process kernel and the programs that ship in the box. It has no `alchemy.run.ts`, no bindings and no deploy, and that missing stack is the marker that it never ships to Cloudflare (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)).
+
+```
+apps/tuval/
+├── src/
+│   ├── bin.ts             # entry: the local process the app's `dev` script runs
+│   ├── boot.ts            # boots a configured graph of programs
+│   ├── config.ts          # the graph config the kernel reads
+│   ├── host/              # the program/process kernel: actors, definitions, errors
+│   ├── registry/          # the program registry
+│   ├── process/           # the running-process side of the table
+│   ├── table/             # the process-table port
+│   ├── ports/             # typed inter-program wiring: compile + open
+│   ├── launch/            # launching a program into a process
+│   ├── durability/        # saving and restoring process state
+│   └── demo/              # the programs that ship in the box
+└── vitest.config.ts       # one `unit` project, so the repo-wide unit gate resolves here
+```
+
 ## Commands
 
 | Command | What it does |
@@ -91,6 +110,15 @@ apps/web/
 | `pnpm test` | Integration suite — boots the stack on local workerd in `globalSetup`, runs the black-box HTTP suite against it. |
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
+
+Those run `apps/web`. `apps/tuval` is local-only, so reach it through its filter:
+
+| Command | What it does |
+|---|---|
+| `pnpm --filter @kampus/tuval dev` | `node src/bin.ts`, which boots the kernel locally. |
+| `pnpm --filter @kampus/tuval typecheck` | `tsc -p tsconfig.json`. |
+| `pnpm --filter @kampus/tuval test` | Every vitest project in the app. |
+| `pnpm --filter @kampus/tuval test:unit` | Just the `unit` project. This is the script CI's `pnpm --filter './apps/**' test:unit` gate calls. |
 
 Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
 

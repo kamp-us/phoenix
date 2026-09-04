@@ -31,9 +31,9 @@ vi.mock("../fate/useImperativeView", () => ({
 	}),
 }));
 
-function mount() {
+function mountAt(entry: string) {
 	return render(
-		<MemoryRouter initialEntries={[`${WELCOME_PATH}?returnTo=${encodeURIComponent("/pano")}`]}>
+		<MemoryRouter initialEntries={[entry]}>
 			<LocaleProvider>
 				<Routes>
 					<Route path={WELCOME_PATH} element={<WelcomePage />} />
@@ -41,6 +41,10 @@ function mount() {
 			</LocaleProvider>
 		</MemoryRouter>,
 	);
+}
+
+function mount() {
+	return mountAt(`${WELCOME_PATH}?returnTo=${encodeURIComponent("/pano")}`);
 }
 
 beforeEach(() => {
@@ -60,6 +64,26 @@ describe("WelcomePage in English", () => {
 		expect(screen.getByText("your account is new; you are still a çaylak.")).toBeTruthy();
 		// `kefil` is the dt of the vouch fact and reads the same in either interface.
 		expect(screen.getByText("kefil")).toBeTruthy();
+	});
+
+	it("renders the first-contribution ask in English (#7044)", async () => {
+		mount();
+		await waitFor(() => expect(screen.getByText("write your first contribution")).toBeTruthy());
+		expect(screen.getByTestId("first-contribution-copy").textContent).toBe(
+			"find a başlık that interests you in sözlük and write your first entry.",
+		);
+		expect(screen.getByTestId("first-contribution-go").textContent).toBe("browse sözlük");
+		expect(screen.getByRole("button", {name: "not now"})).toBeTruthy();
+	});
+
+	it("names the arrival's başlık in the English ask", async () => {
+		mountAt(`${WELCOME_PATH}?returnTo=${encodeURIComponent("/sozluk/monad")}`);
+		await waitFor(() =>
+			expect(screen.getByTestId("first-contribution-copy").textContent).toBe(
+				'you can start by adding an entry to the "monad" başlık.',
+			),
+		);
+		expect(screen.getByTestId("first-contribution-go").textContent).toBe("add an entry");
 	});
 
 	it("renders the yazar note in English", async () => {

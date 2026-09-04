@@ -1,0 +1,27 @@
+{
+	"name": "@kampus/tuval",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Tuval — a local runnable app (ADR 0345): the program/process kernel and the programs that ship in the box",
+	"type": "module",
+	"scripts": {
+		"dev": "node src/bin.ts",
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "vitest run",
+		"test:unit": "vitest run --project unit"
+	},
+	"dependencies": {
+		"@demlik/tea": "catalog:",
+		"@effect/platform-node": "catalog:tuval",
+		"effect": "catalog:tuval"
+	},
+	"devDependencies": {
+		"@effect/vitest": "catalog:tuval",
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

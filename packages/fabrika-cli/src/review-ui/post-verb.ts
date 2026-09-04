@@ -201,17 +201,19 @@ const mismatchOf = (
 	return bytes;
 };
 
-/** The evidence gallery: per surface, the **verified** hosted URL — never a local path. */
+/**
+ * The evidence gallery: per shot, the **verified** hosted URL — never a local path. A set is a
+ * surface × viewport cross-product (#7706), so the heading names both: two shots of one surface
+ * under one heading would read as a duplicate rather than as the two widths they are.
+ */
 const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string =>
 	[
 		"## Evidence",
 		"",
-		...hosted.flatMap(([entry, url]) => [
-			`### ${entry.surface}`,
-			"",
-			`![${entry.surface}](${url})`,
-			"",
-		]),
+		...hosted.flatMap(([entry, url]) => {
+			const shot = `${entry.surface} @ ${entry.viewport}`;
+			return [`### ${shot}`, "", `![${shot}](${url})`, ""];
+		}),
 	]
 		.join("\n")
 		.replace(/\n+$/, "");

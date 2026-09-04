@@ -13,6 +13,7 @@
 	},
 	"dependencies": {
 		"@better-auth/api-key": "catalog:",
+		"@effect/platform-node": "catalog:",
 		"alchemy": "catalog:",
 		"better-auth": "catalog:",
 		"drizzle-orm": "catalog:",

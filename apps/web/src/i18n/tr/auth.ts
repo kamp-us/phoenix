@@ -1,6 +1,7 @@
 /**
  * The entry surfaces: `AuthPage`, `UsernameBootstrap`, `WelcomePage`, `LandingPage` and the
- * `FirstContributionOnramp` nudge — the screens a reader meets on the way in (#7528).
+ * `FirstContributionOnramp` / `FirstContributionNudge` asks — the screens a reader meets on the
+ * way in (#7528).
  *
  * `auth.brand.*` are the brand nouns these screens name (ADR 0347): keys rather than literals so
  * no copy sits outside the catalog, with the same value in both locales.
@@ -77,8 +78,15 @@ export const auth = {
 	"auth.welcome.standingLoading": "durumun yükleniyor.",
 	"auth.welcome.riteHeading": "önündeki yol",
 	"auth.welcome.riteBody":
-		"ilk katkını yaz — mevcut bir başlığa girdi ekleyerek başlayabilirsin. katkı verdikçe bir yazar sana kefil olur; kefillik ve inceleme tamamlandığında yazar olursun ve yazdıkların doğrudan yayına girer.",
+		"katkı verdikçe bir yazar sana kefil olur; kefillik ve inceleme tamamlandığında yazar olursun ve yazdıkların doğrudan yayına girer.",
 	"auth.welcome.continue": "devam et",
+
+	"auth.firstContribution.heading": "ilk katkını yaz",
+	"auth.firstContribution.addEntry": '"{term}" başlığına bir entry ekleyerek başlayabilirsin.',
+	"auth.firstContribution.browse": "sözlükte ilgini çeken bir başlık bul ve ilk entry'ni yaz.",
+	"auth.firstContribution.goAddEntry": "entry ekle",
+	"auth.firstContribution.goBrowse": "sözlüğe göz at",
+	"auth.firstContribution.dismiss": "şimdi değil",
 
 	"auth.landing.tagline": "geliştiricilerin kendi kendine bir şey öğrettiği, yavaş bir köşe.",
 	"auth.landing.manifesto.panoLead": "panoda",
