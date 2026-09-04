@@ -277,6 +277,45 @@ last workspace is not removed, for the same reason: a desk with nothing on it ha
 render and no focus to hold. And there is no Cmd arm that stops a process, so closing the last
 window showing one cannot end it — a window is a view onto a process, not a container for it.
 
+## Shell: the program picker
+
+`src/shell/picker/` is what an empty window shows: the programs it can spawn, and the processes it
+can attach to. It replaces Studio's `scratch` window (`monorepo/packages/studio/studio.ts`), which
+was one hard-coded widget name every new pane opened onto.
+
+```ts
+const entries = yield* readEntries;                      // registry rows + live process rows
+const frame = pickerFrame(windowId, entries, mountPicker());
+const answer = pickerKey(windowId, entries, view, "<arrowdown>");
+const msgs = yield* runPickerIntent(openProgram(windowId, programId), {shellProcessId});
+// [{type: "window.bind", windowId, processId}] — one spawn, under the shell process
+```
+
+**Both lists are read fresh every mount** and the picker stores nothing: what it remembers is the
+window's own view slot (a cursor and at most one refusal), so a second mount after a registry
+change shows the second registry. **A program with no renderer never appears** — the founder's
+ruling makes the renderer optional and a row without one headless: it runs and exposes ports and
+cannot fill a window, so offering it would offer a choice that resolves to a blank pane.
+
+**One handler ends both routes.** A chosen row and a command line both produce a `PickerIntent`,
+and `runPickerIntent` is where each lands: `window:open <program>` spawns one process under the
+shell process and dispatches `window.bind`; `window:attach <process-id>` binds a process already
+running and spawns nothing, which is the door to one process in many windows. The two command rows
+are declared here as `pickerCommands` and folded into the table by `src/shell/commands/`.
+
+**Every refusal is a value in the window.** An unknown program id, a headless program, a process
+that no longer resolves, a spawn that failed, an unreadable command line — each is a `PickerRefusal`
+written to the view slot through `window.setView`, so the picker stays mounted and announces it.
+Nothing here throws and nothing here fails an Effect.
+
+`pickerFrame` is the render, as data: an ARIA listbox of two named groups, an accessible name on
+every option, the active option named for `aria-activedescendant`, and the refusal on an assertive
+live region. Movement answers the arrow keys and their vim and readline spellings (`j`/`k`,
+`<c-n>`/`<c-p>`, Tab), clamps at both ends rather than wrapping, and Home/End jump. The frame names
+colour by role token only, states `dark`, and reports `motion: "none"` unless the surface says
+`prefers-reduced-motion` is off — selection is carried by a character marker beside the colour, so
+no state is signalled by colour or by motion alone.
+
 ## Shell: the page-to-kernel transport
 
 `src/shell/transport/` is the one WebSocket a page attaches over — the tmux server/client split, with
