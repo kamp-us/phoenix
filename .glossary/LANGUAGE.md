@@ -450,7 +450,10 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
 - **scope** — where one spell call came from, as the kernel decides it: the workspace and client
   always, plus the window and process when the caller was inside one. The page names a window and
   nothing else; the kernel resolves the rest, so a page cannot address a process by putting its id
-  on the wire. Source: [`apps/tuval/src/commands/scope.ts`](../apps/tuval/src/commands/scope.ts).
+  on the wire. Not Effect's `Scope`, the resource-lifetime handle Tuval prose also uses (every
+  process runs in its own Effect Scope forked from its parent's); a bare "scope" in Tuval spell
+  prose is this record. Source:
+  [`apps/tuval/src/commands/scope.ts`](../apps/tuval/src/commands/scope.ts).
 - **the Tuval protocol** — the one versioned page-to-kernel wire: four Effect Schema messages
   (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
   [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).

@@ -21,7 +21,7 @@ moved.
 | [`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts) | `SpellSet`: the table and the key bindings compiled against it, in one cell |
 | [`scope.ts`](../apps/tuval/src/commands/scope.ts) | `WindowIndex`, `WindowPlacement`, `Client`, `resolveScope` |
 | [`executor.ts`](../apps/tuval/src/commands/executor.ts) | `SpellExecutor`: one `SpellCall` in, one `SpellReply` out |
-| [`errors.ts`](../apps/tuval/src/commands/errors.ts) | `DuplicateSpellPath`, `SpellNotFound`, `NoSuchWindow`, `UnknownSpell`, `BadArgs`, `BadResult` |
+| [`errors.ts`](../apps/tuval/src/commands/errors.ts) | `DuplicateSpellPath`, `SpellNotDescribable`, `SpellNotFound`, `NoSuchWindow`, `UnknownSpell`, `BadArgs`, `BadResult` |
 | [`index.ts`](../apps/tuval/src/commands/index.ts) | a partial barrel: `bindings/`, `errors`, `executor`, `parse/`, `registry`, `scope` and `spell`, but not `core/` or `bridge/`, which are imported from their own directories |
 | [`parse/tokenize.ts`](../apps/tuval/src/commands/parse/tokenize.ts) | the command line's lexer |
 | [`parse/reading.ts`](../apps/tuval/src/commands/parse/reading.ts) | the single walk `parse` and `complete` share |
@@ -45,8 +45,9 @@ moved.
 | [`protocol/process-row.ts`](../apps/tuval/src/protocol/process-row.ts) | `ProcessRow` as a snapshot carries it |
 | [`protocol/registry-description.ts`](../apps/tuval/src/protocol/registry-description.ts) | `SpellDescription`, `RegistryDescription`, `CapabilityRequest` |
 | [`protocol/patch.ts`](../apps/tuval/src/protocol/patch.ts) | `applyPatch` |
+| [`protocol/recency.ts`](../apps/tuval/src/protocol/recency.ts) | `nextRecency`, `focusWindow`: minting the `recency` stamp |
 | [`protocol/issue.ts`](../apps/tuval/src/protocol/issue.ts) | `firstSchemaIssue`, `describeSchemaError` |
-| [`protocol/json.ts`](../apps/tuval/src/protocol/json.ts) | the one `try`/`catch` JSON boundary |
+| [`protocol/json.ts`](../apps/tuval/src/protocol/json.ts) | the `try`/`catch` JSON boundary, both directions |
 | [`protocol/errors.ts`](../apps/tuval/src/protocol/errors.ts) | `ProtocolRefused`, `PatchRefused` |
 | [`registry/program.ts`](../apps/tuval/src/registry/program.ts) | the program row, including its optional `spells` |
 
@@ -100,8 +101,12 @@ the core spell list and the program rows, and it produces a `RegistryTable`:
   registered at exactly its path.
 - `rows`, the flat list `list` and `describe` read.
 
-Two spells claiming one path fail with `DuplicateSpellPath`, which names the path and both sources
-(`describeSource` renders "the core spell list" or `program "<id>"`).
+Registration is the one place a spell can be refused, and there are two refusals. Two spells
+claiming one path fail with `DuplicateSpellPath`. A spell whose `params` has no JSON Schema form
+fails with `SpellNotDescribable`: `Schema.toJsonSchemaDocument` throws at the pin, and rendering
+happens here, at registration, so a spell nobody can describe never enters the table and describing
+a registered one cannot throw. Both name the path and the source (`describeSource` renders "the core
+spell list" or `program "<id>"`).
 
 `SpellRegistry` is a `Context.Service` over one `Ref` holding the table:
 
@@ -122,9 +127,9 @@ Three layers build the service. `SpellRegistry.layer(table)` holds a table of it
 `SpellRegistry.scripted(spells)` builds one from a bare core list, which is the test seam; the
 third is `SpellSet.layer`, below, which is what boot uses.
 
-`describeSpell(row)` is the serializable face of a spell: its path, its sentence, its `params`
-rendered by `Schema.toJsonSchemaDocument`, and its capability list. The closure never leaves the
-kernel.
+`describeSpell(row)` is the serializable face of a spell: its path, its sentence, the
+`paramsDocument` the row rendered at registration, and its capability list. It is total — the render
+that can fail already happened. The closure never leaves the kernel.
 
 ## Scope, and who resolves it
 
@@ -217,7 +222,7 @@ which compiles the bindings against the table it is about to store:
 |---|---|
 | `SpellSet.read` | the table, its key sources and the compiled bindings, as one value |
 | `SpellSet.reload(input)` | a fresh table from new program rows, fresh bindings, installed in one write |
-| `SpellRegistry.swap(table)` | the narrower entry, which recompiles the bindings rather than leaving them behind |
+| `SpellRegistry.swap(table)` | the narrower entry, which recompiles the bindings rather than leaving them behind, holding the cell across the compile so a concurrent reload cannot land inside it |
 
 `everyPath(table)` is the whole registry as an allowlist, which is what `src/boot.ts` passes the
 bridge today.
@@ -257,7 +262,9 @@ single walk `parse` and `complete` share. Two rules make it incremental:
    only has to be a prefix of something.
 2. **The deepest registered spell on the walk wins**, and every token after its path is an argument.
    Positional arguments fill parameters in declaration order; a token shaped `name=value` whose
-   `name` is an unbound parameter binds by name. Rule 1 outranks rule 2 where they meet.
+   `name` is an unbound parameter binds by name, and one naming a parameter the line already bound
+   is refused with "<name> is already bound" rather than read as a positional value. Rule 1 outranks
+   rule 2 where they meet.
 
 Arguments bind as text. The only *value* the parser refuses is one outside an enum parameter's
 literals, which is the check the kernel would make anyway, made here so a page running this parser cannot
@@ -281,12 +288,14 @@ parser walks, from the protocol's `RegistryDescription`. That is the same value 
 carries, so the page and the kernel run this parser over identical input. A `RegistryTable` would
 carry richer types and the page cannot hold one: it has descriptions, never closures.
 
-`readParams` flattens a description's JSON-Schema `params` to an ordered `ParamSpec` list. Two
-properties of that rendering are load-bearing, both read off `Schema.toJsonSchemaDocument` at the
+`readParams` flattens a description's JSON-Schema `params` to an ordered `ParamSpec` list. Three
+properties of that rendering are load-bearing, all read off `Schema.toJsonSchemaDocument` at the
 `catalogs.tuval` pin (effect `4.0.0-rc.112`): the `properties` key order is the declaration order of
-`Schema.Struct`, which is the positional order of the parameters, and a `Schema.Literals` parameter
-arrives as `{"type": "string", "enum": [...]}`. Everything else is read defensively, because the
-module is total.
+`Schema.Struct`, which is the positional order of the parameters; a `Schema.Literals` parameter
+arrives as `{"type": "string", "enum": [...]}`; and a `Schema.Class` params, or any
+identifier-annotated struct, renders its root as `{"$ref": "#/$defs/<name>"}` with the object itself
+under the document's `definitions`, so the root ref is followed once before the properties are read.
+Everything else is read defensively, because the module is total.
 
 `describeExpected(param)` renders one slot: `<name>`, or the literals joined by `|`.
 
@@ -308,9 +317,12 @@ process, a program or a workspace offers that set, and one named for none of the
 values.
 
 Only the fuzzy rule sorts. The prefix rule is a plain `.filter`, so it hands back the registry or
-snapshot order untouched. In the fuzzy rule, ties fall back to snapshot order because
-`Array.prototype.sort` is required to be stable (ECMA-262 §23.1.3.30), so two calls over one
-snapshot return one list.
+snapshot order untouched. A fuzzy tie breaks on the `recency` stamp every window and process row
+carries, most recent first (#7617 R1.5): the kernel bumps one counter over the whole desk and stamps
+a window on focus and a row on spawn, so two equally tight matches are ordered by which was touched
+last. A value with no stamp of its own — a workspace name, a workspace id — ties on collection order
+instead, and `Array.prototype.sort` is required to be stable (ECMA-262 §23.1.3.30), so two calls
+over one snapshot return one list.
 
 A `Candidate` carries `value` (the text that replaces the caret's token), a `kind`
 (`segment` / `program` / `literal` / `window` / `process` / `workspace`), and the spell's sentence on
@@ -374,16 +386,27 @@ Four messages, one `Schema.Class` each:
 | Message | Direction | Fields |
 |---|---|---|
 | `SpellCall` | page to kernel | `id`, `path`, `args` (opaque here), optional `window` |
-| `SpellReply` | kernel to page | `id`, `outcome`: `{ok: true, result}` or `{ok: false, error}` |
+| `SpellReply` | kernel to page | `id`, plus `ok: true, result` or `ok: false, error` |
 | `Snapshot` | kernel to page | `rev`, `desk`, `windows`, `processes`, `registry` |
 | `Patch` | kernel to page | `rev`, `changes`: path-addressed replaces |
 
 `SpellCall` is the only page-to-kernel message: windows, keys and the command line all speak this
 one shape. `PageToKernel` is the union of that one; `KernelToPage` is the union of the other three.
 
-`SpellOutcome` holds `ok` and its payload together, so a reply carrying both a result and an error
-cannot be built or decoded. `SpellFailure` carries `tag`, `message`, and optionally `path`,
+`SpellReply` is the flat union of `SpellReplyOk` and `SpellReplyError`, which is what holds `ok`
+and its payload together: a reply carrying both a result and an error is a member of neither class,
+so it cannot be built or decoded. `isSpellReply` is the reply leg of `KernelToPage`, since
+`instanceof` cannot answer for a union. `SpellFailure` carries `tag`, `message`, and optionally `path`,
 `expected` and `didYouMean`, which is enough for a client to render an error inline under its input.
+
+Every window and every process row on a `Snapshot` carries a `recency` stamp: one monotonic counter
+over the whole desk, bumped when a window takes focus and when a process spawns, so the highest
+stamp is whatever was touched last. It is a counter and not a `lastFocusedAt` for the reason
+`Revision` is one — the kernel holds no clock, a counter is deterministic under test, and the page
+only ever compares two stamps, so a wall time would buy nothing and cost clock skew.
+[`protocol/recency.ts`](../apps/tuval/src/protocol/recency.ts) mints it, beside the schema that
+declares it and for the same reason `applyPatch` lives there. Completion reads it to break a fuzzy
+tie; no shell holds windows yet, so `focusWindow` has no production caller.
 
 The registry rides in the `Snapshot` as a `RegistryDescription`
 ([`protocol/registry-description.ts`](../apps/tuval/src/protocol/registry-description.ts)), so the
@@ -400,9 +423,13 @@ is total: it answers with the message or with `ProtocolRefused`
 ([`protocol/errors.ts`](../apps/tuval/src/protocol/errors.ts)) naming the direction and the schema
 issue. Nothing throws and nothing resolves a malformed frame to a partial value.
 
-[`protocol/json.ts`](../apps/tuval/src/protocol/json.ts) holds the one native `try`/`catch`, on
-purpose: parsing an untrusted string needs it, the repo bans it inside Effect control flow, so the
-boundary lives in its own module with no `effect` import and the codec wraps it.
+[`protocol/json.ts`](../apps/tuval/src/protocol/json.ts) holds the module's native `try`/`catch`,
+on purpose: reading and writing untrusted JSON needs it, the repo bans it inside Effect control
+flow, so the boundary lives in its own module with no `effect` import and the codec wraps it. Both
+directions answer a value rather than throwing — `parseJson` is `Parsed | Failed`, `stringifyJson`
+is `Stringified | Failed`. The write needs the same guard as the read because `SpellCall.args`,
+a reply's `result` and `Replace.value` are all `Schema.Unknown`: encode is identity there, so a
+BigInt or a cycle reaches the writer untouched and encode fails with `ProtocolRefused`.
 
 [`protocol/ids.ts`](../apps/tuval/src/protocol/ids.ts) re-declares `ProcessId` and `ProgramId`
 rather than importing them from the kernel slices, which keeps the protocol module independent by
@@ -414,12 +441,12 @@ walks each replace path, then decodes the result back as a `Snapshot`. The decod
 patch that would leave the desk in a shape the protocol does not admit is refused with
 `PatchRefused` rather than delivered. A replace never creates a key.
 
-The revision check is `patch.rev <= snapshot.rev` and nothing more, so a patch is refused only when
-its `rev` is not strictly ahead of the snapshot's. A gap is admitted: a patch at `rev + 7` applies
-over `rev`. The message on the refusal, and the comment on `Patch` in
-[`protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts), both say "follow", which reads as
-successor and is wider than the check.
-[#7689](https://github.com/kamp-us/phoenix/issues/7689) is filed on the gap.
+The revision check is `patch.rev !== snapshot.rev + 1`, so a patch applies over exactly the
+revision below it: a patch at `rev + 7` is refused rather than applied over a gap, and so is one
+older than the snapshot. That is what the refusal message ("does not follow") and the comment on
+`Patch` in [`protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts) ("it applies only over
+the revision just below it") have always said; the check used to be wider than both, which is
+[#7689](https://github.com/kamp-us/phoenix/issues/7689).
 
 [`protocol/issue.ts`](../apps/tuval/src/protocol/issue.ts) turns an Effect `SchemaError` into
 `{expected, at}`, which is what every refusal in the slice interpolates.
@@ -431,9 +458,7 @@ a window's box, the way VS Code, Neovim and tmux do it. The focused window suppl
 spell run from the palette still targets the focused window, because scope comes from focus and not
 from where the palette sits.
 
-It is not built yet. [#7643](https://github.com/kamp-us/phoenix/issues/7643) owns it, and it lands
-once [#7556](https://github.com/kamp-us/phoenix/issues/7556) and
-[#7561](https://github.com/kamp-us/phoenix/issues/7561) close and the epic PR
-[#7687](https://github.com/kamp-us/phoenix/pull/7687) merges. What the parser and the completion
-engine above owe it is already here: a
-total per-keystroke read, ranked candidates, and a refusal that points at a character offset.
+It is not built yet ([ADR 0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md)
+carries the why and the sequencing). What the parser and the completion engine above owe it is
+already here: a total per-keystroke read, ranked candidates, and a refusal that points at a
+character offset.

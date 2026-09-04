@@ -117,8 +117,11 @@ Named here so nobody reads the framework as more than it is.
   inert data: stored, described, and checked by nothing. Local program code is fully trusted and
   there is no sandbox (#7484 R1.1, the Neovim model). Until enforcement exists, the only thing
   between a calling program and the registry is the bridge's allowlist. `SpellBridge.layer({allow})`
-  takes that list from whoever builds the layer, and as this ADR is written the only caller in the
-  tree is the bridge's own unit test: nothing reads a program row into it yet. Wiring it to the
+  takes that list from whoever builds the layer, and no program row supplies it yet: `src/boot.ts`
+  allows the whole registry (`everyPath` over the table as it stands at boot) and the bridge's own
+  unit test passes its own list. Because the layer captures the list at build, a config reload
+  leaves it behind while the registry moves on —
+  [#7743](https://github.com/kamp-us/phoenix/issues/7743) is filed on that. Wiring the list to the
   calling program's registry row is the intent recorded in the module's docblock and is a later
   child's work, and enforcement proper is a later epic's. This ADR designs neither.
 - **Scripting and macros.** No way to compose spells into a script, bind a sequence, or record one.
