@@ -300,13 +300,16 @@ const transport = (
 /**
  * Pi's model runtime and the session host over it, created inside this layer's own Scope.
  *
- * This is what keeps ruling 4's `R` empty. `ModelRuntime.create` takes plain paths and flags and
- * nothing else at 0.84.3 (`CreateModelRuntimeOptions`, `dist/core/model-runtime.d.ts:3-18`), so the
- * strings on `PiAiAgentOptions` are the whole of what a process supplies and no Pi value ever
- * crosses back out to it. The two paths are Pi's own, rebased on `agentDir` so an overridden
- * directory moves the credentials and the catalog together (`getAuthPath`/`getModelsPath` are
- * `join(getAgentDir(), …)`, `dist/config.js:432-438`). The runtime holds nothing to release — it
- * declares no `dispose` or `close` — so it is created rather than acquired.
+ * This is what keeps ruling 4's `R` empty. The call site supplies `authPath` and `modelsPath` and
+ * nothing further, so the strings on `PiAiAgentOptions` are the whole of what a process gives Pi
+ * and no Pi value ever crosses back out to it. `CreateModelRuntimeOptions` does declare three
+ * options that are neither a path nor a flag — `credentials`, `modelsStore` and `signal` — and
+ * leaving all three unset is what keeps this seam string-only at 0.84.3
+ * (`dist/core/model-runtime.d.ts:3-18`). The two paths are Pi's own, rebased on `agentDir` so an
+ * overridden directory moves the credentials and the catalog together
+ * (`getAuthPath`/`getModelsPath` are `join(getAgentDir(), …)`, `dist/config.js:432-438`). The
+ * runtime holds nothing to release — it declares no `dispose` or `close` — so it is created rather
+ * than acquired.
  */
 const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 	Layer.unwrap(
