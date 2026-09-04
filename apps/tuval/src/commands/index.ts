@@ -1,4 +1,17 @@
 export {
+	type Binding,
+	BindingError,
+	type BindingSource,
+	type CompiledBindings,
+	type ConfigFile,
+	type ConfigLayer,
+	compileBindings,
+	describeFile,
+	KeyBindingInput,
+	KeyBindings,
+	renderBindingErrors,
+} from "./bindings/index.ts";
+export {
 	BadArgs,
 	BadResult,
 	DuplicateSpellPath,
