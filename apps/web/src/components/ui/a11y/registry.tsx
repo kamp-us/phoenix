@@ -38,8 +38,10 @@ export interface DeferredSpec {
 export type PrimitiveSpec = InteractiveSpec | PresentationalSpec | DeferredSpec;
 
 /** A short, always-present, human-readable label so a control has an accessible name. */
-const label = fc.constantFrom("Beğen", "Yanıtla", "Paylaş", "Gönder", "Kaydet", "Aç");
-const text = fc.constantFrom("kamp.us", "sözlük", "panolar", "bir başlık", "42");
+// Sample values, not product copy: they only have to be non-empty accessible names, so they
+// stay out of the locale catalogs (ADR 0347).
+const label = fc.constantFrom("Like", "Reply", "Share", "Send", "Save", "Open");
+const text = fc.constantFrom("kamp.us", "a heading", "some body text", "42");
 
 const buttonArb: fc.Arbitrary<ReactElement> = fc
 	.record({
@@ -156,11 +158,11 @@ const selectArb: fc.Arbitrary<ReactElement> = fc
 	})
 	.map(({value, disabled}) => (
 		<Select
-			label="Teslim modu"
+			label="Delivery mode"
 			items={[
-				{value: "send", label: "Gönder"},
-				{value: "steer", label: "Yönlendir"},
-				{value: "follow-up", label: "Sonraya al"},
+				{value: "send", label: "Send"},
+				{value: "steer", label: "Steer"},
+				{value: "follow-up", label: "Follow up"},
 			]}
 			value={[value]}
 			disabled={disabled}

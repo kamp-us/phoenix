@@ -11,6 +11,7 @@ import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {PromotionReceipt} from "../../../worker/features/fate/views";
 import {codeOf} from "../../fate/wire";
+import {type CatalogKey, useT} from "../../i18n";
 import {promoteRefreshWarranted, promoteVisible} from "../divan/divanGating";
 import {Alert} from "../ui/Alert";
 import {Button} from "../ui/Button";
@@ -45,16 +46,16 @@ export function promoteOutcome(
 	return result?.promoted ? "promoted" : "alreadyYazar";
 }
 
-export function promotionOutcomeMessage(outcome: PromotionOutcome): string {
+export function promotionOutcomeMessageKey(outcome: PromotionOutcome): CatalogKey {
 	switch (outcome) {
 		case "promoted":
-			return "kullanıcı yazar oldu.";
+			return "profile.promotion.outcome.promoted";
 		case "alreadyYazar":
-			return "kullanıcı zaten yazar.";
+			return "profile.promotion.outcome.alreadyYazar";
 		case "denied":
-			return "bunu yapma yetkin yok.";
+			return "profile.promotion.outcome.denied";
 		case "error":
-			return "işlem başarısız oldu.";
+			return "profile.promotion.outcome.error";
 	}
 }
 
@@ -67,6 +68,7 @@ export function PromotionActions({
 	onSuccessRefresh?: () => void;
 }) {
 	const fate = useFateClient();
+	const t = useT();
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState("");
 
@@ -79,10 +81,10 @@ export function PromotionActions({
 				view: PromotionReceiptView,
 			});
 			const outcome = promoteOutcome(result, error);
-			setMessage(promotionOutcomeMessage(outcome));
+			setMessage(t(promotionOutcomeMessageKey(outcome)));
 			if (promoteRefreshWarranted(outcome)) onSuccessRefresh?.();
 		} catch (caught) {
-			setMessage(promotionOutcomeMessage(errorOutcome(caught)));
+			setMessage(t(promotionOutcomeMessageKey(errorOutcome(caught))));
 		} finally {
 			setBusy(false);
 		}
@@ -91,7 +93,7 @@ export function PromotionActions({
 	return (
 		<section
 			className="kp-promotion"
-			aria-label="yazarlık işlemleri"
+			aria-label={t("profile.promotion.sectionLabel")}
 			data-testid="promotion-actions"
 		>
 			<div className="kp-promotion__buttons">
@@ -105,7 +107,7 @@ export function PromotionActions({
 					loading={busy}
 					data-testid="promote-button"
 				>
-					yazarlığa yükselt
+					{t("profile.promotion.action")}
 				</Button>
 			</div>
 			<Alert

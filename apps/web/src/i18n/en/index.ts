@@ -1,6 +1,8 @@
 import type {CatalogKey} from "../keys";
+import {account} from "./account";
 import {auth} from "./auth";
 import {layout} from "./layout";
+import {mecmua} from "./mecmua";
 import {pano} from "./pano";
 import {sozluk} from "./sozluk";
 import {wire} from "./wire";
@@ -14,8 +16,10 @@ import {wire} from "./wire";
  * runs excess-property checks on a plain object literal and not on spread members.
  */
 export const en = {
+	...account,
 	...auth,
 	...layout,
+	...mecmua,
 	...pano,
 	...sozluk,
 	...wire,

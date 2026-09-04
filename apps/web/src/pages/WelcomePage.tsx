@@ -27,7 +27,7 @@ import {
 import {
 	caylakPromotionPath,
 	useAuthorshipStanding,
-	vouchExistsLabel,
+	vouchExistsLabelKey,
 } from "../components/profile/CaylakStatusBlock";
 import {Button} from "../components/ui/Button";
 import {PHOENIX_WELCOME} from "../flags/keys";
@@ -126,8 +126,8 @@ export function WelcomePage() {
 							</p>
 							{promotionPath?.kind === "vouch-needed" ? (
 								<div className="kp-welcome__vouch-needed" data-testid="welcome-vouch-needed">
-									<p className="kp-welcome__vouch-message">{promotionPath.message}</p>
-									<p className="kp-welcome__vouch-hint">{promotionPath.hint}</p>
+									<p className="kp-welcome__vouch-message">{t(promotionPath.messageKey)}</p>
+									<p className="kp-welcome__vouch-hint">{t(promotionPath.hintKey)}</p>
 								</div>
 							) : null}
 							{promotionPath?.kind === "karma-bar" && standing ? (
@@ -143,7 +143,7 @@ export function WelcomePage() {
 									<div className="kp-welcome__fact">
 										<dt className="kp-welcome__term">{t("auth.welcome.vouchTerm")}</dt>
 										<dd className="kp-welcome__value" data-testid="welcome-vouch">
-											{vouchExistsLabel(standing.vouchExists)}
+											{t(vouchExistsLabelKey(standing.vouchExists))}
 										</dd>
 									</div>
 								</dl>

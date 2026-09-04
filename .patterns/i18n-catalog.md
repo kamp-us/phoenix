@@ -54,6 +54,12 @@ The consumer takes the bound `Translate`, never a `Locale`: `en` is reachable on
 `catalog.ts`'s dynamic import, so a module outside a `LocaleProvider` subtree cannot resolve
 English synchronously. A module-level rule that needs copy is curried on `t` and the component
 supplies it — see `commentBodyValidator` in `pages/PanoPostDetail.tsx`.
+
+A catalog file may carry a **cluster** of sub-surfaces rather than one, each keeping its own key
+prefix — `i18n/tr/account.ts` holds `profile.*`, `bildirim.*`, `mute.*`, `ui.*` and the rest of the
+identity-facing copy. Split a file per component directory only when the directories move
+independently; nine files nothing else distinguishes are nine merge targets, not nine surfaces.
+
 ## Copy that used to live in a module constant
 
 A message table declared at module scope — a `WireMessageOverrides` map, a label lookup — is
@@ -74,6 +80,14 @@ table is rebuilt only then. Nothing downstream reads the table's identity: `useD
 `useDraft` declare no dependency array and read `options.overrides` inside their own closures at
 call time. A helper that took the table at module scope takes it as a parameter instead —
 `validatePostFields(t, overrides, …)`.
+
+## Copy a pure helper decides
+
+A helper outside a component picks the **key**, never the string: `bildirimCopy`,
+`profileStandingLabelKey`, `shareFeedbackLabelKey`. It returns a `CatalogKey` (or takes a
+`Translate` when it also has to interpolate), so the one catalog read stays at the render site and
+the helper's unit test asserts against `tr[key]` instead of a literal. `plural` is generic in its
+form type, so `t(plural(locale, n, {one: "…", other: "…"}))` type-checks with two keys.
 
 ## Plurals pick a message, not a key
 
@@ -130,8 +144,8 @@ number of times in `en` as in `tr`, matched **whole-word**. Turkish is agglutina
 
 That whole-word rule is what you trip over when Turkish suffixes the noun. `divanda` is not a
 whole-word `divan`, so the key's `tr` count is 0 — and an English message that spells `in the divan`
-counts 1 and reds the invariant. **Give the English side a placeholder and pass the noun in**, out of
-an `auth.brand.*`-style key so it is still catalog copy rather than a literal:
+counts 1 and reds the invariant. Two ways out. **Give the English side a placeholder and pass the
+noun in**, out of an `auth.brand.*`-style key so it is still catalog copy rather than a literal:
 
 ```ts
 // tr — the suffixed word, unchanged
@@ -147,7 +161,9 @@ t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})
 Name the placeholder `{panoNoun}`, **never `{pano}`**: the invariant scans with `\p{L}+`, braces are
 not letters, so `{pano}` reads as the word `pano` and counts. A noun whose Turkish spelling mutates
 under the suffix (`sözlük` → `sözlüğe`) can only be written out on the `tr` side; the placeholder
-still belongs on the `en` one.
+still belongs on the `en` one. Or, where the phrase reads fine without the noun, **write the English
+around it** (`up for review`, `one of the yazars`) rather than reintroduce a noun the Turkish only
+carries suffixed (`divandaki`, `yazarsın`, `çaylakların`).
 
 ## Plurals
 

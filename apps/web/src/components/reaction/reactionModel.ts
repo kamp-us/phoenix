@@ -3,6 +3,7 @@
 // bar's shape stable.
 import {REACTION_EMOJI, type ReactionEmoji} from "../../../worker/db/reaction-emoji";
 import type {ReactionAggregate} from "../../../worker/features/reaction/Reaction";
+import type {CatalogKey, Translate} from "../../i18n";
 
 // A mutable twin of `ReactionAggregate` purely because fate's `OptimisticUpdate` rejects
 // the readonly `counts` array the read side uses. Don't collapse the two.
@@ -12,13 +13,13 @@ export interface OptimisticReactionAggregate {
 }
 
 // The glosses ADR 0139 fixes; they are each button's accessible name, not decoration.
-export const REACTION_GLOSS: Record<ReactionEmoji, string> = {
-	"👍": "beğendim",
-	"❤️": "sevdim",
-	"😂": "güldüm",
-	"🤔": "düşündürdü",
-	"😢": "üzüldüm",
-	"🔥": "efsane",
+export const REACTION_GLOSS_KEYS: Record<ReactionEmoji, CatalogKey> = {
+	"👍": "reaction.gloss.thumbsUp",
+	"❤️": "reaction.gloss.heart",
+	"😂": "reaction.gloss.laughing",
+	"🤔": "reaction.gloss.thinking",
+	"😢": "reaction.gloss.crying",
+	"🔥": "reaction.gloss.fire",
 };
 
 export interface ReactionSlot {
@@ -30,12 +31,15 @@ export interface ReactionSlot {
 
 export const EMPTY_AGGREGATE: ReactionAggregate = {counts: [], myReaction: null};
 
-export function reactionSlots(aggregate: ReactionAggregate | undefined | null): ReactionSlot[] {
+export function reactionSlots(
+	aggregate: ReactionAggregate | undefined | null,
+	t: Translate,
+): ReactionSlot[] {
 	const agg = aggregate ?? EMPTY_AGGREGATE;
 	const countOf = new Map<string, number>(agg.counts.map((c) => [c.emoji, c.count]));
 	return REACTION_EMOJI.map((emoji) => ({
 		emoji,
-		gloss: REACTION_GLOSS[emoji],
+		gloss: t(REACTION_GLOSS_KEYS[emoji]),
 		count: countOf.get(emoji) ?? 0,
 		active: agg.myReaction === emoji,
 	}));

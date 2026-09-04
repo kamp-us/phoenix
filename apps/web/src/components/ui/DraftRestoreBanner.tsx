@@ -1,3 +1,4 @@
+import {useT} from "../../i18n";
 import {Button} from "./Button";
 import "./DraftRestoreBanner.css";
 
@@ -16,15 +17,14 @@ export function DraftRestoreBanner({
 	onRestore: () => void;
 	onDismiss: () => void;
 }) {
+	const t = useT();
 	return (
 		<section
 			className="kp-draft-restore"
-			aria-label="kaydedilmiş taslak"
+			aria-label={t("ui.draftRestore.label")}
 			data-testid="draft-restore"
 		>
-			<p className="kp-draft-restore__text">
-				kaydedilmiş bir taslağın var. geri yüklemek ister misin?
-			</p>
+			<p className="kp-draft-restore__text">{t("ui.draftRestore.text")}</p>
 			<div className="kp-draft-restore__actions">
 				<Button
 					type="button"
@@ -33,7 +33,7 @@ export function DraftRestoreBanner({
 					onClick={onRestore}
 					data-testid="draft-restore-accept"
 				>
-					taslağı geri yükle
+					{t("ui.draftRestore.restore")}
 				</Button>
 				<Button
 					type="button"
@@ -42,7 +42,7 @@ export function DraftRestoreBanner({
 					onClick={onDismiss}
 					data-testid="draft-restore-dismiss"
 				>
-					yoksay
+					{t("ui.draftRestore.dismiss")}
 				</Button>
 			</div>
 		</section>

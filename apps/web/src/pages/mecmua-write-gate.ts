@@ -4,8 +4,9 @@
  * the editor route's lazy split. The server gates publish regardless — this is UI only.
  */
 import type {Tier} from "../../worker/features/kunye/standing";
+import type {CatalogKey} from "../i18n/keys";
 
-export type MecmuaPublishAffordance = {kind: "publish"} | {kind: "gate"; message: string};
+export type MecmuaPublishAffordance = {kind: "publish"} | {kind: "gate"; messageKey: CatalogKey};
 
 export function mecmuaPublishAffordance(
 	isSignedIn: boolean,
@@ -14,9 +15,7 @@ export function mecmuaPublishAffordance(
 	if (tier === "yazar") return {kind: "publish"};
 	return {
 		kind: "gate",
-		message: isSignedIn
-			? "yayımlamak için yazar olman gerekiyor — çaylakların yazıları henüz yayımlanamaz."
-			: "yayımlamak için giriş yapıp yazar olman gerekiyor.",
+		messageKey: isSignedIn ? "mecmua.gate.signedIn" : "mecmua.gate.signedOut",
 	};
 }
 
