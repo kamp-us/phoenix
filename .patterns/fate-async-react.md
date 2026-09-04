@@ -141,7 +141,7 @@ reflows when content lands — the footer jumps, layout thrashes (CLS). A skelet
 handful of rows under a page that resolves to twenty jumps ~941px on arrival (#2161). Two rules:
 
 - **Mirror the real DOM shape.** Compose the fallback from the shared `Skeleton` atom
-  (`components/ui/atoms.tsx`) using the *same* container classes and row structure as the loaded
+  (`packages/design/src/atoms.tsx`) using the *same* container classes and row structure as the loaded
   view (`PanoFeedSkeleton` reuses `.kp-pano-list` / `.kp-pano-post`), so widths, gaps, and grid
   match without duplicating measurements.
 - **Single-source the row count from the page size.** The feed skeleton's row count is

@@ -1,6 +1,6 @@
 import * as React from "react";
-import {type CatalogKey, useT} from "../../i18n";
 import {Button} from "./Button";
+import {type DesignCatalogKey, useDesignT} from "./i18n";
 
 export type ShareOutcome = "shared" | "copied" | "error";
 
@@ -56,8 +56,8 @@ async function shareOrCopy(url: string): Promise<ShareOutcome> {
 
 export function shareFeedbackLabelKey(
 	outcome: "copied" | "error" | null,
-	restingKey: CatalogKey,
-): CatalogKey {
+	restingKey: DesignCatalogKey,
+): DesignCatalogKey {
 	switch (outcome) {
 		case "copied":
 			return "ui.share.copied";
@@ -72,7 +72,7 @@ export interface CopyLinkButtonProps {
 	/** Canonical path of the item, e.g. `/pano/:id` or `/pano/:id#comment-<id>`. */
 	path: string;
 	/** The resting label's catalog key; defaults to the shared paylaş copy. */
-	labelKey?: CatalogKey;
+	labelKey?: DesignCatalogKey;
 	testId?: string;
 	className?: string;
 }
@@ -92,7 +92,7 @@ export function CopyLinkButton({
 	testId,
 	className,
 }: CopyLinkButtonProps) {
-	const t = useT();
+	const t = useDesignT();
 	const [feedback, setFeedback] = React.useState<"copied" | "error" | null>(null);
 	const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 

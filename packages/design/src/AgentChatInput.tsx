@@ -27,55 +27,58 @@ import {
 	useRef,
 	useState,
 } from "react";
-import {type CatalogKey, type Translate, useT} from "../../i18n";
-import {Icon} from "../Icon";
-import {Alert} from "../ui/Alert";
-import {Kbd} from "../ui/atoms";
-import {Button} from "../ui/Button";
-import {Card} from "../ui/Card";
-import {Collapsible} from "../ui/Collapsible";
-import {Dialog} from "../ui/Dialog";
-import {Form, Input, Textarea} from "../ui/Form";
-import {Menu, type MenuItem} from "../ui/Menu";
-import {Select, type SelectItem} from "../ui/Select";
-import {
-	abortPi,
-	answerPiExtension,
-	loadPiCommands,
-	loadPiFiles,
-	loadPiModels,
-	loadPiState,
-	loadPiThinkingLevels,
-	type PiCommand,
-	type PiDeliveryMode,
-	type PiEvent,
-	type PiExtensionAnswer,
-	type PiImage,
-	type PiModel,
-	type PiProjectTrust,
-	type PiThinkingLevel,
-	sendPiPrompt,
-	setPiModel,
-	setPiProjectTrust,
-	setPiThinkingLevel,
-	subscribeToPiEvents,
-} from "./piHarness";
+import {Alert} from "./Alert";
+import type {
+	AgentChatInputBridge,
+	PiCommand,
+	PiDeliveryMode,
+	PiEvent,
+	PiExtensionAnswer,
+	PiImage,
+	PiModel,
+	PiProjectTrust,
+	PiThinkingLevel,
+} from "./agent-chat-bridge";
+import {Kbd} from "./atoms";
+import {Button} from "./Button";
+import {Card} from "./Card";
+import {Collapsible} from "./Collapsible";
+import {Dialog} from "./Dialog";
+import {Form, Input, Textarea} from "./Form";
+import {type DesignCatalogKey, type DesignTranslate, useDesignT} from "./i18n";
+import {Menu, type MenuItem} from "./Menu";
+import {Select, type SelectItem} from "./Select";
 import "./AgentChatInput.css";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
-const deliveryModeKeys: readonly {value: PiDeliveryMode; key: CatalogKey}[] = [
+const unavailableBridge: AgentChatInputBridge = {
+	loadPiState: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	loadPiCommands: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	loadPiModels: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	loadPiThinkingLevels: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	loadPiFiles: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	setPiModel: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	setPiThinkingLevel: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	setPiProjectTrust: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	sendPiPrompt: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	abortPi: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	answerPiExtension: () => Promise.reject(new Error("Pi harness kullanılamıyor.")),
+	subscribeToPiEvents: () => () => undefined,
+};
+
+const deliveryModeKeys: readonly {value: PiDeliveryMode; key: DesignCatalogKey}[] = [
 	{value: "prompt", key: "admin.agent.delivery.prompt"},
 	{value: "steer", key: "admin.agent.delivery.steer"},
 	{value: "follow_up", key: "admin.agent.delivery.followUp"},
 ];
 
-const projectTrustKeys: readonly {value: PiProjectTrust; key: CatalogKey}[] = [
+const projectTrustKeys: readonly {value: PiProjectTrust; key: DesignCatalogKey}[] = [
 	{value: "approve", key: "admin.agent.trust.approve"},
 	{value: "no-approve", key: "admin.agent.trust.ignore"},
 ];
 
-const thinkingLevelKeys: Readonly<Record<PiThinkingLevel, CatalogKey>> = {
+const thinkingLevelKeys: Readonly<Record<PiThinkingLevel, DesignCatalogKey>> = {
 	off: "admin.agent.thinking.off",
 	minimal: "admin.agent.thinking.minimal",
 	low: "admin.agent.thinking.low",
@@ -86,8 +89,8 @@ const thinkingLevelKeys: Readonly<Record<PiThinkingLevel, CatalogKey>> = {
 };
 
 const toItems = (
-	entries: readonly {value: string; key: CatalogKey}[],
-	t: Translate,
+	entries: readonly {value: string; key: DesignCatalogKey}[],
+	t: DesignTranslate,
 ): SelectItem[] => entries.map(({value, key}) => ({value, label: t(key)}));
 
 const thinkingLevelIcons: Readonly<Record<PiThinkingLevel, LucideIcon>> = {
@@ -115,12 +118,12 @@ const mockThinkingLevels: readonly PiThinkingLevel[] = [
 	"xhigh",
 ];
 
-const mockCommands = (t: Translate): readonly PiCommand[] => [
+const mockCommands = (t: DesignTranslate): readonly PiCommand[] => [
 	{name: "review", description: t("admin.agent.mock.command.review")},
 	{name: "compact", description: t("admin.agent.mock.command.compact")},
 ];
 
-const mockFiles = ["apps/web/src/App.tsx", "apps/web/src/components/agent/AgentChatInput.tsx"];
+const mockFiles = ["apps/web/src/App.tsx", "packages/design/src/AgentChatInput.tsx"];
 
 type ConnectionState = "loading" | "ready" | "unavailable" | "working";
 
@@ -154,6 +157,30 @@ interface ExtensionRequest {
 	readonly options?: readonly string[];
 	readonly placeholder?: string;
 	readonly prefill?: string;
+}
+
+type IconSize = 12 | 14 | 16 | 20 | 24;
+
+function Icon({
+	icon: Glyph,
+	size = 20,
+	className,
+	label,
+}: {
+	readonly icon: LucideIcon;
+	readonly size?: IconSize;
+	readonly className?: string;
+	readonly label?: string;
+}) {
+	return (
+		<Glyph
+			className={className ? `kp-icon ${className}` : "kp-icon"}
+			size={size}
+			aria-hidden={label ? undefined : true}
+			aria-label={label}
+			role={label ? "img" : undefined}
+		/>
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -280,6 +307,7 @@ function fileAsImage(file: File, unreadable: string): Promise<PiImage> {
 }
 
 export interface AgentChatInputProps {
+	readonly bridge?: AgentChatInputBridge;
 	readonly initialValue?: string;
 	readonly disabled?: boolean;
 	readonly variant?: "harness" | "focused";
@@ -287,13 +315,16 @@ export interface AgentChatInputProps {
 }
 
 export function AgentChatInput({
+	bridge,
 	initialValue = "",
 	disabled = false,
 	variant = "harness",
 	mockWhenUnavailable = false,
 }: AgentChatInputProps) {
-	const t = useT();
+	const activeBridge = bridge ?? unavailableBridge;
+	const t = useDesignT();
 	const inputId = useId();
+	const suggestionsId = `${inputId}-suggestions`;
 	const imageInputRef = useRef<HTMLInputElement>(null);
 	const [draft, setDraft] = useState(initialValue);
 	const [delivery, setDelivery] = useState<PiDeliveryMode>("prompt");
@@ -335,7 +366,12 @@ export function AgentChatInput({
 			});
 			setError(undefined);
 		};
-		void Promise.all([loadPiState(), loadPiCommands(), loadPiModels(), loadPiThinkingLevels()])
+		void Promise.all([
+			activeBridge.loadPiState(),
+			activeBridge.loadPiCommands(),
+			activeBridge.loadPiModels(),
+			activeBridge.loadPiThinkingLevels(),
+		])
 			.then(([nextState, nextCommands, nextModels, nextThinkingLevels]) => {
 				if (!current) return;
 				const selectableThinkingLevels = nextThinkingLevels.filter((level) => level !== "off");
@@ -350,7 +386,7 @@ export function AgentChatInput({
 				setCommands(nextCommands);
 				setModels(nextModels);
 				setThinkingLevels(selectableThinkingLevels);
-				unsubscribe = subscribeToPiEvents(
+				unsubscribe = activeBridge.subscribeToPiEvents(
 					(event) => {
 						if (current) handleEvent(event);
 					},
@@ -372,7 +408,7 @@ export function AgentChatInput({
 			current = false;
 			unsubscribe();
 		};
-	}, [mockWhenUnavailable, t]);
+	}, [activeBridge, mockWhenUnavailable, t]);
 
 	function applyState(nextState: Record<string, unknown>) {
 		setState(nextState);
@@ -394,7 +430,8 @@ export function AgentChatInput({
 				setFiles(mockFiles.filter((path) => path.toLocaleLowerCase().includes(query)));
 				return;
 			}
-			void loadPiFiles(completion.query)
+			void activeBridge
+				.loadPiFiles(completion.query)
 				.then((nextFiles) => {
 					if (current) setFiles(nextFiles);
 				})
@@ -406,7 +443,7 @@ export function AgentChatInput({
 			current = false;
 			window.clearTimeout(timer);
 		};
-	}, [completion, completionDismissed, usingMockHarness]);
+	}, [activeBridge, completion, completionDismissed, usingMockHarness]);
 
 	const suggestions = useMemo<readonly Suggestion[]>(() => {
 		if (!completion || completionDismissed) return [];
@@ -417,6 +454,8 @@ export function AgentChatInput({
 			.slice(0, 8)
 			.map((command) => ({kind: "command", command}));
 	}, [commands, completion, completionDismissed, files]);
+	const activeSuggestionId =
+		suggestions.length > 0 ? `${suggestionsId}-${activeSuggestion}` : undefined;
 
 	useEffect(() => setActiveSuggestion(0), [completion?.kind, completion?.query]);
 
@@ -528,7 +567,7 @@ export function AgentChatInput({
 						: "prompt"
 					: delivery;
 			const streamedPrompt = connection === "working" && requestedDelivery === "prompt";
-			await sendPiPrompt({
+			await activeBridge.sendPiPrompt({
 				type: requestedDelivery,
 				message: message || t("admin.agent.imageOnlyPrompt"),
 				...(images.length > 0 ? {images} : {}),
@@ -560,7 +599,7 @@ export function AgentChatInput({
 			return;
 		}
 		try {
-			await abortPi();
+			await activeBridge.abortPi();
 			addActivity(t("admin.agent.activity.stopped"));
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : t("admin.agent.error.stop"));
@@ -578,13 +617,13 @@ export function AgentChatInput({
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
-			await setPiModel(nextModel);
+			await activeBridge.setPiModel(nextModel);
 			const [nextState, nextThinkingLevels] = await Promise.all([
-				loadPiState(),
-				loadPiThinkingLevels(),
+				activeBridge.loadPiState(),
+				activeBridge.loadPiThinkingLevels(),
 			]);
 			applyState(nextState);
-			setThinkingLevels(nextThinkingLevels);
+			setThinkingLevels(nextThinkingLevels.filter((level) => level !== "off"));
 			addActivity(t("admin.agent.activity.modelChanged", {model: nextModel.name}));
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : t("admin.agent.error.model"));
@@ -604,8 +643,8 @@ export function AgentChatInput({
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
-			await setPiThinkingLevel(nextLevel);
-			applyState(await loadPiState());
+			await activeBridge.setPiThinkingLevel(nextLevel);
+			applyState(await activeBridge.loadPiState());
 			addActivity(
 				t("admin.agent.activity.thinkingChanged", {level: t(thinkingLevelKeys[nextLevel])}),
 			);
@@ -633,13 +672,13 @@ export function AgentChatInput({
 		setSettingsChanging(true);
 		setError(undefined);
 		try {
-			await setPiProjectTrust(nextProjectTrust);
+			await activeBridge.setPiProjectTrust(nextProjectTrust);
 			setProjectTrust(nextProjectTrust);
 			const [nextState, nextCommands, nextModels, nextThinkingLevels] = await Promise.all([
-				loadPiState(),
-				loadPiCommands(),
-				loadPiModels(),
-				loadPiThinkingLevels(),
+				activeBridge.loadPiState(),
+				activeBridge.loadPiCommands(),
+				activeBridge.loadPiModels(),
+				activeBridge.loadPiThinkingLevels(),
 			]);
 			applyState(nextState);
 			setCommands(nextCommands);
@@ -694,13 +733,14 @@ export function AgentChatInput({
 	async function answerExtension(answer: PiExtensionAnswer) {
 		setExtension(undefined);
 		try {
-			await answerPiExtension(answer);
+			await activeBridge.answerPiExtension(answer);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : t("admin.agent.error.extension"));
 		}
 	}
 
 	function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+		if (event.nativeEvent.isComposing) return;
 		if (suggestions.length > 0) {
 			if (event.key === "ArrowDown") {
 				event.preventDefault();
@@ -871,6 +911,11 @@ export function AgentChatInput({
 						<Textarea
 							id={inputId}
 							className="kp-agent-chat__textarea"
+							role="combobox"
+							aria-autocomplete="list"
+							aria-expanded={suggestions.length > 0}
+							aria-controls={suggestions.length > 0 ? suggestionsId : undefined}
+							aria-activedescendant={activeSuggestionId}
 							label={<span className="kp-visually-hidden">{t("admin.agent.compose.label")}</span>}
 							placeholder={t("admin.agent.compose.placeholder")}
 							value={draft}
@@ -888,12 +933,14 @@ export function AgentChatInput({
 						/>
 						{suggestions.length > 0 ? (
 							<Card
+								id={suggestionsId}
 								className="kp-agent-chat__suggestions"
 								role="listbox"
 								aria-label={t("admin.agent.completions")}
 							>
 								{suggestions.map((suggestion, index) => (
 									<SuggestionRow
+										id={`${suggestionsId}-${index}`}
 										key={suggestion.kind === "command" ? suggestion.command.name : suggestion.path}
 										suggestion={suggestion}
 										active={index === activeSuggestion}
@@ -1138,7 +1185,7 @@ function SettingMenu({
 	readonly onValueChange: (value: string) => void;
 	readonly disabled?: boolean;
 }) {
-	const t = useT();
+	const t = useDesignT();
 	const [open, setOpen] = useState(false);
 	const selected = items.find((item) => item.value === value);
 	return (
@@ -1184,10 +1231,12 @@ function SettingMenu({
 }
 
 function SuggestionRow({
+	id,
 	suggestion,
 	active,
 	onSelect,
 }: {
+	readonly id: string;
 	readonly suggestion: Suggestion;
 	readonly active: boolean;
 	readonly onSelect: () => void;
@@ -1195,6 +1244,7 @@ function SuggestionRow({
 	const command = suggestion.kind === "command" ? suggestion.command : undefined;
 	return (
 		<Button
+			id={id}
 			type="button"
 			variant="tertiary"
 			block
@@ -1215,7 +1265,7 @@ function SuggestionRow({
 }
 
 function HarnessWidget({lines}: {readonly lines: readonly string[]}) {
-	const t = useT();
+	const t = useDesignT();
 	return (
 		<Card className="kp-agent-chat__widget" role="status">
 			<p className="kp-agent-chat__widget-title">{t("admin.agent.extension.title")}</p>
@@ -1231,7 +1281,7 @@ function AgentActivity({
 	readonly assistantText: string;
 	readonly activities: readonly Activity[];
 }) {
-	const t = useT();
+	const t = useDesignT();
 	return (
 		<Card className="kp-agent-chat__activity" aria-live="polite">
 			<p className="kp-agent-chat__activity-title">{t("admin.agent.activity.title")}</p>
@@ -1258,7 +1308,7 @@ function PiExtensionDialog({
 	readonly request: ExtensionRequest;
 	readonly onAnswer: (answer: PiExtensionAnswer) => Promise<void>;
 }) {
-	const t = useT();
+	const t = useDesignT();
 	const [value, setValue] = useState(request.prefill ?? "");
 	useEffect(() => setValue(request.prefill ?? ""), [request.id, request.prefill]);
 	const cancel = () => void onAnswer({id: request.id, cancelled: true});

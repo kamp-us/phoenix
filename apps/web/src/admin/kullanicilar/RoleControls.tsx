@@ -3,11 +3,11 @@
  * gated, so a non-admin call comes back the invisible `Denied` and shows the no-authority line,
  * minting nothing. The panel renders this only when both dark-ship flags are on (ADR 0083).
  */
+
+import {Alert, Button} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {RoleState, UserAdminRole} from "../../../worker/features/fate/views";
-import {Alert} from "../../components/ui/Alert";
-import {Button} from "../../components/ui/Button";
 import {codeOf} from "../../fate/wire";
 import {type CatalogKey, useT} from "../../i18n";
 import {nextRole, roleActionLabelKey, roleOutcomeKey} from "./role-controls";

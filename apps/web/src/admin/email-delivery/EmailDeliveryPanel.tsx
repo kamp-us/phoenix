@@ -3,12 +3,11 @@
  * and no roll-up request fires, so this surface ships dark until a human flips it (ADR 0083).
  * It is the client half of a two-gate contract — the worker half fails the invisible `Denied`.
  */
+
+import {Alert, Button, Input, Textarea} from "@kampus/design";
 import {Suspense, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {EmailDeliveryState, FailingAddress} from "../../../worker/features/fate/views";
-import {Alert} from "../../components/ui/Alert";
-import {Button} from "../../components/ui/Button";
-import {Input, Textarea} from "../../components/ui/Form";
 import {codeOf} from "../../fate/wire";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_EMAIL_DELIVERY_ADMIN} from "../../flags/keys";

@@ -1,11 +1,11 @@
 import {describe, expect, it} from "vitest";
-import {tr} from "../../i18n/tr";
 import {shareFeedbackLabelKey, shouldUseNativeShare} from "./CopyLinkButton";
+import {designTrMessages} from "./i18n";
 
 const shareFeedbackLabel = (
 	outcome: Parameters<typeof shareFeedbackLabelKey>[0],
 	restingKey: Parameters<typeof shareFeedbackLabelKey>[1],
-) => tr[shareFeedbackLabelKey(outcome, restingKey)];
+) => designTrMessages[shareFeedbackLabelKey(outcome, restingKey)];
 
 // The scroll-race fix (#649) lives in a DOM effect (`useCommentAnchor`) the repo's
 // node-only unit tier can't exercise without jsdom — its proof is the MutationObserver

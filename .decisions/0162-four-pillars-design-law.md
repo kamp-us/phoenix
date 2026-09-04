@@ -24,7 +24,7 @@ they serve. Design principles are the founder's domain by mandate: ADR
 and founder-authored by default (engineering leads only on platform/infra). An agent transcribes
 these values; it does not invent them.
 
-The values below are real numbers grounded in the live token layer — `apps/web/src/styles/tokens.css`
+The values below are real numbers grounded in the live token layer — `packages/design/src/tokens.css`
 (the three-layer role system plus the compact/normal/spacious density ramps) and
 `apps/web/src/styles/global.css` (where the focus-ring token pair lives). This ADR is `status:
 proposed`: the founder does the final prose-and-values read at the reviewed-ready gate before it is

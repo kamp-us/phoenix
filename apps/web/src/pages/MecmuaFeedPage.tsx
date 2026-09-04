@@ -4,15 +4,13 @@
  * `MECMUA_FEED` (default-off; `.patterns/flag-dark-page-gate.md`), and the `mecmuaFeed` root
  * serves empty while it is.
  */
+
+import {Alert, Card, EmptyState, MetaRow} from "@kampus/design";
 import {Newspaper} from "lucide-react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {MecmuaPost} from "../../worker/features/fate/views";
 import {Icon} from "../components/Icon";
-import {Alert} from "../components/ui/Alert";
-import {Card} from "../components/ui/Card";
-import {EmptyState} from "../components/ui/EmptyState";
-import {MetaRow} from "../components/ui/MetaRow";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
 import {MECMUA_FEED} from "../flags/keys";

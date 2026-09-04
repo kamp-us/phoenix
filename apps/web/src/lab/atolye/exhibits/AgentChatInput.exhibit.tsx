@@ -1,5 +1,6 @@
+import {AgentChatInput} from "@kampus/design";
 import type * as React from "react";
-import {AgentChatInput} from "../../../components/agent/AgentChatInput";
+import {agentChatInputBridge} from "../../../components/agent/piHarness";
 import {defineExhibit} from "../exhibit";
 
 export const agentChatInputExhibit = defineExhibit<React.ComponentProps<typeof AgentChatInput>>({
@@ -8,7 +9,7 @@ export const agentChatInputExhibit = defineExhibit<React.ComponentProps<typeof A
 	summary:
 		"Pi RPC ile çalışan; / komutları, @ dosya anmaları, görsel ekleri ve eklenti diyalogları için yerel prototip.",
 	component: AgentChatInput,
-	fixedProps: {mockWhenUnavailable: true},
+	fixedProps: {bridge: agentChatInputBridge, mockWhenUnavailable: true},
 	knobs: {
 		variant: {
 			kind: "enum",

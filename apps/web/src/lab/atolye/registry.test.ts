@@ -44,7 +44,7 @@ describe("exhibit registry — headless enumeration", () => {
 		expect(Object.keys(composer?.knobs ?? {})).toContain("readOnly");
 	});
 
-	// The catalog (#3094) covers every UI primitive under components/ui/. This pins the
+	// The catalog (#3094) covers every UI primitive under @kampus/design. This pins the
 	// contract so a newly-added primitive without an exhibit surfaces as a red test.
 	it("catalogs an exhibit for every UI primitive", () => {
 		const ids = new Set(listExhibits().map((e) => e.id));

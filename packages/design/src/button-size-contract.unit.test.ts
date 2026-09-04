@@ -6,7 +6,8 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join, relative} from "node:path";
 import {describe, expect, it} from "vitest";
 
-const sourceRoot = join(import.meta.dirname, "../..");
+const repoRoot = join(import.meta.dirname, "../../..");
+const sourceRoots = [join(repoRoot, "apps/web/src"), join(repoRoot, "packages/design/src")];
 const buttonElementPattern = /<Button\b[^>]*>/gs;
 const classNamePattern = /className=(?:"([^"]*)"|\{`([^`]*)`\})/;
 
@@ -25,14 +26,16 @@ function sourceFiles(directory: string, extension: string): string[] {
 function buttonClasses(): Set<string> {
 	const classes = new Set<string>();
 
-	for (const path of sourceFiles(sourceRoot, ".tsx")) {
-		for (const element of readFileSync(path, "utf8").matchAll(buttonElementPattern)) {
-			const match = classNamePattern.exec(element[0]);
-			const value = match?.[1] ?? match?.[2];
-			if (!value) continue;
+	for (const sourceRoot of sourceRoots) {
+		for (const path of sourceFiles(sourceRoot, ".tsx")) {
+			for (const element of readFileSync(path, "utf8").matchAll(buttonElementPattern)) {
+				const match = classNamePattern.exec(element[0]);
+				const value = match?.[1] ?? match?.[2];
+				if (!value) continue;
 
-			for (const name of value.split(/\s+/)) {
-				if (name.startsWith("kp-")) classes.add(name);
+				for (const name of value.split(/\s+/)) {
+					if (name.startsWith("kp-")) classes.add(name);
+				}
 			}
 		}
 	}
@@ -43,12 +46,14 @@ function buttonClasses(): Set<string> {
 type Rule = {file: string; selector: string; body: string};
 
 function cssRules(): Rule[] {
-	return sourceFiles(sourceRoot, ".css").flatMap((path) =>
-		[...readFileSync(path, "utf8").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((rule) => ({
-			file: relative(sourceRoot, path),
-			selector: (rule[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim(),
-			body: rule[2] ?? "",
-		})),
+	return sourceRoots.flatMap((sourceRoot) =>
+		sourceFiles(sourceRoot, ".css").flatMap((path) =>
+			[...readFileSync(path, "utf8").matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((rule) => ({
+				file: relative(repoRoot, path),
+				selector: (rule[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").trim(),
+				body: rule[2] ?? "",
+			})),
+		),
 	);
 }
 

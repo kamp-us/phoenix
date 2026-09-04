@@ -1,0 +1,43 @@
+{
+	"name": "@kampus/design",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Shared Kampüs UI primitives, design tokens, fonts, and accessibility contract",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./tokens.css": "./src/tokens.css",
+		"./fonts.css": "./src/fonts.css"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "vitest run --config vitest.config.ts",
+		"test:a11y": "vitest run --config vitest.a11y.config.ts"
+	},
+	"peerDependencies": {
+		"react": "catalog:",
+		"react-dom": "catalog:"
+	},
+	"dependencies": {
+		"@manti-ui/react": "catalog:",
+		"@fontsource/ibm-plex-sans": "catalog:",
+		"@fontsource/jetbrains-mono": "catalog:",
+		"lucide-react": "catalog:"
+	},
+	"devDependencies": {
+		"@testing-library/react": "catalog:",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
+		"axe-core": "catalog:",
+		"fast-check": "catalog:",
+		"jsdom": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

@@ -1,14 +1,13 @@
 // This control does no flag check of its own: the caller must render it inside a
 // `<FlagGate flag={PHOENIX_USER_BAN}>` so it goes dark by default (ADR 0083).
+
+import {Alert, Button, Input, Textarea} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {BanState} from "../../../worker/features/fate/views";
 import {useImperativeView} from "../../fate/useImperativeView";
 import {codeOf} from "../../fate/wire";
 import {type CatalogKey, useLocale, useT} from "../../i18n";
-import {Alert} from "../ui/Alert";
-import {Button} from "../ui/Button";
-import {Input, Textarea} from "../ui/Form";
 import {
 	type BanView,
 	banExpiry,

@@ -19,7 +19,7 @@ const readSource = (rel: string): string =>
 	readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const USER_MENU_CSS = readSource("./UserMenu.css");
 const GLOBAL_CSS = readSource("../../styles/global.css");
-const BUTTON_CSS = readSource("../ui/Button.css");
+const BUTTON_CSS = readSource("../../../../../packages/design/src/Button.css");
 
 async function openMenu() {
 	render(

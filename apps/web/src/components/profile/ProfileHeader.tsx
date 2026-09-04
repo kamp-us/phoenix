@@ -4,10 +4,10 @@
  * source into these plain props — the two used to hand-derive headers that drifted
  * apart (#2203).
  */
+
+import {Alert, Avatar} from "@kampus/design";
 import {useT} from "../../i18n";
 import {Karma} from "../karma/Karma";
-import {Alert} from "../ui/Alert";
-import {Avatar} from "../ui/Avatar";
 import {profileStatTiles} from "./profileStatTiles";
 import "./ProfileHeader.css";
 

@@ -2,9 +2,10 @@
  * Loading placeholders that mirror the real DOM shape, so content arrival swaps in
  * without a layout jump.
  */
+
+import {Skeleton} from "@kampus/design";
 import {useT} from "../../i18n";
 import {PANO_FEED_PAGE_SIZE} from "../../lib/panoNav";
-import {Skeleton} from "../ui/atoms";
 import "./PanoPost.css";
 import "../../pages/PanoPostDetail.css";
 

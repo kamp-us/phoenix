@@ -1,5 +1,5 @@
+import type {ButtonSize, ButtonVariant} from "@kampus/design";
 import {describe, expect, it} from "vitest";
-import type {ButtonSize, ButtonVariant} from "../../components/ui/Button";
 import {
 	type BooleanKnob,
 	type EnumKnob,

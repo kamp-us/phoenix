@@ -1,6 +1,6 @@
+import {Button} from "@kampus/design";
 import {useFateClient} from "react-fate";
 import {useT} from "../../i18n";
-import {Button} from "../ui/Button";
 import {useVoteFlash} from "../useVoteFlash";
 import {VoteTriangle} from "../VoteTriangle";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";

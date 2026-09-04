@@ -1,5 +1,5 @@
+import {Tabs} from "@kampus/design";
 import type * as React from "react";
-import {Tabs} from "../../../components/ui/Tabs";
 import {defineExhibit} from "../exhibit";
 
 function TabsDemo({variant}: {variant?: "line" | "pill" | "soft"}) {

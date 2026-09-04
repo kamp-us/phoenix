@@ -1,5 +1,5 @@
-import {useT} from "../../i18n";
 import {Button} from "./Button";
+import {useDesignT} from "./i18n";
 import "./DraftRestoreBanner.css";
 
 /**
@@ -17,7 +17,7 @@ export function DraftRestoreBanner({
 	onRestore: () => void;
 	onDismiss: () => void;
 }) {
-	const t = useT();
+	const t = useDesignT();
 	return (
 		<section
 			className="kp-draft-restore"
