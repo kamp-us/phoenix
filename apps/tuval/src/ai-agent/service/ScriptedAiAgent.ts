@@ -9,11 +9,27 @@
  * A prompt replays its turn's events verbatim, so a fixture reads as the conversation it stands
  * for. The three calls that carry an argument the script cannot know — `answer`, `setMode`, and
  * `start`'s resume — emit events built from that argument, and nothing else is synthesized.
+ *
+ * A turn may also carry a `plan`, and then this layer is where a scripted session reaches the
+ * kernel: the plan names one spell at a time out of what it has already been answered, the call
+ * goes through the same `SpellBridge` a real agent program's tool wraps, and each answer lands on
+ * the transcript as a `tool` item. That is the whole difference between a scripted backend and a
+ * model — which spell to call next is a fixture's decision here and the model's there.
  */
 
-import {type Cause, Effect, Layer, Queue, Ref, type Scope, Stream} from "effect";
+import {type Cause, Effect, Layer, Queue, Ref, Result, type Scope, Stream} from "effect";
+import {renderPath} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, PermissionDecision, PermissionRequest} from "../ports/index.ts";
+import {
+	boundToolResult,
+	ItemId,
+	isJsonValue,
+	type JsonValue,
+	type Mode,
+	type PermissionDecision,
+	type PermissionRequest,
+	type TranscriptItem,
+} from "../ports/index.ts";
 import {
 	ModeUnsupported,
 	PageError,
@@ -22,7 +38,7 @@ import {
 	type TransportError,
 	UnknownRequest,
 } from "./errors.ts";
-import type {AgentScript} from "./script.ts";
+import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "./script.ts";
 import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 interface ScriptState {
@@ -59,6 +75,22 @@ const foldPending = (
 	return next;
 };
 
+/** One answered call as the transcript carries it: what was asked, and what came back. */
+const toolItem = (id: string, answered: ScriptedAnswer): TranscriptItem => ({
+	kind: "tool",
+	id: ItemId.make(id),
+	timestamp: Date.now(),
+	name: renderPath(answered.request.path),
+	// The wire takes JSON either way, so args that are not JSON are the fixture's own bug and are
+	// recorded as the nothing they can be rendered as, rather than crashing the item's predicate.
+	input: isJsonValue(answered.request.args) ? (answered.request.args as JsonValue) : null,
+	result: boundToolResult(JSON.stringify(answered.answer) ?? "null"),
+	status: answered.ok ? "ok" : "error",
+});
+
+/** A plan that never ends is a fixture bug; the cap turns a hung run into a named failure. */
+const PLAN_CALL_LIMIT = 1_000;
+
 const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.Scope> =>
 	Effect.gen(function* () {
 		// Acquired against the caller's Scope, so closing it shuts the queue: this layer's whole
@@ -75,6 +107,31 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 				concurrency: 1,
 				discard: true,
 			});
+
+		const runPlan = Effect.fn("TuvalAiAgent.plan")(function* (plan: ScriptedPlan, turn: number) {
+			const spells = script.spells;
+			if (spells === undefined) {
+				return yield* Effect.die(
+					new Error(`turn ${turn} plans a spell call and the script names no spells to reach`),
+				);
+			}
+			const answered: Array<ScriptedAnswer> = [];
+			for (let request = plan(answered); request !== null; request = plan(answered)) {
+				if (answered.length >= PLAN_CALL_LIMIT) {
+					return yield* Effect.die(
+						new Error(`turn ${turn} planned more than ${PLAN_CALL_LIMIT} calls`),
+					);
+				}
+				const outcome = yield* Effect.result(
+					spells.bridge.call(request.path, request.args, spells.scope),
+				);
+				const entry: ScriptedAnswer = Result.isSuccess(outcome)
+					? {request, ok: true, answer: outcome.success}
+					: {request, ok: false, answer: outcome.failure};
+				answered.push(entry);
+				yield* emit([{kind: "item", item: toolItem(`call-${turn}-${answered.length}`, entry)}]);
+			}
+		});
 
 		const start = Effect.fn("TuvalAiAgent.start")(function* (options: {
 			readonly cwd: string;
@@ -137,6 +194,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 				live: turn.disconnect === undefined,
 			}));
 			yield* emit(turn.events);
+			if (turn.plan !== undefined) yield* runPlan(turn.plan, current.turn);
 			if (turn.disconnect !== undefined) yield* Queue.fail(queue, turn.disconnect);
 		});
 
