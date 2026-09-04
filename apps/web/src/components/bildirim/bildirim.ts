@@ -1,6 +1,6 @@
 /** The bildirim surface's render decisions (#1694), factored out so they test without a DOM. */
 import type {NotificationKind} from "../../../worker/features/bildirim/kind";
-import type {CatalogKey, Locale, Translate} from "../../i18n";
+import type {CatalogKey, Locale, PluralForms, Translate} from "../../i18n";
 import {plural} from "../../i18n";
 
 /** Flag off (and every flag failure mode) renders the 404 — the dark ship, ADR 0083. */
@@ -50,11 +50,15 @@ const fixedCopy =
 
 // R1.1 on #7049 ruled the count into the backlog-release copy, with a distinct zero arm for a
 // sweep that published nothing. Zero is not an `Intl.PluralRules` category in either locale, so
-// it is a branch rather than a plural form; both arms are required fields, so shipping the kind
-// with either missing is a compile error — "0 yazınız…" stays unrepresentable.
-const BACKLOG_RELEASE_KEYS: {zero: CatalogKey; some: CatalogKey} = {
+// it is a branch rather than a plural form, and the non-zero side is an ordinary two-arm plural;
+// every arm is a required field, so shipping the kind with one missing is a compile error —
+// "0 yazınız…" and "1 of your posts are…" both stay unrepresentable.
+const BACKLOG_RELEASE_KEYS: {zero: CatalogKey; some: PluralForms<CatalogKey>} = {
 	zero: "bildirim.kind.backlogRelease.zero",
-	some: "bildirim.kind.backlogRelease.some",
+	some: {
+		one: "bildirim.kind.backlogRelease.one",
+		other: "bildirim.kind.backlogRelease.other",
+	},
 };
 
 // `satisfies Record<NotificationKind, …>` keeps the map exhaustive over the shared kind
@@ -70,7 +74,7 @@ const KIND_COPY = {
 	"caylak-pending": fixedCopy("bildirim.kind.caylakPending"),
 	"backlog-release": (ctx: BildirimCopyContext) =>
 		ctx.count > 0
-			? ctx.t(BACKLOG_RELEASE_KEYS.some, {count: ctx.count})
+			? ctx.t(plural(ctx.locale, ctx.count, BACKLOG_RELEASE_KEYS.some), {count: ctx.count})
 			: ctx.t(BACKLOG_RELEASE_KEYS.zero),
 } satisfies Record<NotificationKind, (ctx: BildirimCopyContext) => string>;
 

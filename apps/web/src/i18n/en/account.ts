@@ -42,7 +42,8 @@ export const account = {
 	"bildirim.kind.reportFiled.other": "{count} new items were reported",
 	"bildirim.kind.caylakPending": "a new çaylak is waiting to be reviewed",
 	"bildirim.kind.backlogRelease.zero": "your posts are public from now on",
-	"bildirim.kind.backlogRelease.some": "{count} of your posts are public now",
+	"bildirim.kind.backlogRelease.one": "{count} of your posts is public now",
+	"bildirim.kind.backlogRelease.other": "{count} of your posts are public now",
 	"bildirim.kind.unknown": "{kind} ×{count}",
 
 	"mute.action": "sustur",
@@ -111,7 +112,8 @@ export const account = {
 	"profile.contribution.kind.definition": "definition",
 	"profile.contribution.kind.post": "post",
 	"profile.contribution.kind.comment": "comment",
-	"profile.contribution.score": "{count} votes",
+	"profile.contribution.score.one": "{count} vote",
+	"profile.contribution.score.other": "{count} votes",
 
 	"profile.contributions.heading.public": "contributions",
 	"profile.contributions.heading.self": "your contributions",
