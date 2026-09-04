@@ -61,6 +61,8 @@ export interface PiClientApi {
 		sessionId: string,
 		text: string,
 	) => Effect.Effect<SessionSnapshot, SessionRefusal>;
+	/** Cuts the running turn short. Needs the same lease `prompt` does. */
+	readonly abort: (sessionId: string) => Effect.Effect<SessionSnapshot, SessionRefusal>;
 	/** Every snapshot the server pushes for this session, for as long as the stream is pulled. */
 	readonly snapshots: (sessionId: string) => Stream.Stream<SessionSnapshot>;
 	/** One element per connection loss, so a caller can decide whether and when to reconnect. */
@@ -177,18 +179,35 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			return yield* refOf(lease);
 		});
 
-		const prompt = Effect.fn("PiClientService.prompt")(function* (sessionId: string, text: string) {
+		/**
+		 * The lease every session-scoped call needs. An absent one is this client never having
+		 * taken the session, which is a different fact from the server not knowing it — the
+		 * detail says which, because both arrive as `SessionNotFound`.
+		 */
+		const leased = (sessionId: string): Effect.Effect<PiSessionHandle, SessionNotFound> => {
 			const lease = leases.get(sessionId);
-			if (lease === undefined) {
-				return yield* Effect.fail(
-					new SessionNotFound({
-						sessionId,
-						detail: "this client holds no lease on the session; attach it first",
-					}),
-				);
-			}
+			return lease === undefined
+				? Effect.fail(
+						new SessionNotFound({
+							sessionId,
+							detail: "this client holds no lease on the session; attach it first",
+						}),
+					)
+				: Effect.succeed(lease);
+		};
+
+		const prompt = Effect.fn("PiClientService.prompt")(function* (sessionId: string, text: string) {
+			const lease = yield* leased(sessionId);
 			return yield* Effect.tryPromise({
 				try: () => lease.prompt(text),
+				catch: (cause) => sessionRefusalOf(sessionId, cause),
+			});
+		});
+
+		const abort = Effect.fn("PiClientService.abort")(function* (sessionId: string) {
+			const lease = yield* leased(sessionId);
+			return yield* Effect.tryPromise({
+				try: () => lease.abort(),
 				catch: (cause) => sessionRefusalOf(sessionId, cause),
 			});
 		});
@@ -229,6 +248,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			createSession,
 			attachSession,
 			prompt,
+			abort,
 			snapshots,
 			disconnections,
 		};

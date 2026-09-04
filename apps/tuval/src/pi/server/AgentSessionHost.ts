@@ -48,7 +48,12 @@ const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
 const detailOf = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
-const defaultSessionDir = (cwd: string): string => join(cwd, ".tuval", "pi-sessions");
+/**
+ * Where a session's JSONL lands. Exported because it is a convention two modules share: this host
+ * writes it and the Pi AI agent layer's `page` reads it back, and a second copy of the path would
+ * be a second thing to keep in step.
+ */
+export const defaultSessionDir = (cwd: string): string => join(cwd, ".tuval", "pi-sessions");
 
 /**
  * Pi's catalog is every model it knows of — 1312 at this pin — and a picker wants the ones this
