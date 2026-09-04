@@ -20,7 +20,9 @@ Tuval lives under `apps/` because a person runs it, not because Cloudflare hosts
 pnpm install          # from the repo root, once
 cd apps/tuval
 pnpm dev              # boots the two demo programs; Ctrl-C stops and checkpoints them
-pnpm test             # the unit tier (vitest)
+pnpm test             # both tiers (vitest)
+pnpm test:unit        # the unit tier
+pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback socket, no creds
 pnpm typecheck
 ```
 
@@ -223,3 +225,46 @@ an in-port with no `receive` entry is refused (`NoReceiver`) before the first sp
 route refuses here, with nothing spawned and nothing written), open the wiring, build the kernel,
 launch, then `restore` whatever else the manifest names. `boot` is `start` from the layered
 config. `src/demo/e2e.unit.test.ts` is the proof that this holds across a stop and a second boot.
+
+## The Pi loopback server
+
+`src/pi/server/` is the WebSocket server Pi 0.84.3 does not ship — the spike's `spike-server.mjs`
+(#7469) hand-ported into Effect, plus the production half the spike had no need for. One server
+per Pi process, on `127.0.0.1` and port 0: two Pi processes on one machine run two servers on two
+ports and share nothing.
+
+`PiServerService.layer()` is acquire/release scoped over a `PiSessionHost`. Closing its scope
+closes every socket, ends every connection's fibers and disposes every session exactly once. The
+service hands back the address, the dial URL and the capability token, all three `Redacted` where
+they carry the token.
+
+```ts
+const layer = PiServerService.layer().pipe(
+	Layer.provide(agentSessionHostLayer({modelRuntime, agentDir})),
+);
+```
+
+**The wire.** Framed CBOR through `ClientMessageDecoder` / `encodeServerMessage`. Each request is
+answered under its own id on its own fiber, so a slow `create` never holds up a later `list`.
+Sessions are owned exclusively: a second connection attaching one is refused `session_locked`, a
+missing one answers a structured `not_found`, and an `attach` from the connection that already
+owns it is the reconnect — the previous lease is invalidated, a new one issued, and the transcript
+comes back on the snapshot. Every change advances the session's revision and pushes a
+`session_snapshot` to its owner; bursts coalesce, so revisions can skip but never go backwards.
+
+**The production half** (#7465, founder ruling on #7567). The upgrade carries a per-launch
+capability token — 32 random bytes as hex, minted per process spawn, in handler memory only, never
+in Demlik state, the checkpoint or a log, and a fresh one after a restart. The handshake refuses a
+missing or wrong token, a non-loopback `Host` and a non-loopback `Origin`, all before a WebSocket
+exists and therefore before any frame is read. Every one of those inputs is attacker-controlled and
+pre-auth, so the guard is total — no header and no request target can throw out of it, and the
+`upgrade` listener answers a bare `400` under a `catch` if one ever does. A frame over the declared
+inbound bound closes the socket with `1009`; a per-connection outbound queue over its bound closes
+it with `1013`.
+
+**`PiSessionHost`** is the seam. Above it, only protocol values; below it, the real `AgentSession`
+and its JSONL `SessionManager` — the transcript lands under the session's own cwd, at
+`<cwd>/.tuval/pi-sessions`. Everything crossing that seam is projected, never cast, per
+[`.patterns/strict-wire-schema-projection.md`](../../.patterns/strict-wire-schema-projection.md).
+`makeScriptedHost` in `fixtures.ts` is the same seam with no model behind it, which is what lets
+the whole wire suite run in the unit tier.
