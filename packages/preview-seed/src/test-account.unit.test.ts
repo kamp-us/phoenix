@@ -170,6 +170,25 @@ describe("provisionTestAccounts", () => {
 		assert.lengthOf(batched, 3);
 	});
 
+	/**
+	 * The fence's parameter, pinned where a runtime assertion cannot reach: this label's TEXT would
+	 * pass `isThrowawayDatabaseName`, and the run below provisions on it, so the type is the only
+	 * thing refusing a name no `resolveDatabaseName` ever returned. Widen `databaseName` back to
+	 * `string` and the directive stops suppressing anything — TS2578 reds `pnpm typecheck` (#7740).
+	 */
+	it("refuses a caller-composed database name at the type level", async () => {
+		assert.isNotNull(TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(
+			makeTestAccountDb(d1),
+			// @ts-expect-error TS2345 — `resolveDatabaseName` is `ResolvedDatabaseName`'s only mint.
+			"phoenix-phoenix-db-pr-1-x",
+			{yazar: TOKEN},
+		);
+		assert.strictEqual(outcome._tag, "Provisioned");
+		assert.lengthOf(batched, 3);
+	});
+
 	it("names no tier rather than falling back to one when no token is supplied", async () => {
 		const {d1, batched, selected} = fakeD1([]);
 		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {});
