@@ -256,8 +256,11 @@ comes back on the snapshot. Every change advances the session's revision and pus
 capability token — 32 random bytes as hex, minted per process spawn, in handler memory only, never
 in Demlik state, the checkpoint or a log, and a fresh one after a restart. The handshake refuses a
 missing or wrong token, a non-loopback `Host` and a non-loopback `Origin`, all before a WebSocket
-exists and therefore before any frame is read. A frame over the declared inbound bound closes the
-socket with `1009`; a per-connection outbound queue over its bound closes it with `1013`.
+exists and therefore before any frame is read. Every one of those inputs is attacker-controlled and
+pre-auth, so the guard is total — no header and no request target can throw out of it, and the
+`upgrade` listener answers a bare `400` under a `catch` if one ever does. A frame over the declared
+inbound bound closes the socket with `1009`; a per-connection outbound queue over its bound closes
+it with `1013`.
 
 **`PiSessionHost`** is the seam. Above it, only protocol values; below it, the real `AgentSession`
 and its JSONL `SessionManager` — the transcript lands under the session's own cwd, at

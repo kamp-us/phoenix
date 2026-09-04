@@ -12,12 +12,13 @@ export type RefusalReason =
 	| "missing_token"
 	| "bad_token"
 	| "non_loopback_host"
-	| "non_loopback_origin";
+	| "non_loopback_origin"
+	| "malformed_request";
 
 export interface HandshakeRefused {
 	readonly _tag: "HandshakeRefused";
 	readonly reason: RefusalReason;
-	readonly status: 401 | 403;
+	readonly status: 400 | 401 | 403;
 	/** The HTTP reason phrase written back, and the only thing the client is told. */
 	readonly statusText: string;
 }
@@ -40,7 +41,7 @@ const accepted: HandshakeAccepted = {_tag: "HandshakeAccepted"};
 
 const refuse = (
 	reason: RefusalReason,
-	status: 401 | 403,
+	status: 400 | 401 | 403,
 	statusText: string,
 ): HandshakeRefused => ({
 	_tag: "HandshakeRefused",
@@ -48,6 +49,18 @@ const refuse = (
 	status,
 	statusText,
 });
+
+/**
+ * The verdict the `upgrade` listener substitutes when this module threw anyway — the catch half of
+ * [`.patterns/node-listener-total-boundary.md`](../../../../../.patterns/node-listener-total-boundary.md).
+ * It says no more than the reasoned refusals do, deliberately: a message built from the client's own
+ * bytes would make the fence an oracle.
+ */
+export const malformedUpgrade: HandshakeRefused = refuse(
+	"malformed_request",
+	400,
+	"Bad Request - malformed upgrade",
+);
 
 /**
  * `::1` arrives bracketed in a `Host` header (`[::1]:4321`) and bare from `URL.hostname`, so both
@@ -83,10 +96,9 @@ const isLoopbackOrigin = (origin: string): boolean => {
 
 /**
  * Only the `token` parameter is wanted, so the base is a constant that always parses rather than
- * the request's own `Host`: `isLoopbackAuthority` reads the hostname alone, so `127.0.0.1:abc`
- * reaches here with a port that makes `new URL` throw — synchronously inside the `upgrade`
- * listener, which is an uncaught exception that exits the process, pre-auth, on one request. An
- * unparseable request target answers "no token" for the same reason.
+ * the request's own `Host`, which `isLoopbackAuthority` accepts on its hostname alone and can
+ * therefore carry a port `new URL` throws on. An unparseable request target answers "no token" for
+ * the same reason. See [`.patterns/node-listener-total-boundary.md`](../../../../../.patterns/node-listener-total-boundary.md).
  */
 const tokenBase = "http://127.0.0.1";
 

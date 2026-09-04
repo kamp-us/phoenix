@@ -26,7 +26,13 @@ import {Context, Effect, FiberSet, Layer, Queue, Redacted, type Scope} from "eff
 import {type WebSocket, WebSocketServer} from "ws";
 import {dispatch} from "./dispatch.ts";
 import {FrameRefused, MessageNotEncodable, ServerBindFailed} from "./errors.ts";
-import {authorizeUpgrade, isRefused, refusalResponse} from "./handshake.ts";
+import {
+	authorizeUpgrade,
+	type HandshakeRefused,
+	isRefused,
+	malformedUpgrade,
+	refusalResponse,
+} from "./handshake.ts";
 import {
 	CLOSE_FRAME_TOO_LARGE,
 	CLOSE_INTERNAL,
@@ -84,6 +90,17 @@ const listen = (server: HttpServer, host: string): Effect.Effect<AddressInfo, Se
 const detailOf = (cause: unknown): string =>
 	cause instanceof Error ? cause.message : String(cause);
 
+/**
+ * The socket carries no error listener of its own before the WebSocket exists, so a peer that
+ * vanished mid-handshake would raise `error` with nothing listening — which on a Node `EventEmitter`
+ * is the same uncaught throw the refusal is here to avoid.
+ */
+const refuseUpgrade = (socket: Duplex, refusal: HandshakeRefused): void => {
+	socket.on("error", () => {});
+	if (!socket.destroyed) socket.write(refusalResponse(refusal));
+	socket.destroy();
+};
+
 const closeServer = (server: HttpServer): Effect.Effect<void> =>
 	Effect.callback<void>((resume) => {
 		server.closeAllConnections();
@@ -110,22 +127,23 @@ const make = (
 					Effect.sync(() => {
 						const wss = new WebSocketServer({noServer: true});
 						server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-							const verdict = authorizeUpgrade(
-								{
-									url: request.url,
-									headers: {host: request.headers.host, origin: request.headers.origin},
-								},
-								token,
-							);
-							if (isRefused(verdict)) {
-								socket.write(refusalResponse(verdict));
-								socket.destroy();
-								return;
+							// biome-ignore lint/plugin: the fence half of .patterns/node-listener-total-boundary.md. This body is a Node `upgrade` callback, not Effect code: it runs outside the runtime, has no `E` channel to model into, and must answer before a WebSocket (and therefore before a fiber) exists. `Effect.try` here would build an Effect nobody runs, while an escaping throw is an uncaught exception that exits the process pre-auth on one request (#7567).
+							try {
+								const verdict = authorizeUpgrade(
+									{
+										url: request.url,
+										headers: {host: request.headers.host, origin: request.headers.origin},
+									},
+									token,
+								);
+								if (isRefused(verdict)) return refuseUpgrade(socket, verdict);
+								wss.handleUpgrade(request, socket, head, (ws) => {
+									connections.add(ws);
+									Queue.offerUnsafe(accepted, ws);
+								});
+							} catch {
+								refuseUpgrade(socket, malformedUpgrade);
 							}
-							wss.handleUpgrade(request, socket, head, (ws) => {
-								connections.add(ws);
-								Queue.offerUnsafe(accepted, ws);
-							});
 						});
 					}),
 				),

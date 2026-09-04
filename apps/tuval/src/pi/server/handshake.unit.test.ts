@@ -42,6 +42,13 @@ describe("mintCapabilityToken", () => {
 		assert.isFalse(tokenMatches(token, Redacted.value(token).slice(0, 10)));
 		assert.isFalse(tokenMatches(token, `b${Redacted.value(token).slice(1)}`));
 	});
+
+	it("refuses a token whose character count matches and whose byte count does not", () => {
+		const multibyte = `é${"a".repeat(63)}`;
+		assert.strictEqual(multibyte.length, Redacted.value(token).length);
+		assert.notStrictEqual(Buffer.byteLength(multibyte), Buffer.byteLength(Redacted.value(token)));
+		assert.isFalse(tokenMatches(token, multibyte));
+	});
 });
 
 describe("authorizeUpgrade", () => {
@@ -78,6 +85,37 @@ describe("authorizeUpgrade", () => {
 			reason: "bad_token",
 			status: 401,
 		});
+	});
+
+	it("refuses a percent-decoded multibyte token with 401 rather than throwing", () => {
+		assert.deepStrictEqual(refusal(verdict({url: `/?token=%C3%A9${"a".repeat(63)}`})), {
+			reason: "bad_token",
+			status: 401,
+		});
+	});
+
+	/**
+	 * The class, not the two instances that reached review: nothing an unauthenticated client
+	 * controls may throw out of this function, because the caller is a Node `upgrade` listener and
+	 * a throw there exits the process pre-auth (#7567).
+	 */
+	it("answers a verdict for every hostile header and target, never a throw", () => {
+		const hostile = [
+			{url: `/?token=%C3%A9${"a".repeat(63)}`},
+			{url: `/?token=${"%C3%A9".repeat(64)}`},
+			{url: "/?token="},
+			{url: "//["},
+			{url: "http://[::1]:abc/?token=x"},
+			{url: "%"},
+			{host: "127.0.0.1:abc"},
+			{host: "[::1]:abc", url: "/?token=%C3%A9"},
+			{host: "["},
+			{origin: "http://127.0.0.1:abc"},
+			{origin: "%"},
+		];
+		for (const request of hostile) {
+			assert.doesNotThrow(() => verdict(request), JSON.stringify(request));
+		}
 	});
 
 	it("refuses a non-loopback Host before it even reads the token", () => {

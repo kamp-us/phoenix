@@ -222,6 +222,24 @@ describe("PiServerService", () => {
 		);
 	});
 
+	it.live(
+		"stays up when a wrong token has the right character count and the wrong byte count",
+		() => {
+			const host = makeScriptedHost();
+			return withServer(host, (server) =>
+				Effect.gen(function* () {
+					const multibyte = yield* connectWire(
+						`ws://127.0.0.1:${server.address.port}/?token=%C3%A9${"a".repeat(63)}`,
+					);
+					assert.include((yield* multibyte.closure).reason, "401");
+
+					const client = yield* dial(server);
+					yield* client.next((message) => message.type === "hello");
+				}),
+			);
+		},
+	);
+
 	it.live("stays up when a Host passes the loopback check but does not parse", () => {
 		const host = makeScriptedHost();
 		return withServer(host, (server) =>

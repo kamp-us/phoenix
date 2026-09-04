@@ -17,11 +17,14 @@ export const mintCapabilityToken = (): Redacted.Redacted<string> =>
 	Redacted.make(randomBytes(TOKEN_BYTES).toString("hex"));
 
 /**
- * Constant-time compare over the hex text. A length mismatch answers `false` before the compare,
- * because `timingSafeEqual` throws on unequal lengths — the length is not the secret.
+ * Constant-time compare over the hex text. The guarded quantity is the UTF-8 **byte** length, not
+ * the character count: `timingSafeEqual` throws on unequal byte lengths, and the presented token
+ * arrives percent-decoded, so one multibyte character is 64 characters and 65 bytes and a
+ * character-length guard waves it into the throw. The length is not the secret.
  */
 export const tokenMatches = (expected: Redacted.Redacted<string>, presented: string): boolean => {
-	const value = Redacted.value(expected);
-	if (presented.length !== value.length) return false;
-	return timingSafeEqual(Buffer.from(presented, "utf8"), Buffer.from(value, "utf8"));
+	const value = Buffer.from(Redacted.value(expected), "utf8");
+	const candidate = Buffer.from(presented, "utf8");
+	if (candidate.length !== value.length) return false;
+	return timingSafeEqual(candidate, value);
 };
