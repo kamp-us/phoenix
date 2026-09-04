@@ -169,7 +169,9 @@ export type ClosureRead =
  * every `Part of` number when it does.
  *
  * So the absence of a closure proof is `Unknown`, and only a merged pull request that really links
- * this issue reaches the judgement. `lane prove`'s own use of `traceClosure` is untouched (#7457).
+ * this issue reaches the judgement. Both verbs land on it: `lane prove`'s ship stage reaches
+ * `traceClosure` through `./closure.ts` and this function, never directly, so no caller reads that
+ * permissive default raw (#7457).
  */
 export const provenClosure = (issue: number, facts: ReadonlyArray<PullFact>): ClosureRead => {
 	const landed = landedFor(issue, facts);
