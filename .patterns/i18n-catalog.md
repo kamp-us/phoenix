@@ -120,21 +120,6 @@ Three consequences worth knowing before you write one:
 Formatting a date or a number is the same rule seen from the other side: the module takes the
 `Locale` and formats with it (`createdAtLabel(createdAt, locale)`), so no surface hardcodes
 `tr-TR`.
-## Plurals pick a message, not a key
-
-`plural` is typed `PluralForms → string`, so feeding it two catalog *keys* returns a `string`
-and `t` refuses it. Feed it two already-translated messages instead:
-
-```ts
-plural(locale, count, {
-	one: t("pano.post.commentCount.one", {count}),
-	other: t("pano.post.commentCount.other", {count}),
-});
-```
-
-Both arms are looked up either way, which costs nothing and keeps the whole thing typed. Where
-more than one component renders the same counted phrase, wrap it once
-(`components/pano/commentCount.ts`) so the arm is picked in a single place.
 
 ## The two type checks, and why they are in different files
 
@@ -234,6 +219,11 @@ carries its own `{count}`. Turkish takes no plural agreement after a numeral, so
 usually identical text — write both anyway, because the key set is shared and `en` needs the split.
 `plural` is generic in its arm for exactly this: it picks between two catalog KEYS here and two
 rendered strings elsewhere, and a key-picking `as` cast would trip Biome's `no-type-assertions`.
+
+Where a helper outside a component renders the phrase, it takes the bound `t` and picks between
+two already-translated messages instead — `commentCountLabel` in `components/pano/commentCount.ts`
+is the whole of pano's comment count, so the feed row, the detail header and the thread heading
+cannot drift apart. Both arms are looked up either way, which costs nothing.
 
 ## One file per surface, and what counts as a surface
 
