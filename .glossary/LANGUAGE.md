@@ -423,6 +423,38 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
 means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
 noted as a future-feeling alternative and is not adopted.
 
+### Tuval: spell, registry, palette, scope, the Tuval protocol
+
+Tuval's command-framework nouns, ruled by the thirteen decisions on grilling
+[#7617](https://github.com/kamp-us/phoenix/issues/7617) and built by epic
+[#7627](https://github.com/kamp-us/phoenix/issues/7627). English technical terms, per §3. The why is
+ADR [0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md); the
+shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
+
+- **spell** — one addressable command in Tuval's spell registry: a path, a one-sentence description,
+  an Effect Schema for its parameters and one for its result, an Effect `execute`, and an inert
+  capability list. Source: [`apps/tuval/src/commands/spell.ts`](../apps/tuval/src/commands/spell.ts).
+- **registry** — ambiguous on its own in Tuval prose, so always qualify it. The **spell registry**
+  is the one table of every callable spell, keyed by path, built from the core spell list plus each
+  program row's `spells` and replaced whole on a config reload
+  ([`apps/tuval/src/commands/registry.ts`](../apps/tuval/src/commands/registry.ts)). The **program
+  registry** is the separate kernel table of program rows
+  ([`apps/tuval/src/registry/Registry.ts`](../apps/tuval/src/registry/Registry.ts)); it never reads
+  a row's spells.
+- **palette (the Tuval palette)** — Tuval's desk-level command overlay at the top center of the app,
+  fixed width and never anchored to a window, where a person types a spell and picks from ranked
+  completions. Not apps/web's ⌘K command palette (ADR
+  [0186](../.decisions/0186-command-palette-single-search-contract.md)) and not a reaction palette
+  (ADR [0139](../.decisions/0139-reaction-curated-palette.md)); a bare "palette" in Tuval prose is
+  this one.
+- **scope** — where one spell call came from, as the kernel decides it: the workspace and client
+  always, plus the window and process when the caller was inside one. The page names a window and
+  nothing else; the kernel resolves the rest, so a page cannot address a process by putting its id
+  on the wire. Source: [`apps/tuval/src/commands/scope.ts`](../apps/tuval/src/commands/scope.ts).
+- **the Tuval protocol** — the one versioned page-to-kernel wire: four Effect Schema messages
+  (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
+  [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).
+
 
 ---
 
