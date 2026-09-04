@@ -1,4 +1,5 @@
 // Split from `BanControls.tsx` so these decisions are unit-testable — `apps/web/src` has no jsdom.
+import type {CatalogKey, MessageParams} from "../../i18n";
 import type {FateWireCode} from "../../lib/fateWireCodes";
 
 export interface BanView {
@@ -8,29 +9,43 @@ export interface BanView {
 	readonly expiresAt: number | null;
 }
 
-export const banStatusLabel = (state: BanView): string =>
-	state.banned ? `yasaklı — gerekçe: ${state.reason ?? "belirtilmemiş"}` : "yasaklı değil";
+/** The catalog key a decision resolves to, plus whatever the copy interpolates (ADR 0347). */
+export type BanMessage = {readonly key: CatalogKey; readonly params?: MessageParams};
 
-export const banExpiryLabel = (state: BanView): string | null => {
-	if (!state.banned) return null;
-	if (state.expiresAt === null) return "süre: kalıcı";
-	return `süre bitişi: ${new Date(state.expiresAt).toLocaleString("tr-TR")}`;
+export const banStatusLabel = (state: BanView): BanMessage => {
+	if (!state.banned) return {key: "divan.ban.status.notBanned"};
+	if (state.reason === null) return {key: "divan.ban.status.bannedNoReason"};
+	return {key: "divan.ban.status.banned", params: {reason: state.reason}};
 };
 
-export const banOutcomeMessage = (action: "ban" | "unban", code: FateWireCode | null): string => {
+/** The expiry instant, not its text: only the component knows the reader's locale. */
+export type BanExpiry =
+	| {readonly kind: "permanent"}
+	| {readonly kind: "until"; readonly at: number};
+
+export const banExpiry = (state: BanView): BanExpiry | null => {
+	if (!state.banned) return null;
+	if (state.expiresAt === null) return {kind: "permanent"};
+	return {kind: "until", at: state.expiresAt};
+};
+
+export const banOutcomeMessage = (
+	action: "ban" | "unban",
+	code: FateWireCode | null,
+): CatalogKey => {
 	if (code === null) {
-		return action === "ban" ? "kullanıcı yasaklandı." : "yasak kaldırıldı.";
+		return action === "ban" ? "divan.ban.banned" : "divan.ban.unbanned";
 	}
 	switch (code) {
 		case "BAN_REASON_REQUIRED":
-			return "yasaklama gerekçesi zorunludur.";
+			return "divan.ban.reasonRequired";
 		case "UNAUTHORIZED":
 		case "FORBIDDEN":
-			return "bu işlem için yetkin yok.";
+			return "divan.ban.forbidden";
 		case "USER_NOT_FOUND":
-			return "kullanıcı bulunamadı.";
+			return "divan.ban.notFound";
 		default:
-			return "bir şeyler ters gitti, lütfen tekrar dene.";
+			return "divan.ban.failed";
 	}
 };
 

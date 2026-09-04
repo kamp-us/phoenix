@@ -1,5 +1,7 @@
 import {account} from "./account";
+import {admin} from "./admin";
 import {auth} from "./auth";
+import {divan} from "./divan";
 import {layout} from "./layout";
 import {mecmua} from "./mecmua";
 import {pano} from "./pano";
@@ -13,7 +15,9 @@ import {wire} from "./wire";
  */
 export const tr = {
 	...account,
+	...admin,
 	...auth,
+	...divan,
 	...layout,
 	...mecmua,
 	...pano,

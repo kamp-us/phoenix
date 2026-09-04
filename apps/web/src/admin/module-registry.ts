@@ -1,8 +1,10 @@
 import type {ComponentType, LazyExoticComponent} from "react";
+import type {CatalogKey} from "../i18n";
 
 export interface ConsoleModule {
 	readonly id: string;
-	readonly label: string;
+	/** The nav label as a catalog key — the shell translates it (ADR 0347). */
+	readonly labelKey: CatalogKey;
 	readonly panel: LazyExoticComponent<ComponentType>;
 }
 

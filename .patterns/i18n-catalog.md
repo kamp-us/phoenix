@@ -89,6 +89,37 @@ A helper outside a component picks the **key**, never the string: `bildirimCopy`
 the helper's unit test asserts against `tr[key]` instead of a literal. `plural` is generic in its
 form type, so `t(plural(locale, n, {one: "…", other: "…"}))` type-checks with two keys.
 
+## A DOM-free module returns a key, never copy
+
+Much of the decision logic behind these surfaces lives in plain `.ts` modules beside the
+component — `divanGating.ts`, `flag-overrides.ts`, `remove-the-wave.ts` — because `apps/web/src`
+has no jsdom and those decisions are unit-tested. Such a module cannot call `useT`, so **it
+returns a `CatalogKey` and the component translates it**:
+
+```ts
+export function itemKindLabel(kind: TargetKind): CatalogKey { … }
+```
+
+When the copy interpolates, the module returns the key plus its params. `divanGating.ts` exports
+the shape the other divan modules import:
+
+```ts
+export type Message = {readonly key: CatalogKey; readonly params?: MessageParams};
+```
+
+Three consequences worth knowing before you write one:
+
+- **A module that only composed two Turkish strings loses its reason to exist.** The composed
+  form becomes one flat key, so the helper goes. Only reach back for composition when English
+  needs an arm the Turkish does not — see the plural note below.
+- **A caller-supplied noun stays a prop, not a literal.** `ActorIdentity` takes `fallbackLabel`
+  as a string; divan passes `t("divan.caylak.fallback")`. The shared module still holds no copy.
+- **The unit test then asserts the key**, not the Turkish. Where the test's point is that the
+  copy reads a certain way, it resolves the key through `trCatalog` and asserts that.
+
+Formatting a date or a number is the same rule seen from the other side: the module takes the
+`Locale` and formats with it (`createdAtLabel(createdAt, locale)`), so no surface hardcodes
+`tr-TR`.
 ## Plurals pick a message, not a key
 
 `plural` is typed `PluralForms → string`, so feeding it two catalog *keys* returns a `string`
@@ -166,6 +197,24 @@ around it** (`up for review`, `one of the yazars`) rather than reintroduce a nou
 carries suffixed (`divandaki`, `yazarsın`, `çaylakların`).
 
 ## Plurals
+
+**A sentence carrying N independent counts needs N clause messages plus a frame.** The wave
+confirm counts targets and reports, and pluralizing the whole line on either one renders "1
+target · closes 1 reports" in English. So `blastRadiusLabel` returns a frame message plus a
+clause message, and the component interpolates the resolved clause into the frame. The roster
+line and the actor drawer's üretim line do the same over four and three counts. Turkish is
+unaffected either way, which is exactly why this is easy to miss.
+
+The countable nouns the divan reuses across those lines live once, as
+`divan.count.{items,definitions,posts,comments}.{one,other}`, and `countClause(kind, count)` in
+`divanGating.ts` picks the arm. The frame then holds only the separators — `divan.actor.uretim`
+is `"{definitions} · {posts} · {comments}"` in both locales, with every inflected word in a
+clause.
+
+**A count that is provably never 1 needs no arm of its own.** `reporterDiversityLabel` returns
+early below two reports, so `count` is at least 2 on the diversity arm and only `distinct` moves
+between the arms — one pair of keys, not a frame. Rely on this only where the code proves the
+floor at the return site.
 
 `plural(locale, n, {one, other})` and nothing more. `Intl.PluralRules` reports exactly `one` and
 `other` for both `tr` and `en`, and `plural.unit.test.ts` asserts that against the running engine —
