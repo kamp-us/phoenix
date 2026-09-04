@@ -423,6 +423,23 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
 means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
 noted as a future-feeling alternative and is not adopted.
 
+### Tuval: stack, orientation, size, zoom
+
+The layout tree's four nouns, first used in code by
+[`apps/tuval/src/shell/layout/`](../apps/tuval/src/shell/layout/) (#7551).
+
+- **stack** — a node holding an ordered list of child windows and stacks. Windows are the leaves;
+  a stack is never empty, and only the root may hold a single child.
+- **orientation** — how a stack lays its children out. **`"horizontal"` means the children sit side
+  by side in a row**; `"vertical"` means they stack top to bottom. Studio's `layout-tree` inverts
+  this at its render boundary (its `orentationFromDirection` maps left/right to `"vertical"`);
+  phoenix does not, and no orientation flip appears anywhere in the port.
+- **size** — a child's share of its stack's extent, in **percent, never pixels**: every tab mirrors
+  one desk at a different width, so a pixel would mean something different in each. Min and max are
+  render-time props of the panel component and live nowhere in the tree.
+- **zoom** — the one window rendered alone, `zoomed` on the tree. Setting or clearing it never
+  writes a size, so unzoom restores the layout exactly.
+
 
 ---
 
