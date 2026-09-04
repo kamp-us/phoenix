@@ -11,8 +11,8 @@ import {boot, defaultGlobalConfig, projectConfig, projectDir} from "./boot.ts";
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
 const bin = fileURLToPath(new URL("./bin.ts", import.meta.url));
-/** The demo config the app ships, read here as a global layer over a throwaway project. */
-const demoConfig = fileURLToPath(new URL("../.tuval/tuval.config.ts", import.meta.url));
+/** The config the box ships — the shell plus the two demo rows — read as a global layer over a throwaway project. */
+const boxConfig = fileURLToPath(new URL("../.tuval/tuval.config.ts", import.meta.url));
 
 interface Run {
 	readonly status: number | null;
@@ -156,14 +156,17 @@ describe("boot", () => {
 		);
 	});
 
-	it("boots the demo config: two demo processes, the table on the terminal, and both back after a restart", async () => {
+	it("boots the box config: the shell and the two demo processes, the table on the terminal, and all three back after a restart", async () => {
 		const project = freshProject();
-		const args = ["--config", demoConfig, "--project", project];
+		const args = ["--config", boxConfig, "--project", project];
 		const first = await runUntilRunning(args);
 		expect(first.stderr).toBe("");
 		expect(first.status).toBe(0);
 		expect(first.stdout).toContain(
-			`tuval: booted — 2 program(s) registered from ${demoConfig}; 2 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 3 program(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
+		);
+		expect(first.stdout).toContain(
+			"tuval: process shell program=shell parent=- ports=- state=running@0\n",
 		);
 		expect(first.stdout).toContain(
 			"tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0\n",
@@ -177,7 +180,7 @@ describe("boot", () => {
 		const second = await runUntilRunning(args);
 		expect(second.status).toBe(0);
 		expect(second.stdout).toContain(
-			`tuval: booted — 2 program(s) registered from ${demoConfig}; 2 process(es) live, 2 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 3 program(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
 		);
 		expect(second.stdout).toContain("tuval: process log program=log parent=counter");
 	});
