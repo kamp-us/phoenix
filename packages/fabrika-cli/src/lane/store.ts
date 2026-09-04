@@ -27,6 +27,15 @@ export const DEFAULT_LANES_ROOT = ".fabrika/lanes";
 /** Where a chore lane lives: keyed by name, because a chore has no issue number (#5840). */
 export const DEFAULT_CHORES_ROOT = ".fabrika/chores";
 
+/**
+ * Where an archived lane lives — a SIBLING of the lanes root, never a directory under it.
+ *
+ * That placement is the whole mechanism: `lane reconcile` and `lane migrate` sweep the roots they
+ * are handed and nothing above them, so a lane moved to a sibling is out of both sweeps without
+ * either verb learning a skip rule it could get wrong (ADR 0352).
+ */
+export const DEFAULT_ARCHIVED_LANES_ROOT = ".fabrika/lanes-archived";
+
 export interface LaneRef {
 	/** The lanes root — `.fabrika/lanes`, or `.fabrika/chores` for a chore key. */
 	readonly root: string;

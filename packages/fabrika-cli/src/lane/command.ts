@@ -16,6 +16,7 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
+import {closedReader, runArchive} from "./archive-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
@@ -25,7 +26,7 @@ import {expectationReader} from "./expectation.ts";
 import {deriveRepoRoot, onGround, repoGroundRefusal, resolveRootOrRefuse} from "./ground.ts";
 import {runHistory} from "./history-verb.ts";
 import {runIntegrate} from "./integrate-verb.ts";
-import {defaultRoot, type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
+import {archivedRoot, defaultRoot, type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
@@ -38,7 +39,12 @@ import {runReport} from "./report-verb.ts";
 import {DEFAULT_STALE_MINUTES} from "./stale.ts";
 import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
-import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT, type LaneRef} from "./store.ts";
+import {
+	DEFAULT_ARCHIVED_LANES_ROOT,
+	DEFAULT_CHORES_ROOT,
+	DEFAULT_LANES_ROOT,
+	type LaneRef,
+} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 import {DEFAULT_VIEW_PORT, listeningAt, runView} from "./view-verb.ts";
 
@@ -763,6 +769,67 @@ const migrate = leafCommand(
 	),
 );
 
+const archive = leafCommand(
+	"archive",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		archivedRoot: Flag.string("archived-root").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`where the lane moves to (default: the owning repository's ${DEFAULT_ARCHIVED_LANES_ROOT}, a sibling of the lanes root and swept by nothing)`,
+			),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the closure read reads (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, archivedRoot: archived, repo}) {
+		const parsed = parseKey(lane);
+		if (parsed._tag === "Malformed") {
+			yield* emit(keyRefusal(parsed));
+			return;
+		}
+		const path = yield* Path.Path;
+		let source: string;
+		let destination: string;
+		if (Option.isSome(root) && Option.isSome(archived)) {
+			source = root.value;
+			destination = archived.value;
+		} else {
+			const ground = yield* deriveRepoRoot(process.cwd());
+			if (ground._tag !== "Derived") {
+				yield* emit(repoGroundRefusal("fabrika lane archive", ground));
+				return;
+			}
+			source = Option.getOrElse(root, () => path.join(ground.repoRoot, defaultRoot(parsed.key)));
+			destination = Option.getOrElse(archived, () => path.join(ground.repoRoot, archivedRoot()));
+		}
+		const ref = laneRef(parsed.key, source);
+		yield* emit(
+			yield* onGround("archive", [ref.root, destination], process.cwd(), () =>
+				runArchive({
+					ref,
+					archivedRoot: destination,
+					// A relocated root holds whatever was opened into it, so both templates are
+					// candidates and the lane's own machine id picks — never the root's position.
+					templatePaths: [templatePath("Issue"), templatePath("Chore")],
+					issue: parsed.key._tag === "Issue" ? Number(parsed.key.lane) : null,
+					closed: closedReader(Option.getOrNull(repo), process.env),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Move one lane whose log will never replay out of the swept root."),
+	Command.withDescription(
+		'Move one lane directory from the lanes root to the archived root, so the sweeps stop reporting a lane they can never judge. `lane reconcile` reads such a lane "unreadable" and `lane migrate` "unsafe" on every run, forever: the fault is an event the machine has no cell for, and neither verb may rewrite an append-only log to fix it — sealing writes a line for something that did not happen (ADR 0350) and widening `frozen` lets a lane at its retry cap ship with no unblock. So the record moves aside instead, and nothing in it is touched (ADR 0352). BOTH gates hold or nothing moves: the lane\'s issue must read closed on the board, AND the log must fail to replay under the same judgement `lane migrate` makes — through the lane\'s own machine or through the committed template. Anything else is refused with the directory where it was, so a genuinely broken lane still shows up on every sweep. The replay judgement runs first because it is local and free, so a replaying lane costs no board read. The archived root is a SIBLING of the lanes root, never a directory under it, which is why no sweep needs a skip rule: `reconcile` and `migrate` read the roots they are handed and are never handed this one. The record stays readable — `fabrika lane history <lane> --root <archived-root>` and `fabrika lane brief` read an archived lane when pointed at it. stdout is {answer:"archived", lane, issue, from, to, through, defects}, where `through` is "current" or "candidate" — which machine refused the log — and `defects` names why. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there), 8 (the move did not land — the lane is NOT archived), 9 (the move reported success and the destination does not read back), 11 (the lane, a committed template, the destination probe or the board could not be read, or no candidate machine could be built to judge the log against — UNKNOWN, never a move), 14 (the archived root already holds a lane by this key — a move onto it would bury a record), 19 (the key names no issue, so the closed-issue gate can never be satisfied; a chore lane is not archivable), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default roots), 49 (the lane\'s issue is open — drive the lane, or close it first), 50 (the log replays, so every sweep can judge it and there is nothing to move out of scope). Example: fabrika lane archive 6037',
+	),
+);
+
 const reconcile = leafCommand(
 	"reconcile",
 	{
@@ -876,6 +943,7 @@ export const laneCommand = Command.make("lane").pipe(
 		stale,
 		migrate,
 		reconcile,
+		archive,
 		claim,
 		release,
 		adopt,
