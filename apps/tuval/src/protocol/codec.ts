@@ -28,10 +28,15 @@ const encodeFor =
 	<S extends Schema.Codec<any, any>>(schema: S, direction: Direction) =>
 	(message: S["Type"]): Effect.Effect<string, ProtocolRefused> =>
 		Schema.encodeEffect(schema)(message).pipe(
-			Effect.map(stringifyJson),
 			Effect.mapError(
 				(error) => new ProtocolRefused({direction, reason: describeSchemaError(error)}),
 			),
+			Effect.flatMap((encoded) => {
+				const written = stringifyJson(encoded);
+				return written._tag === "Stringified"
+					? Effect.succeed(written.text)
+					: Effect.fail(new ProtocolRefused({direction, reason: `not JSON: ${written.reason}`}));
+			}),
 		);
 
 export const decodePageMessage = decodeFor(PageToKernel, "page-to-kernel");

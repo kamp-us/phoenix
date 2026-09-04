@@ -135,13 +135,13 @@ const invoke = (path: SpellPath, args: unknown): Effect.Effect<SpellReply, never
 	);
 
 const succeeded = (reply: SpellReply): unknown => {
-	assert.isTrue(reply.outcome.ok, `expected a successful reply, got ${JSON.stringify(reply)}`);
-	return reply.outcome.ok ? reply.outcome.result : undefined;
+	assert.isTrue(reply.ok, `expected a successful reply, got ${JSON.stringify(reply)}`);
+	return reply.ok ? reply.result : undefined;
 };
 
 const failure = (reply: SpellReply) => {
-	assert.isFalse(reply.outcome.ok, `expected a failed reply, got ${JSON.stringify(reply)}`);
-	return reply.outcome.ok ? undefined : reply.outcome.error;
+	assert.isFalse(reply.ok, `expected a failed reply, got ${JSON.stringify(reply)}`);
+	return reply.ok ? undefined : reply.error;
 };
 
 /** The caller itself: a live process the window points at, spawned outside the spells. */

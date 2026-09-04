@@ -74,6 +74,30 @@ describe("applyPatch", () => {
 		}),
 	);
 
+	it.effect("refuses a patch that skips revisions rather than applying it over the gap", () =>
+		Effect.gen(function* () {
+			// The changes the skipped revisions carried are not in this patch, so applying it would
+			// leave the page marked current at a state it never received.
+			for (const rev of [snapshot.rev + 2, snapshot.rev + 5]) {
+				const refusal = yield* Effect.flip(
+					applyPatch(
+						snapshot,
+						patchOf([replace(["desk", "workspaces", workspace, "name"], "skipped")], rev),
+					),
+				);
+				assert.strictEqual(refusal._tag, "tuval/PatchRefused");
+				assert.include(refusal.message, "does not follow");
+			}
+		}),
+	);
+
+	it.effect("refuses a patch older than the snapshot", () =>
+		Effect.gen(function* () {
+			const refusal = yield* Effect.flip(applyPatch(snapshot, patchOf([], snapshot.rev - 1)));
+			assert.strictEqual(refusal._tag, "tuval/PatchRefused");
+		}),
+	);
+
 	it.effect("refuses a replace with no path", () =>
 		Effect.gen(function* () {
 			const refusal = yield* Effect.flip(applyPatch(snapshot, patchOf([replace([], 1)])));

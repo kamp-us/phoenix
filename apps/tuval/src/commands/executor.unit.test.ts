@@ -93,8 +93,8 @@ const execute = (one: SpellCall): Promise<SpellReply> => {
 };
 
 const failure = (reply: SpellReply) => {
-	if (reply.outcome.ok) throw new Error(`expected a refusal, got ${JSON.stringify(reply.outcome)}`);
-	return reply.outcome.error;
+	if (reply.ok) throw new Error(`expected a refusal, got ${JSON.stringify(reply)}`);
+	return reply.error;
 };
 
 describe("SpellExecutor", () => {
@@ -108,7 +108,8 @@ describe("SpellExecutor", () => {
 		const reply = await execute(
 			call({path: ["window", "close"], args: {id: "w-1"}, window: leftWindow}),
 		);
-		expect(reply.outcome).toEqual({ok: true, result: {closed: true}});
+		expect(reply.ok).toBe(true);
+		expect(reply.ok ? reply.result : undefined).toEqual({closed: true});
 		expect(seen).toEqual({
 			window: leftWindow,
 			process: counterProcess,

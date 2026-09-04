@@ -44,20 +44,30 @@ export const SpellFailure = Schema.Struct({
 });
 export type SpellFailure = typeof SpellFailure.Type;
 
-// `ok` and its payload travel together so a reply carrying both a result and an error cannot be
-// built or decoded; the class holds the union rather than flattening it into optional fields.
-const Succeeded = Schema.Struct({ok: Schema.Literal(true), result: Schema.Unknown});
-const Failed = Schema.Struct({ok: Schema.Literal(false), error: SpellFailure});
-
-export const SpellOutcome = Schema.Union([Succeeded, Failed]);
-export type SpellOutcome = typeof SpellOutcome.Type;
-
-export class SpellReply extends Schema.Class<SpellReply>("SpellReply")({
+// The reply is flat, and the union is what keeps `ok` and its payload together: a reply carrying
+// both a result and an error is not a member of either class, so it cannot be built or decoded.
+export class SpellReplyOk extends Schema.Class<SpellReplyOk>("SpellReplyOk")({
 	type: Schema.Literal("spell.reply"),
 	version: Version,
 	id: CallId,
-	outcome: SpellOutcome,
+	ok: Schema.Literal(true),
+	result: Schema.Unknown,
 }) {}
+
+export class SpellReplyError extends Schema.Class<SpellReplyError>("SpellReplyError")({
+	type: Schema.Literal("spell.reply"),
+	version: Version,
+	id: CallId,
+	ok: Schema.Literal(false),
+	error: SpellFailure,
+}) {}
+
+export const SpellReply = Schema.Union([SpellReplyOk, SpellReplyError]);
+export type SpellReply = typeof SpellReply.Type;
+
+/** The reply leg of `KernelToPage`, which `instanceof` cannot answer for a union. */
+export const isSpellReply = (message: KernelToPage): message is SpellReply =>
+	message.type === "spell.reply";
 
 /** The whole desk as the kernel holds it. A tab keeps only tab-ephemeral state (#7617 R1.3). */
 export class Snapshot extends Schema.Class<Snapshot>("Snapshot")({

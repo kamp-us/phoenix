@@ -98,10 +98,10 @@ const help = (booted: Booted) =>
 			}),
 			client,
 		);
-		assert.isTrue(reply.outcome.ok, "help failed");
-		return yield* Schema.decodeUnknownEffect(HelpRows)(
-			reply.outcome.ok ? reply.outcome.result : undefined,
-		).pipe(Effect.orDie);
+		assert.isTrue(reply.ok, "help failed");
+		return yield* Schema.decodeUnknownEffect(HelpRows)(reply.ok ? reply.result : undefined).pipe(
+			Effect.orDie,
+		);
 	}).pipe(Effect.provideContext(booted.kernel));
 
 const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Scope.Scope>) =>

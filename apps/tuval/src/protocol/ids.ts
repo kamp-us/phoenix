@@ -31,6 +31,16 @@ export type ProgramId = typeof ProgramId.Type;
 export const Revision = Schema.Number.check(Schema.isUint32());
 export type Revision = typeof Revision.Type;
 
+/**
+ * How recently the kernel last touched a window or a process row: the higher the stamp, the more
+ * recent. A counter rather than a `lastFocusedAt` timestamp, for the reason `Revision` is one — the
+ * kernel already counts and holds no clock, a counter is deterministic under test, and the page
+ * only ever compares two stamps, so a wall time would buy nothing and cost clock skew between the
+ * kernel and the page. `recency.ts` mints it.
+ */
+export const Recency = Schema.Number.check(Schema.isUint32());
+export type Recency = typeof Recency.Type;
+
 /** A spell path: at least one segment, lowercase English words the registry keys on. */
 export const SpellPath = Schema.Array(Schema.String).check(Schema.isMinLength(1));
 export type SpellPath = typeof SpellPath.Type;

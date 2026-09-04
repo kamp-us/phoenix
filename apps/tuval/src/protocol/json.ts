@@ -19,7 +19,25 @@ export const parseJson = (text: string): JsonParse => {
 	}
 };
 
-export const stringifyJson = (value: unknown): string => JSON.stringify(value);
+export type JsonStringify =
+	| {readonly _tag: "Stringified"; readonly text: string}
+	| {readonly _tag: "Failed"; readonly reason: string};
+
+/**
+ * Symmetric with `parseJson`, and for the same reason: three message fields are `Schema.Unknown`, so
+ * encode is identity there and a BigInt or a cycle reaches `JSON.stringify` unchanged. A bare call
+ * would throw past the codec's error channel.
+ */
+export const stringifyJson = (value: unknown): JsonStringify => {
+	try {
+		const text = JSON.stringify(value);
+		return text === undefined
+			? {_tag: "Failed", reason: "the value has no JSON form"}
+			: {_tag: "Stringified", text};
+	} catch (cause) {
+		return {_tag: "Failed", reason: (cause as Error).message};
+	}
+};
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);

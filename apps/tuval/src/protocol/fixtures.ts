@@ -1,7 +1,14 @@
 /** One of each message, valid, for the tests to encode, decode and patch. */
 
 import {CallId, ProcessId, ProgramId, WindowId, WorkspaceId} from "./ids.ts";
-import {Patch, PROTOCOL_VERSION, Snapshot, SpellCall, SpellReply} from "./messages.ts";
+import {
+	Patch,
+	PROTOCOL_VERSION,
+	Snapshot,
+	SpellCall,
+	SpellReplyError,
+	SpellReplyOk,
+} from "./messages.ts";
 import type {ProcessRow} from "./process-row.ts";
 import type {SpellDescription} from "./registry-description.ts";
 
@@ -16,6 +23,7 @@ export const counterRow: ProcessRow = {
 	parentId: null,
 	ports: {increment: {kind: "count", direction: "in"}},
 	stateSummary: {lifecycle: "running", revision: 3},
+	recency: 2,
 };
 
 export const spellDescription: SpellDescription = {
@@ -34,25 +42,24 @@ export const spellCall = new SpellCall({
 	window: leftWindow,
 });
 
-export const spellReply = new SpellReply({
+export const spellReply = new SpellReplyOk({
 	type: "spell.reply",
 	version: PROTOCOL_VERSION,
 	id: CallId.make("call-1"),
-	outcome: {ok: true, result: {window: rightWindow}},
+	ok: true,
+	result: {window: rightWindow},
 });
 
-export const spellRefusal = new SpellReply({
+export const spellRefusal = new SpellReplyError({
 	type: "spell.reply",
 	version: PROTOCOL_VERSION,
 	id: CallId.make("call-2"),
-	outcome: {
-		ok: false,
-		error: {
-			tag: "tuval/UnknownSpell",
-			message: 'no spell is registered at "window splt"',
-			path: ["window", "splt"],
-			didYouMean: "window split",
-		},
+	ok: false,
+	error: {
+		tag: "tuval/UnknownSpell",
+		message: 'no spell is registered at "window splt"',
+		path: ["window", "splt"],
+		didYouMean: "window split",
 	},
 });
 
@@ -79,8 +86,8 @@ export const snapshot = new Snapshot({
 		activeWorkspace: workspace,
 	},
 	windows: {
-		[leftWindow]: {id: leftWindow, process: counterProcess},
-		[rightWindow]: {id: rightWindow},
+		[leftWindow]: {id: leftWindow, process: counterProcess, recency: 3},
+		[rightWindow]: {id: rightWindow, recency: 1},
 	},
 	processes: [counterRow],
 	registry: [spellDescription],

@@ -17,7 +17,14 @@ import {
 } from "../protocol/codec.ts";
 import {counterRow, workspace as deskWorkspace, leftWindow} from "../protocol/fixtures.ts";
 import {CallId, Revision} from "../protocol/ids.ts";
-import {Patch, PROTOCOL_VERSION, Snapshot, SpellCall, SpellReply} from "../protocol/messages.ts";
+import {
+	isSpellReply,
+	Patch,
+	PROTOCOL_VERSION,
+	Snapshot,
+	SpellCall,
+	type SpellReply,
+} from "../protocol/messages.ts";
 import {applyPatch} from "../protocol/patch.ts";
 import type {RegistryDescription} from "../protocol/registry-description.ts";
 import {SpellExecutor} from "./executor.ts";
@@ -26,6 +33,11 @@ import {type Client, WindowIndex} from "./scope.ts";
 import {ClientId, defineSpell, type SpellPath, WorkspaceId} from "./spell.ts";
 
 const client: Client = {id: ClientId.make("page"), workspace: WorkspaceId.make("ws-1")};
+
+const resultOf = (reply: SpellReply): unknown => {
+	assert.isTrue(reply.ok, `expected a successful reply, got ${JSON.stringify(reply)}`);
+	return reply.ok ? reply.result : undefined;
+};
 
 /** The state a mutation writes, so a `Patch` has a real change to carry rather than a staged one. */
 class Counter extends Context.Service<
@@ -88,7 +100,7 @@ const exchange = Effect.fn("wireProof.exchange")(function* (
 	const reply = yield* executor.execute(call, client);
 	const response = yield* encodeKernelMessage(reply).pipe(Effect.orDie);
 	const back = yield* decodeKernelMessage(response).pipe(Effect.orDie);
-	assert.instanceOf(back, SpellReply, "the kernel answered a call with something else");
+	assert.isTrue(isSpellReply(back), "the kernel answered a call with something else");
 	return {callId, reply: back as SpellReply};
 });
 
@@ -109,7 +121,7 @@ const snapshotOf = (rev: number, registry: RegistryDescription): Snapshot =>
 			},
 			activeWorkspace: deskWorkspace,
 		},
-		windows: {[leftWindow]: {id: leftWindow}},
+		windows: {[leftWindow]: {id: leftWindow, recency: 1}},
 		processes: [counterRow],
 		registry,
 	});
@@ -122,8 +134,8 @@ describe("the wire", () => {
 
 			assert.strictEqual(first.reply.id, first.callId, "a reply carried another call's id");
 			assert.strictEqual(second.reply.id, second.callId, "a reply carried another call's id");
-			assert.deepStrictEqual(first.reply.outcome, {ok: true, result: {count: 0}});
-			assert.deepStrictEqual(second.reply.outcome, {ok: true, result: {count: 1}});
+			assert.deepStrictEqual(resultOf(first.reply), {count: 0});
+			assert.deepStrictEqual(resultOf(second.reply), {count: 1});
 		}).pipe(Effect.provide(app)),
 	);
 
@@ -150,7 +162,7 @@ describe("the wire", () => {
 			const before = snapshotOf(1, registry);
 
 			const {reply} = yield* exchange("c-3", ["count", "bump"], {});
-			assert.deepStrictEqual(reply.outcome, {ok: true, result: {count: 1}});
+			assert.deepStrictEqual(resultOf(reply), {count: 1});
 
 			const sent = yield* encodeKernelMessage(
 				new Patch({

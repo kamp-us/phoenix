@@ -16,7 +16,9 @@ import {
 	PROTOCOL_VERSION,
 	type SpellCall,
 	type SpellFailure,
-	SpellReply,
+	type SpellReply,
+	SpellReplyError,
+	SpellReplyOk,
 } from "../protocol/messages.ts";
 import {BadArgs, BadResult, UnknownSpell} from "./errors.ts";
 import {SpellRegistry, type SpellRow} from "./registry.ts";
@@ -80,8 +82,23 @@ const failureOf = (call: SpellCall, error: unknown): SpellFailure => {
 	return base;
 };
 
-const replyOf = (call: SpellCall, outcome: SpellReply["outcome"]): SpellReply =>
-	new SpellReply({type: "spell.reply", version: PROTOCOL_VERSION, id: call.id, outcome});
+const succeeded = (call: SpellCall, result: unknown): SpellReply =>
+	new SpellReplyOk({
+		type: "spell.reply",
+		version: PROTOCOL_VERSION,
+		id: call.id,
+		ok: true,
+		result,
+	});
+
+const refused = (call: SpellCall, error: SpellFailure): SpellReply =>
+	new SpellReplyError({
+		type: "spell.reply",
+		version: PROTOCOL_VERSION,
+		id: call.id,
+		ok: false,
+		error,
+	});
 
 const runSpell = (row: SpellRow, args: unknown, scope: Scope): Effect.Effect<unknown, unknown> =>
 	// The registry stores `AnySpell`, so this call's types — its requirements included — are `any`
@@ -146,13 +163,12 @@ const make = Effect.fn("Tuval.SpellExecutor.make")(function* () {
 			const args = yield* decodeArgs(row, call);
 			const scope = yield* resolveScope(call, client);
 			const value = yield* runSpell(row, args, scope);
-			return {ok: true, result: yield* encodeResult(row, value)} as const;
+			return succeeded(call, yield* encodeResult(row, value));
 		});
-		const outcome = yield* attempt.pipe(
+		return yield* attempt.pipe(
 			Effect.provideService(WindowIndex, index),
-			Effect.catch((error) => Effect.succeed({ok: false, error: failureOf(call, error)} as const)),
+			Effect.catch((error) => Effect.succeed(refused(call, failureOf(call, error)))),
 		);
-		return replyOf(call, outcome);
 	});
 
 	return SpellExecutor.of({execute});

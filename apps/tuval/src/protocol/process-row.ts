@@ -4,12 +4,14 @@
  * The protocol may not import `src/process/`, so the shape is written out here instead of derived.
  * Two fields differ from the in-memory row, and only because JSON has no room for them: `parentId`
  * is `Option<ProcessId>` in the table and `null`-or-id here, and `ports` carries the declaration
- * only (kind and direction), never the predicate or the queue. `protocol.unit.test.ts` projects a
- * real `TableRow` into this schema so the two cannot drift apart unnoticed.
+ * only (kind and direction), never the predicate or the queue. `recency` has no in-memory
+ * counterpart at all: it is desk state the kernel stamps at spawn, not process state.
+ * `protocol.unit.test.ts` projects a real `TableRow` into this schema so the two cannot drift apart
+ * unnoticed.
  */
 
 import {Schema} from "effect";
-import {ProcessId, ProgramId, Revision} from "./ids.ts";
+import {ProcessId, ProgramId, Recency, Revision} from "./ids.ts";
 
 export const PortDeclaration = Schema.Struct({
 	kind: Schema.String,
@@ -29,5 +31,7 @@ export const ProcessRow = Schema.Struct({
 	parentId: Schema.NullOr(ProcessId),
 	ports: Schema.Record(Schema.String, PortDeclaration),
 	stateSummary: ProcessStateSummary,
+	/** Stamped by the kernel when the process is spawned; the completion engine ranks on it. */
+	recency: Recency,
 });
 export type ProcessRow = typeof ProcessRow.Type;

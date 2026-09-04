@@ -17,7 +17,7 @@ import {Context, Effect, Layer} from "effect";
 import {CallId} from "../../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellFailure} from "../../protocol/messages.ts";
 import {SpellExecutor} from "../executor.ts";
-import {describeSpell, type SpellDescription, SpellRegistry} from "../registry.ts";
+import {buildRegistry, describeSpell, type SpellDescription, SpellRegistry} from "../registry.ts";
 import type {Client} from "../scope.ts";
 import {type AnySpell, renderPath, type Scope, type SpellPath} from "../spell.ts";
 import {SpellNotAllowed} from "./errors.ts";
@@ -56,8 +56,8 @@ const make = Effect.fn("Tuval.SpellBridge.make")(function* (options: {
 			}),
 			clientOf(scope),
 		);
-		if (reply.outcome.ok) return reply.outcome.result;
-		return yield* Effect.fail(reply.outcome.error);
+		if (reply.ok) return reply.result;
+		return yield* Effect.fail(reply.error);
 	});
 
 	return SpellBridge.of({list: registry.describe, call});
@@ -85,23 +85,27 @@ export class SpellBridge extends Context.Service<
 	 * describes is exactly what it answers.
 	 */
 	static readonly scripted = (table: ReadonlyArray<ScriptedCall>): Layer.Layer<SpellBridge> =>
-		Layer.succeed(
+		Layer.effect(
 			SpellBridge,
-			SpellBridge.of({
-				list: Effect.succeed(
-					table.map(({spell}) => describeSpell({path: spell.path, source: {kind: "core"}, spell})),
-				),
-				call: (path) => {
-					const rendered = renderPath(path);
-					const row = table.find(({spell}) => renderPath(spell.path) === rendered);
-					return row === undefined
-						? Effect.fail({
-								tag: "tuval/commands/UnknownSpell",
-								message: `no spell is registered at path "${rendered}"`,
-								path: [...path],
-							} satisfies SpellFailure)
-						: Effect.succeed(row.answer);
-				},
-			}),
+			// Registration renders each spell's params, and a scripted table that cannot be
+			// registered is a bug in the test that wrote it, so it dies rather than answering.
+			Effect.map(
+				buildRegistry({core: table.map(({spell}) => spell), programs: []}).pipe(Effect.orDie),
+				(registered) =>
+					SpellBridge.of({
+						list: Effect.succeed(registered.rows.map(describeSpell)),
+						call: (path) => {
+							const rendered = renderPath(path);
+							const row = table.find(({spell}) => renderPath(spell.path) === rendered);
+							return row === undefined
+								? Effect.fail({
+										tag: "tuval/commands/UnknownSpell",
+										message: `no spell is registered at path "${rendered}"`,
+										path: [...path],
+									} satisfies SpellFailure)
+								: Effect.succeed(row.answer);
+						},
+					}),
+			),
 		);
 }

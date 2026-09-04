@@ -20,7 +20,8 @@ import {
 	PROTOCOL_VERSION,
 	Snapshot,
 	SpellCall,
-	SpellReply,
+	SpellReplyError,
+	SpellReplyOk,
 } from "./messages.ts";
 import {ProcessRow} from "./process-row.ts";
 import {CapabilityRequest, RegistryDescription} from "./registry-description.ts";
@@ -52,7 +53,11 @@ describe("the direction unions", () => {
 			);
 			assert.instanceOf(
 				yield* decodeKernelMessage(yield* encodeKernelMessage(fixtures.spellReply)),
-				SpellReply,
+				SpellReplyOk,
+			);
+			assert.instanceOf(
+				yield* decodeKernelMessage(yield* encodeKernelMessage(fixtures.spellRefusal)),
+				SpellReplyError,
 			);
 			assert.instanceOf(
 				yield* decodeKernelMessage(yield* encodeKernelMessage(fixtures.snapshot)),
@@ -106,7 +111,8 @@ describe("refusals", () => {
 		type: "spell.reply",
 		version: PROTOCOL_VERSION,
 		id: "call-1",
-		outcome: {ok: true, result: null},
+		ok: true,
+		result: null,
 	};
 
 	it.effect("a wrong version, page to kernel", () =>
@@ -155,16 +161,40 @@ describe("refusals", () => {
 
 	it.effect("a missing field, kernel to page", () =>
 		Effect.gen(function* () {
-			const {outcome: _outcome, ...withoutOutcome} = replyBody;
-			const refusal = yield* refusalOf(decodeKernelMessage(JSON.stringify(withoutOutcome)));
+			const {ok: _ok, ...withoutOk} = replyBody;
+			const refusal = yield* refusalOf(decodeKernelMessage(JSON.stringify(withoutOk)));
 			assert.strictEqual(refusal.direction, "kernel-to-page");
-			assert.include(refusal.reason, "outcome");
+			assert.include(refusal.reason, "ok");
 		}),
 	);
 
 	it.effect("bytes that are not JSON at all", () =>
 		Effect.gen(function* () {
 			const refusal = yield* refusalOf(decodePageMessage("not json"));
+			assert.include(refusal.reason, "not JSON");
+		}),
+	);
+
+	// `args` and `result` are `Schema.Unknown`, so encode is identity there and a value with no JSON
+	// form reaches the writer untouched. It must fail on the error channel, not throw past it.
+	it.effect("a call carrying a value that has no JSON form", () =>
+		Effect.gen(function* () {
+			const refusal = yield* refusalOf(
+				encodePageMessage(new SpellCall({...fixtures.spellCall, args: {at: 1n}})),
+			);
+			assert.strictEqual(refusal.direction, "page-to-kernel");
+			assert.include(refusal.reason, "not JSON");
+		}),
+	);
+
+	it.effect("a reply carrying a cycle", () =>
+		Effect.gen(function* () {
+			const cycle: Record<string, unknown> = {};
+			cycle.self = cycle;
+			const refusal = yield* refusalOf(
+				encodeKernelMessage(new SpellReplyOk({...fixtures.spellReply, result: cycle})),
+			);
+			assert.strictEqual(refusal.direction, "kernel-to-page");
 			assert.include(refusal.reason, "not JSON");
 		}),
 	);
@@ -224,7 +254,8 @@ describe("Snapshot.processes", () => {
 			ports: {increment: {kind: "count", direction: "in"}},
 			stateSummary: {lifecycle: "running", revision: 3},
 		};
-		const wire = {...row, parentId: Option.getOrNull(row.parentId)};
+		// `recency` is desk state the kernel stamps at spawn, so the projection adds it to the row.
+		const wire = {...row, parentId: Option.getOrNull(row.parentId), recency: 2};
 		assert.deepStrictEqual(Schema.decodeUnknownSync(ProcessRow)(wire), wire);
 	});
 });

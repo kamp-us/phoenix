@@ -33,7 +33,13 @@ import {
 	encodePageMessage,
 } from "../protocol/codec.ts";
 import {CallId} from "../protocol/ids.ts";
-import {PROTOCOL_VERSION, SpellCall, type SpellFailure, SpellReply} from "../protocol/messages.ts";
+import {
+	isSpellReply,
+	PROTOCOL_VERSION,
+	SpellCall,
+	type SpellFailure,
+	type SpellReply,
+} from "../protocol/messages.ts";
 import {RegistryDescription, type SpellDescription} from "../protocol/registry-description.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
@@ -209,12 +215,11 @@ const overTheWire = Effect.fn("agentProof.call")(function* (
 	const reply = yield* executor.execute(received, client);
 	const answered = yield* encodeKernelMessage(reply).pipe(Effect.orDie);
 	const back = yield* decodeKernelMessage(answered).pipe(Effect.orDie);
-	assert.instanceOf(back, SpellReply, "the kernel answered a call with something else");
+	assert.isTrue(isSpellReply(back), "the kernel answered a call with something else");
 	return back as SpellReply;
 });
 
-const resultOf = (reply: SpellReply): unknown =>
-	reply.outcome.ok ? reply.outcome.result : undefined;
+const resultOf = (reply: SpellReply): unknown => (reply.ok ? reply.result : undefined);
 
 /**
  * The agent's whole script. It knows the two discovery spells by name — that is the one thing an
@@ -333,7 +338,7 @@ const runAgent = Effect.gen(function* () {
 });
 
 const failureOf = (reply: SpellReply): SpellFailure | undefined =>
-	reply.outcome.ok ? undefined : reply.outcome.error;
+	reply.ok ? undefined : reply.error;
 
 // `it.live`, not `it.effect`: `process read` waits on a real timeout for a port that has said
 // nothing yet, and under the test clock no wall time passes, so that wait never ends.
@@ -351,7 +356,7 @@ describe("the agent proof", () => {
 
 			for (const exchange of transcript) {
 				assert.isTrue(
-					exchange.reply.outcome.ok,
+					exchange.reply.ok,
 					`${exchange.path} failed: ${JSON.stringify(failureOf(exchange.reply))}`,
 				);
 			}

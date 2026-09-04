@@ -48,7 +48,7 @@ export const applyPatch = (
 	patch: Patch,
 ): Effect.Effect<Snapshot, PatchRefused | ProtocolRefused> =>
 	Effect.gen(function* () {
-		if (patch.rev <= snapshot.rev) {
+		if (patch.rev !== snapshot.rev + 1) {
 			return yield* new PatchRefused({
 				path: [],
 				reason: `revision ${patch.rev} does not follow ${snapshot.rev}`,

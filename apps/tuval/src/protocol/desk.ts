@@ -7,12 +7,14 @@
  */
 
 import {Schema} from "effect";
-import {ProcessId, WindowId, WorkspaceId} from "./ids.ts";
+import {ProcessId, Recency, WindowId, WorkspaceId} from "./ids.ts";
 
 /** One window: a stable id, and the process it is bound to while something runs in it. */
 export const Window = Schema.Struct({
 	id: WindowId,
 	process: Schema.optionalKey(ProcessId),
+	/** Bumped by the kernel every time this window takes focus; the completion engine ranks on it. */
+	recency: Recency,
 });
 export type Window = typeof Window.Type;
 

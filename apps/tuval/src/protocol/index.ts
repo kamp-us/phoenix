@@ -15,9 +15,19 @@ export {
 	Workspace,
 } from "./desk.ts";
 export {Direction, PatchRefused, ProtocolRefused} from "./errors.ts";
-export {CallId, ProcessId, ProgramId, Revision, SpellPath, WindowId, WorkspaceId} from "./ids.ts";
+export {
+	CallId,
+	ProcessId,
+	ProgramId,
+	Recency,
+	Revision,
+	SpellPath,
+	WindowId,
+	WorkspaceId,
+} from "./ids.ts";
 export {describeSchemaError, firstSchemaIssue, type SchemaIssueSummary} from "./issue.ts";
 export {
+	isSpellReply,
 	KernelToPage,
 	PageToKernel,
 	Patch,
@@ -26,11 +36,13 @@ export {
 	Snapshot,
 	SpellCall,
 	SpellFailure,
-	SpellOutcome,
 	SpellReply,
+	SpellReplyError,
+	SpellReplyOk,
 } from "./messages.ts";
 export {applyPatch} from "./patch.ts";
 export {PortDeclaration, ProcessRow, ProcessStateSummary} from "./process-row.ts";
+export {FIRST_RECENCY, focusWindow, nextRecency} from "./recency.ts";
 export {
 	CapabilityFamily,
 	CapabilityRequest,
