@@ -205,6 +205,15 @@ export const readYourWrite = async <T>(
 	return value;
 };
 
+declare const ResolvedDatabaseNameBrand: unique symbol;
+/**
+ * A D1 name that came back from Cloudflare's record for a database id, minted only by
+ * {@link resolveDatabaseName}. A fence keying on the name is only as good as the name's origin, so
+ * the origin is carried in the type: a label a caller composed is a `string` and does not fit
+ * (`@kampus/preview-seed`'s `provisionTestAccounts`, issue #7740).
+ */
+export type ResolvedDatabaseName = string & {readonly [ResolvedDatabaseNameBrand]: true};
+
 /**
  * The `name` Cloudflare has recorded for one D1 database id — the deploy stack's name, never the
  * caller's word for it, which is what makes it usable as evidence about what a database IS
@@ -214,7 +223,7 @@ export const readYourWrite = async <T>(
  * nullable field, so an answer without one is UNKNOWN rather than "no name": it throws instead of
  * returning a value a fence would then have to interpret.
  */
-export const resolveDatabaseName = async (config: D1RestConfig): Promise<string> => {
+export const resolveDatabaseName = async (config: D1RestConfig): Promise<ResolvedDatabaseName> => {
 	const {accountId, databaseId, layer} = config;
 	const response = await Effect.runPromise(
 		d1.getDatabase({accountId, databaseId}).pipe(Effect.provide(layer)),
@@ -225,11 +234,12 @@ export const resolveDatabaseName = async (config: D1RestConfig): Promise<string>
 			`D1 ${databaseId} resolved to no name — Cloudflare returned a database record without one, so nothing can be decided from it.`,
 		);
 	}
-	return name;
+	// The one mint: the brand is asserted here and nowhere else, on the value the API answered with.
+	return name as ResolvedDatabaseName;
 };
 
 /** {@link resolveDatabaseName} over the env-credentialed REST layer, like {@link makeD1RestFromEnv}. */
 export const resolveDatabaseNameFromEnv = (target: {
 	accountId: string;
 	databaseId: string;
-}): Promise<string> => resolveDatabaseName({...target, layer: d1RestLayerFromEnv});
+}): Promise<ResolvedDatabaseName> => resolveDatabaseName({...target, layer: d1RestLayerFromEnv});

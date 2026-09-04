@@ -235,6 +235,14 @@ Cloudflare's record for the id, written by the deploy stack, so there is nothing
 for a caller to assert. A flag would hand the decision back to the caller, which is
 the hole both versions of this fence exist to close.
 
+That origin is a type, not a convention. `provisionTestAccounts` takes a
+`ResolvedDatabaseName`, which `@kampus/d1-rest`'s `resolveDatabaseName` is the only
+thing that mints, so a label a caller composed does not fit the parameter and is
+refused by the compiler before any rule about its shape is applied. The shape rule
+itself — `isThrowawayDatabaseName` — stays a predicate over any string, because it
+answers a question about text; where the text has to have come from Cloudflare is the
+fence's own signature.
+
 **Each token is a live credential on a running preview.** Every one is read only
 from its own environment variable (never a flag, so it stays out of process
 listings), must be at least 32 characters, and is refused if it carries whitespace,
