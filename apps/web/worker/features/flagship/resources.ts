@@ -12,6 +12,7 @@ import {
 	MECMUA_WRITE,
 	MEMBER_MUTE,
 	PHOENIX_BILDIRIM,
+	PHOENIX_CAYLAK_METER,
 	PHOENIX_CAYLAK_VISIBILITY,
 	PHOENIX_EMAIL_DELIVERY_ADMIN,
 	PHOENIX_EMAIL_DELIVERY_NOTICE,
@@ -336,6 +337,26 @@ export const welcomeFlag = (appId: Input<string>) =>
 	Cloudflare.Flagship.Flag("phoenix_welcome", {appId, ...WELCOME_FLAG});
 
 /**
+ * The ambient-çaylak-meter dark-ship flag config (#7045, epic #4304). The SINGLE seam the
+ * topbar karma chip's promotion readout gates behind. Default-OFF so the meter ships dark —
+ * with it off the chip renders byte-for-byte today's bare karma value for every tier;
+ * flipping it on is the human release act (ADR 0083).
+ *
+ * Per-flag metadata (`feature-flags-schema-lifecycle.md`):
+ *   - owner:           onboarding (the çaylak→yazar path surfaces)
+ *   - originating:     #7045 (epic: new-user onboarding, #4304)
+ *   - removal trigger: once the meter is on at 100% and stable for one release, retire the
+ *                      flag and inline the chip.
+ */
+export const CAYLAK_METER_FLAG = {
+	key: PHOENIX_CAYLAK_METER,
+	description:
+		"ambient çaylak meter — topbar karma chip promotion readout dark-ship (#7045, epic #4304). owner: onboarding. removal: retire once on at 100% and stable.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+/**
  * The locale-choice dark-ship flag config (#7527, epic #7519). Gates the `dil` row in the
  * UserMenu — the only way a reader picks English. Default-OFF, so every reader stays on the
  * Turkish default the site always shipped; flipping it on is the human release act (ADR 0083).
@@ -354,6 +375,10 @@ export const LOCALE_FLAG = {
 	defaultVariation: "off",
 	variations: {off: false, on: true},
 } as const;
+
+/** A plain boolean kill-switch, no targeting rules — see `caylakVisibilityFlag`. */
+export const caylakMeterFlag = (appId: Input<string>) =>
+	Cloudflare.Flagship.Flag("phoenix_caylak_meter", {appId, ...CAYLAK_METER_FLAG});
 
 /** A plain boolean kill-switch, no targeting rules — see `caylakVisibilityFlag`. */
 export const localeFlag = (appId: Input<string>) =>

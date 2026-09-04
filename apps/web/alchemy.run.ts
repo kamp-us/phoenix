@@ -45,6 +45,7 @@ import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
 	bildirimFlag,
+	caylakMeterFlag,
 	caylakVisibilityFlag,
 	demoTargetingFlag,
 	emailDeliveryAdminFlag,
@@ -154,6 +155,10 @@ export default Alchemy.Stack(
 		// seam the post-auth redirect intercept in App.tsx and the /hosgeldin welcome surface
 		// gate behind, so the new-user arrival ships dark until a human release.
 		yield* welcomeFlag(flagship.appId);
+		// The ambient-çaylak-meter dark-ship flag, default-off (#7045, epic #4304) — the single
+		// seam the topbar karma chip's promotion readout gates behind, so the meter ships dark
+		// and the chip stays today's bare karma value until a human release.
+		yield* caylakMeterFlag(flagship.appId);
 		// The locale-choice dark-ship flag, default-off (#7527, epic #7519) — the seam the
 		// UserMenu `dil` row gates behind, so every reader stays on the Turkish default until
 		// a human release. The catalog under it serves `tr` either way (ADR 0347).

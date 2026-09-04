@@ -12,6 +12,12 @@ export interface KarmaProps {
 	readonly value: number;
 	/** Present ⇒ the "value / target" progress form (the çaylak→yazar bar, #1291). */
 	readonly target?: number;
+	/**
+	 * With a `target`, whether the bar itself is drawn. Off ⇒ the delta readout alone — the
+	 * unvouched çaylak's honest state, where the target is real but no bar may depict a goal
+	 * that maps to no live promotion trigger (#1323, #7045). Inert without a `target`.
+	 */
+	readonly showBar?: boolean;
 	readonly variant?: "inline" | "stat";
 	/** Defaults to the catalog's `karma.label`. */
 	readonly label?: string;
@@ -27,6 +33,7 @@ export function karmaAriaLabel(value: number, target: number | undefined, label:
 export function Karma({
 	value,
 	target,
+	showBar = true,
 	variant = "inline",
 	label,
 	testId = "karma",
@@ -46,7 +53,7 @@ export function Karma({
 				{isProgress ? <span className="kp-karma__target">/ {target}</span> : null}
 				<span className="kp-karma__label">{resolvedLabel}</span>
 			</span>
-			{isProgress ? (
+			{isProgress && showBar ? (
 				<progress
 					className="kp-karma__bar"
 					max={target}

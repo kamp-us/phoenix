@@ -17,6 +17,7 @@ import {DivanSubnavLayout} from "./components/divan/DivanSubnavLayout";
 import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {useDivanPendingCount} from "./components/divan/useDivanPendingCount";
 import {AppShell, Main} from "./components/layout/AppShell";
+import {type CaylakMeter, caylakMeter} from "./components/layout/caylakMeter";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
@@ -24,6 +25,10 @@ import {EmailDeliveryNoticeMount} from "./components/membrane/EmailDeliveryNotic
 import {actorLabel} from "./components/moderation/actor-identity";
 import {hasSeenWelcome, welcomeStorage} from "./components/onboarding/welcomeSeen";
 import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
+import {
+	AuthorshipStandingContext,
+	useAuthorshipStanding,
+} from "./components/profile/CaylakStatusBlock";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
 import {SozlukSubnavLayout} from "./components/sozluk/SozlukSubnavLayout";
@@ -34,7 +39,12 @@ import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {readBootUser} from "./flags/boot";
 import {EdgeShellBootMarker} from "./flags/EdgeShellBoot";
-import {MECMUA_PUBLIC_READ, PHOENIX_BILDIRIM, PHOENIX_WELCOME} from "./flags/keys";
+import {
+	MECMUA_PUBLIC_READ,
+	PHOENIX_BILDIRIM,
+	PHOENIX_CAYLAK_METER,
+	PHOENIX_WELCOME,
+} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {LocaleProvider} from "./i18n";
 import {AtolyeExhibitPage} from "./lab/atolye/AtolyeExhibitPage";
@@ -73,6 +83,7 @@ import {postAuthDestination, WELCOME_PATH} from "./pages/welcomeGating";
 type TopbarChips = {
 	userProps: {user: {name: string; username: string | null}} | undefined;
 	karma: number | undefined;
+	caylakMeter: CaylakMeter | undefined;
 	divanTo: string | undefined;
 	divanCount: number | undefined;
 	bildirim: {to: string; unread: number} | undefined;
@@ -182,6 +193,7 @@ function Layout() {
 							// inert, because `reserveSignedInSlots` is false and gates the whole account side.
 							{...(chips?.userProps ?? bootUserProps)}
 							karma={chips?.karma}
+							{...(chips?.caylakMeter ? {caylakMeter: chips.caylakMeter} : {})}
 							{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
 							searchQuery={searchQuery}
 							onSearchSubmit={(query) => {
@@ -253,6 +265,11 @@ function LayoutContent() {
 	// the wire would let read `divan.roster`, and stays unissued for everyone else.
 	const divanCount = useDivanPendingCount(showDivan);
 	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
+	// The ambient çaylak meter (#7045). Both halves of the gate ride ONE `enabled`: flag off or a
+	// non-çaylak tier leaves the standing read unissued, so nothing widens the chrome's wire.
+	const {value: meterOn} = useFlag(PHOENIX_CAYLAK_METER, false);
+	const meterEligible = meterOn && me?.tier === "çaylak";
+	const meterStanding = useAuthorshipStanding(meterEligible);
 	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data, me?.id ?? null);
 	// The welcome arrival's seam (#7043): one flag releases both this intercept and the
 	// /hosgeldin surface.
@@ -307,6 +324,7 @@ function LayoutContent() {
 					}
 				: undefined,
 			karma: selfKarma,
+			caylakMeter: meterEligible && meterStanding ? caylakMeter(meterStanding) : undefined,
 			divanTo: showDivan ? "/divan" : undefined,
 			divanCount: showDivan ? divanCount : undefined,
 			bildirim: bildirimOn && isSignedIn ? {to: "/bildirimler", unread: bildirimUnread} : undefined,
@@ -316,6 +334,8 @@ function LayoutContent() {
 			me?.name,
 			username,
 			selfKarma,
+			meterEligible,
+			meterStanding,
 			showDivan,
 			divanCount,
 			bildirimOn,
@@ -329,14 +349,24 @@ function LayoutContent() {
 		return () => setChips?.(null);
 	}, [chips, setChips]);
 
+	// Publishing the chrome's live read is what keeps `CaylakStatusBlock` and `WelcomePage` from
+	// issuing a second `myAuthorshipStanding` request under the meter (#7045). A non-null channel
+	// means "already reading", so it must be published while the read is still settling too.
+	const standingChannel = useMemo(
+		() => (meterEligible ? {standing: meterStanding} : null),
+		[meterEligible, meterStanding],
+	);
+
 	return (
 		<>
 			<EmailDeliveryNoticeMount me={me} />
-			{needsBootstrap && sessionUser ? (
-				<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
-			) : (
-				<Outlet />
-			)}
+			<AuthorshipStandingContext.Provider value={standingChannel}>
+				{needsBootstrap && sessionUser ? (
+					<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
+				) : (
+					<Outlet />
+				)}
+			</AuthorshipStandingContext.Provider>
 		</>
 	);
 }

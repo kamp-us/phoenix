@@ -36,8 +36,8 @@
 	},
 	"unmigrated": {
 		"apps/web/src/App.tsx": {
-			"ceiling": 5,
-			"why": "Shell copy the migration children did not reach — the actorLabel fallback, the sözlük nav label, `giriş yap`, `yükleniyor…`. Tracked by #7723."
+			"ceiling": 6,
+			"why": "Shell copy the migration children did not reach — the actorLabel fallback, the sözlük nav label, `giriş yap`, `yükleniyor…`. Tracked by #7723. The sixth hit is not copy: `me?.tier === \"çaylak\"`, the çaylak-meter gate's wire value, compared and never rendered (#7045) — it stays here rather than in `exempt` because an exempt row would shadow this file's five-literal debt ratchet."
 		},
 		"apps/web/src/components/controls/Controls.tsx": {
 			"ceiling": 3,

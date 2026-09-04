@@ -145,6 +145,16 @@ export const PHOENIX_FUNNEL_COHORT = "phoenix-funnel-cohort";
 export const PHOENIX_WELCOME = "phoenix-welcome";
 
 /**
+ * The single seam for the ambient çaylak meter (#7045, epic #4304) — the topbar karma chip's
+ * promotion readout. Off ⇒ the chip renders exactly today's bare karma value for every tier.
+ * Default-off, ADR 0083.
+ *
+ * The key spells `caylak`, not `çaylak`: the flag-key grammar is ASCII-only
+ * (`.patterns/feature-flags-schema-lifecycle.md`). The product noun stays `çaylak` in copy.
+ */
+export const PHOENIX_CAYLAK_METER = "phoenix-caylak-meter";
+
+/**
  * The single seam for the reader-facing locale choice (#7527, epic #7519) — the `dil` row in the
  * UserMenu that lets a reader pick English. Off ⇒ no toggle renders and every reader stays on the
  * `tr` default, which is the copy the site always shipped (ADR 0347). Default-off, ADR 0083.
@@ -182,5 +192,6 @@ export const DECLARED_FLAGS: readonly FlagDeclaration[] = [
 	{key: PHOENIX_CAYLAK_VISIBILITY, defaultValue: false},
 	{key: PHOENIX_FUNNEL_COHORT, defaultValue: false},
 	{key: PHOENIX_WELCOME, defaultValue: false},
+	{key: PHOENIX_CAYLAK_METER, defaultValue: false},
 	{key: PHOENIX_LOCALE, defaultValue: false},
 ];

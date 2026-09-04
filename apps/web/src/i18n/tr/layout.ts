@@ -14,6 +14,8 @@ export const layout = {
 	"layout.theme.light": "açık",
 	"layout.theme.dark": "koyu",
 	"layout.theme.auto": "otomatik",
+	"layout.caylakMeter.vouchFact.yes": "kefil: var",
+	"layout.caylakMeter.vouchFact.no": "kefil: yok",
 };
 
 /** `tr` is the source of truth for the key set; `en/layout.ts` is checked against this. */

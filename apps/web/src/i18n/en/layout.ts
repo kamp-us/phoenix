@@ -18,4 +18,6 @@ export const layout = {
 	"layout.theme.light": "light",
 	"layout.theme.dark": "dark",
 	"layout.theme.auto": "auto",
+	"layout.caylakMeter.vouchFact.yes": "kefil: yes",
+	"layout.caylakMeter.vouchFact.no": "kefil: no",
 } satisfies Record<LayoutKey, string>;
