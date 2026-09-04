@@ -27,7 +27,7 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 | DB | Drizzle on D1 | `Drizzle` is a worker-level singleton; feature code calls its `run`/`batch` capability methods. |
 | Live state | `LiveDO` on `state.storage` KV | One Durable Object fans out SSE. State is KV — subscriber rows + a per-connection counter. No DO SQL, no DO migrations. |
 | Frontend | React 19 + Vite 8 + react-fate | Components declare views; one batched `useRequest` per screen; declarative mutations; live views over SSE. |
-| Type-check | `typescript@7` + `@effect/tsgo` | One compiler: the native `tsc`, patched at install with Effect's language service so its diagnostics reach the CLI gate (ADR [0271](./.decisions/0271-one-compiler-effect-patched-tsc.md)). |
+| Type-check | `typescript@7` + `@effect/tsgo` | Two steps per package: the native `tsc`, then `effect-tsgo diagnostics --project tsconfig.json --strict`. No install-time compiler patch, so CI, an agent worktree and your machine run the same gate ([.patterns/typecheck-two-step.md](./.patterns/typecheck-two-step.md), ADR [0271](./.decisions/0271-one-compiler-effect-patched-tsc.md) as history). |
 | Lint / format | Biome 2 | Tabs, 100 col, no bracket spacing. |
 | Package manager | pnpm 10 (workspace catalog) | All commands use `pnpm`; `pnpm dlx`, never `npx`. |
 
