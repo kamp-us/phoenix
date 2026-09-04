@@ -16,6 +16,7 @@ export {
 } from "./desk.ts";
 export {Direction, PatchRefused, ProtocolRefused} from "./errors.ts";
 export {CallId, ProcessId, ProgramId, Revision, SpellPath, WindowId, WorkspaceId} from "./ids.ts";
+export {describeSchemaError, firstSchemaIssue, type SchemaIssueSummary} from "./issue.ts";
 export {
 	KernelToPage,
 	PageToKernel,
