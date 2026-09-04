@@ -3,11 +3,11 @@
  * and no roster request fires, so this surface ships dark until a human flips it (ADR 0083).
  * It is the client half of a two-gate contract — the worker half fails the invisible `Denied`.
  */
+
+import {Button, Input} from "@kampus/design";
 import {Suspense, useState} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {UserAdmin} from "../../../worker/features/fate/views";
-import {Button} from "../../components/ui/Button";
-import {Input} from "../../components/ui/Form";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_USER_ADMIN, PHOENIX_USER_ROLE_ASSIGN} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";

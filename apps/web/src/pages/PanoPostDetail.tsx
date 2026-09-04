@@ -3,6 +3,9 @@
  * comments; children mask their slice off the same refs — see
  * `.patterns/fate-connections.md` and `.patterns/fate-mutations-client.md`.
  */
+
+import type {ReportOutcome} from "@kampus/design";
+import {Alert, Button, Dialog, EmptyState, Input, Kbd, Textarea} from "@kampus/design";
 import {toEntityId, type ViewData, type ViewEntity, type ViewSelection} from "@nkzw/fate";
 import {ArrowLeft} from "lucide-react";
 import * as React from "react";
@@ -24,13 +27,6 @@ import {
 	PanoPostHeaderVote,
 } from "../components/pano/PanoPostHeader";
 import {PanoPostSkeleton} from "../components/pano/PanoSkeleton";
-import {Alert} from "../components/ui/Alert";
-import {Kbd} from "../components/ui/atoms";
-import {Button} from "../components/ui/Button";
-import {Dialog} from "../components/ui/Dialog";
-import {EmptyState} from "../components/ui/EmptyState";
-import {Input, Textarea} from "../components/ui/Form";
-import type {ReportOutcome} from "../components/ui/ReportButton";
 import {
 	beginOptimisticCommentMembership,
 	optimisticCommentRecord,

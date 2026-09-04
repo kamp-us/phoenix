@@ -117,7 +117,9 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
 		Effect.provideContext(kernel),
 	);
-	const restored = yield* restore.pipe(Effect.provideContext(kernel));
+	// Boot holds no ambient per-process services of its own, so what a restored process gets is
+	// the `ProcessPorts` restore builds for it — un-wired, since the graph does not own it (#7789).
+	const restored = yield* restore(Context.empty()).pipe(Effect.provideContext(kernel));
 	return {kernel, launched, restored} satisfies Started;
 });
 

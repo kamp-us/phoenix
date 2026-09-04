@@ -2,9 +2,10 @@
  * Access is server-authoritative: `funnel.summary` denies a non-mod `UNAUTHORIZED`, which
  * `<Screen>` renders as "yetkin yok". Deliberately no client-side role check here.
  */
+
+import {Alert} from "@kampus/design";
 import {FunnelCohorts} from "../components/funnel/FunnelCohorts";
 import {FunnelSummary} from "../components/funnel/FunnelSummary";
-import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {FlagGate} from "../flags/FlagGate";
 import {PHOENIX_FUNNEL_COHORT} from "../flags/keys";

@@ -1,8 +1,10 @@
 import {defineConfig} from "vitest/config";
 
 // A `unit` project so `vitest --project unit` (the pre-push `unit-changed` leg over `apps/**`)
-// resolves here, and an `integration` project beside it now that the app has one: the transport's
-// proof binds a real loopback socket, which is the second tier's whole definition (#7544, #7556).
+// resolves here, and an `integration` project beside it now that the app has one. Tuval's
+// `integration` is the non-remote half of the tier `.glossary/LANGUAGE.md` defines — a real Pi
+// `AgentSession` behind a real loopback socket and a real WebSocket codec, slow but needing no
+// cloud credentials (#7544, #7556, #7567).
 //
 // The browser surface's component tests are `unit` too — a rendered `Desk` could be wrong even if
 // every socket behaved perfectly, which is the tier litmus (`.patterns/effect-testing.md`). They
@@ -34,6 +36,7 @@ export default defineConfig({
 					include: ["src/**/*.integration.test.ts"],
 					pool: "forks",
 					sequence: {groupOrder: 1},
+					testTimeout: 60_000,
 				},
 			},
 		],

@@ -2,10 +2,11 @@
  * `/susturduklarim` — ships dark behind the default-off `member-mute` flag. The gate's shape is
  * `.patterns/flag-dark-page-gate.md`.
  */
+
+import {Alert} from "@kampus/design";
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
 import {MutedMembersList} from "../components/mute/MutedMembersList";
-import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {MEMBER_MUTE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";

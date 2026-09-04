@@ -13,20 +13,26 @@
 	},
 	"dependencies": {
 		"@demlik/tea": "catalog:",
+		"@earendil-works/pi-ai": "catalog:",
+		"@earendil-works/pi-client": "catalog:",
+		"@earendil-works/pi-coding-agent": "catalog:",
+		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:tuval",
 		"effect": "catalog:tuval",
 		"react": "catalog:",
 		"react-dom": "catalog:",
-		"react-resizable-panels": "catalog:"
+		"react-resizable-panels": "catalog:",
+		"ws": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:tuval",
-		"@vitejs/plugin-react": "catalog:",
 		"@testing-library/dom": "catalog:",
 		"@testing-library/react": "catalog:",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",
 		"@types/react-dom": "catalog:",
+		"@types/ws": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
 		"fast-check": "catalog:",
 		"jsdom": "catalog:",
 		"typescript": "catalog:",

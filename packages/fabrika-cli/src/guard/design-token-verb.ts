@@ -1,8 +1,9 @@
 /**
  * `guard design-token-guard check` — ported off v1's `design-token-guard check` (epic #5720).
  *
- * The verb is the IO boundary: walk `apps/web/src` for CSS, parse each file's facts, read the
- * app-side allow-list config, hand both to the pure rule in `./design-token.ts`, seat the answer on
+ * The verb is the IO boundary: walk the consuming app and `@kampus/design` for CSS, parse each
+ * file's facts, read the package-owned allow-list config, hand both to the pure rule in
+ * `./design-token.ts`, seat the answer on
  * the group's exit taxonomy. `--write-baseline` is the one write mode — it re-snapshots the raw-px
  * ceilings after a genuine cleanup leg, the way a snapshot test is updated.
  */
@@ -35,10 +36,10 @@ import {
 
 const VERB = "guard design-token-guard check";
 
-const CSS_ROOT = "apps/web/src";
-const CONFIG_PATH = "apps/web/src/styles/design-token-lint.config.json";
+const CSS_ROOTS = ["apps/web/src", "packages/design/src"] as const;
+const CONFIG_PATH = "packages/design/design-token-lint.config.json";
 /** The one file where hex and raw px legitimately live — the raw-scale layer. */
-const RAW_LAYER = "apps/web/src/styles/tokens.css";
+const RAW_LAYER = "packages/design/src/tokens.css";
 
 export interface DesignTokenGuardOptions {
 	/** An explicit repo root, or `null` to walk up from `cwd` for one. */
@@ -105,9 +106,11 @@ const gatherCssFacts = (
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
 		const path = yield* Path.Path;
-		const base = path.join(root, CSS_ROOT);
 		const rawLayerAbs = path.join(root, RAW_LAYER);
-		const files = yield* walkCss(fs, path, base);
+		const files: Array<string> = [];
+		for (const cssRoot of CSS_ROOTS) {
+			files.push(...(yield* walkCss(fs, path, path.join(root, cssRoot))));
+		}
 		const facts: Array<CssFileFacts> = [];
 		for (const abs of files) {
 			const src = yield* readFile(abs);

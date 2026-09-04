@@ -9,7 +9,7 @@
  * handle and no throw to catch.
  */
 
-import {Effect} from "effect";
+import {Context, Effect} from "effect";
 import {Processes} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessId} from "../../process/process.ts";
@@ -63,8 +63,12 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	if (row._tag === "Failure") return refuse(windowId, options, unknownProgram(programId));
 	if (!showsInAWindow(row.success)) return refuse(windowId, options, programHeadless(programId));
 
+	// Nothing ambient to give: a picker-opened process is not in the graph, so it comes back from a
+	// checkpoint with no services either, and a program the picker may open must need none
+	// (`.patterns/tuval-shell-assembly.md`). Said with `Context.empty()` rather than by omission —
+	// the silent omission is what #7789 closed.
 	const spawned = yield* Effect.result(
-		processes.spawn(programId, {parent: options.shellProcessId}),
+		processes.spawn(programId, {parent: options.shellProcessId, services: Context.empty()}),
 	);
 	return spawned._tag === "Failure"
 		? refuse(windowId, options, spawnFailed(programId, spawned.failure.message))

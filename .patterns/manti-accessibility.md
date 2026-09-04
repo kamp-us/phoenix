@@ -11,7 +11,7 @@ site is never "did I wrap the right child", it is "did I pass the naming prop". 
 what you reach for only when no naming prop exists and the control has no naming text of its own.
 
 Ground truth is `@manti-ui/react@0.9.0` (`dist/index.js`, `dist/components/*/*.d.ts`) and the
-`@zag-js/*@1.43.0` connect files it drives, plus the wrappers in `apps/web/src/components/ui/`;
+`@zag-js/*@1.43.0` connect files it drives, plus the wrappers in `packages/design/src/`;
 when this doc and that source disagree, fix the doc. Manti's `@manti-ui/folds` re-exports the Zag
 machines unchanged (`export * as switchMachine from '@zag-js/switch'`), so a Zag connect file is
 the real behavior.
@@ -66,7 +66,7 @@ suppression one layer up: Manti drops Zag's `aria-labelledby` when you pass `ari
 `aria-labelledby` through `inputProps`.
 
 ```tsx
-// apps/web/src/components/ui/Dialog.test.tsx — the flat API. `title` IS the accessible name.
+// packages/design/src/Dialog.test.tsx — the flat API. `title` IS the accessible name.
 <Dialog open title="başlık" description="açıklama" footer={<Button>tamam</Button>}>
 	<p>gövde</p>
 </Dialog>
@@ -125,7 +125,7 @@ don't write it.
    </Button>
    ```
 
-   Note this lives at the **call site**, not in `ui/Collapsible.tsx` — that wrapper is a bare
+   Note this lives at the **call site**, not in `packages/design/src/Collapsible.tsx` — that wrapper is a bare
    re-export and injects nothing.
 
 2. **Form input with no visible `<label>`** — a placeholder is not a name. The topbar search
@@ -170,10 +170,10 @@ truth, and the name can't drift from the heading. The house shape:
 
 ## See also
 
-- `apps/web/src/components/ui/` — the wrapper layer. Most are bare re-exports; a wrapper earns code
+- `packages/design/src/` — the wrapper layer. Most are bare re-exports; a wrapper earns code
   only when it corrects the primitive (`Switch.tsx` re-asserts Zag's uncontrolled hidden input).
 - [property-based-a11y.md](./property-based-a11y.md) — the `fast-check` × `axe-core` gate over
-  `ui/`. Note the compound primitives above are all parked `deferred` there, so nothing
+  `@kampus/design`. Note the compound primitives above are all parked `deferred` there, so nothing
   automatically catches a naming regression in them.
 - [zag-machine-interaction-tests.md](./zag-machine-interaction-tests.md) — why a test that clicks a
   Manti primitive must flush a microtask before asserting.

@@ -5,6 +5,8 @@
  * carries no live score, so a per-item upvote shows its count only after the cast returns a
  * receipt.
  */
+
+import {Alert, Button, ReportButton, type ReportOutcome, ReviewBadge} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {
@@ -16,10 +18,6 @@ import type {Tier} from "../../../worker/features/kunye/standing";
 import {Screen} from "../../fate/Screen";
 import {codeOf} from "../../fate/wire";
 import {type CatalogKey, useT} from "../../i18n";
-import {Alert} from "../ui/Alert";
-import {Button} from "../ui/Button";
-import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {ReviewBadge} from "../ui/ReviewBadge";
 import {VoteTriangle} from "../VoteTriangle";
 import {CaylakIdentityById, IdentityFallback} from "./CaylakIdentity";
 import {

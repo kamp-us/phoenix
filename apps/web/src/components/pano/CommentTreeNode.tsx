@@ -3,6 +3,16 @@
  * node its children, so a level renders its subtree without re-walking the
  * flat connection.
  */
+
+import {
+	Button,
+	CopyLinkButton,
+	EditedIndicator,
+	Menu,
+	ReportButton,
+	type ReportOutcome,
+	SandboxMarker,
+} from "@kampus/design";
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import type {Comment} from "../../../worker/features/fate/views";
@@ -13,12 +23,6 @@ import {renderMarkdownInline} from "../../lib/markdown";
 import {actorLabel} from "../moderation/actor-identity";
 import {CommentReactionBar} from "../reaction/CommentReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
-import {Button} from "../ui/Button";
-import {CopyLinkButton} from "../ui/CopyLinkButton";
-import {EditedIndicator} from "../ui/EditedIndicator";
-import {Menu} from "../ui/Menu";
-import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {SandboxMarker} from "../ui/SandboxMarker";
 import {useVoteFlash} from "../useVoteFlash";
 import {VoteTriangle} from "../VoteTriangle";
 import {currentLocationReturnTo, useVoteToggle} from "./useVoteToggle";

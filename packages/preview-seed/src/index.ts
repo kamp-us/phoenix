@@ -12,6 +12,8 @@ export {seedSchema} from "./schema.ts";
 export type {SeedDb, SeedReport} from "./seed.ts";
 export {buildSeedStatements, makeSeedDb, seed} from "./seed.ts";
 export type {
+	CaylakStanding,
+	Karma,
 	PreviewCredentials,
 	PreviewTier,
 	ProvisionOutcome,
@@ -20,12 +22,17 @@ export type {
 	TestAccount,
 } from "./test-account.ts";
 export {
-	countForeignAccounts,
+	CANDIDATE_TIER,
+	isThrowawayDatabaseName,
+	KEFIL_SUFFIX,
 	MIN_SESSION_TOKEN_LEN,
 	makeTestAccountDb,
+	PREVIEW_NAME_MARKER,
 	PREVIEW_TIERS,
 	parseSessionToken,
+	parseStanding,
 	provisionTestAccounts,
 	SESSION_TTL_MS,
 	TEST_ACCOUNTS,
+	VOUCHER_TIER,
 } from "./test-account.ts";

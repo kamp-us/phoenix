@@ -8,22 +8,19 @@
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
+import {Button, CountToggle, MetaRow, ToggleGroup} from "@kampus/design";
 import {fireEvent, render, waitFor} from "@testing-library/react";
 import {describe, expect, it, vi} from "vitest";
 import {ReactionBar} from "./reaction/ReactionBar";
-import {Button} from "./ui/Button";
-import {CountToggle} from "./ui/CountToggle";
-import {MetaRow} from "./ui/MetaRow";
-import {ToggleGroup} from "./ui/ToggleGroup";
 
 const readSource = (rel: string): string =>
 	readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 
 const GLOBAL_CSS = readSource("./../styles/global.css");
-const BUTTON_CSS = readSource("./ui/Button.css");
-const FORM_CSS = readSource("./ui/Form.css");
+const BUTTON_CSS = readSource("../../../../packages/design/src/Button.css");
+const FORM_CSS = readSource("../../../../packages/design/src/Form.css");
 const ICON_CSS = readSource("./icon.css");
-const TOGGLE_GROUP_CSS = readSource("./ui/ToggleGroup.css");
+const TOGGLE_GROUP_CSS = readSource("../../../../packages/design/src/ToggleGroup.css");
 
 describe("entry-row spine — focus-ring presence", () => {
 	// One global `:focus-visible` rule paints every ring, so each primitive's contract

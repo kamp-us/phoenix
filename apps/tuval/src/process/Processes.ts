@@ -27,13 +27,19 @@ import {
 	ProcessId,
 	type ProcessRow,
 } from "./process.ts";
+import {ProcessSelf} from "./self.ts";
 
 export interface SpawnOptions {
 	readonly parent?: ProcessId;
 	/** Restore's: the id the process was checkpointed under. A fresh spawn mints its own. */
 	readonly id?: ProcessId;
-	/** Provided to this process's handlers: the services its program's `R` names, per process. */
-	readonly services?: Context.Context<never>;
+	/**
+	 * Provided to this process's handlers: the services its program's `R` names, per process.
+	 * Never optional — a spawner with nothing to give says so with `Context.empty()`. Omission
+	 * used to be silent, and `restore` took it, so a restored process's first handler died on a
+	 * missing service one boot later (#7789).
+	 */
+	readonly services: Context.Context<never>;
 }
 
 /**
@@ -48,7 +54,7 @@ export class Processes extends Context.Service<
 	{
 		readonly spawn: (
 			programId: ProgramId,
-			options?: SpawnOptions,
+			options: SpawnOptions,
 		) => Effect.Effect<ProcessHandle, SpawnError>;
 		readonly stop: (id: ProcessId) => Effect.Effect<void, ProcessNotFound>;
 		/**
@@ -93,7 +99,7 @@ type ErasedSubscribe = {
 		sub: Sub,
 		ctx: unknown,
 		dispatch: Dispatch<Message>,
-	) => Effect.Effect<void, never, Scope.Scope>;
+	) => Effect.Effect<void, HandlerFailed, Scope.Scope>;
 };
 
 type ErasedDefinition = ActorDefinition<
@@ -131,12 +137,31 @@ const toDefinition = (
 	const core = program.core as CoreMachine<unknown, Message, Cmd, Sub, unknown> & {
 		readonly subscribe?: Subscribe<Message, Sub, unknown>;
 	};
+	// A row's own Effect Sub handler wins over the bridged Demlik cell of the same type: the core
+	// declares the Sub, the row says how it is run, and a core carrying both keeps the bridge for
+	// the types the row leaves alone.
+	const subscribe: Record<string, ErasedSubscribe[string]> = {
+		...(subscribeDisposerBridge(core.subscribe ?? {}) as ErasedSubscribe),
+	};
+	for (const [type, handler] of Object.entries(program.subs ?? {})) {
+		const run = handler as (
+			sub: Sub,
+			dispatch: Dispatch<Message>,
+		) => Effect.Effect<void, unknown, Scope.Scope>;
+		subscribe[type] = (sub, _ctx, dispatch) =>
+			run(sub, dispatch).pipe(
+				Effect.mapError(
+					(cause) => new HandlerFailed({programId: program.id, cmdType: sub.type, cause}),
+				),
+				Effect.provideContext(services),
+			);
+	}
 	return {
 		machine: core,
 		store,
 		ctx: {},
 		interpret: handlers,
-		subscribe: subscribeDisposerBridge(core.subscribe ?? {}) as ErasedSubscribe,
+		subscribe,
 		onCommit,
 	};
 };
@@ -159,18 +184,27 @@ function makeServices() {
 
 		const spawn = Effect.fn("Tuval.Processes.spawn")(function* (
 			programId: ProgramId,
-			options?: SpawnOptions,
+			options: SpawnOptions,
 		) {
 			const program = yield* registry.resolve(programId);
-			const parent = options?.parent === undefined ? undefined : yield* lookup(options.parent);
-			const id = options?.id ?? ProcessId.make(randomUUID());
+			const parent = options.parent === undefined ? undefined : yield* lookup(options.parent);
+			const id = options.id ?? ProcessId.make(randomUUID());
 			const parentId = Option.fromNullishOr(parent?.row.id);
-			const services = options?.services ?? Context.empty();
 			const scope = yield* Scope.fork(parent?.scope ?? root);
 			let lifecycle: Lifecycle = "running";
 			let revision = 0;
 			// Assigned once the actor is up; a commit before then (boot's own) is not the row's.
 			let row: ProcessRow | undefined;
+			// Read late on purpose: the definition that closes over this is built before the actor
+			// exists, and a handler only ever calls it once the actor is running.
+			let readState: () => unknown = () => undefined;
+			// What handlers actually get: the spawner's context plus this process's own `ProcessSelf`.
+			// Never `options.services` directly — spawn is the one place `ProcessSelf` is provided, so
+			// no caller and no `restore` has to know it exists (#7603).
+			const handlerServices = Context.add(options.services, ProcessSelf, {
+				scope,
+				state: () => readState(),
+			});
 
 			yield* Scope.addFinalizer(
 				scope,
@@ -193,11 +227,12 @@ function makeServices() {
 					parentId,
 					version: program.identity.version,
 				});
-				return yield* makeActor(toDefinition(program, checkpoint.store, services, onCommit));
+				return yield* makeActor(toDefinition(program, checkpoint.store, handlerServices, onCommit));
 			}).pipe(
 				Effect.provideService(Scope.Scope, scope),
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
 			);
+			readState = actor.getState;
 			yield* Scope.addFinalizer(
 				scope,
 				Effect.sync(() => {

@@ -94,8 +94,10 @@ apps/tuval/
 │   ├── ports/             # typed inter-program wiring: compile + open
 │   ├── launch/            # launching a program into a process
 │   ├── durability/        # saving and restoring process state
+│   ├── ai-agent/          # the backend-blind AI agent slice: core machine, ports, handlers, history
+│   ├── pi/                # the Pi backend: loopback server, lease client, the `TuvalAiAgent` layer
 │   └── demo/              # the programs that ship in the box
-└── vitest.config.ts       # one `unit` project, so the repo-wide unit gate resolves here
+└── vitest.config.ts       # two projects, `unit` and `integration`; the repo-wide unit gate resolves here
 ```
 
 ## Commands
@@ -121,6 +123,7 @@ Those run `apps/web`. `apps/tuval` is local-only, so reach it through its filter
 | `pnpm --filter @kampus/tuval typecheck` | `tsc -p tsconfig.json`. |
 | `pnpm --filter @kampus/tuval test` | Every vitest project in the app. |
 | `pnpm --filter @kampus/tuval test:unit` | Just the `unit` project. This is the script CI's `pnpm --filter './apps/**' test:unit` gate calls. |
+| `pnpm --filter @kampus/tuval test:integration` | Just the `integration` project. Slow, not remote: it drives a real Pi `AgentSession` over a real loopback socket on Pi's faux provider, so it needs no cloud credentials. CI's `integration tests` job runs it alongside `apps/web`'s remote suite. |
 
 Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
 
@@ -170,7 +173,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 | [`readme-guard`](./.github/workflows/readme-guard.yml) | Every `packages/*` workspace member (a dir with `package.json`) carries a `README.md`. | Adding a package without a README. |
 | [`migrations-guard`](./.github/workflows/migrations-guard.yml) | The committed D1 migrations tree: the frozen flat `NNNN_*.sql` history plus the `<timestamp>_<name>/migration.sql` directories `drizzle-kit generate` writes — each directory carries its `snapshot.json` and one `.sql`, prefixes are unique and sort after the flat history, every migration has its row in the committed baseline, and a landed migration's SQL never changes — nor its apply id: renaming or deleting a landed file reds (ADR 0309 + its #7055 amendment). | Editing, renaming, or deleting a landed migration, hand-adding a flat one, landing a migration without its baseline row, or a directory that would apply ahead of history. |
 | [`design-token-guard`](./.github/workflows/design-token-guard.yml) | Component CSS consumes the design-token seam — every `var(--…)` resolves, no raw hex outside `tokens.css`, no off-grid px beyond each file's grandfathered ceiling (ADR 0162). | A dead token ref, a raw hex, or an off-grid px in a component stylesheet. |
-| [`a11y-pbt`](./.github/workflows/a11y-pbt.yml) | Property-based a11y invariants over the `apps/web` `ui/` primitives (accessible name, valid ARIA, keyboard focusability). | A primitive that violates an enforced pillar-4 invariant, or a new unclassified primitive. |
+| [`a11y-pbt`](./.github/workflows/a11y-pbt.yml) | Property-based a11y invariants over the `@kampus/design` primitives (accessible name, valid ARIA, keyboard focusability). | A primitive that violates an enforced pillar-4 invariant, or a new unclassified primitive. |
 | [`doc-links`](./.github/workflows/doc-links.yml) | Every git-tracked `.md`'s relative/internal links resolve on disk, repo-wide (via lychee). | A dead internal link — including one orphaned by a rename outside your own diff. |
 | [`pointer-guard`](./.github/workflows/pointer-guard.yml) | Backticked repo-path pointers in `**/CLAUDE.md` resolve on disk. | A moved/renamed file behind a backticked path pointer in a CLAUDE.md. |
 | [`codeowners-cp`](./.github/workflows/codeowners-cp.yml) | Every §CP control-plane path (from the canonical regex) has a covering `.github/CODEOWNERS` row. | Adding a §CP path to the regex without a CODEOWNERS entry. |
@@ -179,7 +182,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 | [`settings-env-guard`](./.github/workflows/settings-env-guard.yml) | No `.claude/settings.json` `env` value carries an unexpanded `${…}` token (applied verbatim, so it never resolves). | A `${VAR}` left literal in a settings env value. |
 | [`skill-gh-lint`](./.github/workflows/skill-gh-lint.yml) | The skill + agent corpus: REST-only `gh` (no GraphQL paths), valid frontmatter YAML, no bare `git push` in a runnable block, and no `./claude-plugins/…` literal in a fence. | A `gh project` / GraphQL call, malformed `---` frontmatter, a bare push, or a repo-only path literal in a SKILL.md / agents/*.md. |
 | [`decisions-index`](./.github/workflows/decisions-index.yml) | The `.decisions/*` ADR files carry the four index fields, no duplicate `id`, and no filename ↔ front-matter number mismatch. | A new ADR that collides on number, mismatches its filename, or drops an index field. |
-| [`design-inventory-guard`](./.github/workflows/design-inventory-guard.yml) | `design-system-inventory.md` is a fresh extraction of the `components/ui` JSDoc, and the extraction path never touches the founder-authored `design-system-manifest.md` (ADR 0194). | Changing a primitive's `@component` JSDoc without regenerating the inventory. |
+| [`design-inventory-guard`](./.github/workflows/design-inventory-guard.yml) | `design-system-inventory.md` is a fresh extraction of the `packages/design/src` JSDoc, and the extraction path never touches the founder-authored `design-system-manifest.md` (ADR 0194). | Changing a primitive's `@component` JSDoc without regenerating the inventory. |
 
 Not every workflow is a PR gate. [`run-evidence`](./.github/workflows/run-evidence.yml) *produces* the SHA-bound run-evidence artifact the `ship` gate consumes (ADR [0054](./.decisions/0054-run-evidence-bundle.md)); [`deploy`](./.github/workflows/deploy.yml) / [`pr-cleanup`](./.github/workflows/pr-cleanup.yml) stand up and tear down per-PR preview stacks; [`changelog`](./.github/workflows/changelog.yml) / [`publish`](./.github/workflows/publish.yml) fire on a release tag; and [`epic-autoclose`](./.github/workflows/epic-autoclose.yml), [`orphan-sweep`](./.github/workflows/orphan-sweep.yml), [`glossary-drift`](./.github/workflows/glossary-drift.yml), [`pitch-guard`](./.github/workflows/pitch-guard.yml) and [`heal-ci-sweep`](./.github/workflows/heal-ci-sweep.yml) run on an issue event or a schedule rather than on your PR. `heal-ci-sweep` is the stuck-PR watcher: every 6 hours it runs `fabrika heal-ci sweep` over every open PR, writes the classification to the run's job summary, and posts one durable note on a PR that is actually stranded (keyed on `<pr>:<class>:<head>`, so a strand is noticed once, not once per cycle). It is detection only — it merges nothing, re-runs nothing and spawns nothing; acting on a flag is a driver's call. It replaces the coverage that retired with `orphan-heal.yml` (#6146). Ground truth for the full set is `ls .github/workflows/`.
 

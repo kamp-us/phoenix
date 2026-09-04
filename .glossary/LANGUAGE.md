@@ -134,6 +134,18 @@ as D1*. There is **no in-memory SQL tier**; the helper is deleted.)
   pure-logic-dominant files and per-file dedicated stages for the few that need isolation
   (`tests/integration/_integration.ts`). Examples: `search.test.ts`, `fate-live-posts.test.ts`.
 
+**`integration` names two different fidelities, one per app.** The paragraph above is
+`apps/web`'s and stays the definition ADR 0082 fixed: real remote Cloudflare, real D1, real
+credentials. `apps/tuval` deploys nothing and has no D1, so its `integration` project means
+the *other* half of what the tier was always for — the fidelity a claim needs that a
+substituted seam cannot give. There it is a real Pi `AgentSession` behind a real loopback
+socket and a real WebSocket codec, on Pi's own faux provider, so the tier is **slow but not
+remote** and needs no cloud credentials (`apps/tuval/vitest.config.ts`; epic
+[#7497](https://github.com/kamp-us/phoenix/issues/7497)). Two rules hold across both: the
+split is by fidelity and never by folder, and a claim that only a real engine could falsify
+belongs in `integration` whichever app it is in. What you may not do is read one app's
+`integration` and expect the other's — say which app you mean.
+
 **One `Database` seam.** A single `Database` tag holds the raw `D1Database` handle; both
 the `Drizzle` service and the better-auth adapter *derive* from it, so they share one
 underlying handle by construction — the one-handle invariant is type-enforced by the layer

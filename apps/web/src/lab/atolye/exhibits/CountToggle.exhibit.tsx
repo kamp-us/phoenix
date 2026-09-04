@@ -1,5 +1,5 @@
+import {CountToggle} from "@kampus/design";
 import type * as React from "react";
-import {CountToggle} from "../../../components/ui/CountToggle";
 import {defineExhibit} from "../exhibit";
 
 export const countToggleExhibit = defineExhibit<React.ComponentProps<typeof CountToggle>>({

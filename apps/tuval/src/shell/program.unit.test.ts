@@ -14,7 +14,7 @@ import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Option} from "effect";
+import {Context, Effect, Layer, Option} from "effect";
 import {afterAll} from "vitest";
 import {boot, projectDir} from "../boot.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
@@ -75,7 +75,7 @@ const shellProcess = ProcessId.make(shellNode);
 const dispatched = (...msgs: ReadonlyArray<ShellMsg>) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
-		const shell = yield* processes.spawn(shellId, {id: shellProcess});
+		const shell = yield* processes.spawn(shellId, {id: shellProcess, services: Context.empty()});
 		for (const msg of msgs) yield* shell.dispatch(msg);
 		const state = shellStateOf(shell.getState());
 		// `Effect.die`, not `throw`: a bare throw inside an `Effect.gen` escapes the E channel as an
@@ -202,7 +202,9 @@ describe("the shell as a program row", () => {
 			const outcome = yield* Effect.gen(function* () {
 				const processes = yield* Processes;
 				const table = yield* ProcessTable;
-				const failure = yield* Effect.flip(processes.spawn(shellId, {id: shellProcess}));
+				const failure = yield* Effect.flip(
+					processes.spawn(shellId, {id: shellProcess, services: Context.empty()}),
+				);
 				return {failure, live: (yield* table.list).length};
 			}).pipe(Effect.provide(kernel([bumped("2.0.0")], stores)), Effect.scoped);
 

@@ -5,14 +5,13 @@
  * authority: a non-yazar call comes back `FORBIDDEN`, a 4th concurrent vouch
  * `VOUCH_LIMIT_REACHED`.
  */
+
+import {Alert, Button, Dialog} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {PromotionReceipt} from "../../../worker/features/fate/views";
 import {codeOf} from "../../fate/wire";
 import {type CatalogKey, useT} from "../../i18n";
-import {Alert} from "../ui/Alert";
-import {Button} from "../ui/Button";
-import {Dialog} from "../ui/Dialog";
 import {type VouchOutcome, vouchOutcome, vouchOutcomeMessage} from "./divanGating";
 
 const VouchReceiptView = view<PromotionReceipt>()({

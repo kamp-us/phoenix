@@ -1,7 +1,7 @@
 /**
  * The account cluster — the surfaces a reader reaches from their own identity: the profile
  * (own and public), notifications, mutes, çaylak visibility, the email-delivery notice, the
- * reaction glosses, and the shared `components/ui` primitives that carry fixed copy.
+ * reaction glosses, and the shared `@kampus/design` primitives that carry fixed copy.
  *
  * One file, several key prefixes: these are one ticket's surface (#7531) and one catalog file
  * per component directory would be nine files nothing else distinguishes.

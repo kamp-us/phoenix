@@ -1,5 +1,5 @@
+import {Collapsible} from "@kampus/design";
 import type * as React from "react";
-import {Collapsible} from "../../../components/ui/Collapsible";
 import {defineExhibit} from "../exhibit";
 
 function CollapsibleDemo({defaultOpen}: {defaultOpen?: boolean}) {

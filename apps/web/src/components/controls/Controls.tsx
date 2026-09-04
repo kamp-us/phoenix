@@ -1,5 +1,5 @@
+import {ToggleGroup} from "@kampus/design";
 import type {Density} from "../../lib/density";
-import {ToggleGroup} from "../ui/ToggleGroup";
 import "./Controls.css";
 
 export type {Density};

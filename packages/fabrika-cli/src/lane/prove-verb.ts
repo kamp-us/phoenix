@@ -124,11 +124,17 @@ const unreadable = (what: string, reason: string): VerbOutcome =>
  * `partial` rides it for the same reason and answers a different question: whether the merge behind a
  * ship's `DONE` left its issue undischarged. It is a routing fact rather than a proof — the `DONE`
  * still claims no artifact — so it refuses nothing and only tells the caller which arm of the
- * `merge:partial` guard this event takes (ADR 0343). `false` on every other event.
+ * `merge:partial` guard this event takes (ADR 0343).
+ *
+ * It is `null` on every event whose closure nobody read, which is every event but the ship-stage
+ * `DONE`. `false` and `null` route the fold identically and are different facts to a reader: `false`
+ * is a board read that said the merge closed its issue, `null` is no read at all. Collapsing them
+ * left `lane reconcile` unable to tell a confirmed closure from an unread one, so it re-read every
+ * closing merge on every sweep (ADR 0351).
  */
 export interface ProofOutcome extends VerbOutcome {
 	readonly deferred: ReadonlyArray<string>;
-	readonly partial: boolean;
+	readonly partial: boolean | null;
 }
 
 /** What one arm answers with before {@link runProve} normalises each absent field, once, for all. */
@@ -157,7 +163,7 @@ export const runProve = (
 	Effect.map(prove(options), (outcome) => ({
 		...outcome,
 		deferred: outcome.deferred ?? [],
-		partial: outcome.partial ?? false,
+		partial: outcome.partial ?? null,
 	}));
 
 /**

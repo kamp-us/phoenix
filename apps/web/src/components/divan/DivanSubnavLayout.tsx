@@ -1,8 +1,8 @@
+import {Button} from "@kampus/design";
 import {createContext, useContext, useState} from "react";
 import {Outlet} from "react-router";
 import type {SubnavFilter} from "../layout/Subnav";
 import {SubnavShell} from "../layout/SubnavShell";
-import {Button} from "../ui/Button";
 
 /**
  * The section-switcher content the routed divan page publishes UP into its persistent Subnav

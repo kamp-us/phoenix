@@ -204,3 +204,32 @@ export const readYourWrite = async <T>(
 	}
 	return value;
 };
+
+/**
+ * The `name` Cloudflare has recorded for one D1 database id — the deploy stack's name, never the
+ * caller's word for it, which is what makes it usable as evidence about what a database IS
+ * (`@kampus/preview-seed`'s throwaway fence, issue #7740).
+ *
+ * `GET /accounts/{account_id}/d1/database/{databaseId}` returns `result.name` as an optional
+ * nullable field, so an answer without one is UNKNOWN rather than "no name": it throws instead of
+ * returning a value a fence would then have to interpret.
+ */
+export const resolveDatabaseName = async (config: D1RestConfig): Promise<string> => {
+	const {accountId, databaseId, layer} = config;
+	const response = await Effect.runPromise(
+		d1.getDatabase({accountId, databaseId}).pipe(Effect.provide(layer)),
+	);
+	const name = response.name;
+	if (typeof name !== "string" || name.length === 0) {
+		throw new Error(
+			`D1 ${databaseId} resolved to no name — Cloudflare returned a database record without one, so nothing can be decided from it.`,
+		);
+	}
+	return name;
+};
+
+/** {@link resolveDatabaseName} over the env-credentialed REST layer, like {@link makeD1RestFromEnv}. */
+export const resolveDatabaseNameFromEnv = (target: {
+	accountId: string;
+	databaseId: string;
+}): Promise<string> => resolveDatabaseName({...target, layer: d1RestLayerFromEnv});

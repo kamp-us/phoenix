@@ -82,7 +82,9 @@ const kernel = Effect.fn("test.kernel")(function* (stores: CheckpointStores) {
 		[shellProgramId, shellProcess],
 		[painterProgramId, painterProcess],
 	] as const) {
-		const handle = yield* Effect.orDie(processes.spawn(programId, {id: processId}));
+		const handle = yield* Effect.orDie(
+			processes.spawn(programId, {id: processId, services: Context.empty()}),
+		);
 		handles.set(processId, handle);
 	}
 	return {context, handles} satisfies Kernel;

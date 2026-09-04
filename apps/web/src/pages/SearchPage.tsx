@@ -3,11 +3,12 @@
  * backend ranks and owns the keyset. A query under the backend's minimum renders the
  * prompt outside `<Screen>`, so it issues no request at all.
  */
+
+import {Alert} from "@kampus/design";
 import {useListView, useRequest} from "react-fate";
 import {useSearchParams} from "react-router";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {TermRow, TermRowView} from "../components/sozluk/TermRow";
-import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {useT, useTPlural} from "../i18n";
