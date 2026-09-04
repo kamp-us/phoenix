@@ -60,6 +60,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	typeof value.phase === "string" &&
 	(phases as ReadonlyArray<string>).includes(value.phase) &&
 	isNullOrString(value.sessionId) &&
+	isFiniteNumber(value.connection) &&
 	typeof value.cwd === "string" &&
 	isTranscript(value.transcript) &&
 	isNullOrString(value.interrupted) &&

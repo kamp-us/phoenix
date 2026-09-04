@@ -49,6 +49,10 @@ const noWork = (): Promise<void> => Promise.resolve();
 const busy = (state: AiAgentSessionState): boolean =>
 	state.phase !== "idle" && state.phase !== "gone";
 
+/** An open is already in flight, so a second one would build a second transport. */
+const opening = (state: AiAgentSessionState): boolean =>
+	state.phase === "starting" || state.phase === "reconnecting";
+
 /** Where a failure leaves a session: back where it was before the act that failed. */
 const phaseAfterFailure = (state: AiAgentSessionState): AiAgentSessionState["phase"] => {
 	if (state.phase === "starting") return "idle";
@@ -86,10 +90,21 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 							[{type: "aiAgent.start", cwd: msg.cwd, resume: msg.resume}],
 						],
 
+			// The connection bump is what re-opens the events Sub: a reconnect stands a new transport
+			// up under the same session id, and the Sub is reconciled by id (`messages.ts`).
 			started: (state, msg) =>
 				state.phase === "gone"
 					? [state, noCmds]
-					: [{...state, phase: "ready", sessionId: msg.sessionId, failure: null}, noCmds],
+					: [
+							{
+								...state,
+								phase: "ready",
+								sessionId: msg.sessionId,
+								connection: state.connection + 1,
+								failure: null,
+							},
+							noCmds,
+						],
 
 			prompt: (state, msg) =>
 				state.phase !== "ready"
@@ -145,13 +160,16 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 							[{type: "aiAgent.interrupt"}],
 						],
 
-			reconnect: (state) =>
-				state.sessionId === null
-					? [{...state, failure: noSessionToResume}, noCmds]
-					: [
-							{...state, phase: "reconnecting"},
-							[{type: "aiAgent.reconnect", cwd: state.cwd, sessionId: state.sessionId}],
-						],
+			reconnect: (state) => {
+				if (state.sessionId === null) return [{...state, failure: noSessionToResume}, noCmds];
+				// The same guard `start` carries, for the same reason: the handler rebuilds the layer,
+				// so two overlapping opens would build two transports into one process Scope.
+				if (opening(state)) return [{...state, failure: startRefused(state.phase)}, noCmds];
+				return [
+					{...state, phase: "reconnecting"},
+					[{type: "aiAgent.reconnect", cwd: state.cwd, sessionId: state.sessionId}],
+				];
+			},
 
 			failed: (state, msg) => [
 				{...state, phase: phaseAfterFailure(state), failure: msg.failure},
@@ -160,7 +178,9 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		},
 
 		subscriptions: (state) =>
-			state.sessionId === null || state.phase === "gone" ? [] : [eventsSub(state.sessionId)],
+			state.sessionId === null || state.phase === "gone"
+				? []
+				: [eventsSub(state.sessionId, state.connection)],
 
 		identity: {
 			ofState: (state) => state.sessionId,
