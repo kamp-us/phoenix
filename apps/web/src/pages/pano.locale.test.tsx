@@ -86,7 +86,8 @@ describe("the pano feed reads English", () => {
 		await waitFor(() => expect(screen.getByText("2 comments")).toBeTruthy());
 		expect(screen.getByRole("button", {name: "hide"})).toBeTruthy();
 		expect(screen.getByTestId("post-save-p1").textContent).toBe("save");
-		// `tr` reports one plural category, so the singular arm only bites in English.
+		// Turkish takes no plural agreement after a numeral, so both `tr` arms carry the same
+		// string and the singular arm only bites in English.
 		expect(screen.getByText("text")).toBeTruthy();
 	});
 });
