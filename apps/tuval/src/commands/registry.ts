@@ -39,6 +39,19 @@ export interface RegistryTable {
 	readonly rows: ReadonlyArray<SpellRow>;
 }
 
+/**
+ * The row registered at exactly this path, or none. Every reader of a table walks it this way, so
+ * the walk lives here rather than once per caller.
+ */
+export const lookupRow = (table: RegistryTable, path: SpellPath): SpellRow | undefined => {
+	let node: SpellNode | undefined = table.root;
+	for (const segment of path) {
+		node = node.children.get(segment);
+		if (node === undefined) return undefined;
+	}
+	return node.row;
+};
+
 /** The serializable face of one spell: what a client is told without being handed the closure. */
 export interface SpellDescription {
 	readonly path: ReadonlyArray<string>;
@@ -121,14 +134,10 @@ const make = Effect.fn("Tuval.SpellRegistry.make")(function* (initial: RegistryT
 	return SpellRegistry.of({
 		lookup: (path) =>
 			Effect.flatMap(Ref.get(table), (current) => {
-				let node: SpellNode | undefined = current.root;
-				for (const segment of path) {
-					node = node.children.get(segment);
-					if (node === undefined) break;
-				}
-				return node?.row === undefined
+				const row = lookupRow(current, path);
+				return row === undefined
 					? Effect.fail(new SpellNotFound({path: renderPath(path)}))
-					: Effect.succeed(node.row);
+					: Effect.succeed(row);
 			}),
 		list: Effect.map(Ref.get(table), (current) => current.rows),
 		describe: Effect.map(Ref.get(table), (current) => current.rows.map(describeSpell)),

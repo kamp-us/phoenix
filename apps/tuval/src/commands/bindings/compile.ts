@@ -21,7 +21,7 @@ import {WorkspaceId} from "../../protocol/ids.ts";
 import {firstSchemaIssue} from "../../protocol/issue.ts";
 import {PROTOCOL_VERSION, Snapshot} from "../../protocol/messages.ts";
 import {buildSpellIndex, describeExpected, parse, tokenize} from "../parse/index.ts";
-import {describeSpell, type RegistryTable, type SpellNode, type SpellRow} from "../registry.ts";
+import {describeSpell, lookupRow, type RegistryTable} from "../registry.ts";
 import type {SpellPath} from "../spell.ts";
 import {BindingError} from "./errors.ts";
 
@@ -77,15 +77,6 @@ const NO_DESK = new Snapshot({
 	registry: [],
 });
 
-const lookup = (table: RegistryTable, path: SpellPath): SpellRow | undefined => {
-	let node: SpellNode | undefined = table.root;
-	for (const segment of path) {
-		node = node.children.get(segment);
-		if (node === undefined) return undefined;
-	}
-	return node.row;
-};
-
 const normalize = (entry: KeyBindingInput): {command: string; repeat?: boolean} =>
 	typeof entry === "string" ? {command: entry} : entry;
 
@@ -140,7 +131,7 @@ const compileOne = Effect.fn("Tuval.Commands.compileBinding")(function* (
 	}
 
 	const {path, args} = reading.call;
-	const row = lookup(table, path);
+	const row = lookupRow(table, path);
 	// The index is built from this table, so a completed path is registered in it.
 	if (row === undefined) return refuse(0, "a registered spell");
 

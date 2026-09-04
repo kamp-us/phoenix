@@ -98,6 +98,7 @@ describe("commands vocabulary", () => {
 			"index.ts",
 			"registry.ts",
 			"scope.ts",
+			"spell-set.ts",
 			"spell.ts",
 		]);
 	});

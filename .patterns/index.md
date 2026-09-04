@@ -175,7 +175,7 @@ Tuval is the local runnable app under `apps/tuval` (ADR [0345](../.decisions/034
 
 | Doc | Topic | Read when |
 |---|---|---|
-| [tuval-spells.md](./tuval-spells.md) | **Reference.** The command framework: `defineSpell` and a spell's fields, how a program row declares `spells`, `buildRegistry` and the atomically swapped `SpellRegistry`, `Scope` and the kernel-side `WindowIndex`, the executor's call-in/reply-out contract and its error table, key bindings compiled at config load with per-binding recovery, the parser and the two completion ranking rules, and the four Tuval protocol messages | Writing a spell, wiring the registry, or touching anything under `apps/tuval/src/commands/` or `apps/tuval/src/protocol/` (ADR [0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md)) |
+| [tuval-spells.md](./tuval-spells.md) | **Reference.** The command framework: `defineSpell` and a spell's fields, how a program row declares `spells`, `buildRegistry` and the atomically swapped `SpellRegistry`, `Scope` and the kernel-side `WindowIndex`, the executor's call-in/reply-out contract and its error table, key bindings compiled at config load with per-binding recovery, the one cell `SpellSet` holds the table and those bindings in so a reload replaces both at once, the parser and the two completion ranking rules, and the four Tuval protocol messages | Writing a spell, wiring the registry, or touching anything under `apps/tuval/src/commands/` or `apps/tuval/src/protocol/` (ADR [0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md)) |
 
 ## Index — docs & meta patterns
 

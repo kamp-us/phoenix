@@ -17,7 +17,8 @@ moved.
 | File | What is in it |
 |---|---|
 | [`spell.ts`](../apps/tuval/src/commands/spell.ts) | `Spell`, `defineSpell`, `SpellPath`, `Scope`, `renderPath`, the `WindowId` / `WorkspaceId` / `ClientId` brands |
-| [`registry.ts`](../apps/tuval/src/commands/registry.ts) | `buildRegistry`, `SpellRegistry`, `SpellRow`, `SpellNode`, `RegistryTable`, `describeSpell` |
+| [`registry.ts`](../apps/tuval/src/commands/registry.ts) | `buildRegistry`, `SpellRegistry`, `SpellRow`, `SpellNode`, `RegistryTable`, `lookupRow`, `describeSpell` |
+| [`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts) | `SpellSet`: the table and the key bindings compiled against it, in one cell |
 | [`scope.ts`](../apps/tuval/src/commands/scope.ts) | `WindowIndex`, `WindowPlacement`, `Client`, `resolveScope` |
 | [`executor.ts`](../apps/tuval/src/commands/executor.ts) | `SpellExecutor`: one `SpellCall` in, one `SpellReply` out |
 | [`errors.ts`](../apps/tuval/src/commands/errors.ts) | `DuplicateSpellPath`, `SpellNotFound`, `NoSuchWindow`, `UnknownSpell`, `BadArgs`, `BadResult` |
@@ -114,8 +115,12 @@ Two spells claiming one path fail with `DuplicateSpellPath`, which names the pat
 Every read is a single `Ref.get` and `swap` is a single `Ref.set`, so a config reload replaces every
 program's spells at once and no reader ever walks a half-replaced table.
 
-Two layers build it: `SpellRegistry.layer(table)` over an already-built table, and
-`SpellRegistry.scripted(spells)` over a bare core list, which is the test seam.
+`lookupRow(table, path)` is the trie walk itself, exported so the registry, the binding compiler
+and `SpellSet` take one walk rather than three.
+
+Three layers build the service. `SpellRegistry.layer(table)` holds a table of its own and
+`SpellRegistry.scripted(spells)` builds one from a bare core list, which is the test seam; the
+third is `SpellSet.layer`, below, which is what boot uses.
 
 `describeSpell(row)` is the serializable face of a spell: its path, its sentence, its `params`
 rendered by `Schema.toJsonSchemaDocument`, and its capability list. The closure never leaves the
@@ -193,8 +198,44 @@ the layer plus the path *inside* that layer's directory and falls back to the ba
 than leaking an absolute path.
 
 The reading is the parser's own `parse`, so a binding is read by exactly the rules a typed line will be read
-by. Compilation is against the registry as it stands, so re-run it after a `swap`: a
-spell that went away turns its binding into an error on the next compile.
+by. Compilation is against the registry as it stands, so a spell that goes away turns its binding
+into an error on the next compile — which is why nothing calls `compileBindings` directly except
+`SpellSet`, below, where re-running it is not something a caller can forget.
+
+## The set boot holds
+
+`SpellSet` ([`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts)) is the registry table, the
+config's key sources and the bindings compiled from them, held in **one** `Ref` and written in one
+`Ref.set`. Two cells would be two states to keep in step, and keeping them in step is the whole
+job: a binding is only ever as valid as the table it was compiled against.
+
+Its layer hands out `SpellSet` **and** `SpellRegistry`, both reading that one cell, so a reader's
+single `Ref.get` sees both halves of one config. Every write goes through the same private step,
+which compiles the bindings against the table it is about to store:
+
+| Entry | What it does |
+|---|---|
+| `SpellSet.read` | the table, its key sources and the compiled bindings, as one value |
+| `SpellSet.reload(input)` | a fresh table from new program rows, fresh bindings, installed in one write |
+| `SpellRegistry.swap(table)` | the narrower entry, which recompiles the bindings rather than leaving them behind |
+
+`everyPath(table)` is the whole registry as an allowlist, which is what `src/boot.ts` passes the
+bridge today.
+
+Boot joins the set, the executor, the bridge and `SpawnedProcesses` to the kernel's layers
+(`start` in [`boot.ts`](../apps/tuval/src/boot.ts)), reports the spell count beside the program
+count, and prints one line per key binding that did not compile. `Booted.reload` reads the config
+layers again and calls `SpellSet.reload`; it replaces the spells and the bindings and nothing else,
+so processes already running keep running under the rows they were spawned from. The two proofs are
+[`src/reload-proof.unit.test.ts`](../apps/tuval/src/reload-proof.unit.test.ts) (the swap, with a
+reader watching across it) and
+[`src/commands/agent-proof.unit.test.ts`](../apps/tuval/src/commands/agent-proof.unit.test.ts) (a
+scripted program enumerating the registry over the wire and calling every spell in it).
+
+A config module is imported with a per-load number on its URL
+([`config.ts`](../apps/tuval/src/config.ts)), because Node caches an ES module by URL for the life
+of the process and a reload of the same path would otherwise answer with the config the first boot
+read.
 
 ## The parser
 
@@ -307,11 +348,13 @@ so a second agent program costs an adapter and no new spell.
 
 `call(path, args, scope)` refuses a path outside the allowlist with `SpellNotAllowed`
 ([`bridge/errors.ts`](../apps/tuval/src/commands/bridge/errors.ts)) before the executor is reached.
-`SpellBridge.layer({allow})` takes that allowlist from whoever builds the layer, and today the only
-caller in the tree is `bridge/bridge.unit.test.ts`: nothing wires a program row's field into `allow`
-yet. What makes the file program-blind is that no program id is written in it. The intent recorded
-in the module's own docblock is that a calling program's registry row will supply the list, and that
-wiring is a later child's.
+`SpellBridge.layer({allow})` takes that allowlist from whoever builds the layer, and no program
+row's field is wired into it: `src/boot.ts` passes `everyPath` over the table as it stands at boot,
+and `bridge/bridge.unit.test.ts` passes its own. What makes the file program-blind is that no
+program id is written in it. The intent recorded in the module's own docblock is that a calling
+program's registry row will supply the list, and that wiring is a later child's. Because the layer
+captures the list at build, a config reload leaves it behind while the registry moves on —
+[#7743](https://github.com/kamp-us/phoenix/issues/7743) is filed on that.
 
 `call` puts only the scope's window on the wire, so the executor re-resolves the process exactly as
 it does for a page.

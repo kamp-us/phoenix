@@ -15,6 +15,7 @@ import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Cause, Console, Effect, Exit, Option, Runtime} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
+import {renderBindingErrors} from "./commands/bindings/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
 
@@ -60,8 +61,13 @@ const tuval = Command.make(
 		);
 		const from = report.sources.length === 0 ? "no config module" : report.sources.join(" + ");
 		yield* Console.log(
-			`tuval: booted — ${report.programCount} program(s) registered from ${from}; ${report.processCount} process(es) live, ${report.restoredCount} restored from ${report.stateDir}`,
+			`tuval: booted — ${report.programCount} program(s), ${report.spellCount} spell(s) registered from ${from}; ${report.processCount} process(es) live, ${report.restoredCount} restored from ${report.stateDir}`,
 		);
+		// A binding that did not compile costs its own key and nothing else, so this is a report and
+		// not a refusal: boot goes on with the bindings that did compile.
+		for (const line of renderBindingErrors(report.bindingErrors)) {
+			yield* Console.log(`tuval: ${line}`);
+		}
 		const rows = yield* ProcessTablePort.use((port) => port.rows).pipe(
 			Effect.provideContext(kernel),
 		);
