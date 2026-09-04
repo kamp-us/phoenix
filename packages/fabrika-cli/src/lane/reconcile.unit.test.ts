@@ -66,8 +66,24 @@ describe("findMisroute", () => {
 		expect(findMisroute(lane(), shipped({partial: true}))._tag).toBe("Settled");
 	});
 
-	it("reads a recorded `partial: false` as that line's own answer too", () => {
-		expect(findMisroute(lane(), shipped({partial: false}))._tag).toBe("Settled");
+	/**
+	 * The three cases a recorded `false` splits into (#7457). Between ADR 0351 and that fix the ship
+	 * stage wrote `false` off a nominator that could not see a merged `Part of #N`, so such a line
+	 * carries the fallthrough rather than a read — and the correction, not the polarity it lands on,
+	 * is what settles it.
+	 */
+	it("nominates a `partial: false` the ship stage wrote before closures were read off the PR", () => {
+		expect(findMisroute(lane(), shipped({partial: false}))._tag).toBe("Correctable");
+	});
+
+	it("reads a `partial: false` recorded since that fix as the line's own answer", () => {
+		const read = shipped({partial: false, at: "2026-09-10T00:00:00.000Z"});
+		expect(findMisroute(lane(), read)._tag).toBe("Settled");
+	});
+
+	it("nominates an unread `partial: false` once — a correction confirming it settles the line", () => {
+		const log = [...shipped({partial: false}), correctionEntry("issue", at(3), at(8), false)];
+		expect(findMisroute(lane(), log)._tag).toBe("Settled");
 	});
 
 	it("nominates nothing on a log that never reached a merge-closure guard", () => {

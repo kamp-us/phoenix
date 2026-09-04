@@ -43,8 +43,44 @@ export type Misroute =
 	| {readonly _tag: "Unreplayable"; readonly defects: ReadonlyArray<string>};
 
 /**
- * The latest recorded event that took a {@link CompiledLane} partial-guarded cell's fallthrough for
- * want of a payload.
+ * A conservative upper bound on when `lane prove` began reading the ship stage's closure off the PR
+ * the line names (#7457).
+ *
+ * ADR 0351 (#7800) taught the ship stage to record `partial: false` on a closing merge, so the line
+ * would carry its own answer and a sweep would never buy that read twice. But until #7457 the
+ * answer came out of the nominator, which cannot see the subject: a merged `Part of #N` is a node
+ * in neither half of the union. So every `false` written in that window is the fallthrough wearing
+ * an answer's clothes, and trusting it is the permissive fold this whole module undoes.
+ *
+ * A bound rather than the exact merge instant, because the instant is not knowable when the
+ * constant is written. Erring late is the safe direction: a `false` needlessly re-read is paid
+ * once — whichever way the board answers, the correction settles the line and the next sweep skips
+ * it — while a `false` wrongly trusted leaves a lane folded to a terminal over an open issue, which
+ * is the defect.
+ */
+const UNREAD_FALSE_BEFORE = "2026-09-06T00:00:00.000Z";
+
+/** The key a correction names its target by — the pair {@link applyCorrections} matches on. */
+const correctsKey = (task: string, at: string): string => `${task}\u0000${at}`;
+
+/**
+ * Whether this line's routing payload is still open — either it never carried one, or it carried an
+ * unread `false` that no correction has settled yet.
+ *
+ * The second arm is what makes termination hold. A `false` is re-nominated at most once per line:
+ * the sweep appends a correction whichever way the board answers, and the correction is what closes
+ * the line — never the polarity it lands on, which would leave a confirmed-`false` line nominating
+ * itself forever.
+ */
+const unanswered = (entry: LogEntry, corrected: ReadonlySet<string>): boolean => {
+	if (entry.partial === undefined) return true;
+	if (entry.partial) return false;
+	return entry.at < UNREAD_FALSE_BEFORE && !corrected.has(correctsKey(entry.task, entry.at));
+};
+
+/**
+ * The latest recorded event that reached a {@link CompiledLane} partial-guarded cell carrying no
+ * answer its reader can trust.
  *
  * Latest rather than every one, because a lane that merged partially, went round and merged again
  * has two such lines and only the last one still describes where the lane sits — correcting an
@@ -58,13 +94,17 @@ export const findMisroute = (lane: CompiledLane, entries: ReadonlyArray<LogEntry
 	const resolved = applyCorrections(entries);
 	if (resolved._tag === "Undecidable") return {_tag: "Unreplayable", defects: resolved.defects};
 	const log = resolved.entries;
+	const corrected = new Set(
+		entries.flatMap((entry) =>
+			bareEvent(entry.event) === CORRECTED_EVENT && entry.corrects !== undefined
+				? [correctsKey(entry.task, entry.corrects)]
+				: [],
+		),
+	);
 	let found: Misroute | null = null;
 	for (const [index, entry] of log.entries()) {
 		const task = lane.tasks[entry.task];
-		// Any recorded `partial` is the line's own answer, either polarity: this nominates a line that
-		// recorded none, never one that recorded `false`, which would re-nominate the same corrected
-		// line on every run forever.
-		if (task === undefined || entry.partial !== undefined) continue;
+		if (task === undefined || !unanswered(entry, corrected)) continue;
 		const before = foldLog(lane, log.slice(0, index));
 		if (before._tag === "Unreplayable") return before;
 		const state = before.states[entry.task];

@@ -217,11 +217,28 @@ describe("lane report — the append is proof-gated", () => {
 				event: "DONE",
 				task: "issue",
 				classes: null,
+				pr: null,
 				repo: "kamp-us/phoenix",
 				cwd: "/repo",
 				env: {},
 			},
 		]);
+	});
+
+	/**
+	 * The ship stage's closure is read off the PR the terminal names, so the ref has to reach the
+	 * prover and not only the line it lands on — nominating for it cannot see a merged `Part of #N`
+	 * (#7457).
+	 */
+	it("hands the prover the same --pr ref the event line records", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+		const pr = "https://github.com/kamp-us/phoenix/pull/7806";
+
+		const out = await run(fs, "SHIPPED-PR", {prover, pr});
+		expect(out.code).toBe(0);
+		expect(prover.asked[0]).toMatchObject({pr});
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({pr});
 	});
 
 	/**

@@ -89,3 +89,30 @@ as unclaimed work, is superseded by this record. Everything else in 0350 stands.
 - `lane report`'s stdout and its recorded line both carry `partial` at either polarity now, so a
   reader that treated the field's presence as "the merge was partial" is wrong. Nothing in the repo
   read it that way — the fold reads the value — but a future reader is warned here.
+
+## Amendment 2026-09-04 — the `false` this record started writing was not a read
+
+Decision half 1 above rests on "`lane prove` already computes the value", and that premise was
+false. `lane prove` computed it through `nominatePulls`, which cannot see a merged `Part of #N` —
+GitHub builds the closing edge from closing keywords and the search half pins `is:open` — so at the
+ship stage, where the PR is always already merged, the read returned nothing and `traceClosure`
+answered `Closes` by default ([#7457](https://github.com/kamp-us/phoenix/issues/7457)). This record
+therefore taught the ship stage to write `partial: false` from a fallthrough rather than an answer,
+and half 1's "a lane shipped after this stops nominating" stopped exactly the wrong lanes: a
+partially-merged one recorded `false`, `findMisroute` skipped it, and the sweep that exists to catch
+it never looked. Lane 7740 was the live instance.
+
+Two things change and the rest of this record stands. **`lane prove` now reads the closure off the
+PR the event names**, which is the read ADR 0350 already made off a recorded line, so both verbs
+share one reader and the `false` a ship stage writes from here on is a real answer. **A read that
+proved nothing is `unknown` and records no field at all**, which is this record's own "absent means
+nobody read the closure" applied where it had been quietly violated — and it also means an unread
+board no longer refuses the shipper's terminal, since leaving the field absent hands the line to the
+next sweep instead.
+
+Half 1's "`findMisroute` already skips a line at either polarity" is amended accordingly: it skips a
+recorded `true`, and skips a `false` recorded once the ship stage began reading off the named PR,
+but a `false` recorded between this record and that fix is nominated once. Bounding it by the
+recorded line's own timestamp keeps the saving this record bought — a lane shipped after the fix
+still costs zero recurring reads — while the correction appended on that single re-read is what
+settles the line, at either polarity, exactly as half 2 already specifies.

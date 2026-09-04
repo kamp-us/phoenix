@@ -155,6 +155,7 @@ const run = (
 	seams: ReturnType<typeof fakeSeams>,
 	event: string,
 	classes: ReadonlyArray<string> | null = null,
+	pr: string | null = null,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
@@ -164,6 +165,7 @@ const run = (
 				event,
 				task: null,
 				classes,
+				pr,
 				repo: null,
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
@@ -953,6 +955,7 @@ const runEpic = (
 				event,
 				task,
 				classes: null,
+				pr: null,
 				repo: null,
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
@@ -1480,5 +1483,81 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 			evidence: {kind: "head-verdicts", pr: 4318, head: HEAD},
 		});
 		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
+	});
+});
+
+/**
+ * The ship stage's closure read, off the PR the event names (#7457).
+ *
+ * Every board here stubs **both** nomination reads to return nothing, which is what production
+ * looks like for the case ADR 0343 exists to catch: a merged `Part of #N` is a node in neither half
+ * of the union. So an arm that answers at all answers off the named PR, and the `Partial` arm that
+ * could never fire while the nominator was the reader now does.
+ */
+describe("lane prove — the ship stage's closure, read off the PR the event names", () => {
+	const shipLane = () =>
+		fakeFs({
+			files: {
+				[WORKFLOW]: coderTemplateText(),
+				[LOG]:
+					logLine("WIP", "2026-08-16T01:00:00Z") +
+					logLine("DONE", "2026-08-16T02:00:00Z") +
+					logLine("PASS", "2026-08-16T03:00:00Z"),
+			},
+		});
+
+	const blindNominator: ReadonlyArray<Scripted> = [
+		[CLOSERS, closingPulls()],
+		[SEARCH, nominated()],
+	];
+
+	const merged = (body: string): HttpReply =>
+		pull({state: "closed", merged: true, body: `${body}\n\n## Deviations\nNone.\n`});
+
+	const PR_URL = "https://github.com/o/r/pull/4318";
+
+	it("answers `partial` for a merged body carrying `Part of #N` and no closing keyword", async () => {
+		const seams = fakeSeams([...blindNominator, [PULL, merged("Part of #5747")]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({issue: 5747, state: "ship", closure: "partial"});
+		expect(out.partial).toBe(true);
+	});
+
+	it("answers `closes` for a merged body carrying a closing keyword", async () => {
+		const seams = fakeSeams([...blindNominator, [PULL, merged("Fixes #5747")]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes"});
+		expect(out.partial).toBe(false);
+	});
+
+	it("answers `unknown` with no `partial` where the event names no PR", async () => {
+		const seams = fakeSeams(blindNominator);
+
+		const out = await run(shipLane(), seams, "DONE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "unknown"});
+		expect(out.partial).toBe(null);
+	});
+
+	/**
+	 * An unread board no longer refuses the terminal. Recording the `DONE` with no `partial` leaves
+	 * the line nominable by `lane reconcile`, where a refusal would strand the shipper over a merge
+	 * that really landed (ADR 0351).
+	 */
+	it("answers `unknown` with no `partial` where the PR read fails", async () => {
+		const seams = fakeSeams([...blindNominator, [PULL, GATEWAY]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "unknown"});
+		expect(out.partial).toBe(null);
 	});
 });

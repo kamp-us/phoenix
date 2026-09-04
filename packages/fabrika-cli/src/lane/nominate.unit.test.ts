@@ -163,6 +163,7 @@ describe("the `Part of #N` sequence that used to deadlock (#6179)", () => {
 					event: "DONE",
 					task: null,
 					classes: null,
+					pr: null,
 					repo: null,
 					cwd: "/repo",
 					env: {CLAUDE_PIPELINE_REPO: "o/r"},

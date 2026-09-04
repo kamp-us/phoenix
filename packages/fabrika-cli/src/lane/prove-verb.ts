@@ -44,6 +44,7 @@ import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {read as readRangeMarker} from "../wire/range-verdict-marker.ts";
 import {readNamespaced as readRoute} from "../wire/routed-elsewhere.ts";
 import {bindToContent, read as readMarker} from "../wire/verdict-marker.ts";
+import {closureReader} from "./closure.ts";
 import {
 	LANE_UNREADABLE,
 	PROOF_ABSENT,
@@ -66,7 +67,6 @@ import {
 	type Proof,
 	roleOf,
 	SHIP_STATES,
-	traceClosure,
 	traceDiagnosis,
 	tracePulls,
 	type VerdictFact,
@@ -98,6 +98,12 @@ export interface ProveOptions extends LaneRef {
 	 * routed namespace (#6664).
 	 */
 	readonly classes: ReadonlyArray<string> | null;
+	/**
+	 * The PR URL the caller is about to record on the event line, the shipper's own `--pr`. The
+	 * ship stage's closure is read off exactly this PR, so a `DONE` recorded with no ref reads
+	 * `unknown` rather than being nominated for (#7457).
+	 */
+	readonly pr: string | null;
 	readonly repo: string | null;
 	/** Where to look for `.fabrika.jsonc` — the checkout this run stands in, not the ledger root. */
 	readonly cwd: string;
@@ -374,11 +380,18 @@ const prove = (
  *
  * It is not a proof and cannot refuse on the artifact — a `DONE` out of `ship` claims nothing a read
  * could falsify, and refusing one would leave a shipper with no legal terminal over a merge that
- * really did land. What it can refuse is being *unable to read*: an unread board leaves the arm
- * UNKNOWN, and the permissive reading is the exact fold this arm exists to stop (#7382).
+ * really did land. It cannot refuse on an unread board either: a read that failed answers `unknown`
+ * and records **no** `partial`, which leaves the line nominable by `lane reconcile` rather than
+ * stranding the shipper (ADR 0343, ADR 0351).
  *
- * The scope is `open-or-merged`, because the subject is a merge and the closing edge is the half
- * that sees one (`./nominate.ts`).
+ * **The closure is read off the PR this very event names, never off the nominator** (#7457). The
+ * shipper hands the merged PR's URL to `lane report --pr`, and it is relayed here as
+ * {@link ProveOptions.pr}; `./closure.ts` reads that one PR and judges its body, exactly as
+ * `lane reconcile` reads the PR a recorded line names. Nominating was structurally unable to see
+ * the subject: a merged `Part of #N` is a node in neither half of the union — the closing edge is
+ * built from closing keywords and the search half is `is:open` — so the `Partial` arm ADR 0343
+ * added never once fired, and every partial merge still folded its lane to a terminal over an open
+ * issue.
  */
 const readClosure = (
 	options: ProveOptions,
@@ -395,13 +408,23 @@ const readClosure = (
 				`${VERB}: neither task "${taskId}" nor lane "${options.lane}" names an issue number, so whether the merge behind this ${event} closed one is unreadable.`,
 			);
 		}
-		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
-		if (resolved._tag === "Refused") return resolved.outcome;
-		const nominated = yield* nominatePulls(resolved.repo, issue, "open-or-merged");
-		if (nominated._tag === "Unreadable") {
-			return unreadable(nominated.what, nominated.reason);
+		const read = yield* closureReader(options.repo, options.env)(issue, options.pr);
+		if (read._tag === "Unknown") {
+			return {
+				...answer(
+					JSON.stringify(
+						{proof: "not-required", event, task: taskId, state: leaf, issue, closure: "unknown"},
+						null,
+						2,
+					),
+					[
+						`${VERB}: ${why} — nothing to prove, record it.`,
+						`${VERB}: ${read.reason}, so whether this merge discharged #${issue} is UNKNOWN — the line records no \`partial\`, and \`lane reconcile\` reads it again (ADR 0351).`,
+					],
+				),
+			};
 		}
-		const closure = traceClosure(issue, nominated.pulls);
+		const closure = read.closure;
 		const note =
 			closure._tag === "Partial"
 				? `${VERB}: ${closure.prs.map((pr) => `#${pr}`).join(", ")} merged carrying "Part of #${issue}" and no closing keyword, so #${issue} is not discharged — the lane goes round rather than folding to its terminal (ADR 0343).`

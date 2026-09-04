@@ -133,6 +133,39 @@ describe("runReconcile", () => {
 		});
 	});
 
+	/**
+	 * Lane 7740's shape (#7457). Between ADR 0351 and the fix that read the closure off the named PR,
+	 * the ship stage wrote `partial: false` out of a nominator blind to a merged `Part of #N` — so
+	 * that `false` is the fallthrough, not an answer, and the sweep has to reach it. The correction
+	 * settles the line whichever way the board answers, so it is re-read at most once.
+	 */
+	it("corrects a `partial: false` the ship stage wrote before it read the named PR", async () => {
+		const shipLine = `${JSON.stringify({task: "issue", event: "ISSUE.DONE", at: at(3), partial: false, pr: SHIPPED_PR})}\n`;
+		const log = `${line("WIP", at(0))}${line("DONE", at(1))}${line("PASS", at(2))}${shipLine}`;
+		const read = (): ClosureRead => ({_tag: "Read", closure: partial([7806])});
+
+		const first = await sweep(tree([{lane: "7740", log}]), read);
+		expect(first.outcome.code).toBe(0);
+		expect(first.asked).toEqual([[7740, SHIPPED_PR]]);
+		expect(rows(first.outcome.stdout)).toMatchObject([
+			{
+				key: "7740",
+				verdict: "corrected",
+				corrects: {task: "issue", at: at(3), state: "ship", pr: SHIPPED_PR},
+				prs: [7806],
+				from: "complete",
+				to: JSON.stringify({pipeline: {issue: "queued"}}),
+			},
+		]);
+
+		const corrected = first.fs.written.get(`${DEFAULT_LANES_ROOT}/7740/events.jsonl`) ?? "";
+		const second = await sweep(tree([{lane: "7740", log: corrected}]), read);
+		expect(second.asked).toEqual([]);
+		expect(rows(second.outcome.stdout)).toEqual([
+			{key: "7740", root: DEFAULT_LANES_ROOT, verdict: "current"},
+		]);
+	});
+
 	it("records a merged PR that closed its issue, and moves no task doing it", async () => {
 		const {outcome, fs} = await sweep(tree([{lane: "6981", log: SHIPPED_LOG}]), () => ({
 			_tag: "Read",

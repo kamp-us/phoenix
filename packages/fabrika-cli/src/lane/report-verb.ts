@@ -119,6 +119,9 @@ export const runReport = <R>(
 			// The same classes the append carries, so the proof asks about the arm this event actually
 			// takes rather than the one the lane stood on before it (#6664).
 			classes: classed.classes,
+			// The ship stage's closure is read off this very PR, so the ref has to reach the proof and
+			// not only the line it lands on — nominating for it cannot see a merged `Part of #N` (#7457).
+			pr: options.pr,
 			repo: options.repo,
 			cwd: options.cwd,
 			env: options.env,

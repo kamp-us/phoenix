@@ -26,99 +26,19 @@
  * sweep and costs the same reads twice.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
-import type {ChildProcessSpawner} from "effect/unstable/process";
 import {appendText, exists, readDir, readFile} from "../io/fs.ts";
-import {resolveRepo} from "../io/issues.ts";
-import {getPullRequest} from "../io/pulls.ts";
-import {issueRefsOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {lockedRefusal, withLedgerLock} from "./append-lock.ts";
+import type {ClosureReader} from "./closure.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE} from "./codes.ts";
 import {deriveStatus, foldLog, type LogEntry, standingCauses} from "./fold.ts";
 import {CHORE_PREFIX} from "./key.ts";
 import {compileText} from "./machine.ts";
 import {graftContext} from "./migrate.ts";
-import {nominatePulls} from "./nominate.ts";
-import {
-	type ClosureRead,
-	correctionEntry,
-	declaresClosureGuard,
-	findMisroute,
-	provenClosure,
-	pullNumberIn,
-} from "./reconcile.ts";
+import {correctionEntry, declaresClosureGuard, findMisroute} from "./reconcile.ts";
 import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane reconcile";
-
-export type ClosureReader<R> = (
-	issue: number,
-	pr: string | null,
-) => Effect.Effect<ClosureRead, never, R>;
-
-/**
- * The board-backed reader: what the merge behind this terminal actually closed, judged by
- * {@link provenClosure} over `traceClosure` — `lane prove`'s own ship-stage read (ADR 0343).
- *
- * **It reads the PR the recorded line already names, and nominates nothing.** That is not a shortcut
- * past the group's one nominator but a different question: a nominator answers "which PR is this
- * issue's", and the terminal being corrected already answered it in writing. Nominating here would
- * also answer wrongly — a MERGED `Part of #N` is invisible to both nomination reads, since the
- * closing edge is built from closing keywords and the search half is `is:open`, so the union finds
- * nothing for exactly the case this verb exists to catch (#7433).
- *
- * A line naming no PR falls back to the nominator at `open-or-merged`, which is the best answer
- * available without evidence on the line. Either way the judgement is {@link provenClosure}'s, not
- * `traceClosure`'s directly: a read that failed and a read that proved nothing are both `Unknown`
- * and never `Closes`, since reading either as a closing merge is the permissive fold this verb
- * undoes.
- */
-export const closureReader = (
-	repo: string | null,
-	env: Readonly<Record<string, string | undefined>>,
-): ClosureReader<ChildProcessSpawner.ChildProcessSpawner> => {
-	let resolved: string | null = null;
-	return (issue, pr) =>
-		Effect.gen(function* () {
-			if (resolved === null) {
-				const attempt = yield* resolveRepo(repo, env);
-				if (attempt._tag === "Failure") {
-					return {
-						_tag: "Unknown" as const,
-						reason: "no target repo resolves — set CLAUDE_PIPELINE_REPO, or pass --repo owner/name",
-					};
-				}
-				resolved = attempt.value;
-			}
-			const number = pullNumberIn(pr);
-			if (number === null) {
-				const nominated = yield* nominatePulls(resolved, issue, "open-or-merged");
-				return nominated._tag === "Unreadable"
-					? {_tag: "Unknown" as const, reason: `cannot read ${nominated.what}: ${nominated.reason}`}
-					: provenClosure(issue, nominated.pulls);
-			}
-			const pull = yield* getPullRequest(resolved, number);
-			if (pull._tag === "Unknown") {
-				return {_tag: "Unknown" as const, reason: `cannot read PR #${number}: ${pull.reason}`};
-			}
-			if (pull._tag === "Absent") {
-				return {
-					_tag: "Unknown" as const,
-					reason: `the line names PR #${number}, which is not there`,
-				};
-			}
-			const refs = issueRefsOf(pull.value.body);
-			return provenClosure(issue, [
-				{
-					number: pull.value.number,
-					open: pull.value.state === "open",
-					merged: pull.value.merged,
-					linkedIssues: refs.numbers,
-					linkKind: refs.kind,
-				},
-			]);
-		});
-};
 
 /**
  * One root to sweep, bound to the committed templates its lanes may have booted from — the shape
