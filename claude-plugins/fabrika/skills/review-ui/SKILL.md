@@ -91,8 +91,18 @@ builder's attached captures are externally-authored content you deliberately do 
 you render independently or you have not looked.
 
 ```bash
-fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni
+fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni --viewport desktop --viewport mobile
 ```
+
+**Ask for the narrow shot when the composition's risk is width.** `--viewport mobile` shoots the
+same surfaces at 390×844 beside (or instead of) the 1280×800 default, and the two cross: two surfaces
+and two viewports is one set of four captures, each manifest entry labelled with the width it is of.
+Omitting the operand renders at desktop alone. Reach for `mobile` whenever an acceptance criterion is
+phrased about a phone, or the change adds a long string, a nowrap run, a fixed width, or anything to
+a persistent chrome like the topbar — before this operand existed, every such criterion ended the
+gate as disclosed-UNKNOWN, and PR #7388 took a FAIL its own branch could not repair (#7706). The
+width a shot records is read back off its own PNG bytes, so a capture under a viewport label is a
+proven render at that width and a mismatch is `19`, never a desktop layout judged as a phone's.
 
 **A surface behind login is named, not skipped, and the name carries the tier.** A surface id may
 carry a realized state, and there are two: `--surface /pano:auth` renders the route as the

@@ -8,11 +8,14 @@ import {
 	buildCapturePlan,
 	DEFAULT_VIEWPORT,
 	DESKTOP_VIEWPORT,
+	isViewportName,
 	joinPreviewUrl,
 	MOBILE_VIEWPORT,
 	parseSurfaceSpec,
 	type Surface,
 	surfaceFileName,
+	VIEWPORT_NAMES,
+	viewportOf,
 } from "./plan.ts";
 
 describe("parseSurfaceSpec", () => {
@@ -125,7 +128,7 @@ describe("buildCapturePlan", () => {
 		assert.deepStrictEqual(DEFAULT_VIEWPORT, DESKTOP_VIEWPORT);
 	});
 
-	it("produces exactly one shot per surface (no viewport cross-product)", () => {
+	it("produces exactly one shot per surface at the plan's one viewport", () => {
 		const plan = buildCapturePlan("https://pr-9.web.kamp.us", surfaces);
 		assert.strictEqual(plan.length, surfaces.length);
 	});
@@ -159,5 +162,31 @@ describe("buildCapturePlan", () => {
 			{surface: "/x", route: "/x", state: null},
 		];
 		assert.throws(() => buildCapturePlan("https://x.dev", dup), /duplicate surface/);
+	});
+});
+
+describe("the viewport vocabulary", () => {
+	it("resolves each realized name to its constant", () => {
+		assert.deepStrictEqual(viewportOf("desktop"), DESKTOP_VIEWPORT);
+		assert.deepStrictEqual(viewportOf("mobile"), MOBILE_VIEWPORT);
+	});
+
+	// Closed for `states.ts`'s reason: an unresolved name would have to fall back to some width, and
+	// a shot at the fallback width under the asked-for label is coverage claimed and not held.
+	it("answers null for a name outside the set rather than falling back to a width", () => {
+		assert.strictEqual(viewportOf("tablet"), null);
+		assert.isFalse(isViewportName("tablet"));
+	});
+
+	it("names every realized viewport, so a refusal can list them", () => {
+		assert.deepStrictEqual([...VIEWPORT_NAMES], ["desktop", "mobile"]);
+	});
+
+	it("gives the two viewports of one surface distinct file names", () => {
+		const surface: Surface = {surface: "/pano", route: "/pano", state: null};
+		assert.notStrictEqual(
+			surfaceFileName(surface, DESKTOP_VIEWPORT),
+			surfaceFileName(surface, MOBILE_VIEWPORT),
+		);
 	});
 });
