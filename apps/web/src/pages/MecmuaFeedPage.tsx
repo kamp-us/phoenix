@@ -15,6 +15,7 @@ import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
 import {MECMUA_FEED} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {formatAgoTR} from "../lib/datetime";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaFeedPage.css";
@@ -38,12 +39,13 @@ const feedRequest = {
 
 export function MecmuaFeedPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_FEED, false);
+	const t = useT();
 
 	if (flagLoading) {
 		return (
 			<div className="kp-page">
 				<div className="kp-page__inner">
-					<p className="kp-mecmua-feed__status">yükleniyor…</p>
+					<p className="kp-mecmua-feed__status">{t("mecmua.loading")}</p>
 				</div>
 			</div>
 		);
@@ -55,14 +57,14 @@ export function MecmuaFeedPage() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<header className="kp-mecmua-feed__head">
-					<h1 className="kp-mecmua-feed__title">mecmua</h1>
-					<p className="kp-mecmua-feed__lede">takip ettiğin yazarların son yazıları.</p>
+					<h1 className="kp-mecmua-feed__title">{t("mecmua.feed.title")}</h1>
+					<p className="kp-mecmua-feed__lede">{t("mecmua.feed.lede")}</p>
 				</header>
 				<Screen
-					fallback={<p className="kp-mecmua-feed__status">yükleniyor…</p>}
+					fallback={<p className="kp-mecmua-feed__status">{t("mecmua.loading")}</p>}
 					error={({code}) => (
 						<Alert variant="danger" className="kp-alert--inline kp-mecmua-feed__status">
-							akış yüklenemedi: {code.toLowerCase()}
+							{t("mecmua.feed.error", {code: code.toLowerCase()})}
 						</Alert>
 					)}
 				>
@@ -74,6 +76,7 @@ export function MecmuaFeedPage() {
 }
 
 function MecmuaFeedList() {
+	const t = useT();
 	const {mecmuaFeed} = useRequest(feedRequest);
 	const [items] = useListView(FeedConnectionView, mecmuaFeed);
 
@@ -81,8 +84,8 @@ function MecmuaFeedList() {
 		return (
 			<EmptyState
 				icon={<Icon icon={Newspaper} size={24} />}
-				title="henüz akışında yazı yok"
-				description="birkaç yazar takip et, yazıları burada belirsin."
+				title={t("mecmua.feed.empty.title")}
+				description={t("mecmua.feed.empty.description")}
 			/>
 		);
 	}

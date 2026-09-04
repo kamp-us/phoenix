@@ -39,6 +39,12 @@ export {DraftRestoreBanner} from "./DraftRestoreBanner";
 export {EditedIndicator} from "./EditedIndicator";
 export {EmptyState} from "./EmptyState";
 export {Form, Input, Textarea} from "./Form";
+export type {
+	DesignCatalogKey,
+	DesignMessageParams,
+	DesignTranslate,
+} from "./i18n";
+export {DesignTranslationProvider} from "./i18n";
 export type {MenuItem, MenuProps} from "./Menu";
 export {Menu} from "./Menu";
 export type {MetaRowProps} from "./MetaRow";

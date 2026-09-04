@@ -17,12 +17,14 @@ import {
 import {useLiveView, type ViewRef, view} from "react-fate";
 import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
+import {useLocale} from "../../i18n";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {tagClass} from "../../lib/panoTags";
 import {actorLabel} from "../moderation/actor-identity";
 import {PostReactionBar} from "../reaction/PostReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
+import {commentCountLabel} from "./commentCount";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 
 /** Defined here, away from their widgets, so `PanoPost.tsx` needs no back-edge import. */
@@ -70,6 +72,7 @@ export interface PanoPostHeaderProps {
 }
 
 export function PanoPostHeader(props: PanoPostHeaderProps) {
+	const {locale, t} = useLocale();
 	const post = useLiveView(PanoPostHeaderView, props.post);
 	const tags = post.tags ?? [];
 	return (
@@ -108,7 +111,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 				<span>{formatAgoTR(toIso(post.createdAt))}</span>
 				<EditedIndicator createdAt={toIso(post.createdAt)} updatedAt={toIso(post.updatedAt)} />
 				<span>·</span>
-				<span>{post.commentCount} yorum</span>
+				<span>{commentCountLabel(t, locale, post.commentCount)}</span>
 				<span>·</span>
 				<CopyLinkButton path={`/pano/${post.slug ?? post.id}`} testId="post-share" />
 				<PostSaveButton postId={post.id} isSaved={post.isSaved ?? null} />
@@ -122,7 +125,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 							data-testid="post-edit"
 							onClick={props.onEdit}
 						>
-							düzenle
+							{t("pano.action.edit")}
 						</Button>
 						<Button
 							type="button"
@@ -131,7 +134,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 							data-testid="post-delete"
 							onClick={props.onDelete}
 						>
-							sil
+							{t("pano.action.delete")}
 						</Button>
 					</>
 				) : null}

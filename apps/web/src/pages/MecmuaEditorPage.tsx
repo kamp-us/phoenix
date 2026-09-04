@@ -18,6 +18,7 @@ import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {MECMUA_WRITE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {mecmuaPublishAffordance} from "./mecmua-write-gate";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaEditorPage.css";
@@ -32,12 +33,13 @@ const MecmuaEditorView = view<MecmuaPost>()({
 
 export function MecmuaEditorPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_WRITE, false);
+	const t = useT();
 
 	if (flagLoading) {
 		return (
 			<div className="kp-page">
 				<div className="kp-page__inner">
-					<p>yükleniyor…</p>
+					<p>{t("mecmua.loading")}</p>
 				</div>
 			</div>
 		);
@@ -64,6 +66,7 @@ const ownPostsRequest = {
  * only at creation, so a late-arriving body would never reach the editor.
  */
 function MecmuaEditorRoute() {
+	const t = useT();
 	const {id} = useParams<{id: string}>();
 	if (!id) return <MecmuaEditor initialTitle="" initialBody="" />;
 	return (
@@ -71,7 +74,7 @@ function MecmuaEditorRoute() {
 			fallback={
 				<div className="kp-page">
 					<div className="kp-page__inner">
-						<p>yükleniyor…</p>
+						<p>{t("mecmua.loading")}</p>
 					</div>
 				</div>
 			}
@@ -97,15 +100,16 @@ function MecmuaDraftEditor({node}: {node: ViewRef<"MecmuaPost">}) {
 }
 
 function MecmuaDraftNotFound() {
+	const t = useT();
 	return (
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<div className="kp-mecmua-editor">
 					<Alert variant="secondary" className="kp-alert--inline kp-mecmua-editor__notice">
-						taslak bulunamadı.
+						{t("mecmua.editor.draftNotFound")}
 					</Alert>
 					<Link to="/mecmua/yazilarim" className="kp-mecmua-editor__yazilarim-link">
-						yazılarıma dön
+						{t("mecmua.editor.backToMyPosts")}
 					</Link>
 				</div>
 			</div>
@@ -118,6 +122,7 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 	const {me} = useMe();
 	const fate = useFateClient();
 	const navigate = useNavigate();
+	const t = useT();
 	const {id} = useParams<{id: string}>();
 
 	const [title, setTitle] = useState(initialTitle);
@@ -143,9 +148,9 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 					input: {title: title.trim(), body: bodyMarkdown()},
 					view: MecmuaEditorView,
 				}),
-			"taslak kaydedilemedi",
+			t("mecmua.editor.error.saveDraft"),
 			(result) => {
-				setNotice("taslak kaydedildi");
+				setNotice(t("mecmua.editor.notice.draftSaved"));
 				// Each save mints a fresh row, so land on the new id rather than a blank editor.
 				const savedId = result?.id;
 				if (savedId && String(savedId) !== id) navigate(`/mecmua/yaz/${String(savedId)}`);
@@ -165,14 +170,14 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 				});
 				if (saved.error) return saved;
 				const draftId = saved.result?.id;
-				if (!draftId) return {error: {message: "taslak kaydedilemedi"}};
+				if (!draftId) return {error: {message: t("mecmua.editor.error.saveDraft")}};
 				return fate.mutations.mecmua.publish({
 					input: {id: draftId},
 					view: MecmuaEditorView,
 				});
 			},
-			"yazı yayımlanamadı",
-			() => setNotice("yazın yayımlandı"),
+			t("mecmua.editor.error.publish"),
+			() => setNotice(t("mecmua.editor.notice.published")),
 		);
 	}
 
@@ -182,14 +187,14 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 				<div className="kp-mecmua-editor">
 					<header className="kp-mecmua-editor__head">
 						<div className="kp-mecmua-editor__head-row">
-							<h1 className="kp-mecmua-editor__title">{id ? "yazıyı düzenle" : "yeni yazı"}</h1>
+							<h1 className="kp-mecmua-editor__title">
+								{t(id ? "mecmua.editor.title.edit" : "mecmua.editor.title.new")}
+							</h1>
 							<Link to="/mecmua/yazilarim" className="kp-mecmua-editor__yazilarim-link">
-								yazılarım
+								{t("mecmua.editor.myPosts")}
 							</Link>
 						</div>
-						<p className="kp-mecmua-editor__lede">
-							uzun biçimli bir yazı yaz. istediğin an taslak olarak kaydet; hazır olunca yayımla.
-						</p>
+						<p className="kp-mecmua-editor__lede">{t("mecmua.editor.lede")}</p>
 					</header>
 
 					<Input
@@ -197,8 +202,8 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 						className="kp-mecmua-editor__field kp-mecmua-editor__title-input"
 						data-testid="mecmua-editor-title"
 						type="text"
-						label="başlık"
-						placeholder="yazının başlığı"
+						label={t("mecmua.editor.field.title")}
+						placeholder={t("mecmua.editor.field.titlePlaceholder")}
 						value={title}
 						onChange={(e) => setTitle(e.currentTarget.value)}
 						fullWidth
@@ -206,7 +211,7 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 
 					{/* The composer is headless with no native label slot, so fieldset/legend names it. */}
 					<fieldset className="kp-mecmua-editor__field kp-mecmua-editor__fieldset">
-						<legend className="kp-mecmua-editor__label">metin</legend>
+						<legend className="kp-mecmua-editor__label">{t("mecmua.editor.field.body")}</legend>
 						<Composer composer={composer} className="kp-mecmua-editor__body" />
 					</fieldset>
 
@@ -238,7 +243,7 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 							loading={inFlight}
 							onClick={onSaveDraft}
 						>
-							taslak kaydet
+							{t("mecmua.editor.action.saveDraft")}
 						</Button>
 
 						{publishAffordance.kind === "publish" ? (
@@ -250,11 +255,11 @@ function MecmuaEditor({initialTitle, initialBody}: {initialTitle: string; initia
 								disabled={!titleReady}
 								onClick={onPublish}
 							>
-								yayımla
+								{t("mecmua.editor.action.publish")}
 							</Button>
 						) : (
 							<p className="kp-mecmua-editor__gate" role="note" data-testid="mecmua-editor-gate">
-								{publishAffordance.message}
+								{t(publishAffordance.messageKey)}
 							</p>
 						)}
 					</div>

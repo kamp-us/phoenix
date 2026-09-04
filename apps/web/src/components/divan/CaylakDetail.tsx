@@ -17,6 +17,7 @@ import type {
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {Screen} from "../../fate/Screen";
 import {codeOf} from "../../fate/wire";
+import {type CatalogKey, useT} from "../../i18n";
 import {VoteTriangle} from "../VoteTriangle";
 import {CaylakIdentityById, IdentityFallback} from "./CaylakIdentity";
 import {
@@ -73,13 +74,14 @@ export function CaylakDetail({
 	 */
 	readonly viewerVouched: boolean;
 }) {
+	const t = useT();
 	const result = useRequest(divanBacklogRequest(authorId));
 	const [items] = useListView(BacklogConnectionView, result["divan.backlog"]);
 
 	return (
 		<section
 			className="kp-divan__detail"
-			aria-label="çaylak incelemesi"
+			aria-label={t("divan.detail.label")}
 			data-testid="caylak-detail"
 		>
 			<header className="kp-divan__detail-head">
@@ -94,9 +96,9 @@ export function CaylakDetail({
 				/>
 			</header>
 
-			<h3 className="kp-divan__detail-title">incelemedeki içerikler</h3>
+			<h3 className="kp-divan__detail-title">{t("divan.detail.backlogTitle")}</h3>
 			{items.length === 0 ? (
-				<p className="kp-divan__empty">bu çaylağın incelemede bekleyen içeriği yok.</p>
+				<p className="kp-divan__empty">{t("divan.detail.backlogEmpty")}</p>
 			) : (
 				<ul className="kp-divan__backlog">
 					{items.map(({node}) => (
@@ -119,18 +121,19 @@ function ReviewerActions({
 	readonly viewerIsModerator: boolean;
 	readonly viewerVouched: boolean;
 }) {
+	const t = useT();
 	const fate = useFateClient();
 	const [vouchOpen, setVouchOpen] = useState(false);
 	// OR-ed with the prop rather than seeded from it, so a landed confirm shows immediately
 	// AND a refreshed roster row still wins after this component remounts on re-selection.
 	const [justVouched, setJustVouched] = useState(false);
 	const [busy, setBusy] = useState(false);
-	const [message, setMessage] = useState("");
+	const [message, setMessage] = useState<CatalogKey | null>(null);
 
 	async function onPromote() {
 		if (busy) return;
 		setBusy(true);
-		setMessage("");
+		setMessage(null);
 		try {
 			const {result, error} = await fate.mutations.user.promote({
 				input: {userId: authorId},
@@ -183,7 +186,7 @@ function ReviewerActions({
 						disabled={busy}
 						data-testid="promote-button"
 					>
-						{busy ? "yükseltiliyor…" : "yazar yap"}
+						{busy ? t("divan.promote.busy") : t("divan.promote.action")}
 					</Button>
 				) : null}
 				{showVouch ? (
@@ -194,18 +197,18 @@ function ReviewerActions({
 						disabled={vouchState === "done"}
 						data-testid="vouch-button"
 					>
-						{vouchTriggerLabel(vouchState)}
+						{t(vouchTriggerLabel(vouchState))}
 					</Button>
 				) : null}
 			</div>
-			{message ? (
+			{message !== null ? (
 				<Alert
 					variant="secondary"
 					className="kp-alert--inline kp-divan__status"
 					aria-live="polite"
 					data-testid="promote-status"
 				>
-					{message}
+					{t(message)}
 				</Alert>
 			) : null}
 			{showVouch ? (
@@ -221,6 +224,7 @@ function ReviewerActions({
 }
 
 function BacklogItemRow({node}: {readonly node: ViewRef<"DivanBacklogItem">}) {
+	const t = useT();
 	const data = useView(BacklogItemView, node);
 	const fate = useFateClient();
 	const [score, setScore] = useState<number | null>(null);
@@ -275,7 +279,7 @@ function BacklogItemRow({node}: {readonly node: ViewRef<"DivanBacklogItem">}) {
 					onClick={onVote}
 					disabled={voteBusy}
 					pressed={mine}
-					aria-label={mine ? "oyu geri çek" : "oy ver"}
+					aria-label={mine ? t("divan.vote.withdraw") : t("divan.vote.cast")}
 					data-testid={`divan-upvote-${data.id}`}
 				>
 					<VoteTriangle />
@@ -288,10 +292,10 @@ function BacklogItemRow({node}: {readonly node: ViewRef<"DivanBacklogItem">}) {
 			</div>
 			<div className="kp-divan__item-body">
 				<div className="kp-divan__item-meta">
-					<span className="kp-divan__kind">{itemKindLabel(data.kind)}</span>
+					<span className="kp-divan__kind">{t(itemKindLabel(data.kind))}</span>
 					<ReviewBadge />
 				</div>
-				<p className="kp-divan__preview">{data.preview || "(boş)"}</p>
+				<p className="kp-divan__preview">{data.preview || t("divan.detail.previewEmpty")}</p>
 			</div>
 			<ReportButton
 				onReport={onReport}

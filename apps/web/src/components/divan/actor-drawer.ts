@@ -3,6 +3,8 @@
  * DOM-free because `apps/web/src` has no jsdom.
  */
 
+import {countClause, type Message} from "./divanGating";
+
 export type Chamber = "raporlar" | "kefil";
 
 export type DrawerAction =
@@ -65,7 +67,18 @@ export function actorIdentityLabel(handle: string | null, standing: ActorStandin
 	return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-export function uretimLabel(standing: ActorStanding): string | null {
+/**
+ * Three independent counts in one line, so each is its own clause and the component
+ * interpolates the resolved three into the frame — `.patterns/i18n-catalog.md` under Plurals.
+ */
+export interface UretimLabel {
+	readonly frame: Message;
+	readonly definitions: Message;
+	readonly posts: Message;
+	readonly comments: Message;
+}
+
+export function uretimLabel(standing: ActorStanding): UretimLabel | null {
 	if (
 		standing.definitionCount === null ||
 		standing.postCount === null ||
@@ -73,28 +86,37 @@ export function uretimLabel(standing: ActorStanding): string | null {
 	) {
 		return null;
 	}
-	return `${standing.definitionCount} tanım · ${standing.postCount} gönderi · ${standing.commentCount} yorum`;
+	return {
+		frame: {key: "divan.actor.uretim"},
+		definitions: countClause("definitions", standing.definitionCount),
+		posts: countClause("posts", standing.postCount),
+		comments: countClause("comments", standing.commentCount),
+	};
 }
 
-export function kaldirilanLabel(priorRemovals: number | null): string | null {
+export function kaldirilanLabel(priorRemovals: number | null): Message | null {
 	if (priorRemovals === null) return null;
-	if (priorRemovals <= 0) return "temiz";
-	return `${priorRemovals} kaldırıldı`;
+	if (priorRemovals <= 0) return {key: "divan.actor.record.clean"};
+	return {key: "divan.actor.record.removed", params: {count: priorRemovals}};
 }
 
-// Clamped to ≥1: a real reported target always has at least one reporter.
-export function bildirilenLabel(distinctReporters: number): string {
+// Clamped to ≥1: a real reported target always has at least one reporter. The `one` arm is
+// exactly `count === 1` in both catalogs (see `i18n/plural.ts`), so the branch needs no locale.
+export function bildirilenLabel(distinctReporters: number): Message {
 	const n = Math.max(1, Math.floor(distinctReporters));
-	return `${n} kişi`;
+	return {
+		key: n === 1 ? "divan.actor.reporters.one" : "divan.actor.reporters.other",
+		params: {count: n},
+	};
 }
 
-export function kefilDurumuLabel(kefil: boolean | null): string | null {
+export function kefilDurumuLabel(kefil: boolean | null): Message | null {
 	if (kefil === null) return null;
-	return kefil ? "kefilli" : "kefilsiz";
+	return {key: kefil ? "divan.actor.kefil.yes" : "divan.actor.kefil.no"};
 }
 
-export function buAktorLabel(reportedTargets: number | null): string | null {
+export function buAktorLabel(reportedTargets: number | null): Message | null {
 	if (reportedTargets === null) return null;
-	if (reportedTargets <= 1) return "başka raporlu içerik yok";
-	return `${reportedTargets} raporlu içerik`;
+	if (reportedTargets <= 1) return {key: "divan.actor.otherReported.none"};
+	return {key: "divan.actor.otherReported.some", params: {count: reportedTargets}};
 }

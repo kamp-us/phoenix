@@ -11,14 +11,10 @@ import type {EmailDeliveryState, FailingAddress} from "../../../worker/features/
 import {codeOf} from "../../fate/wire";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_EMAIL_DELIVERY_ADMIN} from "../../flags/keys";
+import {type CatalogKey, useLocale, useT} from "../../i18n";
 import type {FateWireCode} from "../../lib/fateWireCodes";
 import "./EmailDeliveryPanel.css";
-import {
-	emailDeliveryOutcomeMessage,
-	reasonLabel,
-	resolvedUserLabel,
-	sinceLabel,
-} from "./email-delivery";
+import {emailDeliveryOutcomeKey, sinceLabel} from "./email-delivery";
 
 const FailingRowView = view<FailingAddress>()({
 	id: true,
@@ -45,35 +41,38 @@ export default function EmailDeliveryPanel() {
 }
 
 function EmailDeliveryAdmin() {
+	const t = useT();
 	// A refetch nonce: the mark/clear mutations return an `EmailDeliveryState` (keyed on the
 	// address), which never removes/adds a row in the `FailingAddress` roll-up connection, so
 	// after a successful write we remount the reader (`key={reloadKey}`) to re-read it fresh.
 	const [reloadKey, setReloadKey] = useState(0);
-	const [message, setMessage] = useState("");
+	const [messageKey, setMessageKey] = useState<CatalogKey>();
 
 	function report(action: "mark" | "clear", code: FateWireCode | null, ok: boolean) {
-		setMessage(emailDeliveryOutcomeMessage(action, code));
+		setMessageKey(emailDeliveryOutcomeKey(action, code));
 		if (ok) setReloadKey((k) => k + 1);
 	}
 
 	return (
 		<section
 			className="kp-email-delivery"
-			aria-label="e-posta teslimatı"
+			aria-label={t("admin.emailDelivery.label")}
 			data-testid="email-delivery-panel"
 		>
 			<MarkForm onResult={(code, ok) => report("mark", code, ok)} />
-			{message ? (
+			{messageKey ? (
 				<Alert
 					variant="secondary"
 					className="kp-alert--inline kp-email-delivery__message"
 					aria-live="polite"
 					data-testid="email-delivery-message"
 				>
-					{message}
+					{t(messageKey)}
 				</Alert>
 			) : null}
-			<Suspense fallback={<p className="kp-email-delivery__loading">yükleniyor…</p>}>
+			<Suspense
+				fallback={<p className="kp-email-delivery__loading">{t("admin.emailDelivery.loading")}</p>}
+			>
 				<FailingList key={reloadKey} onResult={(code, ok) => report("clear", code, ok)} />
 			</Suspense>
 		</section>
@@ -85,6 +84,7 @@ function MarkForm({
 }: {
 	readonly onResult: (code: FateWireCode | null, ok: boolean) => void;
 }) {
+	const t = useT();
 	const fate = useFateClient();
 	const [userId, setUserId] = useState("");
 	const [reason, setReason] = useState("");
@@ -112,10 +112,14 @@ function MarkForm({
 	}
 
 	return (
-		<form className="kp-email-delivery__form" onSubmit={onSubmit} aria-label="adres işaretle">
+		<form
+			className="kp-email-delivery__form"
+			onSubmit={onSubmit}
+			aria-label={t("admin.emailDelivery.form.label")}
+		>
 			<Input
 				className="kp-email-delivery__field kp-email-delivery__user-input"
-				label="kullanıcı kimliği"
+				label={t("admin.emailDelivery.form.userId")}
 				value={userId}
 				onChange={(e) => setUserId(e.target.value)}
 				required
@@ -124,7 +128,7 @@ function MarkForm({
 			/>
 			<Textarea
 				className="kp-email-delivery__field kp-email-delivery__reason"
-				label="gerekçe"
+				label={t("admin.emailDelivery.form.reason")}
 				value={reason}
 				onChange={(e) => setReason(e.target.value)}
 				required
@@ -138,7 +142,7 @@ function MarkForm({
 				disabled={busy}
 				data-testid="email-delivery-mark-button"
 			>
-				{busy ? "işaretleniyor…" : "işaretle"}
+				{busy ? t("admin.emailDelivery.marking") : t("admin.emailDelivery.mark")}
 			</Button>
 		</form>
 	);
@@ -149,6 +153,7 @@ function FailingList({
 }: {
 	readonly onResult: (code: FateWireCode | null, ok: boolean) => void;
 }) {
+	const t = useT();
 	const result = useRequest(
 		{"emailDelivery.failing": {list: FailingConnectionView}},
 		{mode: "network-only"},
@@ -158,21 +163,21 @@ function FailingList({
 	if (items.length === 0) {
 		return (
 			<p className="kp-email-delivery__empty" data-testid="email-delivery-empty">
-				şu an başarısız olan adres yok — kuyruk temiz.
+				{t("admin.emailDelivery.empty")}
 			</p>
 		);
 	}
 
 	return (
 		<table className="kp-email-delivery__table" data-testid="email-delivery-table">
-			<caption className="kp-email-delivery__caption">başarısız e-posta adresleri</caption>
+			<caption className="kp-email-delivery__caption">{t("admin.emailDelivery.caption")}</caption>
 			<thead>
 				<tr>
-					<th scope="col">adres</th>
-					<th scope="col">hesap</th>
-					<th scope="col">gerekçe</th>
-					<th scope="col">başlangıç</th>
-					<th scope="col">işlem</th>
+					<th scope="col">{t("admin.emailDelivery.column.address")}</th>
+					<th scope="col">{t("admin.emailDelivery.column.account")}</th>
+					<th scope="col">{t("admin.emailDelivery.column.reason")}</th>
+					<th scope="col">{t("admin.emailDelivery.column.since")}</th>
+					<th scope="col">{t("admin.emailDelivery.column.action")}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -191,6 +196,8 @@ function FailingRow({
 	readonly node: ViewRef<"FailingAddress">;
 	readonly onResult: (code: FateWireCode | null, ok: boolean) => void;
 }) {
+	const t = useT();
+	const {locale} = useLocale();
 	const data = useView(FailingRowView, node);
 	const fate = useFateClient();
 	const [busy, setBusy] = useState(false);
@@ -214,9 +221,9 @@ function FailingRow({
 	return (
 		<tr data-testid={`email-delivery-row-${data.id}`}>
 			<td className="kp-email-delivery__address">{data.address}</td>
-			<td>{resolvedUserLabel(data.userId)}</td>
-			<td>{reasonLabel(data.reason)}</td>
-			<td>{sinceLabel(data.since)}</td>
+			<td>{data.userId ?? t("admin.emailDelivery.account.none")}</td>
+			<td>{data.reason ?? t("admin.emailDelivery.reason.none")}</td>
+			<td>{sinceLabel(data.since, locale)}</td>
 			<td>
 				{data.userId !== null ? (
 					<Button
@@ -226,7 +233,7 @@ function FailingRow({
 						disabled={busy}
 						data-testid={`email-delivery-clear-${data.id}`}
 					>
-						{busy ? "temizleniyor…" : "temizle"}
+						{busy ? t("admin.emailDelivery.clearing") : t("admin.emailDelivery.clear")}
 					</Button>
 				) : null}
 			</td>

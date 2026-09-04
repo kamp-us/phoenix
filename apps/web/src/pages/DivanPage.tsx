@@ -8,7 +8,7 @@
  */
 
 import {Alert, Button} from "@kampus/design";
-import {useEffect, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {useMe} from "../auth/useMe";
 import {CaylakDetail} from "../components/divan/CaylakDetail";
 import {DecisionFeed} from "../components/divan/DecisionFeed";
@@ -18,11 +18,12 @@ import {Raporlar} from "../components/divan/Raporlar";
 import {TriageLoop} from "../components/divan/TriageLoop";
 import type {SubnavFilter} from "../components/layout/Subnav";
 import {Screen} from "../fate/Screen";
+import {type CatalogKey, useT} from "../i18n";
 import "../components/divan/Divan.css";
 
-const DIVAN_SECTION_FILTERS: SubnavFilter[] = [
-	{id: "caylaklar", label: "çaylaklar"},
-	{id: "raporlar", label: "raporlar"},
+const DIVAN_SECTION_KEYS: ReadonlyArray<{readonly id: string; readonly labelKey: CatalogKey}> = [
+	{id: "caylaklar", labelKey: "divan.nav.caylaklar"},
+	{id: "raporlar", labelKey: "divan.nav.raporlar"},
 ];
 
 export function DivanPage() {
@@ -30,6 +31,7 @@ export function DivanPage() {
 }
 
 function DivanWorkspace() {
+	const t = useT();
 	const {me} = useMe();
 	// The open çaylak carries the roster row's viewer-scoped `viewerVouched` with it, so the
 	// detail's "kefil oldun" state comes off the roster's batched read rather than a second
@@ -51,12 +53,17 @@ function DivanWorkspace() {
 	const setDivanSubnav = useSetDivanSubnavContent();
 	const inZone = setDivanSubnav != null;
 
+	const sectionFilters = useMemo<SubnavFilter[]>(
+		() => DIVAN_SECTION_KEYS.map(({id, labelKey}) => ({id, label: t(labelKey)})),
+		[t],
+	);
+
 	useEffect(() => {
 		if (!inZone || !setDivanSubnav) return;
 		setDivanSubnav(
 			raporlarVisible
 				? {
-						filters: DIVAN_SECTION_FILTERS,
+						filters: sectionFilters,
 						activeFilter: section,
 						onFilterChange: (id) => {
 							if (id === "raporlar") {
@@ -69,7 +76,7 @@ function DivanWorkspace() {
 					}
 				: null,
 		);
-	}, [inZone, setDivanSubnav, raporlarVisible, section]);
+	}, [inZone, setDivanSubnav, raporlarVisible, section, sectionFilters]);
 	useEffect(() => {
 		return () => setDivanSubnav?.(null);
 	}, [setDivanSubnav]);
@@ -78,15 +85,12 @@ function DivanWorkspace() {
 		<div className="kp-divan" data-testid="divan-page">
 			<div className="kp-divan__inner">
 				<header className="kp-divan__masthead">
-					<h1 className="kp-divan__title">divan</h1>
-					<p className="kp-divan__lead">
-						çaylakların ürettiklerini burada değerlendirirsin. en çok üreten, en az incelenmiş
-						çaylaklar üstte.
-					</p>
+					<h1 className="kp-divan__title">{t("divan.title")}</h1>
+					<p className="kp-divan__lead">{t("divan.lead")}</p>
 				</header>
 
 				{!inZone && raporlarVisible && (
-					<nav className="kp-divan__nav" aria-label="divan bölümleri">
+					<nav className="kp-divan__nav" aria-label={t("divan.nav.label")}>
 						<Button
 							type="button"
 							variant="tertiary"
@@ -96,7 +100,7 @@ function DivanWorkspace() {
 							onClick={() => setSection("caylaklar")}
 							data-testid="divan-nav-caylaklar"
 						>
-							çaylaklar
+							{t("divan.nav.caylaklar")}
 						</Button>
 						<Button
 							type="button"
@@ -110,16 +114,16 @@ function DivanWorkspace() {
 							}}
 							data-testid="divan-nav-raporlar"
 						>
-							raporlar
+							{t("divan.nav.raporlar")}
 						</Button>
 					</nav>
 				)}
 
 				{showRaporlarPane ? (
 					<>
-						<section className="kp-divan__raporlar-pane" aria-label="açık raporlar">
+						<section className="kp-divan__raporlar-pane" aria-label={t("divan.raporlar.label")}>
 							<Screen
-								fallback={<p className="kp-divan__loading">yükleniyor…</p>}
+								fallback={<p className="kp-divan__loading">{t("divan.loading")}</p>}
 								error={({code}) => <AccessError code={code} />}
 							>
 								{raporlarMode === "loop" ? (
@@ -130,10 +134,10 @@ function DivanWorkspace() {
 							</Screen>
 						</section>
 
-						<section className="kp-divan__decisions-pane" aria-label="son kararlar">
-							<h2 className="kp-divan__decisions-title">son kararlar</h2>
+						<section className="kp-divan__decisions-pane" aria-label={t("divan.decisions.label")}>
+							<h2 className="kp-divan__decisions-title">{t("divan.decisions.label")}</h2>
 							<Screen
-								fallback={<p className="kp-divan__loading">yükleniyor…</p>}
+								fallback={<p className="kp-divan__loading">{t("divan.loading")}</p>}
 								error={({code}) => <AccessError code={code} />}
 							>
 								<DecisionFeed />
@@ -142,9 +146,9 @@ function DivanWorkspace() {
 					</>
 				) : (
 					<div className="kp-divan__layout">
-						<section className="kp-divan__roster-pane" aria-label="çaylak listesi">
+						<section className="kp-divan__roster-pane" aria-label={t("divan.roster.paneLabel")}>
 							<Screen
-								fallback={<p className="kp-divan__loading">yükleniyor…</p>}
+								fallback={<p className="kp-divan__loading">{t("divan.loading")}</p>}
 								error={({code}) => <AccessError code={code} />}
 							>
 								<DivanRoster
@@ -154,15 +158,15 @@ function DivanWorkspace() {
 							</Screen>
 						</section>
 
-						<section className="kp-divan__detail-pane" aria-label="çaylak incelemesi">
+						<section className="kp-divan__detail-pane" aria-label={t("divan.detail.label")}>
 							{selected === null ? (
 								<p className="kp-divan__hint" data-testid="divan-detail-hint">
-									incelemek için bir çaylak seç.
+									{t("divan.detail.hint")}
 								</p>
 							) : (
 								<Screen
 									key={selectedId}
-									fallback={<p className="kp-divan__loading">yükleniyor…</p>}
+									fallback={<p className="kp-divan__loading">{t("divan.loading")}</p>}
 									error={({code}) => <AccessError code={code} />}
 								>
 									<CaylakDetail
@@ -182,6 +186,7 @@ function DivanWorkspace() {
 }
 
 function AccessError({code}: {readonly code: string}) {
+	const t = useT();
 	const denied = code === "UNAUTHORIZED" || code === "FORBIDDEN";
 	return (
 		<Alert
@@ -189,7 +194,7 @@ function AccessError({code}: {readonly code: string}) {
 			className="kp-alert--inline kp-divan__error"
 			data-testid="divan-access-error"
 		>
-			{denied ? "bu alanı görme yetkin yok." : "divan yüklenemedi, tekrar dene."}
+			{denied ? t("divan.error.denied") : t("divan.error.load")}
 		</Alert>
 	);
 }

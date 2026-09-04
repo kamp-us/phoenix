@@ -7,12 +7,13 @@
  * touch the wire at all unless the gates pass — `myAuthorshipStanding` throws
  * `UNAUTHORIZED` for an anonymous viewer.
  */
-import {useId} from "react";
+import {createContext, useContext, useId} from "react";
 import {view} from "react-fate";
 import type {AuthorshipStanding} from "../../../worker/features/fate/views";
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {useMe} from "../../auth/useMe";
 import {useImperativeView} from "../../fate/useImperativeView";
+import {type CatalogKey, useT} from "../../i18n";
 import {Karma} from "../karma/Karma";
 import "./CaylakStatusBlock.css";
 
@@ -20,14 +21,14 @@ export function shouldShowCaylakStatus(tier: Tier | undefined, isOwnProfile: boo
 	return tier === "çaylak" && isOwnProfile;
 }
 
-export function vouchExistsLabel(vouchExists: boolean): string {
-	return vouchExists ? "var" : "yok";
+export function vouchExistsLabelKey(vouchExists: boolean): CatalogKey {
+	return vouchExists ? "profile.caylakStatus.vouch.yes" : "profile.caylakStatus.vouch.no";
 }
 
-export const VOUCH_NEEDED_COPY = {
-	message: "bir yazar sana kefil olmalı",
-	hint: "ya da bir moderatör seni doğrudan yükseltebilir",
-} as const;
+export const VOUCH_NEEDED_KEYS = {
+	message: "profile.caylakStatus.vouchNeeded.message",
+	hint: "profile.caylakStatus.vouchNeeded.hint",
+} as const satisfies Record<"message" | "hint", CatalogKey>;
 
 /**
  * An unvouched çaylak deliberately gets NO karma bar: `resolveTandem` short-circuits
@@ -38,12 +39,16 @@ export const VOUCH_NEEDED_COPY = {
  */
 export type CaylakPromotionPath =
 	| {readonly kind: "karma-bar"}
-	| {readonly kind: "vouch-needed"; readonly message: string; readonly hint: string};
+	| {readonly kind: "vouch-needed"; readonly messageKey: CatalogKey; readonly hintKey: CatalogKey};
 
 export function caylakPromotionPath(vouchExists: boolean): CaylakPromotionPath {
 	return vouchExists
 		? {kind: "karma-bar"}
-		: {kind: "vouch-needed", message: VOUCH_NEEDED_COPY.message, hint: VOUCH_NEEDED_COPY.hint};
+		: {
+				kind: "vouch-needed",
+				messageKey: VOUCH_NEEDED_KEYS.message,
+				hintKey: VOUCH_NEEDED_KEYS.hint,
+			};
 }
 
 /**
@@ -63,7 +68,7 @@ export const STANDING_FIELDS = {
 const StandingView = view<AuthorshipStanding>()(STANDING_FIELDS);
 
 // See ADR 0022
-type Standing = Pick<AuthorshipStanding, "karma" | "bar" | "vouchExists" | "inReviewCount">;
+export type Standing = Pick<AuthorshipStanding, "karma" | "bar" | "vouchExists" | "inReviewCount">;
 
 // A failed read resolves to `null` on purpose — the safe/off path, so an error
 // degrades to "no block" rather than throwing the whole header.
@@ -75,15 +80,36 @@ export function useAuthorshipStanding(enabled: boolean): Standing | null {
 	return state.status === "ok" ? state.data : null;
 }
 
+/**
+ * `null` ⇒ nothing upstream holds a standing read, so a consumer below issues its own.
+ * Non-null ⇒ the chrome's ambient meter is already reading this view (its `standing` may still
+ * be settling), so a read here would duplicate a request rather than fetch a second fact.
+ */
+export type AuthorshipStandingChannel = {readonly standing: Standing | null} | null;
+
+export const AuthorshipStandingContext = createContext<AuthorshipStandingChannel>(null);
+
+/**
+ * The standing read for a consumer below the chrome. `useImperativeView` has no dedupe — every
+ * instance fires its own `fate.request` in an effect — so `enabled` is ANDed with "nothing
+ * upstream is reading": two live requests for one view are unreachable, not merely untested.
+ */
+export function useSharedAuthorshipStanding(enabled: boolean): Standing | null {
+	const upstream = useContext(AuthorshipStandingContext);
+	const own = useAuthorshipStanding(enabled && upstream === null);
+	return upstream ? upstream.standing : own;
+}
+
 export interface CaylakStatusBlockProps {
 	readonly profileUserId: string;
 }
 
 export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
 	const {me} = useMe();
+	const t = useT();
 	const headingId = useId();
 	const show = shouldShowCaylakStatus(me?.tier, me?.id === profileUserId);
-	const standing = useAuthorshipStanding(show);
+	const standing = useSharedAuthorshipStanding(show);
 
 	if (!show || !standing) return null;
 
@@ -96,32 +122,27 @@ export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
 			data-testid="caylak-status-block"
 		>
 			<h2 id={headingId} className="kp-caylak-status__heading">
-				yazarlığa giden yol
+				{t("profile.caylakStatus.heading")}
 			</h2>
 			{path.kind === "karma-bar" ? (
 				<div className="kp-caylak-status__karma">
-					<Karma
-						value={standing.karma}
-						target={standing.bar}
-						label="karma"
-						testId="caylak-status-karma"
-					/>
+					<Karma value={standing.karma} target={standing.bar} testId="caylak-status-karma" />
 				</div>
 			) : (
 				<div className="kp-caylak-status__vouch-needed" data-testid="caylak-status-vouch-needed">
-					<p className="kp-caylak-status__vouch-message">{path.message}</p>
-					<p className="kp-caylak-status__vouch-hint">{path.hint}</p>
+					<p className="kp-caylak-status__vouch-message">{t(path.messageKey)}</p>
+					<p className="kp-caylak-status__vouch-hint">{t(path.hintKey)}</p>
 				</div>
 			)}
 			<dl className="kp-caylak-status__facts">
 				<div className="kp-caylak-status__fact">
-					<dt className="kp-caylak-status__term">kefil</dt>
+					<dt className="kp-caylak-status__term">{t("profile.caylakStatus.term.kefil")}</dt>
 					<dd className="kp-caylak-status__value" data-testid="caylak-status-vouch">
-						{vouchExistsLabel(standing.vouchExists)}
+						{t(vouchExistsLabelKey(standing.vouchExists))}
 					</dd>
 				</div>
 				<div className="kp-caylak-status__fact">
-					<dt className="kp-caylak-status__term">incelemede</dt>
+					<dt className="kp-caylak-status__term">{t("profile.caylakStatus.term.inReview")}</dt>
 					<dd className="kp-caylak-status__value" data-testid="caylak-status-in-review">
 						{standing.inReviewCount}
 					</dd>

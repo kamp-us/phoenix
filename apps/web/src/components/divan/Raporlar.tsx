@@ -8,12 +8,13 @@
 import {Badge} from "@kampus/design";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport} from "../../../worker/features/fate/views";
+import {plural, useLocale, useT} from "../../i18n";
 import {itemKindLabel} from "./divanGating";
 import {
-	reasonLabel,
+	reasonText,
 	reportAgeLabel,
 	targetAuthorLabel,
-	targetExcerptLabel,
+	targetExcerptText,
 	targetHref,
 } from "./raporlarGating";
 
@@ -34,6 +35,7 @@ const OpenReportRowView = view<OpenReport>()({
 const OpenReportConnectionView = {items: {node: OpenReportRowView}} as const;
 
 export function Raporlar() {
+	const t = useT();
 	const result = useRequest({
 		"report.listOpen": {list: OpenReportConnectionView, args: {first: QUEUE_PAGE_SIZE}},
 	});
@@ -42,13 +44,17 @@ export function Raporlar() {
 	if (items.length === 0) {
 		return (
 			<p className="kp-divan__empty" data-testid="divan-raporlar-empty">
-				bekleyen rapor yok — kuyruk temiz.
+				{t("divan.raporlar.empty")}
 			</p>
 		);
 	}
 
 	return (
-		<ul className="kp-divan__raporlar" aria-label="açık raporlar" data-testid="divan-raporlar">
+		<ul
+			className="kp-divan__raporlar"
+			aria-label={t("divan.raporlar.label")}
+			data-testid="divan-raporlar"
+		>
 			{items.map(({node}) => (
 				<ReportRow key={node.id} node={node} />
 			))}
@@ -57,11 +63,14 @@ export function Raporlar() {
 }
 
 function ReportRow({node}: {readonly node: ViewRef<"OpenReport">}) {
+	const t = useT();
+	const {locale} = useLocale();
 	const data = useView(OpenReportRowView, node);
 	const age = reportAgeLabel(data.firstReportedAt, Date.now());
 	const href = targetHref(data.targetKind, data.targetRef);
-	const excerpt = targetExcerptLabel(data.targetExcerpt);
+	const excerpt = targetExcerptText(data.targetExcerpt) ?? t("divan.excerpt.unavailable");
 	const author = targetAuthorLabel(data.targetAuthor);
+	const reason = reasonText(data.reason) ?? t("divan.rapor.noReason");
 
 	return (
 		<li
@@ -69,11 +78,14 @@ function ReportRow({node}: {readonly node: ViewRef<"OpenReport">}) {
 			data-testid={`divan-rapor-${data.targetKind}-${data.targetId}`}
 		>
 			<span className="kp-divan__item-meta">
-				<span className="kp-divan__kind">{itemKindLabel(data.targetKind)}</span>
+				<span className="kp-divan__kind">{t(itemKindLabel(data.targetKind))}</span>
 				<Badge variant="danger" className="kp-divan__badge">
-					{data.reportCount} rapor
+					{plural(locale, data.reportCount, {
+						one: t("divan.report.count.one", {count: data.reportCount}),
+						other: t("divan.report.count.other", {count: data.reportCount}),
+					})}
 				</Badge>
-				{age !== null && <span className="kp-divan__rapor-age">{age}</span>}
+				{age !== null && <span className="kp-divan__rapor-age">{t(age.key, age.params)}</span>}
 			</span>
 			<p className="kp-divan__rapor-target">
 				{href !== null ? (
@@ -85,7 +97,7 @@ function ReportRow({node}: {readonly node: ViewRef<"OpenReport">}) {
 				)}
 				{author !== null && <span className="kp-divan__rapor-author">{author}</span>}
 			</p>
-			<p className="kp-divan__rapor-reason">{reasonLabel(data.reason)}</p>
+			<p className="kp-divan__rapor-reason">{reason}</p>
 		</li>
 	);
 }

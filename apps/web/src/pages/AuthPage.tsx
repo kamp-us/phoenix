@@ -4,6 +4,7 @@ import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {authClient} from "../auth/client";
 import {codeOf} from "../fate/wire";
+import {useT} from "../i18n";
 import {validateEmail, validateName, validatePassword, validateSignIn} from "./authValidation";
 import {beginUsernameResolution, endUsernameResolution} from "./signupUsernameGate";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
@@ -32,6 +33,7 @@ export function AuthPage() {
 	const [stuckUsername, setStuckUsername] = useState<string | null>(null);
 	const isSignIn = mode === "sign-in";
 	const fate = useFateClient();
+	const t = useT();
 
 	// A separate mutation because `username` is better-auth `input: false`, so it can't
 	// ride `signUp.email`. Both fate failure shapes reach here: a returned `{error}` and
@@ -42,10 +44,10 @@ export function AuthPage() {
 				input: {value: handle},
 				view: SetUsernameView,
 			});
-			if (callError) return messageForCode(codeOf(callError));
+			if (callError) return messageForCode(t, codeOf(callError));
 			return null;
 		} catch (caught) {
-			return messageForCode(codeOf(caught as SetUsernameError));
+			return messageForCode(t, codeOf(caught as SetUsernameError));
 		}
 	}
 
@@ -86,13 +88,13 @@ export function AuthPage() {
 			// run — the browser's bubble would speak the wrong language.
 			const fieldError = validateSignIn(email, password);
 			if (fieldError) {
-				setError(fieldError);
+				setError(t(fieldError));
 				return;
 			}
 			setPending(true);
 			try {
 				const result = await authClient.signIn.email({email, password});
-				if (result.error) setError(result.error.message ?? "giriş başarısız");
+				if (result.error) setError(result.error.message ?? t("auth.signIn.failed"));
 			} finally {
 				setPending(false);
 			}
@@ -107,15 +109,23 @@ export function AuthPage() {
 			.trim()
 			.toLowerCase();
 
-		// Pre-flight the handle against the same rule the server enforces, so a bad one
-		// never creates the account and then fails confusingly after signup.
-		const fieldError =
-			validateName(name) ??
-			validateEmail(email) ??
-			(username ? localRuleMessage(username) : null) ??
-			validatePassword(password, "sign-up");
-		if (fieldError) {
-			setError(fieldError);
+		// Checked in visual field order. The handle is pre-flighted against the same rule the
+		// server enforces, so a bad one never creates the account and then fails confusingly
+		// after signup. `localRuleMessage` renders through the catalog itself, so it hands back
+		// a message rather than a key.
+		const beforeUsername = validateName(name) ?? validateEmail(email);
+		if (beforeUsername) {
+			setError(t(beforeUsername));
+			return;
+		}
+		const usernameMessage = username ? localRuleMessage(t, username) : null;
+		if (usernameMessage) {
+			setError(usernameMessage);
+			return;
+		}
+		const passwordError = validatePassword(password, "sign-up");
+		if (passwordError) {
+			setError(t(passwordError));
 			return;
 		}
 
@@ -123,7 +133,7 @@ export function AuthPage() {
 		try {
 			const result = await authClient.signUp.email({name, email, password});
 			if (result.error) {
-				setError(result.error.message ?? "kayıt başarısız");
+				setError(result.error.message ?? t("auth.signUp.failed"));
 				return;
 			}
 
@@ -156,10 +166,9 @@ export function AuthPage() {
 					<div className="kp-auth__brand">
 						kamp<span className="dot">.</span>us
 					</div>
-					<h2 className="kp-auth__title">kullanıcı adı ayarlanamadı</h2>
+					<h2 className="kp-auth__title">{t("auth.stuck.title")}</h2>
 					<p className="kp-auth__sub">
-						hesabın açıldı, ama seçtiğin <strong>{stuckUsername}</strong> adı ayarlanamadı.
-						kullanıcı adı sonradan değişmez, o yüzden devam etmeden önce tekrar dene.
+						{t("auth.stuck.subBefore")} <strong>{stuckUsername}</strong> {t("auth.stuck.subAfter")}
 					</p>
 					{error ? (
 						<Alert variant="danger" className="kp-alert--inline kp-auth__error">
@@ -176,12 +185,12 @@ export function AuthPage() {
 							loading={pending}
 							onClick={retryStuckUsername}
 						>
-							{pending ? "ayarlanıyor…" : "tekrar dene"}
+							{pending ? t("auth.username.saving") : t("auth.stuck.retry")}
 						</Button>
 					</div>
 					<div className="kp-auth__alt">
 						<Button type="button" variant="link" onClick={abandonStuckUsername} disabled={pending}>
-							bu adı bırak, sonra seçerim
+							{t("auth.stuck.abandon")}
 						</Button>
 					</div>
 				</div>
@@ -195,15 +204,13 @@ export function AuthPage() {
 				<div className="kp-auth__brand">
 					kamp<span className="dot">.</span>us
 				</div>
-				<h2 className="kp-auth__title">{isSignIn ? "giriş yap" : "kayıt ol"}</h2>
-				<p className="kp-auth__sub">
-					{isSignIn ? "kaldığın yerden devam et." : "kapı açık, söz hakkı kazanılır."}
-				</p>
+				<h2 className="kp-auth__title">
+					{isSignIn ? t("auth.signIn.title") : t("auth.signUp.title")}
+				</h2>
+				<p className="kp-auth__sub">{isSignIn ? t("auth.signIn.sub") : t("auth.signUp.sub")}</p>
 				{!isSignIn ? (
 					<p className="kp-auth__rite">
-						hesap açmak herkese serbest. ilk yazdıkların çaylak olarak divanda incelenir; katkı
-						verdikçe bir yazarın kefilliğiyle yazar olursun — o zaman yazdıkların doğrudan yayına
-						girer.
+						{t("auth.signUp.rite", {divanNoun: t("auth.brand.divan")})}
 					</p>
 				) : null}
 				<Form className="kp-auth__form" onSubmit={onSubmit} noValidate>
@@ -213,8 +220,8 @@ export function AuthPage() {
 							id="auth-name"
 							name="name"
 							type="text"
-							label="görünen ad"
-							aria-label="görünen ad"
+							label={t("auth.field.name.label")}
+							aria-label={t("auth.field.name.label")}
 							autoComplete="name"
 							required
 							fullWidth
@@ -227,8 +234,8 @@ export function AuthPage() {
 						id="auth-email"
 						name="email"
 						type="email"
-						label="e-posta"
-						aria-label="e-posta"
+						label={t("auth.field.email.label")}
+						aria-label={t("auth.field.email.label")}
 						autoComplete="email"
 						required
 						fullWidth
@@ -243,10 +250,11 @@ export function AuthPage() {
 							type="text"
 							label={
 								<>
-									kullanıcı adı <span className="kp-auth__optional">(isteğe bağlı)</span>
+									{t("auth.field.username.label")}{" "}
+									<span className="kp-auth__optional">{t("auth.field.username.optional")}</span>
 								</>
 							}
-							hint="profilin /u/<ad> üzerinden açılır. sonradan değişmez."
+							hint={t("auth.field.username.hint")}
 							autoComplete="off"
 							minLength={3}
 							maxLength={30}
@@ -260,17 +268,17 @@ export function AuthPage() {
 						id="auth-pw"
 						name="password"
 						type="password"
-						label="parola"
-						aria-label="parola"
+						label={t("auth.field.password.label")}
+						aria-label={t("auth.field.password.label")}
 						autoComplete={isSignIn ? "current-password" : "new-password"}
 						required
 						minLength={8}
 						fullWidth
 						variant="fill"
-						capsLockLabel="Caps Lock açık"
-						showPasswordLabel="parolayı göster"
-						hidePasswordLabel="parolayı gizle"
-						placeholder={isSignIn ? "••••••••" : "en az 8 karakter"}
+						capsLockLabel={t("auth.field.password.capsLock")}
+						showPasswordLabel={t("auth.field.password.show")}
+						hidePasswordLabel={t("auth.field.password.hide")}
+						placeholder={isSignIn ? "••••••••" : t("auth.field.password.placeholder")}
 					/>
 					{error ? (
 						<Alert variant="danger" className="kp-alert--inline kp-auth__error">
@@ -285,17 +293,23 @@ export function AuthPage() {
 						disabled={pending}
 						loading={pending}
 					>
-						{pending ? (isSignIn ? "giriliyor…" : "açılıyor…") : isSignIn ? "devam et" : "hesap aç"}
+						{pending
+							? isSignIn
+								? t("auth.signIn.pending")
+								: t("auth.signUp.pending")
+							: isSignIn
+								? t("auth.signIn.submit")
+								: t("auth.signUp.submit")}
 					</Button>
 				</Form>
 				<div className="kp-auth__alt">
-					{isSignIn ? "hesabın yok mu? " : "zaten hesabın var mı? "}
+					{isSignIn ? t("auth.signIn.altPrompt") : t("auth.signUp.altPrompt")}
 					<Button
 						type="button"
 						variant="link"
 						onClick={() => setMode(isSignIn ? "sign-up" : "sign-in")}
 					>
-						{isSignIn ? "kayıt ol" : "giriş yap"}
+						{isSignIn ? t("auth.signUp.title") : t("auth.signIn.title")}
 					</Button>
 				</div>
 			</div>

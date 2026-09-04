@@ -5,6 +5,7 @@
  */
 import {Button, Surface} from "@kampus/design";
 import {Link} from "react-router";
+import {useT} from "../../i18n";
 import type {FirstContributionNudge as Nudge} from "./firstContribution";
 import "./FirstContributionNudge.css";
 
@@ -14,7 +15,7 @@ export interface FirstContributionNudgeProps {
 }
 
 export function FirstContributionNudge({nudge, onDismiss}: FirstContributionNudgeProps) {
-	const addEntry = nudge.kind === "add-entry";
+	const t = useT();
 	return (
 		<Surface
 			as="section"
@@ -25,15 +26,17 @@ export function FirstContributionNudge({nudge, onDismiss}: FirstContributionNudg
 			className="kp-first-katki"
 			data-testid="first-contribution-nudge"
 		>
-			<h2 className="kp-first-katki__heading">ilk katkını yaz</h2>
+			<h2 className="kp-first-katki__heading">{t("auth.firstContribution.heading")}</h2>
 			<p className="kp-first-katki__line" data-testid="first-contribution-copy">
-				{addEntry
-					? `"${nudge.term}" başlığına bir entry ekleyerek başlayabilirsin.`
-					: "sözlükte ilgini çeken bir başlık bul ve ilk entry'ni yaz."}
+				{nudge.kind === "add-entry"
+					? t("auth.firstContribution.addEntry", {term: nudge.term})
+					: t("auth.firstContribution.browse", {sozlukNoun: t("auth.brand.sozluk")})}
 			</p>
 			<div className="kp-first-katki__actions">
 				<Link to={nudge.to} className="kp-first-katki__go" data-testid="first-contribution-go">
-					{addEntry ? "entry ekle" : "sözlüğe göz at"}
+					{nudge.kind === "add-entry"
+						? t("auth.firstContribution.goAddEntry")
+						: t("auth.firstContribution.goBrowse", {sozlukNoun: t("auth.brand.sozluk")})}
 				</Link>
 				<Button
 					type="button"
@@ -42,7 +45,7 @@ export function FirstContributionNudge({nudge, onDismiss}: FirstContributionNudg
 					data-testid="first-contribution-dismiss"
 					onClick={onDismiss}
 				>
-					şimdi değil
+					{t("auth.firstContribution.dismiss")}
 				</Button>
 			</div>
 		</Surface>

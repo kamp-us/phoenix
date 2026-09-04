@@ -1,5 +1,6 @@
 import * as React from "react";
 import {Button} from "./Button";
+import {useDesignT} from "./i18n";
 
 export type ReportOutcome = "reported" | "already" | "redirected" | "error";
 
@@ -19,6 +20,7 @@ export interface ReportButtonProps {
  * @slot none Renders its own label; no children slot.
  */
 export function ReportButton({onReport, testId, className}: ReportButtonProps) {
+	const t = useDesignT();
 	const [state, setState] = React.useState<"idle" | "busy" | "reported" | "already">("idle");
 
 	// Once a target reads as reported it stays that way for the session — re-clicking
@@ -34,8 +36,13 @@ export function ReportButton({onReport, testId, className}: ReportButtonProps) {
 		setState(outcome === "reported" ? "reported" : outcome === "already" ? "already" : "idle");
 	}
 
-	const label =
-		state === "reported" ? "bildirildi" : state === "already" ? "zaten bildirildi" : "bildir";
+	const label = t(
+		state === "reported"
+			? "ui.report.reported"
+			: state === "already"
+				? "ui.report.already"
+				: "ui.report.action",
+	);
 
 	return (
 		<Button

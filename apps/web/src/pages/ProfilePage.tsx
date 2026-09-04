@@ -10,9 +10,10 @@ import {CaylakStatusBlock} from "../components/profile/CaylakStatusBlock";
 import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
 import {ProfileHeader} from "../components/profile/ProfileHeader";
-import {profileStandingLabel} from "../components/profile/profileStanding";
+import {profileStandingLabelKey} from "../components/profile/profileStanding";
 import {PHOENIX_CAYLAK_VISIBILITY} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {type CatalogKey, useT} from "../i18n";
 import {type Density, useDensity} from "../lib/density";
 import {type ThemeChoice, useTheme} from "../lib/theme";
 import {CAYLAK_VISIBILITY_PATH} from "./CaylakVisibilityPage";
@@ -29,17 +30,18 @@ const SetDisplayNameView = view<User>()({
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-// Mirrors the DENSITY_LABELS Turkish copy in components/controls/Controls.tsx.
-const DENSITY_LABELS: Record<Density, string> = {
-	compact: "sıkı",
-	normal: "normal",
-	spacious: "ferah",
+// Mirrors the DENSITY_LABELS copy in components/controls/Controls.tsx.
+const DENSITY_LABEL_KEYS: Record<Density, CatalogKey> = {
+	compact: "profile.density.compact",
+	normal: "profile.density.normal",
+	spacious: "profile.density.spacious",
 };
 
 export function ProfilePage() {
 	const session = useSession();
 	const {me, status: meStatus, refetch: refetchMe} = useMe();
 	const fate = useFateClient();
+	const t = useT();
 	const u = session.data?.user;
 	// Session first, so the reads don't wait on the canonical `me` round-trip (#2188);
 	// `username` is immutable once set, so `me` is only the fallback for the brief window
@@ -62,10 +64,12 @@ export function ProfilePage() {
 
 	// Both fall back to the fixed noun, never the email local-part (#2126).
 	const username = me?.username ?? null;
-	const name = actorLabel(me?.name ?? u?.name ?? null, username, "kullanıcı");
-	const handle = username ?? "kullanıcı";
+	const fallbackActor = t("profile.actor.fallback");
+	const name = actorLabel(me?.name ?? u?.name ?? null, username, fallbackActor);
+	const handle = username ?? fallbackActor;
 	// `null` (no honest tier) renders handle-only rather than a placeholder standing.
-	const standingLabel = profileStandingLabel(me?.tier);
+	const standingKey = profileStandingLabelKey(me?.tier);
+	const standingLabel = standingKey ? t(standingKey) : null;
 
 	const [draftName, setDraftName] = useState(name);
 	const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -122,7 +126,7 @@ export function ProfilePage() {
 		setRevokeAllError(null);
 		const {error} = await authClient.revokeSessions();
 		if (error) {
-			setRevokeAllError("oturumlar sonlandırılamadı, tekrar dene.");
+			setRevokeAllError(t("profile.session.revokeError"));
 			setRevokingAll(false);
 			return;
 		}
@@ -159,23 +163,25 @@ export function ProfilePage() {
 				{readUsername ? <ProfileContributionSignal username={readUsername} /> : null}
 
 				<section className="kp-profile__section">
-					<h3>hesap</h3>
+					<h3>{t("profile.section.account")}</h3>
 					<div className="kp-profile__row">
-						<span className="label">görünen ad</span>
+						<span className="label">{t("profile.field.displayName")}</span>
 						<span className="value">
 							<Input
 								className="kp-profile__name-input"
-								aria-label="görünen ad"
+								aria-label={t("profile.field.displayName")}
 								value={draftName}
 								onChange={(e) => {
 									setDraftName(e.target.value);
 									setSaveState("idle");
 								}}
-								error={saveState === "error" ? "kaydedilemedi, tekrar dene" : undefined}
+								error={saveState === "error" ? t("profile.save.error") : undefined}
 								disabled={saveState === "saving"}
 								fullWidth
 							/>
-							{saveState === "saved" && <span className="kp-profile__feedback ok">kaydedildi</span>}
+							{saveState === "saved" && (
+								<span className="kp-profile__feedback ok">{t("profile.save.saved")}</span>
+							)}
 						</span>
 						<Button
 							type="button"
@@ -186,22 +192,22 @@ export function ProfilePage() {
 							disabled={!canSave}
 							loading={saveState === "saving"}
 						>
-							{saveState === "saving" ? "kaydediliyor…" : "kaydet"}
+							{t(saveState === "saving" ? "profile.save.saving" : "profile.save.action")}
 						</Button>
 					</div>
 					<div className="kp-profile__row">
-						<span className="label">kullanıcı adı</span>
+						<span className="label">{t("profile.field.username")}</span>
 						<span className="value">@{handle}</span>
 						<span className="edit-btn" style={{color: "var(--text-faint)"}}>
-							değiştirilemez
+							{t("profile.field.username.immutable")}
 						</span>
 					</div>
 					<div className="kp-profile__row readonly">
-						<span className="label">e-posta</span>
+						<span className="label">{t("profile.field.email")}</span>
 						<span className="value">
 							{u.email}
 							<span className="kp-profile__feedback ok" data-testid="email-change-hint">
-								e-posta değiştirme yakında
+								{t("profile.email.soon")}
 							</span>
 						</span>
 						{/* Interim per #75: a secure change-email flow must verify the new address by
@@ -214,25 +220,25 @@ export function ProfilePage() {
 							className="edit-btn"
 							data-testid="email-change-btn"
 							disabled
-							title="e-posta değiştirme henüz kullanılamıyor"
+							title={t("profile.email.changeUnavailable")}
 						>
-							değiştir
+							{t("profile.email.change")}
 						</Button>
 					</div>
 				</section>
 
 				<section className="kp-profile__section">
-					<h3>görünüm</h3>
+					<h3>{t("profile.section.appearance")}</h3>
 					<div className="kp-profile__row">
-						<span className="label">tema</span>
+						<span className="label">{t("profile.field.theme")}</span>
 						<span className="value">
 							<ToggleGroup
 								className="kp-toggle-group kp-toggle-group--outline"
 								size="sm"
 								items={[
-									{value: "light", label: "açık"},
-									{value: "dark", label: "koyu"},
-									{value: "auto", label: "otomatik"},
+									{value: "light", label: t("profile.theme.light")},
+									{value: "dark", label: t("profile.theme.dark")},
+									{value: "auto", label: t("profile.theme.auto")},
 								]}
 								value={[themeChoice]}
 								onValueChange={([next]) => {
@@ -243,14 +249,14 @@ export function ProfilePage() {
 						<span />
 					</div>
 					<div className="kp-profile__row">
-						<span className="label">yoğunluk</span>
+						<span className="label">{t("profile.field.density")}</span>
 						<span className="value">
 							<ToggleGroup
 								className="kp-toggle-group kp-toggle-group--outline"
 								size="sm"
 								items={(["compact", "normal", "spacious"] as Density[]).map((density) => ({
 									value: density,
-									label: DENSITY_LABELS[density],
+									label: t(DENSITY_LABEL_KEYS[density]),
 								}))}
 								value={[densityChoice]}
 								onValueChange={([next]) => {
@@ -262,27 +268,25 @@ export function ProfilePage() {
 					</div>
 					{caylakVisibilityOn && me?.tier === "yazar" ? (
 						<div className="kp-profile__row">
-							<span className="label">çaylak katkıları</span>
-							<span className="value">
-								çaylakların yazdıklarını akışında görüp görmeyeceğini seçersin.
-							</span>
+							<span className="label">{t("profile.field.caylakContributions")}</span>
+							<span className="value">{t("profile.caylakContributions.description")}</span>
 							<Link
 								className="edit-btn"
 								to={CAYLAK_VISIBILITY_PATH}
 								data-testid="caylak-visibility-link"
 							>
-								ayarla
+								{t("profile.caylakContributions.action")}
 							</Link>
 						</div>
 					) : null}
 				</section>
 
 				<section className="kp-profile__section">
-					<h3>oturum</h3>
-					<p>bu cihazda aktif. çıkış yaparak oturumu sonlandırabilirsin.</p>
+					<h3>{t("profile.section.session")}</h3>
+					<p>{t("profile.session.description")}</p>
 					<div className="kp-profile__danger">
 						<Button type="button" variant="secondary" size="sm" onClick={onSignOut}>
-							çıkış yap
+							{t("profile.session.signOut")}
 						</Button>
 						<Button
 							type="button"
@@ -292,7 +296,7 @@ export function ProfilePage() {
 							disabled={revokingAll}
 							loading={revokingAll}
 						>
-							{revokingAll ? "çıkış yapılıyor…" : "tüm cihazlardan çık"}
+							{t(revokingAll ? "profile.session.signingOutAll" : "profile.session.signOutAll")}
 						</Button>
 					</div>
 					{revokeAllError ? (
@@ -303,12 +307,8 @@ export function ProfilePage() {
 				</section>
 
 				<section className="kp-profile__section kp-profile__section--last">
-					<h3 className="danger">tehlikeli alan</h3>
-					<p>
-						hesabını kaldırırsan başlıkların, tanımların ve yorumların silinmez — @[silinen] adına
-						aktarılır, karmaları korunur. hesabın kimliği (e-posta, oturumlar) kalıcı olarak
-						kaldırılır; aynı e-posta ileride yeniden kayıt olabilir. bu işlem geri alınamaz.
-					</p>
+					<h3 className="danger">{t("profile.section.danger")}</h3>
+					<p>{t("profile.danger.description")}</p>
 					<div className="kp-profile__danger">
 						<Button
 							type="button"
@@ -317,7 +317,7 @@ export function ProfilePage() {
 							data-testid="delete-account-btn"
 							onClick={() => setDeleteOpen(true)}
 						>
-							hesabı kaldır
+							{t("profile.danger.action")}
 						</Button>
 					</div>
 				</section>

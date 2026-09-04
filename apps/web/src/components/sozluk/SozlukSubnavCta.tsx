@@ -1,6 +1,7 @@
 import {Button, Dialog, Form, Input} from "@kampus/design";
 import * as React from "react";
 import {useNavigate} from "react-router";
+import {type Translate, useT} from "../../i18n";
 import {slugifyTerm} from "../../lib/slugifyTerm";
 import {useSozlukCreateDialog} from "./SozlukCreateDialogState";
 
@@ -11,12 +12,13 @@ export function SozlukSubnavCta() {
 	// `open` is hoisted above the unmounting boundary — see `SozlukCreateDialogState` (#3840).
 	// A component-local `useState` here is the exact fragility that vanished the dialog.
 	const {open, setOpen} = useSozlukCreateDialog();
+	const t = useT();
 	const navigate = useNavigate();
 	const [term, setTerm] = React.useState("");
 	const [termError, setTermError] = React.useState<string | null>(null);
 	function onSubmit(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
-		const validationError = validateTerm(term);
+		const validationError = validateTerm(t, term);
 		if (validationError) {
 			setTermError(validationError);
 			return;
@@ -37,16 +39,16 @@ export function SozlukSubnavCta() {
 			}}
 			trigger={
 				<Button variant="primary" icon={<PlusGlyph />}>
-					yeni tanım
+					{t("sozluk.cta.newEntry")}
 				</Button>
 			}
-			title="Yeni tanım"
-			description="oluşturmak istediğin terimi yaz."
+			title={t("sozluk.createDialog.title")}
+			description={t("sozluk.createDialog.description")}
 		>
 			<Form onSubmit={onSubmit}>
 				<Input
 					name="term"
-					label="Terim"
+					label={t("sozluk.createDialog.termLabel")}
 					className="kp-field--semantic-required"
 					value={term}
 					onChange={(event) => {
@@ -57,14 +59,14 @@ export function SozlukSubnavCta() {
 					required
 					autoFocus
 					fullWidth
-					placeholder="terim…"
+					placeholder={t("sozluk.createDialog.termPlaceholder")}
 				/>
 				<div className="kp-dialog-actions">
 					<Button variant="tertiary" type="button" onClick={() => setOpen(false)}>
-						vazgeç
+						{t("sozluk.createDialog.cancel")}
 					</Button>
 					<Button variant="primary" type="submit">
-						oluştur
+						{t("sozluk.createDialog.submit")}
 					</Button>
 				</div>
 			</Form>
@@ -74,16 +76,12 @@ export function SozlukSubnavCta() {
 
 // A punctuation-only term (e.g. "!!!") is a non-empty value `required` accepts but that
 // `slugifyTerm` reduces to "" — the composer is slug-addressed, so it has nowhere to go.
-// Surfacing it through Manti Input's error slot replaces the
-// silent no-op the bare `if (!slug) return` guard left behind (#3789). Empty is left to
-// `required`; only the non-empty-but-unslugifiable term errors here. Turkish copy, per the
-// user-facing sözlük surface (.glossary/LANGUAGE.md).
-const UNSLUGIFIABLE_TERM_MESSAGE = "Terim en az bir harf ya da rakam içermeli.";
-
-function validateTerm(value: unknown): string | null {
+// Empty is left to `required`; only the non-empty-but-unslugifiable term errors here, replacing
+// the silent no-op the bare `if (!slug) return` guard left behind (#3789).
+function validateTerm(t: Translate, value: unknown): string | null {
 	const term = String(value ?? "");
 	if (!term.trim()) return null;
-	return slugifyTerm(term) ? null : UNSLUGIFIABLE_TERM_MESSAGE;
+	return slugifyTerm(term) ? null : t("sozluk.createDialog.termUnslugifiable");
 }
 
 function PlusGlyph() {

@@ -18,6 +18,7 @@ import {DivanSubnavLayout} from "./components/divan/DivanSubnavLayout";
 import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {useDivanPendingCount} from "./components/divan/useDivanPendingCount";
 import {AppShell, Main} from "./components/layout/AppShell";
+import {type CaylakMeter, caylakMeter} from "./components/layout/caylakMeter";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {MecmuaSubnavLayout} from "./components/mecmua/MecmuaSubnavLayout";
@@ -25,6 +26,10 @@ import {EmailDeliveryNoticeMount} from "./components/membrane/EmailDeliveryNotic
 import {actorLabel} from "./components/moderation/actor-identity";
 import {hasSeenWelcome, welcomeStorage} from "./components/onboarding/welcomeSeen";
 import {PanoSubnavLayout} from "./components/pano/PanoSubnavLayout";
+import {
+	AuthorshipStandingContext,
+	useAuthorshipStanding,
+} from "./components/profile/CaylakStatusBlock";
 import {EagerProfileContributionSkeleton} from "./components/profile/ProfileContributionSignal";
 import {SozlukCreateDialogProvider} from "./components/sozluk/SozlukCreateDialogState";
 import {SozlukSubnavLayout} from "./components/sozluk/SozlukSubnavLayout";
@@ -32,8 +37,14 @@ import {FateProvider, PublicFateProvider} from "./fate/FateProvider";
 import {teardownAuthedSnapshot} from "./fate/snapshot";
 import {readBootUser} from "./flags/boot";
 import {EdgeShellBootMarker} from "./flags/EdgeShellBoot";
-import {MECMUA_PUBLIC_READ, PHOENIX_BILDIRIM, PHOENIX_WELCOME} from "./flags/keys";
+import {
+	MECMUA_PUBLIC_READ,
+	PHOENIX_BILDIRIM,
+	PHOENIX_CAYLAK_METER,
+	PHOENIX_WELCOME,
+} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
+import {LocaleProvider} from "./i18n";
 import {AtolyeExhibitPage} from "./lab/atolye/AtolyeExhibitPage";
 import {AtolyeIndexPage} from "./lab/atolye/AtolyeIndexPage";
 import {DensityProvider} from "./lib/density";
@@ -70,6 +81,7 @@ import {postAuthDestination, WELCOME_PATH} from "./pages/welcomeGating";
 type TopbarChips = {
 	userProps: {user: {name: string; username: string | null}} | undefined;
 	karma: number | undefined;
+	caylakMeter: CaylakMeter | undefined;
 	divanTo: string | undefined;
 	divanCount: number | undefined;
 	bildirim: {to: string; unread: number} | undefined;
@@ -179,6 +191,7 @@ function Layout() {
 							// inert, because `reserveSignedInSlots` is false and gates the whole account side.
 							{...(chips?.userProps ?? bootUserProps)}
 							karma={chips?.karma}
+							{...(chips?.caylakMeter ? {caylakMeter: chips.caylakMeter} : {})}
 							{...(chips?.bildirim ? {bildirim: chips.bildirim} : {})}
 							searchQuery={searchQuery}
 							onSearchSubmit={(query) => {
@@ -250,6 +263,11 @@ function LayoutContent() {
 	// the wire would let read `divan.roster`, and stays unissued for everyone else.
 	const divanCount = useDivanPendingCount(showDivan);
 	const {value: bildirimOn} = useFlag(PHOENIX_BILDIRIM, false);
+	// The ambient çaylak meter (#7045). Both halves of the gate ride ONE `enabled`: flag off or a
+	// non-çaylak tier leaves the standing read unissued, so nothing widens the chrome's wire.
+	const {value: meterOn} = useFlag(PHOENIX_CAYLAK_METER, false);
+	const meterEligible = meterOn && me?.tier === "çaylak";
+	const meterStanding = useAuthorshipStanding(meterEligible);
 	const bildirimUnread = useBildirimUnread(bildirimOn && !!session.data, me?.id ?? null);
 	// The welcome arrival's seam (#7043): one flag releases both this intercept and the
 	// /hosgeldin surface.
@@ -304,6 +322,7 @@ function LayoutContent() {
 					}
 				: undefined,
 			karma: selfKarma,
+			caylakMeter: meterEligible && meterStanding ? caylakMeter(meterStanding) : undefined,
 			divanTo: showDivan ? "/divan" : undefined,
 			divanCount: showDivan ? divanCount : undefined,
 			bildirim: bildirimOn && isSignedIn ? {to: "/bildirimler", unread: bildirimUnread} : undefined,
@@ -313,6 +332,8 @@ function LayoutContent() {
 			me?.name,
 			username,
 			selfKarma,
+			meterEligible,
+			meterStanding,
 			showDivan,
 			divanCount,
 			bildirimOn,
@@ -326,14 +347,24 @@ function LayoutContent() {
 		return () => setChips?.(null);
 	}, [chips, setChips]);
 
+	// Publishing the chrome's live read is what keeps `CaylakStatusBlock` and `WelcomePage` from
+	// issuing a second `myAuthorshipStanding` request under the meter (#7045). A non-null channel
+	// means "already reading", so it must be published while the read is still settling too.
+	const standingChannel = useMemo(
+		() => (meterEligible ? {standing: meterStanding} : null),
+		[meterEligible, meterStanding],
+	);
+
 	return (
 		<>
 			<EmailDeliveryNoticeMount me={me} />
-			{needsBootstrap && sessionUser ? (
-				<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
-			) : (
-				<Outlet />
-			)}
+			<AuthorshipStandingContext.Provider value={standingChannel}>
+				{needsBootstrap && sessionUser ? (
+					<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
+				) : (
+					<Outlet />
+				)}
+			</AuthorshipStandingContext.Provider>
 		</>
 	);
 }
@@ -413,56 +444,58 @@ export function App() {
 	const divanRoutes = [<Route key="divan" path="/divan" element={<DivanPage />} />];
 	return (
 		<ThemeProvider>
-			<DensityProvider>
-				<Routes>
-					<Route element={<Layout />}>
-						<Route path="/" element={<LandingPage />} />
-						<Route key="pano-zone" element={<PanoSubnavLayout />}>
-							{panoRoutes}
-						</Route>
-						<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
-							{mecmuaRoutes}
-						</Route>
-						<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
-							{sozlukRoutes}
-						</Route>
-						<Route key="divan-zone" element={<DivanSubnavLayout />}>
-							{divanRoutes}
-						</Route>
-						<Route path="/search" element={<SearchPage />} />
-						<Route path="/auth" element={<AuthPage />} />
-						{/* The welcome moment (#7043) — dark behind phoenix-welcome; the page owns
+			<LocaleProvider>
+				<DensityProvider>
+					<Routes>
+						<Route element={<Layout />}>
+							<Route path="/" element={<LandingPage />} />
+							<Route key="pano-zone" element={<PanoSubnavLayout />}>
+								{panoRoutes}
+							</Route>
+							<Route key="mecmua-zone" element={<MecmuaSubnavLayout />}>
+								{mecmuaRoutes}
+							</Route>
+							<Route key="sozluk-zone" element={<SozlukSubnavLayout />}>
+								{sozlukRoutes}
+							</Route>
+							<Route key="divan-zone" element={<DivanSubnavLayout />}>
+								{divanRoutes}
+							</Route>
+							<Route path="/search" element={<SearchPage />} />
+							<Route path="/auth" element={<AuthPage />} />
+							{/* The welcome moment (#7043) — dark behind phoenix-welcome; the page owns
 						    its own visibility per `.patterns/flag-dark-page-gate.md`. */}
-						<Route path={WELCOME_PATH} element={<WelcomePage />} />
-						<Route path="/funnel" element={<FunnelPage />} />
-						<Route path="/bildirimler" element={<BildirimlerPage />} />
-						{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
+							<Route path={WELCOME_PATH} element={<WelcomePage />} />
+							<Route path="/funnel" element={<FunnelPage />} />
+							<Route path="/bildirimler" element={<BildirimlerPage />} />
+							{/* /lab/composer — throwaway tiptap spike (#2465), reachable by URL only,
 						    no nav entry; deletable when the rich-composer phase begins. */}
-						<Route
-							path="/lab/composer"
-							element={
-								<Suspense fallback={<ComposerRouteFallback />}>
-									<LabComposerPage />
-								</Suspense>
-							}
-						/>
-						<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
-						<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
-						<Route path="/profile" element={<ProfilePage />} />
-						<Route path="/susturduklarim" element={<MutesPage />} />
-						{/* The yazar's çaylak in-place visibility setting (#6426) — beside the other
+							<Route
+								path="/lab/composer"
+								element={
+									<Suspense fallback={<ComposerRouteFallback />}>
+										<LabComposerPage />
+									</Suspense>
+								}
+							/>
+							<Route path="/lab/atolye" element={<AtolyeIndexPage />} />
+							<Route path="/lab/atolye/:exhibit" element={<AtolyeExhibitPage />} />
+							<Route path="/profile" element={<ProfilePage />} />
+							<Route path="/susturduklarim" element={<MutesPage />} />
+							{/* The yazar's çaylak in-place visibility setting (#6426) — beside the other
 						    per-member preference routes; self-404s behind phoenix-caylak-visibility. */}
-						<Route path={CAYLAK_VISIBILITY_PATH} element={<CaylakVisibilityPage />} />
-						<Route path="/u/:username" element={<UserProfilePage />} />
-						{/* The admin console (#2740, epic #2711) — the route element self-gates on
+							<Route path={CAYLAK_VISIBILITY_PATH} element={<CaylakVisibilityPage />} />
+							<Route path="/u/:username" element={<UserProfilePage />} />
+							{/* The admin console (#2740, epic #2711) — the route element self-gates on
 						    the server-authoritative admin probe (denied ⇒ the ordinary not-found
 						    page, invisible-denial), and the console chunk is lazy-imported only past
 						    the gate, so the route ships no console code to a non-admin. */}
-						<Route path="/admin" element={<AdminConsoleRoute />} />
-						<Route path="*" element={<NotFoundPage />} />
-					</Route>
-				</Routes>
-			</DensityProvider>
+							<Route path="/admin" element={<AdminConsoleRoute />} />
+							<Route path="*" element={<NotFoundPage />} />
+						</Route>
+					</Routes>
+				</DensityProvider>
+			</LocaleProvider>
 		</ThemeProvider>
 	);
 }

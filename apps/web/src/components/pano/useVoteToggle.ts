@@ -9,7 +9,8 @@ import {useCallback} from "react";
 import {useNavigate} from "react-router";
 import {useSession} from "../../auth/client";
 import {codeOf} from "../../fate/wire";
-import {WIRE_MESSAGES} from "../../fate/wireMessages";
+import {messageForCode} from "../../fate/wireMessages";
+import {type Translate, useT} from "../../i18n/LocaleProvider";
 import {authRedirectPath} from "../../lib/returnTo";
 import {type ToggleAction, useToggleAction} from "./useToggleAction";
 
@@ -33,14 +34,15 @@ export function isAuthRedirectError(error: unknown): boolean {
 	return codeOf(error) === "UNAUTHORIZED";
 }
 
-export function voteGateMessage(error: unknown): string | null {
-	return codeOf(error) === "VOTE_REQUIRES_YAZAR" ? WIRE_MESSAGES.VOTE_REQUIRES_YAZAR : null;
+export function voteGateMessage(t: Translate, error: unknown): string | null {
+	return codeOf(error) === "VOTE_REQUIRES_YAZAR" ? messageForCode(t, "VOTE_REQUIRES_YAZAR") : null;
 }
 
 export function useGatedToggle(args: GatedToggleArgs): () => void {
 	const session = useSession();
 	const redirectToAuth = useRedirectToAuth(args.returnTo);
 	const {show} = useToast();
+	const t = useT();
 
 	const drive = useToggleAction(() => ({
 		on: args.on,
@@ -53,7 +55,7 @@ export function useGatedToggle(args: GatedToggleArgs): () => void {
 					return;
 				}
 				// Same toast id per gate so N failed taps replace rather than stack (#1879).
-				const message = voteGateMessage(error);
+				const message = voteGateMessage(t, error);
 				if (message) show({id: "vote-gate", message, testId: "vote-gate"});
 			}
 		},

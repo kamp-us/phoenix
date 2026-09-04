@@ -12,6 +12,7 @@ import {Link} from "react-router";
 import {Icon} from "../components/Icon";
 import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {formatDateTR} from "../lib/datetime";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaIndexPage.css";
@@ -30,12 +31,13 @@ type FetchState =
 
 export function MecmuaIndexPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_PUBLIC_READ, false);
+	const t = useT();
 
 	if (flagLoading) {
 		return (
 			<div className="kp-page">
 				<div className="kp-page__inner">
-					<p>yükleniyor…</p>
+					<p>{t("mecmua.loading")}</p>
 				</div>
 			</div>
 		);
@@ -48,6 +50,7 @@ export function MecmuaIndexPage() {
 
 function MecmuaIndex() {
 	const [state, setState] = useState<FetchState>({kind: "loading"});
+	const t = useT();
 
 	useEffect(() => {
 		let cancelled = false;
@@ -72,9 +75,9 @@ function MecmuaIndex() {
 			<div className="kp-page__inner">
 				<header className="kp-mecmua-index__head">
 					<div className="kp-mecmua-index__head-row">
-						<h1 className="kp-mecmua-index__title">mecmua</h1>
+						<h1 className="kp-mecmua-index__title">{t("mecmua.index.title")}</h1>
 					</div>
-					<p className="kp-mecmua-index__lede">topluluğun uzun yazıları</p>
+					<p className="kp-mecmua-index__lede">{t("mecmua.index.lede")}</p>
 				</header>
 				<MecmuaIndexBody state={state} />
 			</div>
@@ -83,14 +86,16 @@ function MecmuaIndex() {
 }
 
 function MecmuaIndexBody({state}: {state: FetchState}) {
+	const t = useT();
+
 	if (state.kind === "loading") {
-		return <p className="kp-mecmua-index__status">yükleniyor…</p>;
+		return <p className="kp-mecmua-index__status">{t("mecmua.loading")}</p>;
 	}
 
 	if (state.kind === "error") {
 		return (
 			<Alert variant="danger" className="kp-alert--inline kp-mecmua-index__status">
-				yazılar yüklenemedi, tekrar dene.
+				{t("mecmua.index.error")}
 			</Alert>
 		);
 	}
@@ -99,8 +104,8 @@ function MecmuaIndexBody({state}: {state: FetchState}) {
 		return (
 			<EmptyState
 				icon={<Icon icon={BookOpenText} size={24} />}
-				title="henüz yazı yok"
-				description="ilk mecmua yazısı yayımlandığında burada görünecek."
+				title={t("mecmua.index.empty.title")}
+				description={t("mecmua.index.empty.description")}
 			/>
 		);
 	}

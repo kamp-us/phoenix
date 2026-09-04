@@ -10,6 +10,7 @@ import {MutedMembersList} from "../components/mute/MutedMembersList";
 import {Screen} from "../fate/Screen";
 import {MEMBER_MUTE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {authRedirectPath} from "../lib/returnTo";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MutesPage.css";
@@ -17,12 +18,13 @@ import "./MutesPage.css";
 export function MutesPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MEMBER_MUTE, false);
 	const session = useSession();
+	const t = useT();
 
 	if (flagLoading || session.isPending) {
 		return (
 			<div className="kp-mutes">
 				<div className="kp-mutes__inner">
-					<p className="kp-mutes__loading">yükleniyor…</p>
+					<p className="kp-mutes__loading">{t("mute.page.loading")}</p>
 				</div>
 			</div>
 		);
@@ -38,18 +40,18 @@ export function MutesPage() {
 		<main className="kp-mutes" data-testid="mutes-page">
 			<div className="kp-mutes__inner">
 				<header className="kp-mutes__masthead">
-					<h1 className="kp-mutes__title">susturduklarım</h1>
-					<p className="kp-mutes__lede">
-						susturduğun üyelerin içerikleri akışında görünmez. buradan sessizliği geri alabilirsin.
-					</p>
+					<h1 className="kp-mutes__title">{t("mute.page.title")}</h1>
+					<p className="kp-mutes__lede">{t("mute.page.lede")}</p>
 				</header>
 				<Screen
-					fallback={<p className="kp-mutes__loading">yükleniyor…</p>}
+					fallback={<p className="kp-mutes__loading">{t("mute.page.loading")}</p>}
 					error={({code}) => (
 						<Alert variant="danger" className="kp-alert--inline kp-mutes__error">
-							{code === "UNAUTHORIZED" || code === "FORBIDDEN"
-								? "susturduklarını görmek için giriş yapmalısın."
-								: "susturduğun üyeler yüklenemedi, tekrar dene."}
+							{t(
+								code === "UNAUTHORIZED" || code === "FORBIDDEN"
+									? "mute.page.error.unauthorized"
+									: "mute.page.error.generic",
+							)}
 						</Alert>
 					)}
 				>

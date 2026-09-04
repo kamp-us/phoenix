@@ -6,6 +6,7 @@
  */
 
 import {Alert, Avatar} from "@kampus/design";
+import {useT} from "../../i18n";
 import {Karma} from "../karma/Karma";
 import {profileStatTiles} from "./profileStatTiles";
 import "./ProfileHeader.css";
@@ -37,6 +38,7 @@ export function ProfileHeader({
 	statsError = false,
 	showKarma = false,
 }: ProfileHeaderProps) {
+	const t = useT();
 	const tiles = profileStatTiles(stats ?? {definitionCount: 0, postCount: 0, commentCount: 0});
 
 	return (
@@ -63,14 +65,14 @@ export function ProfileHeader({
 					className="kp-alert--inline kp-profile-header__stats kp-profile-header__stats--error"
 					data-testid="stats-error"
 				>
-					istatistikler yüklenemedi
+					{t("profile.header.statsError")}
 				</Alert>
 			) : (
 				<div className="kp-profile-header__stats" data-testid="user-profile-stats">
 					{tiles.map((tile) => (
 						<div className="kp-profile-header__stat" data-testid={tile.testId} key={tile.key}>
 							<div className="n">{tile.value}</div>
-							<div className="l">{tile.label}</div>
+							<div className="l">{t(tile.labelKey)}</div>
 						</div>
 					))}
 					{showKarma ? (

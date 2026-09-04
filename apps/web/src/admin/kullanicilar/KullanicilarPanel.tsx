@@ -11,8 +11,9 @@ import type {UserAdmin} from "../../../worker/features/fate/views";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_USER_ADMIN, PHOENIX_USER_ROLE_ASSIGN} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
+import {useLocale, useT} from "../../i18n";
 import "./KullanicilarPanel.css";
-import {banLabel, createdAtLabel, roleLabel, usernameLabel} from "./kullanicilar";
+import {banLabelKey, createdAtLabel, hasCreatedAt, roleLabelKey} from "./kullanicilar";
 import {RoleControls} from "./RoleControls";
 
 const ROSTER_PAGE_SIZE = 50;
@@ -38,6 +39,7 @@ export default function KullanicilarPanel() {
 }
 
 function KullanicilarRoster() {
+	const t = useT();
 	// The applied search is separate from the draft so a keystroke doesn't refetch the roster.
 	const [draft, setDraft] = useState("");
 	const [applied, setApplied] = useState("");
@@ -52,14 +54,22 @@ function KullanicilarRoster() {
 	}
 
 	return (
-		<section className="kp-kullanicilar" aria-label="kullanıcılar" data-testid="kullanicilar-panel">
-			<form className="kp-kullanicilar__search" onSubmit={onSubmit} aria-label="kullanıcı ara">
+		<section
+			className="kp-kullanicilar"
+			aria-label={t("admin.kullanicilar.label")}
+			data-testid="kullanicilar-panel"
+		>
+			<form
+				className="kp-kullanicilar__search"
+				onSubmit={onSubmit}
+				aria-label={t("admin.kullanicilar.search.form")}
+			>
 				<Input
 					className="kp-kullanicilar__field kp-kullanicilar__search-input"
-					label="ara"
+					label={t("admin.kullanicilar.search.label")}
 					value={draft}
 					onChange={(e) => setDraft(e.target.value)}
-					placeholder="kullanıcı adı, e-posta…"
+					placeholder={t("admin.kullanicilar.search.placeholder")}
 					data-testid="kullanicilar-search-input"
 				/>
 				<Button
@@ -68,10 +78,12 @@ function KullanicilarRoster() {
 					type="submit"
 					data-testid="kullanicilar-search-button"
 				>
-					ara
+					{t("admin.kullanicilar.search.submit")}
 				</Button>
 			</form>
-			<Suspense fallback={<p className="kp-kullanicilar__loading">yükleniyor…</p>}>
+			<Suspense
+				fallback={<p className="kp-kullanicilar__loading">{t("admin.kullanicilar.loading")}</p>}
+			>
 				<RosterList
 					key={reloadNonce}
 					search={applied}
@@ -89,6 +101,7 @@ function RosterList({
 	readonly search: string;
 	readonly onRoleChanged: () => void;
 }) {
+	const t = useT();
 	// Read once here so the whole column — header and cells — appears or disappears as a unit:
 	// flag off means no action column at all, not an empty one.
 	const {value: roleAssignOn} = useFlag(PHOENIX_USER_ROLE_ASSIGN, false);
@@ -106,23 +119,23 @@ function RosterList({
 	if (items.length === 0) {
 		return (
 			<p className="kp-kullanicilar__empty" data-testid="kullanicilar-empty">
-				{search ? "aramanla eşleşen kullanıcı yok." : "henüz kullanıcı yok."}
+				{search ? t("admin.kullanicilar.empty.search") : t("admin.kullanicilar.empty.all")}
 			</p>
 		);
 	}
 
 	return (
 		<table className="kp-kullanicilar__table" data-testid="kullanicilar-table">
-			<caption className="kp-kullanicilar__caption">kullanıcı listesi</caption>
+			<caption className="kp-kullanicilar__caption">{t("admin.kullanicilar.caption")}</caption>
 			<thead>
 				<tr>
-					<th scope="col">kullanıcı adı</th>
-					<th scope="col">e-posta</th>
-					<th scope="col">rol</th>
-					<th scope="col">durum</th>
-					<th scope="col">seviye</th>
-					<th scope="col">kayıt</th>
-					{roleAssignOn ? <th scope="col">rol işlemleri</th> : null}
+					<th scope="col">{t("admin.kullanicilar.column.username")}</th>
+					<th scope="col">{t("admin.kullanicilar.column.email")}</th>
+					<th scope="col">{t("admin.kullanicilar.column.role")}</th>
+					<th scope="col">{t("admin.kullanicilar.column.status")}</th>
+					<th scope="col">{t("admin.kullanicilar.column.tier")}</th>
+					<th scope="col">{t("admin.kullanicilar.column.createdAt")}</th>
+					{roleAssignOn ? <th scope="col">{t("admin.kullanicilar.column.roleActions")}</th> : null}
 				</tr>
 			</thead>
 			<tbody>
@@ -148,15 +161,23 @@ function RosterRow({
 	readonly roleAssignOn: boolean;
 	readonly onRoleChanged: () => void;
 }) {
+	const t = useT();
+	const {locale} = useLocale();
 	const data = useView(UserAdminRowView, node);
 	return (
 		<tr data-testid={`kullanicilar-row-${data.id}`}>
-			<td className="kp-kullanicilar__username">{usernameLabel(data.username)}</td>
+			<td className="kp-kullanicilar__username">
+				{data.username ?? t("admin.kullanicilar.username.unset")}
+			</td>
 			<td>{data.email}</td>
-			<td>{roleLabel(data.role)}</td>
-			<td data-testid={`kullanicilar-ban-${data.id}`}>{banLabel(data.banned)}</td>
+			<td>{t(roleLabelKey(data.role))}</td>
+			<td data-testid={`kullanicilar-ban-${data.id}`}>{t(banLabelKey(data.banned))}</td>
 			<td>{data.tier}</td>
-			<td>{createdAtLabel(data.createdAt)}</td>
+			<td>
+				{hasCreatedAt(data.createdAt)
+					? createdAtLabel(data.createdAt, locale)
+					: t("admin.kullanicilar.createdAt.unknown")}
+			</td>
 			{roleAssignOn ? (
 				<td className="kp-kullanicilar__actions">
 					<RoleControls userId={data.id} platformRole={data.role} onRoleChanged={onRoleChanged} />

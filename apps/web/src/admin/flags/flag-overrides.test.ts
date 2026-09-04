@@ -1,15 +1,14 @@
 import {describe, expect, it} from "vitest";
 import {
-	actionButtonLabel,
+	actionButtonLabelKey,
 	applyOverride,
-	booleanLabel,
-	defaultLabel,
-	effectiveLabel,
+	defaultLabelKey,
+	effectiveLabelKey,
 	effectiveValue,
 	encodeOverrideCookieValue,
 	FLAG_OVERRIDE_COOKIE,
-	overrideLabel,
-	overrideOutcomeMessage,
+	overrideLabelKey,
+	overrideOutcomeKey,
 	overrideStateOf,
 	parseOverridesFromCookie,
 	serializeOverrideCookie,
@@ -105,27 +104,24 @@ describe("serializeOverrideCookie — the write side", () => {
 	});
 });
 
-describe("render decisions — lowercase Turkish, text-only", () => {
-	it("labels booleans, defaults, overrides, and effective values", () => {
-		expect(booleanLabel(true)).toBe("açık");
-		expect(booleanLabel(false)).toBe("kapalı");
-		expect(defaultLabel(false)).toBe("varsayılan: kapalı");
-		expect(overrideLabel("on")).toBe("yerel geçersiz kılma: açık");
-		expect(overrideLabel("off")).toBe("yerel geçersiz kılma: kapalı");
-		expect(overrideLabel("clear")).toBe("yerel geçersiz kılma: yok");
-		expect(effectiveLabel(true)).toBe("geçerli değer: açık");
+// The panel resolves these through `useT`, so the module's job is the key, not the copy.
+describe("render decisions — the catalog key each state picks", () => {
+	it("keys defaults, overrides, and effective values", () => {
+		expect(defaultLabelKey(true)).toBe("admin.flags.default.on");
+		expect(defaultLabelKey(false)).toBe("admin.flags.default.off");
+		expect(overrideLabelKey("on")).toBe("admin.flags.override.on");
+		expect(overrideLabelKey("off")).toBe("admin.flags.override.off");
+		expect(overrideLabelKey("clear")).toBe("admin.flags.override.clear");
+		expect(effectiveLabelKey(true)).toBe("admin.flags.effective.on");
+		expect(effectiveLabelKey(false)).toBe("admin.flags.effective.off");
 	});
 
-	it("confirms each toggle outcome and names the control", () => {
-		expect(overrideOutcomeMessage({key: "mecmua-write", state: "on"})).toContain(
-			"açık olarak geçersiz",
-		);
-		expect(overrideOutcomeMessage({key: "mecmua-write", state: "off"})).toContain(
-			"kapalı olarak geçersiz",
-		);
-		expect(overrideOutcomeMessage({key: "mecmua-write", state: "clear"})).toContain("temizlendi");
-		expect(actionButtonLabel("on")).toBe("aç");
-		expect(actionButtonLabel("off")).toBe("kapat");
-		expect(actionButtonLabel("clear")).toBe("temizle");
+	it("keys each toggle outcome and each control", () => {
+		expect(overrideOutcomeKey("on")).toBe("admin.flags.outcome.on");
+		expect(overrideOutcomeKey("off")).toBe("admin.flags.outcome.off");
+		expect(overrideOutcomeKey("clear")).toBe("admin.flags.outcome.clear");
+		expect(actionButtonLabelKey("on")).toBe("admin.flags.action.on");
+		expect(actionButtonLabelKey("off")).toBe("admin.flags.action.off");
+		expect(actionButtonLabelKey("clear")).toBe("admin.flags.action.clear");
 	});
 });

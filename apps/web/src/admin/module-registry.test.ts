@@ -1,9 +1,10 @@
 import {lazy} from "react";
 import {describe, expect, it} from "vitest";
+import type {CatalogKey} from "../i18n";
 import {type ConsoleModule, createConsoleRegistry, selectActiveModule} from "./module-registry";
 
-function fakeModule(id: string, label = id): ConsoleModule {
-	return {id, label, panel: lazy(async () => ({default: () => null}))};
+function fakeModule(id: string, labelKey: CatalogKey = "admin.module.flags"): ConsoleModule {
+	return {id, labelKey, panel: lazy(async () => ({default: () => null}))};
 }
 
 describe("createConsoleRegistry — register by value", () => {

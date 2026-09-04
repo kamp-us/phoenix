@@ -5,6 +5,7 @@
 
 import {Button} from "@kampus/design";
 import {useState} from "react";
+import {useT} from "../../i18n";
 import {useMemberMute} from "./useMemberMute";
 
 export interface MuteButtonProps {
@@ -15,6 +16,7 @@ export interface MuteButtonProps {
 
 export function MuteButton({memberId, memberLabel, testId}: MuteButtonProps) {
 	const {mute} = useMemberMute();
+	const t = useT();
 	const [busy, setBusy] = useState(false);
 
 	async function onClick() {
@@ -35,10 +37,10 @@ export function MuteButton({memberId, memberLabel, testId}: MuteButtonProps) {
 			onClick={onClick}
 			disabled={busy}
 			aria-busy={busy || undefined}
-			aria-label={`${memberLabel} adlı üyeyi sustur`}
+			aria-label={t("mute.action.label", {member: memberLabel})}
 			data-testid={testId}
 		>
-			sustur
+			{t("mute.action")}
 		</Button>
 	);
 }

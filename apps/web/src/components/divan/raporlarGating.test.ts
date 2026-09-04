@@ -1,33 +1,49 @@
 import {describe, expect, it} from "vitest";
 import {
-	reasonLabel,
+	reasonText,
 	reportAgeLabel,
 	targetAuthorLabel,
-	targetExcerptLabel,
+	targetExcerptText,
 	targetHref,
 } from "./raporlarGating";
 
-describe("reportAgeLabel — the first-reported age, lowercase Turkish", () => {
+describe("reportAgeLabel — the first-reported age as a catalog key", () => {
 	const now = Date.parse("2026-07-02T12:00:00Z");
 
-	it("renders sub-minute ages as 'az önce'", () => {
-		expect(reportAgeLabel("2026-07-02T11:59:30Z", now)).toBe("az önce");
+	it("renders sub-minute ages as the just-now key", () => {
+		expect(reportAgeLabel("2026-07-02T11:59:30Z", now)).toEqual({key: "divan.age.now"});
 	});
 
 	it("renders sub-hour ages in minutes", () => {
-		expect(reportAgeLabel("2026-07-02T11:15:00Z", now)).toBe("45 dakika önce");
+		expect(reportAgeLabel("2026-07-02T11:15:00Z", now)).toEqual({
+			key: "divan.age.minutes.other",
+			params: {count: 45},
+		});
 	});
 
 	it("renders sub-day ages in hours", () => {
-		expect(reportAgeLabel("2026-07-02T05:00:00Z", now)).toBe("7 saat önce");
+		expect(reportAgeLabel("2026-07-02T05:00:00Z", now)).toEqual({
+			key: "divan.age.hours.other",
+			params: {count: 7},
+		});
 	});
 
 	it("renders older ages in days", () => {
-		expect(reportAgeLabel("2026-06-29T12:00:00Z", now)).toBe("3 gün önce");
+		expect(reportAgeLabel("2026-06-29T12:00:00Z", now)).toEqual({
+			key: "divan.age.days.other",
+			params: {count: 3},
+		});
 	});
 
-	it("clamps a future (clock-skewed) timestamp to 'az önce'", () => {
-		expect(reportAgeLabel("2026-07-02T12:05:00Z", now)).toBe("az önce");
+	it("takes the singular arm at exactly one unit", () => {
+		expect(reportAgeLabel("2026-07-02T11:00:00Z", now)).toEqual({
+			key: "divan.age.hours.one",
+			params: {count: 1},
+		});
+	});
+
+	it("clamps a future (clock-skewed) timestamp to just-now", () => {
+		expect(reportAgeLabel("2026-07-02T12:05:00Z", now)).toEqual({key: "divan.age.now"});
 	});
 
 	it("returns null for a malformed timestamp (no age beats a wrong age)", () => {
@@ -35,14 +51,14 @@ describe("reportAgeLabel — the first-reported age, lowercase Turkish", () => {
 	});
 });
 
-describe("reasonLabel — the reason cell", () => {
+describe("reasonText — the reason cell", () => {
 	it("passes a present reason through", () => {
-		expect(reasonLabel("spam")).toBe("spam");
+		expect(reasonText("spam")).toBe("spam");
 	});
 
-	it("falls back to 'gerekçe yok' for null and blank reasons", () => {
-		expect(reasonLabel(null)).toBe("gerekçe yok");
-		expect(reasonLabel("   ")).toBe("gerekçe yok");
+	it("yields null for null and blank reasons, so the row renders the catalog fallback", () => {
+		expect(reasonText(null)).toBeNull();
+		expect(reasonText("   ")).toBeNull();
 	});
 });
 
@@ -65,14 +81,14 @@ describe("targetHref — the in-situ link per target kind (#1702)", () => {
 	});
 });
 
-describe("targetExcerptLabel — the excerpt/title cell", () => {
+describe("targetExcerptText — the excerpt/title cell", () => {
 	it("passes a present excerpt through", () => {
-		expect(targetExcerptLabel("başlık")).toBe("başlık");
+		expect(targetExcerptText("başlık")).toBe("başlık");
 	});
 
-	it("falls back to 'içerik yüklenemedi' for null and blank excerpts", () => {
-		expect(targetExcerptLabel(null)).toBe("içerik yüklenemedi");
-		expect(targetExcerptLabel("   ")).toBe("içerik yüklenemedi");
+	it("yields null for null and blank excerpts, so the row renders the catalog fallback", () => {
+		expect(targetExcerptText(null)).toBeNull();
+		expect(targetExcerptText("   ")).toBeNull();
 	});
 });
 

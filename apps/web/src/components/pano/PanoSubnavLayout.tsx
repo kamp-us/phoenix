@@ -1,6 +1,7 @@
 import {Button} from "@kampus/design";
 import {createContext, type ReactNode, useContext, useState} from "react";
 import {Outlet} from "react-router";
+import {useT} from "../../i18n";
 import type {SubnavFilter} from "../layout/Subnav";
 import {SubnavShell} from "../layout/SubnavShell";
 import {PanoSubnavCta} from "./PanoSubnavCta";
@@ -60,6 +61,7 @@ function PanoSubnavFilters({
 
 /** Plain inline text, deliberately no resting-chrome pill — containment law, #2585. */
 function PanoSubnavCrumb({crumb}: {crumb: {label: ReactNode; onClear: () => void}}) {
+	const t = useT();
 	return (
 		<span className="kp-subnav__crumb">
 			{crumb.label}
@@ -70,7 +72,7 @@ function PanoSubnavCrumb({crumb}: {crumb: {label: ReactNode; onClear: () => void
 				className="kp-subnav__crumb-clear"
 				onClick={crumb.onClear}
 			>
-				× filtreyi kaldır
+				{t("layout.filter.clear")}
 			</Button>
 		</span>
 	);

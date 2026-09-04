@@ -355,7 +355,14 @@ The same `vitest.config.ts` defines two more projects that **don't** deploy:
   belongs in `integration`.
 - **`client`** — the SPA component/DOM tier (#1419): `src/**/*.test.tsx` under
   `jsdom`, fork heap capped at 512MB so a passive-update loop crashes fast
-  instead of hanging (#1470).
+  instead of hanging (#1470). Its forks also run `--no-experimental-webstorage`:
+  Node's own `localStorage` global is `undefined` without `--localstorage-file`,
+  and Vitest's `populateGlobal` skips any jsdom window key the fork's global
+  already defines — so with Node's copy present, `window.localStorage` reads as
+  `undefined` in a tier that looks like a browser. It bites by Node version
+  (green under pnpm's bundled Node 22, red on CI's pinned Node 26), so keep the
+  flag on both jsdom configs (`vitest.config.ts`, `vitest.a11y.config.ts`) and
+  reach `localStorage` through `src/lib/browserStorage.ts` in app code (#7728).
 
 **Change-scoped selection is a unit-tier + local-loop accelerator only.**
 `vitest --changed` / `related` narrows by the resolved import graph — sound for

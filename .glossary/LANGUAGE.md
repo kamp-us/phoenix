@@ -429,9 +429,27 @@ noted as a future-feeling alternative and is not adopted.
 ## 3. Product / brand nouns (Turkish surface)
 
 The naming convention is **Turkish for product / brand, English for technical**:
-product and brand names and all user-facing copy stay Turkish; everything technical is
+product and brand names stay Turkish and are never translated; everything technical is
 English — URL routes/paths, code identifiers, D1 table/column names, file names. The
 canonical example is that the route is `/search?q=`, not `/ara`.
+
+**User-facing copy in `apps/web` is Turkish *and* English, behind the i18n catalog**
+(ADR [0347](../.decisions/0347-web-copy-behind-i18n-catalog.md)). The reader picks a
+**locale**; **Turkish is the default**, so a reader who picks nothing reads what the site
+always read. Both locales are served from one typed **catalog** per locale under
+`apps/web/src/i18n/`, and **the brand nouns in the table below are not translated in
+either one** — the English interface still says sözlük, pano, mecmua, yazar, çaylak.
+Tuval, Fabrika and Demlik are English-only: only the product name is Turkish, and none of
+them coins a Turkish term.
+
+Three technical terms come with that rule:
+
+- **locale** — the reader's chosen language, `tr` or `en`. `tr` is the default.
+- **catalog** — the typed per-locale message record (`Record<Key, string>`) under
+  `apps/web/src/i18n/`, split one file per surface. There is no runtime i18n dependency;
+  a key present in one locale and missing in the other is a `pnpm typecheck` failure.
+- **catalog key** — the identifier a surface passes to read one message out of the
+  catalog. Keys are technical, so they are English, whatever locale they resolve into.
 
 **Two axes hide inside this one rule — keep them separate.** *Canonical glossary-term
 language* (the name a concept carries in [`TERMS.md`](./TERMS.md)) and *UI copy language*
@@ -445,17 +463,19 @@ language* (the name a concept carries in [`TERMS.md`](./TERMS.md)) and *UI copy 
   glossary-freshness gate demands a term for a new internal/analytics surface: **coin the
   English term, don't translate it** — the concept stays English regardless of what
   language its page renders in.
-- **User-facing UI copy stays Turkish** — the existing rule, unchanged. The mod-facing
-  funnel page renders Turkish copy while the concept underneath keeps its English
-  canonical name.
+- **User-facing UI copy is whatever locale the reader picked** — it comes out of the
+  catalog, in `tr` or `en`. The mod-facing funnel page renders localized copy while the
+  concept underneath keeps its one English canonical name in `TERMS.md`. Adding English
+  copy changes nothing on the glossary axis: a term is not re-decided because the page
+  it appears on can now render in English.
 
 The `bildir` row below already models this split: the brand lexeme surfaces in the
-user-facing copy (`bildir` / `bildirildi`) while its technical surface (`features/report`,
-the `Report` service, `content_report`) stays English. The funnel is the mirror case —
-a technical concept whose *canonical term* is English (`funnel / conversion funnel`) even
-though the surface it powers renders Turkish UI copy. Collapsing the two axes ("the
-concept shows on a Turkish screen, so its glossary term must be Turkish") is the mistake
-this note exists to stop.
+user-facing copy (`bildir` / `bildirildi`, in both locales — it is a brand noun) while its
+technical surface (`features/report`, the `Report` service, `content_report`) stays
+English. The funnel is the mirror case — a technical concept whose *canonical term* is
+English (`funnel / conversion funnel`) whatever locale the surface it powers renders in.
+Collapsing the two axes ("the concept shows on a Turkish screen, so its glossary term must
+be Turkish") is the mistake this note exists to stop.
 
 **On a showcase / exhibit surface, the chrome is technical, only the sample content is
 product copy.** Any surface that *demonstrates* components — a design-system storyboard,
@@ -463,11 +483,12 @@ a component gallery, a pattern showcase — layers a component/primitive that re
 example content. Split them: the **names** — component names, primitive names, section
 and exhibit labels, and every code identifier or route path around them — are technical,
 so they stay **English**; **only the in-exhibit example/sample content** the component
-renders is user-facing product copy, so **it** is Turkish. Turkish never bleeds up from
-the rendered sample into the technical chrome that frames it: a `Button` exhibit is
-labeled `Button` (English name) showing a `Gönder` sample (Turkish content), never a
-`Düğme` exhibit. This is the general rule for every showcase surface — Turkish-naming the
-components was the atölye-storyboard inversion the founder ruled a standing don't.
+renders is user-facing product copy, so **it** reads in the product's voice. The sample
+never bleeds up into the technical chrome that frames it: a `Button` exhibit is labeled
+`Button` (English name) showing a `Gönder` sample (product copy), never a `Düğme` exhibit.
+This is the general rule for every showcase surface — Turkish-naming the components was
+the atölye-storyboard inversion the founder ruled a standing don't. Exhibit sample content
+is not a user surface, so it is exempt from the catalog and stays as authored.
 
 The Turkish product/brand nouns this repo uses:
 

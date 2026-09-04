@@ -9,15 +9,16 @@ import {Alert, Button} from "@kampus/design";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {ResolvedReport, ResolveReceipt} from "../../../worker/features/report/views";
+import {useT} from "../../i18n";
 import {
 	decisionLabel,
 	groupDecisionFeed,
 	isRestorable,
-	resolverLabel,
+	resolverHandle,
 	waveEntryLabel,
 } from "./decisionFeedGating";
 import {itemKindLabel} from "./divanGating";
-import {reportAgeLabel, targetAuthorLabel, targetExcerptLabel, targetHref} from "./raporlarGating";
+import {reportAgeLabel, targetAuthorLabel, targetExcerptText, targetHref} from "./raporlarGating";
 
 const FEED_PAGE_SIZE = 50;
 
@@ -50,6 +51,7 @@ const ResolveReceiptView = view<ResolveReceipt>()({
 });
 
 export function DecisionFeed() {
+	const t = useT();
 	const result = useRequest({
 		"report.listResolved": {list: ResolvedReportConnectionView, args: {first: FEED_PAGE_SIZE}},
 	});
@@ -90,17 +92,17 @@ export function DecisionFeed() {
 					view: ResolveReceiptView,
 				});
 				if (callError) {
-					setError("geri getirilemedi, tekrar dene.");
+					setError(t("divan.decision.restoreFailed"));
 					return;
 				}
 				setRestoredIds((prev) => [...prev, target.id]);
 			} catch {
-				setError("geri getirilemedi, tekrar dene.");
+				setError(t("divan.decision.restoreFailed"));
 			} finally {
 				setBusyId(null);
 			}
 		},
-		[fate],
+		[fate, t],
 	);
 
 	const restoreWave = useCallback(
@@ -113,17 +115,17 @@ export function DecisionFeed() {
 					view: ResolveReceiptView,
 				});
 				if (callError) {
-					setError("geri getirilemedi, tekrar dene.");
+					setError(t("divan.decision.restoreFailed"));
 					return;
 				}
 				setRestoredIds((prev) => [...prev, ...memberIds]);
 			} catch {
-				setError("geri getirilemedi, tekrar dene.");
+				setError(t("divan.decision.restoreFailed"));
 			} finally {
 				setBusyId(null);
 			}
 		},
-		[fate],
+		[fate, t],
 	);
 
 	if (entries.length === 0) {
@@ -133,7 +135,7 @@ export function DecisionFeed() {
 					<DecisionProbe key={String(node.id)} node={node} onProbe={onProbe} />
 				))}
 				<p className="kp-divan__empty" data-testid="divan-decisions-empty">
-					henüz karar yok — verilen kararlar burada görünür.
+					{t("divan.decision.empty")}
 				</p>
 			</>
 		);
@@ -153,7 +155,11 @@ export function DecisionFeed() {
 					{error}
 				</Alert>
 			)}
-			<ul className="kp-divan__decisions" aria-label="son kararlar" data-testid="divan-decisions">
+			<ul
+				className="kp-divan__decisions"
+				aria-label={t("divan.decisions.label")}
+				data-testid="divan-decisions"
+			>
 				{entries.map((entry) => {
 					if (entry.kind === "wave") {
 						const first = nodeById.get(entry.memberIds[0] ?? "");
@@ -208,11 +214,13 @@ function DecisionRow({
 		targetId: string;
 	}) => void;
 }) {
+	const t = useT();
 	const data = useView(ResolvedReportRowView, node);
 	const age = reportAgeLabel(data.resolvedAt, Date.now());
 	const href = targetHref(data.targetKind, data.targetRef);
-	const excerpt = targetExcerptLabel(data.targetExcerpt);
+	const excerpt = targetExcerptText(data.targetExcerpt) ?? t("divan.excerpt.unavailable");
 	const author = targetAuthorLabel(data.targetAuthor);
+	const resolver = resolverHandle(data.resolverHandle) ?? t("divan.decision.moderator");
 	const restorable = isRestorable(data.resolution);
 
 	return (
@@ -221,14 +229,14 @@ function DecisionRow({
 			data-testid={`divan-decision-${data.targetKind}-${data.targetId}`}
 		>
 			<span className="kp-divan__item-meta">
-				<span className="kp-divan__kind">{itemKindLabel(data.targetKind)}</span>
+				<span className="kp-divan__kind">{t(itemKindLabel(data.targetKind))}</span>
 				<span className="kp-divan__decision" data-testid="divan-decision-verdict">
-					{decisionLabel(data.resolution)}
+					{t(decisionLabel(data.resolution))}
 				</span>
 				<span className="kp-divan__decision-by" data-testid="divan-decision-resolver">
-					{resolverLabel(data.resolverHandle)}
+					{resolver}
 				</span>
-				{age !== null && <span className="kp-divan__decision-age">{age}</span>}
+				{age !== null && <span className="kp-divan__decision-age">{t(age.key, age.params)}</span>}
 			</span>
 			<p className="kp-divan__decision-target">
 				{href !== null ? (
@@ -253,7 +261,7 @@ function DecisionRow({
 					}
 					data-testid="divan-decision-restore"
 				>
-					geri getir
+					{t("divan.decision.restore")}
 				</Button>
 			)}
 		</li>
@@ -273,23 +281,26 @@ function WaveDecisionRow({
 	readonly busy: boolean;
 	readonly onRestore: () => void;
 }) {
+	const t = useT();
 	const data = useView(ResolvedReportRowView, node);
 	const age = reportAgeLabel(data.resolvedAt, Date.now());
+	const wave = waveEntryLabel(memberCount);
+	const resolver = resolverHandle(data.resolverHandle) ?? t("divan.decision.moderator");
 	const restorable = isRestorable(data.resolution);
 
 	return (
 		<li className="kp-divan__decision-row" data-testid={`divan-decision-wave-${data.waveId}`}>
 			<span className="kp-divan__item-meta">
 				<span className="kp-divan__kind" data-testid="divan-decision-wave-count">
-					{waveEntryLabel(memberCount)}
+					{t(wave.key, wave.params)}
 				</span>
 				<span className="kp-divan__decision" data-testid="divan-decision-verdict">
-					{decisionLabel(data.resolution)}
+					{t(decisionLabel(data.resolution))}
 				</span>
 				<span className="kp-divan__decision-by" data-testid="divan-decision-resolver">
-					{resolverLabel(data.resolverHandle)}
+					{resolver}
 				</span>
-				{age !== null && <span className="kp-divan__decision-age">{age}</span>}
+				{age !== null && <span className="kp-divan__decision-age">{t(age.key, age.params)}</span>}
 			</span>
 			{restorable && (
 				<Button
@@ -302,7 +313,7 @@ function WaveDecisionRow({
 					onClick={onRestore}
 					data-testid="divan-decision-restore-wave"
 				>
-					geri getir
+					{t("divan.decision.restore")}
 				</Button>
 			)}
 		</li>

@@ -10,6 +10,7 @@ import {actorLabel} from "../components/moderation/actor-identity";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import type {WireMessageOverrides} from "../fate/wireMessages";
+import {type Translate, useT} from "../i18n";
 import {panoSubmitGate} from "../lib/panoSubmitGate";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
@@ -61,20 +62,26 @@ const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const TITLE_MIN = 5;
 
-const PANO_SUBMIT_OVERRIDES: WireMessageOverrides = {
-	TITLE_REQUIRED: "başlık boş olamaz",
-	TITLE_TOO_LONG: `başlık en fazla ${TITLE_MAX} karakter olabilir`,
-	BODY_TOO_LONG: `metin en fazla ${BODY_MAX} karakter olabilir`,
-	TAGS_REQUIRED: "en az bir etiket seç",
-	TAG_INVALID: "geçersiz etiket",
-	URL_INVALID: "geçersiz bağlantı",
-	TOO_SHORT: `başlık en az ${TITLE_MIN} karakter olmalı`,
-	VALIDATION_ERROR: "girdiğin bilgiler geçersiz",
-	USER_NOT_FOUND: "kullanıcı bulunamadı",
-	BAD_REQUEST: "geçersiz istek",
-};
+// Built per render rather than at module scope: every message is catalog copy now, and a
+// module constant would freeze the locale the module was first evaluated under.
+function panoSubmitOverrides(t: Translate): WireMessageOverrides {
+	return {
+		TITLE_REQUIRED: t("pano.error.titleRequired"),
+		TITLE_TOO_LONG: t("pano.error.titleTooLong", {max: TITLE_MAX}),
+		BODY_TOO_LONG: t("pano.error.bodyTooLong", {max: BODY_MAX}),
+		TAGS_REQUIRED: t("pano.error.tagsRequired"),
+		TAG_INVALID: t("pano.error.tagInvalid"),
+		URL_INVALID: t("pano.error.urlInvalid"),
+		TOO_SHORT: t("pano.error.titleTooShort", {min: TITLE_MIN}),
+		VALIDATION_ERROR: t("pano.error.validation"),
+		USER_NOT_FOUND: t("pano.error.userNotFound"),
+		BAD_REQUEST: t("pano.error.badRequest"),
+	};
+}
 
 export function PanoSubmitPage() {
+	const t = useT();
+	const overrides = React.useMemo(() => panoSubmitOverrides(t), [t]);
 	const session = useSession();
 	const navigate = useNavigate();
 	const [mode, setMode] = React.useState<Mode>("link");
@@ -91,7 +98,7 @@ export function PanoSubmitPage() {
 		setError,
 		inFlight: isInFlight,
 		run,
-	} = useDraftSubmit({overrides: PANO_SUBMIT_OVERRIDES, redirectPath: () => "/pano/yeni"});
+	} = useDraftSubmit({overrides, redirectPath: () => "/pano/yeni"});
 
 	async function prefillFromUrl() {
 		const meta = await fetchMetadata(url);
@@ -173,12 +180,12 @@ export function PanoSubmitPage() {
 						tags: Array.from(selectedTags),
 						// Never fall back to `user.email` here — it would leak into the rendered
 						// optimistic author (#2126).
-						author: actorLabel(user.name, null, "kullanıcı"),
+						author: actorLabel(user.name, null, t("pano.user")),
 						authorId: user.id,
 						now,
 					}),
 				}),
-			"gönderi paylaşılamadı",
+			t("pano.submit.failed"),
 			(result) => {
 				draft.clear();
 				const newId = result?.slug ?? result?.id;
@@ -206,7 +213,7 @@ export function PanoSubmitPage() {
 					},
 					view: PanoPostCardView,
 				}),
-			"taslak kaydedilemedi",
+			t("pano.submit.draftFailed"),
 			() => setDraftSaved(true),
 		);
 	}
@@ -217,19 +224,17 @@ export function PanoSubmitPage() {
 				<div className="kp-pano-submit">
 					<Link to="/pano" className="kp-pano-submit__back">
 						<Icon icon={ArrowLeft} size={14} />
-						akışa dön
+						{t("pano.backToFeed")}
 					</Link>
-					<h1 className="kp-pano-submit__title">bir şey paylaş</h1>
-					<p className="kp-pano-submit__lede">
-						bağlantı, yazı, soru. self-promo da olur — bir kere açıkla niye paylaşıyorsun.
-					</p>
+					<h1 className="kp-pano-submit__title">{t("pano.submit.heading")}</h1>
+					<p className="kp-pano-submit__lede">{t("pano.submit.lede")}</p>
 
 					<ToggleGroup
 						className="kp-toggle-group kp-toggle-group--segmented kp-pano-submit__toggle"
 						size="sm"
 						items={[
-							{value: "link", label: "link"},
-							{value: "text", label: "yazı"},
+							{value: "link", label: t("pano.mode.linkShort")},
+							{value: "text", label: t("pano.mode.text")},
 						]}
 						value={[mode]}
 						onValueChange={([next]) => {
@@ -251,8 +256,8 @@ export function PanoSubmitPage() {
 									id="submit-url"
 									data-testid="pano-submit-url"
 									type="url"
-									label="URL"
-									placeholder="https://overreacted.io/..."
+									label={t("pano.field.url")}
+									placeholder={t("pano.submit.url.placeholder")}
 									value={url}
 									onChange={(e) => setUrl(e.currentTarget.value)}
 									onBlur={prefillFromUrl}
@@ -263,7 +268,7 @@ export function PanoSubmitPage() {
 										<div className="fav">{host.charAt(0).toLowerCase()}</div>
 										<div>
 											<div className="host">{host}</div>
-											<div className="ttl">{title || "başlık otomatik tamamlanacak"}</div>
+											<div className="ttl">{title || t("pano.submit.titleAutofill")}</div>
 										</div>
 									</div>
 								) : null}
@@ -275,17 +280,17 @@ export function PanoSubmitPage() {
 							id="submit-title"
 							data-testid="pano-submit-title"
 							type="text"
-							label="başlık"
+							label={t("pano.field.title")}
 							hint={
 								<>
-									{titleTooShort ? "5 karakterden az olamaz · " : ""}
-									{titleTooLong ? `en fazla ${TITLE_MAX} karakter · ` : ""}
+									{titleTooShort ? `${t("pano.submit.title.tooShort", {min: TITLE_MIN})} · ` : ""}
+									{titleTooLong ? `${t("pano.submit.title.tooLong", {max: TITLE_MAX})} · ` : ""}
 									{title.length}/{TITLE_MAX}
 								</>
 							}
 							minLength={TITLE_MIN}
 							maxLength={TITLE_MAX + 50}
-							placeholder="en az 5 karakter"
+							placeholder={t("pano.submit.title.placeholder", {min: TITLE_MIN})}
 							value={title}
 							onChange={(e) => setTitle(e.currentTarget.value)}
 							fullWidth
@@ -296,8 +301,8 @@ export function PanoSubmitPage() {
 								className="kp-pano-submit__field"
 								id="submit-context"
 								data-testid="pano-submit-body"
-								label="bağlam (opsiyonel)"
-								placeholder="bir kere açıkla niye paylaşıyorsun"
+								label={t("pano.submit.context.label")}
+								placeholder={t("pano.submit.context.placeholder")}
 								value={body}
 								onChange={(e) => setBody(e.currentTarget.value)}
 								fullWidth
@@ -310,16 +315,14 @@ export function PanoSubmitPage() {
 								data-testid="pano-submit-body"
 								label={
 									<>
-										içerik{" "}
-										<span style={{color: "var(--text-faint)", fontWeight: 400}}>(opsiyonel)</span>
+										{t("pano.field.body")}{" "}
+										<span style={{color: "var(--text-faint)", fontWeight: 400}}>
+											{t("pano.optional")}
+										</span>
 									</>
 								}
-								hint={
-									<>
-										markdown · ``` ``` kod bloğu · {body.length}/{BODY_MAX}
-									</>
-								}
-								placeholder="markdown · ``` ``` kod bloğu"
+								hint={t("pano.submit.body.hint", {count: body.length, max: BODY_MAX})}
+								placeholder={t("pano.submit.body.placeholder")}
 								value={body}
 								onChange={(e) => setBody(e.currentTarget.value)}
 								fullWidth
@@ -329,12 +332,12 @@ export function PanoSubmitPage() {
 
 						<fieldset className="kp-pano-submit__field kp-pano-submit__fieldset">
 							<legend className="kp-pano-submit__field-label">
-								<span>etiketler · en az 1, en fazla 3</span>
+								<span>{t("pano.submit.tags.legend")}</span>
 								<span
 									className="kp-pano-submit__required"
 									data-testid="pano-submit-tags-legend-required"
 								>
-									gerekli
+									{t("pano.required")}
 								</span>
 							</legend>
 							<ToggleGroup
@@ -364,8 +367,8 @@ export function PanoSubmitPage() {
 							{noTags ? (
 								<span className="kp-pano-submit__tag-cue" data-testid="pano-submit-tags-required">
 									{tagsAreSoleBlocker
-										? "son adım: en az bir etiket seç"
-										: PANO_SUBMIT_OVERRIDES.TAGS_REQUIRED}
+										? t("pano.submit.tags.lastStep")
+										: t("pano.error.tagsRequired")}
 								</span>
 							) : null}
 						</fieldset>
@@ -388,7 +391,7 @@ export function PanoSubmitPage() {
 								data-testid="pano-submit-draft-saved"
 								style={{color: "var(--text-faint)"}}
 							>
-								taslak kaydedildi
+								{t("pano.submit.draftSaved")}
 							</Alert>
 						) : null}
 
@@ -399,8 +402,8 @@ export function PanoSubmitPage() {
 								data-testid="pano-submit-disabled-reason"
 							>
 								{tagsAreSoleBlocker
-									? "“paylaş” için son bir adım kaldı: yukarıdan en az bir etiket seç"
-									: "“paylaş” için en az bir etiket seçmelisin"}
+									? t("pano.submit.disabled.lastStep")
+									: t("pano.submit.disabled.needTag")}
 							</p>
 						) : null}
 
@@ -412,19 +415,19 @@ export function PanoSubmitPage() {
 								disabled={isInFlight}
 								onClick={onSaveDraft}
 							>
-								taslak
+								{t("pano.submit.draft")}
 							</Button>
 							<Button
 								type="submit"
 								variant="primary"
 								disabled={submitDisabled}
 								data-testid="pano-submit-submit"
-								title={submitDisabled && noTags ? "en az bir etiket seç" : undefined}
+								title={submitDisabled && noTags ? t("pano.error.tagsRequired") : undefined}
 								aria-describedby={
 									submitDisabled && noTags ? "pano-submit-disabled-reason" : undefined
 								}
 							>
-								{isInFlight ? "gönderiliyor…" : "paylaş"}
+								{isInFlight ? t("pano.action.sending") : t("pano.submit.share")}
 							</Button>
 						</div>
 					</form>
