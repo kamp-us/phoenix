@@ -1,6 +1,7 @@
 /**
- * The two boundaries this layer keeps: no Pi type reaches its public surface, and the per-launch
- * token reaches nothing at all.
+ * The three boundaries this layer keeps: it is ruling 4's `Layer<TuvalAiAgent, never, Scope>`
+ * (#7570) over the one host a process provides, no Pi type reaches its public surface, and the
+ * per-launch token reaches nothing at all.
  *
  * The surface probe states its expected answer on the right of an `=`, with a positive control
  * pinned to the opposite value, per `.patterns/unconditional-test-assertions.md`'s type-level
@@ -16,32 +17,44 @@ import type {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import type {PiServerService, PiSessionHost, ServerBindFailed} from "../server/index.ts";
 import {PiAiAgent} from "./index.ts";
 
-type AgentOnly<L> =
+/**
+ * Ruling 4's shape. `E` is `never` — a bind failure dies inside the layer — and `R` is the one
+ * `PiSessionHost` the process provides; the ruled `Scope` is the scoped layer's own and is not a
+ * requirement a `Layer` type carries.
+ */
+type RuledShape<L> =
 	L extends Layer.Layer<infer A, infer E, infer R>
-		? [A, E, R] extends [TuvalAiAgent, ServerBindFailed, PiSessionHost]
+		? [A, E, R] extends [TuvalAiAgent, never, PiSessionHost]
 			? true
 			: false
 		: false;
 
-const surface: AgentOnly<ReturnType<typeof PiAiAgent.layer>> = true;
+const surface: RuledShape<ReturnType<typeof PiAiAgent.layer>> = true;
 
 /** The control: a layer that published the server would publish the token with it. */
-const leaksTheServer: AgentOnly<
-	Layer.Layer<TuvalAiAgent | PiServerService, ServerBindFailed, PiSessionHost>
+const leaksTheServer: RuledShape<
+	Layer.Layer<TuvalAiAgent | PiServerService, never, PiSessionHost>
 > = false;
 
+/** The second control: the departure this test used to pin, now red on the error channel. */
+const raisesTheBindFailure: RuledShape<Layer.Layer<TuvalAiAgent, ServerBindFailed, PiSessionHost>> =
+	false;
+
 describe("the Pi AI agent layer's surface", () => {
-	it("provides the interface and nothing else", () => {
-		expect([surface, leaksTheServer]).toEqual([true, false]);
+	it("is the ruled shape and provides the interface and nothing else", () => {
+		expect([surface, leaksTheServer, raisesTheBindFailure]).toEqual([true, false, false]);
 	});
 
-	it("publishes only the layer and its own options", () => {
-		expect(Object.keys(PiAiAgent).sort()).toEqual(["layer", "layerOver"]);
+	it("publishes one layer and its own options", () => {
+		expect(Object.keys(PiAiAgent).sort()).toEqual(["layer"]);
 	});
 
 	it("re-exports no Pi type through its entry point", () => {
 		const entry = readFileSync(join(import.meta.dirname, "index.ts"), "utf8");
 		expect(entry).not.toMatch(/@earendil-works/);
+		// A re-export from the server or client module reaches Pi's own types one hop further out,
+		// which the `@earendil-works` scan alone cannot see.
+		expect(entry).not.toMatch(/from\s+"\.\.\/(server|client)\//);
 	});
 });
 

@@ -89,6 +89,14 @@ const readBranch = (dir: string, sessionId: string, cwd: string) =>
 		catch: storeUnreadable,
 	});
 
+const without =
+	(key: string) =>
+	(seen: ReadonlySet<string>): ReadonlySet<string> => {
+		const next = new Set(seen);
+		next.delete(key);
+		return next;
+	};
+
 const make = (
 	options: PiAiAgentOptions,
 ): Effect.Effect<TuvalAiAgentApi, never, Scope.Scope | PiClientService> =>
@@ -156,19 +164,21 @@ const make = (
 			yield* Ref.set(queue, open);
 			yield* emit(open, [{kind: "phase", phase: "starting"}]);
 
-			yield* dial.pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
+			const acquire = Effect.gen(function* () {
+				yield* dial;
+				return options_.resume === undefined
+					? yield* pi.createSession(
+							options_.cwd,
+							options.model === undefined ? {} : {model: options.model},
+						)
+					: yield* pi.attachSession(options_.resume);
+			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
 
-			const ref =
-				options_.resume === undefined
-					? yield* pi
-							.createSession(
-								options_.cwd,
-								options.model === undefined ? {} : {model: options.model},
-							)
-							.pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)))
-					: yield* pi
-							.attachSession(options_.resume)
-							.pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
+			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
+			// phase: without this every subscriber sits on `starting` for the life of the layer.
+			const ref = yield* acquire.pipe(
+				Effect.tapError(() => emit(open, [{kind: "phase", phase: "gone"}])),
+			);
 
 			yield* Ref.set(session, ref);
 			// Forked into the layer's own scope, not the caller's, so the fan lives exactly as long
@@ -189,12 +199,22 @@ const make = (
 					detail: "start has not opened a Pi session on this layer",
 				});
 			}
-			if (key !== undefined && (yield* Ref.get(keys)).has(key)) return;
+			if (key !== undefined) {
+				if ((yield* Ref.get(keys)).has(key)) return;
+				// Recorded at the send, not at the turn's end: the transport-level retry the key
+				// exists for fires while the first send is still in flight (ruling 2, #7570), and a
+				// key recorded after `pi.prompt` resolves could never see it.
+				yield* Ref.update(keys, (seen) => new Set(seen).add(key));
+			}
 			// The pin answers a `prompt` request with the snapshot the turn ended on, so this
 			// resolves at the end of the turn rather than at the send. The events the turn produced
 			// have already been pushed and folded by then; nothing waits on this returning.
-			yield* pi.prompt(current.id, text).pipe(Effect.mapError(promptErrorOf));
-			if (key !== undefined) yield* Ref.update(keys, (seen) => new Set(seen).add(key));
+			yield* pi.prompt(current.id, text).pipe(
+				Effect.mapError(promptErrorOf),
+				// A send that never landed is not a turn this session has seen, so the key goes
+				// back and a retry of it is admitted.
+				Effect.tapError(() => (key === undefined ? Effect.void : Ref.update(keys, without(key)))),
+			);
 		});
 
 		const interrupt = Effect.gen(function* () {
@@ -269,17 +289,26 @@ const transport = (
 	return Layer.provideMerge(client, server);
 };
 
-export const PiAiAgent = {
-	layer: (
-		options: PiAiAgentOptions = {},
-	): Layer.Layer<TuvalAiAgent, ServerBindFailed, PiSessionHost> =>
-		Layer.effect(TuvalAiAgent, make(options)).pipe(Layer.provide(transport(options))),
+/**
+ * The mapping half alone, over a transport the caller already stood up.
+ *
+ * Not part of `PiAiAgent`: ruling 4 (#7570) gives this module one layer, and a second public one
+ * whose requirement is a live `PiClientService` is a second shape a process could build. It stays
+ * out of `index.ts` for that reason, and exists for the integration proof beside it, which needs
+ * two agents over one server to see what the server does with a second claimant.
+ */
+export const aiAgentOverClient = (
+	options: PiAiAgentOptions = {},
+): Layer.Layer<TuvalAiAgent, never, PiClientService> => Layer.effect(TuvalAiAgent, make(options));
 
+export const PiAiAgent = {
 	/**
-	 * The mapping half alone, over a transport a caller already stood up. The teardown proof needs
-	 * to hold the server it is asserting about, and a process that already runs a Pi server has no
-	 * reason to start a second one.
+	 * `Layer<TuvalAiAgent, never, Scope>` over a `PiSessionHost` the process provides (ruling 4,
+	 * #7570). A bind failure dies rather than riding the error channel: the layer is built inside
+	 * the process's Scope before any handler runs, so there is no caller to hand a `ServerBindFailed`
+	 * to and nothing that could act on one — a loopback port this process cannot bind is a broken
+	 * host, not a case the row models.
 	 */
-	layerOver: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent, never, PiClientService> =>
-		Layer.effect(TuvalAiAgent, make(options)),
+	layer: (options: PiAiAgentOptions = {}): Layer.Layer<TuvalAiAgent, never, PiSessionHost> =>
+		Layer.effect(TuvalAiAgent, make(options)).pipe(Layer.provide(Layer.orDie(transport(options)))),
 } as const;

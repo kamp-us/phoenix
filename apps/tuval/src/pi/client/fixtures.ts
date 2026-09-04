@@ -41,7 +41,8 @@ export interface ProtocolServerOptions {
 
 const serverId = randomUUID();
 
-const defaultAnswer = (message: ClientMessage): ServerMessage | undefined => {
+/** The `hello` handshake and an empty `list` for everything else, exported as a fallback arm. */
+export const defaultAnswer = (message: ClientMessage): ServerMessage | undefined => {
 	if (message.type === "hello") {
 		return {
 			type: "hello",

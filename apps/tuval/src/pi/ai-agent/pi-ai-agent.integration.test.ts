@@ -26,6 +26,7 @@ import {
 import {PiClientService, webSocketTransportFactory} from "../client/index.ts";
 import {agentSessionHostLayer, PiServerService, SessionOpenFailed} from "../server/index.ts";
 import {PiAiAgent} from "./index.ts";
+import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const MODEL = {provider: "faux", id: "faux-1"} as const;
 
@@ -241,7 +242,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 						assert.strictEqual(missing.reason, "session-not-found");
 					}).pipe(
 						Effect.provide(
-							PiAiAgent.layerOver({model: MODEL}).pipe(
+							aiAgentOverClient({model: MODEL}).pipe(
 								Layer.provide(PiClientService.layerWebSocket({url})),
 							),
 						),
@@ -282,7 +283,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					);
 				}).pipe(
 					Effect.provide(
-						PiAiAgent.layerOver({model: MODEL}).pipe(
+						aiAgentOverClient({model: MODEL}).pipe(
 							Layer.provide(PiClientService.layer({transportFactory: socket.factory})),
 						),
 					),

@@ -16,18 +16,22 @@
  * - **`reconnect()` is `connect()`.** It opens a fresh transport through the factory and refuses
  *   when the client is not disconnected, which is why reconnect is a caller's call here.
  *
- * There is no retry loop in this service — one drop is one `Disconnected` and nothing dials again
- * until a caller asks. Retry policy belongs to the handlers and stays declared data (#7371).
+ * Nothing here dials on its own — one drop is one `Disconnected` and the next dial is a caller's
+ * call; retry policy over a whole start belongs to the handlers and stays declared data (#7371).
+ * The one wait this service keeps is `reacquireWait` below, which is not a policy but the wire's
+ * own missing sequencing: it holds a reacquire against the server's release of the socket it is
+ * replacing, and reaches nothing else.
  */
 
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {PiClient, type PiSessionHandle} from "@earendil-works/pi-client";
 import type {ModelRef, SessionSnapshot, ThinkingLevel} from "@earendil-works/pi-protocol";
-import {Context, Effect, Layer, Queue, type Scope, Stream} from "effect";
+import {Context, Effect, Layer, Queue, Schedule, type Scope, Stream} from "effect";
 import {
 	type ConnectionRefusal,
 	Disconnected,
 	ProtocolRefused,
+	SessionLocked,
 	SessionNotFound,
 	type SessionRefusal,
 } from "./errors.ts";
@@ -102,6 +106,25 @@ export class PiClientService extends Context.Service<PiClientService, PiClientAp
 		});
 }
 
+/**
+ * How long a reacquire waits out the server's release of the connection it replaces.
+ *
+ * The server keys session ownership by a connection id it mints per accepted socket and clears the
+ * old owner only once that socket's `close` lands (`../server/records.ts`). `reconnect()` opens a
+ * fresh transport, so a reacquire is a different connection racing that release, and losing the
+ * race reads as `session_locked` for a session this client just held. The 0.84.3 protocol carries
+ * no message naming the connection being replaced, so a client cannot ask the server to retire the
+ * old owner first; waiting is the only sequencing available on this side of the wire.
+ *
+ * Six tries over roughly 630ms, and only where this client already held the session — a client
+ * attaching a session it never owned is still refused on its first try.
+ */
+const reacquireWait = {
+	while: (refusal: SessionRefusal) => refusal instanceof SessionLocked,
+	times: 6,
+	schedule: Schedule.exponential("10 millis", 2),
+} as const;
+
 const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.Scope> =>
 	Effect.gen(function* () {
 		const listenerErrors = yield* Queue.unbounded<Error>();
@@ -171,10 +194,13 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 		const attachSession = Effect.fn("PiClientService.attachSession")(function* (sessionId: string) {
 			const held = leases.get(sessionId);
 			if (held?.active) return yield* refOf(held);
-			const lease = yield* Effect.tryPromise({
+			const attach = Effect.tryPromise({
 				try: () => client.attachSession(sessionId),
 				catch: (cause) => sessionRefusalOf(sessionId, cause),
 			});
+			// A dead entry is this client having owned the session on the socket that just went, so
+			// this call is a reacquire and the server's release of the old owner may lag it.
+			const lease = yield* held === undefined ? attach : Effect.retry(attach, reacquireWait);
 			leases.set(lease.id, lease);
 			return yield* refOf(lease);
 		});

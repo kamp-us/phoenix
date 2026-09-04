@@ -40,7 +40,7 @@ knowing which primitives throw, and guarding the quantity they actually throw on
   a constant that always parses rather than a header the client controls.
 - `crypto.timingSafeEqual` throws on unequal **byte** lengths. A percent-decoded parameter can hold a
   multibyte character, so a `String.length` pre-check passes a 64-character, 65-byte value straight
-  into the throw. Compare `Buffer.byteLength`.
+  into the throw. Compare the byte lengths — `Buffer.from(value, "utf8").length` on each side, which is what `server/token.ts` does.
 
 Both of those shipped as a process kill on #7567, one per review round, which is why the rule is
 written down rather than left to the next reader's instinct.

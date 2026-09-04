@@ -282,6 +282,58 @@ route refuses here, with nothing spawned and nothing written), open the wiring, 
 launch, then `restore` whatever else the manifest names. `boot` is `start` from the layered
 config. `src/demo/e2e.unit.test.ts` is the proof that this holds across a stop and a second boot.
 
+## The AI agent slice
+
+`src/ai-agent/` is the backend-blind half of running an AI agent as a Tuval program. Nothing under
+it names Pi, Claude or any other backend: a row varies by the layer it is handed and by its identity,
+and that is all (founder ruling, 2026-09-02). It is the half a second backend builds against.
+
+**The service.** `TuvalAiAgent` (`src/ai-agent/service/`) is the one interface every backend
+implements — `start`, `prompt`, `interrupt`, `answer`, `setMode`, `page`, and one `events` stream.
+One subscription and one ordering: `AgentEvent` (`src/ai-agent/events.ts`) tags every kind —
+`item`, `phase`, `permission`, `permission-resolved`, `mode`, `usage` — so the core folds a single
+sequence rather than racing several (ruling 1, [#7570](https://github.com/kamp-us/phoenix/issues/7570)).
+Each method carries its own `Schema.TaggedError`; a backend's own refusals are `reason`s inside
+those, never tags that reach a caller. `ScriptedAiAgent.layer` is the deterministic implementation
+every unit test runs on — a checked-in `AgentScript` is the whole backend, it talks to nothing, and
+it holds no retry and no reconnect, so a test can prove the retry policy lives in the handlers'
+declared data rather than hiding in a layer.
+
+**The core.** `src/ai-agent/core/` is `ai-agent-session`, the one Demlik machine that drives any
+layer. It holds no Effect and names no backend: each Cmd is the name of work a handler performs, and
+the Sub is the name of the layer's event stream. Every refusal is data — a prompt outside `ready`, an
+answer to a card nobody raised, a mode the agent does not offer each record an `AgentFailure` and
+emit no Cmd, so the window renders the refusal instead of a crash taking the process with it.
+
+**The handlers.** `src/ai-agent/handlers/` is the one generic handler set. Each handler yields the
+service and calls one of its members; a layer's typed error becomes a `failed` Msg carrying the tag
+as data, and the one thing that does fail a handler is a `PayloadRejected` — the route refused what
+this program emitted, which is a wiring bug in the graph rather than the agent's answer. The Sub is
+the outbound half: it dispatches each event as a Msg *and* runs the same fold the core runs over a
+local projection seeded from the core's state, so the tail published on `transcript` is the tail the
+core commits. Retry and deadline are three numbers on the row (`policy.ts`), not an `Effect.retry`
+buried in a handler, and only `start` and the reconnect that repeats it are retried
+([#7371](https://github.com/kamp-us/phoenix/issues/7371)).
+
+**The ports.** `src/ai-agent/ports/` is the five ports that make a process an AI agent —
+`transcript`, `transcript-page`, `prompt`, `permission`, `mode` — each with one nominal kind, one
+payload predicate and one queue bound. Every payload is model-blind: no model name, cost, token
+count, session id or backend type appears on one. A program playing both ends of a two-way port
+names each end locally, and `compile` matches on the kind, so a cross-kind route still refuses.
+
+**The history.** `src/ai-agent/history/` is pure and imports no Effect, no socket and no other
+`ai-agent/` directory but `ports/`. The window is the live tail only — the newest whole exchanges
+under both an item and a byte bound, plus what the bounds left out. Older history is backend-owned
+(ruling 5): `planTranscriptPage` is a bound over a slice the backend already returned, walking older,
+whole exchanges only, and Tuval keeps no second copy.
+
+**The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
+the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
+`layer`, `cwd` and the identity. `PiAiAgent.layer` is the first layer to fill it; `ClaudeAiAgent` is
+next ([#7618](https://github.com/kamp-us/phoenix/issues/7618)).
+
+Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
+
 ## The Pi loopback server
 
 `src/pi/server/` is the WebSocket server Pi 0.84.3 does not ship — the spike's `spike-server.mjs`

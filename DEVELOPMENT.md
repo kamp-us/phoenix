@@ -94,8 +94,10 @@ apps/tuval/
 │   ├── ports/             # typed inter-program wiring: compile + open
 │   ├── launch/            # launching a program into a process
 │   ├── durability/        # saving and restoring process state
+│   ├── ai-agent/          # the backend-blind AI agent slice: core machine, ports, handlers, history
+│   ├── pi/                # the Pi backend: loopback server, lease client, the `TuvalAiAgent` layer
 │   └── demo/              # the programs that ship in the box
-└── vitest.config.ts       # one `unit` project, so the repo-wide unit gate resolves here
+└── vitest.config.ts       # two projects, `unit` and `integration`; the repo-wide unit gate resolves here
 ```
 
 ## Commands
@@ -121,6 +123,7 @@ Those run `apps/web`. `apps/tuval` is local-only, so reach it through its filter
 | `pnpm --filter @kampus/tuval typecheck` | `tsc -p tsconfig.json`. |
 | `pnpm --filter @kampus/tuval test` | Every vitest project in the app. |
 | `pnpm --filter @kampus/tuval test:unit` | Just the `unit` project. This is the script CI's `pnpm --filter './apps/**' test:unit` gate calls. |
+| `pnpm --filter @kampus/tuval test:integration` | Just the `integration` project. Slow, not remote: it drives a real Pi `AgentSession` over a real loopback socket on Pi's faux provider, so it needs no cloud credentials. CI's `integration tests` job runs it alongside `apps/web`'s remote suite. |
 
 Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
 

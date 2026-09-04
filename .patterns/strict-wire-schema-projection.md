@@ -20,7 +20,7 @@ and the happy path passes:
   (`@earendil-works/pi-ai` `dist/types.d.ts:691-694`), while the wire's `ModelCostSchema` is a
   strict object of exactly the four rates (`@earendil-works/pi-protocol` `dist/schemas.js`).
 - `TextContent` carries `textSignature`, `ThinkingContent` carries `thinkingSignature`, `Usage`
-  carries `cacheWrite1h` (same file, `237-286`) — none of them declared on the wire.
+  carries `cacheWrite1h` (`@earendil-works/pi-ai` `dist/types.d.ts:237-286`) — none of them declared on the wire.
 
 Every one of those is filled only by *some* provider, on *some* model. A cast therefore ships an
 encoder that works until the day a model is priced in tiers or a provider returns a signature, and
