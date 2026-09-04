@@ -5,7 +5,7 @@
  */
 
 import type {Cmd, Machine, Sub} from "@demlik/tea";
-import {type Effect, Schema} from "effect";
+import {type Effect, Schema, type Scope} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
 
@@ -52,6 +52,20 @@ export type HostHandlers<M extends {readonly type: string}, C extends Cmd, E, R>
 	readonly [K in C["type"]]: (
 		cmd: Extract<C, {readonly type: K}>,
 	) => Effect.Effect<ReadonlyArray<M>, E, R>;
+};
+
+/**
+ * A Sub is long-lived scoped work, so its handler is an Effect the host forks into a Scope of the
+ * Sub's own and pushes Msgs from through `dispatch` — a stream has many answers over time, which
+ * is the whole difference from a Cmd handler's one list of follow-ups. It lives on the row beside
+ * `handlers` rather than on the core machine because a Sub that needs a service has nowhere to ask
+ * for one on Demlik's Promise-shaped `subscribe`: the core stays plain data, the Effect stays here.
+ */
+export type HostSubs<M, U extends Sub, E, R> = {
+	readonly [K in U["type"]]: (
+		sub: Extract<U, {readonly type: K}>,
+		dispatch: (msg: M) => void,
+	) => Effect.Effect<void, E, R | Scope.Scope>;
 };
 
 /**
@@ -130,6 +144,8 @@ export interface Program<
 	 */
 	readonly receive?: Readonly<Record<string, Receiver<M>>>;
 	readonly handlers: HostHandlers<M, C, E, R>;
+	/** Effect-valued Sub handlers, one per Sub the core subscribes to. A row with none omits it. */
+	readonly subs?: HostSubs<M, U, E, R>;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	readonly renderer?: RendererRef;
 	readonly identity: DefinitionIdentity;

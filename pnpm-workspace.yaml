@@ -20,6 +20,12 @@ catalog:
   '@demlik/tea': 0.12.0
   '@distilled.cloud/cloudflare': 0.27.0
   '@effect/language-service': ^0.85.1
+  # Pi 0.84.3, pinned exact: apps/tuval's loopback Pi server runs the founder's spike pin
+  # end to end, and the wire protocol's schemas are part of that contract (#7567).
+  '@earendil-works/pi-ai': 0.84.3
+  '@earendil-works/pi-client': 0.84.3
+  '@earendil-works/pi-coding-agent': 0.84.3
+  '@earendil-works/pi-protocol': 0.84.3
   '@effect/platform-bun': 4.0.0-beta.92
   '@effect/platform-node': 4.0.0-beta.92
   '@effect/sql-d1': 4.0.0-beta.92
@@ -45,6 +51,7 @@ catalog:
   '@tiptap/react': 3.27.3
   '@tiptap/starter-kit': 3.27.3
   '@types/node': ^25.6.2
+  '@types/ws': ^8.18.1
   '@types/react': ^19.2.14
   '@types/react-dom': ^19.2.3
   '@usirin/forge': ^0.2.0
@@ -80,6 +87,7 @@ catalog:
   typescript: ^7.0.2
   vite: ^8.0.16
   vitest: ^4.1.5
+  ws: ^8.21.3
   yaml: 2.9.0
   zod: 4.4.3
 
@@ -104,6 +112,16 @@ catalogs:
 # package.json consumes is what `cleanupUnusedCatalogs` deletes on the next install.
 overrides:
   '@effect/platform-node@4.0.0-beta.92>@effect/platform-node-shared': 4.0.0-beta.92
+  # Pi 0.84.3 is pinned end to end (#7465 no-go: no unpinning off 0.84.3). The four cataloged
+  # packages ask for their siblings by `^0.84.3`, and a caret picks the highest published
+  # patch — 0.84.4 — which put a SECOND `@earendil-works/pi-ai` in the tree beside the
+  # cataloged 0.84.3 one. The faux provider is registered into one copy and the agent loop
+  # reads the other, so the duplicate is a correctness hazard, not just weight. Re-key the
+  # whole family on the next pin bump.
+  '@earendil-works/pi-agent-core': 0.84.3
+  '@earendil-works/pi-ai': 0.84.3
+  '@earendil-works/pi-telemetry': 0.84.3
+  '@earendil-works/pi-tui': 0.84.3
 
 cleanupUnusedCatalogs: true
 

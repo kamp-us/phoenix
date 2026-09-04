@@ -756,6 +756,11 @@ jobs:
       - name: Build SPA
         run: pnpm --filter './apps/**' build
 
+      # Two apps answer this filter and their `integration` projects mean different
+      # things. `apps/tuval`'s is slow-not-remote — a real Pi session over a real
+      # loopback socket, no credentials (see `.glossary/LANGUAGE.md`). The rest of
+      # this note is `apps/web`'s, which is the remote tier ADR 0082 defines.
+      #
       # The `integration` vitest project (ADR 0082): each file deploys the alchemy
       # stack to real remote Cloudflare under its own per-file isolated stage via
       # `Test.make`, so D1 is ALWAYS real (no offline D1) and the suite needs real

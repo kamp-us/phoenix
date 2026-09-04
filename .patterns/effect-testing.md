@@ -17,6 +17,11 @@ The litmus for tier placement (ADR 0082): **"Could this be wrong even if the dat
 
 Reach for `unit` first — only push to `integration` what the in-process algebra genuinely can't reach faithfully.
 
+**This page is `apps/web`'s.** `apps/tuval` also declares an `integration` project and it is a
+different fidelity — a real Pi session over a real loopback socket, no D1 and no credentials. The
+term is defined for both apps in [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md); nothing above
+applies to Tuval.
+
 ## The `*.unit.test.ts` naming convention
 
 Unit tests are tagged `*.unit.test.ts`. The `unit` project's glob (`worker/**/*.test.ts`) already catches them — the suffix is a **label, not a separate project** (a distinct project would re-trigger Vitest 4's distinct-`sequence.groupOrder` rule; convention-first avoids it). A `*.unit.test.ts` file is a promise: pure logic, no SQL engine, no platform fake, no resource-carrying layer. The few remaining plain `*.test.ts` files under `worker/` (`features/fate-live/do.test.ts` over a `DurableObjectState` fake, `features/fate/codegen-vite.test.ts`) are also in the `unit` glob and likewise boot no database.
