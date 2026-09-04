@@ -16,6 +16,7 @@ import {FirstContributionOnramp} from "../components/authorship/FirstContributio
 import {Icon} from "../components/Icon";
 import {actorLabel} from "../components/moderation/actor-identity";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
+import {commentCountLabel} from "../components/pano/commentCount";
 import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";
 import {
 	PanoPostHeader,
@@ -41,7 +42,7 @@ import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
-import {type Translate, useT} from "../i18n/LocaleProvider";
+import {type Translate, useLocale, useT} from "../i18n";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
@@ -115,19 +116,25 @@ function useReportHandler() {
 	);
 }
 
-const POST_OVERRIDES: WireMessageOverrides = {
-	TITLE_REQUIRED: "başlık boş olamaz",
-	TITLE_TOO_LONG: `başlık en fazla ${TITLE_MAX} karakter olabilir`,
-	BODY_TOO_LONG: `metin en fazla ${BODY_MAX} karakter olabilir`,
-	POST_NOT_FOUND: "başlık bulunamadı",
-};
+// Built per render rather than at module scope: every message is catalog copy now, and a
+// module constant would freeze the locale the module was first evaluated under.
+function postOverrides(t: Translate): WireMessageOverrides {
+	return {
+		TITLE_REQUIRED: t("pano.error.titleRequired"),
+		TITLE_TOO_LONG: t("pano.error.titleTooLong", {max: TITLE_MAX}),
+		BODY_TOO_LONG: t("pano.error.bodyTooLong", {max: BODY_MAX}),
+		POST_NOT_FOUND: t("pano.error.postNotFound"),
+	};
+}
 
-const COMMENT_OVERRIDES: WireMessageOverrides = {
-	BODY_REQUIRED: "yorum boş olamaz",
-	BODY_TOO_LONG: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
-	COMMENT_NOT_FOUND: "yorum bulunamadı",
-	PARENT_NOT_FOUND: "yanıtlanan yorum bulunamadı",
-};
+function commentOverrides(t: Translate): WireMessageOverrides {
+	return {
+		BODY_REQUIRED: t("pano.error.commentBodyRequired"),
+		BODY_TOO_LONG: t("pano.error.commentBodyTooLong", {max: COMMENT_BODY_MAX}),
+		COMMENT_NOT_FOUND: t("pano.error.commentNotFound"),
+		PARENT_NOT_FOUND: t("pano.error.parentNotFound"),
+	};
+}
 
 const currentLocationPath = () => `${window.location.pathname}${window.location.search}`;
 
@@ -139,27 +146,30 @@ function readDeleteError(state: unknown): string | null {
 	return typeof value === "string" ? value : null;
 }
 
-// Curried on the bound translate: these are module-level rules, but the copy they resolve is
-// locale-bound, so the caller (a component) supplies the `t` it read from context.
-const validateCommentBody =
-	(t: Translate) =>
+// Curried on the bound translate and the memoized override table: these are module-level rules,
+// but the copy they resolve is locale-bound, so the component supplies both.
+const commentBodyValidator =
+	(t: Translate, overrides: WireMessageOverrides) =>
 	(trimmed: string, body: string): string | null => {
-		if (trimmed.length === 0) return messageForCode(t, "BODY_REQUIRED", COMMENT_OVERRIDES);
-		if (body.length > COMMENT_BODY_MAX)
-			return messageForCode(t, "BODY_TOO_LONG", COMMENT_OVERRIDES);
+		if (trimmed.length === 0) return messageForCode(t, "BODY_REQUIRED", overrides);
+		if (body.length > COMMENT_BODY_MAX) return messageForCode(t, "BODY_TOO_LONG", overrides);
 		return null;
 	};
 
-const validatePostFields =
-	(t: Translate) =>
-	(trimmedTitle: string, body: string): string | null => {
-		if (trimmedTitle.length === 0) return messageForCode(t, "TITLE_REQUIRED", POST_OVERRIDES);
-		if (trimmedTitle.length > TITLE_MAX) return messageForCode(t, "TITLE_TOO_LONG", POST_OVERRIDES);
-		if (body.length > BODY_MAX) return messageForCode(t, "BODY_TOO_LONG", POST_OVERRIDES);
-		return null;
-	};
+const validatePostFields = (
+	t: Translate,
+	overrides: WireMessageOverrides,
+	trimmedTitle: string,
+	body: string,
+): string | null => {
+	if (trimmedTitle.length === 0) return messageForCode(t, "TITLE_REQUIRED", overrides);
+	if (trimmedTitle.length > TITLE_MAX) return messageForCode(t, "TITLE_TOO_LONG", overrides);
+	if (body.length > BODY_MAX) return messageForCode(t, "BODY_TOO_LONG", overrides);
+	return null;
+};
 
 export function PanoPostDetail() {
+	const t = useT();
 	const {id} = useParams<{id: string}>();
 	const safeId = id ?? "";
 	return (
@@ -167,13 +177,13 @@ export function PanoPostDetail() {
 			<div className="kp-page__inner">
 				<Link to="/pano" className="kp-pano-postpage__back">
 					<Icon icon={ArrowLeft} size={14} />
-					akışa dön
+					{t("pano.backToFeed")}
 				</Link>
 				<Screen
 					fallback={<PanoPostSkeleton />}
 					error={({code}) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
-							başlık yüklenemedi: {code.toLowerCase()}
+							{t("pano.detail.loadFailed", {code: code.toLowerCase()})}
 						</p>
 					)}
 				>
@@ -185,6 +195,7 @@ export function PanoPostDetail() {
 }
 
 function PostContent({idOrSlug}: {idOrSlug: string}) {
+	const t = useT();
 	const {post} = useRequest({
 		post: {view: PostDetailView, args: {idOrSlug, comments: {first: PAGE_SIZE}}},
 	});
@@ -192,8 +203,8 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 	if (!post) {
 		return (
 			<NotFoundPage
-				title="başlık bulunamadı"
-				message={`"${idOrSlug}" diye bir başlık bulamadık. başka bir şeye bakmak ister misin?`}
+				title={t("pano.error.postNotFound")}
+				message={t("pano.detail.notFound.message", {query: idOrSlug})}
 			/>
 		);
 	}
@@ -202,13 +213,14 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 }
 
 function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: string}) {
+	const t = useT();
+	const overrides = React.useMemo(() => postOverrides(t), [t]);
 	const data = useView(PanoPostHeaderView, post);
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
 	const location = useLocation();
 	const report = useReportHandler();
-	const t = useT();
 
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
@@ -221,9 +233,9 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 		setError: setEditError,
 		inFlight: editInFlight,
 		run: runEdit,
-	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
+	} = useDraftSubmit({overrides, redirectPath: postRedirectPath});
 	const {error: deleteError, setError: setDeleteError} = useDraftSubmit({
-		overrides: POST_OVERRIDES,
+		overrides,
 		redirectPath: postRedirectPath,
 	});
 
@@ -251,7 +263,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 	async function onEditSubmit(e: React.SyntheticEvent) {
 		e.preventDefault();
 		const trimmedTitle = editTitle.trim();
-		const validationError = validatePostFields(t)(trimmedTitle, editBody);
+		const validationError = validatePostFields(t, overrides, trimmedTitle, editBody);
 		if (validationError != null) {
 			setEditError(validationError);
 			return;
@@ -263,7 +275,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 					optimistic: postEditOptimistic({title: trimmedTitle, body: editBody}),
 					view: PanoPostHeaderView,
 				}),
-			"başlık güncellenemedi",
+			t("pano.detail.postUpdateFailed"),
 			() => setEditing(false),
 		);
 	}
@@ -290,7 +302,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 			return;
 		}
 		navigate(path, {
-			state: {[DELETE_ERROR_STATE_KEY]: messageForCode(t, outcome.code, POST_OVERRIDES)},
+			state: {[DELETE_ERROR_STATE_KEY]: messageForCode(t, outcome.code, overrides)},
 		});
 	}
 
@@ -302,7 +314,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 					<form className="kp-pano-edit-post" onSubmit={onEditSubmit}>
 						<Input
 							className="kp-pano-edit-post__title"
-							aria-label="başlık"
+							aria-label={t("pano.field.title")}
 							value={editTitle}
 							onChange={(e) => setEditTitle(e.target.value)}
 							disabled={editInFlight}
@@ -312,7 +324,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 						/>
 						<Textarea
 							className="kp-pano-edit-post__body"
-							aria-label="içerik"
+							aria-label={t("pano.field.body")}
 							value={editBody}
 							onChange={(e) => setEditBody(e.target.value)}
 							disabled={editInFlight}
@@ -342,7 +354,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 									setEditError(null);
 								}}
 							>
-								iptal
+								{t("pano.action.dismiss")}
 							</Button>
 							<Button
 								variant="primary"
@@ -351,7 +363,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 								disabled={editInFlight || editTitle.trim().length === 0}
 								data-testid="post-edit-save"
 							>
-								{editInFlight ? "kaydediliyor…" : "kaydet"}
+								{editInFlight ? t("pano.action.saving") : t("pano.action.save")}
 							</Button>
 						</div>
 					</form>
@@ -371,12 +383,12 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 					open={confirmDelete}
 					onOpenChange={setConfirmDelete}
 					role="alertdialog"
-					title="başlığı sil"
-					description="bu başlığı silmek istediğine emin misin? geri alınamaz."
+					title={t("pano.detail.deletePost.title")}
+					description={t("pano.detail.deletePost.description")}
 					footer={({close}) => (
 						<>
 							<Button variant="tertiary" onClick={close}>
-								vazgeç
+								{t("pano.action.cancel")}
 							</Button>
 							<Button
 								variant="primary"
@@ -384,7 +396,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 								data-testid="post-delete-confirm"
 								onClick={onDeleteConfirm}
 							>
-								sil
+								{t("pano.action.delete")}
 							</Button>
 						</>
 					)}
@@ -409,7 +421,7 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 				signedIn={!!session.data?.user}
 				currentUserId={session.data?.user?.id ?? null}
 				currentUserName={
-					session.data?.user ? actorLabel(session.data.user.name, null, "kullanıcı") : null
+					session.data?.user ? actorLabel(session.data.user.name, null, t("pano.user")) : null
 				}
 			/>
 		</>
@@ -465,6 +477,8 @@ function useCommentAnchor(): string | null {
 }
 
 function Comments(props: CommentsProps) {
+	const {locale, t} = useLocale();
+	const overrides = React.useMemo(() => commentOverrides(t), [t]);
 	const post = useView(PostDetailView, props.post);
 	const fate = useFateClient();
 	const report = useReportHandler();
@@ -502,7 +516,7 @@ function Comments(props: CommentsProps) {
 		inFlight: deleteInFlight,
 		run: runDelete,
 	} = useDraftSubmit({
-		overrides: COMMENT_OVERRIDES,
+		overrides,
 		redirectPath: () => `/pano/${props.postId}`,
 	});
 
@@ -579,7 +593,7 @@ function Comments(props: CommentsProps) {
 				);
 				return promise;
 			},
-			"yorum silinemedi",
+			t("pano.detail.commentDeleteFailed"),
 			() => {
 				setConfirmDeleteId(null);
 				confirmCommentGone(deletedId);
@@ -656,11 +670,13 @@ function Comments(props: CommentsProps) {
 				onConfirm={confirmComment}
 				optimistic={optimisticComment}
 			/>
-			<h2 className="kp-pano-postpage__thread-heading">{visibleCount} yorum</h2>
+			<h2 className="kp-pano-postpage__thread-heading">
+				{commentCountLabel(t, locale, visibleCount)}
+			</h2>
 			{visibleCount === 0 ? (
 				<EmptyState
-					title="henüz yorum yok."
-					description="ilk yorumu sen yaz — tartışmayı başlat."
+					title={t("pano.detail.noComments.title")}
+					description={t("pano.detail.noComments.description")}
 				/>
 			) : null}
 			<div className="kp-pano-thread">
@@ -692,8 +708,8 @@ function Comments(props: CommentsProps) {
 			<Dialog
 				open={confirmDeleteId != null}
 				role="alertdialog"
-				title="yorumu sil"
-				description="bu yorumu silmek istediğine emin misin? geri alınamaz."
+				title={t("pano.detail.deleteComment.title")}
+				description={t("pano.detail.deleteComment.description")}
 				onOpenChange={(open) => {
 					if (!open) {
 						setConfirmDeleteId(null);
@@ -703,7 +719,7 @@ function Comments(props: CommentsProps) {
 				footer={({close}) => (
 					<>
 						<Button variant="tertiary" onClick={close}>
-							vazgeç
+							{t("pano.action.cancel")}
 						</Button>
 						<Button
 							variant="primary"
@@ -713,7 +729,7 @@ function Comments(props: CommentsProps) {
 							data-testid="pano-comment-delete-confirm"
 							onClick={onDeleteConfirm}
 						>
-							{deleteInFlight ? "siliniyor…" : "sil"}
+							{deleteInFlight ? t("pano.action.deleting") : t("pano.action.delete")}
 						</Button>
 					</>
 				)}
@@ -759,11 +775,12 @@ function CommentComposer({
 	} | null;
 	autoFocus?: boolean;
 }) {
+	const {t} = useLocale();
+	const overrides = React.useMemo(() => commentOverrides(t), [t]);
 	const fate = useFateClient();
 	const navigate = useNavigate();
 	const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const createdId = React.useRef<string | null>(null);
-	const t = useT();
 
 	React.useEffect(() => {
 		if (autoFocus) textareaRef.current?.focus();
@@ -771,7 +788,7 @@ function CommentComposer({
 
 	const {body, setBody, error, inFlight, submit} = useDraft({
 		initialBody: "",
-		validate: validateCommentBody(t),
+		validate: commentBodyValidator(t, overrides),
 		redirectPath: currentLocationPath,
 		run: async (value) => {
 			const optimisticRecord = optimistic
@@ -816,8 +833,8 @@ function CommentComposer({
 				throw caught;
 			}
 		},
-		overrides: COMMENT_OVERRIDES,
-		failureFallback: "yorum eklenemedi",
+		overrides,
+		failureFallback: t("pano.detail.commentAddFailed"),
 		onSuccess: () => {
 			setBody("");
 			if (createdId.current) onConfirm?.(createdId.current);
@@ -842,11 +859,9 @@ function CommentComposer({
 			<Textarea
 				ref={textareaRef}
 				className="kp-pano-comment-composer__textarea"
-				aria-label={parentId ? "yanıt" : "yorum"}
+				aria-label={parentId ? t("pano.field.reply") : t("pano.field.comment")}
 				placeholder={
-					signedIn
-						? "yorum yaz. markdown çalışır, ``` ``` kod bloğu çalışır."
-						: "yorum yazmak için giriş yap"
+					signedIn ? t("pano.composer.placeholder") : t("pano.composer.signedOutPlaceholder")
 				}
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
@@ -869,7 +884,7 @@ function CommentComposer({
 			) : null}
 			<div className="kp-pano-comment-composer__foot">
 				<span className="kp-pano-comment-composer__hint">
-					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd>
+					{t("pano.markdown")} · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd>
 				</span>
 				<div style={{display: "flex", gap: 6}}>
 					{onCancel ? (
@@ -880,7 +895,7 @@ function CommentComposer({
 							onClick={onCancel}
 							disabled={inFlight}
 						>
-							iptal
+							{t("pano.action.dismiss")}
 						</Button>
 					) : null}
 					<Button
@@ -890,7 +905,11 @@ function CommentComposer({
 						disabled={inFlight || body.trim().length === 0}
 						data-testid={parentId ? `pano-comment-reply-submit-${parentId}` : "pano-comment-submit"}
 					>
-						{inFlight ? "gönderiliyor…" : parentId ? "yanıtla" : "yorum ekle"}
+						{inFlight
+							? t("pano.action.sending")
+							: parentId
+								? t("pano.action.reply")
+								: t("pano.composer.submit")}
 					</Button>
 				</div>
 			</div>
@@ -911,13 +930,14 @@ function CommentEditComposer({
 	onEdited: () => void;
 	onCancel: () => void;
 }) {
+	const t = useT();
+	const overrides = React.useMemo(() => commentOverrides(t), [t]);
 	const fate = useFateClient();
 	const localId = commentId;
-	const t = useT();
 
 	const {body, setBody, error, inFlight, submit} = useDraft({
 		initialBody,
-		validate: validateCommentBody(t),
+		validate: commentBodyValidator(t, overrides),
 		redirectPath: currentLocationPath,
 		run: (value) =>
 			fate.mutations.comment.edit({
@@ -925,8 +945,8 @@ function CommentEditComposer({
 				optimistic: bodyEditOptimistic(value),
 				view: CommentTreeNodeView,
 			}),
-		overrides: COMMENT_OVERRIDES,
-		failureFallback: "yorum güncellenemedi",
+		overrides,
+		failureFallback: t("pano.detail.commentUpdateFailed"),
 		onSuccess: onEdited,
 	});
 
@@ -938,7 +958,7 @@ function CommentEditComposer({
 		>
 			<Textarea
 				className="kp-pano-comment-composer__textarea"
-				aria-label="yorumu düzenle"
+				aria-label={t("pano.detail.editComment.label")}
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
 				onKeyDown={submitOnCmdEnter}
@@ -960,11 +980,11 @@ function CommentEditComposer({
 			) : null}
 			<div className="kp-pano-comment-composer__foot">
 				<span className="kp-pano-comment-composer__hint">
-					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd>
+					{t("pano.markdown")} · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd>
 				</span>
 				<div style={{display: "flex", gap: 6}}>
 					<Button variant="tertiary" size="sm" type="button" onClick={onCancel} disabled={inFlight}>
-						iptal
+						{t("pano.action.dismiss")}
 					</Button>
 					<Button
 						variant="primary"
@@ -973,7 +993,7 @@ function CommentEditComposer({
 						disabled={inFlight || body.trim().length === 0}
 						data-testid={`pano-comment-edit-save-${localId}`}
 					>
-						{inFlight ? "kaydediliyor…" : "kaydet"}
+						{inFlight ? t("pano.action.saving") : t("pano.action.save")}
 					</Button>
 				</div>
 			</div>

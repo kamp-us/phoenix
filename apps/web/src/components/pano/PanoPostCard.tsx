@@ -7,6 +7,7 @@ import {Link} from "react-router";
 import type {Post} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {toIso} from "../../fate/wire";
+import {useLocale} from "../../i18n";
 import {formatAgoTR} from "../../lib/datetime";
 import {tagClass} from "../../lib/panoTags";
 import {
@@ -22,6 +23,7 @@ import {Tag, type TagKind} from "../ui/atoms";
 import {Button} from "../ui/Button";
 import {MetaRow} from "../ui/MetaRow";
 import {SandboxMarker} from "../ui/SandboxMarker";
+import {commentCountLabel} from "./commentCount";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
 
@@ -79,6 +81,7 @@ export function PanoPostCard({
 	/** Threaded down from the feed, which reads the `member-mute` flag once (#3117). */
 	muteEnabled?: boolean;
 }) {
+	const {locale, t} = useLocale();
 	const data = useLiveView(PanoPostCardView, post);
 	const session = useSession();
 	const {isMuted} = useMutedMembers();
@@ -94,7 +97,7 @@ export function PanoPostCard({
 		? composedScalars(session.isPending, session.data?.user?.id ?? null, data)
 		: {myVote: data.myVote ?? null, isSaved: data.isSaved ?? null};
 	const href = `/pano/${data.slug ?? data.id}`;
-	const siteLabel = data.host ?? (data.url ? null : "yazı");
+	const siteLabel = data.host ?? (data.url ? null : t("pano.post.text"));
 	const agoLabel = formatAgoTR(toIso(data.createdAt));
 	const tags = data.tags ?? [];
 
@@ -144,7 +147,7 @@ export function PanoPostCard({
 					<MetaRow.Dot />
 					<span>{agoLabel}</span>
 					<MetaRow.Dot />
-					<a href={`${href}#comments`}>{data.commentCount} yorum</a>
+					<a href={`${href}#comments`}>{commentCountLabel(t, locale, data.commentCount)}</a>
 					<MetaRow.Dot />
 					<PostSaveButton postId={data.id} isSaved={isSaved} />
 					{muteEnabled && !isOwn && data.authorId ? (
@@ -161,7 +164,7 @@ export function PanoPostCard({
 						<>
 							<MetaRow.Dot />
 							<Button type="button" variant="link" size="sm" onClick={() => onHide(data.id)}>
-								gizle
+								{t("pano.action.hide")}
 							</Button>
 						</>
 					) : null}

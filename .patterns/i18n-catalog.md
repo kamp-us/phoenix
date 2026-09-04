@@ -53,7 +53,43 @@ go unmessaged. That coverage guarantee used to live in `fate/wireMessages.ts`'s
 The consumer takes the bound `Translate`, never a `Locale`: `en` is reachable only through
 `catalog.ts`'s dynamic import, so a module outside a `LocaleProvider` subtree cannot resolve
 English synchronously. A module-level rule that needs copy is curried on `t` and the component
-supplies it — see `validateCommentBody` in `pages/PanoPostDetail.tsx`.
+supplies it — see `commentBodyValidator` in `pages/PanoPostDetail.tsx`.
+## Copy that used to live in a module constant
+
+A message table declared at module scope — a `WireMessageOverrides` map, a label lookup — is
+evaluated once, when the module is first imported, so a `t` call inside it freezes whichever
+locale was live then. Turn the constant into a function of `t` and build it per render:
+
+```ts
+function panoSubmitOverrides(t: Translate): WireMessageOverrides {
+	return {TITLE_REQUIRED: t("pano.error.titleRequired"), …};
+}
+// in the component
+const overrides = React.useMemo(() => panoSubmitOverrides(t), [t]);
+```
+
+The `useMemo` is a cheap guard, not a correctness requirement. `LocaleProvider` memoizes its
+context value on `[locale, setLocale, catalog]`, so `t` is stable until the locale swaps and the
+table is rebuilt only then. Nothing downstream reads the table's identity: `useDraftSubmit` and
+`useDraft` declare no dependency array and read `options.overrides` inside their own closures at
+call time. A helper that took the table at module scope takes it as a parameter instead —
+`validatePostFields(t, overrides, …)`.
+
+## Plurals pick a message, not a key
+
+`plural` is typed `PluralForms → string`, so feeding it two catalog *keys* returns a `string`
+and `t` refuses it. Feed it two already-translated messages instead:
+
+```ts
+plural(locale, count, {
+	one: t("pano.post.commentCount.one", {count}),
+	other: t("pano.post.commentCount.other", {count}),
+});
+```
+
+Both arms are looked up either way, which costs nothing and keeps the whole thing typed. Where
+more than one component renders the same counted phrase, wrap it once
+(`components/pano/commentCount.ts`) so the arm is picked in a single place.
 
 ## The two type checks, and why they are in different files
 
