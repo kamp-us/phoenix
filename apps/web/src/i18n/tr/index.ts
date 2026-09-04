@@ -1,3 +1,4 @@
+import {auth} from "./auth";
 import {layout} from "./layout";
 import {wire} from "./wire";
 
@@ -7,6 +8,7 @@ import {wire} from "./wire";
  * then checked against it (ADR 0347).
  */
 export const tr = {
+	...auth,
 	...layout,
 	...wire,
 };

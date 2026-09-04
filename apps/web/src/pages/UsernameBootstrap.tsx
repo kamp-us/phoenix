@@ -9,7 +9,7 @@ import type {User} from "../../worker/features/fate/views";
 import {deriveUsernameFromEmail} from "../../worker/features/pasaport/username-rule";
 import {Alert, Button, Form, Input} from "../components/ui";
 import {codeOf} from "../fate/wire";
-import {useT} from "../i18n/LocaleProvider";
+import {useT} from "../i18n";
 import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";
 
@@ -84,21 +84,17 @@ export function UsernameBootstrap({
 				<div className="kp-auth__brand">
 					kamp<span className="dot">.</span>us
 				</div>
-				<h2 className="kp-auth__title">kullanıcı adını seç</h2>
-				<p className="kp-auth__sub">profilin /u/&lt;ad&gt; üzerinden açılır. sonradan değişmez.</p>
+				<h2 className="kp-auth__title">{t("auth.bootstrap.title")}</h2>
+				<p className="kp-auth__sub">{t("auth.field.username.hint")}</p>
 				<Form className="kp-auth__form" onSubmit={onSubmit}>
 					<Input
 						className="kp-auth__field"
 						id="bootstrap-username"
 						name="username"
 						type="text"
-						label="kullanıcı adı"
-						aria-label="kullanıcı adı"
-						hint={
-							needsConfirm
-								? "bu e-postandan türetilmiş ad. sonradan değişmez — onaylamadan önce istersen değiştir."
-								: undefined
-						}
+						label={t("auth.field.username.label")}
+						aria-label={t("auth.field.username.label")}
+						hint={needsConfirm ? t("auth.bootstrap.confirmHint") : undefined}
 						autoComplete="off"
 						required
 						minLength={3}
@@ -125,7 +121,11 @@ export function UsernameBootstrap({
 						disabled={pending}
 						loading={pending}
 					>
-						{pending ? "ayarlanıyor…" : needsConfirm ? "bu adı onayla" : "devam et"}
+						{pending
+							? t("auth.username.saving")
+							: needsConfirm
+								? t("auth.bootstrap.confirmSubmit")
+								: t("auth.bootstrap.submit")}
 					</Button>
 				</Form>
 			</div>

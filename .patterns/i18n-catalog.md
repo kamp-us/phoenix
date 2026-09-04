@@ -92,6 +92,27 @@ unchanged.
 number of times in `en` as in `tr`, matched **whole-word**. Turkish is agglutinative, so
 `bildirimler` contains `bildir` and a substring match would call every suffixed word a brand noun.
 
+That whole-word rule is what you trip over when Turkish suffixes the noun. `divanda` is not a
+whole-word `divan`, so the key's `tr` count is 0 — and an English message that spells `in the divan`
+counts 1 and reds the invariant. **Give the English side a placeholder and pass the noun in**, out of
+an `auth.brand.*`-style key so it is still catalog copy rather than a literal:
+
+```ts
+// tr — the suffixed word, unchanged
+"auth.landing.col.pano": "panoda son 24 saat",
+// en
+"auth.landing.col.pano": "the last 24 hours on {panoNoun}",
+```
+
+```tsx
+t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})
+```
+
+Name the placeholder `{panoNoun}`, **never `{pano}`**: the invariant scans with `\p{L}+`, braces are
+not letters, so `{pano}` reads as the word `pano` and counts. A noun whose Turkish spelling mutates
+under the suffix (`sözlük` → `sözlüğe`) can only be written out on the `tr` side; the placeholder
+still belongs on the `en` one.
+
 ## Plurals
 
 `plural(locale, n, {one, other})` and nothing more. `Intl.PluralRules` reports exactly `one` and
