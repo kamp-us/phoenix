@@ -9,6 +9,11 @@
  * whichever tiers it holds a token for; a tier with no token is left unseeded, and the capture verb
  * refuses a surface naming it rather than falling back to a seeded one.
  *
+ * **A tier is not a standing.** Where the çaylak sits on the promotion path — its karma and whether
+ * a kefil exists — is a second axis, and the path forks on it into two compositions that look
+ * nothing alike (#7708). {@link CaylakStanding} names a point on it; a run that names none leaves
+ * both standing tables untouched.
+ *
  * Direct-D1 like the rest of this package — never a runtime worker route (CLAUDE.md, "Sözlük
  * seed"). Moderation authority is the `(id, "moderates", key(platform))` tuple, not `user.role`
  * (ADR 0107 §4); the vestigial column is written beside it only so a coarse role read agrees. Only
@@ -32,7 +37,7 @@ import {and, eq, notInArray} from "drizzle-orm";
 import type {BatchItem} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
-import {relationTuple, seedSchema, session, user} from "./schema.ts";
+import {authorshipVouch, relationTuple, seedSchema, session, user, userProfile} from "./schema.ts";
 
 const relations = defineRelations(seedSchema);
 
@@ -117,6 +122,42 @@ export const parseSessionToken = (raw: string): SessionToken | null =>
  */
 export type PreviewCredentials = Partial<Readonly<Record<PreviewTier, SessionToken>>>;
 
+/** The tier a standing is about, and the tier whose identity can vouch for it (ADR 0107 §4). */
+export const CANDIDATE_TIER = "çaylak" satisfies PreviewTier;
+export const VOUCHER_TIER = "yazar" satisfies PreviewTier;
+
+declare const KarmaBrand: unique symbol;
+/** A karma total that has passed {@link parseStanding} — a non-negative safe integer. */
+export type Karma = number & {readonly [KarmaBrand]: true};
+
+/**
+ * Where on the çaylak→yazar promotion path a provisioned identity stands (#7708). Both fields
+ * always travel together, because the path forks on `kefil` and reads `karma` against a bar chosen
+ * by that fork (`promotionBarFor` in the worker's `features/kunye/standing.ts`) — a standing
+ * carrying one without the other names no renderable state.
+ */
+export interface CaylakStanding {
+	readonly karma: Karma;
+	readonly kefil: boolean;
+}
+
+/** The suffix that turns a karma total into a vouched standing: `15+kefil`. */
+export const KEFIL_SUFFIX = "+kefil";
+
+/**
+ * The single operand form, so a partial standing is unrepresentable at the CLI boundary too: one
+ * flag either yields both fields or is refused. `\d+` and not a signed parse — a negative total is
+ * not a point on the ladder, and `Number("-1")` would otherwise seed one.
+ */
+export const parseStanding = (raw: string): CaylakStanding | null => {
+	const trimmed = raw.trim();
+	const kefil = trimmed.endsWith(KEFIL_SUFFIX);
+	const karmaText = kefil ? trimmed.slice(0, -KEFIL_SUFFIX.length) : trimmed;
+	if (!/^\d+$/.test(karmaText)) return null;
+	const karma = Number(karmaText);
+	return Number.isSafeInteger(karma) ? {karma: karma as Karma, kefil} : null;
+};
+
 export interface ProvisionReport {
 	/** The tiers provisioned, in {@link PREVIEW_TIERS} order — one `user` + one `session` row each. */
 	readonly tiers: readonly PreviewTier[];
@@ -126,14 +167,23 @@ export interface ProvisionReport {
 }
 
 /**
- * Three arms, never one: a refusal must not read as a provision that wrote nothing. `NotThrowaway`
- * names how many foreign accounts were found, which is the fact the operator acts on, and
- * `NoCredentials` says the run named no tier at all rather than seeding a default one.
+ * Four arms, never one: a refusal must not read as a provision that wrote nothing. `NotThrowaway`
+ * names how many foreign accounts were found, which is the fact the operator acts on;
+ * `NoCredentials` says the run named no tier at all rather than seeding a default one; and
+ * `StandingNeedsTier` names the tier whose absence makes the requested standing unwritable — the
+ * `candidate` this standing is about, or the `voucher` a `kefil` needs. `authorship_vouch` carries
+ * no foreign keys (migration `0013`), so a vouch written past that refusal would be a dangling
+ * `voucher_id` nothing in the database catches and no read resolves.
  */
 export type ProvisionOutcome =
 	| {readonly _tag: "Provisioned"; readonly report: ProvisionReport}
 	| {readonly _tag: "NotThrowaway"; readonly foreignAccounts: number}
-	| {readonly _tag: "NoCredentials"};
+	| {readonly _tag: "NoCredentials"}
+	| {
+			readonly _tag: "StandingNeedsTier";
+			readonly missing: PreviewTier;
+			readonly role: "candidate" | "voucher";
+	  };
 
 /**
  * Accounts on this database that are none of the test identities and not the `@[silinen]` migration
@@ -184,9 +234,45 @@ const accountRows = (
 	];
 };
 
+/**
+ * The standing rows for the çaylak, written beside its account and session in the same batch.
+ * Karma is SET, never incremented, and a standing without a `kefil` DELETES any vouch the previous
+ * run left — re-seeding the other fork of the promotion path is the whole capture route (#7708),
+ * so a leftover row would render the state the operator just asked to leave.
+ */
+const standingRows = (
+	db: SeedDb,
+	standing: CaylakStanding,
+	now: Date,
+): readonly [Statement, Statement] => {
+	const candidate = TEST_ACCOUNTS[CANDIDATE_TIER];
+	const profileRow = {
+		userId: candidate.id,
+		username: candidate.username,
+		displayName: candidate.name,
+		totalKarma: standing.karma,
+		updatedAt: now,
+	};
+	const vouchRow = {
+		voucherId: TEST_ACCOUNTS[VOUCHER_TIER].id,
+		candidateId: candidate.id,
+		createdAt: now,
+	};
+	return [
+		db
+			.insert(userProfile)
+			.values(profileRow)
+			.onConflictDoUpdate({target: userProfile.userId, set: profileRow}),
+		standing.kefil
+			? db.insert(authorshipVouch).values(vouchRow).onConflictDoNothing()
+			: db.delete(authorshipVouch).where(eq(authorshipVouch.candidateId, candidate.id)),
+	];
+};
+
 export const provisionTestAccounts = async (
 	db: SeedDb,
 	credentials: PreviewCredentials,
+	standing: CaylakStanding | null = null,
 	now: Date = new Date(),
 ): Promise<ProvisionOutcome> => {
 	const requested = PREVIEW_TIERS.flatMap((tier) => {
@@ -196,6 +282,16 @@ export const provisionTestAccounts = async (
 	const [head, ...rest] = requested;
 	if (head === undefined) return {_tag: "NoCredentials"};
 
+	if (standing !== null) {
+		const seeded = requested.map(({tier}) => tier);
+		if (!seeded.includes(CANDIDATE_TIER)) {
+			return {_tag: "StandingNeedsTier", missing: CANDIDATE_TIER, role: "candidate"};
+		}
+		if (standing.kefil && !seeded.includes(VOUCHER_TIER)) {
+			return {_tag: "StandingNeedsTier", missing: VOUCHER_TIER, role: "voucher"};
+		}
+	}
+
 	const foreignAccounts = await countForeignAccounts(db);
 	if (foreignAccounts > 0) return {_tag: "NotThrowaway", foreignAccounts};
 
@@ -203,6 +299,7 @@ export const provisionTestAccounts = async (
 	const rows = [
 		...accountRows(db, head.tier, head.token, now, expiresAt),
 		...rest.flatMap(({tier, token}) => accountRows(db, tier, token, now, expiresAt)),
+		...(standing === null ? [] : standingRows(db, standing, now)),
 	] as const;
 	const tuples = requested
 		.filter(({tier}) => TEST_ACCOUNTS[tier].moderates)
@@ -213,8 +310,9 @@ export const provisionTestAccounts = async (
 				.onConflictDoNothing(),
 		);
 
-	// One `batch` so every account, its session and its moderation tuple land together or not at all
-	// — a session pointing at an unpromoted account renders a çaylak's view under the yazar's name.
+	// One `batch` so every account, its session, its moderation tuple and its standing land together
+	// or not at all — a session pointing at an unpromoted account renders a çaylak's view under the
+	// yazar's name, and a karma row without its vouch row renders a standing nobody asked for.
 	const results = await db.batch([...rows, ...tuples]);
 
 	return {
