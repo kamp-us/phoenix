@@ -440,6 +440,27 @@ The layout tree's four nouns, first used in code by
 - **zoom** — the one window rendered alone, `zoomed` on the tree. Setting or clearing it never
   writes a size, so unzoom restores the layout exactly.
 
+### Tuval: workspace, prefix, attach
+
+The shell's three nouns, first used in code by
+[`apps/tuval/src/shell/core/`](../apps/tuval/src/shell/core/) (#7554). English technical terms,
+per §3, and named in the epic's own vocabulary ruling
+([#7499](https://github.com/kamp-us/phoenix/issues/7499)).
+
+- **workspace** — one named desk: a layout tree and the window focus sits in. The shell holds many
+  and exactly one is active; the last one cannot be removed, because a shell with no desk has
+  nothing to show. Re-derived from the founder's Studio, where workspaces are a keyed map beside an
+  `activeWorkspace` id (`monorepo/packages/studio/studio.ts`).
+- **prefix** — the one key that arms the shell for the sequence after it (`<c-b>` by default,
+  tmux's shape). With the prefix unarmed every key belongs to the focused window; there is no
+  shell-wide mode, and "mode" is **retired** with the Runekeeper lineage.
+- **attach** — a page joining the running kernel over one socket, the tmux client sense. A restart
+  is literal: kill Node, boot Node, re-attach the page, and the desk that comes back is the
+  checkpointed one.
+
+"Pane" is **not adopted**: the tmux word for what Vim calls a window stays **window**. "Widget",
+"spell" and "rune" are retired with the same lineage.
+
 
 ---
 
