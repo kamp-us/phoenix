@@ -451,6 +451,58 @@ the revision just below it") have always said; the check used to be wider than b
 [`protocol/issue.ts`](../apps/tuval/src/protocol/issue.ts) turns an Effect `SchemaError` into
 `{expected, at}`, which is what every refusal in the slice interpolates.
 
+## The shell's command rows
+
+The shell declares its named commands under
+[`apps/tuval/src/shell/commands/`](../apps/tuval/src/shell/commands) and publishes them as spells on
+its own program row, so there is no second command mechanism beside this framework — one registry
+answers a bound key, a typed line, `help`, and an agent's bridge.
+
+| File | What is in it |
+|---|---|
+| [`shell/commands/row.ts`](../apps/tuval/src/shell/commands/row.ts) | `ShellCommand`, `defineCommand`, `CommandPath`, `commandName`, `commandPath`, `parameterNames` |
+| [`shell/commands/table.ts`](../apps/tuval/src/shell/commands/table.ts) | `shellCommands`, `commandFor`, `commandNames`, `resolveVerb`, `verbSpellings`, `msgForCommandName` |
+| [`shell/commands/line.ts`](../apps/tuval/src/shell/commands/line.ts) | `readCommandLine`, `CommandLineResult` |
+| [`shell/commands/errors.ts`](../apps/tuval/src/shell/commands/errors.ts) | `CommandRefusal` and its five arms, `refusalMessage` |
+| [`shell/commands/spells.ts`](../apps/tuval/src/shell/commands/spells.ts) | `shellSpells`, `CommandDispatched` |
+| [`shell/commands/dispatch.ts`](../apps/tuval/src/shell/commands/dispatch.ts) | `ShellDispatch` |
+
+A row is `defineCommand({path, describe, params, toMsg})`. It is the same shape as a spell minus the
+executing: `toMsg` takes the decoded parameters and returns one `ShellMsg`
+([`shell/core/machine.ts`](../apps/tuval/src/shell/core/machine.ts)), so a row captures no context,
+returns no Promise, and is data a test drives directly. Whatever a command needs from the world
+rides on the Msg's own Cmd — `window:open` becomes `window.open`, whose cell emits the picker's
+`openProgram` Cmd, and the spawning stays where the registry and the process table are.
+
+`commandName` joins the path with colons (`window:close`), which is the spelling a key binding uses;
+`commandPath` reads it back. One derivation each way, so a row cannot carry a name its path
+disagrees with, and the prefix table's `CommandName`
+([`shell/keys/table.ts`](../apps/tuval/src/shell/keys/table.ts)) needs no second vocabulary.
+
+`msgForCommandName` is the one place a bound key's name becomes a Msg, and `shell/core/machine.ts`
+calls it — so a key press and a typed line run the same row. It answers `null` for a row that needs
+an argument, because a key sequence has nowhere to carry one, and the core leaves that name as a
+`runCommand` Cmd.
+
+`readCommandLine` lexes with this framework's `tokenize` and suggests with its `didYouMean`, then
+binds the tokens positionally in `Schema.Struct` declaration order and decodes them against the
+row's real schema through `Schema.decodeUnknownResult`. That is the difference from `parse` above:
+the palette's parser binds argument *text* and leaves the decode to the executor, so its refusal
+names a position; this one has the schema in hand, so its refusal names the row and the parameter.
+A verb resolves as the full name, else the `window:` row of that name, else an unambiguous last
+segment — `open` is claimed by both `window:open` and `command:open`, and the `window:` step is what
+keeps `:open counter` readable rather than a guess.
+
+Two rows are declared elsewhere and lifted here: `window:open` and `window:attach` come from
+`pickerCommands` ([`shell/picker/intent.ts`](../apps/tuval/src/shell/picker/intent.ts)), where the
+picker put them so the argument grammar would sit beside the handler that consumes it. The table
+reads their name, sentence and argument kind off that list rather than re-typing them.
+
+`shellSpells` wraps each row as a spell whose `execute` builds the Msg and hands it to
+`ShellDispatch`, an interface this slice declares and whoever runs the desk implements — the same
+shape `WindowIndex` takes above. `AnySpell` erases that requirement, so the composition root that
+builds the registry owes the service.
+
 ## The palette
 
 The palette is one desk-level overlay at the top center of the whole app, fixed width, never tied to

@@ -31,7 +31,6 @@ export {
 	type PickerIntent,
 	pickerCommandFor,
 	pickerCommands,
-	resolveCommandLine,
 } from "./intent.ts";
 export {type PickerOptions, runPickerIntent} from "./open.ts";
 export {

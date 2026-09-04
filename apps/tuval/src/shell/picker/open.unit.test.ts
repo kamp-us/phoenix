@@ -4,9 +4,10 @@
  * "the same handler" is the claim this slice exists to keep and nothing in the types enforces it.
  */
 
-import {Effect, Result} from "effect";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import type {AnyProgram} from "../../registry/program.ts";
+import {readCommandLine} from "../commands/line.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import {noEntries, type PickerEntries, programEntries} from "./entries.ts";
 import {
@@ -18,7 +19,7 @@ import {
 	windowId,
 } from "./fixtures.ts";
 import type {PickerIntent} from "./intent.ts";
-import {attachProcess, openProgram, resolveCommandLine} from "./intent.ts";
+import {attachProcess, openProgram} from "./intent.ts";
 import {runPickerIntent} from "./open.ts";
 import {mountPicker, pickerKey} from "./view.ts";
 
@@ -150,21 +151,37 @@ describe("attaching to a running process", () => {
 describe("the picker row and the command line are one handler", () => {
 	const entries: PickerEntries = {programs: programEntries(rows), processes: []};
 
-	it("`window:open counter` and choosing the counter row both produce one process", async () => {
-		const chosen = pickerKey(window, entries, mountPicker(), "<enter>");
-		const typed = resolveCommandLine(window, "open counter");
-		expect(chosen._tag).toBe("Chose");
-		expect(Result.isSuccess(typed)).toBe(true);
-		if (chosen._tag !== "Chose" || !Result.isSuccess(typed)) return;
+	/**
+	 * The intent a typed line ends in. The line reads to a core Msg (`../commands/line.ts`) and the
+	 * core turns that Msg into the picker's own Cmd — `../commands/line.unit.test.ts` proves that
+	 * link. Here the Cmd is rebuilt from the Msg so the two routes can be compared as values.
+	 */
+	const typedIntent = (line: string): PickerIntent | null => {
+		const read = readCommandLine(line);
+		if (read._tag !== "Msg") return null;
+		if (read.msg.type === "window.open") {
+			return openProgram(window, programId(read.msg.programId));
+		}
+		return read.msg.type === "window.attach"
+			? attachProcess(window, processId(read.msg.processId))
+			: null;
+	};
 
-		expect(chosen.intent).toEqual(typed.success);
-		const [fromRow, fromLine] = await Promise.all([run(chosen.intent), run(typed.success)]);
+	it("`open counter` and choosing the counter row both produce one process", async () => {
+		const chosen = pickerKey(window, entries, mountPicker(), "<enter>");
+		const typed = typedIntent("open counter");
+		expect(chosen._tag).toBe("Chose");
+		expect(typed).not.toBeNull();
+		if (chosen._tag !== "Chose" || typed === null) return;
+
+		expect(chosen.intent).toEqual(typed);
+		const [fromRow, fromLine] = await Promise.all([run(chosen.intent), run(typed)]);
 		expect(fromRow.spawns).toEqual([{programId: "counter", parent: shellProcessId}]);
 		expect(fromLine.spawns).toEqual(fromRow.spawns);
 		expect(fromLine.msgs).toEqual(fromRow.msgs);
 	});
 
-	it("`window:attach <id>` and choosing the process row both bind without spawning", async () => {
+	it("`attach <id>` and choosing the process row both bind without spawning", async () => {
 		const withProcess: PickerEntries = {
 			...noEntries,
 			processes: [
@@ -178,17 +195,14 @@ describe("the picker row and the command line are one handler", () => {
 			],
 		};
 		const chosen = pickerKey(window, withProcess, mountPicker(), "<enter>");
-		const typed = resolveCommandLine(window, "attach p-1");
+		const typed = typedIntent("attach p-1");
 		expect(chosen._tag).toBe("Chose");
-		expect(Result.isSuccess(typed)).toBe(true);
-		if (chosen._tag !== "Chose" || !Result.isSuccess(typed)) return;
+		expect(typed).not.toBeNull();
+		if (chosen._tag !== "Chose" || typed === null) return;
 
-		expect(chosen.intent).toEqual(typed.success);
+		expect(chosen.intent).toEqual(typed);
 		const seed = [["p-1", "counter", undefined]] as const;
-		const [fromRow, fromLine] = await Promise.all([
-			run(chosen.intent, {seed}),
-			run(typed.success, {seed}),
-		]);
+		const [fromRow, fromLine] = await Promise.all([run(chosen.intent, {seed}), run(typed, {seed})]);
 		expect(fromRow.spawns).toEqual([]);
 		expect(fromLine.msgs).toEqual(fromRow.msgs);
 	});

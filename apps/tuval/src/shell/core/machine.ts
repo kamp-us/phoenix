@@ -6,9 +6,10 @@
  *
  * **A bound key runs its Msg, it does not queue one.** `keys.press` resolves a completed sequence
  * to the Msg that command names and applies it through this same reducer, in the transition that
- * read the key — so one press is one commit and one checkpoint. A name this core does not own
- * (`command:open`, `config:reload`, a user's own binding) leaves as a `runCommand` Cmd for the
- * command rows (#7555) instead.
+ * read the key — so one press is one commit and one checkpoint. The name becomes a Msg through the
+ * command table (`../commands/table.ts`), the one place that mapping lives, so a bound key and a
+ * typed command line run the same row. A name the table does not hold — a user's own binding —
+ * leaves as a `runCommand` Cmd for whoever runs the desk.
  *
  * **The prefix timer is the host's, and there is exactly one.** The core says when a window opens
  * (`startPrefixTimer`, carrying its length in ms) and when it closes (`cancelPrefixTimer`); the
@@ -19,6 +20,7 @@
 
 import {defineMachine} from "@demlik/tea";
 import {Duration} from "effect";
+import {msgForCommandName} from "../commands/table.ts";
 import type {CommandName, Key, PrefixState, PrefixTable} from "../keys/index.ts";
 import {idle, route} from "../keys/index.ts";
 import {
@@ -50,9 +52,13 @@ import {
 } from "./state.ts";
 
 /**
- * What the core asks its host to do. Four arms, and the absence is the point: there is no
- * stop-a-process arm, so closing a window cannot end the process it was showing — a window is a
- * view onto a process, and the last view closing says nothing about the process's lifetime.
+ * What the core asks its host to do. The absence is the point: there is no stop-a-process arm, so
+ * closing a window cannot end the process it was showing — a window is a view onto a process, and
+ * the last view closing says nothing about the process's lifetime.
+ *
+ * `openProgram` and `attachProcess` are the picker's (`../picker/open.ts` runs both): spawning
+ * needs the registry and the process table, which a pure reducer cannot reach, so the core names
+ * the window and the thing to show in it and stops there.
  */
 export type ShellCmd =
 	| {
@@ -63,7 +69,11 @@ export type ShellCmd =
 	  }
 	| {readonly type: "startPrefixTimer"; readonly timeoutMs: number}
 	| {readonly type: "cancelPrefixTimer"}
-	| {readonly type: "runCommand"; readonly name: CommandName};
+	| {readonly type: "runCommand"; readonly name: CommandName}
+	| {readonly type: "openProgram"; readonly windowId: WindowId; readonly programId: string}
+	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
+	| {readonly type: "openCommandLine"}
+	| {readonly type: "reloadConfig"};
 
 /**
  * Every Msg the shell core takes. `windowId` and `workspaceId` are optional wherever the focused
@@ -85,6 +95,11 @@ export type ShellMsg =
 	| {readonly type: "workspace.create"}
 	| {readonly type: "workspace.remove"; readonly workspaceId?: WorkspaceId}
 	| {readonly type: "workspace.activate"; readonly workspaceId: WorkspaceId}
+	| {readonly type: "workspace.step"; readonly direction: "previous" | "next"}
+	| {readonly type: "window.open"; readonly programId: string; readonly windowId?: WindowId}
+	| {readonly type: "window.attach"; readonly processId: string; readonly windowId?: WindowId}
+	| {readonly type: "command.open"}
+	| {readonly type: "config.reload"}
 	| {readonly type: "keys.press"; readonly key: Key}
 	| {readonly type: "prefix.timeout"};
 
@@ -281,49 +296,24 @@ const removeWorkspace = (
 	];
 };
 
-/**
- * The command names this core owns, resolved against the state that will receive the Msg. A name
- * absent here is not this core's — it leaves as a `runCommand` Cmd.
- *
- * The two split names carry Studio's and tmux's naming, where the word describes the divider the
- * key draws rather than the arrangement it produces: `|` is `window:split-vertical` and puts the
- * two windows *side by side*, which in this repo's layout vocabulary is `"horizontal"`
- * (`.glossary/LANGUAGE.md`, "Tuval: stack, orientation, size, zoom"). The inversion is real and
- * lives on this one line so nothing downstream has to know about it.
- */
-const commandMsg = (state: ShellState, name: CommandName): ShellMsg | null => {
-	switch (name as string) {
-		case "window:split-vertical":
-			return {type: "window.split", orientation: "horizontal"};
-		case "window:split-horizontal":
-			return {type: "window.split", orientation: "vertical"};
-		case "window:focus-left":
-			return {type: "window.focusDirection", direction: "left"};
-		case "window:focus-right":
-			return {type: "window.focusDirection", direction: "right"};
-		case "window:focus-up":
-			return {type: "window.focusDirection", direction: "up"};
-		case "window:focus-down":
-			return {type: "window.focusDirection", direction: "down"};
-		case "window:close":
-			return {type: "window.close"};
-		case "workspace:create":
-			return {type: "workspace.create"};
-		case "workspace:next":
-			return neighbourWorkspace(state, 1);
-		case "workspace:previous":
-			return neighbourWorkspace(state, -1);
-		default:
-			return null;
-	}
+/** Walking workspaces wraps, as tmux's `next-window` does. */
+const neighbourWorkspace = (state: ShellState, step: number): Step => {
+	const at = state.order.indexOf(state.activeWorkspace);
+	if (at === -1 || state.order.length === 0) return [state, NO_CMDS];
+	const next = state.order[(at + step + state.order.length) % state.order.length];
+	return next === undefined ? [state, NO_CMDS] : [{...state, activeWorkspace: next}, NO_CMDS];
 };
 
-/** Walking workspaces wraps, as tmux's `next-window` does. */
-const neighbourWorkspace = (state: ShellState, step: number): ShellMsg | null => {
-	const at = state.order.indexOf(state.activeWorkspace);
-	if (at === -1 || state.order.length === 0) return null;
-	const next = state.order[(at + step + state.order.length) % state.order.length];
-	return next === undefined ? null : {type: "workspace.activate", workspaceId: next};
+/**
+ * Name the window a Cmd targets, when the desk has one. Both picker arms below take it the same
+ * way every other cell does — the Msg's own window, else the focused one — and a Msg naming a
+ * window this workspace does not hold is a no-op rather than a failure.
+ */
+const targetWindow = (state: ShellState, windowId: WindowId | undefined): WindowId | null => {
+	const workspace = activeWorkspace(state);
+	if (workspace === undefined) return null;
+	const target = windowId ?? workspace.focused;
+	return hasWindow(workspace, target) ? target : null;
 };
 
 /**
@@ -361,7 +351,10 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 
 		if (answer._tag !== "Command") return [routed, timer];
 
-		const commanded = commandMsg(routed, answer.name);
+		// The command table is the one place a name becomes a Msg, so a bound key and a typed line
+		// run the same row. A name it does not hold — or a row needing an argument a key sequence
+		// has nowhere to carry — leaves as a `runCommand` Cmd for a surface to answer.
+		const commanded = msgForCommandName(answer.name);
 		if (commanded === null) return [routed, [...timer, {type: "runCommand", name: answer.name}]];
 		const [next, cmds] = apply(routed, commanded);
 		return [next, [...timer, ...cmds]];
@@ -381,6 +374,24 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 			const known = state.order.includes(msg.workspaceId);
 			return known ? [{...state, activeWorkspace: msg.workspaceId}, NO_CMDS] : [state, NO_CMDS];
 		},
+		"workspace.step": (state, msg) => neighbourWorkspace(state, msg.direction === "next" ? 1 : -1),
+		"window.open": (state, msg) => {
+			const target = targetWindow(state, msg.windowId);
+			return target === null
+				? [state, NO_CMDS]
+				: [state, [{type: "openProgram", windowId: target, programId: msg.programId}]];
+		},
+		"window.attach": (state, msg) => {
+			const target = targetWindow(state, msg.windowId);
+			return target === null
+				? [state, NO_CMDS]
+				: [state, [{type: "attachProcess", windowId: target, processId: msg.processId}]];
+		},
+		// Neither touches the desk, and neither leaves as `runCommand`: a host answering that Cmd
+		// resolves the name through the command table, so routing a row's own Msg back through it
+		// would be a loop. Each gets the arm that says what it is.
+		"command.open": (state) => [state, [{type: "openCommandLine"}]],
+		"config.reload": (state) => [state, [{type: "reloadConfig"}]],
 		"keys.press": pressKey,
 		"prefix.timeout": (state) =>
 			state.prefix.armed ? [{...state, prefix: disarmed}, NO_CMDS] : [state, NO_CMDS],
@@ -421,5 +432,9 @@ export const shellCore = ({table}: ShellCoreOptions) =>
 			startPrefixTimer: () => Promise.resolve(),
 			cancelPrefixTimer: () => Promise.resolve(),
 			runCommand: () => Promise.resolve(),
+			openProgram: () => Promise.resolve(),
+			attachProcess: () => Promise.resolve(),
+			openCommandLine: () => Promise.resolve(),
+			reloadConfig: () => Promise.resolve(),
 		},
 	});

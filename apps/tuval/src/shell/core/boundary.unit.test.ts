@@ -61,7 +61,14 @@ describe("shell core boundary", () => {
 
 	it("the Cmd vocabulary has no arm that stops a process", () => {
 		expectTypeOf<ShellCmd["type"]>().toEqualTypeOf<
-			"forwardKey" | "startPrefixTimer" | "cancelPrefixTimer" | "runCommand"
+			| "forwardKey"
+			| "startPrefixTimer"
+			| "cancelPrefixTimer"
+			| "runCommand"
+			| "openProgram"
+			| "attachProcess"
+			| "openCommandLine"
+			| "reloadConfig"
 		>();
 	});
 
@@ -74,9 +81,14 @@ describe("shell core boundary", () => {
 			| "window.bind"
 			| "window.unbind"
 			| "window.setView"
+			| "window.open"
+			| "window.attach"
 			| "workspace.create"
 			| "workspace.remove"
 			| "workspace.activate"
+			| "workspace.step"
+			| "command.open"
+			| "config.reload"
 			| "keys.press"
 			| "prefix.timeout"
 		>();
