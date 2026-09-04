@@ -18,6 +18,17 @@ Where this lives today: [`apps/tuval/src/pi/server/`](../apps/tuval/src/pi/serve
 [`handshake.ts`](../apps/tuval/src/pi/server/handshake.ts), and the same file's `ws.on("message", …)`
 over `decodeFrame`.
 
+**It reaches `EventTarget` too, which is where the client side lives.** Node's global `WebSocket` is
+an `EventTarget`, not an `EventEmitter`, and a throw out of one of its listeners is the same
+`uncaughtException` ([Node.js, `events`, "`EventTarget` error handling"](https://nodejs.org/api/events.html#eventtarget-error-handling));
+a probe on Node 26.2.0 confirms it. So the dial side holds the rule as well —
+[`apps/tuval/src/pi/client/transport.ts`](../apps/tuval/src/pi/client/transport.ts)'s four
+`addEventListener` bodies each compute a verdict and hand it to a handler, and none of them can
+throw: the inbound frame is checked for being binary rather than assumed, and the terminal path is a
+single `terminate` that is idempotent by a flag. There is no `catch` fence there because there is no
+attacker-controlled parse in the body to fence — the decoding all happens on `PiClient`'s side of
+the handler.
+
 ## The two halves
 
 **Make the callee total.** The decision function answers a verdict for every input rather than

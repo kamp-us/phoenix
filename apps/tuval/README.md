@@ -268,3 +268,28 @@ and its JSONL `SessionManager` — the transcript lands under the session's own 
 [`.patterns/strict-wire-schema-projection.md`](../../.patterns/strict-wire-schema-projection.md).
 `makeScriptedHost` in `fixtures.ts` is the same seam with no model behind it, which is what lets
 the whole wire suite run in the unit tier.
+
+## The Pi client
+
+`src/pi/client/` is the dial side, in Node inside the same Pi process: the `ByteTransport` the
+0.84.3 pin does not export, plus the lease handling around `PiClient`. Pi ships a Unix-socket
+factory and nothing over a WebSocket, and Node 26 ships the WebSocket *client* as a global while
+`ws` supplies the server half — so `webSocketTransportFactory` is ours, hand-derived from the
+spike's `play.ts` (#7469) and shaped after the pin's own `unix.js`.
+
+`PiClientService.layerWebSocket({url})` takes the server's dial URL, token included, and hands back
+`connect`, `reconnect`, `createSession`, `attachSession`, `prompt`, `snapshots` and
+`disconnections`. Nothing below that surface returns a `Promise` or throws a Pi error class: every
+rejection folds into one of four typed refusals — `SessionLocked`, `SessionNotFound`,
+`Disconnected`, `ProtocolRefused` — in `refusals.ts`.
+
+**Reconnect is explicit, and it does not preserve leases.** The pin invalidates every lease when the
+connection drops, so a dropped socket is one `Disconnected` on the `disconnections` stream and
+nothing else: no redial, no backoff, no queued call waiting on one. A caller reconnects and then
+reacquires by session id, and the reacquired snapshot carries the transcript from before the drop.
+Retry policy is the handlers' and stays declared data (#7371).
+
+`fixtures.ts`'s `startProtocolServer` is an in-process `ws` listener speaking the real codec, which
+is what lets the transport and the no-retry-loop proof run in the unit tier; the lock, the
+not-found and the reacquire run against the loopback server on Pi's faux provider in
+`pi-client.integration.test.ts`.
