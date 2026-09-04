@@ -87,7 +87,7 @@ describe("findMisroute", () => {
 	});
 
 	it("reads a correction already in the log, so a swept lane is not swept twice", () => {
-		const log = [...shipped(), correctionEntry("issue", at(3), at(8))];
+		const log = [...shipped(), correctionEntry("issue", at(3), at(8), true)];
 		expect(findMisroute(lane(), log)._tag).toBe("Settled");
 	});
 });
@@ -96,26 +96,30 @@ describe("the correction line", () => {
 	it("sends a lane the board proved partial back to a state an operator can spawn against", () => {
 		const log = shipped();
 		expect(stateOf(log)).toBe("complete");
-		expect(stateOf([...log, correctionEntry("issue", at(3), at(8))])).toBe(
+		expect(stateOf([...log, correctionEntry("issue", at(3), at(8), true)])).toBe(
 			JSON.stringify({pipeline: {issue: "queued"}}),
 		);
 	});
 
 	it("leaves a lane whose merge closed its issue folding to complete", () => {
-		// No correction is appended on that arm at all — the closure read is what decides, and this
-		// pins that the untouched ledger's own fold is unchanged by the field's existence.
 		expect(stateOf(shipped())).toBe("complete");
 		expect(stateOf(shipped({partial: false}))).toBe("complete");
 	});
 
+	it("moves no task when it confirms a closing merge, and stops that lane nominating", () => {
+		const log = [...shipped(), correctionEntry("issue", at(3), at(8), false)];
+		expect(stateOf(log)).toBe(stateOf(shipped()));
+		expect(findMisroute(lane(), log)._tag).toBe("Settled");
+	});
+
 	it("rewrites no recorded line — the correction is appended and the target stays verbatim", () => {
-		const log = [...shipped(), correctionEntry("issue", at(3), at(8))];
+		const log = [...shipped(), correctionEntry("issue", at(3), at(8), true)];
 		expect(log[3]).toEqual(entry("DONE", at(3)));
 		expect(log).toHaveLength(5);
 	});
 
 	it("supersedes the entry it names and drops itself before the machine sees it", () => {
-		const resolved = applyCorrections([...shipped(), correctionEntry("issue", at(3), at(8))]);
+		const resolved = applyCorrections([...shipped(), correctionEntry("issue", at(3), at(8), true)]);
 		expect(resolved).toEqual({
 			_tag: "Corrected",
 			entries: [...shipped().slice(0, 3), entry("DONE", at(3), {partial: true})],
@@ -123,17 +127,21 @@ describe("the correction line", () => {
 	});
 
 	it("is undecidable rather than resolved when it names no entry of its task", () => {
-		const resolved = applyCorrections([...shipped(), correctionEntry("issue", at(9), at(8))]);
+		const resolved = applyCorrections([...shipped(), correctionEntry("issue", at(9), at(8), true)]);
 		expect(resolved._tag).toBe("Undecidable");
 	});
 
 	it("is undecidable rather than resolved when two entries share the timestamp it names", () => {
-		const log = [entry("WIP", at(0)), entry("DONE", at(0)), correctionEntry("issue", at(0), at(8))];
+		const log = [
+			entry("WIP", at(0)),
+			entry("DONE", at(0)),
+			correctionEntry("issue", at(0), at(8), true),
+		];
 		expect(applyCorrections(log)._tag).toBe("Undecidable");
 	});
 
 	it("makes an unresolvable correction a fold defect, never a silently skipped line", () => {
-		const folded = foldLog(lane(), [...shipped(), correctionEntry("issue", at(9), at(8))]);
+		const folded = foldLog(lane(), [...shipped(), correctionEntry("issue", at(9), at(8), true)]);
 		expect(folded._tag).toBe("Unreplayable");
 	});
 });
@@ -196,9 +204,9 @@ describe("parseLog on a correction", () => {
 	const parsed = (line: object) => parseLog(`${JSON.stringify(line)}\n`);
 
 	it("reads the line lane reconcile writes", () => {
-		expect(parsed(correctionEntry("issue", at(3), at(8)))).toEqual({
+		expect(parsed(correctionEntry("issue", at(3), at(8), true))).toEqual({
 			_tag: "Parsed",
-			entries: [correctionEntry("issue", at(3), at(8))],
+			entries: [correctionEntry("issue", at(3), at(8), true)],
 		});
 	});
 

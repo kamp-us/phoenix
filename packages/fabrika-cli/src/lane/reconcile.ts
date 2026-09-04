@@ -10,6 +10,10 @@
  *
  * Reads no disk and no board: it answers which line is *correctable*, and whether the board agrees
  * the merge was partial is the verb's read, made only for a lane this module nominates.
+ *
+ * A lane is nominated once. Whichever way the board answers, the verb appends the answer as a
+ * correction, so the next sweep skips the line at either polarity and the population shrinks to the
+ * lanes nobody has confirmed yet (ADR 0351).
  */
 import {applyCorrections, foldLog, type LogEntry} from "./fold.ts";
 import {bareEvent, CORRECTED_EVENT, type CompiledLane} from "./machine.ts";
@@ -138,11 +142,24 @@ export const provenClosure = (issue: number, facts: ReadonlyArray<PullFact>): Cl
 	return {_tag: "Read", closure: traceClosure(issue, landed)};
 };
 
-/** The line a proven-partial merge appends: it supersedes {@link Misroute} and moves no task. */
-export const correctionEntry = (task: string, corrects: string, at: string): LogEntry => ({
+/**
+ * The line a read closure appends: it supersedes {@link Misroute} and moves no task.
+ *
+ * Both polarities are written, and the `false` one is the whole reason a sweep is affordable. A
+ * proven-partial merge routes the lane round again; a proven-closing one changes nothing about where
+ * the lane sits and is recorded anyway, so the confirmed read lives in the ledger and the next sweep
+ * skips the lane instead of buying the same answer again (ADR 0351). The correction is the only
+ * place that read can land — the ledger is the record, so there is no cache beside it.
+ */
+export const correctionEntry = (
+	task: string,
+	corrects: string,
+	at: string,
+	partial: boolean,
+): LogEntry => ({
 	task,
 	event: `${task.toUpperCase()}.${CORRECTED_EVENT}`,
 	at,
-	partial: true,
+	partial,
 	corrects,
 });

@@ -1,7 +1,7 @@
 ---
 id: 0350
 title: A correction supersedes a recorded line
-status: accepted
+status: amended-in-part by [0351](0351-a-confirmed-closure-is-recorded-not-re-read.md)
 date: 2026-09-01
 ---
 
@@ -43,6 +43,9 @@ Three pieces:
    recorded event that took a `merge:partial` cell's fallthrough carrying no answer, located off the
    compiled machine rather than off a state-name list — then reads that one merge's closure through
    `traceClosure`, `lane prove`'s own ship-stage judgement, and appends only on a proven `Partial`.
+   (ADR [0351](0351-a-confirmed-closure-is-recorded-not-re-read.md) widened that last clause: a
+   proven `Closes` is appended too, carrying `partial: false`, so the lane is read once rather than
+   on every sweep.)
 
 **The closure is read off the pull request the recorded line already names, not off a nomination.**
 A nominator answers "which PR is this issue's", and the terminal being corrected answered that in
@@ -121,8 +124,12 @@ record yields to that call rather than to an argument.
   operator to know it. Run out of order it corrects nothing and reports why.
 - An already-broken ledger is a row at exit 0; only an append this run tried and could not land
   refuses, because only that one leaves whether the lane still needs correcting UNKNOWN.
-- A sweep is not free. Only a nominated lane costs a board read, but a closing merge records no
+- ~~A sweep is not free. Only a nominated lane costs a board read, but a closing merge records no
   `partial` either and so nominates exactly like a partial one: on phoenix's own ledger 228 of the
   298 guard-declaring lanes are read, one serial request each, and a run has already exhausted a
   GitHub rate limit part-way through. `--check` costs the same reads. Bounding the nomination so the
-  sweep is cheap is open work, not something this record claims.
+  sweep is cheap is open work, not something this record claims.~~ **Superseded by ADR
+  [0351](0351-a-confirmed-closure-is-recorded-not-re-read.md)**, which is that work: the sweep now
+  records a confirmed closing read as `partial: false`, so a lane is read once rather than every
+  sweep, and the ship stage writes the same field at both polarities. The backlog is still hundreds
+  of reads on its first pass; what changed is that it is paid once.

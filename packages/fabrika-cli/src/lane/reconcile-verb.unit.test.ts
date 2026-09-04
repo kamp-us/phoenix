@@ -133,14 +133,49 @@ describe("runReconcile", () => {
 		});
 	});
 
-	it("leaves a lane whose merged PR closed its issue untouched", async () => {
+	it("records a merged PR that closed its issue, and moves no task doing it", async () => {
 		const {outcome, fs} = await sweep(tree([{lane: "6981", log: SHIPPED_LOG}]), () => ({
 			_tag: "Read",
 			closure: closes("#7329 closes #6981 on merge"),
 		}));
 		expect(outcome.code).toBe(0);
+		expect(rows(outcome.stdout)).toMatchObject([
+			{key: "6981", verdict: "confirmed", from: "complete", to: "complete"},
+		]);
+		const log = fs.written.get(`${DEFAULT_LANES_ROOT}/6981/events.jsonl`) ?? "";
+		expect(log.startsWith(SHIPPED_LOG)).toBe(true);
+		expect(JSON.parse(log.slice(SHIPPED_LOG.length))).toEqual({
+			task: "issue",
+			event: "ISSUE.CORRECTED",
+			at: NOW,
+			partial: false,
+			corrects: at(3),
+		});
+	});
+
+	it("reads the board once across two sweeps of a lane whose merge closed its issue", async () => {
+		const fs = tree([{lane: "6981", log: SHIPPED_LOG}]);
+		const read = (): ClosureRead => ({
+			_tag: "Read",
+			closure: closes("#7329 closes #6981 on merge"),
+		});
+		const first = await sweep(fs, read);
+		const second = await sweep(fs, read);
+		expect(first.asked).toEqual([[6981, SHIPPED_PR]]);
+		expect(second.asked).toEqual([]);
+		expect(rows(second.outcome.stdout)).toEqual([
+			{key: "6981", root: DEFAULT_LANES_ROOT, verdict: "current"},
+		]);
+	});
+
+	it("withholds the confirming append under --check, so the read is bought again", async () => {
+		const {outcome, fs} = await sweep(
+			tree([{lane: "6981", log: SHIPPED_LOG}]),
+			() => ({_tag: "Read", closure: closes("#7329 closes #6981 on merge")}),
+			true,
+		);
 		expect(rows(outcome.stdout)).toMatchObject([{key: "6981", verdict: "closes"}]);
-		expect(fs.written.has(`${DEFAULT_LANES_ROOT}/6981/events.jsonl`)).toBe(false);
+		expect(fs.written.size).toBe(0);
 	});
 
 	it("reports without appending under --check", async () => {

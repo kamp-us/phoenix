@@ -14,10 +14,16 @@
  *
  * Every lane is judged on its own — an unreadable one is a row, never the end of the sweep — and the
  * board is asked only about a lane whose log already nominates a correctable line: one PR read each,
- * serial. That is most of a mature ledger rather than a handful of it, since a closing merge records
- * no `partial` either and so nominates exactly like a partial one — on phoenix's own lanes, 228 of
- * the 298 that declare the guard. Budget a sweep as hundreds of requests, not as none. `--check` is
- * the same sweep with the append withheld, and it costs the same reads.
+ * serial.
+ *
+ * **A lane is read once, not once per sweep.** Whichever way the board answers, the answer is
+ * appended as a correction — `partial: true` on a merge that left its issue open, `partial: false` on
+ * one that closed it — so the line carries its own answer afterwards and `findMisroute` stops
+ * nominating it (ADR 0351). The confirming line moves no task; the ship stage now writes `false`
+ * too, so only lanes shipped before that stop nominating one at a time. Budget a sweep as one read
+ * per never-confirmed lane: the first pass over a backlog is still hundreds, every pass after it is
+ * the lanes that shipped since. `--check` withholds the append, so it buys nothing for the next
+ * sweep and costs the same reads twice.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -136,6 +142,7 @@ type Verdict =
 	| "current"
 	| "corrected"
 	| "misrouted"
+	| "confirmed"
 	| "closes"
 	| "unmigrated"
 	| "unknown"
@@ -146,6 +153,7 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 	"current",
 	"corrected",
 	"misrouted",
+	"confirmed",
 	"closes",
 	"unmigrated",
 	"unknown",
@@ -168,7 +176,7 @@ interface LaneRow {
 	};
 	/** The merged PRs whose `Part of #N` proves the closure partial. */
 	readonly prs?: ReadonlyArray<number>;
-	/** What the lane folds to now, and what it would fold to corrected. */
+	/** What the lane folds to now, and what it folds to with the correction; equal on a closing read. */
 	readonly from?: string;
 	readonly to?: string;
 }
@@ -285,16 +293,16 @@ const reconcileLane = <R>(
 		if (read._tag === "Unknown") {
 			return {key, root, verdict: "unknown", corrects, reason: read.reason};
 		}
-		if (read.closure._tag === "Closes") {
-			return {key, root, verdict: "closes", corrects, reason: read.closure.why};
-		}
 
-		const prs = read.closure.prs;
-		const entry = correctionEntry(misroute.task, misroute.at, options.now);
+		const partial = read.closure._tag === "Partial";
+		const entry = correctionEntry(misroute.task, misroute.at, options.now, partial);
 		const from = foldedValue(loaded.lane, loaded.entries);
 		const to = foldedValue(loaded.lane, [...loaded.entries, entry]);
+		const row = partial
+			? {corrects, prs: read.closure.prs, from, to}
+			: {corrects, reason: read.closure.why, from, to};
 		if (options.check) {
-			return {key, root, verdict: "misrouted", corrects, prs, from, to};
+			return {key, root, verdict: partial ? "misrouted" : "closes", ...row};
 		}
 
 		return yield* withLedgerLock(
@@ -320,7 +328,7 @@ const reconcileLane = <R>(
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
 				return Result.isFailure(wrote)
 					? unappended(`the append to ${fresh.logPath} did not land: ${wrote.failure.reason}`)
-					: {key, root, verdict: "corrected" as const, corrects, prs, from, to};
+					: {key, root, verdict: partial ? ("corrected" as const) : ("confirmed" as const), ...row};
 			}),
 			(lockDir) => unappended(lockedRefusal(VERB, lockDir)),
 		);
