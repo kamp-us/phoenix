@@ -234,8 +234,10 @@ layers again and calls `SpellSet.reload`; it replaces the spells and the binding
 so processes already running keep running under the rows they were spawned from. The two proofs are
 [`src/reload-proof.unit.test.ts`](../apps/tuval/src/reload-proof.unit.test.ts) (the swap, with a
 reader watching across it) and
-[`src/commands/agent-proof.unit.test.ts`](../apps/tuval/src/commands/agent-proof.unit.test.ts) (a
-scripted program enumerating the registry over the wire and calling every spell in it).
+[`src/commands/agent-proof.unit.test.ts`](../apps/tuval/src/commands/agent-proof.unit.test.ts),
+which runs one script twice: once as a plain scripted program sending `SpellCall`s over the wire,
+and once as a process built by `aiAgentProgram` over `ScriptedAiAgent.layer`, reaching the same
+spells through `SpellBridge`.
 
 A config module is imported with a per-load number on its URL
 ([`config.ts`](../apps/tuval/src/config.ts)), because Node caches an ES module by URL for the life
@@ -373,6 +375,13 @@ it does for a page.
 
 `SpellBridge.scripted(table)` answers from a fixed table and runs nothing, so it has no allowlist to
 enforce.
+
+An AI agent process reaches the bridge through its `TuvalAiAgent` layer, which is where a real
+program's SDK tool would sit. `ScriptedAiAgent` has no SDK, so its script says what to call: a
+turn's optional `plan` ([`ai-agent/service/script.ts`](../apps/tuval/src/ai-agent/service/script.ts))
+names one spell at a time out of the answers the turn already has, and the script's `spells` holds
+the `SpellBridgeApi` those calls go through plus the `Scope` each one carries. Every answer lands on
+the session's transcript as a `tool` item, so the run reads back as the conversation it was.
 
 ## The Tuval protocol
 
