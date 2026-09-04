@@ -222,6 +222,21 @@ describe("PiServerService", () => {
 		);
 	});
 
+	it.live("stays up when a Host passes the loopback check but does not parse", () => {
+		const host = makeScriptedHost();
+		return withServer(host, (server) =>
+			Effect.gen(function* () {
+				const malformed = yield* connectWire(`ws://127.0.0.1:${server.address.port}/`, {
+					headers: {Host: "127.0.0.1:abc"},
+				});
+				assert.include((yield* malformed.closure).reason, "401");
+
+				const client = yield* dial(server);
+				yield* client.next((message) => message.type === "hello");
+			}),
+		);
+	});
+
 	it.live("closes every connection and disposes every session exactly once on scope close", () => {
 		const host = makeScriptedHost();
 		return Effect.gen(function* () {

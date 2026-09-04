@@ -81,6 +81,21 @@ const isLoopbackOrigin = (origin: string): boolean => {
 	return loopbackHosts.has(parsed.hostname.toLowerCase());
 };
 
+/**
+ * Only the `token` parameter is wanted, so the base is a constant that always parses rather than
+ * the request's own `Host`: `isLoopbackAuthority` reads the hostname alone, so `127.0.0.1:abc`
+ * reaches here with a port that makes `new URL` throw — synchronously inside the `upgrade`
+ * listener, which is an uncaught exception that exits the process, pre-auth, on one request. An
+ * unparseable request target answers "no token" for the same reason.
+ */
+const tokenBase = "http://127.0.0.1";
+
+const tokenFrom = (url: string | undefined): string | null => {
+	const target = url ?? "/";
+	if (!URL.canParse(target, tokenBase)) return null;
+	return new URL(target, tokenBase).searchParams.get("token");
+};
+
 export const authorizeUpgrade = (
 	request: UpgradeRequest,
 	expected: Redacted.Redacted<string>,
@@ -95,7 +110,7 @@ export const authorizeUpgrade = (
 		return refuse("non_loopback_origin", 403, "Forbidden - non-loopback Origin");
 	}
 
-	const presented = new URL(request.url ?? "/", `http://${host}`).searchParams.get("token");
+	const presented = tokenFrom(request.url);
 	if (presented === null) return refuse("missing_token", 401, "Unauthorized - missing token");
 	if (!tokenMatches(expected, presented)) {
 		return refuse("bad_token", 401, "Unauthorized - bad token");

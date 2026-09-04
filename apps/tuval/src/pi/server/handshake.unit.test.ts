@@ -58,6 +58,21 @@ describe("authorizeUpgrade", () => {
 		assert.deepStrictEqual(refusal(verdict({url: "/"})), {reason: "missing_token", status: 401});
 	});
 
+	it("answers rather than throws on a loopback hostname whose authority does not parse", () => {
+		assert.strictEqual(verdict({host: "127.0.0.1:abc"})._tag, "HandshakeAccepted");
+		assert.deepStrictEqual(refusal(verdict({host: "[::1]:abc", url: "/"})), {
+			reason: "missing_token",
+			status: 401,
+		});
+	});
+
+	it("refuses an unparseable request target as a missing token", () => {
+		assert.deepStrictEqual(refusal(verdict({url: "//["})), {
+			reason: "missing_token",
+			status: 401,
+		});
+	});
+
 	it("refuses a wrong token with 401", () => {
 		assert.deepStrictEqual(refusal(verdict({url: `/?token=${"b".repeat(64)}`})), {
 			reason: "bad_token",
