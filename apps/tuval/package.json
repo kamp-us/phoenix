@@ -11,9 +11,13 @@
 		"test:unit": "vitest run --project unit"
 	},
 	"dependencies": {
+		"@anthropic-ai/claude-agent-sdk": "catalog:",
+		"@anthropic-ai/sdk": "catalog:",
 		"@demlik/tea": "catalog:",
 		"@effect/platform-node": "catalog:tuval",
-		"effect": "catalog:tuval"
+		"@modelcontextprotocol/sdk": "catalog:",
+		"effect": "catalog:tuval",
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:tuval",
