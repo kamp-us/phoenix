@@ -170,6 +170,14 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 - **One service per feature folder.** Reads + writes coexist.
 - **Testing strategy:** **two tiers** ([ADR 0082](../.decisions/0082-two-test-tiers-unit-integration.md)). `unit` — pure logic and Effect control flow with **no database**, substituting the `Drizzle` seam directly (`*.unit.test.ts`, offline in the `unit` Vitest project under `@effect/vitest`); `integration` — real behavior against **real remote D1** and the deployed worker (black-box HTTP, [alchemy-test-harness.md](./alchemy-test-harness.md)). `node:sqlite` / `makeSqliteTestDb` is **banned** as a backing. Litmus: *could this be wrong even if the DB behaved perfectly?* yes → `unit`, only-wrong-if-real-D1-differs → `integration`. See [effect-testing.md](./effect-testing.md).
 
+## Index — Tuval
+
+Tuval is the local runnable app under `apps/tuval` (ADR [0345](../.decisions/0345-tuval-lives-under-apps.md)): a program/process kernel plus the shell that drives it. It shares none of the fate/worker layers above.
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [tuval-spells.md](./tuval-spells.md) | **Reference.** The command framework: `defineSpell` and a spell's fields, how a program row declares `spells`, `buildRegistry` and the atomically swapped `SpellRegistry`, `Scope` and the kernel-side `WindowIndex`, the executor's call-in/reply-out contract and its error table, key bindings compiled at config load with per-binding recovery, the one cell `SpellSet` holds the table and those bindings in so a reload replaces both at once, the parser and the two completion ranking rules, and the four Tuval protocol messages | Writing a spell, wiring the registry, or touching anything under `apps/tuval/src/commands/` or `apps/tuval/src/protocol/` (ADR [0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md)) |
+
 ## Index — docs & meta patterns
 
 | Doc | Topic | Read when |

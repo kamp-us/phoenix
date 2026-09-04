@@ -87,6 +87,8 @@ apps/tuval/
 │   ├── config.ts          # the graph config the kernel reads
 │   ├── host/              # the program/process kernel: actors, definitions, errors
 │   ├── registry/          # the program registry
+│   ├── commands/          # the spell registry, executor, parser, key bindings, agent bridge
+│   ├── protocol/          # the versioned page-to-kernel wire: messages, codec, patch
 │   ├── process/           # the running-process side of the table
 │   ├── table/             # the process-table port
 │   ├── ports/             # typed inter-program wiring: compile + open

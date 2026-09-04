@@ -20,9 +20,10 @@ export type {
 	TestAccount,
 } from "./test-account.ts";
 export {
-	countForeignAccounts,
+	isThrowawayDatabaseName,
 	MIN_SESSION_TOKEN_LEN,
 	makeTestAccountDb,
+	PREVIEW_NAME_MARKER,
 	PREVIEW_TIERS,
 	parseSessionToken,
 	provisionTestAccounts,
