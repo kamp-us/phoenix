@@ -1,4 +1,4 @@
-import {Surface} from "../../components/ui/Card";
+import {Surface} from "@kampus/design";
 import type {AnyExhibit} from "./exhibit";
 import {PropKnobs} from "./PropKnobs";
 import "./ExhibitStage.css";

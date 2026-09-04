@@ -1,5 +1,5 @@
+import {Button} from "@kampus/design";
 import {useState} from "react";
-import {Button} from "../components/ui/Button";
 
 export function LoadMoreButton({
 	loadNext,

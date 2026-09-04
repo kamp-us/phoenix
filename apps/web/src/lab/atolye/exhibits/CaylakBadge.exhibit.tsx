@@ -1,5 +1,5 @@
+import {CaylakBadge} from "@kampus/design";
 import type * as React from "react";
-import {CaylakBadge} from "../../../components/ui/CaylakBadge";
 import {defineExhibit} from "../exhibit";
 
 // A propless badge, like its `ReviewBadge` sibling — no knob. Which of the two an item

@@ -4,13 +4,14 @@
  * clicked through the UserMenu, because the `dil` row's own gate is already pinned by
  * `UserMenu.locale.test.tsx`; what is under test here is the pano copy behind it.
  */
+
+import {ToastProvider} from "@kampus/design";
 import {render, screen, waitFor} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import type {useSession as useSessionType} from "../auth/client";
 import {CommentTreeNode} from "../components/pano/CommentTreeNode";
 import {PanoPostCard} from "../components/pano/PanoPostCard";
-import {ToastProvider} from "../components/ui/Toast";
 import {LocaleProvider} from "../i18n";
 import {LOCALE_STORAGE_KEY} from "../lib/localeStorage";
 import {PanoSubmitPage} from "./PanoSubmitPage";

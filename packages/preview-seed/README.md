@@ -35,7 +35,8 @@ A pure, unit-tested core + a thin Effect bin (the repo tooling idiom):
   of the canonical `apps/web/worker/db/drizzle/migrations` columns).
 - `src/seed.ts` — idempotent upserts; runs against any `D1Database` (in-memory
   test fake or REST adapter) and also emits `{sql, params}` for the REST batch.
-- `src/test-account.ts` — the review-ui test accounts, one per tier, + their session rows.
+- `src/test-account.ts` — the review-ui test accounts, one per tier, + their session
+  rows and the çaylak's optional standing (karma + kefil).
 - `src/bin.ts` — the `preview-seed run` and `preview-seed test-account` CLI.
 
 ## Running it
@@ -51,7 +52,10 @@ node packages/preview-seed/src/bin.ts run --database-id <stage-d1-uuid>
   alchemy state store, or `@distilled.cloud/cloudflare/d1`'s `getDatabase`).
 - `--account-id` (optional) — defaults to `$CLOUDFLARE_ACCOUNT_ID`.
 - `$CLOUDFLARE_API_TOKEN` — the minted CI token (carries `D1 Write`); read by
-  `CredentialsFromEnv`.
+  `CredentialsFromEnv`. `test-account` also reads the database's name through it, and
+  `GET /accounts/{id}/d1/database/{id}` lists `D1 Read` and `D1 Write` under
+  ["Accepted Permissions (at least one required)"](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/get/),
+  so the existing grant already covers the lookup and no new permission group is needed.
 
 Transport is the Cloudflare D1 REST query API via alchemy's already-installed
 `@distilled.cloud/cloudflare` — the same primitive alchemy uses to apply
@@ -71,8 +75,10 @@ PREVIEW_TEST_CAYLAK_SESSION_TOKEN=<a different 32+ char secret> \
   node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1-uuid>
 ```
 
-Every write lands in one atomic D1 `batch`: a `user` row and a `session` row per
-tier, plus the `(id, "moderates", "platform:platform")` tuple that is the real
+The target must be a per-PR preview: the verb resolves the id's name through the
+Cloudflare API first and refuses anything that is not `…-db-pr-<n>-…` (the guard
+boundary below). Every write lands in one atomic D1 `batch`: a `user` row and a
+`session` row per tier, plus the `(id, "moderates", "platform:platform")` tuple that is the real
 moderation authority (ADR 0107 §4; `user.role` is vestigial and written only so a
 coarse read agrees). Re-running it upserts the same rows, so a token is rotated by
 re-running with a new one.
@@ -102,6 +108,56 @@ the wrong audience.
 The çaylak gets no moderation tuple, and that is the point of the tier: an identity
 holding moderation authority renders a moderator's affordances whatever its `tier`
 column says.
+
+### The standing axis — where on the promotion path the çaylak sits
+
+A tier says which audience the identity belongs to; it does not say where on the
+çaylak→yazar promotion path it stands. That path forks on **vouch-exists**, and the
+two forks render different compositions: `promotionBarFor` in
+`apps/web/worker/features/kunye/standing.ts` returns `VOUCH_PROMOTION_KARMA_BAR` (15)
+for a vouched çaylak and `KARMA_THRESHOLDS.yazar` (100) for an unvouched one, and the
+unvouched composition deliberately draws no `<progress>` bar. Without a standing
+operand only the second was reachable, so a PR whose payoff was the vouched
+composition took a `review-ui` FAIL no change to its branch could clear (issue #7708).
+
+`--caylak-standing` names the point:
+
+```bash
+PREVIEW_TEST_SESSION_TOKEN=<32+ char secret> \
+PREVIEW_TEST_CAYLAK_SESSION_TOKEN=<a different 32+ char secret> \
+  node packages/preview-seed/src/bin.ts test-account \
+    --database-id <preview-d1-uuid> --caylak-standing 15+kefil
+```
+
+| Operand | Standing written |
+| --- | --- |
+| *(omitted)* | none — `user_profile` and `authorship_vouch` are left untouched |
+| `0` | `total_karma = 0`, no kefil |
+| `15+kefil` | `total_karma = 15`, vouched by the yazar test identity |
+
+**One operand, both fields.** The karma total and the kefil travel together because a
+standing carrying one without the other names no renderable state, so a partial
+standing is unrepresentable at the flag as well as in the type. A spec that is not a
+non-negative integer with an optional `+kefil` suffix is refused before any write.
+
+**A vouched çaylak requires the yazar tier in the same run.** `authorship_vouch` has
+no foreign keys by design (migration `0013_authorship_vouch` — an account anonymize
+must not cascade-erase the historical act), so nothing in the database would catch a
+`voucher_id` pointing at an identity this preview never seeded, and
+`features/kunye/VouchLedger.ts` reads back on the voucher. So the run is **refused**,
+not silently written, when `$PREVIEW_TEST_SESSION_TOKEN` is unset. A standing of any
+kind likewise needs the çaylak tier itself.
+
+**Re-seeding is the capture route, so a standing is set and not accumulated.** Karma
+is written, never incremented, and a run that drops the kefil deletes the vouch row
+the previous run wrote. A reviewer seeds one fork, captures, re-seeds the other, and
+captures again — which is why `review-ui`'s `:state` vocabulary
+(`packages/fabrika-cli/src/capture/states.ts`) is untouched by this: a state token
+names a *tier*, and a standing is not one.
+
+The standing rows ride the same atomic `db.batch` as the account and session rows, so
+a half-written standing never reaches a capture. They change nothing about the fence
+below, which reads the database's name and no row at all (ADR 0349).
 
 **A tier with no token is left unseeded, and nothing substitutes for it.** This verb
 seeds exactly the tiers whose variable is set and names the rest in its output; a
@@ -144,28 +200,40 @@ fail-open security hole (CLAUDE.md, "Sözlük seed"). Nothing in this path may b
 rebuilt as a worker endpoint — an account-minting route on the public worker is
 strictly worse than the seeder routes that were removed.
 
-**Throwaway stages and previews only, and the fence is not the caller's word for
-it.** A caller-asserted "this is a preview" proves nothing, so the verb reads the
-target instead: a preview/stage D1 deploys empty and this package's content
-fixtures denormalize their author, so a throwaway carries **no human `user` row at
-all**. Finding one that is none of the test identities, the verb refuses and writes
-nothing — that database is somebody's real world.
+**Per-PR previews only, and the fence is the database's name — never the caller's
+word for it.** A caller-asserted "this is a preview" proves nothing, so the verb
+resolves `--database-id` through the Cloudflare D1 API and reads the name the deploy
+stack gave it. alchemy composes a per-PR preview as `phoenix-phoenix-db-pr-<n>-<hash>`,
+so a name carrying `-pr-` is a throwaway; production (`…-db-prod-…`), a named dev
+stage, and a record the API returns with no name at all are each refused before any
+write.
 
-**The tier axis widens the identity list and nothing else.** Every seeded tier is
-excluded from that count, which is what keeps a re-run idempotent once both are on
-the D1 — a check that knew only one of them would call the other somebody's real
-world and refuse every subsequent run. It excludes exactly the fixed ids in the
-table above, so it does not admit one further row.
+**Why the name and not the rows.** The fence used to be emptiness — no human `user`
+row other than the test identities — and it could not survive contact with CI. The
+Playwright e2e job runs against the same preview D1 and signs real users up through
+`/api/auth/sign-up/email`, so by the time any seat can run this verb the preview holds
+dozens of human rows: the check refused every preview it was built for, and the `:auth`
+/ `:auth-caylak` captures were unreachable in practice (issue #7740). The founder
+ruling of 2026-09-04 re-keyed it on the name —
+[#7740 comment](https://github.com/kamp-us/phoenix/issues/7740#issuecomment-5535874078).
 
 Say the reach exactly, because the argument against an override flag rests on it.
-The check is *no human `user` row other than the test identities*. It catches any
-database anyone has ever signed into, which is every real one in practice. It does
-**not** catch an empty database that is not a throwaway — a fresh apex deploy
-before the first sign-up, a wiped stage, a mistyped `--database-id` that resolves
-to a real-but-unpopulated D1 all pass it. The operator still owns which
-`--database-id` they pass. What the fence removes is the failure that actually
-happens: pointing at a live database and minting a moderator in it. There is no
-override flag, and adding one would be adding back the hole the check closes.
+The check is *the name Cloudflare has recorded for this database id contains `-pr-`*.
+It catches every production and stage database, because none of them carries that
+segment. The verb decides it before it reads either tier token, so a run against a real
+database refuses on the target alone and no live preview credential is parsed into the
+process first (`src/bin.ts` resolves the name and refuses ahead of `readTierToken`; the
+same check runs again inside `provisionTestAccounts`, for every other caller). It does **not** catch a
+database somebody deliberately named to look like a per-PR preview, and it does not
+care what rows the target holds — a preview full of e2e sign-ups passes, which is the
+whole point. The operator still owns which `--database-id` they pass.
+
+**There is still no override flag, and that argument survives the re-keying
+unchanged.** What the old check bought was that a caller cannot talk their way past
+the fence, and that is exactly what the name keeps: the name comes back from
+Cloudflare's record for the id, written by the deploy stack, so there is nothing here
+for a caller to assert. A flag would hand the decision back to the caller, which is
+the hole both versions of this fence exist to close.
 
 **Each token is a live credential on a running preview.** Every one is read only
 from its own environment variable (never a flag, so it stays out of process

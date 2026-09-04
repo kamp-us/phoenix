@@ -1,10 +1,10 @@
 name: a11y-pbt
 
 # CI gate for #2175 (ADR 0162 pillar 4): the property-based a11y promotion loop
-# over the apps/web ui/ primitives. `fast-check` generates randomized valid prop
+# over the @kampus/design primitives. `fast-check` generates randomized valid prop
 # combinations for each primitive and asserts the pillar-4 invariants — accessible
 # name, valid ARIA, keyboard-focusability — in jsdom via axe. Each invariant carries
-# a warning-to-enforced posture (apps/web/src/components/ui/a11y/posture.ts): the
+# a warning-to-enforced posture (packages/design/src/a11y/posture.ts): the
 # jsdom-decidable rules are enforced (a violation fails this job); contrast and
 # tap-target start as warnings (jsdom has no layout/CSS) and graduate by a one-line
 # posture edit. The suite fails closed on an unclassified new primitive. This is the
@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   a11y:
-    name: property-based a11y over the ui/ primitives (warning-to-enforced)
+    name: property-based a11y over @kampus/design (warning-to-enforced)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -41,6 +41,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # Exit non-zero on an enforced pillar-4 invariant violation or an unclassified
-      # ui/ primitive (fail-closed). Warning-posture invariants report, never fail.
+      # @kampus/design primitive (fail-closed). Warning-posture invariants report, never fail.
       - name: Run the property-based a11y suite
-        run: pnpm --filter @kampus/web test:a11y
+        run: pnpm --filter @kampus/design test:a11y

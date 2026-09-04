@@ -1,13 +1,12 @@
 // The account-deletion confirmation dialog. `account.delete` is a boundary mutation,
 // so it may throw OR return `{error}` and both paths are handled below — see
 // `.patterns/fate-mutations-client.md`.
+
+import {Button, Dialog, Input} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {AccountDeletionReceipt} from "../../../worker/features/fate/views";
 import {useT} from "../../i18n";
-import {Button} from "../ui/Button";
-import {Dialog} from "../ui/Dialog";
-import {Input} from "../ui/Form";
 
 // Mirrors the worker's `ACCOUNT_DELETE_CONFIRMATION` (`Schema.Literal`); the user types it
 // verbatim and the mutation input re-validates it server-side. NOT catalog copy, and not

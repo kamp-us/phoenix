@@ -1,5 +1,5 @@
+import {Tooltip} from "@kampus/design";
 import type * as React from "react";
-import {Tooltip} from "../../../components/ui/Tooltip";
 import {defineExhibit} from "../exhibit";
 
 export const tooltipExhibit = defineExhibit<React.ComponentProps<typeof Tooltip>>({

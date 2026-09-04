@@ -1,5 +1,5 @@
+import {ReviewBadge} from "@kampus/design";
 import type * as React from "react";
-import {ReviewBadge} from "../../../components/ui/ReviewBadge";
 import {defineExhibit} from "../exhibit";
 
 export const reviewBadgeExhibit = defineExhibit<React.ComponentProps<typeof ReviewBadge>>({

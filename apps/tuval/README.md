@@ -20,7 +20,9 @@ Tuval lives under `apps/` because a person runs it, not because Cloudflare hosts
 pnpm install          # from the repo root, once
 cd apps/tuval
 pnpm dev              # boots the two demo programs; Ctrl-C stops and checkpoints them
-pnpm test             # the unit tier (vitest)
+pnpm test             # both tiers (vitest)
+pnpm test:unit        # the unit tier
+pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback socket, no creds
 pnpm typecheck
 ```
 
@@ -279,3 +281,146 @@ an in-port with no `receive` entry is refused (`NoReceiver`) before the first sp
 route refuses here, with nothing spawned and nothing written), open the wiring, build the kernel,
 launch, then `restore` whatever else the manifest names. `boot` is `start` from the layered
 config. `src/demo/e2e.unit.test.ts` is the proof that this holds across a stop and a second boot.
+
+## The AI agent slice
+
+`src/ai-agent/` is the backend-blind half of running an AI agent as a Tuval program. Nothing under
+it names Pi, Claude or any other backend: a row varies by the layer it is handed and by its identity,
+and that is all (founder ruling, 2026-09-02). It is the half a second backend builds against.
+
+**The service.** `TuvalAiAgent` (`src/ai-agent/service/`) is the one interface every backend
+implements — `start`, `prompt`, `interrupt`, `answer`, `setMode`, `page`, and one `events` stream.
+One subscription and one ordering: `AgentEvent` (`src/ai-agent/events.ts`) tags every kind —
+`item`, `phase`, `permission`, `permission-resolved`, `mode`, `usage` — so the core folds a single
+sequence rather than racing several (ruling 1, [#7570](https://github.com/kamp-us/phoenix/issues/7570)).
+Each method carries its own `Schema.TaggedError`; a backend's own refusals are `reason`s inside
+those, never tags that reach a caller. `ScriptedAiAgent.layer` is the deterministic implementation
+every unit test runs on — a checked-in `AgentScript` is the whole backend, it talks to nothing, and
+it holds no retry and no reconnect, so a test can prove the retry policy lives in the handlers'
+declared data rather than hiding in a layer.
+
+**The core.** `src/ai-agent/core/` is `ai-agent-session`, the one Demlik machine that drives any
+layer. It holds no Effect and names no backend: each Cmd is the name of work a handler performs, and
+the Sub is the name of the layer's event stream. Every refusal is data — a prompt outside `ready`, an
+answer to a card nobody raised, a mode the agent does not offer each record an `AgentFailure` and
+emit no Cmd, so the window renders the refusal instead of a crash taking the process with it.
+
+**The handlers.** `src/ai-agent/handlers/` is the one generic handler set. Each handler yields the
+service and calls one of its members; a layer's typed error becomes a `failed` Msg carrying the tag
+as data, and the one thing that does fail a handler is a `PayloadRejected` — the route refused what
+this program emitted, which is a wiring bug in the graph rather than the agent's answer. The Sub is
+the outbound half: it dispatches each event as a Msg *and* runs the same fold the core runs over a
+local projection seeded from the core's state, so the tail published on `transcript` is the tail the
+core commits. Retry and deadline are three numbers on the row (`policy.ts`), not an `Effect.retry`
+buried in a handler, and only `start` and the reconnect that repeats it are retried
+([#7371](https://github.com/kamp-us/phoenix/issues/7371)).
+
+**The ports.** `src/ai-agent/ports/` is the five ports that make a process an AI agent —
+`transcript`, `transcript-page`, `prompt`, `permission`, `mode` — each with one nominal kind, one
+payload predicate and one queue bound. Every payload is model-blind: no model name, cost, token
+count, session id or backend type appears on one. A program playing both ends of a two-way port
+names each end locally, and `compile` matches on the kind, so a cross-kind route still refuses.
+
+**The history.** `src/ai-agent/history/` is pure and imports no Effect, no socket and no other
+`ai-agent/` directory but `ports/`. The window is the live tail only — the newest whole exchanges
+under both an item and a byte bound, plus what the bounds left out. Older history is backend-owned
+(ruling 5): `planTranscriptPage` is a bound over a slice the backend already returned, walking older,
+whole exchanges only, and Tuval keeps no second copy.
+
+**The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
+the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
+`layer`, `cwd` and the identity. `PiAiAgent.layer` is the first layer to fill it; `ClaudeAiAgent` is
+next ([#7618](https://github.com/kamp-us/phoenix/issues/7618)).
+
+Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
+
+## The Pi loopback server
+
+`src/pi/server/` is the WebSocket server Pi 0.84.3 does not ship — the spike's `spike-server.mjs`
+(#7469) hand-ported into Effect, plus the production half the spike had no need for. One server
+per Pi process, on `127.0.0.1` and port 0: two Pi processes on one machine run two servers on two
+ports and share nothing.
+
+`PiServerService.layer()` is acquire/release scoped over a `PiSessionHost`. Closing its scope
+closes every socket, ends every connection's fibers and disposes every session exactly once. The
+service hands back the address, the dial URL and the capability token, all three `Redacted` where
+they carry the token.
+
+```ts
+const layer = PiServerService.layer().pipe(
+	Layer.provide(agentSessionHostLayer({modelRuntime, agentDir})),
+);
+```
+
+**The wire.** Framed CBOR through `ClientMessageDecoder` / `encodeServerMessage`. Each request is
+answered under its own id on its own fiber, so a slow `create` never holds up a later `list`.
+Sessions are owned exclusively: a second connection attaching one is refused `session_locked`, a
+missing one answers a structured `not_found`, and an `attach` from the connection that already
+owns it is the reconnect — the previous lease is invalidated, a new one issued, and the transcript
+comes back on the snapshot. Every change advances the session's revision and pushes a
+`session_snapshot` to its owner; bursts coalesce, so revisions can skip but never go backwards.
+
+**The production half** (#7465, founder ruling on #7567). The upgrade carries a per-launch
+capability token — 32 random bytes as hex, minted per process spawn, in handler memory only, never
+in Demlik state, the checkpoint or a log, and a fresh one after a restart. The handshake refuses a
+missing or wrong token, a non-loopback `Host` and a non-loopback `Origin`, all before a WebSocket
+exists and therefore before any frame is read. Every one of those inputs is attacker-controlled and
+pre-auth, so the guard is total — no header and no request target can throw out of it, and the
+`upgrade` listener answers a bare `400` under a `catch` if one ever does. A frame over the declared
+inbound bound closes the socket with `1009`; a per-connection outbound queue over its bound closes
+it with `1013`.
+
+**`PiSessionHost`** is the seam. Above it, only protocol values; below it, the real `AgentSession`
+and its JSONL `SessionManager` — the transcript lands under the session's own cwd, at
+`<cwd>/.tuval/pi-sessions`. Everything crossing that seam is projected, never cast, per
+[`.patterns/strict-wire-schema-projection.md`](../../.patterns/strict-wire-schema-projection.md).
+`makeScriptedHost` in `fixtures.ts` is the same seam with no model behind it, which is what lets
+the whole wire suite run in the unit tier.
+
+## The Pi client
+
+`src/pi/client/` is the dial side, in Node inside the same Pi process: the `ByteTransport` the
+0.84.3 pin does not export, plus the lease handling around `PiClient`. Pi ships a Unix-socket
+factory and nothing over a WebSocket, and Node 26 ships the WebSocket *client* as a global while
+`ws` supplies the server half — so `webSocketTransportFactory` is ours, hand-derived from the
+spike's `play.ts` (#7469) and shaped after the pin's own `unix.js`.
+
+`PiClientService.layerWebSocket({url})` takes the server's dial URL, token included, and hands back
+`connect`, `reconnect`, `createSession`, `attachSession`, `prompt`, `abort`, `snapshots` and
+`disconnections`. Nothing below that surface returns a `Promise` or throws a Pi error class: every
+rejection folds into one of four typed refusals — `SessionLocked`, `SessionNotFound`,
+`Disconnected`, `ProtocolRefused` — in `refusals.ts`.
+
+**Reconnect is explicit, and it does not preserve leases.** The pin invalidates every lease when the
+connection drops, so a dropped socket is one `Disconnected` on the `disconnections` stream and
+nothing else: no redial, no backoff, no queued call waiting on one. A caller reconnects and then
+reacquires by session id, and the reacquired snapshot carries the transcript from before the drop.
+Retry policy is the handlers' and stays declared data (#7371).
+
+`fixtures.ts`'s `startProtocolServer` is an in-process `ws` listener speaking the real codec, which
+is what lets the transport and the no-retry-loop proof run in the unit tier; the lock, the
+not-found and the reacquire run against the loopback server on Pi's faux provider in
+`pi-client.integration.test.ts`.
+
+## The Pi AI agent layer
+
+`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `Layer<TuvalAiAgent>` and
+requires nothing (founder ruling 4, [#7570](https://github.com/kamp-us/phoenix/issues/7570)):
+building it inside the process's scope stands up Pi's model runtime, the `PiSessionHost` over it,
+one loopback server and one client, and closing that scope closes the client, the server and every
+session exactly once. A process therefore holds no Pi value of its own — `PiAiAgentOptions` carries
+plain strings, and `agentDir` is the only path it usually sets. Nothing on that surface is a Pi
+type, and the per-launch token is unwrapped once, into the transport factory's closure, and reaches
+no event, no method's answer and no log line.
+
+`start({cwd, resume?})` is the caller's, not the layer's, so restore is "rebuild the layer, then
+`start({cwd, resume: sessionId})`" — and that same call is the only way back after a drop. A dropped
+socket fails `events` once with a `TransportError` and nothing dials again; the handlers decide.
+
+Pi pushes whole snapshots, so `items.ts` folds each revision into the events that changed, keyed by
+identities Pi guarantees — a tool row by its call id, so the result supersedes the running row it
+belongs to ([snapshot-authoritative-to-delta-events.md](../../.patterns/snapshot-authoritative-to-delta-events.md)).
+History is Pi's own: `page(before, limit)` reads the session's JSONL through
+`SessionManager.getBranch()` and bounds it with the shared page planner, so Tuval keeps no second
+copy. Pi raises no permission requests and offers no modes at this pin, so `answer` and `setMode`
+refuse as data.

@@ -1,6 +1,5 @@
+import {Button, Dialog} from "@kampus/design";
 import type * as React from "react";
-import {Button} from "../../../components/ui/Button";
-import {Dialog} from "../../../components/ui/Dialog";
 import {defineExhibit} from "../exhibit";
 
 function DialogDemo({showClose, defaultOpen}: {showClose?: boolean; defaultOpen?: boolean}) {

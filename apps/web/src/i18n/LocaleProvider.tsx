@@ -4,6 +4,7 @@
  * Persistence mirrors `lib/theme`: the choice lives under `kampus.locale`, read through
  * `lib/localeStorage`, defaulting to `tr`.
  */
+import {DesignTranslationProvider} from "@kampus/design";
 import * as React from "react";
 import {browserStorage} from "../lib/browserStorage";
 import {readStoredLocale, writeStoredLocale} from "../lib/localeStorage";
@@ -79,7 +80,11 @@ export function LocaleProvider({children}: {children: React.ReactNode}) {
 		[locale, setLocale, catalog],
 	);
 
-	return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
+	return (
+		<LocaleContext.Provider value={value}>
+			<DesignTranslationProvider translate={value.t}>{children}</DesignTranslationProvider>
+		</LocaleContext.Provider>
+	);
 }
 
 export function useLocale(): LocaleContextValue {

@@ -10,11 +10,12 @@
  * so a disabled control would only be a dead end wearing a control's clothes. Which of the six
  * states renders is the pure {@link caylakVisibilityGate}.
  */
+
+import {Alert} from "@kampus/design";
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {CaylakVisibilitySetting} from "../components/caylak-visibility/CaylakVisibilityToggle";
-import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {PHOENIX_CAYLAK_VISIBILITY} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";

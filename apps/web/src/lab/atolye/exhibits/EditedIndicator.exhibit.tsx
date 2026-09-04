@@ -1,5 +1,5 @@
+import {EditedIndicator} from "@kampus/design";
 import type * as React from "react";
-import {EditedIndicator} from "../../../components/ui/EditedIndicator";
 import {defineExhibit} from "../exhibit";
 
 // `createdAt` is pinned; `updatedAt` is the knob. When the two land within the

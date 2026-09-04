@@ -1,6 +1,5 @@
+import {Button, ToastProvider, useToast} from "@kampus/design";
 import type * as React from "react";
-import {Button} from "../../../components/ui/Button";
-import {ToastProvider, useToast} from "../../../components/ui/Toast";
 import {defineExhibit} from "../exhibit";
 
 function ToastTrigger({durationMs}: {durationMs: number}) {

@@ -1,7 +1,7 @@
+import {Button} from "@kampus/design";
 import type * as React from "react";
 import {NavLink} from "react-router";
 import {useT} from "../../i18n";
-import {Button} from "../ui/Button";
 import "./Subnav.css";
 
 export type SubnavFilter = {id: string; label: React.ReactNode};

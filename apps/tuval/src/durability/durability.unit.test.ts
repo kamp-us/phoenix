@@ -3,7 +3,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Option, Schema} from "effect";
+import {Context, Effect, Layer, Option, Schema} from "effect";
 import {Processes} from "../process/Processes.ts";
 import {ProcessTable} from "../process/ProcessTable.ts";
 import {ProcessId} from "../process/process.ts";
@@ -78,7 +78,7 @@ describe("durability", () => {
 		const probe = probeOf();
 		return Effect.gen(function* () {
 			const processes = yield* Processes;
-			const handle = yield* processes.spawn(counter);
+			const handle = yield* processes.spawn(counter, {services: Context.empty()});
 			probe.watched = handle.id;
 			yield* handle.dispatch({type: "tick"});
 			yield* handle.dispatch({type: "tick"});
@@ -95,13 +95,15 @@ describe("durability", () => {
 			return Effect.gen(function* () {
 				const processes = yield* Processes;
 				const id = ProcessId.make("fixed");
-				const first = yield* processes.spawn(counter, {id});
-				const held = yield* processes.spawn(counter, {id}).pipe(Effect.flip);
+				const first = yield* processes.spawn(counter, {id, services: Context.empty()});
+				const held = yield* processes
+					.spawn(counter, {id, services: Context.empty()})
+					.pipe(Effect.flip);
 				assert.instanceOf(held, CheckpointHeld);
 				assert.strictEqual(held.processId, id);
 
 				yield* first.stop;
-				const again = yield* processes.spawn(counter, {id});
+				const again = yield* processes.spawn(counter, {id, services: Context.empty()});
 				assert.strictEqual(again.id, id);
 			}).pipe(Effect.provide(kernel([counterProgram(probe, stores)], stores)));
 		},
@@ -116,8 +118,11 @@ describe("durability", () => {
 			return Effect.gen(function* () {
 				const before = yield* Effect.gen(function* () {
 					const processes = yield* Processes;
-					const root = yield* processes.spawn(counter);
-					const child = yield* processes.spawn(counter, {parent: root.id});
+					const root = yield* processes.spawn(counter, {services: Context.empty()});
+					const child = yield* processes.spawn(counter, {
+						parent: root.id,
+						services: Context.empty(),
+					});
 					yield* root.dispatch({type: "tick"});
 					yield* root.dispatch({type: "tick"});
 					yield* child.dispatch({type: "tick"});
@@ -127,7 +132,7 @@ describe("durability", () => {
 
 				yield* Effect.gen(function* () {
 					const table = yield* ProcessTable;
-					const restored = yield* restore;
+					const restored = yield* restore(Context.empty());
 					assert.deepStrictEqual(
 						restored.map((handle) => handle.id),
 						[before.root, before.child],
@@ -160,14 +165,14 @@ describe("durability", () => {
 			return Effect.gen(function* () {
 				const id = yield* Effect.gen(function* () {
 					const processes = yield* Processes;
-					const handle = yield* processes.spawn(counter);
+					const handle = yield* processes.spawn(counter, {services: Context.empty()});
 					yield* handle.dispatch({type: "tick"});
 					return handle.id;
 				}).pipe(Effect.provide(kernel([counterProgram(probe, stores)], stores)));
 
 				yield* Effect.gen(function* () {
 					const table = yield* ProcessTable;
-					const refused = yield* restore.pipe(Effect.flip);
+					const refused = yield* restore(Context.empty()).pipe(Effect.flip);
 					assert.instanceOf(refused, SnapshotRefused);
 					assert.strictEqual(refused.processId, id);
 					assert.deepStrictEqual(refused.found, {programId: "counter", version: "1.0.0"});
@@ -209,7 +214,7 @@ describe("durability", () => {
 				const stores = fileStores(dir);
 				yield* Effect.gen(function* () {
 					const table = yield* ProcessTable;
-					const refused = yield* restore.pipe(Effect.flip);
+					const refused = yield* restore(Context.empty()).pipe(Effect.flip);
 					assert.instanceOf(refused, SnapshotMalformed);
 					assert.strictEqual(refused.processId, id);
 					assert.deepStrictEqual(yield* table.list, []);
@@ -228,7 +233,7 @@ describe("durability", () => {
 
 			const id = yield* Effect.gen(function* () {
 				const processes = yield* Processes;
-				const handle = yield* processes.spawn(counter);
+				const handle = yield* processes.spawn(counter, {services: Context.empty()});
 				yield* handle.dispatch({type: "tick"});
 				return handle.id;
 			}).pipe(Effect.provide(kernel(rows, stores)));
@@ -247,7 +252,7 @@ describe("durability", () => {
 			);
 
 			yield* Effect.gen(function* () {
-				const restored = yield* restore;
+				const restored = yield* restore(Context.empty());
 				assert.strictEqual(restored[0]!.id, id);
 				assert.deepStrictEqual(restored[0]!.getState(), {count: 1, acks: 1});
 				assert.deepStrictEqual(probe.log, ["notify:1"]);

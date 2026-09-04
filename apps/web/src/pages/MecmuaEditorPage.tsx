@@ -7,15 +7,13 @@
  * `.patterns/flag-dark-page-gate.md`).
  */
 import {Composer, useComposerEditor} from "@kampus/composer";
+import {Alert, Button, Input} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useNavigate, useParams} from "react-router";
 import type {MecmuaPost} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
-import {Alert} from "../components/ui/Alert";
-import {Button} from "../components/ui/Button";
-import {Input} from "../components/ui/Form";
 import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {MECMUA_WRITE} from "../flags/keys";

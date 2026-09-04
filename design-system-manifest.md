@@ -11,7 +11,7 @@ rules a reviewer and a linter can enforce).
 Its **sibling** for the marketing surface is [brand-imagery.md](./brand-imagery.md) — the same
 founder-authored / agent-transcribed shape for **brand imagery** (the "ASCII cutaway kampüs" visual
 grammar). This manifest governs the **UI**; that doc governs generated marketing / product art.
-Both map to the *same* [`apps/web/src/styles/tokens.css`](apps/web/src/styles/tokens.css) tokens —
+Both map to the *same* [`packages/design/src/tokens.css`](packages/design/src/tokens.css) tokens —
 brand art and interface are one color system.
 
 The normative content is **founder-authored, not agent-invented**. It is the machine form of ADR
@@ -22,7 +22,7 @@ values into this artifact; it does **not** author design law. Where the ADR is s
 surfaced to the founder — it is never filled here.
 
 The token annotations below are grounded against the **live** token layer:
-[`apps/web/src/styles/tokens.css`](apps/web/src/styles/tokens.css) (raw → semantic → role, plus
+[`packages/design/src/tokens.css`](packages/design/src/tokens.css) (raw → semantic → role, plus
 the compact/normal/spacious density ramps) and
 [`apps/web/src/styles/global.css`](apps/web/src/styles/global.css) (where the focus-ring token
 pair is defined). Each value cites where it **actually lives** in source.
@@ -70,21 +70,21 @@ delta**.
 
 | # | Value | Law (0162) | Where it lives in source | Current → target delta |
 |---|---|---|---|---|
-| 1 | **Grid** | 4px base grid; sanctioned **1px & 2px** exceptions (hairline borders, optical nudges). Everything lands on the 4px lattice unless a sanctioned exception. | The 4px lattice is the discipline behind the spacing ramp (`--s-1..--s-8`) and radius scale (`--r-sm: 2px`, `--r-md: 4px`, `--r-lg: 6px`) in [`tokens.css`](apps/web/src/styles/tokens.css). | On-grid re-derivation of the ramps is [#2164](https://github.com/kamp-us/phoenix/issues/2164)/[#2163](https://github.com/kamp-us/phoenix/issues/2163)'s job (some live density steps are off-grid, e.g. `normal --s-1: 5px`). |
-| 2 | **Body text** | **14px** ratified body size. | `--t-body` in [`tokens.css`](apps/web/src/styles/tokens.css) (`:root` TYPE block). | **Achieved** — `--t-body` is now `14px` and the full `--t-*` ramp opened to that base by [#2164](https://github.com/kamp-us/phoenix/issues/2164). |
-| 3 | **Spacing** | 4px-based ramp — hand-tuned but on-grid (Primer/Polaris perceptual ladder, not a rigid ×N multiplier); **all three density ramps re-derive to clean 4px multiples**. | `--s-1..--s-8` in [`tokens.css`](apps/web/src/styles/tokens.css), redefined per `[data-density="compact"\|normal\|spacious"]`. | Compact ramp is already 4px multiples (`4/8/12/16/20/24/32/40`); `normal`/`spacious` steps are re-derived to 4px multiples by [#2164](https://github.com/kamp-us/phoenix/issues/2164). |
+| 1 | **Grid** | 4px base grid; sanctioned **1px & 2px** exceptions (hairline borders, optical nudges). Everything lands on the 4px lattice unless a sanctioned exception. | The 4px lattice is the discipline behind the spacing ramp (`--s-1..--s-8`) and radius scale (`--r-sm: 2px`, `--r-md: 4px`, `--r-lg: 6px`) in [`tokens.css`](packages/design/src/tokens.css). | On-grid re-derivation of the ramps is [#2164](https://github.com/kamp-us/phoenix/issues/2164)/[#2163](https://github.com/kamp-us/phoenix/issues/2163)'s job (some live density steps are off-grid, e.g. `normal --s-1: 5px`). |
+| 2 | **Body text** | **14px** ratified body size. | `--t-body` in [`tokens.css`](packages/design/src/tokens.css) (`:root` TYPE block). | **Achieved** — `--t-body` is now `14px` and the full `--t-*` ramp opened to that base by [#2164](https://github.com/kamp-us/phoenix/issues/2164). |
+| 3 | **Spacing** | 4px-based ramp — hand-tuned but on-grid (Primer/Polaris perceptual ladder, not a rigid ×N multiplier); **all three density ramps re-derive to clean 4px multiples**. | `--s-1..--s-8` in [`tokens.css`](packages/design/src/tokens.css), redefined per `[data-density="compact"\|normal\|spacious"]`. | Compact ramp is already 4px multiples (`4/8/12/16/20/24/32/40`); `normal`/`spacious` steps are re-derived to 4px multiples by [#2164](https://github.com/kamp-us/phoenix/issues/2164). |
 | 4 | **Tap target** | **36px minimum hit area** for every interactive control (the hit area, not necessarily the visible glyph). | Not a single token — enforced per interactive control (min-height / min-width or hit-area padding). | New floor; the concrete fixes land in [#2166](https://github.com/kamp-us/phoenix/issues/2166). |
-| 5 | **Elevation** | **Four levels — flat/resting · raised · dropdown · overlay** — plus a **dark-mode surface-tint bump** (each level lightens the surface, not shadow-only). | The four named levels `--shadow-flat` / `--shadow-raised` / `--shadow-dropdown` / `--shadow-overlay` in [`tokens.css`](apps/web/src/styles/tokens.css) (`[data-theme="dark"]` / `[data-theme="light"]` blocks). | **Achieved** — the four-level ramp + the dark-mode surface-tint bump are built by [#2164](https://github.com/kamp-us/phoenix/issues/2164); the old `--shadow-sm`/`--shadow-md` are retired and consumers rewired to the named levels. |
+| 5 | **Elevation** | **Four levels — flat/resting · raised · dropdown · overlay** — plus a **dark-mode surface-tint bump** (each level lightens the surface, not shadow-only). | The four named levels `--shadow-flat` / `--shadow-raised` / `--shadow-dropdown` / `--shadow-overlay` in [`tokens.css`](packages/design/src/tokens.css) (`[data-theme="dark"]` / `[data-theme="light"]` blocks). | **Achieved** — the four-level ramp + the dark-mode surface-tint bump are built by [#2164](https://github.com/kamp-us/phoenix/issues/2164); the old `--shadow-sm`/`--shadow-md` are retired and consumers rewired to the named levels. |
 | 6 | **Focus — the spacer ring** | **2px ring + 2px gap** (a ring separated from the control by a transparent spacer). The gap guarantees the ring clears **3:1 contrast even on same-family dark surfaces**. Extends the existing `--focus-ring` token — its *definition* gains the gap; the ~13 correct consumers keep consuming `--focus-ring` unchanged. | `--focus-ring: 2px solid var(--accent-9)` and `--focus-ring-offset: 2px`, defined in [`apps/web/src/styles/global.css`](apps/web/src/styles/global.css) (**NOT** `tokens.css`), painted by the single `:focus-visible` rule there. | **Live `--focus-ring` is a flush 2px ring** (`--focus-ring-offset: 2px` already exists as the outline offset) → 0162's spacer ring adds the **2px transparent gap** to the token's definition; [#2169](https://github.com/kamp-us/phoenix/issues/2169) builds the systematic focus layer, [#2166](https://github.com/kamp-us/phoenix/issues/2166) fixes the ReactionBar double-wrap misuse. |
-| 7 | **Contrast floors** | **AA 4.5:1** for body / any meaning-carrying text; **3:1** for large text and non-text UI (borders, icons, control affordances); **AAA where it comes for free** (`--text-primary` = `--gray-12` already clears AAA vs `--surface`). | The text-hierarchy ladder role tokens in [`tokens.css`](apps/web/src/styles/tokens.css) role block: `--text-primary` (`--gray-12`), `--text-secondary` (`mix(11,12)`), `--text-muted` (`--gray-11`, AA-safe floor for meaning), `--text-faint` (`--gray-10`, 3:1 only, decorative). | Law already holds for the ladder; the concrete WCAG-defect fixes (faint-for-meaning promotions, CTA-on-tomato) land in [#2166](https://github.com/kamp-us/phoenix/issues/2166). |
-| 8 | **Density** | Expose **all three ramps — compact · normal · spacious**. | The `[data-density="compact"\|normal\|spacious"]` ramp infra in [`tokens.css`](apps/web/src/styles/tokens.css). | Infra exists; the user-facing density control is wired by [#2183](https://github.com/kamp-us/phoenix/issues/2183). |
+| 7 | **Contrast floors** | **AA 4.5:1** for body / any meaning-carrying text; **3:1** for large text and non-text UI (borders, icons, control affordances); **AAA where it comes for free** (`--text-primary` = `--gray-12` already clears AAA vs `--surface`). | The text-hierarchy ladder role tokens in [`tokens.css`](packages/design/src/tokens.css) role block: `--text-primary` (`--gray-12`), `--text-secondary` (`mix(11,12)`), `--text-muted` (`--gray-11`, AA-safe floor for meaning), `--text-faint` (`--gray-10`, 3:1 only, decorative). | Law already holds for the ladder; the concrete WCAG-defect fixes (faint-for-meaning promotions, CTA-on-tomato) land in [#2166](https://github.com/kamp-us/phoenix/issues/2166). |
+| 8 | **Density** | Expose **all three ramps — compact · normal · spacious**. | The `[data-density="compact"\|normal\|spacious"]` ramp infra in [`tokens.css`](packages/design/src/tokens.css). | Infra exists; the user-facing density control is wired by [#2183](https://github.com/kamp-us/phoenix/issues/2183). |
 
 ---
 
 ## Semantic token annotations — reach for the role layer only
 
 Components consume **role tokens only**. This is stated law in
-[`tokens.css`](apps/web/src/styles/tokens.css) itself (the role-layer rule, "These are the ONLY
+[`tokens.css`](packages/design/src/tokens.css) itself (the role-layer rule, "These are the ONLY
 tokens components should reference") and is promoted to a pillar non-negotiable by 0162 (Pillar 2).
 **Never** reference a raw scale (`--mauve-*`, `--tomato-*`, …) or a semantic scale (`--gray-N`,
 `--accent-N`) from a component — reach for the role alias below.
@@ -185,7 +185,7 @@ reduced-motion handling is a regression no matter how good the new look is.
 
 The full contract, the per-layer authority table, and its enforcement live in
 [`.patterns/design-sync-authority.md`](.patterns/design-sync-authority.md); it is locked by the
-property-based a11y loop (generic, every `ui/` primitive) and the entry-row spine tripwire
+property-based a11y loop (generic, every `@kampus/design` primitive) and the entry-row spine tripwire
 ([`apps/web/src/components/entry-row-spine.test.tsx`](apps/web/src/components/entry-row-spine.test.tsx)).
 
 ---

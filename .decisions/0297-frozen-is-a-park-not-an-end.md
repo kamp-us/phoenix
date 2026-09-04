@@ -1,7 +1,7 @@
 ---
 id: 0297
 title: A lane task's `frozen` is a park with a door out, and the door hands out no retries
-status: amended-in-part by [0302](0302-known-parks-clear-novel-routes-human.md), [0312](0312-event-anchored-retry-budget.md)
+status: amended-in-part by [0302](0302-known-parks-clear-novel-routes-human.md), [0312](0312-event-anchored-retry-budget.md), [0350](0350-a-correction-supersedes-a-recorded-line.md)
 date: 2026-08-18
 tags: [fabrika, lane, pipeline, state-machine]
 ---

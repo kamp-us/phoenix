@@ -16,15 +16,13 @@
  * (aria-haspopup/expanded on the trigger, Escape-to-close, outside-dismiss).
  */
 
+import {Avatar, Button, Popover} from "@kampus/design";
 import {useState} from "react";
 import {Link} from "react-router";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_LOCALE} from "../../flags/keys";
 import {useLocale, useT} from "../../i18n";
 import type {ThemeChoice} from "../../lib/theme";
-import {Avatar} from "../ui/Avatar";
-import {Button} from "../ui/Button";
-import {Popover} from "../ui/Popover";
 import {LocaleChoicePicker} from "./LocaleChoicePicker";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import "./UserMenu.css";

@@ -2,15 +2,14 @@
  * The English render of the mecmua and account surfaces (#7531) — the provider path end to end,
  * plus the loaded `en` catalog for the surfaces whose components need a fate client to mount.
  */
+
+import {CaylakBadge, DraftRestoreBanner, ReviewBadge} from "@kampus/design";
 import {render, screen, waitFor} from "@testing-library/react";
 import type {ReactNode} from "react";
 import {MemoryRouter} from "react-router";
 import {beforeEach, describe, expect, it} from "vitest";
 import {EmailDeliveryNotice} from "../components/membrane/EmailDeliveryNotice";
 import {ProfileHeader} from "../components/profile/ProfileHeader";
-import {CaylakBadge} from "../components/ui/CaylakBadge";
-import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
-import {ReviewBadge} from "../components/ui/ReviewBadge";
 import {LOCALE_STORAGE_KEY} from "../lib/localeStorage";
 import {NotFoundPage} from "../pages/NotFoundPage";
 import {loadCatalog} from "./catalog";

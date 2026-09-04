@@ -41,7 +41,7 @@ const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>
 const fakeProver = (
 	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
 	deferred: ReadonlyArray<string> = [],
-	partial = false,
+	partial: boolean | null = null,
 ) => {
 	const asked: ProveOptions[] = [];
 	return {
@@ -374,7 +374,18 @@ describe("lane report — the partial merge a shipped lane discloses", () => {
 		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "queued"}}});
 	});
 
-	it("leaves a closing merge the line and the terminal it always had", async () => {
+	it("records a read closing merge as `partial: false`, on the terminal it always had", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const prover = fakeProver(answer(JSON.stringify({proof: "not-required"})), [], false);
+
+		const out = await run(fs, "LANDED", {prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE", partial: false});
+		expect(JSON.parse(out.stdout).current).toBe("complete");
+	});
+
+	it("carries no `partial` where no closure was read, so absent still means unread", async () => {
 		const fs = laneAt(LOG_AT.ship);
 
 		const out = await run(fs, "LANDED");

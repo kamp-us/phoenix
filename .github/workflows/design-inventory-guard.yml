@@ -6,7 +6,7 @@ name: design-inventory-guard
 #
 #   1. Self-update freshness — re-run the extractor and red when the committed
 #      `design-system-inventory.md` is stale vs the live JSDoc on the annotated
-#      `apps/web/src/components/ui/*` primitives (drift = red; fresh = green). This keeps
+#      `packages/design/src/*` primitives (drift = red; fresh = green). This keeps
 #      agent-facing coverage current without founder re-transcription.
 #   2. Descriptive/normative firewall — regenerate through the extractor (which writes ONLY the
 #      descriptive inventory) and red if the founder-authored `design-system-manifest.md` moved.

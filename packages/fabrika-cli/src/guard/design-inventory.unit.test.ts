@@ -15,7 +15,7 @@ import {
 	type SourceFile,
 } from "./design-inventory.ts";
 
-const source = (content: string, path = "apps/web/src/components/ui/Alert.tsx"): SourceFile => ({
+const source = (content: string, path = "packages/design/src/Alert.tsx"): SourceFile => ({
 	path,
 	content,
 });
