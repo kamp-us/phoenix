@@ -223,3 +223,28 @@ an in-port with no `receive` entry is refused (`NoReceiver`) before the first sp
 route refuses here, with nothing spawned and nothing written), open the wiring, build the kernel,
 launch, then `restore` whatever else the manifest names. `boot` is `start` from the layered
 config. `src/demo/e2e.unit.test.ts` is the proof that this holds across a stop and a second boot.
+
+## Shell: the layout tree
+
+`src/shell/layout/` is the pure window layout — the tmux half of the shell, ported by hand from
+Studio's `monorepo/packages/layout-tree/src/index.ts` after the invariant audit #7551 asked for.
+Nodes are windows and stacks with stable ids, addressed by id and never by position; a window holds
+an optional process id and nothing else, so an empty window is an ordinary node. Nothing here
+imports React, Demlik or Effect, so every operation is a plain function on immutable data.
+
+```ts
+let tree = createTree(createStack("root", "horizontal", [createWindow("w0")]));
+tree = split(tree, "w0", "vertical", {window: "w1", stack: "s1"}); // w1 takes half of w0's share
+tree = resize(tree, "root", {w0: 30, w1: 70});                     // percent, never pixels
+findSibling(tree, "w0", "down")?.id;                               // "w1"
+checkTree(tree);                                                   // [] — every invariant holds
+```
+
+`"horizontal"` means the children sit side by side; Studio inverts that at its render boundary and
+this port does not (see `.glossary/LANGUAGE.md` §"Tuval: stack, orientation, size, zoom"). A split
+of a single-child stack flips that stack instead of nesting a new one; `remove` collapses an emptied
+stack into its grandparent, replaces a stack left holding one child with that child, and hands the
+freed share to the sibling the window sat against, which makes it the exact inverse of the split
+that created the window. Removing the tree's last window is refused — what closing the last window
+means is the shell's call, not the tree's. `checkTree` states the invariants as data, so the
+persistence boundary can reject a restored tree instead of rendering a broken one.
