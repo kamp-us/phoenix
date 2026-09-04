@@ -5,6 +5,7 @@
  * client-side filter on `authorId` rather than a re-fetch.
  */
 import type {TargetKind} from "../../../worker/db/target-kind";
+import type {Message} from "./divanGating";
 import type {Verdict} from "./triage-loop";
 
 export interface WaveTarget {
@@ -82,18 +83,39 @@ export function canApplyWave(selected: ReadonlyArray<string>): boolean {
 	return selected.length > 0;
 }
 
-export function waveManifestLabel(targetCount: number): string {
+// The `one` arm is exactly `count === 1` in both catalogs (see `i18n/plural.ts`).
+export function waveManifestLabel(targetCount: number): Message {
 	const n = Math.max(0, Math.floor(targetCount));
-	return `bu aktör · ${n} bildirili hedef`;
+	return {
+		key: n === 1 ? "divan.wave.manifest.one" : "divan.wave.manifest.other",
+		params: {count: n},
+	};
 }
 
+export interface BlastRadius {
+	readonly frame: Message;
+	readonly reports: Message;
+}
+
+// Two messages, not one: the frame counts targets and the inner clause counts reports, and
+// English needs each arm chosen independently — one key pluralized on targets renders
+// "1 target · closes 1 reports". The component interpolates the clause into the frame.
 export function blastRadiusLabel(
 	targets: ReadonlyArray<WaveTarget>,
 	selected: ReadonlyArray<string>,
-): string {
+): BlastRadius {
 	const chosen = selectedWaveTargets(targets, selected);
 	const reports = chosen.reduce((sum, t) => sum + Math.max(0, Math.floor(t.reportCount)), 0);
-	return `${chosen.length} hedef · ${reports} raporu kapatır · geri alınabilir`;
+	return {
+		frame: {
+			key: chosen.length === 1 ? "divan.wave.blast.one" : "divan.wave.blast.other",
+			params: {targets: chosen.length},
+		},
+		reports: {
+			key: reports === 1 ? "divan.wave.blastReports.one" : "divan.wave.blastReports.other",
+			params: {count: reports},
+		},
+	};
 }
 
 export interface WaveKeyEvent {
@@ -166,8 +188,8 @@ export function summarizeWaveBatch(outcomes: ReadonlyArray<WaveOutcome>): {
 	return {resolved, failed};
 }
 
-export function waveFailureLabel(failedCount: number): string | null {
+export function waveFailureLabel(failedCount: number): Message | null {
 	const n = Math.max(0, Math.floor(failedCount));
 	if (n === 0) return null;
-	return `${n} hedef çözülemedi, tekrar dene`;
+	return {key: n === 1 ? "divan.wave.failed.one" : "divan.wave.failed.other", params: {count: n}};
 }

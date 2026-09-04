@@ -212,6 +212,39 @@
 	align-self: center;
 }
 
+/* The ambient çaylak meter (#7045) — the karma chip plus the `· kefil: …` fact it is read
+   against, on one baseline. */
+.kp-topbar__caylak-meter {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	align-self: center;
+}
+
+.kp-topbar__caylak-kefil {
+	color: var(--text-muted);
+	font: var(--t-meta);
+	white-space: nowrap;
+}
+
+/* The unvouched çaylak's settled copy. No `text-overflow: ellipsis` and no width-gated
+   `display: none`: either one puts it back out of reach on the narrow viewport it is here for. */
+.kp-topbar__caylak-vouch-needed {
+	color: var(--text-muted);
+	font: var(--t-meta);
+	min-width: 0;
+}
+
+/* The meter's bar rides the karma atom, whose fill is `--accent` (Karma.css). That fill is
+   unlawful inside the topbar under the accent-scarcity law below, so it is stripped to a
+   neutral role token here — the same override shape the law's own two treatments use. */
+.kp-topbar__caylak-meter .kp-karma__bar::-webkit-progress-value {
+	background: var(--text-muted);
+}
+.kp-topbar__caylak-meter .kp-karma__bar::-moz-progress-bar {
+	background: var(--text-muted);
+}
+
 /* Accent-scarcity containment law (#2614, epic #2595). Under the nav-IA zone grammar the
    topbar holds ZERO accent fills: #2600 relocated the one promoted `+ gönderi` CTA to the
    pano Subnav, so no surviving topbar element may claim the accent budget (design-manifest

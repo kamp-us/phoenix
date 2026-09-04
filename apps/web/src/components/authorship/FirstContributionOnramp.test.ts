@@ -4,7 +4,11 @@
  * honest-framing copy.
  */
 import {describe, expect, it} from "vitest";
-import {onrampCopy, shouldShowOnramp} from "./FirstContributionOnramp";
+import {en} from "../../i18n/en";
+import {tr} from "../../i18n/tr";
+import {onrampHeadingKey, shouldShowOnramp} from "./FirstContributionOnramp";
+
+const SURFACES = ["sozluk", "pano", "pano-comment"] as const;
 
 describe("shouldShowOnramp — the çaylak-only gate", () => {
 	it("shows only when the viewer is a çaylak", () => {
@@ -24,33 +28,34 @@ describe("shouldShowOnramp — the çaylak-only gate", () => {
 	});
 });
 
-describe("onrampCopy — per-surface lowercase-Turkish copy", () => {
+describe("onrampHeadingKey — per-surface copy", () => {
 	it("uses the tanım noun on the sözlük surface", () => {
-		const copy = onrampCopy("sozluk");
-		expect(copy.heading).toBe("ilk tanımını yazmaya hazırsın");
+		expect(tr[onrampHeadingKey("sozluk")]).toBe("ilk tanımını yazmaya hazırsın");
 	});
 
 	it("uses the gönderi noun on the pano surface", () => {
-		const copy = onrampCopy("pano");
-		expect(copy.heading).toBe("ilk gönderini paylaşmaya hazırsın");
+		expect(tr[onrampHeadingKey("pano")]).toBe("ilk gönderini paylaşmaya hazırsın");
 	});
 
 	it("uses the yorum noun on the pano comment surface", () => {
-		const copy = onrampCopy("pano-comment");
-		expect(copy.heading).toBe("ilk yorumunu yazmaya hazırsın");
+		expect(tr[onrampHeadingKey("pano-comment")]).toBe("ilk yorumunu yazmaya hazırsın");
 	});
 
 	it("gives every surface its own heading — no surface reuses another's noun", () => {
-		const headings = (["sozluk", "pano", "pano-comment"] as const).map(
-			(s) => onrampCopy(s).heading,
-		);
-		expect(new Set(headings).size).toBe(headings.length);
+		const keys = SURFACES.map((s) => onrampHeadingKey(s));
+		expect(new Set(keys).size).toBe(keys.length);
 	});
 
-	it("keeps the heading lowercase (Turkish user-facing convention)", () => {
-		for (const surface of ["sozluk", "pano", "pano-comment"] as const) {
-			const {heading} = onrampCopy(surface);
+	it("keeps the Turkish heading lowercase (user-facing convention)", () => {
+		for (const surface of SURFACES) {
+			const heading = tr[onrampHeadingKey(surface)];
 			expect(heading).toBe(heading.toLocaleLowerCase("tr-TR"));
+		}
+	});
+
+	it("answers in English too", () => {
+		for (const surface of SURFACES) {
+			expect(en[onrampHeadingKey(surface)]).toBeTruthy();
 		}
 	});
 });

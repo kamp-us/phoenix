@@ -58,6 +58,14 @@ const render = leafCommand(
 				"a surface id to capture — a route such as /pano, or a route plus a tier state (/pano:auth renders as the yazar test account, /pano:auth-caylak as the çaylak one), each proved signed in AND at the named tier against the preview's session endpoint before the shot is recorded; repeatable, and zero operands is refused (no tool guesses surfaces from a diff)",
 			),
 		),
+		// `atLeast(0)` is the repeatable form with no floor: omitting it renders at desktop alone,
+		// which is what every invocation written before this operand asked for implicitly.
+		viewport: Flag.string("viewport").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				"a viewport to shoot every --surface at — desktop (1280x800) or mobile (390x844), repeatable and crossed with --surface; each shot proves its own width off the captured PNG's bytes before it is recorded (default: desktop alone)",
+			),
+		),
 		// `atLeast(0)` is the repeatable form with no floor: forcing nothing is the ordinary run.
 		flag: Flag.string("flag").pipe(
 			Flag.atLeast(0),
@@ -73,12 +81,13 @@ const render = leafCommand(
 		),
 		repo: repoFlag,
 	},
-	Effect.fn(function* ({pr, out, surface, flag, app, repo}) {
+	Effect.fn(function* ({pr, out, surface, viewport, flag, app, repo}) {
 		yield* emit(
 			yield* runRender({
 				pr,
 				out,
 				surfaces: surface,
+				viewports: viewport,
 				flags: flag,
 				app: Option.getOrNull(app),
 				repo: Option.getOrNull(repo),
@@ -91,7 +100,7 @@ const render = leafCommand(
 ).pipe(
 	Command.withShortDescription("Capture the named surfaces from a PR's preview deployment."),
 	Command.withDescription(
-		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per surface (path, dimensions, sha256, page errors); every surface's outcome is enumerated on stderr. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, auth-caylak, a --flag operand is not a <key>=<on|off> pair, or --flag was passed with an anonymous surface), 11 (a read failed, the preview comment is malformed or names several apps, a capture's validity is undeterminable, a tier-naming surface was requested with that tier's session token or BETTER_AUTH_SECRET unset, a tier-naming surface's session proof did not come back signed in or came back at another tier, or a forced flag evaluated at its default anyway), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano",
+		"Capture the named surfaces from a PR's announced preview deployment at the inspected head, one validated PNG per surface per viewport, and write the set manifest. Prints one JSON object: the set, the PR, the head, the preview URL, and one capture record per shot (surface, viewport, path, dimensions, sha256, page errors); every shot's outcome is enumerated on stderr. --viewport is crossed with --surface, so two of each is four captures whose file names carry the viewport label. Full success is the only exit 0. Exits 1 (zero --surface operands), 7 (PR absent or closed), 10 (--out is not kebab-case, a --surface names a :state nothing renders — the realized set is auth, auth-caylak, a --viewport names a viewport outside the closed set desktop, mobile or is passed twice, a --flag operand is not a <key>=<on|off> pair, or --flag was passed with an anonymous surface), 11 (a read failed, the preview comment is malformed or names several apps, a capture's validity is undeterminable, a tier-naming surface was requested with that tier's session token or BETTER_AUTH_SECRET unset, a tier-naming surface's session proof did not come back signed in or came back at another tier, or a forced flag evaluated at its default anyway), 12 (the preview deploys a head that is not the PR's live head — stale preview), 13 (a surface threw during render), 14 (a surface is unreachable), 15 (a capture is invalid), 16 (no preview-deploy comment — the CANT-SEE route), 19 (a capture's PNG width read back from its own bytes is not the requested viewport's width). Example: fabrika review-ui render --pr 4321 --out judged --surface /pano --viewport desktop --viewport mobile",
 	),
 );
 

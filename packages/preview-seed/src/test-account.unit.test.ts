@@ -1,12 +1,14 @@
 /**
  * The test-account provisioner's three refusable facts: a token weak enough to be guessed, a target
- * that is not a throwaway, and a run naming no tier at all. Each must be decided BEFORE any write,
- * so the fake below records every statement it is handed and the assertions read that record.
+ * whose name is not a per-PR preview's, and a run naming no tier at all. Each must be decided
+ * BEFORE any write, so the fake below records every statement it is handed and the assertions read
+ * that record.
  */
 
 import {assert, describe, it} from "@effect/vitest";
 import {toRestParams} from "@kampus/d1-rest";
 import {
+	isThrowawayDatabaseName,
 	MIN_SESSION_TOKEN_LEN,
 	makeTestAccountDb,
 	parseSessionToken,
@@ -14,6 +16,10 @@ import {
 	SESSION_TTL_MS,
 	TEST_ACCOUNTS,
 } from "./test-account.ts";
+
+/** A per-PR preview's real shape: alchemy's `phoenix-phoenix-db-pr-<n>-<hash>` (PR #7717's). */
+const PREVIEW_NAME = "phoenix-phoenix-db-pr-7717-td6ketak4e75f6i4";
+const PROD_NAME = "phoenix-phoenix-db-prod-9f2c1a7be4d05613";
 
 interface Recorded {
 	readonly sql: string;
@@ -73,33 +79,47 @@ describe("parseSessionToken", () => {
 
 const CAYLAK_TOKEN = parseSessionToken("c".repeat(MIN_SESSION_TOKEN_LEN));
 
+describe("isThrowawayDatabaseName", () => {
+	it("admits a per-PR preview and refuses production, a named stage and an empty name", () => {
+		assert.isTrue(isThrowawayDatabaseName(PREVIEW_NAME));
+		assert.isFalse(isThrowawayDatabaseName(PROD_NAME));
+		assert.isFalse(isThrowawayDatabaseName("phoenix-phoenix-db-umut-2f1c9de4ab7705ff"));
+		assert.isFalse(isThrowawayDatabaseName(""));
+	});
+});
+
 describe("provisionTestAccounts", () => {
-	it("refuses a database holding a foreign account, writing nothing", async () => {
+	/**
+	 * The fence's whole job: a real database is refused on its name, and the tokens it was handed
+	 * never get it past that — production carries no `-pr-` segment however the run is invoked.
+	 */
+	it("refuses a production database on its name, writing nothing", async () => {
 		assert.isNotNull(TOKEN);
-		const {d1, batched} = fakeD1([{id: "somebody-real"}]);
-		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), {yazar: TOKEN});
+		const {d1, batched, selected} = fakeD1([]);
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PROD_NAME, {yazar: TOKEN});
 		assert.strictEqual(outcome._tag, "NotThrowaway");
-		assert.strictEqual(outcome._tag === "NotThrowaway" ? outcome.foreignAccounts : -1, 1);
+		assert.strictEqual(outcome._tag === "NotThrowaway" ? outcome.databaseName : "", PROD_NAME);
 		assert.lengthOf(batched, 0);
+		assert.lengthOf(selected, 0);
 	});
 
 	/**
-	 * The re-run case: after both tiers are seeded the database holds two test identities, and a
-	 * throwaway check that only knew one of them would call the other somebody's real world and
-	 * refuse every subsequent run.
+	 * The failure that put the fence on the name (#7740): CI's e2e suite signs human users up on
+	 * every preview it tests, so a preview holding accounts is the normal case, not a refusable one.
 	 */
-	it("excludes every test identity from the foreign count, so a re-run stays idempotent", async () => {
+	it("provisions a preview that already holds signed-up human accounts", async () => {
 		assert.isNotNull(TOKEN);
-		const {d1, selected} = fakeD1([]);
-		await provisionTestAccounts(makeTestAccountDb(d1), {yazar: TOKEN});
-		const params = selected.flatMap((stmt) => stmt.params);
-		assert.include(params, TEST_ACCOUNTS.yazar.id);
-		assert.include(params, TEST_ACCOUNTS.çaylak.id);
+		const {d1, batched} = fakeD1([{id: "e2e-signup-1"}, {id: "e2e-signup-2"}]);
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
+			yazar: TOKEN,
+		});
+		assert.strictEqual(outcome._tag, "Provisioned");
+		assert.lengthOf(batched, 3);
 	});
 
 	it("names no tier rather than falling back to one when no token is supplied", async () => {
 		const {d1, batched, selected} = fakeD1([]);
-		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), {});
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {});
 		assert.strictEqual(outcome._tag, "NoCredentials");
 		assert.lengthOf(batched, 0);
 		assert.lengthOf(selected, 0);
@@ -109,7 +129,12 @@ describe("provisionTestAccounts", () => {
 		assert.isNotNull(TOKEN);
 		const now = new Date("2026-08-28T00:00:00.000Z");
 		const {d1, batched} = fakeD1([]);
-		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), {yazar: TOKEN}, now);
+		const outcome = await provisionTestAccounts(
+			makeTestAccountDb(d1),
+			PREVIEW_NAME,
+			{yazar: TOKEN},
+			now,
+		);
 		assert.strictEqual(outcome._tag, "Provisioned");
 		if (outcome._tag !== "Provisioned") return;
 		assert.strictEqual(outcome.report.expiresAt.getTime(), now.getTime() + SESSION_TTL_MS);
@@ -130,7 +155,7 @@ describe("provisionTestAccounts", () => {
 		assert.isNotNull(TOKEN);
 		assert.isNotNull(CAYLAK_TOKEN);
 		const {d1, batched} = fakeD1([]);
-		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), {
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
 			yazar: TOKEN,
 			çaylak: CAYLAK_TOKEN,
 		});
@@ -151,7 +176,9 @@ describe("provisionTestAccounts", () => {
 	it("seeds only the tier it holds a token for, leaving the other unwritten", async () => {
 		assert.isNotNull(CAYLAK_TOKEN);
 		const {d1, batched} = fakeD1([]);
-		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), {çaylak: CAYLAK_TOKEN});
+		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
+			çaylak: CAYLAK_TOKEN,
+		});
 		assert.strictEqual(outcome._tag, "Provisioned");
 		if (outcome._tag !== "Provisioned") return;
 		assert.deepStrictEqual(outcome.report.tiers, ["çaylak"]);
@@ -167,7 +194,10 @@ describe("provisionTestAccounts", () => {
 		assert.isNotNull(TOKEN);
 		assert.isNotNull(CAYLAK_TOKEN);
 		const {d1, batched} = fakeD1([]);
-		await provisionTestAccounts(makeTestAccountDb(d1), {yazar: TOKEN, çaylak: CAYLAK_TOKEN});
+		await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
+			yazar: TOKEN,
+			çaylak: CAYLAK_TOKEN,
+		});
 		batched.forEach((stmt, i) => {
 			stmt.params.forEach((p, j) => {
 				assert.isNotNull(p, `batch[${i}].params[${j}] is null`);

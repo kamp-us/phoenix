@@ -3,6 +3,7 @@ import {useSession} from "../../auth/client";
 import {useMe} from "../../auth/useMe";
 import {MECMUA_FEED, MECMUA_PUBLIC_READ, MECMUA_WRITE} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
+import {useT} from "../../i18n";
 import {shouldShowMecmuaWriteCta} from "../../pages/mecmua-write-gate";
 import type {SubnavLink} from "../layout/Subnav";
 import {SubnavShell} from "../layout/SubnavShell";
@@ -14,14 +15,15 @@ import {MecmuaSubnavCta} from "./MecmuaSubnavCta";
 export function MecmuaSubnavLayout() {
 	const session = useSession();
 	const {me} = useMe();
+	const t = useT();
 	const {value: readOn} = useFlag(MECMUA_PUBLIC_READ, false);
 	const {value: feedOn} = useFlag(MECMUA_FEED, false);
 	const {value: writeOn} = useFlag(MECMUA_WRITE, false);
 	const canAuthor = shouldShowMecmuaWriteCta(writeOn, !!session.data, me?.tier);
 	const links: SubnavLink[] = [
-		...(readOn ? [{to: "/mecmua", label: "keşfet", end: true}] : []),
-		...(feedOn ? [{to: "/mecmua/akis", label: "akış"}] : []),
-		...(canAuthor ? [{to: "/mecmua/yazilarim", label: "yazılarım"}] : []),
+		...(readOn ? [{to: "/mecmua", label: t("mecmua.nav.discover"), end: true}] : []),
+		...(feedOn ? [{to: "/mecmua/akis", label: t("mecmua.nav.feed")}] : []),
+		...(canAuthor ? [{to: "/mecmua/yazilarim", label: t("mecmua.nav.myPosts")}] : []),
 	];
 	return (
 		<>

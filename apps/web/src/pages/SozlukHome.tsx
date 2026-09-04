@@ -8,6 +8,7 @@ import {useListView, useRequest, useView, type ViewRef} from "react-fate";
 import {useSearchParams} from "react-router";
 import {TermRow, TermRowView} from "../components/sozluk/TermRow";
 import {Screen} from "../fate/Screen";
+import {useT} from "../i18n";
 import {sozlukPageEmptyLabel} from "../lib/sozlukPageEmptyLabel";
 import "./SozlukHome.css";
 
@@ -69,14 +70,20 @@ interface ChromeProps {
 }
 
 function SozlukHomeChrome({status, errorMessage, children}: ChromeProps) {
-	const totalsLine = status === "ok" ? "" : status === "loading" ? "yükleniyor…" : "yüklenemedi";
+	const t = useT();
+	const totalsLine =
+		status === "ok"
+			? ""
+			: status === "loading"
+				? t("sozluk.home.loading")
+				: t("sozluk.home.loadFailedShort");
 
 	return (
 		<>
 			<header className="kp-sozluk-home__masthead">
 				<div>
 					<h1 className="kp-sozluk-home__title">
-						sözlük {totalsLine ? <small>{totalsLine}</small> : null}
+						{t("sozluk.home.title")} {totalsLine ? <small>{totalsLine}</small> : null}
 					</h1>
 				</div>
 				{/* The alphabet + create CTA live in the persistent Subnav zone (#2602), so the
@@ -85,7 +92,7 @@ function SozlukHomeChrome({status, errorMessage, children}: ChromeProps) {
 
 			{status === "error" ? (
 				<p style={{font: "var(--t-meta)", color: "var(--danger)", padding: "var(--s-3) 0"}}>
-					sözlük yüklenemedi: {errorMessage}
+					{t("sozluk.home.loadFailed", {code: errorMessage ?? ""})}
 				</p>
 			) : null}
 
@@ -113,23 +120,24 @@ interface ColumnProps {
 }
 
 function RecentColumn({connection, letter}: ColumnProps) {
+	const t = useT();
 	const [items] = useListView(TermConnectionView, connection);
 	const {onMatch, state} = useFilteredColumn(items);
 
 	return (
 		<section>
 			<header className="kp-sozluk-home__col-head">
-				<span className="title">son eklenenler</span>
-				<span>24 sa</span>
+				<span className="title">{t("sozluk.home.recent")}</span>
+				<span>{t("sozluk.home.recentWindow")}</span>
 			</header>
 			<div className="kp-sozluk-list">
 				{items.map(({node}) => (
 					<FilterableTermRow key={node.id} node={node} letter={letter} onMatch={onMatch} />
 				))}
 				{state === "empty" ? (
-					<ColumnEmptyState>henüz terim yok.</ColumnEmptyState>
+					<ColumnEmptyState>{t("sozluk.home.noTerms")}</ColumnEmptyState>
 				) : state === "no-match" ? (
-					<ColumnEmptyState>{sozlukPageEmptyLabel(letter)}</ColumnEmptyState>
+					<ColumnEmptyState>{sozlukPageEmptyLabel(t, letter)}</ColumnEmptyState>
 				) : null}
 			</div>
 		</section>
@@ -162,14 +170,15 @@ function FilterableTermRow({
 }
 
 function PopularColumn({connection, letter}: ColumnProps) {
+	const t = useT();
 	const [items] = useListView(TermConnectionView, connection);
 	const {onMatch, state} = useFilteredColumn(items);
 
 	return (
 		<section>
 			<header className="kp-sozluk-home__col-head">
-				<span className="title">en çok oylananlar</span>
-				<span>tüm zamanlar</span>
+				<span className="title">{t("sozluk.home.popular")}</span>
+				<span>{t("sozluk.home.popularWindow")}</span>
 			</header>
 			<ol className="kp-sozluk-popular">
 				{items.map(({node}, i) => (
@@ -184,9 +193,9 @@ function PopularColumn({connection, letter}: ColumnProps) {
 				))}
 			</ol>
 			{state === "empty" ? (
-				<ColumnEmptyState>henüz terim yok.</ColumnEmptyState>
+				<ColumnEmptyState>{t("sozluk.home.noTerms")}</ColumnEmptyState>
 			) : state === "no-match" ? (
-				<ColumnEmptyState>{sozlukPageEmptyLabel(letter)}</ColumnEmptyState>
+				<ColumnEmptyState>{sozlukPageEmptyLabel(t, letter)}</ColumnEmptyState>
 			) : null}
 		</section>
 	);

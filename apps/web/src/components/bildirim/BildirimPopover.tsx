@@ -9,6 +9,7 @@ import {Bell} from "lucide-react";
 import {useState} from "react";
 import {Link} from "react-router";
 import {Screen} from "../../fate/Screen";
+import {plural, useLocale} from "../../i18n";
 import {Icon} from "../Icon";
 import {Alert} from "../ui/Alert";
 import {Badge} from "../ui/Badge";
@@ -22,7 +23,11 @@ import "./BildirimPopover.css";
 
 export function BildirimPopover({to, unread}: {to: string; unread: number}) {
 	const [open, setOpen] = useState(false);
-	const label = `${unread} okunmamış bildirim`;
+	const {t, locale} = useLocale();
+	const label = t(
+		plural(locale, unread, {one: "bildirim.unreadLabel.one", other: "bildirim.unreadLabel.other"}),
+		{count: unread},
+	);
 
 	return (
 		<>
@@ -34,7 +39,7 @@ export function BildirimPopover({to, unread}: {to: string; unread: number}) {
 				onOpenChange={setOpen}
 				placement="bottom-end"
 				className="kp-bildirim-pop__popup"
-				title={<span className="kp-bildirim-pop__title">bildirimler</span>}
+				title={<span className="kp-bildirim-pop__title">{t("bildirim.title")}</span>}
 				trigger={
 					<Button
 						type="button"
@@ -64,12 +69,14 @@ export function BildirimPopover({to, unread}: {to: string; unread: number}) {
 					data-testid="topbar-bildirim-popover"
 				>
 					<Screen
-						fallback={<p className="kp-bildirim__loading">yükleniyor…</p>}
+						fallback={<p className="kp-bildirim__loading">{t("bildirim.loading")}</p>}
 						error={({code}) => (
 							<Alert variant="danger" className="kp-alert--inline kp-bildirim__error">
-								{code === "UNAUTHORIZED" || code === "FORBIDDEN"
-									? "bildirimlerini görmek için giriş yapmalısın."
-									: "bildirimler yüklenemedi, tekrar dene."}
+								{t(
+									code === "UNAUTHORIZED" || code === "FORBIDDEN"
+										? "bildirim.error.unauthorized"
+										: "bildirim.error.generic",
+								)}
 							</Alert>
 						)}
 					>
@@ -83,7 +90,7 @@ export function BildirimPopover({to, unread}: {to: string; unread: number}) {
 						data-testid="topbar-bildirim-see-all"
 						onClick={() => setOpen(false)}
 					>
-						tümünü gör
+						{t("bildirim.seeAll")}
 					</Link>
 				</footer>
 			</Popover>

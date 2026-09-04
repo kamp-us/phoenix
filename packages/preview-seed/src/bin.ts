@@ -6,14 +6,16 @@
  */
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {makeD1Rest} from "@kampus/d1-rest";
+import {makeD1Rest, resolveDatabaseName} from "@kampus/d1-rest";
 import {Config, Console, Effect, Layer, Option, Redacted, Schema} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {seed} from "./seed.ts";
 import {
+	isThrowawayDatabaseName,
 	MIN_SESSION_TOKEN_LEN,
 	makeTestAccountDb,
+	PREVIEW_NAME_MARKER,
 	PREVIEW_TIERS,
 	type PreviewCredentials,
 	type PreviewTier,
@@ -70,13 +72,13 @@ const TIER_TOKEN_ENV: Readonly<Record<PreviewTier, string>> = {
 	çaylak: "PREVIEW_TEST_CAYLAK_SESSION_TOKEN",
 };
 
-/** The target is not a throwaway — a database holding somebody's accounts is never provisioned. */
+/** The target is not a per-PR preview — anything else is somebody's real world, and is refused. */
 class NotThrowawayError extends Schema.TaggedErrorClass<NotThrowawayError>()(
 	"@kampus/preview-seed/NotThrowawayError",
-	{foreignAccounts: Schema.Number, databaseId: Schema.String},
+	{databaseName: Schema.String, databaseId: Schema.String},
 ) {
 	override get message(): string {
-		return `preview-seed: D1 ${this.databaseId} holds ${this.foreignAccounts} account(s) that are none of the test identities — that is not a throwaway preview/stage, and no test account was written. Target a freshly deployed preview D1.`;
+		return `preview-seed: D1 ${this.databaseId} is named "${this.databaseName}", which is not a per-PR preview (a preview name carries "${PREVIEW_NAME_MARKER}") — no test account was written. Target the D1 a PR's preview-deploy comment names.`;
 	}
 }
 
@@ -116,22 +118,32 @@ const testAccount = Command.make(
 		const resolvedAccount = Option.isSome(accountId)
 			? accountId.value
 			: yield* Config.string("CLOUDFLARE_ACCOUNT_ID");
+		const target = {accountId: resolvedAccount, databaseId, layer: restLayer};
+		const databaseName = yield* Effect.tryPromise({
+			try: () => resolveDatabaseName(target),
+			catch: (cause) => new D1RestError({cause}),
+		});
+		// The fence runs ahead of the token reads, not just ahead of the write: a run against a real
+		// database refuses on the target alone, so no live preview credential is parsed into this
+		// process first. `provisionTestAccounts` re-decides it for every other caller of the package.
+		if (!isThrowawayDatabaseName(databaseName)) {
+			return yield* new NotThrowawayError({databaseName, databaseId});
+		}
+
 		const credentials: PreviewCredentials = Object.fromEntries(
 			(yield* Effect.forEach(PREVIEW_TIERS, (tier) =>
 				readTierToken(tier).pipe(Effect.map((token) => [tier, token] as const)),
 			)).filter(([, token]) => token !== null),
 		);
 
-		const db = makeTestAccountDb(
-			makeD1Rest({accountId: resolvedAccount, databaseId, layer: restLayer}),
-		);
+		const db = makeTestAccountDb(makeD1Rest(target));
 		const outcome = yield* Effect.tryPromise({
-			try: () => provisionTestAccounts(db, credentials),
+			try: () => provisionTestAccounts(db, databaseName, credentials),
 			catch: (cause) => new D1RestError({cause}),
 		});
 		if (outcome._tag === "NoCredentials") return yield* new NoCredentialsError();
 		if (outcome._tag === "NotThrowaway") {
-			return yield* new NotThrowawayError({foreignAccounts: outcome.foreignAccounts, databaseId});
+			return yield* new NotThrowawayError({databaseName: outcome.databaseName, databaseId});
 		}
 		const provisioned = outcome.report.tiers
 			.map((tier) => `@${TEST_ACCOUNTS[tier].username} at ${tier}`)
@@ -143,7 +155,7 @@ const testAccount = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		"Provision the review-ui test accounts + their sessions on a throwaway preview/stage D1, one per tier whose token is set ($PREVIEW_TEST_SESSION_TOKEN for yazar, $PREVIEW_TEST_CAYLAK_SESSION_TOKEN for çaylak) — idempotent, refuses a database holding real accounts, and prints the tiers provisioned plus any left unseeded",
+		"Provision the review-ui test accounts + their sessions on a per-PR preview D1, one per tier whose token is set ($PREVIEW_TEST_SESSION_TOKEN for yazar, $PREVIEW_TEST_CAYLAK_SESSION_TOKEN for çaylak) — idempotent, refuses any database Cloudflare does not name as a per-PR preview, and prints the tiers provisioned plus any left unseeded",
 	),
 );
 

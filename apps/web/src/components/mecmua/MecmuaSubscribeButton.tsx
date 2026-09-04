@@ -8,6 +8,7 @@ import {useMe} from "../../auth/useMe";
 import {useImperativeView} from "../../fate/useImperativeView";
 import {MECMUA_FEED} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
+import {type CatalogKey, useT} from "../../i18n";
 import {Alert} from "../ui/Alert";
 import {Button} from "../ui/Button";
 import "./MecmuaSubscribeButton.css";
@@ -17,9 +18,10 @@ const SubscriptionView = view<MecmuaSubscriptionReceipt>()({
 	subscribed: true,
 });
 
-export function mecmuaSubscribeLabel(subscribed: boolean, hovering: boolean): string {
-	if (!subscribed) return "abone ol";
-	return hovering ? "bırak" : "takip ediliyor";
+/** The key, not the copy: the label is one catalog read at the render site. */
+export function mecmuaSubscribeLabelKey(subscribed: boolean, hovering: boolean): CatalogKey {
+	if (!subscribed) return "mecmua.subscribe.subscribe";
+	return hovering ? "mecmua.subscribe.leave" : "mecmua.subscribe.following";
 }
 
 export function MecmuaSubscribeButton({authorId}: {authorId: string}) {
@@ -35,6 +37,7 @@ export function MecmuaSubscribeButton({authorId}: {authorId: string}) {
 
 function MecmuaSubscribeToggle({authorId}: {authorId: string}) {
 	const fate = useFateClient();
+	const t = useT();
 	const args = useMemo(() => ({authorId}), [authorId]);
 	const {state, refetch} = useImperativeView("mecmuaSubscription", SubscriptionView, {
 		args,
@@ -46,7 +49,7 @@ function MecmuaSubscribeToggle({authorId}: {authorId: string}) {
 	const [hovering, setHovering] = useState(false);
 
 	// Don't render a guessy control until the initial edge state resolves, or the button
-	// would flash "abone ol" for a reader who already follows this author.
+	// would flash the subscribe label for a reader who already follows this author.
 	if (state.status === "idle" || state.status === "loading") return null;
 
 	const subscribed = state.status === "ok" ? Boolean(state.data?.subscribed) : false;
@@ -59,13 +62,13 @@ function MecmuaSubscribeToggle({authorId}: {authorId: string}) {
 			const res = await op({input: {authorId}, view: SubscriptionView});
 			if (res.error) {
 				setError(
-					subscribed ? "abonelikten çıkılamadı, tekrar dene." : "abone olunamadı, tekrar dene.",
+					t(subscribed ? "mecmua.subscribe.error.unsubscribe" : "mecmua.subscribe.error.subscribe"),
 				);
 				return;
 			}
 			await refetch();
 		} catch {
-			setError("bir şeyler ters gitti, tekrar dene.");
+			setError(t("mecmua.subscribe.error.generic"));
 		} finally {
 			setPending(false);
 		}
@@ -86,7 +89,7 @@ function MecmuaSubscribeToggle({authorId}: {authorId: string}) {
 				onFocus={() => setHovering(true)}
 				onBlur={() => setHovering(false)}
 			>
-				{mecmuaSubscribeLabel(subscribed, hovering)}
+				{t(mecmuaSubscribeLabelKey(subscribed, hovering))}
 			</Button>
 			{error ? (
 				<Alert

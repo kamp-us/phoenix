@@ -1,9 +1,13 @@
 import {describe, expect, it} from "vitest";
+import {tr} from "../../i18n/tr";
 import {
 	promoteOutcome,
-	promotionOutcomeMessage,
+	promotionOutcomeMessageKey,
 	shouldShowPromotionActions,
 } from "./PromotionActions";
+
+const promotionOutcomeMessage = (outcome: Parameters<typeof promotionOutcomeMessageKey>[0]) =>
+	tr[promotionOutcomeMessageKey(outcome)];
 
 const denied = {code: "UNAUTHORIZED", message: "x"};
 const oops = {code: "INTERNAL", message: "x"};

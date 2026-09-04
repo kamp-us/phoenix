@@ -1,5 +1,11 @@
 import {describe, expect, it} from "vitest";
-import {profileStandingLabel} from "./profileStanding";
+import {tr} from "../../i18n/tr";
+import {profileStandingLabelKey} from "./profileStanding";
+
+const profileStandingLabel = (tier: Parameters<typeof profileStandingLabelKey>[0]) => {
+	const key = profileStandingLabelKey(tier);
+	return key === null ? null : tr[key];
+};
 
 describe("profileStandingLabel — the trusted-tier subtitle (#1302)", () => {
 	it("labels a yazar with the glossary rank", () => {

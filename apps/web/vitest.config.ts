@@ -215,7 +215,17 @@ export default defineConfig({
 					// Vitest 4 reads per-project fork exec args off a top-level `execArgv`
 					// (poolOptions was removed in the v4 pool rework), passed to the fork as
 					// node flags.
-					execArgv: ["--max-old-space-size=512"],
+					// `--no-experimental-webstorage` keeps jsdom's `localStorage` reachable (#7728).
+					// Node ships its own experimental `localStorage` global, which is `undefined`
+					// unless `--localstorage-file` is passed. Vitest's `populateGlobal` copies a
+					// jsdom window key onto the fork's global ONLY when the key is absent there or
+					// listed in its `KEYS` allowlist — `localStorage` is on neither path once Node
+					// defines it, so jsdom's real Storage is silently skipped and `window.localStorage`
+					// (the global itself, `window === globalThis` in this env) reads as `undefined`.
+					// The gap is Node-version-shaped, which is why it only reddened CI: local runs go
+					// through pnpm's bundled Node 22, CI through the volta-pinned Node 26 that has the
+					// global. Turning Node's copy off restores jsdom's.
+					execArgv: ["--max-old-space-size=512", "--no-experimental-webstorage"],
 					sequence: {groupOrder: 2},
 				},
 			},

@@ -1,4 +1,5 @@
 import * as React from "react";
+import {browserStorage} from "./browserStorage";
 import {readStoredDensity, writeStoredDensity} from "./densityStorage";
 
 export type Density = "compact" | "normal" | "spacious";
@@ -6,10 +7,6 @@ export type Density = "compact" | "normal" | "spacious";
 // tokens.css treats the absence of a [data-density] value as compact (the base
 // --s-* ramp), so compact is the default choice.
 const DEFAULT_CHOICE: Density = "compact";
-
-function browserStorage(): Storage | undefined {
-	return typeof window === "undefined" ? undefined : window.localStorage;
-}
 
 interface DensityContextValue {
 	choice: Density;

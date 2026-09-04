@@ -24,6 +24,7 @@ import {runDesignInventoryCheck, runDesignInventoryGenerate} from "./design-inve
 import {runDesignTokenGuard} from "./design-token-verb.ts";
 import {runFanoutGuard} from "./fanout-verb.ts";
 import {runHomingGuard} from "./homing-verb.ts";
+import {runI18nGuard} from "./i18n-literal-verb.ts";
 import {runLeakGuard} from "./leak-verb.ts";
 import {runNoGh} from "./no-gh-verb.ts";
 import {runPatchGuard} from "./patch-verb.ts";
@@ -594,6 +595,33 @@ const designTokenGuard = Command.make("design-token-guard").pipe(
 	),
 );
 
+const i18nCheck = leafCommand(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runI18nGuard({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red on Turkish copy left outside the apps/web i18n catalog."),
+	Command.withDescription(
+		"Scan every non-test `apps/web/src/**/*.{ts,tsx}` outside `apps/web/src/i18n/` and `apps/web/src/lab/` and red on a Turkish character (\u00e7\u011f\u0131\u00f6\u015f\u00fc, either case) inside a string literal or a run of JSX text. Copy that lives in a component can never render in English, which is what ADR 0347 put behind the typed catalog. Comments, regex literals and unquoted object keys are not copy and are not judged. The bounded allow-list in `apps/web/src/i18n/i18n-guard.config.json` carries two buckets \u2014 `exempt` for the permanently-Turkish (a wire enum value, the s\u00f6zl\u00fck alphabet, a lab surface) and `unmigrated` for tracked debt \u2014 each entry a per-file ceiling with a mandatory `why`, so the gate is green today while redding any NEW literal. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations on each offending line under Actions. Exits 7 (zero scope: no file scanned, or a malformed allow-list config \u2014 fail-closed, ADR 0092), 11 (a file could not be read, so the verdict is UNKNOWN), 12 (Turkish copy sits outside the catalog). Example: fabrika guard i18n-guard check",
+	),
+);
+
+const i18nGuard = Command.make("i18n-guard").pipe(
+	Command.withSubcommands([i18nCheck]),
+	Command.withShortDescription("apps/web copy reads through the i18n catalog, not a literal."),
+	Command.withDescription(
+		"A Turkish literal in a component is a string no locale switch can reach: the reader who picked English still sees it. The catalog (ADR 0347, .patterns/i18n-catalog.md) is the one surface where copy lives, and this gate is what keeps the next component from re-opening the hole the migration closed.",
+	),
+);
+
 const designInventoryCheck = leafCommand(
 	"check",
 	{root: rootFlag},
@@ -661,6 +689,7 @@ const guards = [
 	decisionsIndexGuard,
 	designTokenGuard,
 	designInventoryGuard,
+	i18nGuard,
 	noGhGuard,
 ];
 

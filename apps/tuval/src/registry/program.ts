@@ -6,6 +6,8 @@
 
 import type {Cmd, Machine, Sub} from "@demlik/tea";
 import {type Effect, Schema, type Scope} from "effect";
+// Type-only, so the commands slice's runtime dependency on this file stays one-directional.
+import type {AnySpell} from "../commands/spell.ts";
 
 // Type-only brand: a plain string at runtime, a distinct type to the checker (`.patterns/effect-schema-validation.md`).
 export const ProgramId = Schema.String.pipe(Schema.brand("tuval/ProgramId"));
@@ -129,6 +131,11 @@ export interface Program<
 	readonly core: Machine<S, M, C, U, Ctx>;
 	/** Public: the only thing another process may see of this program. */
 	readonly ports: Readonly<Record<string, PortSchema>>;
+	/**
+	 * Public: the commands this program offers, each registered under `[id, ...spell.path]`
+	 * (`src/commands/`). The kernel's own `Registry` never reads them — only the spell registry does.
+	 */
+	readonly spells?: ReadonlyArray<AnySpell>;
 	/**
 	 * How a payload admitted on one of this program's in-ports becomes its private Msg, keyed by
 	 * port name. The payload crosses the wire as `unknown` and takes a Msg shape only here, so the

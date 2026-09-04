@@ -6,8 +6,10 @@
  * contract); a since-deleted profile degrades to the bare "çaylak" label.
  */
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
+import {useT} from "../../i18n";
 import {Button} from "../ui/Button";
 import {CaylakIdentity} from "./CaylakIdentity";
+import {type CountKind, countClause} from "./divanGating";
 import {divanRosterRequest, RosterConnectionView, RosterRowView} from "./divanReads";
 
 export function DivanRoster({
@@ -17,19 +19,20 @@ export function DivanRoster({
 	readonly selectedId: string | null;
 	readonly onSelect: (authorId: string, viewerVouched: boolean) => void;
 }) {
+	const t = useT();
 	const result = useRequest(divanRosterRequest());
 	const [items] = useListView(RosterConnectionView, result["divan.roster"]);
 
 	if (items.length === 0) {
 		return (
 			<p className="kp-divan__empty" data-testid="divan-roster-empty">
-				incelemede bekleyen çaylak yok.
+				{t("divan.roster.empty")}
 			</p>
 		);
 	}
 
 	return (
-		<ul className="kp-divan__roster" aria-label="incelemedeki çaylaklar">
+		<ul className="kp-divan__roster" aria-label={t("divan.roster.label")}>
 			{items.map(({node}) => (
 				<RosterRow key={node.id} node={node} selectedId={selectedId} onSelect={onSelect} />
 			))}
@@ -46,8 +49,13 @@ function RosterRow({
 	readonly selectedId: string | null;
 	readonly onSelect: (authorId: string, viewerVouched: boolean) => void;
 }) {
+	const t = useT();
 	const data = useView(RosterRowView, node);
 	const selected = selectedId === data.authorId;
+	const count = (kind: CountKind, n: number) => {
+		const clause = countClause(kind, n);
+		return t(clause.key, clause.params);
+	};
 
 	return (
 		<li className="kp-divan__roster-item">
@@ -67,8 +75,12 @@ function RosterRow({
 					totalKarma={data.totalKarma}
 				/>
 				<span className="kp-divan__counts">
-					{data.totalCount} içerik · {data.definitionCount} tanım, {data.postCount} gönderi,{" "}
-					{data.commentCount} yorum
+					{t("divan.roster.counts", {
+						items: count("items", data.totalCount),
+						definitions: count("definitions", data.definitionCount),
+						posts: count("posts", data.postCount),
+						comments: count("comments", data.commentCount),
+					})}
 				</span>
 			</Button>
 		</li>

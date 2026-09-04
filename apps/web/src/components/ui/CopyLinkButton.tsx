@@ -1,4 +1,5 @@
 import * as React from "react";
+import {type CatalogKey, useT} from "../../i18n";
 import {Button} from "./Button";
 
 export type ShareOutcome = "shared" | "copied" | "error";
@@ -53,24 +54,25 @@ async function shareOrCopy(url: string): Promise<ShareOutcome> {
 	}
 }
 
-export function shareFeedbackLabel(
+export function shareFeedbackLabelKey(
 	outcome: "copied" | "error" | null,
-	restingLabel: string,
-): string {
+	restingKey: CatalogKey,
+): CatalogKey {
 	switch (outcome) {
 		case "copied":
-			return "kopyalandı";
+			return "ui.share.copied";
 		case "error":
-			return "kopyalanamadı";
+			return "ui.share.error";
 		default:
-			return restingLabel;
+			return restingKey;
 	}
 }
 
 export interface CopyLinkButtonProps {
 	/** Canonical path of the item, e.g. `/pano/:id` or `/pano/:id#comment-<id>`. */
 	path: string;
-	label?: string;
+	/** The resting label's catalog key; defaults to the shared paylaş copy. */
+	labelKey?: CatalogKey;
 	testId?: string;
 	className?: string;
 }
@@ -84,7 +86,13 @@ export interface CopyLinkButtonProps {
  *   surfaces). Don't hand-roll per-page link logic.
  * @slot none Renders its own label; no children slot.
  */
-export function CopyLinkButton({path, label = "paylaş", testId, className}: CopyLinkButtonProps) {
+export function CopyLinkButton({
+	path,
+	labelKey = "ui.share.label",
+	testId,
+	className,
+}: CopyLinkButtonProps) {
+	const t = useT();
 	const [feedback, setFeedback] = React.useState<"copied" | "error" | null>(null);
 	const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -115,7 +123,7 @@ export function CopyLinkButton({path, label = "paylaş", testId, className}: Cop
 			data-copied={feedback === "copied" ? "" : undefined}
 			data-copy-error={feedback === "error" ? "" : undefined}
 		>
-			{shareFeedbackLabel(feedback, label)}
+			{t(shareFeedbackLabelKey(feedback, labelKey))}
 		</Button>
 	);
 }
