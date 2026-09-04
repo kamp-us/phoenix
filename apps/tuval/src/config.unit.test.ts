@@ -7,6 +7,9 @@ import {ConfigLoadError, loadConfigModule, loadLayeredConfig} from "./config.ts"
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
 
+/** How `describeFile` names a fixture module: relative to the directory two levels above it. */
+const layerName = (name: string) => `config-fixtures/${name}.ts`;
+
 const refusal = async (name: string): Promise<ConfigLoadError> => {
 	const error = await Effect.runPromise(Effect.flip(loadConfigModule(fixture(name))));
 	expect(error).toBeInstanceOf(ConfigLoadError);
@@ -21,7 +24,12 @@ const layered = (global: string, project: string) =>
 describe("loadConfigModule", () => {
 	it("returns the rows a well-formed module exports, and an empty graph when it exports none", async () => {
 		const config = await Effect.runPromise(loadConfigModule(fixture("two-rows")));
-		expect(config).toEqual({version: 1, programs: [{id: "a"}, {id: "b"}], graph: {nodes: []}});
+		expect(config).toEqual({
+			version: 1,
+			programs: [{id: "a"}, {id: "b"}],
+			graph: {nodes: []},
+			keys: {},
+		});
 	});
 
 	it("returns the graph a module exports beside its rows", async () => {
@@ -30,6 +38,7 @@ describe("loadConfigModule", () => {
 			version: 1,
 			programs: [{id: "a"}],
 			graph: {nodes: [{id: "n", program: "a", on: []}]},
+			keys: {},
 		});
 	});
 
@@ -78,6 +87,10 @@ describe("loadLayeredConfig", () => {
 					{id: "m", program: "a", on: []},
 				],
 			},
+			keys: [
+				{file: `global ${layerName("global-layer")}`, bindings: {}},
+				{file: `project ${layerName("project-layer")}`, bindings: {}},
+			],
 			sources: [fixture("global-layer"), fixture("project-layer")],
 		});
 	});
@@ -87,18 +100,31 @@ describe("loadLayeredConfig", () => {
 		expect(await layered(missing, fixture("with-graph"))).toEqual({
 			programs: [{id: "a"}],
 			graph: {nodes: [{id: "n", program: "a", on: []}]},
+			keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 			sources: [fixture("with-graph")],
 		});
 		expect(await layered(fixture("two-rows"), missing)).toEqual({
 			programs: [{id: "a"}, {id: "b"}],
 			graph: {nodes: []},
+			keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 			sources: [fixture("two-rows")],
 		});
 		expect(await layered(missing, missing)).toEqual({
 			programs: [],
 			graph: {nodes: []},
+			keys: [],
 			sources: [],
 		});
+	});
+
+	it("carries each layer's key bindings as its own source, named for the layer", async () => {
+		const config = await layered(fixture("keys"), fixture("does-not-exist"));
+		expect(config.keys).toEqual([
+			{
+				file: `global ${layerName("keys")}`,
+				bindings: {"ctrl-h": "help", "ctrl-x": {command: "spell list", repeat: true}},
+			},
+		]);
 	});
 
 	it("still refuses a layer that exists and is broken", async () => {

@@ -23,10 +23,11 @@ export type {
 } from "./test-account.ts";
 export {
 	CANDIDATE_TIER,
-	countForeignAccounts,
+	isThrowawayDatabaseName,
 	KEFIL_SUFFIX,
 	MIN_SESSION_TOKEN_LEN,
 	makeTestAccountDb,
+	PREVIEW_NAME_MARKER,
 	PREVIEW_TIERS,
 	parseSessionToken,
 	parseStanding,

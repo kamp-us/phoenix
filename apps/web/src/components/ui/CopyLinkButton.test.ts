@@ -1,5 +1,11 @@
 import {describe, expect, it} from "vitest";
-import {shareFeedbackLabel, shouldUseNativeShare} from "./CopyLinkButton";
+import {tr} from "../../i18n/tr";
+import {shareFeedbackLabelKey, shouldUseNativeShare} from "./CopyLinkButton";
+
+const shareFeedbackLabel = (
+	outcome: Parameters<typeof shareFeedbackLabelKey>[0],
+	restingKey: Parameters<typeof shareFeedbackLabelKey>[1],
+) => tr[shareFeedbackLabelKey(outcome, restingKey)];
 
 // The scroll-race fix (#649) lives in a DOM effect (`useCommentAnchor`) the repo's
 // node-only unit tier can't exercise without jsdom — its proof is the MutationObserver
@@ -7,15 +13,15 @@ import {shareFeedbackLabel, shouldUseNativeShare} from "./CopyLinkButton";
 // which is the swallowed-failure path that #649 made visible.
 describe("shareFeedbackLabel", () => {
 	it("flashes success copy on a completed clipboard write", () => {
-		expect(shareFeedbackLabel("copied", "paylaş")).toBe("kopyalandı");
+		expect(shareFeedbackLabel("copied", "ui.share.label")).toBe("kopyalandı");
 	});
 
 	it("surfaces a visible error instead of silently resting on a denied write (#649)", () => {
-		expect(shareFeedbackLabel("error", "paylaş")).toBe("kopyalanamadı");
+		expect(shareFeedbackLabel("error", "ui.share.label")).toBe("kopyalanamadı");
 	});
 
 	it("rests on the caller's label when idle", () => {
-		expect(shareFeedbackLabel(null, "paylaş")).toBe("paylaş");
+		expect(shareFeedbackLabel(null, "ui.share.label")).toBe("paylaş");
 	});
 });
 

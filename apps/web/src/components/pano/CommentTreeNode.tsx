@@ -7,6 +7,7 @@ import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import type {Comment} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
+import {useT} from "../../i18n";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {actorLabel} from "../moderation/actor-identity";
@@ -68,6 +69,7 @@ export interface CommentTreeNodeProps {
 }
 
 export function CommentTreeNode(props: CommentTreeNodeProps) {
+	const t = useT();
 	const data = useLiveView(CommentTreeNodeView, props.comment);
 	const fate = useFateClient();
 	const {onReport} = props;
@@ -106,7 +108,9 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 		<article className={cls} id={`comment-${data.id}`}>
 			<header className="kp-comment__head">
 				{isDeleted ? (
-					<span className="kp-comment__author kp-comment__author--deleted">[silindi]</span>
+					<span className="kp-comment__author kp-comment__author--deleted">
+						{t("pano.comment.deleted")}
+					</span>
 				) : (
 					<a className="kp-comment__author" href={`/u/${data.authorUsername ?? data.author}`}>
 						{actorLabel(data.authorDisplayName ?? null, data.authorUsername ?? null, data.author)}
@@ -129,7 +133,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						size="sm"
 						className={`kp-comment__upvote ${voted ? "kp-comment__upvote--active" : ""}`}
 						pressed={voted}
-						aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
+						aria-label={voted ? t("pano.vote.retract") : t("pano.vote.up")}
 						onClick={onUpvote}
 						data-testid={`comment-vote-${localId}`}
 					>
@@ -149,7 +153,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 					size="sm"
 					className="kp-comment__collapser"
 					onClick={() => setOpen(!open)}
-					aria-label={open ? "Daralt" : "Genişlet"}
+					aria-label={open ? t("pano.comment.collapse") : t("pano.comment.expand")}
 				>
 					[ {open ? "—" : "+"} ]
 				</Button>
@@ -176,7 +180,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 								onClick={() => props.onReply?.(data.id)}
 								data-testid={`pano-comment-reply-trigger-${localId}`}
 							>
-								yanıtla
+								{t("pano.action.reply")}
 							</Button>
 							<CopyLinkButton
 								path={`${props.postPath}#comment-${data.id}`}
@@ -198,7 +202,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 											size="sm"
 											iconOnly
 											className="kp-comment__menu-trigger"
-											aria-label="Daha fazla"
+											aria-label={t("pano.comment.more")}
 											data-testid={`pano-comment-menu-${localId}`}
 										>
 											⋯
@@ -208,7 +212,9 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 										{
 											value: "edit",
 											label: (
-												<span data-testid={`pano-comment-edit-trigger-${localId}`}>düzenle</span>
+												<span data-testid={`pano-comment-edit-trigger-${localId}`}>
+													{t("pano.action.edit")}
+												</span>
 											),
 										},
 										{type: "separator"},
@@ -219,7 +225,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 													className="kp-menu-danger"
 													data-testid={`pano-comment-delete-trigger-${localId}`}
 												>
-													sil
+													{t("pano.action.delete")}
 												</span>
 											),
 										},

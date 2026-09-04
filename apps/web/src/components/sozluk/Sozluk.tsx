@@ -1,5 +1,6 @@
 import type * as React from "react";
 import {Link} from "react-router";
+import {useT, useTPlural} from "../../i18n";
 import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
 import {actorLabel} from "../moderation/actor-identity";
 import "./Sozluk.css";
@@ -12,13 +13,16 @@ export type TermRow = {
 };
 
 export function SozlukTermRow({term}: {term: TermRow}) {
+	const tp = useTPlural();
 	return (
 		<Link to={`/sozluk/${term.slug}`} className="kp-sozluk-term-row">
 			<div>
 				<div className="kp-sozluk-term-row__title">{term.title}</div>
 				{term.excerpt ? <div className="kp-sozluk-term-row__excerpt">{term.excerpt}</div> : null}
 			</div>
-			<span className="kp-sozluk-term-row__count">{term.count} tanım</span>
+			<span className="kp-sozluk-term-row__count">
+				{tp(term.count, {one: "sozluk.entryCount.one", other: "sozluk.entryCount.other"})}
+			</span>
 		</Link>
 	);
 }
@@ -40,6 +44,7 @@ export type PopularTerm = {
 };
 
 export function SozlukPopular({terms}: {terms: PopularTerm[]}) {
+	const tp = useTPlural();
 	return (
 		<ol className="kp-sozluk-popular">
 			{terms.map((t, i) => (
@@ -48,7 +53,9 @@ export function SozlukPopular({terms}: {terms: PopularTerm[]}) {
 					<Link className="kp-sozluk-popular__title" to={`/sozluk/${t.slug}`}>
 						{t.title}
 					</Link>
-					<span className="kp-sozluk-popular__meta">{t.totalScore} oy</span>
+					<span className="kp-sozluk-popular__meta">
+						{tp(t.totalScore, {one: "sozluk.voteCount.one", other: "sozluk.voteCount.other"})}
+					</span>
 				</li>
 			))}
 		</ol>
@@ -66,6 +73,7 @@ export type DefinitionData = {
 };
 
 export function SozlukDefinition({d}: {d: DefinitionData}) {
+	const tp = useTPlural();
 	const handle = d.authorUsername ?? d.author;
 	return (
 		<article className="kp-definition" id={d.id}>
@@ -77,7 +85,7 @@ export function SozlukDefinition({d}: {d: DefinitionData}) {
 				<span>·</span>
 				<span>{d.agoLabel}</span>
 				<span>·</span>
-				<span>{d.score} oy</span>
+				<span>{tp(d.score, {one: "sozluk.voteCount.one", other: "sozluk.voteCount.other"})}</span>
 			</div>
 		</article>
 	);
@@ -134,8 +142,9 @@ export function SozlukAlphabet({
 	value?: string;
 	emptyLetters?: string[];
 }) {
+	const t = useT();
 	return (
-		<nav className="kp-sozluk-alphabet" aria-label="Harf">
+		<nav className="kp-sozluk-alphabet" aria-label={t("sozluk.alphabet.label")}>
 			{ALPHABET.map((l) => {
 				const isEmpty = emptyLetters.includes(l);
 				const isActive = value === l;
@@ -146,7 +155,9 @@ export function SozlukAlphabet({
 				]
 					.filter(Boolean)
 					.join(" ");
-				const letterName = `${l.toLocaleUpperCase("tr")} harfi`;
+				// Turkish dotted-capital: `i` uppercases to `İ`, never the ASCII `I` (#2169).
+				const letter = l.toLocaleUpperCase("tr");
+				const letterName = t("sozluk.alphabet.letterName", {letter});
 				if (isEmpty) {
 					// A plain span so it isn't announced as a link. aria-label/aria-disabled aren't
 					// valid on a generic span, so the visually-hidden suffix carries the "no terms"
@@ -154,7 +165,9 @@ export function SozlukAlphabet({
 					return (
 						<span key={l} className={cls}>
 							{l}
-							<span className="kp-visually-hidden">{`(${letterName}, terim yok)`}</span>
+							<span className="kp-visually-hidden">
+								{t("sozluk.alphabet.letterEmpty", {letter})}
+							</span>
 						</span>
 					);
 				}

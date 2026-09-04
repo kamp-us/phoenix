@@ -1,3 +1,4 @@
+import {useT} from "../../i18n";
 import {editedAfter, formatEditedTooltipTR} from "../../lib/datetime";
 import {Tooltip} from "./Tooltip";
 
@@ -15,6 +16,7 @@ export function EditedIndicator({
 	createdAt: string | null | undefined;
 	updatedAt: string | null | undefined;
 }) {
+	const t = useT();
 	if (!editedAfter(createdAt, updatedAt)) return null;
 	const tooltip = formatEditedTooltipTR(updatedAt);
 	return (
@@ -29,7 +31,7 @@ export function EditedIndicator({
 					fontStyle: "italic",
 				}}
 			>
-				düzenlendi
+				{t("ui.edited")}
 			</span>
 		</Tooltip>
 	);

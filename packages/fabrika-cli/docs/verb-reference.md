@@ -868,7 +868,7 @@ Judge a UI pull request over its preview deployment. Contract:
 
 | Verb | Answers |
 |---|---|
-| `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized tier state (`/pano:auth` renders as the yazar test account, `/pano:auth-caylak` as the çaylak one), refusing on `11` unless the preview's own session read proves the shot came back signed in *and* at the tier the surface named. `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface names a tier state and on `11` unless the preview's own evaluation says the key took |
+| `review-ui render` | the named surfaces captured from a PR's preview deployment — a route, or a route plus a realized tier state (`/pano:auth` renders as the yazar test account, `/pano:auth-caylak` as the çaylak one), refusing on `11` unless the preview's own session read proves the shot came back signed in *and* at the tier the surface named. `--flag <key>=<on\|off>` forces a dark-shipped flag for the run, refusing on `10` unless every surface names a tier state and on `11` unless the preview's own evaluation says the key took. `--viewport <name>` picks the widths, over the closed set `desktop` (1280×800) and `mobile` (390×844), crossed with `--surface` and defaulting to `desktop` alone; a name outside the set or repeated is `10`, and a shot whose PNG width reads back as another width is `19` |
 | `review-ui post` | the `review-ui` verdict on stdin, appended into this namespace's one comment |
 | `review-ui note` | a typed blocker note when the surfaces cannot be seen |
 | `review-ui route` | a head-bound `routed-elsewhere` record: this PR renders nothing, so no verdict is owed |

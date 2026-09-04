@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {nextRole, roleActionLabel, roleOutcomeMessage} from "./role-controls";
+import {nextRole, roleActionLabelKey, roleOutcomeKey} from "./role-controls";
 
 describe("nextRole", () => {
 	it("grants moderatör to a üye", () => {
@@ -10,36 +10,34 @@ describe("nextRole", () => {
 	});
 });
 
-describe("roleActionLabel", () => {
-	it("a üye row offers to grant the role", () => {
-		expect(roleActionLabel("member", false)).toBe("moderatör yap");
+describe("roleActionLabelKey", () => {
+	it("a üye row keys the grant action", () => {
+		expect(roleActionLabelKey("member", false)).toBe("admin.kullanicilar.role.promote");
 	});
-	it("a moderatör row offers to revoke the role", () => {
-		expect(roleActionLabel("moderator", false)).toBe("moderatörlüğü al");
+	it("a moderatör row keys the revoke action", () => {
+		expect(roleActionLabelKey("moderator", false)).toBe("admin.kullanicilar.role.demote");
 	});
-	it("reflects the in-flight state per direction", () => {
-		expect(roleActionLabel("member", true)).toBe("yapılıyor…");
-		expect(roleActionLabel("moderator", true)).toBe("alınıyor…");
+	it("keys the in-flight state per direction", () => {
+		expect(roleActionLabelKey("member", true)).toBe("admin.kullanicilar.role.promoting");
+		expect(roleActionLabelKey("moderator", true)).toBe("admin.kullanicilar.role.demoting");
 	});
 });
 
-describe("roleOutcomeMessage", () => {
-	it("a granted moderatör confirms the promotion", () => {
-		expect(roleOutcomeMessage("moderator", null)).toBe("kullanıcı moderatör yapıldı.");
+describe("roleOutcomeKey", () => {
+	it("a granted moderatör keys the promotion", () => {
+		expect(roleOutcomeKey("moderator", null)).toBe("admin.kullanicilar.role.promoted");
 	});
-	it("a revoked role confirms the removal", () => {
-		expect(roleOutcomeMessage("member", null)).toBe("moderatörlük kaldırıldı.");
+	it("a revoked role keys the removal", () => {
+		expect(roleOutcomeKey("member", null)).toBe("admin.kullanicilar.role.demoted");
 	});
-	it("the invisible Denied (both codes) reads as no-authority, leaking neither cause", () => {
-		expect(roleOutcomeMessage(null, "UNAUTHORIZED")).toBe("bu işlem için yetkin yok.");
-		expect(roleOutcomeMessage(null, "FORBIDDEN")).toBe("bu işlem için yetkin yok.");
+	it("the invisible Denied (both codes) keys the same no-authority line, leaking neither cause", () => {
+		expect(roleOutcomeKey(null, "UNAUTHORIZED")).toBe("admin.kullanicilar.error.forbidden");
+		expect(roleOutcomeKey(null, "FORBIDDEN")).toBe("admin.kullanicilar.error.forbidden");
 	});
-	it("a missing target reads not-found", () => {
-		expect(roleOutcomeMessage(null, "USER_NOT_FOUND")).toBe("kullanıcı bulunamadı.");
+	it("a missing target keys not-found", () => {
+		expect(roleOutcomeKey(null, "USER_NOT_FOUND")).toBe("admin.kullanicilar.error.notFound");
 	});
 	it("any other code falls back to the generic failure", () => {
-		expect(roleOutcomeMessage(null, "INTERNAL_SERVER_ERROR")).toBe(
-			"bir şeyler ters gitti, lütfen tekrar dene.",
-		);
+		expect(roleOutcomeKey(null, "INTERNAL_SERVER_ERROR")).toBe("admin.kullanicilar.error.generic");
 	});
 });

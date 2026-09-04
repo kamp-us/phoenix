@@ -3,26 +3,26 @@ import {
 	decisionLabel,
 	groupDecisionFeed,
 	isRestorable,
-	resolverLabel,
+	resolverHandle,
 	waveEntryLabel,
 } from "./decisionFeedGating";
 
 describe("decisionLabel", () => {
-	it("maps removed → kaldırıldı", () => {
-		expect(decisionLabel("removed")).toBe("kaldırıldı");
+	it("maps removed → the removed key", () => {
+		expect(decisionLabel("removed")).toBe("divan.decision.removed");
 	});
-	it("maps dismissed → yoksayıldı", () => {
-		expect(decisionLabel("dismissed")).toBe("yoksayıldı");
+	it("maps dismissed → the dismissed key", () => {
+		expect(decisionLabel("dismissed")).toBe("divan.decision.dismissed");
 	});
 });
 
-describe("resolverLabel — the resolver is first-class", () => {
+describe("resolverHandle — the resolver is first-class", () => {
 	it("renders a resolved handle as @handle", () => {
-		expect(resolverLabel("founder")).toBe("@founder");
+		expect(resolverHandle("founder")).toBe("@founder");
 	});
-	it("falls back to a generic moderatör when unresolved (never a raw id)", () => {
-		expect(resolverLabel(null)).toBe("moderatör");
-		expect(resolverLabel("   ")).toBe("moderatör");
+	it("yields null when unresolved, so the row renders the catalog noun (never a raw id)", () => {
+		expect(resolverHandle(null)).toBeNull();
+		expect(resolverHandle("   ")).toBeNull();
 	});
 });
 
@@ -83,8 +83,8 @@ describe("groupDecisionFeed — a wave collapses to one entry, lone removals sta
 });
 
 describe("waveEntryLabel — the batch byline", () => {
-	it("names the target count as 'N hedef · dalga'", () => {
-		expect(waveEntryLabel(3)).toBe("3 hedef · dalga");
-		expect(waveEntryLabel(1)).toBe("1 hedef · dalga");
+	it("names the target count, picking the plural arm off the count", () => {
+		expect(waveEntryLabel(3)).toEqual({key: "divan.decision.wave.other", params: {count: 3}});
+		expect(waveEntryLabel(1)).toEqual({key: "divan.decision.wave.one", params: {count: 1}});
 	});
 });

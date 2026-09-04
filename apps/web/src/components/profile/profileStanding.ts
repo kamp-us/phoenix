@@ -5,13 +5,14 @@
  * (#1302).
  */
 import type {Tier} from "../../../worker/features/kunye/standing";
+import type {CatalogKey} from "../../i18n/keys";
 
-export function profileStandingLabel(tier: Tier | undefined): string | null {
+export function profileStandingLabelKey(tier: Tier | undefined): CatalogKey | null {
 	switch (tier) {
 		case "yazar":
-			return "yazar";
+			return "profile.standing.yazar";
 		case "çaylak":
-			return "çaylak";
+			return "profile.standing.caylak";
 		default:
 			// `visitor` (never stored for an account) or an unknown/loading tier — no
 			// honest label to show, so render handle-only rather than asserting one.

@@ -19,12 +19,14 @@
  * (ADR 0107 §4); the vestigial column is written beside it only so a coarse role read agrees. Only
  * the yazar identity carries that tuple: a çaylak with moderation authority is not a çaylak.
  *
- * The throwaway fence is the load-bearing part. A caller-asserted "this is a preview" proves
- * nothing, so the refusal is grounded in the database itself: a preview/stage D1 is deployed
- * empty and this package's content fixtures denormalize their author, so a throwaway carries no
- * human `user` row at all. One that carries somebody else's account is somebody's real world and
- * is refused before any write. The check is emptiness, not throwaway-ness — the README's
- * "guard boundary" section states its exact reach, and the operator still owns `--database-id`.
+ * The throwaway fence is the load-bearing part, and what it reads is the database's NAME. A
+ * caller-asserted "this is a preview" proves nothing, so the fence reads a fact the deploy stack
+ * sets and the caller cannot: Cloudflare's own record for the given `--database-id`. A per-PR
+ * preview is `phoenix-phoenix-db-pr-<n>-…`; anything else — `…-prod-…`, a renamed stage, a name
+ * the API declines to give — is refused before any write. It replaced an emptiness check that
+ * could never pass in practice, because CI's e2e suite signs human users up on every preview it
+ * tests — see ADR 0349 (#7740, founder ruling
+ * https://github.com/kamp-us/phoenix/issues/7740#issuecomment-5535874078).
  *
  * No `account` row is written, and that is deliberate rather than an omission: better-auth
  * resolves a session through `internalAdapter.findSession` (`dist/db/internal-adapter.mjs` at the
@@ -33,7 +35,7 @@
  * carries credentials for signing IN, which this path skips by construction.
  */
 import {key, platform} from "@kampus/authz";
-import {and, eq, notInArray} from "drizzle-orm";
+import {eq} from "drizzle-orm";
 import type {BatchItem} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
@@ -98,8 +100,6 @@ export const TEST_ACCOUNTS = {
 		moderates: false,
 	},
 } as const satisfies Record<PreviewTier, TestAccount>;
-
-const TEST_ACCOUNT_IDS = PREVIEW_TIERS.map((tier) => TEST_ACCOUNTS[tier].id);
 
 declare const SessionTokenBrand: unique symbol;
 /** A session token that has passed {@link parseSessionToken} — the only thing provisioning accepts. */
@@ -168,7 +168,7 @@ export interface ProvisionReport {
 
 /**
  * Four arms, never one: a refusal must not read as a provision that wrote nothing. `NotThrowaway`
- * names how many foreign accounts were found, which is the fact the operator acts on;
+ * names the database name that failed the fence, which is the fact the operator acts on;
  * `NoCredentials` says the run named no tier at all rather than seeding a default one; and
  * `StandingNeedsTier` names the tier whose absence makes the requested standing unwritable — the
  * `candidate` this standing is about, or the `voucher` a `kefil` needs. `authorship_vouch` carries
@@ -177,7 +177,7 @@ export interface ProvisionReport {
  */
 export type ProvisionOutcome =
 	| {readonly _tag: "Provisioned"; readonly report: ProvisionReport}
-	| {readonly _tag: "NotThrowaway"; readonly foreignAccounts: number}
+	| {readonly _tag: "NotThrowaway"; readonly databaseName: string}
 	| {readonly _tag: "NoCredentials"}
 	| {
 			readonly _tag: "StandingNeedsTier";
@@ -186,17 +186,20 @@ export type ProvisionOutcome =
 	  };
 
 /**
- * Accounts on this database that are none of the test identities and not the `@[silinen]` migration
- * sentinel (ADR 0097) — the evidence the target is somebody's real world.
+ * The substring that makes a D1 name a per-PR preview's. alchemy composes a preview database as
+ * `phoenix-phoenix-db-pr-<n>-<hash>`, so the PR segment is the one part of the name no other stage
+ * carries: production is `…-db-prod-…` and a named dev stage is `…-db-<stage>-…`, neither of which
+ * contains it.
  */
-export const countForeignAccounts = async (db: SeedDb): Promise<number> => {
-	const rows = await db
-		.select({id: user.id})
-		.from(user)
-		.where(and(notInArray(user.id, TEST_ACCOUNT_IDS), eq(user.type, "human")))
-		.all();
-	return rows.length;
-};
+export const PREVIEW_NAME_MARKER = "-pr-";
+
+/**
+ * Whether a D1 name is a throwaway per-PR preview's. Fail closed: only a name carrying
+ * {@link PREVIEW_NAME_MARKER} is throwaway, and everything else — production, a renamed stage, an
+ * empty string — is not.
+ */
+export const isThrowawayDatabaseName = (name: string): boolean =>
+	name.includes(PREVIEW_NAME_MARKER);
 
 type Statement = BatchItem<"sqlite">;
 
@@ -269,12 +272,20 @@ const standingRows = (
 	];
 };
 
+/**
+ * `databaseName` is Cloudflare's record for the target id, resolved by the caller — never a label
+ * the caller composed. The fence is decided first, so a run against a real database is refused on
+ * the same answer whatever tokens it was handed.
+ */
 export const provisionTestAccounts = async (
 	db: SeedDb,
+	databaseName: string,
 	credentials: PreviewCredentials,
 	standing: CaylakStanding | null = null,
 	now: Date = new Date(),
 ): Promise<ProvisionOutcome> => {
+	if (!isThrowawayDatabaseName(databaseName)) return {_tag: "NotThrowaway", databaseName};
+
 	const requested = PREVIEW_TIERS.flatMap((tier) => {
 		const token = credentials[tier];
 		return token === undefined ? [] : [{tier, token}];
@@ -291,9 +302,6 @@ export const provisionTestAccounts = async (
 			return {_tag: "StandingNeedsTier", missing: VOUCHER_TIER, role: "voucher"};
 		}
 	}
-
-	const foreignAccounts = await countForeignAccounts(db);
-	if (foreignAccounts > 0) return {_tag: "NotThrowaway", foreignAccounts};
 
 	const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
 	const rows = [

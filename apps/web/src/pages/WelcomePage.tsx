@@ -34,12 +34,13 @@ import {
 } from "../components/onboarding/welcomeSeen";
 import {
 	caylakPromotionPath,
-	useAuthorshipStanding,
-	vouchExistsLabel,
+	useSharedAuthorshipStanding,
+	vouchExistsLabelKey,
 } from "../components/profile/CaylakStatusBlock";
 import {Button} from "../components/ui/Button";
 import {PHOENIX_WELCOME} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {authRedirectPath} from "../lib/returnTo";
 import {NotFoundPage} from "./NotFoundPage";
 import {welcomeAddressing, welcomeGate, welcomeReturnTo} from "./welcomeGating";
@@ -51,6 +52,7 @@ export function WelcomePage() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const {me} = useMe();
+	const t = useT();
 
 	const returnTo = welcomeReturnTo(location.search);
 	const userId = session.data?.user.id ?? null;
@@ -101,14 +103,14 @@ export function WelcomePage() {
 	});
 
 	const addressing = welcomeAddressing(me?.tier);
-	const standing = useAuthorshipStanding(gate === "ready");
+	const standing = useSharedAuthorshipStanding(gate === "ready");
 
 	if (gate === "loading") {
 		return (
 			<div className="kp-welcome">
 				<div className="kp-welcome__inner">
 					<p className="kp-welcome__lede" data-testid="welcome-loading">
-						yükleniyor…
+						{t("auth.welcome.loading")}
 					</p>
 				</div>
 			</div>
@@ -129,43 +131,46 @@ export function WelcomePage() {
 		<main className="kp-welcome" data-testid="welcome-page">
 			<div className="kp-welcome__inner">
 				<header className="kp-welcome__masthead">
-					{/* "hoş geldin, çaylak" is the founder's ruled copy for this moment (#4266); the
-					    tier is named only to a reader who actually holds it (#4261). */}
+					{/* The tier is named only to a reader who actually holds it (#4261); the two
+					    greetings are the founder's ruled copy for this moment (#4266). */}
 					<h1 className="kp-welcome__title" data-testid="welcome-title">
-						{addressing === "çaylak" ? "hoş geldin, çaylak" : "hoş geldin"}
+						{addressing === "çaylak" ? t("auth.welcome.titleCaylak") : t("auth.welcome.title")}
 					</h1>
 					<p className="kp-welcome__lede">
-						kamp.us, geliştiricilerin kendi kendine bir şey öğrettiği yavaş bir köşe. panoda
-						bağlantı ve yazı paylaşılıyor; sözlükte terimler kendi cümlelerimizle yazılıyor. reklam
-						yok, takipçi yarışı yok — söz hakkı kazanılır.
+						{t("auth.welcome.lede", {
+							panoNoun: t("auth.brand.pano"),
+							sozlukNoun: t("auth.brand.sozluk"),
+						})}
 					</p>
 				</header>
 
 				<section className="kp-welcome__section" data-testid="welcome-standing">
-					<h2 className="kp-welcome__heading">neredesin</h2>
+					<h2 className="kp-welcome__heading">{t("auth.welcome.standingHeading")}</h2>
 					{addressing === "çaylak" ? (
 						<>
-							<p className="kp-welcome__line">hesabın yeni açıldı; henüz bir çaylaksın.</p>
+							<p className="kp-welcome__line">
+								{t("auth.welcome.caylakLine", {caylakNoun: t("auth.brand.caylak")})}
+							</p>
 							{promotionPath?.kind === "vouch-needed" ? (
 								<div className="kp-welcome__vouch-needed" data-testid="welcome-vouch-needed">
-									<p className="kp-welcome__vouch-message">{promotionPath.message}</p>
-									<p className="kp-welcome__vouch-hint">{promotionPath.hint}</p>
+									<p className="kp-welcome__vouch-message">{t(promotionPath.messageKey)}</p>
+									<p className="kp-welcome__vouch-hint">{t(promotionPath.hintKey)}</p>
 								</div>
 							) : null}
 							{promotionPath?.kind === "karma-bar" && standing ? (
 								<Karma
 									value={standing.karma}
 									target={standing.bar}
-									label="karma"
+									label={t("auth.welcome.karmaLabel")}
 									testId="welcome-karma"
 								/>
 							) : null}
 							{standing ? (
 								<dl className="kp-welcome__facts">
 									<div className="kp-welcome__fact">
-										<dt className="kp-welcome__term">kefil</dt>
+										<dt className="kp-welcome__term">{t("auth.welcome.vouchTerm")}</dt>
 										<dd className="kp-welcome__value" data-testid="welcome-vouch">
-											{vouchExistsLabel(standing.vouchExists)}
+											{t(vouchExistsLabelKey(standing.vouchExists))}
 										</dd>
 									</div>
 								</dl>
@@ -173,20 +178,17 @@ export function WelcomePage() {
 						</>
 					) : addressing === "yazar" ? (
 						<p className="kp-welcome__line" data-testid="welcome-yazar-note">
-							zaten bir yazarsın; yazdıkların doğrudan yayına girer.
+							{t("auth.welcome.yazarNote", {yazarNoun: t("auth.brand.yazar")})}
 						</p>
 					) : (
-						<p className="kp-welcome__line">durumun yükleniyor.</p>
+						<p className="kp-welcome__line">{t("auth.welcome.standingLoading")}</p>
 					)}
 				</section>
 
 				{addressing !== "yazar" ? (
 					<section className="kp-welcome__section" data-testid="welcome-rite">
-						<h2 className="kp-welcome__heading">önündeki yol</h2>
-						<p className="kp-welcome__line">
-							katkı verdikçe bir yazar sana kefil olur; kefillik ve inceleme tamamlandığında yazar
-							olursun ve yazdıkların doğrudan yayına girer.
-						</p>
+						<h2 className="kp-welcome__heading">{t("auth.welcome.riteHeading")}</h2>
+						<p className="kp-welcome__line">{t("auth.welcome.riteBody")}</p>
 					</section>
 				) : null}
 
@@ -207,7 +209,7 @@ export function WelcomePage() {
 					data-testid="welcome-continue"
 					onClick={() => navigate(returnTo, {replace: true})}
 				>
-					devam et
+					{t("auth.welcome.continue")}
 				</Button>
 			</div>
 		</main>

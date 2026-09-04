@@ -12,7 +12,13 @@ import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
 import {assert, describe, it} from "@effect/vitest";
 import {Layer} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {assertRestParam, makeD1Rest, readYourWrite, toRestParams} from "./index.ts";
+import {
+	assertRestParam,
+	makeD1Rest,
+	readYourWrite,
+	resolveDatabaseName,
+	toRestParams,
+} from "./index.ts";
 
 const restD1 = (fetch: typeof globalThis.fetch): D1Database =>
 	makeD1Rest({
@@ -169,5 +175,54 @@ describe("readYourWrite — bounded read-your-writes poll (#3075/#3078)", () => 
 		assert.strictEqual(value, false);
 		assert.strictEqual(reads, 4);
 		assert.deepStrictEqual(delays, [50, 100, 200]);
+	});
+});
+
+// The name is evidence about what a database IS — `@kampus/preview-seed`'s throwaway fence keys on
+// it (#7740) — so an answer carrying no name must not reach a caller as a value to interpret.
+describe("resolveDatabaseName — the name Cloudflare has recorded for a database id", () => {
+	const target = (fetch: typeof globalThis.fetch) => ({
+		accountId: "acc",
+		databaseId: "db",
+		layer: Layer.mergeAll(
+			FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fetch))),
+			fromApiToken({apiToken: "test-token"}),
+		),
+	});
+
+	const respond =
+		(result: unknown): typeof globalThis.fetch =>
+		async () =>
+			new Response(JSON.stringify({result}), {
+				status: 200,
+				headers: {"content-type": "application/json"},
+			});
+
+	it("returns the name off the database record", async () => {
+		const name = "phoenix-phoenix-db-pr-7717-td6ketak4e75f6i4";
+		assert.strictEqual(await resolveDatabaseName(target(respond({uuid: "db", name}))), name);
+	});
+
+	it("reads the record for the requested account and database", async () => {
+		let seen = "";
+		const spy: typeof globalThis.fetch = async (input) => {
+			seen = typeof input === "string" ? input : String((input as Request).url ?? input);
+			return new Response(JSON.stringify({result: {name: "n-pr-1-x"}}), {
+				status: 200,
+				headers: {"content-type": "application/json"},
+			});
+		};
+		await resolveDatabaseName(target(spy));
+		assert.include(seen, "/accounts/acc/d1/database/db");
+	});
+
+	it("throws rather than returning an empty name", async () => {
+		for (const result of [{uuid: "db"}, {uuid: "db", name: null}, {uuid: "db", name: ""}]) {
+			const thrown = await resolveDatabaseName(target(respond(result))).then(
+				() => null,
+				(error: unknown) => error,
+			);
+			assert.instanceOf(thrown, Error, `${JSON.stringify(result)} must throw`);
+		}
 	});
 });

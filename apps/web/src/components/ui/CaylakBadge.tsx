@@ -4,6 +4,7 @@
 // definition entry. Sibling of `ReviewBadge`, never a rename of it: that badge tells an
 // AUTHOR their own item is in review, this one tells a READER whose item they are reading.
 // Which of the two renders on a given item is `SandboxMarker`'s decision, not a call site's.
+import {useT} from "../../i18n";
 import {Badge} from "./Badge";
 import "./CaylakBadge.css";
 
@@ -16,12 +17,13 @@ import "./CaylakBadge.css";
  * @slot none Fixed copy; no children slot.
  */
 export function CaylakBadge() {
+	const t = useT();
 	return (
 		<Badge variant="secondary" className="kp-caylak-badge" data-testid="caylak-badge">
-			çaylak katkısı
+			{t("ui.caylakBadge")}
 			{/* The visible words name the item; the hidden clause gives a screen-reader listener the
 			    stage too, which sighted readers get from the quiet chip treatment. */}
-			<span className="kp-visually-hidden">, hazırlık aşamasında</span>
+			<span className="kp-visually-hidden">{t("ui.caylakBadge.stage")}</span>
 		</Badge>
 	);
 }
