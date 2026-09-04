@@ -83,6 +83,28 @@ catalog:
   yaml: 2.9.0
   zod: 4.4.3
 
+# apps/tuval's own Effect pin. The kernel epic (#7496) runs on 4.0.0-rc.112 while everything else
+# sits on beta.92. A named catalog declares one version per consumer set, and that is a claim about
+# the manifests only: it does not reach what those declared packages pull in underneath. One such
+# transitive edge did cross over, and the `overrides` block below is what holds it.
+catalogs:
+  tuval:
+    '@effect/platform-node': 4.0.0-rc.112
+    '@effect/vitest': 4.0.0-rc.112
+    effect: 4.0.0-rc.112
+
+# `@effect/platform-node@4.0.0-beta.92` asks for `@effect/platform-node-shared` by a caret range, and
+# a caret over a prerelease picks the highest version present in the workspace. So the moment
+# catalogs.tuval brought rc.112 into the tree, the beta parent started resolving its own internals to
+# that rc copy, including on the apps/web deploy path (alchemy reaches it through
+# @distilled.cloud/cloudflare-runtime). This entry names the beta parent, so beta.92 consumers keep
+# the beta child while apps/tuval's rc `@effect/platform-node` still gets rc.112. Nothing checks this
+# by machine: catalog-guard reads manifest values and never lockfile resolution, so the pin is the
+# enforcement. The version is written out rather than as `catalog:` because a root catalog entry no
+# package.json consumes is what `cleanupUnusedCatalogs` deletes on the next install.
+overrides:
+  '@effect/platform-node@4.0.0-beta.92>@effect/platform-node-shared': 4.0.0-beta.92
+
 cleanupUnusedCatalogs: true
 
 onlyBuiltDependencies:

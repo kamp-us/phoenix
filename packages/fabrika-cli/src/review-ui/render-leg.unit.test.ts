@@ -2,6 +2,7 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {type CapturedSurface, CaptureError} from "../capture/capture.ts";
 import {NO_FORCED_FLAGS} from "../capture/flag-override.ts";
+import {DESKTOP_VIEWPORT, MOBILE_VIEWPORT} from "../capture/plan.ts";
 import {PAGE_ERROR_CAP} from "./manifest.ts";
 import {type CaptureShots, makeCaptureRenderLeg} from "./render-leg.ts";
 import type {SurfaceRender} from "./render-verb.ts";
@@ -10,6 +11,7 @@ const PREVIEW = "https://pr-4321-web.example.test";
 
 const request = {
 	surface: "/pano",
+	viewport: DESKTOP_VIEWPORT,
 	previewUrl: PREVIEW,
 	outDir: "/tmp/shots",
 	cookies: [],
@@ -21,13 +23,17 @@ const failing =
 	() =>
 		Effect.fail(new CaptureError({message}));
 
-/** A 24-byte PNG header declaring 8x4 — enough for `validateCaptureBytes`, no codec needed. */
-const pngHeader = (): Uint8Array => {
+/**
+ * A 24-byte PNG header declaring the given size — enough for `validateCaptureBytes`, no codec
+ * needed. The width defaults to the desktop viewport's, because the leg now reads the width back
+ * off these very bytes and refuses a shot that is not the width it asked for.
+ */
+const pngHeader = (width = DESKTOP_VIEWPORT.width, height = 2140): Uint8Array => {
 	const bytes = new Uint8Array(24);
 	bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
 	bytes.set([0x49, 0x48, 0x44, 0x52], 12);
-	bytes[19] = 8;
-	bytes[23] = 4;
+	new DataView(bytes.buffer).setUint32(16, width);
+	new DataView(bytes.buffer).setUint32(20, height);
 	return bytes;
 };
 
@@ -119,6 +125,46 @@ describe("captureRenderLeg", () => {
 			_tag: "Rendered",
 			entry: {pageErrors: {rows: one, more: 0}},
 		});
+	});
+});
+
+/**
+ * The width half of the same readback discipline (#7706): the requested viewport is what the plan
+ * asked for, the recorded width is what the bytes say, and a shot that answers the narrow question
+ * from desktop pixels is a valid PNG no byte check downstream can tell from the real thing.
+ */
+describe("captureRenderLeg — the shot's own width", () => {
+	const mobileRequest = {...request, viewport: MOBILE_VIEWPORT};
+	const runMobile = (capture: CaptureShots): SurfaceRender =>
+		Effect.runSync(makeCaptureRenderLeg(capture)(mobileRequest));
+
+	it("plans the shot at the viewport it was handed, never a hardcoded default", () => {
+		const planned: number[] = [];
+		const spy: CaptureShots = (plan, _outDir, _options) => {
+			planned.push(plan[0]?.viewport.width ?? 0);
+			return succeeding({status: 200, pngBytes: pngHeader(MOBILE_VIEWPORT.width)})([], "", {});
+		};
+		runMobile(spy);
+		expect(planned).toEqual([MOBILE_VIEWPORT.width]);
+	});
+
+	it("records the shot when its bytes read back at the requested width", () => {
+		const render = runMobile(succeeding({status: 200, pngBytes: pngHeader(MOBILE_VIEWPORT.width)}));
+		expect(render).toMatchObject({_tag: "Rendered", entry: {viewport: "mobile", width: 390}});
+	});
+
+	it("refuses a desktop-width shot filed under mobile, naming both widths", () => {
+		expect(runMobile(succeeding({status: 200, pngBytes: pngHeader(1280)}))).toEqual({
+			_tag: "WrongViewport",
+			wanted: 390,
+			rendered: 1280,
+		});
+	});
+
+	// Undecodable comes first: "invalid bytes" is the truer answer than "the wrong width", and a
+	// width read off bytes that failed validation would be a number nobody proved.
+	it("keeps an invalid capture on the Invalid arm rather than the width one", () => {
+		expect(run(succeeding({status: 200, pngBytes: new Uint8Array(0)}))._tag).toBe("Invalid");
 	});
 });
 

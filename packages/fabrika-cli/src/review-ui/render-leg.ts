@@ -17,12 +17,7 @@ import {SESSION_PROBE_PATH} from "../capture/auth.ts";
 import {captureShots} from "../capture/capture.ts";
 import {FLAG_PROBE_PATH, isForcing} from "../capture/flag-override.ts";
 import {isRenderCrash} from "../capture/page-errors.ts";
-import {
-	buildCapturePlan,
-	DEFAULT_VIEWPORT,
-	joinPreviewUrl,
-	parseSurfaceSpec,
-} from "../capture/plan.ts";
+import {buildCapturePlan, joinPreviewUrl, parseSurfaceSpec} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
 import {tierOf} from "../capture/states.ts";
 import {capAndCount} from "../evidence.ts";
@@ -59,7 +54,7 @@ export const makeCaptureRenderLeg =
 					buildCapturePlan(
 						request.previewUrl,
 						[parseSurfaceSpec(request.surface)],
-						DEFAULT_VIEWPORT,
+						request.viewport,
 					),
 				catch: (cause) => String(cause),
 			}).pipe(Effect.catch((reason) => Effect.succeed(reason)));
@@ -150,10 +145,21 @@ export const makeCaptureRenderLeg =
 			if (validity._tag === "Invalid") {
 				return {_tag: "Invalid", detail: validity.reason} satisfies SurfaceRender;
 			}
+			// The width comes off the PNG header, never echoed from the request — the same readback
+			// discipline the tier proof runs one layer up. A shot the browser took at another width is
+			// a valid image of a layout nobody asked about.
+			if (validity.width !== request.viewport.width) {
+				return {
+					_tag: "WrongViewport",
+					wanted: request.viewport.width,
+					rendered: validity.width,
+				} satisfies SurfaceRender;
+			}
 			return {
 				_tag: "Rendered",
 				entry: {
 					surface: request.surface,
+					viewport: request.viewport.label,
 					path: shot.localPath,
 					width: validity.width,
 					height: validity.height,
