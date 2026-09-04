@@ -327,6 +327,59 @@ describe("the AI agent handlers under a process", () => {
 		);
 	});
 
+	// The scripted layer never reconnects itself: once a turn disconnects, that build's `start`,
+	// `prompt` and `page` all fail. So a reconnect that came back can only have rebuilt the layer,
+	// which is what ruling 4 (#7570) says restore is.
+	it.live("rebuilds the layer on reconnect and re-opens the event stream", () => {
+		const probe: Probe = {acquired: 0, released: 0};
+		return withKernel(disconnects, probe, (spawn, log) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
+				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* eventually(() => sessionOf(handle).failure?.tag === "tuval/ai-agent/TransportError");
+				const downAt = log.length;
+
+				yield* handle.dispatch({type: "reconnect"});
+				yield* eventually(
+					() =>
+						probe.acquired === 2 && sessionOf(handle).transcript.items.length === history.length,
+				);
+
+				const session = sessionOf(handle);
+				assert.deepStrictEqual(
+					[probe.acquired, probe.released, session.phase, session.failure],
+					[2, 1, "ready", null],
+					"the dead transport is closed, a fresh one is built, and the session is back",
+				);
+				assert.strictEqual(session.sessionId, SESSION_ID);
+				assert.isTrue(
+					log.slice(downAt).some((entry) => entry.port === aiAgentPortNames.transcript),
+					"the reopened stream published the resumed history on the transcript port",
+				);
+			}),
+		);
+	});
+
+	it.live("counts the rebuilt transport once, not twice, when the process stops", () => {
+		const probe: Probe = {acquired: 0, released: 0};
+		return withKernel(disconnects, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* handle.dispatch({type: "start", cwd: "/work", resume: null});
+				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* eventually(() => sessionOf(handle).failure !== null);
+				yield* handle.dispatch({type: "reconnect"});
+				yield* eventually(() => probe.acquired === 2);
+
+				yield* handle.stop;
+				assert.deepStrictEqual([probe.acquired, probe.released], [2, 2]);
+			}),
+		);
+	});
+
 	it.live("publishes nothing and fails nothing when a port has no route", () => {
 		const probe: Probe = {acquired: 0, released: 0};
 		return withKernel(

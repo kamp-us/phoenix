@@ -6,7 +6,9 @@
 
 export {
 	MODE_UNSUPPORTED,
+	PAGE_ERROR,
 	PROMPT_ERROR,
+	portRefused,
 	START_ERROR,
 	UNKNOWN_REQUEST,
 } from "./failures.ts";

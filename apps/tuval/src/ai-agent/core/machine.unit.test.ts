@@ -316,6 +316,16 @@ describe("reconnect", () => {
 		expect(state.failure?.reason).toBe("session-not-found");
 		expect(cmds).toEqual([]);
 	});
+
+	// The handler rebuilds the layer, so a second reconnect over an in-flight one would build a
+	// second transport into the one process Scope.
+	it("refuses a second open while one is in flight", () => {
+		for (const phase of ["starting", "reconnecting"] as const) {
+			const [state, cmds] = apply(started({phase}), {type: "reconnect"});
+			expect(state.failure?.reason).toBe("session-locked");
+			expect(cmds).toEqual([]);
+		}
+	});
 });
 
 describe("failed", () => {
@@ -383,10 +393,25 @@ describe("the Cmd each Msg answers for", () => {
 });
 
 describe("the events subscription", () => {
-	it("is keyed by the session id, as Sub data", () => {
+	it("is keyed by the session id and the connection, as Sub data", () => {
 		expect(machine.subscriptions?.(started())).toEqual([
-			{id: "aiAgent.events:session-1", type: "aiAgent.events", sessionId: "session-1"},
+			{
+				id: "aiAgent.events:session-1#0",
+				type: "aiAgent.events",
+				sessionId: "session-1",
+				connection: 0,
+			},
 		]);
+	});
+
+	// The reconnect keeps the session id, so an id made of that alone would read as still running
+	// and leave the process listening to the transport the rebuild just closed.
+	it("changes id on every started, so a reconnect re-opens the stream", () => {
+		const [reopened] = apply(started({phase: "reconnecting"}), {
+			type: "started",
+			sessionId: "session-1",
+		});
+		expect(machine.subscriptions?.(reopened)?.[0]?.id).toBe("aiAgent.events:session-1#1");
 	});
 
 	it("is absent before a session exists and once it is gone", () => {

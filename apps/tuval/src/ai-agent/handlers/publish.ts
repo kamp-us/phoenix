@@ -8,8 +8,8 @@
  *
  * `PortNotWired` is swallowed on purpose. A headless row is a founder ruling (#7557) and a
  * headless process has no route off `transcript`; refusing to publish to nobody would make every
- * event a handler failure. `PayloadRejected` is not swallowed — that is a graph whose route admits
- * a payload this program emits, which is a wiring bug and must be loud.
+ * event a handler failure. `PayloadRejected` is not swallowed — that is a route refusing a payload
+ * this program emitted, which is a wiring bug and must be loud.
  */
 
 import {Effect} from "effect";

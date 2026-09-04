@@ -14,6 +14,21 @@ export const START_ERROR = "tuval/ai-agent/StartError";
 export const PROMPT_ERROR = "tuval/ai-agent/PromptError";
 export const UNKNOWN_REQUEST = "tuval/ai-agent/UnknownRequest";
 export const MODE_UNSUPPORTED = "tuval/ai-agent/ModeUnsupported";
+export const PAGE_ERROR = "tuval/ai-agent/PageError";
+
+/**
+ * An inbound payload this end of a port cannot act on, written against that port's own tag.
+ *
+ * The tag has to be the port's, because the window renders by tag (ruling 3, #7570) and a
+ * misdirected mode-set shown as a prompt error lands in the wrong place. `refused` is not a case
+ * any of these classes enumerates, and that is deliberate — like `deadlineFailure`, this refusal is
+ * the graph's mistake and not one the backend can raise.
+ */
+export const portRefused = (tag: string, detail: string): AgentFailure => ({
+	tag,
+	reason: "refused",
+	detail,
+});
 
 export const startRefused = (phase: string): AgentFailure => ({
 	tag: START_ERROR,

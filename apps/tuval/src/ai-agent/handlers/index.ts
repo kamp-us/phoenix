@@ -6,7 +6,8 @@
  * hand `aiAgentHandlers`. A layer's typed error never leaves as an error — each becomes a `failed`
  * Msg carrying the tag as data (ruling 3, #7570), because the window renders the refusal and a
  * crash would take the process with it. The one thing that does fail a handler is a
- * `PayloadRejected`: that is a wiring bug in the graph, not the agent's answer.
+ * `PayloadRejected` — the route refused what this program emitted, which is a wiring bug in the
+ * graph, not the agent's answer.
  *
  * The Sub is the outbound half. One subscription, one ordering (ruling 1, #7570): each event is
  * dispatched as an `event` Msg and the same fold the core runs is applied to a local projection,
@@ -112,10 +113,14 @@ export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerS
 				: onDone(answered.success);
 		});
 
-	/** `start` and `reconnect` are one call under two names: acquire, start, answer with a Msg. */
+	/**
+	 * `start` and `reconnect` are one call under two names, and ruling 4 (#7570) makes that call
+	 * "rebuild the layer, then start": the transport lives in the layer's build, so resuming a
+	 * session id against the handle a disconnect already killed reaches nothing.
+	 */
 	const open = (cwd: string, resume: string | null): Effect.Effect<Follow, never, ProcessSelf> =>
 		Effect.gen(function* () {
-			const agent = yield* slot.acquire;
+			const agent = yield* slot.rebuild;
 			const started = yield* Effect.result(
 				underPolicy(agent.start(resume === null ? {cwd} : {cwd, resume}), policy),
 			);

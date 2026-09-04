@@ -39,17 +39,27 @@ export type AiAgentSessionCmd =
 	| {readonly type: "aiAgent.interrupt"}
 	| {readonly type: "aiAgent.reconnect"; readonly cwd: string; readonly sessionId: string};
 
-/** The one subscription: this session's event stream, keyed by the session it belongs to. */
+/**
+ * The one subscription: this session's event stream, keyed by the session *and* the connection.
+ *
+ * Demlik reconciles Subs by id — an id still desired keeps running, one that leaves is stopped, one
+ * that appears is started. A reconnect rebuilds the layer under the same session id (ruling 4,
+ * #7570), so an id made of the session alone reads as "already running" and leaves the process
+ * subscribed to the transport it just tore down.
+ */
 export interface AiAgentEventsSub extends Sub<"aiAgent.events"> {
 	readonly sessionId: string;
+	readonly connection: number;
 }
 
 export type AiAgentSessionSub = AiAgentEventsSub;
 
-export const eventsSubId = (sessionId: string): SubId => subId(`aiAgent.events:${sessionId}`);
+export const eventsSubId = (sessionId: string, connection: number): SubId =>
+	subId(`aiAgent.events:${sessionId}#${connection}`);
 
-export const eventsSub = (sessionId: string): AiAgentEventsSub => ({
-	id: eventsSubId(sessionId),
+export const eventsSub = (sessionId: string, connection: number): AiAgentEventsSub => ({
+	id: eventsSubId(sessionId, connection),
 	type: "aiAgent.events",
 	sessionId,
+	connection,
 });

@@ -7,7 +7,7 @@ process lives. Everything here is `apps/tuval/src/`; the row type is
 
 ## The split: plain core, Effect row
 
-A program is one registry row (ADR #7484 R1.1). Its `core` is a Demlik machine and stays plain data
+A program is one registry row (#7484 R1.1). Its `core` is a Demlik machine and stays plain data
 — no Effect, no closure, no service reaches State, Cmd or Sub (#7371). Every Effect a program runs
 lives on the row beside the core, in one of two records:
 
@@ -36,9 +36,18 @@ handlers may yield to learn about themselves. It carries two things:
 
 - **`scope`** — the process's Effect Scope (#7513). Acquire here anything that must live exactly as
   long as the process: `Layer.buildWithScope(layer, self.scope)` puts the layer's finalizers on the
-  process's stop rather than on the Cmd that happened to build it. Memoize per process by keying a
-  `WeakMap` on the Scope object: two processes of one row are two keys, so they never share, and a
-  stopped process's key is unreachable.
+  process's stop rather than on the Cmd that happened to build it. Key the holder by `WeakMap` on
+  the Scope object: two processes of one row are two keys, so they never share, and a stopped
+  process's key is unreachable.
+
+**A resource that can die under the process gets a child Scope, not a memo.** A memo keyed on the
+process Scope is a per-process singleton, so a transport the backend dropped stays cached until the
+process stops and every later call reaches the dead handle. Build into `Scope.fork(self.scope)`
+instead: closing the child tears that connection down and detaches it from the parent, so rebuilding
+is cheap and a process stop still closes the live one exactly once. When the core also names a Sub
+over that resource, key the Sub's id on a generation the state bumps per rebuild — Demlik reconciles
+Subs by id, so an id that does not change reads as "already running" and leaves the process
+subscribed to the transport it just replaced.
 - **`state()`** — the machine's committed state, as `unknown`. The registry erases a program's
   private types, so the program's own predicate reads it back (`isAiAgentSessionState` is the
   worked example). Use it to seed a projection, not to poll: a `dispatch` from a Sub handler is
@@ -56,8 +65,9 @@ failures come back and they are not the same thing:
 
 - `PortNotWired` — nobody is listening. Swallow it. A program with no window still runs, and
   refusing to publish to nobody would turn every event into a handler failure.
-- `PayloadRejected` — a route admits a payload this program emits. Let it fail the handler: that is
-  a wiring bug in the graph, and it must be loud.
+- `PayloadRejected` — the route refused what this program emitted; the wire is a nominal kind plus a
+  predicate, and the predicate said no. Let it fail the handler: that is a wiring bug in the graph,
+  and it must be loud.
 
 A program playing both ends of a two-way port kind names each end locally (`pageRequest` /
 `pageReply`); `compile` matches on the kind, not the key.

@@ -56,6 +56,13 @@ export interface AiAgentSessionState {
 	readonly phase: Phase;
 	/** The backend's session id once `start` answered; `null` before that and after a fresh start. */
 	readonly sessionId: string | null;
+	/**
+	 * Which transport this session's live event stream belongs to. Every `started` mints the next
+	 * one, so the events Sub's id changes on a reconnect and the host re-opens the stream against
+	 * the rebuilt layer; keying the Sub on `sessionId` alone left a resumed session subscribed to
+	 * the dead transport it had just replaced.
+	 */
+	readonly connection: number;
 	readonly cwd: string;
 	readonly transcript: TranscriptPayload;
 	/** The assistant turn a restart cut short, so the window can offer the resend. */
@@ -91,6 +98,7 @@ export const emptyUsage: UsageTotals = {model: null, inputTokens: 0, outputToken
 export const initialState = (cwd: string): AiAgentSessionState => ({
 	phase: "idle",
 	sessionId: null,
+	connection: 0,
 	cwd,
 	transcript: {items: [], omitted: emptyOmission},
 	interrupted: null,

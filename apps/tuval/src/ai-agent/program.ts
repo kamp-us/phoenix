@@ -26,7 +26,11 @@ import {
 	type AiAgentSessionState,
 	type AiAgentSessionSub,
 	aiAgentSessionMachine,
+	MODE_UNSUPPORTED,
+	PAGE_ERROR,
 	PROMPT_ERROR,
+	portRefused,
+	UNKNOWN_REQUEST,
 } from "./core/index.ts";
 import {
 	type AiAgentHandlerError,
@@ -77,16 +81,17 @@ export type AiAgentProgram = Program<
 >;
 
 /**
- * An inbound payload this end of a two-way port cannot act on, as data.
+ * An inbound payload this end of a two-way port cannot act on, as data, under that port's own tag.
  *
  * A port kind admits both directions' payloads (`ports/payloads.ts` carries one tagged type per
  * kind), so the checker cannot rule out a `page` arriving where a request belongs — and neither
  * can a receiver, which is a pure translation with no channel to fail on. Refusing as a `failed`
- * Msg keeps the port's own invariant visible in the window instead of throwing inside the pump.
+ * Msg keeps the port's own invariant visible in the window instead of throwing inside the pump,
+ * and the tag is the port's because the window renders by tag (ruling 3, #7570).
  */
-const refuse = (detail: string): AiAgentSessionMsg => ({
+const refuse = (tag: string, detail: string): AiAgentSessionMsg => ({
 	type: "failed",
-	failure: {tag: PROMPT_ERROR, reason: "refused", detail},
+	failure: portRefused(tag, detail),
 });
 
 /**
@@ -125,20 +130,20 @@ export const aiAgentProgram = (options: AiAgentProgramOptions): AiAgentProgram =
 		receive: {
 			[aiAgentPortNames.prompt]: (payload: PromptPayload) =>
 				payload.key === undefined
-					? refuse(`a prompt arrived with no idempotency key: "${payload.text}"`)
+					? refuse(PROMPT_ERROR, `a prompt arrived with no idempotency key: "${payload.text}"`)
 					: {type: "prompt", text: payload.text, key: payload.key},
 			[aiAgentPortNames.pageRequest]: (payload: TranscriptPagePayload) =>
 				payload.kind === "request"
 					? {type: "page", before: payload.before, limit: payload.limit}
-					: refuse("a page arrived on the request end of transcript-page"),
+					: refuse(PAGE_ERROR, "a page arrived on the request end of transcript-page"),
 			[aiAgentPortNames.permissionDecision]: (payload: PermissionPayload) =>
 				payload.kind === "decision"
 					? {type: "answer", request: payload.request, decision: payload.decision}
-					: refuse("a pending set arrived on the answer end of permission"),
+					: refuse(UNKNOWN_REQUEST, "a pending set arrived on the answer end of permission"),
 			[aiAgentPortNames.modeSet]: (payload: ModePayload) =>
 				payload.kind === "set"
 					? {type: "setMode", mode: payload.mode}
-					: refuse("a mode state arrived on the set end of mode"),
+					: refuse(MODE_UNSUPPORTED, "a mode state arrived on the set end of mode"),
 		},
 		handlers,
 		subs,
