@@ -19,7 +19,7 @@ Tuval lives under `apps/` because a person runs it, not because Cloudflare hosts
 ```bash
 pnpm install          # from the repo root, once
 cd apps/tuval
-pnpm dev              # boots the two demo programs; Ctrl-C stops and checkpoints them
+pnpm dev              # boots the shell and the two demo programs; Ctrl-C stops and checkpoints them
 pnpm test             # the unit tier (vitest)
 pnpm typecheck
 ```
@@ -43,7 +43,8 @@ refusals; `--project <dir>` runs against another project's `.tuval/`. A path nam
 must exist.
 
 ```
-tuval: booted — 2 program(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 2 process(es) live, 0 restored from …/apps/tuval/.tuval
+tuval: booted — 3 program(s) registered from …/apps/tuval/.tuval/tuval.config.ts; 3 process(es) live, 0 restored from …/apps/tuval/.tuval
+tuval: process shell program=shell parent=- ports=- state=running@0
 tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0
 tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0
 tuval: running — Ctrl-C stops and checkpoints
@@ -51,8 +52,8 @@ count 1
 count 2
 ```
 
-The two programs in the box are the demo counter and log (`src/demo/`, #7517): the counter ticks
-once a second and announces each count on its `ticks` out-port, the log records what arrives on
+Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
+ticks once a second and announces each count on its `ticks` out-port, the log records what arrives on
 its `ticks` in-port and prints it. They are boring on purpose — they exist to prove the kernel
 routes, checkpoints and restores, not to anticipate the real programs — and they are ordinary
 rows registered by the config like any other. Stop and run again: both come back at their saved
@@ -81,11 +82,15 @@ programs and runs nothing.
 import {Console} from "effect";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
+import {shellGraphNode, shellProgram, unwiredShellEffects} from "../src/shell/program.ts";
 
 export default {
 	version: 1,
-	programs: demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
-	graph: demoGraph,
+	programs: [
+		shellProgram({effects: unwiredShellEffects}),
+		...demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
+	],
+	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
 } satisfies TuvalConfigInput;
 ```
 
@@ -350,3 +355,37 @@ replays current state, never a transcript.
 
 Its proof binds a real loopback socket, so it runs as this app's `integration` tier
 (`pnpm test:integration`) beside the `unit` one.
+
+## Shell: the shell as a program
+
+`src/shell/program.ts` is the whole of the shell's claim on the kernel: one registry row, one graph
+node. There is no built-in shell and no special path — the desk is a `Program` exactly as the demo
+counter is, registered through your own config module, and dropping its row and node is how you boot
+without one.
+
+```ts
+shellProgram({effects: unwiredShellEffects}); // id "shell", core from src/shell/core/, no ports
+shellGraphNode;                               // {id: "shell", program: "shell", on: []} — a root
+```
+
+Its durability is the kernel's, unchanged: boot spawns the node once, the spawn opens the checkpoint
+under the node's own id, and a second boot finds a snapshot there and restores instead of spawning
+fresh — workspaces, layouts, focus and per-window view state come back byte-equal, and a snapshot
+written under another definition version refuses the boot rather than fresh-booting over it. Nothing
+under `src/shell/` opens a store, and a test asserts that no file there ever will.
+
+The version is one of two checks a snapshot passes. The other is its shape: a checkpoint re-enters
+the program as `unknown`, so `shellStateOf` runs `isShellState` over it — total through every
+workspace, layout node, view slot and order entry — and a version-matched snapshot with a corrupt
+interior reads as `null` rather than as a desk.
+
+A restored window whose process id no longer resolves is **kept**: `windowBindings(state, live)`
+answers `ProcessGone` for it and `Empty` for a window with no process, so the surface renders a
+placeholder or the picker and never a window that silently vanished. That function is also where the
+layout tree's plain-string window ids meet the window contract's branded ones (#7700) — one
+conversion, through the brand's own constructor.
+
+The core's four Cmds — forwarding a key, arming and cancelling the prefix timer, running a command
+row — are handed in as `effects`, and this slice ships only `unwiredShellEffects`, which does none of
+them and logs each drop at debug. Until the command rows (#7555) and the browser surface (#7559)
+land, a booted desk answers Msgs and answers no key.

@@ -26,6 +26,12 @@ export type WindowId = typeof WindowId.Type;
  */
 export type ViewState = Schema.Json;
 
+/**
+ * Is this a value the slot may hold? `Schema.Json`'s own guard, because the slot's type *is* that
+ * schema — a hand-written JSON predicate beside it would be a second declaration of one shape.
+ */
+export const isViewState = S.is(S.Json);
+
 /** The process is live. Mirrors the kernel's `StateSummary` with `state` typed at the program's own shape. */
 export interface ProcessLive<S> {
 	readonly _tag: "Live";

@@ -120,6 +120,29 @@ absent key's value, `Schema.decode({decode: SchemaGetter.transform(...)})` for a
 stripping a trailing slash. `HarnessConfig` is then `typeof Harness.Type` — one declaration, not an
 interface kept in sync beside it.
 
+## A boundary whose type is already an interface: a total predicate, not a second declaration
+
+Sometimes the shape at the boundary is an interface you cannot replace with a Schema — it is a
+sibling module's public type, or it lives in a module that must not import Effect. Declaring a
+Schema beside it is the "maintaining both is a smell" anti-pattern below. The answer is a **total**
+type predicate, written beside the type it recovers, and total is the whole point: a guard that
+checks the top-level fields and then casts (`candidate as T`) hands a corrupt interior back typed
+as sound, which is exactly the fail a boundary exists to catch.
+
+`apps/tuval/src/shell/` is the worked example — `shellStateOf` recovers a checkpointed desk from
+`unknown`, `isShellState` (`core/state.ts`) is total over it, and it recurses into `isLayoutTree`
+(`layout/node.ts`, a module kept free of Effect on purpose). Two rules make it hold:
+
+- **The predicate lives with the type, one per module**, so a field added to the interface and a
+  field the guard checks are edited in the same file.
+- **A field whose type already is a Schema reuses that schema's own guard.** The shell's view slot
+  is typed `Schema.Json`, so its check is `Schema.is(Schema.Json)` — never a hand-rolled JSON
+  predicate, which would be the second declaration this section is avoiding.
+
+State what the predicate does *not* check. A structural guard is not an invariant checker: the
+shell's guard says nothing about whether `activeWorkspace` names a workspace the map holds, because
+that is the reducer's invariant and its readers already answer `undefined` rather than throwing.
+
 ## Schema for tagged errors that cross boundaries
 
 [effect-errors.md](./effect-errors.md) covers this briefly. If an error needs to round-trip through JSON (RPC, persisted error log, message queue), use `Schema.TaggedErrorClass`:

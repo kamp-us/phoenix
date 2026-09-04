@@ -79,6 +79,50 @@ export function createTree(root: StackNode, zoomed: WindowId | null = null): Lay
 	return {root, zoomed};
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+export function isWindowNode(value: unknown): value is WindowNode {
+	return (
+		isRecord(value) &&
+		value.tag === "window" &&
+		typeof value.id === "string" &&
+		(value.processId === null || typeof value.processId === "string")
+	);
+}
+
+export function isStackNode(value: unknown): value is StackNode {
+	return (
+		isRecord(value) &&
+		value.tag === "stack" &&
+		typeof value.id === "string" &&
+		(value.orientation === "horizontal" || value.orientation === "vertical") &&
+		Array.isArray(value.children) &&
+		value.children.every(isLayoutNode) &&
+		isRecord(value.sizes) &&
+		Object.values(value.sizes).every((size) => typeof size === "number")
+	);
+}
+
+/**
+ * Is this a node of the tree? Total over the union and recursive through `children`, because a
+ * checkpointed layout re-enters as `unknown` and every reader here walks it without a guard of its
+ * own. Hand-written predicates rather than a Schema decode: this module stays free of Effect
+ * (#7551), and the interfaces above stay the shape's one declaration.
+ */
+export function isLayoutNode(value: unknown): value is LayoutNode {
+	return isWindowNode(value) || isStackNode(value);
+}
+
+/** `sizes` is checked for number values and not for its sum — `resolveSizes` re-derives that. */
+export function isLayoutTree(value: unknown): value is LayoutTree {
+	return (
+		isRecord(value) &&
+		isStackNode(value.root) &&
+		(value.zoomed === null || typeof value.zoomed === "string")
+	);
+}
+
 /** Percent values may not sum exactly after division; the renderer rounds to 3 decimals. */
 export const SIZE_TOLERANCE = 0.01;
 
