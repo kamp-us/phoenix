@@ -4,20 +4,23 @@
  * read denies the invisible `UNAUTHORIZED`.
  */
 import type {Resolution} from "../../../worker/features/report/resolution";
+import type {CatalogKey} from "../../i18n";
+import type {Message} from "./divanGating";
 
-export function decisionLabel(resolution: Resolution): string {
+export function decisionLabel(resolution: Resolution): CatalogKey {
 	switch (resolution) {
 		case "removed":
-			return "kaldırıldı";
+			return "divan.decision.removed";
 		case "dismissed":
-			return "yoksayıldı";
+			return "divan.decision.dismissed";
 	}
 }
 
-// Never the raw account id — a UUID is not legible copy.
-export function resolverLabel(handle: string | null): string {
+// Never the raw account id — a UUID is not legible copy. `null` falls back to the catalog's
+// generic moderator noun.
+export function resolverHandle(handle: string | null): string | null {
 	const trimmed = handle?.trim();
-	return trimmed ? `@${trimmed}` : "moderatör";
+	return trimmed ? `@${trimmed}` : null;
 }
 
 // Only a removal took an action; a dismissal has nothing to bring back.
@@ -54,6 +57,10 @@ export function groupDecisionFeed(
 	return entries;
 }
 
-export function waveEntryLabel(memberCount: number): string {
-	return `${memberCount} hedef · dalga`;
+// The `one` arm is exactly `count === 1` in both catalogs (see `i18n/plural.ts`).
+export function waveEntryLabel(memberCount: number): Message {
+	return {
+		key: memberCount === 1 ? "divan.decision.wave.one" : "divan.decision.wave.other",
+		params: {count: memberCount},
+	};
 }

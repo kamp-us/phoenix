@@ -1,41 +1,32 @@
 import {describe, expect, it} from "vitest";
-import {banLabel, createdAtLabel, roleLabel, usernameLabel} from "./kullanicilar";
+import {banLabelKey, createdAtLabel, hasCreatedAt, roleLabelKey} from "./kullanicilar";
 
-describe("usernameLabel", () => {
-	it("shows the handle when set", () => {
-		expect(usernameLabel("kanka")).toBe("kanka");
+describe("roleLabelKey", () => {
+	it("keys the moderator role", () => {
+		expect(roleLabelKey("moderator")).toBe("admin.kullanicilar.role.moderator");
 	});
-	it("falls back to the not-set note when null", () => {
-		expect(usernameLabel(null)).toBe("belirlenmemiş");
+	it("keys the member role", () => {
+		expect(roleLabelKey("member")).toBe("admin.kullanicilar.role.member");
 	});
 });
 
-describe("roleLabel", () => {
-	it("maps the moderator role to moderatör", () => {
-		expect(roleLabel("moderator")).toBe("moderatör");
+describe("banLabelKey", () => {
+	it("a banned account keys the banned label", () => {
+		expect(banLabelKey(true)).toBe("admin.kullanicilar.ban.banned");
 	});
-	it("maps the member role to üye", () => {
-		expect(roleLabel("member")).toBe("üye");
-	});
-});
-
-describe("banLabel", () => {
-	it("a banned account reads yasaklı", () => {
-		expect(banLabel(true)).toBe("yasaklı");
-	});
-	it("a live account reads aktif", () => {
-		expect(banLabel(false)).toBe("aktif");
+	it("a live account keys the active label", () => {
+		expect(banLabelKey(false)).toBe("admin.kullanicilar.ban.active");
 	});
 });
 
 describe("createdAtLabel", () => {
-	it("renders a positive epoch-millis as a local date string", () => {
-		const label = createdAtLabel(Date.UTC(2026, 0, 1));
+	it("renders a positive epoch-millis in the active locale", () => {
+		const label = createdAtLabel(Date.UTC(2026, 0, 1), "tr");
 		expect(label).toBeTypeOf("string");
 		expect(label.length).toBeGreaterThan(0);
-		expect(label).not.toBe("bilinmiyor");
 	});
-	it("the 0 sentinel (no column) reads bilinmiyor", () => {
-		expect(createdAtLabel(0)).toBe("bilinmiyor");
+	it("the 0 sentinel (no column) is not a date", () => {
+		expect(hasCreatedAt(0)).toBe(false);
+		expect(hasCreatedAt(Date.UTC(2026, 0, 1))).toBe(true);
 	});
 });

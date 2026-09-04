@@ -18,6 +18,7 @@ import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {PHOENIX_CAYLAK_VISIBILITY} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {authRedirectPath} from "../lib/returnTo";
 import {caylakVisibilityGate} from "./caylakVisibilityGating";
 import {NotFoundPage} from "./NotFoundPage";
@@ -29,6 +30,7 @@ export function CaylakVisibilityPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(PHOENIX_CAYLAK_VISIBILITY, false);
 	const session = useSession();
 	const {me, status: meStatus} = useMe();
+	const t = useT();
 
 	const gate = caylakVisibilityGate({
 		flagOn,
@@ -44,7 +46,7 @@ export function CaylakVisibilityPage() {
 			<div className="kp-caylak-visibility">
 				<div className="kp-caylak-visibility__inner">
 					<p className="kp-caylak-visibility__loading" data-testid="caylak-visibility-loading">
-						yükleniyor…
+						{t("caylakVisibility.page.loading")}
 					</p>
 				</div>
 			</div>
@@ -61,11 +63,8 @@ export function CaylakVisibilityPage() {
 		<main className="kp-caylak-visibility" data-testid="caylak-visibility-page">
 			<div className="kp-caylak-visibility__inner">
 				<header className="kp-caylak-visibility__masthead">
-					<h1 className="kp-caylak-visibility__title">çaylak görünürlüğü</h1>
-					<p className="kp-caylak-visibility__lede">
-						çaylakların yazdıkları varsayılan olarak akışında görünmez. burada, onları yerinde
-						görmeyi seçebilirsin.
-					</p>
+					<h1 className="kp-caylak-visibility__title">{t("caylakVisibility.page.title")}</h1>
+					<p className="kp-caylak-visibility__lede">{t("caylakVisibility.page.lede")}</p>
 				</header>
 
 				{gate === "unavailable" ? (
@@ -74,27 +73,28 @@ export function CaylakVisibilityPage() {
 						className="kp-alert--inline kp-caylak-visibility__error"
 						data-testid="caylak-visibility-unavailable"
 					>
-						ayarın yüklenemedi, sayfayı yenileyip tekrar dene.
+						{t("caylakVisibility.page.unavailable")}
 					</Alert>
 				) : null}
 
 				{gate === "caylak" ? (
 					<p className="kp-caylak-visibility__note" data-testid="caylak-visibility-caylak-note">
-						bu ayar yazarlara özel. sen henüz çaylaksın, bu yüzden burada açıp kapatacak bir şey
-						yok. yazar olduğunda çaylak katkılarını akışında görmeyi buradan seçebilirsin.
+						{t("caylakVisibility.page.caylakNote")}
 					</p>
 				) : null}
 
 				{gate === "toggle" ? (
 					<Screen
-						fallback={<p className="kp-caylak-visibility__loading">yükleniyor…</p>}
+						fallback={
+							<p className="kp-caylak-visibility__loading">{t("caylakVisibility.page.loading")}</p>
+						}
 						error={() => (
 							<Alert
 								variant="danger"
 								className="kp-alert--inline kp-caylak-visibility__error"
 								data-testid="caylak-visibility-read-error"
 							>
-								ayarın yüklenemedi, sayfayı yenileyip tekrar dene.
+								{t("caylakVisibility.page.unavailable")}
 							</Alert>
 						)}
 					>

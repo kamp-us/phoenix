@@ -9,6 +9,7 @@ import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {PromotionReceipt} from "../../../worker/features/fate/views";
 import {codeOf} from "../../fate/wire";
+import {type CatalogKey, useT} from "../../i18n";
 import {Alert} from "../ui/Alert";
 import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
@@ -31,19 +32,20 @@ export function VouchSheet({
 	readonly candidateId: string;
 	readonly onResolved?: (outcome: VouchOutcome) => void;
 }) {
+	const t = useT();
 	const fate = useFateClient();
 	const [busy, setBusy] = useState(false);
-	const [message, setMessage] = useState("");
+	const [message, setMessage] = useState<CatalogKey | null>(null);
 
 	function reset() {
 		setBusy(false);
-		setMessage("");
+		setMessage(null);
 	}
 
 	async function onConfirm() {
 		if (busy) return;
 		setBusy(true);
-		setMessage("");
+		setMessage(null);
 		try {
 			const {result, error} = await fate.mutations.user.vouch({
 				input: {candidateId},
@@ -67,8 +69,8 @@ export function VouchSheet({
 	return (
 		<Dialog
 			open={open}
-			title="kefil ol"
-			description="incelediğin çaylağa kefil oluyorsun."
+			title={t("divan.vouch.offer")}
+			description={t("divan.vouch.description")}
 			onOpenChange={(next) => {
 				if (!next) reset();
 				onOpenChange(next);
@@ -76,7 +78,7 @@ export function VouchSheet({
 			footer={({close}) => (
 				<>
 					<Button variant="tertiary" onClick={close}>
-						vazgeç
+						{t("divan.cancel")}
 					</Button>
 					<Button
 						variant="primary"
@@ -85,24 +87,20 @@ export function VouchSheet({
 						loading={busy}
 						data-testid="vouch-confirm-button"
 					>
-						{busy ? "kefil olunuyor…" : "kefil ol"}
+						{busy ? t("divan.vouch.busy") : t("divan.vouch.offer")}
 					</Button>
 				</>
 			)}
 		>
-			<p className="kp-divan__stake">
-				kefil olmak bir taahhüttür: kendi itibarını ortaya koyarsın ve aynı anda en fazla üç kişiye
-				kefil olabilirsin. çaylak yeterli karmaya ulaştığında, kefilinle birlikte yazar olur.
-				dilediğinde kefilliğini geri çekebilirsin.
-			</p>
-			{message ? (
+			<p className="kp-divan__stake">{t("divan.vouch.stake")}</p>
+			{message !== null ? (
 				<Alert
 					variant="secondary"
 					className="kp-alert--inline kp-divan__status"
 					aria-live="polite"
 					data-testid="vouch-status"
 				>
-					{message}
+					{t(message)}
 				</Alert>
 			) : null}
 		</Dialog>

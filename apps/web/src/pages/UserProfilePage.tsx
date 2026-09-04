@@ -10,8 +10,8 @@ import {shouldShowCaylakStatus} from "../components/profile/CaylakStatusBlock";
 import {ContributionRow} from "../components/profile/ContributionRow";
 import {PromotionActions, shouldShowPromotionActions} from "../components/profile/PromotionActions";
 import {
-	CONTRIBUTIONS_EMPTY,
-	CONTRIBUTIONS_HEADING,
+	CONTRIBUTIONS_EMPTY_KEYS,
+	CONTRIBUTIONS_HEADING_KEYS,
 } from "../components/profile/profileContributions";
 import {
 	ContributionsConnectionView,
@@ -22,24 +22,28 @@ import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/Us
 import {EmptyState} from "../components/ui/EmptyState";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
+import {useT} from "../i18n";
 import {NotFoundPage} from "./NotFoundPage";
 import "./UserProfilePage.css";
 
 export function UserProfilePage() {
 	const {username} = useParams<{username: string}>();
 	const safeUsername = username ?? "";
+	const t = useT();
 
 	return (
 		<Screen
 			fallback={
 				<div className="kp-user-profile" data-testid="user-profile-loading">
-					<div className="kp-user-profile__inner">yükleniyor…</div>
+					<div className="kp-user-profile__inner">{t("profile.page.loading")}</div>
 				</div>
 			}
 			error={({code}) => (
 				<div className="kp-user-profile">
 					<div className="kp-user-profile__inner">
-						<p style={{color: "var(--danger)"}}>profil yüklenemedi: {code.toLowerCase()}</p>
+						<p style={{color: "var(--danger)"}}>
+							{t("profile.page.error", {code: code.toLowerCase()})}
+						</p>
 					</div>
 				</div>
 			)}
@@ -51,6 +55,7 @@ export function UserProfilePage() {
 
 function UserProfileContent({username}: {username: string}) {
 	const fate = useFateClient();
+	const t = useT();
 	const {profile} = useRequest(profileRequest(username));
 	// The same network-only re-pull the divan promote handler drives (#7036): a settled
 	// tier answer re-pulls this page's read so the rendered status can't stay stale.
@@ -62,8 +67,8 @@ function UserProfileContent({username}: {username: string}) {
 	if (!profile) {
 		return (
 			<NotFoundPage
-				title="kullanıcı bulunamadı"
-				message={`@${username} burada yok. başka bir şeye bakmak ister misin?`}
+				title={t("profile.user.notFound.title")}
+				message={t("profile.user.notFound.message", {username})}
 			/>
 		);
 	}
@@ -98,6 +103,7 @@ function ProfilePromotion({
 }
 
 function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
+	const t = useT();
 	const data = useView(UserProfileView, profile);
 	const {userId} = useView(UserProfileHeaderView, profile);
 	const {me} = useMe();
@@ -107,11 +113,11 @@ function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 
 	return (
 		<section className="kp-user-profile__feed" data-testid="user-profile-feed">
-			<h3>{CONTRIBUTIONS_HEADING.public}</h3>
+			<h3>{t(CONTRIBUTIONS_HEADING_KEYS.public)}</h3>
 			{items.length === 0 ? (
 				<EmptyState
-					title={CONTRIBUTIONS_EMPTY.title}
-					description={CONTRIBUTIONS_EMPTY.description}
+					title={t(CONTRIBUTIONS_EMPTY_KEYS.title)}
+					description={t(CONTRIBUTIONS_EMPTY_KEYS.description)}
 				/>
 			) : (
 				<ul className="kp-user-profile__list">

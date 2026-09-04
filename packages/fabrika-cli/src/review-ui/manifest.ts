@@ -30,6 +30,12 @@ export const PAGE_ERROR_CAP = 3;
 /** One captured surface, as both the stdout object and the manifest record it. */
 export interface CaptureEntry {
 	readonly surface: string;
+	/**
+	 * The viewport label this shot was taken at (`plan.ts`'s closed set). A set is a
+	 * surface × viewport cross-product, so the surface id alone no longer identifies an entry —
+	 * without this a manifest cannot say what width its pixels are of (#7706).
+	 */
+	readonly viewport: string;
 	readonly path: string;
 	readonly width: number;
 	readonly height: number;
@@ -86,6 +92,7 @@ const toEntry = (value: unknown): CaptureEntry | null => {
 	const record = value as Record<string, unknown>;
 	if (
 		typeof record.surface !== "string" ||
+		typeof record.viewport !== "string" ||
 		typeof record.path !== "string" ||
 		typeof record.width !== "number" ||
 		typeof record.height !== "number" ||
@@ -96,6 +103,7 @@ const toEntry = (value: unknown): CaptureEntry | null => {
 	}
 	return {
 		surface: record.surface,
+		viewport: record.viewport,
 		path: record.path,
 		width: record.width,
 		height: record.height,

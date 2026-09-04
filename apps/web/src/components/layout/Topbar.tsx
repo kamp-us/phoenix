@@ -2,6 +2,7 @@ import {Gavel, Search} from "lucide-react";
 import type * as React from "react";
 import {useEffect} from "react";
 import {Link, NavLink} from "react-router";
+import {useT} from "../../i18n";
 import {isSearchShortcut} from "../../lib/searchShortcut";
 import type {ThemeChoice} from "../../lib/theme";
 import {BildirimPopover} from "../bildirim/BildirimPopover";
@@ -11,6 +12,7 @@ import {Karma} from "../karma/Karma";
 import {Kbd} from "../ui/atoms";
 import {Badge} from "../ui/Badge";
 import {Input} from "../ui/Form";
+import type {CaylakMeter} from "./caylakMeter";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import {UserMenu} from "./UserMenu";
 import "./Topbar.css";
@@ -25,6 +27,7 @@ export function Topbar({
 	divanPending,
 	user,
 	karma,
+	caylakMeter,
 	bildirim,
 	actions,
 	searchQuery = "",
@@ -42,6 +45,11 @@ export function Topbar({
 	divanPending?: number;
 	user?: {name: string; src?: string; username?: string | null};
 	karma?: number;
+	/**
+	 * Present ⇒ the bare `karma` chip becomes the çaylak promotion meter (#7045). Absent is the
+	 * flag-off path AND every non-çaylak tier, so one undefined prop is the whole containment.
+	 */
+	caylakMeter?: CaylakMeter;
 	bildirim?: {to: string; unread: number};
 	actions?: React.ReactNode;
 	searchQuery?: string;
@@ -53,6 +61,7 @@ export function Topbar({
 	// also renders a sign-in CTA must derive that CTA from this flag's negation (#6660).
 	reserveSignedInSlots?: boolean;
 }) {
+	const t = useT();
 	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <Kbd>⌘K</Kbd> hint below.
 	// preventDefault overrides the browser's own ⌘/Ctrl+K (address-bar) binding.
 	useEffect(() => {
@@ -90,8 +99,8 @@ export function Topbar({
 			to={divanTo}
 			data-testid="topbar-divan-link"
 			className="kp-topbar__signal-link"
-			aria-label="divan"
-			title="divan"
+			aria-label={t("layout.divan")}
+			title={t("layout.divan")}
 		>
 			<Icon icon={Gavel} size={16} />
 			{/* The bildirim bell's exact badge grammar (#6760): the same Badge + the same two
@@ -127,8 +136,8 @@ export function Topbar({
 				className="kp-topbar__search-field"
 				name="q"
 				defaultValue={searchQuery}
-				placeholder="ara…"
-				aria-label="Ara"
+				placeholder={t("layout.search.placeholder")}
+				aria-label={t("layout.search.label")}
 				fullWidth
 				left={<Icon icon={Search} size={12} />}
 				right={<Kbd>⌘K</Kbd>}
@@ -143,10 +152,32 @@ export function Topbar({
 				testId="topbar-theme-picker"
 			/>
 		) : null;
-	const karmaChip =
-		typeof karma === "number" ? (
-			<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
-		) : null;
+	// The meter wins over the bare chip only where it exists — a yazar (and every flag-off
+	// çaylak) reaches the same `<Karma>` call this file has always rendered.
+	const karmaChip = caylakMeter ? (
+		<span className="kp-topbar__caylak-meter" data-testid="topbar-caylak-meter">
+			<Karma
+				value={caylakMeter.karma}
+				target={caylakMeter.target}
+				showBar={caylakMeter.kind === "karma-bar"}
+				variant="inline"
+				testId="topbar-karma"
+				className="kp-topbar__karma"
+			/>
+			<span className="kp-topbar__caylak-kefil" data-testid="topbar-caylak-kefil">
+				· {t(caylakMeter.vouchFactKey)}
+			</span>
+			{/* Rendered, not a `title`: a tooltip on a non-interactive span never opens on touch
+			    and takes no keyboard focus, so it would leave the mobile çaylak told nothing. */}
+			{caylakMeter.kind === "vouch-needed" ? (
+				<span className="kp-topbar__caylak-vouch-needed" data-testid="topbar-caylak-vouch-needed">
+					· {t(caylakMeter.vouchNeededKey)}
+				</span>
+			) : null}
+		</span>
+	) : typeof karma === "number" ? (
+		<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
+	) : null;
 	const bildirimSignal =
 		bildirim && showUnreadBadge(bildirim.unread) ? (
 			<BildirimPopover to={bildirim.to} unread={bildirim.unread} />

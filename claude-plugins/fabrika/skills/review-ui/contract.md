@@ -242,7 +242,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/yeni [--flag <key>=<on|off>] [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -252,6 +252,7 @@ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/
 | `--pr` | integer | yes | — | the pull request whose preview is judged |
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under `<OS temp>/fabrika-review-ui/<pr>-<head8>/<set>/` |
 | `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/pano`), or a route plus a realized tier state (`/pano:auth`, `/pano:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
+| `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
 | `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve |
 | `--repo` | string | no | resolved | the repository |
@@ -276,6 +277,28 @@ non-200, an unreadable body, a user with no tier, a user at another tier — ref
 `11` and records no capture under that surface id. A cookie that did not authenticate renders the
 visitor's page and one that authenticated as the wrong identity renders somebody else's, and both are
 perfectly valid PNGs no byte check can tell from the real one.
+
+**`--viewport` is the width axis, and it is closed for the same reason `:state` is.** The narrow half
+of the design law — a sub-36px tap target, a nowrap string that overflows, spacing that goes off-grid
+— is only answerable from narrow pixels, and before this operand existed every shot was 1280 wide, so
+an acceptance criterion phrased about a phone ended the gate as disclosed-UNKNOWN rather than PASS or
+FAIL (#7706, and PR #7388 took a FAIL that no change to its branch could repair). Omitting it renders
+at `desktop` alone, exactly as every invocation written before it did. The two realized names resolve
+to the constants in `capture/plan.ts`; a third name would have to fall back to some width, and a shot
+at the fallback width filed under the asked-for label is coverage claimed and not held. Repeating one
+name is `10` too — the second shot would overwrite the first's file and its evidence.
+
+Viewports **cross** the surfaces rather than pairing with them: two surfaces and two viewports is one
+set of four captures. Nothing collides, because the PNG file name has always carried the viewport
+label (`pano@desktop.png`, `pano@mobile.png`) and each manifest entry now records it beside the
+surface id — so a set can say what width each of its shots is of, and the evidence gallery heads each
+one `<surface> @ <viewport>`.
+
+Asking for a width is not the same as rendering at it, so — like the session and the override — the
+shot proves its own. The recorded width is read back from the captured PNG's own header, never echoed
+from the request, and a shot whose width is not the requested viewport's is refused on `19` and
+recorded nowhere. A desktop-width capture filed under `mobile` is a perfectly valid PNG of a layout
+nobody asked about, and no byte check downstream can tell it from the real thing.
 
 **`--flag` forces a dark-shipped flag on, so the state the PR adds paints** (ADR 0336, #7218). It
 rides the worker's existing `phoenix_flag_overrides` cookie — no route is added and
@@ -309,8 +332,8 @@ still refuses every `:state`.
 {"set": "judged", "pr": 4321, "head": "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c",
  "previewUrl": "https://phoenix-pr-4321.kampus.workers.dev",
  "captures": [
-   {"surface": "/pano", "path": "<abs>/judged/pano.png", "width": 1280, "height": 2140,
-    "sha256": "…", "pageErrors": {"rows": [], "more": 0}}
+   {"surface": "/pano", "viewport": "desktop", "path": "<abs>/judged/pano@desktop.png",
+    "width": 1280, "height": 2140, "sha256": "…", "pageErrors": {"rows": [], "more": 0}}
  ]}
 ```
 
@@ -318,11 +341,13 @@ still refuses every `:state`.
 `11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent → `16`, anchor
 present but unparseable → `11`). **Bind the preview to the head**: the comment's deployed SHA
 must equal the live head — a preview that lags the push is `12`, because pixels of an old tree
-bound to a new SHA are the stale-verdict class at the capture seam. For each `--surface`, in the
-provisioned headless browser at the machinery's default viewport: navigate to
+bound to a new SHA are the stale-verdict class at the capture seam. For each `--surface` at each
+`--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
-page exception is **crashed** (`13`); otherwise screenshot full-page to `<set>/<route-slug>.png`
-and validate (exists, non-zero bytes, decodable, non-zero area — `15` on any failure).
+page exception is **crashed** (`13`); otherwise screenshot full-page to
+`<set>/<route-slug>@<viewport>.png` and validate (exists, non-zero bytes, decodable, non-zero area —
+`15` on any failure), then **read the width back off those bytes** and refuse a shot that is not the
+requested viewport's width (`19`).
 `console.error` output is **recorded per capture in `pageErrors`, never a gate outcome** — the
 crash/advisory split is the machinery's page-error module, and an empty list is only ever
 written from a successfully-read error channel (v1's extractor returned empty on a parse failure,
@@ -333,7 +358,7 @@ per-surface line counts the **whole** tally, not the kept rows. **Write the set 
 byte-identical to the stdout JSON — `post` reads the set through it, and a set without its
 manifest is not a set.
 
-Exit 0 requires **every** requested surface captured and valid. `12` and `16` are run-level
+Exit 0 requires **every** requested surface captured and valid at **every** requested viewport. `12` and `16` are run-level
 refusals decided before the per-surface loop and never mix with its outcomes. When per-surface
 outcomes mix, the reported code is the smallest applicable of `13`/`14`/`15` and stderr carries
 every surface's outcome — the code routes, the stderr enumerates. Dropping a surface is the skill's explicit
@@ -344,13 +369,14 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
 | `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token or `BETTER_AUTH_SECRET` is unset; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
 | `15` | proven: at least one capture is invalid (zero bytes, undecodable, zero area) |
 | `16` | proven: no comment carrying the preview anchor exists on the PR — this repo, or this PR, has no preview to judge |
+| `19` | proven: a capture's PNG width, read back from its own bytes, is not the requested viewport's width — the requested viewport's render is UNKNOWN, and nothing was recorded under that label |
 
 **Errors**
 
@@ -360,22 +386,25 @@ re-invocation without it, on the record; never the tool's tolerance.
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
 | `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth, auth-caylak; render the bare route.` | 10 | refusal |
 | `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
-| `review-ui render: surface "<id>" did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
-| `review-ui render: surface "<id>" named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
+| `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
+| `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
 | `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |
 | `review-ui render: --flag was passed with the anonymous surface "<id>" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.` | 10 | refusal |
-| `review-ui render: surface "<id>" did not render with its forced flags (<reason>) — the forced render is UNKNOWN, never the default one.` | 11 | refusal |
+| `review-ui render: surface "<id>" at <viewport> did not render with its forced flags (<reason>) — the forced render is UNKNOWN, never the default one.` | 11 | refusal |
+| `review-ui render: --viewport "<name>" is not a viewport this repo renders — the names are desktop, mobile.` | 10 | refusal |
+| `review-ui render: --viewport "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
+| `review-ui render: surface "<id>" at <viewport> was asked for at <wanted>px and its bytes read back <actual>px wide — the requested viewport's render is UNKNOWN, never another width's.` | 19 | refusal |
 | `review-ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `review-ui render: cannot read <what> for #<n>: <reason> — the render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: the preview comment names apps <list> — pass --app to pick one.` | 11 | refusal |
 | `review-ui render: the preview comment carries the anchor but no parseable URL + SHA for app "<app>" — a malformed announcement is unreadable, not absent.` | 11 | refusal |
 | `review-ui render: the preview deploys <deployed-sha7>, the live head is <head7> — stale preview; pixels of an old tree must not bind a new head (#4808's class).` | 12 | refusal |
-| `review-ui render: surface "<id>" threw during render: <first page error> — the render is red; a broken page is not composition to judge.` | 13 | refusal |
-| `review-ui render: surface "<id>" is unreachable at the preview (<reason>) — judge what renders, and hold the gap against the PR's Deviations (#4305).` | 14 | refusal |
-| `review-ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
+| `review-ui render: surface "<id>" at <viewport> threw during render: <first page error> — the render is red; a broken page is not composition to judge.` | 13 | refusal |
+| `review-ui render: surface "<id>" at <viewport> is unreachable at the preview (<reason>) — judge what renders, and hold the gap against the PR's Deviations (#4305).` | 14 | refusal |
+| `review-ui render: surface "<id>" at <viewport> captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
-**Scope** — exactly the `--surface` operands against one PR's announced preview. Zero operands
+**Scope** — exactly the `--surface` × `--viewport` cross product against one PR's announced preview. Zero operands
 is `1`, so "rendered nothing, found nothing wrong" is unrepresentable (ADR 0092). The
 per-surface outcome enumeration goes to stderr on every path, success included.
 
@@ -383,21 +412,28 @@ per-surface outcome enumeration goes to stderr on every path, success included.
 
 ```
 $ fabrika review-ui render --pr 4321 --out judged --surface /pano
-{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}}]}
+{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```
 $ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /yonetim
-review-ui render: surface "/pano" captured: 1280x2140, 0 page errors
-review-ui render: surface "/yonetim" is unreachable at the preview (status 404) — judge what renders, and hold the gap against the PR's Deviations (#4305).
+review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page errors
+review-ui render: surface "/yonetim" at desktop is unreachable at the preview (status 404) — judge what renders, and hold the gap against the PR's Deviations (#4305).
 $ echo $?
 14
 ```
 
 ```
+$ fabrika review-ui render --pr 4321 --out narrow --surface /pano --viewport desktop --viewport mobile
+review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page errors
+review-ui render: surface "/pano" at mobile captured: 390x3180, 0 page errors
+{"set":"narrow","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/pano@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}},{"surface":"/pano","viewport":"mobile","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/pano@mobile.png","width":390,"height":3180,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
+```
+
+```
 $ fabrika review-ui render --pr 4321 --out forced --surface /hosgeldin:auth --flag phoenix-welcome=on
-review-ui render: surface "/hosgeldin:auth" captured: 1280x1640, 0 page errors
-{"set":"forced","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/hosgeldin:auth","path":"/tmp/fabrika-review-ui/4321-03135b91/forced/hosgeldin-auth.png","width":1280,"height":1640,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
+review-ui render: surface "/hosgeldin:auth" at desktop captured: 1280x1640, 0 page errors
+{"set":"forced","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/hosgeldin:auth","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/forced/hosgeldin-auth@desktop.png","width":1280,"height":1640,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```

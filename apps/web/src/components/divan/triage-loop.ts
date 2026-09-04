@@ -3,6 +3,8 @@
  * DOM-free because `apps/web/src` has no jsdom.
  */
 import type {TargetKind} from "../../../worker/db/target-kind";
+import type {CatalogKey} from "../../i18n";
+import type {Message} from "./divanGating";
 
 export type Verdict = "dismiss" | "remove";
 
@@ -98,51 +100,72 @@ export function escapeTo(current: LoopLayer): LoopLayer {
 
 // `distinct` clamps into `[1, count]` so a malformed count never reads more distinct
 // reporters than reports.
-export function reporterDiversityLabel(reportCount: number, distinctReporters: number): string {
+export function reporterDiversityLabel(reportCount: number, distinctReporters: number): Message {
 	const count = Math.max(0, Math.floor(reportCount));
-	if (count <= 1) return `${count} rapor`;
+	if (count <= 1) {
+		return {
+			key: count === 1 ? "divan.report.count.one" : "divan.report.count.other",
+			params: {count},
+		};
+	}
+	// `count` is >= 2 on this arm, so only `distinct` can be 1 and only it needs an arm.
 	const distinct = Math.max(1, Math.min(Math.floor(distinctReporters), count));
-	return `${count} rapor · ${distinct} farklı kişi`;
+	return {
+		key: distinct === 1 ? "divan.triage.diversity.one" : "divan.triage.diversity.other",
+		params: {count, distinct},
+	};
 }
 
 export function authorReputationLabel(
 	tier: string | null,
 	karma: number | null,
 	priorRemovals: number | null,
-): string | null {
+): Message | null {
 	if (tier === null || karma === null) return null;
-	const parts = [tier, `${karma} karma`];
 	if (priorRemovals !== null && priorRemovals > 0) {
-		parts.push(`${priorRemovals} kaldırma`);
+		return {
+			key:
+				priorRemovals === 1
+					? "divan.triage.reputationRemovals.one"
+					: "divan.triage.reputationRemovals.other",
+			params: {tier, karma, removals: priorRemovals},
+		};
 	}
-	return parts.join(" · ");
+	return {key: "divan.triage.reputation", params: {tier, karma}};
 }
 
+/** Either the excerpt's own text or a catalog stand-in for it. */
+export type ExcerptLabel = {readonly text: string} | Message;
+
 // See ADR 0138 — a moderator is not force-fed the excerpt in order to dismiss it.
-export function maskedExcerpt(excerpt: string | null, revealed: boolean): string {
+export function maskedExcerpt(excerpt: string | null, revealed: boolean): ExcerptLabel {
 	const trimmed = excerpt?.trim();
-	if (!trimmed) return "içerik yüklenemedi";
-	return revealed ? trimmed : "içerik gizli · O ile göster";
+	if (!trimmed) return {key: "divan.excerpt.unavailable"};
+	return revealed ? {text: trimmed} : {key: "divan.triage.excerptHidden"};
 }
 
 export interface LegendEntry {
 	readonly keys: ReadonlyArray<string>;
-	readonly label: string;
+	readonly labelKey: CatalogKey;
 }
 
 export const triageLegend: ReadonlyArray<LegendEntry> = [
-	{keys: ["j", "k"], label: "gez"},
-	{keys: ["Y"], label: "yoksay"},
-	{keys: ["R"], label: "kaldır"},
-	{keys: ["U"], label: "geri al"},
-	{keys: ["O"], label: "göster"},
-	{keys: ["A"], label: "künye"},
-	{keys: ["V", "M"], label: "bölme"},
-	{keys: ["X"], label: "dalga"},
+	{keys: ["j", "k"], labelKey: "divan.triage.legend.navigate"},
+	{keys: ["Y"], labelKey: "divan.triage.legend.dismiss"},
+	{keys: ["R"], labelKey: "divan.triage.legend.remove"},
+	{keys: ["U"], labelKey: "divan.triage.legend.undo"},
+	{keys: ["O"], labelKey: "divan.triage.legend.reveal"},
+	{keys: ["A"], labelKey: "divan.triage.legend.kunye"},
+	{keys: ["V", "M"], labelKey: "divan.triage.legend.chamber"},
+	{keys: ["X"], labelKey: "divan.triage.legend.wave"},
 ];
 
-export function drainedLabel(decisionsToday: number): string {
+// The `one` arm is exactly `count === 1` in both catalogs (see `i18n/plural.ts`).
+export function drainedLabel(decisionsToday: number): Message {
 	const n = Math.max(0, Math.floor(decisionsToday));
-	if (n === 0) return "raporlar temiz";
-	return `raporlar temiz · bugün ${n} karar`;
+	if (n === 0) return {key: "divan.triage.drained"};
+	return {
+		key: n === 1 ? "divan.triage.drainedToday.one" : "divan.triage.drainedToday.other",
+		params: {count: n},
+	};
 }

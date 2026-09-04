@@ -6,6 +6,8 @@
  * written here must read back through the worker's `parseOverrideCookie` verbatim.
  */
 
+import type {CatalogKey} from "../../i18n";
+
 export const FLAG_OVERRIDE_COOKIE = "phoenix_flag_overrides";
 
 export type FlagOverrides = Readonly<Record<string, boolean>>;
@@ -90,42 +92,42 @@ export function serializeOverrideCookie(overrides: FlagOverrides): string {
 	return `${FLAG_OVERRIDE_COOKIE}=${encodeOverrideCookieValue(overrides)}; ${attrs}; max-age=31536000`;
 }
 
-export const booleanLabel = (value: boolean): string => (value ? "açık" : "kapalı");
+export const defaultLabelKey = (defaultValue: boolean): CatalogKey =>
+	defaultValue ? "admin.flags.default.on" : "admin.flags.default.off";
 
-export const defaultLabel = (defaultValue: boolean): string =>
-	`varsayılan: ${booleanLabel(defaultValue)}`;
-
-export const overrideLabel = (state: OverrideState): string => {
+export const overrideLabelKey = (state: OverrideState): CatalogKey => {
 	switch (state) {
 		case "on":
-			return "yerel geçersiz kılma: açık";
+			return "admin.flags.override.on";
 		case "off":
-			return "yerel geçersiz kılma: kapalı";
+			return "admin.flags.override.off";
 		case "clear":
-			return "yerel geçersiz kılma: yok";
+			return "admin.flags.override.clear";
 	}
 };
 
-export const effectiveLabel = (value: boolean): string => `geçerli değer: ${booleanLabel(value)}`;
+export const effectiveLabelKey = (value: boolean): CatalogKey =>
+	value ? "admin.flags.effective.on" : "admin.flags.effective.off";
 
-export const overrideOutcomeMessage = ({key, state}: OverrideAction): string => {
+/** The panel interpolates `{key}` — the flag key is data, so it never enters the catalog. */
+export const overrideOutcomeKey = (state: OverrideState): CatalogKey => {
 	switch (state) {
 		case "on":
-			return `${key} bu tarayıcıda açık olarak geçersiz kılındı.`;
+			return "admin.flags.outcome.on";
 		case "off":
-			return `${key} bu tarayıcıda kapalı olarak geçersiz kılındı.`;
+			return "admin.flags.outcome.off";
 		case "clear":
-			return `${key} için yerel geçersiz kılma temizlendi.`;
+			return "admin.flags.outcome.clear";
 	}
 };
 
-export const actionButtonLabel = (state: OverrideState): string => {
+export const actionButtonLabelKey = (state: OverrideState): CatalogKey => {
 	switch (state) {
 		case "on":
-			return "aç";
+			return "admin.flags.action.on";
 		case "off":
-			return "kapat";
+			return "admin.flags.action.off";
 		case "clear":
-			return "temizle";
+			return "admin.flags.action.clear";
 	}
 };

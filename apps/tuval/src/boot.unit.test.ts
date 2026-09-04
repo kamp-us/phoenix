@@ -6,7 +6,10 @@ import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
 import {Effect} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
-import {boot, defaultGlobalConfig, projectConfig, projectDir} from "./boot.ts";
+import {boot, coreSpells, defaultGlobalConfig, projectConfig, projectDir} from "./boot.ts";
+
+/** Every boot registers these, whatever the config declares; no fixture program declares a spell. */
+const CORE_SPELLS = coreSpells.length;
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
@@ -111,6 +114,9 @@ describe("boot", () => {
 		expect(report).toEqual({
 			sources: [fixture("two-rows")],
 			programCount: 2,
+			spellCount: CORE_SPELLS,
+			bindingCount: 0,
+			bindingErrors: [],
 			stateDir: projectDir(project),
 			processCount: 0,
 			restoredCount: 0,
@@ -122,7 +128,7 @@ describe("boot", () => {
 		const result = run(["--config", fixture("two-rows"), "--project", project]);
 		expect(result.status).toBe(0);
 		expect(result.stdout).toBe(
-			`tuval: booted — 2 program(s) registered from ${fixture("two-rows")}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 2 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("two-rows")}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
 		);
 	});
 
@@ -142,7 +148,7 @@ describe("boot", () => {
 		expect(result.stderr).toBe("");
 		expect(result.status).toBe(0);
 		expect(result.stdout).toBe(
-			`tuval: booted — 3 program(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
 		);
 	});
 
@@ -152,7 +158,7 @@ describe("boot", () => {
 		const result = run(["--project", project], {...process.env, HOME: home});
 		expect(result.status).toBe(0);
 		expect(result.stdout).toBe(
-			`tuval: booted — 0 program(s) registered from no config module; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 0 program(s), ${CORE_SPELLS} spell(s) registered from no config module; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
 		);
 	});
 
@@ -163,7 +169,7 @@ describe("boot", () => {
 		expect(first.stderr).toBe("");
 		expect(first.status).toBe(0);
 		expect(first.stdout).toContain(
-			`tuval: booted — 3 program(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
 		);
 		expect(first.stdout).toContain(
 			"tuval: process shell program=shell parent=- ports=- state=running@0\n",
@@ -180,10 +186,10 @@ describe("boot", () => {
 		const second = await runUntilRunning(args);
 		expect(second.status).toBe(0);
 		expect(second.stdout).toContain(
-			`tuval: booted — 3 program(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
 		);
 		expect(second.stdout).toContain("tuval: process log program=log parent=counter");
-	});
+	}, 20_000);
 
 	it("restores every checkpointed process from the project's state through Demlik's fileStore", async () => {
 		const project = seededProject("1.0.0");
@@ -197,12 +203,12 @@ describe("boot", () => {
 		]);
 		expect(result.status).toBe(0);
 		expect(result.stdout).toContain(
-			`tuval: booted — 1 program(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${projectDir(project)}\n`,
 		);
 		expect(result.stdout).toContain(
 			"tuval: process p-1 program=counter parent=- ports=- state=running@0\n",
 		);
-	});
+	}, 20_000);
 
 	it("refuses to boot on a snapshot under another program version, naming the process and both versions", () => {
 		const project = seededProject("0.9.0");

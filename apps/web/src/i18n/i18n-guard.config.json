@@ -1,0 +1,59 @@
+{
+	"$comment": "The bounded allow-list `fabrika guard i18n-guard check` judges apps/web/src against (#7536, ADR 0347). `exempt` is permanent — text that is not copy. `unmigrated` is debt, each entry naming the issue that clears it. A ceiling is a count, so adding a Turkish literal to a listed file still reds.",
+	"exempt": {
+		"apps/web/src/components/authorship/FirstContributionOnramp.tsx": {
+			"ceiling": 1,
+			"why": "`tier === \"çaylak\"` — the wire value the server sends, compared and never rendered."
+		},
+		"apps/web/src/components/profile/CaylakStatusBlock.tsx": {
+			"ceiling": 1,
+			"why": "`tier === \"çaylak\"` — the wire value the server sends, compared and never rendered."
+		},
+		"apps/web/src/components/profile/profileStanding.ts": {
+			"ceiling": 1,
+			"why": "`case \"çaylak\":` over the wire tier value; the arm returns a CatalogKey, so the copy is already in the catalog."
+		},
+		"apps/web/src/components/sozluk/Sozluk.tsx": {
+			"ceiling": 6,
+			"why": "The Turkish alphabet the sözlük indexes by — letters the index is built from, not a sentence any locale could restate."
+		},
+		"apps/web/src/lib/panoTags.ts": {
+			"ceiling": 9,
+			"why": "The pano tag vocabulary, stored verbatim on `post_record.tags` — the kinds and their legacy English aliases are wire values. `tagLabel` returning the kind as the rendered label is the separate debt noted on #7658."
+		},
+		"apps/web/src/pages/LabComposerPage.tsx": {
+			"ceiling": 25,
+			"why": "The throwaway /lab/composer tiptap spike (#2465) — a lab surface like apps/web/src/lab/, whose exhibit content is exempt from the catalog by LANGUAGE.md's showcase rule."
+		},
+		"apps/web/src/pages/WelcomePage.tsx": {
+			"ceiling": 2,
+			"why": "`addressing === \"çaylak\"` — the wire tier value picking which catalog key to read; every rendered string beside it is already `t(…)`."
+		},
+		"apps/web/src/pages/welcomeGating.ts": {
+			"ceiling": 1,
+			"why": "`tier === \"çaylak\"` — the wire value narrowed into the addressing union, never rendered."
+		}
+	},
+	"unmigrated": {
+		"apps/web/src/App.tsx": {
+			"ceiling": 6,
+			"why": "Shell copy the migration children did not reach — the actorLabel fallback, the sözlük nav label, `giriş yap`, `yükleniyor…`. Tracked by #7723. The sixth hit is not copy: `me?.tier === \"çaylak\"`, the çaylak-meter gate's wire value, compared and never rendered (#7045) — it stays here rather than in `exempt` because an exempt row would shadow this file's five-literal debt ratchet."
+		},
+		"apps/web/src/components/controls/Controls.tsx": {
+			"ceiling": 3,
+			"why": "The density and mode picker labels (`sıkı`, `açık`, `yoğunluk`). Tracked by #7723."
+		},
+		"apps/web/src/components/profile/DeleteAccountDialog.tsx": {
+			"ceiling": 1,
+			"why": "CONFIRMATION_PHRASE — the phrase a reader retypes to delete their account, so it has to read in their locale. Tracked by #7663."
+		},
+		"apps/web/src/fate/LoadMoreButton.tsx": {
+			"ceiling": 1,
+			"why": "The pagination button's two states (`yükleniyor…` / `daha fazla`). Tracked by #7723."
+		},
+		"apps/web/src/lib/panoNav.ts": {
+			"ceiling": 2,
+			"why": "PANO_FILTERS carries its Turkish label beside its id; the label belongs in the catalog and the id stays the wire value. Tracked by #7658."
+		}
+	}
+}

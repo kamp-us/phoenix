@@ -14,6 +14,7 @@ import type {
 	FunnelCohorts as FunnelCohortsEntity,
 	FunnelCohortWeek as FunnelCohortWeekEntity,
 } from "../../../worker/features/fate/views";
+import {type Locale, useLocale, useT} from "../../i18n";
 
 const FunnelCohortsView = view<FunnelCohortsEntity>()({
 	id: true,
@@ -43,17 +44,21 @@ const cohortRequest = {
 	"funnel.cohortRollups": {list: WeekConnectionView},
 } as const;
 
-function formatRate(rate: number): string {
-	return rate.toLocaleString("tr-TR", {
+function numberLocale(locale: Locale): string {
+	return locale === "tr" ? "tr-TR" : "en-US";
+}
+
+function formatRate(rate: number, locale: Locale): string {
+	return rate.toLocaleString(numberLocale(locale), {
 		style: "percent",
 		minimumFractionDigits: 1,
 		maximumFractionDigits: 1,
 	});
 }
 
-function formatCount(n: number): string {
+function formatCount(n: number, locale: Locale): string {
 	if (n < 1000) return String(n);
-	return n.toLocaleString("tr-TR");
+	return n.toLocaleString(numberLocale(locale));
 }
 
 function CohortWeekTable({
@@ -65,22 +70,23 @@ function CohortWeekTable({
 	readonly testId: string;
 	readonly caption: string;
 }) {
+	const t = useT();
 	if (nodes.length === 0) {
-		return <p className="kp-funnel__cohort-empty">henüz ölçüm yok</p>;
+		return <p className="kp-funnel__cohort-empty">{t("divan.funnel.cohorts.empty")}</p>;
 	}
 	return (
 		<table className="kp-funnel__cohort-table" data-testid={testId}>
 			<caption className="kp-funnel__cohort-caption">{caption}</caption>
 			<thead>
 				<tr>
-					<th scope="col">kayıt haftası</th>
-					<th scope="col">kaydoldu</th>
-					<th scope="col">2–7. gün döndü</th>
-					<th scope="col">ilk katkı</th>
-					<th scope="col">kefil</th>
-					<th scope="col">yazar</th>
-					<th scope="col">1. gün dönüşü</th>
-					<th scope="col">7. gün dönüşü</th>
+					<th scope="col">{t("divan.funnel.cohorts.colWeek")}</th>
+					<th scope="col">{t("divan.funnel.cohorts.colSignedUp")}</th>
+					<th scope="col">{t("divan.funnel.cohorts.colReturned")}</th>
+					<th scope="col">{t("divan.funnel.cohorts.colFirstContribution")}</th>
+					<th scope="col">{t("divan.funnel.cohorts.colKefil")}</th>
+					<th scope="col">{t("divan.funnel.cohorts.colYazar")}</th>
+					<th scope="col">{t("divan.funnel.cohorts.colD1")}</th>
+					<th scope="col">{t("divan.funnel.cohorts.colD7")}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -93,22 +99,25 @@ function CohortWeekTable({
 }
 
 function CohortWeekRow({node}: {readonly node: ViewRef<"FunnelCohortWeek">}) {
+	const {locale} = useLocale();
 	const week = useView(WeekNodeView, node);
 	return (
 		<tr>
 			<td>{week.id}</td>
-			<td>{formatCount(week.signedUp)}</td>
-			<td>{formatCount(week.returnedDays2to7)}</td>
-			<td>{formatCount(week.firstContributed7d)}</td>
-			<td>{formatCount(week.vouched7d)}</td>
-			<td>{formatCount(week.promoted7d)}</td>
-			<td>{formatRate(week.d1ReturnRate)}</td>
-			<td>{formatRate(week.d7ReturnRate)}</td>
+			<td>{formatCount(week.signedUp, locale)}</td>
+			<td>{formatCount(week.returnedDays2to7, locale)}</td>
+			<td>{formatCount(week.firstContributed7d, locale)}</td>
+			<td>{formatCount(week.vouched7d, locale)}</td>
+			<td>{formatCount(week.promoted7d, locale)}</td>
+			<td>{formatRate(week.d1ReturnRate, locale)}</td>
+			<td>{formatRate(week.d7ReturnRate, locale)}</td>
 		</tr>
 	);
 }
 
 export function FunnelCohorts() {
+	const t = useT();
+	const {locale} = useLocale();
 	const result = useRequest(cohortRequest);
 	const report = useView(FunnelCohortsView, result["funnel.cohorts"]);
 	const [liveItems] = useListView(WeekConnectionView, result["funnel.cohortWeeks"]);
@@ -117,44 +126,41 @@ export function FunnelCohorts() {
 	if (!report.enabled) return null;
 
 	return (
-		<section className="kp-funnel__panel kp-funnel__cohorts" aria-label="kozet hunisi">
-			<h2 className="kp-funnel__section-title">kozet hunisi</h2>
-			<p className="kp-funnel__section-note">
-				her satır aynı hafta kayıt olan hesapların ilk yedi günü. mevcut davet hacminde bu sayılar
-				yön gösterir, istatistiksel anlam taşımaz.
-			</p>
+		<section
+			className="kp-funnel__panel kp-funnel__cohorts"
+			aria-label={t("divan.funnel.cohorts.label")}
+		>
+			<h2 className="kp-funnel__section-title">{t("divan.funnel.cohorts.label")}</h2>
+			<p className="kp-funnel__section-note">{t("divan.funnel.cohorts.note")}</p>
 			<CohortWeekTable
 				nodes={liveItems.map(({node}) => node)}
 				testId="funnel-cohort-weeks"
-				caption="canlı okuma — mevcut tablolar üzerinden"
+				caption={t("divan.funnel.cohorts.liveCaption")}
 			/>
 			<CohortWeekTable
 				nodes={rollupItems.map(({node}) => node)}
 				testId="funnel-cohort-rollups"
-				caption="haftalık kayıt — her pazartesi 06.00 UTC'de hesaplanır"
+				caption={t("divan.funnel.cohorts.rollupCaption")}
 			/>
 			<dl className="kp-funnel__cohort-holes">
 				{report.foundingPromotionsUnmeasurable > 0 && (
 					<div className="kp-funnel__metric">
-						<dt className="kp-funnel__metric-label">ölçülemeyen yazarlık geçişi</dt>
+						<dt className="kp-funnel__metric-label">{t("divan.funnel.cohorts.foundingHole")}</dt>
 						<dd className="kp-funnel__metric-value" data-testid="funnel-cohort-founding-hole">
-							{formatCount(report.foundingPromotionsUnmeasurable)}
+							{formatCount(report.foundingPromotionsUnmeasurable, locale)}
 						</dd>
 					</div>
 				)}
 				{report.vouchEvidenceUnmeasurable > 0 && (
 					<div className="kp-funnel__metric">
-						<dt className="kp-funnel__metric-label">kefil kaydı olmayan yazar</dt>
+						<dt className="kp-funnel__metric-label">{t("divan.funnel.cohorts.vouchHole")}</dt>
 						<dd className="kp-funnel__metric-value" data-testid="funnel-cohort-vouch-hole">
-							{formatCount(report.vouchEvidenceUnmeasurable)}
+							{formatCount(report.vouchEvidenceUnmeasurable, locale)}
 						</dd>
 					</div>
 				)}
 			</dl>
-			<p className="kp-funnel__section-note">
-				kurucu kuşakta yazarlık geçişi damgalanmamıştı, çekilen kefiller ise kaydını siler — bu
-				hesaplar sayılmaz, geriye dönük kurulamaz.
-			</p>
+			<p className="kp-funnel__section-note">{t("divan.funnel.cohorts.holesNote")}</p>
 		</section>
 	);
 }
