@@ -13,6 +13,23 @@ export class DuplicateSpellPath extends Schema.TaggedError<DuplicateSpellPath>()
 	}
 }
 
+/**
+ * A spell whose `params` has no JSON Schema form, refused where `DuplicateSpellPath` is: at
+ * registration, before it can defect every later description of the table.
+ */
+export class SpellNotDescribable extends Schema.TaggedError<SpellNotDescribable>()(
+	"tuval/commands/SpellNotDescribable",
+	{
+		path: Schema.String,
+		source: Schema.String,
+		reason: Schema.String,
+	},
+) {
+	override get message(): string {
+		return `spell "${this.path}" from ${this.source} has params no JSON Schema can describe: ${this.reason}`;
+	}
+}
+
 export class SpellNotFound extends Schema.TaggedError<SpellNotFound>()(
 	"tuval/commands/SpellNotFound",
 	{path: Schema.String},

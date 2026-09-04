@@ -38,6 +38,7 @@ const spell = (
 export const descriptions: RegistryDescription = [
 	spell(["window", "close"], "Close the focused window.", jsonSchema({}, [])),
 	spell(["window", "move"], "Move the focused window.", jsonSchema({direction}, ["direction"])),
+	spell(["window", "focus"], "Focus a window by id.", jsonSchema({windowId: text}, ["windowId"])),
 	spell(
 		["workspace", "activate"],
 		"Switch to a workspace.",
@@ -65,12 +66,13 @@ export const rightWindow = WindowId.make("w-right");
 export const counterProcess = ProcessId.make("p-counter");
 export const clientProcess = ProcessId.make("p-client");
 
-const row = (id: ProcessId, programId: string): ProcessRow => ({
+const row = (id: ProcessId, programId: string, recency: number): ProcessRow => ({
 	id,
 	programId: ProgramId.make(programId),
 	parentId: null,
 	ports: {},
 	stateSummary: {lifecycle: "running", revision: 1},
+	recency,
 });
 
 const workspace = (id: WorkspaceId, name: string) => ({
@@ -94,12 +96,15 @@ export const snapshot = new Snapshot({
 		},
 		activeWorkspace: main,
 	},
+	// `w-right` was focused after `w-left`, so a tie between the two ranks it first.
 	windows: {
-		[leftWindow]: {id: leftWindow},
-		[rightWindow]: {id: rightWindow},
+		[leftWindow]: {id: leftWindow, recency: 4},
+		[rightWindow]: {id: rightWindow, recency: 9},
 	},
 	// `tea-client` holds `c`, but not at its front: a program id is a system name, so it is reached
 	// by prefix or not at all.
-	processes: [row(counterProcess, "counter"), row(clientProcess, "tea-client")],
+	// `p-client` spawned after `p-counter`, so a tie between the two ranks it first — the ruled
+	// recency tie-break (#7617 R1.5), which is the reverse of this collection order on purpose.
+	processes: [row(counterProcess, "counter", 5), row(clientProcess, "tea-client", 8)],
 	registry: descriptions,
 });

@@ -2,7 +2,7 @@ import {type Cmd, defineMachine} from "@demlik/tea";
 import {Effect, Schema} from "effect";
 import {describe, expect, it} from "vitest";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
-import {DuplicateSpellPath, SpellNotFound} from "./errors.ts";
+import {DuplicateSpellPath, SpellNotDescribable, SpellNotFound} from "./errors.ts";
 import {buildRegistry, type RegistryTable, SpellRegistry} from "./registry.ts";
 import {type AnySpell, defineSpell, renderPath, type SpellPath} from "./spell.ts";
 
@@ -97,6 +97,54 @@ describe("buildRegistry", () => {
 		expect(error.message).toBe(
 			'spell path "editor.save" is already registered by the core spell list; refusing program "editor"',
 		);
+	});
+
+	it("registers a program whose `spells` field is absent as contributing none", async () => {
+		const {spells: _spells, ...withoutSpells} = program("empty", []);
+		const table = await build({core: [], programs: [withoutSpells as AnyProgram]});
+		expect(paths(table)).toEqual([]);
+	});
+
+	it("refuses a spell whose params no JSON Schema can describe, naming the spell and its source", async () => {
+		// A number-keyed record has no JSON Schema form at the pin: `toJsonSchemaDocument` throws on
+		// its index signature. Registering it would defect `describe`, and with it `help`, `spell
+		// list` and every `Snapshot`.
+		const unrepresentable = defineSpell({
+			path: ["window", "sizes"],
+			describe: "Report the size of every window.",
+			params: Schema.Record(Schema.Number, Schema.String),
+			result: Schema.Struct({ok: Schema.Boolean}),
+			execute: () => Effect.succeed({ok: true}),
+			capabilities: [],
+		});
+
+		const fromCore = await refusal({core: [unrepresentable], programs: []});
+		expect(fromCore).toBeInstanceOf(SpellNotDescribable);
+		expect(fromCore).toMatchObject({path: "window.sizes", source: "the core spell list"});
+		expect(fromCore.message).toContain('spell "window.sizes" from the core spell list');
+
+		const fromProgram = await refusal({
+			core: [],
+			programs: [program("editor", [unrepresentable])],
+		});
+		expect(fromProgram).toBeInstanceOf(SpellNotDescribable);
+		expect(fromProgram).toMatchObject({
+			path: "editor.window.sizes",
+			source: 'program "editor"',
+		});
+	});
+
+	it("describes every registered spell without throwing, from the row's own document", async () => {
+		const table = await build({core: [spell(["window", "close"])], programs: []});
+		const described = await withRegistry(table, (registry) => registry.describe);
+		expect(described).toEqual([
+			{
+				path: ["window", "close"],
+				describe: "Run window.close.",
+				params: Schema.toJsonSchemaDocument(Schema.Struct({id: Schema.String})),
+				capabilities: [{family: "process-control"}],
+			},
+		]);
 	});
 
 	it("refuses one program claiming a path twice, naming both sources", async () => {

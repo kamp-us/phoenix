@@ -29,6 +29,21 @@ describe("parse", () => {
 		});
 	});
 
+	it("refuses a named argument the line already bound, rather than re-reading it positionally", () => {
+		// Falling through to the next positional slot would send `workspace: "name=b"` to the
+		// kernel: a workspace id of literal text the user never meant as one.
+		expect(run("workspace rename name=a name=b")).toEqual({
+			_tag: "Refused",
+			position: 24,
+			expected: "name is already bound",
+		});
+		expect(run("workspace rename ws-2 workspace=ws-3")).toEqual({
+			_tag: "Refused",
+			position: 22,
+			expected: "workspace is already bound",
+		});
+	});
+
 	it("is partial while a required argument is still owed", () => {
 		const result = run("workspace activate");
 		expect(result._tag).toBe("Partial");

@@ -9,9 +9,12 @@
  *    workspace names the snapshot carries. The caret's characters must appear in order; the tighter
  *    and earlier the run, the higher the rank. `scr` reaches `scratch`.
  *
- * Ties fall back to snapshot order, and that is `Array.prototype.sort` doing it: ECMA-262 requires
- * the sort to be stable (§23.1.3.30), so equal scores keep the order they were collected in and two
- * calls over one snapshot return one list.
+ * A fuzzy tie breaks on recency, most recent first (#7617 R1.5): every window and process row on the
+ * snapshot carries the kernel's `recency` stamp, so two equally tight matches are ordered by which
+ * one was focused or spawned last. Values with no stamp of their own — a workspace name, a
+ * workspace id — tie on collection order instead, and that is `Array.prototype.sort` doing it:
+ * ECMA-262 requires the sort to be stable (§23.1.3.30), so two calls over one snapshot return one
+ * list.
  *
  * Which live set a parameter draws from is its own name: a parameter named for a window, a process,
  * a program or a workspace offers that set, and one named for none of them offers no live values —
@@ -38,9 +41,17 @@ export interface Candidate {
  * are a system name and rank by prefix; the rest are user-named and rank fuzzily.
  */
 interface LiveSet {
-	readonly values: ReadonlyArray<Candidate>;
+	readonly values: ReadonlyArray<Ranked>;
 	readonly ranking: "prefix" | "fuzzy";
 }
+
+/** A candidate with the stamp its tie breaks on. Zero is "no stamp", which is every system name. */
+interface Ranked {
+	readonly candidate: Candidate;
+	readonly recency: number;
+}
+
+const unstamped = (candidate: Candidate): Ranked => ({candidate, recency: 0});
 
 const EMPTY: LiveSet = {values: [], ranking: "prefix"};
 
@@ -48,23 +59,31 @@ const liveValues = (param: ParamSpec, snapshot: Snapshot): LiveSet => {
 	const name = param.name.toLowerCase();
 	if (name.includes("program")) {
 		const ids = [...new Set(snapshot.processes.map((row) => row.programId as string))];
-		return {values: ids.map((id) => ({value: id, kind: "program"})), ranking: "prefix"};
+		return {
+			values: ids.map((id) => unstamped({value: id, kind: "program"})),
+			ranking: "prefix",
+		};
 	}
 	if (name.includes("window")) {
-		const values = Object.keys(snapshot.windows).map(
-			(id): Candidate => ({value: id, kind: "window"}),
+		const values = Object.values(snapshot.windows).map(
+			(window): Ranked => ({
+				candidate: {value: window.id, kind: "window"},
+				recency: window.recency,
+			}),
 		);
 		return {values, ranking: "fuzzy"};
 	}
 	if (name.includes("process")) {
-		const values = snapshot.processes.map((row): Candidate => ({value: row.id, kind: "process"}));
+		const values = snapshot.processes.map(
+			(row): Ranked => ({candidate: {value: row.id, kind: "process"}, recency: row.recency}),
+		);
 		return {values, ranking: "fuzzy"};
 	}
 	if (name.includes("workspace")) {
 		const values = Object.values(snapshot.desk.workspaces).flatMap(
-			(workspace): Array<Candidate> => [
-				{value: workspace.name, kind: "workspace"},
-				{value: workspace.id, kind: "workspace"},
+			(workspace): Array<Ranked> => [
+				unstamped({value: workspace.name, kind: "workspace"}),
+				unstamped({value: workspace.id, kind: "workspace"}),
 			],
 		);
 		return {values, ranking: "fuzzy"};
@@ -92,34 +111,38 @@ const subsequenceScore = (value: string, query: string): number | undefined => {
 	return undefined;
 };
 
-const byPrefix = (candidates: ReadonlyArray<Candidate>, query: string): ReadonlyArray<Candidate> =>
-	candidates.filter((candidate) => candidate.value.startsWith(query));
+const byPrefix = (values: ReadonlyArray<Ranked>, query: string): ReadonlyArray<Candidate> =>
+	values
+		.filter((ranked) => ranked.candidate.value.startsWith(query))
+		.map((ranked) => ranked.candidate);
 
-const byFuzz = (candidates: ReadonlyArray<Candidate>, query: string): ReadonlyArray<Candidate> =>
-	candidates
-		.flatMap((candidate) => {
-			const score = subsequenceScore(candidate.value, query);
-			return score === undefined ? [] : [{candidate, score}];
+const byFuzz = (values: ReadonlyArray<Ranked>, query: string): ReadonlyArray<Candidate> =>
+	values
+		.flatMap((ranked) => {
+			const score = subsequenceScore(ranked.candidate.value, query);
+			return score === undefined ? [] : [{ranked, score}];
 		})
-		.sort((left, right) => left.score - right.score)
-		.map((scored) => scored.candidate);
+		.sort((left, right) => left.score - right.score || right.ranked.recency - left.ranked.recency)
+		.map((scored) => scored.ranked.candidate);
 
 export const candidatesFor = (slot: Slot, snapshot: Snapshot): ReadonlyArray<Candidate> => {
 	if (slot.kind === "none") return [];
 	if (slot.kind === "segment") {
-		const segments: Array<Candidate> = [];
+		const segments: Array<Ranked> = [];
 		for (const [segment, child] of slot.node.children) {
 			segments.push(
-				child.spell === undefined
-					? {value: segment, kind: "segment"}
-					: {value: segment, kind: "segment", describe: child.spell.describe},
+				unstamped(
+					child.spell === undefined
+						? {value: segment, kind: "segment"}
+						: {value: segment, kind: "segment", describe: child.spell.describe},
+				),
 			);
 		}
 		return byPrefix(segments, slot.token.text);
 	}
 	if (slot.param.literals !== undefined) {
 		return byPrefix(
-			slot.param.literals.map((literal) => ({value: literal, kind: "literal" as const})),
+			slot.param.literals.map((literal) => unstamped({value: literal, kind: "literal"})),
 			slot.token.text,
 		);
 	}

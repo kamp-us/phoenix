@@ -12,7 +12,7 @@ describe("complete — exact prefix over system names", () => {
 	});
 
 	it("offers the segments under the node the caret sits in", () => {
-		expect(values("window ")).toEqual(["close", "move"]);
+		expect(values("window ")).toEqual(["close", "move", "focus"]);
 		expect(values("window c")).toEqual(["close"]);
 	});
 
@@ -39,12 +39,26 @@ describe("complete — fuzzy subsequence over user-named values", () => {
 		expect(values("workspace activate scr")).toEqual(["scratch", "super-carrier"]);
 	});
 
-	it("offers every live value of the set when nothing is typed yet", () => {
-		expect(values("process kill ")).toEqual(["p-counter", "p-client"]);
+	it("offers every live value of the set when nothing is typed yet, most recent first", () => {
+		// Every value scores the same on an empty query, so this is the tie-break on its own:
+		// `p-client` carries the higher recency stamp and `p-counter` comes first in the snapshot.
+		expect(values("process kill ")).toEqual(["p-client", "p-counter"]);
 	});
 
-	it("breaks a tie on snapshot order", () => {
-		expect(values("process kill p-")).toEqual(["p-counter", "p-client"]);
+	it("breaks a tie on recency, most recent first — not on snapshot order (#7617 R1.5)", () => {
+		expect(values("process kill p-")).toEqual(["p-client", "p-counter"]);
+		expect(values("window move ")).toEqual(["left", "right", "up", "down"]);
+	});
+
+	it("breaks a window tie on recency too, against the order the record lists them in", () => {
+		// `w-left` is the first key of `snapshot.windows`, and `w-right` was focused later.
+		expect(values("window focus w-")).toEqual(["w-right", "w-left"]);
+	});
+
+	it("keeps the tighter match ahead of the more recent one", () => {
+		// Recency only breaks a tie: `p-counter` is not a tighter match than `p-client` here, but
+		// `scratch` is a tighter match than `super-carrier` and neither carries a stamp.
+		expect(values("workspace activate scr")).toEqual(["scratch", "super-carrier"]);
 	});
 
 	it("offers nothing for a parameter that names no live set", () => {

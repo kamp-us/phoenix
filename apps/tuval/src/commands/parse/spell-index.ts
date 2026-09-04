@@ -13,7 +13,10 @@
  * read off `Schema.toJsonSchemaDocument` at the `catalogs.tuval` pin (effect 4.0.0-rc.112): the
  * `properties` object's key order is the declaration order of `Schema.Struct`, which is the
  * positional order of the parameters, and a `Schema.Literals` parameter arrives as
- * `{"type": "string", "enum": [...]}`. Everything else is read defensively — this module is total.
+ * `{"type": "string", "enum": [...]}`. A third followed from the same reading: a `Schema.Class` or
+ * an identifier-annotated struct renders its root as `{"$ref": "#/$defs/<name>"}` with the object
+ * itself under the document's `definitions`, so the root ref is followed once before the properties
+ * are read. Everything else is read defensively — this module is total.
  */
 
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
@@ -61,8 +64,33 @@ const stringLiterals = (property: unknown): ReadonlyArray<string> | undefined =>
 		: undefined;
 };
 
+/**
+ * The document's own definitions, under either spelling. `Schema.toJsonSchemaDocument` writes the
+ * map as `definitions` and points at it with `#/$defs/…`, so both have to be read.
+ */
+const definitionsOf = (params: unknown): Record<string, unknown> => ({
+	...asRecord(asRecord(params)?.$defs),
+	...asRecord(asRecord(params)?.definitions),
+});
+
+const REF = /^#\/(?:\$defs|definitions)\/(.+)$/;
+
+/**
+ * The object schema a root `$ref` points at. A `Schema.Class` params, or any identifier-annotated
+ * struct, renders as a bare `$ref` into the document's definitions (read off the renderer at the
+ * `catalogs.tuval` pin), and a spell whose parameters live there has parameters like any other.
+ */
+const followRef = (schema: Record<string, unknown> | undefined, params: unknown) => {
+	const ref = schema?.$ref;
+	if (typeof ref !== "string") return schema;
+	const name = REF.exec(ref)?.[1];
+	if (name === undefined) return schema;
+	return asRecord(definitionsOf(params)[decodeURIComponent(name)]) ?? schema;
+};
+
 export const readParams = (params: unknown): ReadonlyArray<ParamSpec> => {
-	const schema = asRecord(asRecord(params)?.schema) ?? asRecord(params);
+	const root = asRecord(asRecord(params)?.schema) ?? asRecord(params);
+	const schema = followRef(root, params);
 	const properties = asRecord(schema?.properties);
 	if (properties === undefined) return [];
 	const declaredRequired = schema?.required;

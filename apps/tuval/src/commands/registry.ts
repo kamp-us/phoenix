@@ -9,7 +9,7 @@
 
 import {Context, Effect, type JsonSchema, Layer, Ref, Schema} from "effect";
 import type {AnyProgram, CapabilityRequest, ProgramId} from "../registry/program.ts";
-import {DuplicateSpellPath, SpellNotFound} from "./errors.ts";
+import {DuplicateSpellPath, SpellNotDescribable, SpellNotFound} from "./errors.ts";
 import {type AnySpell, renderPath, type SpellPath} from "./spell.ts";
 
 /** Where a registered spell came from. A refusal names both sides through `describeSource`. */
@@ -25,6 +25,12 @@ export interface SpellRow {
 	readonly path: SpellPath;
 	readonly source: SpellSource;
 	readonly spell: AnySpell;
+	/**
+	 * The spell's `params` as JSON Schema, rendered once at registration. It sits on the row rather
+	 * than being read on demand because rendering is the step that can refuse, and a registered
+	 * spell is one that already rendered — see `buildRegistry`.
+	 */
+	readonly paramsDocument: JsonSchema.Document<"draft-2020-12">;
 }
 
 /** A node of the path trie. A node carries a row when a spell is registered at exactly its path. */
@@ -63,9 +69,28 @@ export interface SpellDescription {
 export const describeSpell = (row: SpellRow): SpellDescription => ({
 	path: [...row.path],
 	describe: row.spell.describe,
-	params: Schema.toJsonSchemaDocument(row.spell.params),
+	params: row.paramsDocument,
 	capabilities: [...row.spell.capabilities],
 });
+
+/**
+ * A spell's `params` as a JSON Schema document. `Schema.toJsonSchemaDocument` throws on a schema it
+ * cannot represent (six `throw errorWithPath` sites in
+ * `effect/dist/internal/schema/toJsonSchemaDocument.js` at the `catalogs.tuval` pin), so the throw
+ * is caught here and becomes the refusal `buildRegistry` fails with.
+ */
+const describeParams = (
+	row: Omit<SpellRow, "paramsDocument">,
+): Effect.Effect<JsonSchema.Document<"draft-2020-12">, SpellNotDescribable> =>
+	Effect.try({
+		try: () => Schema.toJsonSchemaDocument(row.spell.params),
+		catch: (cause) =>
+			new SpellNotDescribable({
+				path: renderPath(row.path),
+				source: describeSource(row.source),
+				reason: (cause as Error).message,
+			}),
+	});
 
 interface MutableNode {
 	readonly children: Map<string, MutableNode>;
@@ -80,8 +105,11 @@ const freeze = (node: MutableNode): SpellNode => {
 };
 
 /**
- * The table over the core spells and the program rows. Building it is registration: two spells
- * claiming one path fail with `DuplicateSpellPath`, naming the path and both sources.
+ * The table over the core spells and the program rows. Building it is registration, and it is the
+ * one place a spell can be refused: two spells claiming one path fail with `DuplicateSpellPath`,
+ * and a spell whose `params` has no JSON Schema form fails with `SpellNotDescribable`, each naming
+ * the spell and its source. Describing the registry is what feeds `help`, `spell list` and every
+ * `Snapshot`, so a spell nobody can describe must never enter the table.
  */
 export const buildRegistry = Effect.fn("Tuval.Commands.buildRegistry")(function* (input: {
 	readonly core: ReadonlyArray<AnySpell>;
@@ -90,7 +118,9 @@ export const buildRegistry = Effect.fn("Tuval.Commands.buildRegistry")(function*
 	const root: MutableNode = {children: new Map()};
 	const rows: Array<SpellRow> = [];
 
-	const claim = (row: SpellRow): Effect.Effect<void, DuplicateSpellPath> => {
+	const claim = (
+		row: Omit<SpellRow, "paramsDocument">,
+	): Effect.Effect<void, DuplicateSpellPath | SpellNotDescribable> => {
 		let node = root;
 		for (const segment of row.path) {
 			const child = node.children.get(segment) ?? {children: new Map<string, MutableNode>()};
@@ -106,9 +136,12 @@ export const buildRegistry = Effect.fn("Tuval.Commands.buildRegistry")(function*
 				}),
 			);
 		}
-		node.row = row;
-		rows.push(row);
-		return Effect.void;
+		const claimed = node;
+		return Effect.map(describeParams(row), (paramsDocument) => {
+			const stored: SpellRow = {...row, paramsDocument};
+			claimed.row = stored;
+			rows.push(stored);
+		});
 	};
 
 	for (const spell of input.core) {
@@ -161,6 +194,6 @@ export class SpellRegistry extends Context.Service<
 	/** The registry over a bare core spell list — the test seam, no program rows involved. */
 	static readonly scripted = (
 		spells: ReadonlyArray<AnySpell>,
-	): Layer.Layer<SpellRegistry, DuplicateSpellPath> =>
+	): Layer.Layer<SpellRegistry, DuplicateSpellPath | SpellNotDescribable> =>
 		Layer.effect(SpellRegistry, Effect.flatMap(buildRegistry({core: spells, programs: []}), make));
 }

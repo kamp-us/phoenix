@@ -12,10 +12,10 @@
  * is the whole job.
  */
 
-import {Context, Effect, Layer, Ref} from "effect";
+import {Context, Effect, Layer, SynchronizedRef} from "effect";
 import type {AnyProgram} from "../registry/program.ts";
 import {type BindingSource, type CompiledBindings, compileBindings} from "./bindings/index.ts";
-import {type DuplicateSpellPath, SpellNotFound} from "./errors.ts";
+import {type DuplicateSpellPath, type SpellNotDescribable, SpellNotFound} from "./errors.ts";
 import {
 	buildRegistry,
 	describeSpell,
@@ -72,29 +72,32 @@ const make = Effect.fn("Tuval.SpellSet.make")(function* (input: SpellSetInput) {
 		yield* buildRegistry({core: input.core, programs: input.programs}),
 		input.keys,
 	);
-	// One cell, so the single `Ref.set` in `install` is the only way either half changes and a
-	// reader's single `Ref.get` sees both halves of one config.
-	const cell = yield* Ref.make<SpellSetState>(initial);
-	const install = (state: SpellSetState) => Ref.set(cell, state);
+	// One cell, so the single write in `install` is the only way either half changes and a reader's
+	// single read sees both halves of one config. It is a `SynchronizedRef` so an update that
+	// has to compile first can hold the cell while it does.
+	const cell = yield* SynchronizedRef.make<SpellSetState>(initial);
+	const install = (state: SpellSetState) => SynchronizedRef.set(cell, state);
 
 	const registry = SpellRegistry.of({
 		lookup: (path) =>
-			Effect.flatMap(Ref.get(cell), (state) => {
+			Effect.flatMap(SynchronizedRef.get(cell), (state) => {
 				const row = lookupRow(state.table, path);
 				return row === undefined
 					? Effect.fail(new SpellNotFound({path: renderPath(path)}))
 					: Effect.succeed(row);
 			}),
-		list: Effect.map(Ref.get(cell), (state) => state.table.rows),
-		describe: Effect.map(Ref.get(cell), (state) => state.table.rows.map(describeSpell)),
+		list: Effect.map(SynchronizedRef.get(cell), (state) => state.table.rows),
+		describe: Effect.map(SynchronizedRef.get(cell), (state) => state.table.rows.map(describeSpell)),
 		// The registry's own `swap` recompiles the bindings against the table it is installing, so
 		// even this narrower entry cannot leave the two halves disagreeing.
-		swap: (table) =>
-			Effect.flatMap(Ref.get(cell), (state) => Effect.flatMap(build(table, state.keys), install)),
+		// `SynchronizedRef.updateEffect` holds the cell's semaphore across the compile, so this is
+		// one write and not a read, a compile and a later write a concurrent reload could land
+		// inside (#7752).
+		swap: (table) => SynchronizedRef.updateEffect(cell, (state) => build(table, state.keys)),
 	});
 
 	const set = SpellSet.of({
-		read: Ref.get(cell),
+		read: SynchronizedRef.get(cell),
 		reload: Effect.fn("Tuval.SpellSet.reload")(function* (next: SpellSetInput) {
 			const table = yield* buildRegistry({core: next.core, programs: next.programs});
 			yield* install(yield* build(table, next.keys));
@@ -110,7 +113,9 @@ export class SpellSet extends Context.Service<
 		/** The table, its key sources and their compiled bindings, as one value. */
 		readonly read: Effect.Effect<SpellSetState>;
 		/** A reloaded config: a fresh table and fresh bindings, installed in one write. */
-		readonly reload: (input: SpellSetInput) => Effect.Effect<void, DuplicateSpellPath>;
+		readonly reload: (
+			input: SpellSetInput,
+		) => Effect.Effect<void, DuplicateSpellPath | SpellNotDescribable>;
 	}
 >()("tuval/SpellSet") {
 	/**
@@ -120,7 +125,8 @@ export class SpellSet extends Context.Service<
 	 */
 	static readonly layer = (
 		input: SpellSetInput,
-	): Layer.Layer<SpellSet | SpellRegistry, DuplicateSpellPath> => Layer.effectContext(make(input));
+	): Layer.Layer<SpellSet | SpellRegistry, DuplicateSpellPath | SpellNotDescribable> =>
+		Layer.effectContext(make(input));
 }
 
 /** Every registered path, which is what a caller allowed the whole registry passes the bridge. */

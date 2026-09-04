@@ -9,7 +9,8 @@
  *    token only has to be a *prefix* of something.
  * 2. **The deepest registered spell on the walk wins**, and every token after its path is an
  *    argument. Positional arguments fill the parameters in declaration order; a token shaped
- *    `name=value` whose `name` is an unbound parameter binds by name instead. Rule 1 outranks this
+ *    `name=value` whose `name` is an unbound parameter binds by name instead, and one that names a
+ *    parameter already bound is refused rather than read as a positional value. Rule 1 outranks this
  *    one where the two meet: while the caret's token still prefixes a deeper segment it is a path
  *    being typed, not an argument.
  *
@@ -177,22 +178,44 @@ const bind = (
 		return undefined;
 	};
 
-	const target = (token: Token): {param: ParamSpec; value: string} | undefined => {
+	/**
+	 * Where a token binds: by name when it is `name=value` for a free parameter, else positionally.
+	 * A `name=value` for a parameter already bound is `rebound`, never a positional value — letting
+	 * it fall through would bind the whole `name=value` text as the next positional argument.
+	 */
+	type Target =
+		| {readonly kind: "bind"; readonly param: ParamSpec; readonly value: string}
+		| {readonly kind: "rebound"; readonly name: string}
+		| {readonly kind: "full"};
+
+	const target = (token: Token): Target => {
 		const named = NAMED.exec(token.text);
 		const name = named?.[1];
 		const value = named?.[2];
 		if (name !== undefined && value !== undefined) {
 			const param = byName.get(name);
-			if (param !== undefined && !bound.has(param.name)) return {param, value};
+			if (param !== undefined) {
+				return bound.has(param.name)
+					? {kind: "rebound", name: param.name}
+					: {kind: "bind", param, value};
+			}
 		}
 		const positional = nextPositional();
-		return positional === undefined ? undefined : {param: positional, value: token.text};
+		return positional === undefined
+			? {kind: "full"}
+			: {kind: "bind", param: positional, value: token.text};
 	};
 
 	for (const token of committed) {
 		const slot = target(token);
-		if (slot === undefined) {
+		if (slot.kind === "full") {
 			return {core: refused(token.start, "no further arguments"), slot: {kind: "none"}};
+		}
+		if (slot.kind === "rebound") {
+			return {
+				core: refused(token.start, `${slot.name} is already bound`),
+				slot: {kind: "none"},
+			};
 		}
 		if (slot.param.literals !== undefined && !slot.param.literals.includes(slot.value)) {
 			return {
@@ -210,8 +233,14 @@ const bind = (
 
 	if (pending !== undefined) {
 		const slot = target(pending);
-		if (slot === undefined) {
+		if (slot.kind === "full") {
 			return {core: refused(pending.start, "no further arguments"), slot: {kind: "none"}};
+		}
+		if (slot.kind === "rebound") {
+			return {
+				core: refused(pending.start, `${slot.name} is already bound`),
+				slot: {kind: "none"},
+			};
 		}
 		const valueSlot: Slot = {kind: "value", param: slot.param, token: pending};
 		const {literals} = slot.param;

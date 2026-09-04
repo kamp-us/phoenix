@@ -5,7 +5,7 @@ import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
 import {SpellBridge} from "./commands/bridge/index.ts";
 import {helpSpells} from "./commands/core/index.ts";
 import {processSpells, SpawnedProcesses} from "./commands/core/process.ts";
-import type {DuplicateSpellPath} from "./commands/errors.ts";
+import type {DuplicateSpellPath, SpellNotDescribable} from "./commands/errors.ts";
 import {SpellExecutor} from "./commands/executor.ts";
 import type {SpellRegistry} from "./commands/registry.ts";
 import {WindowIndex} from "./commands/scope.ts";
@@ -156,7 +156,7 @@ export interface Booted {
 	 */
 	readonly reload: Effect.Effect<
 		ReloadReport,
-		ConfigLoadError | DuplicateSpellPath,
+		ConfigLoadError | DuplicateSpellPath | SpellNotDescribable,
 		FileSystem.FileSystem
 	>;
 }
