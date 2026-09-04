@@ -35,7 +35,8 @@ A pure, unit-tested core + a thin Effect bin (the repo tooling idiom):
   of the canonical `apps/web/worker/db/drizzle/migrations` columns).
 - `src/seed.ts` — idempotent upserts; runs against any `D1Database` (in-memory
   test fake or REST adapter) and also emits `{sql, params}` for the REST batch.
-- `src/test-account.ts` — the review-ui test accounts, one per tier, + their session rows.
+- `src/test-account.ts` — the review-ui test accounts, one per tier, + their session
+  rows and the çaylak's optional standing (karma + kefil).
 - `src/bin.ts` — the `preview-seed run` and `preview-seed test-account` CLI.
 
 ## Running it
@@ -107,6 +108,56 @@ the wrong audience.
 The çaylak gets no moderation tuple, and that is the point of the tier: an identity
 holding moderation authority renders a moderator's affordances whatever its `tier`
 column says.
+
+### The standing axis — where on the promotion path the çaylak sits
+
+A tier says which audience the identity belongs to; it does not say where on the
+çaylak→yazar promotion path it stands. That path forks on **vouch-exists**, and the
+two forks render different compositions: `promotionBarFor` in
+`apps/web/worker/features/kunye/standing.ts` returns `VOUCH_PROMOTION_KARMA_BAR` (15)
+for a vouched çaylak and `KARMA_THRESHOLDS.yazar` (100) for an unvouched one, and the
+unvouched composition deliberately draws no `<progress>` bar. Without a standing
+operand only the second was reachable, so a PR whose payoff was the vouched
+composition took a `review-ui` FAIL no change to its branch could clear (issue #7708).
+
+`--caylak-standing` names the point:
+
+```bash
+PREVIEW_TEST_SESSION_TOKEN=<32+ char secret> \
+PREVIEW_TEST_CAYLAK_SESSION_TOKEN=<a different 32+ char secret> \
+  node packages/preview-seed/src/bin.ts test-account \
+    --database-id <preview-d1-uuid> --caylak-standing 15+kefil
+```
+
+| Operand | Standing written |
+| --- | --- |
+| *(omitted)* | none — `user_profile` and `authorship_vouch` are left untouched |
+| `0` | `total_karma = 0`, no kefil |
+| `15+kefil` | `total_karma = 15`, vouched by the yazar test identity |
+
+**One operand, both fields.** The karma total and the kefil travel together because a
+standing carrying one without the other names no renderable state, so a partial
+standing is unrepresentable at the flag as well as in the type. A spec that is not a
+non-negative integer with an optional `+kefil` suffix is refused before any write.
+
+**A vouched çaylak requires the yazar tier in the same run.** `authorship_vouch` has
+no foreign keys by design (migration `0013_authorship_vouch` — an account anonymize
+must not cascade-erase the historical act), so nothing in the database would catch a
+`voucher_id` pointing at an identity this preview never seeded, and
+`features/kunye/VouchLedger.ts` reads back on the voucher. So the run is **refused**,
+not silently written, when `$PREVIEW_TEST_SESSION_TOKEN` is unset. A standing of any
+kind likewise needs the çaylak tier itself.
+
+**Re-seeding is the capture route, so a standing is set and not accumulated.** Karma
+is written, never incremented, and a run that drops the kefil deletes the vouch row
+the previous run wrote. A reviewer seeds one fork, captures, re-seeds the other, and
+captures again — which is why `review-ui`'s `:state` vocabulary
+(`packages/fabrika-cli/src/capture/states.ts`) is untouched by this: a state token
+names a *tier*, and a standing is not one.
+
+The standing rows ride the same atomic `db.batch` as the account and session rows, so
+a half-written standing never reaches a capture. They change nothing about the fence
+below, which reads the database's name and no row at all (ADR 0349).
 
 **A tier with no token is left unseeded, and nothing substitutes for it.** This verb
 seeds exactly the tiers whose variable is set and names the rest in its output; a

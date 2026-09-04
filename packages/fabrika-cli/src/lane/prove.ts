@@ -391,8 +391,15 @@ export type Closure =
 	| {readonly _tag: "Closes"; readonly why: string}
 	| {readonly _tag: "Partial"; readonly prs: ReadonlyArray<number>};
 
+/**
+ * The merged pull requests whose body links this issue — the evidence every closure judgement rests
+ * on, named once so a second reader cannot drift from what {@link traceClosure} counts as landed.
+ */
+export const landedFor = (issue: number, facts: ReadonlyArray<PullFact>): ReadonlyArray<PullFact> =>
+	facts.filter((fact) => fact.merged && fact.linkedIssues.includes(issue));
+
 export const traceClosure = (issue: number, facts: ReadonlyArray<PullFact>): Closure => {
-	const landed = facts.filter((fact) => fact.merged && fact.linkedIssues.includes(issue));
+	const landed = landedFor(issue, facts);
 	if (landed.length === 0) return {_tag: "Closes", why: `no merged PR's body links #${issue}`};
 	const closing = landed.filter((fact) => fact.linkKind === "fixes");
 	return closing.length > 0
