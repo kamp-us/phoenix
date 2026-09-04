@@ -89,6 +89,25 @@ and migrating later, and a second 2026-09-03 ruling took it off this epic's tail
 own PR against main once three things are true, that #7556 and #7561 have closed and that the epic
 PR [#7687](https://github.com/kamp-us/phoenix/pull/7687) has merged.
 
+### The tail review rulings, 2026-09-03
+
+The tail review of the epic PR ([#7687](https://github.com/kamp-us/phoenix/pull/7687)) found two
+places where the code had diverged from a ruling, and the founder ruled on both the same day
+(recorded on [#7627](https://github.com/kamp-us/phoenix/issues/7627)):
+
+- **R1.5 stands, and the snapshot carries recency.** The ruling breaks fuzzy ties by recency, and
+  the protocol had no recency field, so the code was breaking ties by collection order. Ruled "A":
+  add the field rather than amend the ruling. Every `Window` and `ProcessRow` carries a
+  kernel-minted `Recency`, a monotonic counter (not a clock: the kernel holds no clock, already
+  counts a `Revision`, and a counter is deterministic under test) advanced on focus and on spawn
+  ([`protocol/recency.ts`](../apps/tuval/src/protocol/recency.ts)). The completion engine breaks a
+  fuzzy tie most-recent-first, and its test pins the ruling against fixtures ordered the other way.
+- **R3.1 stands, and `SpellReply` is flat.** The builder had nested the outcome as
+  `{version, id, outcome: {ok, ...}}` to keep `ok` and `result` from disagreeing. Ruled
+  "flatten": `SpellReply` is `Schema.Union([SpellReplyOk, SpellReplyError])`, that is
+  `{version, id, ok: true, result}` or `{version, id, ok: false, error}`, and the union itself
+  keeps the invariant.
+
 ### What the framework is, as built
 
 The shapes are documented as reference in
@@ -147,8 +166,10 @@ Named here so nobody reads the framework as more than it is.
   reload swaps every program's spells in one write.
 - A spell whose meaning depends on process state takes a process id as an argument rather than
   inventing itself at runtime. That is the cost of R1.2 and it was accepted with it.
-- The parser's reading of a JSON-Schema `params` depends on two properties of
+- The parser's reading of a JSON-Schema `params` depends on three properties of
   `Schema.toJsonSchemaDocument` at the `catalogs.tuval` pin (effect `4.0.0-rc.112`): `properties`
   key order is `Schema.Struct` declaration order, and a `Schema.Literals` parameter renders as
-  `{"type": "string", "enum": [...]}`. Both are read off that source and pinned by the parser's
-  tests. An Effect bump has to re-check them.
+  `{"type": "string", "enum": [...]}`, and a `Schema.Class` or identifier-annotated struct renders
+  its root as a `$ref` into the document's `definitions`, which the parser follows once before
+  reading properties. All three are read off that source and pinned by the parser's tests. An
+  Effect bump has to re-check them.
