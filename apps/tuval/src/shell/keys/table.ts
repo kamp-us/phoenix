@@ -60,6 +60,7 @@ export const defaultPrefixTable: PrefixTable = {
 		{sequence: "<arrowdown>", command: command("window:focus-down"), repeatable: false},
 		{sequence: "<arrowup>", command: command("window:focus-up"), repeatable: false},
 		{sequence: "<arrowright>", command: command("window:focus-right"), repeatable: false},
+		{sequence: "z", command: command("window:zoom"), repeatable: false},
 		{sequence: "x", command: command("window:close"), repeatable: false},
 		{sequence: "N", command: command("workspace:create"), repeatable: false},
 		{sequence: "<c-h>", command: command("workspace:previous"), repeatable: true},

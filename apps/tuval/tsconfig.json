@@ -5,6 +5,13 @@
 		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
 		"noEmit": true,
 		"allowImportingTsExtensions": true,
+		// The browser surface under `src/shell/ui/` is React and reads the DOM; every other slice is
+		// Node-only, and each of those keeps itself that way through its own `boundary.unit.test.ts`
+		// (`src/shell/core/boundary.unit.test.ts` fails on the literal `document` under `core/`). One
+		// project rather than a second composite leaf: the surface imports the kernel's own modules
+		// by path, so splitting them would buy a project reference and nothing else.
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
 		"types": ["node"]
 	},
 	"include": ["src", ".tuval/tuval.config.ts", "vitest.config.ts"]

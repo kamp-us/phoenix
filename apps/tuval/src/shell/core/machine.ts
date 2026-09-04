@@ -29,11 +29,16 @@ import {
 	createWindow,
 	type Direction,
 	findSibling,
+	type NodeId,
 	type Orientation,
 	remove,
+	resize,
+	type StackId,
 	setProcess,
 	split,
+	unzoom,
 	type WindowId,
+	zoom,
 } from "../layout/index.ts";
 import type {ViewState} from "../window/host.ts";
 import {
@@ -92,6 +97,12 @@ export type ShellMsg =
 	| {readonly type: "window.bind"; readonly processId: string; readonly windowId?: WindowId}
 	| {readonly type: "window.unbind"; readonly windowId?: WindowId}
 	| {readonly type: "window.setView"; readonly view: ViewState; readonly windowId?: WindowId}
+	| {
+			readonly type: "layout.resize";
+			readonly stackId: StackId;
+			readonly sizes: Readonly<Record<NodeId, number>>;
+	  }
+	| {readonly type: "layout.zoom"; readonly windowId?: WindowId}
 	| {readonly type: "workspace.create"}
 	| {readonly type: "workspace.remove"; readonly workspaceId?: WorkspaceId}
 	| {readonly type: "workspace.activate"; readonly workspaceId: WorkspaceId}
@@ -168,6 +179,37 @@ const bindWindow = (
 		withActive(state, {...workspace, layout: setProcess(workspace.layout, target, processId)}),
 		NO_CMDS,
 	];
+};
+
+/**
+ * Write one stack's sizes. The surface sends this once per finished drag and never per pointer
+ * move: a Msg per move checkpoints a hundred times across one gesture and mirrors half-finished
+ * layouts to every other tab ([`.patterns/layout-tree-with-resizable-panels.md`](../../../../../.patterns/layout-tree-with-resizable-panels.md)).
+ */
+const resizeStack = (state: ShellState, msg: Extract<ShellMsg, {type: "layout.resize"}>): Step => {
+	const workspace = activeWorkspace(state);
+	if (workspace === undefined) return [state, NO_CMDS];
+	const layout = resize(workspace.layout, msg.stackId, msg.sizes);
+	return layout === workspace.layout
+		? [state, NO_CMDS]
+		: [withActive(state, {...workspace, layout}), NO_CMDS];
+};
+
+/**
+ * Toggle zoom, tmux's `prefix z`. Zooming while a window is already zoomed unzooms whichever it
+ * was, so one key is the whole gesture; `sizes` is never written either way, which is what makes
+ * unzoom restore the split exactly (`../layout/tree.ts`).
+ */
+const zoomWindow = (state: ShellState, msg: Extract<ShellMsg, {type: "layout.zoom"}>): Step => {
+	const workspace = activeWorkspace(state);
+	if (workspace === undefined) return [state, NO_CMDS];
+	const layout =
+		workspace.layout.zoomed === null
+			? zoom(workspace.layout, msg.windowId ?? workspace.focused)
+			: unzoom(workspace.layout);
+	return layout === workspace.layout
+		? [state, NO_CMDS]
+		: [withActive(state, {...workspace, layout}), NO_CMDS];
 };
 
 const splitWindow = (state: ShellState, msg: Extract<ShellMsg, {type: "window.split"}>): Step => {
@@ -368,6 +410,8 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId),
 		"window.unbind": (state, msg) => bindWindow(state, msg.windowId, null),
 		"window.setView": setView,
+		"layout.resize": resizeStack,
+		"layout.zoom": zoomWindow,
 		"workspace.create": createWorkspace,
 		"workspace.remove": removeWorkspace,
 		"workspace.activate": (state, msg) => {

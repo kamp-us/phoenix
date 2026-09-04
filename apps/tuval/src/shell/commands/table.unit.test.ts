@@ -21,6 +21,7 @@ describe("the command table", () => {
 		expect(commandNames.map(String)).toEqual([
 			"window:split-vertical",
 			"window:split-horizontal",
+			"window:zoom",
 			"window:close",
 			"window:focus-left",
 			"window:focus-right",

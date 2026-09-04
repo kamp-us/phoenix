@@ -42,6 +42,8 @@ describe("shell core: the reducer's cells", () => {
 			"command.open",
 			"config.reload",
 			"keys.press",
+			"layout.resize",
+			"layout.zoom",
 			"prefix.timeout",
 			"window.attach",
 			"window.bind",

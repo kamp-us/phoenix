@@ -38,6 +38,35 @@ export const unreadableCommand = (line: string, reason: string): PickerRefusal =
 	reason,
 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+const strings = (value: Record<string, unknown>, fields: ReadonlyArray<string>): boolean =>
+	fields.every((field) => typeof value[field] === "string");
+
+/**
+ * Is this a refusal? The slot a refusal lives in is checkpointed JSON that re-enters as `unknown`,
+ * so the surface reading one back needs a guard rather than an assertion — the same reason the shell
+ * state has `isShellState` (`../core/state.ts`). Total over the union, including each arm's fields:
+ * an arm-shaped value missing a field would reach `refusalMessage` and render `undefined`.
+ */
+export const isPickerRefusal = (value: unknown): value is PickerRefusal => {
+	if (!isRecord(value)) return false;
+	switch (value._tag) {
+		case "UnknownProgram":
+		case "ProgramHeadless":
+			return strings(value, ["programId"]);
+		case "ProcessGone":
+			return strings(value, ["processId"]);
+		case "SpawnFailed":
+			return strings(value, ["programId", "reason"]);
+		case "UnreadableCommand":
+			return strings(value, ["line", "reason"]);
+		default:
+			return false;
+	}
+};
+
 /**
  * The refusal as the window announces it. One function so the surface never composes its own
  * wording: the browser page reads this string into the picker's alert region, and a test reads the
