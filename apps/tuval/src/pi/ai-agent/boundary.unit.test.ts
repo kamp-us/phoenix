@@ -69,10 +69,26 @@ describe("the Pi AI agent layer's surface", () => {
 
 	it("re-exports no Pi type through its entry point", () => {
 		const entry = readFileSync(join(import.meta.dirname, "index.ts"), "utf8");
-		expect(entry).not.toMatch(/@earendil-works/);
-		// A re-export from the server or client module reaches Pi's own types one hop further out,
-		// which the `@earendil-works` scan alone cannot see.
-		expect(entry).not.toMatch(/from\s+"\.\.\/(server|client)\//);
+		// The exact set, not a scan for forbidden substrings: the scan this replaced looked for
+		// `@earendil-works` and `from "../server|client/"`, and `export {aiAgentOverHost} from
+		// "./PiAiAgent.ts";` carries neither, so the one escape route the module has stayed green
+		// under it (#7791). A positive set reds on any fourth name however it is spelled — do not
+		// restore the regexes.
+		expect(exportedNames(entry)).toEqual(["ModelSelection", "PiAiAgent", "PiAiAgentOptions"]);
+		// The control: each departure appended to the real entry text, so the set above is what reds
+		// on it. `aiAgentOverHost` and `aiAgentOverClient` both publish a Pi-typed `R`, and a star
+		// re-export publishes whatever `PiAiAgent.ts` grows next.
+		expect(
+			[
+				'export {aiAgentOverHost} from "./PiAiAgent.ts";',
+				'export {aiAgentOverClient} from "./PiAiAgent.ts";',
+				'export * from "./PiAiAgent.ts";',
+			].map((departure) => exportedNames(`${entry}\n${departure}\n`)),
+		).toEqual([
+			["ModelSelection", "PiAiAgent", "PiAiAgentOptions", "aiAgentOverHost"],
+			["ModelSelection", "PiAiAgent", "PiAiAgentOptions", "aiAgentOverClient"],
+			["*", "ModelSelection", "PiAiAgent", "PiAiAgentOptions"],
+		]);
 	});
 });
 
@@ -93,6 +109,34 @@ const sources = (): ReadonlyArray<{name: string; text: string}> => {
 	return readdirSync(dir)
 		.filter((name) => name.endsWith(".ts") && !name.includes(".test."))
 		.map((name) => ({name, text: readFileSync(join(dir, name), "utf8")}));
+};
+
+/**
+ * Every name a module's text publishes, sorted. Two of the three names `index.ts` exports are types
+ * and carry no runtime key, so the set is read off the text rather than off the imported module. A
+ * star re-export enumerates nothing, so it reports the literal `*` — a name no ruled set carries,
+ * which is what makes `export * from "./PiAiAgent.ts";` red rather than pass unseen.
+ */
+const exportedNames = (text: string): ReadonlyArray<string> => {
+	const clauses =
+		/^export\s+(?:(\*(?:\s+as\s+\w+)?)|\{([^}]*)\}|(default)\b|(?:declare\s+)?(?:async\s+)?(?:type|interface|const|let|var|function\*?|class|enum|namespace)\s+(\w+))/gm;
+	const names: Array<string> = [];
+	for (const [, star, clause, fallback, declared] of stripComments(text).matchAll(clauses)) {
+		if (star !== undefined) names.push("*");
+		else if (clause !== undefined) names.push(...clause.split(",").flatMap(exportedName));
+		else names.push(fallback ?? declared ?? "");
+	}
+	return names.sort();
+};
+
+/** One specifier out of an `export {...}` clause: `type A`, `A as B` and `A` all name what lands. */
+const exportedName = (specifier: string): ReadonlyArray<string> => {
+	const named = specifier
+		.trim()
+		.replace(/^type\s+/, "")
+		.split(/\s+as\s+/);
+	const landed = named.at(-1) ?? "";
+	return landed === "" ? [] : [landed];
 };
 
 const stripComments = (text: string): string =>
