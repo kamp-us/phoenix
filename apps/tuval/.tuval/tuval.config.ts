@@ -8,12 +8,15 @@
 import {Console} from "effect";
 import type {TuvalConfigInput} from "../src/config.ts";
 import {demoGraph, demoPrograms} from "../src/demo/index.ts";
-import {shellGraphNode, shellProgram, unwiredShellEffects} from "../src/shell/program.ts";
+import {ProcessId} from "../src/process/process.ts";
+import {wiredShellEffects} from "../src/shell/host/index.ts";
+import {shellGraphNode, shellNode, shellProgram} from "../src/shell/program.ts";
 
 export default {
 	version: 1,
 	programs: [
-		shellProgram({effects: unwiredShellEffects}),
+		// The shell is spawned at its graph node's id, so that is the process the picker opens under.
+		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
 		...demoPrograms({everyMs: 1000, write: (line) => Console.log(line)}),
 	],
 	graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},

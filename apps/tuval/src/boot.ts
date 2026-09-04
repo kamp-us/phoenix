@@ -112,7 +112,11 @@ export const start = Effect.fn("Tuval.start")(function* ({
 			Layer.provideMerge(Layer.succeedContext(registry)),
 		),
 	);
-	const launched = yield* launch(compiled, wiring).pipe(Effect.provideContext(kernel));
+	// The kernel rides into every launched process's handlers: the shell row's Cmds spawn programs
+	// and read the process table, and a program row declares exactly those needs as its `R`.
+	const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
+		Effect.provideContext(kernel),
+	);
 	const restored = yield* restore.pipe(Effect.provideContext(kernel));
 	return {kernel, launched, restored} satisfies Started;
 });

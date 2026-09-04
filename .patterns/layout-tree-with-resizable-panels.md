@@ -87,6 +87,19 @@ layout is a second source of truth that would fight the first on the next reload
 The surface never calls that hook, and `layout.unit.test.tsx` asserts `localStorage` is untouched
 after a resize.
 
+## Rule 5 — a size prop's unit is its JSX form: a string is percent, braces are pixels
+
+`minSize` and `maxSize` read their unit off the value's *type*, and the library's own `PanelProps`
+docblock is the rule: "Numbers are interpreted as pixels … Strings without explicit units are
+interpreted as percentage … Use explicit units (`px`, `%`, `em`, `rem`, `vh`, `vw`) to change
+interpretation" (`react-resizable-panels@4.12.3`, `dist/react-resizable-panels.d.ts`, `minSize`).
+
+So `minSize="10"` is ten **percent** and `minSize={10}` is ten **pixels**. In JSX the two differ by
+two characters and read the same aloud, so the quotes are load-bearing. `LayoutView.tsx` passes
+`minSize="10"` — a window may not be squeezed below a tenth of its stack — and quietly switching it
+to braces would allow a ten-pixel sliver
+([#7783](https://github.com/kamp-us/phoenix/issues/7783)).
+
 ## Zoom is a conditional render, never `collapse()`
 
 `LayoutTree.zoomed` names one window; when it is set, render that window alone and unmount the

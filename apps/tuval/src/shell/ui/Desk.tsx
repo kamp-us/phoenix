@@ -114,14 +114,24 @@ export function Desk({
 	}, [keyTarget, onKeyDown]);
 
 	// The core's prefix timer is a Cmd, and Cmds do not cross the transport — but the snapshot
-	// carries the window's length, so the surface can run the countdown off state alone. Re-armed on
-	// every prefix change, which is what `cancelPrefixTimer` would otherwise have to say.
-	const prefix = state.prefix;
+	// carries the window's length, so the surface runs the countdown off state alone.
+	//
+	// The dependency is the prefix's *value*, spelled out, and never the `state.prefix` object: every
+	// snapshot arrives JSON-decoded, so that object is new on each one and an effect keyed on it
+	// re-armed the countdown on unrelated kernel traffic — a demo counter ticking once a second
+	// starved an armed prefix indefinitely (#7782).
+	const armed = state.prefix.armed;
+	const timeoutMs = state.prefix.armed ? state.prefix.timeoutMs : 0;
+	const pending = state.prefix.armed ? state.prefix.pending.join("") : "";
 	useEffect(() => {
-		if (!prefix.armed) return;
-		const timer = setTimeout(() => dispatch({type: "prefix.timeout"}), prefix.timeoutMs);
+		if (!armed) return;
+		// Through the ref, so the caller's `dispatch` identity is not a dependency either — the same
+		// starvation, from the other direction.
+		const timer = setTimeout(() => latest.current.dispatch({type: "prefix.timeout"}), timeoutMs);
 		return () => clearTimeout(timer);
-	}, [prefix, dispatch]);
+		// `pending` is a dependency because each key typed into an armed sequence restarts the window,
+		// exactly as `startPrefixTimer` restarts the host's one timer.
+	}, [armed, timeoutMs, pending]);
 
 	const closeCommandLine = useCallback(() => {
 		setCommandLineOpen(false);

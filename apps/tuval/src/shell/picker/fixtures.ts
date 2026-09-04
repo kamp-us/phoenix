@@ -150,7 +150,12 @@ export const pickerHarness = (
 
 		const layer = Layer.mergeAll(
 			Registry.layer(rows).pipe(Layer.orDie),
-			Layer.succeed(Processes, Processes.of({spawn, stop: () => Effect.void})),
+			// `handle` answers none: the picker never dispatches into what it spawned, so a double that
+			// pretended to hand back a live actor would be claiming more than these tests exercise.
+			Layer.succeed(
+				Processes,
+				Processes.of({spawn, stop: () => Effect.void, handle: () => Effect.succeed(Option.none())}),
+			),
 			Layer.succeed(ProcessTable, processTable),
 			Layer.succeed(ProcessTablePort, port),
 		);

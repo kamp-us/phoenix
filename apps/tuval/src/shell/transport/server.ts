@@ -37,8 +37,13 @@ import {
 	toWireRow,
 } from "./wire.ts";
 
-/** Where a process handle comes from. The kernel hands out handles at launch; this reads them back. */
-export type Handles = (id: ProcessId) => Option.Option<ProcessHandle>;
+/**
+ * Where a process handle comes from. An Effect, because the answer moves: a process the picker
+ * spawned after this server started is dispatchable too, and a caller that had to hand over a
+ * snapshot map could only ever serve the processes that existed at boot. `Processes.handle` is what
+ * `boot` passes here.
+ */
+export type Handles = (id: ProcessId) => Effect.Effect<Option.Option<ProcessHandle>>;
 
 export interface ServeOptions {
 	readonly token: Redacted.Redacted<string>;
@@ -183,7 +188,7 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 		processId: ProcessId,
 		msg: {readonly type: string},
 	) {
-		const handle = handles(processId);
+		const handle = yield* handles(processId);
 		if (handle._tag === "None") {
 			return yield* send({
 				kind: DISPATCHED_KIND,

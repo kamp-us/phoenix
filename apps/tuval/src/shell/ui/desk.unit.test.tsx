@@ -11,7 +11,7 @@
 
 import {act, fireEvent, render, screen, within} from "@testing-library/react";
 import type {ReactElement} from "react";
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
@@ -232,5 +232,62 @@ describe("the status line", () => {
 		expect(screen.getByLabelText("Shell status").textContent).toContain(
 			"Prefix armed, waiting for a sequence.",
 		);
+	});
+});
+
+/**
+ * The harness above keeps one desk object across renders; this one re-decodes it, which is what a
+ * live socket does — every snapshot is fresh JSON, equal in value and new in identity.
+ */
+function DecodedHarness({
+	sent,
+	snapshots,
+}: {
+	readonly sent: Array<ShellMsg>;
+	readonly snapshots: number;
+}): ReactElement {
+	const [state, setState] = useState<ShellState>(threeWindowDesk());
+	useEffect(() => {
+		if (snapshots > 0) setState((current) => JSON.parse(JSON.stringify(current)) as ShellState);
+	}, [snapshots]);
+	return (
+		<Desk
+			state={state}
+			dispatch={(msg) => {
+				sent.push(msg);
+				setState(
+					(current) =>
+						JSON.parse(JSON.stringify(applyMsg(defaultPrefixTable, current, msg)[0])) as ShellState,
+				);
+			}}
+			resolveMount={boundEverywhere}
+			entries={entries}
+		/>
+	);
+}
+
+describe("the prefix countdown", () => {
+	it("times out on its own clock, however much unrelated kernel traffic arrives (#7782)", () => {
+		vi.useFakeTimers();
+		try {
+			const sent: Array<ShellMsg> = [];
+			const view = render(<DecodedHarness sent={sent} snapshots={0} />);
+			act(arm);
+
+			// Ten snapshots over one armed second: a demo counter ticking at 100ms, and nothing about
+			// the prefix changing. A countdown keyed on the snapshot object re-armed on every one of
+			// these and never fired.
+			for (let tick = 1; tick <= 10; tick++) {
+				act(() => {
+					view.rerender(<DecodedHarness sent={sent} snapshots={tick} />);
+					vi.advanceTimersByTime(100);
+				});
+			}
+			act(() => void vi.advanceTimersByTime(200));
+
+			expect(sent.filter((msg) => msg.type === "prefix.timeout")).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

@@ -6,11 +6,17 @@
 
 import {defineMachine} from "@demlik/tea";
 import {Effect} from "effect";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
+import {type AnyProgram, type Program, ProgramId, type RendererRef} from "../registry/program.ts";
 import {COUNT_KIND, isCount} from "./count.ts";
 
-export type LogState = {readonly lines: ReadonlyArray<number>};
-export type LogMsg = {readonly type: "record"; readonly count: number};
+export type LogState = {
+	readonly lines: ReadonlyArray<number>;
+	/** Keystrokes the shell forwarded into this process, newest last. See `./counter.ts`. */
+	readonly keys: ReadonlyArray<string>;
+};
+export type LogMsg =
+	| {readonly type: "record"; readonly count: number}
+	| {readonly type: "key"; readonly key: string};
 export type Print = {readonly type: "print"; readonly line: string};
 
 export interface LogOptions {
@@ -24,11 +30,15 @@ export const logProgram = ({write}: LogOptions): AnyProgram =>
 	({
 		id: logId,
 		core: defineMachine<LogState, LogMsg, Print, never, unknown>({
-			init: (loaded) => [loaded ?? {lines: []}, []],
+			init: (loaded) => [loaded ?? {lines: [], keys: []}, []],
 			update: {
 				record: (state, msg) => [
-					{lines: [...state.lines, msg.count]},
+					{...state, lines: [...state.lines, msg.count]},
 					[{type: "print", line: `count ${msg.count}`}],
+				],
+				key: (state, msg) => [
+					{...state, keys: [...state.keys, msg.key]},
+					[{type: "print", line: `key ${msg.key}`}],
 				],
 			},
 			// Demlik's `Machine` demands a Promise `interpret` beside the row's `handlers`; the host never reads it (#7576).
@@ -47,6 +57,9 @@ export const logProgram = ({write}: LogOptions): AnyProgram =>
 			print: (cmd: Print) => Effect.as(write(cmd.line), [] as ReadonlyArray<LogMsg>),
 		},
 		capabilities: [],
+		// Headless rows never bind a window (`../shell/picker/entries.ts`); see `./counter.ts` for why
+		// the page's own table is keyed by program id rather than by this reference.
+		renderer: {kind: "host-native", ref: "tuval/demo/log"} satisfies RendererRef,
 		identity: {
 			package: "@kampus/tuval",
 			program: "log",

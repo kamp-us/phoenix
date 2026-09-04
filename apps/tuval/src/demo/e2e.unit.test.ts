@@ -92,7 +92,7 @@ describe("tuval end to end", () => {
 							["count 1", "count 2", "count 3"],
 						);
 						assert.deepStrictEqual(app.counter.handle.getState(), {count: 3});
-						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3]});
+						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3], keys: []});
 					}),
 				);
 
@@ -108,7 +108,7 @@ describe("tuval end to end", () => {
 						);
 						assert.deepStrictEqual(app.started.restored, []);
 						assert.deepStrictEqual(app.counter.handle.getState(), {count: 3});
-						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3]});
+						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3], keys: []});
 						assert.deepStrictEqual(yield* tableShape(app.rows), [
 							["counter", "counter", null],
 							["log", "log", "counter"],
@@ -117,7 +117,7 @@ describe("tuval end to end", () => {
 						yield* app.tick;
 						assert.strictEqual(yield* Queue.take(app.lines), "count 4");
 						assert.strictEqual(yield* Queue.size(app.lines), 0);
-						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3, 4]});
+						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3, 4], keys: []});
 					}),
 				);
 			}),
