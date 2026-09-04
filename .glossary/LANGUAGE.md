@@ -423,6 +423,23 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
 means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
 noted as a future-feeling alternative and is not adopted.
 
+### Tuval: spell, palette, the Tuval protocol
+
+Tuval's command-framework nouns, ruled by the thirteen decisions on grilling
+[#7617](https://github.com/kamp-us/phoenix/issues/7617) and built by epic
+[#7627](https://github.com/kamp-us/phoenix/issues/7627). English technical terms, per §3. The why is
+ADR [0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md); the
+shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
+
+- **spell** — one addressable command in Tuval's registry: a path, a one-sentence description, an
+  Effect Schema for its parameters and one for its result, an Effect `execute`, and an inert
+  capability list. Source: [`apps/tuval/src/commands/spell.ts`](../apps/tuval/src/commands/spell.ts).
+- **palette** — the desk-level command overlay at the top center of the app, fixed width and never
+  anchored to a window, where a person types a spell and picks from ranked completions.
+- **the Tuval protocol** — the one versioned page-to-kernel wire: four Effect Schema messages
+  (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
+  [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).
+
 
 ---
 
