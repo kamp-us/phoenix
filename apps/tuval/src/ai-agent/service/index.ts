@@ -3,6 +3,16 @@
  * yields, the errors it can fail with, the events it emits, and the scripted layer tests run on.
  */
 
+export type {
+	AgentEvent,
+	ItemEvent,
+	ModeEvent,
+	PermissionEvent,
+	PermissionResolvedEvent,
+	Phase,
+	PhaseEvent,
+	UsageEvent,
+} from "../events.ts";
 export {
 	ModeUnsupported,
 	PageError,
@@ -15,16 +25,6 @@ export {
 	type TransportReason,
 	UnknownRequest,
 } from "./errors.ts";
-export type {
-	AgentEvent,
-	ItemEvent,
-	ModeEvent,
-	PermissionEvent,
-	PermissionResolvedEvent,
-	Phase,
-	PhaseEvent,
-	UsageEvent,
-} from "./events.ts";
 export {ScriptedAiAgent} from "./ScriptedAiAgent.ts";
 export type {AgentScript, ScriptedModes, ScriptedTurn} from "./script.ts";
 export {

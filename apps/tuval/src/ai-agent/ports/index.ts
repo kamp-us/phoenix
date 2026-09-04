@@ -8,9 +8,11 @@
 export {
 	isModePayload,
 	isPermissionPayload,
+	isPermissionRequest,
 	isPromptPayload,
 	isTranscriptPagePayload,
 	isTranscriptPayload,
+	isWindowOmission,
 	Mode,
 	type ModePayload,
 	type PermissionDecision,

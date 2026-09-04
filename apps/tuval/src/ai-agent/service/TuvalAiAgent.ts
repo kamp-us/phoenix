@@ -16,6 +16,7 @@
  */
 
 import {Context, type Effect, type Stream} from "effect";
+import type {AgentEvent} from "../events.ts";
 import type {Mode, PermissionDecision, TranscriptItem} from "../ports/index.ts";
 import type {
 	ModeUnsupported,
@@ -25,7 +26,6 @@ import type {
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
-import type {AgentEvent} from "./events.ts";
 
 export interface StartOptions {
 	readonly cwd: string;

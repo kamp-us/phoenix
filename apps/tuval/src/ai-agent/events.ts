@@ -9,9 +9,13 @@
  * `usage` is the one kind no port carries. It names the model, its token counts and its cost —
  * exactly what the interface refuses to put on a port so one window can render any agent — and it
  * is consumed only by the core, which owns the cumulative totals.
+ *
+ * It sits above `service/` rather than inside it because both sides of the seam speak it: the
+ * layers push it and the core machine folds it, and the core may import nothing from `service/`
+ * (#7601).
  */
 
-import type {Mode, PermissionDecision, PermissionRequest, TranscriptItem} from "../ports/index.ts";
+import type {Mode, PermissionDecision, PermissionRequest, TranscriptItem} from "./ports/index.ts";
 
 /**
  * Where a session is, as the core's `ai-agent-session` machine names it (#7497). The layer

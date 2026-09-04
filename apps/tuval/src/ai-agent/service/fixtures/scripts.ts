@@ -9,9 +9,9 @@
  * passing against its own restatement.
  */
 
+import type {AgentEvent} from "../../events.ts";
 import type {ItemId, Mode, PermissionRequest, ToolItem, TranscriptItem} from "../../ports/index.ts";
 import {TransportError} from "../errors.ts";
-import type {AgentEvent} from "../events.ts";
 import type {AgentScript} from "../script.ts";
 
 export const SESSION_ID = "session-7599";

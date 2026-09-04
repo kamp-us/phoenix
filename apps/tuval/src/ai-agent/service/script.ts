@@ -6,9 +6,9 @@
  * conversation it stands for and a test asserts against the very array it handed the layer.
  */
 
+import type {AgentEvent} from "../events.ts";
 import type {Mode, TranscriptItem} from "../ports/index.ts";
 import type {TransportError} from "./errors.ts";
-import type {AgentEvent} from "./events.ts";
 
 /** One prompt's answer: the events it emits, in order, and whether the transport dies after them. */
 export interface ScriptedTurn {
