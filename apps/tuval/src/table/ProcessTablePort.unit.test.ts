@@ -1,5 +1,5 @@
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Fiber, Layer, Option, Stream} from "effect";
+import {Context, Effect, Fiber, Layer, Option, Stream} from "effect";
 import {expectTypeOf} from "vitest";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
@@ -54,8 +54,11 @@ describe("ProcessTablePort", () => {
 			Effect.gen(function* () {
 				const processes = yield* Processes;
 				const port = yield* ProcessTablePort;
-				const root = yield* processes.spawn(counterId);
-				const child = yield* processes.spawn(counterId, {parent: root.id});
+				const root = yield* processes.spawn(counterId, {services: Context.empty()});
+				const child = yield* processes.spawn(counterId, {
+					parent: root.id,
+					services: Context.empty(),
+				});
 				yield* child.dispatch({type: "tick"});
 
 				const rows = yield* port.rows;
@@ -94,7 +97,7 @@ describe("ProcessTablePort", () => {
 				const port = yield* ProcessTablePort;
 				const events = yield* collect(port.changes, 3);
 
-				const handle = yield* processes.spawn(counterId);
+				const handle = yield* processes.spawn(counterId, {services: Context.empty()});
 				yield* handle.dispatch({type: "tick"});
 				yield* processes.stop(handle.id);
 
@@ -143,7 +146,7 @@ describe("ProcessTablePort", () => {
 					});
 					const inbox = yield* wiring.inbox({node: NodeId.make("v"), port: "table"});
 
-					const handle = yield* processes.spawn(counterId);
+					const handle = yield* processes.spawn(counterId, {services: Context.empty()});
 					yield* handle.dispatch({type: "tick"});
 					yield* processes.stop(handle.id);
 
@@ -212,8 +215,11 @@ describe("ProcessTablePort", () => {
 			[counter],
 			Effect.gen(function* () {
 				const processes = yield* Processes;
-				const root = yield* processes.spawn(counterId);
-				const child = yield* processes.spawn(counterId, {parent: root.id});
+				const root = yield* processes.spawn(counterId, {services: Context.empty()});
+				const child = yield* processes.spawn(counterId, {
+					parent: root.id,
+					services: Context.empty(),
+				});
 				yield* child.dispatch({type: "tick"});
 				assert.deepStrictEqual(yield* ps, [
 					`${root.id} counter - [ticks:out:tick/v1,verdicts:in:verdict/v1] running@0`,
