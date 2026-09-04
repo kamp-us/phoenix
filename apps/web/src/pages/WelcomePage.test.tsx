@@ -10,6 +10,7 @@ import {fireEvent, render, screen} from "@testing-library/react";
 import {MemoryRouter, Route, Routes, useLocation} from "react-router";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {installFakeStorage} from "../../tests/client/fakeStorage";
+import {firstContributionDismissKey} from "../components/onboarding/firstContribution";
 import {WELCOME_SEEN_SCHEMA, welcomeSeenKey} from "../components/onboarding/welcomeSeen";
 import {WelcomePage} from "./WelcomePage";
 import {WELCOME_PATH} from "./welcomeGating";
@@ -119,8 +120,17 @@ describe("WelcomePage — one screen answering #4266's three questions", () => {
 		expect(screen.getByTestId("welcome-page").tagName).toBe("MAIN");
 		expect(screen.getByTestId("welcome-standing")).toBeTruthy();
 		expect(screen.getByTestId("welcome-rite")).toBeTruthy();
-		// One screen, no second step: a single control leaves the surface.
+		// One screen, no second step: `devam et` is the only control that ends the moment.
 		expect(screen.getAllByTestId("welcome-continue")).toHaveLength(1);
+		// #7044's ask adds one dismiss beside it — an ask the reader may decline, not a step.
+		expect(document.querySelectorAll("button")).toHaveLength(2);
+		expect(screen.getByTestId("first-contribution-dismiss")).toBeTruthy();
+	});
+
+	it("is back to its single control once the ask is declined", () => {
+		flag.value = true;
+		renderRoute();
+		fireEvent.click(screen.getByTestId("first-contribution-dismiss"));
 		expect(document.querySelectorAll("button")).toHaveLength(1);
 	});
 
@@ -216,6 +226,51 @@ describe("WelcomePage — shown-once persistence (criterion 4)", () => {
 		localStorage.setItem(welcomeSeenKey(WELCOME_SEEN_SCHEMA, "u-other"), "1");
 		renderRoute();
 		expect(screen.getByTestId("welcome-page")).toBeTruthy();
+	});
+});
+
+describe("WelcomePage — the first-contribution ask (#7044)", () => {
+	it("offers the çaylak the ask, pointed at sözlük on a cold arrival", () => {
+		flag.value = true;
+		renderRoute();
+		expect(screen.getByTestId("first-contribution-nudge")).toBeTruthy();
+		expect(screen.getByTestId("first-contribution-go").getAttribute("href")).toBe("/sozluk");
+	});
+
+	it("points a başlık arrival at that başlık", () => {
+		flag.value = true;
+		renderRoute(`${WELCOME_PATH}?returnTo=${encodeURIComponent("/sozluk/monad")}`);
+		expect(screen.getByTestId("first-contribution-go").getAttribute("href")).toBe("/sozluk/monad");
+		expect(screen.getByTestId("first-contribution-copy").textContent).toContain("monad");
+	});
+
+	it("never asks a yazar — the ladder decides, not the copy", () => {
+		flag.value = true;
+		tier = "yazar";
+		renderRoute();
+		expect(screen.queryByTestId("first-contribution-nudge")).toBeNull();
+	});
+
+	it("dismissal persists across a reload — the ask never returns", () => {
+		flag.value = true;
+		const first = renderRoute();
+		fireEvent.click(screen.getByTestId("first-contribution-dismiss"));
+		expect(screen.queryByTestId("first-contribution-nudge")).toBeNull();
+		first.unmount();
+
+		// A reload of the surface itself: the welcome's own marker would bounce a returning
+		// account, so read the dismissal back on a browser where only it was set.
+		installFakeStorage({[firstContributionDismissKey("u-1")]: "1"});
+		renderRoute();
+		expect(screen.getByTestId("welcome-page")).toBeTruthy();
+		expect(screen.queryByTestId("first-contribution-nudge")).toBeNull();
+	});
+
+	it("another account on the same browser is still asked", () => {
+		flag.value = true;
+		installFakeStorage({[firstContributionDismissKey("u-other")]: "1"});
+		renderRoute();
+		expect(screen.getByTestId("first-contribution-nudge")).toBeTruthy();
 	});
 });
 
