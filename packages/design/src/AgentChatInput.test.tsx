@@ -21,7 +21,7 @@ function installHarnessFetch(): {
 		if (path === "/__pi/commands") {
 			return response({
 				commands: {
-					commands: [{name: "skill:review", description: "Review and report."}],
+					commands: [{name: "skill:review", description: "İncele ve geri bildir."}],
 				},
 			});
 		}
@@ -70,7 +70,7 @@ function installHarnessFetch(): {
 		},
 		loadPiCommands: async () => {
 			await request("/__pi/commands");
-			return [{name: "skill:review", description: "Review and report."}];
+			return [{name: "skill:review", description: "İncele ve geri bildir."}];
 		},
 		loadPiModels: async () => {
 			await request("/__pi/models");
@@ -133,7 +133,7 @@ describe("AgentChatInput", () => {
 	it("uses Pi's live command registry for slash completion", async () => {
 		const {bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);
-		const input = await screen.findByLabelText("Write a message to Pi");
+		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
 
 		fireEvent.change(input, {target: {value: "/rev"}});
 		const command = await screen.findByRole("option", {name: /\/skill:review/i});
@@ -145,13 +145,13 @@ describe("AgentChatInput", () => {
 	it("exposes the completion list through the textarea combobox contract", async () => {
 		const {bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);
-		const input = await screen.findByLabelText("Write a message to Pi");
+		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
 
 		expect(input.getAttribute("role")).toBe("combobox");
 		expect(input.getAttribute("aria-expanded")).toBe("false");
 		fireEvent.change(input, {target: {value: "/rev"}});
 
-		const listbox = await screen.findByRole("listbox", {name: "Pi completions"});
+		const listbox = await screen.findByRole("listbox", {name: "Pi tamamlamaları"});
 		const option = await screen.findByRole("option", {name: /\/skill:review/i});
 		expect(input.getAttribute("aria-expanded")).toBe("true");
 		expect(input.getAttribute("aria-controls")).toBe(listbox.id);
@@ -161,7 +161,7 @@ describe("AgentChatInput", () => {
 	it("does not submit while an IME composition owns Enter", async () => {
 		const {fetch, bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);
-		const input = await screen.findByLabelText("Write a message to Pi");
+		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
 
 		fireEvent.change(input, {target: {value: "Composing text"}});
 		fireEvent.keyDown(input, {key: "Enter", isComposing: true});
@@ -173,7 +173,7 @@ describe("AgentChatInput", () => {
 	it("inserts a repository-relative path from @ completion", async () => {
 		const {bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);
-		const input = await screen.findByLabelText("Write a message to Pi");
+		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
 
 		fireEvent.change(input, {target: {value: "@app"}});
 		const file = await screen.findByRole("option", {name: /@apps\/web\/src\/App\.tsx/i});
@@ -185,17 +185,15 @@ describe("AgentChatInput", () => {
 	it("sends the selected delivery mode through the Pi bridge", async () => {
 		const {fetch, bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);
-		const input = await screen.findByLabelText("Write a message to Pi");
+		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
 
 		fireEvent.change(input, {target: {value: "Review the component."}});
-		fireEvent.click(screen.getByRole("combobox", {name: "Pi delivery mode"}));
-		fireEvent.click(await screen.findByRole("option", {name: "follow up"}));
+		fireEvent.click(screen.getByRole("combobox", {name: "Pi teslim modu"}));
+		fireEvent.click(await screen.findByRole("option", {name: "sonraya al"}));
 		await waitFor(() => {
-			expect(screen.getByRole("combobox", {name: "Pi delivery mode"}).textContent).toBe(
-				"follow up",
-			);
+			expect(screen.getByRole("combobox", {name: "Pi teslim modu"}).textContent).toBe("sonraya al");
 		});
-		fireEvent.click(screen.getByRole("button", {name: /send/i}));
+		fireEvent.click(screen.getByRole("button", {name: /gönder/i}));
 
 		await waitFor(() => {
 			expect(fetch).toHaveBeenCalledWith(
@@ -212,7 +210,7 @@ describe("AgentChatInput", () => {
 		const {fetch, bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} />);
 
-		fireEvent.click(await screen.findByRole("combobox", {name: "Pi model"}));
+		fireEvent.click(await screen.findByRole("combobox", {name: "Pi modeli"}));
 		fireEvent.click(await screen.findByRole("option", {name: "GPT-5.6"}));
 		await waitFor(() => {
 			expect(fetch).toHaveBeenCalledWith(
@@ -224,8 +222,8 @@ describe("AgentChatInput", () => {
 			);
 		});
 
-		fireEvent.click(screen.getByRole("combobox", {name: "Pi thinking effort"}));
-		fireEvent.click(await screen.findByRole("option", {name: "high"}));
+		fireEvent.click(screen.getByRole("combobox", {name: "Pi düşünme eforu"}));
+		fireEvent.click(await screen.findByRole("option", {name: "yüksek"}));
 		await waitFor(() => {
 			expect(fetch).toHaveBeenCalledWith(
 				"/__pi/thinking-level",
@@ -233,8 +231,8 @@ describe("AgentChatInput", () => {
 			);
 		});
 
-		fireEvent.click(screen.getByRole("combobox", {name: /Pi project trust/i}));
-		fireEvent.click(await screen.findByRole("option", {name: "skip resources"}));
+		fireEvent.click(screen.getByRole("combobox", {name: /Pi proje izni/i}));
+		fireEvent.click(await screen.findByRole("option", {name: "yoksay"}));
 		await waitFor(() => {
 			expect(fetch).toHaveBeenCalledWith(
 				"/__pi/project-trust",
@@ -251,13 +249,13 @@ describe("AgentChatInput", () => {
 		render(<AgentChatInput bridge={bridge} variant="focused" />);
 
 		await screen.findByRole("button", {name: "model: GPT-5"});
-		expect(screen.queryByText("local workshop only")).toBeNull();
-		expect(screen.queryByRole("combobox", {name: "Pi delivery mode"})).toBeNull();
-		expect(screen.getByRole("button", {name: "Add image"})).toBeTruthy();
-		expect(screen.getByRole("button", {name: /Pi inspector/i})).toBeTruthy();
+		expect(screen.queryByText("yalnızca yerel atölye")).toBeNull();
+		expect(screen.queryByRole("combobox", {name: "Pi teslim modu"})).toBeNull();
+		expect(screen.getByRole("button", {name: "Görsel ekle"})).toBeTruthy();
+		expect(screen.getByRole("button", {name: /Pi denetçisi/i})).toBeTruthy();
 
-		fireEvent.click(screen.getByRole("button", {name: "Project resources and delivery settings"}));
-		fireEvent.click(await screen.findByRole("menuitemradio", {name: "skip resources"}));
+		fireEvent.click(screen.getByRole("button", {name: "Proje kaynakları ve gönderme ayarları"}));
+		fireEvent.click(await screen.findByRole("menuitemradio", {name: "kaynakları yükleme"}));
 
 		await waitFor(() => {
 			expect(fetch).toHaveBeenCalledWith(
@@ -273,7 +271,7 @@ describe("AgentChatInput", () => {
 	it("adds an image pasted from clipboard items", async () => {
 		const {bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} variant="focused" />);
-		const input = await screen.findByLabelText("Write a message to Pi");
+		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
 		const image = new File([new Uint8Array([137, 80, 78, 71])], "ekran.png", {
 			type: "image/png",
 		});
@@ -296,7 +294,7 @@ describe("AgentChatInput", () => {
 		render(<AgentChatInput variant="focused" mockWhenUnavailable />);
 
 		expect(await screen.findByRole("button", {name: "model: GPT-5.5"})).toBeTruthy();
-		fireEvent.click(screen.getByRole("button", {name: "thinking effort: medium"}));
+		fireEvent.click(screen.getByRole("button", {name: "düşünme eforu: orta"}));
 
 		expect(await screen.findByRole("menuitemradio", {name: "minimal"})).toBeTruthy();
 		expect(screen.queryByRole("menuitemradio", {name: "off"})).toBeNull();

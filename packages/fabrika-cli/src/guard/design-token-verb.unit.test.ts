@@ -57,6 +57,22 @@ describe("runDesignTokenGuard", () => {
 		expect(outcome.stdout).toContain("every ref resolves");
 	});
 
+	// Keep a violation in the app half while the package half stays clean. If CSS_ROOTS silently
+	// drops apps/web/src, this regression test becomes a false green.
+	it("keeps app CSS in the dual-root scan", async () => {
+		const clean = tree(".a {\n  background: var(--surface);\n}\n");
+		const outcome = await run({
+			...clean,
+			files: {
+				...clean.files,
+				[APP_COMPONENT_CSS]: ".app { color: #ff00aa; }\n",
+			},
+		});
+		expect(outcome.code).toBe(VIOLATION);
+		expect(outcome.stdout).toBe("");
+		expect(outcome.stderr.join("\n")).toContain(APP_COMPONENT_CSS.replace(`${ROOT}/`, ""));
+	});
+
 	it("seats a dead ref on the violation code with nothing on stdout", async () => {
 		const outcome = await run(tree(".a {\n  color: var(--gone);\n}\n"));
 		expect(outcome.code).toBe(VIOLATION);
