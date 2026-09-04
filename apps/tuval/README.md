@@ -248,3 +248,31 @@ freed share to the sibling the window sat against, which makes it the exact inve
 that created the window. Removing the tree's last window is refused — what closing the last window
 means is the shell's call, not the tree's. `checkTree` states the invariants as data, so the
 persistence boundary can reject a restored tree instead of rendering a broken one.
+
+## Shell: the core machine
+
+`src/shell/core/` is the shell's private Demlik core — one `defineMachine`, and the one place the
+desk is written. State is workspaces keyed by id beside an `activeWorkspace` (Studio's shape, from
+`monorepo/packages/studio/studio.ts`), each workspace a layout tree and the window focus sits in,
+plus a view slot per window and the prefix. All of it is JSON, because the kernel checkpoints it
+like any other process's state; the type-level proof is in `boundary.unit.test.ts`.
+
+```ts
+const [state, cmds] = applyMsg(defaultPrefixTable, initialState(), {
+	type: "keys.press",
+	key: {key: "b", ctrlKey: true},   // the prefix arms: cmds is [{type: "startPrefixTimer", …}]
+});
+applyMsg(defaultPrefixTable, state, {type: "keys.press", key: {key: "|"}}); // splits, side by side
+```
+
+Two shapes are worth knowing. **A bound key runs its command's Msg in the same transition** — one
+press is one commit and one checkpoint — and a name the core does not own (`command:open`,
+`config:reload`, one of yours) leaves as a `runCommand` Cmd for the command rows instead. **The
+prefix timer is the host's, and there is exactly one**: the core says when a window opens
+(`startPrefixTimer`, carrying its length in ms) and when it closes (`cancelPrefixTimer`), and the
+host feeds `prefix.timeout` back when it fires.
+
+Two refusals and one absence carry the model. The last window of a workspace does not close and the
+last workspace is not removed, for the same reason: a desk with nothing on it has no layout to
+render and no focus to hold. And there is no Cmd arm that stops a process, so closing the last
+window showing one cannot end it — a window is a view onto a process, not a container for it.
