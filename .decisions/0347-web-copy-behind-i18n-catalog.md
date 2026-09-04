@@ -98,16 +98,11 @@ The docs this replaces are narrowed in the same pull request: `CLAUDE.md`'s "Tur
 product/brand, English for technical" convention bullet and `.glossary/LANGUAGE.md` §3. Both now
 point here rather than restating the rule.
 
-A third doc still states the opposite and is **not** narrowed here.
-[`.patterns/error-copy-law.md`](../.patterns/error-copy-law.md)'s "Out of scope: i18n / translation"
-section says kamp.us copy is authored in English as the source language and shipped in Turkish
-through a translation layer, and routes the reader on to issue #3378, which is closed. This decision
-has no source language and no translation layer — `tr` and `en` are authored peers — so that section
-now reads stale in the inverse direction. `.patterns/` is a different doc surface than this change's
-three files, so the correction is filed as
-[#7635](https://github.com/kamp-us/phoenix/issues/7635), folded by triage into open epic
-[#7519](https://github.com/kamp-us/phoenix/issues/7519), which owns the `apps/web` i18n surface and
-carries the fix. Until that lands, this record is the one to read, not that section.
+A third doc stated the opposite and is narrowed in the same pull request:
+[`.patterns/error-copy-law.md`](../.patterns/error-copy-law.md)'s i18n section used to say kamp.us
+copy is authored in English as the source language and shipped in Turkish through a translation
+layer, routing on to the closed #3378. It now scopes that law to the English arm of the catalog and
+points here; its `.patterns/index.md` row says the same.
 
 ## Records
 

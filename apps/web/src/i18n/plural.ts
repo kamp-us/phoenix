@@ -7,7 +7,7 @@
 import type {Locale} from "./locale";
 
 // Generic in the arm — and constrained to `string` — so the same rule picks between two rendered
-// messages and between the two catalog KEYS `usePlural` reads, whose union stays a `CatalogKey`
+// messages and between the two catalog KEYS `useTPlural` reads, whose union stays a `CatalogKey`
 // on the way out. A key-picking cast would trip Biome's `no-type-assertions`.
 export interface PluralForms<T extends string = string> {
 	readonly one: T;
