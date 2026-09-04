@@ -4,7 +4,7 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {defaultPrefixTable, type Key} from "../keys/index.ts";
+import {CommandName, defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
 import {applyMsg, cellsFor, initialState, type ShellCmd, type ShellMsg} from "./machine.ts";
 import {activeWorkspace, type ShellState, windowIds} from "./state.ts";
@@ -39,18 +39,23 @@ const prefix = press("b", {ctrlKey: true});
 describe("shell core: the reducer's cells", () => {
 	it("has one cell per Msg, and the list is exactly the shell's vocabulary", () => {
 		expect(Object.keys(cellsFor(table)).sort()).toEqual([
+			"command.open",
+			"config.reload",
 			"keys.press",
 			"prefix.timeout",
+			"window.attach",
 			"window.bind",
 			"window.close",
 			"window.focus",
 			"window.focusDirection",
+			"window.open",
 			"window.setView",
 			"window.split",
 			"window.unbind",
 			"workspace.activate",
 			"workspace.create",
 			"workspace.remove",
+			"workspace.step",
 		]);
 	});
 
@@ -288,14 +293,26 @@ describe("shell core: keys", () => {
 		expect(cmds).toEqual([{type: "startPrefixTimer", timeoutMs: 500}]);
 	});
 
-	it("a command this core does not own leaves as a runCommand Cmd", () => {
+	it("a bound name runs the command table's Msg — `r` reaches the reload Cmd", () => {
 		const armed = fold(initialState(), prefix);
 		const [after, cmds] = apply(armed, press("r"));
 
 		expect(after.workspaces).toEqual(armed.workspaces);
+		expect(cmds).toEqual([{type: "cancelPrefixTimer"}, {type: "reloadConfig"}]);
+	});
+
+	it("a name the command table does not hold leaves as a runCommand Cmd", () => {
+		const own: PrefixTable = {
+			...defaultPrefixTable,
+			bindings: [{sequence: "z", command: CommandName.make("mine:something"), repeatable: false}],
+		};
+		const armed = applyMsg(own, initialState(), prefix)[0];
+		const [after, cmds] = applyMsg(own, armed, press("z"));
+
+		expect(after.workspaces).toEqual(armed.workspaces);
 		expect(cmds).toEqual([
 			{type: "cancelPrefixTimer"},
-			{type: "runCommand", name: "config:reload"},
+			{type: "runCommand", name: "mine:something"},
 		]);
 	});
 

@@ -7,9 +7,12 @@ import {NodeFileSystem} from "@effect/platform-node";
 import {Effect} from "effect";
 import {afterEach, describe, expect, it} from "vitest";
 import {boot, coreSpells, defaultGlobalConfig, projectConfig, projectDir} from "./boot.ts";
+import {shellSpells} from "./shell/commands/spells.ts";
 
 /** Every boot registers these, whatever the config declares; no fixture program declares a spell. */
 const CORE_SPELLS = coreSpells.length;
+/** The box config declares the shell, whose command rows ride on its row (#7555). */
+const BOX_SPELLS = CORE_SPELLS + shellSpells.length;
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));
@@ -169,7 +172,7 @@ describe("boot", () => {
 		expect(first.stderr).toBe("");
 		expect(first.status).toBe(0);
 		expect(first.stdout).toContain(
-			`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 3 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
 		);
 		expect(first.stdout).toContain(
 			"tuval: process shell program=shell parent=- ports=- state=running@0\n",
@@ -186,7 +189,7 @@ describe("boot", () => {
 		const second = await runUntilRunning(args);
 		expect(second.status).toBe(0);
 		expect(second.stdout).toContain(
-			`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
+			`tuval: booted — 3 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
 		);
 		expect(second.stdout).toContain("tuval: process log program=log parent=counter");
 	}, 20_000);

@@ -6,16 +6,14 @@
  *
  * The two command rows are declared here rather than in `../commands/` (#7555) so the argument
  * grammar sits beside the handler that consumes it; the commands slice folds `pickerCommands` into
- * its table and owns the command line itself.
+ * its table and owns the command line itself, which is why no line reader lives here.
  */
 
-import {Result} from "effect";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
 import {CommandName} from "../keys/table.ts";
 import type {WindowId} from "../window/host.ts";
 import type {PickerEntry} from "./entries.ts";
-import {type PickerRefusal, unreadableCommand} from "./refusal.ts";
 
 export type PickerIntent =
 	| {readonly _tag: "OpenProgram"; readonly windowId: WindowId; readonly programId: ProgramId}
@@ -58,13 +56,13 @@ export const pickerCommands: ReadonlyArray<PickerCommand> = [
 	{
 		name: OPEN_COMMAND,
 		argument: "program-id",
-		summary: "Spawn a program and show it in this window",
+		summary: "Spawn a program and show it in this window.",
 		toIntent: (windowId, argument) => openProgram(windowId, ProgramId.make(argument)),
 	},
 	{
 		name: ATTACH_COMMAND,
 		argument: "process-id",
-		summary: "Show a running process in this window",
+		summary: "Show a running process in this window.",
 		toIntent: (windowId, argument) => attachProcess(windowId, ProcessId.make(argument)),
 	},
 ];
@@ -73,30 +71,3 @@ const byName = new Map(pickerCommands.map((command) => [command.name as string, 
 
 export const pickerCommandFor = (name: CommandName): PickerCommand | undefined =>
 	byName.get(name as string);
-
-/**
- * A command line as `prefix :` leaves it — `"open counter"`, `"attach ab12"` — resolved to an
- * intent. The verb is matched bare, since the command line's own prompt is what the leading
- * `window:` would otherwise repeat; the full row name still resolves, so `:window:open counter`
- * reads too.
- */
-export const resolveCommandLine = (
-	windowId: WindowId,
-	line: string,
-): Result.Result<PickerIntent, PickerRefusal> => {
-	const trimmed = line.trim();
-	const at = trimmed.search(/\s/);
-	const verb = at === -1 ? trimmed : trimmed.slice(0, at);
-	const argument = at === -1 ? "" : trimmed.slice(at + 1).trim();
-	const command = pickerCommandFor(CommandName.make(verb.includes(":") ? verb : `window:${verb}`));
-	if (command === undefined) {
-		return Result.fail(unreadableCommand(trimmed, `no command row is named "${verb}"`));
-	}
-	if (argument === "") {
-		return Result.fail(unreadableCommand(trimmed, `"${verb}" takes one ${command.argument}`));
-	}
-	if (/\s/.test(argument)) {
-		return Result.fail(unreadableCommand(trimmed, `a ${command.argument} holds no whitespace`));
-	}
-	return Result.succeed(command.toIntent(windowId, argument));
-};

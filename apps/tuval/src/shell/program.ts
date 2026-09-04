@@ -18,6 +18,7 @@ import {NodeId} from "../ports/graph.ts";
 import {ProcessId} from "../process/process.ts";
 import type {AnyProgram, HostHandlers, Program, RendererRef} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
+import {shellSpells} from "./commands/spells.ts";
 import {
 	isShellState,
 	type ShellCmd,
@@ -77,9 +78,21 @@ export const unwiredShellEffects: ShellEffects = {
 	cancelPrefixTimer: () =>
 		Effect.logDebug("shell: cancelPrefixTimer dropped — no surface attached").pipe(Effect.as([])),
 	runCommand: (cmd) =>
-		Effect.logDebug(`shell: runCommand "${cmd.name}" dropped — no command rows attached`).pipe(
+		Effect.logDebug(`shell: runCommand "${cmd.name}" names no command row — dropped`).pipe(
 			Effect.as([]),
 		),
+	openProgram: (cmd) =>
+		Effect.logDebug(
+			`shell: openProgram "${cmd.programId}" dropped — no surface attached to spawn it`,
+		).pipe(Effect.as([])),
+	attachProcess: (cmd) =>
+		Effect.logDebug(
+			`shell: attachProcess "${cmd.processId}" dropped — no surface attached to resolve it`,
+		).pipe(Effect.as([])),
+	openCommandLine: () =>
+		Effect.logDebug("shell: openCommandLine dropped — no surface attached").pipe(Effect.as([])),
+	reloadConfig: () =>
+		Effect.logDebug("shell: reloadConfig dropped — no config loader attached").pipe(Effect.as([])),
 };
 
 export interface ShellProgramOptions<E = never, R = never> {
@@ -92,6 +105,11 @@ export interface ShellProgramOptions<E = never, R = never> {
 /**
  * The shell's registry row. No public ports and no capability requests: nothing addresses the shell
  * over a port, and the #7467 records ride along as the inert data every row carries.
+ *
+ * `spells` is the command table (`./commands/`), so every named row is registered under
+ * `[shellId, ...path]` and reachable through the one registry — the palette, `help`, and an agent's
+ * bridge all read the shell's commands there rather than from a second catalogue. Running one needs
+ * `ShellDispatch`, which `AnySpell` erases: whoever builds the registry owes that service.
  */
 export const shellProgram = <E = never, R = never>({
 	table = defaultPrefixTable,
@@ -101,6 +119,7 @@ export const shellProgram = <E = never, R = never>({
 		id: shellId,
 		core: shellCore({table}),
 		ports: {},
+		spells: shellSpells,
 		handlers: effects,
 		capabilities: [],
 		renderer: shellRenderer,
