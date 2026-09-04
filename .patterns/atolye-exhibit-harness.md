@@ -17,7 +17,7 @@ showcases. No external storybook tool (Storybook/Ladle) — founder-ruled out, h
 ### 1. The knob schema — soundness lives in the type layer (`knob.ts`)
 
 A **knob** is one on-screen control bound to one host-component prop. Four kinds:
-`string`→text · `number`→number · `boolean`→`@kampus/design/Switch` · `enum`→`@kampus/design/ToggleGroup` (both Manti).
+`string`→text · `number`→number · `boolean`→`Switch` from `@kampus/design` · `enum`→`ToggleGroup` from `@kampus/design` (both Manti).
 
 `KnobForType<T>` maps a prop's type to the one knob it admits, so **invalid states are
 unrepresentable at compile time, not caught at runtime**: a `boolean` prop takes only a
