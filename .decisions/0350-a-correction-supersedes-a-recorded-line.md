@@ -52,6 +52,16 @@ their union finds nothing for exactly the case this verb catches. Reading the na
 request, exact, and needs no widening of a read three other verbs depend on. A line naming no PR
 falls back to the nominator, which is the best answer available without evidence on the line.
 
+**A read that proves nothing is `unknown`, never `closes`.** `traceClosure` answers `Closes` when no
+merged PR links the issue, which is right where it lives: refusing there would strand a shipper over
+a merge that really landed. Read here it inverts, because `closes` leaves the lane at its terminal —
+so an empty answer would be the justification for leaving alone exactly the lane this sweep exists to
+catch, and the empty answer is the common case rather than the rare one. The PR-less fallback lands
+on it by construction, a merged `Part of #N` being invisible to both nomination reads; so does a
+named PR that is not merged; so does one whose body carries both link kinds. `provenClosure` refuses
+it: only a merged pull request that really links this issue reaches `traceClosure`'s judgement at
+all.
+
 **A correction addresses its target by that target's own `at`, and ambiguity is a defect.** A line
 number would not survive a reader that skips blank lines; a position would not survive an append.
 The timestamp is stable under every later append, and a `corrects` matching no entry of its task —
@@ -65,6 +75,36 @@ permissive fold one level up. `lane reconcile` reports it as `unmigrated`, namin
 the step before this one — and only where the committed template the lane booted from declares the
 guard, so an emitted epic machine and an epic tail (which declares none by design, 0343's own
 carve-out) still read `current`.
+
+## Relationship to ADR 0297 and ADR 0322
+
+Two live records read, on their face, as barring what this one ships. Both are named here rather than
+left for the next reader to collide with.
+
+**ADR [0297](0297-frozen-is-a-park-not-an-end.md) closes the event vocabulary at the operator's six,
+and this adds an eighth.** It is not an operator event, and the shape is ADR
+[0312](0312-event-anchored-retry-budget.md)'s exactly: no human records a `CORRECTED` with `lane
+transition`, `lane reconcile` appends it; the operator's six are unchanged and `applyEvent` refuses
+this one by name. 0297's constraint that a `final` may carry an `on` only from the six is unchanged
+for transitions — `CORRECTED` targets no state, so it opens no door out of any final. 0297 is amended
+in part again, and its frontmatter says so.
+
+**ADR [0322](0322-closed-issue-lanes-demote-at-read-time.md) rules that reconciliation is a
+derivation on read, not a verb someone runs — "no reconciliation verb", "nothing is written".** Its
+subject is a fact the lane never performed: the issue was closed outside the lane's own flow, so no
+recorded line is wrong, and the principle behind the ruling is that the ledger records what the lane
+itself did. This record's subject is the mirror image — an act the lane did perform, a merge that
+landed, whose recorded line omitted the routing payload it should have carried. Correcting a
+mis-recorded own-act keeps the ledger a record of what the lane did rather than turning it into a
+record of the board. 0322's mechanism stands wherever its subject reaches: `lane reconcile` nominates
+only a line that sat on a `merge:partial` cell, so a lane whose issue closed elsewhere is nominated
+by nothing here and is still demoted at read time by `lane view`.
+
+**0322 is a transcribed founder ruling, not an engineering call.** The distinction above is this
+record's reading of that ruling's scope, not a re-decision of it. If the reading is wrong — if "no
+reconciliation verb" was meant to bar any verb that writes a lane against the board, including one
+correcting the lane's own recorded act — then the mechanism is the founder's to re-rule, and this
+record yields to that call rather than to an argument.
 
 ## Consequences
 
@@ -81,3 +121,8 @@ carve-out) still read `current`.
   operator to know it. Run out of order it corrects nothing and reports why.
 - An already-broken ledger is a row at exit 0; only an append this run tried and could not land
   refuses, because only that one leaves whether the lane still needs correcting UNKNOWN.
+- A sweep is not free. Only a nominated lane costs a board read, but a closing merge records no
+  `partial` either and so nominates exactly like a partial one: on phoenix's own ledger 228 of the
+  298 guard-declaring lanes are read, one serial request each, and a run has already exhausted a
+  GitHub rate limit part-way through. `--check` costs the same reads. Bounding the nomination so the
+  sweep is cheap is open work, not something this record claims.

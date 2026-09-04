@@ -5,7 +5,8 @@ import {type FakeFsOptions, fakeFs} from "../fakes.test-support.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 import type {Closure} from "./prove.ts";
-import {type ClosureRead, runReconcile} from "./reconcile-verb.ts";
+import type {ClosureRead} from "./reconcile.ts";
+import {runReconcile} from "./reconcile-verb.ts";
 import {DEFAULT_LANES_ROOT} from "./store.ts";
 
 const NOW = "2026-09-01T12:00:00.000Z";

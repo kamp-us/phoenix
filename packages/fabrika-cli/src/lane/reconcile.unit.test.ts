@@ -8,7 +8,8 @@ import {describe, expect, it} from "vitest";
 import {coderWorkflow} from "./fixtures.test-support.ts";
 import {applyCorrections, deriveStatus, foldLog, type LogEntry, parseLog} from "./fold.ts";
 import {type CompiledLane, compile} from "./machine.ts";
-import {correctionEntry, findMisroute, pullNumberIn} from "./reconcile.ts";
+import type {PullFact} from "./prove.ts";
+import {correctionEntry, findMisroute, provenClosure, pullNumberIn} from "./reconcile.ts";
 
 const lane = (): CompiledLane => {
 	const result = compile(coderWorkflow());
@@ -63,6 +64,10 @@ describe("findMisroute", () => {
 
 	it("nominates nothing once that DONE carries its answer", () => {
 		expect(findMisroute(lane(), shipped({partial: true}))._tag).toBe("Settled");
+	});
+
+	it("reads a recorded `partial: false` as that line's own answer too", () => {
+		expect(findMisroute(lane(), shipped({partial: false}))._tag).toBe("Settled");
 	});
 
 	it("nominates nothing on a log that never reached a merge-closure guard", () => {
@@ -130,6 +135,47 @@ describe("the correction line", () => {
 	it("makes an unresolvable correction a fold defect, never a silently skipped line", () => {
 		const folded = foldLog(lane(), [...shipped(), correctionEntry("issue", at(9), at(8))]);
 		expect(folded._tag).toBe("Unreplayable");
+	});
+});
+
+describe("provenClosure", () => {
+	const fact = (over: Partial<PullFact> = {}): PullFact => ({
+		number: 7328,
+		open: false,
+		merged: true,
+		linkedIssues: [6980],
+		linkKind: "part-of",
+		...over,
+	});
+
+	it("proves the merge partial where a merged PR reaches the issue through `Part of`", () => {
+		expect(provenClosure(6980, [fact()])).toEqual({
+			_tag: "Read",
+			closure: {_tag: "Partial", prs: [7328]},
+		});
+	});
+
+	it("proves the closure where that merged PR carries a closing keyword", () => {
+		expect(provenClosure(6980, [fact({linkKind: "fixes"})])).toMatchObject({
+			_tag: "Read",
+			closure: {_tag: "Closes"},
+		});
+	});
+
+	it("reads an empty nomination as unknown, never as a closing merge", () => {
+		expect(provenClosure(6980, [])).toMatchObject({_tag: "Unknown"});
+	});
+
+	it("reads a named PR that never merged as unknown", () => {
+		expect(provenClosure(6980, [fact({merged: false, open: true})])).toMatchObject({
+			_tag: "Unknown",
+		});
+	});
+
+	it("reads a body whose `fixes` refs drop this lane's issue as unknown", () => {
+		expect(provenClosure(6980, [fact({linkKind: "fixes", linkedIssues: [7000]})])).toMatchObject({
+			_tag: "Unknown",
+		});
 	});
 });
 

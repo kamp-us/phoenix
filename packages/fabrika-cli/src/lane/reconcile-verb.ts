@@ -13,8 +13,11 @@
  * inert. Two questions, two writes, two verbs.
  *
  * Every lane is judged on its own — an unreadable one is a row, never the end of the sweep — and the
- * board is asked only about a lane whose log already nominates a correctable line, so a clean sweep
- * costs no requests. `--check` is the same sweep with the append withheld.
+ * board is asked only about a lane whose log already nominates a correctable line: one PR read each,
+ * serial. That is most of a mature ledger rather than a handful of it, since a closing merge records
+ * no `partial` either and so nominates exactly like a partial one — on phoenix's own lanes, 228 of
+ * the 298 that declare the guard. Budget a sweep as hundreds of requests, not as none. `--check` is
+ * the same sweep with the append withheld, and it costs the same reads.
  */
 import {Effect, FileSystem, Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -30,16 +33,17 @@ import {CHORE_PREFIX} from "./key.ts";
 import {compileText} from "./machine.ts";
 import {graftContext} from "./migrate.ts";
 import {nominatePulls} from "./nominate.ts";
-import {type Closure, traceClosure} from "./prove.ts";
-import {correctionEntry, declaresClosureGuard, findMisroute, pullNumberIn} from "./reconcile.ts";
+import {
+	type ClosureRead,
+	correctionEntry,
+	declaresClosureGuard,
+	findMisroute,
+	provenClosure,
+	pullNumberIn,
+} from "./reconcile.ts";
 import {DEFAULT_CHORES_ROOT, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane reconcile";
-
-export type ClosureRead =
-	| {readonly _tag: "Read"; readonly closure: Closure}
-	/** The board did not answer. Never read as `Closes` — that is the fold #7433 exists to stop. */
-	| {readonly _tag: "Unknown"; readonly reason: string};
 
 export type ClosureReader<R> = (
 	issue: number,
@@ -48,7 +52,7 @@ export type ClosureReader<R> = (
 
 /**
  * The board-backed reader: what the merge behind this terminal actually closed, judged by
- * `traceClosure` — `lane prove`'s own ship-stage read (ADR 0343).
+ * {@link provenClosure} over `traceClosure` — `lane prove`'s own ship-stage read (ADR 0343).
  *
  * **It reads the PR the recorded line already names, and nominates nothing.** That is not a shortcut
  * past the group's one nominator but a different question: a nominator answers "which PR is this
@@ -58,8 +62,10 @@ export type ClosureReader<R> = (
  * nothing for exactly the case this verb exists to catch (#7433).
  *
  * A line naming no PR falls back to the nominator at `open-or-merged`, which is the best answer
- * available without evidence on the line. Either way an unreadable answer is `Unknown` and never
- * `Closes` — reading a failed read as a closing merge is the permissive fold this verb undoes.
+ * available without evidence on the line. Either way the judgement is {@link provenClosure}'s, not
+ * `traceClosure`'s directly: a read that failed and a read that proved nothing are both `Unknown`
+ * and never `Closes`, since reading either as a closing merge is the permissive fold this verb
+ * undoes.
  */
 export const closureReader = (
 	repo: string | null,
@@ -83,7 +89,7 @@ export const closureReader = (
 				const nominated = yield* nominatePulls(resolved, issue, "open-or-merged");
 				return nominated._tag === "Unreadable"
 					? {_tag: "Unknown" as const, reason: `cannot read ${nominated.what}: ${nominated.reason}`}
-					: {_tag: "Read" as const, closure: traceClosure(issue, nominated.pulls)};
+					: provenClosure(issue, nominated.pulls);
 			}
 			const pull = yield* getPullRequest(resolved, number);
 			if (pull._tag === "Unknown") {
@@ -96,18 +102,15 @@ export const closureReader = (
 				};
 			}
 			const refs = issueRefsOf(pull.value.body);
-			return {
-				_tag: "Read" as const,
-				closure: traceClosure(issue, [
-					{
-						number: pull.value.number,
-						open: pull.value.state === "open",
-						merged: pull.value.merged,
-						linkedIssues: refs.numbers,
-						linkKind: refs.kind,
-					},
-				]),
-			};
+			return provenClosure(issue, [
+				{
+					number: pull.value.number,
+					open: pull.value.state === "open",
+					merged: pull.value.merged,
+					linkedIssues: refs.numbers,
+					linkKind: refs.kind,
+				},
+			]);
 		});
 };
 

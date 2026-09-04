@@ -13,6 +13,7 @@
  */
 import {applyCorrections, foldLog, type LogEntry} from "./fold.ts";
 import {bareEvent, CORRECTED_EVENT, type CompiledLane} from "./machine.ts";
+import {type Closure, landedFor, type PullFact, traceClosure} from "./prove.ts";
 
 export type Misroute =
 	/** This entry sat on a partial-guarded cell and recorded no `partial` — the board decides. */
@@ -56,7 +57,10 @@ export const findMisroute = (lane: CompiledLane, entries: ReadonlyArray<LogEntry
 	let found: Misroute | null = null;
 	for (const [index, entry] of log.entries()) {
 		const task = lane.tasks[entry.task];
-		if (task === undefined || entry.partial === true) continue;
+		// Any recorded `partial` is the line's own answer, either polarity: this nominates a line that
+		// recorded none, never one that recorded `false`, which would re-nominate the same corrected
+		// line on every run forever.
+		if (task === undefined || entry.partial !== undefined) continue;
 		const before = foldLog(lane, log.slice(0, index));
 		if (before._tag === "Unreplayable") return before;
 		const state = before.states[entry.task];
@@ -98,6 +102,40 @@ export const declaresClosureGuard = (lane: CompiledLane): boolean =>
 export const pullNumberIn = (ref: string | null): number | null => {
 	const matched = ref === null ? null : /\/pull\/(\d+)(?:[/#?].*)?$/.exec(ref);
 	return matched?.[1] === undefined ? null : Number(matched[1]);
+};
+
+export type ClosureRead =
+	| {readonly _tag: "Read"; readonly closure: Closure}
+	/**
+	 * The board did not answer, or answered and proved nothing. Never read as `Closes` — that is the
+	 * permissive fold #7433 exists to undo.
+	 */
+	| {readonly _tag: "Unknown"; readonly reason: string};
+
+/**
+ * What a board answer *proves* about the merge behind a recorded terminal.
+ *
+ * {@link traceClosure} answers `Closes` when no merged PR links the issue, and that default is right
+ * where it lives: refusing there would strand a shipper over a merge that really landed. Read here
+ * it inverts. A `closes` verdict leaves the lane folded to its terminal, so a read that proved
+ * nothing would be the justification for leaving alone exactly the lane this sweep exists to catch —
+ * and that empty answer is the common case, not the rare one. The PR-less fallback lands on it by
+ * construction, a merged `Part of #N` being invisible to both nomination reads; so does a named PR
+ * that is not merged; so does one whose body carries both link kinds, since `issueRefsOf` drops
+ * every `Part of` number when it does.
+ *
+ * So the absence of a closure proof is `Unknown`, and only a merged pull request that really links
+ * this issue reaches the judgement. `lane prove`'s own use of `traceClosure` is untouched (#7457).
+ */
+export const provenClosure = (issue: number, facts: ReadonlyArray<PullFact>): ClosureRead => {
+	const landed = landedFor(issue, facts);
+	if (landed.length === 0) {
+		return {
+			_tag: "Unknown",
+			reason: `the board named no merged pull request whose body links #${issue}, so nothing read proves this merge closed it`,
+		};
+	}
+	return {_tag: "Read", closure: traceClosure(issue, landed)};
 };
 
 /** The line a proven-partial merge appends: it supersedes {@link Misroute} and moves no task. */
