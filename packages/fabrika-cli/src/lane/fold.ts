@@ -33,8 +33,10 @@ import {
  * `class:<name>` guard routes on (ADR 0317), `waitGrant` is the waits a resume buys, which rides
  * the `UNBLOCKED` line so one recorded event both clears a queue stall and pays for the read the
  * lane resumes to take (ADR 0313), and `partial` says the merge behind a ship's `DONE` left its
- * issue open, which is what the `merge:partial` guard routes on (ADR 0343). Absent `partial` reads
- * as a closing merge, so every line written before the field existed folds exactly as it did.
+ * issue open, which is what the `merge:partial` guard routes on (ADR 0343). It is recorded at both
+ * polarities, so absent means "nobody read the closure", never "the merge closed it": the fold still
+ * routes an absent one down the closing arm, and every line written before the field existed folds
+ * exactly as it did, but a reader asking which lines were never confirmed can now tell (ADR 0351).
  *
  * `deferred` is the fourth kind: not evidence and not a payload the fold reads, but the disclosure
  * that this `PASS` was proven over a set short the namespaces named — the routed `review-ui` an
@@ -500,7 +502,7 @@ export const applyEvent = (
 	at: string,
 	classes: ReadonlyArray<string> | null = null,
 	waitGrant: number | null = null,
-	partial = false,
+	partial: boolean | null = null,
 ): ApplyResult => {
 	if (!isOperatorEvent(event)) {
 		if (event === CLEARED_EVENT) {
@@ -545,7 +547,7 @@ export const applyEvent = (
 			type: event,
 			...(classes === null ? {} : {classes}),
 			...(waitGrant === null ? {} : {waitGrant}),
-			...(partial ? {partial} : {}),
+			...(partial === null ? {} : {partial}),
 		});
 	} catch (error) {
 		if (error instanceof NoCellError) {
@@ -588,7 +590,7 @@ export const applyEvent = (
 		at,
 		...(classes === null ? {} : {classes}),
 		...(waitGrant === null ? {} : {waitGrant}),
-		...(partial ? {partial} : {}),
+		...(partial === null ? {} : {partial}),
 	};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
 	return {_tag: "Applied", entry, previous, current};
