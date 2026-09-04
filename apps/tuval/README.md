@@ -278,7 +278,7 @@ factory and nothing over a WebSocket, and Node 26 ships the WebSocket *client* a
 spike's `play.ts` (#7469) and shaped after the pin's own `unix.js`.
 
 `PiClientService.layerWebSocket({url})` takes the server's dial URL, token included, and hands back
-`connect`, `reconnect`, `createSession`, `attachSession`, `prompt`, `snapshots` and
+`connect`, `reconnect`, `createSession`, `attachSession`, `prompt`, `abort`, `snapshots` and
 `disconnections`. Nothing below that surface returns a `Promise` or throws a Pi error class: every
 rejection folds into one of four typed refusals — `SessionLocked`, `SessionNotFound`,
 `Disconnected`, `ProtocolRefused` — in `refusals.ts`.
@@ -293,3 +293,24 @@ Retry policy is the handlers' and stays declared data (#7371).
 is what lets the transport and the no-retry-loop proof run in the unit tier; the lock, the
 not-found and the reacquire run against the loopback server on Pi's faux provider in
 `pi-client.integration.test.ts`.
+
+## The Pi AI agent layer
+
+`src/pi/ai-agent/` is where Pi's protocol stops. `PiAiAgent.layer()` is a `TuvalAiAgent` over the
+loopback server and the client above it: building it stands up one server, dials one client and
+holds both against the scope it was built in, so closing that scope closes the client, the server
+and every session exactly once. Nothing on its surface is a Pi type, and the per-launch token is
+unwrapped once, into the transport factory's closure, and reaches no event, no method's answer and
+no log line.
+
+`start({cwd, resume?})` is the caller's, not the layer's, so restore is "rebuild the layer, then
+`start({cwd, resume: sessionId})`" — and that same call is the only way back after a drop. A dropped
+socket fails `events` once with a `TransportError` and nothing dials again; the handlers decide.
+
+Pi pushes whole snapshots, so `items.ts` folds each revision into the events that changed, keyed by
+identities Pi guarantees — a tool row by its call id, so the result supersedes the running row it
+belongs to ([snapshot-authoritative-to-delta-events.md](../../.patterns/snapshot-authoritative-to-delta-events.md)).
+History is Pi's own: `page(before, limit)` reads the session's JSONL through
+`SessionManager.getBranch()` and bounds it with the shared page planner, so Tuval keeps no second
+copy. Pi raises no permission requests and offers no modes at this pin, so `answer` and `setMode`
+refuse as data.

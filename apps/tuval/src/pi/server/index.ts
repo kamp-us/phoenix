@@ -1,5 +1,6 @@
 export {
 	type AgentSessionHostOptions,
+	defaultSessionDir,
 	layer as agentSessionHostLayer,
 } from "./AgentSessionHost.ts";
 export {type ProtocolModelCost, projectModelCost, type SourceModelCost} from "./cost.ts";
