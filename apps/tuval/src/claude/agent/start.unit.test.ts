@@ -7,7 +7,7 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Effect, Exit, Option, Stream} from "effect";
+import {Cause, Effect, Exit, Logger, Option, Stream} from "effect";
 import {Mode} from "../../ai-agent/ports/index.ts";
 import {TUVAL_SERVER_NAME, wireNameOf} from "../tools/index.ts";
 import {
@@ -20,6 +20,23 @@ import {
 	START_EVENTS,
 	TOOL_SESSION_ID,
 } from "./fixtures/harness.ts";
+
+/**
+ * The info lines a run wrote. `start` reports the SDK pin beside the CLI version the init frame
+ * named, and that pair is the only place SDK/CLI drift is visible, so it is asserted rather than
+ * trusted (founder ruling on #7580).
+ */
+const logged = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<ReadonlyArray<string>, E> =>
+	Effect.suspend(() => {
+		const lines: Array<string> = [];
+		const capture = Logger.layer([
+			Logger.make(({logLevel, message}) => {
+				if (logLevel !== "Info") return;
+				lines.push(String(Array.isArray(message) ? message[0] : message));
+			}),
+		]);
+		return effect.pipe(Effect.provide(capture), Effect.as(lines as ReadonlyArray<string>));
+	});
 
 const failure = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?: string} =>
 	Exit.isFailure(exit)
@@ -76,6 +93,17 @@ describe("start opens one streaming query", () => {
 				assert.lengthOf(scripted.opened, 1);
 			}),
 		),
+	);
+
+	it.effect("logs the SDK pin beside the CLI version the init frame named", () =>
+		Effect.gen(function* () {
+			const lines = yield* logged(on({version: "9.9.9-test"}, (agent) => agent.start({cwd: CWD})));
+			// `claude_code_version` off the captured `init` fixture, which is a real run's frame.
+			const line = lines.find((each) => each.includes("SDK 9.9.9-test"));
+			assert.isDefined(line);
+			assert.include(line ?? "", "CLI 2.1.259");
+			assert.include(line ?? "", SESSION_ID);
+		}),
 	);
 
 	it.effect("emits starting, the init's own events, then the mode list", () =>
@@ -164,6 +192,33 @@ describe("setMode", () => {
 				assert.deepStrictEqual(scripted.opened[0]?.record.modes, ["plan"]);
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
 				assert.deepStrictEqual(events[START_EVENTS], {
+					kind: "mode",
+					current: Mode.make("plan"),
+					available: MODES,
+				});
+			}),
+		),
+	);
+
+	it.effect("opens a later session on the mode it announced, not the row's static one", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setMode(Mode.make("plan"));
+				yield* agent.start({cwd: CWD});
+				assert.strictEqual(scripted.opened[1]?.record.options.permissionMode, "plan");
+			}),
+		),
+	);
+
+	it.effect("opens the first session on a mode set before it, which is permitted", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.setMode(Mode.make("plan"));
+				yield* agent.start({cwd: CWD});
+				assert.strictEqual(scripted.opened[0]?.record.options.permissionMode, "plan");
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(events[START_EVENTS - 1], {
 					kind: "mode",
 					current: Mode.make("plan"),
 					available: MODES,

@@ -289,6 +289,7 @@ const make = (
 			cwd: string,
 			resume: string | undefined,
 			out: EventQueue,
+			held: Mode | null,
 		) {
 			const stale: Array<string> = [];
 			if (resume !== undefined) {
@@ -314,6 +315,7 @@ const make = (
 							server,
 							canUseTool,
 							env: sessionEnv(),
+							held,
 							...(resume === undefined ? {} : {resume}),
 							...(watch === null ? {} : {spawn: watch.spawn}),
 						}),
@@ -366,6 +368,7 @@ const make = (
 			readonly cwd: string;
 			readonly resume?: string;
 		}) {
+			const previous = yield* Ref.get(session);
 			// A second `start` is a reconnect, and it replaces the session whole: the previous
 			// subprocess is closed, its pump ended with it, and the old queue is shut so a
 			// subscription taken before this call is not resurrected.
@@ -376,13 +379,19 @@ const make = (
 			yield* Ref.set(queue, out);
 			yield* emit(out, [{kind: "phase", phase: "starting"}]);
 
+			const held = yield* Ref.get(mode);
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
-			const opened = yield* open(startOptions.cwd, startOptions.resume, out).pipe(
+			const opened = yield* open(startOptions.cwd, startOptions.resume, out, held).pipe(
 				Effect.tapError((_error: StartError) => emit(out, [{kind: "phase", phase: "gone"}])),
 			);
 
 			yield* Ref.set(session, opened.session);
+			// The keys belong to a session, not to the layer: a key is dropped when this *session* has
+			// seen it, so a new session admits one the previous session spent. Resuming the session the
+			// keys were recorded under is the one case that keeps them.
+			const continuing = previous !== null && startOptions.resume === previous.id;
+			if (!continuing) yield* Ref.set(keys, new Set<string>());
 			// Forked into the session's own scope, so the fan lives exactly as long as the
 			// subprocess it reads and dies with it.
 			yield* Effect.forkIn(
@@ -390,7 +399,6 @@ const make = (
 				opened.session.scope,
 			);
 
-			const held = yield* Ref.get(mode);
 			yield* emit(out, [{kind: "mode", current: held, available}]);
 			// A card the layer does not hold cannot be answered, so a window restored with one would
 			// wedge on it. Resolving it is what lets the generic restore drop it (#7608).

@@ -21,7 +21,11 @@ aborts a running async generator, so that await is not interruptible: the fiber 
 the generator yields or ends, and the generator ends only when you call the SDK's own `close()`.
 Scope finalizers run last-registered-first, and `forkIn` registers the fiber's interruption *after*
 the layer's build-time finalizers — so the scope tries to interrupt-and-await a fiber that is
-waiting on a subprocess nobody has told to stop.
+waiting on a subprocess nobody has told to stop. Both halves are readable at the pin
+(`effect@4.0.0-rc.112`, `dist/internal/effect.js`): `scopeCloseFinalizers` walks the registered
+finalizers from `arr.length - 1` down to `0`, and `forkIn` registers the fiber's interrupt through
+`scopeAddFinalizerUnsafe` at fork time, which is after the layer's build already registered its
+own.
 
 The fix is to give the session its own scope and close it in order:
 

@@ -54,6 +54,19 @@ describe("prompt", () => {
 		),
 	);
 
+	it.effect("admits a key the previous session spent, because keys belong to a session", () =>
+		on({}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.prompt("hello", "turn-1");
+				yield* agent.start({cwd: CWD});
+				yield* agent.prompt("hello", "turn-1");
+				yield* Effect.yieldNow;
+				assert.deepStrictEqual(sent(scripted.opened[1]?.record.prompts ?? []), ["hello"]);
+			}),
+		),
+	);
+
 	it.effect("sends an unkeyed repeat, because a deliberate resend mints no key", () =>
 		on({}, (agent, scripted) =>
 			Effect.gen(function* () {

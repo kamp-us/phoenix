@@ -44,11 +44,25 @@ export interface ClaudeAiAgentOptions {
 export const advertisedModes = (options: ClaudeAiAgentOptions): ReadonlyArray<Mode> =>
 	options.modes.filter((mode) => OFFERABLE_MODES.includes(mode));
 
-/** The mode a session opens on: the row's, when it is one the row advertises, else `default`. */
-export const openingMode = (options: ClaudeAiAgentOptions): PermissionMode =>
-	advertisedModes(options).includes(options.permissionMode)
+/**
+ * The mode a session opens on: the mode the layer is holding when it holds one, else the row's, else
+ * `default`. Either way it is filtered through what the row advertises.
+ *
+ * `held` is what makes the announced mode and the session's real mode the same fact. The layer emits
+ * its held mode on every `start`, and a `setMode` before the first session — or before a reconnect —
+ * is permitted, so a session opened on the row's static mode would be running one mode while the
+ * stream said another.
+ */
+export const openingMode = (
+	options: ClaudeAiAgentOptions,
+	held: Mode | null = null,
+): PermissionMode => {
+	const offered = advertisedModes(options);
+	if (held !== null && offered.includes(held)) return held as PermissionMode;
+	return offered.includes(options.permissionMode)
 		? (options.permissionMode as PermissionMode)
 		: "default";
+};
 
 /**
  * The environment the spawned CLI runs under.
@@ -73,6 +87,8 @@ export interface QueryOptionsInput {
 	readonly canUseTool: NonNullable<Options["canUseTool"]>;
 	readonly env: Record<string, string | undefined>;
 	readonly spawn?: SpawnClaudeCodeProcess | undefined;
+	/** The mode the layer is holding, if an operator has set one. */
+	readonly held?: Mode | null | undefined;
 }
 
 export const queryOptionsOf = (
@@ -82,7 +98,7 @@ export const queryOptionsOf = (
 	const servers: Record<string, McpServerConfig> = {[TUVAL_SERVER_NAME]: input.server.server};
 	return {
 		cwd: input.cwd,
-		permissionMode: openingMode(options),
+		permissionMode: openingMode(options, input.held ?? null),
 		allowedTools: [...new Set([...input.server.wireNames, ...options.allowedTools])],
 		mcpServers: servers,
 		canUseTool: input.canUseTool,

@@ -46,6 +46,20 @@ describe("the mode a session opens on", () => {
 	it("falls back to default rather than opening on a mode the row will not offer", () => {
 		expect(openingMode(row({permissionMode: Mode.make("bypassPermissions")}))).toBe("default");
 	});
+
+	// The announced mode and the session's real mode are one fact: a session opened on the row's
+	// static mode while the stream said `plan` would be a lie on the stream.
+	it("is the mode the layer is holding, over the row's own", () => {
+		expect(openingMode(row({permissionMode: Mode.make("default")}), Mode.make("plan"))).toBe(
+			"plan",
+		);
+	});
+
+	it("ignores a held mode the row does not advertise", () => {
+		expect(
+			openingMode(row({permissionMode: Mode.make("plan")}), Mode.make("bypassPermissions")),
+		).toBe("plan");
+	});
 });
 
 describe("the spawned CLI's environment", () => {
