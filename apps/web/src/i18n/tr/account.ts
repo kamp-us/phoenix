@@ -44,7 +44,8 @@ export const account = {
 	"bildirim.kind.reportFiled.other": "{count} yeni içerik bildirildi",
 	"bildirim.kind.caylakPending": "yeni bir çaylak divanda incelenmeyi bekliyor",
 	"bildirim.kind.backlogRelease.zero": "bundan sonra yazılarınız herkese açık",
-	"bildirim.kind.backlogRelease.some": "{count} yazınız artık herkese açık",
+	"bildirim.kind.backlogRelease.one": "{count} yazınız artık herkese açık",
+	"bildirim.kind.backlogRelease.other": "{count} yazınız artık herkese açık",
 	"bildirim.kind.unknown": "{kind} ×{count}",
 
 	"mute.action": "sustur",
@@ -112,7 +113,8 @@ export const account = {
 	"profile.contribution.kind.definition": "tanım",
 	"profile.contribution.kind.post": "başlık",
 	"profile.contribution.kind.comment": "yorum",
-	"profile.contribution.score": "{count} oy",
+	"profile.contribution.score.one": "{count} oy",
+	"profile.contribution.score.other": "{count} oy",
 
 	"profile.contributions.heading.public": "katkılar",
 	"profile.contributions.heading.self": "katkıların",

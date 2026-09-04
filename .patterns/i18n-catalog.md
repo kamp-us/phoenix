@@ -40,6 +40,11 @@ apps/web/src/i18n/
 **Keys are technical, so they are English** and dotted, prefixed by their surface —
 `layout.userMenu.logout`. The key never changes when the copy does.
 
+A catalog file may carry a **cluster** of sub-surfaces rather than one, each keeping its own key
+prefix — `i18n/tr/account.ts` holds `profile.*`, `bildirim.*`, `mute.*`, `ui.*` and the rest of the
+identity-facing copy. Split a file per component directory only when the directories move
+independently; nine files nothing else distinguishes are nine merge targets, not nine surfaces.
+
 ## When the key set comes from a vocabulary, not from the copy
 
 `i18n/tr/wire.ts` is the exception to step 1: its keys are `` `wire.${FateWireCode}` ``, a template
@@ -54,10 +59,6 @@ The consumer takes the bound `Translate`, never a `Locale`: `en` is reachable on
 `catalog.ts`'s dynamic import, so a module outside a `LocaleProvider` subtree cannot resolve
 English synchronously. A module-level rule that needs copy is curried on `t` and the component
 supplies it — see `validateCommentBody` in `pages/PanoPostDetail.tsx`.
-A catalog file may carry a **cluster** of sub-surfaces rather than one, each keeping its own key
-prefix — `i18n/tr/account.ts` holds `profile.*`, `bildirim.*`, `mute.*`, `ui.*` and the rest of the
-identity-facing copy. Split a file per component directory only when the directories move
-independently; nine files nothing else distinguishes are nine merge targets, not nine surfaces.
 
 ## Copy a pure helper decides
 
@@ -115,6 +116,15 @@ the yazars`) rather than reintroduce it and red the test.
 `other` for both `tr` and `en`, and `plural.unit.test.ts` asserts that against the running engine —
 if a runtime ever reports a third category, that test is what says so. A third locale, or an ICU
 `select`/gender need, is the point ADR 0347 names for re-opening the library question.
+
+**Any message interpolating a count goes through `plural()`** — a key holding `{count}` carries
+`.one` and `.other` arms in *both* catalogs, and the render site picks between them. Turkish does
+not inflect the noun after a numeral, so the two `tr` arms are usually the same string; write both
+anyway, because the arm a key is missing is the arm nothing can pick. A single-arm `{count}` key
+type-checks, passes every test in the suite and still renders "1 votes" to an English reader — the
+gap #7667 tracks a parity test for. The exception is a message where the number is a badge rather
+than a quantity the grammar agrees with: `bildirim.kind.unknown` renders `{kind} ×{count}` and reads
+the same at every count.
 
 ## The flag
 
