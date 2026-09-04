@@ -189,7 +189,10 @@ function makeServices() {
 			// Read late on purpose: the definition that closes over this is built before the actor
 			// exists, and a handler only ever calls it once the actor is running.
 			let readState: () => unknown = () => undefined;
-			const services = Context.add(options?.services ?? Context.empty(), ProcessSelf, {
+			// What handlers actually get: the spawner's context plus this process's own `ProcessSelf`.
+			// Never `options.services` directly — spawn is the one place `ProcessSelf` is provided, so
+			// no caller and no `restore` has to know it exists (#7603).
+			const handlerServices = Context.add(options.services, ProcessSelf, {
 				scope,
 				state: () => readState(),
 			});
@@ -215,9 +218,7 @@ function makeServices() {
 					parentId,
 					version: program.identity.version,
 				});
-				return yield* makeActor(
-					toDefinition(program, checkpoint.store, options.services, onCommit),
-				);
+				return yield* makeActor(toDefinition(program, checkpoint.store, handlerServices, onCommit));
 			}).pipe(
 				Effect.provideService(Scope.Scope, scope),
 				Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
