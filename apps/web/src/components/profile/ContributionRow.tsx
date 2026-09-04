@@ -4,6 +4,7 @@ import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
+import {plural, useLocale} from "../../i18n";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {Badge} from "../ui/Badge";
@@ -38,7 +39,15 @@ export interface ContributionRowProps {
 }
 
 export function ContributionRow({node, isOwn = false, sandboxBadge = false}: ContributionRowProps) {
+	const {t, locale} = useLocale();
 	const c = useView(ContributionView, node);
+	const score = t(
+		plural(locale, c.score, {
+			one: "profile.contribution.score.one",
+			other: "profile.contribution.score.other",
+		}),
+		{count: c.score},
+	);
 	// `sandboxBadge` is the caller's çaylak-status gate on the OWNER badge (#1316); a
 	// surface that withholds it passes `undefined` and lands on `none` for the owner.
 	const badge = (
@@ -57,13 +66,13 @@ export function ContributionRow({node, isOwn = false, sandboxBadge = false}: Con
 						variant="secondary"
 						className="kp-user-profile__kind kp-user-profile__kind--definition"
 					>
-						tanım
+						{t("profile.contribution.kind.definition")}
 					</Badge>
 					{badge}
 					<Link to={`/sozluk/${c.termSlug}`} className="kp-user-profile__row-title">
 						{c.termTitle}
 					</Link>
-					<span className="kp-user-profile__row-score">{c.score} oy</span>
+					<span className="kp-user-profile__row-score">{score}</span>
 					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
 				</div>
 				<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt ?? "")}</p>
@@ -76,13 +85,13 @@ export function ContributionRow({node, isOwn = false, sandboxBadge = false}: Con
 			<li className="kp-user-profile__row" data-testid="contribution-post">
 				<div className="kp-user-profile__row-head">
 					<Badge variant="secondary" className="kp-user-profile__kind kp-user-profile__kind--post">
-						başlık
+						{t("profile.contribution.kind.post")}
 					</Badge>
 					{badge}
 					<Link to={`/pano/${c.id}`} className="kp-user-profile__row-title">
 						{c.title}
 					</Link>
-					<span className="kp-user-profile__row-score">{c.score} oy</span>
+					<span className="kp-user-profile__row-score">{score}</span>
 					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
 				</div>
 				{c.bodyExcerpt ? (
@@ -100,13 +109,13 @@ export function ContributionRow({node, isOwn = false, sandboxBadge = false}: Con
 						variant="secondary"
 						className="kp-user-profile__kind kp-user-profile__kind--comment"
 					>
-						yorum
+						{t("profile.contribution.kind.comment")}
 					</Badge>
 					{badge}
 					<Link to={`/pano/${c.postId}`} className="kp-user-profile__row-title">
 						{c.postTitle}
 					</Link>
-					<span className="kp-user-profile__row-score">{c.score} oy</span>
+					<span className="kp-user-profile__row-score">{score}</span>
 					<span className="kp-user-profile__row-date">{formatAgoTR(toIso(c.createdAt))}</span>
 				</div>
 				<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt ?? "")}</p>

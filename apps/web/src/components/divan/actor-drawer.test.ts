@@ -86,14 +86,22 @@ describe("actorIdentityLabel — @handle · tier · karma", () => {
 });
 
 describe("uretimLabel — the actor's live content footprint", () => {
-	it("renders N tanım · N gönderi · N yorum", () => {
-		expect(uretimLabel(standing())).toBe("4 tanım · 1 gönderi · 7 yorum");
+	it("gives each count its own clause, singular where the count is 1", () => {
+		expect(uretimLabel(standing())).toEqual({
+			frame: {key: "divan.actor.uretim"},
+			definitions: {key: "divan.count.definitions.other", params: {count: 4}},
+			posts: {key: "divan.count.posts.one", params: {count: 1}},
+			comments: {key: "divan.count.comments.other", params: {count: 7}},
+		});
 	});
 
 	it("renders faithful zeros for a real newcomer — 0 is not absence", () => {
-		expect(uretimLabel(standing({definitionCount: 0, postCount: 0, commentCount: 0}))).toBe(
-			"0 tanım · 0 gönderi · 0 yorum",
-		);
+		expect(uretimLabel(standing({definitionCount: 0, postCount: 0, commentCount: 0}))).toEqual({
+			frame: {key: "divan.actor.uretim"},
+			definitions: {key: "divan.count.definitions.other", params: {count: 0}},
+			posts: {key: "divan.count.posts.other", params: {count: 0}},
+			comments: {key: "divan.count.comments.other", params: {count: 0}},
+		});
 	});
 
 	it("is null when the counts are unresolved (no fabricated footprint)", () => {
@@ -103,38 +111,38 @@ describe("uretimLabel — the actor's live content footprint", () => {
 
 describe("kaldirilanLabel — the prior-removals trust tell", () => {
 	it("counts removals when the actor has them", () => {
-		expect(kaldirilanLabel(2)).toBe("2 kaldırıldı");
+		expect(kaldirilanLabel(2)).toEqual({key: "divan.actor.record.removed", params: {count: 2}});
 	});
 
 	it("reads temiz at zero (the value no longer re-states the sicil key), null when unresolved", () => {
-		expect(kaldirilanLabel(0)).toBe("temiz");
+		expect(kaldirilanLabel(0)).toEqual({key: "divan.actor.record.clean"});
 		expect(kaldirilanLabel(null)).toBeNull();
 	});
 });
 
 describe("bildirilenLabel — the pile-on breadth tell", () => {
 	it("counts distinct reporters (bare count under the bildiren key), clamped to at least 1", () => {
-		expect(bildirilenLabel(7)).toBe("7 kişi");
-		expect(bildirilenLabel(0)).toBe("1 kişi");
+		expect(bildirilenLabel(7)).toEqual({key: "divan.actor.reporters.other", params: {count: 7}});
+		expect(bildirilenLabel(0)).toEqual({key: "divan.actor.reporters.one", params: {count: 1}});
 	});
 });
 
 describe("kefilDurumuLabel — the vouch tell", () => {
 	it("reads kefilli / kefilsiz, null when unresolved", () => {
-		expect(kefilDurumuLabel(true)).toBe("kefilli");
-		expect(kefilDurumuLabel(false)).toBe("kefilsiz");
+		expect(kefilDurumuLabel(true)).toEqual({key: "divan.actor.kefil.yes"});
+		expect(kefilDurumuLabel(false)).toEqual({key: "divan.actor.kefil.no"});
 		expect(kefilDurumuLabel(null)).toBeNull();
 	});
 });
 
 describe("buAktorLabel — the #1855 remove-the-wave entry point", () => {
 	it("counts the actor's other reported targets (bare under the bu aktör key)", () => {
-		expect(buAktorLabel(3)).toBe("3 raporlu içerik");
+		expect(buAktorLabel(3)).toEqual({key: "divan.actor.otherReported.some", params: {count: 3}});
 	});
 
 	it("reads the clean line at 0/1, null when unresolved", () => {
-		expect(buAktorLabel(1)).toBe("başka raporlu içerik yok");
-		expect(buAktorLabel(0)).toBe("başka raporlu içerik yok");
+		expect(buAktorLabel(1)).toEqual({key: "divan.actor.otherReported.none"});
+		expect(buAktorLabel(0)).toEqual({key: "divan.actor.otherReported.none"});
 		expect(buAktorLabel(null)).toBeNull();
 	});
 });

@@ -1,4 +1,5 @@
 // State is carried by the word, not color alone (the AA-contrast tokens).
+import {useT} from "../../i18n";
 import {Badge} from "./Badge";
 import "./ReviewBadge.css";
 
@@ -11,9 +12,10 @@ import "./ReviewBadge.css";
  * @slot none Fixed copy; no children slot.
  */
 export function ReviewBadge() {
+	const t = useT();
 	return (
 		<Badge variant="info" className="kp-review-badge" data-testid="incelemede-badge">
-			incelemede
+			{t("ui.reviewBadge")}
 		</Badge>
 	);
 }

@@ -41,6 +41,7 @@ const manifest = (overrides: Partial<CaptureManifest> = {}): CaptureManifest => 
 	captures: [
 		{
 			surface: "/pano",
+			viewport: "desktop",
 			path: CAPTURE_PATH,
 			width: 1280,
 			height: 2140,
@@ -167,7 +168,8 @@ const run = (
 	).then((outcome) => ({outcome, requests: seams.requests, bodies: seams.bodies}));
 };
 
-const COMPOSED = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence\n\n### /pano\n\n![/pano](${HOSTED})`;
+const SHOT = "/pano @ desktop";
+const COMPOSED = `review-ui: FAIL @ ${HEAD} — changes-requested\n\n${BODY.trimEnd()}\n\n## Evidence\n\n### ${SHOT}\n\n![${SHOT}](${HOSTED})`;
 
 const happy = (): ReadonlyArray<Scripted> => [
 	[PULL, pull()],
@@ -194,7 +196,7 @@ describe("runPost", () => {
 		const write = bodies[requests.findIndex((request) => CREATE.test(request))] ?? "";
 		const body = String(JSON.parse(write).body);
 		expect(body.split("\n")[0]).toBe(`review-ui: FAIL @ ${HEAD} — changes-requested`);
-		expect(body).toContain(`![/pano](${HOSTED})`);
+		expect(body).toContain(`![${SHOT}](${HOSTED})`);
 		// The gallery embeds the hosted URL, never the local path the reviewer judged.
 		expect(body).not.toContain(CAPTURE_PATH);
 	});

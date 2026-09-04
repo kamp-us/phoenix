@@ -128,26 +128,52 @@ describe("escapeTo — the Esc de-escalation ladder (one rung per press)", () =>
 
 describe("reporterDiversityLabel — the pile-on shape (a real wave vs a grudge)", () => {
 	it("surfaces the diversity contrast for a multi-report target", () => {
-		expect(reporterDiversityLabel(9, 7)).toBe("9 rapor · 7 farklı kişi");
-		expect(reporterDiversityLabel(9, 1)).toBe("9 rapor · 1 farklı kişi");
+		expect(reporterDiversityLabel(9, 7)).toEqual({
+			key: "divan.triage.diversity.other",
+			params: {count: 9, distinct: 7},
+		});
+	});
+
+	it("takes the singular arm when one person filed every report", () => {
+		expect(reporterDiversityLabel(9, 1)).toEqual({
+			key: "divan.triage.diversity.one",
+			params: {count: 9, distinct: 1},
+		});
 	});
 
 	it("drops the diversity clause for a single report (nothing to contrast)", () => {
-		expect(reporterDiversityLabel(1, 1)).toBe("1 rapor");
+		expect(reporterDiversityLabel(1, 1)).toEqual({
+			key: "divan.report.count.one",
+			params: {count: 1},
+		});
 	});
 
 	it("clamps distinct to [1, count] so it never exceeds the report count", () => {
-		expect(reporterDiversityLabel(3, 9)).toBe("3 rapor · 3 farklı kişi");
+		expect(reporterDiversityLabel(3, 9)).toEqual({
+			key: "divan.triage.diversity.other",
+			params: {count: 3, distinct: 3},
+		});
 	});
 });
 
 describe("authorReputationLabel — the reputation-in-row copy", () => {
 	it("renders tier · karma · removals for a repeat offender", () => {
-		expect(authorReputationLabel("çaylak", 3, 2)).toBe("çaylak · 3 karma · 2 kaldırma");
+		expect(authorReputationLabel("çaylak", 3, 2)).toEqual({
+			key: "divan.triage.reputationRemovals.other",
+			params: {tier: "çaylak", karma: 3, removals: 2},
+		});
+
+		expect(authorReputationLabel("çaylak", 3, 1)).toEqual({
+			key: "divan.triage.reputationRemovals.one",
+			params: {tier: "çaylak", karma: 3, removals: 1},
+		});
 	});
 
 	it("drops the removal clause for a clean author (zero removals)", () => {
-		expect(authorReputationLabel("yazar", 240, 0)).toBe("yazar · 240 karma");
+		expect(authorReputationLabel("yazar", 240, 0)).toEqual({
+			key: "divan.triage.reputation",
+			params: {tier: "yazar", karma: 240},
+		});
 	});
 
 	it("returns null when the author is unresolved (no fabricated reputation)", () => {
@@ -158,37 +184,41 @@ describe("authorReputationLabel — the reputation-in-row copy", () => {
 
 describe("maskedExcerpt — the reveal-on-O gate (never force-fed a slur)", () => {
 	it("masks the excerpt by default, hinting O to reveal", () => {
-		expect(maskedExcerpt("kötü söz", false)).toBe("içerik gizli · O ile göster");
+		expect(maskedExcerpt("kötü söz", false)).toEqual({key: "divan.triage.excerptHidden"});
 	});
 
 	it("shows the excerpt once revealed", () => {
-		expect(maskedExcerpt("kötü söz", true)).toBe("kötü söz");
+		expect(maskedExcerpt("kötü söz", true)).toEqual({text: "kötü söz"});
 	});
 
 	it("reads the neutral fallback for a missing excerpt regardless of reveal", () => {
-		expect(maskedExcerpt(null, true)).toBe("içerik yüklenemedi");
-		expect(maskedExcerpt("  ", false)).toBe("içerik yüklenemedi");
+		expect(maskedExcerpt(null, true)).toEqual({key: "divan.excerpt.unavailable"});
+		expect(maskedExcerpt("  ", false)).toEqual({key: "divan.excerpt.unavailable"});
 	});
 });
 
 describe("drainedLabel — the earned empty state", () => {
 	it("counts today's decisions when there were any", () => {
-		expect(drainedLabel(12)).toBe("raporlar temiz · bugün 12 karar");
+		expect(drainedLabel(12)).toEqual({
+			key: "divan.triage.drainedToday.other",
+			params: {count: 12},
+		});
+		expect(drainedLabel(1)).toEqual({key: "divan.triage.drainedToday.one", params: {count: 1}});
 	});
 
 	it("reads clean without a count for an already-empty queue", () => {
-		expect(drainedLabel(0)).toBe("raporlar temiz");
+		expect(drainedLabel(0)).toEqual({key: "divan.triage.drained"});
 	});
 });
 
 describe("triageLegend — the HUD key legend (#2726)", () => {
-	it("names every bound gesture with keycap(s) + a lowercase action", () => {
-		const byLabel = new Map(triageLegend.map((e) => [e.label, e.keys]));
-		expect(byLabel.get("gez")).toEqual(["j", "k"]);
-		expect(byLabel.get("yoksay")).toEqual(["Y"]);
-		expect(byLabel.get("kaldır")).toEqual(["R"]);
-		expect(byLabel.get("bölme")).toEqual(["V", "M"]);
-		expect(byLabel.get("dalga")).toEqual(["X"]);
+	it("names every bound gesture with keycap(s) + a catalog key for the action", () => {
+		const byLabel = new Map(triageLegend.map((e) => [e.labelKey, e.keys]));
+		expect(byLabel.get("divan.triage.legend.navigate")).toEqual(["j", "k"]);
+		expect(byLabel.get("divan.triage.legend.dismiss")).toEqual(["Y"]);
+		expect(byLabel.get("divan.triage.legend.remove")).toEqual(["R"]);
+		expect(byLabel.get("divan.triage.legend.chamber")).toEqual(["V", "M"]);
+		expect(byLabel.get("divan.triage.legend.wave")).toEqual(["X"]);
 	});
 
 	it("carries a keycap for every verdict/undo/reveal binding keyToAction maps", () => {

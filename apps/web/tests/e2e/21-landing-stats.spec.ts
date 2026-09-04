@@ -41,7 +41,7 @@ test.describe("Landing stats", () => {
 
 		await page.goto("/");
 		await expect(page.getByTestId("kp-landing-stats")).toBeVisible({timeout: 10_000});
-		const before = await page.getByTestId("stat-başlık").locator(".n").innerText();
+		const before = await page.getByTestId("stat-posts").locator(".n").innerText();
 		const beforeCount = parseTrNumber(before);
 
 		await page.goto("/pano/yeni");
@@ -60,7 +60,7 @@ test.describe("Landing stats", () => {
 		await page.reload();
 		await expect(page.getByTestId("kp-landing-stats")).toBeVisible({timeout: 10_000});
 		await expect(async () => {
-			const text = await page.getByTestId("stat-başlık").locator(".n").innerText();
+			const text = await page.getByTestId("stat-posts").locator(".n").innerText();
 			expect(parseTrNumber(text)).toBeGreaterThan(beforeCount);
 		}).toPass({timeout: 15_000});
 	});

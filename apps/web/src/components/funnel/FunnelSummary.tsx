@@ -5,6 +5,7 @@
  */
 import {useRequest, useView, view} from "react-fate";
 import type {FunnelSummary as FunnelSummaryEntity} from "../../../worker/features/fate/views";
+import {type Locale, useLocale, useT} from "../../i18n";
 
 const FunnelSummaryView = view<FunnelSummaryEntity>()({
 	id: true,
@@ -23,71 +24,89 @@ const funnelRequest = {
 	"funnel.summary": {view: FunnelSummaryView},
 } as const;
 
-function formatCount(n: number): string {
-	if (n < 1000) return String(n);
-	return n.toLocaleString("tr-TR");
+function numberLocale(locale: Locale): string {
+	return locale === "tr" ? "tr-TR" : "en-US";
 }
 
-function formatRate(rate: number): string {
-	return rate.toLocaleString("tr-TR", {
+function formatCount(n: number, locale: Locale): string {
+	if (n < 1000) return String(n);
+	return n.toLocaleString(numberLocale(locale));
+}
+
+function formatRate(rate: number, locale: Locale): string {
+	return rate.toLocaleString(numberLocale(locale), {
 		style: "percent",
 		minimumFractionDigits: 1,
 		maximumFractionDigits: 1,
 	});
 }
 
-function formatMedianDays(medianMs: number | null): string {
-	if (medianMs === null) return "henüz ölçülemiyor";
-	const days = medianMs / MS_PER_DAY;
-	return `${days.toLocaleString("tr-TR", {minimumFractionDigits: 1, maximumFractionDigits: 1})} gün`;
-}
-
 export function FunnelSummary() {
+	const t = useT();
+	const {locale} = useLocale();
 	const result = useRequest(funnelRequest);
 	const summary = useView(FunnelSummaryView, result["funnel.summary"]);
+	const medianMs = summary.timeToPromotionMedianMs;
+	const median =
+		medianMs === null
+			? t("divan.funnel.notMeasurable")
+			: t("divan.funnel.days", {
+					days: (medianMs / MS_PER_DAY).toLocaleString(numberLocale(locale), {
+						minimumFractionDigits: 1,
+						maximumFractionDigits: 1,
+					}),
+				});
 
 	return (
 		<div data-testid="funnel-summary">
 			<figure className="kp-funnel__headline">
-				<figcaption className="kp-funnel__headline-label">yazar dönüşüm oranı</figcaption>
+				<figcaption className="kp-funnel__headline-label">
+					{t("divan.funnel.promotionRate")}
+				</figcaption>
 				<p className="kp-funnel__headline-value" data-testid="funnel-promotion-rate">
-					{formatRate(summary.promotionRate)}
+					{formatRate(summary.promotionRate, locale)}
 				</p>
 			</figure>
 			<figure className="kp-funnel__headline">
-				<figcaption className="kp-funnel__headline-label">ilk katkı oranı</figcaption>
+				<figcaption className="kp-funnel__headline-label">
+					{t("divan.funnel.firstContributionRate")}
+				</figcaption>
 				<p className="kp-funnel__headline-value" data-testid="funnel-first-contribution-rate">
-					{formatRate(summary.firstContributionRate)}
+					{formatRate(summary.firstContributionRate, locale)}
 				</p>
 			</figure>
 			<figure className="kp-funnel__headline">
-				<figcaption className="kp-funnel__headline-label">kefil oranı</figcaption>
+				<figcaption className="kp-funnel__headline-label">{t("divan.funnel.vouchRate")}</figcaption>
 				<p className="kp-funnel__headline-value" data-testid="funnel-vouch-rate">
-					{formatRate(summary.vouchRate)}
+					{formatRate(summary.vouchRate, locale)}
 				</p>
 			</figure>
 			<figure className="kp-funnel__headline">
-				<figcaption className="kp-funnel__headline-label">yazara geçiş süresi (medyan)</figcaption>
+				<figcaption className="kp-funnel__headline-label">
+					{t("divan.funnel.timeToPromotion")}
+				</figcaption>
 				<p className="kp-funnel__headline-value" data-testid="funnel-time-to-promotion">
-					{formatMedianDays(summary.timeToPromotionMedianMs)}
+					{median}
 				</p>
 				{summary.timeToPromotionNotYetMeasurable > 0 && (
 					<figcaption
 						className="kp-funnel__headline-note"
 						data-testid="funnel-time-to-promotion-not-measurable"
 					>
-						{formatCount(summary.timeToPromotionNotYetMeasurable)} yazar henüz ölçülemiyor
+						{t("divan.funnel.notMeasurableCount", {
+							count: formatCount(summary.timeToPromotionNotYetMeasurable, locale),
+						})}
 					</figcaption>
 				)}
 			</figure>
 			<dl className="kp-funnel__counts">
 				<div className="kp-funnel__metric">
-					<dt className="kp-funnel__metric-label">çaylak</dt>
-					<dd className="kp-funnel__metric-value">{formatCount(summary.caylakCount)}</dd>
+					<dt className="kp-funnel__metric-label">{t("divan.funnel.caylak")}</dt>
+					<dd className="kp-funnel__metric-value">{formatCount(summary.caylakCount, locale)}</dd>
 				</div>
 				<div className="kp-funnel__metric">
-					<dt className="kp-funnel__metric-label">yazar</dt>
-					<dd className="kp-funnel__metric-value">{formatCount(summary.yazarCount)}</dd>
+					<dt className="kp-funnel__metric-label">{t("divan.funnel.yazar")}</dt>
+					<dd className="kp-funnel__metric-value">{formatCount(summary.yazarCount, locale)}</dd>
 				</div>
 			</dl>
 		</div>

@@ -1,13 +1,20 @@
 // `apps/web/src` has no jsdom, so the gate, the vouch readout, and the consumed-shape
 // key set are factored out of the component and asserted as pure values.
 import {describe, expect, it} from "vitest";
+import {tr} from "../../i18n/tr";
 import {
 	caylakPromotionPath,
 	STANDING_FIELDS,
 	shouldShowCaylakStatus,
-	VOUCH_NEEDED_COPY,
-	vouchExistsLabel,
+	VOUCH_NEEDED_KEYS,
+	vouchExistsLabelKey,
 } from "./CaylakStatusBlock";
+
+const vouchExistsLabel = (vouchExists: boolean) => tr[vouchExistsLabelKey(vouchExists)];
+const VOUCH_NEEDED_COPY = {
+	message: tr[VOUCH_NEEDED_KEYS.message],
+	hint: tr[VOUCH_NEEDED_KEYS.hint],
+};
 
 describe("shouldShowCaylakStatus — the two-gate AND (çaylak + own profile)", () => {
 	it("shows only when the viewer is a çaylak AND it is their own profile", () => {
@@ -53,8 +60,8 @@ describe("caylakPromotionPath — the unvouched-vs-vouched rendering split (#132
 		const path = caylakPromotionPath(false);
 		expect(path.kind).toBe("vouch-needed");
 		if (path.kind === "vouch-needed") {
-			expect(path.message).toBe(VOUCH_NEEDED_COPY.message);
-			expect(path.hint).toBe(VOUCH_NEEDED_COPY.hint);
+			expect(tr[path.messageKey]).toBe(VOUCH_NEEDED_COPY.message);
+			expect(tr[path.hintKey]).toBe(VOUCH_NEEDED_COPY.hint);
 		}
 	});
 
@@ -63,7 +70,7 @@ describe("caylakPromotionPath — the unvouched-vs-vouched rendering split (#132
 	});
 
 	it("never carries promotion copy on the karma-bar branch (invalid state unrepresentable)", () => {
-		expect(caylakPromotionPath(true)).not.toHaveProperty("message");
+		expect(caylakPromotionPath(true)).not.toHaveProperty("messageKey");
 	});
 
 	it("the unvouched copy communicates that a vouch (or a mod action) is required", () => {

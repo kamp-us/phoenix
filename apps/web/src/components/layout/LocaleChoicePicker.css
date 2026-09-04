@@ -1,0 +1,11 @@
+/* The dil picker shares the tema picker's sizing problem and its answer (#7527): both sit in
+   the account popover's 36px settings rows, and the segmented track's default height is its
+   items' --tap-min floor plus the track's 2px pad + 1px border, i.e. 42px — which would make
+   the two settings rows the tall ones in the panel. Sizing to --letter-size keeps them on the
+   compact/normal/spacious ramp instead of pinning a height.
+
+   Specificity is deliberate: `.kp-toggle-group [data-part="item"]` (ToggleGroup.css) is 0-2-0,
+   so the extra class here decides the tie rather than stylesheet import order. */
+.kp-locale-picker .kp-toggle-group [data-part="item"] {
+	min-height: var(--letter-size);
+}

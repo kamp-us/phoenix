@@ -1,5 +1,9 @@
 import {describe, expect, it} from "vitest";
+import {tr} from "../i18n/tr";
 import {mecmuaPublishAffordance, shouldShowMecmuaWriteCta} from "./mecmua-write-gate";
+
+const gateCopy = (affordance: ReturnType<typeof mecmuaPublishAffordance>) =>
+	affordance.kind === "gate" ? tr[affordance.messageKey] : "";
 
 describe("mecmuaPublishAffordance — publish is a yazar-only affordance", () => {
 	it("offers publish to a yazar", () => {
@@ -9,14 +13,14 @@ describe("mecmuaPublishAffordance — publish is a yazar-only affordance", () =>
 	it("gates a signed-in çaylak with the earned-gate message (not a login prompt)", () => {
 		const affordance = mecmuaPublishAffordance(true, "çaylak");
 		expect(affordance.kind).toBe("gate");
-		expect(affordance).toMatchObject({message: expect.stringContaining("yazar olman gerekiyor")});
-		expect(affordance).toMatchObject({message: expect.stringContaining("çaylak")});
+		expect(gateCopy(affordance)).toContain("yazar olman gerekiyor");
+		expect(gateCopy(affordance)).toContain("çaylak");
 	});
 
 	it("gates a signed-out reader with the sign-in-and-earn message", () => {
 		const affordance = mecmuaPublishAffordance(false, undefined);
 		expect(affordance.kind).toBe("gate");
-		expect(affordance).toMatchObject({message: expect.stringContaining("giriş yap")});
+		expect(gateCopy(affordance)).toContain("giriş yap");
 	});
 
 	it("gates a visitor tier the same as any non-yazar", () => {

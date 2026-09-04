@@ -19,6 +19,9 @@ export default defineConfig({
 		environment: "jsdom",
 		setupFiles: ["./tests/client/setup.ts"],
 		exclude: ["node_modules/**", "dist/**"],
+		// Same jsdom-storage repair as the `client` tier — see the `execArgv` note in
+		// `vitest.config.ts` (#7728). Kept here too so the two jsdom tiers behave alike.
+		execArgv: ["--no-experimental-webstorage"],
 		// A generative suite (fast-check runs N prop combinations per primitive,
 		// each a render + async axe pass), so give it headroom over the default.
 		testTimeout: 30_000,
