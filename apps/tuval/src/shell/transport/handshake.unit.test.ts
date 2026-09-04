@@ -59,6 +59,16 @@ describe("the attach handshake", () => {
 		});
 	});
 
+	it("refuses a request target Node accepts and `new URL` rejects, rather than throwing", () => {
+		// `ws` calls `verifyClient` synchronously from the `upgrade` listener, so a throw here is an
+		// uncaught exception that kills the kernel on one unauthenticated loopback connection. Node's
+		// HTTP parser hands `GET http://[ HTTP/1.1` through as this target verbatim (#7499).
+		expect(checkHandshake({url: "http://[", origin: undefined}, token, origins)).toEqual({
+			_tag: "Refused",
+			reason: "missing-token",
+		});
+	});
+
 	it("the printed launch URL carries the token and nothing else secret", () => {
 		const url = new URL(launchUrl({port: 4242, token}));
 		expect([url.protocol, url.hostname, url.port, url.pathname]).toEqual([

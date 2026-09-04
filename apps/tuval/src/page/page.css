@@ -21,8 +21,13 @@ body {
 	margin: 0;
 }
 
+/*
+ * `--text-muted`, never `--text-faint`: this line is the kernel's own reason inside a `role="alert"`,
+ * and `--text-faint` is the 3:1 decorative rung that `design-system-manifest.md` forbids meaning
+ * from (apps/web fixed the same class under #2166).
+ */
 .tuval-attach-reason {
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font:
 		var(--t-mono) ui-monospace,
 		monospace;
@@ -50,8 +55,9 @@ body {
 		sans-serif;
 }
 
+/* A sentence and an empty-state line, so `--text-muted` for the same reason as the reason above. */
 .tuval-demo-hint {
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font:
 		var(--t-meta) system-ui,
 		sans-serif;

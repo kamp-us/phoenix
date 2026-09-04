@@ -174,6 +174,28 @@ describe("normalize()", () => {
 		});
 	});
 
+	it("refuses a bare modifier, which parses cleanly and spells nothing", () => {
+		// These reach `ignored` in `stringify`, which answers "". Succeeding with that empty spelling
+		// let a config store it as the prefix and left the shell permanently unarmable (#7499).
+		expect([
+			value(normalize("<Shift>")),
+			value(normalize("<Control>")),
+			value(normalize("<Alt>")),
+			value(normalize("<Meta>")),
+			value(normalize("<Unidentified>")),
+		]).toEqual([
+			{_tag: "InvalidKeyError", key: "<Shift>", message: "Invalid key: <Shift>"},
+			{_tag: "InvalidKeyError", key: "<Control>", message: "Invalid key: <Control>"},
+			{_tag: "InvalidKeyError", key: "<Alt>", message: "Invalid key: <Alt>"},
+			{_tag: "InvalidKeyError", key: "<Meta>", message: "Invalid key: <Meta>"},
+			{
+				_tag: "InvalidKeyError",
+				key: "<Unidentified>",
+				message: "Invalid key: <Unidentified>",
+			},
+		]);
+	});
+
 	it("handles errors", () => {
 		expect(value(normalize("ab"))).toEqual({
 			_tag: "InvalidKeyError",

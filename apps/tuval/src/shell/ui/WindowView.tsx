@@ -70,6 +70,7 @@ export function WindowView({
 						view={asPickerView(view)}
 						dispatch={dispatch}
 						reducedMotion={reducedMotion}
+						focused={focused}
 					/>
 				) : (
 					<div className="tuval-placeholder" role="status">

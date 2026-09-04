@@ -67,6 +67,17 @@ export interface HandshakeRequest {
 	readonly origin: string | undefined;
 }
 
+/**
+ * The token off a request target, or `null` for a target that carries none. `URL.parse` rather than
+ * `new URL`, because Node's HTTP parser accepts targets the URL parser rejects — `GET http://[
+ * HTTP/1.1` arrives as `req.url === "http://["` — and `ws` calls `verifyClient` synchronously from
+ * the server's `upgrade` listener, so a throw here escapes uncaught and takes the whole kernel down
+ * on one unauthenticated loopback connection. An unparseable target names no token, which is the
+ * closed answer (#7499).
+ */
+const offeredToken = (url: string | undefined): string | null =>
+	URL.parse(url ?? "/", "ws://127.0.0.1")?.searchParams.get(TOKEN_PARAM) ?? null;
+
 export const checkHandshake = (
 	request: HandshakeRequest,
 	expected: Redacted.Redacted<string>,
@@ -74,7 +85,7 @@ export const checkHandshake = (
 ): HandshakeVerdict => {
 	if (request.origin !== undefined && !origins.has(request.origin))
 		return refused("foreign-origin");
-	const offered = new URL(request.url ?? "/", "ws://127.0.0.1").searchParams.get(TOKEN_PARAM);
+	const offered = offeredToken(request.url);
 	if (offered === null || offered === "") return refused("missing-token");
 	return sameToken(offered, Redacted.value(expected)) ? accepted : refused("wrong-token");
 };

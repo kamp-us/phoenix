@@ -55,12 +55,18 @@ const pickerRow = (command: PickerCommand): AnyShellCommand => {
 			toMsg: ({program}) => ({type: "window.open", programId: program}),
 		});
 	}
-	return defineCommand({
-		path,
-		describe: command.summary,
-		params: Schema.Struct({process: Schema.NonEmptyString}),
-		toMsg: ({process}) => ({type: "window.attach", processId: process}),
-	});
+	if (command.argument === "process-id") {
+		return defineCommand({
+			path,
+			describe: command.summary,
+			params: Schema.Struct({process: Schema.NonEmptyString}),
+			toMsg: ({process}) => ({type: "window.attach", processId: process}),
+		});
+	}
+	// The gate the docblock promises: a third `PickerCommand.argument` kind reaches here with a type
+	// the checker can no longer narrow to `never`, so it stops compiling instead of silently
+	// becoming a `window.attach` parameter.
+	return command.argument satisfies never;
 };
 
 /**

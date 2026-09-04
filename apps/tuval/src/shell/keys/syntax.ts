@@ -242,9 +242,24 @@ export const parse = (keyString: string): Result.Result<Key, KeyParseError> => {
 	return Result.succeed(obj);
 };
 
-/** The one spelling of a key string: parse it, then stringify what came back. */
+/**
+ * The one spelling of a key string: parse it, then stringify what came back. A key `stringify`
+ * answers `""` for — a bare modifier, an unidentified key — names no binding, so it is a refusal
+ * rather than a spelling. It has to be: `<Shift>` parses cleanly and stringifies to `""`, and a
+ * config that stored that as the prefix left the shell permanently unarmable, because the router
+ * answers `Pending` for the empty key before it ever compares against the prefix (#7499).
+ */
 export const normalize = (keyString: string): Result.Result<string, KeyParseError> =>
-	Result.map(parse(keyString), stringify);
+	Result.flatMap(parse(keyString), (key) => {
+		const spelling = stringify(key);
+		return spelling === ""
+			? Result.fail<KeyParseError>({
+					_tag: "InvalidKeyError",
+					key: keyString,
+					message: `Invalid key: ${keyString}`,
+				})
+			: Result.succeed(spelling);
+	});
 
 /**
  * A sequence string split into the key strings it holds — `"<c-b>x"` into `["<c-b>", "x"]`. A

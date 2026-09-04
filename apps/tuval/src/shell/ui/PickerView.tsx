@@ -5,10 +5,15 @@
  *
  * The listbox is the focus holder, not each option — that is the `aria-activedescendant` pattern,
  * and it is what keeps the desk's single keyboard listener the only listener: the options are not
- * tabbable and none of them listens.
+ * tabbable and none of them listens. "Focus holder" is literal and it has to be: assistive tech
+ * announces `aria-activedescendant` only off the element that actually has DOM focus, so a listbox
+ * nothing ever focused moves a highlight nobody hears (#7499). Taking focus is not a second
+ * listener — the desk's document listener still sees every press, because a `div` is not a text
+ * entry and the key never stops there.
  */
 
 import type {ReactElement} from "react";
+import {useCallback, useEffect, useRef} from "react";
 import type {ShellMsg} from "../core/index.ts";
 import {
 	isPickerRefusal,
@@ -20,6 +25,7 @@ import {
 } from "../picker/index.ts";
 import type {WindowId} from "../window/index.ts";
 import {useForwardedKey} from "./forwarded-key.tsx";
+import {isTextEntry} from "./text-entry.ts";
 
 export interface PickerViewProps {
 	readonly windowId: WindowId;
@@ -28,6 +34,8 @@ export interface PickerViewProps {
 	readonly view: PickerViewState;
 	readonly dispatch: (msg: ShellMsg) => void;
 	readonly reducedMotion: boolean;
+	/** Whether this window is the desk's focused one — the picker holds DOM focus only then. */
+	readonly focused: boolean;
 }
 
 /**
@@ -50,10 +58,29 @@ export function PickerView({
 	view,
 	dispatch,
 	reducedMotion,
+	focused,
 }: PickerViewProps): ReactElement {
 	const frame = pickerFrame(windowId, entries, view, {reducedMotion});
+	const listbox = useRef<HTMLDivElement>(null);
+
+	// Never off the command line's input: the desk hands that surface focus deliberately, and a
+	// picker that grabbed it back would eat the line the user is typing.
+	const takeFocus = useCallback(() => {
+		const node = listbox.current;
+		if (node === null) return;
+		const active = node.ownerDocument.activeElement;
+		if (active === node || isTextEntry(active)) return;
+		node.focus({preventScroll: true});
+	}, []);
+
+	useEffect(() => {
+		if (focused) takeFocus();
+	}, [focused, takeFocus]);
 
 	useForwardedKey(windowId, (key) => {
+		// A forwarded key means the desk considers this window focused. Re-claiming here is what
+		// carries focus back after the command line closes onto the desk container.
+		takeFocus();
 		const answer = pickerKey(windowId, entries, view, key);
 		switch (answer._tag) {
 			case "Moved":
@@ -75,6 +102,7 @@ export function PickerView({
 	return (
 		<div className="tuval-picker">
 			<div
+				ref={listbox}
 				role="listbox"
 				id={frame.id}
 				aria-label={frame.label}

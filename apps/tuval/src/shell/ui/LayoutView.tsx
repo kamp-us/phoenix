@@ -81,6 +81,10 @@ function StackView({stack, renderWindow, dispatch}: StackViewProps): ReactElemen
 			orientation={stack.orientation}
 			defaultLayout={defaultLayoutOf(stack)}
 			onLayoutChanged={onLayoutChanged}
+			// The separator paints as a 4px hairline (`./tokens.css`), and the library inflates the
+			// grab rect to this minimum rather than to the painted box, which is what keeps a thin
+			// divider a real pointer target. The pin's own defaults are 20 coarse / 10 fine.
+			resizeTargetMinimumSize={{coarse: 36, fine: 24}}
 			data-stack-id={stack.id}
 		>
 			{stack.children.flatMap((child, index) => {
@@ -95,7 +99,9 @@ function StackView({stack, renderWindow, dispatch}: StackViewProps): ReactElemen
 							<Separator
 								key={`separator-${child.id}`}
 								className="tuval-separator"
-								aria-label={`Resize ${stack.orientation === "horizontal" ? "columns" : "rows"}`}
+								// One group can hold several separators, so the name says which pair this one
+								// sits between — "Resize columns" three times over names nothing.
+								aria-label={`Resize ${stack.orientation === "horizontal" ? "columns" : "rows"} before ${child.id}`}
 							/>,
 							panel,
 						];

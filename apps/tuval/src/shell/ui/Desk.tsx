@@ -28,6 +28,7 @@ import {routerPrefix, statusFrame, surfaceKey, zoomedWindow} from "./frame.ts";
 import {LayoutView} from "./LayoutView.tsx";
 import type {MountResolver} from "./mount.ts";
 import {StatusLine} from "./StatusLine.tsx";
+import {isTextEntry} from "./text-entry.ts";
 import {WindowView} from "./WindowView.tsx";
 
 export interface DeskProps {
@@ -41,14 +42,6 @@ export interface DeskProps {
 	readonly keyTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener"> | null;
 	readonly reducedMotion?: boolean;
 }
-
-/** Does this element read its own keys? A key inside one is text, never a shell sequence. */
-const isTextEntry = (target: EventTarget | null): boolean => {
-	if (target === null || !(typeof target === "object") || !("tagName" in target)) return false;
-	const element = target as {tagName?: unknown; isContentEditable?: unknown};
-	const tag = typeof element.tagName === "string" ? element.tagName.toLowerCase() : "";
-	return tag === "input" || tag === "textarea" || element.isContentEditable === true;
-};
 
 export function Desk({
 	state,

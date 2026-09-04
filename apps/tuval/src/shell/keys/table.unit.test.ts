@@ -69,9 +69,25 @@ describe("normalizeSequence()", () => {
 	it("refuses the empty sequence", () => {
 		expect(Result.merge(normalizeSequence(""))).toMatchObject({reason: "empty sequence"});
 	});
+
+	it("refuses a sequence whose keys spell nothing, not just an empty input", () => {
+		expect(Result.merge(normalizeSequence("<Shift>"))).toMatchObject({
+			sequence: "<Shift>",
+			reason: "Invalid key: <Shift>",
+		});
+	});
 });
 
 describe("applyKeysConfig()", () => {
+	it("refuses a prefix that spells no key, and keeps the table it had", () => {
+		// `<Shift>` used to be stored as the empty prefix, which the router can never match — the
+		// shell was silently unarmable for the rest of the session (#7499).
+		expect(Result.merge(applyKeysConfig(defaultPrefixTable, {prefix: "<Shift>"}))).toMatchObject({
+			_tag: "UnreadableSequenceError",
+			sequence: "<Shift>",
+		});
+	});
+
 	it("replaces a binding with the same sequence in place, and appends a new one", () => {
 		const table = Result.getOrThrow(
 			applyKeysConfig(defaultPrefixTable, {

@@ -2,11 +2,11 @@
 
 How Tuval's browser surface renders a tiling layout tree with
 [`react-resizable-panels`](https://github.com/bvaughn/react-resizable-panels) v4, and why the
-binding is four rules rather than one prop.
+binding is six rules rather than one prop.
 
 Scope: `apps/tuval/src/shell/ui/LayoutView.tsx` and the pure helpers it reads from
 `apps/tuval/src/shell/ui/frame.ts`. The library is pinned exactly at `4.12.3` through the workspace
-catalog, because three of the four rules below rest on behaviour a range could move.
+catalog, because most of the rules below rest on behaviour a range could move.
 
 Every claim here is read off the pinned package in `node_modules/react-resizable-panels/dist/` —
 `react-resizable-panels.d.ts` for the API and `react-resizable-panels.js` for the behaviour — and
@@ -99,6 +99,26 @@ two characters and read the same aloud, so the quotes are load-bearing. `LayoutV
 `minSize="10"` — a window may not be squeezed below a tenth of its stack — and quietly switching it
 to braces would allow a ten-pixel sliver
 ([#7783](https://github.com/kamp-us/phoenix/issues/7783)).
+
+## Rule 6 — the separator's state is `data-separator`, and its grab region is a Group prop
+
+The separator's hover/drag/focus styling hangs off one attribute, `data-separator`, whose value at
+this pin is the state — `inactive`, `hover`, `focus`, `active` or `disabled`. Read that off
+`dist/react-resizable-panels.js` (`Separator`, the `data-separator: G` prop), not off the `.d.ts`,
+whose `SeparatorProps.id` docblock says the value is the separator's id; the runtime writes the id
+to `id` and `data-testid` and the state here. There is no `data-resize-handle-active` at v4 — that
+name is a v2 handle attribute, and a stylesheet carrying it paints nothing
+([#7499](https://github.com/kamp-us/phoenix/issues/7499)).
+
+The element also has no width or height of its own: the library's inline style is `flexBasis:
+"auto"` with `flexGrow: 0` / `flexShrink: 0`, and it renders no children. So the stylesheet gives it
+one — `apps/tuval/src/shell/ui/tokens.css` sizes it per `aria-orientation`, which the library sets
+to the axis *across* the group (`"vertical"` inside a horizontal group).
+
+Sizing it thin is the right look and the wrong hit target, and the two are separable: `Group`'s
+`resizeTargetMinimumSize` inflates the *grab rect* independently of the painted box, defaulting to
+`{coarse: 20, fine: 10}`. `LayoutView.tsx` raises it to `{coarse: 36, fine: 24}` so a 4px hairline
+is still a real pointer and touch target.
 
 ## Zoom is a conditional render, never `collapse()`
 

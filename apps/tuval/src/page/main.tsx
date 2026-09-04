@@ -1,6 +1,7 @@
 /**
- * The page's entry. It does three things and stops: ask the dev server where the kernel is, open
- * the one socket, and mount the desk over the shell process it finds in the table.
+ * The page's entry. It asks the dev server where the kernel is, opens the one socket, mounts the
+ * desk over the shell process it finds in the table, and then stays: the socket's scope is the
+ * page's lifetime.
  *
  * The launch URL is fetched rather than baked in because the token is minted per boot and never
  * written to disk (`../shell/host/serve.ts`); `/__tuval/launch` is answered from memory by the same
@@ -116,6 +117,12 @@ const boot = Effect.gen(function* () {
 		),
 	);
 	root.render(<StrictMode>{shown}</StrictMode>);
+	// The scope must outlive the render. `attach` acquires the socket against it and forks the read
+	// loop with `Effect.forkScoped` (`../shell/transport/client.ts`), so an `Effect.scoped` that
+	// closes when this effect completes interrupts the read loop and runs the socket's finalizer the
+	// instant the desk first paints: one snapshot, then a deaf desk and every dispatch written to a
+	// closed socket. The page's lifetime is the socket's lifetime, and nothing shorter (#7499).
+	return yield* Effect.never;
 }).pipe(Effect.provide(Socket.layerWebSocketConstructorGlobal), Effect.scoped);
 
 Effect.runFork(boot);

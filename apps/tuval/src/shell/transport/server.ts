@@ -203,13 +203,35 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 				result: {_tag: "ProcessGone", processId},
 			});
 		}
-		// A handler's own failure is not the window's (`../window/host.ts`): the Msg still reached a
-		// live process, so the ack says Delivered and the failure comes back through the state stream.
-		// Only the actor refusing the Msg outright means the process is gone.
+		// `dispatch` fails four ways and they do not mean the same thing, so each arm is named. A
+		// blanket catch answered Delivered for all of them, which acknowledged a Msg the actor threw
+		// away and hid a broken checkpoint write entirely (#7499).
 		const gone = yield* handle.value.dispatch(msg).pipe(
 			Effect.as(false),
-			Effect.catchTag("tuval/host/ActorStoppedError", () => Effect.succeed(true)),
-			Effect.catchCause(() => Effect.succeed(false)),
+			Effect.catchTags({
+				// Stopped, or draining and refusing new Msgs: the Msg was not applied and never will
+				// be, so `ProcessGone` is the only honest ack the wire has (`../window/host.ts`).
+				"tuval/host/ActorStoppedError": () => Effect.succeed(true),
+				DispatchDiscardedError: () => Effect.succeed(true),
+				// The Msg was applied; the checkpoint behind it was not. Durability is broken and
+				// nothing else surfaces it, so it is logged here and the ack stays Delivered.
+				"tuval/host/StoreError": (error) =>
+					Effect.logError("tuval transport: the checkpoint write for a dispatched Msg failed", {
+						processId,
+						operation: error.operation,
+						cause: error.cause,
+					}).pipe(Effect.as(false)),
+			}),
+			// A handler's own failure is not the window's: the Msg reached a live process, so the ack
+			// says Delivered and the failure comes back through the state stream.
+			Effect.orElseSucceed(() => false),
+			// A defect from the actor fiber is nobody's declared failure; it is still not silence.
+			Effect.catchCause((cause) =>
+				Effect.logError("tuval transport: a dispatched Msg died in the actor", {
+					processId,
+					cause,
+				}).pipe(Effect.as(false)),
+			),
 		);
 		yield* send({
 			kind: DISPATCHED_KIND,

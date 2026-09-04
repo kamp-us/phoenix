@@ -6,7 +6,7 @@
  * stop and a real boot from the checkpoint the stop wrote.
  */
 
-import {type Cmd, defineMachine} from "@demlik/tea";
+import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Option, Queue, Redacted, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
@@ -151,6 +151,40 @@ describe("the page-to-kernel transport", () => {
 				const result = yield* shell.dispatch({type: "split", window: "w2"});
 				assert.deepStrictEqual(result, {_tag: "Delivered"});
 				assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root", "w2"]});
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"acks a Msg the actor discarded as ProcessGone, never as Delivered",
+		() =>
+			// A blanket `catchCause` answered Delivered for every failure `dispatch` raises, so a Msg
+			// the actor threw away came back to the page as if it had landed (#7499).
+			Effect.gen(function* () {
+				const built = yield* kernel(memoryStores());
+				const real = built.handles.get(shellProcess);
+				assert.ok(real !== undefined);
+				const discarding: ProcessHandle = {
+					...real,
+					dispatch: (msg) => Effect.fail(new DispatchDiscardedError(msg.type)),
+				};
+				const server = yield* serve({
+					token: mintLaunchToken(),
+					port: 0,
+					handles: (id) =>
+						Effect.sync(() =>
+							id === shellProcess
+								? Option.some(discarding)
+								: Option.fromNullishOr(built.handles.get(id)),
+						),
+				}).pipe(Effect.provideContext(built.context), Effect.orDie);
+
+				const attached = yield* page(server.launchUrl);
+				const shell = yield* attached.attachProcess<DeskState, DeskMsg>(shellProcess);
+				assert.deepStrictEqual(yield* shell.dispatch({type: "split", window: "w2"}), {
+					_tag: "ProcessGone",
+					processId: shellProcess,
+				});
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

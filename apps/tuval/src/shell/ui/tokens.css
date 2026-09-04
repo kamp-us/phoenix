@@ -138,14 +138,33 @@
 	padding: var(--s-2);
 }
 
+/*
+ * The separator's own state comes from `data-separator`, whose value at the pin
+ * (`react-resizable-panels@4.12.3`, `Separator` in `dist/react-resizable-panels.js`) is one of
+ * `inactive` / `hover` / `focus` / `active` / `disabled`. The library sets no width or height — its
+ * inline style is `flexBasis: auto` with no children — so a rule that paints only a background
+ * paints a zero-pixel box, and the grab region comes from `Group`'s `resizeTargetMinimumSize`
+ * rather than from these pixels (`./LayoutView.tsx`).
+ */
 .tuval-separator {
 	flex: 0 0 auto;
 	background: var(--border-faint);
 	transition: background var(--motion-fast) ease;
 }
 
-.tuval-separator:hover,
-.tuval-separator[data-resize-handle-active] {
+.tuval-separator[aria-orientation="vertical"] {
+	inline-size: 4px;
+	cursor: col-resize;
+}
+
+.tuval-separator[aria-orientation="horizontal"] {
+	block-size: 4px;
+	cursor: row-resize;
+}
+
+.tuval-separator[data-separator="hover"],
+.tuval-separator[data-separator="focus"],
+.tuval-separator[data-separator="active"] {
 	background: var(--accent);
 }
 
@@ -200,8 +219,9 @@
 	padding: 0 var(--s-2);
 }
 
+/* The placeholder spells a real command, so it is text a reader has to be able to read. */
 .tuval-command-line input::placeholder {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 .tuval-refusal {

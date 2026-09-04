@@ -136,6 +136,24 @@ describe("the three arms of the window contract", () => {
 	});
 });
 
+describe("the picker's activedescendant", () => {
+	// `aria-activedescendant` is announced only off the element that holds DOM focus, so a listbox
+	// nothing ever focused moves a highlight assistive tech never hears (#7499). The listbox is the
+	// only element the pattern may focus — the options stay untabbable.
+	it("holds DOM focus while its window is the focused one, and names an active option", () => {
+		render(<Harness initial={threeWindowDesk("window-2")} sent={[]} />);
+		const listbox = screen.getByRole("listbox", {name: /Open a program/});
+		expect(document.activeElement).toBe(listbox);
+		expect(listbox.getAttribute("aria-activedescendant")).toBeTruthy();
+	});
+
+	it("does not take focus when another window is the focused one", () => {
+		render(<Harness initial={threeWindowDesk("window-1")} sent={[]} />);
+		const listbox = screen.getByRole("listbox", {name: /Open a program/});
+		expect(document.activeElement).not.toBe(listbox);
+	});
+});
+
 describe("the single application-level keyboard listener", () => {
 	let added: Array<string>;
 

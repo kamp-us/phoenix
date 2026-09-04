@@ -97,6 +97,21 @@ describe("the panel binding", () => {
 		expect(separators).toHaveLength(2);
 		expect(separators[0]?.getAttribute("aria-valuenow")).not.toBeNull();
 	});
+
+	it("carries the state attribute the stylesheet paints, and a name per pair", () => {
+		// The stylesheet used to hang its drag highlight on `data-resize-handle-active`, which the
+		// pinned major never emits, so the highlight never painted (#7499). `data-separator` is the
+		// state at this pin; `aria-label` is per separator, so a group of three names three things.
+		render(<TreeHarness initial={threeWindowDesk()} sent={[]} />);
+		const separators = screen.getAllByRole("separator");
+		expect(separators.map((one) => one.getAttribute("data-separator"))).toEqual([
+			"inactive",
+			"inactive",
+		]);
+		expect(separators.some((one) => one.hasAttribute("data-resize-handle-active"))).toBe(false);
+		const names = separators.map((one) => one.getAttribute("aria-label"));
+		expect(new Set(names).size).toBe(names.length);
+	});
 });
 
 describe("a user resize", () => {
