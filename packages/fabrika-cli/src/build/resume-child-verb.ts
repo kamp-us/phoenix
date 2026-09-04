@@ -88,6 +88,7 @@ export const runResumeChild = (
 		// marker, so the entry cannot open a repair lane over a child nobody failed.
 		const claimed = yield* runClaim({
 			number: issue,
+			issue: null,
 			repo,
 			cwd: options.cwd,
 			env,

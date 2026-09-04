@@ -441,8 +441,8 @@ would report a claim nobody holds.
    `src/wire/registry.ts` row carrying `fixtures` and `brands` (both required by `WireFormat`), and
    its `### handoff-pack` section in `docs/wire-formats.md` — without the last,
    `src/wire/index-doc.unit.test.ts` reds on key-set equality.
-5. `packages/fabrika-cli/README.md` — add the group to the list and a `## The handoff group`
-   section. This one is **convention, not enforcement**: `readme-guard` only checks that each
+5. `packages/fabrika-cli/docs/verb-reference.md` — add the group to the list and a
+   `## The handoff group` section. This one is **convention, not enforcement**: `readme-guard` only checks that each
    workspace member has a README at all, and several shipped groups have no section today. Stated
    so an implementer does not skip it believing CI will catch it, and does not hunt for a job that
    would.

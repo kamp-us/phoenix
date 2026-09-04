@@ -160,9 +160,15 @@ const reachesForBlock = (headingText: string): boolean => {
 	);
 };
 
+/** One line of the contract region, carrying the 1-based number it sits on in the whole body. */
+export interface RegionLine {
+	readonly line: number;
+	readonly text: string;
+}
+
 /**
- * Every ATX heading outside a fenced code block **and outside a `<details>` block** — neither a
- * fenced example nor a collapsed appendix may pass for the real one.
+ * The body's **contract region**: every line outside a fenced code block and outside a `<details>`
+ * block, with the fence and `<details>` delimiters themselves dropped.
  *
  * The `<details>` rule is what makes an enriched body readable. `triage enrich` composes
  * `authored region + marker + preserved original`, and the preserved original is kept verbatim
@@ -175,15 +181,17 @@ const reachesForBlock = (headingText: string): boolean => {
  *
  * An unclosed `<details>` swallows the rest of the body, exactly as the GitHub render does.
  *
- * Exported for `triage repair-criteria`, which must locate a drifted heading by exactly the rules
- * this reader refuses it under — a second scanner would be a second definition of "heading".
+ * Exported so every reader that judges a body scans the same bytes: `triage repair-criteria` locates
+ * a drifted heading under exactly the rules this module refuses it under, and `triage enrich`'s
+ * stated-ordering scan (`../triage/ordering.ts`) reads the same region. A second walk would be a
+ * second definition of where the contract lives.
  */
-export const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Heading> => {
-	const headings: Heading[] = [];
+export const contractRegionLines = (lines: ReadonlyArray<string>): ReadonlyArray<RegionLine> => {
+	const region: RegionLine[] = [];
 	let openFence: string | null = null;
 	let detailsDepth = 0;
-	for (const [index, line] of lines.entries()) {
-		const fence = FENCE.exec(line);
+	for (const [index, text] of lines.entries()) {
+		const fence = FENCE.exec(text);
 		if (fence !== null) {
 			const marker = fence[1] ?? "";
 			if (openFence === null) openFence = marker;
@@ -191,22 +199,30 @@ export const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Headin
 			continue;
 		}
 		if (openFence !== null) continue;
-		if (DETAILS_OPEN.test(line)) {
+		if (DETAILS_OPEN.test(text)) {
 			detailsDepth += 1;
 			continue;
 		}
-		if (DETAILS_CLOSE.test(line)) {
+		if (DETAILS_CLOSE.test(text)) {
 			detailsDepth = Math.max(0, detailsDepth - 1);
 			continue;
 		}
 		if (detailsDepth > 0) continue;
-		const heading = ATX_HEADING.exec(line);
+		region.push({line: index + 1, text});
+	}
+	return region;
+};
+
+/**
+ * Every ATX heading in the contract region — neither a fenced example nor a collapsed appendix may
+ * pass for the real one.
+ */
+export const scanHeadings = (lines: ReadonlyArray<string>): ReadonlyArray<Heading> => {
+	const headings: Heading[] = [];
+	for (const {line, text} of contractRegionLines(lines)) {
+		const heading = ATX_HEADING.exec(text);
 		if (heading === null) continue;
-		headings.push({
-			level: (heading[1] ?? "").length,
-			text: heading[2] ?? "",
-			line: index + 1,
-		});
+		headings.push({level: (heading[1] ?? "").length, text: heading[2] ?? "", line});
 	}
 	return headings;
 };

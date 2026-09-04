@@ -15,15 +15,11 @@
 import {Effect} from "effect";
 import {SESSION_PROBE_PATH} from "../capture/auth.ts";
 import {captureShots} from "../capture/capture.ts";
+import {FLAG_PROBE_PATH, isForcing} from "../capture/flag-override.ts";
 import {isRenderCrash} from "../capture/page-errors.ts";
-import {
-	buildCapturePlan,
-	DEFAULT_VIEWPORT,
-	joinPreviewUrl,
-	parseSurfaceSpec,
-} from "../capture/plan.ts";
+import {buildCapturePlan, joinPreviewUrl, parseSurfaceSpec} from "../capture/plan.ts";
 import {validateCaptureBytes} from "../capture/png.ts";
-import {provesSession} from "../capture/states.ts";
+import {tierOf} from "../capture/states.ts";
 import {capAndCount} from "../evidence.ts";
 import {PAGE_ERROR_CAP, sha256Hex} from "./manifest.ts";
 import type {RenderLeg, SurfaceRender} from "./render-verb.ts";
@@ -58,7 +54,7 @@ export const makeCaptureRenderLeg =
 					buildCapturePlan(
 						request.previewUrl,
 						[parseSurfaceSpec(request.surface)],
-						DEFAULT_VIEWPORT,
+						request.viewport,
 					),
 				catch: (cause) => String(cause),
 			}).pipe(Effect.catch((reason) => Effect.succeed(reason)));
@@ -68,11 +64,22 @@ export const makeCaptureRenderLeg =
 
 			// A seeded session is asked to prove itself, because pixels cannot: a cookie that does not
 			// authenticate renders the visitor's page, and that is a valid PNG under the `:auth` name.
-			const probing = provesSession(plan[0]?.surface.state ?? null);
+			const wantedTier = tierOf(plan[0]?.surface.state ?? null);
+			// Same reason one layer over: an override the preview dropped renders the flag-off page,
+			// and that page is a valid PNG under the flag-on name.
+			const forcing = isForcing(request.forcedFlags);
 			const captured = yield* capture(plan, request.outDir, {
 				cookies: request.cookies,
-				...(probing
+				...(wantedTier !== null
 					? {sessionProbeUrl: joinPreviewUrl(request.previewUrl, SESSION_PROBE_PATH)}
+					: {}),
+				...(forcing
+					? {
+							flagProbe: {
+								url: joinPreviewUrl(request.previewUrl, FLAG_PROBE_PATH),
+								flags: request.forcedFlags,
+							},
+						}
 					: {}),
 			}).pipe(Effect.catch((error) => Effect.succeed(error.message)));
 			if (typeof captured === "string") {
@@ -92,7 +99,7 @@ export const makeCaptureRenderLeg =
 			}
 			// Classified before the bytes: an anonymous shot under a signed-in name is a valid PNG of
 			// the wrong page, so validating it first would answer a question nobody asked.
-			if (probing) {
+			if (wantedTier !== null) {
 				const proof = shot.sessionProof;
 				if (proof === undefined || proof._tag !== "SignedIn") {
 					return {
@@ -105,6 +112,30 @@ export const makeCaptureRenderLeg =
 									: proof.reason,
 					} satisfies SurfaceRender;
 				}
+				// Signed in is not the whole question. A surface whose audience is defined by NOT
+				// clearing a floor renders perfectly for somebody above it, so the tier the preview
+				// itself reports back decides whether these are the pixels the surface id named.
+				if (proof.tier !== wantedTier) {
+					return {
+						_tag: "WrongTier",
+						wanted: wantedTier,
+						rendered: proof.tier,
+					} satisfies SurfaceRender;
+				}
+			}
+			if (forcing) {
+				const proof = shot.overrideProof;
+				if (proof === undefined || proof._tag !== "Forced") {
+					return {
+						_tag: "OverrideInert",
+						reason:
+							proof === undefined
+								? "the capture returned no override proof"
+								: proof._tag === "Inert"
+									? `the preview evaluated ${proof.keys.join(", ")} at the default`
+									: proof.reason,
+					} satisfies SurfaceRender;
+				}
 			}
 			const crash = shot.pageErrors.find(isRenderCrash);
 			if (crash !== undefined) {
@@ -114,10 +145,21 @@ export const makeCaptureRenderLeg =
 			if (validity._tag === "Invalid") {
 				return {_tag: "Invalid", detail: validity.reason} satisfies SurfaceRender;
 			}
+			// The width comes off the PNG header, never echoed from the request — the same readback
+			// discipline the tier proof runs one layer up. A shot the browser took at another width is
+			// a valid image of a layout nobody asked about.
+			if (validity.width !== request.viewport.width) {
+				return {
+					_tag: "WrongViewport",
+					wanted: request.viewport.width,
+					rendered: validity.width,
+				} satisfies SurfaceRender;
+			}
 			return {
 				_tag: "Rendered",
 				entry: {
 					surface: request.surface,
+					viewport: request.viewport.label,
 					path: shot.localPath,
 					width: validity.width,
 					height: validity.height,

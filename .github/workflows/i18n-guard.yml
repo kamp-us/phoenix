@@ -1,0 +1,51 @@
+name: i18n-guard
+
+# CI gate for #7536 (epic #7519, ADR 0347): apps/web user copy reads through the typed
+# i18n catalog, never a literal in a component. It runs `fabrika guard i18n-guard check`,
+# which reds on a Turkish character (çğıöşü, either case) inside a string literal or a run
+# of JSX text in any non-test `apps/web/src/**/*.{ts,tsx}` outside `apps/web/src/i18n/` and
+# `apps/web/src/lab/`. Comments, regex literals and unquoted object keys are not copy and
+# are not judged. The bounded allow-list
+# (apps/web/src/i18n/i18n-guard.config.json) carries per-file ceilings in two buckets —
+# `exempt` for the permanently-Turkish, `unmigrated` for tracked debt — so the gate is
+# green today while still redding any NEW literal. Fail-closed on zero scope or a
+# malformed allow-list (ADR 0092). The scan lives once in fabrika-cli's `guard` group
+# (#6093), which every guard shares.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least-privilege GITHUB_TOKEN: the job only checks out + reads the repo and runs the
+# guard, which fails via exit code — it posts no check-run/status/PR comment — so
+# contents:read is all it needs; default-deny every other scope (CodeQL least-privilege).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check apps/web copy reads through the i18n catalog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Non-zero on three distinct seats, so a red says which thing happened: 12 a Turkish
+      # literal or JSX run outside the catalog and over its file's ceiling, 7 zero scope (no
+      # file scanned, or a malformed allow-list — fail-closed, ADR 0092), 11 a file could not
+      # be read so the verdict is UNKNOWN. The report is on stderr, with ::error annotations
+      # on each offending line. Reproduce locally with the same verb. See #7536.
+      - name: Check no Turkish copy sits outside apps/web/src/i18n
+        run: node packages/fabrika-cli/src/bin.ts guard i18n-guard check

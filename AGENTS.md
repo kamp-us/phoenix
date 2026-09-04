@@ -2,17 +2,19 @@
 
 kamp.us, reborn.
 
-A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
-(`web` is the only app today), each its own package + stack + stage (ADR
-0057). React 19 + Effect + fate. HTTP via Effect `HttpRouter` / `HttpApiBuilder`
-(ADR 0027). Durable Objects authored on alchemy's Effect DO model (ADR 0028).
+A multi-app repo: one runnable app per directory under `apps/` (ADR 0345). A deployed
+app is a Cloudflare Worker owning its own package + stack + stage (ADR 0057; `web` is
+the only one today); a local app (`tuval`) has no stack and never deploys. React 19 +
+Effect + fate. HTTP via Effect `HttpRouter` / `HttpApiBuilder` (ADR 0027). Durable
+Objects authored on alchemy's Effect DO model (ADR 0028).
 
 ## Architecture
 
-- **One worker per app.** Each `apps/<app>` is its own pnpm package owning its own
-  `alchemy.run.ts` stack + per-app stage, reusing the account-global state store and
-  the four CI secrets — no second bootstrap (ADR 0057). `apps/web` is the only worker
-  today; the structure fans out as apps are added.
+- **One runnable app per directory.** Each `apps/<app>` is its own pnpm package. A
+  deployed app owns its own `alchemy.run.ts` stack + per-app stage, reusing the
+  account-global state store and the four CI secrets — no second bootstrap (ADR 0057);
+  `apps/web` is the only worker today. A local app carries no `alchemy.run.ts`, and that
+  absence is the marker that it never deploys (ADR 0345); `apps/tuval` is the only one.
 - **`apps/web`** serves both the SPA (via `assets` binding) and the API.
 - The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE. Other backend routes live under `/api/*`.
 - Frontend is React 19 + Vite, built into `dist/client`.
@@ -20,11 +22,12 @@ A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
 
 ```
 phoenix/
-├── apps/                    # one worker per app, each its own package + stack (ADR 0057)
-│   └── web/                 # @kampus/web — the only worker today
-│       ├── worker/          # worker entry + backend code
-│       ├── src/             # React frontend
-│       └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)
+├── apps/                    # one runnable app per directory (ADR 0345); deployed ones own a stack (ADR 0057)
+│   ├── web/                 # @kampus/web — the only worker today
+│   │   ├── worker/          # worker entry + backend code
+│   │   ├── src/             # React frontend
+│   │   └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)
+│   └── tuval/               # @kampus/tuval — local app, no stack, never deploys (epic #7496)
 ├── packages/                # shared internal packages
 ├── infra/                   # standalone stacks: ci-credentials (one-shot CI-token provisioner), depo (internal asset store/CDN — designed, ADR 0144)
 └── pnpm-workspace.yaml
@@ -37,7 +40,7 @@ pnpm install
 cp apps/web/.env.example apps/web/.env   # first run only — local dev env (gitignored)
 pnpm dev          # turbo-driven; two processes: `vite` (SPA/HMR) + `alchemy dev` (worker)
 pnpm dev:web      # just the Vite SPA dev server
-pnpm dev:worker   # just `alchemy dev` (the worker on a local workerd, offline)
+pnpm dev:worker   # just `alchemy dev` (the worker on a local workerd, real CF resources)
 pnpm build
 pnpm deploy       # pnpm build && alchemy deploy (use --stage <name> for isolation)
 pnpm typecheck
@@ -50,7 +53,11 @@ pnpm format       # biome check --write
 Deploy is alchemy-managed (ADR 0026–0031): `alchemy.run.ts` is the stack, there is
 no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker + D1
 + DOs per stage; CI uses the Cloudflare-hosted state store, local dev uses
-`Alchemy.localState()` (offline).
+`Alchemy.localState()`. Only the *state store* is local — the resources it binds
+(D1, the DO namespaces) are real Cloudflare resources in your personal dev stage,
+so `alchemy dev` needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in your
+environment. There is no offline emulator (ADR
+[0032](.decisions/0032-alchemy-beta45-and-dev-model.md)).
 
 ## pnpm over npm
 
@@ -76,9 +83,10 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 - Doc surfaces: `README` = project/product front door (what kamp.us is — products + ethos; never carry retired or old-problem context a new reader has no frame for); `DEVELOPMENT.md` = current build/dev state for builders (quickstart, stack, architecture, commands, conventions, the pipeline); `.decisions/` = the why + history, including superseded approaches; `.patterns/` = how the current code is shaped; `reports/` = dated point-in-time findings/measurements (analysis snapshots — not evergreen, distinct from `.patterns/` code-shape and `.decisions/` why+history); `.glossary/` = the canonical vocabulary (architecture terms + product/brand nouns); [`design-system-manifest.md`](./design-system-manifest.md) = the context-file-for-design — the four-pillars design law (ADR 0162) as an agent-readable manifest `write-code` reads before generating any UI (role-token annotations, component-selection rules, per-pillar prohibitions).
 - **Every `packages/*` workspace package carries a `README.md`** (what it is, why it exists, how to use it) — a package with no README has no entry point for a reader or consumer. Enforced fail-closed in CI by `fabrika guard readme-guard check` (the `readme-guard.yml` job), which scopes to real workspace members (dirs with a `package.json`) so it ignores dead-shell dirs and fails closed on zero scope (ADR 0092).
 - **A mutation over a fate-live fanned entity must publish the `/fate/live` invalidation.** A `Fate.mutation` that writes an entity in a subscribed connection (`Post` / `Comment` / `Definition`) must, after the write, publish through `WorkerLivePublisher` — omitting it silently staleness-breaks every other client's live view (the publisher's error channel is `never`, so nothing forces it; #1893–#1896 all shipped the omission). Every mutation is classified fanned/not in [`apps/web/worker/features/fate-live/fanned-mutations.ts`](apps/web/worker/features/fate-live/fanned-mutations.ts), and `fabrika guard fanout-guard check` (the `fanout-guard.yml` job) fails closed on an unclassified mutation, a fanned mutation whose feature omits the publish, or zero scope (ADR 0155/0092).
+- **`apps/web` user copy lives in the i18n catalog, never in a component.** A Turkish string literal or a run of Turkish JSX text under `apps/web/src` is copy no locale switch can reach — the English reader still sees it. Every user surface reads `t("<surface>.<thing>")` out of `apps/web/src/i18n` (ADR [0347](.decisions/0347-web-copy-behind-i18n-catalog.md); the shape is [`.patterns/i18n-catalog.md`](.patterns/i18n-catalog.md)). Enforced fail-closed in CI by `fabrika guard i18n-guard check` (the `i18n-guard.yml` job), which scans every non-test `apps/web/src/**/*.{ts,tsx}` outside `apps/web/src/i18n/` and `apps/web/src/lab/` and reds on a hit or on zero scope; comments, regex literals and unquoted object keys are not copy and are not judged. The bounded allow-list in [`apps/web/src/i18n/i18n-guard.config.json`](apps/web/src/i18n/i18n-guard.config.json) carries per-file ceilings in two buckets — `exempt` for the permanently-Turkish (a wire enum value, the sözlük alphabet, a lab surface) and `unmigrated` for tracked debt — each entry with a mandatory `why`, never a silent tolerance (ADR 0092; #7536).
 - Decisions are product-driven by default; engineering leads only on platform/infra (the pipeline, fate/DO substrate, infra primitives) — see ADR [0078](.decisions/0078-product-driven-decisions-by-default.md).
-- **Turkish for product/brand, English for technical.** Product/brand names and user-facing copy stay Turkish; everything technical is English — URL routes/paths, code identifiers, D1 table/column names, file names. The canonical vocabulary lives in [`.glossary/LANGUAGE.md`](.glossary/LANGUAGE.md) — read it; the brand-noun list and the architecture terms (module / interface / depth / seam / …) are defined there, not duplicated here.
-- **Every dependency via `catalog:`.** Each dep in any `package.json` is sourced from the pnpm workspace `catalog:` (declared once in `pnpm-workspace.yaml`), never a hardcoded version string — one shared version per dep across the repo. When a dep is also a transitive dep of something already in the tree, catalog it at the EXACT version that parent links (don't introduce a second version). Enforced fail-closed in CI by `fabrika guard catalog-guard check` (the `catalog-guard.yml` job), which scans the root and every workspace member `package.json` (`dependencies`/`devDependencies`/`peerDependencies`) and reds on any non-`catalog:`/`workspace:` version or on zero scope; a genuinely unavoidable exception lives in the guard's explicit reasoned allowlist, never a silent tolerance (ADR 0092; #2737). Incident: PR #535 hardcoded `@distilled.cloud/cloudflare` and broke frozen-lockfile CI.
+- **Turkish for product/brand, English for technical.** Product/brand names stay Turkish and are never translated in any locale; everything technical is English — URL routes/paths, code identifiers, D1 table/column names, file names. **`apps/web` user-facing copy is Turkish *and* English**, both served from one typed i18n catalog per locale, with Turkish the default — ADR [0347](.decisions/0347-web-copy-behind-i18n-catalog.md) records that ruling, names where the catalog lives, fixes its foundation, and keeps Tuval, Fabrika and Demlik English-only. The canonical vocabulary lives in [`.glossary/LANGUAGE.md`](.glossary/LANGUAGE.md) — read it; the brand-noun list and the architecture terms (module / interface / depth / seam / …) are defined there, not duplicated here.
+- **Every dependency via `catalog:`.** Each dep in any `package.json` is sourced from the pnpm workspace `catalog:` (declared once in `pnpm-workspace.yaml`), never a hardcoded version string — one shared version per dep across the repo. When a dep is also a transitive dep of something already in the tree, catalog it at the EXACT version that parent links (don't introduce a second version). The one sanctioned exception is a named catalog (`catalog:<name>`, declared under `catalogs:` in `pnpm-workspace.yaml`) for a consumer set that must sit on a different pin: `catalogs.tuval` holds apps/tuval's Effect rc while the root catalog holds everyone else's beta. It declares one version per consumer set **in the manifests**, and that is all it does. It does not contain transitive resolution, and `catalog-guard` reads manifest values only, so nothing checks the lockfile. A second pin in the tree can therefore reach a package that only ever declared the first: `catalogs.tuval`'s rc.112 did exactly that, and `@effect/platform-node@4.0.0-beta.92` started resolving its own `@effect/platform-node-shared` to the rc copy on the apps/web deploy path. When you add a named catalog, read the lockfile diff for that leak and hold each crossed edge with a parent-scoped entry under `overrides:` in `pnpm-workspace.yaml` (`'<parent>@<version>><child>': <version>`), written as a literal version because `cleanupUnusedCatalogs` deletes a root catalog entry no `package.json` consumes. Enforced fail-closed in CI by `fabrika guard catalog-guard check` (the `catalog-guard.yml` job), which scans the root and every workspace member `package.json` (`dependencies`/`devDependencies`/`peerDependencies`) and reds on any non-`catalog:`/`workspace:` version or on zero scope; a genuinely unavoidable exception lives in the guard's explicit reasoned allowlist, never a silent tolerance (ADR 0092; #2737). Incident: PR #535 hardcoded `@distilled.cloud/cloudflare` and broke frozen-lockfile CI.
 
 ## Decisions
 

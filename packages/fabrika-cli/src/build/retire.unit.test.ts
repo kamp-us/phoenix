@@ -1,9 +1,10 @@
 import {describe, expect, it} from "vitest";
 import {LANE_TOKEN, NONCE, SIBLING_NONCE, SIBLING_TOKEN} from "./fixtures.test-support.ts";
-import {type BoardState, classify, sessionsByNonce, subjectsFor} from "./retire.ts";
+import {type BoardState, classify, seatResidue, sessionsByNonce, subjectsFor} from "./retire.ts";
 
 const BRANCH = `build/4312-editor-focus-loss-${NONCE}`;
 const PATH = "/trees/agent-a9bd";
+const BASE = "origin/main";
 
 const subject = (branch = BRANCH, path = PATH) => {
 	const [only] = subjectsFor(4312, [{path, branch}]);
@@ -59,8 +60,8 @@ describe("classify — the terminal-ticket license", () => {
 		).toMatchObject({_tag: "Release", license: "ticket-terminal"});
 	});
 
-	it("holds a worktree whose ticket is not terminal, and says what the board reads", () => {
-		const verdict = classify(subject(), board(), NOBODY);
+	it("holds a claimed worktree whose ticket is not terminal, and says what the board reads", () => {
+		const verdict = classify(subject(), board({sessionByNonce: {[NONCE]: "s-9f2e"}}), NOBODY);
 
 		expect(verdict._tag).toBe("Hold");
 		expect(verdict._tag === "Hold" && verdict.because).toMatch(/#4312 is open/);
@@ -89,15 +90,50 @@ describe("classify — the adopted-session license", () => {
 		expect(verdict._tag === "Hold" && verdict.because).toMatch(/names session s-9f2e/);
 	});
 
-	it("holds when no claim marker on the board carries this branch's nonce — absence licenses nothing", () => {
+	it("defers to the tree when no claim marker on the board carries this branch's nonce", () => {
 		const verdict = classify(
 			subject(),
 			board({adoptedSessions: ["s-9f2e"], sessionByNonce: {[SIBLING_NONCE]: "s-9f2e"}}),
 			NOBODY,
 		);
 
+		expect(verdict).toEqual({_tag: "Unclaimed"});
+	});
+});
+
+describe("classify / seatResidue — the unclaimed-lane license", () => {
+	const held = board({sessionByNonce: {[NONCE]: "s-9f2e"}});
+
+	it("holds a branch a live claim marker still carries, before the tree is read at all", () => {
+		expect(classify(subject(), held, NOBODY)._tag).toBe("Hold");
+	});
+
+	it("releases an unclaimed subject whose tree is clean and whose branch is level with the base", () => {
+		const verdict = seatResidue(subject(), {uncommitted: 0, commitsPastBase: 0, base: BASE});
+
+		expect(verdict).toMatchObject({_tag: "Release", license: "lane-unclaimed"});
+	});
+
+	it("holds an unclaimed subject holding uncommitted work, naming the count that blocked it", () => {
+		const verdict = seatResidue(subject(), {uncommitted: 3, commitsPastBase: 0, base: BASE});
+
 		expect(verdict._tag).toBe("Hold");
-		expect(verdict._tag === "Hold" && verdict.because).toMatch(/no authorized claim marker/);
+		expect(verdict._tag === "Hold" && verdict.because).toMatch(/3 uncommitted path\(s\)/);
+	});
+
+	it("holds an unclaimed subject whose branch carries commits past the base, naming the base", () => {
+		const verdict = seatResidue(subject(), {uncommitted: 0, commitsPastBase: 2, base: BASE});
+
+		expect(verdict._tag).toBe("Hold");
+		expect(verdict._tag === "Hold" && verdict.because).toMatch(/2 commit\(s\) past origin\/main/);
+	});
+
+	it("names BOTH counts when a tree carries both — there is no second read to find the other", () => {
+		const verdict = seatResidue(subject(), {uncommitted: 1, commitsPastBase: 4, base: BASE});
+
+		expect(verdict._tag === "Hold" && verdict.because).toMatch(
+			/1 uncommitted path\(s\) and 4 commit\(s\) past origin\/main/,
+		);
 	});
 });
 

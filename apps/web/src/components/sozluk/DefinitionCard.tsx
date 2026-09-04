@@ -1,5 +1,18 @@
 // Mutations throw their boundary-class wire errors, so every call site catches.
 // See `.patterns/fate-mutations-client.md`.
+
+import {
+	Alert,
+	Button,
+	CopyLinkButton,
+	Dialog,
+	EditedIndicator,
+	MetaRow,
+	ReportButton,
+	type ReportOutcome,
+	SandboxMarker,
+	Textarea,
+} from "@kampus/design";
 import * as React from "react";
 import {toEntityId, useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
@@ -9,6 +22,7 @@ import {bodyEditOptimistic} from "../../fate/optimisticEdit";
 import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
 import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
+import {type Translate, useT} from "../../i18n";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
@@ -17,15 +31,6 @@ import {actorLabel} from "../moderation/actor-identity";
 import {useVoteToggle} from "../pano/useVoteToggle";
 import {DefinitionReactionBar} from "../reaction/DefinitionReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
-import {Alert} from "../ui/Alert";
-import {Button} from "../ui/Button";
-import {CopyLinkButton} from "../ui/CopyLinkButton";
-import {Dialog} from "../ui/Dialog";
-import {EditedIndicator} from "../ui/EditedIndicator";
-import {Textarea} from "../ui/Form";
-import {MetaRow} from "../ui/MetaRow";
-import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {SandboxMarker} from "../ui/SandboxMarker";
 import {useVoteFlash} from "../useVoteFlash";
 import {VoteTriangle} from "../VoteTriangle";
 
@@ -53,11 +58,14 @@ const ReportReceiptView = view<ReportReceipt>()({
 	created: true,
 });
 
-const DEFINITION_OVERRIDES: WireMessageOverrides = {
-	BODY_REQUIRED: "tanım boş olamaz",
-	BODY_TOO_LONG: `tanım en fazla ${BODY_MAX} karakter olabilir`,
-	DEFINITION_NOT_FOUND: "tanım bulunamadı",
-};
+// Locale-dependent, so it is built per render rather than at module scope.
+function definitionOverrides(t: Translate): WireMessageOverrides {
+	return {
+		BODY_REQUIRED: t("sozluk.composer.bodyRequired"),
+		BODY_TOO_LONG: t("sozluk.composer.bodyTooLong", {max: BODY_MAX}),
+		DEFINITION_NOT_FOUND: t("sozluk.definition.notFound"),
+	};
+}
 
 export interface DefinitionCardProps {
 	definition: ViewRef<"Definition">;
@@ -72,6 +80,8 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	const t = useT();
+	const overrides = React.useMemo(() => definitionOverrides(t), [t]);
 	const [editing, setEditing] = React.useState(false);
 	const [editBody, setEditBody] = React.useState(definition.body);
 	const [confirmDelete, setConfirmDelete] = React.useState(false);
@@ -81,12 +91,12 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		setError: setEditError,
 		inFlight: editInFlight,
 		run: runEdit,
-	} = useDraftSubmit({overrides: DEFINITION_OVERRIDES, redirectPath: editRedirectPath});
+	} = useDraftSubmit({overrides, redirectPath: editRedirectPath});
 	const {
 		error: deleteError,
 		inFlight: deleteInFlight,
 		run: runDelete,
-	} = useDraftSubmit({overrides: DEFINITION_OVERRIDES, redirectPath: editRedirectPath});
+	} = useDraftSubmit({overrides, redirectPath: editRedirectPath});
 
 	const voted = definition.myVote === true;
 	const {flashing, endFlash} = useVoteFlash(definition.score);
@@ -127,11 +137,11 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		e.preventDefault();
 		const trimmed = editBody.trim();
 		if (trimmed.length === 0) {
-			setEditError(messageForCode("BODY_REQUIRED", DEFINITION_OVERRIDES));
+			setEditError(messageForCode(t, "BODY_REQUIRED", overrides));
 			return;
 		}
 		if (editBody.length > BODY_MAX) {
-			setEditError(messageForCode("BODY_TOO_LONG", DEFINITION_OVERRIDES));
+			setEditError(messageForCode(t, "BODY_TOO_LONG", overrides));
 			return;
 		}
 		await runEdit(
@@ -141,7 +151,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					optimistic: bodyEditOptimistic(editBody),
 					view: DefinitionView,
 				}),
-			"tanım güncellenemedi",
+			t("sozluk.definition.updateFailed"),
 			() => setEditing(false),
 		);
 	}
@@ -170,7 +180,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 				);
 				return promise;
 			},
-			"tanım silinemedi",
+			t("sozluk.definition.deleteFailed"),
 			() => {
 				setConfirmDelete(false);
 				props.onDeleted?.(String(definition.id));
@@ -216,7 +226,11 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					pressed={voted}
 					disabled={isAuthor}
 					aria-label={
-						isAuthor ? "Kendi tanımına oy veremezsin" : voted ? "Oyunu geri al" : "Yukarı oy"
+						isAuthor
+							? t("sozluk.definition.voteSelfDisabled")
+							: voted
+								? t("sozluk.definition.retractVote")
+								: t("sozluk.definition.upvote")
 					}
 					data-testid={`definition-vote-${definition.id}`}
 					onClick={onVoteClick}
@@ -237,7 +251,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					<form className="kp-sozluk-composer" onSubmit={onEditSubmit}>
 						<Textarea
 							className="kp-sozluk-composer__textarea"
-							aria-label="tanımı düzenle"
+							aria-label={t("sozluk.definition.editLabel")}
 							value={editBody}
 							onChange={(e) => setEditBody(e.target.value)}
 							disabled={editInFlight}
@@ -268,7 +282,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 										setEditError(null);
 									}}
 								>
-									iptal
+									{t("sozluk.definition.cancel")}
 								</Button>
 								<Button
 									variant="primary"
@@ -277,7 +291,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 									disabled={editInFlight || editBody.trim().length === 0}
 									data-testid={`definition-edit-save-${definition.id}`}
 								>
-									{editInFlight ? "kaydediliyor…" : "kaydet"}
+									{editInFlight ? t("sozluk.definition.saving") : t("sozluk.definition.save")}
 								</Button>
 							</span>
 						</footer>
@@ -328,7 +342,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 										setEditing(true);
 									}}
 								>
-									düzenle
+									{t("sozluk.definition.edit")}
 								</Button>
 								<Button
 									type="button"
@@ -337,7 +351,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 									data-testid={`definition-delete-${definition.id}`}
 									onClick={() => setConfirmDelete(true)}
 								>
-									sil
+									{t("sozluk.definition.delete")}
 								</Button>
 							</>
 						) : null}
@@ -357,12 +371,12 @@ export function DefinitionCard(props: DefinitionCardProps) {
 						open={confirmDelete}
 						onOpenChange={setConfirmDelete}
 						role="alertdialog"
-						title="tanımı sil"
-						description="bu tanımı silmek istediğine emin misin? geri alınamaz."
+						title={t("sozluk.definition.deleteTitle")}
+						description={t("sozluk.definition.deleteDescription")}
 						footer={({close}) => (
 							<>
 								<Button variant="tertiary" onClick={close}>
-									vazgeç
+									{t("sozluk.definition.deleteCancel")}
 								</Button>
 								<Button
 									variant="primary"
@@ -372,7 +386,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 									data-testid={`definition-delete-confirm-${definition.id}`}
 									onClick={onDeleteConfirm}
 								>
-									{deleteInFlight ? "siliniyor…" : "sil"}
+									{deleteInFlight ? t("sozluk.definition.deleting") : t("sozluk.definition.delete")}
 								</Button>
 							</>
 						)}

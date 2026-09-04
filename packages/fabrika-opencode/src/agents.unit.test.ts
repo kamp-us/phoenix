@@ -66,4 +66,11 @@ describe("authored agent shell mirrors", () => {
 		expect(shell.description).toBeTruthy();
 		expect(shell.prompt.length).toBeGreaterThan(0);
 	});
+
+	// opencode denies the task tool to any spawned subagent whose own ruleset names no `task`
+	// rule, so dropping this key leaves the operator with no spawn primitive at all (#6980).
+	it("the operator mirror declares a task permission so its spawn tool survives the spawn", () => {
+		const shell = parseAgentMarkdown(readFileSync(join(AGENT_SHELLS_DIR, "operator.md"), "utf8"));
+		expect(shell.permission?.task).toBe("allow");
+	});
 });

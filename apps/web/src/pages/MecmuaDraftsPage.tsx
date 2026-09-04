@@ -4,20 +4,18 @@
  * `.patterns/flag-dark-page-gate.md`); that root serves empty while the flag is off, so a
  * signed-out or gated read just renders empty.
  */
+
+import {Alert, Badge, Card, EmptyState, MetaRow} from "@kampus/design";
 import {NotebookPen} from "lucide-react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {MecmuaPost} from "../../worker/features/fate/views";
 import {Icon} from "../components/Icon";
-import {Alert} from "../components/ui/Alert";
-import {Badge} from "../components/ui/Badge";
-import {Card} from "../components/ui/Card";
-import {EmptyState} from "../components/ui/EmptyState";
-import {MetaRow} from "../components/ui/MetaRow";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
 import {MECMUA_WRITE} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {formatDateTR} from "../lib/datetime";
 import {NotFoundPage} from "./NotFoundPage";
 import "./MecmuaDraftsPage.css";
@@ -34,13 +32,14 @@ const myPostsRequest = {
 
 export function MecmuaDraftsPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_WRITE, false);
+	const t = useT();
 	// No in-page write CTA on purpose: mecmua's single one lives in the Subnav (#2603).
 
 	if (flagLoading) {
 		return (
 			<div className="kp-page">
 				<div className="kp-page__inner">
-					<p className="kp-mecmua-drafts__status">yükleniyor…</p>
+					<p className="kp-mecmua-drafts__status">{t("mecmua.loading")}</p>
 				</div>
 			</div>
 		);
@@ -53,15 +52,15 @@ export function MecmuaDraftsPage() {
 			<div className="kp-page__inner">
 				<header className="kp-mecmua-drafts__head">
 					<div className="kp-mecmua-drafts__head-row">
-						<h1 className="kp-mecmua-drafts__title">yazılarım</h1>
+						<h1 className="kp-mecmua-drafts__title">{t("mecmua.drafts.title")}</h1>
 					</div>
-					<p className="kp-mecmua-drafts__lede">taslakların ve yayımladığın yazılar.</p>
+					<p className="kp-mecmua-drafts__lede">{t("mecmua.drafts.lede")}</p>
 				</header>
 				<Screen
-					fallback={<p className="kp-mecmua-drafts__status">yükleniyor…</p>}
+					fallback={<p className="kp-mecmua-drafts__status">{t("mecmua.loading")}</p>}
 					error={({code}) => (
 						<Alert variant="danger" className="kp-alert--inline kp-mecmua-drafts__status">
-							yazılar yüklenemedi: {code.toLowerCase()}
+							{t("mecmua.drafts.error", {code: code.toLowerCase()})}
 						</Alert>
 					)}
 				>
@@ -73,6 +72,7 @@ export function MecmuaDraftsPage() {
 }
 
 function MecmuaDraftsList() {
+	const t = useT();
 	const {mecmuaMyPosts} = useRequest(myPostsRequest);
 	const [items] = useListView(MyPostsConnectionView, mecmuaMyPosts);
 
@@ -80,8 +80,8 @@ function MecmuaDraftsList() {
 		return (
 			<EmptyState
 				icon={<Icon icon={NotebookPen} size={24} />}
-				title="henüz yazın yok"
-				description="yeni bir yazıya başla; taslakların burada birikir."
+				title={t("mecmua.drafts.empty.title")}
+				description={t("mecmua.drafts.empty.description")}
 			/>
 		);
 	}
@@ -96,9 +96,10 @@ function MecmuaDraftsList() {
 }
 
 function MecmuaDraftRow({node}: {node: ViewRef<"MecmuaPost">}) {
+	const t = useT();
 	const post = useView(MecmuaMyPostView, node);
 	const published = post.publishedAt != null;
-	const heading = post.title.trim().length > 0 ? post.title : "(başlıksız taslak)";
+	const heading = post.title.trim().length > 0 ? post.title : t("mecmua.drafts.untitled");
 
 	return (
 		<Card as="li" interactive className="kp-mecmua-drafts__item" data-testid="mecmua-drafts-item">
@@ -111,7 +112,7 @@ function MecmuaDraftRow({node}: {node: ViewRef<"MecmuaPost">}) {
 								variant="success"
 								className="kp-mecmua-drafts__badge kp-mecmua-drafts__badge--published"
 							>
-								yayımlandı
+								{t("mecmua.drafts.published")}
 							</Badge>
 							{post.publishedAt ? (
 								<time dateTime={toIso(post.publishedAt)}>
@@ -121,7 +122,7 @@ function MecmuaDraftRow({node}: {node: ViewRef<"MecmuaPost">}) {
 						</>
 					) : (
 						<Badge variant="secondary" className="kp-mecmua-drafts__badge">
-							taslak
+							{t("mecmua.drafts.draft")}
 						</Badge>
 					)}
 				</MetaRow>

@@ -78,3 +78,26 @@ export const INVALID_CAPTURE = 15;
 export const NO_PREVIEW = 16;
 /** Proven: at least one evidence upload or its verification failed — **nothing was posted**. */
 export const UPLOAD_FAILED = 17;
+/**
+ * Refused: this post would retire a standing verdict of the OPPOSITE polarity at the same head, and
+ * `--supersede` was not passed.
+ *
+ * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
+ * vocabulary — the write is legitimate and one flag away. What it costs is the record: on PR #7081 a
+ * FAIL became a PASS with nothing showing a gate had blocked, and GitHub keeps no comment-body
+ * history to recover it from (#7247). Nothing is posted on this refusal — the evidence uploads of
+ * step 4 have already run by then, which is a spent upload rather than a landed verdict.
+ */
+export const SUPERSEDES_VERDICT = 18;
+/**
+ * Refused, proven: a shot's PNG width, read back from its own bytes, is not the width of the
+ * viewport that was asked for.
+ *
+ * Its own seat rather than the wrong-page `11`, because unlike a wrong tier or an inert override
+ * this one is decided against the recorded artifact rather than against a probe the preview
+ * answered — the readback is the same shape as `INVALID_CAPTURE`'s, one question further on. A shot
+ * at the wrong width is a valid PNG of a layout nobody asked about, and recording it under a
+ * viewport label would make the narrow half of the design law answerable from desktop pixels
+ * (#7706).
+ */
+export const WRONG_VIEWPORT = 19;

@@ -14,7 +14,7 @@ import {INVENTORY_ARTIFACT, NORMATIVE_MANIFEST} from "./design-inventory.ts";
 import {runDesignInventoryCheck, runDesignInventoryGenerate} from "./design-inventory-verb.ts";
 
 const ROOT = "/repo";
-const UI = `${ROOT}/apps/web/src/components/ui`;
+const UI = `${ROOT}/packages/design/src`;
 const ARTIFACT = `${ROOT}/${INVENTORY_ARTIFACT}`;
 const MANIFEST = `${ROOT}/${NORMATIVE_MANIFEST}`;
 

@@ -14,16 +14,47 @@
  * A surface may name a state (`/pano:auth`), but only one this repo can actually put on screen —
  * the vocabulary and its mechanism live in `capture/states.ts`. Anything else is refused rather
  * than shot, because a state nothing renders captures the default pixels under a variant's name,
- * which is coverage claimed and not held (#7051). An `:auth` surface is refused twice over: on `11`
- * before a browser launches when the credentials are incomplete, and on `11` again when the shot's
- * own session proof does not come back signed in — a cookie that failed to authenticate produces a
- * perfectly valid PNG of the visitor's page, which no byte check can tell from the real thing.
+ * which is coverage claimed and not held (#7051). Every realized state names the **tier** it renders
+ * at, and a tier-naming surface is refused three times over, all on `11`: before a browser launches
+ * when that tier's credentials are incomplete — an unset tier token is a tier `preview-seed
+ * test-account` did not seed, and falling back to the seeded one would shoot the wrong audience
+ * clean (#7398); when the shot's own session proof does not come back signed in; and when that proof
+ * comes back at a different tier than the surface named. Each produces a perfectly valid PNG of a
+ * page nobody asked for, which no byte check can tell from the real thing.
+ *
+ * `--viewport <name>` picks the widths the surfaces are shot at, over `plan.ts`'s closed set, and
+ * defaults to `desktop` alone so every caller written before it is unchanged (#7706). Viewports
+ * cross the surfaces: two of each is four captures in one set, distinguished on disk and in the
+ * manifest by the viewport label. Each shot then proves its own width off the PNG header — the
+ * narrow half of the design law is only answerable from narrow pixels, and a desktop-width shot
+ * filed under `mobile` would answer it from the wrong ones, on `19`.
+ *
+ * `--flag <key>=<on|off>` forces a dark-shipped flag for the run (ADR 0336, #7218), and it is
+ * refused twice over on the same shape: on `10` when an operand is unreadable or names an anonymous
+ * surface — the preview honors the override cookie only for an authorized platform-admin actor — and
+ * on `11` when the shot's own flag probe says the forced key evaluated at its default anyway.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {readIdentity, sessionCookies} from "../capture/auth.ts";
 import type {CaptureCookie} from "../capture/capture.ts";
-import {isRealizedState, provesSession, REALIZED_STATES, stateOf} from "../capture/states.ts";
+import {
+	FORCED_VALUES,
+	type ForcedFlags,
+	isForcing,
+	NO_FORCED_FLAGS,
+	overrideCookies,
+	parseFlagOperands,
+} from "../capture/flag-override.ts";
+import {DEFAULT_VIEWPORT, VIEWPORT_NAMES, type Viewport, viewportOf} from "../capture/plan.ts";
+import {
+	type CaptureTier,
+	isRealizedState,
+	provesSession,
+	REALIZED_STATES,
+	stateOf,
+	tierOf,
+} from "../capture/states.ts";
 import {writeFile} from "../io/fs.ts";
 import {listComments} from "../io/issues.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
@@ -36,6 +67,7 @@ import {
 	RENDER_CRASHED,
 	STALE_TREE,
 	SURFACE_UNREACHABLE,
+	WRONG_VIEWPORT,
 } from "./codes.ts";
 import {
 	type CaptureEntry,
@@ -53,10 +85,17 @@ const VERB = "review-ui render";
 export interface SurfaceRenderRequest {
 	/** The surface id — `<route>` or `<route>:<state>`. */
 	readonly surface: string;
+	/** The width this shot is asked for, and the width its bytes must read back at. */
+	readonly viewport: Viewport;
 	readonly previewUrl: string;
 	readonly outDir: string;
 	/** Seeded into the capture context before navigation. Empty ⇒ the anonymous render. */
 	readonly cookies: readonly CaptureCookie[];
+	/**
+	 * The flags {@link cookies}' override cookie forces, so the leg can ask the preview what they
+	 * evaluated to. Empty ⇒ nothing was forced and no proof is owed.
+	 */
+	readonly forcedFlags: ForcedFlags;
 }
 
 /**
@@ -70,6 +109,9 @@ export type SurfaceRender =
 	| {readonly _tag: "Crashed"; readonly firstError: string}
 	| {readonly _tag: "Invalid"; readonly detail: string}
 	| {readonly _tag: "Unauthenticated"; readonly reason: string}
+	| {readonly _tag: "WrongTier"; readonly wanted: CaptureTier; readonly rendered: string}
+	| {readonly _tag: "WrongViewport"; readonly wanted: number; readonly rendered: number}
+	| {readonly _tag: "OverrideInert"; readonly reason: string}
 	| {readonly _tag: "Failed"; readonly reason: string};
 
 export type RenderLeg = (request: SurfaceRenderRequest) => Effect.Effect<SurfaceRender>;
@@ -78,6 +120,10 @@ export interface RenderOptions {
 	readonly pr: number;
 	readonly out: string;
 	readonly surfaces: readonly string[];
+	/** Raw `--viewport` operands, each a name in `plan.ts`'s closed set. Empty ⇒ desktop alone. */
+	readonly viewports: readonly string[];
+	/** Raw `--flag` operands, each a `<key>=<on|off>` pair. Empty ⇒ every flag at its default. */
+	readonly flags: readonly string[];
 	readonly app: string | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -110,24 +156,44 @@ const routeCode = (renders: readonly SurfaceRender[]): number | null => {
 	return null;
 };
 
-const outcomeLine = (surface: string, render: SurfaceRender): string => {
+/**
+ * One planned shot: a surface at a viewport. The set is the cross product of the two operand lists,
+ * so nothing downstream can name a surface without the width its pixels are of.
+ */
+interface PlannedShot {
+	readonly surface: string;
+	readonly viewport: Viewport;
+}
+
+/** Every enumeration and every refusal names the shot, and a shot is a surface at a viewport. */
+const shotName = (shot: PlannedShot): string =>
+	`surface "${shot.surface}" at ${shot.viewport.label}`;
+
+const outcomeLine = (shot: PlannedShot, render: SurfaceRender): string => {
+	const subject = shotName(shot);
 	switch (render._tag) {
 		case "Rendered": {
 			// The count is the whole tally, not the kept rows: the payload collapses the list, so a
 			// stderr count read off `rows` alone would under-report exactly when there is most to report.
 			const errors = render.entry.pageErrors;
-			return `${VERB}: surface "${surface}" captured: ${render.entry.width}x${render.entry.height}, ${errors.rows.length + errors.more} page error(s)`;
+			return `${VERB}: ${subject} captured: ${render.entry.width}x${render.entry.height}, ${errors.rows.length + errors.more} page error(s)`;
 		}
 		case "Unreachable":
-			return `${VERB}: surface "${surface}" is unreachable at the preview (${render.reason}) — judge what renders, and hold the gap against the PR's Deviations (#4305).`;
+			return `${VERB}: ${subject} is unreachable at the preview (${render.reason}) — judge what renders, and hold the gap against the PR's Deviations (#4305).`;
 		case "Crashed":
-			return `${VERB}: surface "${surface}" threw during render: ${render.firstError} — the render is red; a broken page is not composition to judge.`;
+			return `${VERB}: ${subject} threw during render: ${render.firstError} — the render is red; a broken page is not composition to judge.`;
 		case "Invalid":
-			return `${VERB}: surface "${surface}" captured invalid bytes (${render.detail}) — a capture nobody can open is not evidence (#3925's class).`;
+			return `${VERB}: ${subject} captured invalid bytes (${render.detail}) — a capture nobody can open is not evidence (#3925's class).`;
 		case "Unauthenticated":
-			return `${VERB}: surface "${surface}" did not render signed in (${render.reason}) — the authenticated render is UNKNOWN, never the anonymous one.`;
+			return `${VERB}: ${subject} did not render signed in (${render.reason}) — the authenticated render is UNKNOWN, never the anonymous one.`;
+		case "WrongTier":
+			return `${VERB}: ${subject} named tier ${render.wanted} and rendered as ${render.rendered} — the named tier's render is UNKNOWN, never another tier's.`;
+		case "WrongViewport":
+			return `${VERB}: ${subject} was asked for at ${render.wanted}px and its bytes read back ${render.rendered}px wide — the requested viewport's render is UNKNOWN, never another width's.`;
+		case "OverrideInert":
+			return `${VERB}: ${subject} did not render with its forced flags (${render.reason}) — the forced render is UNKNOWN, never the default one.`;
 		case "Failed":
-			return `${VERB}: surface "${surface}" could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
+			return `${VERB}: ${subject} could not be rendered: ${render.reason} — the outcome is UNKNOWN.`;
 	}
 };
 
@@ -166,6 +232,52 @@ export const runRender = (
 				OFF_VOCABULARY,
 				`${VERB}: --surface "${unrealized}" names a :state nothing renders — the realized states are ${REALIZED_STATES.join(", ")}; render the bare route.`,
 			);
+		}
+
+		const unknownViewport = options.viewports.find((name) => viewportOf(name) === null);
+		if (unknownViewport !== undefined) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --viewport "${unknownViewport}" is not a viewport this repo renders — the names are ${VIEWPORT_NAMES.join(", ")}.`,
+			);
+		}
+		const repeated = options.viewports.find(
+			(name, index) => options.viewports.indexOf(name) !== index,
+		);
+		if (repeated !== undefined) {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --viewport "${repeated}" was passed twice — the second shot would overwrite the first's file and evidence.`,
+			);
+		}
+		// Omitted is desktop alone, which is what every invocation written before this operand asked
+		// for implicitly (#7706).
+		const viewports: readonly Viewport[] =
+			options.viewports.length === 0
+				? [DEFAULT_VIEWPORT]
+				: options.viewports.map((name) => viewportOf(name) as Viewport);
+
+		const operands = parseFlagOperands(options.flags);
+		if (operands._tag === "Malformed") {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --flag "${operands.token}" is not a <key>=<${FORCED_VALUES.join("|")}> pair (${operands.reason}) — an operand nothing can force would shoot the default state under the forced name.`,
+			);
+		}
+		const forcedFlags = operands.flags;
+		// The override rides the `phoenix_flag_overrides` cookie, which a deployed stage honors only
+		// for a request whose actor holds platform Admin (`flagship/override-authz.ts`, untouched).
+		// So an anonymous surface cannot carry a forced flag at all — it would render the default
+		// state cleanly under the forced name, which is the coverage-claimed-and-not-held class this
+		// verb already refuses a stateless `:state` for (#7051, #7218).
+		if (isForcing(forcedFlags)) {
+			const anonymous = options.surfaces.find((surface) => !provesSession(stateOf(surface)));
+			if (anonymous !== undefined) {
+				return refuse(
+					OFF_VOCABULARY,
+					`${VERB}: --flag was passed with the anonymous surface "${anonymous}" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (${REALIZED_STATES.join(", ")}) on every surface.`,
+				);
+			}
 		}
 
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
@@ -220,40 +332,55 @@ export const runRender = (
 			);
 		}
 
-		// An `:auth` surface rendered without credentials would come back as the visitor's page under
-		// the signed-in name — the "unseen ground reading as clean" this whole axis exists to stop —
-		// so an incomplete pair is UNKNOWN here, before a browser launches.
-		const wantsAuth = options.surfaces.some((surface) => provesSession(stateOf(surface)));
-		const identity = readIdentity(options.env);
-		if (wantsAuth && identity._tag === "Missing") {
+		// A tier-naming surface rendered without that tier's credentials would come back as the
+		// visitor's page — or worse, as the one tier this preview did seed — under the named tier's
+		// name. That is the "unseen ground reading as clean" this whole axis exists to stop, so an
+		// incomplete credential set is UNKNOWN here, before a browser launches. A tier whose token is
+		// unset is a tier `preview-seed test-account` did not seed on this preview (#7398).
+		const wantedTiers = options.surfaces.flatMap((surface) => {
+			const tier = tierOf(stateOf(surface));
+			return tier === null ? [] : [tier];
+		});
+		const identity = readIdentity(options.env, wantedTiers);
+		if (wantedTiers.length > 0 && identity._tag === "Missing") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: an :auth surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}) — the authenticated render is UNKNOWN, never the anonymous one.`,
+				`${VERB}: a tier-naming surface was requested but its credentials are incomplete (unset: ${identity.names.join(", ")}) — the named tier's render is UNKNOWN, never a seeded substitute.`,
 				[scanned],
 			);
 		}
-		const authCookies: readonly CaptureCookie[] =
-			identity._tag === "Identity"
-				? sessionCookies(announced.url, identity.token, identity.secret)
-				: [];
+		const cookiesFor = (tier: CaptureTier): readonly CaptureCookie[] => {
+			if (identity._tag !== "Identity") return [];
+			const token = identity.tokens[tier];
+			return token === undefined ? [] : sessionCookies(announced.url, token, identity.secret);
+		};
+		const forcedCookies = overrideCookies(announced.url, forcedFlags);
 
 		const setDir = setDirectory(options.tmpRoot, pr, head, options.out);
+		// Surface-major so a mixed-viewport enumeration reads one surface's widths together.
+		const shots: readonly PlannedShot[] = options.surfaces.flatMap((surface) =>
+			viewports.map((viewport) => ({surface, viewport})),
+		);
 		const renders: SurfaceRender[] = [];
-		for (const surface of options.surfaces) {
+		for (const shot of shots) {
+			// Only a tier-naming variant carries a session and the override, and it carries ITS OWN
+			// tier's session: a bare route stays the visitor's render at every flag's default, so each
+			// is genuinely different pixels rather than one shot repeated.
+			const tier = tierOf(stateOf(shot.surface));
 			renders.push(
 				yield* options.render({
-					surface,
+					surface: shot.surface,
+					viewport: shot.viewport,
 					previewUrl: announced.url,
 					outDir: setDir,
-					// Only the `:auth` variant carries the session; a bare route stays the visitor's
-					// render, so the two are genuinely different pixels rather than one shot twice.
-					cookies: provesSession(stateOf(surface)) ? authCookies : [],
+					cookies: tier === null ? [] : [...cookiesFor(tier), ...forcedCookies],
+					forcedFlags: tier === null ? NO_FORCED_FLAGS : forcedFlags,
 				}),
 			);
 		}
 		const enumerated = [
 			scanned,
-			...options.surfaces.map((surface, i) => outcomeLine(surface, renders[i] as SurfaceRender)),
+			...shots.map((shot, i) => outcomeLine(shot, renders[i] as SurfaceRender)),
 		];
 
 		const failed = renders.find((render) => render._tag === "Failed");
@@ -266,11 +393,27 @@ export const runRender = (
 		}
 		// Ahead of the proven-red codes below, and deliberately: the shot is a fine PNG of the wrong
 		// page, so routing it as a red surface would accuse the PR of a defect the render never saw.
-		const anonymous = renders.findIndex((render) => render._tag === "Unauthenticated");
-		if (anonymous !== -1) {
+		// The three arms are one class — wrong session, wrong tier, wrong flag state — and route alike.
+		const wrongPage = renders.findIndex(
+			(render) =>
+				render._tag === "Unauthenticated" ||
+				render._tag === "WrongTier" ||
+				render._tag === "OverrideInert",
+		);
+		if (wrongPage !== -1) {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				outcomeLine(options.surfaces[anonymous] as string, renders[anonymous] as SurfaceRender),
+				outcomeLine(shots[wrongPage] as PlannedShot, renders[wrongPage] as SurfaceRender),
+				enumerated,
+			);
+		}
+		// Its own code rather than the `11` above, because this one is proven against the recorded
+		// bytes rather than against a probe the preview answered.
+		const wrongWidth = renders.findIndex((render) => render._tag === "WrongViewport");
+		if (wrongWidth !== -1) {
+			return refuse(
+				WRONG_VIEWPORT,
+				outcomeLine(shots[wrongWidth] as PlannedShot, renders[wrongWidth] as SurfaceRender),
 				enumerated,
 			);
 		}
@@ -287,7 +430,7 @@ export const runRender = (
 			const index = renders.findIndex((render) => render._tag === tag);
 			return refuse(
 				routed,
-				outcomeLine(options.surfaces[index] as string, renders[index] as SurfaceRender),
+				outcomeLine(shots[index] as PlannedShot, renders[index] as SurfaceRender),
 				enumerated,
 			);
 		}

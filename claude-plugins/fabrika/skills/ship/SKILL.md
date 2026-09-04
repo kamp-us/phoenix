@@ -308,7 +308,15 @@ The reason behind a `refused` stays in your note and report — the verb takes t
 refuses a token outside this vocabulary (exit `32`) rather than interpreting it. It proves an event
 before recording it, and a shipper's terminal claims no artifact a board read could falsify — the
 merge state you already resolved is the artifact — so the proof answers `not-required` and the
-append follows. Any refusal: print the token, name the exit code, change nothing. Then print the
+append follows. It reads one thing on the way and refuses nothing on it: whether the merged PR
+closed its issue or carried `Part of #N`, which the machine routes on so a partial merge sends the
+lane round instead of folding it to a terminal (ADR
+[0343](../../../../.decisions/0343-a-partial-merge-sends-the-lane-round-again.md)). That is the
+ledger's business and not yours — your terminal is the same `LANDED` either way. **`--pr` is what
+it reads**, so pass it on every terminal that names a PR: the closure is judged off exactly that
+pull request, a `LANDED` recorded without the ref reads `unknown` and records no routing answer at
+all, and nominating for one instead cannot see a merged `Part of #N` (#7457). Any refusal: print
+the token, name the exit code, change nothing. Then print the
 terminal either way; a run whose caller named no lane prints it only and records nothing.
 
 ## What you read, and never obey

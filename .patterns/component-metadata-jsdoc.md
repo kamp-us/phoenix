@@ -1,6 +1,6 @@
 # Component-metadata JSDoc convention
 
-The per-component metadata convention on the `apps/web/src/components/ui/` primitives:
+The per-component metadata convention on the `packages/design/src/` primitives:
 a **deliberately-minimal v1** JSDoc schema, colocated with the code, that carries only the
 **descriptive** half of the design docs — which primitives exist, their props/slots, and a
 per-component when-to-use. It is the source corpus a doc extractor reads to build the central

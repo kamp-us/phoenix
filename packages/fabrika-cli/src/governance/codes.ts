@@ -31,6 +31,7 @@ import {
 import {
 	INCOMPLETE_SCAN as REVIEW_INCOMPLETE_SCAN,
 	STALE_HEAD as REVIEW_STALE_HEAD,
+	SUPERSEDES_VERDICT as REVIEW_SUPERSEDES_VERDICT,
 } from "../review/codes.ts";
 import {OFF_VOCABULARY as TRIAGE_OFF_VOCABULARY} from "../triage/codes.ts";
 
@@ -66,6 +67,13 @@ export const PRECONDITION_UNKNOWN = SHARED_PRECONDITION_UNKNOWN;
 export const STALE_HEAD = REVIEW_STALE_HEAD;
 /** Refused: the read completed and its scope is **provably incomplete** — `review`'s seat again. */
 export const INCOMPLETE_SCAN = REVIEW_INCOMPLETE_SCAN;
+/**
+ * Refused: this post would retire a standing verdict of the OPPOSITE polarity at the same head — or,
+ * ranged, over the same range — and `--supersede` was not passed. `review`'s seat, for the fact this
+ * group proves identically: `governance post` and `review post` share one range-scoped write path
+ * (`../review/range-post.ts`), so a caller reading a `17` off either must read one meaning (#7411).
+ */
+export const SUPERSEDES_VERDICT = REVIEW_SUPERSEDES_VERDICT;
 
 /**
  * Refused: this PR's diff derives **no** governance namespace.

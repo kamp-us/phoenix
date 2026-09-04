@@ -330,16 +330,45 @@ export interface IssueRecord {
 	 */
 	readonly isPullRequest: boolean;
 	/**
-	 * Whether this issue hangs under a parent — a sub-issue, which inherits its epic's contract.
+	 * The edge to this issue's parent, when it hangs under one — a sub-issue, which inherits its
+	 * epic's contract.
 	 *
 	 * Read from `parent_issue_url` AND `parent`: the sub-issues API has shipped both shapes, and a
 	 * reader that knows only `parent` resolves every sub-issue as parentless. **The list endpoints
 	 * carry neither key**, so a caller that needs this fact re-reads the issue singly; a list record
-	 * always answers `false` here, which is the fail-open direction for a scope filter and the reason
+	 * always answers `None` here, which is the fail-open direction for a scope filter and the reason
 	 * `pitch-verb.ts` never filters on a list record.
 	 */
-	readonly isSubIssue: boolean;
+	readonly parent: ParentEdge;
 }
+
+/**
+ * Whether an issue hangs under a parent, and which one.
+ *
+ * Three cases rather than a boolean beside a nullable number, because those two can disagree and
+ * `{isSubIssue: false, parent: 4304}` states nothing a caller may act on. `Unnamed` is a payload
+ * carrying the edge but no number that parses: still a sub-issue, so a fence on parenthood refuses
+ * over it, and only a caller that must *name* the parent loses anything.
+ */
+export type ParentEdge =
+	| {readonly _tag: "None"}
+	| {readonly _tag: "Unnamed"}
+	| {readonly _tag: "Parent"; readonly number: number};
+
+const ISSUE_URL_NUMBER = /\/issues\/(\d+)$/;
+
+const parentEdge = (value: Record<string, unknown>): ParentEdge => {
+	const {parent, parent_issue_url: url} = value;
+	if (isRecord(parent) && typeof parent.number === "number") {
+		return {_tag: "Parent", number: parent.number};
+	}
+	if (typeof url === "string") {
+		const match = ISSUE_URL_NUMBER.exec(url);
+		if (match !== null) return {_tag: "Parent", number: Number(match[1])};
+	}
+	const linked = (url !== undefined && url !== null) || (parent !== undefined && parent !== null);
+	return linked ? {_tag: "Unnamed"} : {_tag: "None"};
+};
 
 const toIssueRecord = (value: unknown): IssueRecord | null => {
 	if (!isRecord(value)) return null;
@@ -364,9 +393,7 @@ const toIssueRecord = (value: unknown): IssueRecord | null => {
 		stateReason: typeof state_reason === "string" ? state_reason : null,
 		comments: typeof value.comments === "number" ? value.comments : 0,
 		isPullRequest: isRecord(value.pull_request),
-		isSubIssue:
-			(value.parent_issue_url !== undefined && value.parent_issue_url !== null) ||
-			(value.parent !== undefined && value.parent !== null),
+		parent: parentEdge(value),
 	};
 };
 

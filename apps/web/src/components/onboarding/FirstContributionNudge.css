@@ -1,0 +1,38 @@
+/* The welcome moment's exit ask (#7044, epic #4304) — soft by design: a raised panel,
+   not a banner, and its dismissal sits at the same weight as its action. The shell
+   itself is `Surface`'s (tone/radius/padding/border are props on the primitive); only
+   the inner stack lives here. Role tokens only — no color literal. */
+
+.kp-first-katki {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.kp-first-katki__heading {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-first-katki__line {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-first-katki__actions {
+	display: flex;
+	align-items: center;
+	gap: var(--s-3);
+	flex-wrap: wrap;
+}
+
+.kp-first-katki__go {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--tap-min);
+	font: var(--t-body-sm);
+	font-weight: 600;
+	color: var(--link);
+}

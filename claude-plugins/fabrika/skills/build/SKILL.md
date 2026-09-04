@@ -441,7 +441,7 @@ PR number as the issue, never claim the issue as a substitute, and never guess f
 Claim the PR's number first — repair mutates a shared lane exactly like a build does:
 
 ```bash
-fabrika build claim <repair-pr>
+fabrika build claim <repair-pr> --issue <served-issue>
 fabrika build verdicts --pr <repair-pr>
 ```
 
@@ -453,8 +453,10 @@ build claim: subject: PR #<repair-pr> serves #<served-issue> (fixes|part-of) —
 
 Consume it as a cross-check against the two Ground operands already retained. If the line is absent,
 malformed, repeated, or names any other PR or issue, stop `STOPPED` before mutation; never guess an
-operand from a partial answer. The line proves which subject the claim admitted, not that the live PR
-body has one unique linkage — the two-subject `build tree` proof below still owns that stronger fact.
+operand from a partial answer. The `--issue` operand makes admission select the retained served issue
+from the live linkage set, independent of reference order. The line proves which subject the claim
+admitted; the two-subject
+`build tree` proof below re-proves that membership after the branch is resumed.
 
 **Step 1's refusal of a `type:decision` is about picking one up fresh, and it does not reach here.**
 An ADR PR is served by a decision issue, and repairing it is the ordinary path: the claim admits it
@@ -468,6 +470,31 @@ included. Act only on rows it prints; empty rows at exit 0 are a proven no-work 
 UNKNOWN exit means the verdict state is unread — **never "nothing to fix"**. The budget is the
 fold's own `capReached` field, never a number you carry: on `true`, end `ESCALATED` and post the
 escalation via `fabrika build note <repair-pr> --token <claim-token>` instead of another push.
+
+**A CI red is produced from the merge ref, not from your head — reproduce it there before you call
+it false.** A `pull_request`-triggered workflow runs with `GITHUB_REF` set to `refs/pull/<n>/merge`
+and `GITHUB_SHA` set to that merge commit — the prospective merge of your head into the base — so a
+plain `actions/checkout` builds the *merged* tree while every check run it produces is labelled with
+the head SHA
+([GitHub, "Events that trigger workflows", `pull_request`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)).
+A job that pins `ref:` to the head sha is the exception and reads what its name says. So a failure
+you cannot reproduce at the head is **not thereby a false finding**: fetch the merge ref, reproduce
+it there, and only a failure absent from *that* tree is one to report.
+
+```bash
+git fetch origin refs/pull/<n>/merge && git checkout FETCH_HEAD
+```
+
+That ref is recomputed as base moves, so the tree you fetch is the merge of your head with base
+*now* — the same tree CI used only if nothing landed since, and absent entirely while the PR is
+conflicted. Neither case makes the red false; both mean you have not reproduced it yet.
+
+The shape that puts you here carries no textual conflict to warn you: a branch renames a symbol
+while main adds call sites on the old name, git merges both sides clean, and the merged file defines
+the new name and calls the old one. It is invisible in the head blob and invisible in the diff, and
+it exists only in the merge ref. Epic #6629's PR #6690 spent a whole repair round filing that
+correct FAIL as a gate misreading its own SHA
+([#6794](https://github.com/kamp-us/phoenix/issues/6794)).
 
 **A founder can clear one more round, and you read that through the same field.** The clearance is
 data on the PR — an authorized account records it with `fabrika build clear`, and the fold counts it,
@@ -486,9 +513,10 @@ fabrika build tree --issue <served-issue> --repair <repair-pr>
 
 Proceed only on the documented JSON answer whose `claim.number` is `<repair-pr>` and whose
 `servedIssue.number` is `<served-issue>`; this is one verb proving that the resumed branch names the
-PR, carries that PR claim's nonce, and the live PR uniquely serves the issue. Do not parse any
-incidental diagnostic. Exit `4` means the unique linkage is malformed, `7` means the PR or issue is
-absent/closed, `10` means the repair PR lacked its issue operand, `11` means a claim/linkage read is
+PR, carries that PR claim's nonce, and the live PR's served-issue set contains the explicitly
+requested issue. Do not parse any incidental diagnostic. Exit `4` means the linkage is absent, `7`
+means the PR or issue is absent/closed, `10` means the repair PR lacked its issue operand, `11` means
+a claim/linkage read is
 UNKNOWN, `14` means the branch, nonce, PR, or issue relationship is wrong, and `15` means the PR
 claim is foreign: stop on every one before
 mutation, naming the code. Re-run this same two-subject proof before each later git mutation.
@@ -550,8 +578,14 @@ tiebreak to your own prior claim and refuses on `15`.
 `--resume` is checked against the board, not trusted: on a child holding no standing `FAIL` the claim
 step refuses on `31`, so the entry can never be run past the fence. `--resume-lane` **re-keys** the
 branch the prior lane built on to this claim's nonce instead of cutting a second one — two branches
-carrying one child's commits is the range `lane prove` calls underivable, and that refusal cannot be
-cleared from inside a worktree. It refuses on `7` when no branch in this clone's refs was cut for the
+carrying one child's commits is the range `lane prove` calls underivable. **A clone already in that
+state has one move, and it is yours to take**: `fabrika build retire-branch <n>` renames the
+superseded branches out of `build/` — never deletes them — so one carrying branch is left and the
+range locates (ADR [0324](../../../../.decisions/0324-retire-superseded-lane-branch.md)). It picks
+the survivor off the board, so it refuses on `34` rather than guess when no authorized claim marker
+carries a candidate's lane nonce, and on `33` when a worktree still holds a branch it would rename,
+naming `fabrika build retire` as the act that clears that hold.
+`--resume-lane` refuses on `7` when no branch in this clone's refs was cut for the
 number — refs are shared across every worktree, so that means the branch is gone, not that you are
 standing in the wrong tree — and on `11` when another worktree still holds the branch, which it
 proves **before** re-keying: `git branch -m` does not refuse there, it renames the branch out from

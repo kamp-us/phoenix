@@ -678,6 +678,66 @@ describe("nextLeaf — the arm an event would take, asked before it is recorded 
 	});
 });
 
+/**
+ * `lane history` prints what `parseLog` returns, so a field the parser drops is a disclosure nobody
+ * can read back — which is the whole job of `deferred` (#7041).
+ */
+describe("the deferral a proven PASS carries (#7041)", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.PASS","at":"t"${fields}}\n`;
+
+	it("carries the deferred namespaces back off the line, and refuses a shape that is not a list", () => {
+		expect(parseLog(line(`,"deferred":["review-ui"]`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.PASS", at: "t", deferred: ["review-ui"]}],
+		});
+		expect(parseLog(line(`,"deferred":"review-ui"`))).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line(`,"deferred":[""]`))).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("leaves a line that deferred nothing without the field", () => {
+		expect(parseLog(line(""))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.PASS", at: "t"}],
+		});
+	});
+});
+
+/**
+ * The routing payload a ship's `DONE` carries (ADR 0343). Absent reads as a closing merge, so the
+ * whole ledger written before the field existed folds byte-for-byte as it did.
+ */
+describe("the partial merge a ship DONE carries (#7382)", () => {
+	const line = (fields: string) => `{"task":"issue","event":"ISSUE.DONE","at":"t"${fields}}\n`;
+
+	it("carries the flag back off the line, and refuses a shape that is not a boolean", () => {
+		expect(parseLog(line(`,"partial":true`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", partial: true}],
+		});
+		expect(parseLog(line(`,"partial":"yes"`))).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("leaves a closing merge's line without the field", () => {
+		expect(parseLog(line(""))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t"}],
+		});
+	});
+
+	it("carries the merged PRs that `partial` was read off (#7457)", () => {
+		expect(parseLog(line(`,"partial":false,"landed":[7329]`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", partial: false, landed: [7329]}],
+		});
+	});
+
+	it("refuses a `landed` naming no merged PR, which would read as evidence and attest nothing", () => {
+		expect(parseLog(line(`,"landed":[]`))).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line(`,"landed":["7329"]`))).toMatchObject({_tag: "Malformed"});
+		expect(parseLog(line(`,"landed":7329`))).toMatchObject({_tag: "Malformed"});
+	});
+});
+
 describe("the park cause a BLOCKED carries (#6480)", () => {
 	const caused = (task: string, event: string, cause: string): LogEntry => ({
 		...entry(task, event),
@@ -769,6 +829,81 @@ describe("the parse defects that keep a grant from folding as a silent no-op (AD
 		expect(parseLog(line(`,"round":3`))).toEqual({
 			_tag: "Parsed",
 			entries: [{task: "issue", event: `ISSUE.${CLEARED_EVENT}`, at: "t", round: 3}],
+		});
+	});
+
+	/** The same failure mode on the wait axis: a grant of nothing raises the budget by nothing. */
+	it("refuses a waitGrant that names no whole grant, and parses one that does (ADR 0313)", () => {
+		const resume = (fields: string) =>
+			`{"task":"issue","event":"ISSUE.UNBLOCKED","at":"t"${fields}}\n`;
+		const defect = ["line 1 carries a `waitGrant` that names no whole grant of waits"];
+
+		expect(parseLog(resume(`,"waitGrant":0`))).toMatchObject({_tag: "Malformed", defects: defect});
+		expect(parseLog(resume(`,"waitGrant":1.5`))).toMatchObject({
+			_tag: "Malformed",
+			defects: defect,
+		});
+		expect(parseLog(resume(`,"waitGrant":"one"`))).toMatchObject({
+			_tag: "Malformed",
+			defects: defect,
+		});
+		expect(parseLog(resume(`,"waitGrant":1`))).toEqual({
+			_tag: "Parsed",
+			entries: [{task: "issue", event: "ISSUE.UNBLOCKED", at: "t", waitGrant: 1}],
+		});
+	});
+});
+
+/**
+ * The wait axis's own unbudgeted resume (#6717). It cannot key on `errorFinals` the way the retry
+ * axis does: `human:queue-stall` is a plain state carrying no `type: "final"`, so it structurally
+ * cannot be in that set, and the refusal keys on the wait counter and `ship:queued`'s own park
+ * pairing instead.
+ */
+describe("the queue stall — a resume out of it needs the waits granted on the same line", () => {
+	const stalled = () => {
+		const compiled = lane(coderWorkflow());
+		const dwell: ReadonlyArray<readonly [string, string]> = Array.from(
+			{length: WAIT_BUDGET + 2},
+			() => ["issue", "WIP"] as const,
+		);
+		const log = drive(compiled, [["issue", "WIP"], ["issue", "DONE"], ["issue", "PASS"], ...dwell]);
+		const states = statesOf(compiled, log);
+		expect(states.issue).toMatchObject({type: "human:queue-stall", waits: WAIT_BUDGET});
+		return {compiled, log, states};
+	};
+
+	it("refuses a bare UNBLOCKED with the log unappended, naming the grant route and not `build clear`", () => {
+		const {compiled, states} = stalled();
+
+		const applied = applyEvent(compiled, states, "issue", "UNBLOCKED", "2026-08-29T00:00:00.000Z");
+
+		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
+		const reason = applied._tag === "Refused" ? applied.reason : "";
+		expect(reason).toMatch(/the state comes back and the wait budget does not/);
+		expect(reason).toMatch(/recipe unpark/);
+		expect(reason).not.toMatch(/Record the founder's cleared round first/);
+	});
+
+	it("applies the same UNBLOCKED when it carries the grant, resuming one read below the budget", () => {
+		const {compiled, log, states} = stalled();
+
+		const applied = applyEvent(
+			compiled,
+			states,
+			"issue",
+			"UNBLOCKED",
+			"2026-08-29T00:00:00.000Z",
+			null,
+			1,
+		);
+
+		expect(applied).toMatchObject({_tag: "Applied", entry: {waitGrant: 1}});
+		if (applied._tag !== "Applied") return;
+		expect(statesOf(compiled, [...log, applied.entry]).issue).toMatchObject({
+			type: "ship:queued",
+			waits: WAIT_BUDGET,
+			maxWaits: WAIT_BUDGET + 1,
 		});
 	});
 });

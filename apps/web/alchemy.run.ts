@@ -19,13 +19,16 @@
  *
  * State selection follows ADR 0031 (local-first dev): `Alchemy.localState()` is
  * a file-based store needing only `FileSystem`/`Path` — no credentials, no
- * network — so `alchemy dev` boots fully offline. A real `alchemy deploy` uses
- * the Cloudflare-hosted store for reproducible shared state.
+ * network. That is the *store* only: the resources it tracks are still
+ * reconciled against the Cloudflare API, so `alchemy dev` needs
+ * `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and there is no offline
+ * emulator (ADR 0032). A real `alchemy deploy` uses the Cloudflare-hosted store
+ * for reproducible shared state.
  *
  * The store is selected from the **dev-vs-deploy** signal, not `CI` (see
  * `resolveStateMode` in `worker/env.ts`): `CI` is set for BOTH the deploy workflow
  * and the integration-test job, so it can't tell a real deploy from a test run.
- * Only `alchemy dev` resolves to `localState()` (offline); a real `alchemy deploy`
+ * Only `alchemy dev` resolves to `localState()`; a real `alchemy deploy`
  * — and the `Test.make` integration suite, which deploys to real remote Cloudflare
  * per ADR 0082 — uses the shared Cloudflare store. The selector runs synchronously
  * at module-eval, so it reads the dev signal off `process.env`
@@ -42,6 +45,7 @@ import {resolveStateMode} from "./worker/env.ts";
 import {isProductionDeploy} from "./worker/environment.ts";
 import {
 	bildirimFlag,
+	caylakMeterFlag,
 	caylakVisibilityFlag,
 	demoTargetingFlag,
 	emailDeliveryAdminFlag,
@@ -49,6 +53,7 @@ import {
 	Flagship,
 	funnelCohortFlag,
 	karmaGatesFlag,
+	localeFlag,
 	mecmuaFeedFlag,
 	mecmuaPublicReadFlag,
 	mecmuaWriteFlag,
@@ -150,6 +155,14 @@ export default Alchemy.Stack(
 		// seam the post-auth redirect intercept in App.tsx and the /hosgeldin welcome surface
 		// gate behind, so the new-user arrival ships dark until a human release.
 		yield* welcomeFlag(flagship.appId);
+		// The ambient-çaylak-meter dark-ship flag, default-off (#7045, epic #4304) — the single
+		// seam the topbar karma chip's promotion readout gates behind, so the meter ships dark
+		// and the chip stays today's bare karma value until a human release.
+		yield* caylakMeterFlag(flagship.appId);
+		// The locale-choice dark-ship flag, default-off (#7527, epic #7519) — the seam the
+		// UserMenu `dil` row gates behind, so every reader stays on the Turkish default until
+		// a human release. The catalog under it serves `tr` either way (ADR 0347).
+		yield* localeFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

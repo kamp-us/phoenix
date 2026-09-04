@@ -1,5 +1,5 @@
+import {Switch} from "@kampus/design";
 import type * as React from "react";
-import {Switch} from "../../../components/ui/Switch";
 import {defineExhibit} from "../exhibit";
 
 export const switchExhibit = defineExhibit<React.ComponentProps<typeof Switch>>({

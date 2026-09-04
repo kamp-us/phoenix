@@ -347,6 +347,8 @@ range, exactly as `triage/codes.ts` itself states for `adr`.
 | `30` | proven: not admitted on the type axis — the issue is `type:decision` or `type:epic`, whose deliverable is not a pull request a build lane produces |
 | `31` | proven: the claim's mode and the child's standing range verdict disagree — a fresh build over a child holding a `FAIL`, or a `--resume` over a child holding none |
 | `32` | proven: not admitted on the criteria axis — the issue body carries no readable `### Acceptance criteria` block, absent or malformed, so there is no contract to build against |
+| `33` | proven: a working tree of this clone holds the lane branch, and the board licenses no release of it |
+| `34` | proven: no authorized claim marker attests a single survivor among a child's lane branches, so none is superseded |
 | `127` | the verb never ran at all (unresolved binary — the shell's code, not this process's) |
 
 **`7` versus `11` is the split the whole group rests on** (the `wire` group's `ABSENT` vs
@@ -370,15 +372,16 @@ fabrika build tree [--require-clean] [--issue <n> [--repair <pr>]]
 |---|---|---|---|---|
 | `--require-clean` | boolean | no | `false` | additionally refuse a tree with any uncommitted change — the lane-open posture |
 | `--issue` | integer | no | — | additionally prove the checked-out branch serves this issue — the pre-mutation posture |
-| `--repair` | integer | no | — | with `--issue`, prove this repair PR's claim, resumed branch and unique served-issue linkage as one relationship |
+| `--repair` | integer | no | — | with `--issue`, prove this repair PR's claim, resumed branch and membership of the requested issue in its served-issue linkage set |
 
 **Output** — machine. With neither `--issue` nor `--repair`, one line containing the tree root's
 absolute path. With `--issue`, one JSON object:
 `{"answer":"proven","root":"<absolute>","branch":"<name>","claim":{"number":<issue-or-pr>,"nonce":"<nonce>"},"servedIssue":{"number":<issue>,"kind":"issue|fixes|part-of"}}`.
 A fresh proof puts the issue number in both `claim.number` and `servedIssue.number`, with kind
-`issue`. A repair proof puts the PR in `claim.number`, the issue in `servedIssue.number`, and the
-live PR body's unique winning reference kind in `servedIssue.kind`. This is the whole successful
-repair answer; the skill consumes this object, never a scope line or incidental diagnostic.
+`issue`. A repair proof puts the PR in `claim.number`, the explicitly requested issue in
+`servedIssue.number`, and the live PR body's winning reference kind in `servedIssue.kind`. This is
+the whole successful repair answer; the skill consumes this object, never a scope line or incidental
+diagnostic.
 
 This verb **reads and never repairs**: it creates nothing, cleans nothing, removes nothing. It also
 asserts nothing about *where* the tree is — that is the operator's call, not fabrika's (#5386).
@@ -390,10 +393,10 @@ The assertions:
 2. **Fresh lane** (`--issue`, without `--repair`) — the checked-out create branch names that issue
    and carries that issue's winning claim nonce. A non-lane, wrong-number, or nonce mismatch is `14`.
 3. **Repair lane** (`--issue <n> --repair <pr>`) — one fail-closed flow proves all subjects: the
-   checked-out resume branch names `<pr>`; its nonce owns `<pr>`'s winning claim; the live, open PR
-   names exactly one issue through the same closing-keyword/`Part of` grammar review reads; that issue
-   is `<n>`, is live and readable, and is an issue rather than another pull request. The PR is never passed as the issue operand, the issue is never
-   queried for the repair claim, and no branch number is guessed into a served issue.
+   checked-out resume branch names `<pr>`; its nonce owns `<pr>`'s winning claim; the live, open PR's
+   complete closing-keyword/`Part of` set contains `<n>`; and `<n>` is live, readable, and an issue
+   rather than another pull request. The PR is never passed as the issue operand, the issue is never
+   queried for the repair claim, and reference order never selects a different served issue.
 
 **The branch's own nonce is the identity the claim is read under** — the question is whether the
 winning marker belongs to THIS lane, not to this session (#6037). A sibling lane of the same session
@@ -403,8 +406,8 @@ is `14`; only another session's claim is `15`. No stamp file exists to check.
 
 | Code | Trigger |
 |---|---|
-| `4` | the PR body names zero or several served issues — no unique repair subject |
-| `7` | the repair PR or its uniquely linked served issue is proven absent or closed |
+| `4` | the PR body names no served issue — the requested repair subject is not linked |
+| `7` | the repair PR or explicitly requested served issue is proven absent or closed |
 | `10` | `--repair` was given without its required `--issue` operand |
 | `11` | the tree root, claim state, repair PR, or linked served issue could not be read — UNKNOWN |
 | `13` | proven: uncommitted changes present at a `--require-clean` open |
@@ -425,14 +428,14 @@ is `14`; only another session's claim is `15`. No stamp file exists to check.
 | `build tree: #<n> is held by <winning token>, not by the lane on nonce <nonce>.` | 15 | refusal |
 | `build tree: cannot read repair PR #<pr>: <reason> — its served issue is UNKNOWN; nothing is proven.` | 11 | refusal |
 | `build tree: PR #<pr> is proven absent or closed.` | 7 | refusal |
-| `build tree: repair PR #<pr> names <count> served issues through <kind>; exactly one is required, so the repair subject is not uniquely readable.` | 4 | refusal |
-| `build tree: repair PR #<pr> serves issue #<actual>, not requested issue #<n> — wrong lane.` | 14 | refusal |
+| `build tree: repair PR #<pr> names no served issues through <kind>, so requested issue #<n> is not proven.` | 4 | refusal |
+| `build tree: repair PR #<pr> does not serve requested issue #<n> through <kind>; it serves #<actual>[, #<actual>...] instead — wrong lane.` | 14 | refusal |
 | `build tree: cannot read issue #<n>, which repair PR #<pr> serves: <reason> — the repair subject is UNKNOWN; nothing is proven.` | 11 | refusal |
 | `build tree: issue #<n> is proven absent or closed.` | 7 | refusal |
 | `build tree: repair PR #<pr> links #<n>, but that record is itself a pull request, not the served issue — wrong lane.` | 14 | refusal |
 
 **Scope** — not a judging verb: it reads this process's git state, one claim, and in repair the live
-PR plus its one served issue.
+PR plus the explicitly requested issue in its served-issue set.
 
 **Examples**
 
@@ -445,6 +448,9 @@ $ fabrika build tree --require-clean
 $ fabrika build tree --issue 4312
 {"answer":"proven","root":"/private/var/<redacted>/lanes/build-4312","branch":"build/4312-editor-focus-loss-c1a4d6f8","claim":{"number":4312,"nonce":"c1a4d6f8"},"servedIssue":{"number":4312,"kind":"issue"}}
 ```
+
+For a PR body that closes both `#7162` and `#7181`, either reference may appear first; the explicit
+issue operand selects the repair subject:
 
 ```
 $ fabrika build tree --issue 7181 --repair 7182
@@ -466,6 +472,8 @@ $ echo $?
   mutation: a pass is a fact about this invocation and nothing later.
 - #7183 — a repair branch carries a PR claim nonce while its contract belongs to a distinct issue;
   the repair proof binds both subjects instead of weakening either one.
+- #7309 — a one-PR epic closes the epic and its landed children; the explicit issue operand selects
+  the repair subject by membership rather than reference order or singularity.
 - 2026-08-13 ruling on #5386 — fabrika holds no worktree opinion; `12` is retired and this verb
   asserts nothing about where the tree sits.
 
@@ -746,7 +754,7 @@ when every blocker's state is known.
 | `build eligible: blocked by <n> open blocked_by edges: #<m>, #<k>.` | 16 | refusal |
 | `build eligible: origin/<trunk>..epic/<p> adds a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).` | 0, 11 or 16 | detail line, once |
 | `build eligible: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged blocker.` | 11 or 16 | detail line, once |
-| `build eligible: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints) | 11 or 16 | detail line, once |
+| `build eligible: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints; on a shallow clone the merge-base reason carries git's own words, names the shallow clone as a likely cause and `git fetch --unshallow origin` as the remedy) | 11 or 16 | detail line, once |
 
 **Scope** — one issue, its parent (if any), every blocker its `blocked_by` list names, and —
 only when an edge is still undischarged — `epic/<parent>` in this tree.
@@ -847,18 +855,21 @@ because retracting another lane's claim is the one write this protocol must neve
 
 ```
 fabrika build claim 4312 [--repo <owner/name>] [--purpose plan|gate|build] [--token <token>]
+                         [--issue <served-issue>]
                          [--override <reason> --override-lane <lane>]
 fabrika build confirm 4312 --token <token> [--repo <owner/name>]
 fabrika build release 4312 --token <token> [--repo <owner/name>]
 fabrika build adopt 4312 --session <dead-session> --reason <text> [--repo <owner/name>]
 ```
 
-**Inputs** — the first two rows are identical for all three verbs; the last three are `claim`'s alone:
+**Inputs** — the first two rows are identical for all three verbs; `--issue` and the final three
+rows are `claim`'s alone:
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `<number>` | positional integer | yes | — | the issue (or, in repair, the PR) the claim concerns |
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository whose markers are read and written |
+| `--issue` | positive integer | repair `claim` only | — | the served issue retained independently from the repair PR; it must be a member of the PR body's complete winning linkage set, and selects the admission subject without reference-order dependence |
 | `--token` | string | required on `confirm` / `release`, optional on `claim` | — | the token `claim` handed this lane — which lane is asking. On `claim` it is the token this lane ALREADY holds, and makes the re-claim idempotent (below); omitted, the run is a fresh lane. Not a claim token, or one carrying another session id, is `1` |
 | `--purpose` | `plan` \| `gate` \| `build` | no | `build` | why this lane claims; the audience axis binds `build` only (#5175). An off-enum value is `10`, never a fallback |
 | `--override` | string | no | — | claim an issue the admission test refused on either axis, naming why; requires `--override-lane` |
@@ -868,9 +879,11 @@ fabrika build adopt 4312 --session <dead-session> --reason <text> [--repo <owner
 any marker is posted**, `claim` puts `<number>` through the
 [admission test](#admission-test--scope-admission-and-the-audience-axis) — the same imported
 module `build pick` filters on, every axis, never a second derivation. In repair, `<number>` is a PR,
-and the test judges the issue that PR serves rather than the PR's own empty home — a PR naming no
-readable issue is `refused: no-served-issue` at `20`. A `refused: out-of-scope` is
-`20` and a
+and the test judges the issue that PR serves rather than the PR's own empty home. The repair skill
+passes that retained subject as `--issue`; the verb requires membership in the PR body's complete
+winning linkage set before admission, so an epic-first and epic-last body select the same issue. An
+empty linkage set fails that explicit membership check at `14`, before admission. A `refused:
+out-of-scope` is `20` and a
 `refused: audience-not-agent` is `21`, a `refused: no-acceptance-criteria` is `32`, each named on
 stderr; an unreadable declaration or home is `11` and a malformed declaration is `4`, and neither
 ever proceeds. Nothing is written on any refusal: the issue carries no marker, so a refused claim
@@ -1000,12 +1013,12 @@ A successful PR claim also writes this deterministic subject diagnostic to stder
 build claim: subject: PR #<pr> serves #<issue> (fixes|part-of) — the admission test judges that issue, not the PR's own empty home.
 ```
 
-The repair skill consumes exactly one such line as a cross-check against the PR and served-issue
-operands retained from its two Ground URLs. An absent, malformed, repeated, or mismatched line stops
-the lane before mutation; it is never a source from which to guess a missing operand. The line proves
-the admission subject, while `build tree --issue <issue> --repair <pr>` re-reads the live PR with the
-plural linkage parser and refuses zero or several served issues on `4`. These are consecutive proofs,
-not substitutes: neither the scalar diagnostic nor the Ground URLs weaken the unique live relationship.
+The repair skill passes its retained issue as `build claim <pr> --issue <issue>` and consumes exactly
+one such line as a cross-check against the two Ground operands. An absent, malformed, repeated, or
+mismatched line stops the lane before mutation; it is never a source from which to guess a missing
+operand. Claim selects that explicit member with the plural linkage parser before admission, while
+`build tree --issue <issue> --repair <pr>` re-reads the same live membership after branch resume.
+These are consecutive proofs, not substitutes.
 
 - `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>", "purpose":
   "build"}` — plus `"override": {"lane": "<lane>", "reason": "<reason>"}` when the win came through
@@ -1033,8 +1046,9 @@ proven-foreign only; a missing session id is `1`; an unreadable marker set is `1
 | `7` | the issue is proven absent (404) or closed |
 | `8` | the marker write failed — it may or may not have landed; run `confirm` with the token named on stderr before anything else, and never re-run `claim` |
 | `9` | the marker landed but the read-back does not match |
-| `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum — a refusal, never a fallback to `build` |
+| `10` | `claim` only: `--purpose` is off the `plan` \| `gate` \| `build` enum, or `--issue` was passed for a non-PR target |
 | `11` | the marker set could not be read — ownership is UNKNOWN, never "unclaimed"; or, `claim` only, the campaigns table or the issue's home could not be read — scope admission is UNKNOWN, never admitted; or, `claim` against an issue only, its `blocked_by` list or a blocker's own state could not be read — blockedness is UNKNOWN, never "not blocked" |
+| `14` | `claim --issue` only: the repair PR's complete linkage set does not contain the explicitly requested served issue — no marker was written |
 | `15` | proven: another lane's earlier authorized marker wins (`claim`), holds (`confirm`), or `release` was asked for a token this lane does not hold. `claim` also refuses here over a claim this lane has *adopted* — release it first |
 | `16` | `claim` against an **issue** only, proven: a `blocked_by` blocker is still open — every one is named on stderr, and no marker was written. Not overridable: the remedy is waiting, and the edge clears when the blocker closes or its work lands on the epic run's assembly branch |
 | `20` | `claim` only, proven: the issue's home is pinned by no `active` campaign row — no marker was written |
@@ -1096,7 +1110,7 @@ the pieces is what handed a builder an ordering decision it then got wrong (#718
 | `build claim: cannot read the blocked_by edges of #<n>: <reason> — blockedness is UNKNOWN, never "not blocked"; nothing was written.` (`<reason>` also covers a parent that could not be read, which leaves the assembly-branch discharge unread) | 11 | refusal |
 | `build claim: origin/<trunk>..epic/<p> adds a commit naming #<m> — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).` | 0, 11 or 16 | detail line, once |
 | `build claim: origin/<trunk>..epic/<p> adds <n> commit(s), none naming an undischarged blocker.` | 11 or 16 | detail line, once |
-| `build claim: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints) | 11 or 16 | detail line, once |
+| `build claim: cannot read epic/<p> in this tree: <reason> — no edge is counted discharged off it, and every edge keeps the state the board gave it.` (`<reason>` also covers an unnameable trunk and an absent merge base — the range's other two endpoints; on a shallow clone the merge-base reason carries git's own words, names the shallow clone as a likely cause and `git fetch --unshallow origin` as the remedy) | 11 or 16 | detail line, once |
 | `build claim: the "## Campaigns" table does not parse: <detail> — a malformed table is never read as "nothing is active"; nothing was written.` | 4 | refusal |
 | `build claim: #<n> is already held by this lane (comment <id>) — answered with the marker that owns it; nothing was written.` — beside `{"answer":"won", …}` on exit 0, when `--token` names a lane that already holds `<n>` | 0 | answer |
 | `build claim: --token "<value>" is not a claim token (build:<session-id>:<uuid>) — which lane is asking is not stated.` | 1 | usage error |
@@ -1105,6 +1119,8 @@ the pieces is what handed a builder an ordering decision it then got wrong (#718
 | `build claim: --override was given without a lane — pass --override-lane "<lane>" so the escape hatch names who took it.` | 1 | usage error |
 | `build claim: --override-lane was given without --override — a lane names no override on its own.` | 1 | usage error |
 | `build claim: --purpose "<value>" is not one of plan \| gate \| build — an unrecognised purpose refuses, and never falls back to build.` | 10 | usage error |
+| `build claim: --issue is repair-only, but #<n> is an issue rather than a pull request; nothing was written.` | 10 | refusal |
+| `build claim: PR #<pr> does not serve requested issue #<issue> through <kind>; it serves <actual> instead — nothing was written.` | 14 | refusal |
 | `build claim: the marker write failed: <reason> — the claim state is UNKNOWN; run "fabrika build confirm <n> --token <minted token>" before any further action.` — preceded by `build claim: the token this run minted is <minted token> — it addresses the marker the failed write may still have landed. Do not re-run "fabrika build claim <n>": it mints a second token, and if the first marker landed the race resolves to that earlier one, leaving a claim no lane holds a token for.` | 8 | refusal |
 | `build claim: cannot read the claim markers on #<n>: <reason> — ownership is UNKNOWN, never "unclaimed".` | 11 | refusal |
 | `build claim: #<n> already carries a build a reviewer failed — <gate> <polarity> over <base>..<tip> (comment <id>); …. A fresh build would re-implement it; run "fabrika build resume-child <n>" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in (#7187). Nothing was written.` — every standing verdict is named, `PASS` ones included, whenever at least one is a `FAIL` | 31 | refusal |
@@ -1504,7 +1520,7 @@ number, which is the number repair mode claims.
 | `build branch: --resume-lane takes over the local branch of an epic child, which has no PR — it cannot be combined with --resume <pr>.` | 10 | refusal |
 | `build branch: --resume-lane reads the slug off the branch it takes over — drop --slug "<value>".` | 10 | refusal |
 | `build branch: no branch anywhere in this clone's refs was cut for #<n> — the build to resume is gone. …` | 7 | refusal |
-| `build branch: <a>, <b> were all cut for #<n> — which one this lane resumes is not derivable here; retire the superseded branches, then re-run.` | 11 | refusal |
+| `build branch: <a>, <b> were all cut for #<n> — which one this lane resumes is not derivable here; retire the superseded branches with "fabrika build retire-branch <n>", which renames them out of build/ without deleting anything (ADR 0324), then re-run.` | 11 | refusal |
 | `build branch: <branch> is checked out in the worktree <path>, so re-keying it here would rename the branch out from under that lane rather than fail — retiring or releasing that worktree is an operator's act, not this lane's. Nothing was changed.` | 11 | refusal |
 | `build branch: cannot read which worktree holds <branch>: <reason> — re-keying it could silently retarget another lane's HEAD, so whether the take-over is safe is UNKNOWN; nothing was changed.` | 11 | refusal |
 | `build branch: cannot re-key <old> to <new>: <reason> — nothing was changed.` | 11 | refusal |

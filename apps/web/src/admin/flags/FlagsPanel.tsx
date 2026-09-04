@@ -1,18 +1,18 @@
+import {Alert, Button} from "@kampus/design";
 import {useState} from "react";
-import {Alert} from "../../components/ui/Alert";
-import {Button} from "../../components/ui/Button";
 import {DECLARED_FLAGS} from "../../flags/keys";
+import {type CatalogKey, useT} from "../../i18n";
 import "./FlagsPanel.css";
 import {
-	actionButtonLabel,
+	actionButtonLabelKey,
 	applyOverride,
-	defaultLabel,
-	effectiveLabel,
+	defaultLabelKey,
+	effectiveLabelKey,
 	effectiveValue,
 	type FlagOverrides,
 	type OverrideState,
-	overrideLabel,
-	overrideOutcomeMessage,
+	overrideLabelKey,
+	overrideOutcomeKey,
 	overrideStateOf,
 	parseOverridesFromCookie,
 	serializeOverrideCookie,
@@ -26,23 +26,21 @@ function readOverrides(): FlagOverrides {
 }
 
 export default function FlagsPanel() {
+	const t = useT();
 	const [overrides, setOverrides] = useState<FlagOverrides>(readOverrides);
-	const [message, setMessage] = useState("");
+	const [outcome, setOutcome] = useState<{key: string; messageKey: CatalogKey}>();
 
 	function toggle(key: string, state: OverrideState) {
 		const next = applyOverride(overrides, {key, state});
 		// biome-ignore lint/suspicious/noDocumentCookie: writing this cookie IS the feature (#2742) — the panel's sole job is to set phoenix_flag_overrides client-side; the worker (#2741) honors it. A single synchronous write needs no Cookie Store API.
 		document.cookie = serializeOverrideCookie(next);
 		setOverrides(next);
-		setMessage(overrideOutcomeMessage({key, state}));
+		setOutcome({key, messageKey: overrideOutcomeKey(state)});
 	}
 
 	return (
-		<section className="kp-flags" aria-label="özellik bayrakları" data-testid="flags-panel">
-			<p className="kp-flags__intro">
-				bayraklar yalnızca bu tarayıcıda geçersiz kılınır — flagship veya başka kullanıcılar
-				etkilenmez.
-			</p>
+		<section className="kp-flags" aria-label={t("admin.flags.label")} data-testid="flags-panel">
+			<p className="kp-flags__intro">{t("admin.flags.intro")}</p>
 			<ul className="kp-flags__list">
 				{DECLARED_FLAGS.map((flag) => {
 					const current = overrideStateOf(overrides, flag.key);
@@ -54,11 +52,11 @@ export default function FlagsPanel() {
 									<code className="kp-flags__key">{flag.key}</code>
 								</legend>
 								<div className="kp-flags__meta">
-									<span className="kp-flags__default">{defaultLabel(flag.defaultValue)}</span>
+									<span className="kp-flags__default">{t(defaultLabelKey(flag.defaultValue))}</span>
 									<span className="kp-flags__override" data-testid={`flag-override-${flag.key}`}>
-										{overrideLabel(current)}
+										{t(overrideLabelKey(current))}
 									</span>
-									<span className="kp-flags__effective">{effectiveLabel(effective)}</span>
+									<span className="kp-flags__effective">{t(effectiveLabelKey(effective))}</span>
 								</div>
 								<div className="kp-flags__actions">
 									{TOGGLE_STATES.map((state) => (
@@ -69,7 +67,7 @@ export default function FlagsPanel() {
 											onClick={() => toggle(flag.key, state)}
 											data-testid={`flag-${state}-${flag.key}`}
 										>
-											{actionButtonLabel(state)}
+											{t(actionButtonLabelKey(state))}
 										</Button>
 									))}
 								</div>
@@ -78,14 +76,14 @@ export default function FlagsPanel() {
 					);
 				})}
 			</ul>
-			{message ? (
+			{outcome ? (
 				<Alert
 					variant="secondary"
 					className="kp-alert--inline kp-flags__message"
 					aria-live="polite"
 					data-testid="flags-message"
 				>
-					{message}
+					{t(outcome.messageKey, {key: outcome.key})}
 				</Alert>
 			) : null}
 		</section>

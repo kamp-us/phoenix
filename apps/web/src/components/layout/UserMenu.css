@@ -70,13 +70,13 @@
 	width: 100%;
 }
 
-/* The tema row: label left, segmented control right — a labeled settings row,
-   which is what a three-way choice is. The picker is the neutral `segmented`
-   ToggleGroup, so it carries no accent fill (#2614 stays satisfied).
+/* A settings row (tema, dil): label left, segmented control right — which is what a
+   two- or three-way choice is. Each picker is the neutral `segmented` ToggleGroup, so it
+   carries no accent fill (#2614 stays satisfied).
    Same --tap-min row box as its link siblings, so the panel keeps ONE rhythm: the
-   picker sizes itself below that (ThemeChoicePicker.css) and centers inside, rather
-   than pushing this row taller than every other one. */
-.kp-user-menu__theme-row {
+   picker sizes itself below that (ThemeChoicePicker.css / LocaleChoicePicker.css) and
+   centers inside, rather than pushing this row taller than every other one. */
+.kp-user-menu__setting-row {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -84,7 +84,7 @@
 	min-height: var(--tap-min);
 	padding: 0 var(--s-3);
 }
-.kp-user-menu__theme-label {
+.kp-user-menu__setting-label {
 	font: var(--t-body-sm);
 	color: var(--text-secondary);
 }

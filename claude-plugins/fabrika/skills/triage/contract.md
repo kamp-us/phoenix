@@ -165,6 +165,8 @@ or the search index could not be read
 | `17` | refused: a live claim marker on the target names a claimant other than the asking lane — another session, or another lane of this one | — | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `18` | refused: no value of `.fabrika.jsonc` may be used — a key's load-time check refused it, it could not be read, or it did not decode | — | — | — | — | — | — | ✓ | ✓ | — | — |
 | `19` | refused: the asking lane holds no live claim on the target | — | — | — | — | — | — | — | — | — | ✓ |
+| `20` | refused: the body this verb composed **states an ordering** the live `blocked_by` graph carries no edge for (ADR 0301) | — | — | — | — | — | ✓ | — | — | — | — |
+| `21` | refused: a `--blocked-by` target is a **pull request** — ADR 0301 names a blocking PR by the issue its merge closes | — | — | — | — | — | — | ✓ | — | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb in
@@ -1514,6 +1516,48 @@ Two boundaries carry the weight:
 `Absent` is **not** a refusal. An epic pitch, a decision, a parked ticket may legitimately carry no
 criteria block; a verb that demanded one would be a different verb.
 
+### A stated ordering must be an edge, and `20` is the refusal
+
+ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes the native
+`blocked_by` graph the one carrier of "do not start this yet", so an ordering that lives only in
+prose produces an issue `build pick` admits and no lane can build: #6663 said verbatim
+"**Blocked. Do not start until #6662 has merged**" over a graph with zero edges, and a build lane
+spent a claim, a read pass and a back-off on it. The founder ruling on
+[#6728](https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763) makes this verb
+fail-closed over it, on the same idiom as `fanout-guard` and `catalog-guard`.
+
+**What counts as a stated ordering.** The scan runs over the **authored region only** — the same
+contract region the criteria reader scans, so the preserved original inside `<details>` and any
+fenced block are out of reach — and a line states an ordering when an **ordering phrase binds an
+issue reference**: `blocked by/on/until/behind #N`, `do not start until/before #N`,
+`depends on #N`, `dependent on #N`, or `order is … #N`. A keyword merely co-present with a `#N` is
+not one, and neither is an ordering inside an inline-code span, a double-quoted span, or a
+blockquote — those are somebody else's words being reported. The bar is deliberately this narrow:
+a red on a body that owns no prerequisite could not be cleared by wiring an edge, so it would leave
+only the reword escape on a body that is already correct.
+
+**The phrase must be in the issue's own voice.** A body states its own prerequisite as "Blocked on
+#N"; a bare third-person subject — "it is already blocked on #N", "they depend on #N" — is a report
+about something the body just mentioned, and no edge on *this* issue could clear it. #7238 says
+verbatim "Not folded into #7223: its criteria are scoped to … and it is already blocked on #7035"
+and owns no prerequisite at all. `This work is blocked until #N` is not covered: a named subject
+reads as self-reference.
+
+**A `#N` that is a pull request is not a prerequisite here.** ADR 0301 names a blocking PR by the
+issue its merge closes, and `--blocked-by` refuses a PR on `21`, so reding on one would leave the
+reword escape alone on a body that is often already right — over the 150 most recently created
+issues, 5 of the 6 bodies this gate refused named a PR. The verb reads each number the ordering names
+and drops the pull requests, printing which ones it dropped and why.
+
+**The refusal reads the issue's own live `blocked_by` set** and reds when a number a stated ordering
+names is absent from it, writing nothing. A read that failed is `11`, never a pass — and so is a
+number whose issue-versus-PR question could not be settled.
+
+**There is no override flag, and that is deliberate.** The refusal names the two escapes the ruling
+allows — **wire the edge** with `fabrika triage apply <n> --blocked-by <m>` and re-send, or
+**reword** the body so it states no ordering it does not own. A false red costs one of those two
+moves; a bypass costs a builder a claim on unstartable work.
+
 **Exit status**
 
 | Code | Trigger |
@@ -1524,9 +1568,10 @@ criteria block; a verb that demanded one would be a different verb.
 | `7` | the issue is proven absent (404), is closed, or it was read and its body is empty — a read that succeeded over nothing |
 | `8` | the `PATCH` failed — UNKNOWN whether the body changed |
 | `9` | the body was written but the read-back does not match |
-| `11` | the issue body could not be read, so there is no original to preserve — or its comments, or the claim on them, could not be read |
+| `11` | the issue body could not be read, so there is no original to preserve — or its comments, the claim on them, its `blocked_by` edges, or a number a stated ordering names could not be read |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `15` | the composed body's **authored region** carries an acceptance-criteria block the wire reader classifies `Malformed` |
+| `20` | the composed body's **authored region** states an ordering the issue's live `blocked_by` graph carries no edge for |
 
 **Errors**
 
@@ -1578,6 +1623,17 @@ $ fabrika triage enrich 4312 --json < enriched.md
 {"outcome":"enriched","number":4312,"redactions":0,"mode":"rewrite"}
 ```
 
+```
+$ fabrika triage enrich 6663 < enriched.md
+triage enrich: the rewrite states an ordering on #6662 that #6663's live blocked_by graph carries no
+edge for (line 7: "**Blocked. Do not start until #6662 has merged** — it adds the invalidate arm.").
+ADR 0301 makes that graph the one carrier, so a builder reads the edges and never this sentence.
+There is no override: either wire the edge — `fabrika triage apply 6663 --blocked-by 6662` — and
+re-send, or reword the body so it states no ordering it does not own. Nothing was written.
+$ echo $?
+20
+```
+
 **Grounding**
 
 - #3019 / #2393 — a verbatim re-emit re-committed a machine-local path into a public issue. Fidelity
@@ -1612,6 +1668,7 @@ $ fabrika triage enrich 4312 --json < enriched.md
 fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
 fabrika triage apply 4312 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening
 fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --token <claim-token>
+fabrika triage apply 6663 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 6662
 ```
 
 **Inputs**
@@ -1624,9 +1681,43 @@ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 -
 | `--ready-for` | enum | yes | — | who picks it up: `human` or `agent` |
 | `--home` | integer | one of | — | the **number** of an open milestone to home the issue in |
 | `--lane` | enum | one of | — | a standing lane, taking its values from the `lane` rows `triage homes` prints |
+| `--blocked-by` | integer | no | none | an issue this one waits on, written as a native `blocked_by` edge; **repeatable**, idempotent, and never a pull request (`21`) |
 | `--token` | string | no | none | the claim token `triage claim` handed this lane; without it the guard reads the session alone and refuses once two lanes of it hold live markers |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
+
+### `--blocked-by` — the one triage route to the dependency graph
+
+ADR [0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md) makes the native
+`blocked_by` graph the one carrier of "do not start this yet", and until this flag no triage verb
+could write one: `map ticket` was `addBlockedBy`'s only caller, and only for a wayfinding map's own
+tickets. So a triager filing an ordered slice set had the graph API one import away and no sanctioned
+way to reach it, and wrote the ordering as prose — [#6728](https://github.com/kamp-us/phoenix/issues/6728),
+ruled at [this comment](https://github.com/kamp-us/phoenix/issues/6728#issuecomment-5465597763).
+
+Three properties, each a refusal rather than a hope:
+
+- **Every target is resolved before any edge — or any label — is written.** The POST body takes the
+  target's **internal `id`**, never its issue number (passing a number silently addresses a different
+  issue), so each value is resolved through `internalId` first. A target **proven absent (404)** is
+  `7` with nothing written anywhere; a resolve that merely failed is `11`.
+- **The edges already live are read first and skipped**, so re-running leaves exactly one edge and
+  exits `0`. That is what makes a resumed lane safe, and it rests on a read this verb performs rather
+  than on an assumption about how the API answers a duplicate POST.
+- **The read-back is over the graph, not over the POST responses.** After the writes the verb re-reads
+  `blocked_by` and proves every requested number is in it: a write it believes landed and a graph that
+  carries the edge are different facts, and only the second gates a build lane. A requested edge absent
+  from that read is `9`; a write that failed outright is `8`.
+
+`--blocked-by <this issue>` is refused on `7`: a self-edge makes the issue permanently unbuildable and
+`build eligible` would report it as a real blocker.
+
+**A target that is a pull request is refused on `21`, and the message says where the edge belongs.**
+`GET /repos/{o}/{r}/issues/<n>` serves pull requests — a PR number answers 200 with an `id` — so one
+resolves `Present` and the proven-absent `7` arm above can never fire for it. ADR 0301 already rules
+the case: *a blocking pull request is named in the graph by the issue its merge closes*, so pass that
+issue's number. Its own seat rather than `7`'s, because "no such issue" is false about a number the
+caller is looking at.
 
 **Exactly one of `--home` / `--lane` is required.** Supplying both, or neither, is a usage error. This
 is the whole design: an un-homed `status:triaged` issue is **unrepresentable** rather than detected
@@ -1654,9 +1745,16 @@ make an epic unstampable. `--ready-for human` is unaffected on every type: the p
 backs is the one made to an agent.
 
 **Output** — machine channel. One tab-separated line: `triaged`, `<number>`, `<type>`, `<priority>`,
-`<ready-for>`, `<home>` — where `<home>` is the milestone number or the lane label. With `--json`, an
-object with those keys plus `removed` (the labels superseded) and `readBack`, an object of
-`{labels, milestone}` observed after the write.
+`<ready-for>`, `<home>`, `<blocked-by>` — where `<home>` is the milestone number or the lane label,
+and `<blocked-by>` is the edge set **this run read back**, rendered `#a,#b`. With `--json`, an object
+with those keys plus `removed` (the labels superseded), `blockedBy` (that same edge set, as numbers)
+and `readBack`, an object of `{labels, milestone}` observed after the write.
+
+**The column is always present, and on a run passing no `--blocked-by` it is always empty** —
+whatever the live graph holds. This verb reads the dependency endpoint only when the flag is there,
+so an empty column means *this run wrote no edge*, never *the issue waits on nothing*. Read the
+graph with `fabrika build eligible <n>` or the issue's own dependency list; concluding "no
+prerequisites" from an empty column here is the same false safety `20` exists to close.
 
 **`readBack` carries the milestone, not only the labels.** A labels-only read-back cannot evidence a
 `--home` at all — the flag's entire effect is a milestone — so it reported success over the one facet
@@ -1736,11 +1834,12 @@ for drift, not because they are currently absent.)
 
 | Code | Trigger |
 |---|---|
-| `7` | a label this invocation would write does not exist in the repository, or the issue is closed |
-| `8` | a label or milestone write failed — UNKNOWN which changes landed |
-| `9` | the writes landed but the read-back does not show the required end state |
+| `7` | a label this invocation would write does not exist in the repository, the issue is closed, a `--blocked-by` target is **proven absent (404)**, or `--blocked-by` names this issue itself — nothing written |
+| `21` | a `--blocked-by` target is a **pull request** — pass the issue its merge closes (ADR 0301); nothing written |
+| `8` | a label, milestone or `blocked_by` edge write failed — UNKNOWN which changes landed |
+| `9` | the writes landed but the read-back does not show the required end state, or a requested `blocked_by` edge is absent from the edge read-back |
 | `10` | an off-vocabulary enum value, or `--home` names a milestone that is not open |
-| `11` | the issue, its comments, the claim on it, the repository's label set, or its milestone set could not be read |
+| `11` | the issue, its comments, the claim on it, the repository's label set, its milestone set, the issue's live `blocked_by` edges, or a `--blocked-by` target's internal id could not be read |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `16` | `--ready-for agent` over a live body the wire reader does not answer `Found` on — every type but `epic`; nothing was written |
 | `18` | `.fabrika.jsonc` yielded no usable value — a key's load-time check refused it (the containment invariant is one such check), the file could not be read, or a key did not decode; refused at load, before the issue is even read |
@@ -1795,7 +1894,24 @@ failure is `11` and never a silent pass.
 
 ```
 $ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47
-triaged	4312	bug	p2	agent	47
+triaged	4312	bug	p2	agent	47	
+```
+
+```
+$ fabrika triage apply 6663 --type bug --priority p1 --ready-for agent --home 47 --blocked-by 6662
+triage apply: scanned 34 labels in kamp-us/phoenix.
+triage apply: scanned 6 open milestones in kamp-us/phoenix.
+triage apply: read back #6663 blocked_by #6662.
+triaged	6663	bug	p1	agent	47	#6662
+```
+
+```
+$ fabrika triage apply 7283 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 7271
+triage apply: --blocked-by 7271 names a pull request, not an issue — ADR 0301: a blocking pull
+request is named in the graph by the issue its merge closes, so pass that issue's number instead.
+No edge was written.
+$ echo $?
+21
 ```
 
 ```
@@ -1814,12 +1930,12 @@ $ echo $?
 
 ```
 $ fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --json
-{"outcome":"triaged","number":4312,"type":"bug","priority":"p2","readyFor":"agent","home":47,"removed":["status:needs-triage"],"readBack":{"labels":["type:bug","p2","status:triaged","ready-for:agent"],"milestone":47}}
+{"outcome":"triaged","number":4312,"type":"bug","priority":"p2","readyFor":"agent","home":47,"removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:bug","p2","status:triaged","ready-for:agent"],"milestone":47}}
 ```
 
 ```
 $ fabrika triage apply 4290 --type chore --priority p2 --ready-for agent --lane axis:pipeline-hardening --json
-{"outcome":"triaged","number":4290,"type":"chore","priority":"p2","readyFor":"agent","home":"axis:pipeline-hardening","removed":["status:needs-triage"],"readBack":{"labels":["type:chore","p2","status:triaged","ready-for:agent","axis:pipeline-hardening"],"milestone":null}}
+{"outcome":"triaged","number":4290,"type":"chore","priority":"p2","readyFor":"agent","home":"axis:pipeline-hardening","removed":["status:needs-triage"],"blockedBy":[],"readBack":{"labels":["type:chore","p2","status:triaged","ready-for:agent","axis:pipeline-hardening"],"milestone":null}}
 ```
 
 **Grounding**
@@ -2038,8 +2154,8 @@ location, with the leak matcher literally named for comments.
 | `5` | the reason text carries a machine-local path |
 | `6` | the reason is a bare `@` path reference — it never arrived |
 | `7` | the issue is proven absent or already closed; `--duplicate-of` is proven absent or closed; or `closed-by-triage` does not exist in the repository |
-| `8` | one of the four writes failed — the message names what did and did not land |
-| `9` | the writes landed but the read-back does not show a not-planned close |
+| `8` | one of the four steps failed — the message names what did and did not land |
+| `9` | the writes landed but the read-back does not show a not-planned close, or still shows a triage status label |
 | `11` | the issue body, its comments, the claim on it, the duplicate, or the label set could not be read — no kill was attempted |
 | `17` | a live claim marker on the issue names another session — or, when `--token` named this lane, another lane of this one; a tokenless call is refused once two lanes of its session hold live markers |
 | `12` | refused: the issue is human-filed — no agent footer and no operator author — and no `--duplicate-of` was named (the fold exception, above) |
@@ -2067,15 +2183,15 @@ location, with the leak matcher literally named for comments.
 | `triage kill: #<n> is human-filed and would be folded into #<m>, but ADR 0159 makes the confirmation the guard — pass --confirm once salvage has genuinely been attempted.` | 13 | refusal |
 | `triage kill: the fold comment on #<m> failed: <reason> — #<n> is NOT closed, carries no reason and no label; nothing was lost. Re-run.` | 8 | refusal |
 | `triage kill: the reason comment on #<n> failed: <reason> — #<n> is NOT closed and carries no label, but the fold on #<m> DID land; delete that comment before re-running, or the fold posts twice.` | 8 | refusal |
-| `triage kill: applying closed-by-triage to #<n> failed: <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply the label by hand, or delete the landed comments and re-run.` | 8 | refusal |
+| `triage kill: the label step on #<n> failed after <k> of <m> change(s): <reason> — the fold and the reason comment landed; #<n> is still OPEN and invisible to the kill audit. Apply closed-by-triage by hand and strip any triage status label, or delete the landed comments and re-run.` | 8 | refusal |
 | `triage kill: closing #<n> failed: <reason> — the fold, the reason and closed-by-triage all landed; #<n> is still OPEN and fully annotated. Close it by hand with state_reason=not_planned, or delete the landed comments and re-run.` | 8 | refusal |
 | `triage kill: closed, but the read-back shows state_reason=<observed>, not not_planned — #<n> reads as done rather than killed.` | 9 | refusal |
+| `triage kill: closed not-planned, but the read-back shows status=[<observed>], milestone=<home> — expected every triage status label stripped from #<n>.` | 9 | refusal |
 | `triage kill: no operator accounts are configured (FABRIKA_OPERATOR_ACCOUNTS is unset), so a footerless filing reads human whoever authored it.` | 12 | notice |
 | `triage kill: redacted <k> machine-local path(s) from the folded duplicate body.` | 0 | notice |
 
 **Write order is the auditability guarantee.** Fold the duplicate content, post the reason comment,
-apply `closed-by-triage`, then close with `state_reason=not_planned` — and **each step gates the
-next**. v1 ran three unguarded sequential writes under `set -uo pipefail` with no `-e`, so a failed
+write the labels, then close with `state_reason=not_planned` — and **each step gates the next**. v1 ran three unguarded sequential writes under `set -uo pipefail` with no `-e`, so a failed
 reason comment did not stop the close: the issue landed closed, unexplained, and invisible to the
 kill audit. Here a failure before the close leaves the issue **open**, which is the recoverable
 direction.
@@ -2086,6 +2202,20 @@ generic "a write failed" would leave a caller unable to tell "nothing happened, 
 comments are live, re-running duplicates them". An earlier revision covered only the fold. The
 read-back asserts `state` is `closed` **and** `state_reason` is `not_planned`, because a plain
 `closed` reads as "done", not "killed".
+
+**The label step strips every triage status, through the same reconcile `apply` and `park` write
+through.** A killed issue carrying `status:needs-triage` makes any count over that label that is not
+filtered to open issues over-report the queue, and a kill after an earlier `apply` leaves
+`status:triaged` saying the same false thing
+([#6710](https://github.com/kamp-us/phoenix/issues/6710)). The removals are planned by
+`planReconcile` off a `killedFacets` table naming the **status facet alone**, so the strip and the
+two reconciling exits cannot disagree about which statuses a triage transition owns, and every other
+label — the type, priority, audience and lane the issue was read under — is preserved as the history
+that makes a closed issue legible. The strip rides in the label step rather than after the close,
+which is what keeps the order's guarantee: a failure there leaves the issue open. And the read-back
+asserts the status facet's end state alongside `state`/`state_reason`, because the
+`closed-by-triage` add lands whether or not the removals did — a read-back blind to the labels would
+pass the exact defect this fixes.
 
 **`closed-by-triage` is provenance, and the refusal on its absence stands for a different reason
 (ADR [0256](https://github.com/kamp-us/phoenix/blob/main/.decisions/0256-kill-audit-keys-on-the-not-planned-close.md)).**

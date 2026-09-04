@@ -224,6 +224,9 @@
 .kp-divan__roster-row {
 	display: flex;
 	flex-direction: column;
+	/* Manti's button root centres its children; this row is a left-aligned record, and
+	   stretch is also what bounds each child to the card's width. */
+	align-items: stretch;
 	gap: var(--s-1);
 	width: 100%;
 	padding: var(--s-2) var(--s-3);
@@ -248,6 +251,9 @@
 .kp-divan__counts {
 	font: var(--t-meta);
 	color: var(--text-muted);
+	/* Manti's button root sets white-space: nowrap; the counts are the row's decision data
+	   and wrap rather than run past the card. */
+	white-space: normal;
 }
 
 /* identity (handle + karma-on-others) ------------------------------------- */
@@ -256,12 +262,22 @@
 	display: inline-flex;
 	align-items: center;
 	gap: var(--s-2);
+	min-width: 0;
+	max-width: 100%;
 }
 
 .kp-divan__handle {
 	font: var(--t-body-sm);
 	font-weight: 600;
 	color: var(--text-primary);
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.kp-divan__karma {
+	flex: none;
 }
 
 /* detail ------------------------------------------------------------------ */
@@ -484,7 +500,7 @@
 }
 
 /* Shell (surface-raised · border · r-sm · pad-lg) is the shared Surface primitive
-   (ui/Card.css, #2163); only the card's own column layout stays here. */
+   (packages/design/src/Card.css, #2163); only the card's own column layout stays here. */
 .kp-triage__card {
 	display: flex;
 	flex-direction: column;
@@ -629,7 +645,7 @@
 	}
 }
 
-/* Shell is the shared Surface primitive (ui/Card.css, #2163); layout stays here. */
+/* Shell is the shared Surface primitive (packages/design/src/Card.css, #2163); layout stays here. */
 .kp-actor {
 	display: flex;
 	flex-direction: column;
@@ -700,7 +716,7 @@
 
 /* remove-the-wave (#1855): the same-author batch manifest, docked over the loop when
    the mod grabs a flood with Shift-X. */
-/* Shell is the shared Surface primitive (ui/Card.css, #2163); layout stays here. */
+/* Shell is the shared Surface primitive (packages/design/src/Card.css, #2163); layout stays here. */
 .kp-wave {
 	display: flex;
 	flex-direction: column;
@@ -751,12 +767,12 @@
 	background: var(--surface);
 }
 
-.kp-wave__row[data-selected="true"] .kp-wave__check {
-	color: var(--danger);
-}
-
 .kp-wave__check {
 	color: var(--text-muted);
+}
+
+.kp-wave__row[data-selected="true"] .kp-wave__check {
+	color: var(--danger);
 }
 
 .kp-wave__kind {

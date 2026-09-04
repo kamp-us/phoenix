@@ -31,6 +31,7 @@ export const RosterRowView = view<DivanCaylak>()({
 	postCount: true,
 	commentCount: true,
 	totalCount: true,
+	viewerVouched: true,
 });
 
 export const RosterConnectionView = {items: {node: RosterRowView}} as const;

@@ -16,12 +16,14 @@
  * (aria-haspopup/expanded on the trigger, Escape-to-close, outside-dismiss).
  */
 
+import {Avatar, Button, Popover} from "@kampus/design";
 import {useState} from "react";
 import {Link} from "react-router";
+import {FlagGate} from "../../flags/FlagGate";
+import {PHOENIX_LOCALE} from "../../flags/keys";
+import {useLocale, useT} from "../../i18n";
 import type {ThemeChoice} from "../../lib/theme";
-import {Avatar} from "../ui/Avatar";
-import {Button} from "../ui/Button";
-import {Popover} from "../ui/Popover";
+import {LocaleChoicePicker} from "./LocaleChoicePicker";
 import {ThemeChoicePicker} from "./ThemeChoicePicker";
 import "./UserMenu.css";
 
@@ -40,6 +42,10 @@ export function UserMenu({
 }) {
 	const [open, setOpen] = useState(false);
 	const close = () => setOpen(false);
+	const t = useT();
+	// Read off the context rather than drilled through Topbar like `themeChoice`: the locale
+	// already has an app-level provider, so a prop pair would be a second source for one value.
+	const {locale, setLocale} = useLocale();
 
 	return (
 		<Popover
@@ -63,7 +69,7 @@ export function UserMenu({
 					onClick={close}
 					data-testid="topbar-profile-link"
 				>
-					profil
+					{t("layout.userMenu.profile")}
 				</Link>
 				{bildirim ? (
 					<Link
@@ -72,16 +78,16 @@ export function UserMenu({
 						onClick={close}
 						data-testid="topbar-bildirim-link"
 					>
-						bildirimler
+						{t("layout.userMenu.bildirimler")}
 					</Link>
 				) : null}
 				<Link className="kp-user-menu__item" to="/profile" onClick={close}>
-					ayarlar
+					{t("layout.userMenu.settings")}
 				</Link>
 			</nav>
 			{themeChoice && onThemeChange ? (
-				<div className="kp-user-menu__theme-row" data-testid="topbar-theme-row">
-					<span className="kp-user-menu__theme-label">tema</span>
+				<div className="kp-user-menu__setting-row" data-testid="topbar-theme-row">
+					<span className="kp-user-menu__setting-label">{t("layout.userMenu.theme")}</span>
 					<ThemeChoicePicker
 						choice={themeChoice}
 						onChange={onThemeChange}
@@ -89,6 +95,14 @@ export function UserMenu({
 					/>
 				</div>
 			) : null}
+			{/* Dark until the human release flip (ADR 0083): with the flag off no toggle renders
+			    and every reader stays on the `tr` default, which is today's copy exactly. */}
+			<FlagGate flag={PHOENIX_LOCALE}>
+				<div className="kp-user-menu__setting-row" data-testid="topbar-locale-row">
+					<span className="kp-user-menu__setting-label">{t("layout.userMenu.locale")}</span>
+					<LocaleChoicePicker locale={locale} onChange={setLocale} testId="topbar-locale-picker" />
+				</div>
+			</FlagGate>
 			<hr className="kp-user-menu__sep" />
 			{/* The Button primitive, not a bare <button> — the Manti-adoption guard rules out raw
 			    interactive controls, and going through it also means global.css's plain-button
@@ -103,7 +117,7 @@ export function UserMenu({
 					onLogout?.();
 				}}
 			>
-				çıkış
+				{t("layout.userMenu.logout")}
 			</Button>
 		</Popover>
 	);

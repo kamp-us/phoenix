@@ -4,12 +4,13 @@
  * loop consumes, never a re-fetch. The render + hop decisions live DOM-free in
  * `actor-drawer.ts`; this is the thin shell.
  */
+
+import {Button, Surface} from "@kampus/design";
 import type {OpenReport} from "../../../worker/features/report/views";
 import {FlagGate} from "../../flags/FlagGate";
 import {PHOENIX_USER_BAN} from "../../flags/keys";
+import {useT} from "../../i18n";
 import {BanControls} from "../moderation/BanControls";
-import {Button} from "../ui/Button";
-import {Surface} from "../ui/Card";
 import {
 	type ActorStanding,
 	actorIdentityLabel,
@@ -47,12 +48,14 @@ export function ActorDrawer({
 	readonly onHopKefil: () => void;
 	readonly onHopModeration: () => void;
 }) {
+	const t = useT();
 	const standing = standingOf(data);
 	const identity = actorIdentityLabel(data.targetAuthor, standing);
 	const uretim = uretimLabel(standing);
 	const kaldirilan = kaldirilanLabel(standing.priorRemovals);
 	const kefilDurumu = kefilDurumuLabel(standing.kefil);
 	const buAktor = buAktorLabel(standing.reportedTargets);
+	const bildirilen = bildirilenLabel(standing.distinctReporters);
 	const recordVerdicts = modRecordVerdicts(chamber);
 
 	return (
@@ -63,51 +66,55 @@ export function ActorDrawer({
 			padding="lg"
 			border
 			className="kp-actor"
-			aria-label="aktör künyesi"
+			aria-label={t("divan.actor.label")}
 			data-testid="actor-drawer"
 		>
 			<header className="kp-actor__head">
 				<span className="kp-actor__identity" data-testid="actor-identity">
-					{identity ?? "aktör bilinmiyor"}
+					{identity ?? t("divan.actor.unknown")}
 				</span>
 			</header>
 
 			<dl className="kp-actor__tells">
 				{uretim !== null && (
 					<div className="kp-actor__tell">
-						<dt className="kp-actor__tell-key">üretim</dt>
+						<dt className="kp-actor__tell-key">{t("divan.actor.tell.uretim")}</dt>
 						<dd className="kp-actor__tell-val" data-testid="actor-uretim">
-							{uretim}
+							{t(uretim.frame.key, {
+								definitions: t(uretim.definitions.key, uretim.definitions.params),
+								posts: t(uretim.posts.key, uretim.posts.params),
+								comments: t(uretim.comments.key, uretim.comments.params),
+							})}
 						</dd>
 					</div>
 				)}
 				{kaldirilan !== null && (
 					<div className="kp-actor__tell">
-						<dt className="kp-actor__tell-key">sicil</dt>
+						<dt className="kp-actor__tell-key">{t("divan.actor.tell.sicil")}</dt>
 						<dd className="kp-actor__tell-val" data-testid="actor-kaldirilan">
-							{kaldirilan}
+							{t(kaldirilan.key, kaldirilan.params)}
 						</dd>
 					</div>
 				)}
 				<div className="kp-actor__tell">
-					<dt className="kp-actor__tell-key">bildiren</dt>
+					<dt className="kp-actor__tell-key">{t("divan.actor.tell.bildiren")}</dt>
 					<dd className="kp-actor__tell-val" data-testid="actor-bildirilen">
-						{bildirilenLabel(standing.distinctReporters)}
+						{t(bildirilen.key, bildirilen.params)}
 					</dd>
 				</div>
 				{kefilDurumu !== null && (
 					<div className="kp-actor__tell">
-						<dt className="kp-actor__tell-key">kefil</dt>
+						<dt className="kp-actor__tell-key">{t("divan.actor.tell.kefil")}</dt>
 						<dd className="kp-actor__tell-val" data-testid="actor-kefil">
-							{kefilDurumu}
+							{t(kefilDurumu.key, kefilDurumu.params)}
 						</dd>
 					</div>
 				)}
 				{buAktor !== null && (
 					<div className="kp-actor__tell">
-						<dt className="kp-actor__tell-key">bu aktör</dt>
+						<dt className="kp-actor__tell-key">{t("divan.actor.tell.buAktor")}</dt>
 						<dd className="kp-actor__tell-val" data-testid="actor-bu-aktor">
-							{buAktor}
+							{t(buAktor.key, buAktor.params)}
 						</dd>
 					</div>
 				)}
@@ -120,7 +127,7 @@ export function ActorDrawer({
 					data-testid="actor-kefil-guard"
 					data-verdicts={recordVerdicts}
 				>
-					mod sicili bilgilendirir, kefil kararını vermez.
+					{t("divan.actor.guard")}
 				</p>
 			)}
 
@@ -142,7 +149,7 @@ export function ActorDrawer({
 					aria-current={chamber === "kefil" ? "true" : undefined}
 					data-testid="actor-hop-kefil"
 				>
-					kefil (V)
+					{t("divan.actor.hop.kefil")}
 				</Button>
 				<Button
 					type="button"
@@ -153,7 +160,7 @@ export function ActorDrawer({
 					aria-current={chamber === "raporlar" ? "true" : undefined}
 					data-testid="actor-hop-moderation"
 				>
-					moderasyon (M)
+					{t("divan.actor.hop.moderation")}
 				</Button>
 			</div>
 		</Surface>

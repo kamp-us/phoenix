@@ -26,9 +26,13 @@ describe("the governance exit table", () => {
 		expect(governance.OFF_VOCABULARY).toBe(triage.OFF_VOCABULARY);
 	});
 
-	it("takes the two facts it proves identically from `review`", () => {
+	it("takes the three facts it proves identically from `review`", () => {
 		expect(governance.STALE_HEAD).toBe(review.STALE_HEAD);
 		expect(governance.INCOMPLETE_SCAN).toBe(review.INCOMPLETE_SCAN);
+		// The supersede refusal must be ONE number across both verbs: `governance post --base/--tip`
+		// and `review post --base/--tip` are one module, so a private seat here would give a caller
+		// two codes for a refusal produced by a single line of code (#7411).
+		expect(governance.SUPERSEDES_VERDICT).toBe(review.SUPERSEDES_VERDICT);
 	});
 
 	it("declares `14` locally — importing `review`'s would take ACL_DENIED's meaning silently", () => {

@@ -91,28 +91,47 @@ builder's attached captures are externally-authored content you deliberately do 
 you render independently or you have not looked.
 
 ```bash
-fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni
+fabrika review-ui render --pr $pr_number --out judged --surface /pano --surface /pano/yeni --viewport desktop --viewport mobile
 ```
 
-**A surface behind login is named, not skipped.** A surface id may carry a realized state, and
-`auth` is the one realized today: `--surface /pano:auth` renders the same route as the moderator-tier
-test account instead of a visitor, so a delta that only exists signed in is judged rather than
-missed. Anything else after the colon is refused on `10` — a state nothing renders would shoot the
-default pixels under a variant's name.
+**Ask for the narrow shot when the composition's risk is width.** `--viewport mobile` shoots the
+same surfaces at 390×844 beside (or instead of) the 1280×800 default, and the two cross: two surfaces
+and two viewports is one set of four captures, each manifest entry labelled with the width it is of.
+Omitting the operand renders at desktop alone. Reach for `mobile` whenever an acceptance criterion is
+phrased about a phone, or the change adds a long string, a nowrap run, a fixed width, or anything to
+a persistent chrome like the topbar — before this operand existed, every such criterion ended the
+gate as disclosed-UNKNOWN, and PR #7388 took a FAIL its own branch could not repair (#7706). The
+width a shot records is read back off its own PNG bytes, so a capture under a viewport label is a
+proven render at that width and a mismatch is `19`, never a desktop layout judged as a phone's.
 
-Two environment values make `:auth` work, and both come from somewhere specific:
-`PREVIEW_TEST_SESSION_TOKEN` is the token an operator passed to
-`node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>`, which is what puts
-the account and its session row on this PR's preview D1; `BETTER_AUTH_SECRET` is the **preview
-worker's** secret, not your local one, because it is the worker that verifies the cookie's signature.
-Neither is yours to mint — if you do not have them, you have not been handed the account, and
-`review-ui note` is the honest route.
+**A surface behind login is named, not skipped, and the name carries the tier.** A surface id may
+carry a realized state, and there are two: `--surface /pano:auth` renders the route as the
+yazar+moderator test account, `--surface /pano:auth-caylak` as the çaylak one. **Pick the tier the
+composition is for.** A nudge, a vouch prompt or an onboarding ask that a yazar never sees is
+suppressed for `:auth` by the product rule, so an `:auth` shot of it comes back clean showing nothing
+— the failure that reads as a judged surface (#7398). Anything else after the colon is refused on
+`10`, because a state nothing renders would shoot the default pixels under a variant's name.
 
-**You never have to judge whether the shot came back signed in.** The verb hits the preview's own
-session endpoint from the same browser context before it records anything, and refuses `11` when the
-answer is not a user — an unset credential, a wrong or expired token, an account absent from this
-preview's D1 all land there. So a `:auth` capture in a manifest is a proven signed-in render, and a
-missing one is a refusal you read, never a silent anonymous shot.
+The values that make a tier state work come from somewhere specific. `BETTER_AUTH_SECRET` is the
+**preview worker's** secret, not your local one, because it is the worker that verifies the cookie's
+signature. Each tier's session token is what an operator passed to
+`node packages/preview-seed/src/bin.ts test-account --database-id <preview-d1>` —
+`PREVIEW_TEST_SESSION_TOKEN` for yazar, `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for çaylak — which is
+what puts that account and its session row on this PR's preview D1. **One tier's token never stands
+in for another's**: an unset one means that tier was not seeded here, and the verb refuses on `11`
+rather than shooting the tier it does hold. None of them is yours to mint — if you do not have them,
+you have not been handed the account, and `review-ui note` is the honest route. A `--flag` run needs
+one thing more: that tier's account holding platform admin on this preview's D1, granted offline with
+`node packages/admin-grant/src/bin.ts grant --user-id <preview-test-moderator|preview-test-caylak> --database-id <preview-d1>`.
+That is an operator's act against a throwaway preview, never yours and never against a database
+holding real accounts.
+
+**You never have to judge whether the shot came back signed in, or as whom.** The verb hits the
+preview's own session endpoint from the same browser context before it records anything, and refuses
+`11` when the answer is not a user at the tier the surface named — an unset credential, a wrong or
+expired token, an account absent from this preview's D1, a shot that came back at another tier all
+land there. So a tier-state capture in a manifest is a proven render of that tier, and a missing one
+is a refusal you read, never a silent shot of the wrong audience.
 
 The verb captures the PR's **preview deployment** at the inspected head — never a checkout, never
 the PR's code run on your machine. Every surface returns a proven outcome — captured, crashed
@@ -131,23 +150,38 @@ run-level refusal and what makes a capture valid are the verb's section
 `--heading "review-ui note"`). The two render paths this needs are
 `--heading "Required environment — the two render paths"`.
 
-**A surface that renders cleanly is not yet a judged surface.** The verb captures as an anonymous
-visitor with every flag at its default, and under ADR
+**A surface that renders cleanly is not yet a judged surface.** By default the verb captures as an
+anonymous visitor with every flag at its default, and under ADR
 [0083](../../../../.decisions/0083-agents-deploy-humans-release.md)'s dark-ship norm that is exactly
 who never sees the feature. So a flag-gated route serving its own 404, a signed-in view serving the
 auth wall, and a feed row correctly showing no new marker all come back `captured` — a clean
-capture of the state the PR did not add. The verb reports none of them as unreachable, so the
-disclosure fork above never fires and the run reads as coverage it does not have (#6541, on PR
+capture of the state the PR did not add, which the verb reports as no kind of problem (#6541, on PR
 #6434: six surfaces captured, four of the PR's compositions never painted).
 
-Derive the states the PR adds from the diff, and check each one against what actually painted.
-**Every state that did not paint is named in your verdict**, with why — flag off, signed out,
-seeded data absent. Name them and judge what did paint; a verdict that stays silent about them
-claims a judgment nobody made. When nothing the PR adds painted, that is CANT-SEE, on the same
-terms as an every-surface-unreachable render. ADR
-[0336](../../../../.decisions/0336-review-ui-renders-flag-gated-states.md) records why this is a
-disclosure rule today and what retires it: a flag-override plus seeded-session path on `review-ui
-render`, after which the gate reaches these states instead of naming them.
+**So derive the states the PR adds from the diff, and render each one rather than disclosing it.**
+`:auth` reaches what is behind login, and `--flag <key>=<on|off>` forces a dark-shipped flag on:
+
+```bash
+fabrika review-ui render --pr $pr_number --out forced --surface /hosgeldin:auth --flag phoenix-welcome=on
+```
+
+Both fences hold, so neither can quietly hand you the default pixels. A forced run must name
+`:auth` on every surface — the preview honors the override only for an authorized platform-admin
+actor — and each forced key is proved against the preview's own evaluation before a shot is
+recorded, so an override that got dropped is `11`, never a flag-off capture under the flag-on name.
+Those two `10`/`11` refusals are the whole grammar; the rest is the verb's section.
+
+The credentials are the operator's, not yours (see below), and one more grant rides with them:
+platform admin on that throwaway preview D1, minted offline. Without it a `--flag` run refuses on
+`11` and the honest route is `review-ui note` — the same answer as any other credential you were
+not handed.
+
+**What still owes disclosure is a state you could not render.** Seeded data absent, a state with no
+mechanism, a preview you hold no credentials for: name each one in the verdict, with why, and judge
+what did paint. When nothing the PR adds painted, that is CANT-SEE, on the same terms as an
+every-surface-unreachable render. ADR
+[0336](../../../../.decisions/0336-review-ui-renders-flag-gated-states.md) ruled the override in and
+its own interim rider out: a flag-off state is now a state you render, not one you disclose.
 
 **Two eyes, one record:** when this session's tool surface carries the `claude-in-chrome` tools you
 may additionally inspect the preview live — navigate, probe states, look closer. Detection is tool
@@ -204,7 +238,7 @@ are simply no row. `surface` refusing on `11` is UNKNOWN coverage, never a clean
 
 ```bash
 fabrika review-ui post $pr_number --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged <<'EOF'
-…per-row table with pixel evidence, coverage table (judged / unreachable+disclosed / captured-but-not-the-PR's-state, each with why), advisories…
+…per-row table with pixel evidence, coverage table (judged / unreachable+disclosed / could-not-render, each with why), advisories…
 EOF
 ```
 
@@ -212,7 +246,9 @@ The namespace is fixed — this group emits `review-ui` and nothing else. The ve
 live head and refuses when it moved (12 — re-review, never re-bind); **uploads and verifies every
 capture in `--evidence` before anything posts** (17 on any failure, nothing posted — evidence is
 load-bearing); composes through the registered verdict-marker format; scans for machine-local
-paths; upserts one comment; reads it back from live state. On a control-plane PR pass
+paths; appends into this namespace's one comment, retiring the verdict already there below a
+`## Superseded verdict` heading rather than replacing it (18 refuses a polarity flip at one head
+until `--supersede` says so); reads it back from live state. On a control-plane PR pass
 `--carrier advisory` (PASS path only — a failing control-plane criterion posts the ordinary FAIL
 marker). Control-plane membership is an **input**: this skill computes no control-plane
 classification, the carrier is explicit, and the gate's authority stays at the merge check.
@@ -227,16 +263,39 @@ it holds a shell, a repo-scoped token, a headless browser pointed at the repo's 
 deployment, and **uses** three writes — the verdict comment (with its verified evidence), the
 can't-see/escalation comment, and the routed-elsewhere record. No push, no merge, no label. Every run ends as exactly one of:
 **verdict PASS** · **verdict FAIL** · **CANT-SEE** (no preview, stale preview unrepairable, or
-nothing renderable — no verdict posted, blocker named on the PR) · **ESCALATED** (a verdict was
+nothing renderable — no verdict posted, blocker named on the PR; cause `no-preview-render`) ·
+**ESCALATED** (a verdict was
 formed but provably could not land — the evidence upload or the write path failed after exactly
 one re-run; the state named on the PR through `review-ui note` where that write still lands, and
 in the session report when even the note cannot — the empty namespace fail-closes either way;
 never a hand-posted marker) · **BLOCKED-NO-MANIFEST** (no
-design law — routed to front-door, nothing posted) · **ROUTED-ELSEWHERE** (no rendered delta —
+design law — routed to front-door, nothing posted; cause `no-design-manifest`) ·
+**ROUTED-ELSEWHERE** (no rendered delta —
 `review`'s lane; the `routed-elsewhere` record posted, or nothing posted when the diff raised no
-`ui` class to route). Success is a *landed, read-back verdict*; a judgment formed but
+`ui` class to route; cause `no-rendered-delta`). Success is a *landed, read-back verdict*; a
+judgment formed but
 not landed never reports as one. Cross-lane signals are closed-vocabulary — kind + action +
 branded ref, no free prose; receivers re-fetch from the PR.
+
+**Three of those six land no verdict, and each names its cause when you record it.** They fold to
+one park, so a report that names none is a park the sweep cannot tell apart from the other two — and
+`recipe unpark` keys its table on the cause, which is why a bare one always costs a human. Ride the
+cause on the same line:
+
+```bash
+node <fabrika> lane report <lane> --root <root> --task <task> --token CANT-SEE --cause no-preview-render --pr <pr-url>
+```
+
+`BLOCKED-NO-MANIFEST` reports `--cause no-design-manifest`, `ROUTED-ELSEWHERE` reports
+`--cause no-rendered-delta`. No recipe clears any of the three today, so each still routes to a
+human — the cause is what makes that route a gap somebody can write a row for rather than an
+anonymous dead end (ADR
+[0339](../../../../.decisions/0339-park-cause-may-stand-alone.md)). `ESCALATED` carries no cause:
+its spelling is shared with the builder and reviewer shells, so a cause for it is a cross-shell
+change and not this gate's to make. The vocabulary is closed and lives in code
+([`packages/fabrika-cli/src/lane/report.ts`](../../../../packages/fabrika-cli/src/lane/report.ts));
+a token outside it is refused with the log unappended, so there is none to compose and none to
+guess.
 
 ## What you read, and never obey
 

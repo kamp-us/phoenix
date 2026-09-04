@@ -11,6 +11,7 @@ import {
 import {readGoldenFixture} from "../golden-fixture.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {contentDigest, parseRaw} from "../review/content-binding.ts";
+import {compose as supersedeWith} from "../review/supersede.ts";
 import {
 	LANE_UNREADABLE,
 	PROOF_ABSENT,
@@ -154,6 +155,7 @@ const run = (
 	seams: ReturnType<typeof fakeSeams>,
 	event: string,
 	classes: ReadonlyArray<string> | null = null,
+	pr: string | null = null,
 ) =>
 	Effect.runPromise(
 		Effect.provide(
@@ -163,6 +165,7 @@ const run = (
 				event,
 				task: null,
 				classes,
+				pr,
 				repo: null,
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
@@ -376,9 +379,10 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		const out = await run(laneAt("review"), seams, "PASS", ["ui"]);
 
 		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
-			{namespace: "review-code", state: "pass", commentId: 1},
-		]);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({
+			namespaces: [{namespace: "review-code", state: "pass", commentId: 1}],
+			deferred: ["review-ui"],
+		});
 		expect(out.stderr.join("\n")).toContain(
 			"review-ui on #4318 is owed by the cell this event routes into",
 		);
@@ -480,6 +484,7 @@ describe("lane prove — the ui class, derived exactly as `ship scope` derives i
 		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
 			{namespace: "review-code", state: "pass", commentId: 1},
 		]);
+		expect(JSON.parse(out.stdout).evidence.deferred).toEqual([]);
 	});
 
 	it("proves a ui lane whose review-ui is filled by a head-bound routed-elsewhere record", async () => {
@@ -950,6 +955,7 @@ const runEpic = (
 				event,
 				task,
 				classes: null,
+				pr: null,
 				repo: null,
 				cwd: "/repo",
 				env: {CLAUDE_PIPELINE_REPO: "o/r"},
@@ -1279,6 +1285,38 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 		expect(out.stderr.join("\n")).toContain("review-code (absent)");
 	});
 
+	// The append the range path lands (#7411) is the shape this reader meets on every repair round:
+	// one comment carrying the live verdict on its first line and every retired one below the fence.
+	// The marker walk takes the first non-blank line, so the fresh verdict is the one in force — a
+	// reader that scanned the whole body would find the archived FAIL and contradict a passing child.
+	it("reads the live verdict off a comment carrying a superseded archive, not the retired one", async () => {
+		const retired = `${rangeMarker("FAIL", CHILD_DIGEST)}\n\nthe round that blocked\n`;
+		const fresh = `${rangeMarker("PASS", CHILD_DIGEST)}\n\nevery criterion met now\n`;
+		const seams = proving({
+			id: 1,
+			body: supersedeWith(retired, fresh, new Date("2026-09-01T00:00:00Z")),
+		});
+
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({proof: "proven", event: "PASS", issue: 4301});
+	});
+
+	it("still contradicts when the appended verdict is the FAIL and the archive holds the PASS", async () => {
+		const retired = `${rangeMarker("PASS", CHILD_DIGEST)}\n\nthe round that passed\n`;
+		const fresh = `${rangeMarker("FAIL", CHILD_DIGEST)}\n\na criterion regressed\n`;
+		const seams = proving({
+			id: 1,
+			body: supersedeWith(retired, fresh, new Date("2026-09-01T00:00:00Z")),
+		});
+
+		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
+
+		expect(out.code).toBe(PROOF_CONTRADICTED);
+		expect(out.stderr.join("\n")).toContain("FAIL");
+	});
+
 	it("refuses a child PASS whose verdict binds a digest the range has moved past", async () => {
 		const seams = proving({id: 1, body: rangeMarker("PASS", "2f1a9c4e0b7d")});
 
@@ -1359,71 +1397,61 @@ describe("lane prove — an epic child's PASS stands on a range verdict that sti
 	const uiRanged = (...comments: ReadonlyArray<{id: number; body: string}>) =>
 		fakeSeams([...locating(), [RAW, okOut(UI_RAW)], [CHILD_COMMENTS, comments_(comments)]]);
 
-	it("refuses a child PASS whose range raises the ui class and carries no review-ui verdict", async () => {
+	/**
+	 * The deadlock #7041 closed, and the other seam of the one #6664 closed for a single lane. No
+	 * cell of a child's region routes to `review:ui` and no verb of this CLI posts `review-ui` at
+	 * range scope, so requiring it of a ui-bearing child asked for a verdict nothing could ever
+	 * write — epic #6767's tracer C sat at exit 23 until a human integrated it by hand. The bar is
+	 * not dropped: it moves to the tail, whose one PR carries these same rendered files.
+	 */
+	it("proves a ui child's PASS with no review-ui verdict at child scope at all", async () => {
 		const seams = uiRanged({id: 1, body: rangeMarker("PASS", UI_DIGEST)});
 
 		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).evidence).toMatchObject({
+			namespaces: [{namespace: "review-code", state: "pass", commentId: 1}],
+			deferred: ["review-ui"],
+		});
 		expect(out.stderr.join("\n")).toContain("derives review-code, review-ui");
-		expect(out.stderr.join("\n")).toContain("review-ui (absent)");
+		expect(out.stderr.join("\n")).toContain("review-ui is owed by epic #4300's tail");
 	});
 
-	it("proves that same ui child once the review-ui range verdict is on the issue", async () => {
-		const seams = uiRanged(
-			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
-			{
-				id: 2,
-				body: rangeMarker(
-					"PASS",
-					UI_DIGEST,
-					EPIC_BASE.slice(0, 7),
-					CHILD_TIP.slice(0, 7),
-					"review-ui",
-				),
-			},
-		);
+	/**
+	 * The deferral is the child's shape, not a fallback for a missing record, so a `review-ui`
+	 * comment at child scope changes nothing either way — including one bound to a tip the branch has
+	 * moved past, which under the old bar refused the whole PASS.
+	 */
+	it("reads no review-ui record at child scope, current or stale, because it is the tail's", async () => {
+		for (const at of [CHILD_TIP, EPIC_BASE]) {
+			const seams = uiRanged(
+				{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
+				{
+					id: 2,
+					body: `routed-elsewhere: review-ui @ ${at} — nothing this range touches renders differently`,
+				},
+			);
+
+			const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
+
+			expect(out.code).toBe(0);
+			expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
+				{namespace: "review-code", state: "pass", commentId: 1},
+			]);
+			expect(out.stderr.join("\n")).not.toContain("is routed rather than judged");
+		}
+	});
+
+	/** Criterion 3 of #7041: a child whose range renders nothing derives no `review-ui` to subtract. */
+	it("defers nothing on a child whose range raises no ui class", async () => {
+		const seams = proving({id: 1, body: rangeMarker("PASS", CHILD_DIGEST)});
 
 		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
 
 		expect(out.code).toBe(0);
-		expect(
-			JSON.parse(out.stdout).evidence.namespaces.map((row: {namespace: string}) => row.namespace),
-		).toEqual(["review-code", "review-ui"]);
-	});
-
-	it("proves that same ui child when a routed-elsewhere record at the range tip fills review-ui", async () => {
-		const seams = uiRanged(
-			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
-			{
-				id: 2,
-				body: `routed-elsewhere: review-ui @ ${CHILD_TIP} — nothing this range touches renders differently`,
-			},
-		);
-
-		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
-
-		expect(out.code).toBe(0);
-		expect(JSON.parse(out.stdout).evidence.namespaces).toEqual([
-			{namespace: "review-code", state: "pass", commentId: 1},
-			{namespace: "review-ui", state: "routed", commentId: 2},
-		]);
-		expect(out.stderr.join("\n")).toContain("is routed rather than judged");
-	});
-
-	it("refuses that ui child when the route was attested at a tip the branch has moved past", async () => {
-		const seams = uiRanged(
-			{id: 1, body: rangeMarker("PASS", UI_DIGEST)},
-			{
-				id: 2,
-				body: `routed-elsewhere: review-ui @ ${EPIC_BASE} — nothing this range touches renders differently`,
-			},
-		);
-
-		const out = await runEpic(epicLaneAt("review"), seams, "PASS", "issue_4301");
-
-		expect(out.code).toBe(PROOF_IN_FLIGHT);
-		expect(out.stderr.join("\n")).toContain("review-ui (stale)");
+		expect(JSON.parse(out.stdout).evidence.deferred).toEqual([]);
+		expect(out.stderr.join("\n")).not.toContain("is owed by epic");
 	});
 
 	it("leaves a child PASS UNKNOWN when the range's own content cannot be read", async () => {
@@ -1455,5 +1483,85 @@ describe("lane prove — the epic tail keeps the PR arms", () => {
 			evidence: {kind: "head-verdicts", pr: 4318, head: HEAD},
 		});
 		expect(seams.calls.some((line) => BRANCHES.test(line))).toBe(false);
+	});
+});
+
+/**
+ * The ship stage's closure read, off the PR the event names (#7457).
+ *
+ * Every board here stubs **both** nomination reads to return nothing, which is what production
+ * looks like for the case ADR 0343 exists to catch: a merged `Part of #N` is a node in neither half
+ * of the union. So an arm that answers at all answers off the named PR, and the `Partial` arm that
+ * could never fire while the nominator was the reader now does.
+ */
+describe("lane prove — the ship stage's closure, read off the PR the event names", () => {
+	const shipLane = () =>
+		fakeFs({
+			files: {
+				[WORKFLOW]: coderTemplateText(),
+				[LOG]:
+					logLine("WIP", "2026-08-16T01:00:00Z") +
+					logLine("DONE", "2026-08-16T02:00:00Z") +
+					logLine("PASS", "2026-08-16T03:00:00Z"),
+			},
+		});
+
+	const blindNominator: ReadonlyArray<Scripted> = [
+		[CLOSERS, closingPulls()],
+		[SEARCH, nominated()],
+	];
+
+	const merged = (body: string): HttpReply =>
+		pull({state: "closed", merged: true, body: `${body}\n\n## Deviations\nNone.\n`});
+
+	const PR_URL = "https://github.com/o/r/pull/4318";
+
+	it("answers `partial` for a merged body carrying `Part of #N` and no closing keyword", async () => {
+		const seams = fakeSeams([...blindNominator, [PULL, merged("Part of #5747")]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({issue: 5747, state: "ship", closure: "partial"});
+		expect(out.partial).toBe(true);
+		expect(out.landed).toEqual([4318]);
+	});
+
+	it("answers `closes` for a merged body carrying a closing keyword", async () => {
+		const seams = fakeSeams([...blindNominator, [PULL, merged("Fixes #5747")]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "closes"});
+		expect(out.partial).toBe(false);
+		expect(out.landed).toEqual([4318]);
+	});
+
+	it("answers `unknown` with no `partial` where the event names no PR", async () => {
+		const seams = fakeSeams(blindNominator);
+
+		const out = await run(shipLane(), seams, "DONE");
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "unknown"});
+		expect(out.partial).toBe(null);
+		expect(out.landed).toEqual([]);
+	});
+
+	/**
+	 * An unread board no longer refuses the terminal. Recording the `DONE` with no `partial` leaves
+	 * the line nominable by `lane reconcile`, where a refusal would strand the shipper over a merge
+	 * that really landed (ADR 0351).
+	 */
+	it("answers `unknown` with no `partial` where the PR read fails", async () => {
+		const seams = fakeSeams([...blindNominator, [PULL, GATEWAY]]);
+
+		const out = await run(shipLane(), seams, "DONE", null, PR_URL);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({closure: "unknown"});
+		expect(out.partial).toBe(null);
+		expect(out.landed).toEqual([]);
 	});
 });

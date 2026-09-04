@@ -1,5 +1,6 @@
+import {Button} from "@kampus/design";
 import {useFateClient} from "react-fate";
-import {Button} from "../ui/Button";
+import {useT} from "../../i18n";
 import {useVoteFlash} from "../useVoteFlash";
 import {VoteTriangle} from "../VoteTriangle";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";
@@ -24,6 +25,7 @@ export function VoteControl({
 	testIdSuffix?: string;
 	own?: boolean;
 }) {
+	const t = useT();
 	const {flashing, endFlash} = useVoteFlash(count);
 	return (
 		<div className="kp-pano-post__vote">
@@ -35,7 +37,9 @@ export function VoteControl({
 				className="kp-pano-post__vote-btn"
 				pressed={pressed}
 				disabled={own}
-				aria-label={own ? "Kendi gönderine oy veremezsin" : pressed ? "Oyunu geri al" : "Yukarı oy"}
+				aria-label={
+					own ? t("pano.vote.ownPost") : pressed ? t("pano.vote.retract") : t("pano.vote.up")
+				}
 				data-testid={testIdSuffix ? `post-vote-${testIdSuffix}` : undefined}
 				onClick={() => onToggle?.()}
 			>
@@ -95,6 +99,7 @@ export function PostVoteWidget({
 }
 
 export function PostSaveButton({postId, isSaved}: {postId: string; isSaved: boolean | null}) {
+	const t = useT();
 	const fate = useFateClient();
 
 	const saved = isSaved === true;
@@ -131,7 +136,7 @@ export function PostSaveButton({postId, isSaved}: {postId: string; isSaved: bool
 			data-testid={`post-save-${postId}`}
 			onClick={onToggle}
 		>
-			{saved ? "kaydedildi" : "kaydet"}
+			{saved ? t("pano.save.saved") : t("pano.save.save")}
 		</Button>
 	);
 }

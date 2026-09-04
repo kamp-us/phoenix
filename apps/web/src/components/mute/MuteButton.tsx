@@ -2,8 +2,10 @@
 // muted state to render here — un-muting lives on `MutedMembersList`. The card also owns
 // the gating (flag on, signed in, not the viewer's own content) and only mounts this
 // button when it can act, which is why there is no check for any of that below.
+
+import {Button} from "@kampus/design";
 import {useState} from "react";
-import {Button} from "../ui/Button";
+import {useT} from "../../i18n";
 import {useMemberMute} from "./useMemberMute";
 
 export interface MuteButtonProps {
@@ -14,6 +16,7 @@ export interface MuteButtonProps {
 
 export function MuteButton({memberId, memberLabel, testId}: MuteButtonProps) {
 	const {mute} = useMemberMute();
+	const t = useT();
 	const [busy, setBusy] = useState(false);
 
 	async function onClick() {
@@ -34,10 +37,10 @@ export function MuteButton({memberId, memberLabel, testId}: MuteButtonProps) {
 			onClick={onClick}
 			disabled={busy}
 			aria-busy={busy || undefined}
-			aria-label={`${memberLabel} adlı üyeyi sustur`}
+			aria-label={t("mute.action.label", {member: memberLabel})}
 			data-testid={testId}
 		>
-			sustur
+			{t("mute.action")}
 		</Button>
 	);
 }

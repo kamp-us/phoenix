@@ -33,7 +33,7 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 
 ## Architecture
 
-phoenix is a pnpm monorepo with effectively one app — the worker in `apps/web`. The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
+phoenix is a pnpm monorepo with one runnable app per directory under `apps/` (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). There are two today: `apps/web`, the Cloudflare Worker, and `apps/tuval`, a local app that carries no `alchemy.run.ts` and never deploys. The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
 
 One worker serves the React SPA (built to `dist/client`, served via the `assets` binding) and the API. It keeps precedence on its own paths — `/api/*`, `/fate`, `/fate/*` — and hands everything else to the SPA. The backend is one Effect program: it declares its bindings, hosts the Durable Object, and returns a `fetch` handler.
 
@@ -77,6 +77,29 @@ apps/web/
 
 **The live plane.** A single Durable Object, `LiveDO`, fans out SSE. One class plays both roles — it holds a tab's stream (`connection:<id>`) and owns a data key's subscriber registry and fan-out (`topic:<key>`), told apart by instance-name prefix. It reaches its sibling instances through its own namespace, resolved once at init, so every RPC method stays requirement-free. State is `state.storage` KV: subscriber rows plus a per-connection counter that invalidates dead instances. Mutations reach the DO through the per-request `LivePublisher` service, whose publish methods are `Effect<void>` — a failed publish cannot fail the committed mutation. Read [.patterns/effect-sse-externally-driven.md](./.patterns/effect-sse-externally-driven.md); ADRs [0037](./.decisions/0037-unified-void-aligned-live-do.md) (the DO) and [0039](./.decisions/0039-livebus-context-service.md) (the publish-capability service, since folded into `LivePublisher`) are the design.
 
+**The second app is local.** `apps/tuval` is a Node app you run on your machine: the program/process kernel and the programs that ship in the box. It has no `alchemy.run.ts`, no bindings and no deploy, and that missing stack is the marker that it never ships to Cloudflare (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)).
+
+```
+apps/tuval/
+├── src/
+│   ├── bin.ts             # entry: the local process the app's `dev` script runs
+│   ├── boot.ts            # boots a configured graph of programs
+│   ├── config.ts          # the graph config the kernel reads
+│   ├── host/              # the program/process kernel: actors, definitions, errors
+│   ├── registry/          # the program registry
+│   ├── commands/          # the spell registry, executor, parser, key bindings, agent bridge
+│   ├── protocol/          # the versioned page-to-kernel wire: messages, codec, patch
+│   ├── process/           # the running-process side of the table
+│   ├── table/             # the process-table port
+│   ├── ports/             # typed inter-program wiring: compile + open
+│   ├── launch/            # launching a program into a process
+│   ├── durability/        # saving and restoring process state
+│   ├── ai-agent/          # the backend-blind AI agent slice: core machine, ports, handlers, history
+│   ├── pi/                # the Pi backend: loopback server, lease client, the `TuvalAiAgent` layer
+│   └── demo/              # the programs that ship in the box
+└── vitest.config.ts       # two projects, `unit` and `integration`; the repo-wide unit gate resolves here
+```
+
 ## Commands
 
 | Command | What it does |
@@ -92,7 +115,35 @@ apps/web/
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
 
+Those run `apps/web`. `apps/tuval` is local-only, so reach it through its filter:
+
+| Command | What it does |
+|---|---|
+| `pnpm --filter @kampus/tuval dev` | `node src/bin.ts`, which boots the kernel locally. |
+| `pnpm --filter @kampus/tuval typecheck` | `tsc -p tsconfig.json`. |
+| `pnpm --filter @kampus/tuval test` | Every vitest project in the app. |
+| `pnpm --filter @kampus/tuval test:unit` | Just the `unit` project. This is the script CI's `pnpm --filter './apps/**' test:unit` gate calls. |
+| `pnpm --filter @kampus/tuval test:integration` | Just the `integration` project. Slow, not remote: it drives a real Pi `AgentSession` over a real loopback socket on Pi's faux provider, so it needs no cloud credentials. CI's `integration tests` job runs it alongside `apps/web`'s remote suite. |
+
 Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — which pins the workspace binary (2.4.15). A bare `biome …` can resolve a stale **global** install (e.g. a homebrew 2.1.1) that doesn't recognize the GritQL node bindings our `biome-plugins/*.grit` rules use, so it prints spurious `Compile Error` lines while loading them. That noise is cosmetic (the run still exits `0`, unaffected via pnpm and in CI) and safe to ignore — but go through pnpm and it won't appear.
+
+## Rendering surfaces
+
+[`design-harness.json`](./design-harness.json) at the repo root is how `fabrika ui render` gets a headless browser onto a phoenix page. Without it every surface refuses on exit `19`, no capture is ever produced, and a rendered change ships judged only from reading CSS ([#7395](https://github.com/kamp-us/phoenix/issues/7395)).
+
+| Key | Value | Why |
+|---|---|---|
+| `command` | copy `apps/web/.env.example` to `.env` when none is there, then `pnpm dev` | Both dev legs. The copy is what makes a fresh worktree bootable — that file holds throwaway dev values only. Output is redirected to stderr, which is the stream a failed readiness probe quotes back. |
+| `url` | `http://localhost:3000` | Vite's port, which also proxies `/api` and `/fate` to the worker. |
+| `readyPath` | `/api/health` | 200 only once **both** legs answer. `/` would go green on Vite alone, and every capture would then show `şu an yüklenemedi` where the data belongs. |
+
+**Reachable today:** the routes a signed-out visitor can actually see — `/`, `/pano`, `/sozluk`, `/mecmua`, `/divan`, `/search`, `/auth` and `/lab/atolye` among them. Point the harness at one of those and the capture is what a visitor sees.
+
+**A session-gated route does not refuse — it captures the signed-out view and exits `0`.** [`apps/web/src/App.tsx`](./apps/web/src/App.tsx) routes entirely client-side, and Vite serves `index.html` at 200 for any path it does not otherwise own, so the navigation always succeeds; [`browser.ts`](./packages/fabrika-cli/src/ui/browser.ts) calls a surface unreachable only on a navigation failure, status `0`, or status `>= 400`. There is no route-level auth wrapper either — each page gates itself, so what lands in the PNG differs per page: `/profile` client-redirects to `/auth`, `/bildirimler` renders its `giriş yapmalısın` prompt, a flag-dark page self-404s. Each is a valid, non-empty capture that `ui evidence` accepts. **The harness cannot tell you it showed you the wrong thing**, so a gated surface is only judgeable with a real session — `storageState` is the schema's slot for that, and minting one is tracked on [#7398](https://github.com/kamp-us/phoenix/issues/7398). Until then, treat a capture of a gated route as UNKNOWN however plausible it looks.
+
+Exit `15` is real but narrower than a UI route: it needs a response that is genuinely `>= 400`, which under this harness means an `/api/*` or `/fate/*` path proxied to a worker that is down. It refuses per surface, so that one path names itself while the rest of the repo still renders, rather than everything falling back to the repo-wide `19`. No SPA path produces it — not even one the router has no route for, which renders `NotFoundPage` at 200.
+
+`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust.
 
 ## Conventions
 
@@ -122,7 +173,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 | [`readme-guard`](./.github/workflows/readme-guard.yml) | Every `packages/*` workspace member (a dir with `package.json`) carries a `README.md`. | Adding a package without a README. |
 | [`migrations-guard`](./.github/workflows/migrations-guard.yml) | The committed D1 migrations tree: the frozen flat `NNNN_*.sql` history plus the `<timestamp>_<name>/migration.sql` directories `drizzle-kit generate` writes — each directory carries its `snapshot.json` and one `.sql`, prefixes are unique and sort after the flat history, every migration has its row in the committed baseline, and a landed migration's SQL never changes — nor its apply id: renaming or deleting a landed file reds (ADR 0309 + its #7055 amendment). | Editing, renaming, or deleting a landed migration, hand-adding a flat one, landing a migration without its baseline row, or a directory that would apply ahead of history. |
 | [`design-token-guard`](./.github/workflows/design-token-guard.yml) | Component CSS consumes the design-token seam — every `var(--…)` resolves, no raw hex outside `tokens.css`, no off-grid px beyond each file's grandfathered ceiling (ADR 0162). | A dead token ref, a raw hex, or an off-grid px in a component stylesheet. |
-| [`a11y-pbt`](./.github/workflows/a11y-pbt.yml) | Property-based a11y invariants over the `apps/web` `ui/` primitives (accessible name, valid ARIA, keyboard focusability). | A primitive that violates an enforced pillar-4 invariant, or a new unclassified primitive. |
+| [`a11y-pbt`](./.github/workflows/a11y-pbt.yml) | Property-based a11y invariants over the `@kampus/design` primitives (accessible name, valid ARIA, keyboard focusability). | A primitive that violates an enforced pillar-4 invariant, or a new unclassified primitive. |
 | [`doc-links`](./.github/workflows/doc-links.yml) | Every git-tracked `.md`'s relative/internal links resolve on disk, repo-wide (via lychee). | A dead internal link — including one orphaned by a rename outside your own diff. |
 | [`pointer-guard`](./.github/workflows/pointer-guard.yml) | Backticked repo-path pointers in `**/CLAUDE.md` resolve on disk. | A moved/renamed file behind a backticked path pointer in a CLAUDE.md. |
 | [`codeowners-cp`](./.github/workflows/codeowners-cp.yml) | Every §CP control-plane path (from the canonical regex) has a covering `.github/CODEOWNERS` row. | Adding a §CP path to the regex without a CODEOWNERS entry. |
@@ -131,7 +182,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 | [`settings-env-guard`](./.github/workflows/settings-env-guard.yml) | No `.claude/settings.json` `env` value carries an unexpanded `${…}` token (applied verbatim, so it never resolves). | A `${VAR}` left literal in a settings env value. |
 | [`skill-gh-lint`](./.github/workflows/skill-gh-lint.yml) | The skill + agent corpus: REST-only `gh` (no GraphQL paths), valid frontmatter YAML, no bare `git push` in a runnable block, and no `./claude-plugins/…` literal in a fence. | A `gh project` / GraphQL call, malformed `---` frontmatter, a bare push, or a repo-only path literal in a SKILL.md / agents/*.md. |
 | [`decisions-index`](./.github/workflows/decisions-index.yml) | The `.decisions/*` ADR files carry the four index fields, no duplicate `id`, and no filename ↔ front-matter number mismatch. | A new ADR that collides on number, mismatches its filename, or drops an index field. |
-| [`design-inventory-guard`](./.github/workflows/design-inventory-guard.yml) | `design-system-inventory.md` is a fresh extraction of the `components/ui` JSDoc, and the extraction path never touches the founder-authored `design-system-manifest.md` (ADR 0194). | Changing a primitive's `@component` JSDoc without regenerating the inventory. |
+| [`design-inventory-guard`](./.github/workflows/design-inventory-guard.yml) | `design-system-inventory.md` is a fresh extraction of the `packages/design/src` JSDoc, and the extraction path never touches the founder-authored `design-system-manifest.md` (ADR 0194). | Changing a primitive's `@component` JSDoc without regenerating the inventory. |
 
 Not every workflow is a PR gate. [`run-evidence`](./.github/workflows/run-evidence.yml) *produces* the SHA-bound run-evidence artifact the `ship` gate consumes (ADR [0054](./.decisions/0054-run-evidence-bundle.md)); [`deploy`](./.github/workflows/deploy.yml) / [`pr-cleanup`](./.github/workflows/pr-cleanup.yml) stand up and tear down per-PR preview stacks; [`changelog`](./.github/workflows/changelog.yml) / [`publish`](./.github/workflows/publish.yml) fire on a release tag; and [`epic-autoclose`](./.github/workflows/epic-autoclose.yml), [`orphan-sweep`](./.github/workflows/orphan-sweep.yml), [`glossary-drift`](./.github/workflows/glossary-drift.yml), [`pitch-guard`](./.github/workflows/pitch-guard.yml) and [`heal-ci-sweep`](./.github/workflows/heal-ci-sweep.yml) run on an issue event or a schedule rather than on your PR. `heal-ci-sweep` is the stuck-PR watcher: every 6 hours it runs `fabrika heal-ci sweep` over every open PR, writes the classification to the run's job summary, and posts one durable note on a PR that is actually stranded (keyed on `<pr>:<class>:<head>`, so a strand is noticed once, not once per cycle). It is detection only — it merges nothing, re-runs nothing and spawns nothing; acting on a flag is a driver's call. It replaces the coverage that retired with `orphan-heal.yml` (#6146). Ground truth for the full set is `ls .github/workflows/`.
 

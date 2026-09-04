@@ -8,6 +8,7 @@ import type {HttpReply} from "../fakes.test-support.ts";
 import {okOut} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {coderTemplateText} from "../lane/fixtures.test-support.ts";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 
 export const LANES_ROOT = ".fabrika/lanes";
 
@@ -34,6 +35,19 @@ export const eventLog = (...events: ReadonlyArray<string>): string =>
 /** queued → build → review → ship → human:cp-approval, the park the §CP recipe clears. */
 export const PARKED_AT_CP = eventLog("WIP", "DONE", "PASS", "BLOCKED");
 
+/**
+ * queued → … → ship, then a dwell that spends the whole wait budget — the #6717 park.
+ *
+ * The first `WIP` out of `ship` is unguarded, so it takes `WAIT_BUDGET` more to spend the budget and
+ * one beyond that to fall through into the stall.
+ */
+export const PARKED_AT_QUEUE_STALL = eventLog(
+	"WIP",
+	"DONE",
+	"PASS",
+	...Array.from({length: WAIT_BUDGET + 2}, () => "WIP"),
+);
+
 /** queued → blocked, the bare park no fixed fix keys on. */
 export const PARKED_BLOCKED = eventLog("BLOCKED");
 
@@ -58,6 +72,9 @@ export const PARKED_ON_WORKTREE = parkedBlockedOn("worktree-holds-branch");
 
 /** The #7217 park: BLOCKED because the campaign homing the lane's milestone read `paused`. */
 export const PARKED_ON_CAMPAIGN = parkedBlockedOn("campaign-paused");
+
+/** The #6770 park: BLOCKED because the provider killed the shell before it reported a terminal. */
+export const PARKED_ON_SPAWN = parkedBlockedOn("spawn-dead");
 
 /** The milestone {@link LANE}'s issue is homed on, and the one a campaign row pins. */
 export const LANE_MILESTONE = 49;
@@ -103,8 +120,15 @@ export const worktreeList = (
 			.join("\n"),
 	);
 
-/** The closing-PR edge `openPullsClosing` reads — one open PR declaring it closes the issue. */
-export const closingPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
+/**
+ * The closing-PR edge `pullsClosing` reads, each node's GraphQL state named.
+ *
+ * The state is the fixture's to say because it is what the read filters on, and `MERGED` is the one
+ * the queue-moved recipe's own success case turns on — a landed PR is closed (#6717).
+ */
+export const closingPullsIn = (
+	...rows: ReadonlyArray<{readonly number: number; readonly state: string}>
+): ExecResult =>
 	okOut(
 		JSON.stringify({
 			data: {
@@ -112,10 +136,10 @@ export const closingPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
 					issue: {
 						closedByPullRequestsReferences: {
 							pageInfo: {hasNextPage: false, endCursor: null},
-							nodes: numbers.map((number) => ({
-								number,
-								url: `https://example.test/pull/${number}`,
-								state: "OPEN",
+							nodes: rows.map((row) => ({
+								number: row.number,
+								url: `https://example.test/pull/${row.number}`,
+								state: row.state,
 							})),
 						},
 					},
@@ -123,6 +147,10 @@ export const closingPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
 			},
 		}),
 	);
+
+/** The same edge with every node open — what every caller but the queue-stall row nominates from. */
+export const closingPulls = (...numbers: ReadonlyArray<number>): ExecResult =>
+	closingPullsIn(...numbers.map((number) => ({number, state: "OPEN"})));
 
 /** The search index's nomination envelope — candidate numbers, never a proof (`searchOpenPulls`). */
 export const nominatedPulls = (...numbers: ReadonlyArray<number>): ExecResult =>

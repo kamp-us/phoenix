@@ -21,7 +21,7 @@
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {mergeBase, rangeCommits, resolveCommit} from "../io/git.ts";
+import {mergeBase, noMergeBaseReason, rangeCommits, resolveCommit} from "../io/git.ts";
 import {epicBranch} from "../wire/lane-brief.ts";
 import {issueRefsIn} from "./commit-message.ts";
 import {defaultBranch} from "./github.ts";
@@ -82,7 +82,7 @@ export const readAssembly = (
 			return {
 				_tag: "Unreadable" as const,
 				branch,
-				reason: `no merge base with ${baseRef}: ${base.reason}`,
+				reason: yield* noMergeBaseReason(baseRef, base.reason),
 			};
 		const walked = yield* rangeCommits(base.value, tip.value);
 		if (walked._tag === "Failure")

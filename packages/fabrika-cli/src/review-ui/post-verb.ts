@@ -15,6 +15,12 @@
  *
  * There is no `--namespace`. This group emits `review-ui` and nothing else, so a
  * misdirected-namespace write is unrepresentable rather than refused.
+ *
+ * Step 7 **appends**: a matched comment keeps its prior verdict verbatim below
+ * `../review/supersede.ts`'s fence and the fresh verdict takes the first line, because GitHub keeps
+ * no comment-body history and a PATCH over a verdict is that verdict gone — on PR #7081 a FAIL
+ * became a PASS with nothing left showing a gate had ever blocked (#7247). A post that would retire
+ * a standing verdict of the opposite polarity at the same head is `18` until `--supersede` says so.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -27,6 +33,7 @@ import type {StdinRead} from "../io/stdin.ts";
 import {normalizeForReadback} from "../report/compose.ts";
 import {emitAdvisory, readAdvisory, reviewedHeadLine} from "../review/advisory.ts";
 import {type AuthoredSurface, leakRefusal, readAuthored} from "../review/authored.ts";
+import {compose as supersedeWith} from "../review/supersede.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "../review/target.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -43,6 +50,7 @@ import {
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	STALE_TREE,
+	SUPERSEDES_VERDICT,
 	UPLOAD_FAILED,
 	WRITE_UNKNOWN,
 } from "./codes.ts";
@@ -115,6 +123,10 @@ export interface PostOptions {
 	 */
 	readonly harnessPath: string;
 	readonly upload: UploadLeg;
+	/** The explicit acknowledgement that this verdict retires a standing one of the other polarity. */
+	readonly supersede: boolean;
+	/** The wall clock the superseded heading is dated from — a port so a test can pin the day. */
+	readonly now: Effect.Effect<number>;
 }
 
 /** Either side may be abbreviated, so the match is a prefix in whichever direction is shorter. */
@@ -137,6 +149,21 @@ const carriesNamespace = (body: string, carrier: Carrier): boolean => {
 	if (carrier === "advisory") return readAdvisory(body)?.namespace === NAMESPACE;
 	const parsed = readMarker(body);
 	return parsed._tag === "Found" && parsed.value.namespace === NAMESPACE;
+};
+
+/**
+ * The polarity a standing comment's marker carries at `sha`, or `null` when there is none to
+ * compare — an advisory carrier, a marker at another head, or a body carrying no readable marker.
+ *
+ * Head-scoped because a verdict at a moved head is a different fact, not a reversal. Only a flip
+ * over the same tree rewrites what the merge gate reads, which is the loss this refusal exists for.
+ */
+const standingPolarityAt = (body: string, carrier: Carrier, sha: string): Polarity | null => {
+	if (carrier === "advisory") return null;
+	const parsed = readMarker(body);
+	return parsed._tag === "Found" && prefixMatch(parsed.value.sha, sha)
+		? parsed.value.polarity
+		: null;
 };
 
 /** Why the read-back does not show what was posted, or `null` when it does. */
@@ -174,17 +201,19 @@ const mismatchOf = (
 	return bytes;
 };
 
-/** The evidence gallery: per surface, the **verified** hosted URL — never a local path. */
+/**
+ * The evidence gallery: per shot, the **verified** hosted URL — never a local path. A set is a
+ * surface × viewport cross-product (#7706), so the heading names both: two shots of one surface
+ * under one heading would read as a duplicate rather than as the two widths they are.
+ */
 const gallery = (hosted: ReadonlyArray<readonly [CaptureEntry, string]>): string =>
 	[
 		"## Evidence",
 		"",
-		...hosted.flatMap(([entry, url]) => [
-			`### ${entry.surface}`,
-			"",
-			`![${entry.surface}](${url})`,
-			"",
-		]),
+		...hosted.flatMap(([entry, url]) => {
+			const shot = `${entry.surface} @ ${entry.viewport}`;
+			return [`### ${shot}`, "", `![${shot}](${url})`, ""];
+		}),
 	]
 		.join("\n")
 		.replace(/\n+$/, "");
@@ -403,7 +432,7 @@ export const runPost = (
 		const leaked = leakRefusal(SURFACE, composed);
 		if (leaked !== null) return leaked;
 
-		// Step 7 — one namespace under one carrier, one comment.
+		// Step 7 — one namespace under one carrier, one comment: append into it, never over it.
 		const me = yield* viewerLogin;
 		if (me._tag === "Failure") return unreadable("the authenticated user", pr, me.reason);
 		const comments = yield* listComments(repo, pr);
@@ -424,14 +453,30 @@ export const runPost = (
 				return comment.id > newest.id ? comment : newest;
 			}, undefined);
 
+		// The prior verdict is never replaced, only pushed below the fence — GitHub keeps no
+		// comment-body history, so a PATCH over it is the record gone. A polarity flip at the same head
+		// is the one case that also needs saying out loud: it is the flip the merge gate reads (#7247).
+		const standing = mine === undefined ? null : standingPolarityAt(mine.body, carrier, inspected);
+		if (standing !== null && standing !== polarity && !options.supersede) {
+			return refuse(
+				SUPERSEDES_VERDICT,
+				`${VERB}: a standing ${standing} for ${NAMESPACE} at ${inspected} would be superseded by this ${polarity} — pass --supersede to retire it on the record. Nothing was posted.`,
+				diagnostics,
+			);
+		}
+		const envelope =
+			mine === undefined
+				? composed
+				: supersedeWith(mine.body, composed, new Date(yield* options.now));
+
 		let landed: {readonly id: number; readonly url: string} | null = null;
 		let failure: string | null = null;
 		if (mine === undefined) {
-			const created = yield* createComment(repo, pr, composed);
+			const created = yield* createComment(repo, pr, envelope);
 			if (created._tag === "Failure") failure = created.reason;
 			else landed = {id: created.value.id, url: created.value.url};
 		} else {
-			const edited = yield* patchComment(repo, mine.id, composed);
+			const edited = yield* patchComment(repo, mine.id, envelope);
 			if (edited._tag === "Failure") failure = edited.reason;
 			else landed = {id: mine.id, url: edited.value};
 		}
@@ -448,7 +493,7 @@ export const runPost = (
 		const mismatch =
 			back._tag === "Failure"
 				? back.reason
-				: mismatchOf(back.value, {polarity, sha: inspected, clause}, carrier, composed);
+				: mismatchOf(back.value, {polarity, sha: inspected, clause}, carrier, envelope);
 		if (mismatch !== null) {
 			return refuse(
 				READBACK_MISMATCH,
@@ -463,7 +508,7 @@ export const runPost = (
 				namespace: NAMESPACE,
 				polarity,
 				sha: inspected,
-				upsert: mine === undefined ? "created" : "edited",
+				upsert: mine === undefined ? "created" : "superseded",
 				carrier,
 				surfaces: manifest.captures.length,
 				commentUrl: landed.url,

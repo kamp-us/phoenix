@@ -3,6 +3,10 @@ import {fileURLToPath} from "node:url";
 import {fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {MemoryRouter} from "react-router";
 import {describe, expect, it, vi} from "vitest";
+import {promotionBarFor, VOUCH_PROMOTION_KARMA_BAR} from "../../../worker/features/kunye/standing";
+import {trCatalog} from "../../i18n";
+import {VOUCH_NEEDED_KEYS} from "../profile/CaylakStatusBlock";
+import {caylakMeter} from "./caylakMeter";
 import {Topbar} from "./Topbar";
 
 const NAV = [
@@ -446,5 +450,126 @@ describe("Topbar reserved signed-in account slot (#2933)", () => {
 		const utility = screen.getByTestId("topbar-zone-utility");
 		expect(within(utility).getByTestId("topbar-theme-picker")).toBeTruthy();
 		expect(screen.getByTestId("topbar-user-placeholder")).toBeTruthy();
+	});
+});
+
+// The ambient çaylak meter (#7045, epic #4304). The flag lives in `App.tsx`; this component's
+// whole containment is the `caylakMeter` prop's presence, so "flag off" and "yazar" are the
+// one absent-prop path asserted below.
+describe("Topbar ambient çaylak meter (#7045)", () => {
+	function renderMeter(props: Partial<Parameters<typeof Topbar>[0]>) {
+		return render(
+			<MemoryRouter>
+				<Topbar
+					nav={NAV}
+					divanTo="/divan"
+					karma={42}
+					reserveSignedInSlots
+					user={{name: "Elif", username: "elif"}}
+					{...props}
+				/>
+			</MemoryRouter>,
+		);
+	}
+
+	// Fixtures off the wire's own producer, never a literal — an unvouched standing carries the
+	// unassisted bar the backend actually sends, so the rendered target is asserted against what
+	// a çaylak receives rather than a shape only a test can produce.
+	const unvouched = (karma: number) => ({karma, bar: promotionBarFor(false), vouchExists: false});
+	const vouched = (karma: number) => ({karma, bar: promotionBarFor(true), vouchExists: true});
+
+	// Criteria 1 and 5 share this assertion: with no meter prop the chip is today's bare karma
+	// readout, bar-free — which is exactly the flag-off path and every yazar.
+	it("renders today's bare karma chip with no meter (flag off, and every yazar)", () => {
+		const {container} = renderMeter({});
+		const karma = screen.getByTestId("topbar-karma");
+		expect(karma.textContent).toContain("42");
+		expect(karma.textContent).not.toContain("kefil");
+		expect(screen.queryByTestId("topbar-caylak-meter")).toBeNull();
+		expect(container.querySelectorAll("progress")).toHaveLength(0);
+	});
+
+	it("names the karma delta and the unmet kefil condition for an unvouched çaylak", () => {
+		renderMeter({caylakMeter: caylakMeter(unvouched(9))});
+		const meter = screen.getByTestId("topbar-caylak-meter");
+		expect(screen.getByTestId("topbar-zone-status-signal").contains(meter)).toBe(true);
+		expect(meter.textContent).toContain("9");
+		expect(meter.textContent).toContain(String(VOUCH_PROMOTION_KARMA_BAR));
+		expect(screen.getByTestId("topbar-caylak-kefil").textContent).toContain("kefil: yok");
+	});
+
+	// The unassisted 100 reaches assistive tech too — `karmaAriaLabel` builds the target into the
+	// visually-hidden span — so the reduced bar is asserted on both the visible readout and the
+	// announced one.
+	it("renders and announces the reduced bar while unvouched, never the wire's 100", () => {
+		renderMeter({caylakMeter: caylakMeter(unvouched(9))});
+		const karma = screen.getByTestId("topbar-karma");
+		expect(karma.textContent).toContain("/ 15");
+		expect(karma.textContent).not.toContain("100");
+		expect(karma.querySelector(".kp-karma__sr")?.textContent).toBe("karma: 9 / 15");
+	});
+
+	// Criterion 3, inherited from `CaylakStatusBlock`'s #1323 rule rather than re-derived.
+	it("draws NO promotion bar while unvouched, and carries the settled vouch-needed copy", () => {
+		const {container} = renderMeter({
+			caylakMeter: caylakMeter(unvouched(9)),
+		});
+		expect(container.querySelectorAll("progress")).toHaveLength(0);
+		expect(screen.getByTestId("topbar-caylak-vouch-needed").textContent).toContain(
+			trCatalog[VOUCH_NEEDED_KEYS.message],
+		);
+	});
+
+	// A `title` is the delivery this rejects: it never opens on touch and takes no keyboard
+	// focus, so the mobile çaylak criterion 3 is written for would be told nothing at all.
+	it("delivers the vouch-needed copy as rendered text, reachable with no hover", () => {
+		renderMeter({caylakMeter: caylakMeter(unvouched(9))});
+		const meter = screen.getByTestId("topbar-caylak-meter");
+		expect(meter.textContent).toContain(trCatalog[VOUCH_NEEDED_KEYS.message]);
+		for (const el of [meter, ...meter.querySelectorAll("*")]) {
+			expect(el.getAttribute("title")).toBeNull();
+		}
+	});
+
+	it("draws exactly one bar once a kefil exists, against the reduced target", () => {
+		const {container} = renderMeter({
+			caylakMeter: caylakMeter(vouched(9)),
+		});
+		const bars = container.querySelectorAll("progress");
+		expect(bars).toHaveLength(1);
+		expect(bars[0]?.getAttribute("max")).toBe("15");
+		expect(bars[0]?.getAttribute("value")).toBe("9");
+		expect(screen.getByTestId("topbar-caylak-kefil").textContent).toContain("kefil: var");
+		expect(screen.queryByTestId("topbar-caylak-vouch-needed")).toBeNull();
+	});
+
+	// Criterion 2's "no badges, streaks or second standing readout anywhere in the chrome".
+	it("adds no second standing readout to the chrome", () => {
+		renderMeter({caylakMeter: caylakMeter(vouched(9))});
+		const zone = screen.getByTestId("topbar-zone-status-signal");
+		expect(zone.querySelectorAll('[data-testid="topbar-karma"]')).toHaveLength(1);
+		expect(zone.querySelectorAll('[data-testid="topbar-caylak-meter"]')).toHaveLength(1);
+	});
+
+	it("the meter stays a read-only status glyph — no button/link affordance", () => {
+		renderMeter({caylakMeter: caylakMeter(vouched(9))});
+		const meter = screen.getByTestId("topbar-caylak-meter");
+		expect(meter.tagName).toBe("SPAN");
+		expect(meter.closest("button")).toBeNull();
+		expect(meter.closest("a")).toBeNull();
+	});
+
+	// The meter's bar is the topbar's first `<progress>`, and the karma atom fills it with
+	// `--accent` (Karma.css) — unlawful here under the accent-scarcity law above. The override
+	// is a paint fact jsdom cannot compute, so it is locked at the stylesheet source.
+	it("strips the karma atom's accent bar fill to a neutral token inside the topbar", () => {
+		const overrides = cssRules(TOPBAR_CSS).filter((r) =>
+			/kp-topbar__caylak-meter[\s\S]*kp-karma__bar/.test(r.selector),
+		);
+		expect(overrides.length).toBeGreaterThanOrEqual(2);
+		for (const r of overrides) {
+			expect(r.body).toMatch(/background:\s*var\(--text-muted\)/);
+			expect(ACCENT_FILL.test(r.body)).toBe(false);
+		}
 	});
 });

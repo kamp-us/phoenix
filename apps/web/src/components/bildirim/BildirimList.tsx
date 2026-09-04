@@ -1,12 +1,14 @@
 /** `BildirimList` — the notification center's list (#1694), with per-row and mark-all read actions. */
+
+import {Button} from "@kampus/design";
 import {useEffect, useRef, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Notification, NotificationMarkReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {LoadMoreButton} from "../../fate/wire";
-import {Button} from "../ui/Button";
-import {bildirimCopy, bildirimTarget, rowUnread, targetLinkLabel} from "./bildirim";
+import {plural, useLocale} from "../../i18n";
+import {bildirimCopy, bildirimTarget, rowUnread, targetLinkLabelKey} from "./bildirim";
 import {useBildirimUnread} from "./useBildirimUnread";
 
 const PAGE_SIZE = 20;
@@ -40,6 +42,7 @@ export function BildirimList() {
 	const result = useRequest(bildirimRequest);
 	const [items, loadNext] = useListView(BildirimConnectionView, result["bildirim.list"]);
 	const fate = useFateClient();
+	const {t, locale} = useLocale();
 	const userId = useSession().data?.user?.id ?? null;
 
 	// `bildirim.list` has no per-node live topic, so the per-recipient unread count is the
@@ -91,7 +94,7 @@ export function BildirimList() {
 	if (items.length === 0) {
 		return (
 			<p className="kp-bildirim__empty" data-testid="bildirim-empty">
-				henüz bildirimin yok.
+				{t("bildirim.empty")}
 			</p>
 		);
 	}
@@ -99,7 +102,17 @@ export function BildirimList() {
 	return (
 		<>
 			<div className="kp-bildirim__masthead">
-				<span className="kp-bildirim__meta">{items.length} bildirim</span>
+				<span className="kp-bildirim__meta">
+					{t(
+						plural(locale, items.length, {
+							one: "bildirim.count.one",
+							other: "bildirim.count.other",
+						}),
+						{
+							count: items.length,
+						},
+					)}
+				</span>
 				<Button
 					type="button"
 					variant="secondary"
@@ -110,7 +123,7 @@ export function BildirimList() {
 					loading={markAllBusy}
 					data-testid="bildirim-mark-all"
 				>
-					{allMarked ? "tümü okundu" : "tümünü okundu say"}
+					{t(allMarked ? "bildirim.markAll.done" : "bildirim.markAll.action")}
 				</Button>
 			</div>
 			<ul className="kp-bildirim__list" data-testid="bildirim-list">
@@ -144,6 +157,7 @@ function BildirimRow({
 	allMarkedThisSession: boolean;
 	onMarkRead: (id: string) => void;
 }) {
+	const {t, locale} = useLocale();
 	const data = useView(BildirimRowView, node);
 	const unread = rowUnread(data.readAt, markedThisSession, allMarkedThisSession);
 	const target = bildirimTarget(data.targetUrl);
@@ -156,7 +170,9 @@ function BildirimRow({
 		>
 			{/* Decorative — the unread state is announced by the row's "okundu" button. */}
 			{unread ? <span className="kp-bildirim__dot" aria-hidden="true" /> : null}
-			<span className="kp-bildirim__kind">{bildirimCopy(data.kind, data.count)}</span>
+			<span className="kp-bildirim__kind">
+				{bildirimCopy(data.kind, {t, locale, count: data.count})}
+			</span>
 			<time className="kp-bildirim__meta" dateTime={data.createdAt}>
 				{new Date(data.createdAt).toLocaleDateString("tr-TR")}
 			</time>
@@ -169,11 +185,11 @@ function BildirimRow({
 					}}
 					data-testid={`bildirim-target-${data.id}`}
 				>
-					{targetLinkLabel(data.targetKind)}
+					{t(targetLinkLabelKey(data.targetKind))}
 				</Link>
 			) : (
 				<span className="kp-bildirim__tombstone" data-testid={`bildirim-tombstone-${data.id}`}>
-					silinmiş içerik
+					{t("bildirim.tombstone")}
 				</span>
 			)}
 			{unread ? (
@@ -185,7 +201,7 @@ function BildirimRow({
 					onClick={() => onMarkRead(data.id)}
 					data-testid={`bildirim-mark-${data.id}`}
 				>
-					okundu
+					{t("bildirim.markRead")}
 				</Button>
 			) : null}
 		</li>

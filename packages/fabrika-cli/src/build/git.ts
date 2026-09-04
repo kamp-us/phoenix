@@ -212,6 +212,27 @@ export const worktreeDirtyPaths = (path: string): Shell<Attempt<number>> =>
 	});
 
 /**
+ * How many commits `branch` carries that `base` does not — `0` is a branch that added nothing.
+ *
+ * It asks *this* tree, not the one holding the branch: refs are shared across every worktree of a
+ * clone, so the branch tip and the base are the same objects from anywhere in it, and a reader that
+ * needed the other directory would answer UNKNOWN exactly when that directory is the problem.
+ *
+ * A stale local `base` can only inflate the count, which errs toward "this branch carries work" —
+ * the direction a caller deciding whether a tree is disposable wants to be wrong in. Nothing here
+ * fetches: a cleanup verb that reached the network would fail on the offline path it exists for.
+ */
+export const commitsPastBase = (branch: string, base: string): Shell<Attempt<number>> =>
+	Effect.gen(function* () {
+		const r = yield* execCapture("git", ["rev-list", "--count", `${base}..${branch}`]);
+		if (!r.ok) return fail(r.reason);
+		const count = Number.parseInt(r.stdout.trim(), 10);
+		return Number.isInteger(count) && count >= 0
+			? ok(count)
+			: fail(`git counted no commits between ${base} and ${branch}: "${r.stdout.trim()}"`);
+	});
+
+/**
  * Commit everything another worktree holds onto the branch it is standing on — ADR 0321's salvage.
  *
  * The uncommitted work in a dead spawn's tree is the only copy of what it was doing, so it is
@@ -290,6 +311,20 @@ export const upstreamOf = (branch: string): Shell<{remote: string; ref: string} 
 		if (!r.ok) return null;
 		const split = splitRemoteRef(r.stdout.trim(), yield* remotes);
 		return split === null ? null : {remote: split.remote, ref: split.ref};
+	});
+
+/**
+ * The remote branch a lane publishes to: its tracked upstream, else `origin/<branch>`.
+ *
+ * Resume mode's local name is `build/pr-<pr>-<nonce>`, which by construction is never the PR's head
+ * ref, so any check that reads the local name back calls every repair round a foreign lane —
+ * `build push`'s false `17` (#5222) and `ui evidence`'s false `LANE_NOT_MINE` (#7402) are the same
+ * bug found twice. The fallback keeps a fresh lane, whose branch carries no upstream until its first
+ * push, answering its own name.
+ */
+export const publishTarget = (branch: string): Shell<{remote: string; ref: string}> =>
+	Effect.gen(function* () {
+		return (yield* upstreamOf(branch)) ?? {remote: "origin", ref: branch};
 	});
 
 /** The SHA a remote's ref points at, read from the remote itself — the push's independent witness. */

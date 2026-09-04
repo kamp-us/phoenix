@@ -1,7 +1,8 @@
+import {Button} from "@kampus/design";
 import {useNavigate} from "react-router";
 import {useSession} from "../../auth/client";
 import {readBootUser} from "../../flags/boot";
-import {Button} from "../ui/Button";
+import {useT} from "../../i18n";
 
 /**
  * pano's primary action, signed-in only. The gate reads the edge-resolved
@@ -10,12 +11,13 @@ import {Button} from "../ui/Button";
  * is absent.
  */
 export function PanoSubnavCta() {
+	const t = useT();
 	const session = useSession();
 	const navigate = useNavigate();
 	if (readBootUser() == null && !session.data) return null;
 	return (
 		<Button variant="primary" onClick={() => navigate("/pano/yeni")}>
-			yeni gönderi
+			{t("pano.cta.newPost")}
 		</Button>
 	);
 }

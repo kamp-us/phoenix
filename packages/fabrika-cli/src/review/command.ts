@@ -78,7 +78,7 @@ const scope = leafCommand(
 ).pipe(
 	Command.withShortDescription("A PR's artifact classes, head, issue, flags and governance need."),
 	Command.withDescription(
-		"Partition a PR's changed files into the code / doc / skill artifact classes and report its head SHA, linked issue, self / harness flags and whether the diff requires the governance namespace. The file list is read out of the object database at the bound commit, so the printed head and the partitioned files are the same tree. First stdout line is `scoped\\t<head-sha>\\t<fixes:n|part-of:n|->` — the same issue-reference token `ship scope` prints, so a `Part of #N` partial split reads as linked here too. Then one `class\\t<name>\\t<files>` line per present class, the two flag lines, and `governance\\t<required|not-required>` — the same derivation `governance scope` prints, over this repo's `governedRoots` rather than a hardcoded list: five roots by default, `.decisions/` and `.fabrika.jsonc` as well as the three `harness` roots, so the governance obligation is never inferred from `harness` (#5607); the bound commit and the scanned count are on stderr. Exits 7 (PR absent, closed, or zero changed files — ADR 0092, #4060), 10 (--sha is not a head SHA), 11 (the PR could not be read, or the commit could not be bound — the scope is UNKNOWN), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (the commit carries fewer files than the PR declares). Example: fabrika review scope 4321 --sha 03135b91",
+		"Partition a PR's changed files into the code / doc / skill artifact classes and report its head SHA, linked issue, self / harness flags and whether the diff requires the governance namespace. The file list is read out of the object database at the bound commit, so the printed head and the partitioned files are the same tree. First stdout line is `scoped\\t<head-sha>\\t<fixes:n|part-of:n|->` — the same issue-reference token `ship scope` prints, so a `Part of #N` partial split reads as linked here too. Then one `class\\t<name>\\t<files>` line per present class, the two flag lines, and `governance\\t<required|not-required>` — the same derivation `governance scope` prints, over this repo's `governedRoots` rather than a hardcoded list: five roots by default, `.decisions/` and `.fabrika.jsonc` as well as the three `harness` roots; the bound commit and the scanned count are on stderr. Exits 7 (PR absent, closed, or zero changed files — ADR 0092), 10 (--sha is not a head SHA), 11 (the PR could not be read, or the commit could not be bound — the scope is UNKNOWN), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (the commit carries fewer files than the PR declares). Example: fabrika review scope 4321 --sha 03135b91",
 	),
 );
 
@@ -98,7 +98,7 @@ const diff = leafCommand(
 ).pipe(
 	Command.withShortDescription("Serve a PR's unified diff at the bound commit."),
 	Command.withDescription(
-		"Serve a PR's unified diff bytes on stdout, read out of the object database at the bound commit and refusing a truncated one rather than passing it through as the whole. Nothing is checked out. No --json: the diff is the object. Exits 7 (PR absent, closed, or zero changed files), 10 (--sha is not a head SHA), 11 (the diff could not be read, or the commit could not be bound — UNKNOWN), 12 (--sha is not the PR's head — re-review, never re-bind), 13 (the diff carries fewer files than the PR declares — #3925's class). Example: fabrika review diff 4321 --sha 03135b91",
+		"Serve a PR's unified diff bytes on stdout, read out of the object database at the bound commit and refusing a truncated one rather than passing it through as the whole. Nothing is checked out. No --json: the diff is the object. Exits 7 (PR absent, closed, or zero changed files), 10 (--sha is not a head SHA), 11 (the diff could not be read, or the commit could not be bound — UNKNOWN), 12 (--sha is not the PR's head — re-review, never re-bind), 13 (the diff carries fewer files than the PR declares). Example: fabrika review diff 4321 --sha 03135b91",
 	),
 );
 
@@ -167,7 +167,7 @@ const ci = leafCommand(
 		"Roll up a head's check runs, fail-closed; --wait waits out a pending.",
 	),
 	Command.withDescription(
-		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally under ADR 0308, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates ran: with at least one run from a workflow this repo authors, the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop so no caller ever sleeps (`docs/skill-conventions.md` §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`: every refusal and the `no-producer` answer are states no waiting changes, so they return on the first read rather than burning the budget. `budget-exhausted` still prints `pending` — the wait ran out, CI did not conclude, and it is never a verdict; `head-moved` says the PR left the head this answer binds. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows — ADR 0092), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared — #3999), 16 (the enumeration is complete, but no workflow this repo authors produced a run at the head — no gate inspected these bytes, so the answer is neither green nor pending; #6522). Example: fabrika review ci 4321 --sha 03135b91',
+		'Enumerate the live check runs at a head and roll them up green / red / pending, fail-closed on the ambiguous rows — a cancelled or unrecognised conclusion is red, never green. First stdout line is `ci\\t<sha>\\t<rollup>`, then `run\\t<count>` and one `check\\t<status>\\t<count>` line per status present — a status tally under ADR 0308, with the failing and still-running runs named on stderr. An empty enumeration asks whether the repo produces CI at all: with zero workflows it refuses, unless `.fabrika.jsonc` declares `ci.noProducer: "degrade"`, which rolls up `no-producer` — never green. A rollup that is not red then asks which gates ran: with at least one run from a workflow this repo authors, the covered-of-declared count is on stderr (and `gates` under `--json`); with none it refuses on 16; a repo that authors no workflow of its own has no gate to have missed and says so on stderr at exit 0. `--wait` turns a `pending` read into a bounded in-verb wait — the verb owns the loop, never the caller (claude-plugins/fabrika/docs/skill-conventions.md §14) — and prepends `settle\\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>` to the answer (`settle` under `--json`, null without `--wait`). It polls ONLY a `pending`; every refusal and the `no-producer` answer return on the first read. `budget-exhausted` still prints `pending` — the wait ran out and CI did not conclude; `head-moved` says the PR left the head this answer binds; `governance-owed` says the only unfinished check is `governance floor at head` with its `governance-floor` run already completed, so the verdict the caller itself owes is what is missing — it returns at once, while a floor whose run is still in flight is waited on unchanged; `governance-stale` is the same floor on a `red` rollup, where it is the only FAILING check and its published verdict is `stale` — the caller re-posts and re-reads, and a floor that is `unresolved` or a real `fail`, or any other failing check beside it, stays a plain `red`. Exits 7 (PR or --sha proven absent, zero check runs declared, or zero workflows — ADR 0092), 11 (the enumeration, the workflow inventory, the workflow runs at the head, or `.fabrika.jsonc` could not be read — CI state is UNKNOWN, never green), 13 (received fewer runs than declared), 16 (the enumeration is complete, but no workflow this repo authors produced a run at the head — neither green nor pending). Example: fabrika review ci 4321 --sha 03135b91',
 	),
 );
 
@@ -180,7 +180,7 @@ const verdicts = leafCommand(
 ).pipe(
 	Command.withShortDescription("Every verdict marker on a PR, bound to the live head."),
 	Command.withDescription(
-		"Sweep every verdict marker on a PR and bind each to the live head as one of three outcomes — current / stale / unbindable, never folded (ADR 0058). First stdout line is `verdicts\\t<live-head>\\t<count>`; a count of 0 is a proven answer. Then one `<namespace>\\t<polarity>\\t<sha>\\t<binding>\\t<comment-id>` line per marker, newest first; a marker that fails the format prints as a `malformed` row rather than being dropped. An unresolvable head prints unbindable on every row. Exits 7 (PR proven absent), 11 (the comment list could not be read — never zero), 13 (the sweep is provably short). Example: fabrika review verdicts 4321",
+		"Sweep every verdict marker on a PR and bind each to the live head as one of three outcomes — current / stale / unbindable, never folded (ADR 0058). First stdout line is `verdicts\\t<live-head>\\t<count>`; a count of 0 is a proven answer. Then one `<namespace>\\t<polarity>\\t<sha>\\t<binding>\\t<comment-id>\\t<standing|superseded>` line per marker, newest first; a marker that fails the format prints as a `malformed` row rather than being dropped, and a verdict retired below a comment's supersede fence prints its own `superseded` row rather than being hidden by the one that replaced it (#7247). An unresolvable head prints unbindable on every row. Exits 7 (PR proven absent), 11 (the comment list could not be read — never zero), 13 (the sweep is provably short). Example: fabrika review verdicts 4321",
 	),
 );
 
@@ -201,7 +201,7 @@ const deviations = leafCommand(
 ).pipe(
 	Command.withShortDescription("The PR body's Deviations state, entries and token scan."),
 	Command.withDescription(
-		"Report the PR body's `## Deviations` state — found | none-declared | absent | malformed, three distinct facts — with its entries and the Tier-M token scan over the diff at the bound commit. First stdout line is `deviations\\t<state>`, then one `entry\\t<class-label-or-->\\t<Said>` line per entry and one `tier-m\\t<kind>\\t<file>:<line>\\t<token>` line per hit. Exits 7 (PR proven absent), 10 (--sha is not a head SHA), 11 (the body or diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN, never `none`), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (a partial diff must not print a partial scan beside a disclosure claim). Example: fabrika review deviations 4321 --sha 03135b91",
+		"Report the PR body's `## Deviations` state — found | none-declared | absent | malformed, three distinct facts — with its entries and the Tier-M token scan over the diff at the bound commit. First stdout line is `deviations\\t<state>`, then one `entry\\t<class-label-or-->\\t<Said>` line per entry and one `tier-m\\t<kind>\\t<file>:<line>\\t<token>` line per hit. Exits 7 (PR proven absent), 10 (--sha is not a head SHA), 11 (the body or diff could not be read, or the commit could not be bound — the disclosure state is UNKNOWN, never `none`), 12 (--sha is not the PR's head — re-scope, never re-bind), 13 (the diff is provably short — no partial scan is printed beside a disclosure claim). Example: fabrika review deviations 4321 --sha 03135b91",
 	),
 );
 
@@ -251,10 +251,27 @@ const post = leafCommand(
 			Flag.optional,
 			Flag.withDescription("the range's tip revision — the other half of --base"),
 		),
+		supersede: Flag.boolean("supersede").pipe(
+			Flag.withDescription(
+				"acknowledge that this verdict retires a standing one of the OPPOSITE polarity at the same head, or ranged, over the same range; without it that post is refused at 17",
+			),
+		),
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({pr, namespace, polarity, sha, clause, carrier, base, tip, repo, json}) {
+	Effect.fn(function* ({
+		pr,
+		namespace,
+		polarity,
+		sha,
+		clause,
+		carrier,
+		base,
+		tip,
+		supersede,
+		repo,
+		json,
+	}) {
 		yield* emit(
 			yield* runPost({
 				pr,
@@ -265,6 +282,7 @@ const post = leafCommand(
 				carrier,
 				base: Option.getOrNull(base),
 				tip: Option.getOrNull(tip),
+				supersede,
 				repo: Option.getOrNull(repo),
 				json,
 				env: process.env,
@@ -276,7 +294,7 @@ const post = leafCommand(
 ).pipe(
 	Command.withShortDescription("Post the verdict on stdin as this namespace's one comment."),
 	Command.withDescription(
-		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, upsert, and read it back from live state. With --base and --tip the verdict is RANGE-scoped instead (#5935): the positional names the child issue, the class set is recomputed over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha and --carrier advisory are refused in this mode. Prints `posted\\t<namespace>\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|edited>\\t<comment-url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace the diff or range did not derive, bad polarity, advisory with FAIL or with a range, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind). Examples: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md; fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md',
+		'Post the verdict on STDIN as ONE comment for this namespace — re-resolve the live head, recompute the class set at the bound commit, compose the first line through the `verdict-marker` wire format, leak-scan the assembled comment, APPEND into this head\'s own comment, and read it back from live state. The prior verdict is never replaced: it survives verbatim under a dated `## Superseded verdict` heading below the fence, while the fresh verdict takes the first line, so every marker reader resolves the newest one (#7247). With --base and --tip the verdict is RANGE-scoped instead (ADR 0285): the positional names the child issue, the class set is recomputed over what `<base>...<tip>` changed in this checkout, the first line goes through the `range-verdict-marker` format `lane prove` reads, and the answer\'s third field is `<base>..<tip>`; --sha and --carrier advisory are refused in this mode. That path appends the same way, keyed on the range rather than a head (#7411). Prints `posted\\t<namespace>\\t<polarity>\\t<sha|base..tip>\\t<content>\\t<created|superseded>\\t<comment-url>`, where `<content>` is the content digest the verdict binds (ADR 0276). Exits 3 (empty stdin — an empty verdict reads as UNGATED), 5 (machine-local path in the assembled comment), 6 (bare @ reference), 7 (PR absent or closed; or, ranged, the issue is absent, closed, or a pull request), 8 (the create/edit failed — UNKNOWN), 9 (read-back does not yield this marker), 10 (namespace the diff or range did not derive, bad polarity, advisory with FAIL or with a range, a lone --base/--tip, or --sha beside a range), 11 (a precondition read failed, or the commit could not be bound — nothing was posted), 12 (the live head moved past --sha — re-review, never re-bind), 17 (a standing verdict of the OPPOSITE polarity at this head — ranged, over this range — would be retired and --supersede was not passed; nothing posted). Examples: fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "guide matches shipped behavior" < verdict.md; fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md',
 	),
 );
 
@@ -346,7 +364,7 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch path a reviewer's staged files go under."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>, one absolute path on stdout, the directory created if absent. The nonce is twelve hex of sha256(--lane, --sha), because this group ships no claim verb to take one from: --lane is what keys the namespace per LANE rather than per session, so two reviewers of one session cannot clobber each other's fixed-name files, and --sha is what keys it per ROUND, so round 2 cannot read round 1's staged diff under the same name. Both are required — a default for either returns a path shared with whatever that axis separates. The printed path is machine-local and must never reach a posted artifact; `review post` and `review append-criterion` red on it at 5. Exits 1 (the directory could not be created, --lane is blank, the positional is not a PR number, or no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment), 10 (--slug carries a path separator or is not kebab-case, or --sha is not a head SHA). Example: fabrika review scratch 4321 --slug diff --lane 4287 --sha 03135b91",
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-review/<session-id>/<pr>-<lane-nonce>/<slug>, one absolute path on stdout, the directory created if absent. The nonce is twelve hex of sha256(--lane, --sha): --lane keys the path per LANE rather than per session, --sha keys it per ROUND, and both are required. The printed path is machine-local and must never reach a posted artifact; `review post` and `review append-criterion` red on it at 5. Exits 1 (the directory could not be created, --lane is blank, the positional is not a PR number, or no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment), 10 (--slug carries a path separator or is not kebab-case, or --sha is not a head SHA). Example: fabrika review scratch 4321 --slug diff --lane 4287 --sha 03135b91",
 	),
 );
 

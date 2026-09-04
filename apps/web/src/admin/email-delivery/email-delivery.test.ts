@@ -1,55 +1,40 @@
 import {describe, expect, it} from "vitest";
-import {
-	emailDeliveryOutcomeMessage,
-	reasonLabel,
-	resolvedUserLabel,
-	sinceLabel,
-} from "./email-delivery";
-
-describe("resolvedUserLabel", () => {
-	it("shows the user id when the address resolves to an account", () => {
-		expect(resolvedUserLabel("user_123")).toBe("user_123");
-	});
-	it("falls back to the no-account note when unresolved", () => {
-		expect(resolvedUserLabel(null)).toBe("hesap yok");
-	});
-});
-
-describe("reasonLabel", () => {
-	it("shows the reason when present", () => {
-		expect(reasonLabel("hard bounce")).toBe("hard bounce");
-	});
-	it("falls back to belirtilmemiş when absent", () => {
-		expect(reasonLabel(null)).toBe("belirtilmemiş");
-	});
-});
+import {emailDeliveryOutcomeKey, sinceLabel} from "./email-delivery";
 
 describe("sinceLabel", () => {
-	it("renders the epoch-millis as a local date string", () => {
-		const label = sinceLabel(Date.UTC(2026, 0, 1));
+	it("renders the epoch-millis in the active locale", () => {
+		const label = sinceLabel(Date.UTC(2026, 0, 1), "tr");
 		expect(label).toBeTypeOf("string");
 		expect(label.length).toBeGreaterThan(0);
 	});
 });
 
-describe("emailDeliveryOutcomeMessage", () => {
-	it("success (null code) confirms the action per verb", () => {
-		expect(emailDeliveryOutcomeMessage("mark", null)).toBe("adres işaretlendi.");
-		expect(emailDeliveryOutcomeMessage("clear", null)).toBe("işaret temizlendi.");
+describe("emailDeliveryOutcomeKey", () => {
+	it("success (null code) keys the confirmation per verb", () => {
+		expect(emailDeliveryOutcomeKey("mark", null)).toBe("admin.emailDelivery.outcome.marked");
+		expect(emailDeliveryOutcomeKey("clear", null)).toBe("admin.emailDelivery.outcome.cleared");
 	});
-	it("an empty reason maps to the required message", () => {
-		expect(emailDeliveryOutcomeMessage("mark", "EMAIL_FAILING_REASON_REQUIRED")).toContain(
-			"gerekçe",
+	it("an empty reason keys the required message", () => {
+		expect(emailDeliveryOutcomeKey("mark", "EMAIL_FAILING_REASON_REQUIRED")).toBe(
+			"admin.emailDelivery.error.reasonRequired",
 		);
 	});
-	it("a denial maps to the no-authority message (both codes)", () => {
-		expect(emailDeliveryOutcomeMessage("mark", "UNAUTHORIZED")).toContain("yetkin yok");
-		expect(emailDeliveryOutcomeMessage("clear", "FORBIDDEN")).toContain("yetkin yok");
+	it("a denial keys the no-authority message (both codes)", () => {
+		expect(emailDeliveryOutcomeKey("mark", "UNAUTHORIZED")).toBe(
+			"admin.emailDelivery.error.forbidden",
+		);
+		expect(emailDeliveryOutcomeKey("clear", "FORBIDDEN")).toBe(
+			"admin.emailDelivery.error.forbidden",
+		);
 	});
-	it("an unknown target maps to the not-found message", () => {
-		expect(emailDeliveryOutcomeMessage("clear", "USER_NOT_FOUND")).toContain("bulunamadı");
+	it("an unknown target keys the not-found message", () => {
+		expect(emailDeliveryOutcomeKey("clear", "USER_NOT_FOUND")).toBe(
+			"admin.emailDelivery.error.notFound",
+		);
 	});
-	it("any other code maps to the generic retry message", () => {
-		expect(emailDeliveryOutcomeMessage("mark", "INTERNAL_SERVER_ERROR")).toContain("ters gitti");
+	it("any other code keys the generic retry message", () => {
+		expect(emailDeliveryOutcomeKey("mark", "INTERNAL_SERVER_ERROR")).toBe(
+			"admin.emailDelivery.error.generic",
+		);
 	});
 });

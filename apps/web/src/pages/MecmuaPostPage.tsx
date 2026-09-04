@@ -4,12 +4,14 @@
  * can't re-diverge (the raw-markdown bug #2578). Client-only; SEO/prerender is deferred.
  * Ships dark behind `MECMUA_PUBLIC_READ` (default-off; `.patterns/flag-dark-page-gate.md`).
  */
+
+import {Alert} from "@kampus/design";
 import {lazy, Suspense, useEffect, useState} from "react";
 import {useParams} from "react-router";
 import {MecmuaSubscribeButton} from "../components/mecmua/MecmuaSubscribeButton";
-import {Alert} from "../components/ui/Alert";
 import {MECMUA_PUBLIC_READ} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
+import {useT} from "../i18n";
 import {NotFoundPage} from "./NotFoundPage";
 
 // Lazy on purpose: this is the only reference to the composer, which keeps tiptap off
@@ -32,12 +34,13 @@ type FetchState =
 export function MecmuaPostPage() {
 	const {value: flagOn, loading: flagLoading} = useFlag(MECMUA_PUBLIC_READ, false);
 	const {slug} = useParams<{slug: string}>();
+	const t = useT();
 
 	if (flagLoading) {
 		return (
 			<div className="kp-page">
 				<div className="kp-page__inner">
-					<p>yükleniyor…</p>
+					<p>{t("mecmua.loading")}</p>
 				</div>
 			</div>
 		);
@@ -50,6 +53,7 @@ export function MecmuaPostPage() {
 
 function MecmuaPostReader({slug}: {slug: string}) {
 	const [state, setState] = useState<FetchState>({kind: "loading"});
+	const t = useT();
 
 	useEffect(() => {
 		let cancelled = false;
@@ -75,7 +79,7 @@ function MecmuaPostReader({slug}: {slug: string}) {
 		return (
 			<div className="kp-page">
 				<div className="kp-page__inner">
-					<p>yükleniyor…</p>
+					<p>{t("mecmua.loading")}</p>
 				</div>
 			</div>
 		);
@@ -84,8 +88,8 @@ function MecmuaPostReader({slug}: {slug: string}) {
 	if (state.kind === "not-found") {
 		return (
 			<NotFoundPage
-				title="yazı bulunamadı"
-				message={`"${slug}" diye bir yazı bulamadık. başka bir şeye bakmak ister misin?`}
+				title={t("mecmua.post.notFound.title")}
+				message={t("mecmua.post.notFound.message", {slug})}
 			/>
 		);
 	}
@@ -95,7 +99,7 @@ function MecmuaPostReader({slug}: {slug: string}) {
 			<div className="kp-page">
 				<div className="kp-page__inner">
 					<Alert variant="danger" className="kp-alert--inline">
-						yazı yüklenemedi, tekrar dene.
+						{t("mecmua.post.error")}
 					</Alert>
 				</div>
 			</div>
@@ -111,7 +115,7 @@ function MecmuaPostReader({slug}: {slug: string}) {
 					<Suspense
 						fallback={
 							<div className="kp-prose">
-								<p>yükleniyor…</p>
+								<p>{t("mecmua.loading")}</p>
 							</div>
 						}
 					>

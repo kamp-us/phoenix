@@ -10,7 +10,11 @@ import {
 	type Scripted,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {foldLog, type LogEntry, parseLog} from "../lane/fold.ts";
+import {compileText} from "../lane/machine.ts";
 import {CODEOWNERS, ENV, files, HEAD, pull} from "../ship/fixtures.test-support.ts";
+import {ADDED} from "../ship/queue.ts";
+import {WAIT_BUDGET} from "../wait-budget.ts";
 import {
 	NOT_PARKED,
 	PARK_HOLDS,
@@ -24,6 +28,7 @@ import {
 	branchList,
 	campaignsTable,
 	closingPulls,
+	closingPullsIn,
 	httpError,
 	LANE,
 	LANE_BRANCH,
@@ -33,8 +38,10 @@ import {
 	laneTemplate,
 	nominatedPulls,
 	PARKED_AT_CP,
+	PARKED_AT_QUEUE_STALL,
 	PARKED_BLOCKED,
 	PARKED_ON_CAMPAIGN,
+	PARKED_ON_SPAWN,
 	PARKED_ON_WORKTREE,
 	parkedBlockedOn,
 	WORKFLOW,
@@ -57,6 +64,7 @@ const PRUNE = /^git worktree prune$/;
 const REMOVE = /^git worktree remove /;
 const STATUS = /^git -C \S+ status --porcelain$/;
 const SELF = /^git rev-parse --path-format=absolute/;
+const REVLIST = /^git rev-list --count /;
 const LANE_ISSUE = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}$`);
 const LANE_COMMENTS = new RegExp(`^GET \\S+/repos/o/r/issues/${LANE}/comments`);
 const REMOTES = /^git remote$/;
@@ -214,7 +222,7 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
-	it("is PARK_HOLDS while a working tree holds the branch and the board licenses no retirement", async () => {
+	it("is PARK_HOLDS while a working tree holds the branch and no license retires it", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
 		const out = await run(
@@ -224,6 +232,10 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 				[TREES, worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
 				[PRUNE, okOut("")],
 				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut("")],
+				// Unbuilt commits on the branch: no board license covers this tree and ADR 0342's arm
+				// refuses one carrying work, so the park still holds.
+				[REVLIST, okOut("2\n")],
 			],
 			[
 				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
@@ -264,6 +276,33 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
 	});
 
+	// #7027: the operator released the dead builder's claim first, which used to close this route.
+	it("clears the park on an OPEN issue when nothing claims the lane and the tree carries nothing", async () => {
+		const fs = lane(PARKED_ON_WORKTREE);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH)],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[PRUNE, okOut("")],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut("")],
+				[REVLIST, okOut("0\n")],
+				[REMOVE, okOut("")],
+				[TREES, worktreeList()],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toMatch(/retired 1 working tree/);
+	});
+
 	it("is TARGET_ABSENT in a clone that never cut the branch — never a clear on an absent read", async () => {
 		const fs = lane(PARKED_ON_WORKTREE);
 
@@ -295,6 +334,253 @@ describe("recipe unpark — a BLOCKED park clears on its cause (#6480)", () => {
 
 		expect(out.code).toBe(PARK_NOVEL);
 		expect(out.stderr.join("\n")).toMatch(/some-cause-nobody-wrote-a-row-for/);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a spawn-dead park clears once the dead shell's residue is gone (#6770)", () => {
+	const claimComment = (author: string, token: string): HttpReply => ({
+		status: 200,
+		body: JSON.stringify([
+			{
+				id: 1,
+				user: {login: author},
+				created_at: "2026-08-29T00:00:00Z",
+				body: `build-claim: ${token} · 2026-08-29T00:00:00.000Z`,
+			},
+		]),
+	});
+	const PERMISSION = /collaborators\/\S+\/permission/;
+
+	it("clears on the claim read alone in a clone that cut no branch — a dead reviewer's park", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[[BRANCHES, branchList("main")]],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "blocked",
+			clearance: "spawn-clear",
+			mechanism: `spawn-clear:#${LANE} unclaimed, no lane branch`,
+			current: "build",
+		});
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	it("clears once no claim stands and no working tree holds the lane branch", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH, "main")],
+				[TREES, worktreeList({path: "/repo", branch: "main"})],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toBe(
+			`spawn-clear:#${LANE} unclaimed, ${LANE_BRANCH} free`,
+		);
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// The composition's own path, which `branch-free`'s coverage of the shared tree read cannot reach:
+	// the claim half comes back empty, so the tree half runs, and it refuses under `spawn-dead`'s park
+	// and remedy rather than `branch-free`'s.
+	it("is PARK_HOLDS when no claim stands but a working tree still holds the lane branch", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH, "main")],
+				[TREES, worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[PRUNE, okOut("")],
+				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut(" M half-written.ts")],
+				[REVLIST, okOut("0\n")],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toMatch(/\/trees\/agent-a9bd/);
+		// Both halves' scopes survive the refusal, so the claim read the clearance already did is not
+		// dropped on the way out through the tree half.
+		expect(stderr).toMatch(/build claim marker/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("clears under its own mechanism once the holding tree is retired", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[
+				[BRANCHES, branchList(LANE_BRANCH)],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[PRUNE, okOut("")],
+				[once(TREES), worktreeList({path: "/trees/agent-a9bd", branch: LANE_BRANCH})],
+				[SELF, okOut(["/repo/.git", "/repo"].join("\n"))],
+				[STATUS, okOut("")],
+				[REMOVE, okOut("")],
+				[TREES, worktreeList()],
+			],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify({...openIssue, state: "closed"})}],
+				[LANE_COMMENTS, {status: 200, body: "[]"}],
+			],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout).mechanism).toBe(
+			`spawn-clear:#${LANE} unclaimed, ${LANE_BRANCH} free (retired 1 working tree(s))`,
+		);
+		expect(fs.written.get(LOG)).toMatch(/ISSUE\.UNBLOCKED/);
+	});
+
+	// ADR 0295: a claim leaves through a written release or an adopt succession, never through this
+	// verb inferring the claimant gone — so the residue read holds rather than clears.
+	it("is PARK_HOLDS while the dead shell's claim still stands, naming the token", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[
+					LANE_COMMENTS,
+					claimComment("usirin", "build:dead-session:9f2cab41-1111-4222-8333-444455556666"),
+				],
+				[PERMISSION, {status: 200, body: '{"permission":"write"}'}],
+			],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/build:dead-session:9f2cab41/);
+		expect(fs.written.size).toBe(0);
+	});
+
+	it("is UNKNOWN when the claim read fails — never a cleared park", async () => {
+		const fs = lane(PARKED_ON_SPAWN);
+
+		const out = await run(
+			fs,
+			[],
+			[
+				[LANE_ISSUE, {status: 200, body: JSON.stringify(openIssue)}],
+				[LANE_COMMENTS, httpError(500)],
+			],
+		);
+
+		expect(out.code).toBe(PRECONDITION_UNKNOWN);
+		expect(fs.written.size).toBe(0);
+	});
+});
+
+describe("recipe unpark — a queue stall clears when the queue moved, and grants (#6717)", () => {
+	const RULES = /^GET \S+\/repos\/o\/r\/rules\/branches\/main$/;
+	const SUBJECTS = /^GET \S+\/repos\/o\/r\/commits\?sha=main/;
+	const TIMELINE = /^GET \S+\/repos\/o\/r\/issues\/4321\/timeline\?/;
+	const QUEUE_GOVERNED: Scripted = [
+		RULES,
+		{status: 200, body: JSON.stringify([{type: "merge_queue"}])},
+	];
+
+	/** The log the run left behind, parsed through the fold's own reader rather than by hand. */
+	const parsed = (written: string | undefined) => {
+		const read = parseLog(written ?? "");
+		if (read._tag !== "Parsed") throw new Error(read.defects.join("; "));
+		return read.entries;
+	};
+
+	/** That same log replayed — the clear's whole claim is what the fold reads back off it. */
+	const refolded = (entries: ReadonlyArray<LogEntry>) => {
+		const compiled = compileText(laneTemplate());
+		if (compiled._tag !== "Compiled") throw new Error(compiled.defects.join("; "));
+		const fold = foldLog(compiled.lane, entries);
+		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+		return fold.states.issue;
+	};
+
+	it("clears on `landed` and buys the resumed lane one fresh conclusive read", async () => {
+		const fs = lane(PARKED_AT_QUEUE_STALL);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPullsIn({number: 4321, state: "MERGED"}))],
+				[PULL, reply(pull({merged: true, state: "closed"}))],
+			],
+			[QUEUE_GOVERNED],
+		);
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(out.stdout)).toMatchObject({
+			park: "human:queue-stall",
+			clearance: "queue-moved",
+			mechanism: "queue-moved:#4321 landed",
+			current: "ship:queued",
+			waitGrant: 1,
+		});
+
+		const before = parsed(PARKED_AT_QUEUE_STALL);
+		const entries = parsed(fs.written.get(LOG));
+		expect(entries).toHaveLength(before.length + 1);
+		expect(entries.at(-1)).toMatchObject({event: "ISSUE.UNBLOCKED", waitGrant: 1});
+		expect(entries.filter((entry) => entry.event.endsWith("CLEARED"))).toEqual([]);
+
+		// The grant rides the log line, so the re-fold is a pure replay and reads the same twice.
+		for (const state of [refolded(entries), refolded(entries)]) {
+			expect(state).toMatchObject({
+				type: "ship:queued",
+				waits: WAIT_BUDGET,
+				maxWaits: WAIT_BUDGET + 1,
+			});
+		}
+	});
+
+	it("leaves the park standing at PARK_HOLDS on `unresolved`, log byte-identical", async () => {
+		const fs = lane(PARKED_AT_QUEUE_STALL);
+
+		const out = await run(
+			fs,
+			[
+				[CLOSERS, reply(closingPulls(4321))],
+				[PULL, reply(pull())],
+			],
+			[
+				QUEUE_GOVERNED,
+				[SUBJECTS, {status: 200, body: "[]"}],
+				[
+					TIMELINE,
+					{
+						status: 200,
+						body: JSON.stringify([{event: ADDED, created_at: "2026-08-29T10:00:00Z"}]),
+					},
+				],
+			],
+		);
+
+		expect(out.code).toBe(PARK_HOLDS);
+		expect(out.stderr.join("\n")).toMatch(/the merge queue to move this PR/);
 		expect(fs.written.size).toBe(0);
 	});
 });

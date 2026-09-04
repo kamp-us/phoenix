@@ -246,10 +246,17 @@ class):
 `Cloudflare.state()` vs `Alchemy.localState()` from the **dev-vs-deploy** signal
 alone — **not** `CI`, and (since ADR 0082) **not** `VITEST`. Only `alchemy dev`
 (its `ALCHEMY_EXEC_OPTIONS.dev` flag, or the coarser `ALCHEMY_DEV` override)
-resolves to offline `localState()`. A Vitest integration run resolves to the
-shared Cloudflare store exactly like a real deploy, because it deploys to real
-remote Cloudflare. The Stack's baked state and `Test.make`'s `state` option
-therefore agree on `Cloudflare.state()`.
+resolves to `Alchemy.localState()` — the *state store*, not the loop: the
+worker still binds a **real** Cloudflare D1 in your personal stage, while its DO
+namespaces run on a local provider (`alchemy@2.0.0-beta.59 —
+src/Cloudflare/Workers/LocalWorkerProvider.ts`, where `case "d1"` returns
+`D1.remote(...)` and `case "durable_object_namespace"` returns
+`DurableObjectNamespace.local(...)`; ADR
+[0032](../.decisions/0032-alchemy-beta45-and-dev-model.md) names D1/R2/KV as the
+real resources). [`alchemy-stack-deploy.md`](alchemy-stack-deploy.md) states the
+same split. A Vitest integration run resolves to the shared Cloudflare store
+exactly like a real deploy, because it deploys to real remote Cloudflare. The Stack's baked state
+and `Test.make`'s `state` option therefore agree on `Cloudflare.state()`.
 
 ## The harness contract (`tests/integration/_harness.ts`)
 
@@ -348,7 +355,14 @@ The same `vitest.config.ts` defines two more projects that **don't** deploy:
   belongs in `integration`.
 - **`client`** — the SPA component/DOM tier (#1419): `src/**/*.test.tsx` under
   `jsdom`, fork heap capped at 512MB so a passive-update loop crashes fast
-  instead of hanging (#1470).
+  instead of hanging (#1470). Its forks also run `--no-experimental-webstorage`:
+  Node's own `localStorage` global is `undefined` without `--localstorage-file`,
+  and Vitest's `populateGlobal` skips any jsdom window key the fork's global
+  already defines — so with Node's copy present, `window.localStorage` reads as
+  `undefined` in a tier that looks like a browser. It bites by Node version
+  (green under pnpm's bundled Node 22, red on CI's pinned Node 26), so keep the
+  flag on both jsdom configs (`vitest.config.ts`, `vitest.a11y.config.ts`) and
+  reach `localStorage` through `src/lib/browserStorage.ts` in app code (#7728).
 
 **Change-scoped selection is a unit-tier + local-loop accelerator only.**
 `vitest --changed` / `related` narrows by the resolved import graph — sound for

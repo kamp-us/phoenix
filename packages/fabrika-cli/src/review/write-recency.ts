@@ -22,6 +22,8 @@
  * emitted line against that consumer's own matcher so the interop cannot drift unnoticed.
  */
 
+import {FENCE, split} from "./supersede.ts";
+
 /**
  * The stamp line. `g` for {@link writtenAtOf}'s `matchAll` and {@link withWrittenAt}'s replace,
  * `m` so it anchors per line, `i` because a hand-typed stamp is still a stamp.
@@ -42,17 +44,28 @@ export const stampIso = (epochMillis: number): string =>
  *
  * Replacing rather than appending is what keeps a re-post orderable: a body that accumulated two
  * stamps would order by whichever one the reader happened to take.
+ *
+ * Only the live region is stamped or stripped. A superseded verdict archived below the fence keeps
+ * its own stamp, because that stamp is part of the prior verdict's bytes and `./supersede.ts`
+ * preserves those verbatim.
  */
-export const withWrittenAt = (body: string, iso: string): string =>
-	`${body.replace(WRITTEN_AT, "").replace(/\s+$/, "")}\n\nVerdict-written: ${iso}`;
+export const withWrittenAt = (body: string, iso: string): string => {
+	const {live, archive} = split(body);
+	const stamped = `${live.replace(WRITTEN_AT, "").replace(/\s+$/, "")}\n\nVerdict-written: ${iso}`;
+	return archive === "" ? stamped : `${stamped}\n\n${FENCE}\n\n${archive}\n`;
+};
 
 /**
- * The write time a body stamps on itself, or `null` for an unstamped one. Takes the LAST match, so
- * a verdict whose prose quotes an earlier stamp still resolves to its own.
+ * The write time a body stamps on itself, or `null` for an unstamped one.
+ *
+ * Read over the live region alone, then the LAST match within it. Both halves are load-bearing: the
+ * live-region slice keeps an archived verdict's older stamp from re-crowning a superseded round
+ * (#7247), and taking the last match keeps a verdict whose prose quotes an earlier stamp resolving
+ * to its own.
  */
 export const writtenAtOf = (body: string): string | null => {
 	let last: string | null = null;
-	for (const match of body.matchAll(WRITTEN_AT)) last = match[1] ?? last;
+	for (const match of split(body).live.matchAll(WRITTEN_AT)) last = match[1] ?? last;
 	return last;
 };
 

@@ -136,6 +136,7 @@ sibling contract.md — the checked-in `/report` contract is behind its own bina
 | `14` | refused: the invoking token resolves below `write`, or the ACL lookup failed — authorization denied, fail-closed (ADR 0055) | — | — | — | — | — | — | — | ✓ |
 | `15` | refused: the write is not provably the prior rows plus one — the append-only fence, whose causes carry distinct messages | — | — | — | — | — | — | — | ✓ |
 | `16` | refused: the enumeration is complete and **no gate inspected the bytes** — the rollup is not `red`, yet no workflow this repo authors produced a run at the head, so a `green` would report coverage that does not exist | — | — | — | ✓ | — | — | — | — |
+| `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing written (#7247) | — | — | — | — | — | — | ✓ | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb
@@ -596,7 +597,8 @@ fabrika review ci 4321 [--sha <head>] [--wait] [--budget-seconds <n>] [--cadence
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. Under `--wait`, a first line
-`settle\t<settled|budget-exhausted|head-moved>`; without it that line is absent. Then
+`settle\t<settled|budget-exhausted|head-moved|governance-owed|governance-stale>`; without it that
+line is absent. Then
 `ci\t<sha>\t<green|red|pending|no-producer>`, then `run\t<count>` — how many check runs were
 enumerated, so the line channel carries its own completeness proof. Then one line per status present
 —
@@ -668,10 +670,30 @@ a bound that ran out:
   it.
 - `head-moved` — the PR left the head this answer binds during the wait. The last read still binds
   what it inspected; the caller re-reads at the new head rather than trusting a stale `settled`.
+- `governance-owed` — the only unfinished check at this head is `governance floor at head`, and the
+  `governance-floor` workflow run at this head has completed. Per ADR
+  [0318](../../../../.decisions/0318-the-governance-floor-reports-through-a-check-run.md) that
+  check-run stays `in_progress` while no governance verdict is bound at the head, so what the wait is
+  waiting for is a verdict its own caller owes. Nothing was proven — the rollup still reads `pending`
+  — but unlike `budget-exhausted` the caller clears this itself: fire the governance skill, then
+  re-read. The distinguishing read is the workflow run, never the check-run alone: a floor whose run
+  is still in flight has not published yet and **is** waited on, unchanged (#7392).
+- `governance-stale` — the rollup is `red`, the only **failing** check at this head is `governance
+  floor at head`, its published verdict is `stale`, and a `governance-floor` run exists at this head
+  to vouch that the row is this repo's own. Same shape as `governance-owed` on ADR 0318's other
+  rollup: a verdict bound to an earlier head concludes `failure` rather than staying pending, so the
+  read returns at once with a red its own caller clears — which on a repair round is every round
+  after the first (#7441). Three reds it never covers: any other failing check beside the floor, a
+  floor whose verdict is a real `fail`, and a floor that is `unresolved`, which is UNKNOWN and so
+  nobody's to discount (ADR 0092). Unlike the `absent` half, an in-flight floor run does **not**
+  disqualify — that is the caller's own re-fire mid-republish. The published state is read off the
+  check-run's `output.title`, never re-derived here: `review ci` relays what the PR shows rather than
+  producing a second answer about the floor (ADR 0228).
 
 Every refusal and the `no-producer` answer are states no waiting changes, so `--wait` returns them
 on the **first** read rather than burning the budget: the `16` head has no gate of this repo's coming
-at all, and a repo with no producer has no run to wait for.
+at all, and a repo with no producer has no run to wait for. The two governance tokens are the same
+principle reaching states that only look like an ordinary `pending` and an ordinary `red`.
 
 If `--sha` is given and does not prefix-match the PR's live head, a stderr notice names both —
 the caller is enumerating a head that has moved, which is a fact worth seeing at the read even
@@ -739,6 +761,30 @@ check	success	1
 check	queued	2
 ```
 
+A `governance: required` diff whose floor is the last thing pending — the budget is not spent,
+because the caller is the one who owes the verdict:
+
+```
+$ fabrika review ci 4321 --sha 03135b91 --wait
+settle	governance-owed
+ci	03135b91	pending
+run	3
+check	success	2
+check	in_progress	1
+```
+
+The repair round of that same PR: the verdict is bound to the head before this one, so the floor
+concludes `failure` and the rollup is `red` — a red the caller clears with one governance post:
+
+```
+$ fabrika review ci 4321 --sha 03135b91 --wait
+settle	governance-stale
+ci	03135b91	red
+run	3
+check	success	2
+check	failure	1
+```
+
 **Grounding**
 
 - #4552 — the CI-at-head read was dispatch-prompt-dependent in v1; a gate ruled on a live RED
@@ -750,6 +796,14 @@ check	queued	2
   keeps reporting on its own trigger. The verb read `green` over four CodeQL runs at an epic
   assembly head that `ci.yml`, `migrations-guard` and `design-token-guard` had never seen. `green`
   and "no gate ran" were one word, and the second is the dangerous one.
+- #7392 — on PR #7384 a reviewer burned a full 600s budget on a head whose only pending check was
+  the governance floor, then posted the verdict that cleared it in one round. The waiting verb and
+  the thing waited on were the same shell, so `budget-exhausted` sent a self-clearing condition to a
+  human park.
+- #7441 — the other half of the same root cause, found reviewing #7392's own PR. A repair round's
+  floor is `stale`, not `absent`, so it concludes `failure` and `--wait` returns `red` on the first
+  read. A reviewer following this skill's rule that a red rollup is the code class's execution
+  evidence would FAIL a PR over a floor it had just cleared.
 
 ---
 
@@ -770,18 +824,25 @@ fabrika review verdicts 4321 [--repo <owner/name>] [--json]
 | `--json` | boolean | no | `false` | emit the result object |
 
 **Output** — machine channel. First line: `verdicts\t<live-head>\t<count>`, where `<count>` is
-the number of marker-bearing comments found (`0` is a valid, proven answer: the PR carries no
+the number of verdict rows found (`0` is a valid, proven answer: the PR carries no
 verdict). Then one line per marker, newest first:
-`<namespace>\t<polarity>\t<marker-sha>\t<current|stale|unbindable>\t<comment-id>` — the marker SHA
+`<namespace>\t<polarity>\t<marker-sha>\t<current|stale|unbindable>\t<comment-id>\t<standing|superseded>`
+— the marker SHA
 is the head the verdict was formed at, which under ADR 0276 need not be the live head for the row
-to read `current`. Advisory
+to read `current`, and the sixth field says whether the verdict is the one in force or one retired
+below its comment's supersede fence. Advisory
 carriers (a `Reviewed-head: @ <sha>` body line under an advisory first line) print with polarity
 `ADVISORY` and the body-bound SHA. Malformed markers — bytes reaching for the format that fail
-it — print as `malformed\t-\t-\t-\t<comment-id>` with the wire reason on stderr: **a drifted
+it — print as `malformed\t-\t-\t-\t<comment-id>\t-` with the wire reason on stderr: **a drifted
 marker is surfaced as a defect, never dropped from the sweep** (a dropped row is how a FAIL'd PR
 reads as unreviewed, #4103/#4105).
 
-With `--json`: `{"outcome":"verdicts","head":…,"markers":[{namespace,polarity,sha,binding,commentId}…],"malformed":[{commentId,reason}…],"scanned":<comments>}`.
+**A superseded verdict gets its own row.** `review post` retires the prior verdict below the
+`<!-- fabrika:superseded -->` fence rather than over it, so those bytes are still on the PR;
+printing only the survivor would report exactly the erasure the append exists to prevent (#7247).
+Only a `standing` row is a verdict in force, and `ship gate` reads no other kind.
+
+With `--json`: `{"outcome":"verdicts","head":…,"markers":[{namespace,polarity,sha,binding,commentId,standing}…],"malformed":[{commentId,reason}…],"scanned":<comments>}`.
 
 **Binding is computed here, per marker** — `bindToContent` from
 `packages/fabrika-cli/src/wire/verdict-marker.ts`, imported, and the same derivation `ship gate`
@@ -831,8 +892,15 @@ answer, not an exit, because the markers themselves were seen and are reportable
 ```
 $ fabrika review verdicts 4321
 verdicts	03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c	2
-review-code	PASS	0b1c2d3e	stale	5154891644
-review-doc	PASS	03135b91	current	5154902211
+review-code	PASS	0b1c2d3e	stale	5154891644	standing
+review-doc	PASS	03135b91	current	5154902211	standing
+```
+
+```
+$ fabrika review verdicts 7081
+verdicts	77f61ce9c9f95e660ecf56d55fcecbb6f4997e85	2
+review-ui	PASS	77f61ce9	current	5460446728	standing
+review-ui	FAIL	77f61ce9	current	5460446728	superseded
 ```
 
 **Grounding**
@@ -980,7 +1048,8 @@ tier-m	removed-assertion	src/cart.test.ts:14	expect(renderTotal(10)).toBe("10.00
 **Invocation**
 
 ```
-fabrika review post 4321 --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" [--carrier marker|advisory] [--repo <owner/name>] [--json]
+fabrika review post 4321 --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" [--carrier marker|advisory] [--supersede] [--repo <owner/name>] [--json]
+fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" [--supersede] [--repo <owner/name>] [--json]
 ```
 
 The verdict body arrives on **stdin only** — no `--body`, no `--body-file`, for the reason the
@@ -991,22 +1060,40 @@ the poster reads success.
 
 | Flag | Type | Required | Default | Description |
 |---|---|---|---|---|
-| *(positional)* | integer | yes | — | the pull-request number |
-| `--namespace` | string | yes | — | the namespace this verdict fills; must match the wire format's class and be in this PR's derived class set |
+| *(positional)* | integer | yes | — | the pull-request number — with `--base`/`--tip`, the child issue instead |
+| `--namespace` | string | yes | — | the namespace this verdict fills; must match the wire format's class and be in this PR's derived class set — ranged, the set the range's own changed paths derive |
 | `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
-| `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
+| `--sha` | string | unless ranged | — | the head the reviewer actually inspected (7–40 lowercase hex); required unless `--base`/`--tip` scope the verdict to a range, and refused beside one |
+| `--base` | string | with `--tip` | — | the range's base end, 7–40 lowercase hex — the epic-child form (#5935) |
+| `--tip` | string | with `--base` | — | the range's tip end |
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
-| `--carrier` | enum | no | `marker` | `marker` (first-line head- and content-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` in the body). `advisory` is a PASS path only |
+| `--carrier` | enum | no | `marker` | `marker` (first-line head- and content-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` in the body). `advisory` is a PASS path only, and is refused beside a range |
+| `--supersede` | boolean | no | `false` | acknowledge that this verdict retires a standing one of the **opposite** polarity at the same head, or ranged, over the same range; without it that post is the `17` refusal |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the verdict body below the first line: per-criterion table, findings, the §DEV row |
 
 **Output** — machine channel. One line:
-`posted\t<namespace>\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>` — counting
-`posted` as the first field, the **fifth** is the content digest the verdict binds (ADR 0276) and
-the **sixth** says whether the upsert created a fresh comment or edited this namespace's existing
-comment at this head.
-With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","carrier":…,"commentUrl":…}`.
+`posted\t<namespace>\t<polarity>\t<sha|base..tip>\t<content>\t<created|superseded>\t<comment-url>` — counting
+`posted` as the first field, the **fourth** names the subject the verdict binds — the head in PR mode,
+`<base>..<tip>` in range mode — the **fifth** is the content digest the verdict binds (ADR 0276) and
+the **sixth** says whether the write opened a fresh comment or appended into this namespace's
+existing comment at that same subject, retiring the verdict that was there.
+With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"content":…,"upsert":"created"|"superseded","carrier":…,"commentUrl":…}`;
+ranged, the `sha` and `carrier` fields give way to one `range`:
+`{"outcome":"posted","namespace":…,"polarity":…,"range":{"base":…,"tip":…},"content":…,"upsert":"created"|"superseded","commentUrl":…}`.
+
+**Range mode — `--base`/`--tip`, the epic-child form (#5935, ADR 0285).** An epic child opens no PR
+mid-run, so there is no head to bind to and no PR surface to post on: the positional names the
+**child issue**, the class set is recomputed over what `<base>...<tip>` changed in this checkout, and
+the first line goes through the `range-verdict-marker` format `lane prove` folds rather than the
+head-bound one. `--sha` and `--carrier advisory` are both head-scoped ideas, and are refused here
+rather than ignored. The six steps below hold with the range in the head's place: step 1 becomes the
+target proof — the positional must be an open issue and not a pull request — step 2 derives over the
+range's changed paths, and step 5's upsert key is the range, prefix-matched on **both** ends, so a
+re-post over the same range appends into the one comment while a verdict over a moved tip is a
+different fact that opens a second (#7411). The write path is
+`packages/fabrika-cli/src/review/range-post.ts`, which `governance post --base/--tip` also runs.
 
 **What the operation does, in order — each step gates the next.**
 
@@ -1028,10 +1115,20 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"co
    FAIL marker).
 4. **Leak-scan the assembled comment** (`report/leaks.ts`, imported) — an authored machine-local
    path is the `5` refusal.
-5. **Upsert one comment per namespace *at this head*, matched under the carrier this post uses**: an
-   existing comment by this bot that already carries this namespace **under this carrier, bound to
-   the head being posted**, is edited in place; otherwise a new comment is created. A re-post at the
-   same head upserts; a post at a moved head appends, leaving the prior head's verdict intact — a
+5. **Append into one comment per namespace *at this head*, matched under the carrier this post
+   uses**: an existing comment by this bot that already carries this namespace **under this carrier,
+   bound to the head being posted**, receives the fresh verdict on its first line with its prior
+   verdict retired verbatim below the `<!-- fabrika:superseded -->` fence, under a dated
+   `## Superseded verdict — YYYY-MM-DD` heading; otherwise a new comment is created. **The prior
+   verdict is never replaced.** GitHub keeps no comment-body history, so a PATCH over a verdict is
+   that verdict gone: on PR #7081 a FAIL became a PASS at an unchanged head and nothing anywhere
+   showed a gate had ever blocked (#7247). The fresh verdict goes on top because the marker is the
+   comment's first non-blank line, so every reader — `ship gate`, `review verdicts`, `lane prove` —
+   resolves the newest one without knowing the envelope exists. When the write would retire a
+   standing verdict of the **opposite** polarity at this head, the post is the `17` refusal unless
+   `--supersede` is passed, and nothing is written on that refusal — the flip is legitimate and
+   routine, but it is the one that decides the merge, so it is said out loud. A post at a moved head
+   appends a new comment, leaving the prior head's verdict intact — a
    verdict is SHA-bound, so a new head's verdict is a different fact, not a revision, and editing
    the old comment destroys the only record of what was true over that tree (ADR 0213 named this
    half of rule 2's key as still open; #4007 closed it in v1). With `marker` the match key is the
@@ -1060,12 +1157,13 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"co
 | `3` | stdin was read and held nothing — an empty verdict body would read as UNGATED |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference — the body never arrived |
-| `7` | the PR is proven absent (404) or closed |
+| `7` | the PR is proven absent (404) or closed; ranged, the child issue is proven absent, is closed, or is a pull request |
 | `8` | the create/edit failed — UNKNOWN whether a comment landed |
 | `9` | the comment landed but the read-back does not yield this marker |
-| `10` | `--namespace` off the wire format's class or outside this PR's derived set; a bad `--polarity`; `--carrier advisory` with `--polarity FAIL` |
-| `11` | a precondition read failed — the PR, the live head, or the commit binding / bound file list the class set is derived from |
+| `10` | `--namespace` off the wire format's class or outside this PR's derived set — ranged, outside the set the range's changes derive; a bad `--polarity`; `--carrier advisory` with `--polarity FAIL`, or with a range; a lone `--base`/`--tip`; `--sha` beside a range; a range end that is not a revision; neither `--sha` nor a range |
+| `11` | a precondition read failed — the PR, the live head, or the commit binding / bound file list the class set is derived from; ranged, the issue, the comments, or the content `<base>..<tip>` changes |
 | `12` | the live head moved past `--sha` — re-review at the new head, never re-bind |
+| `17` | a standing verdict of the opposite polarity at this head — ranged, over this range — would be retired and `--supersede` was not passed; nothing written |
 
 **Errors**
 
@@ -1083,10 +1181,31 @@ With `--json`: `{"outcome":"posted","namespace":…,"polarity":…,"sha":…,"co
 | `review post: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
 | `review post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review post: posted, but the read-back does not yield this marker (<wire reason>) — the PR may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
+| `review post: a standing <PASS\|FAIL> for <ns> at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
+
+Ranged, the same steps produce their own text — the target is an issue, the subject is the range:
+
+| Message (stderr) | Code | Kind |
+|---|---|---|
+| `review post: --base and --tip come together — a range has two ends.` | 10 | refusal |
+| `review post: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).` | 10 | refusal |
+| `review post: --carrier advisory is a PR-scoped path (ADR 0151) — a range verdict has no advisory carrier.` | 10 | refusal |
+| `review post: --sha is required for a PR-scoped verdict — for a range-scoped one pass --base and --tip.` | 10 | refusal |
+| `review post: --<base\|tip> "<v>" is not a revision — expected 7–40 hex characters.` | 10 | refusal |
+| `review post: --namespace <ns> is not derived by <base>..<tip>'s changes (present: <set>) — a gate never emits a namespace it did not judge.` | 10 | refusal |
+| `review post: #<n> is proven absent in <repo>.` | 7 | refusal |
+| `review post: #<n> is a pull request — a range-scoped verdict lands on the child issue; a PR's verdict is head-bound, so drop --base/--tip and pass --sha.` | 7 | refusal |
+| `review post: #<n> is <state> — a verdict on a closed issue gates nothing.` | 7 | refusal |
+| `review post: cannot read <what> for #<n>: <reason> — nothing was posted.` | 11 | refusal |
+| `review post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; re-read #<n>'s comments before retrying.` | 8 | refusal |
+| `review post: posted, but the read-back does not yield this marker (<wire reason>) — #<n> may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
+| `review post: a standing <PASS\|FAIL> for <ns> over <base>..<tip> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
 
 **Scope** — one PR: its live head (step 1), the bound commit's file list (step 2), its comments
 (steps 5–6), plus the caller's stdin. Steps 1, 2 and 5's reads failing is `11` — nothing written,
-outcome known-unwritten.
+outcome known-unwritten. Ranged, it is one issue and one range instead: the issue's state and
+comments, and what `<base>...<tip>` changes in this checkout — no PR is resolved, because there is
+none.
 
 **Examples**
 
@@ -1102,6 +1221,32 @@ $ echo $?
 10
 ```
 
+```
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "the correction landed" < verdict.md
+review post: a standing FAIL for review-doc at 03135b91 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
+$ echo $?
+17
+```
+
+```
+$ fabrika review post 4321 --namespace review-doc --polarity PASS --sha 03135b91 --clause "the correction landed" --supersede < verdict.md
+posted	review-doc	PASS	03135b91	2f1a9c4e0b7d	superseded	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
+```
+
+Ranged, the fourth field is the range and the comment lands on the child issue:
+
+```
+$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "every criterion met" < verdict.md
+posted	review	PASS	9f2c1ab..03135b9	2f1a9c4e0b7d	created	https://github.com/kamp-us/phoenix/issues/5830#issuecomment-5154902211
+```
+
+```
+$ fabrika review post 5830 --namespace review --polarity PASS --base 9f2c1ab --tip 03135b9 --clause "the findings are answered" < verdict.md
+review post: a standing FAIL for review over 9f2c1ab..03135b9 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
+$ echo $?
+17
+```
+
 **Grounding**
 
 - #3173 — a hand-rolled `gh api` emit posted a literal path and self-reported a false PASS; this
@@ -1114,6 +1259,14 @@ $ echo $?
 - v1 emitted through four per-gate scripts with three conventions and one gate (trivial) skipping
   read-back entirely (S2/S6); one verb, one protocol, no skippable branch.
 - ADR 0151 / §ADVISORY — the advisory carrier's fixed shape; ADR 0226 — advisory is PASS-only.
+- #7247 / PR #7081 — the upsert replaced a standing FAIL with a PASS and the record of the block
+  was unrecoverable; the append and the `17` refusal are that incident's two answers. #6708 / #6736
+  settled the same question for issue bodies, and `report amend` is the precedent this follows.
+- #5935 / ADR 0285 — the range form exists because an epic child has no PR to bind to mid-run. Its
+  write path is `packages/fabrika-cli/src/review/range-post.ts`, one module rather than a per-verb
+  copy: `review post` and `governance post` differ there in exactly one decision — which namespace
+  the range's own paths admit — so the two verbs cannot drift on what a ranged post does. #7411
+  extended the append to it, keyed on the range where the PR path keys on the head.
 
 ---
 

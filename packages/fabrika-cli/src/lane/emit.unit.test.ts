@@ -6,9 +6,9 @@ import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {fakeFs} from "../fakes.test-support.ts";
 import {readGoldenFixture} from "../golden-fixture.ts";
-import {RETRY_BUDGET} from "../retry-budget.ts";
+import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
-import {applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
+import {applyClearance, applyEvent, deriveStatus, foldLog, type LogEntry} from "./fold.ts";
 import {type CompiledLane, compileText} from "./machine.ts";
 import {runTransition} from "./transition-verb.ts";
 
@@ -58,23 +58,45 @@ const laneOf = (text: string): CompiledLane => {
 	return compiled.lane;
 };
 
-/** Drive a sequence through `applyEvent`, asserting every step is accepted, and fold the result. */
-const drive = (
+const AT = "2026-08-17T00:00:00.000Z";
+
+const statesOf = (compiled: CompiledLane, entries: ReadonlyArray<LogEntry>) => {
+	const fold = foldLog(compiled, entries);
+	if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
+	return fold.states;
+};
+
+/** Drive a sequence through `applyEvent`, asserting every step is accepted, and keep the log. */
+const driveLog = (
 	compiled: CompiledLane,
 	steps: ReadonlyArray<readonly [string, string]>,
-): ReturnType<typeof deriveStatus> => {
-	const log: LogEntry[] = [];
-	const statesOf = (entries: ReadonlyArray<LogEntry>) => {
-		const fold = foldLog(compiled, entries);
-		if (fold._tag !== "Folded") throw new Error(fold.defects.join("; "));
-		return fold.states;
-	};
+	from: ReadonlyArray<LogEntry> = [],
+): ReadonlyArray<LogEntry> => {
+	const log: LogEntry[] = [...from];
 	for (const [task, event] of steps) {
-		const applied = applyEvent(compiled, statesOf(log), task, event, "2026-08-17T00:00:00.000Z");
+		const applied = applyEvent(compiled, statesOf(compiled, log), task, event, AT);
 		if (applied._tag !== "Applied") throw new Error(`${task} ${event}: ${applied.reason}`);
 		log.push(applied.entry);
 	}
-	return deriveStatus(compiled, statesOf(log));
+	return log;
+};
+
+const drive = (
+	compiled: CompiledLane,
+	steps: ReadonlyArray<readonly [string, string]>,
+): ReturnType<typeof deriveStatus> =>
+	deriveStatus(compiled, statesOf(compiled, driveLog(compiled, steps)));
+
+/** Append one founder-cleared round the way `build clear` does — an event, never a context edit. */
+const grant = (
+	compiled: CompiledLane,
+	log: ReadonlyArray<LogEntry>,
+	task: string,
+	round: number,
+): ReadonlyArray<LogEntry> => {
+	const applied = applyClearance(compiled, log, task, round, AT);
+	if (applied._tag !== "Appendable") throw new Error(`grant ${round}: ${applied._tag}`);
+	return [...log, applied.entry];
 };
 
 /** One child driven queued → build → review → integrate → landed. */
@@ -134,6 +156,7 @@ describe("emitMachine", () => {
 					task: "issue_4301",
 					cause: null,
 					classes: [],
+					waitGrant: null,
 				}),
 				fs.layer,
 			),
@@ -176,6 +199,7 @@ describe("emitMachine", () => {
 					task: "issue_4303",
 					cause: null,
 					classes: [],
+					waitGrant: null,
 				}),
 				fs.layer,
 			),
@@ -318,7 +342,7 @@ describe("emitMachine", () => {
 					},
 				},
 				shipped: {type: "final"},
-				"human:epic-review": {type: "final"},
+				"human:epic-review": {type: "final", on: {"EPIC_4300.UNBLOCKED": "hist"}},
 			},
 		});
 	});
@@ -362,6 +386,33 @@ describe("emitMachine", () => {
 		const spent = drive(compiled, [...LAND_ALL, ...fails, ["epic_4300", "FAIL"]]);
 		expect(spent).toMatchObject({stateValue: "tripped", status: "done"});
 		expect(spent.context.errors).toEqual(["epic_4300"]);
+	});
+
+	it("walks the epic-review park back into review on a granted round (ADR 0341)", () => {
+		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
+		const parked = driveLog(compiled, [
+			...LAND_ALL,
+			...Array.from({length: CAP_ROUND}, () => ["epic_4300", "FAIL"] as const),
+		]);
+		expect(deriveStatus(compiled, statesOf(compiled, parked))).toMatchObject({
+			stateValue: "tripped",
+			status: "done",
+		});
+
+		// The door is walkable and the budget still gates it, exactly as `frozen`'s does (ADR 0312).
+		expect(
+			applyEvent(compiled, statesOf(compiled, parked), "epic_4300", "UNBLOCKED", AT),
+		).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
+
+		const resumed = driveLog(
+			compiled,
+			[["epic_4300", "UNBLOCKED"]],
+			grant(compiled, parked, "epic_4300", CAP_ROUND),
+		);
+		expect(deriveStatus(compiled, statesOf(compiled, resumed))).toMatchObject({
+			stateValue: {epic: {epic_4300: "review"}},
+			status: "active",
+		});
 	});
 
 	it("terminates a partly-built epic — every child closed still leaves the epic review to run", () => {

@@ -16,6 +16,12 @@ import {type BrowserContext, chromium} from "@playwright/test";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {readSessionProof, type SessionProof} from "./auth.ts";
+import {
+	type ForcedFlags,
+	flagProbeBody,
+	type OverrideProof,
+	readOverrideProof,
+} from "./flag-override.ts";
 import {type PageError, toPageError} from "./page-errors.ts";
 import type {Shot} from "./plan.ts";
 
@@ -45,6 +51,12 @@ export interface CapturedSurface {
 	 * visitor's page, which is a valid PNG under the signed-in name (#7051).
 	 */
 	readonly sessionProof?: SessionProof;
+	/**
+	 * Whether the forced flags took, present only when the caller forced any. Pixels cannot answer
+	 * it either: an unhonored override renders the flag-off page, a valid PNG under the flag-on
+	 * name (#7218).
+	 */
+	readonly overrideProof?: OverrideProof;
 }
 
 /** A Playwright launch/navigation/screenshot/write failure — surfaced, never swallowed. */
@@ -74,9 +86,9 @@ export interface CaptureOptions {
 	/** Full-page screenshot (default) vs. above-the-fold only. */
 	readonly fullPage?: boolean;
 	/**
-	 * Cookies seeded into every shot's browser context before navigation — how the
-	 * local render harness honors the `phoenix_flag_overrides` dev-override cookie so
-	 * flag-gated surfaces render under `alchemy dev` (#2963). Absent ⇒ no cookies.
+	 * Cookies seeded into every shot's browser context before navigation — the session cookie an
+	 * `:auth` shot presents (`auth.ts`) and the `phoenix_flag_overrides` cookie a forced shot
+	 * carries (`flag-override.ts`, #2963/#7218). Absent ⇒ no cookies.
 	 */
 	readonly cookies?: readonly CaptureCookie[];
 	/**
@@ -84,6 +96,12 @@ export interface CaptureOptions {
 	 * and before it navigates. Absent ⇒ no proof is taken and `sessionProof` stays absent.
 	 */
 	readonly sessionProbeUrl?: string;
+	/**
+	 * The flag-evaluation probe to run from each shot's context once the cookies are seeded — the
+	 * URL to ask, and the flags whose forced values the answer is checked against. Absent ⇒ no proof
+	 * is taken and `overrideProof` stays absent.
+	 */
+	readonly flagProbe?: {readonly url: string; readonly flags: ForcedFlags};
 }
 
 /**
@@ -102,6 +120,30 @@ const proveSession = (context: BrowserContext, probeUrl: string): Promise<Sessio
 			(cause): SessionProof => ({
 				_tag: "Unreadable",
 				reason: `session probe failed: ${String(cause)}`,
+			}),
+		);
+
+/**
+ * Ask the preview what the forced flags evaluated to for this context. Same context, same cookie
+ * jar, and total on the same terms as {@link proveSession}: a rejected probe is a fact about the
+ * probe, and letting it throw would accuse the page of being unreachable.
+ */
+const proveOverride = (
+	context: BrowserContext,
+	probe: {readonly url: string; readonly flags: ForcedFlags},
+): Promise<OverrideProof> =>
+	context.request
+		.post(probe.url, {
+			headers: {"content-type": "application/json"},
+			data: flagProbeBody(probe.flags),
+		})
+		.then(async (response) =>
+			readOverrideProof(response.status(), await response.text(), probe.flags),
+		)
+		.catch(
+			(cause): OverrideProof => ({
+				_tag: "Unreadable",
+				reason: `flag probe failed: ${String(cause)}`,
 			}),
 		);
 
@@ -150,6 +192,10 @@ export const captureShots = (
 								options.sessionProbeUrl === undefined
 									? undefined
 									: await proveSession(context, options.sessionProbeUrl);
+							const overrideProof =
+								options.flagProbe === undefined
+									? undefined
+									: await proveOverride(context, options.flagProbe);
 							const page = await context.newPage();
 							// Listen across the WHOLE navigation window (attached before goto), so a
 							// runtime error thrown during mount/init is caught even when the frame
@@ -186,6 +232,7 @@ export const captureShots = (
 									pageErrors,
 									...(response === null ? {} : {status: response.status()}),
 									...(sessionProof === undefined ? {} : {sessionProof}),
+									...(overrideProof === undefined ? {} : {overrideProof}),
 								};
 							} finally {
 								await context.close();

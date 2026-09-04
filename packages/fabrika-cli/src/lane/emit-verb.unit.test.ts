@@ -13,6 +13,11 @@ import {
 	TOPOLOGY_FOREIGN,
 } from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
+import {coderTemplateText} from "./fixtures.test-support.ts";
+
+const WORKFLOW = ".fabrika/lanes/4300/workflow.json";
+const LOG = ".fabrika/lanes/4300/events.jsonl";
+const AT = "2026-08-21T16:30:00.000Z";
 
 const ISSUE = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300$/;
 const SUBS = /^GET https:\/\/api\.github\.com\/repos\/o\/r\/issues\/4300\/sub_issues\?/;
@@ -79,6 +84,29 @@ describe("lane emit", () => {
 
 		expect(out.code).toBe(LANE_EXISTS);
 		expect(fs.written.size).toBe(0);
+	});
+
+	it("refuses a lane already on disk and names both steps of the remedy", async () => {
+		const {out, fs} = await run(
+			[
+				[ISSUE, epic()],
+				[SUBS, children],
+			],
+			fakeFs({
+				files: {
+					[WORKFLOW]: coderTemplateText(),
+					[LOG]: `${JSON.stringify({task: "issue", event: "ISSUE.WIP", at: AT})}\n`,
+				},
+				directories: [".fabrika/lanes/4300"],
+			}),
+		);
+
+		expect(out.code).toBe(LANE_EXISTS);
+		expect(out.stdout).toBe("");
+		expect(fs.written.size).toBe(0);
+		const stderr = out.stderr.join("\n");
+		expect(stderr).toContain("retire .fabrika/lanes/4300");
+		expect(stderr).toContain("fabrika lane emit 4300");
 	});
 
 	it("refuses a proven-absent epic on the no-target seat", async () => {

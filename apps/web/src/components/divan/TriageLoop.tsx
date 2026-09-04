@@ -6,18 +6,16 @@
  * actionable rather than dropping it. The pure decisions live DOM-free in `triage-loop.ts`;
  * this component is the thin React shell over them.
  */
+
+import {Alert, Badge, Button, Kbd, Surface} from "@kampus/design";
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport, ResolveReceipt} from "../../../worker/features/report/views";
-import {Alert} from "../ui/Alert";
-import {Kbd} from "../ui/atoms";
-import {Badge} from "../ui/Badge";
-import {Button} from "../ui/Button";
-import {Surface} from "../ui/Card";
+import {plural, useLocale, useT} from "../../i18n";
 import {ActorDrawer} from "./ActorDrawer";
 import {type Chamber, drawerDefaultOpen, drawerKeyToAction, hopTarget} from "./actor-drawer";
 import {itemKindLabel, parseBacklogItemId} from "./divanGating";
-import {reasonLabel, reportAgeLabel, targetExcerptLabel, targetHref} from "./raporlarGating";
+import {reasonText, reportAgeLabel, targetExcerptText, targetHref} from "./raporlarGating";
 import {
 	blastRadiusLabel,
 	buildWaveManifest,
@@ -100,6 +98,7 @@ type LastVerdict =
 	| {readonly kind: "wave"; readonly waveId: string; readonly keys: ReadonlyArray<string>};
 
 export function TriageLoop({onExit}: {readonly onExit: () => void}) {
+	const t = useT();
 	const result = useRequest({
 		"report.listOpen": {list: OpenReportConnectionView, args: {first: QUEUE_PAGE_SIZE}},
 	});
@@ -143,7 +142,7 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 					view: ResolveReceiptView,
 				});
 				if (callError) {
-					setError("işlem başarısız oldu, tekrar dene.");
+					setError(t("divan.triage.resolveFailed"));
 					return;
 				}
 				setResolvedIds((prev) => [...prev, `${target.targetKind}:${target.targetId}`]);
@@ -158,12 +157,12 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 				setPending(null);
 				setIndex((i) => focusAfterResolve(i, live.length - 1));
 			} catch {
-				setError("işlem başarısız oldu, tekrar dene.");
+				setError(t("divan.triage.resolveFailed"));
 			} finally {
 				setBusy(false);
 			}
 		},
-		[fate, live.length],
+		[fate, live.length, t],
 	);
 
 	const undo = useCallback(async () => {
@@ -180,7 +179,7 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 					view: ResolveReceiptView,
 				});
 				if (callError) {
-					setError("geri alınamadı, tekrar dene.");
+					setError(t("divan.triage.undoFailed"));
 					return;
 				}
 				setResolvedIds((prev) => prev.filter((x) => !last.keys.includes(x)));
@@ -191,7 +190,7 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 					view: ResolveReceiptView,
 				});
 				if (callError) {
-					setError("geri alınamadı, tekrar dene.");
+					setError(t("divan.triage.undoFailed"));
 					return;
 				}
 				const id = `${last.targetKind}:${last.targetId}`;
@@ -200,11 +199,11 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 			}
 			setLastVerdict(null);
 		} catch {
-			setError("geri alınamadı, tekrar dene.");
+			setError(t("divan.triage.undoFailed"));
 		} finally {
 			setBusy(false);
 		}
-	}, [fate, lastVerdict]);
+	}, [fate, lastVerdict, t]);
 
 	// Returns whether it landed, so the batch can partition resolved from failed — no silent
 	// partial drop.
@@ -342,9 +341,10 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 	]);
 
 	if (live.length === 0) {
+		const drained = drainedLabel(decisionsToday);
 		return (
 			<div className="kp-triage__drained" data-testid="triage-drained">
-				<p className="kp-triage__drained-line">{drainedLabel(decisionsToday)}</p>
+				<p className="kp-triage__drained-line">{t(drained.key, drained.params)}</p>
 			</div>
 		);
 	}
@@ -357,11 +357,11 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 				</span>
 				<ul className="kp-triage__legend">
 					{triageLegend.map((entry) => (
-						<li className="kp-triage__legend-item" key={entry.label}>
+						<li className="kp-triage__legend-item" key={entry.labelKey}>
 							{entry.keys.map((k) => (
 								<Kbd key={k}>{k}</Kbd>
 							))}
-							<span className="kp-triage__legend-label">{entry.label}</span>
+							<span className="kp-triage__legend-label">{t(entry.labelKey)}</span>
 						</li>
 					))}
 				</ul>
@@ -397,7 +397,7 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 
 			{pending === "remove" && focusedTarget && (
 				<div className="kp-triage__confirm" role="alertdialog" data-testid="triage-confirm">
-					<p className="kp-triage__confirm-line">içeriği kaldır? (R onayla · Esc vazgeç)</p>
+					<p className="kp-triage__confirm-line">{t("divan.triage.confirmLine")}</p>
 					<div className="kp-triage__confirm-actions">
 						<Button
 							type="button"
@@ -409,7 +409,7 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 							onClick={() => void resolve(focusedTarget, "remove")}
 							data-testid="triage-confirm-yes"
 						>
-							kaldır
+							{t("divan.triage.remove")}
 						</Button>
 						<Button
 							type="button"
@@ -420,7 +420,7 @@ export function TriageLoop({onExit}: {readonly onExit: () => void}) {
 							onClick={() => setPending(null)}
 							data-testid="triage-confirm-no"
 						>
-							vazgeç
+							{t("divan.cancel")}
 						</Button>
 					</div>
 				</div>
@@ -456,6 +456,8 @@ function WaveManifest({
 	readonly onResolved: (keys: ReadonlyArray<string>, waveId: string) => void;
 	readonly onClose: () => void;
 }) {
+	const t = useT();
+	const {locale} = useLocale();
 	const [rowsByKey, setRowsByKey] = useState<Record<string, WaveRow>>({});
 	const onProbe = useCallback((row: WaveRow) => {
 		const key = waveTargetKey(row);
@@ -485,6 +487,8 @@ function WaveManifest({
 	const [pending, setPending] = useState<Verdict | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const manifestLabel = waveManifestLabel(manifest.length);
+	const blast = blastRadiusLabel(manifest, selected);
 
 	const apply = useCallback(
 		async (verdict: Verdict) => {
@@ -507,13 +511,13 @@ function WaveManifest({
 			const failLabel = waveFailureLabel(failed.length);
 			if (failLabel !== null) {
 				// No silent partial drop: the failed targets stay selected and in the manifest.
-				setError(failLabel);
+				setError(t(failLabel.key, failLabel.params));
 				setExplicit(failed);
 			} else {
 				onClose();
 			}
 		},
-		[manifest, selected, resolveTarget, onResolved, onClose],
+		[manifest, selected, resolveTarget, onResolved, onClose, t],
 	);
 
 	useEffect(() => {
@@ -577,21 +581,21 @@ function WaveManifest({
 			border
 			className="kp-wave"
 			role="dialog"
-			aria-label="dalgayı kaldır"
+			aria-label={t("divan.wave.label")}
 			data-testid="wave-manifest"
 		>
 			<header className="kp-wave__head">
 				<span className="kp-wave__title" data-testid="wave-title">
-					{waveManifestLabel(manifest.length)}
+					{t(manifestLabel.key, manifestLabel.params)}
 				</span>
 				<span className="kp-wave__keys" aria-hidden="true">
-					T tümü · Space seç · ⌥R kaldır · ⌥Y yoksay · Esc çık
+					{t("divan.wave.keys")}
 				</span>
 			</header>
 
 			<ul className="kp-wave__list">
-				{manifest.map((t, i) => {
-					const key = waveTargetKey(t);
+				{manifest.map((target, i) => {
+					const key = waveTargetKey(target);
 					const on = isWaveSelected(selected, key);
 					return (
 						<li
@@ -604,9 +608,14 @@ function WaveManifest({
 							<span className="kp-wave__check" aria-hidden="true">
 								{on ? "◉" : "○"}
 							</span>
-							<span className="kp-wave__kind">{itemKindLabel(t.targetKind)}</span>
-							<span className="kp-wave__row-title">{t.title}</span>
-							<span className="kp-wave__count">{t.reportCount} rapor</span>
+							<span className="kp-wave__kind">{t(itemKindLabel(target.targetKind))}</span>
+							<span className="kp-wave__row-title">{target.title}</span>
+							<span className="kp-wave__count">
+								{plural(locale, target.reportCount, {
+									one: t("divan.report.count.one", {count: target.reportCount}),
+									other: t("divan.report.count.other", {count: target.reportCount}),
+								})}
+							</span>
 						</li>
 					);
 				})}
@@ -625,7 +634,10 @@ function WaveManifest({
 			{pending === "remove" && (
 				<div className="kp-wave__confirm" role="alertdialog" data-testid="wave-confirm">
 					<p className="kp-wave__confirm-line" data-testid="wave-confirm-line">
-						{blastRadiusLabel(manifest, selected)}
+						{t(blast.frame.key, {
+							...blast.frame.params,
+							reports: t(blast.reports.key, blast.reports.params),
+						})}
 					</p>
 					<div className="kp-wave__confirm-actions">
 						<Button
@@ -638,7 +650,7 @@ function WaveManifest({
 							onClick={() => void apply("remove")}
 							data-testid="wave-confirm-yes"
 						>
-							kaldır (Enter)
+							{t("divan.wave.remove")}
 						</Button>
 						<Button
 							type="button"
@@ -649,7 +661,7 @@ function WaveManifest({
 							onClick={() => setPending(null)}
 							data-testid="wave-confirm-no"
 						>
-							vazgeç (Esc)
+							{t("divan.wave.cancel")}
 						</Button>
 					</div>
 				</div>
@@ -671,16 +683,25 @@ function WaveProbe({
 	readonly node: ViewRef<"OpenReport">;
 	readonly onData: (row: WaveRow) => void;
 }) {
+	const t = useT();
 	const data = useView(OpenReportLoopView, node);
 	useEffect(() => {
 		onData({
 			targetKind: data.targetKind,
 			targetId: data.targetId,
-			title: targetExcerptLabel(data.targetExcerpt),
+			title: targetExcerptText(data.targetExcerpt) ?? t("divan.excerpt.unavailable"),
 			reportCount: data.reportCount,
 			authorId: data.authorId,
 		});
-	}, [data.targetKind, data.targetId, data.targetExcerpt, data.reportCount, data.authorId, onData]);
+	}, [
+		data.targetKind,
+		data.targetId,
+		data.targetExcerpt,
+		data.reportCount,
+		data.authorId,
+		onData,
+		t,
+	]);
 	return null;
 }
 
@@ -714,16 +735,19 @@ function TriageCard({
 	readonly node: ViewRef<"OpenReport">;
 	readonly revealed: boolean;
 }) {
+	const t = useT();
 	const data = useView(OpenReportLoopView, node);
 	const age = reportAgeLabel(data.firstReportedAt, Date.now());
 	const href = targetHref(data.targetKind, data.targetRef);
-	const excerpt = maskedExcerpt(data.targetExcerpt, revealed);
+	const masked = maskedExcerpt(data.targetExcerpt, revealed);
+	const excerpt = "text" in masked ? masked.text : t(masked.key, masked.params);
 	const diversity = reporterDiversityLabel(data.reportCount, data.distinctReporters);
 	const reputation = authorReputationLabel(
 		data.authorTier,
 		data.authorKarma,
 		data.authorPriorRemovals,
 	);
+	const reason = reasonText(data.reason) ?? t("divan.rapor.noReason");
 
 	return (
 		<Surface
@@ -736,11 +760,11 @@ function TriageCard({
 			data-testid={`triage-card-${data.targetKind}-${data.targetId}`}
 		>
 			<header className="kp-triage__card-head">
-				<span className="kp-triage__kind">{itemKindLabel(data.targetKind)}</span>
+				<span className="kp-triage__kind">{t(itemKindLabel(data.targetKind))}</span>
 				<Badge variant="secondary" className="kp-triage__diversity" data-testid="triage-diversity">
-					{diversity}
+					{t(diversity.key, diversity.params)}
 				</Badge>
-				{age !== null && <span className="kp-triage__age">{age}</span>}
+				{age !== null && <span className="kp-triage__age">{t(age.key, age.params)}</span>}
 			</header>
 
 			<div className="kp-triage__excerpt-wrap">
@@ -761,10 +785,10 @@ function TriageCard({
 				)}
 				{reputation !== null && (
 					<span className="kp-triage__reputation" data-testid="triage-reputation">
-						{reputation}
+						{t(reputation.key, reputation.params)}
 					</span>
 				)}
-				<span className="kp-triage__reason">{reasonLabel(data.reason)}</span>
+				<span className="kp-triage__reason">{reason}</span>
 			</footer>
 		</Surface>
 	);

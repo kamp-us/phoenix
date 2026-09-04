@@ -58,7 +58,7 @@
 	text-decoration: underline;
 }
 
-/* Row shell + shared child treatment is the MetaRow primitive (ui/MetaRow.css,
+/* Row shell + shared child treatment is the MetaRow primitive (packages/design/src/MetaRow.css,
    #2163); only this header's own tuning (t-meta font, 8px gap) stays here, at a
    specificity that outranks the primitive's defaults so the fold is order-free. */
 .kp-meta-row.kp-pano-postpage__meta {

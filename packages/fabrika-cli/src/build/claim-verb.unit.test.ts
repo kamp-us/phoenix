@@ -25,6 +25,7 @@ import {
 	READBACK_MISMATCH,
 	TYPE_NOT_BUILDABLE,
 	WRITE_UNKNOWN,
+	WRONG_LANE,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {
@@ -114,6 +115,7 @@ const unblocked = (script: ReadonlyArray<Scripted>) => fakeSeams([...script, NO_
 
 const options = {
 	number: 4312,
+	issue: null as number | null,
 	repo: null,
 	cwd: "/repo",
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e", ...GH_TOKEN_ENV} as Record<
@@ -660,6 +662,24 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
 	});
 
+	it.each([
+		["first", "Fixes #5553\nFixes #5554\n"],
+		["last", "Fixes #5554\nFixes #5553\n"],
+	])("admits an explicitly retained served issue when it appears %s", async (_order, body) => {
+		const {out} = await claimPull(body, servedTicket(44), {issue: 5553});
+		expect(out.code).toBe(0);
+		expect(out.stderr.some((line) => line.includes("PR #4312 serves #5553 (fixes)"))).toBe(true);
+	});
+
+	it("refuses an explicit issue outside the PR linkage set before writing", async () => {
+		const {out, shell} = await claimPull("Fixes #5553\nFixes #5554\n", servedTicket(44), {
+			issue: 5555,
+		});
+		expect(out.code).toBe(WRONG_LANE);
+		expect(out.stderr.at(-1)).toContain("does not serve requested issue #5555");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
+	});
+
 	it("reads Part of #<n> too — the partial-PR shape build --partial emits", async () => {
 		const {out} = await claimPull("Part of #5553\n", servedTicket(44));
 		expect(out.code).toBe(0);
@@ -731,6 +751,16 @@ describe("runClaim — a PR number is judged by the issue it serves", () => {
 		expect(out.stderr.some((line) => line.includes("this issue carries ready-for:agent"))).toBe(
 			true,
 		);
+	});
+
+	it("refuses --issue on a non-PR target before writing", async () => {
+		const shell = unblocked([[ISSUE, issue()]]);
+		const out = await Effect.runPromise(
+			Effect.provide(runClaim({...options, issue: 4312}), Layer.merge(shell.layer, IN_SCOPE.layer)),
+		);
+		expect(out.code).toBe(OFF_VOCABULARY);
+		expect(out.stderr.at(-1)).toContain("--issue is repair-only");
+		expect(shell.requests.some((line) => POST.test(line))).toBe(false);
 	});
 
 	it("leaves an issue target reading its own record — the resolution never fires on one", async () => {

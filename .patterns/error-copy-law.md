@@ -1,6 +1,6 @@
-# The error-copy law — English source copy
+# The error-copy law — the English arm
 
-The voice-and-clarity law for the **English source copy** of an error message: the words a
+The voice-and-clarity law for the **English arm** of an error message: the words a
 user reads when an operation fails. It governs *how the copy is written*, not *how the
 message reaches the client* — that mechanism is already owned by two things this law is
 **subordinate to** and never replaces:
@@ -21,20 +21,16 @@ Where an error is declared and how its wire code is annotated is [effect-errors.
 + [fate-effect-wire-errors.md](./fate-effect-wire-errors.md); read those for the *mechanism*. Read
 this doc for the *copy* — the words in the `message` field and in `WIRE_MESSAGES`.
 
-## Out of scope: i18n / translation
+## Scope: the English arm of the catalog
 
-This law governs **English source copy only**. kamp.us user-facing copy is authored in English as
-the source language and shipped in Turkish (later other locales) through a translation layer — that
-direction (the i18n mechanism, the EN→TR translation-quality craft, and the explicit re-litigation
-of the current Turkish-first registries against `.glossary/LANGUAGE.md` §3) is charted separately in
-[#3378](https://github.com/kamp-us/phoenix/issues/3378). This law does **not** translate copy,
-migrate the existing Turkish strings in `WIRE_MESSAGES`, or settle the shipped register
-(capitalization, formality) — those belong to #3378. It states only the craft invariants that hold
-for the English source string regardless of how it is later translated or cased.
-
-> The strings currently in `WIRE_MESSAGES` are Turkish — the pre-i18n reality #3378 addresses. Until
-> that migration lands, this law is the going-forward authoring rule for new English source copy; it
-> does not retroactively rewrite the existing catalog.
+Since [ADR 0347](../.decisions/0347-web-copy-behind-i18n-catalog.md) `apps/web` copy is Turkish
+and English, authored as peers in the typed catalog under `apps/web/src/i18n/` — there is no
+source language and no translation layer. This law governs the **English** arm of an error
+message: the `en` entry a wire code resolves to, and any English `message` field a worker emits.
+The Turkish arm follows the register in [`.glossary/LANGUAGE.md`](../.glossary/LANGUAGE.md); the
+mechanism that pairs the two, the `CatalogKey` derivation and the brand-noun invariant, is
+[i18n-catalog.md](./i18n-catalog.md). This law does not settle Turkish register, and it does not own
+the catalog's shape.
 
 ## The law
 

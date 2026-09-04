@@ -1,6 +1,7 @@
+import {Button} from "@kampus/design";
 import type * as React from "react";
 import {NavLink} from "react-router";
-import {Button} from "../ui/Button";
+import {useT} from "../../i18n";
 import "./Subnav.css";
 
 export type SubnavFilter = {id: string; label: React.ReactNode};
@@ -47,6 +48,7 @@ export function Subnav({
 	meta?: React.ReactNode;
 	cta?: React.ReactNode;
 }) {
+	const t = useT();
 	return (
 		<div className="kp-subnav">
 			{filters?.length || links?.length || destinations ? (
@@ -86,7 +88,7 @@ export function Subnav({
 							className="kp-subnav__crumb-clear"
 							onClick={crumb.onClear}
 						>
-							× filtreyi kaldır
+							{t("layout.filter.clear")}
 						</Button>
 					) : null}
 				</span>

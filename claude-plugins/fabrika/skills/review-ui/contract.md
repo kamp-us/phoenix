@@ -60,7 +60,7 @@ this contract (one registry-side enum addition; flagged in the implementation ti
 | Verb | Purpose | Split test |
 |---|---|---|
 | `review-ui render` | capture named surfaces from the PR's preview deployment at the inspected head, one validated PNG per surface, each surface's outcome proven | preview resolution, head-binding, capture and per-surface outcome typing are mechanical; *choosing the surfaces and looking at the pixels* stays in the skill |
-| `review-ui post` | the single sanctioned `review-ui` verdict emit: verify-upload the evidence set, compose through the wire format, bind to the inspected head at post time, post one comment, read it back | upload-verify-compose-post-readback is a protocol; *the polarity and every finding behind it* are judgment |
+| `review-ui post` | the single sanctioned `review-ui` verdict emit: verify-upload the evidence set, compose through the wire format, bind to the inspected head at post time, append into this namespace's one comment, read it back | upload-verify-compose-post-readback is a protocol; *the polarity and every finding behind it* are judgment |
 | `review-ui note` | the single sanctioned non-verdict write: post one plain comment naming a proven blocker state (can't-see, escalation), leak-scanned, read back — never a marker | compose-scan-post-readback is a protocol; *whether the state warrants a note* is judgment |
 | `review-ui route` | the single sanctioned way to resolve this namespace with no verdict: post one head-bound `routed-elsewhere` record stating that the PR renders nothing, leak-scanned, upserted, read back | binding, upsert and read-back are a protocol; *whether the diff renders anything* is judgment, and no verb may take it |
 
@@ -176,6 +176,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `15` | proven: a capture was produced but is invalid — zero bytes, undecodable, zero area, or a set member fails its manifest sha |
 | `16` | proven: no preview deployment exists for this PR — the announced-preview convention resolves to nothing; the skill's CANT-SEE route |
 | `17` | proven: at least one evidence upload or upload-verification failed — **nothing was posted** |
+| `18` | refused: the write would retire a standing verdict of the **opposite polarity** at this head and `--supersede` was not passed — nothing posted (#7247) |
 | `127` | the verb never ran at all (unresolved binary) |
 
 **`7` versus `11`** is the package's spine: a 404 is a fact about the repository, an unreachable
@@ -202,12 +203,26 @@ Per the tandem ruling (both briefs, 2026-08-09), declared identically to `build-
   verb changes behavior based on it. Chrome absent means the default path, silently.
 - Chrome output never enters `review-ui post --evidence`: evidence comes from `review-ui render`
   capture sets only, so the attach path has one validated producer.
-- **`:auth` surfaces need two environment values**, both unset by default: `PREVIEW_TEST_SESSION_TOKEN`
-  (the session token `preview-seed test-account` wrote onto the preview D1) and `BETTER_AUTH_SECRET`
-  (the preview worker's, so the cookie signature verifies). With neither or one set, an `:auth`
-  request refuses `11` rather than substituting the anonymous render; with no `:auth` surface asked
-  for, every surface renders anonymously as before. Setting both is necessary and not sufficient —
-  whether the cookie authenticated is the per-shot session proof's answer, also an `11`.
+- **A tier-naming surface needs `BETTER_AUTH_SECRET` plus that tier's own session token**, all unset
+  by default. `BETTER_AUTH_SECRET` is the preview worker's, so the cookie signature verifies; the
+  token is the one `preview-seed test-account` wrote onto the preview D1 for that tier —
+  `PREVIEW_TEST_SESSION_TOKEN` for `:auth` (yazar), `PREVIEW_TEST_CAYLAK_SESSION_TOKEN` for
+  `:auth-caylak` (çaylak). **One variable per tier, and an unset one is never satisfied by
+  another's**: an unset tier token means that tier was not seeded on this preview, and falling back
+  to a seeded identity would render the audience the surface said it was not (#7398). With any of
+  them unset the request refuses `11` rather than substituting; with no tier-naming surface asked
+  for, every surface renders anonymously as before. Setting them is necessary and not sufficient —
+  whether the cookie authenticated, and at which tier, is the per-shot session proof's answer, also
+  an `11`.
+- **`--flag` needs those same values plus one grant on the preview D1.** The override cookie is
+  honored only for a platform admin (`flagship/override-authz.ts`, unchanged by #7218), and
+  `preview-seed test-account` provisions moderation authority to the yazar identity and nothing at
+  all to the çaylak one. So a forced run is preceded by `node packages/admin-grant/src/bin.ts grant
+  --user-id <the tier's account id> --database-id <preview-d1>` — offline and direct-D1, on a
+  throwaway preview only, never against a database holding real accounts. Admin is a relation tuple,
+  not a tier, so granting it to `preview-test-caylak` leaves that identity a çaylak and the tier
+  proof still binds. The grant is what makes the forced capture an admin's view as well, which is
+  the trade the operand asks for and the reason it is not the default.
 
 **The preview-deploy convention.** The repo announces each PR's preview as a sticky PR comment
 carrying the anchor `<!-- preview-deploy:<app> -->`, whose body names, per app: the deployed URL
@@ -227,7 +242,7 @@ anchor at all is the proven `16`.
 **Invocation**
 
 ```
-fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/yeni [--app web] [--repo <owner/name>]
+fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/yeni [--viewport desktop --viewport mobile] [--flag <key>=<on|off>] [--app web] [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -236,22 +251,73 @@ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /pano/
 |---|---|---|---|---|
 | `--pr` | integer | yes | — | the pull request whose preview is judged |
 | `--out` | string | yes | — | kebab-case capture-set name; captures land under `<OS temp>/fabrika-review-ui/<pr>-<head8>/<set>/` |
-| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/pano`), or a route plus a realized state (`/pano:auth`); zero operands is `1` — no tool guesses surfaces from a diff |
+| `--surface` | string, repeatable | yes (≥1) | — | a surface id: a route (`/pano`), or a route plus a realized tier state (`/pano:auth`, `/pano:auth-caylak`); zero operands is `1` — no tool guesses surfaces from a diff |
+| `--viewport` | string, repeatable | no | `desktop` alone | a viewport to shoot every `--surface` at, over the closed set `desktop` (1280×800) and `mobile` (390×844); crossed with `--surface`, so two of each is four captures. A name outside the set, or one passed twice, is `10` |
+| `--flag` | string, repeatable | no | every flag at its default | force one flag for this run: `<key>=on` or `<key>=off`; anything else, or a key forced twice, is `10` |
 | `--app` | string | no | the sole app in the preview comment; ambiguity refuses on `11` | which app's sub-line of the preview comment to resolve |
 | `--repo` | string | no | resolved | the repository |
 
 A `:state` suffix is admitted **only for a state something here actually puts on screen**, and
-refused on `10` otherwise. The realized set is `auth` and nothing else (#7051): an `:auth` surface
-renders with the moderator-tier test account's better-auth session cookie seeded into the capture
-context. The account is provisioned direct-D1 by `preview-seed test-account`, never by a worker
-route.
+refused on `10` otherwise. The realized set is `auth` and `auth-caylak` (#7051, #7398), and **each
+one names the tier it renders at**: `:auth` is the yazar+moderator identity, `:auth-caylak` the
+çaylak one. Each seeds that identity's own better-auth session cookie into the capture context, and
+each account is provisioned direct-D1 by `preview-seed test-account`, never by a worker route.
 
-Seeding a cookie is not the same as being signed in, so the shot proves it rather than assuming it.
-From the same browser context, before the shot is classified, the verb reads the preview's own
-`/api/auth/get-session` and requires a user back; anything else — a bare `null`, a non-200, an
-unreadable body — refuses the surface on `11` and records no capture. This is what makes the pixels a
-signed-in yazar+moderator's: a cookie that did not authenticate renders the visitor's page, and that
-page is a perfectly valid PNG no byte check can tell from the real one.
+The tier is an axis of the surface id because a tier is an audience. A surface whose whole point is
+that it renders *below* yazar — a çaylak nudge, a pre-promotion prompt, an onboarding ask — is
+suppressed for anyone clearing the floor, so a yazar's shot of it comes back valid, decodable and
+showing the state the PR did not add. That is the dangerous failure this axis closes: a clean-looking
+capture of the wrong audience.
+
+Seeding a cookie is not the same as being signed in, and being signed in is not the same as being
+signed in *as that tier*, so the shot proves both rather than assuming either. From the same browser
+context, before the shot is classified, the verb reads the preview's own `/api/auth/get-session` and
+requires a user back **whose `tier` is the one the surface named**; anything else — a bare `null`, a
+non-200, an unreadable body, a user with no tier, a user at another tier — refuses the surface on
+`11` and records no capture under that surface id. A cookie that did not authenticate renders the
+visitor's page and one that authenticated as the wrong identity renders somebody else's, and both are
+perfectly valid PNGs no byte check can tell from the real one.
+
+**`--viewport` is the width axis, and it is closed for the same reason `:state` is.** The narrow half
+of the design law — a sub-36px tap target, a nowrap string that overflows, spacing that goes off-grid
+— is only answerable from narrow pixels, and before this operand existed every shot was 1280 wide, so
+an acceptance criterion phrased about a phone ended the gate as disclosed-UNKNOWN rather than PASS or
+FAIL (#7706, and PR #7388 took a FAIL that no change to its branch could repair). Omitting it renders
+at `desktop` alone, exactly as every invocation written before it did. The two realized names resolve
+to the constants in `capture/plan.ts`; a third name would have to fall back to some width, and a shot
+at the fallback width filed under the asked-for label is coverage claimed and not held. Repeating one
+name is `10` too — the second shot would overwrite the first's file and its evidence.
+
+Viewports **cross** the surfaces rather than pairing with them: two surfaces and two viewports is one
+set of four captures. Nothing collides, because the PNG file name has always carried the viewport
+label (`pano@desktop.png`, `pano@mobile.png`) and each manifest entry now records it beside the
+surface id — so a set can say what width each of its shots is of, and the evidence gallery heads each
+one `<surface> @ <viewport>`.
+
+Asking for a width is not the same as rendering at it, so — like the session and the override — the
+shot proves its own. The recorded width is read back from the captured PNG's own header, never echoed
+from the request, and a shot whose width is not the requested viewport's is refused on `19` and
+recorded nowhere. A desktop-width capture filed under `mobile` is a perfectly valid PNG of a layout
+nobody asked about, and no byte check downstream can tell it from the real thing.
+
+**`--flag` forces a dark-shipped flag on, so the state the PR adds paints** (ADR 0336, #7218). It
+rides the worker's existing `phoenix_flag_overrides` cookie — no route is added and
+`flagship/override-authz.ts` is untouched — and that gate is why the operand carries a fence of its
+own: on a deployed stage the cookie is honored only for a request whose actor holds platform
+`Admin`, so an anonymous surface would drop it and render the default state cleanly under the
+forced name. Every `--surface` in a forced run must therefore name a tier state, and a bare route
+beside a `--flag` is `10`. Neither preview test account holds admin, so a forced run also needs
+`admin-grant grant --user-id <that tier's account id> --database-id <preview-d1>` against that
+throwaway preview D1 — offline, direct-D1, the same sanctioned path ADR 0107 already names. Admin is
+a relation tuple and not a tier, so a granted `preview-test-caylak` is still a çaylak and still
+passes the tier proof.
+
+Seeding an override is not the same as the override taking, so — like the session — the shot proves
+it. From the same context, before the shot is classified, the verb POSTs the preview's own
+`/api/flags/evaluate` asking each forced key with the **opposite** value as its default: a dropped
+cookie answers `!forced` for every key, which is `11` naming the inert keys. A key the probe leaves
+unevaluated, or a probe that cannot be read, is `11` too and is never folded into "the override was
+dropped" — that would be a fact about the override read off a probe nobody could read.
 
 The refusal on every other token is the same fence v1 stated, kept for the same reason: v1 demanded
 `:focus-visible` captures with no mechanism to prove the state was realized, and a state that
@@ -266,8 +332,8 @@ still refuses every `:state`.
 {"set": "judged", "pr": 4321, "head": "03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c",
  "previewUrl": "https://phoenix-pr-4321.kampus.workers.dev",
  "captures": [
-   {"surface": "/pano", "path": "<abs>/judged/pano.png", "width": 1280, "height": 2140,
-    "sha256": "…", "pageErrors": {"rows": [], "more": 0}}
+   {"surface": "/pano", "viewport": "desktop", "path": "<abs>/judged/pano@desktop.png",
+    "width": 1280, "height": 2140, "sha256": "…", "pageErrors": {"rows": [], "more": 0}}
  ]}
 ```
 
@@ -275,11 +341,13 @@ still refuses every `:state`.
 `11`). Resolve the preview comment for `--app` (paginated sweep; anchor absent → `16`, anchor
 present but unparseable → `11`). **Bind the preview to the head**: the comment's deployed SHA
 must equal the live head — a preview that lags the push is `12`, because pixels of an old tree
-bound to a new SHA are the stale-verdict class at the capture seam. For each `--surface`, in the
-provisioned headless browser at the machinery's default viewport: navigate to
+bound to a new SHA are the stale-verdict class at the capture seam. For each `--surface` at each
+`--viewport`, in the provisioned headless browser sized to that viewport: navigate to
 `<previewUrl><route>`; status ≥ 400 or failed navigation is **unreachable** (`14`); an uncaught
-page exception is **crashed** (`13`); otherwise screenshot full-page to `<set>/<route-slug>.png`
-and validate (exists, non-zero bytes, decodable, non-zero area — `15` on any failure).
+page exception is **crashed** (`13`); otherwise screenshot full-page to
+`<set>/<route-slug>@<viewport>.png` and validate (exists, non-zero bytes, decodable, non-zero area —
+`15` on any failure), then **read the width back off those bytes** and refuse a shot that is not the
+requested viewport's width (`19`).
 `console.error` output is **recorded per capture in `pageErrors`, never a gate outcome** — the
 crash/advisory split is the machinery's page-error module, and an empty list is only ever
 written from a successfully-read error channel (v1's extractor returned empty on a parse failure,
@@ -290,7 +358,7 @@ per-surface line counts the **whole** tally, not the kept rows. **Write the set 
 byte-identical to the stdout JSON — `post` reads the set through it, and a set without its
 manifest is not a set.
 
-Exit 0 requires **every** requested surface captured and valid. `12` and `16` are run-level
+Exit 0 requires **every** requested surface captured and valid at **every** requested viewport. `12` and `16` are run-level
 refusals decided before the per-surface loop and never mix with its outcomes. When per-surface
 outcomes mix, the reported code is the smallest applicable of `13`/`14`/`15` and stderr carries
 every surface's outcome — the code routes, the stderr enumerates. Dropping a surface is the skill's explicit
@@ -301,13 +369,14 @@ re-invocation without it, on the record; never the tool's tolerance.
 | Code | Trigger |
 |---|---|
 | `7` | the PR is proven absent (404) or closed |
-| `10` | `--out` not kebab-case, or a `--surface` names a `:state` outside the realized set (`auth`) |
-| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; an `:auth` surface was requested while `PREVIEW_TEST_SESSION_TOKEN` / `BETTER_AUTH_SECRET` is unset; or an `:auth` surface's session proof did not come back signed in |
+| `10` | `--out` not kebab-case; a `--surface` names a `:state` outside the realized set (`auth`, `auth-caylak`); a `--viewport` names a viewport outside the closed set (`desktop`, `mobile`) or is passed twice; a `--flag` operand is not a `<key>=<on\|off>` pair, or forces one key twice; or `--flag` was passed beside an anonymous surface |
+| `11` | the PR/head/comment read failed; the preview comment is present but malformed for `--app`, or `--app` is omitted while the comment names several apps; the browser provision is broken; a capture's validity could not be determined; a tier-naming surface was requested while that tier's session token or `BETTER_AUTH_SECRET` is unset; a tier-naming surface's session proof did not come back signed in, or came back at a tier the surface did not name; or a forced flag evaluated at its default anyway |
 | `12` | proven: the preview comment's deployed SHA is not the PR's live head — stale preview; re-render after the preview catches up |
 | `13` | proven: at least one surface threw an uncaught page error |
 | `14` | proven: at least one surface is unreachable (status ≥ 400, failed navigation, no route, dark flag, gated tier) |
 | `15` | proven: at least one capture is invalid (zero bytes, undecodable, zero area) |
 | `16` | proven: no comment carrying the preview anchor exists on the PR — this repo, or this PR, has no preview to judge |
+| `19` | proven: a capture's PNG width, read back from its own bytes, is not the requested viewport's width — the requested viewport's render is UNKNOWN, and nothing was recorded under that label |
 
 **Errors**
 
@@ -315,20 +384,27 @@ re-invocation without it, on the record; never the tool's tolerance.
 |---|---|---|
 | `review-ui render: PR #<n> not found in <repo>.` | 7 | refusal |
 | `review-ui render: PR #<n> is closed — nothing to judge.` | 7 | refusal |
-| `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth; render the bare route.` | 10 | refusal |
-| `review-ui render: an :auth surface was requested but its credentials are incomplete (unset: <names>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
-| `review-ui render: surface "<id>" did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
+| `review-ui render: --surface "<id>" names a :state nothing renders — the realized states are auth, auth-caylak; render the bare route.` | 10 | refusal |
+| `review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: <names>) — the named tier's render is UNKNOWN, never a seeded substitute.` | 11 | refusal |
+| `review-ui render: surface "<id>" at <viewport> did not render signed in (<reason>) — the authenticated render is UNKNOWN, never the anonymous one.` | 11 | refusal |
+| `review-ui render: surface "<id>" at <viewport> named tier <wanted> and rendered as <rendered> — the named tier's render is UNKNOWN, never another tier's.` | 11 | refusal |
+| `review-ui render: --flag "<token>" is not a <key>=<on\|off> pair (<reason>) — an operand nothing can force would shoot the default state under the forced name.` | 10 | refusal |
+| `review-ui render: --flag was passed with the anonymous surface "<id>" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.` | 10 | refusal |
+| `review-ui render: surface "<id>" at <viewport> did not render with its forced flags (<reason>) — the forced render is UNKNOWN, never the default one.` | 11 | refusal |
+| `review-ui render: --viewport "<name>" is not a viewport this repo renders — the names are desktop, mobile.` | 10 | refusal |
+| `review-ui render: --viewport "<name>" was passed twice — the second shot would overwrite the first's file and evidence.` | 10 | refusal |
+| `review-ui render: surface "<id>" at <viewport> was asked for at <wanted>px and its bytes read back <actual>px wide — the requested viewport's render is UNKNOWN, never another width's.` | 19 | refusal |
 | `review-ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `review-ui render: cannot read <what> for #<n>: <reason> — the render is UNKNOWN.` | 11 | refusal |
 | `review-ui render: the preview comment names apps <list> — pass --app to pick one.` | 11 | refusal |
 | `review-ui render: the preview comment carries the anchor but no parseable URL + SHA for app "<app>" — a malformed announcement is unreadable, not absent.` | 11 | refusal |
 | `review-ui render: the preview deploys <deployed-sha7>, the live head is <head7> — stale preview; pixels of an old tree must not bind a new head (#4808's class).` | 12 | refusal |
-| `review-ui render: surface "<id>" threw during render: <first page error> — the render is red; a broken page is not composition to judge.` | 13 | refusal |
-| `review-ui render: surface "<id>" is unreachable at the preview (<reason>) — judge what renders, and hold the gap against the PR's Deviations (#4305).` | 14 | refusal |
-| `review-ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
+| `review-ui render: surface "<id>" at <viewport> threw during render: <first page error> — the render is red; a broken page is not composition to judge.` | 13 | refusal |
+| `review-ui render: surface "<id>" at <viewport> is unreachable at the preview (<reason>) — judge what renders, and hold the gap against the PR's Deviations (#4305).` | 14 | refusal |
+| `review-ui render: surface "<id>" at <viewport> captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 15 | refusal |
 | `review-ui render: no preview-deploy comment on PR #<n> — nothing to judge without running the PR's code; the run is CANT-SEE.` | 16 | refusal |
 
-**Scope** — exactly the `--surface` operands against one PR's announced preview. Zero operands
+**Scope** — exactly the `--surface` × `--viewport` cross product against one PR's announced preview. Zero operands
 is `1`, so "rendered nothing, found nothing wrong" is unrepresentable (ADR 0092). The
 per-surface outcome enumeration goes to stderr on every path, success included.
 
@@ -336,15 +412,55 @@ per-surface outcome enumeration goes to stderr on every path, success included.
 
 ```
 $ fabrika review-ui render --pr 4321 --out judged --surface /pano
-{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}}]}
+{"set":"judged","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/judged/pano@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}}]}
 ```
 
 ```
 $ fabrika review-ui render --pr 4321 --out judged --surface /pano --surface /yonetim
-review-ui render: surface "/pano" captured: 1280x2140, 0 page errors
-review-ui render: surface "/yonetim" is unreachable at the preview (status 404) — judge what renders, and hold the gap against the PR's Deviations (#4305).
+review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page errors
+review-ui render: surface "/yonetim" at desktop is unreachable at the preview (status 404) — judge what renders, and hold the gap against the PR's Deviations (#4305).
 $ echo $?
 14
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out narrow --surface /pano --viewport desktop --viewport mobile
+review-ui render: surface "/pano" at desktop captured: 1280x2140, 0 page errors
+review-ui render: surface "/pano" at mobile captured: 390x3180, 0 page errors
+{"set":"narrow","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/pano","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/pano@desktop.png","width":1280,"height":2140,"sha256":"9c41…","pageErrors":{"rows":[],"more":0}},{"surface":"/pano","viewport":"mobile","path":"/tmp/fabrika-review-ui/4321-03135b91/narrow/pano@mobile.png","width":390,"height":3180,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out forced --surface /hosgeldin:auth --flag phoenix-welcome=on
+review-ui render: surface "/hosgeldin:auth" at desktop captured: 1280x1640, 0 page errors
+{"set":"forced","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/hosgeldin:auth","viewport":"desktop","path":"/tmp/fabrika-review-ui/4321-03135b91/forced/hosgeldin-auth@desktop.png","width":1280,"height":1640,"sha256":"1f7b…","pageErrors":{"rows":[],"more":0}}]}
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
+review-ui render: surface "/hosgeldin:auth-caylak" captured: 1280x1640, 0 page errors
+{"set":"caylak","pr":4321,"head":"03135b91aa04f7e2c9d8b1640a5c22e9f01b7d3c","previewUrl":"https://phoenix-pr-4321.kampus.workers.dev","captures":[{"surface":"/hosgeldin:auth-caylak","path":"/tmp/fabrika-review-ui/4321-03135b91/caylak/hosgeldin-auth-caylak.png","width":1280,"height":1640,"sha256":"4d02…","pageErrors":{"rows":[],"more":0}}]}
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
+review-ui render: a tier-naming surface was requested but its credentials are incomplete (unset: PREVIEW_TEST_CAYLAK_SESSION_TOKEN) — the named tier's render is UNKNOWN, never a seeded substitute.
+$ echo $?
+11
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out caylak --surface /hosgeldin:auth-caylak
+review-ui render: surface "/hosgeldin:auth-caylak" named tier çaylak and rendered as yazar — the named tier's render is UNKNOWN, never another tier's.
+$ echo $?
+11
+```
+
+```
+$ fabrika review-ui render --pr 4321 --out forced --surface /hosgeldin --flag phoenix-welcome=on
+review-ui render: --flag was passed with the anonymous surface "/hosgeldin" — the preview honors an override only for an authorized platform-admin actor, so an anonymous surface would render the default state silently; name a tier state (auth, auth-caylak) on every surface.
+$ echo $?
+10
 ```
 
 **Grounding**
@@ -363,6 +479,13 @@ $ echo $?
   never a silent skip; the disclosure fork (Deviations-named vs undisclosed) is the skill's.
 - v1 S4 — v1's captures lived in an unrecorded `mktemp -d`: a PASS whose evidence upload failed
   was unauditable. The set path here is deterministic from PR + head, and the manifest records it.
+- #6541 / ADR 0336 — the verb captured every flag at its default, so under the dark-ship norm the
+  gate judged the off-path and said PASS. `--flag` is that ruling's implementation (#7218), and its
+  own proof exists because an override the preview dropped is the same clean-but-wrong capture.
+- #7398 — one identity at one tier meant a çaylak-only surface could not be rendered at all, and the
+  yazar's shot of it came back `captured`, valid and decodable, showing the state the PR did not add.
+  The tier rides the surface id, one seeded identity per tier, and the session proof reads the tier
+  back — the third instance of the same class the two bullets above name.
 
 ---
 
@@ -371,7 +494,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged [--carrier marker|advisory] [--repo <owner/name>]
+fabrika review-ui post 4321 --polarity FAIL --sha 03135b91 --clause "changes-requested" --evidence judged [--carrier marker|advisory] [--supersede] [--repo <owner/name>]
 ```
 
 The verdict body arrives on **stdin only** — no `--body`, no `--body-file`, for the sibling
@@ -388,6 +511,7 @@ poster reads success.
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
 | `--evidence` | string | yes | — | the `review-ui render` capture-set name whose verified upload is this verdict's evidence |
 | `--carrier` | enum | no | `marker` | `marker` (first-line SHA-bound marker) or `advisory` (§CP: advisory first line, `Reviewed-head: @ <sha>` body line). `advisory` is a PASS path only |
+| `--supersede` | boolean | no | `false` | acknowledge that this verdict retires a standing one of the **opposite** polarity at this head; without it that post is the `18` refusal |
 | `--repo` | string | no | resolved | the repository |
 | stdin | markdown | yes | — | the verdict body below the first line: per-row findings with pixel evidence, the coverage table, advisories |
 
@@ -396,8 +520,9 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 `review post` makes at runtime is unrepresentable here.
 
 **Output** — machine. One JSON object:
-`{"answer":"posted","namespace":"review-ui","polarity":"FAIL","sha":"03135b91","upsert":"created","carrier":"marker","surfaces":1,"commentUrl":"…"}`
-— `surfaces` is the count of captures in the `--evidence` set's manifest.
+`{"answer":"posted","namespace":"review-ui","polarity":"FAIL","sha":"03135b91","upsert":"created"|"superseded","carrier":"marker","surfaces":1,"commentUrl":"…"}`
+— `surfaces` is the count of captures in the `--evidence` set's manifest, and `upsert` is
+`superseded` whenever the write appended into a comment that already carried this namespace.
 
 **What the operation does, in order — each step gates the next.**
 
@@ -424,9 +549,16 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
    surface, the verified hosted URL.
 6. **Leak-scan the assembled comment** (`5` / `6` — the imported predicates; a finding that must
    cite a leak cites it by class root or repo-relative form).
-7. **Upsert one comment for this namespace under this carrier** (the disjoint marker/advisory
+7. **Append into one comment for this namespace under this carrier** (the disjoint marker/advisory
    match keys, exactly as `review post` step 5 specifies them); a second stacked marker is
-   un-anchored and fail-closes a passing PR.
+   un-anchored and fail-closes a passing PR. **The prior verdict is never replaced**: it is retired
+   verbatim below the `<!-- fabrika:superseded -->` fence under a dated `## Superseded verdict —
+   YYYY-MM-DD` heading, and the fresh verdict takes the first line so every marker reader resolves
+   the newest one. GitHub keeps no comment-body history, so a PATCH over a verdict is that verdict
+   gone: on PR #7081 a FAIL became a PASS at an unchanged head and nothing showed a gate had ever
+   blocked (#7247). When the write would retire a standing verdict of the **opposite** polarity at
+   this head, it is the `18` refusal unless `--supersede` is passed, and nothing is posted — the
+   flip is legitimate and routine, but it is the one the merge gate reads.
 8. **Read it back, unconditionally, from live PR state** — the format's `read` (or the advisory
    anchors), then the whole comment through `normalizeForReadback` (`9` on mismatch). A
    read-back that trusts a carried variable re-ships the false-PASS class.
@@ -447,6 +579,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `12` | refused: the live head moved past `--sha`, or the evidence set was rendered at a different head — the verdict or its pixels would bind a tree that is not the PR |
 | `15` | proven: a capture in the evidence set is invalid or fails its manifest sha |
 | `17` | proven: at least one evidence upload or its verification failed — nothing was posted |
+| `18` | refused: a standing verdict of the opposite polarity at this head would be retired and `--supersede` was not passed — nothing posted |
 
 **Errors**
 
@@ -468,6 +601,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: the assembled comment carries a machine-local path at line <k> (<class>) — cite it repo-relative or by class root.` | 5 | refusal |
 | `review-ui post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; run \`fabrika review verdicts <n>\` before retrying.` | 8 | refusal |
 | `review-ui post: posted, but the read-back does not yield this marker (<wire reason>) — inspect comment <id>.` | 9 | refusal |
+| `review-ui post: a standing <PASS\|FAIL> for review-ui at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 18 | refusal |
 
 **Scope** — one PR (its live head, its comments), one evidence set (its manifest and every
 capture in it), the caller's stdin. Steps 1–4 failing on a read is `11` — nothing written,
@@ -485,6 +619,18 @@ $ fabrika review-ui post 4321 --polarity PASS --sha 03135b91 --clause "ok" --evi
 review-ui post: the live head is a1b2c3d4, not 03135b91 — the tree you judged is gone; re-review at a1b2c3d4 (ADR 0058).
 $ echo $?
 12
+```
+
+```
+$ fabrika review-ui post 7081 --polarity PASS --sha 77f61ce9 --clause "merge-ready" --evidence judged < verdict.md
+review-ui post: a standing FAIL for review-ui at 77f61ce9 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
+$ echo $?
+18
+```
+
+```
+$ fabrika review-ui post 7081 --polarity PASS --sha 77f61ce9 --clause "merge-ready" --evidence judged --supersede < verdict.md
+{"answer":"posted","namespace":"review-ui","polarity":"PASS","sha":"77f61ce9","upsert":"superseded","carrier":"marker","surfaces":1,"commentUrl":"https://github.com/kamp-us/phoenix/pull/7081#issuecomment-5460446728"}
 ```
 
 **Grounding**

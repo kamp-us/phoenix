@@ -215,6 +215,28 @@ export const parkedFacets = (resolved: ResolvedBoard = DEFAULT_BOARD): ReadonlyA
 	{name: "lane", owns: ownsIn(resolved.facets, "lane"), keep: []},
 ];
 
+/**
+ * The facet table for a kill: the status facet alone, keeping nothing.
+ *
+ * **One facet, deliberately.** A killed issue keeps its classification as history — the type,
+ * priority, audience and lane it was read under are what make a closed issue legible to whoever
+ * finds it later — so this table names none of them, and `planReconcile` therefore counts every one
+ * of their labels as `preserved` rather than owned. Inheriting `parkedFacets` here would strip all
+ * five and leave a closed issue with no record of what it was.
+ *
+ * What must go is the status: `status:needs-triage` on a closed issue makes every unfiltered count
+ * over that label over-report the queue, and a kill after an earlier `apply` leaves `status:triaged`
+ * saying the same false thing (#6710). The keep set is empty, so all three triage statuses are
+ * planned as removals whichever one the issue arrived carrying.
+ *
+ * The home is not a facet, and a kill does not move it: the caller passes the observed milestone as
+ * `home` on both the plan and the read-back assertion, so no milestone change is planned and none is
+ * demanded.
+ */
+export const killedFacets = (resolved: ResolvedBoard = DEFAULT_BOARD): ReadonlyArray<Facet> => [
+	{name: "status", owns: ownsIn(resolved.facets, "status"), keep: []},
+];
+
 /** One atomic write the plan will issue. `AddLabels` is one change because it is one API call. */
 export type Change =
 	| {readonly _tag: "SetMilestone"; readonly milestone: number}

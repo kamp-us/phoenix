@@ -14,10 +14,12 @@ import {
 	MALFORMED_CRITERIA,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
+	PULL_REQUEST_TARGET,
 	READBACK_MISMATCH,
 	TRIAGE_EXIT_TABLE,
 	UNCONFIRMED,
 	UNREPAIRABLE,
+	UNWIRED_ORDERING,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
@@ -94,6 +96,28 @@ describe("the codes this group adds", () => {
 		expect(CLAIM_NOT_HELD).not.toBe(CLAIMED_ELSEWHERE);
 	});
 
+	/**
+	 * `15` is the *shape* of a block in the body a re-send can correct; `20` is the body disagreeing
+	 * with the *graph*, which no re-send alone can fix. Fusing them would send a caller looking for a
+	 * markdown defect that is not there.
+	 */
+	it("seats the unwired-ordering refusal clear of the malformed-criteria one", () => {
+		expect(UNWIRED_ORDERING).toBe(20);
+		expect(UNWIRED_ORDERING).not.toBe(MALFORMED_CRITERIA);
+		expect(UNWIRED_ORDERING).not.toBe(CLAIM_NOT_HELD);
+	});
+
+	/**
+	 * `repos/{o}/{r}/issues/<n>` serves pull requests, so a PR number resolves Present and ZERO_SCOPE's
+	 * proven-absent arm can never fire for one — fusing the two would say "no such issue" about a
+	 * number the caller is looking at.
+	 */
+	it("seats the pull-request target clear of the proven-absent one", () => {
+		expect(PULL_REQUEST_TARGET).toBe(21);
+		expect(PULL_REQUEST_TARGET).not.toBe(ZERO_SCOPE);
+		expect(PULL_REQUEST_TARGET).not.toBe(UNWIRED_ORDERING);
+	});
+
 	it("clears every seat `report` occupies, read from its exports and not a list", () => {
 		expect(checkAlignment(report, codes, SHARED_SEATS).collisions).toEqual([]);
 	});
@@ -109,7 +133,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 
 	it("carries every allocated code exactly once", () => {
 		expect(codes).toEqual([
-			0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 126, 127,
+			0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 126, 127,
 		]);
 	});
 
@@ -128,5 +152,7 @@ describe("TRIAGE_EXIT_TABLE", () => {
 		expect(meaningOf(CRITERIA_REQUIRED)).toContain("--ready-for agent");
 		expect(meaningOf(CLAIMED_ELSEWHERE)).toContain("another session");
 		expect(meaningOf(CLAIM_NOT_HELD)).toContain("holds no live claim");
+		expect(meaningOf(UNWIRED_ORDERING)).toContain("blocked_by");
+		expect(meaningOf(PULL_REQUEST_TARGET)).toContain("pull request");
 	});
 });

@@ -4,7 +4,8 @@
  * Two assertions, each with its own code so a caller can act on which one failed: a clean tree at a
  * `--require-clean` open (`13`), and a checked-out branch carrying this claim's nonce (`14`). A fresh
  * proof binds one issue branch to that issue's claim. A repair proof additionally binds the resumed
- * branch to the named PR, that PR's winning claim, and the one issue its live body serves (#7183).
+ * branch to the named PR, that PR's winning claim, and the explicitly requested issue in its live
+ * body's served-issue set (#7183, #7309).
  * Both are location-neutral — where the lane runs is the operator's call, not fabrika's (#5386). It
  * reads and never repairs: no clean, no create, no remove.
  *
@@ -28,7 +29,7 @@ export interface TreeOptions {
 	readonly requireClean: boolean;
 	/** Additionally prove the checked-out branch serves this issue — the pre-mutation posture. */
 	readonly issue: number | null;
-	/** In repair, the PR claim and resumed branch that must uniquely serve `issue`. */
+	/** In repair, the PR claim and resumed branch whose linkage set must contain `issue`. */
 	readonly repair: number | null;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -117,28 +118,21 @@ export const runTree = (
 		);
 		if (pull._tag === "Refused") return pull.outcome;
 		const linkage = issueRefsOf(pull.pull.body);
-		if (linkage.numbers.length !== 1) {
+		if (linkage.numbers.length === 0) {
 			return refuse(
 				BAD_SECTIONS,
-				`${VERB}: repair PR #${repair} names ${linkage.numbers.length} served issues through ${linkage.kind}; exactly one is required, so the repair subject is not uniquely readable.`,
+				`${VERB}: repair PR #${repair} names no served issues through ${linkage.kind}, so requested issue #${issueNumber} is not proven.`,
 				held.notes,
 			);
 		}
-		const servedIssue = linkage.numbers[0];
-		if (servedIssue === undefined) {
-			return refuse(
-				BAD_SECTIONS,
-				`${VERB}: repair PR #${repair}'s served issue disappeared while reading its linkage — nothing is proven.`,
-				held.notes,
-			);
-		}
-		if (servedIssue !== issueNumber) {
+		if (!linkage.numbers.includes(issueNumber)) {
 			return refuse(
 				WRONG_LANE,
-				`${VERB}: repair PR #${repair} serves issue #${servedIssue}, not requested issue #${issueNumber} — wrong lane.`,
+				`${VERB}: repair PR #${repair} does not serve requested issue #${issueNumber} through ${linkage.kind}; it serves ${linkage.numbers.map((number) => `#${number}`).join(", ")} instead — wrong lane.`,
 				held.notes,
 			);
 		}
+		const servedIssue = issueNumber;
 		const issue = yield* openIssue(
 			VERB,
 			resolved.repo,

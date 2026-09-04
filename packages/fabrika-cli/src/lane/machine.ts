@@ -3,19 +3,23 @@
  * per task out, everything XState's nesting carried reduced to data (#5673; grounded in the
  * recorded spike runs on #5671/#5672).
  *
- * Structural recognitions replace every name-driven mechanism, and **one guard spelling is read**:
+ * Structural recognitions replace every name-driven mechanism, and **two guard spellings are read**:
  * a `guard`/`actions` string is otherwise inert data.
  *
  *   - An **array on an event** means guarded: `[taken-when-the-guard-holds, else-fallthrough]`, and
- *     the fallthrough target, when final, is the task's error final (`frozen`, `tripped`). The
- *     first arm's own spelling picks the guard, and only two spellings exist. `class:<name>` reads
- *     the lane class the event carried (see {@link TaskState}) and spends nothing: it picks which
- *     shell serves the round, and picking is not repairing (ADR 0317). Every other spelling is the
- *     budget guard, one inline counter comparison in the compiled cell, and **which counter it
- *     spends is the event's own polarity**: `FAIL` is a repair round and spends `retries`, every
- *     other event is a wait and spends `waits`. A queue dwell must not eat the budget a later
- *     repair draws on, and reading that off the event keeps it structural — beyond `class:`, no
- *     guard name is consulted (ADR 0313).
+ *     the fallthrough target, when final, is the task's error final (`frozen`, `tripped`) — except
+ *     under the two routing spellings below, whose fallthrough is the ordinary path and carries no
+ *     error. The first arm's own spelling picks the guard, and only three kinds exist.
+ *     `class:<name>` reads the lane class the event carried (see {@link TaskState}) and spends
+ *     nothing: it picks which shell serves the round, and picking is not repairing (ADR 0317).
+ *     {@link PARTIAL_GUARD} reads whether the merge this event reports closed its issue, and spends
+ *     nothing either: a `Part of #N` merge is real work landing, so the lane goes round again rather
+ *     than folding to a terminal over an issue the board still calls buildable (ADR 0343). Every
+ *     other spelling is the budget guard, one inline counter comparison in the compiled cell, and
+ *     **which counter it spends is the event's own polarity**: `FAIL` is a repair round and spends
+ *     `retries`, every other event is a wait and spends `waits`. A queue dwell must not eat the
+ *     budget a later repair draws on, and reading that off the event keeps it structural — beyond
+ *     the two routing spellings, no guard name is consulted (ADR 0313).
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
@@ -55,6 +59,17 @@ export const isOperatorEvent = (event: string): event is OperatorEvent =>
 export const CLEARED_EVENT = "CLEARED";
 
 /**
+ * The eighth event, and the only line that names another line: a correction, appended by
+ * `lane reconcile` to say what a recorded event's routing payload should have been (ADR 0350).
+ *
+ * It reaches no machine at all — no state holds a cell for it, and the fold consumes it before any
+ * message is dispatched. That is the design rather than an omission: a correction is a fact about
+ * the log, not about the task, so it amends a line the machine has long since folded past without
+ * needing a door out of the terminal that fold reached.
+ */
+export const CORRECTED_EVENT = "CORRECTED";
+
+/**
  * One task's folded state: the leaf, its two budgets, the state it left (`was`), and the grants
  * applied so far — `cleared` is the fold's own tally of {@link CLEARED_EVENT} rounds, which is what
  * makes `maxRetries` a function of the log's prefix rather than of a document anyone can edit.
@@ -83,6 +98,25 @@ export interface LaneMsg {
 	readonly round?: number;
 	/** The lane classes the recorder observed; absent leaves {@link TaskState.classes} standing. */
 	readonly classes?: ReadonlyArray<string>;
+	/**
+	 * Waits this event grants, raising {@link TaskState.maxWaits} from its own position in the log.
+	 *
+	 * It rides the resume rather than arriving as an eighth event, because the point is that ONE
+	 * recorded line both clears the park and buys the read the resumed lane needs: a bare `UNBLOCKED`
+	 * out of `human:queue-stall` restores a state whose wait budget is spent, and the fold refuses
+	 * exactly that (ADR 0313). `recipe unpark` grants it once it has proven the queue moved; a
+	 * human's `lane transition --grant-wait` is the fallback for when that read cannot run.
+	 */
+	readonly waitGrant?: number;
+	/**
+	 * Whether the merge this event reports left its issue undischarged — the `merge:partial` guard's
+	 * whole input, relayed off `lane prove`'s closure read (ADR 0343).
+	 *
+	 * Unlike {@link TaskState.classes} it is not sticky and folds into no state field: it is a fact
+	 * about *this* merge, so a lane that partially merged, went round and closed properly must read
+	 * the second merge's answer and not the first's.
+	 */
+	readonly partial?: boolean;
 }
 
 export type TaskMachine = Machine<TaskState, LaneMsg, never, never, unknown>;
@@ -104,6 +138,27 @@ export interface CompiledTask {
 	 * the error final the resume just left (ADR 0313).
 	 */
 	readonly guardedStates: ReadonlySet<string>;
+	/**
+	 * Per **waits**-guarded state, the parks its spent-budget arm falls into — `ship:queued`'s `WIP`
+	 * to `human:queue-stall`, and nothing else in today's machine.
+	 *
+	 * The wait axis's own resume read, and it needs the pairing where {@link guardedStates} needs
+	 * only the name: a retry-guarded state's fallthrough is a final, so `errorFinals` already says
+	 * where a resume came from. A wait park is a plain state, so the pair is what tells the fold that
+	 * a resume lands back in the state whose spent guard produced this very park — rather than in one
+	 * a differently-caused park happens to share (ADR 0313).
+	 */
+	readonly waitParks: ReadonlyMap<string, ReadonlySet<string>>;
+	/**
+	 * Per state holding a {@link PARTIAL_GUARD}-guarded cell, the events that cell reads — the places
+	 * where a recorded line's `partial` payload is the whole difference between two targets.
+	 *
+	 * Carried so a reader can locate a misrouted line off the machine instead of off a state-name
+	 * list: which state ships, and which event lands the merge, is the document's call. An epic
+	 * tail's emitted region declares no partial arm, so it yields nothing here — ADR 0343's carve-out
+	 * falls out of the compilation rather than being restated as a special case.
+	 */
+	readonly partialStates: ReadonlyMap<string, ReadonlySet<string>>;
 	/**
 	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours
 	 * (ADR 0312). Carried so a refusal can name the repair — re-record each as a `CLEARED` event —
@@ -134,10 +189,11 @@ export type CompileResult =
 type Cell = (state: TaskState, msg: LaneMsg) => readonly [TaskState, readonly never[]];
 
 /**
- * The one guard spelling the compiler reads: `class:<name>` takes the arm when `<name>` stands over
- * the task. Anything else — `retriesRemaining`, a per-task spelling, a name nobody defined — is the
- * budget guard, whose counter the event's polarity picks, which is what keeps every document
- * written before this shape existed compiling byte-for-byte the same.
+ * The first guard spelling the compiler reads: `class:<name>` takes the arm when `<name>` stands
+ * over the task. Anything the two routing spellings do not match — `retriesRemaining`, a per-task
+ * spelling, a name nobody defined — is the budget guard, whose counter the event's polarity picks,
+ * which is what keeps every document written before this shape existed compiling byte-for-byte the
+ * same.
  */
 const CLASS_GUARD = /^class:([a-z][a-z0-9-]*)$/;
 
@@ -146,9 +202,32 @@ const classGuardOf = (arm: unknown): string | undefined => {
 	return CLASS_GUARD.exec(arm.guard)?.[1];
 };
 
-/** Fold the classes an event carried into the state before any guard reads them. */
-const withClasses = (state: TaskState, msg: LaneMsg): TaskState =>
-	msg.classes === undefined ? state : {...state, classes: msg.classes};
+/**
+ * The second: the arm a merge that did not close its issue takes ({@link LaneMsg.partial}).
+ *
+ * Namespaced like `class:<name>` rather than spelled bare, because a bare word falls through to the
+ * budget guard: a typo would compile, match nothing, spend a wait, and fold the lane to the terminal
+ * this arm exists to divert it from — silently, which is the failure ADR 0317 named on the class
+ * axis and this axis inherits.
+ */
+export const PARTIAL_GUARD = "merge:partial";
+
+const partialGuarded = (arm: unknown): boolean => isRecord(arm) && arm.guard === PARTIAL_GUARD;
+
+/**
+ * Fold the payloads an event carried into the state before any guard reads them — the classes a
+ * `class:<name>` arm routes on, and the waits the event grants.
+ *
+ * Applying the grant here rather than in one cell is what makes it a property of the event instead
+ * of the edge: the budget stays a fold over the recorded log, and replaying that log twice yields
+ * the same `maxWaits` because the grant is read off the line rather than accumulated in context.
+ */
+const withPayload = (state: TaskState, msg: LaneMsg): TaskState => {
+	const classed = msg.classes === undefined ? state : {...state, classes: msg.classes};
+	return msg.waitGrant === undefined
+		? classed
+		: {...classed, maxWaits: classed.maxWaits + msg.waitGrant};
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
@@ -184,6 +263,8 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const finals = new Set<string>();
 	const errorFinals = new Set<string>();
 	const guardedStates = new Set<string>();
+	const waitParks = new Map<string, Set<string>>();
+	const partialStates = new Map<string, Set<string>>();
 	for (const [name, node] of Object.entries(states)) {
 		if (nodeType(node) === "final") finals.add(name);
 	}
@@ -235,24 +316,40 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 				const laneClass = classGuardOf(transition[0]);
 				if (laneClass !== undefined) {
 					cells[msg] = (s, m) => {
-						const c = withClasses(s, m);
+						const c = withPayload(s, m);
 						const target = c.classes.includes(laneClass) ? taken : fallthrough;
+						return [{...c, type: target, was: c.type}, []];
+					};
+					continue;
+				}
+				if (partialGuarded(transition[0])) {
+					const reads = partialStates.get(stateName) ?? new Set<string>();
+					reads.add(msg);
+					partialStates.set(stateName, reads);
+					cells[msg] = (s, m) => {
+						const c = withPayload(s, m);
+						const target = m.partial === true ? taken : fallthrough;
 						return [{...c, type: target, was: c.type}, []];
 					};
 					continue;
 				}
 				if (finals.has(fallthrough)) errorFinals.add(fallthrough);
 				if (msg === "FAIL") guardedStates.add(stateName);
+				else {
+					const parks = waitParks.get(stateName) ?? new Set<string>();
+					parks.add(fallthrough);
+					waitParks.set(stateName, parks);
+				}
 				cells[msg] =
 					msg === "FAIL"
 						? (s, m) => {
-								const c = withClasses(s, m);
+								const c = withPayload(s, m);
 								return c.retries < c.maxRetries
 									? [{...c, type: taken, retries: c.retries + 1, was: c.type}, []]
 									: [{...c, type: fallthrough, was: c.type}, []];
 							}
 						: (s, m) => {
-								const c = withClasses(s, m);
+								const c = withPayload(s, m);
 								return c.waits < c.maxWaits
 									? [{...c, type: taken, waits: c.waits + 1, was: c.type}, []]
 									: [{...c, type: fallthrough, was: c.type}, []];
@@ -269,13 +366,13 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			}
 			if (nodeType(states[transition]) === "history") {
 				cells[msg] = (s, m) => {
-					const c = withClasses(s, m);
+					const c = withPayload(s, m);
 					return [{...c, type: c.was ?? initialState}, []];
 				};
 			} else {
 				const target = transition;
 				cells[msg] = (s, m) => {
-					const c = withClasses(s, m);
+					const c = withPayload(s, m);
 					return [{...c, type: target, was: c.type}, []];
 				};
 			}
@@ -339,7 +436,18 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		update: table as never,
 	});
 	return {
-		task: {machine, initial, finals, errorFinals, openFinals, guardedStates, staleGrants, extras},
+		task: {
+			machine,
+			initial,
+			finals,
+			errorFinals,
+			openFinals,
+			guardedStates,
+			waitParks,
+			partialStates,
+			staleGrants,
+			extras,
+		},
 		defects: [],
 	};
 };

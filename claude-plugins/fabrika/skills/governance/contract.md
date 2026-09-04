@@ -29,7 +29,7 @@ access per
 | `governance sweep` | the uncited live-`accepted` records whose decision domain a subject touches, ranked, for a subject read out of a bound commit or out of the corpus | the ranking is arithmetic over a corpus; reading the shortlist, and reading the domain the ranking cannot see, is judgment |
 | `governance guards` | the anchored invariants the bound diff removes or modifies, and the guard-bearing files it touches | detecting an anchor's removal or mutation in a diff is textual and mechanical; whether the change *weakens* the invariant is judgment |
 | `governance base` | this skill's own text at the merge-base of a PR that edits it — the self fence's bytes | resolving a merge base and reading named paths at it is mechanical; judging the PR by those rules rather than the head's is the judgment |
-| `governance post` | the single sanctioned emit of the `governance` namespace verdict: compose through the `verdict-marker` wire format, re-resolve the head, upsert one comment per head, leak-scan, read back, then re-fire the floor check at that head | marker composition, head re-resolution, the derived-namespace fence and the read-back are a protocol; the polarity and clause are judgment |
+| `governance post` | the single sanctioned emit of the `governance` namespace verdict: compose through the `verdict-marker` wire format, re-resolve the head, append into one comment per head, leak-scan, read back, then re-fire the floor check at that head | marker composition, head re-resolution, the derived-namespace fence and the read-back are a protocol; the polarity and clause are judgment |
 | `governance digest` | the decision records that landed in a window, each with its id, title, status, landing commit and whether its diff carried anchored-invariant changes | enumerating merges in a window and reading each record's frontmatter is mechanical; ranking tension and blast radius is judgment |
 | `governance readout` | the digest-publishing protocol: compose the ranked rows through the `governance-digest` wire format, upsert them into the durable artifact, read them back | composition, upsert and read-back are a protocol; the rows and their order are judgment |
 
@@ -131,7 +131,7 @@ each meaning:
 |---|---|---|
 | `3` `5` `6` `7` `8` `9` `11` | `packages/fabrika-cli/src/report/codes.ts` | `EMPTY_STDIN`, `LEAKED_PATH`, `BARE_AT_PATH`, `NO_TARGET` (re-exported here as `ZERO_SCOPE`, the same rename `review` uses), `WRITE_UNKNOWN`, `READBACK_MISMATCH`, `PRECONDITION_UNKNOWN` |
 | `10` | `packages/fabrika-cli/src/triage/codes.ts` | `OFF_VOCABULARY`. **The seat is literally the same binding** — `triage/codes.ts` is `export const OFF_VOCABULARY = REPORT_CLASSIFIED`, so there is no numeric difference to hunt for. Import it **from `triage`** anyway, because that is where the meaning this group proves is named; `report`'s spelling, `CLASSIFIED`, means "the title or `--label` carries a type or priority classification" (`report file` only). `review/codes.ts` imports it from `triage` for exactly this reason. |
-| `12` `13` | `packages/fabrika-cli/src/review/codes.ts` | `STALE_HEAD`, `INCOMPLETE_SCAN` — imported because this group proves the same two facts |
+| `12` `13` `17` | `packages/fabrika-cli/src/review/codes.ts` | `STALE_HEAD`, `INCOMPLETE_SCAN`, `SUPERSEDES_VERDICT` — imported because this group proves the same three facts. `17` in particular *must* be the import: `governance post --base/--tip` and `review post --base/--tip` are one module (`review/range-post.ts`), so a private seat here would hand a caller two codes for a refusal produced by one line of code (#7411) |
 | `4` | declared locally as `DELIBERATE_GAP = 4` | the same shape `review/codes.ts` ships, so the gap is registered rather than silently absent |
 | `14` | this group's own | see below |
 
@@ -157,14 +157,15 @@ package**, never from a sibling `contract.md`.
 | `12` | refused: the `--sha` given is not the PR's head — a read taken over, or a verdict bound to, a tree that is no longer the PR | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
 | `13` | refused: the read completed but its scope is **provably incomplete** — a truncated changed-file list or diff, a comment enumeration short of its declared count | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 | `14` | refused: this PR's diff derives **no** governance namespace — a verdict in a namespace the diff did not require | — | — | — | — | ✓ | — | — |
+| `17` | refused: the write would retire a standing verdict of the **opposite polarity** at this head — ranged, over this range — and `--supersede` was not passed; nothing written (#7411) | — | — | — | — | ✓ | — | — |
 | `127` | the verb never ran (unresolved binary) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 **The export names `governance/codes.ts` must ship**, because `checkAlignment`
 (`packages/fabrika-cli/src/exit-code-alignment.ts`) keys on export *names* and not on numerals — a
 different spelling reds the alignment test with nothing in the failure naming why:
 `EMPTY_STDIN`, `DELIBERATE_GAP`, `LEAKED_PATH`, `BARE_AT_PATH`, `ZERO_SCOPE`, `WRITE_UNKNOWN`,
-`READBACK_MISMATCH`, `OFF_VOCABULARY`, `PRECONDITION_UNKNOWN`, `STALE_HEAD`, `INCOMPLETE_SCAN`, and
-this group's own `NOT_HARNESS_TOUCHING`.
+`READBACK_MISMATCH`, `OFF_VOCABULARY`, `PRECONDITION_UNKNOWN`, `STALE_HEAD`, `INCOMPLETE_SCAN`,
+`SUPERSEDES_VERDICT`, and this group's own `NOT_HARNESS_TOUCHING`.
 
 **This matrix owns what a code *means*; the per-verb tables own what *triggers* it.** Every verb can
 also return `0`, `1`, `126` and `127` with the meanings above, stated here and nowhere else; the
@@ -897,7 +898,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" [--repo <owner/name>] [--json]
+fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" [--supersede] [--repo <owner/name>] [--json]
 ```
 
 The verdict body arrives on **stdin only** — no `--body`, no `--body-file`, for the reason the
@@ -912,15 +913,18 @@ poster reads success.
 | `--polarity` | enum | yes | — | `PASS` or `FAIL` — a third token is not a polarity |
 | `--sha` | string | yes | — | the head the reviewer actually inspected (7–40 lowercase hex) |
 | `--clause` | string | yes | — | the human clause; blank is not a clause |
+| `--supersede` | boolean | no | `false` | acknowledge that this verdict retires a standing one of the **opposite** polarity at this head — ranged, over this range; without it that post is the `17` refusal |
 | `--repo` | string | no | resolved | the repository |
 | `--json` | boolean | no | `false` | emit the result object |
 | stdin | markdown | yes | — | the verdict body below the first line: the questions swept, the sweep outcome, the domain read by hand, the anchored invariants in reach and their disposition |
 
 **Output** — machine channel. One line:
-`posted\tgovernance\t<polarity>\t<sha>\t<content>\t<created|edited>\t<comment-url>`, where
-`<content>` is the content digest the verdict binds (ADR 0276).
+`posted\tgovernance\t<polarity>\t<sha>\t<content>\t<created|superseded>\t<comment-url>`, where
+`<content>` is the content digest the verdict binds (ADR 0276) and the sixth field says whether the
+write opened a fresh comment or appended into this namespace's existing comment at this head,
+retiring the verdict that was there.
 With `--json`:
-`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"edited","floor":"refired"|"restarting"|"green"|"in-flight"|"no-run"|"unknown","commentUrl":…}`.
+`{"outcome":"posted","namespace":"governance","polarity":…,"sha":…,"content":…,"upsert":"created"|"superseded","floor":"refired"|"restarting"|"green"|"in-flight"|"no-run"|"unknown","commentUrl":…}`.
 The tab line does not carry `floor` — the floor's outcome is on stderr, one line, always.
 
 **The namespace is fixed.** There is no `--namespace` flag: this verb emits exactly one namespace and
@@ -946,18 +950,29 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    it lands, `emit` composes bytes `read` rejects and step 6 fails every clean run.
 4. **Leak-scan the assembled comment** (`report/leaks.ts`, imported) — an authored machine-local path
    is the `5` refusal, a bare `@` reference the `6`.
-5. **Upsert one comment per head.** An existing comment by this bot whose first non-blank line reads
-   as the `governance` namespace **bound to the head being posted** — its marker `sha` compared
-   prefix-tolerantly to that head — is edited in place; otherwise a new comment is created. So a
-   re-post at the same head upserts, and a post at a moved head appends, leaving the prior head's
-   verdict readable: a verdict is SHA-bound, so a new head's verdict is a different fact, not a
-   revision, and editing the old comment destroys the only record of what was true over that tree
-   (ADR 0213 named this half of rule 2's key as still open; #4007 closed it in v1). One namespace at
-   one head, one comment: a second marker stacked on line 2 is un-anchored, resolves the namespace
-   empty and fail-closes a substantively-passing PR.
+5. **Append into one comment per head.** An existing comment by this bot whose first non-blank line
+   reads as the `governance` namespace **bound to the head being posted** — its marker `sha` compared
+   prefix-tolerantly to that head — receives the fresh verdict on its first line with its prior
+   verdict retired verbatim below the `<!-- fabrika:superseded -->` fence, under a dated
+   `## Superseded verdict — YYYY-MM-DD` heading; otherwise a new comment is created. **The prior
+   verdict is never replaced.** GitHub keeps no comment-body history, so a PATCH over a verdict is
+   that verdict gone: a FAIL replaced by a PASS at one head leaves no trace a gate ever blocked
+   (#7247, #7411). The fresh verdict goes on top because the marker is the comment's first non-blank
+   line, so every reader — `ship gate`, `review verdicts`, `lane prove` — resolves the newest one
+   without knowing the envelope exists. When the write would retire a standing verdict of the
+   **opposite** polarity at this head, the post is the `17` refusal unless `--supersede` is passed,
+   and nothing is written on that refusal — the flip is legitimate and routine, but it is the one
+   that decides the merge, so it is said out loud. A post at a moved head still creates a second
+   comment, leaving the prior head's verdict readable: a verdict is SHA-bound, so a new head's
+   verdict is a different fact, not a revision, and editing the old comment destroys the only record
+   of what was true over that tree (ADR 0213 named this half of rule 2's key as still open; #4007
+   closed it in v1). One namespace at one head, one comment: a second marker stacked on line 2 is
+   un-anchored, resolves the namespace empty and fail-closes a substantively-passing PR.
 6. **Read it back, unconditionally, from live PR state** — re-fetch the comment, hand its body to the
    format's `read`, require `Found` with exactly the five fields posted, then compare the whole
-   comment against the bytes sent through `normalizeForReadback`. A read-back that trusts a carried
+   comment against the bytes sent through `normalizeForReadback`. The comparand is the **envelope**,
+   not the fresh verdict alone: on a re-post the bytes sent carry the retired verdict below the
+   fence, so comparing the fresh half would red every append. A read-back that trusts a carried
    variable instead of live state re-ships #3173's false PASS.
 7. **Assert the floor at this head.** `governance-floor.yml` triggers on `pull_request` alone, so it
    ran before this verdict could exist, judged a head with no verdict on it, and no comment write can
@@ -1008,6 +1023,7 @@ clothes.
 | `11` | a precondition read failed — the PR, the live head, or the commit binding the re-derivation rests on |
 | `12` | the live head moved past `--sha` — re-review at the new head, never re-bind |
 | `14` | this PR's diff derives no governance namespace — refusing to fill a namespace it did not require |
+| `17` | a standing verdict of the opposite polarity at this head — ranged, over this range — would be retired and `--supersede` was not passed; nothing written |
 
 **Errors**
 
@@ -1026,6 +1042,8 @@ clothes.
 | `governance post: #<n>'s diff touches no governance root (<roots>) — the namespace is not required here, and a verdict in it would attest a scope nobody derived.` | 14 | refusal |
 | `governance post: create/edit failed: <reason> — UNKNOWN whether the verdict landed; re-read #<n>'s comments before retrying.` | 8 | refusal |
 | `governance post: posted, but the read-back does not yield this marker (<wire reason>) — the PR may carry a garbled verdict; inspect comment <id>.` | 9 | refusal |
+| `governance post: a standing <PASS\|FAIL> for governance at <sha> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
+| `governance post: a standing <PASS\|FAIL> for governance over <base>..<tip> would be superseded by this <PASS\|FAIL> — pass --supersede to retire it on the record. Nothing was posted.` | 17 | refusal |
 
 **Scope** — one PR: its live head, the bound commit's file list for the re-derivation, its comments,
 and the caller's stdin, plus the workflow runs at the bound head for step 7. A read failing at any of
@@ -1051,14 +1069,34 @@ $ echo $?
 14
 ```
 
+The re-post that retires a standing verdict of the same polarity needs no operand, and its sixth
+field says the prior one was archived rather than replaced:
+
+```
+$ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md
+posted	governance	PASS	03135b91	2f1a9c4e0b7d	superseded	https://github.com/kamp-us/phoenix/pull/4321#issuecomment-5154902211
+```
+
+The flip is the one that has to be said out loud:
+
+```
+$ fabrika governance post 4321 --polarity PASS --sha 03135b91 --clause "no contradiction, no weakening" < verdict.md
+governance post: a standing FAIL for governance at 03135b91 would be superseded by this PASS — pass --supersede to retire it on the record. Nothing was posted.
+$ echo $?
+17
+```
+
 **Grounding**
 
-- ADR 0058 — the marker is SHA-bound and one-per-(PR, namespace), upserted rather than appended. ADR
+- ADR 0058 — the marker is SHA-bound and one-per-(PR, namespace). ADR
   0213 refines rule 2's uniqueness key and names its head dimension as left open there; #4007 closed
   that half in v1, and step 5 above carries it here: the key is (PR, namespace, head), so a re-post
-  at the same head upserts and a moved head appends. Which skill posted a namespace is still no part
+  at the same head lands in the one comment and a moved head opens a second. Which skill posted a
+  namespace is still no part
   of the key — nothing in the enqueue decision asks — which is what makes one skill emitting N
   namespaces, and a namespace filled by a non-primary reviewer, both already legal.
+- #7247, #7411 — within one comment, a re-post appends rather than replaces: the prior verdict is
+  retired verbatim below the fence, because GitHub keeps no comment-body history to recover it from.
 - #3173 — a hand-rolled emit posted a literal path and self-reported a false PASS; this verb is the
   single sanctioned path and the read-back is unconditional and from live state.
 - ADR 0055 — authority arrives through the ACL-checked read, never from the text being plausible.

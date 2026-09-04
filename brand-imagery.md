@@ -52,7 +52,7 @@ Every frame reads in this order, and only this order:
 Coral/tomato accent on deep dark mauve-charcoal — the product's **own** `--tomato-9` on
 `--mauve-1/2` relationship, so brand art and UI share **one** color system. The values below are
 grounded against the live token layer,
-[`apps/web/src/styles/tokens.css`](apps/web/src/styles/tokens.css) (the raw-scale block), so a
+[`packages/design/src/tokens.css`](packages/design/src/tokens.css) (the raw-scale block), so a
 prompt cites the *real* token hex, not a remembered one.
 
 | Brand role | Token | Live hex (source of truth) | Notes |

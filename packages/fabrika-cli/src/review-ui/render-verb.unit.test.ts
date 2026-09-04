@@ -9,6 +9,7 @@ import {
 	RENDER_CRASHED,
 	STALE_TREE,
 	SURFACE_UNREACHABLE,
+	WRONG_VIEWPORT,
 	ZERO_SCOPE,
 } from "./codes.ts";
 import {parseManifest} from "./manifest.ts";
@@ -46,12 +47,18 @@ const announcement = (sha: string = HEAD.slice(0, 7)): HttpReply => ({
 	]),
 });
 
-const rendered = (surface: string, outDir: string): SurfaceRender => ({
+const rendered = (
+	surface: string,
+	outDir: string,
+	viewport = "desktop",
+	width = 1280,
+): SurfaceRender => ({
 	_tag: "Rendered",
 	entry: {
 		surface,
-		path: `${outDir}/${surface.replace(/^\//, "")}.png`,
-		width: 1280,
+		viewport,
+		path: `${outDir}/${surface.replace(/^\//, "")}@${viewport}.png`,
+		width,
 		height: 2140,
 		sha256: "9c41",
 		pageErrors: {rows: [], more: 0},
@@ -62,12 +69,17 @@ const rendered = (surface: string, outDir: string): SurfaceRender => ({
 const legOf =
 	(answers: Readonly<Record<string, SurfaceRender>>): RenderLeg =>
 	(request) =>
-		Effect.succeed(answers[request.surface] ?? rendered(request.surface, request.outDir));
+		Effect.succeed(
+			answers[request.surface] ??
+				rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+		);
 
 const options = {
 	pr: 4321,
 	out: "judged",
 	surfaces: ["/pano"],
+	viewports: [] as readonly string[],
+	flags: [] as readonly string[],
 	app: null,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -106,7 +118,8 @@ describe("runRender", () => {
 			_tag: "Rendered",
 			entry: {
 				surface: "/pano",
-				path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano.png",
+				viewport: "desktop",
+				path: "/tmp/fabrika-review-ui/4321-03135b91/judged/pano@desktop.png",
 				width: 1280,
 				height: 2140,
 				sha256: "9c41",
@@ -126,7 +139,7 @@ describe("runRender", () => {
 		);
 		// The stderr tally is the whole list, not the kept rows — the collapse must not shrink the count.
 		expect(outcome.stderr).toContain(
-			'review-ui render: surface "/pano" captured: 1280x2140, 13 page error(s)',
+			'review-ui render: surface "/pano" at desktop captured: 1280x2140, 13 page error(s)',
 		);
 	});
 
@@ -179,6 +192,61 @@ describe("runRender", () => {
 		expect(seen.get("/pano:auth")).toBe(2);
 	});
 
+	// A tier with no token of its own is a tier `preview-seed test-account` did not seed on this
+	// preview. Reading it as satisfied by the yazar's token would render the audience the surface
+	// said it was not, and the capture would come back clean (#7398).
+	it("refuses a çaylak surface whose tier token is unset, naming it rather than falling back", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("PREVIEW_TEST_CAYLAK_SESSION_TOKEN");
+	});
+
+	it("seeds each tier's own session, so two tiers are two identities and not one shot twice", async () => {
+		const seen = new Map<string, string | undefined>();
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth", "/hosgeldin:auth-caylak"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				PREVIEW_TEST_CAYLAK_SESSION_TOKEN: "c".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: (request) => {
+				seen.set(request.surface, request.cookies[0]?.value);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen.get("/hosgeldin:auth")).not.toBe(seen.get("/hosgeldin:auth-caylak"));
+	});
+
+	// The credential check only proves each tier's token was SET. Which tier actually rendered is the
+	// shot's own answer, and a shot that came back above the named floor is UNKNOWN — the page
+	// rendered fine, it is just not the audience the surface id named (#7398).
+	it("refuses a wrong-tier shot on 11, recording no capture under that surface id", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth-caylak"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_CAYLAK_SESSION_TOKEN: "c".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: legOf({
+				"/hosgeldin:auth-caylak": {_tag: "WrongTier", wanted: "çaylak", rendered: "yazar"},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.join("\n")).toContain("named tier çaylak and rendered as yazar");
+		expect(written.size).toBe(0);
+	});
+
 	// The credential check only proves the pair was SET. Whether the cookie actually authenticated is
 	// the shot's own answer, and a shot that came back a visitor's is UNKNOWN — never a red surface,
 	// because the page rendered fine, and never a Rendered entry under the `:auth` id (#7051).
@@ -218,6 +286,89 @@ describe("runRender", () => {
 			}),
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
+	// The operand's own refusals, decided before a browser launches. Both are `10`: an operand
+	// nothing can force and an operand the preview would silently drop are the same defect — the
+	// default state shot under the forced name (#7218).
+	it("refuses a malformed --flag operand on 10, naming the token and why", async () => {
+		const {outcome} = await run(happy(), {surfaces: ["/pano:auth"], flags: ["phoenix-welcome"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain("no = separating the key from its value");
+		expect((await run(happy(), {surfaces: ["/pano:auth"], flags: ["a=true"]})).outcome.code).toBe(
+			OFF_VOCABULARY,
+		);
+	});
+
+	it("refuses --flag beside an anonymous surface on 10 — the preview would drop the cookie", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano:auth", "/hosgeldin"],
+			flags: ["phoenix-welcome=on"],
+		});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain('anonymous surface "/hosgeldin"');
+	});
+
+	it("composes the override with the seeded session — one signed-in, flag-on shot", async () => {
+		const seen = new Map<string, {cookies: number; forced: Record<string, boolean>}>();
+		const {outcome} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth"],
+			flags: ["phoenix-welcome=on"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: (request) => {
+				seen.set(request.surface, {
+					cookies: request.cookies.length,
+					forced: request.forcedFlags,
+				});
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		// Two session cookies (prefixed and bare) plus the one override cookie.
+		expect(seen.get("/hosgeldin:auth")).toEqual({
+			cookies: 3,
+			forced: {"phoenix-welcome": true},
+		});
+	});
+
+	it("forces nothing when no --flag is passed, so the default run is untouched", async () => {
+		const seen: Array<Record<string, boolean>> = [];
+		const {outcome} = await run(happy(), {
+			render: (request) => {
+				seen.push(request.forcedFlags);
+				return Effect.succeed(rendered(request.surface, request.outDir));
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual([{}]);
+	});
+
+	// A fine PNG of the flag-off page is not a defect in the PR, so it routes UNKNOWN beside a red one.
+	it("refuses an inert override on 11, recording no capture", async () => {
+		const {outcome, written} = await run(happy(), {
+			surfaces: ["/hosgeldin:auth", "/b:auth"],
+			flags: ["phoenix-welcome=on"],
+			env: {
+				CLAUDE_PIPELINE_REPO: "o/r",
+				PREVIEW_TEST_SESSION_TOKEN: "t".repeat(32),
+				BETTER_AUTH_SECRET: "s".repeat(32),
+			},
+			render: legOf({
+				"/hosgeldin:auth": {
+					_tag: "OverrideInert",
+					reason: "the preview evaluated phoenix-welcome at the default",
+				},
+				"/b:auth": {_tag: "Crashed", firstError: "TypeError: x is null"},
+			}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toMatch(/did not render with its forced flags/);
 	});
 
 	it("refuses a closed PR on 7 — a closed PR is provably not reviewable scope", async () => {
@@ -285,7 +436,7 @@ describe("runRender", () => {
 		expect(outcome.stderr.some((line) => line.includes("unreachable"))).toBe(true);
 		expect(outcome.stderr.some((line) => line.includes("invalid bytes"))).toBe(true);
 		// The refusal names a surface the ROUTED code applies to, not merely the first bad one.
-		expect(outcome.stderr.at(-1)).toMatch(/surface "\/b" threw during render/);
+		expect(outcome.stderr.at(-1)).toMatch(/surface "\/b" at desktop threw during render/);
 	});
 
 	it("seats an unreachable-only set on 14 and an invalid-only set on 15", async () => {
@@ -297,6 +448,69 @@ describe("runRender", () => {
 			render: legOf({"/pano": {_tag: "Invalid", detail: "zero bytes"}}),
 		});
 		expect(invalid.outcome.code).toBe(INVALID_CAPTURE);
+	});
+
+	// Omitting the operand is what every invocation written before it did, so the default must stay
+	// the single desktop shot rather than becoming a cross-product nobody asked for (#7706).
+	it("renders at desktop alone when no --viewport is passed", async () => {
+		const seen: string[] = [];
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/pano/yeni"],
+			render: (request) => {
+				seen.push(`${request.surface}@${request.viewport.label}`);
+				return Effect.succeed(
+					rendered(request.surface, request.outDir, request.viewport.label, request.viewport.width),
+				);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(["/pano@desktop", "/pano/yeni@desktop"]);
+	});
+
+	it("crosses viewports with surfaces: two of each is four captures under four file names", async () => {
+		const {outcome} = await run(happy(), {
+			surfaces: ["/pano", "/pano/yeni"],
+			viewports: ["desktop", "mobile"],
+		});
+		expect(outcome.code).toBe(0);
+		const read = parseManifest(outcome.stdout);
+		expect(read._tag).toBe("Manifest");
+		const captures = read._tag === "Manifest" ? read.value.captures : [];
+		expect(captures).toHaveLength(4);
+		expect(captures.map((entry) => `${entry.surface}@${entry.viewport}`)).toEqual([
+			"/pano@desktop",
+			"/pano@mobile",
+			"/pano/yeni@desktop",
+			"/pano/yeni@mobile",
+		]);
+		expect(new Set(captures.map((entry) => entry.path)).size).toBe(4);
+	});
+
+	it("refuses an off-vocabulary --viewport on 10, listing the names it does render", async () => {
+		const {outcome} = await run(happy(), {viewports: ["tablet"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain("the names are desktop, mobile");
+	});
+
+	it("refuses one --viewport passed twice on 10 — the second shot overwrites the first", async () => {
+		const {outcome} = await run(happy(), {viewports: ["mobile", "mobile"]});
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.join("\n")).toContain('--viewport "mobile" was passed twice');
+	});
+
+	// A desktop-width shot filed under `mobile` answers the narrow half of the law from the wrong
+	// pixels, which no byte check downstream can tell from the real thing (#7706).
+	it("refuses a shot whose bytes read back at another width on 19, recording no capture", async () => {
+		const {outcome, written} = await run(happy(), {
+			viewports: ["mobile"],
+			render: legOf({"/pano": {_tag: "WrongViewport", wanted: 390, rendered: 1280}}),
+		});
+		expect(outcome.code).toBe(WRONG_VIEWPORT);
+		expect(outcome.stdout).toBe("");
+		expect(written.size).toBe(0);
+		expect(outcome.stderr.at(-1)).toContain(
+			'surface "/pano" at mobile was asked for at 390px and its bytes read back 1280px wide',
+		);
 	});
 
 	it("keeps a render that never became answerable UNKNOWN (11), not a bad render", async () => {

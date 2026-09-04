@@ -5,7 +5,7 @@
  *
  * The `issues.ts` disciplines hold here — every list read paged, absent split from unreadable
  * through {@link Existence}, and a shape that is not what was asked for treated as a failure rather
- * than an empty result. REST is the default surface; {@link openPullsClosing} is on GraphQL because
+ * than an empty result. REST is the default surface; {@link pullsClosing} is on GraphQL because
  * the closing-issue link edge it needs is published nowhere else.
  *
  * **Every list read returns what it received alongside what the platform declared.** A review whose
@@ -146,6 +146,15 @@ export interface CheckRun {
 	readonly name: string;
 	readonly status: string;
 	readonly conclusion: string | null;
+	/**
+	 * The check-run's `output.title`, which is how a run says *why* it concluded as it did.
+	 *
+	 * `null` for a run that published no output — most runs do not, and a title nobody wrote must not
+	 * read as an empty one. `ship floor --publish-check` writes a title per row of ADR 0318's table,
+	 * and `review/governance-owed.ts` reads that title back to tell a stale floor from an unresolved
+	 * one, which the name/status/conclusion triple cannot distinguish (#7441).
+	 */
+	readonly title: string | null;
 }
 
 export interface CheckRunPage {
@@ -178,10 +187,12 @@ export const listCheckRuns = (repo: string, sha: string): Shell<Attempt<CheckRun
 				) {
 					return fail("GitHub answered 200 but one entry is not a check run");
 				}
+				const output = isRecord(value.output) ? value.output : null;
 				runs.push({
 					name: value.name,
 					status: value.status,
 					conclusion: typeof value.conclusion === "string" ? value.conclusion : null,
+					title: typeof output?.title === "string" ? output.title : null,
 				});
 			}
 			return ok({declared: page.value.declared, runs});
@@ -270,7 +281,7 @@ export const patchComment = (repo: string, id: number, body: string): Shell<Atte
  * fresh PR. A caller proving a PR traces to an issue reads each candidate's own record and its own
  * body; what this narrows is how many records that costs.
  *
- * **Why this survives #5850's retirement of the same read.** {@link openPullsClosing} replaced it
+ * **Why this survives #5850's retirement of the same read.** {@link pullsClosing} replaced it
  * everywhere the question is "which PR closes this issue", and is authoritative there — an edge, not
  * an index, so it has no lag. It is built from closing keywords, so it cannot see a `Part of #N` PR
  * — the body shape `build --partial` emits for an epic child, and the normal shape for a lane task
@@ -305,18 +316,31 @@ export const searchOpenPulls = (
 		}),
 	);
 
-/** One open pull request that declares it closes the issue: the number and the link to hand on. */
+/**
+ * Which pull requests a caller counts. `open` is every caller that acts *on* a PR; `open-or-merged`
+ * is the one that asks whether a PR reached the end of the merge queue, where the clearing case is a
+ * merged and therefore closed PR (#6717).
+ */
+export type PullScope = "open" | "open-or-merged";
+
+/** One pull request that declares it closes the issue: the number and the link to hand on. */
 export interface ClosingPull {
 	readonly number: number;
 	readonly url: string;
 }
 
+/** The GraphQL PR states {@link pullsClosing} keeps, per caller scope. */
+const CLOSER_STATES: Readonly<Record<PullScope, ReadonlySet<string>>> = {
+	open: new Set(["OPEN"]),
+	"open-or-merged": new Set(["OPEN", "MERGED"]),
+};
+
 const CLOSERS_QUERY =
 	"query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){issue(number:$number){closedByPullRequestsReferences(first:100,includeClosedPrs:true,after:$cursor){pageInfo{hasNextPage endCursor} nodes{number url state}}}}}";
 
 /**
- * Every OPEN pull request that **declares it closes** `issue`, read off GitHub's own closing-issue
- * link edge and paged.
+ * Every pull request in `scope` that **declares it closes** `issue`, read off GitHub's own
+ * closing-issue link edge and paged.
  *
  * v1 asked `search/issues` for `<issue> in:body`, which matches any prose quoting the number: a PR
  * closing a different issue but naming this one in a table came back as a candidate, and the
@@ -324,16 +348,18 @@ const CLOSERS_QUERY =
  * read here is the one GitHub builds from a closing keyword, so a mention is not a hit and
  * "several" means what the caller needs it to mean — two PRs each declaring they close this issue.
  *
- * `includeClosedPrs: true` plus an explicit `OPEN` filter, rather than the field's own exclusion:
+ * `includeClosedPrs: true` plus an explicit state filter, rather than the field's own exclusion:
  * that argument's name promises more than it delivers (a merged PR is still returned under
- * `false`), and the caller is asking about open PRs specifically.
+ * `false`), so which states count is the caller's to say and never the field's. A rejected PR is
+ * outside every scope — it closed without landing, and no caller here is asking about one.
  *
  * The answer is the whole set rather than a first hit: zero and several are facts a caller must be
  * able to refuse on, and a read that narrowed to one would invent the lane's PR.
  */
-export const openPullsClosing = (
+export const pullsClosing = (
 	repo: string,
 	issue: number,
+	scope: PullScope = "open",
 ): Shell<Attempt<ReadonlyArray<ClosingPull>>> =>
 	authed(
 		(token): Api<Attempt<ReadonlyArray<ClosingPull>>> =>
@@ -378,7 +404,7 @@ export const openPullsClosing = (
 						) {
 							return fail("GitHub answered 200 but one node is not a pull request");
 						}
-						if (node.state !== "OPEN") continue;
+						if (!CLOSER_STATES[scope].has(node.state)) continue;
 						out.push({number: node.number, url: node.url});
 					}
 					const info = isRecord(set.pageInfo) ? set.pageInfo : null;

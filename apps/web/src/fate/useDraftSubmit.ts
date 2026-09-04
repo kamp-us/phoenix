@@ -9,6 +9,7 @@
  */
 import * as React from "react";
 import {useNavigate} from "react-router";
+import {useT} from "../i18n/LocaleProvider";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {codeOf} from "./wire";
@@ -26,6 +27,7 @@ export function useDraftSubmit(options: {
 	const [error, setError] = React.useState<string | null>(null);
 	const [inFlight, setInFlight] = React.useState(false);
 	const navigate = useNavigate();
+	const t = useT();
 
 	const run = async <R>(
 		mutate: () => Promise<MutationResult<R>>,
@@ -37,7 +39,7 @@ export function useDraftSubmit(options: {
 		try {
 			const {error: callError, result} = await mutate();
 			if (callError) {
-				setError(messageForCode(codeOf(callError), options.overrides));
+				setError(messageForCode(t, codeOf(callError), options.overrides));
 				return;
 			}
 			await onSuccess(result);

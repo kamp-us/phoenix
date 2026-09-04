@@ -8,6 +8,7 @@ import {useMe} from "../auth/useMe";
 import {Icon} from "../components/Icon";
 import {Screen} from "../fate/Screen";
 import {toIso} from "../fate/wire";
+import {type CatalogKey, plural, useLocale, useT} from "../i18n";
 import {formatAgoTR} from "../lib/datetime";
 import {landingCtaPhase, showJoinCta} from "./landingGating";
 import "./LandingPage.css";
@@ -61,6 +62,7 @@ function formatStat(n: number): string {
 
 export function LandingPage() {
 	// Gating rules (and why the phase is three-valued) live in `landingGating`.
+	const t = useT();
 	const session = useSession();
 	const {status} = useMe();
 	const phase = landingCtaPhase(session.isPending, status);
@@ -73,21 +75,22 @@ export function LandingPage() {
 					<h1 className="kp-landing__brand">
 						kamp<span className="dot">.</span>us
 					</h1>
-					<p className="kp-landing__tagline">
-						geliştiricilerin kendi kendine bir şey öğrettiği, yavaş bir köşe.
-					</p>
+					<p className="kp-landing__tagline">{t("auth.landing.tagline")}</p>
 					<p className="kp-landing__manifesto">
-						<strong>panoda</strong> bağlantı ve yazı paylaşıyor, tartışıyoruz.{" "}
-						<strong>sözlükte</strong> terimleri kendi cümlelerimizle yazıyoruz. türkçe öncelikli;
-						reklam, takipçi sayısı, sansasyon yok — sadece okumaya değer şeyler ve onları yazan
-						birkaç yüz kişi.
+						<strong>
+							{t("auth.landing.manifesto.panoLead", {panoNoun: t("auth.brand.pano")})}
+						</strong>{" "}
+						{t("auth.landing.manifesto.panoBody")}{" "}
+						<strong>
+							{t("auth.landing.manifesto.sozlukLead", {sozlukNoun: t("auth.brand.sozluk")})}
+						</strong>{" "}
+						{t("auth.landing.manifesto.sozlukBody")} {t("auth.landing.manifesto.tail")}
 					</p>
 					{joinVisible ? (
 						<p className="kp-landing__rite">
-							<strong>kapı açık:</strong> hesap açmak herkese serbest.{" "}
-							<strong>söz hakkı kazanılır:</strong> ilk yazdıkların çaylak olarak divanda incelenir;
-							katkı verdikçe bir yazar sana kefil olur, yazar olursun — o zaman yazdıkların doğrudan
-							yayına girer.
+							<strong>{t("auth.landing.rite.doorLead")}</strong> {t("auth.landing.rite.doorBody")}{" "}
+							<strong>{t("auth.landing.rite.earnedLead")}</strong>{" "}
+							{t("auth.landing.rite.earnedBody", {divanNoun: t("auth.brand.divan")})}
 						</p>
 					) : null}
 				</div>
@@ -95,23 +98,26 @@ export function LandingPage() {
 					{joinVisible ? (
 						<Link className="kp-landing__join" to="/auth" data-testid="landing-join-cta">
 							<span className="label">
-								hesap aç <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+								{t("auth.landing.join.label")}{" "}
+								<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
 							</span>
-							<span className="sub">kapı açık · söz hakkı kazanılır</span>
+							<span className="sub">{t("auth.landing.join.sub")}</span>
 						</Link>
 					) : null}
 					<div className="kp-landing__browse">
 						<Link to="/pano">
 							<span className="label">
-								pano <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+								{t("auth.brand.pano")}{" "}
+								<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
 							</span>
-							<span className="sub">başlıklar · tartışmalar</span>
+							<span className="sub">{t("auth.landing.browse.panoSub")}</span>
 						</Link>
 						<Link to="/sozluk">
 							<span className="label">
-								sözlük <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+								{t("auth.brand.sozluk")}{" "}
+								<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
 							</span>
-							<span className="sub">terimler · tanımlar</span>
+							<span className="sub">{t("auth.landing.browse.sozlukSub")}</span>
 						</Link>
 					</div>
 				</div>
@@ -124,20 +130,51 @@ export function LandingPage() {
 	);
 }
 
+type StatId = "definitions" | "posts" | "authors" | "comments" | "version";
+
+// The tile order, shared by the loaded grid and both skeletons. `id` is the test handle and stays
+// English while `label` translates — a test id derived from copy would change with the locale.
+const STAT_TILES: ReadonlyArray<{readonly id: StatId; readonly label: CatalogKey}> = [
+	{id: "definitions", label: "auth.landing.stats.definitions"},
+	{id: "posts", label: "auth.landing.stats.posts"},
+	{id: "authors", label: "auth.landing.stats.authors"},
+	{id: "comments", label: "auth.landing.stats.comments"},
+	{id: "version", label: "auth.landing.stats.version"},
+];
+
+/**
+ * The noun beside a count, in the reader's locale. Turkish has one form for both arms and English
+ * two, so the catalog carries a `…One`/`…Other` pair per noun and `plural` picks (ADR 0347).
+ */
+function useCountNoun(): (count: number, one: CatalogKey, other: CatalogKey) => string {
+	const t = useT();
+	const {locale} = useLocale();
+	return (count, one, other) => plural(locale, count, {one: t(one), other: t(other)});
+}
+
 function LandingBody() {
+	const t = useT();
 	const {landingStats, landingPosts, landingTerms} = useRequest(landingRequest);
 	const stats = useView(LandingStatsView, landingStats);
 	const [postItems] = useListView(PostConnectionView, landingPosts);
 	const [termItems] = useListView(TermConnectionView, landingTerms);
+	const statValues: Readonly<Record<StatId, string>> = {
+		definitions: formatStat(stats.totalDefinitions),
+		posts: formatStat(stats.totalPosts),
+		authors: formatStat(stats.totalAuthors),
+		comments: formatStat(stats.totalComments),
+		version: String(stats.version),
+	};
 
 	return (
 		<>
 			<div className="kp-landing__cols">
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
-						<h3>panoda son 24 saat</h3>
+						<h3>{t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})}</h3>
 						<Link to="/pano">
-							hepsini gör <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+							{t("auth.landing.seeAll")}{" "}
+							<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
 						</Link>
 					</header>
 					<ul>
@@ -145,7 +182,7 @@ function LandingBody() {
 							<li className="kp-landing-row">
 								<span className="kp-landing-row__rank">·</span>
 								<div>
-									<span className="kp-landing-row__meta">henüz başlık yok.</span>
+									<span className="kp-landing-row__meta">{t("auth.landing.empty.posts")}</span>
 								</div>
 							</li>
 						) : (
@@ -158,9 +195,10 @@ function LandingBody() {
 
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
-						<h3>sözlüğe son eklenenler</h3>
+						<h3>{t("auth.landing.col.sozluk", {sozlukNoun: t("auth.brand.sozluk")})}</h3>
 						<Link to="/sozluk">
-							hepsini gör <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+							{t("auth.landing.seeAll")}{" "}
+							<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
 						</Link>
 					</header>
 					<ul>
@@ -168,7 +206,7 @@ function LandingBody() {
 							<li className="kp-landing-row">
 								<span className="kp-landing-row__rank">·</span>
 								<div>
-									<span className="kp-landing-row__meta">henüz terim yok.</span>
+									<span className="kp-landing-row__meta">{t("auth.landing.empty.terms")}</span>
 								</div>
 							</li>
 						) : (
@@ -179,16 +217,10 @@ function LandingBody() {
 			</div>
 
 			<div className="kp-landing__stats" data-testid="kp-landing-stats">
-				{[
-					{value: formatStat(stats.totalDefinitions), label: "tanım"},
-					{value: formatStat(stats.totalPosts), label: "başlık"},
-					{value: formatStat(stats.totalAuthors), label: "yazar"},
-					{value: formatStat(stats.totalComments), label: "yorum"},
-					{value: stats.version, label: "phoenix"},
-				].map((stat) => (
-					<div key={stat.label} className="kp-landing__stat" data-testid={`stat-${stat.label}`}>
-						<div className="n">{stat.value}</div>
-						<div className="l">{stat.label}</div>
+				{STAT_TILES.map((tile) => (
+					<div key={tile.id} className="kp-landing__stat" data-testid={`stat-${tile.id}`}>
+						<div className="n">{statValues[tile.id]}</div>
+						<div className="l">{t(tile.label)}</div>
 					</div>
 				))}
 			</div>
@@ -198,6 +230,7 @@ function LandingBody() {
 
 function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 	const p = useView(LandingPostView, node);
+	const countNoun = useCountNoun();
 	return (
 		<li className="kp-landing-row">
 			<span className="kp-landing-row__rank">{String(rank).padStart(2, "0")}</span>
@@ -216,13 +249,22 @@ function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 					</a>
 				) : null}
 				<div className="kp-landing-row__meta">
-					<span>{p.score} oy</span>
+					<span>
+						{p.score} {countNoun(p.score, "auth.landing.row.voteOne", "auth.landing.row.voteOther")}
+					</span>
 					<span className="dot">·</span>
 					<span className="author">@{p.author}</span>
 					<span className="dot">·</span>
 					<span>{formatAgoTR(toIso(p.createdAt))}</span>
 					<span className="dot">·</span>
-					<span>{p.commentCount} yorum</span>
+					<span>
+						{p.commentCount}{" "}
+						{countNoun(
+							p.commentCount,
+							"auth.landing.row.commentOne",
+							"auth.landing.row.commentOther",
+						)}
+					</span>
 				</div>
 			</div>
 		</li>
@@ -230,23 +272,31 @@ function LandingPostRow({node, rank}: {node: ViewRef<"Post">; rank: number}) {
 }
 
 function LandingTermRow({node}: {node: ViewRef<"Term">}) {
-	const t = useView(LandingTermView, node);
+	const term = useView(LandingTermView, node);
+	const countNoun = useCountNoun();
 	return (
 		<li className="kp-landing-row">
 			<span className="kp-landing-row__rank">·</span>
 			<div>
-				<Link className="kp-landing-row__title" to={`/sozluk/${t.slug}`}>
-					{t.title}
-					{t.excerpt ? <span className="gloss"> — {t.excerpt}</span> : null}
+				<Link className="kp-landing-row__title" to={`/sozluk/${term.slug}`}>
+					{term.title}
+					{term.excerpt ? <span className="gloss"> — {term.excerpt}</span> : null}
 				</Link>
 				<div className="kp-landing-row__meta">
-					{t.lastActivityAt ? (
+					{term.lastActivityAt ? (
 						<>
-							<span>{formatAgoTR(toIso(t.lastActivityAt))}</span>
+							<span>{formatAgoTR(toIso(term.lastActivityAt))}</span>
 							<span className="dot">·</span>
 						</>
 					) : null}
-					<span>{t.definitionCount} tanım</span>
+					<span>
+						{term.definitionCount}{" "}
+						{countNoun(
+							term.definitionCount,
+							"auth.landing.row.definitionOne",
+							"auth.landing.row.definitionOther",
+						)}
+					</span>
 				</div>
 			</div>
 		</li>
@@ -254,14 +304,16 @@ function LandingTermRow({node}: {node: ViewRef<"Term">}) {
 }
 
 function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
-	const label = status === "loading" ? "yükleniyor…" : "şu an yüklenemedi";
+	const t = useT();
+	const label = status === "loading" ? t("auth.landing.loading") : t("auth.landing.error");
 	return (
 		<div className="kp-landing__cols">
 			<section className="kp-landing__col">
 				<header className="kp-landing__col-head">
-					<h3>panoda son 24 saat</h3>
+					<h3>{t("auth.landing.col.pano", {panoNoun: t("auth.brand.pano")})}</h3>
 					<Link to="/pano">
-						hepsini gör <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+						{t("auth.landing.seeAll")}{" "}
+						<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
 					</Link>
 				</header>
 				<ul>
@@ -275,9 +327,10 @@ function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
 			</section>
 			<section className="kp-landing__col">
 				<header className="kp-landing__col-head">
-					<h3>sözlüğe son eklenenler</h3>
+					<h3>{t("auth.landing.col.sozluk", {sozlukNoun: t("auth.brand.sozluk")})}</h3>
 					<Link to="/sozluk">
-						hepsini gör <Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
+						{t("auth.landing.seeAll")}{" "}
+						<Icon icon={ArrowRight} size={16} className="kp-inline-arrow" />
 					</Link>
 				</header>
 				<ul>
@@ -294,14 +347,15 @@ function LandingColsSkeleton({status}: {status: "loading" | "error"}) {
 }
 
 function LandingBodyFallback() {
+	const t = useT();
 	return (
 		<>
 			<LandingColsSkeleton status="loading" />
 			<div className="kp-landing__stats" data-testid="kp-landing-stats-loading">
-				{["tanım", "başlık", "yazar", "yorum", "phoenix"].map((label) => (
-					<div key={label} className="kp-landing__stat">
+				{STAT_TILES.map((tile) => (
+					<div key={tile.id} className="kp-landing__stat">
 						<div className="n">…</div>
-						<div className="l">{label}</div>
+						<div className="l">{t(tile.label)}</div>
 					</div>
 				))}
 			</div>
@@ -310,13 +364,14 @@ function LandingBodyFallback() {
 }
 
 function LandingBodyError() {
+	const t = useT();
 	return (
 		<>
 			<LandingColsSkeleton status="error" />
 			<div className="kp-landing__stats" data-testid="kp-landing-stats-error">
 				<div className="kp-landing__stat">
 					<div className="n">—</div>
-					<div className="l">istatistikler şu an yok</div>
+					<div className="l">{t("auth.landing.stats.error")}</div>
 				</div>
 			</div>
 		</>

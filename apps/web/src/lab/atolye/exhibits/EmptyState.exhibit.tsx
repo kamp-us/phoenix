@@ -1,6 +1,5 @@
+import {Button, EmptyState} from "@kampus/design";
 import type * as React from "react";
-import {Button} from "../../../components/ui/Button";
-import {EmptyState} from "../../../components/ui/EmptyState";
 import {defineExhibit} from "../exhibit";
 
 export const emptyStateExhibit = defineExhibit<React.ComponentProps<typeof EmptyState>>({

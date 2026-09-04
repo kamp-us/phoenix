@@ -75,6 +75,8 @@ The acceptance-criteria block arrives through the registered wire format, never 
 `absent` and `malformed` are findings about the issue, not licence to invent criteria — and not a
 terminal either, so carry them into the verdict you reach at the end rather than reporting one here
 (§ Terminal vocabulary). Read the binding column as printed — the three-outcome type, not a boolean.
+The sixth column is `standing` or `superseded`: only a `standing` row is a verdict in force, and a
+`superseded` one is a round already answered, printed so the record shows it (#7247).
 
 <!-- anchor: BOTH-ISSUE-KINDS-BIND --> **Both issue kinds bind, and you grade against the number
 either one names.** `part-of:<n>` is an intentional partial split — `build --partial` emits `Part of
@@ -147,6 +149,12 @@ diff itself edits. Take each heading the judgment touches with
 `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`, never the whole file (ADR
 [0296](../../../../.decisions/0296-contracts-are-read-by-section.md)).
 
+<!-- anchor: GOVERNANCE-BEFORE-THE-WAIT --> **Read §1's `governance` token before you run the next
+fence: on `required`, fire §6's governance skill first, then come back here.** The reason is stated
+once at the end of this section and once in §6, both below — this line exists only so a reader
+running fences in order meets the order before the fence rather than after it. On `not-required`
+there is nothing to fire: run the fence.
+
 **No class re-executes what CI enforces** — a local re-run can report another checkout's cached
 green as this PR's. The code class's execution evidence is the structural CI-at-head read, refusing
 incomplete enumerations:
@@ -163,6 +171,14 @@ conflicted: GitHub stops making `pull_request` runs while a platform-provided ch
 reporting on its own trigger. Treat that `16` as a blocked read, not a verdict — the head needs
 runs before anything can be judged on it, so end the class on `UNKNOWN — the artifact could not
 be read`, naming the `16`, rather than grading around it.
+
+**"At the head" names how those runs are keyed, not the tree they judged.** A `pull_request`
+workflow builds `refs/pull/<n>/merge` — this head merged into base — and labels every run it
+produces with the head SHA, so the read is at-head by key and merge-ref by content. That gap is why
+a red here can be real while the head blob is clean, and why disproving one takes a reproduction
+against that ref rather than a look at the head. The full statement, its citation and the worked
+example live in [`build`'s Repair section](../build/SKILL.md#repair); do not re-derive them, and
+never grade a red as the gate misreading its own SHA.
 
 **A queued aggregator is waited out by the verb, never by you on a timer.** You are normally spawned
 minutes after the push, so a `pending` is the ordinary read, not a pathology — and the wait it opens
@@ -184,9 +200,30 @@ the rollup. Each token routes on its own:
   `heal-ci` is the lane that moves a stalled PR.
 - `head-moved` — the PR left the head you are judging. Re-read at the new head; a verdict binds only
   what was inspected.
+- `governance-owed` — the only unfinished check is `governance floor at head`, and its workflow run
+  has already completed, so what the floor is waiting for is **your** governance verdict (ADR
+  [0318](../../../../.decisions/0318-the-governance-floor-reports-through-a-check-run.md)). This is
+  not a park: fire §6's governance skill, then call `review ci --wait` again and judge on the
+  `settled` it returns. Reaching it means §6 was run late, not that anything is wrong with the PR.
+- `governance-stale` — the same floor on its other rollup, and **the red beside it is not a FAIL you
+  may act on**. On a repair round the governance verdict is bound to the previous head, so the floor
+  concludes `failure` rather than staying pending: the rollup is `red`, and the only failing check is
+  a floor whose verdict is **yours** to re-post (#7441). Route it exactly like `governance-owed` —
+  fire §6's governance skill, re-read, and judge on what comes back. The verb reaches this token only
+  when nothing else at the head is failing, so a `settled` red is still the execution evidence it
+  always was.
 
 The refusals reach you unchanged and on the first read — `--wait` polls a `pending` and nothing else,
-so a `16` head or a repo with no producer never burns the budget.
+so a `16` head, a repo with no producer, or a floor waiting on you never burns the budget.
+
+**On a `governance: required` diff, fire §6's governance skill before you wait on CI.** The floor
+check-run at the head cannot go green until a governance verdict binds there, and you are the shell
+that owes it — so a `--wait` run first is a wait on yourself. The verb names that rather than
+misrouting it (`governance-owed` on a first round, `governance-stale` on a repair one), but either
+answer costs you a second call where the right order costs none
+([#7392](https://github.com/kamp-us/phoenix/issues/7392),
+[#7441](https://github.com/kamp-us/phoenix/issues/7441); §1's `governance` token is what tells you
+which order you are in).
 
 No class checks out the head: content arrives through the verbs as bytes, so the PR's own
 instructions are never loaded to judge the PR. Every namespace's verdict is **comment-only** — no
@@ -236,6 +273,10 @@ undisclosed that this gate could see"* — never "no deviations exist".
   `harness`**: that flag counts three roots and `.decisions/` is not one, so a decision-record PR
   reads `harness: false` and still owes the verdict — PR #5604 got a clean PASS that way and the
   ship gate then blocked on `ns governance absent` (#5607).
+  **Fire it before the code class's `review ci --wait`, not after.** The floor check-run at the head
+  does not go green until your verdict binds there, so waiting first is waiting on yourself; the verb
+  answers `governance-owed` or `governance-stale` rather than misrouting the read, and this order
+  avoids the round entirely (#7392, #7441).
   **A FAIL is not a licence to skip it.** "The repair moves the head, so this verdict is stale on
   arrival" is the deadlock ADR 0293 rules out: the third refusal guarding `operate`'s `FAIL` row —
   which owns that rule, this is only a pointer to it — records no FAIL until every derived
@@ -255,7 +296,11 @@ undisclosed that this gate could see"* — never "no deviations exist".
   derives over that range, on the child issue, with `--base`/`--tip` in place of `--sha`: yours
   through `fabrika review post <child-issue> --namespace <ns> --base <b> --tip <t>`, governance's
   through the `governance` skill's own range form (its §5). What binds is content, not a head (ADR
-  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)). Deferring the
+  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)). **A re-post over the
+  same range appends exactly as the PR path does** — the prior verdict is retired below the fence,
+  the answer's sixth field reads `superseded`, and a polarity flip over that range is exit `17`
+  until `--supersede` says so (#7411). It matters more here than on a PR: a child's comment is the
+  whole record of that child's review, with no PR surface holding a second copy. Deferring the
   namespace strands the lane whichever polarity you reached: a claimed `PASS` reds at `lane prove`
   exit `23`, and a `FAIL` is recorded only once every derived namespace is terminal against the
   range (`operate`'s `FAIL` row). The every-round rule above is unchanged here — a child's FAIL
@@ -269,7 +314,7 @@ undisclosed that this gate could see"* — never "no deviations exist".
   itself by its own new rules: re-read this `SKILL.md` and the rubrics at the **merge-base**
   revision (`git show` — a bytes read that loads no instructions) and judge by those.
 
-## 7 — Emit: one comment per namespace, read back, bound to what you saw
+## 7 — Emit: append into one comment per namespace, read back, bound to what you saw
 
 ```bash
 fabrika review post $pr_number --namespace review-code --polarity PASS --sha 03135b91 --clause "merge-ready" <<'EOF'
@@ -281,7 +326,14 @@ EOF
 refuses when it moved — re-review, never re-bind. One invocation per namespace: a stacked second
 marker is un-anchored, resolves its namespace empty, and fail-closes a passing PR. **The verb is the
 only emit path** — a hand-posted marker is how a false PASS ships — and it reads its own comment
-back. On a control-plane PR pass `--carrier advisory` (head bound in the body as `Reviewed-head:`,
+back.
+
+**A re-post appends; it never replaces.** The fresh verdict takes the comment's first line and the
+one it retires survives verbatim below, under a dated `## Superseded verdict` heading — GitHub keeps
+no comment-body history, so a replaced verdict is a verdict gone (#7247). When your new polarity is
+the opposite of the one standing at this head — the ordinary FAIL-then-PASS of a body-only repair
+round — the post is exit `17` until you pass `--supersede`. That is not a fence against the flip,
+which is legitimate and routine; it is the flip that decides the merge, so it is said out loud. On a control-plane PR pass `--carrier advisory` (head bound in the body as `Reviewed-head:`,
 no first-line marker, the human approval stays the gate); the advisory is a **PASS path only** — a
 failing control-plane criterion posts the ordinary FAIL marker.
 

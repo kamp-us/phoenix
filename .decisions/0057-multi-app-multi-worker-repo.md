@@ -1,7 +1,7 @@
 ---
 id: 0057
 title: Multi-app, multi-worker repo — per-app package owns its own `alchemy.run.ts` stack + per-app stage, reusing the account-global state store and four CI secrets (no second bootstrap); CI must build + deploy each app
-status: accepted
+status: amended-in-part by [0345](0345-tuval-lives-under-apps.md)
 date: 2026-06-14
 tags: [infra, alchemy, ci, repo-shape]
 ---

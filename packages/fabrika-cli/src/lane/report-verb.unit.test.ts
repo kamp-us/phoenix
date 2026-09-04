@@ -20,13 +20,16 @@ const ROOT = ".fabrika/lanes";
 const WORKFLOW = `${ROOT}/42/workflow.json`;
 const LOG = `${ROOT}/42/events.jsonl`;
 
-const logLine = (event: string): string =>
-	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: "2026-08-16T00:00:00.000Z"})}\n`;
+const logLine = (event: string, classes?: ReadonlyArray<string>): string =>
+	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at: "2026-08-16T00:00:00.000Z", ...(classes === undefined ? {} : {classes})})}\n`;
 
 /** The log prefix that folds the coder lane's task into the state each shell reports out of. */
-const LOG_AT: Readonly<Record<"build" | "review" | "ship", string>> = {
+const LOG_AT: Readonly<Record<"build" | "review" | "review:ui" | "ship", string>> = {
 	build: logLine("WIP"),
 	review: logLine("WIP") + logLine("DONE"),
+	// The same path as `review` with `ui` standing from the `WIP`, so the `PASS` out of `review`
+	// takes the class-guarded arm into the rendered gate's own cell.
+	"review:ui": logLine("WIP", ["ui"]) + logLine("DONE") + logLine("PASS"),
 	ship: logLine("WIP") + logLine("DONE") + logLine("PASS"),
 };
 
@@ -35,14 +38,19 @@ const LOG_AT: Readonly<Record<"build" | "review" | "ship", string>> = {
  * answers what the test wants read. `proof: "not-required"` is the shape `lane prove` answers with
  * at exit 0 for an event that claims no artifact.
  */
-const fakeProver = (outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"}))) => {
+const fakeProver = (
+	outcome: VerbOutcome = answer(JSON.stringify({proof: "not-required"})),
+	deferred: ReadonlyArray<string> = [],
+	partial: boolean | null = null,
+	landed: ReadonlyArray<number> = [],
+) => {
 	const asked: ProveOptions[] = [];
 	return {
 		asked,
 		prove: (options: ProveOptions) =>
 			Effect.sync(() => {
 				asked.push(options);
-				return outcome;
+				return {...outcome, deferred, partial, landed};
 			}),
 	};
 };
@@ -88,9 +96,10 @@ const appendedLine = (fs: ReturnType<typeof fakeFs>): string =>
 	fs.written.get(LOG)?.trim().split("\n").at(-1) ?? "";
 
 describe("lane report — every shell terminal token maps to one operator event", () => {
-	const stateFor: Readonly<Record<keyof typeof SHELL_VOCABULARIES, "build" | "review" | "ship">> = {
+	const stateFor: Readonly<Record<keyof typeof SHELL_VOCABULARIES, keyof typeof LOG_AT>> = {
 		builder: "build",
 		reviewer: "review",
+		"ui-reviewer": "review:ui",
 		shipper: "ship",
 	};
 
@@ -209,11 +218,28 @@ describe("lane report — the append is proof-gated", () => {
 				event: "DONE",
 				task: "issue",
 				classes: null,
+				pr: null,
 				repo: "kamp-us/phoenix",
 				cwd: "/repo",
 				env: {},
 			},
 		]);
+	});
+
+	/**
+	 * The ship stage's closure is read off the PR the terminal names, so the ref has to reach the
+	 * prover and not only the line it lands on — nominating for it cannot see a merged `Part of #N`
+	 * (#7457).
+	 */
+	it("hands the prover the same --pr ref the event line records", async () => {
+		const fs = laneAt(LOG_AT.build);
+		const prover = fakeProver();
+		const pr = "https://github.com/kamp-us/phoenix/pull/7806";
+
+		const out = await run(fs, "SHIPPED-PR", {prover, pr});
+		expect(out.code).toBe(0);
+		expect(prover.asked[0]).toMatchObject({pr});
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({pr});
 	});
 
 	/**
@@ -316,6 +342,86 @@ describe("lane report — the park cause a BLOCKED carries (#6480)", () => {
 		expect(out.code).toBe(CAUSE_UNRECOGNISED);
 		expect(prover.asked).toEqual([]);
 		expect(fs.written.size).toBe(0);
+	});
+});
+
+/**
+ * A `PASS` proven over a set short one namespace is a different fact from one proven over the whole
+ * set, and only the event line can carry the difference — an epic child hands `review-ui` to its
+ * epic's tail, and a bare `PASS` says nothing about the verdict still owed there (#7041).
+ */
+describe("lane report — the deferral a proven PASS discloses", () => {
+	it("records what the prover deferred on the event line and on stdout", async () => {
+		const fs = laneAt(LOG_AT.review);
+		const prover = fakeProver(answer(JSON.stringify({proof: "proven"})), ["review-ui"]);
+
+		const out = await run(fs, "PASS", {prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.PASS",
+			deferred: ["review-ui"],
+		});
+		expect(JSON.parse(out.stdout).deferred).toEqual(["review-ui"]);
+	});
+
+	it("leaves an event that deferred nothing exactly the line it always was", async () => {
+		const fs = laneAt(LOG_AT.review);
+
+		const out = await run(fs, "PASS");
+
+		expect(out.code).toBe(0);
+		expect(Object.hasOwn(JSON.parse(appendedLine(fs)), "deferred")).toBe(false);
+		expect(Object.hasOwn(JSON.parse(out.stdout), "deferred")).toBe(false);
+	});
+});
+
+/**
+ * The #7382 shape: a merged `Part of #N` PR drove its lane to `complete` exactly as a closing merge
+ * did, because nothing between the nominator and the ledger carried the difference (ADR 0343).
+ */
+describe("lane report — the partial merge a shipped lane discloses", () => {
+	it("records the prover's partial and lands the lane back in `queued`", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const prover = fakeProver(answer(JSON.stringify({proof: "not-required"})), [], true);
+
+		const out = await run(fs, "LANDED", {prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({event: "ISSUE.DONE", partial: true});
+		expect(JSON.parse(out.stdout)).toMatchObject({current: {pipeline: {issue: "queued"}}});
+	});
+
+	/**
+	 * The evidence rides the line beside the polarity (#7457), and it is what a later sweep reads to
+	 * tell this `false` from the one the old nominator fell through to — a distinction no timestamp
+	 * on the line can make.
+	 */
+	it("records a read closing merge as `partial: false` naming the PRs it stood on", async () => {
+		const fs = laneAt(LOG_AT.ship);
+		const prover = fakeProver(answer(JSON.stringify({proof: "not-required"})), [], false, [7329]);
+
+		const out = await run(fs, "LANDED", {prover});
+
+		expect(out.code).toBe(0);
+		expect(JSON.parse(appendedLine(fs))).toMatchObject({
+			event: "ISSUE.DONE",
+			partial: false,
+			landed: [7329],
+		});
+		expect(JSON.parse(out.stdout).current).toBe("complete");
+	});
+
+	it("carries no `partial` and no `landed` where no closure was read, so absent still means unread", async () => {
+		const fs = laneAt(LOG_AT.ship);
+
+		const out = await run(fs, "LANDED");
+
+		expect(out.code).toBe(0);
+		const line = JSON.parse(appendedLine(fs));
+		expect(Object.hasOwn(line, "partial")).toBe(false);
+		expect(Object.hasOwn(line, "landed")).toBe(false);
+		expect(JSON.parse(out.stdout).current).toBe("complete");
 	});
 });
 

@@ -2,8 +2,10 @@
  * Loading placeholders that mirror the real DOM shape, so content arrival swaps in
  * without a layout jump.
  */
+
+import {Skeleton} from "@kampus/design";
+import {useT} from "../../i18n";
 import {PANO_FEED_PAGE_SIZE} from "../../lib/panoNav";
-import {Skeleton} from "../ui/atoms";
 import "./PanoPost.css";
 import "../../pages/PanoPostDetail.css";
 
@@ -13,12 +15,13 @@ import "../../pages/PanoPostDetail.css";
 const FEED_ROWS = PANO_FEED_PAGE_SIZE;
 
 export function PanoFeedSkeleton() {
+	const t = useT();
 	return (
 		<div
 			className="kp-pano-list"
 			role="status"
 			aria-busy="true"
-			aria-label="yükleniyor…"
+			aria-label={t("pano.loading")}
 			data-testid="pano-feed-skeleton"
 		>
 			{Array.from({length: FEED_ROWS}, (_, i) => (
@@ -44,12 +47,13 @@ export function PanoFeedSkeleton() {
 }
 
 export function PanoPostSkeleton() {
+	const t = useT();
 	return (
 		<div
 			className="kp-pano-postpage__head"
 			role="status"
 			aria-busy="true"
-			aria-label="yükleniyor…"
+			aria-label={t("pano.loading")}
 			data-testid="pano-post-skeleton"
 		>
 			<span className="kp-pano-post__vote" aria-hidden="true">

@@ -21,13 +21,20 @@ import {
 	CLASS_UNRECOGNISED,
 	CONCURRENT_WRITE,
 	EVENT_REFUSED,
+	GRANT_REFUSED,
 	RESUME_UNBUDGETED,
 	TASK_UNKNOWN,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
 import {isOperatorEvent} from "./machine.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
-import {type CauseResolution, causeForEvent, classesForEvent} from "./report.ts";
+import {
+	type CauseResolution,
+	causeForEvent,
+	classesForEvent,
+	type GrantResolution,
+	grantForEvent,
+} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
 
 const VERB = "fabrika lane transition";
@@ -54,6 +61,14 @@ export interface TransitionOptions extends LaneRef {
 	 * set is refused rather than routed as unclassed.
 	 */
 	readonly classes: ReadonlyArray<string>;
+	/**
+	 * Waits this event grants, on an `UNBLOCKED` out of a wait park; `null` grants none.
+	 *
+	 * It rides the resume so the clear and the grant are one recorded line — `recipe unpark` passes it
+	 * once it has proven the queue moved, and a human passes `--grant-wait` when that read cannot run
+	 * (ADR 0313). A resume that needs one and carries none is `applyEvent`'s `unbudgeted-resume`.
+	 */
+	readonly waitGrant: number | null;
 }
 
 export const runTransition = (
@@ -90,6 +105,12 @@ export const runTransition = (
 						`${VERB}: refused (log unappended): ${classed.reason}.`,
 					);
 				}
+				const granted: GrantResolution = isOperatorEvent(event)
+					? grantForEvent(options.waitGrant, event)
+					: {_tag: "Granted", grant: null};
+				if (granted._tag === "Rejected") {
+					return refuse(GRANT_REFUSED, `${VERB}: refused (log unappended): ${granted.reason}.`);
+				}
 
 				const at = yield* Effect.sync(() => new Date().toISOString());
 				const applied = applyEvent(
@@ -99,6 +120,7 @@ export const runTransition = (
 					event,
 					at,
 					classed.classes,
+					granted.grant,
 				);
 				if (applied._tag === "Refused") {
 					return refuse(
@@ -129,6 +151,7 @@ export const runTransition = (
 							taskAffected: task.taskId,
 							...(classed.classes === null ? {} : {classes: classed.classes}),
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+							...(granted.grant === null ? {} : {waitGrant: granted.grant}),
 						},
 						null,
 						2,

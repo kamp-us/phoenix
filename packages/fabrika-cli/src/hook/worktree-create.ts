@@ -40,6 +40,152 @@ export const worktreePathFor = (repoRoot: string, name: string): string =>
 	`${repoRoot}/.claude/worktrees/${name}`;
 
 /**
+ * Where this spawn's fetched base lands — a ref **no sibling spawn can write**, under a directory
+ * **no sibling spawn can remove**.
+ *
+ * `FETCH_HEAD` is one file in the shared `.git` dir and every parallel spawn fetches against the same
+ * clone, so one spawn reads it while a sibling's fetch has it truncated and the read returns nothing.
+ * Measured on git 2.40.1 in this repo's `worktree-base.git.test.ts` fixture: 12 of 320 concurrent
+ * fetch-then-resolve pairs lost the base that way (#6081). Serializing the pair would fix it too, but
+ * a per-spawn name removes the shared write instead of taking turns at it.
+ *
+ * A per-spawn *name* left a shared *directory*, which is a second race (#7428). `git update-ref -d`
+ * deletes the loose ref and then walks upward removing every parent it just emptied — but its walk
+ * has a floor: `try_remove_empty_parents` in git's `refs/files-backend.c` advances its pointer past
+ * the refname's first **two** components — the `for (i = 0; i < 2; i++)` loop commented
+ * `refs/{heads,tags,...}` — before pruning anything, identical on v2.40.1 and v2.51.0. So the
+ * deepest directory it can ever remove is the third
+ * component's. The leaf therefore sits directly in `refs/fabrika/`, which is component two and out of
+ * reach; a nested `refs/fabrika/worktree-base/<leaf>` put the shared directory one level lower, where
+ * the last spawn to finish rmdir'd it out from under a sibling's in-flight `git fetch` — between that
+ * fetch's mkdir and its `<leaf>.lock` create — and the sibling died on `cannot lock ref … No such file
+ * or directory`. Measured across 720 concurrent spawns against one clone on git 2.40.1: nested, the
+ * shared directory was absent in 363 of 4635 polls; flat under `refs/fabrika/`, 0 of 4894.
+ *
+ * `concurrencyArm` deliberately does not classify that diagnostic: this shape removes the race rather
+ * than recovering from it, and prune-and-backoff would not have helped a fetch whose parent directory
+ * was gone.
+ *
+ * The slug is folded to `[A-Za-z0-9-]` so it cannot carry a `..` or a `.lock` suffix into a refname,
+ * and the nonce — not the slug — is what makes the name unique: two slugs that differ only in
+ * punctuation fold together, which would put the shared write straight back.
+ */
+export const baseRefFor = (name: string, nonce: string): string =>
+	`refs/fabrika/worktree-base-${name.replace(/[^A-Za-z0-9]+/g, "-")}-${nonce}`;
+
+/** The fully-qualified source is deliberate: an unqualified `main` also matches a tag named `main`. */
+export const fetchBaseArgs = (base: string, baseRef: string): ReadonlyArray<string> => [
+	"fetch",
+	"--quiet",
+	"origin",
+	`+refs/heads/${base}:${baseRef}`,
+];
+
+export const resolveBaseArgs = (baseRef: string): ReadonlyArray<string> => [
+	"rev-parse",
+	"--verify",
+	"--quiet",
+	`${baseRef}^{commit}`,
+];
+
+export const dropBaseRefArgs = (baseRef: string): ReadonlyArray<string> => [
+	"update-ref",
+	"-d",
+	baseRef,
+];
+
+/**
+ * The two ways one spawn's `git worktree add` breaks a **sibling** spawn's git command against the
+ * same clone. Both are named by the administrative file the losing command choked on.
+ *
+ * `PlaceholderHead` — `git worktree add` writes `.git/worktrees/<name>/HEAD` as a null-oid
+ * placeholder before it checks out, and any concurrent `git fetch`'s connectivity check walks every
+ * worktree HEAD and reds on it: `fatal: bad object worktrees/<name>/HEAD`.
+ *
+ * `IncompleteAdminDir` — an add reading another add's half-written administrative directory:
+ * `fatal: failed to read .git/worktrees/<name>/commondir`.
+ *
+ * The name in each diagnostic is the *sibling's* worktree, never the failing spawn's own, which is
+ * what separates these from a genuine failure naming the tree it was asked to build. #6081's
+ * per-spawn base ref fixed neither, because neither is about what the base is named.
+ *
+ * **Each arm has two sources** — both measured in `worktree-concurrency.git.test.ts`, each with the
+ * git it was measured on:
+ *
+ *  - A **live** sibling add, which holds the state for the length of its creation window and then
+ *    replaces it. Short, on git 2.40.1: one sample in 161 over a ~320ms creation, and it closes
+ *    *before* the `post-checkout` install, so it never spans that ~10s.
+ *  - A **dead** sibling add, which left its administrative directory behind. Whether that entry
+ *    heals on its own is git's own business and moves between versions: on git 2.40.1 it never does
+ *    — a re-run of the identical fetch fails identically for as long as the directory is there —
+ *    while on git 2.55.0, this repo's CI runner, the second fetch succeeds. It is the shape the
+ *    #7331 report measured in production, where every failing fetch named one worktree — the first
+ *    spawn's, whose own add had failed earlier in the same run.
+ *
+ * So the recovery is {@link pruneWorktreesArgs} *and* a bounded re-attempt, never a re-attempt
+ * alone: prune clears the dead sibling's leftover on both gits measured, where a bare re-attempt
+ * clears it on only one of them, and the backoff waits out the live one.
+ */
+export type ConcurrencyArm = "PlaceholderHead" | "IncompleteAdminDir";
+
+const CONCURRENCY_ARMS: ReadonlyArray<readonly [ConcurrencyArm, RegExp]> = [
+	["PlaceholderHead", /bad object worktrees\/\S+\/HEAD/],
+	["IncompleteAdminDir", /failed to read \S*worktrees\/\S+\/commondir/],
+];
+
+/** Prose for a refusal line, so an exhausted recovery names what it kept losing to. */
+export const CONCURRENCY_ARM_CAUSE: Readonly<Record<ConcurrencyArm, string>> = {
+	PlaceholderHead: "a sibling worktree's placeholder HEAD",
+	IncompleteAdminDir: "a sibling worktree's incomplete administrative directory",
+};
+
+/**
+ * Which named arm this git diagnostic is, or `null` for everything else.
+ *
+ * `null` is the fail-closed answer and covers every unrecognised failure: a credential miss, a
+ * refused path, a third arm nobody has measured. Only a positive match is recovered from, so a
+ * genuine failure still refuses on its first attempt rather than after a backoff.
+ */
+export const concurrencyArm = (diagnostic: string): ConcurrencyArm | null =>
+	CONCURRENCY_ARMS.find(([, pattern]) => pattern.test(diagnostic))?.[0] ?? null;
+
+/**
+ * Drop the administrative directories whose worktrees are gone — the dead-sibling source above.
+ *
+ * **It cannot deregister a live sibling's add**, which is what makes it safe to run from a hook that
+ * many spawns are running at once. `git worktree add` writes `worktrees/<name>/locked` =
+ * `initializing` as the first file in the administrative directory and removes it only once the
+ * checkout is done, and prune skips a locked entry; independently, the worktree directory itself
+ * exists at every instant the administrative directory does, and prune only drops an entry whose
+ * directory is missing. Both were measured on git 2.40.1 (160 of 161 samples across a live add's
+ * creation window held the lock; none had the administrative directory without its worktree).
+ */
+export const pruneWorktreesArgs: ReadonlyArray<string> = ["worktree", "prune"];
+
+/**
+ * Attempts and delays for that recovery. Bounded, and **no lock is taken**: `git worktree add` fires
+ * the `post-checkout` dependency install (ADR 0109 §3), so serialising it would serialise every
+ * parallel spawn behind one ~10s install — the constraint #6081 already recorded. A loser prunes and
+ * waits out the live window instead of taking a turn at a lock.
+ */
+export const RECOVERY_ATTEMPTS = 5;
+
+const FIRST_DELAY_MS = 200;
+const MAX_DELAY_MS = 1_600;
+
+/**
+ * Doubling from 200ms, capped — so one wrapped command's recovery waits at most 3s. The verb wraps
+ * two, so a spawn that loses at both spends up to 6s of its 600s budget.
+ */
+export const recoveryBackoffMs = (attempt: number): number =>
+	Math.min(FIRST_DELAY_MS * 2 ** Math.max(0, attempt - 1), MAX_DELAY_MS);
+
+/** 40 hex for sha1, 64 for sha256 — anything else is not an object id this verb may branch from. */
+const COMMIT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+
+export const isCommitId = (candidate: string): boolean => COMMIT_ID.test(candidate);
+
+/**
  * Turn a captured `WorktreeCreate` payload into the plan, or say why there is none.
  *
  * Every arm is fail-closed on purpose: the verb's caller is the harness, a refusal there blocks the

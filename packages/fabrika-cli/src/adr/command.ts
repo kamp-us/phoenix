@@ -245,7 +245,7 @@ const amendInPart = leafCommand(
 ).pipe(
 	Command.withShortDescription("Add this ADR to an older one's amended-in-part list."),
 	Command.withDescription(
-		"Append this ADR to an older one's `amended-in-part by` list, in id order, preserving the links already there. Prints `<path>\\t<new status>`. Same exit codes as supersede. Example: fabrika adr amend-in-part 0023 --by 0240",
+		"Append this ADR to an older one's `amended-in-part by` list, in id order, preserving the links already there. Prints `<path>\\t<new status>`. Exits 7 (no such id), 13 (no --by record), 14 (no single status: line), 15 (diff touched another line — nothing written), 16 (the record is already superseded, so it is not amendable). Example: fabrika adr amend-in-part 0023 --by 0240",
 	),
 );
 

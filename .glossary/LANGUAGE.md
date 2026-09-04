@@ -134,6 +134,18 @@ as D1*. There is **no in-memory SQL tier**; the helper is deleted.)
   pure-logic-dominant files and per-file dedicated stages for the few that need isolation
   (`tests/integration/_integration.ts`). Examples: `search.test.ts`, `fate-live-posts.test.ts`.
 
+**`integration` names two different fidelities, one per app.** The paragraph above is
+`apps/web`'s and stays the definition ADR 0082 fixed: real remote Cloudflare, real D1, real
+credentials. `apps/tuval` deploys nothing and has no D1, so its `integration` project means
+the *other* half of what the tier was always for — the fidelity a claim needs that a
+substituted seam cannot give. There it is a real Pi `AgentSession` behind a real loopback
+socket and a real WebSocket codec, on Pi's own faux provider, so the tier is **slow but not
+remote** and needs no cloud credentials (`apps/tuval/vitest.config.ts`; epic
+[#7497](https://github.com/kamp-us/phoenix/issues/7497)). Two rules hold across both: the
+split is by fidelity and never by folder, and a claim that only a real engine could falsify
+belongs in `integration` whichever app it is in. What you may not do is read one app's
+`integration` and expect the other's — say which app you mean.
+
 **One `Database` seam.** A single `Database` tag holds the raw `D1Database` handle; both
 the `Drizzle` service and the better-auth adapter *derive* from it, so they share one
 underlying handle by construction — the one-handle invariant is type-enforced by the layer
@@ -401,14 +413,90 @@ delete authority a property of **loaded data** rather than of source: it is comp
 `boardVocabulary`, so a repo that renames a status cannot end up with a facet that deletes labels
 nobody declared.
 
+### Tuval: program, process, window
+
+Tuval's three nouns, ruled by [#7484 R1.1](https://github.com/kamp-us/phoenix/issues/7484#issuecomment-5505745671)
+("let's be boring and choose program and process for now") and first used in code by the registry
+slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `apps/tuval` (ADR
+[0345](../.decisions/0345-tuval-lives-under-apps.md)). English technical terms, per §3.
+
+- **program** — one registry row: a stable id, a private Demlik core machine, public typed port
+  schemas, host handlers, a capability request list, an optional renderer reference, and the
+  #7467 identity / capability / placement records as inert data. A program is *exactly* one row;
+  there is no second species and no view-only exemption. Source:
+  [`apps/tuval/src/registry/program.ts`](../apps/tuval/src/registry/program.ts).
+- **process** — one running instance of a program: a stable id, a parent, ports, a lifecycle.
+  Always say **"OS process"** for the operating-system kind; a bare "process" in Tuval prose is
+  this one.
+- **window** — a view onto a process, the Vim-buffer model: many windows may show one process at
+  once, all sharing the process state, each window owning its own view state (scroll, selection).
+
+"Widget" and "actor" are **retired** for Tuval's own surfaces — an older doc that says either
+means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
+noted as a future-feeling alternative and is not adopted.
+
+### Tuval: spell, registry, palette, scope, the Tuval protocol
+
+Tuval's command-framework nouns, ruled by the thirteen decisions on grilling
+[#7617](https://github.com/kamp-us/phoenix/issues/7617) and built by epic
+[#7627](https://github.com/kamp-us/phoenix/issues/7627). English technical terms, per §3. The why is
+ADR [0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md); the
+shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
+
+- **spell** — one addressable command in Tuval's spell registry: a path, a one-sentence description,
+  an Effect Schema for its parameters and one for its result, an Effect `execute`, and an inert
+  capability list. Source: [`apps/tuval/src/commands/spell.ts`](../apps/tuval/src/commands/spell.ts).
+- **registry** — ambiguous on its own in Tuval prose, so always qualify it. The **spell registry**
+  is the one table of every callable spell, keyed by path, built from the core spell list plus each
+  program row's `spells` and replaced whole on a config reload
+  ([`apps/tuval/src/commands/registry.ts`](../apps/tuval/src/commands/registry.ts)). The **program
+  registry** is the separate kernel table of program rows
+  ([`apps/tuval/src/registry/Registry.ts`](../apps/tuval/src/registry/Registry.ts)); it never reads
+  a row's spells.
+- **palette (the Tuval palette)** — Tuval's desk-level command overlay at the top center of the app,
+  fixed width and never anchored to a window, where a person types a spell and picks from ranked
+  completions. Not apps/web's ⌘K command palette (ADR
+  [0186](../.decisions/0186-command-palette-single-search-contract.md)) and not a reaction palette
+  (ADR [0139](../.decisions/0139-reaction-curated-palette.md)); a bare "palette" in Tuval prose is
+  this one.
+- **scope** — where one spell call came from, as the kernel decides it: the workspace and client
+  always, plus the window and process when the caller was inside one. The page names a window and
+  nothing else; the kernel resolves the rest, so a page cannot address a process by putting its id
+  on the wire. Not Effect's `Scope`, the resource-lifetime handle Tuval prose also uses (every
+  process runs in its own Effect Scope forked from its parent's); a bare "scope" in Tuval spell
+  prose is this record. Source:
+  [`apps/tuval/src/commands/scope.ts`](../apps/tuval/src/commands/scope.ts).
+- **the Tuval protocol** — the one versioned page-to-kernel wire: four Effect Schema messages
+  (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
+  [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).
+
+
 ---
 
 ## 3. Product / brand nouns (Turkish surface)
 
 The naming convention is **Turkish for product / brand, English for technical**:
-product and brand names and all user-facing copy stay Turkish; everything technical is
+product and brand names stay Turkish and are never translated; everything technical is
 English — URL routes/paths, code identifiers, D1 table/column names, file names. The
 canonical example is that the route is `/search?q=`, not `/ara`.
+
+**User-facing copy in `apps/web` is Turkish *and* English, behind the i18n catalog**
+(ADR [0347](../.decisions/0347-web-copy-behind-i18n-catalog.md)). The reader picks a
+**locale**; **Turkish is the default**, so a reader who picks nothing reads what the site
+always read. Both locales are served from one typed **catalog** per locale under
+`apps/web/src/i18n/`, and **the brand nouns in the table below are not translated in
+either one** — the English interface still says sözlük, pano, mecmua, yazar, çaylak.
+Tuval, Fabrika and Demlik are English-only: only the product name is Turkish, and none of
+them coins a Turkish term.
+
+Three technical terms come with that rule:
+
+- **locale** — the reader's chosen language, `tr` or `en`. `tr` is the default.
+- **catalog** — the typed per-locale message record (`Record<Key, string>`) under
+  `apps/web/src/i18n/`, split one file per surface. There is no runtime i18n dependency;
+  a key present in one locale and missing in the other is a `pnpm typecheck` failure.
+- **catalog key** — the identifier a surface passes to read one message out of the
+  catalog. Keys are technical, so they are English, whatever locale they resolve into.
 
 **Two axes hide inside this one rule — keep them separate.** *Canonical glossary-term
 language* (the name a concept carries in [`TERMS.md`](./TERMS.md)) and *UI copy language*
@@ -422,17 +510,19 @@ language* (the name a concept carries in [`TERMS.md`](./TERMS.md)) and *UI copy 
   glossary-freshness gate demands a term for a new internal/analytics surface: **coin the
   English term, don't translate it** — the concept stays English regardless of what
   language its page renders in.
-- **User-facing UI copy stays Turkish** — the existing rule, unchanged. The mod-facing
-  funnel page renders Turkish copy while the concept underneath keeps its English
-  canonical name.
+- **User-facing UI copy is whatever locale the reader picked** — it comes out of the
+  catalog, in `tr` or `en`. The mod-facing funnel page renders localized copy while the
+  concept underneath keeps its one English canonical name in `TERMS.md`. Adding English
+  copy changes nothing on the glossary axis: a term is not re-decided because the page
+  it appears on can now render in English.
 
 The `bildir` row below already models this split: the brand lexeme surfaces in the
-user-facing copy (`bildir` / `bildirildi`) while its technical surface (`features/report`,
-the `Report` service, `content_report`) stays English. The funnel is the mirror case —
-a technical concept whose *canonical term* is English (`funnel / conversion funnel`) even
-though the surface it powers renders Turkish UI copy. Collapsing the two axes ("the
-concept shows on a Turkish screen, so its glossary term must be Turkish") is the mistake
-this note exists to stop.
+user-facing copy (`bildir` / `bildirildi`, in both locales — it is a brand noun) while its
+technical surface (`features/report`, the `Report` service, `content_report`) stays
+English. The funnel is the mirror case — a technical concept whose *canonical term* is
+English (`funnel / conversion funnel`) whatever locale the surface it powers renders in.
+Collapsing the two axes ("the concept shows on a Turkish screen, so its glossary term must
+be Turkish") is the mistake this note exists to stop.
 
 **On a showcase / exhibit surface, the chrome is technical, only the sample content is
 product copy.** Any surface that *demonstrates* components — a design-system storyboard,
@@ -440,11 +530,12 @@ a component gallery, a pattern showcase — layers a component/primitive that re
 example content. Split them: the **names** — component names, primitive names, section
 and exhibit labels, and every code identifier or route path around them — are technical,
 so they stay **English**; **only the in-exhibit example/sample content** the component
-renders is user-facing product copy, so **it** is Turkish. Turkish never bleeds up from
-the rendered sample into the technical chrome that frames it: a `Button` exhibit is
-labeled `Button` (English name) showing a `Gönder` sample (Turkish content), never a
-`Düğme` exhibit. This is the general rule for every showcase surface — Turkish-naming the
-components was the atölye-storyboard inversion the founder ruled a standing don't.
+renders is user-facing product copy, so **it** reads in the product's voice. The sample
+never bleeds up into the technical chrome that frames it: a `Button` exhibit is labeled
+`Button` (English name) showing a `Gönder` sample (product copy), never a `Düğme` exhibit.
+This is the general rule for every showcase surface — Turkish-naming the components was
+the atölye-storyboard inversion the founder ruled a standing don't. Exhibit sample content
+is not a user surface, so it is exempt from the catalog and stays as authored.
 
 The Turkish product/brand nouns this repo uses:
 

@@ -20,6 +20,14 @@ consumer touches:
 - `makeD1RestFromEnv(target)` / `d1RestLayerFromEnv` — the env-credentialed convenience
   (`$CLOUDFLARE_API_TOKEN` via `CredentialsFromEnv` + a Fetch client) a bin and its
   integration test both run the real direct-D1 work through.
+- `resolveDatabaseName(config)` / `resolveDatabaseNameFromEnv(target)` — the `name`
+  Cloudflare has recorded for a database id (`GET /accounts/{id}/d1/database/{id}`).
+  The deploy stack writes that name and the caller cannot, which is what makes it usable
+  as evidence about what a database *is* — `@kampus/preview-seed`'s throwaway fence keys
+  on it (#7740). A record that comes back without a name throws rather than returning a
+  value a fence would have to interpret. The answer is a `ResolvedDatabaseName`, and these
+  two functions are its only mint — a fence takes that type so a label the caller composed
+  is a plain `string` and does not fit.
 - `readYourWrite(read, isConsistent, options?)` — a bounded read-your-writes poll for callers
   that need read-after-write consistency over this transport. The REST `/query` endpoint
   carries no D1 session bookmark (that Sessions API primitive is Workers-binding-only), so an

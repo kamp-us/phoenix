@@ -148,6 +148,15 @@ flake. There is no path from an ambiguous log to "safe to rerun". Each token lic
 Only **gating** reds reach this lane — an informational context is red without blocking anything,
 and treating one as healable is how a non-failure stalled a mergeable PR.
 
+**The logs you are classifying came from `refs/pull/<n>/merge`, not from the PR's head.** A
+`pull_request` workflow builds the prospective merge of head into base and labels the runs with the
+head SHA, so a `logic` red naming a symbol or a line nobody can find at the head is still a real
+failure of the tree that must merge — the head being clean disproves nothing, and reclassifying on
+that basis is how a correct FAIL gets filed as a gate misreading its own SHA
+([#6794](https://github.com/kamp-us/phoenix/issues/6794)). Route it to repair as the `logic` it is;
+reproducing it against that ref is the repair lane's step, stated with its citation and worked
+example in [`build`'s Repair section](../build/SKILL.md#repair).
+
 ## 4 — The one rerun, and why the verb owns the guard
 
 ```bash
@@ -201,6 +210,17 @@ is outstanding. A PR correctly waiting on a person is a stall you report and nev
 approve, and you do not resolve another person's thread. An *unresolved review thread* is not one of
 this class's signals — resolution state is GraphQL-only and the contract rules it out of scope, so a
 PR blocked solely by an open thread lands in another class.
+
+**One park in this class is not a person's, and it is a verb away.** A lane parked at
+`human:queue-stall` is only saying its merge queue outlasted the lane's wait budget, so it is
+recipe-clearable: `fabrika recipe unpark <lane-key> --task <task>` proves whether the queue actually
+moved — it relays `ship reconcile`, so only `landed` or `ejected` clears — and on a clear it records
+the `UNBLOCKED` and the fresh conclusive read in one event. Exit `13` is the queue genuinely not
+having moved, and the park stands. Run it when you work the row rather than routing a human, and a
+stall self-heals on the next scheduled pass (ADR
+[0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)). `sweep` itself still
+writes nothing on its own authority — the verb is yours to run on the row you are working, never the
+sweep's to run over the board.
 
 ## Sweep — the scheduled surface
 

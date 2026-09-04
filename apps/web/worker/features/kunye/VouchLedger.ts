@@ -42,6 +42,13 @@ export class VouchLedger extends Context.Service<
 
 		readonly has: (input: VouchKey) => Effect.Effect<boolean>;
 
+		/**
+		 * Every candidate this voucher has a row for, in ONE read. The divan roster needs the
+		 * whole set to mark its rows, and a per-row {@link has} would be the waterfall ADR 0021
+		 * forbids.
+		 */
+		readonly candidatesVouchedBy: (voucherId: string) => Effect.Effect<ReadonlyArray<string>>;
+
 		/** The cap input: vouches whose candidate is still `çaylak`. */
 		readonly activeCountFor: (voucherId: string) => Effect.Effect<number>;
 
@@ -125,6 +132,21 @@ export const VouchLedgerLive = Layer.effect(VouchLedger)(
 						.get(),
 				);
 				return row !== undefined;
+			}),
+
+			// Unfiltered by tier, unlike `activeCountFor`: the roster marks "you vouched for
+			// this person", which a promotion does not undo.
+			candidatesVouchedBy: Effect.fn("VouchLedger.candidatesVouchedBy")(function* (
+				voucherId: string,
+			) {
+				const rows = yield* run((db) =>
+					db
+						.select({candidateId: schema.authorshipVouch.candidateId})
+						.from(schema.authorshipVouch)
+						.where(eq(schema.authorshipVouch.voucherId, voucherId))
+						.all(),
+				);
+				return rows.map((r) => r.candidateId);
 			}),
 
 			// The inner-join to `user` is what makes a promotion return the slot without

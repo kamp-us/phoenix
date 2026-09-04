@@ -121,9 +121,10 @@ describe("blastRadiusLabel — the plain-Turkish magnitude confirm (not a noise 
 			target({targetId: "b", reportCount: 5}),
 			target({targetId: "c", reportCount: 2}),
 		];
-		expect(blastRadiusLabel(targets, ["post:a", "post:b"])).toBe(
-			"2 hedef · 9 raporu kapatır · geri alınabilir",
-		);
+		expect(blastRadiusLabel(targets, ["post:a", "post:b"])).toEqual({
+			frame: {key: "divan.wave.blast.other", params: {targets: 2}},
+			reports: {key: "divan.wave.blastReports.other", params: {count: 9}},
+		});
 	});
 
 	it("restates the real magnitude off the current selection (a toggle changes it)", () => {
@@ -131,15 +132,25 @@ describe("blastRadiusLabel — the plain-Turkish magnitude confirm (not a noise 
 			target({targetId: "a", reportCount: 4}),
 			target({targetId: "b", reportCount: 5}),
 		];
-		expect(blastRadiusLabel(targets, ["post:a"])).toBe(
-			"1 hedef · 4 raporu kapatır · geri alınabilir",
-		);
+		expect(blastRadiusLabel(targets, ["post:a"])).toEqual({
+			frame: {key: "divan.wave.blast.one", params: {targets: 1}},
+			reports: {key: "divan.wave.blastReports.other", params: {count: 4}},
+		});
+	});
+
+	it("picks the report arm off the report total, not the target count", () => {
+		const targets = [target({targetId: "a", reportCount: 1})];
+		expect(blastRadiusLabel(targets, ["post:a"]).reports).toEqual({
+			key: "divan.wave.blastReports.one",
+			params: {count: 1},
+		});
 	});
 });
 
 describe("waveManifestLabel — the manifest heading", () => {
 	it("names the actor's reported-target breadth", () => {
-		expect(waveManifestLabel(3)).toBe("bu aktör · 3 bildirili hedef");
+		expect(waveManifestLabel(3)).toEqual({key: "divan.wave.manifest.other", params: {count: 3}});
+		expect(waveManifestLabel(1)).toEqual({key: "divan.wave.manifest.one", params: {count: 1}});
 	});
 });
 
@@ -208,7 +219,7 @@ describe("summarizeWaveBatch / waveFailureLabel — no silent partial drop", () 
 	});
 
 	it("surfaces which targets did not resolve, or null on a fully-applied batch", () => {
-		expect(waveFailureLabel(2)).toBe("2 hedef çözülemedi, tekrar dene");
+		expect(waveFailureLabel(2)).toEqual({key: "divan.wave.failed.other", params: {count: 2}});
 		expect(waveFailureLabel(0)).toBeNull();
 	});
 });
@@ -241,6 +252,9 @@ describe("waveResolveInputs — ONE shared waveId across the batch (#1855, AC4)"
 		const {resolved, failed} = summarizeWaveBatch(outcomes);
 		expect(resolved).toEqual(["post:a", "post:c"]);
 		expect(failed).toEqual(["post:b"]);
-		expect(waveFailureLabel(failed.length)).toBe("1 hedef çözülemedi, tekrar dene");
+		expect(waveFailureLabel(failed.length)).toEqual({
+			key: "divan.wave.failed.one",
+			params: {count: 1},
+		});
 	});
 });

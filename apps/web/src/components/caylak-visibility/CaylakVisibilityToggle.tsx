@@ -13,11 +13,12 @@
  * either return `{error}` or throw (`.patterns/fate-mutations-client.md`) — both branches
  * land in the same revert.
  */
+
+import {Alert, Switch} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, useRequest, useView, view} from "react-fate";
 import type {CaylakVisibilityPreference} from "../../../worker/features/fate/views";
-import {Alert} from "../ui/Alert";
-import {Switch} from "../ui/Switch";
+import {useT} from "../../i18n";
 import "./CaylakVisibilityToggle.css";
 
 const PreferenceView = view<CaylakVisibilityPreference>()({
@@ -37,6 +38,7 @@ export function CaylakVisibilitySetting() {
 
 export function CaylakVisibilityToggle({optedIn}: {readonly optedIn: boolean}) {
 	const fate = useFateClient();
+	const t = useT();
 	const [checked, setChecked] = useState(optedIn);
 	const [saving, setSaving] = useState(false);
 	const [failed, setFailed] = useState(false);
@@ -72,19 +74,16 @@ export function CaylakVisibilityToggle({optedIn}: {readonly optedIn: boolean}) {
 				rootProps={{"data-testid": "caylak-visibility-switch"}}
 				inputProps={{"data-testid": "caylak-visibility-switch-input"}}
 			>
-				çaylak katkılarını yerinde göster
+				{t("caylakVisibility.toggle.label")}
 			</Switch>
-			<p className="kp-caylak-visibility-toggle__hint">
-				açtığında çaylakların yazdıkları akışına karışır, çaylak işi olduğu belli olacak şekilde
-				işaretli. kapalıyken hiçbir çaylak katkısı akışında görünmez.
-			</p>
+			<p className="kp-caylak-visibility-toggle__hint">{t("caylakVisibility.toggle.hint")}</p>
 			{failed ? (
 				<Alert
 					variant="danger"
 					className="kp-alert--inline kp-caylak-visibility-toggle__error"
 					data-testid="caylak-visibility-error"
 				>
-					ayar kaydedilemedi, tekrar dene.
+					{t("caylakVisibility.toggle.error")}
 				</Alert>
 			) : null}
 		</div>

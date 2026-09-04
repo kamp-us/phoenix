@@ -6,7 +6,17 @@
  * event, and the append rides `transition`'s exact path — validate against the folded state FIRST,
  * append only what the machine accepts, refuse everything else with the log left byte-identical.
  * The optional `--pr`/`--comment` refs land on the event line itself, so an event names its
- * evidence at the moment the shell knows the URL (#5712).
+ * evidence at the moment the shell knows the URL (#5712). One more field lands there and it is the
+ * prover's rather than the caller's: `deferred`, relayed off the proof's own answer and never
+ * recomposed here, says this `PASS` was proven over a set short the namespaces named — the routed
+ * `review-ui` an epic child hands to its epic's tail, which nothing else in the ledger records
+ * (#7041). `partial` is the second of that kind and rides the ship stage's `DONE`: it says whether
+ * the merge behind this terminal carried `Part of #N` and left the issue open, which is the whole
+ * input to the machine's `merge:partial` arm (ADR 0343). It rides at both polarities — a closing
+ * merge records `partial: false` — so the line says the closure was read rather than leaving a
+ * later sweep to read it again (ADR 0351). `landed` is that read's evidence and rides beside it:
+ * the merged PRs the closure judged, so a recorded `false` says which reader wrote it and not only
+ * which way it fell (#7457).
  *
  * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
  * operator into the shell must not move the bar: between the machine's acceptance and the append
@@ -31,7 +41,7 @@ import {
 	TOKEN_UNRECOGNISED,
 } from "./codes.ts";
 import {applyEvent, foldLog, type LogEntry, resolveTask} from "./fold.ts";
-import type {ProveOptions} from "./prove-verb.ts";
+import type {ProofOutcome, ProveOptions} from "./prove-verb.ts";
 import {loadRefusal, replayRefusal} from "./refusals.ts";
 import {causeForEvent, classesForEvent, eventForToken} from "./report.ts";
 import {type LaneRef, loadLane} from "./store.ts";
@@ -61,7 +71,7 @@ export interface ReportOptions extends LaneRef {
 
 export const runReport = <R>(
 	options: ReportOptions,
-	prove: (options: ProveOptions) => Effect.Effect<VerbOutcome, never, R>,
+	prove: (options: ProveOptions) => Effect.Effect<ProofOutcome, never, R>,
 ): Effect.Effect<VerbOutcome, never, FileSystem.FileSystem | Path.Path | R> =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystem.FileSystem;
@@ -111,6 +121,9 @@ export const runReport = <R>(
 			// The same classes the append carries, so the proof asks about the arm this event actually
 			// takes rather than the one the lane stood on before it (#6664).
 			classes: classed.classes,
+			// The ship stage's closure is read off this very PR, so the ref has to reach the proof and
+			// not only the line it lands on — nominating for it cannot see a merged `Part of #N` (#7457).
+			pr: options.pr,
 			repo: options.repo,
 			cwd: options.cwd,
 			env: options.env,
@@ -140,6 +153,9 @@ export const runReport = <R>(
 				if (freshFold._tag !== "Folded") return replayRefusal(VERB, fresh.logPath, freshFold);
 
 				const now = yield* Effect.sync(() => new Date().toISOString());
+				// `partial` reaches only this pass: the pre-lock one runs before the proof that reads it,
+				// and it decides nothing — both arms of `merge:partial` hold a cell, so the arm taken
+				// cannot turn an acceptance into a refusal. This pass is the one that appends.
 				const reapplied = applyEvent(
 					fresh.lane,
 					freshFold.states,
@@ -147,6 +163,8 @@ export const runReport = <R>(
 					resolved.event,
 					now,
 					classed.classes,
+					null,
+					proved.partial,
 				);
 				if (reapplied._tag === "Refused") {
 					return refuse(EVENT_REFUSED, `${VERB}: refused (log unappended): ${reapplied.reason}`);
@@ -157,6 +175,8 @@ export const runReport = <R>(
 					...(options.pr === null ? {} : {pr: options.pr}),
 					...(options.comment === null ? {} : {comment: options.comment}),
 					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
+					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 				};
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
 				if (Result.isFailure(wrote)) {
@@ -176,6 +196,9 @@ export const runReport = <R>(
 							...(options.pr === null ? {} : {pr: options.pr}),
 							...(options.comment === null ? {} : {comment: options.comment}),
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
+							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
+							...(proved.partial === null ? {} : {partial: proved.partial}),
+							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 						},
 						null,
 						2,

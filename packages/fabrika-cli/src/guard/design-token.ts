@@ -13,7 +13,7 @@
  *    means the file must be raw-px clean.
  *
  * The ceilings and allow-lists are bounded and live in
- * `apps/web/src/styles/design-token-lint.config.json`: they grandfather the debt the frontend audit
+ * `packages/design/design-token-lint.config.json`: they grandfather the debt the frontend audit
  * catalogued so the gate is green on `main` while still redding any NEW bypass.
  *
  * IO-free: pure over facts gathered at the boundary in `./design-token-verb.ts`.
@@ -152,7 +152,7 @@ export const renderReport = (verdict: DesignTokenVerdict): string => {
 	}
 	if (verdict.reason === "zero-scope") {
 		return (
-			`${VERB}: discovered ZERO CSS files under apps/web/src — fail-closed ` +
+			`${VERB}: discovered ZERO CSS files under apps/web/src or packages/design/src — fail-closed ` +
 			"(ADR 0092). Is the repo root correct, or did the styles layout change?"
 		);
 	}
@@ -165,7 +165,7 @@ export const renderReport = (verdict: DesignTokenVerdict): string => {
 				"no declared, runtime-injected, or grandfathered property (the Toast dead-ref class, " +
 				"#2167). Reach for an existing role token (design-system-manifest.md), or — if it is " +
 				"genuinely runtime-injected — add it to externalProperties in " +
-				"apps/web/src/styles/design-token-lint.config.json:\n" +
+				"packages/design/design-token-lint.config.json:\n" +
 				lines.join("\n"),
 		);
 	}
@@ -173,7 +173,7 @@ export const renderReport = (verdict: DesignTokenVerdict): string => {
 		const lines = verdict.hex.map((h) => `    ${h.path}:${h.line}  ${h.value}`);
 		sections.push(
 			`  RAW HEX OUTSIDE tokens.css (${verdict.hex.length}) — hex color literals live ONLY in ` +
-				"the raw-scale layer (apps/web/src/styles/tokens.css) by law " +
+				"the raw-scale layer (packages/design/src/tokens.css) by law " +
 				"(design-system-manifest.md, Pillar 2). Reach for a role token (--surface, --text-*, " +
 				"--accent, --link, …):\n" +
 				lines.join("\n"),

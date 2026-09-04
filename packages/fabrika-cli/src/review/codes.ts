@@ -9,7 +9,7 @@
  * checked-in `/report` contract already sits behind its own binary on `7` and `11` (#4752), which is
  * why the shipped package is the authority and no prose copy is.
  *
- * **`12`-`16` are this group's private band, and are deliberately not cleared against sibling
+ * **`12`-`17` are this group's private band, and are deliberately not cleared against sibling
  * groups.** `triage` seats `12`/`13` on its own two refusals; that is two namespaces, not one
  * collision, because the `3`+ band carries no cross-group uniqueness obligation — see rule 3 of
  * `../../../../claude-plugins/fabrika/docs/cli-interface-convention.md`, which also names the one
@@ -82,6 +82,16 @@ export const APPEND_ONLY = 15;
  * state that reads as safety while carrying none (#6522).
  */
 export const NO_GATE_COVERAGE = 16;
+/**
+ * Refused: this post would retire a standing verdict of the OPPOSITE polarity at the same head, and
+ * `--supersede` was not passed.
+ *
+ * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
+ * vocabulary — the write is legitimate and one flag away. What it costs is the record: a FAIL
+ * overwritten by a PASS leaves nothing showing a gate ever blocked, and GitHub keeps no comment-body
+ * history to recover it from (#7247). Nothing is written on this refusal.
+ */
+export const SUPERSEDES_VERDICT = 17;
 
 /** The unallocated code — see the gap note at the top of this file. */
 export const DELIBERATE_GAP = 4;

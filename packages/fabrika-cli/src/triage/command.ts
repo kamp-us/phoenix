@@ -127,7 +127,7 @@ const kill = leafCommand(
 ).pipe(
 	Command.withShortDescription("Close an agent-filed issue not-planned, with a reason."),
 	Command.withDescription(
-		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the closed-by-triage label, then the close — and read back that it says not_planned. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close), 11 (a precondition read failed, including the claim on the issue), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
+		"Close an agent-filed issue not-planned over four gated writes — the optional redacted duplicate fold, the reason from STDIN, the labels — every triage status stripped and closed-by-triage applied — then the close, and read back that it says not_planned carrying no triage status. Prints `killed\\t<number>\\t<foldedInto|none>`. Exits 3 (empty stdin), 5 (machine-local path in the reason), 6 (bare @ reference), 7 (issue absent or closed, duplicate absent or closed, or no closed-by-triage label), 8 (a write failed — UNKNOWN), 9 (read-back is not a not-planned close, or still shows a triage status), 11 (a precondition read failed, including the claim on the issue), 12 (human-filed — no agent footer and no operator author, see $FABRIKA_OPERATOR_ACCOUNTS), 13 (unconfirmed), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage kill 4312 --confirm --duplicate-of 4290 < reason.md",
 	),
 );
 
@@ -208,11 +208,28 @@ const apply = leafCommand(
 				`a standing lane instead of a milestone; this repo's own set, defaulting to ${STANDING_LANES.join(" or ")}`,
 			),
 		),
+		blockedBy: Flag.integer("blocked-by").pipe(
+			Flag.atLeast(0),
+			Flag.withDescription(
+				"an issue this one waits on, written as a native blocked_by edge; repeatable, idempotent, and never a pull request",
+			),
+		),
 		token: laneTokenFlag,
 		repo: repoFlag,
 		json: jsonFlag,
 	},
-	Effect.fn(function* ({issue, type, priority, readyFor, home, lane, token, repo, json}) {
+	Effect.fn(function* ({
+		issue,
+		type,
+		priority,
+		readyFor,
+		home,
+		lane,
+		blockedBy,
+		token,
+		repo,
+		json,
+	}) {
 		yield* emit(
 			yield* runApply({
 				issue,
@@ -221,6 +238,7 @@ const apply = leafCommand(
 				readyFor,
 				home: Option.getOrNull(home),
 				lane: Option.getOrNull(lane),
+				blockedBy,
 				token: Option.getOrNull(token),
 				repo: Option.getOrNull(repo),
 				json,
@@ -230,9 +248,11 @@ const apply = leafCommand(
 		);
 	}),
 ).pipe(
-	Command.withShortDescription("Stamp the whole triaged transition as one reconcile."),
+	Command.withShortDescription(
+		"Stamp the triaged transition and its blocked_by edges as one reconcile.",
+	),
 	Command.withDescription(
-		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>`. Exits 7 (no such issue, it is closed, or a label this run would write does not exist), 8 (a write failed — UNKNOWN), 9 (read-back mismatch), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47",
+		"Stamp the whole triaged transition — type, priority, audience, status and home — as ONE owned-facet reconcile, then read the end state back positively. Exactly one of --home / --lane. Repeatable --blocked-by writes the issue's native blocked_by edges (ADR 0301), resolving each target's internal id, skipping the edges already live so a re-run is idempotent, and reading the whole set back. Prints `triaged\\t<n>\\t<type>\\t<priority>\\t<ready-for>\\t<home>\\t<blocked-by>`, where the last column is the edge set THIS RUN read back, as `#a,#b` — always empty without --blocked-by, whatever the graph holds, because the dependency endpoint is read only when the flag is there. Exits 7 (no such issue, it is closed, a label this run would write does not exist, or a --blocked-by target is proven absent — no edge written), 8 (a write failed — UNKNOWN), 9 (read-back mismatch, including a requested edge absent from the edge read-back), 10 (off-vocabulary value, or a non-open milestone), 11 (a precondition read failed, including the claim on the issue and the blocked_by read), 16 (--ready-for agent over a body with no readable acceptance-criteria block — every type but epic), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 18 (.fabrika.jsonc yielded no usable value — refused by a key's load-time check, unreadable, or undecodable), 21 (a --blocked-by target is a pull request — ADR 0301 names a blocking PR by the issue its merge closes, so pass that issue's number; no edge written). Example: fabrika triage apply 4312 --type bug --priority p2 --ready-for agent --home 47 --blocked-by 4311",
 	),
 );
 
@@ -286,7 +306,7 @@ const claim = leafCommand(
 ).pipe(
 	Command.withShortDescription("Take one lane's claim on one issue."),
 	Command.withDescription(
-		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one, which is what tells two triagers of ONE session apart. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
+		"Take one lane's claim on one issue, proven by re-reading the markers back. Prints `won\\t<claim-token>` or `lost\\t<holder-session-id>` — both are proven answers and both exit 0. Keep the token: passing it back as --token re-enters this lane instead of minting a second one. Exits 1 (no session id is set — FABRIKA_SESSION_ID, CLAUDE_CODE_SESSION_ID and PI_SUBAGENT_PARENT_SESSION consulted, or --token is not this session's), 7 (no such issue, or it is closed), 8 (marker POST failed — UNKNOWN), 9 (marker absent on read-back, or a conceded marker could not be deleted), 11 (the issue or its comments could not be read — never \"won\"). Example: fabrika triage claim 4312",
 	),
 );
 
@@ -340,7 +360,7 @@ const provenance = leafCommand(
 ).pipe(
 	Command.withShortDescription("Whether an issue was reported by an agent or a human."),
 	Command.withDescription(
-		"Say whether an issue was reported by an agent or typed by a human. Two agent signals: the anchored `Filed by an agent` footer (ADR 0159), or an author in the operator set named by $FABRIKA_OPERATOR_ACCOUNTS — an operator's own filing is agent-reported footer or not (#4619 ruling). Prints `agent` or `human`; with no operator set configured this is the footer-only rule, a footerless non-operator filing answers `human`, an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
+		"Say whether an issue was reported by an agent or typed by a human. Two agent signals: the anchored `Filed by an agent` footer (ADR 0159), or an author in the operator set named by $FABRIKA_OPERATOR_ACCOUNTS — an operator's own filing is agent-reported footer or not. Prints `agent` or `human`; with no operator set configured this is the footer-only rule, a footerless non-operator filing answers `human`, an empty body answers `human` fail-closed, an unreadable one refuses. Exits 7 (issue proven absent), 11 (unreadable — the provenance is UNKNOWN, never `human`). Example: fabrika triage provenance 4312",
 	),
 );
 
@@ -390,7 +410,7 @@ const homes = leafCommand(
 ).pipe(
 	Command.withShortDescription("The assignable homes: open milestones and standing lanes."),
 	Command.withDescription(
-		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus every standing lane this repo BOTH declares in `.fabrika.jsonc` (`boardVocabulary.standingLanes`) and carries the label for — a repo whose board lacks a declared lane is offered none, so no listed home can fail a label write later. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every `active` campaign's milestone carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. An ABSENT roadmap is not a refusal: every milestone lists with a null arc row and stderr says no roadmap was found. Exits 7 (zero open milestones, or a roadmap that exists and parsed to 0 arc rows), 11 (the milestone list, the repo's label set or a roadmap that exists could not be read or probed, or `.fabrika.jsonc` yielded no usable lane set). Example: fabrika triage homes",
+		"List the assignable homes: every OPEN milestone joined to its roadmap arc/campaign row by `#<number>`, plus every standing lane this repo BOTH declares in `.fabrika.jsonc` (`boardVocabulary.standingLanes`) and carries the label for — a repo whose board lacks a declared lane is offered none. First stdout line is `homes`, then one `<kind>\\t<key>\\t<label>` line per candidate; every `active` campaign's milestone carries a fourth column, `running: p0/blocker only` (a `running` field under `--json`) — such a campaign is closed to new intake unless the work is p0 or blocks one of its own in-flight lanes. An ABSENT roadmap is not a refusal: every milestone lists with a null arc row and stderr says no roadmap was found. Exits 7 (zero open milestones, or a roadmap that exists and parsed to 0 arc rows), 11 (the milestone list, the repo's label set or a roadmap that exists could not be read or probed, or `.fabrika.jsonc` yielded no usable lane set). Example: fabrika triage homes",
 	),
 );
 
@@ -428,7 +448,7 @@ const enrich = leafCommand(
 ).pipe(
 	Command.withShortDescription("Replace an issue body with the rewrite on stdin."),
 	Command.withDescription(
-		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, or the claim on it, could not be read), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one). Example: fabrika triage enrich 4312 < enriched.md",
+		"Replace an issue body with the rewrite on STDIN above the preserved, leak-redacted original — or with --epic, a pitch above the original under a fixed header. A prior enrichment is recognised by the marker this verb writes, bound to this issue number, so a re-run in EITHER mode replaces the authored region instead of nesting a second envelope. Prints `enriched\\t<number>\\t<redactions>`. The authored region is scanned for a stated ordering — an ordering phrase binding a #N, in the issue's own voice rather than a third-person report about another issue — and refused when the live blocked_by graph carries no edge for a number it names (ADR 0301); there is no override, so wire the edge with `triage apply <n> --blocked-by <m>` or reword. A #N that is a pull request is not read as a prerequisite: ADR 0301 names a blocking PR by the issue its merge closes. Exits 3 (empty stdin), 5 (machine-local path in the authored text), 6 (bare @ reference), 7 (issue absent or closed, or its body is empty — no original to preserve), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (the issue, the claim on it, its blocked_by edges, or a number a stated ordering names could not be read), 17 (a live claim marker on the issue names another session, or — with --token — another lane of this one), 20 (the authored region states an ordering the graph carries no edge for — nothing written). Example: fabrika triage enrich 4312 < enriched.md",
 	),
 );
 
@@ -467,7 +487,7 @@ const repairCriteria = leafCommand(
 ).pipe(
 	Command.withShortDescription("Repair an acceptance-criteria block's shape, mechanically."),
 	Command.withDescription(
-		'Rewrite an acceptance-criteria block\'s shape: a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria", and — when the block carries no checkbox at all — its plain list bullets to unchecked checkboxes, each item\'s text byte-for-byte unchanged. Authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved|would-repair>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. --dry-run plans everything and writes nothing, answering `would-repair` with the repairs it would make, so the set of bodies about to be edited is reviewable first. Every repaired body gets one disclosure comment naming its repairs, posted after the read-back — an in-place edit of a filed body GitHub keeps no history of leaves no other record. Only a pure shape rewrite on the exact heading text is repaired; a drifted heading text, a block mixing prose or another block into the list, an empty item, a block that already carries a checkbox beside its bullets, and a converted bullet the reader counts no criterion at are all refused, never guessed — a `Repaired` plan reads back exactly one criterion per line it rewrote. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
+		'Rewrite an acceptance-criteria block\'s shape: a level-drifted "## Acceptance criteria" heading to the conforming "### Acceptance criteria", and — when the block carries no checkbox at all — its plain list bullets to unchecked checkboxes, each item\'s text byte-for-byte unchanged. Authored region only, preserved originals byte-for-byte untouched, the repair pre-verified through the wire read before anything is written. One issue by number, or --sweep for every open issue with one `<repaired|conforming|no-block|refused|moved|would-repair>\\t<number>` line each; a sweep re-reads each issue immediately before its write and answers `moved` instead of writing when the body changed after the board snapshot. --dry-run plans everything and writes nothing, answering `would-repair` with the repairs it would make. Every repaired body gets one disclosure comment naming its repairs, posted after the read-back. Only a pure shape rewrite on the exact heading text is repaired; a drifted heading text, a block mixing prose or another block into the list, an empty item, a block that already carries a checkbox beside its bullets, and a converted bullet the reader counts no criterion at are all refused, never guessed — a `Repaired` plan reads back exactly one criterion per line it rewrote. Exits 7 (issue absent, closed, or a pull request), 8 (the PATCH failed — UNKNOWN), 9 (read-back mismatch), 11 (an issue or the open-issue list could not be read), 14 (not mechanically repairable — the refusal names what it read). Example: fabrika triage repair-criteria 5726',
 	),
 );
 
@@ -501,7 +521,7 @@ const scratch = leafCommand(
 ).pipe(
 	Command.withShortDescription("The per-lane scratch path a triager's working files go under."),
 	Command.withDescription(
-		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce is what keys the namespace per LANE rather than per session, so two triagers of one fan-out cannot clobber each other's fixed-name files. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment, --token is not a claim token of this session, or the repo does not resolve), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read — UNKNOWN), 19 (proven: this lane holds no live claim on the issue). Example: fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…",
+		"The per-lane scratch path, allocated fail-closed: <temp root>/fabrika-triage/<session-id>/<issue>-<claim-nonce>/<slug>, one absolute path on stdout, the directory created if absent. --token's nonce keys the namespace per LANE rather than per session. The printed path is machine-local and must never reach a posted artifact. Exits 1 (the directory could not be created, no session id is set (the FABRIKA_SESSION_ID → CLAUDE_CODE_SESSION_ID → PI_SUBAGENT_PARENT_SESSION chain) or the id is not one path segment, --token is not a claim token of this session, or the repo does not resolve), 10 (--slug carries a path separator or is not kebab-case), 11 (the claim state could not be read — UNKNOWN), 19 (proven: this lane holds no live claim on the issue). Example: fabrika triage scratch 4312 --slug authored --token triage:s-9f2e:c1a4d6f8-…",
 	),
 );
 

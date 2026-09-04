@@ -3,6 +3,8 @@
  * definitions (see `.patterns/fate-connections.md`). The page has two branches: an
  * existing term, and a slug with no term yet, where the first definition creates it.
  */
+
+import {Alert, Button, DraftRestoreBanner, Kbd, Skeleton, Textarea} from "@kampus/design";
 import * as React from "react";
 import {
 	toEntityId,
@@ -20,16 +22,12 @@ import {FirstContributionOnramp} from "../components/authorship/FirstContributio
 import {actorLabel} from "../components/moderation/actor-identity";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
-import {Alert} from "../components/ui/Alert";
-import {Kbd, Skeleton} from "../components/ui/atoms";
-import {Button} from "../components/ui/Button";
-import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
-import {Textarea} from "../components/ui/Form";
 import {Screen} from "../fate/Screen";
 import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {useConfirmGone, useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {LoadMoreButton} from "../fate/wire";
 import type {WireMessageOverrides} from "../fate/wireMessages";
+import {type Translate, useT} from "../i18n";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
@@ -67,14 +65,23 @@ const TermView = view<Term>()({
 	definitions: DefinitionConnectionView,
 });
 
-const SOZLUK_OVERRIDES: WireMessageOverrides = {
-	BODY_REQUIRED: "tanım boş olamaz",
-	BODY_TOO_LONG: `tanım en fazla ${BODY_MAX} karakter olabilir`,
-};
+// Locale-dependent, so it is built per render rather than at module scope.
+function sozlukOverrides(t: Translate): WireMessageOverrides {
+	return {
+		BODY_REQUIRED: t("sozluk.composer.bodyRequired"),
+		BODY_TOO_LONG: t("sozluk.composer.bodyTooLong", {max: BODY_MAX}),
+	};
+}
 
 function SozlukTermSkeleton() {
+	const t = useT();
 	return (
-		<div role="status" aria-busy="true" aria-label="yükleniyor…" data-testid="sozluk-term-loading">
+		<div
+			role="status"
+			aria-busy="true"
+			aria-label={t("sozluk.term.loading")}
+			data-testid="sozluk-term-loading"
+		>
 			<header className="kp-sozluk-term__head">
 				<Skeleton width={140} height={12} className="kp-sozluk-term__skeleton-crumbs" />
 				<Skeleton width={220} height={20} className="kp-sozluk-term__skeleton-title" />
@@ -102,6 +109,7 @@ function SozlukTermSkeleton() {
 
 export function SozlukTermPage() {
 	const {slug} = useParams<{slug: string}>();
+	const t = useT();
 	const safeSlug = slug ?? "";
 	// Bumping `reloadKey` remounts the content onto the now-existing term. The composer
 	// must force-refetch `term(slug)` BEFORE bumping it, or the remount's render read
@@ -118,7 +126,7 @@ export function SozlukTermPage() {
 					fallback={<SozlukTermSkeleton />}
 					error={({code}) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
-							terim yüklenemedi: {code.toLowerCase()}
+							{t("sozluk.term.loadFailed", {code: code.toLowerCase()})}
 						</p>
 					)}
 				>
@@ -157,14 +165,15 @@ function SozlukTermContent({
 		{mode: "network-only"},
 	);
 	const session = useSession();
+	const t = useT();
 	const signedIn = !!session.data?.user;
 
 	if (!term) {
 		if (!signedIn) {
 			return (
 				<NotFoundPage
-					title="terim bulunamadı"
-					message={`"${slug}" diye bir terim henüz yok. giriş yapıp ilk tanımı sen yazabilirsin.`}
+					title={t("sozluk.term.notFoundTitle")}
+					message={t("sozluk.term.notFoundMessage", {slug})}
 				/>
 			);
 		}
@@ -186,20 +195,21 @@ function NewTermComposer({
 	slug: string;
 	onCreated: (definitionId: string | null) => void;
 }) {
+	const t = useT();
 	return (
 		<>
 			<header className="kp-sozluk-term__head">
 				<p className="kp-sozluk-term__crumbs">
-					<a href="/sozluk">sözlük</a> / <a href="/sozluk">{slug.charAt(0).toLowerCase()}</a> /{" "}
-					{slug.replace(/-/g, " ")}
+					<a href="/sozluk">{t("sozluk.term.crumbRoot")}</a> /{" "}
+					<a href="/sozluk">{slug.charAt(0).toLowerCase()}</a> / {slug.replace(/-/g, " ")}
 				</p>
 				<h1 className="kp-sozluk-term__title kp-prose">{slug.replace(/-/g, " ")}</h1>
 				<div className="kp-sozluk-term__meta">
-					<span>henüz tanım yok</span>
+					<span>{t("sozluk.term.noEntriesYet")}</span>
 				</div>
 			</header>
 			<p style={{font: "var(--t-body)", color: "var(--text-muted)"}}>
-				"{slug}" terimi henüz yok. ilk tanımı sen yazabilirsin.
+				{t("sozluk.term.newTermPrompt", {slug})}
 			</p>
 			<Composer slug={slug} onTermCreated={onCreated} />
 		</>
@@ -278,13 +288,15 @@ export function DefinitionsList(props: DefinitionsListProps) {
 }
 
 function DefinitionSignInPrompt({slug}: {slug: string}) {
+	const t = useT();
 	return (
 		<div className="kp-sozluk-composer" data-testid="sozluk-composer-signin">
 			<header className="kp-sozluk-composer__head">
-				<span className="kp-sozluk-composer__title">sen nasıl tanımlardın?</span>
+				<span className="kp-sozluk-composer__title">{t("sozluk.composer.title")}</span>
 			</header>
 			<p style={{font: "var(--t-body)", color: "var(--text-muted)"}}>
-				tanım eklemek için <Link to={authRedirectPath(`/sozluk/${slug}`)}>giriş yap</Link>.
+				{t("sozluk.composer.signInPrefix")}
+				<Link to={authRedirectPath(`/sozluk/${slug}`)}>{t("sozluk.composer.signInLink")}</Link>.
 			</p>
 		</div>
 	);
@@ -305,13 +317,15 @@ function Composer({
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	const t = useT();
+	const overrides = React.useMemo(() => sozlukOverrides(t), [t]);
 	const [body, setBody] = React.useState("");
 	const {
 		error,
 		setError,
 		inFlight: isInFlight,
 		run,
-	} = useDraftSubmit({overrides: SOZLUK_OVERRIDES, redirectPath: () => `/sozluk/${slug}`});
+	} = useDraftSubmit({overrides, redirectPath: () => `/sozluk/${slug}`});
 	const draftValue = React.useMemo<DefinitionDraft>(() => ({body}), [body]);
 	const draft = useDraftAutosave({
 		route: `/sozluk/${slug}`,
@@ -344,7 +358,7 @@ function Composer({
 		const optimistic = buildOptimisticDefinition(!onTermCreated, {
 			body,
 			// Never fall back to `user.email` here — it would render in the author line (#2126).
-			author: actorLabel(user.name, null, "kullanıcı"),
+			author: actorLabel(user.name, null, t("sozluk.composer.actorFallback")),
 			authorId: user.id,
 		});
 		await run(
@@ -372,7 +386,7 @@ function Composer({
 				}
 				return promise;
 			},
-			"tanım eklenemedi",
+			t("sozluk.composer.addFailed"),
 			async (result) => {
 				setBody("");
 				draft.clear();
@@ -398,15 +412,15 @@ function Composer({
 		<form className="kp-sozluk-composer" onSubmit={onSubmit}>
 			<FirstContributionOnramp surface="sozluk" />
 			<header className="kp-sozluk-composer__head">
-				<span className="kp-sozluk-composer__title">sen nasıl tanımlardın?</span>
+				<span className="kp-sozluk-composer__title">{t("sozluk.composer.title")}</span>
 			</header>
 			{draft.offered ? (
 				<DraftRestoreBanner onRestore={restoreDraft} onDismiss={draft.dismiss} />
 			) : null}
 			<Textarea
 				className="kp-sozluk-composer__textarea"
-				aria-label="tanım"
-				placeholder="markdown destekli. ```js ... ``` kod bloğu için. kişisel deneyim, örnek, hatıra; kuru sözlük tanımı zaten Wikipedia'da var."
+				aria-label={t("sozluk.composer.bodyLabel")}
+				placeholder={t("sozluk.composer.bodyPlaceholder")}
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
 				onKeyDown={submitOnCmdEnter}
@@ -426,12 +440,13 @@ function Composer({
 			) : null}
 			{tooLong ? (
 				<Alert variant="danger" className="kp-alert--inline kp-sozluk-composer__error">
-					tanım en fazla {BODY_MAX} karakter olabilir ({body.length})
+					{t("sozluk.composer.bodyTooLongCount", {max: BODY_MAX, length: body.length})}
 				</Alert>
 			) : null}
 			<footer className="kp-sozluk-composer__foot">
 				<span className="kp-sozluk-composer__hint">
-					markdown · <Kbd>⌘</Kbd>+<Kbd>↵</Kbd> gönder
+					{t("sozluk.composer.hintPrefix")}
+					<Kbd>⌘</Kbd>+<Kbd>↵</Kbd> {t("sozluk.composer.hintSubmit")}
 				</span>
 				<span style={{display: "flex", gap: 6}}>
 					<Button
@@ -443,7 +458,7 @@ function Composer({
 							setError(null);
 						}}
 					>
-						iptal
+						{t("sozluk.composer.cancel")}
 					</Button>
 					<Button
 						variant="primary"
@@ -452,7 +467,7 @@ function Composer({
 						disabled={disabled}
 						data-testid="sozluk-composer-submit"
 					>
-						{isInFlight ? "gönderiliyor…" : "tanımı ekle"}
+						{isInFlight ? t("sozluk.composer.submitting") : t("sozluk.composer.submit")}
 					</Button>
 				</span>
 			</footer>

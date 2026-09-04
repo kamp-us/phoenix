@@ -1,5 +1,5 @@
+import {CopyLinkButton} from "@kampus/design";
 import type * as React from "react";
-import {CopyLinkButton} from "../../../components/ui/CopyLinkButton";
 import {defineExhibit} from "../exhibit";
 
 export const copyLinkButtonExhibit = defineExhibit<React.ComponentProps<typeof CopyLinkButton>>({
@@ -9,6 +9,5 @@ export const copyLinkButtonExhibit = defineExhibit<React.ComponentProps<typeof C
 	component: CopyLinkButton,
 	knobs: {
 		path: {kind: "string", label: "Path", default: "/pano/ornek"},
-		label: {kind: "string", label: "Label", default: "paylaş"},
 	},
 });

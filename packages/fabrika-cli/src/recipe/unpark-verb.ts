@@ -19,6 +19,7 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
+import {readClaimants} from "../build/claim.ts";
 import {WORKTREE_HELD} from "../build/codes.ts";
 import {worktreeCheckouts} from "../build/git.ts";
 import {childLaneBranches} from "../build/lane.ts";
@@ -29,12 +30,13 @@ import {readRoadmapFile} from "../config/paths.ts";
 import {fetchAndResolve, localBranches, readFileAt} from "../io/git.ts";
 import {getIssue} from "../io/issues.ts";
 import {isRecord, parseJson} from "../io/json.ts";
-import {nominateOpenPulls, nominationScope} from "../lane/nominate.ts";
+import {nominatePulls, nominationScope} from "../lane/nominate.ts";
 import {tracePulls} from "../lane/prove.ts";
 import {runStatus} from "../lane/status-verb.ts";
 import {runTransition} from "../lane/transition-verb.ts";
 import {BASE_REF} from "../ledger/ground.ts";
 import {runCpApproval} from "../ship/cp-approval-verb.ts";
+import {runReconcile} from "../ship/reconcile-verb.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
 	NOT_PARKED,
@@ -45,7 +47,7 @@ import {
 	TARGET_ABSENT,
 	TASK_UNRESOLVED,
 } from "./codes.ts";
-import {classifyPark, type ParkRecipe} from "./parks.ts";
+import {classifyPark, type ParkRecipe, QUEUE_MOVED_GRANT} from "./parks.ts";
 import {buildExit, laneExit, relayRefusal} from "./relay.ts";
 import {clearProof, issueOf, leafOf} from "./status-read.ts";
 import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
@@ -53,7 +55,7 @@ import {openPull, resolveTargetRepo, scannedLine} from "./target.ts";
 const VERB = "fabrika recipe unpark";
 
 export interface UnparkOptions {
-	/** The lanes root — `.fabrika/lanes` unless a caller relocates it. */
+	/** The lanes root, already resolved by the adapter — the caller's `--root`, else the derived one. */
 	readonly root: string;
 	/** The lane id under the root — by convention the issue number the lane drives. */
 	readonly lane: string;
@@ -66,7 +68,19 @@ export interface UnparkOptions {
 }
 
 type Clearance =
-	| {readonly _tag: "Cleared"; readonly mechanism: string}
+	| {
+			readonly _tag: "Cleared";
+			readonly mechanism: string;
+			/**
+			 * Waits the clear grants on the very `UNBLOCKED` that records it, or `null`.
+			 *
+			 * Only the queue-stall row grants: its park IS a spent wait budget, so a clear that restored
+			 * the state alone would hand the lane one conclusive read and re-park it (#6717). Every other
+			 * row parks for a reason that is not a budget, and granting there would inflate a budget
+			 * nobody spent.
+			 */
+			readonly waitGrant: number | null;
+	  }
 	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
 
 type Deps = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner;
@@ -114,6 +128,7 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 			task,
 			cause: null,
 			classes: [],
+			waitGrant: clearance.waitGrant,
 		});
 		if (recorded.code !== 0) {
 			return relayRefusal(VERB, "fabrika lane transition", recorded, laneExit(recorded.code));
@@ -137,6 +152,7 @@ export const runUnpark = (options: UnparkOptions): Effect.Effect<VerbOutcome, ne
 				clearance: parked.recipe.clearance,
 				mechanism: clearance.mechanism,
 				current: proof.leaf,
+				...(clearance.waitGrant === null ? {} : {waitGrant: clearance.waitGrant}),
 			}),
 			[
 				`${VERB}: park "${leaf}" matched a known recipe; cleared via ${clearance.mechanism}.`,
@@ -161,6 +177,10 @@ const clear = (
 			return clearBranchFree(options, task, recipe);
 		case "campaign-active":
 			return clearCampaignActive(options, task, recipe);
+		case "spawn-clear":
+			return clearSpawnClear(options, task, recipe);
+		case "queue-moved":
+			return clearQueueMoved(options, task, recipe);
 	}
 };
 
@@ -196,7 +216,7 @@ const clearCpApproval = (
 		// The lane's PR through the shared nominator (`../lane/nominate.ts`): a §CP park sits on the same
 		// PR `lane brief` dispatched a shipper against, and a `Part of #N` PR that this verb could not
 		// see is a park no recipe could ever clear (#6179).
-		const nominated = yield* nominateOpenPulls(repo, issue);
+		const nominated = yield* nominatePulls(repo, issue);
 		if (nominated._tag === "Unreadable") {
 			return no(
 				refuse(
@@ -269,6 +289,7 @@ const clearCpApproval = (
 				return {
 					_tag: "Cleared",
 					mechanism: `cp-approval:${String(answered.mechanism ?? "discharge")}`,
+					waitGrant: null,
 				};
 			case "stop":
 				return no(
@@ -341,12 +362,52 @@ const clearBranchFree = (
 			);
 		}
 
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, []);
+		if (freed._tag === "Refused") return no(freed.outcome);
+
+		return {
+			_tag: "Cleared",
+			mechanism:
+				freed.retired === 0
+					? `branch-free:${candidates.join(",")}`
+					: `branch-free:${candidates.join(",")} (retired ${freed.retired} working tree(s))`,
+			waitGrant: null,
+		};
+	});
+
+type TreeRead =
+	| {readonly _tag: "Freed"; readonly retired: number}
+	| {readonly _tag: "Refused"; readonly outcome: VerbOutcome};
+
+/**
+ * Whether any working tree of this clone still holds one of `candidates`, after the recipe's own
+ * remedy verb has had its turn at them.
+ *
+ * Shared by the two rows that turn on the read — `branch-free`, whose whole cause it is, and
+ * `spawn-clear`, for which it is the second half. Every listed tree counts as a hold, a prunable
+ * record included: a checkout is blocked on a stale registration too, so reading one as free would
+ * clear a park still standing.
+ *
+ * `scanned` carries the reads the caller already performed, so a refusal from here reports the whole
+ * scope the caller covered rather than the tree half alone.
+ */
+const treesFreedOf = (
+	options: UnparkOptions,
+	issue: number,
+	recipe: ParkRecipe,
+	candidates: ReadonlyArray<string>,
+	scanned: ReadonlyArray<string>,
+): Effect.Effect<TreeRead, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): TreeRead => ({_tag: "Refused", outcome});
+
 		const checkouts = yield* worktreeCheckouts;
 		if (checkouts._tag === "Failure") {
 			return no(
 				refuse(
 					PRECONDITION_UNKNOWN,
 					`${VERB}: cannot read which working tree holds ${candidates.join(", ")}: ${checkouts.reason} — the park's cause is UNKNOWN, never cleared.`,
+					scanned,
 				),
 			);
 		}
@@ -366,7 +427,7 @@ const clearBranchFree = (
 					refuse(
 						PRECONDITION_UNKNOWN,
 						`${VERB}: cannot re-read which working tree holds ${candidates.join(", ")} after the retirement: ${after.reason} — the park's cause is UNKNOWN, never cleared.`,
-						[scope],
+						[...scanned, scope],
 					),
 				);
 			}
@@ -382,18 +443,116 @@ const clearBranchFree = (
 						.map((checkout) => `${checkout.branch} is checked out in ${checkout.path}`)
 						.join("; ")}; nothing was written.`,
 					retired === 0
-						? [scope]
-						: [scope, `${VERB}: ${retired} working tree(s) were retired, and these still hold.`],
+						? [...scanned, scope]
+						: [
+								...scanned,
+								scope,
+								`${VERB}: ${retired} working tree(s) were retired, and these still hold.`,
+							],
 				),
 			);
 		}
 
+		return {_tag: "Freed", retired};
+	});
+
+/**
+ * Read whether the #6770 park's cause is gone: the shell the provider killed left nothing behind
+ * that would refuse the same brief being dispatched again.
+ *
+ * It proves a dispatch is possible, never that the provider is back — no verb can spawn an agent, so
+ * the operator's next dispatch is that test and a still-down provider re-parks the lane (ADR 0339).
+ * The two halves are the residue ADR 0321 makes the driver's to clear: a build claim the dead shell
+ * stranded, which is a hold until `build release` or a `build adopt` succession retracts it (ADR
+ * 0295 — this verb evicts nothing from absence), and a working tree still holding its lane branch,
+ * which the row's `build retire` remedy takes back where a license reaches it — and after the
+ * release above, that is ADR 0342's unclaimed-lane arm rather than either board license.
+ *
+ * A lane carrying no branch for the issue clears on the claim read alone, and that holds for all
+ * three shell roles rather than only the two that cut nothing. A dead reviewer or shipper never cut
+ * a branch, so "no branch here" is their ordinary case rather than `branch-free`'s wrong clone. A
+ * dead builder did cut one, and never pushed it (ADR 0285) — but it was cut in a worktree of this
+ * clone, whose branch refs live in the shared common git dir, so {@link localBranches} lists it here
+ * (`.patterns/worktree-agent-constraints.md`; the same sharing `build branch --resume-lane` reads a
+ * missing branch as gone rather than elsewhere on). That containment holds only while the unpark runs
+ * in the clone that spawned the shell — which is the clone the lane ledger lives in, and nothing
+ * enforces it: run this from another clone and a dead builder's zero reads as free, where
+ * `branch-free`'s same zero refuses at `TARGET_ABSENT`.
+ */
+const clearSpawnClear = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so the dead shell's residue cannot be resolved.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+
+		const claimants = yield* readClaimants(resolved.repo, issue);
+		if (claimants._tag === "Unknown") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read who claims #${issue}: ${claimants.reason} — whether the dead shell stranded a claim is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		const claimed = scannedLine(
+			VERB,
+			claimants.claimants.length,
+			"build claim marker",
+			`#${issue}`,
+		);
+		if (claimants.holder !== null) {
+			return no(
+				refuse(
+					PARK_HOLDS,
+					`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — ${claimants.holder.token} still claims #${issue}; release it, or run the ADR 0295 succession, then unpark again. Nothing was written.`,
+					[claimed],
+				),
+			);
+		}
+
+		const branches = yield* localBranches;
+		if (branches._tag === "Failure") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read this clone's local branches: ${branches.reason} — whether a working tree still holds #${issue}'s lane branch is UNKNOWN, never cleared.`,
+					[claimed],
+				),
+			);
+		}
+		const candidates = childLaneBranches(issue, branches.value);
+		if (candidates.length === 0) {
+			return {
+				_tag: "Cleared",
+				mechanism: `spawn-clear:#${issue} unclaimed, no lane branch`,
+				waitGrant: null,
+			};
+		}
+
+		const freed = yield* treesFreedOf(options, issue, recipe, candidates, [claimed]);
+		if (freed._tag === "Refused") return no(freed.outcome);
+
 		return {
 			_tag: "Cleared",
 			mechanism:
-				retired === 0
-					? `branch-free:${candidates.join(",")}`
-					: `branch-free:${candidates.join(",")} (retired ${retired} working tree(s))`,
+				freed.retired === 0
+					? `spawn-clear:#${issue} unclaimed, ${candidates.join(",")} free`
+					: `spawn-clear:#${issue} unclaimed, ${candidates.join(",")} free (retired ${freed.retired} working tree(s))`,
+			waitGrant: null,
 		};
 	});
 
@@ -495,5 +654,132 @@ const clearCampaignActive = (
 			);
 		}
 
-		return {_tag: "Cleared", mechanism: `campaign-active:#${milestone}`};
+		return {_tag: "Cleared", mechanism: `campaign-active:#${milestone}`, waitGrant: null};
+	});
+
+/**
+ * Read whether the #6717 park's cause is gone: the merge queue has actually moved this PR.
+ *
+ * The read is `ship reconcile`'s answer relayed and never a second reading of the queue here (ADR
+ * 0228), at one poll because a recipe pass is a snapshot — the dwelling is what the lane already
+ * did. Two of its four answers clear, and both are the queue having finished with the PR: `landed`
+ * and `ejected`. `unresolved` is the queue still working, which is the park standing correctly, and
+ * `parked` says the arm never entered a queue at all — a different fault from a slow queue, whose
+ * remedy is `ship disarm --site post-enqueue` and so a human's.
+ *
+ * It is the one row whose clear also **grants**, and that is the whole shape the founder ruled: the
+ * park IS a spent wait budget, so restoring the state alone would buy one conclusive read and
+ * re-park the lane. The grant rides the same recorded `UNBLOCKED`, so there is no bare resume for
+ * the fold's wait-axis refusal to catch and no second line anybody has to remember to write.
+ *
+ * The PR is resolved at `open-or-merged` scope, because the clearing case is a merged and therefore
+ * closed PR: nominating open PRs alone would refuse at {@link TARGET_ABSENT} on this row's own
+ * success case. Several candidates is still not this verb's to pick between.
+ */
+const clearQueueMoved = (
+	options: UnparkOptions,
+	task: string,
+	recipe: ParkRecipe,
+): Effect.Effect<Clearance, never, ChildProcessSpawner.ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const no = (outcome: VerbOutcome): Clearance => ({_tag: "Refused", outcome});
+		const SCOPE = "open-or-merged" as const;
+
+		const issue = issueOf(options.lane, task);
+		if (issue === null) {
+			return no(
+				refuse(
+					TASK_UNRESOLVED,
+					`${VERB}: neither task "${task}" nor lane "${options.lane}" names an issue number, so the queued PR cannot be resolved.`,
+				),
+			);
+		}
+		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
+		if (resolved._tag === "Refused") return no(resolved.outcome);
+		const repo = resolved.repo;
+
+		const nominated = yield* nominatePulls(repo, issue, SCOPE);
+		if (nominated._tag === "Unreadable") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: cannot read ${nominated.what}: ${nominated.reason} — whether the queue moved is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		const traced = tracePulls(issue, nominated.pulls, SCOPE);
+		if (traced._tag === "None") {
+			return no(
+				refuse(
+					TARGET_ABSENT,
+					`${VERB}: ${traced.why} across ${nominationScope(issue, SCOPE)}, and "${recipe.park}" waits on ${recipe.waitingOn} — there is no subject to read.`,
+				),
+			);
+		}
+		if (traced._tag === "Many") {
+			return no(
+				refuse(
+					PARK_NOVEL,
+					`${VERB}: ${traced.prs.length} PRs link #${issue} (${traced.prs
+						.map((candidate) => `#${candidate}`)
+						.join(
+							", ",
+						)}) — which one the stall hangs on is not this verb's to guess; route this to a human.`,
+				),
+			);
+		}
+		const pr = traced.pr;
+		const scope = scannedLine(VERB, 1, "pull request", `#${pr}`);
+
+		const watched = yield* runReconcile({
+			pr,
+			polls: 1,
+			cadenceSeconds: 0,
+			repo,
+			json: true,
+			env: options.env,
+		});
+		if (watched.code !== 0) {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: fabrika ship reconcile refused at exit ${watched.code} — whether the queue moved is UNKNOWN, never cleared.`,
+					[...watched.stderr],
+				),
+			);
+		}
+		const answered = parseJson(watched.stdout);
+		if (!isRecord(answered) || typeof answered.outcome !== "string") {
+			return no(
+				refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: fabrika ship reconcile exited 0 and named no outcome — whether the queue moved is UNKNOWN, never cleared.`,
+				),
+			);
+		}
+		switch (answered.outcome) {
+			case "landed":
+			case "ejected":
+				return {
+					_tag: "Cleared",
+					mechanism: `queue-moved:#${pr} ${answered.outcome}`,
+					waitGrant: QUEUE_MOVED_GRANT,
+				};
+			case "unresolved":
+				return no(
+					refuse(
+						PARK_HOLDS,
+						`${VERB}: "${recipe.park}" still waits on ${recipe.waitingOn} — PR #${pr} reconciles "unresolved", still queued; nothing was written.`,
+						[scope],
+					),
+				);
+			default:
+				return no(
+					refuse(
+						PARK_NOVEL,
+						`${VERB}: PR #${pr} reconciles "${answered.outcome}", so "${recipe.park}" is parked over something this recipe does not cover — a merge arm that never entered the queue is \`ship disarm --site post-enqueue\`'s, not a dwell's. Refusing with the ledger untouched; route this to a human.`,
+						[scope],
+					),
+				);
+		}
 	});

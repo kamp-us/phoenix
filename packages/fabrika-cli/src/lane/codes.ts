@@ -238,15 +238,18 @@ export const MISDIRECTED_PUSH = 34;
 export const CAUSE_UNRECOGNISED = 35;
 
 /**
- * The `UNBLOCKED` would walk the door out of an error final back into a state whose guarded routes
- * all fall straight back through it — the state restored, the repair budget still spent. Refused
- * with the log unappended.
+ * The resume would walk the door out of a park back into a state whose guarded routes all fall
+ * straight back through it — the state restored, the budget it needs still spent. Refused with the
+ * log unappended, on either budget.
  *
  * Its own seat rather than {@link EVENT_REFUSED}'s: that one says the machine holds no cell, and the
  * remedy is a different event. Here the cell is there and the fold would succeed — it would advertise
  * `active`/`review` on a lane that re-freezes on its next `FAIL`, which is what #6570 reports. The
- * remedy is not another event at all but a recorded clearance (`build clear`), so a caller reading
- * only the code must not be told to retype the transition (ADR 0312).
+ * remedy is not another event at all but a grant, so a caller reading only the code must not be told
+ * to retype the transition. **Which grant differs by axis and the message says which**: a recorded
+ * `CLEARED` round for retries (`build clear`, ADR 0312), and waits granted on this same resume for
+ * the wait axis (`recipe unpark`, else `--grant-wait`, ADR 0313) — `build clear` buys a repair round
+ * and never a longer wait.
  */
 export const RESUME_UNBUDGETED = 36;
 
@@ -349,3 +352,56 @@ export const ASSEMBLY_RED = 44;
  * sits with the codes the driver records nothing for (#7244). The remedy is the seat, not the range.
  */
 export const ASSEMBLY_DIRTY = 45;
+
+/**
+ * The machine a lane would run is not the machine its issue's board state calls for — the boot half
+ * of #7024, where an epic booted before it had a plan came up on the single-task coder template and
+ * nothing downstream said the lane was wrong.
+ *
+ * Its own seat rather than {@link LANE_EXISTS} or {@link TOPOLOGY_ABSENT}: nothing is in the way and
+ * no topology was read, so both of those send the reader to the wrong remedy. The remedy here is a
+ * different verb — `lane emit` for an issue with children, `lane open` for one without.
+ */
+export const SHAPE_MISMATCH = 46;
+
+/**
+ * The `--grant-wait` handed to `lane transition` is not a whole grant of at least one wait, or rides
+ * on an event that is not `UNBLOCKED` — refused with the log unappended.
+ *
+ * Its own seat rather than {@link RESUME_UNBUDGETED}'s: that one says a resume needs a grant and
+ * carries none, and the remedy is to add one. This one says the grant itself is unrecordable, and
+ * the two must not fold together — a `--grant-wait 0` that landed would raise the budget by nothing
+ * while reading as a granted resume, which is the silent no-op ADR 0313's wait axis exists to make
+ * loud (the parse refuses the same shape on a log line already).
+ */
+export const GRANT_REFUSED = 47;
+
+/**
+ * The issue a boot was pointed at hangs under a parent, whose lane already carries it as a task —
+ * the mirror of {@link SHAPE_MISMATCH}, and the one #7024's guard could not reach, since both facts
+ * that guard reads are facts about the issue itself. A child booted its own coder-template ledger
+ * while the parent epic's lane held the same number, and nothing reconciled the two (#7381).
+ *
+ * Its own seat rather than {@link SHAPE_MISMATCH}'s, because the remedies are opposite: an epic
+ * needs a machine of its own and is booted with `lane emit`, while a child needs no lane at all —
+ * the parent's is the one to drive, and a second boot is exactly the harm.
+ */
+export const LANE_IS_CHILD = 48;
+
+/**
+ * `lane archive` was pointed at a lane whose issue is still open on the board.
+ *
+ * An archive moves a lane out of every sweep, so the closed issue is half of what makes that safe:
+ * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. Its own seat
+ * because the remedy is to drive the lane, not to fix the record (ADR 0352).
+ */
+export const ISSUE_LIVE = 49;
+
+/**
+ * `lane archive` was pointed at a lane whose log replays.
+ *
+ * The other half: only a lane no sweep can ever judge leaves the sweep's scope. A replaying lane is
+ * one every sweep judges fine, and archiving it would hide a lane the pipeline still reads. The
+ * remedy is to leave it where it is (ADR 0352).
+ */
+export const LOG_REPLAYS = 50;

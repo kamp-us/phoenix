@@ -30,7 +30,8 @@
 
 import {issueRefsIn} from "../build/commit-message.ts";
 import type {ParentedCommit} from "../io/git.ts";
-import {ROUTED_NAMESPACES} from "../review/classes.ts";
+import type {PullScope} from "../io/pulls.ts";
+import {type IssueRefs, ROUTED_NAMESPACES} from "../review/classes.ts";
 
 /** The branch grammar's own reader, re-exported so this module's callers take one derivation. */
 export {childLaneBranches} from "../build/lane.ts";
@@ -52,8 +53,22 @@ export const REVIEW_STATE = "review";
  * now proves what it owes: `review` the namespaces it can reach **when this arm is the one it is
  * taking**, `review:ui` all of them. A lane that is not taking it holds the whole set at `review`,
  * so the deferral can never outlive the routing that earns it (ADR 0320).
+ *
+ * An epic child is the one role this state name does not reach at all — its region has no such cell
+ * to route to and no verb can post the namespace at its scope, so its deferral is unconditional and
+ * its creditor is the tail. {@link claimOf} carries that reading.
  */
 export const REVIEW_UI_STATE = "review:ui";
+
+/**
+ * The two leaves a shipper runs in — `ship` and the queue dwell it re-enters (ADR 0313).
+ *
+ * A `DONE` out of either claims no artifact ({@link claimOf} answers `None` for both), and that is
+ * unchanged: what the merge closed is a *routing* question, not a proof, so `./closure.ts` reads it
+ * beside the proof rather than folded into it. A refused proof would strand the shipper with no
+ * legal terminal over a merge that really did land.
+ */
+export const SHIP_STATES: ReadonlyArray<string> = ["ship", "ship:queued"];
 
 /** The label a no-PR builder outcome is only legal under (`build`'s `SUCCESS-NO-PR`). */
 export const INVESTIGATION_LABEL = "type:investigation";
@@ -105,7 +120,12 @@ export type Claim =
 	 */
 	| {readonly _tag: "ParkUncontradicted"}
 	| {readonly _tag: "RangeCommits"; readonly epic: number}
-	| {readonly _tag: "RangeVerdict"; readonly epic: number}
+	/**
+	 * `defers` is {@link Claim}'s one subtraction asked of a range instead of a head, and on this arm
+	 * it is constant rather than routed — see {@link claimOf} for why a child's scope can hold no
+	 * routed namespace's verdict at all.
+	 */
+	| {readonly _tag: "RangeVerdict"; readonly epic: number; readonly defers: ReadonlyArray<string>}
 	| {readonly _tag: "None"; readonly why: string};
 
 /**
@@ -115,9 +135,20 @@ export type Claim =
  * that decides whether the plain `review` cell may defer. It defers exactly when the event routes
  * into {@link REVIEW_UI_STATE}, so the subtraction and the routing are one fact rather than two:
  * a machine with no such arm (a `chore` workflow), or a `PASS` whose class flag never raised `ui`
- * and so walks straight to `ship`, defers nothing and stands on the whole derived set. A child's
- * `PASS` defers nothing either, and for the same reason read structurally: its regions carry no
- * `review:ui` cell at all.
+ * and so walks straight to `ship`, defers nothing and stands on the whole derived set.
+ *
+ * **A child's `PASS` defers the routed set unconditionally, and `next` decides nothing there.** A
+ * child opens no PR (ADR 0285) and every verb that may post a {@link ROUTED_NAMESPACES} verdict
+ * resolves live PR state, so that namespace is unpostable at child scope by construction — the same
+ * closed circle #6664 closed for the single lane, met at the other seam: requiring it of a child
+ * demanded a verdict no cell of that child's region and no verb of this CLI could ever produce, and
+ * every ui-bearing child deadlocked at exit 23 with no legal exit (#7041). The cell that owes it is
+ * the epic's tail, and the bar moves there rather than down: one epic run is one branch and one PR
+ * (ADR 0285), so every rendered file a child's range added is in the tail PR's own diff, where the
+ * tail's `PASS` derives it, defers nothing and stands on the whole set at a head a preview exists
+ * for. A child whose range renders nothing never derives the namespace at all, so the subtraction
+ * takes nothing off its bar and its proof is byte-for-byte what it was. See ADR 0340 for why this
+ * one deferral is a constant where ADR 0320 rules every other one derived from the machine.
  */
 export const claimOf = (
 	event: string,
@@ -130,7 +161,7 @@ export const claimOf = (
 		return child ? {_tag: "RangeCommits", epic: role.epic} : {_tag: "OpenPull"};
 	}
 	if (event === "PASS" && leaf === REVIEW_STATE) {
-		if (child) return {_tag: "RangeVerdict", epic: role.epic};
+		if (child) return {_tag: "RangeVerdict", epic: role.epic, defers: ROUTED_NAMESPACES};
 		return {
 			_tag: "HeadVerdicts",
 			defers: next === REVIEW_UI_STATE ? ROUTED_NAMESPACES : [],
@@ -282,11 +313,22 @@ export interface PullFact {
 	readonly number: number;
 	readonly open: boolean;
 	/**
+	 * Whether it merged. Not derivable from {@link open}: a merged PR and a rejected one both read
+	 * closed, and the one park whose clearing case is a *landed* PR has to tell them apart (#6717).
+	 */
+	readonly merged: boolean;
+	/**
 	 * **Every** issue the body links, through the closing keywords or `Part of` — never the search
 	 * term. Plural because an epic tail links one issue per landed child plus the epic itself, and a
 	 * scalar field there can only ever report one of them (#6797).
 	 */
 	readonly linkedIssues: ReadonlyArray<number>;
+	/**
+	 * Which kind of reference {@link linkedIssues} came off — a closing keyword, or the explicit
+	 * non-closing `Part of #N`. Only the closing kind discharges the issue on merge, so it is the one
+	 * fact that tells a ship's `DONE` whether the lane it folds is finished (#7382).
+	 */
+	readonly linkKind: IssueRefs["kind"];
 }
 
 export type PullTrace =
@@ -295,7 +337,7 @@ export type PullTrace =
 	| {readonly _tag: "Many"; readonly prs: ReadonlyArray<number>};
 
 /**
- * The open PR tracing to this issue.
+ * The PR tracing to this issue, within the caller's scope.
  *
  * The search index only nominates; the trace is the body's own links, so a PR that merely mentions
  * the number in prose is not a proof of it. Several is its own answer — which one the lane owns is
@@ -305,14 +347,21 @@ export type PullTrace =
  * and "candidates were read and every one linked elsewhere" have different remedies, and a refusal
  * saying the first of a board that shows the second is false of the board (#6797).
  */
-export const tracePulls = (issue: number, facts: ReadonlyArray<PullFact>): PullTrace => {
-	const open = facts.filter((fact) => fact.open);
-	const matched = open.filter((fact) => fact.linkedIssues.includes(issue));
+export const tracePulls = (
+	issue: number,
+	facts: ReadonlyArray<PullFact>,
+	scope: PullScope = "open",
+): PullTrace => {
+	const counts = (fact: PullFact): boolean =>
+		fact.open || (scope === "open-or-merged" && fact.merged);
+	const live = facts.filter(counts);
+	const matched = live.filter((fact) => fact.linkedIssues.includes(issue));
 	const first = matched[0];
+	const noun = scope === "open" ? "open PR" : "open or merged PR";
 	if (first === undefined) {
-		if (facts.length === 0) return {_tag: "None", why: `no open PR links #${issue}`};
+		if (facts.length === 0) return {_tag: "None", why: `no ${noun} links #${issue}`};
 		const read = facts.map((fact) => `#${fact.number}`).join(", ");
-		return open.length === 0
+		return live.length === 0
 			? {
 					_tag: "None",
 					why: `read ${read} — every candidate has closed since it was nominated`,
@@ -322,6 +371,43 @@ export const tracePulls = (issue: number, facts: ReadonlyArray<PullFact>): PullT
 	return matched.length === 1
 		? {_tag: "One", pr: first.number}
 		: {_tag: "Many", prs: matched.map((fact) => fact.number)};
+};
+
+/**
+ * Whether the merge a shipped lane stands on discharged its issue, or landed part of it.
+ *
+ * `Partial` is the arm that diverts the lane, and it is taken on positive evidence alone: a merged
+ * PR reaching this issue through `Part of #N` and through no closing keyword. Everything else — a
+ * closing merge, merges that link elsewhere, nothing nominated — answers `Closes`, which is what the
+ * machine did before this read existed, so the closing path cannot move on a read that saw less than
+ * it hoped. A read that *failed* is neither: the nominator answers `Unreadable` and never reaches
+ * here, so an unread board refuses the event rather than folding the lane on a guess.
+ *
+ * Several merged partials answer `Partial` together where {@link tracePulls} would answer `Many`.
+ * That arm exists there because picking one PR out of several is not derivable; here nothing is
+ * picked — every candidate says the same thing about the issue.
+ */
+export type Closure =
+	| {readonly _tag: "Closes"; readonly why: string}
+	| {readonly _tag: "Partial"; readonly prs: ReadonlyArray<number>};
+
+/**
+ * The merged pull requests whose body links this issue — the evidence every closure judgement rests
+ * on, named once so a second reader cannot drift from what {@link traceClosure} counts as landed.
+ */
+export const landedFor = (issue: number, facts: ReadonlyArray<PullFact>): ReadonlyArray<PullFact> =>
+	facts.filter((fact) => fact.merged && fact.linkedIssues.includes(issue));
+
+export const traceClosure = (issue: number, facts: ReadonlyArray<PullFact>): Closure => {
+	const landed = landedFor(issue, facts);
+	if (landed.length === 0) return {_tag: "Closes", why: `no merged PR's body links #${issue}`};
+	const closing = landed.filter((fact) => fact.linkKind === "fixes");
+	return closing.length > 0
+		? {
+				_tag: "Closes",
+				why: `${closing.map((fact) => `#${fact.number}`).join(", ")} closes #${issue} on merge`,
+			}
+		: {_tag: "Partial", prs: landed.map((fact) => fact.number)};
 };
 
 /** One comment on the driven issue, as much of it as the diagnosis question needs. */

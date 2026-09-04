@@ -176,7 +176,7 @@ const amend = leafCommand(
 ).pipe(
 	Command.withShortDescription("Append a dated amendment from stdin to an existing issue's body."),
 	Command.withDescription(
-		"Append the section on STDIN to an existing issue's body under a separator and a dated `## Amendment` heading this verb composes, leaving the prior body verbatim above it, then read the body back. Never replaces a body — GitHub keeps no issue-body history. Prints `<issue>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (write failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika report amend --issue 4312 < correction.md",
+		"Append the section on STDIN to an existing issue's body under a separator and a dated `## Amendment` heading this verb composes, leaving the prior body verbatim above it, then read the body back. Never replaces a body; the why is in claude-plugins/fabrika/skills/report/contract.md. Prints `<issue>\\t<url>`. Exits 3 (empty stdin), 5 (machine-local path), 6 (bare @ reference), 7 (no such issue), 8 (write failed — UNKNOWN), 9 (read-back mismatch), 11 (issue unreadable). Example: fabrika report amend --issue 4312 < correction.md",
 	),
 );
 

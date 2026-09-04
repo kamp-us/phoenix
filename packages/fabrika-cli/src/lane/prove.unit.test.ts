@@ -9,6 +9,7 @@ import {
 	issueOf,
 	judgeVerdicts,
 	roleOf,
+	traceClosure,
 	traceDiagnosis,
 	tracePulls,
 	traceRange,
@@ -78,12 +79,41 @@ describe("claimOf", () => {
 
 	it("claims a range for a child, which never opens a PR to claim", () => {
 		expect(claimOf("DONE", "build", CHILD)).toEqual({_tag: "RangeCommits", epic: 5800});
-		expect(claimOf("PASS", "review", CHILD)).toEqual({_tag: "RangeVerdict", epic: 5800});
+		expect(claimOf("PASS", "review", CHILD)).toEqual({
+			_tag: "RangeVerdict",
+			epic: 5800,
+			defers: ["review-ui"],
+		});
 	});
 
-	/** A child's regions carry no `review:ui` cell, so its range-scoped set has nowhere to defer to. */
+	/**
+	 * A child's deferral is not routed and `next` cannot switch it off: no cell of a child's region
+	 * and no verb of this CLI can produce a `review-ui` verdict at range scope, so requiring one held
+	 * every ui-bearing child at exit 23 forever (#7041). The creditor is the tail, whose one PR
+	 * carries the child's rendered files by construction (ADR 0285).
+	 */
+	it("defers the routed namespace on a child's PASS whatever the machine's next leaf is", () => {
+		for (const next of ["integrate", "review:ui", null]) {
+			expect(claimOf("PASS", "review", CHILD, next)).toEqual({
+				_tag: "RangeVerdict",
+				epic: 5800,
+				defers: ["review-ui"],
+			});
+		}
+	});
+
+	/** A child's regions carry no `review:ui` cell, so no event is ever recorded out of one. */
 	it("claims nothing for a child out of `review:ui`, a cell its regions do not have", () => {
 		expect(claimOf("PASS", "review:ui", CHILD)._tag).toBe("None");
+	});
+
+	/**
+	 * The other half of the child's deferral: the cell it hands `review-ui` to has to still owe it.
+	 * The epic tail's `review` routes to `ship` and to no ui cell, so its `PASS` defers nothing and
+	 * stands on the whole set its one PR derives — which is where the child's rendered files are.
+	 */
+	it("leaves the tail owing the whole set, so a child's deferral lands on a cell that pays it", () => {
+		expect(claimOf("PASS", "review", TAIL, "ship")).toEqual({_tag: "HeadVerdicts", defers: []});
 	});
 
 	/**
@@ -300,7 +330,13 @@ describe("traceRange", () => {
 });
 
 describe("tracePulls", () => {
-	const linking = {number: 4318, open: true, linkedIssues: [4312]};
+	const linking = {
+		number: 4318,
+		open: true,
+		merged: false,
+		linkedIssues: [4312],
+		linkKind: "fixes" as const,
+	};
 
 	it("traces the one open PR whose body links the issue", () => {
 		expect(tracePulls(4312, [linking])).toEqual({_tag: "One", pr: 4318});
@@ -312,26 +348,52 @@ describe("tracePulls", () => {
 	 * left the tail unproven against the epic it closes.
 	 */
 	it("proves the epic tail against the epic whose reference is last among N+1", () => {
-		const tail = {number: 6690, open: true, linkedIssues: [6642, 6643, 6648, 6629]};
+		const tail = {
+			number: 6690,
+			open: true,
+			merged: false,
+			linkedIssues: [6642, 6643, 6648, 6629],
+			linkKind: "fixes" as const,
+		};
 		expect(tracePulls(6629, [tail])).toEqual({_tag: "One", pr: 6690});
 		expect(tracePulls(6642, [tail])).toEqual({_tag: "One", pr: 6690});
 	});
 
 	it("does not count a PR that only mentions the number, or one that has closed", () => {
-		expect(tracePulls(4312, [{number: 4400, open: true, linkedIssues: []}])).toMatchObject({
+		expect(
+			tracePulls(4312, [
+				{number: 4400, open: true, merged: false, linkedIssues: [], linkKind: "none" as const},
+			]),
+		).toMatchObject({
 			_tag: "None",
 		});
 		expect(tracePulls(4312, [{...linking, open: false}])).toMatchObject({_tag: "None"});
 	});
 
+	/** #6717: the queue-stall recipe's clearing case is a landed PR, which is closed. */
+	it("counts a merged PR only at open-or-merged scope, and never a rejected one", () => {
+		const landed = {...linking, open: false, merged: true};
+		expect(tracePulls(4312, [landed], "open-or-merged")).toEqual({_tag: "One", pr: 4318});
+		expect(tracePulls(4312, [landed])).toMatchObject({_tag: "None"});
+		expect(tracePulls(4312, [{...linking, open: false}], "open-or-merged")).toEqual({
+			_tag: "None",
+			why: "read #4318 — every candidate has closed since it was nominated",
+		});
+	});
+
 	it("keeps several linking PRs as their own answer rather than picking the first", () => {
-		const trace = tracePulls(4312, [linking, {number: 4319, open: true, linkedIssues: [4312]}]);
+		const trace = tracePulls(4312, [
+			linking,
+			{number: 4319, open: true, merged: false, linkedIssues: [4312], linkKind: "fixes" as const},
+		]);
 		expect(trace).toEqual({_tag: "Many", prs: [4318, 4319]});
 	});
 
 	it("tells a candidate that was read and discarded from one that was never nominated", () => {
 		const nothing = tracePulls(4312, []);
-		const read = tracePulls(4312, [{number: 4400, open: true, linkedIssues: [4000]}]);
+		const read = tracePulls(4312, [
+			{number: 4400, open: true, merged: false, linkedIssues: [4000], linkKind: "fixes" as const},
+		]);
 		const closed = tracePulls(4312, [{...linking, open: false}]);
 		expect(nothing).toEqual({_tag: "None", why: "no open PR links #4312"});
 		expect(read).toEqual({_tag: "None", why: "read #4400 — no candidate's body links #4312"});
@@ -339,6 +401,56 @@ describe("tracePulls", () => {
 			_tag: "None",
 			why: "read #4318 — every candidate has closed since it was nominated",
 		});
+	});
+});
+
+describe("traceClosure", () => {
+	const merged = (linkKind: "fixes" | "part-of") => ({
+		number: 7328,
+		open: false,
+		merged: true,
+		linkedIssues: [6980],
+		linkKind,
+	});
+
+	it("reads a closing merge as the discharge it is", () => {
+		expect(traceClosure(6980, [merged("fixes")])).toEqual({
+			_tag: "Closes",
+			why: "#7328 closes #6980 on merge",
+		});
+	});
+
+	/** The #7382 shape: PR #7328 merged as `Part of #6980`, and the lane folded to `complete`. */
+	it("reads a `Part of #N` merge as leaving the issue open", () => {
+		expect(traceClosure(6980, [merged("part-of")])).toEqual({_tag: "Partial", prs: [7328]});
+	});
+
+	// Only positive evidence diverts, so every reading short of one answers what the machine already
+	// did — an unread board never reaches here, because the nominator refuses first.
+	it("answers Closes on an open PR, a merge linking elsewhere, and nothing nominated", () => {
+		const open = {...merged("part-of"), open: true, merged: false};
+		const elsewhere = {...merged("part-of"), linkedIssues: [6979]};
+
+		expect(traceClosure(6980, [open])._tag).toBe("Closes");
+		expect(traceClosure(6980, [elsewhere])._tag).toBe("Closes");
+		expect(traceClosure(6980, [])).toEqual({
+			_tag: "Closes",
+			why: "no merged PR's body links #6980",
+		});
+	});
+
+	// Where `tracePulls` keeps `Many` because picking one PR is underivable, nothing is picked here:
+	// every candidate says the same thing about the issue, so one closing merge among them settles it.
+	it("takes one closing merge over any number of partials", () => {
+		const second = {...merged("part-of"), number: 7400};
+
+		expect(traceClosure(6980, [merged("part-of"), second])).toEqual({
+			_tag: "Partial",
+			prs: [7328, 7400],
+		});
+		expect(
+			traceClosure(6980, [merged("part-of"), {...second, linkKind: "fixes" as const}]),
+		).toEqual({_tag: "Closes", why: "#7400 closes #6980 on merge"});
 	});
 });
 

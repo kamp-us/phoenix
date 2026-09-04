@@ -2,28 +2,29 @@
  * Access is server-authoritative: `funnel.summary` denies a non-mod `UNAUTHORIZED`, which
  * `<Screen>` renders as "yetkin yok". Deliberately no client-side role check here.
  */
+
+import {Alert} from "@kampus/design";
 import {FunnelCohorts} from "../components/funnel/FunnelCohorts";
 import {FunnelSummary} from "../components/funnel/FunnelSummary";
-import {Alert} from "../components/ui/Alert";
 import {Screen} from "../fate/Screen";
 import {FlagGate} from "../flags/FlagGate";
 import {PHOENIX_FUNNEL_COHORT} from "../flags/keys";
+import {useT} from "../i18n";
 import "../components/funnel/Funnel.css";
 
 export function FunnelPage() {
+	const t = useT();
 	return (
 		<main className="kp-funnel" data-testid="funnel-page">
 			<div className="kp-funnel__inner">
 				<header className="kp-funnel__masthead">
-					<h1 className="kp-funnel__title">dönüşüm</h1>
-					<p className="kp-funnel__lead">
-						çaylaktan yazara geçiş hunisi. şu an platformdaki insan hesapların tier dağılımı.
-					</p>
+					<h1 className="kp-funnel__title">{t("divan.funnel.title")}</h1>
+					<p className="kp-funnel__lead">{t("divan.funnel.lead")}</p>
 				</header>
 
-				<section className="kp-funnel__panel" aria-label="tier dağılımı">
+				<section className="kp-funnel__panel" aria-label={t("divan.funnel.tierLabel")}>
 					<Screen
-						fallback={<p className="kp-funnel__loading">yükleniyor…</p>}
+						fallback={<p className="kp-funnel__loading">{t("divan.loading")}</p>}
 						error={({code}) => <AccessError code={code} />}
 					>
 						<FunnelSummary />
@@ -35,9 +36,9 @@ export function FunnelPage() {
 				    gate keeps the section — requests included — out of the DOM entirely while the
 				    flag is off, so the page stays byte-identical to the pool readout. */}
 				<FlagGate flag={PHOENIX_FUNNEL_COHORT}>
-					<section aria-label="kozet hunisi">
+					<section aria-label={t("divan.funnel.cohorts.label")}>
 						<Screen
-							fallback={<p className="kp-funnel__loading">yükleniyor…</p>}
+							fallback={<p className="kp-funnel__loading">{t("divan.loading")}</p>}
 							error={({code}) => <AccessError code={code} />}
 						>
 							<FunnelCohorts />
@@ -50,6 +51,7 @@ export function FunnelPage() {
 }
 
 function AccessError({code}: {readonly code: string}) {
+	const t = useT();
 	const denied = code === "UNAUTHORIZED" || code === "FORBIDDEN";
 	return (
 		<Alert
@@ -57,7 +59,7 @@ function AccessError({code}: {readonly code: string}) {
 			className="kp-alert--inline kp-funnel__error"
 			data-testid="funnel-access-error"
 		>
-			{denied ? "bu alanı görme yetkin yok." : "dönüşüm verisi yüklenemedi, tekrar dene."}
+			{denied ? t("divan.error.denied") : t("divan.funnel.errorLoad")}
 		</Alert>
 	);
 }
