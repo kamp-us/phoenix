@@ -387,3 +387,21 @@ export const GRANT_REFUSED = 47;
  * the parent's is the one to drive, and a second boot is exactly the harm.
  */
 export const LANE_IS_CHILD = 48;
+
+/**
+ * `lane archive` was pointed at a lane whose issue is still open on the board.
+ *
+ * An archive moves a lane out of every sweep, so the closed issue is half of what makes that safe:
+ * a live lane put beyond `reconcile` and `migrate` is work nothing watches any more. Its own seat
+ * because the remedy is to drive the lane, not to fix the record (ADR 0352).
+ */
+export const ISSUE_LIVE = 49;
+
+/**
+ * `lane archive` was pointed at a lane whose log replays.
+ *
+ * The other half: only a lane no sweep can ever judge leaves the sweep's scope. A replaying lane is
+ * one every sweep judges fine, and archiving it would hide a lane the pipeline still reads. The
+ * remedy is to leave it where it is (ADR 0352).
+ */
+export const LOG_REPLAYS = 50;

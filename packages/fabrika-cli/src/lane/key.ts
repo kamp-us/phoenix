@@ -12,7 +12,12 @@
  * anything carrying a separator, a traversal, or shell-significant bytes is refused as malformed
  * rather than resolved into a path nobody meant.
  */
-import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT, type LaneRef} from "./store.ts";
+import {
+	DEFAULT_ARCHIVED_LANES_ROOT,
+	DEFAULT_CHORES_ROOT,
+	DEFAULT_LANES_ROOT,
+	type LaneRef,
+} from "./store.ts";
 
 /** What marks an argument as naming a chore rather than an issue. */
 export const CHORE_PREFIX = "chore:";
@@ -55,6 +60,15 @@ export const parseKey = (raw: string): KeyResult => {
 /** The root a key lives under when the caller relocates nothing. */
 export const defaultRoot = (key: LaneKey): string =>
 	key._tag === "Chore" ? DEFAULT_CHORES_ROOT : DEFAULT_LANES_ROOT;
+
+/**
+ * Where an archived lane goes, for the one kind that can be archived.
+ *
+ * Only an issue lane: archiving turns on the lane's issue reading closed, and a chore lane drives no
+ * issue, so the gate can never hold for one (ADR 0352). There is deliberately no chore counterpart
+ * to reach for.
+ */
+export const archivedRoot = (): string => DEFAULT_ARCHIVED_LANES_ROOT;
 
 /** Where a key puts its lane — the caller's `--root` wins over the kind's default. */
 export const laneRef = (key: LaneKey, root: string | null): LaneRef => ({
