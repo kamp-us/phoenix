@@ -44,13 +44,22 @@ const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
 through, and handing them over is a wiring decision rather than a capability grant — local program
 code is fully trusted, there is no sandbox (#7484 R1.1).
 
-**Every spawner hands over that same kernel context, so a program a picker may open may require
-kernel services** (#7951). `restore` gets it from `start` for the checkpointed processes the graph
-did not plan; the picker passes on the context its own shell process was launched with
-(`src/shell/picker/open.ts`). `src/demo/counter.ts` is the example: its `announce` handler wants
-`ProcessPorts`, and it comes up under either spawner. What each of those two paths does *not* pass on
-is the spawner's own `ProcessPorts` — a port binding emits from one node — so each builds the process
-one of its own, un-wired where the graph owns no route (#7789).
+**Two of the three spawners hand that same kernel context over, so a program a picker may open may
+require kernel services** (#7951). `start` passes it to `restore` for the checkpointed processes the
+graph did not plan (`src/boot.ts`); the picker passes on the context its own shell process was
+launched with (`src/shell/picker/open.ts`). The third does not: the `process spawn` spell hands its
+child `Context.make(ProcessPorts, ports)` and nothing else (`src/commands/core/process.ts`), so under
+the spawner an agent program itself reaches for, a row needing a kernel service still dies at its
+handler.
+
+`ProcessPorts` is the one service those first two refuse to pass down — a port binding emits from one
+node, so a child holding its spawner's would emit out of the wrong one — and they refuse it
+differently. `restore` merges an `unwired` `ProcessPorts` in second, so a restored process has one
+and an emit fails `PortNotWired` where the graph owns no route (#7789). The picker only removes the
+service (`Context.omit(ProcessPorts)`), and `Processes.spawn` puts back only `ProcessSelf`, so a
+picker-opened process is spawned with no `ProcessPorts` at all. `src/demo/counter.ts` is the example
+under both: its `announce` handler wants `ProcessPorts`, which comes back un-wired under `restore`
+and is absent from the spawn context under the picker.
 
 **Nothing checks the pairing, so the failure is at the handler.** `SpawnOptions.services` is typed
 `Context.Context<never>`, which every context satisfies, so a row asking for a service its spawner

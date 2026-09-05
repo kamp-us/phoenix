@@ -70,8 +70,9 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	// `internal/effect.ts`), which is why nothing here has to name what it passes on.
 	//
 	// `ProcessPorts` is the one thing dropped rather than passed: a port binding emits from *this*
-	// node, so handing it down would send the child's payloads out of the shell's own ports. Restore
-	// drops it the same way and builds the process an un-wired one (`src/durability/restore.ts`).
+	// node, so handing it down would send the child's payloads out of the shell's own ports. Removing
+	// it leaves the child with none, where restore overrides the inherited one with an un-wired
+	// `ProcessPorts` of its own (`src/durability/restore.ts`).
 	const services = Context.omit(ProcessPorts)(yield* Effect.context());
 	const spawned = yield* Effect.result(
 		processes.spawn(programId, {parent: options.shellProcessId, services}),
