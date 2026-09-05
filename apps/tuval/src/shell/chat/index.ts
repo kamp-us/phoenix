@@ -12,6 +12,8 @@ export {
 } from "./ChatWindow.tsx";
 export {type ComposerBridge, type ComposerHandlers, composerBridge} from "./composer-bridge.ts";
 export {tuvalDesignMessages, tuvalDesignTranslate} from "./copy.ts";
+export {ModeSwitch} from "./ModeSwitch.tsx";
+export {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
 export {isWorking, phaseLine, phaseLines} from "./phase.ts";
 export {
 	type ChatRow,
@@ -22,4 +24,12 @@ export {
 	rowIndexOfItem,
 	rowKey,
 } from "./rows.ts";
+export {ToolRow} from "./ToolRow.tsx";
+export {
+	type DiffLine,
+	diffLines,
+	omissionLine,
+	type ToolDetail,
+	toolDetail,
+} from "./tool-detail.ts";
 export {asChatView, type ChatView, initialChatView} from "./view.ts";

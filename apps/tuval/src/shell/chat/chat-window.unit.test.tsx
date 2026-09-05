@@ -11,7 +11,7 @@
  * the offsets it was asked for are what the scroll assertions read.
  */
 
-import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Effect, Stream} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
@@ -52,7 +52,7 @@ const openWindow = async (
 	const host = await Effect.runPromise(
 		process.window<ChatView>(
 			WindowId.make("w1"),
-			initialView ?? {scroll: 0, draft: "", cursor: null, atOldest: false},
+			initialView ?? {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []},
 		),
 	);
 	const resolved: ChatWindowOptions = {
@@ -123,8 +123,9 @@ describe("the transcript", () => {
 		expect(await screen.findByText("do it")).toBeDefined();
 		expect(screen.getByText("done")).toBeDefined();
 		expect(screen.getByText("resumed")).toBeDefined();
-		expect(screen.getByText("read_file")).toBeDefined();
-		expect(screen.getByText("ok")).toBeDefined();
+		// The tool call is its disclosure trigger, and the trigger's own content is its accessible
+		// name: the tool and its status, both as words.
+		expect(screen.getByRole("button", {name: "read_file ok"})).toBeDefined();
 	});
 
 	it("is dark whatever it is mounted inside", async () => {
@@ -244,6 +245,7 @@ describe("the composer", () => {
 				draft: "half-written",
 				cursor: null,
 				atOldest: false,
+				expanded: [],
 			},
 		);
 		expect(composer().value).toBe("half-written");
@@ -305,7 +307,7 @@ describe("the phase line and the contract's two placeholders", () => {
 			processId,
 			readProcess: Stream.never,
 			dispatch: () => Effect.succeed({_tag: "Delivered"} as const),
-			view: () => ({scroll: 0, draft: "", cursor: null, atOldest: false}),
+			view: () => ({scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []}),
 			setView: () => Effect.void,
 		};
 		render(chatWindow({}).render(silent) as ReactElement);
@@ -322,15 +324,27 @@ describe("the phase line and the contract's two placeholders", () => {
 });
 
 describe("two windows over one process", () => {
-	it("show the same transcript and keep their own scroll offset and page cursor", async () => {
-		const state = withTranscript(transcriptOf(20));
-		const shared = await Effect.runPromise(
+	interface Pair {
+		readonly process: TestProcess<AiAgentSessionState, AiAgentSessionMsg>;
+		readonly left: ChatWindowHost;
+		readonly right: ChatWindowHost;
+		/** Each window's own transcript scroller, boxed so a scroll offset means something. */
+		readonly scrollers: readonly [HTMLElement, HTMLElement];
+	}
+
+	const openPair = async (
+		state: AiAgentSessionState,
+		options: ChatWindowOptions = {},
+	): Promise<Pair> => {
+		const process = await Effect.runPromise(
 			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
 		);
-		const initial: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false};
-		const left = await Effect.runPromise(shared.window<ChatView>(WindowId.make("left"), initial));
-		const right = await Effect.runPromise(shared.window<ChatView>(WindowId.make("right"), initial));
-		const renderer = chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined});
+		const initial: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
+		const left = await Effect.runPromise(process.window<ChatView>(WindowId.make("left"), initial));
+		const right = await Effect.runPromise(
+			process.window<ChatView>(WindowId.make("right"), initial),
+		);
+		const renderer = chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined, ...options});
 		render(
 			<>
 				{renderer.render(left)}
@@ -339,19 +353,83 @@ describe("two windows over one process", () => {
 		);
 		const transcripts = await screen.findAllByRole("log", {name: "Transcript"});
 		expect(transcripts.length).toBe(2);
-
 		const [first, second] = transcripts as [HTMLElement, HTMLElement];
 		giveScrollBox(first);
 		giveScrollBox(second);
-		Object.defineProperty(first, "scrollTop", {configurable: true, value: 400});
-		Object.defineProperty(second, "scrollTop", {configurable: true, value: 900});
+		return {process, left, right, scrollers: [first, second]};
+	};
+
+	/** jsdom never moves a scroller, so the offset a scroll event reports is set on the element. */
+	const scrollWindowTo = async (scroller: HTMLElement, offset: number): Promise<void> => {
+		Object.defineProperty(scroller, "scrollTop", {configurable: true, value: offset});
 		await act(async () => {
-			fireEvent.scroll(first);
-			fireEvent.scroll(second);
+			fireEvent.scroll(scroller);
 		});
+	};
+
+	const windowBox = (id: string): HTMLElement => {
+		const box = document.querySelector<HTMLElement>(`[data-window="${id}"]`);
+		if (box === null) throw new Error(`window ${id} is not mounted`);
+		return box;
+	};
+
+	const page = {
+		items: [userItem("p0", "older prompt"), assistantItem("p1", "older answer")],
+		hasMore: true,
+	};
+
+	it("show the same transcript and keep their own scroll offset and page cursor", async () => {
+		const {left, right, scrollers} = await openPair(withTranscript(transcriptOf(20)));
+		await scrollWindowTo(scrollers[0], 400);
+		await scrollWindowTo(scrollers[1], 900);
 		await waitFor(() => expect(left.view().scroll).toBe(400));
 		expect(right.view().scroll).toBe(900);
 		expect(left.view()).not.toEqual(right.view());
 		expect(TEST_VIEWPORT.height).toBe(1_000);
+	});
+
+	// `lastPage` is one slot of shared session state, so the reply to the left window's request is
+	// visible to the right one too. Without `ChatWindow`'s `loading` guard the right window merges
+	// a page it never asked for — it gains history it did not scroll to and its own cursor advances,
+	// which is what made #7604's per-window cursor a slot that could not diverge (#7860). Deleting
+	// that guard reds this test.
+	it("merges the page only into the window that asked for it", async () => {
+		const {process, left, right, scrollers} = await openPair(withTranscript(transcriptOf(20)), {
+			pageLimit: 25,
+		});
+
+		await scrollWindowTo(scrollers[0], 0);
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		expect(process.inbox()[0]).toEqual({type: "page", before: "i0", limit: 25});
+
+		await act(async () => {
+			await Effect.runPromise(process.commit(withTranscript(transcriptOf(20), {lastPage: page})));
+		});
+
+		await waitFor(() => expect(left.view().cursor).toBe("p0"));
+		expect(within(windowBox("left")).getByText("older prompt")).toBeDefined();
+
+		expect(within(windowBox("right")).queryByText("older prompt")).toBeNull();
+		expect(within(windowBox("right")).queryByText("older answer")).toBeNull();
+		expect(right.view().cursor).toBeNull();
+		expect(right.view().atOldest).toBe(false);
+	});
+
+	// The seen-marker is set whether or not the page was merged, so the page the right window
+	// ignored is not merged later when it does ask: it waits for its own reply.
+	it("does not merge the page it ignored when it later asks for one of its own", async () => {
+		const {process, left, right, scrollers} = await openPair(withTranscript(transcriptOf(20)));
+
+		await scrollWindowTo(scrollers[0], 0);
+		await act(async () => {
+			await Effect.runPromise(process.commit(withTranscript(transcriptOf(20), {lastPage: page})));
+		});
+		await waitFor(() => expect(left.view().cursor).toBe("p0"));
+
+		await scrollWindowTo(scrollers[1], 0);
+		await waitFor(() => expect(process.inbox().length).toBe(2));
+		expect(within(windowBox("right")).getByText("Loading earlier messages…")).toBeDefined();
+		expect(within(windowBox("right")).queryByText("older prompt")).toBeNull();
+		expect(right.view().cursor).toBeNull();
 	});
 });

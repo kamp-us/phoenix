@@ -165,6 +165,10 @@ export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerS
 
 		"aiAgent.answer": (cmd) =>
 			withAgent(
+				// `cmd.message` is not forwarded: the founder's pinned `answer` signature (#7570 ruling 3,
+				// held by `../service/boundary.unit.test.ts`) takes the request and the decision only.
+				// The note rides the Cmd so nothing between the window and here loses it; #7875 tracks
+				// the last hop, which needs a ruling before that signature can widen.
 				(agent) => agent.answer(cmd.request, cmd.decision),
 				() => nothing,
 			),

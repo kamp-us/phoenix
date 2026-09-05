@@ -30,11 +30,13 @@ import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEvent} from "react";
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {windowRenderer} from "../window/index.ts";
 import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
+import {ModeSwitch} from "./ModeSwitch.tsx";
+import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
 import {isWorking, phaseLine} from "./phase.ts";
 import {
 	type ChatRow,
@@ -44,6 +46,7 @@ import {
 	rowIndexOfItem,
 	rowKey,
 } from "./rows.ts";
+import {ToolRow} from "./ToolRow.tsx";
 import {asChatView, type ChatView} from "./view.ts";
 import "./chat.css";
 
@@ -126,22 +129,20 @@ function ItemRow({
 	item,
 	interrupted,
 	onResend,
+	expanded,
+	onToggleTool,
 }: {
 	readonly item: TranscriptItem;
 	readonly interrupted: boolean;
 	readonly onResend: (() => void) | null;
+	readonly expanded: boolean;
+	readonly onToggleTool: (id: string, open: boolean) => void;
 }): ReactElement {
 	return (
 		<>
 			<span className="tuval-chat-who">{who[item.kind]}</span>
 			{item.kind === "tool" ? (
-				<span className="tuval-chat-tool">
-					<span>{item.name}</span>
-					<span className="tuval-chat-tool-input">{JSON.stringify(item.input)}</span>
-					<span className="tuval-chat-tool-status" data-status={item.status}>
-						{item.status}
-					</span>
-				</span>
+				<ToolRow item={item} expanded={expanded} onToggle={(open) => onToggleTool(item.id, open)} />
 			) : (
 				<p className="tuval-chat-text">{item.text}</p>
 			)}
@@ -164,11 +165,15 @@ function RowView({
 	interruptedId,
 	onResend,
 	onOlder,
+	expanded,
+	onToggleTool,
 }: {
 	readonly row: ChatRow;
 	readonly interruptedId: string | null;
 	readonly onResend: (() => void) | null;
 	readonly onOlder: () => void;
+	readonly expanded: ReadonlySet<string>;
+	readonly onToggleTool: (id: string, open: boolean) => void;
 }): ReactElement {
 	if (row.kind === "loading") {
 		return (
@@ -192,6 +197,8 @@ function RowView({
 			item={row.item}
 			interrupted={row.item.id === interruptedId}
 			onResend={row.item.id === interruptedId ? onResend : null}
+			expanded={expanded.has(row.item.id)}
+			onToggleTool={onToggleTool}
 		/>
 	);
 }
@@ -226,6 +233,35 @@ function ChatWindow({
 	const dispatch = useCallback((msg: AiAgentSessionMsg) => {
 		void Effect.runFork(hostRef.current.dispatch(msg));
 	}, []);
+
+	const expanded = useMemo(() => new Set(view.expanded), [view.expanded]);
+
+	/** The row just opened, until the layout effect below has scrolled its trigger back into view. */
+	const openedRef = useRef<string | null>(null);
+
+	const toggleTool = useCallback(
+		(id: string, open: boolean) => {
+			if (open) openedRef.current = id;
+			commit((current) => {
+				const held = current.expanded.includes(id);
+				if (held === open) return current;
+				return {
+					...current,
+					expanded: open
+						? [...current.expanded, id]
+						: current.expanded.filter((other) => other !== id),
+				};
+			});
+		},
+		[commit],
+	);
+
+	const answerPermission = useCallback(
+		(answer: PermissionAnswer) => dispatch({type: "answer", ...answer}),
+		[dispatch],
+	);
+
+	const setMode = useCallback((mode: Mode) => dispatch({type: "setMode", mode}), [dispatch]);
 
 	const rows = useMemo(
 		() =>
@@ -271,10 +307,22 @@ function ChatWindow({
 		dispatch({type: "page", before, limit: options.pageLimit});
 	}, [loading, view.atOldest, rows, dispatch, options.pageLimit]);
 
+	// `lastPage` is shared session state, so every mounted window sees a page any one of them asked
+	// for (#7860). A window consumes one only while its own request is out: without the `loading`
+	// guard a window that scrolled nowhere gets the other's history prepended and its `atOldest`
+	// advanced, which is what made the per-window cursor a slot that never diverged. The seen-marker
+	// is set either way, so a window that ignored a page does not merge it later when it does ask.
+	//
+	// The guard is a proxy, not a correlation, and #7860 stays open on the residual: `loading`
+	// answers "is *my* request out", but `lastPage` carries no requester and `page` (`core/machine.ts`)
+	// issues its Cmd with no in-flight guard — so two windows whose requests overlap each still merge
+	// whichever reply lands first. Closing that needs the reply to name the window that asked, which
+	// is a change to the Msg and the core rather than to this effect.
 	useEffect(() => {
 		const page = state?.lastPage ?? null;
 		if (page === null || page === seenPageRef.current) return;
 		seenPageRef.current = page;
+		if (!loading) return;
 		setOlder((held) => mergeOlder(held, page.items));
 		setLoading(false);
 		reanchorRef.current = true;
@@ -283,7 +331,7 @@ function ChatWindow({
 			cursor: page.items[0]?.id ?? current.cursor,
 			atOldest: !page.hasMore,
 		}));
-	}, [state?.lastPage, commit]);
+	}, [state?.lastPage, loading, commit]);
 
 	useLayoutEffect(() => {
 		if (!reanchorRef.current) return;
@@ -291,6 +339,19 @@ function ChatWindow({
 		const index = rowIndexOfItem(rows, anchorRef.current);
 		if (index >= 0) virtualizer.scrollToIndex(index, {align: "start"});
 	}, [rows, virtualizer]);
+
+	// An expanded row grows downward from its own top, so a row opened near the bottom pushes its
+	// own trigger off the top edge — the operator clicks a disclosure and the thing they clicked
+	// leaves the screen. Anchoring the opened row to the top puts the trigger back above its panel.
+	useLayoutEffect(() => {
+		const opened = openedRef.current;
+		if (opened === null) return;
+		openedRef.current = null;
+		const index = rowIndexOfItem(rows, opened);
+		if (index >= 0) virtualizer.scrollToIndex(index, {align: "start"});
+		// `view.expanded` is the dependency that matters: opening a row leaves `rows` untouched —
+		// the list is the same items — so an effect keyed on `rows` alone would never run.
+	}, [view.expanded, rows, virtualizer]);
 
 	// First paint lands where a chat belongs: on the newest turn, or back on the offset this window
 	// was left at. Once, and never again — a later re-render must not yank the operator's scroll.
@@ -395,10 +456,13 @@ function ChatWindow({
 			data-window={host.windowId}
 			onKeyDown={onKeyDown}
 		>
-			<p className="tuval-chat-phase" data-phase={phase} role="status">
-				<span className="tuval-chat-phase-dot" aria-hidden="true" />
-				{phaseLine(phase)}
-			</p>
+			<div className="tuval-chat-bar">
+				<p className="tuval-chat-phase" data-phase={phase} role="status">
+					<span className="tuval-chat-phase-dot" aria-hidden="true" />
+					{phaseLine(phase)}
+				</p>
+				<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
+			</div>
 			<div
 				ref={scrollRef}
 				className="tuval-chat-transcript"
@@ -424,6 +488,8 @@ function ChatWindow({
 									interruptedId={interruptedId}
 									onResend={lastPrompt === null ? null : resend}
 									onOlder={requestOlder}
+									expanded={expanded}
+									onToggleTool={toggleTool}
 								/>
 							</div>
 						);
@@ -431,6 +497,7 @@ function ChatWindow({
 				</div>
 			</div>
 			<DesignTranslationProvider translate={tuvalDesignTranslate}>
+				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />
 				<AgentChatInput
 					variant="focused"
 					bridge={composer.bridge}

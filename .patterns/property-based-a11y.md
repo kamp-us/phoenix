@@ -49,6 +49,34 @@ reasoned, reason-carrying parking spot (Manti machine primitives needing require
 `items`/`trigger`/`content` props or a portal interaction; form controls whose name
 comes from a composed label prop), not an escape hatch.
 
+## Running it from a consumer, over your own composition
+
+The gate above covers each primitive **alone**. It does not cover what an app builds *out of* them,
+and two of the reasons are structural: the compound primitives are parked `deferred` precisely
+because they need composition to be representative, and an app's own markup around a primitive (a
+table, a labelled region) is not in the registry at all. So an app that composes them owes its own
+pass.
+
+`runEnforcedInvariants` is exported for that, as `@kampus/design/a11y`
+([`check.ts`](../packages/design/src/a11y/check.ts) is the subpath's entry, and re-exports the spec
+types beside it). The consumer supplies the rendered root and a spec; `fast-check` generates the
+**state** rather than the props, since a composition's inputs are its app's own domain data.
+`apps/tuval/src/shell/chat/chat-a11y.unit.test.tsx` is the worked instance (issue
+[#7610](https://github.com/kamp-us/phoenix/issues/7610)).
+
+Three things that pass are worth copying:
+
+- **Scope the scan to the regions you built.** A pass over the whole screen inherits every red from
+  a primitive you only mounted — a consumer cannot fix a defect in the package, and widening its own
+  gate to swallow one teaches the next builder to widen it again. Name the regions, and name the
+  issue for anything excluded.
+- **The focus probe needs a root that is not the control.** `checkFocusable` runs
+  `root.querySelector(spec.selector)`, and `querySelector` searches descendants — so `:scope` matches
+  nothing and the probe reports `no element matched selector`. Mark the control, probe from an
+  ancestor by that mark, unmark.
+- **Give the test its own timeout.** One `axe.run` per region per generated state is seconds, not
+  milliseconds; Vitest's 5s default passes the file alone and times it out inside a loaded full run.
+
 ## Adding a primitive
 
 Add its export to `packages/design/src/index.ts`, then classify it in `registry.tsx` — the coverage

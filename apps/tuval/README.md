@@ -24,7 +24,19 @@ pnpm test             # both tiers (vitest)
 pnpm test:unit        # the unit tier
 pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback socket, no creds
 pnpm typecheck
+pnpm proof:chat       # the chat window in a real browser, on fixtures — see "Paint proofs"
 ```
+
+### Paint proofs
+
+Both test tiers run in jsdom, which has no layout: a claim about what the chat window *paints* —
+a diff column's width, a disclosure indicator's size, whether a portaled listbox resolves its
+tokens — cannot be made there, and a report of a browser run whose harness was thrown away cannot
+be checked by anyone (#7610). So the harness ships. `pnpm proof:chat` serves
+`src/shell/chat/proof/`: two chat windows over one in-memory process, on the same fixtures the unit
+tier uses, with a tool call of each shape, a pending permission card and three modes. It boots no
+kernel, opens no socket and imports no agent code, so what it proves is paint and keyboard and
+nothing else. Pass `--port <n>` when the default is taken.
 
 `pnpm dev` runs `node src/bin.ts`, an Effect CLI (`effect/unstable/cli`) over the pure `boot`.
 Node strips the TypeScript itself, so the kernel has no build step. Boot loads your config layers

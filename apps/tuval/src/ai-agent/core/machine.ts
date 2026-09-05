@@ -136,7 +136,14 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								),
 								failure: null,
 							},
-							[{type: "aiAgent.answer", request: msg.request, decision: msg.decision}],
+							[
+								{
+									type: "aiAgent.answer",
+									request: msg.request,
+									decision: msg.decision,
+									...(msg.message === undefined ? {} : {message: msg.message}),
+								},
+							],
 						],
 
 			setMode: (state, msg) =>

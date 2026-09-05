@@ -138,7 +138,12 @@ export const aiAgentProgram = (options: AiAgentProgramOptions): AiAgentProgram =
 					: refuse(PAGE_ERROR, "a page arrived on the request end of transcript-page"),
 			[aiAgentPortNames.permissionDecision]: (payload: PermissionPayload) =>
 				payload.kind === "decision"
-					? {type: "answer", request: payload.request, decision: payload.decision}
+					? {
+							type: "answer",
+							request: payload.request,
+							decision: payload.decision,
+							...(payload.message === undefined ? {} : {message: payload.message}),
+						}
 					: refuse(UNKNOWN_REQUEST, "a pending set arrived on the answer end of permission"),
 			[aiAgentPortNames.modeSet]: (payload: ModePayload) =>
 				payload.kind === "set"
