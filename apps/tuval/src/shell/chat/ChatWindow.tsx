@@ -123,6 +123,17 @@ const useProcessView = (host: ChatWindowHost): ProcessView<AiAgentSessionState> 
 	return view;
 };
 
+/**
+ * A bare printable character typed on the transcript belongs to nobody: the scroll region has no
+ * text to take it, and letting it reach the desk's one keyboard listener either arms the prefix or
+ * forwards it into the window's process (#7973). Modified keys are somebody else's — the desk
+ * prefix is Ctrl-keyed and Alt+R is the window's — and so is every named key the region scrolls on.
+ */
+const swallowBareCharacter = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+	const bare = !event.ctrlKey && !event.metaKey && !event.altKey && [...event.key].length === 1;
+	if (bare) event.stopPropagation();
+};
+
 const Placeholder = ({children}: {readonly children: ReactNode}): ReactElement => (
 	<p className="tuval-chat-placeholder" role="status">
 		{children}
@@ -481,6 +492,7 @@ function ChatWindow({
 				ref={scrollRef}
 				className="tuval-chat-transcript"
 				onScroll={onScroll}
+				onKeyDown={swallowBareCharacter}
 				role="log"
 				aria-label="Transcript"
 				// The scroll container is the only way to older turns on a plain transcript, so a

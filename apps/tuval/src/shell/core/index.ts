@@ -20,6 +20,7 @@ export {
 	isPrefixSnapshot,
 	isShellState,
 	isWorkspace,
+	keyTargetOf,
 	type MintedIds,
 	mint,
 	type PrefixSnapshot,

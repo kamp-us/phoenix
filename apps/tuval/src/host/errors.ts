@@ -11,6 +11,20 @@ export class ActorStoppedError extends Schema.TaggedError<ActorStoppedError>()(
 	}
 }
 
+/**
+ * The machine has no update cell for this Msg in its current state — Demlik's own `NoCellError`
+ * (`@demlik/tea` 0.12), typed. A Msg a program never wrote a cell for is the sender's mistake, not
+ * a fault in the program, so it fails that one dispatch and leaves the process open (#7973).
+ */
+export class MsgNotAcceptedError extends Schema.TaggedError<MsgNotAcceptedError>()(
+	"tuval/host/MsgNotAcceptedError",
+	{msgType: Schema.String, stateName: Schema.String},
+) {
+	override get message(): string {
+		return `program has no update cell for Msg "${this.msgType}" in state "${this.stateName}"`;
+	}
+}
+
 /** A `Store` rejected. Demlik lets the rejection propagate to the dispatcher; here it is typed. */
 export class StoreError extends Schema.TaggedError<StoreError>()("tuval/host/StoreError", {
 	operation: Schema.Literals(["load", "save"]),

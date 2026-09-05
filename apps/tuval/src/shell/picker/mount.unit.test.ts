@@ -90,7 +90,7 @@ describe("attaching gives one process a second window", () => {
 			);
 
 			assert.deepStrictEqual(answer.bind, [
-				{type: "window.bind", windowId: "window-2", processId: "p-1"},
+				{type: "window.bind", windowId: "window-2", processId: "p-1", takesKeys: false},
 			]);
 			assert.deepStrictEqual(
 				answer.seen.map((head) =>

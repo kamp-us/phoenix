@@ -47,9 +47,9 @@ import {
 	activeWorkspace,
 	disarmed,
 	hasWindow,
+	keyTargetOf,
 	mint,
 	type PrefixSnapshot,
-	processOf,
 	type ShellState,
 	type Workspace,
 	type WorkspaceId,
@@ -114,7 +114,16 @@ export type ShellMsg =
 	| {readonly type: "window.close"; readonly windowId?: WindowId}
 	| {readonly type: "window.focus"; readonly windowId: WindowId}
 	| {readonly type: "window.focusDirection"; readonly direction: Direction}
-	| {readonly type: "window.bind"; readonly processId: string; readonly windowId?: WindowId}
+	| {
+			readonly type: "window.bind";
+			readonly processId: string;
+			readonly windowId?: WindowId;
+			/**
+			 * The bound program declared `takesKeys`. The picker reads it off the row it just resolved
+			 * (`../picker/open.ts`); absent means the shell forwards this window no keys (#7973).
+			 */
+			readonly takesKeys?: boolean;
+	  }
 	| {readonly type: "window.unbind"; readonly windowId?: WindowId}
 	| {readonly type: "window.setView"; readonly view: ViewState; readonly windowId?: WindowId}
 	| {
@@ -209,13 +218,17 @@ const bindWindow = (
 	state: ShellState,
 	windowId: WindowId | undefined,
 	processId: string | null,
+	takesKeys = false,
 ): Step => {
 	const workspace = activeWorkspace(state);
 	if (workspace === undefined) return [state, NO_CMDS];
 	const target = windowId ?? workspace.focused;
 	if (!hasWindow(workspace, target)) return [state, NO_CMDS];
 	return [
-		withActive(state, {...workspace, layout: setProcess(workspace.layout, target, processId)}),
+		withActive(state, {
+			...workspace,
+			layout: setProcess(workspace.layout, target, processId, takesKeys),
+		}),
 		NO_CMDS,
 	];
 };
@@ -412,8 +425,9 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 
 		if (answer._tag === "ToWindow") {
 			const workspace = activeWorkspace(routed);
-			const processId = workspace === undefined ? null : processOf(workspace, workspace.focused);
-			// An empty window has no process to forward to, so the key is dropped rather than queued.
+			const processId = workspace === undefined ? null : keyTargetOf(workspace, workspace.focused);
+			// An empty window has no process to forward to, and a window whose program never declared
+			// `takesKeys` has no cell for one, so the key is dropped rather than queued (#7973).
 			return [
 				routed,
 				processId === null || workspace === undefined
@@ -446,7 +460,7 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"window.close": closeWindow,
 		"window.focus": (state, msg) => focusWindow(state, msg.windowId),
 		"window.focusDirection": (state, msg) => focusDirection(state, msg.direction),
-		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId),
+		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId, msg.takesKeys),
 		"window.unbind": (state, msg) => bindWindow(state, msg.windowId, null),
 		"window.setView": setView,
 		"layout.resize": resizeStack,

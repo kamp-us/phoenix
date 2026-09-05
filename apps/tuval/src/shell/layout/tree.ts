@@ -290,13 +290,19 @@ export function resize(
 	return root ? {...tree, root} : tree;
 }
 
-/** Attach or detach a window's process. A window carries no other payload. */
+/**
+ * Attach or detach a window's process, and with it whether that process's program takes forwarded
+ * keys. The two are one payload: `createWindow` drops the declaration whenever the process goes.
+ */
 export function setProcess(
 	tree: LayoutTree,
 	windowId: WindowId,
 	processId: string | null,
+	takesKeys = false,
 ): LayoutTree {
-	const root = mapWindow(tree.root, windowId, (window) => ({...window, processId}));
+	const root = mapWindow(tree.root, windowId, (window) =>
+		createWindow(window.id, processId, takesKeys),
+	);
 	return root ? {...tree, root} : tree;
 }
 

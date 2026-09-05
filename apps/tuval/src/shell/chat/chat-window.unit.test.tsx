@@ -14,7 +14,7 @@
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Effect, Stream} from "effect";
 import type {ReactElement} from "react";
-import {describe, expect, it} from "vitest";
+import {afterEach, describe, expect, it} from "vitest";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {phases} from "../../ai-agent/core/state.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
@@ -249,6 +249,45 @@ describe("the composer", () => {
 			},
 		);
 		expect(composer().value).toBe("half-written");
+	});
+});
+
+describe("keys typed on the transcript", () => {
+	const seen: string[] = [];
+	const listener = (event: Event): void => void seen.push((event as KeyboardEvent).key);
+
+	afterEach(() => {
+		globalThis.document.removeEventListener("keydown", listener);
+		seen.length = 0;
+	});
+
+	/** Every keydown the desk's one document listener would have seen (`../ui/Desk.tsx`). */
+	const watchDesk = (): ReadonlyArray<string> => {
+		globalThis.document.addEventListener("keydown", listener);
+		return seen;
+	};
+
+	it("keeps a bare character off the desk's listener, and lets the rest through (#7973)", async () => {
+		await openWindow(withTranscript(transcriptOf(2)));
+		const transcript = screen.getByRole("log", {name: "Transcript"});
+		const reached = watchDesk();
+
+		await act(async () => {
+			fireEvent.keyDown(transcript, {key: "x"});
+			fireEvent.keyDown(transcript, {key: "b", ctrlKey: true});
+			fireEvent.keyDown(transcript, {key: "Escape"});
+			fireEvent.keyDown(transcript, {key: "r", altKey: true});
+		});
+
+		expect(reached).toEqual(["b", "Escape", "r"]);
+	});
+
+	it("still interrupts on Escape typed on the transcript", async () => {
+		const {process} = await openWindow(withTranscript(transcriptOf(2), {phase: "prompting"}));
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole("log", {name: "Transcript"}), {key: "Escape"});
+		});
+		await waitFor(() => expect(process.inbox()).toEqual([{type: "interrupt"}]));
 	});
 });
 

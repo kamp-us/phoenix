@@ -138,6 +138,18 @@ export const processOf = (workspace: Workspace, windowId: WindowId): string | nu
 	return null;
 };
 
+/**
+ * Where a forwarded key goes: the window's process, and only when the program bound to it declared
+ * it takes keys (`src/registry/program.ts`). `null` for an empty window, a window the tree does not
+ * hold, and — the case #7973 is about — a window whose program never asked for a key.
+ */
+export const keyTargetOf = (workspace: Workspace, windowId: WindowId): string | null => {
+	for (const window of windows(workspace.layout.root)) {
+		if (window.id === windowId) return window.takesKeys === true ? window.processId : null;
+	}
+	return null;
+};
+
 export const hasWindow = (workspace: Workspace, windowId: WindowId): boolean =>
 	windowIds(workspace).includes(windowId);
 

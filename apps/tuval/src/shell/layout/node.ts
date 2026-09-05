@@ -38,6 +38,13 @@ export interface WindowNode {
 	readonly tag: "window";
 	readonly id: WindowId;
 	readonly processId: string | null;
+	/**
+	 * The bound program declared `takesKeys` (`src/registry/program.ts`), so the shell may forward a
+	 * key to this window's process. Written only beside `processId` and dropped with it, because it
+	 * describes the binding rather than the window; absent on an unbound window and on every window
+	 * bound before #7973, which is the safe reading — a key nobody declared for is not sent.
+	 */
+	readonly takesKeys?: true;
 }
 
 /**
@@ -61,8 +68,19 @@ export interface LayoutTree {
 	readonly zoomed: WindowId | null;
 }
 
-export function createWindow(id: WindowId, processId: string | null = null): WindowNode {
-	return {tag: "window", id, processId};
+/**
+ * A window node, bound or not. `setProcess` rebuilds through here rather than spreading the old
+ * node, so the pair can never drift: unbinding drops the declaration with the process, and a
+ * `takesKeys` handed in beside a `null` process is dropped too.
+ */
+export function createWindow(
+	id: WindowId,
+	processId: string | null = null,
+	takesKeys = false,
+): WindowNode {
+	return processId !== null && takesKeys
+		? {tag: "window", id, processId, takesKeys: true}
+		: {tag: "window", id, processId};
 }
 
 /**
@@ -87,7 +105,8 @@ export function isWindowNode(value: unknown): value is WindowNode {
 		Predicate.isObject(value) &&
 		value.tag === "window" &&
 		typeof value.id === "string" &&
-		(value.processId === null || typeof value.processId === "string")
+		(value.processId === null || typeof value.processId === "string") &&
+		(value.takesKeys === undefined || (value.takesKeys === true && value.processId !== null))
 	);
 }
 
