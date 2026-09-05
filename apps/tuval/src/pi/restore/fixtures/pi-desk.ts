@@ -10,27 +10,24 @@
  * kernel" (2026-09-02): the two boots read the same variable, so the second finds the first's
  * session file.
  *
- * `fauxProvider` is Pi's own (`@earendil-works/pi-ai`), so the proof calls no model API and costs
- * nothing (founder ruling, amended on #7573). The provider is minted per load, exactly as a
- * restart would mint a new runtime — what carries across is the JSONL and the checkpoint, which
- * is the thing under test.
+ * The host is `../../proof/faux.ts`'s, shared with the vertical proof: Pi's own `fauxProvider`, so
+ * the proof calls no model API and costs nothing (founder ruling, amended on #7573). The provider
+ * is minted per load, exactly as a restart would mint a new runtime — what carries across is the
+ * JSONL and the checkpoint, which is the thing under test.
  */
 
-import {join} from "node:path";
-import {fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall} from "@earendil-works/pi-ai";
-import {ModelRuntime} from "@earendil-works/pi-coding-agent";
-import {Effect, Layer} from "effect";
+import {fauxAssistantMessage, fauxText, fauxToolCall} from "@earendil-works/pi-ai";
 import {
 	agentRoutes,
 	windowProgram,
 	windowRoutes,
 } from "../../../ai-agent/restore/fixtures/window.ts";
-import {aiAgentOverHost} from "../../ai-agent/PiAiAgent.ts";
 import {PI_SESSION_PROGRAM, piSessionProgram} from "../../program.ts";
-import {agentSessionHostLayer, SessionOpenFailed} from "../../server/index.ts";
+import {FAUX_MODEL, fauxPiLayer} from "../../proof/faux.ts";
 import {AGENT_NODE, BEFORE_THE_TOOL, PROJECT_ROOT_VAR, WINDOW_NODE} from "./names.ts";
 
-export const MODEL = {provider: "faux", id: "faux-1"} as const;
+/** Re-exported so a reader of this fixture sees the model its assertions name (`../../proof/faux.ts`). */
+export const MODEL = FAUX_MODEL;
 
 /**
  * What the faux provider answers, in order: one plain reply, then a tool turn and its follow-up.
@@ -59,42 +56,7 @@ const projectRoot = (): string => {
 
 const root = projectRoot();
 
-/**
- * Pi's session host over the faux provider, with no built-in tools: the model runtime is created
- * against the proof's own agent dir so nothing reads or writes the operator's `~/.pi`, and
- * `allowModelNetwork: false` makes that structural rather than a promise.
- */
-const hostLayer = Layer.unwrap(
-	Effect.tryPromise({
-		try: async () => {
-			const faux = fauxProvider({
-				provider: MODEL.provider,
-				api: "faux",
-				models: [{id: MODEL.id, cost: {input: 3, output: 15, cacheRead: 0, cacheWrite: 0}}],
-			});
-			faux.setResponses([...replies]);
-			const modelRuntime = await ModelRuntime.create({
-				modelsPath: null,
-				refreshOnCreate: false,
-				allowModelNetwork: false,
-				authPath: join(root, ".tuval", "pi-agent", "auth.json"),
-			});
-			modelRuntime.registerNativeProvider(faux.provider);
-			return agentSessionHostLayer({
-				modelRuntime,
-				agentDir: join(root, ".tuval", "pi-agent"),
-				projectRoot: root,
-				noTools: "all",
-			});
-		},
-		catch: (cause) => new SessionOpenFailed({cwd: root, detail: String(cause)}),
-	}).pipe(Effect.orDie),
-);
-
-const agentRow = piSessionProgram({
-	cwd: root,
-	layer: aiAgentOverHost({model: MODEL, projectRoot: root}).pipe(Layer.provide(hostLayer)),
-});
+const agentRow = piSessionProgram({cwd: root, layer: fauxPiLayer({root, replies})});
 
 export default {
 	version: 1,

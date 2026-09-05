@@ -10,9 +10,11 @@
  * the loader imports a config module with no arguments (`src/config.ts`), and the module knows
  * where it sits. A per-open `--cwd` override is a later follow-up, not this row.
  *
- * The renderer reference is `./renderer-ref.ts`'s, imported rather than retyped: that leaf holds no
- * React and no transport, so naming the window here costs this row nothing (a row is kernel-side
- * data). Declaring it is also what puts `pi-session` in the picker — a row with none is headless
+ * The program id and the renderer reference are both `./renderer-ref.ts`'s, imported rather than
+ * retyped: that leaf holds no React and no transport, so naming the window here costs this row
+ * nothing (a row is kernel-side data), and the page's renderer table can key on the same id without
+ * pulling this file's `node:path` and model runtime into the browser bundle. Declaring the renderer
+ * is also what puts `pi-session` in the picker — a row with none is headless
  * and left out of both picker lists (`../shell/picker/entries.ts`). The capability list is empty
  * for the reason
  * `aiAgentProgram` states — the #7467 records are inert data, so asking for a capability here
@@ -25,9 +27,9 @@ import type {Layer} from "effect";
 import {type AiAgentProgram, aiAgentProgram} from "../ai-agent/program.ts";
 import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
 import {PiAiAgent, type PiAiAgentOptions} from "./ai-agent/index.ts";
-import {PI_CHAT_WINDOW_REF} from "./renderer-ref.ts";
+import {PI_CHAT_WINDOW_REF, PI_SESSION_PROGRAM} from "./renderer-ref.ts";
 
-export const PI_SESSION_PROGRAM = "pi-session";
+export {PI_SESSION_PROGRAM} from "./renderer-ref.ts";
 
 /**
  * The project root a config module sits under, from that module's own `import.meta.url`.

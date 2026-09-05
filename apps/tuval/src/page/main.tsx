@@ -19,7 +19,7 @@ import {createRoot} from "react-dom/client";
 import type {ShellMsg} from "../shell/core/index.ts";
 import {attach, SHELL_PROGRAM_ID} from "../shell/transport/browser.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
-import {demoRenderers} from "./renderers.tsx";
+import {pageRenderers} from "./renderers.tsx";
 import "../shell/ui/tokens.css";
 import "./page.css";
 
@@ -90,7 +90,7 @@ const desk = Effect.fn("tuval.page.desk")(function* () {
 		<AttachedDesk
 			page={page}
 			shell={shell}
-			renderers={demoRenderers}
+			renderers={pageRenderers}
 			reducedMotion={reducedMotion}
 		/>
 	);
