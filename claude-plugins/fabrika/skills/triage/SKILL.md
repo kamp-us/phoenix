@@ -185,9 +185,10 @@ Lane-entering work (an epic, or a parentless feature) additionally carries a `##
 *is* that home — inside your rewrite for a feature, on stdin for an epic — and **only the founder
 approves a pitch**. Take an existing home: **triage never creates a milestone**, and
 `wayfinder:backlog` is bounded to genuine fog rather than work you would rather not decide about.
-**An `active` campaign's milestone is closed to new intake** unless the work is `p0` or blocks one of
-that milestone's own in-flight lanes — `triage homes` marks those rows `running`, and is where you read
-which milestones they are. That is a subtraction and nothing more: home the work by fit exactly as above.
+**An `active` campaign's milestone is closed to new intake** unless the work is `p0` or `p1`, or
+blocks one of that milestone's own in-flight lanes (ADR 0354) — `triage homes` marks those rows
+`running: p0/p1 or blocker`, and is where you read which milestones they are. Only `p2` is subtracted,
+so a park reason names that band and nothing wider. That is a subtraction and nothing more: home the work by fit exactly as above.
 Every row the verb prints, and what `running` is derived from, is its own section
 (`fabrika wire doc-section --heading "triage homes" < <skill-base>/contract.md`).
 
