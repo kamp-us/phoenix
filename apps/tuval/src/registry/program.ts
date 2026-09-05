@@ -8,6 +8,7 @@ import type {Cmd, Machine, Sub} from "@demlik/tea";
 import {type Effect, Schema, type Scope} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
+import type {SubFailurePolicy} from "../sub-failure.ts";
 
 // Type-only brand: a plain string at runtime, a distinct type to the checker (`.patterns/effect-schema-validation.md`).
 export const ProgramId = Schema.String.pipe(Schema.brand("tuval/ProgramId"));
@@ -121,6 +122,19 @@ export interface Placement {
 	readonly host: "local" | "browser";
 }
 
+/**
+ * The core a row carries: Demlik's `Machine` widened by ADR 0346's Sub-failure policy. The policy's
+ * type lives in `src/sub-failure.ts`, owned by neither slice, so a row declaring `subFailure` still
+ * imports nothing from the host that reads it.
+ */
+export type ProgramCore<
+	S,
+	M extends {readonly type: string},
+	C extends Cmd,
+	U extends Sub,
+	Ctx,
+> = Machine<S, M, C, U, Ctx> & {readonly subFailure?: SubFailurePolicy<M, U>};
+
 export interface Program<
 	S,
 	M extends {readonly type: string},
@@ -134,7 +148,7 @@ export interface Program<
 	/** What a surface calls this program. Absent means `identity.program` — read it through `programLabel`. */
 	readonly label?: string;
 	/** Private: read by the host that runs the program and by no other process. */
-	readonly core: Machine<S, M, C, U, Ctx>;
+	readonly core: ProgramCore<S, M, C, U, Ctx>;
 	/** Public: the only thing another process may see of this program. */
 	readonly ports: Readonly<Record<string, PortSchema>>;
 	/**
