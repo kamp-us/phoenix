@@ -134,9 +134,11 @@ Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — w
 
 | Key | Value | Why |
 |---|---|---|
-| `command` | copy `apps/web/.env.example` to `.env` when none is there, then `pnpm dev` | Both dev legs. The copy is what makes a fresh worktree bootable — that file holds throwaway dev values only. Output is redirected to stderr, which is the stream a failed readiness probe quotes back. |
+| `command` | copy `apps/web/.env.example` to `.env` when none is there, then `pnpm exec turbo run dev dev:worker --filter=@kampus/web` | Both dev legs, and only those. The copy is what makes a fresh worktree bootable — that file holds throwaway dev values only. Output is redirected to stderr, which is the stream a failed readiness probe quotes back. |
 | `url` | `http://localhost:3000` | Vite's port, which also proxies `/api` and `/fate` to the worker. |
 | `readyPath` | `/api/health` | 200 only once **both** legs answer. `/` would go green on Vite alone, and every capture would then show `şu an yüklenemedi` where the data belongs. |
+
+The `--filter=@kampus/web` is load-bearing, not tidiness. Bare `pnpm dev` is `turbo run dev dev:worker` across every workspace member, and `apps/tuval`'s own `dev` is `node src/bin.ts` — Tuval's kernel, a persistent process with no part in rendering an `apps/web` page (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)). It also writes a counter to stderr about once a second, and stderr is the 2000-character window `server.ts` quotes back when readiness fails, so an unfiltered command spends that window on Tuval's counter instead of the reason the worker never came up.
 
 **Reachable today:** the routes a signed-out visitor can actually see — `/`, `/pano`, `/sozluk`, `/mecmua`, `/divan`, `/search`, `/auth` and `/lab/atolye` among them. Point the harness at one of those and the capture is what a visitor sees.
 
@@ -144,7 +146,9 @@ Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — w
 
 Exit `15` is real but narrower than a UI route: it needs a response that is genuinely `>= 400`, which under this harness means an `/api/*` or `/fate/*` path proxied to a worker that is down. It refuses per surface, so that one path names itself while the rest of the repo still renders, rather than everything falling back to the repo-wide `19`. No SPA path produces it — not even one the router has no route for, which renders `NotFoundPage` at 200.
 
-`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust.
+`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment. **Set is not enough: the token also has to carry the permission `alchemy.run.ts` needs**, which begins with `GET /accounts/{account_id}/flagship/apps`. A token that `/user/tokens/verify` calls `valid and active` but that 401s on that endpoint fails exactly like an absent one — the worker leg never comes up and readiness times out. Either way `ui render` exits `11`, and that is UNKNOWN, never a capture to trust.
+
+**Do not expect alchemy's own error in the refusal's stderr tail.** Vite logs an `ECONNREFUSED` proxy error for every readiness poll while the worker is down — twice a second, against `server.ts`'s 2000-character tail — so the boot error that actually explains the failure is evicted long before the 60s bound is up. Run `pnpm dev:worker` on its own to read it. Narrowing that tail to the cause is tracked on [#8025](https://github.com/kamp-us/phoenix/issues/8025).
 
 ## Conventions
 
