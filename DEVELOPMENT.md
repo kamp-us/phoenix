@@ -96,6 +96,7 @@ apps/tuval/
 │   ├── durability/        # saving and restoring process state
 │   ├── ai-agent/          # the backend-blind AI agent slice: core machine, ports, handlers, history
 │   ├── pi/                # the Pi backend: loopback server, lease client, the `TuvalAiAgent` layer
+│   ├── claude/            # the Claude backend: the Agent SDK layer, SDK-message mapping, the generic kernel tools
 │   └── demo/              # the programs that ship in the box
 └── vitest.config.ts       # two projects, `unit` and `integration`; the repo-wide unit gate resolves here
 ```
