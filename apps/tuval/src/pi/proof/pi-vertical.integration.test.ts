@@ -288,7 +288,7 @@ const chat = Effect.fn("piVertical.chat")(function* (
 	key: string,
 ) {
 	const was = replies(before).length;
-	yield* session.send({type: "prompt", text, key});
+	yield* session.send({type: "prompt", text, key, timestamp: Date.now()});
 	const after = yield* liveWhere(
 		session.seen,
 		`the reply to "${text}"`,

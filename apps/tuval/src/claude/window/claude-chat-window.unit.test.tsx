@@ -49,6 +49,8 @@ interface Opened {
 	readonly hosts: ReadonlyArray<ClaudeHost>;
 }
 
+const SENT_AT = 1_700_000_000_000;
+
 /** Deterministic keys, so two windows driven the same way produce byte-identical prompts. */
 const countingKeys = () => {
 	let next = 0;
@@ -67,6 +69,7 @@ const open = async (state: AiAgentSessionState, windows = 1): Promise<Opened> =>
 		scrollCommitMs: 0,
 		scrollToFn: () => undefined,
 		newKey: countingKeys(),
+		now: () => SENT_AT,
 	});
 	const hosts: Array<ClaudeHost> = [];
 	for (let index = 0; index < windows; index += 1) {
@@ -218,6 +221,7 @@ describe("what this binding adds to the shared window", () => {
 			scrollCommitMs: 0,
 			scrollToFn: () => undefined,
 			newKey: countingKeys(),
+			now: () => SENT_AT,
 		});
 		const rendered = render(renderer.render(host) as ReactElement);
 		await within(rendered.container).findByRole("log", {name: "Transcript"});
@@ -258,7 +262,7 @@ describe("what this binding adds to the shared window", () => {
 		expect(claude.process.inbox()).toEqual(shared.process.inbox());
 		// The drive is only a real test of "adds nothing" if it actually made the window send.
 		expect(shared.process.inbox()).toEqual([
-			{type: "prompt", text: "ship it", key: "k0"},
+			{type: "prompt", text: "ship it", key: "k0", timestamp: SENT_AT},
 			{type: "interrupt"},
 		]);
 	});

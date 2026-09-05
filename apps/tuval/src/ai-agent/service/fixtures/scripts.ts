@@ -51,6 +51,15 @@ export const plainReplyTurn: ReadonlyArray<AgentEvent> = [
 
 export const plainReply: AgentScript = {...empty, turns: [{events: plainReplyTurn}]};
 
+/** A backend that never echoes the operator's turn: the reply is the only item this one emits. */
+export const noEchoReplyTurn: ReadonlyArray<AgentEvent> = [
+	{kind: "phase", phase: "prompting"},
+	{kind: "item", item: item({kind: "assistant", id: id("a4"), timestamp: at(12), text: "on it"})},
+	{kind: "phase", phase: "ready"},
+];
+
+export const noEchoReply: AgentScript = {...empty, turns: [{events: noEchoReplyTurn}]};
+
 export const runningTool: ToolItem = {
 	kind: "tool",
 	id: id("t1"),

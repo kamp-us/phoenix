@@ -26,6 +26,7 @@ import {type AiAgentSessionState, initialState} from "./state.ts";
 
 const ITEM_LIMIT = 8;
 const BYTE_LIMIT = 4_000;
+const SENT_AT = 1_700_000_000_000;
 
 const machine = aiAgentSessionMachine({
 	cwd: "/repo",
@@ -56,7 +57,17 @@ const randomMsg = (
 		case 1:
 			return {msg: {type: "started", sessionId: "session-1"}, newItem: false};
 		case 2:
-			return {msg: {type: "prompt", text: "x".repeat(random.int(80)), key: id}, newItem: false};
+			// Whether this records an item depends on the phase it lands on, so `drive` decides it.
+			// The text is keyed to the step so no random `user` item can read as this turn's echo.
+			return {
+				msg: {
+					type: "prompt",
+					text: `prompt ${id}: ${"x".repeat(random.int(80))}`,
+					key: id,
+					timestamp: SENT_AT + step,
+				},
+				newItem: false,
+			};
 		case 3:
 			return {
 				msg: {
@@ -162,7 +173,10 @@ const drive = (seed: number, steps: number): Run => {
 			state,
 			msg,
 		);
-		if (newItem && next.phase !== "gone") items += 1;
+		// A prompt on a `ready` session records the operator's own turn (#7978), which is an item the
+		// tail has to account for exactly like one a layer reported.
+		const recorded = msg.type === "prompt" && state.phase === "ready";
+		if ((newItem || recorded) && next.phase !== "gone") items += 1;
 		state = next;
 	}
 	return {state, items};

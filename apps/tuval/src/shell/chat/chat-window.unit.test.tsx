@@ -39,6 +39,9 @@ interface Harness {
 	readonly keys: ReadonlyArray<string>;
 }
 
+/** The send clock every dispatched prompt in this file wears. */
+const SENT_AT = 1_700_000_000_000;
+
 const openWindow = async (
 	state: AiAgentSessionState,
 	options: ChatWindowOptions = {},
@@ -61,6 +64,7 @@ const openWindow = async (
 			keys.push(key);
 			return key;
 		},
+		now: () => SENT_AT,
 		scrollCommitMs: 0,
 		scrollToFn: (offset) => void scrolls.push(offset),
 		...options,
@@ -214,7 +218,12 @@ describe("the composer", () => {
 			fireEvent.keyDown(input, {key: "Enter"});
 		});
 		await waitFor(() => expect(process.inbox().length).toBe(1));
-		expect(process.inbox()[0]).toEqual({type: "prompt", text: "ship it", key: keys[0]});
+		expect(process.inbox()[0]).toEqual({
+			type: "prompt",
+			text: "ship it",
+			key: keys[0],
+			timestamp: SENT_AT,
+		});
 		await waitFor(() => expect(view().draft).toBe(""));
 		expect(input.value).toBe("");
 	});
@@ -311,7 +320,12 @@ describe("an interrupted turn", () => {
 			fireEvent.click(resend);
 		});
 		await waitFor(() => expect(process.inbox().length).toBe(1));
-		expect(process.inbox()[0]).toEqual({type: "prompt", text: "go", key: keys[0]});
+		expect(process.inbox()[0]).toEqual({
+			type: "prompt",
+			text: "go",
+			key: keys[0],
+			timestamp: SENT_AT,
+		});
 	});
 
 	it("resends on Alt+R from the composer, and on nothing else", async () => {
@@ -324,7 +338,7 @@ describe("an interrupted turn", () => {
 			fireEvent.keyDown(composer(), {key: "r", altKey: true});
 		});
 		await waitFor(() => expect(process.inbox().length).toBe(1));
-		expect(process.inbox()[0]).toEqual({type: "prompt", text: "go", key: "k0"});
+		expect(process.inbox()[0]).toEqual({type: "prompt", text: "go", key: "k0", timestamp: SENT_AT});
 	});
 });
 

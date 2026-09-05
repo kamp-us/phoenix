@@ -58,6 +58,8 @@ const apply = (
 
 const opened: AiAgentSessionState = {...initialState(CWD), phase: "ready", sessionId: SESSION_ID};
 
+const SENT_AT = 1_700_000_000_000;
+
 const fold = (state: AiAgentSessionState, events: ReadonlyArray<AgentEvent>): AiAgentSessionState =>
 	events.reduce(
 		(carried, event) => apply(carried, {type: "event", sessionId: SESSION_ID, event})[0],
@@ -101,7 +103,12 @@ describe("the core over what the layer emitted", () => {
 	it.effect("keeps the session prompting for the whole turn, so the window reads working", () =>
 		Effect.gen(function* () {
 			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
-			const [prompting] = apply(opened, {type: "prompt", text: "hello", key: "k1"});
+			const [prompting] = apply(opened, {
+				type: "prompt",
+				text: "hello",
+				key: "k1",
+				timestamp: SENT_AT,
+			});
 			// Every event but the last, which is the turn's own end.
 			const running = fold(prompting, events.slice(0, -1));
 			assert.strictEqual(running.phase, "prompting");
@@ -111,10 +118,20 @@ describe("the core over what the layer emitted", () => {
 	it.effect("admits a second prompt once the turn's result has landed", () =>
 		Effect.gen(function* () {
 			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
-			const [prompting] = apply(opened, {type: "prompt", text: "hello", key: "k1"});
+			const [prompting] = apply(opened, {
+				type: "prompt",
+				text: "hello",
+				key: "k1",
+				timestamp: SENT_AT,
+			});
 			const settled = fold(prompting, events);
 			assert.strictEqual(settled.phase, "ready");
-			const [next, cmds] = apply(settled, {type: "prompt", text: "and again", key: "k2"});
+			const [next, cmds] = apply(settled, {
+				type: "prompt",
+				text: "and again",
+				key: "k2",
+				timestamp: SENT_AT,
+			});
 			assert.isNull(next.failure);
 			assert.deepStrictEqual(cmds, [{type: "aiAgent.prompt", text: "and again", key: "k2"}]);
 		}),
