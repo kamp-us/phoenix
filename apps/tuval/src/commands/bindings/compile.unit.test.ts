@@ -52,6 +52,24 @@ describe("compileBindings", () => {
 		expect(errors[0]?.message).toContain("at character 12");
 	});
 
+	it("points at the nested parameter's own token, not at the first argument", async () => {
+		const command = "window place main 3,wide";
+		const {bindings, errors} = await compile({"ctrl+p": command});
+
+		expect(bindings).toEqual([]);
+		// `at` is `at.row` here and `args` is keyed by the bare `at`: without resolving the path to
+		// its parameter the lookup misses and the caret falls back to `main`, which is fine.
+		expect(errors[0]).toMatchObject({key: "ctrl+p", position: command.indexOf("3,wide")});
+	});
+
+	it("points at the token behind an indexed path segment", async () => {
+		const command = "window fit main 3,wide";
+		const {errors} = await compile({"ctrl+f": command});
+
+		// `sizes[1]` opens on the same parameter name, so `[` ends it exactly as `.` does.
+		expect(errors[0]).toMatchObject({key: "ctrl+f", position: command.indexOf("3,wide")});
+	});
+
 	it("sets `repeat` from the object form and leaves it unset for a bare string", async () => {
 		const {bindings, errors} = await compile({
 			"ctrl+n": {command: "workspace next", repeat: true},

@@ -23,7 +23,7 @@ import {
 	type RegistryTable,
 	SpellRegistry,
 } from "./registry.ts";
-import {type AnySpell, renderPath, type SpellPath} from "./spell.ts";
+import {type AnySpell, renderPath} from "./spell.ts";
 
 /** What one config produces: the spells its programs declare, and the keys they are bound to. */
 export interface SpellSetInput {
@@ -128,7 +128,3 @@ export class SpellSet extends Context.Service<
 	): Layer.Layer<SpellSet | SpellRegistry, DuplicateSpellPath | SpellNotDescribable> =>
 		Layer.effectContext(make(input));
 }
-
-/** Every registered path, which is what a caller allowed the whole registry passes the bridge. */
-export const everyPath = (table: RegistryTable): ReadonlyArray<SpellPath> =>
-	table.rows.map((row) => row.path);
