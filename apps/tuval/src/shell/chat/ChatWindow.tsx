@@ -59,6 +59,15 @@ export type ChatWindowRenderer = WindowRenderer<
 >;
 
 export interface ChatWindowOptions {
+	/**
+	 * The program's own extras in the status bar, beside the phase line and the mode switch.
+	 *
+	 * This is the whole of what a thin renderer adds on top of the shared window (founder ruling
+	 * 2026-09-02, amended on #7572 / #7584), and it is a function of the live state because that is
+	 * what a renderer is: `f(state, view)`. Pi's is its usage line (#7611); a program with no extras
+	 * passes none and the bar renders exactly as it did before this slot existed.
+	 */
+	readonly extras?: (state: AiAgentSessionState) => ReactNode;
 	/** Mints one idempotency key per deliberate send (ruling 2, #7570). */
 	readonly newKey?: () => string;
 	readonly pageLimit?: number;
@@ -77,6 +86,7 @@ export interface ChatWindowOptions {
 }
 
 interface ResolvedOptions {
+	readonly extras: ((state: AiAgentSessionState) => ReactNode) | null;
 	readonly newKey: () => string;
 	readonly pageLimit: number;
 	readonly overscan: number;
@@ -87,6 +97,7 @@ interface ResolvedOptions {
 }
 
 const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
+	extras: options.extras ?? null,
 	newKey: options.newKey ?? (() => crypto.randomUUID()),
 	pageLimit: options.pageLimit ?? 50,
 	overscan: options.overscan ?? 6,
@@ -461,7 +472,10 @@ function ChatWindow({
 					<span className="tuval-chat-phase-dot" aria-hidden="true" />
 					{phaseLine(phase)}
 				</p>
-				<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
+				<div className="tuval-chat-bar-end">
+					{options.extras === null ? null : options.extras(process.state)}
+					<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
+				</div>
 			</div>
 			<div
 				ref={scrollRef}

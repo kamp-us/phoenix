@@ -288,6 +288,16 @@
 	justify-content: space-between;
 }
 
+/* The bar's trailing group: the program's own extras, then the mode switch. One flex child, so the
+   bar stays a two-ended row whether or not a renderer passes extras. */
+.tuval-chat-bar-end {
+	display: flex;
+	flex: 0 1 auto;
+	gap: var(--s-3);
+	align-items: center;
+	min-inline-size: 0;
+}
+
 .tuval-chat-mode {
 	flex: 0 0 auto;
 }

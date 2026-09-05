@@ -15,7 +15,7 @@
 	// and are re-checked here under the relaxed flag, which is the point.
 	// `assets.d.ts` carries the app's `*.css` module declaration, which the design package's own
 	// side-effect stylesheet imports need as much as this slice's do.
-	"include": ["src/shell/chat", "src/page/assets.d.ts"],
+	"include": ["src/shell/chat", "src/pi/window", "src/page/assets.d.ts"],
 	// `exclude` is inherited, and the base excludes exactly this directory.
 	"exclude": ["node_modules"]
 }

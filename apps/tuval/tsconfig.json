@@ -15,8 +15,10 @@
 		"types": ["node"]
 	},
 	"include": ["src", ".tuval/tuval.config.ts", "vitest.config.ts"],
-	// The one slice that imports `@kampus/design` has its own lens, `tsconfig.design.json`, because
-	// the package is source-consumed and is authored with `exactOptionalPropertyTypes: false`.
-	// Excluding it here is what keeps the kernel on the strict flag; `typecheck` runs both.
-	"exclude": ["node_modules", "src/shell/chat"]
+	// The two slices that import `@kampus/design` have their own lens, `tsconfig.design.json`,
+	// because the package is source-consumed and is authored with `exactOptionalPropertyTypes:
+	// false`. Excluding them here is what keeps the kernel on the strict flag; `typecheck` runs
+	// both. `src/pi/window/ref.ts` still enters this project by import from `src/pi/program.ts`,
+	// which is the point of that leaf: the row names the renderer without reaching any of it.
+	"exclude": ["node_modules", "src/shell/chat", "src/pi/window"]
 }

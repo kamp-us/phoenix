@@ -25,7 +25,9 @@ import {Processes} from "../process/Processes.ts";
 import {ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import {programEntries, showsInAWindow} from "../shell/picker/entries.ts";
 import {PI_SESSION_PROGRAM, piSessionProgram, projectRootOf} from "./program.ts";
+import {PI_CHAT_WINDOW_REF} from "./renderer-ref.ts";
 import {makeScriptedHost} from "./server/fixtures.ts";
 import {PiServerService} from "./server/index.ts";
 
@@ -67,8 +69,18 @@ describe("the pi-session program row", () => {
 		assert.strictEqual(declared.identity.program, PI_SESSION_PROGRAM);
 		assert.deepStrictEqual(declared.placement, {host: "local"});
 		assert.deepStrictEqual(declared.capabilities, []);
-		assert.isUndefined(declared.renderer, "the row is headless until a Pi window binds one");
+		assert.deepStrictEqual(declared.renderer, PI_CHAT_WINDOW_REF);
 		assert.isFunction(declared.resume, "a restored Pi session has no way back without a resume");
+	});
+
+	it("shows in the picker, which is what declaring a renderer buys the row", () => {
+		const declared = row(tempProject());
+		assert.isTrue(showsInAWindow(declared));
+		assert.deepStrictEqual(
+			programEntries([declared]).map((entry) => entry.programId),
+			[ProgramId.make(PI_SESSION_PROGRAM)],
+			"a row the picker leaves out is a program nobody can open a window on",
+		);
 	});
 
 	it.effect("spawns through the registry and opens its session in the project root", () =>
