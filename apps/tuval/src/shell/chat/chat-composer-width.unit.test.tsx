@@ -72,6 +72,8 @@ interface ComposerBox {
 	readonly centred: boolean;
 }
 
+/** Each field answers one question: a cap is reported by `capped`, never folded into the size. */
+
 const composerBox = (parentWidth: number): ComposerBox => {
 	const root = document.querySelector(".kp-agent-chat");
 	if (root === null) throw new Error("the composer root .kp-agent-chat did not render");
@@ -82,10 +84,9 @@ const composerBox = (parentWidth: number): ComposerBox => {
 
 	const size = resolve(declared("inline-size") || declared("width"));
 	const cap = declared("max-inline-size") || declared("max-width");
-	const isCap = cap !== "" && cap !== "none";
 	return {
-		inlineSize: isCap ? Number.NaN : (size ?? Number.NaN),
-		capped: isCap,
+		inlineSize: size ?? Number.NaN,
+		capped: cap !== "" && cap !== "none",
 		centred: [
 			declared("margin-inline-start") || declared("margin-left"),
 			declared("margin-inline-end") || declared("margin-right"),
