@@ -618,8 +618,28 @@ already opens — never a second mechanism.
 the runnable thing, so `paletteCandidates` walks the trie past the matching segment and lists every
 spell beneath it with its `describe`: typing `win` offers `window close`, `window move` and
 `window focus`, not the bare word `window`. On a value slot it hands straight back to
-`candidatesFor`, so the fuzzy-on-recency rule is unchanged. Prefix on the paths the system defines,
-fuzzy on the values a user named — one rule per slot, the same split `complete` makes.
+`candidatesFor`, so the fuzzy-on-recency rule is unchanged.
+
+**The palette's path slot lists more than the prefix reaches; completion's does not.** Completion's
+rule 1 above is exact prefix and stays that way — Tab, the `:` line and `candidatesFor` are one
+behaviour. The palette's listbox adds two looser tiers underneath it, because a prefix-only listbox
+is unreachable for a reader who remembers the verb and not the group: `zoom` found nothing while
+`window zoom` sat in the unfiltered list
+([#8002](https://github.com/kamp-us/phoenix/issues/8002), the founder's
+[2026-09-05 ruling](https://github.com/kamp-us/phoenix/issues/8002#issuecomment-5554612396), which
+scopes ADR 0348's R1.5 to completion). The three tiers, in order:
+
+1. **Exact prefix on the next segment** — the completion rule, and it always ranks first.
+2. **Substring of the rest of the path** — `space` lists `workspace new` and `workspace activate`.
+3. **Substring of the `describe` sentence** — `focus` lists `window focus` on its path, then
+   `window close` and `window move` on "the focused window".
+
+All three fold case, and registry order survives inside a tier (`Array.prototype.sort` is stable,
+ECMA-262 §23.1.3.30). A row's `value` is the whole remaining path however it was matched, so
+accepting a sentence-matched row still leaves a line the parser reads as that spell's path.
+
+So: exact prefix wherever the system's names are being *completed*, a looser listing wherever they
+are being *found*, and fuzzy on the values a user named.
 
 **One field, and the rows are never focusable.** The ARIA combobox pattern: the caret stays in the
 input for the palette's whole life and the active row is named by `aria-activedescendant`. That is
