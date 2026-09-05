@@ -137,7 +137,7 @@ describe("a config reload", () => {
 	);
 
 	it.live(
-		"reports the binding that stopped compiling with all five of its parts, and keeps the rest",
+		"reports the binding that stopped compiling, pointing at the segment that went away, and keeps the rest",
 		() =>
 			run(
 				Effect.gen(function* () {
@@ -152,11 +152,13 @@ describe("a config reload", () => {
 					assert.strictEqual(broken?.file, "global config-fixtures/reloadable.ts");
 					assert.isTrue((broken?.position ?? -1) >= 0, "the error points at no position");
 					assert.isTrue((broken?.expected ?? "").length > 0, "the error expects nothing");
-					assert.strictEqual(broken?.didYouMean, "sey");
+					// `alpha` has exactly one child after the rename, so the nearest match to `say` is the
+					// expectation itself and the hint is dropped rather than repeating it (#7745).
+					assert.isUndefined(broken?.didYouMean, "the hint repeated the expectation");
 					assert.strictEqual(
 						broken?.message,
-						'global config-fixtures/reloadable.ts: cannot bind "ctrl-a": at character 6, expected sey; did you mean "sey"?',
-						"the five parts did not render in order",
+						'global config-fixtures/reloadable.ts: cannot bind "ctrl-a": at character 6, expected sey',
+						"the parts did not render in order",
 					);
 					assert.notInclude(
 						broken?.message ?? "",

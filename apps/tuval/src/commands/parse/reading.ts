@@ -59,12 +59,20 @@ export interface Reading {
 const describeSegments = (segments: ReadonlyArray<string>): string =>
 	segments.length === 0 || segments.length > 6 ? "<segment>" : segments.join("|");
 
+/**
+ * A suggestion equal to the expectation is dropped here, where the two are computed, rather than at
+ * each surface that renders them. With one candidate — a node with a single child, a parameter with
+ * a single literal — the expectation and the nearest match are the same string, and the line reads
+ * `expected sey; did you mean "sey"?`: the reader is refused for the word they were just asked for,
+ * and the distinction the two fields carry (what shape belongs here, versus a guess at the typo) is
+ * erased (#7745).
+ */
 const refused = (
 	position: number,
 	expected: string,
 	suggestion?: string,
 ): Extract<ReadingCore, {kind: "Refused"}> =>
-	suggestion === undefined
+	suggestion === undefined || suggestion === expected
 		? {kind: "Refused", position, expected}
 		: {kind: "Refused", position, expected, didYouMean: suggestion};
 
