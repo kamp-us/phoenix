@@ -46,6 +46,12 @@ export interface TranscriptPage {
 export interface TuvalAiAgentApi {
 	readonly start: (options: StartOptions) => Effect.Effect<StartedSession, StartError>;
 	/**
+	 * Returns at the send, never at the end of the turn (#8018). The generic host awaits a Cmd
+	 * handler before publishing the commit that handler came from, so a layer that resolves this at
+	 * the turn's end holds the operator's own message off the window until the reply lands. A
+	 * backend whose send is one turn-long call forks the await and routes what it can no longer
+	 * return onto `events`.
+	 *
 	 * `key` is the idempotency key (ruling 2): a second prompt carrying a key this session already
 	 * saw is dropped rather than re-sent, so a transport-level retry of one send is free. A
 	 * deliberate resend — the one the window offers after an interrupted turn — mints a new key.

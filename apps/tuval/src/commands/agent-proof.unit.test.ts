@@ -605,7 +605,9 @@ const runServiceAgent = Effect.gen(function* () {
 			key: "k1",
 			timestamp: Date.now(),
 		});
-		yield* eventually(() => (lastTranscript(emitted)?.items.length ?? 0) >= answered.length);
+		// The operator's own turn opens the tail — the core records it at the send (#7978) — so the
+		// run's spell rows are what follows it.
+		yield* eventually(() => (lastTranscript(emitted)?.items.length ?? 0) > answered.length);
 		const help = yield* overTheWire(["help"], {});
 		return {
 			answered,
@@ -683,7 +685,13 @@ describe("the agent proof, on the agent service", () => {
 		Effect.gen(function* () {
 			const {answered, transcript} = yield* runServiceAgent;
 			assert.isDefined(transcript, "the agent published no transcript");
-			const items = transcript?.items ?? [];
+			const opened = transcript?.items ?? [];
+			assert.strictEqual(
+				opened[0]?.kind,
+				"user",
+				"the tail does not open on the prompt the run was given",
+			);
+			const items = opened.slice(1);
 			assert.deepStrictEqual(
 				items.map((item) => (item.kind === "tool" ? item.name : item.kind)),
 				answered.map((entry) => renderPath(entry.request.path)),

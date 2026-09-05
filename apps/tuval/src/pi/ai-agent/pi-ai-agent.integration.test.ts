@@ -92,8 +92,31 @@ const droppable = (url: string): {factory: ByteTransportFactory; drop: () => voi
 };
 
 /**
+ * How many model turns have run.
+ *
+ * `prompt` returns at the send rather than at the turn's end (#8018), so a settled call is no
+ * longer a settled turn and a test that reads history or sends again has to wait for one. The faux
+ * provider counts its own calls, which is a read off nobody's stream — the drains below own the
+ * events, and a second consumer of that one queue would take frames from them.
+ */
+const turnsRan = (faux: ReturnType<typeof fauxProvider>, calls: number) =>
+	Effect.gen(function* () {
+		for (let attempt = 0; attempt < 200 && faux.state.callCount < calls; attempt += 1) {
+			yield* Effect.sleep("50 millis");
+		}
+		assert.strictEqual(
+			faux.state.callCount,
+			calls,
+			`timed out waiting for ${calls} model turn(s) to run`,
+		);
+		// The session appends the turn to its JSONL and pushes the closing snapshot after the model
+		// call returns, so the count leads both by a tick.
+		yield* Effect.sleep(SETTLE);
+	});
+
+/**
  * Everything the agent has pushed so far. The layer's queue is unbounded and buffers from `start`,
- * so a subscription taken after a settled prompt still sees the whole run in order — which makes
+ * so a subscription taken after a settled turn still sees the whole run in order — which makes
  * this a drain rather than a race.
  */
 const drain = (agent: TuvalAiAgentApi) =>
@@ -122,6 +145,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				assert.isNotEmpty(started.sessionId);
 
 				yield* agent.prompt("read the readme", "key-1");
+				yield* turnsRan(faux, 2);
 				const events = yield* drain(agent);
 
 				assert.deepEqual(
@@ -178,9 +202,14 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 			return Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
 				yield* agent.start({cwd});
+				// One at a time: the page walk below reads the JSONL these turns write, and three
+				// concurrent sends would race each other into it.
 				yield* agent.prompt("first question");
+				yield* turnsRan(faux, 1);
 				yield* agent.prompt("second question");
+				yield* turnsRan(faux, 2);
 				yield* agent.prompt("third question");
+				yield* turnsRan(faux, 3);
 
 				const newest = yield* agent.page(null, 2);
 				assert.isTrue(newest.hasMore, "three exchanges do not fit in a two-item page");
@@ -230,6 +259,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					const started = yield* owner.start({cwd});
 					const stream = yield* Stream.toQueue(owner.events, {capacity: "unbounded"});
 					yield* owner.prompt("first question");
+					yield* turnsRan(faux, 1);
 
 					yield* Effect.gen(function* () {
 						const intruder = yield* TuvalAiAgent;
@@ -275,6 +305,7 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					const resumed = yield* owner.start({cwd, resume: started.sessionId});
 					assert.strictEqual(resumed.sessionId, started.sessionId);
 					yield* owner.prompt("second question");
+					yield* turnsRan(faux, 2);
 					const after = yield* drain(owner);
 					assert.isTrue(
 						items(after).some((item) => item.kind === "user" && item.text === "first question"),

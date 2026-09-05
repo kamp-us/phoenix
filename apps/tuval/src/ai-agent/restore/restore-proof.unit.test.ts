@@ -151,6 +151,8 @@ interface SecondRun {
 	readonly republishedCards: ReadonlyArray<ReadonlyArray<string>>;
 	/** How many `transcript` payloads the resend alone produced. */
 	readonly emissionsForTheResend: number;
+	/** The item ids the *first* of those emissions carried, which is the send's own. */
+	readonly firstEmissionForTheResend: ReadonlyArray<string>;
 	readonly afterResend: ReadonlyArray<string>;
 	readonly phaseAfterResend: AiAgentSessionState["phase"];
 }
@@ -226,6 +228,9 @@ const runFromTheCheckpoint = (
 			afterReconnect,
 			republishedCards,
 			emissionsForTheResend: transcriptsIn(arrivalsOf(window).slice(beforeResend)).length,
+			firstEmissionForTheResend:
+				transcriptsIn(arrivalsOf(window).slice(beforeResend))[0]?.items.map((item) => item.id) ??
+				[],
 			afterResend: rendered(window),
 			phaseAfterResend: sessionOf(agent).phase,
 		} satisfies SecondRun;
@@ -294,11 +299,18 @@ describe("the whole app, stopped mid-reply and booted back over its checkpoints"
 		).not.toContain("a4");
 	});
 
-	it("answers one resend with exactly one new emission", () => {
+	// Two, not one: the operator's own turn is published when they send it and the reply when it
+	// arrives (#7978/#7979). A single emission would mean the window shows your message only once
+	// the agent has answered, which is the wait the founder reported.
+	it("answers one resend with two emissions, the operator's turn before the reply", () => {
 		expect(
 			outcome.second.emissionsForTheResend,
-			"one deliberate resend did not produce exactly one transcript emission",
-		).toBe(1);
+			"one deliberate resend did not produce the send's emission and the reply's",
+		).toBe(2);
+		expect(
+			outcome.second.firstEmissionForTheResend,
+			"the send's own emission did not already carry the operator's turn",
+		).toEqual(outcome.second.afterResend.slice(0, -1));
 		expect(outcome.second.afterResend).toEqual(afterTheResend);
 		expect(outcome.second.phaseAfterResend).toBe("ready");
 	});

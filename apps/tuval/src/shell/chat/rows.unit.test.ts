@@ -5,7 +5,8 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {assistantItem, call, transcriptOf, userItem} from "./chat.testing.ts";
+import {planTranscriptPage, planTranscriptWindow} from "../../ai-agent/history/index.ts";
+import {assistantItem, call, toolItem, transcriptOf, userItem} from "./chat.testing.ts";
 import {chatRows, mergeOlder, oldestLoadedId, rowIndexOfItem, rowKey} from "./rows.ts";
 
 const base = {older: [], tail: [], omitted: 0, loading: false, atOldest: false};
@@ -186,5 +187,35 @@ describe("rowKey", () => {
 		).toBe("item:x");
 		expect(rowKey({kind: "loading"})).toBe("loading");
 		expect(rowKey({kind: "older", items: 3})).toBe("older");
+	});
+});
+
+describe("a live tail carrying an exchange the bounds cannot hold", () => {
+	const older = [userItem("u0"), assistantItem("a0")];
+	const turn = [userItem("u1"), ...Array.from({length: 44}, (_, index) => toolItem(`t${index}`))];
+	const history = [...older, ...turn];
+
+	it("pages the exchange older than it and renders every item once", () => {
+		const live = planTranscriptWindow(history, {itemLimit: 5});
+		expect(live.kind).toBe("window");
+		if (live.kind !== "window") return;
+		expect(live.items).toEqual(turn);
+
+		const page = planTranscriptPage(history, {before: "u1", limit: 5});
+		expect(page.kind).toBe("page");
+		if (page.kind !== "page") return;
+		expect(page.items).toEqual(older);
+		expect(page.next).toBeNull();
+
+		const rows = chatRows({
+			older: mergeOlder([], page.items),
+			tail: live.items,
+			omitted: live.omitted.items,
+			loading: false,
+			atOldest: true,
+		});
+		const ids = rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
+		expect(ids).toEqual(history.map((item) => item.id));
+		expect(new Set(ids).size).toBe(ids.length);
 	});
 });

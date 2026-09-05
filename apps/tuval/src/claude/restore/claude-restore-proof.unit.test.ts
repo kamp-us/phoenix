@@ -38,6 +38,7 @@ import {
 	afterTheResend,
 	CARD,
 	CWD,
+	KEYS,
 	OFFERED,
 	SESSION,
 	SWITCHED_TO,
@@ -170,6 +171,8 @@ interface SecondRun {
 	readonly afterReconnect: ReadonlyArray<string>;
 	readonly modeAfterReconnect: AiAgentSessionState["modes"];
 	readonly emissionsForTheResend: number;
+	/** The item ids the *first* of those emissions carried, which is the send's own. */
+	readonly firstEmissionForTheResend: ReadonlyArray<string>;
 	readonly afterResend: ReadonlyArray<string>;
 	readonly phaseAfterResend: AiAgentSessionState["phase"];
 }
@@ -184,7 +187,7 @@ const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSyst
 		const {agent, window} = yield* handlesOf(booted);
 		yield* until("the session to open", () => sessionOf(agent).sessionId !== null);
 
-		yield* say(window, "read the readme", "k1");
+		yield* say(window, "read the readme", KEYS.first);
 		yield* until("the first reply", () => rendered(window).includes("a1"));
 		yield* until("the permission card", () =>
 			(pendingIn(arrivalsOf(window)).at(-1) ?? []).includes(CARD),
@@ -198,10 +201,10 @@ const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSyst
 		yield* switchMode(window);
 		yield* until("the mode switch to commit", () => sessionOf(agent).modes.current === SWITCHED_TO);
 
-		yield* say(window, "now the tests", "k2");
+		yield* say(window, "now the tests", KEYS.second);
 		yield* until("the second reply", () => rendered(window).includes("a2"));
 
-		yield* say(window, "delete the build dir", "k3");
+		yield* say(window, "delete the build dir", KEYS.cut);
 		// The window's copy is published from the Sub's own projection, which runs ahead of the core
 		// committing the same event — so a stop taken on the window's word alone can checkpoint a
 		// tail without the cut turn in it. Wait for the committed state, which is what is saved.
@@ -241,7 +244,7 @@ const runFromTheCheckpoint = (
 		const modeAfterReconnect = sessionOf(agent).modes;
 		const beforeResend = arrivalsOf(window).length;
 
-		yield* say(window, "try that again", "k4");
+		yield* say(window, "try that again", KEYS.resend);
 		yield* until("the resent turn's reply", () => rendered(window).includes("a4"));
 		yield* until("the resend to settle", () => sessionOf(agent).phase === "ready");
 		yield* quiet(window);
@@ -252,6 +255,9 @@ const runFromTheCheckpoint = (
 			afterReconnect,
 			modeAfterReconnect,
 			emissionsForTheResend: transcriptsIn(arrivalsOf(window).slice(beforeResend)).length,
+			firstEmissionForTheResend:
+				transcriptsIn(arrivalsOf(window).slice(beforeResend))[0]?.items.map((item) => item.id) ??
+				[],
 			afterResend: rendered(window),
 			phaseAfterResend: sessionOf(agent).phase,
 		} satisfies SecondRun;
@@ -355,11 +361,18 @@ describe("the claude-session row, driven through ports and booted back over its 
 		).not.toContain("a4");
 	});
 
-	it("answers one resend with exactly one new emission", () => {
+	// Two, not one: the operator's own turn is published when they send it and the reply when it
+	// arrives (#7978/#7979). A single emission would mean the window shows your message only once
+	// the agent has answered, which is the wait the founder reported.
+	it("answers one resend with two emissions, the operator's turn before the reply", () => {
 		expect(
 			outcome.second.emissionsForTheResend,
-			"one deliberate resend did not produce exactly one transcript emission",
-		).toBe(1);
+			"one deliberate resend did not produce the send's emission and the reply's",
+		).toBe(2);
+		expect(
+			outcome.second.firstEmissionForTheResend,
+			"the send's own emission did not already carry the operator's turn",
+		).toEqual(outcome.second.afterResend.slice(0, -1));
 		expect(outcome.second.afterResend).toEqual(afterTheResend);
 		expect(outcome.second.phaseAfterResend).toBe("ready");
 	});

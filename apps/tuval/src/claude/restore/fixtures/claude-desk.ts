@@ -10,9 +10,13 @@
  *
  * The script is Claude-shaped traffic rather than the generic one: a tool call that runs and then
  * settles, a permission card the operator answers, the four modes the row advertises, a turn the
- * restart cuts, and a resumed start.
+ * restart cuts, and a resumed start. No turn and no history row carries the operator's own text,
+ * for `../../proof/script.ts`'s reason: the Claude CLI never echoes a submitted prompt back, and a
+ * resume replays no user frame either, so the operator's half comes from the core's `prompt` cell
+ * under `promptItemId(key)` (#7978/#7979).
  */
 
+import {promptItemId} from "../../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../../ai-agent/events.ts";
 import type {
 	ItemId,
@@ -47,13 +51,6 @@ export const OFFERED: ReadonlyArray<Mode> = CLAUDE_MODES.map((mode) => Mode.make
 
 const id = (value: string): ItemId => value as ItemId;
 const at = (offset: number): number => 1_760_000_000_000 + offset;
-
-const user = (value: string, text: string, offset: number): TranscriptItem => ({
-	kind: "user",
-	id: id(value),
-	timestamp: at(offset),
-	text,
-});
 
 const assistant = (value: string, text: string, offset: number): TranscriptItem => ({
 	kind: "assistant",
@@ -91,7 +88,6 @@ export const card: PermissionRequest = {
 /** Turn one: a tool call that runs then settles, and the card the operator is asked to answer. */
 export const firstTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
-	{kind: "item", item: user("u1", "read the readme", 1)},
 	{kind: "item", item: runningRead},
 	{kind: "item", item: settledRead},
 	{kind: "permission", request: CARD, detail: card},
@@ -101,7 +97,6 @@ export const firstTurn: ReadonlyArray<AgentEvent> = [
 
 export const secondTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
-	{kind: "item", item: user("u2", "now the tests", 4)},
 	{kind: "item", item: assistant("a2", "all green", 5)},
 	{kind: "phase", phase: "ready"},
 ];
@@ -113,32 +108,36 @@ export const secondTurn: ReadonlyArray<AgentEvent> = [
  */
 export const cutTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
-	{kind: "item", item: user("u3", "delete the build dir", 6)},
 	{kind: "item", item: assistant("a3", "I was in the middle of", 7)},
 ];
 
-/** The resend, one item long, so one deliberate send is one new emission on `transcript`. */
+/** The resend, one item long: the layer reports the reply, and the core reported the send. */
 export const resendTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
 	{kind: "item", item: assistant("a4", "done, the dir is gone", 8)},
 	{kind: "phase", phase: "ready"},
 ];
 
+/** The idempotency keys the proof sends its four prompts under. */
+export const KEYS = {first: "k1", second: "k2", cut: "k3", resend: "k4"} as const;
+
 /** The item ids the tail holds after the cut, and after the resend that follows the restore. */
-export const afterTheCut = ["u1", "t1", "a1", "u2", "a2", "u3", "a3"];
-export const afterTheResend = [...afterTheCut, "a4"];
+export const afterTheCut = [
+	promptItemId(KEYS.first),
+	"t1",
+	"a1",
+	promptItemId(KEYS.second),
+	"a2",
+	promptItemId(KEYS.cut),
+	"a3",
+];
+export const afterTheResend = [...afterTheCut, promptItemId(KEYS.resend), "a4"];
 
 const script: AgentScript = {
 	sessionId: SESSION,
 	// The backend's own store: the turns that completed. The cut turn is not in it, because it
 	// never did — so replaying history on resume reconciles the tail without touching the cut.
-	history: [
-		user("u1", "read the readme", 1),
-		settledRead,
-		assistant("a1", "here it is", 3),
-		user("u2", "now the tests", 4),
-		assistant("a2", "all green", 5),
-	],
+	history: [settledRead, assistant("a1", "here it is", 3), assistant("a2", "all green", 5)],
 	modes: {current: null, available: OFFERED},
 	interrupt: [],
 	turns: [{events: firstTurn}, {events: secondTurn}, {events: cutTurn}, {events: resendTurn}],
