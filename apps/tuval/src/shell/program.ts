@@ -110,7 +110,7 @@ export interface ShellProgramOptions<E = never, R = never> {
  * `[shellId, ...path]` and reachable through the one registry — the palette, `help`, and an agent's
  * bridge all read the shell's commands there rather than from a second catalogue. Running one needs
  * `ShellDispatch`, which `AnySpell` erases; `src/boot.ts` owes it and pays it with
- * `ShellDispatch.kernel(shellId)`, which finds this row's live process and dispatches into it.
+ * `shellDispatchKernel(shellId)`, which finds this row's live process and dispatches into it.
  */
 export const shellProgram = <E = never, R = never>({
 	table = defaultPrefixTable,
