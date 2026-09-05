@@ -6,9 +6,9 @@
  * the socket itself is proven end to end in `../shell/proof/`.
  */
 
+import {assert, describe, it} from "@effect/vitest";
 import {act, render, screen} from "@testing-library/react";
-import {Effect, Option, Stream, SubscriptionRef} from "effect";
-import {describe, expect, it} from "vitest";
+import {Effect, Option, Schema, Stream, SubscriptionRef} from "effect";
 import {counterId} from "../demo/counter.ts";
 import {ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
@@ -153,203 +153,260 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	return {page, shell, attaches, sent} satisfies Scripted;
 });
 
-/** Let the forked stream fibers deliver before asserting; each is one microtask hop, not a clock. */
-const settle = async (): Promise<void> => {
-	for (let hop = 0; hop < 8; hop++) await act(async () => await Promise.resolve());
-};
+class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
+
+/**
+ * Let the forked stream fibers deliver before asserting; each is one microtask hop, not a clock.
+ * `act` answers a `Promise`, so the lift is object-notation `tryPromise` + `orDie` — the sanctioned
+ * stand-in for the banned `Effect.promise` (#2736).
+ */
+const settle = Effect.gen(function* () {
+	for (let hop = 0; hop < 8; hop++) {
+		yield* Effect.tryPromise({
+			try: () => act(async () => await Promise.resolve()),
+			catch: (cause) => new TestIo({cause}),
+		}).pipe(Effect.orDie);
+	}
+});
 
 describe("the attached desk", () => {
-	it("opens one subscription for a process shown in two windows, and mounts its renderer in both", async () => {
-		const app = await Effect.runPromise(scripted());
-		render(
-			<AttachedDesk
-				page={app.page}
-				shell={app.shell}
-				renderers={demoRenderers}
-				reducedMotion={true}
-			/>,
-		);
-		await settle();
+	it.effect(
+		"opens one subscription for a process shown in two windows, and mounts its renderer in both",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted();
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={demoRenderers}
+						reducedMotion={true}
+					/>,
+				);
+				yield* settle;
 
-		expect(app.attaches).toEqual([counterProcess]);
-		const windows = screen.getAllByRole("region", {name: /^Window /});
-		expect(windows.map((node) => node.getAttribute("data-window-id"))).toEqual([
-			"window-1",
-			"window-2",
-		]);
-		// One process, one state, two windows showing it.
-		expect(screen.getAllByLabelText("Counter value").map((node) => node.textContent)).toEqual([
-			"7",
-			"7",
-		]);
-	});
-
-	it("offers every program the kernel sent, by id and label, instead of the empty-section message", async () => {
-		const app = await Effect.runPromise(scripted({state: emptyDesk(), rows: []}));
-		render(
-			<AttachedDesk
-				page={app.page}
-				shell={app.shell}
-				renderers={demoRenderers}
-				reducedMotion={true}
-			/>,
-		);
-		await settle();
-
-		const programs = screen.getByRole("group", {name: "Programs"});
-		expect(
-			[...programs.querySelectorAll('[role="option"]')].map((node) =>
-				node.getAttribute("aria-label"),
-			),
-		).toEqual([
-			`Counter — program ${counterId}`,
-			"Log — program tuval/log",
-			"Scratch — program tuval/scratch",
-		]);
-		expect(screen.queryByText("No registered program can fill a window.")).toBeNull();
-	});
-
-	it("resolves a window's renderer by the reference its program names, never by the program id", async () => {
-		// `tuval/scratch` is a program this page has no entry for; its row names the counter demo's
-		// renderer, and that reference is the whole of what the page resolves against.
-		const scratchRow: TableRow = {...counterRow, programId: ProgramId.make("tuval/scratch")};
-		const app = await Effect.runPromise(scripted({rows: [scratchRow]}));
-		render(
-			<AttachedDesk
-				page={app.page}
-				shell={app.shell}
-				renderers={demoRenderers}
-				reducedMotion={true}
-			/>,
-		);
-		await settle();
-
-		expect(screen.getAllByLabelText("Counter value").map((node) => node.textContent)).toEqual([
-			"7",
-			"7",
-		]);
-	});
-
-	it("holds the window with a placeholder when the process's program is not in the catalog", async () => {
-		// The empty catalog is also the transient: `programs` replays its initial value, so a table row
-		// can reach the page a frame before the registry frame does.
-		const app = await Effect.runPromise(scripted({programs: []}));
-		render(
-			<AttachedDesk
-				page={app.page}
-				shell={app.shell}
-				renderers={demoRenderers}
-				reducedMotion={true}
-			/>,
-		);
-		await settle();
-
-		expect(
-			screen.getAllByText(
-				`Process ${counterProcess} is running, but no catalog entry on this page for program ${counterId}.`,
-			),
-		).toHaveLength(2);
-		expect(screen.queryByLabelText("Counter value")).toBeNull();
-	});
-
-	it("holds the window with a placeholder when the page answers to no renderer of that name", async () => {
-		const app = await Effect.runPromise(
-			scripted({
-				programs: [
-					{
-						programId: counterId,
-						label: "Counter",
-						renderer: {kind: "host-native", ref: "tuval/demo/absent"},
-					},
-				],
+				assert.deepStrictEqual(app.attaches, [counterProcess]);
+				const windows = screen.getAllByRole("region", {name: /^Window /});
+				assert.deepStrictEqual(
+					windows.map((node) => node.getAttribute("data-window-id")),
+					["window-1", "window-2"],
+				);
+				// One process, one state, two windows showing it.
+				assert.deepStrictEqual(
+					screen.getAllByLabelText("Counter value").map((node) => node.textContent),
+					["7", "7"],
+				);
 			}),
-		);
-		render(
-			<AttachedDesk
-				page={app.page}
-				shell={app.shell}
-				renderers={demoRenderers}
-				reducedMotion={true}
-			/>,
-		);
-		await settle();
+	);
 
-		expect(
-			screen.getAllByText(
-				`Process ${counterProcess} is running, but this page answers to no renderer named tuval/demo/absent.`,
-			),
-		).toHaveLength(2);
-		expect(screen.queryByLabelText("Counter value")).toBeNull();
-	});
+	it.effect(
+		"offers every program the kernel sent, by id and label, instead of the empty-section message",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted({state: emptyDesk(), rows: []});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={demoRenderers}
+						reducedMotion={true}
+					/>,
+				);
+				yield* settle;
 
-	it("choosing a program from the picker asks for the same open the command line asks for", async () => {
-		const app = await Effect.runPromise(scripted({state: emptyDesk(), rows: []}));
-		render(
-			<AttachedDesk
-				page={app.page}
-				shell={app.shell}
-				renderers={demoRenderers}
-				reducedMotion={true}
-			/>,
-		);
-		await settle();
+				const programs = screen.getByRole("group", {name: "Programs"});
+				assert.deepStrictEqual(
+					[...programs.querySelectorAll('[role="option"]')].map((node) =>
+						node.getAttribute("aria-label"),
+					),
+					[
+						`Counter — program ${counterId}`,
+						"Log — program tuval/log",
+						"Scratch — program tuval/scratch",
+					],
+				);
+				assert.isNull(screen.queryByText("No registered program can fill a window."));
+			}),
+	);
 
-		act(() => {
-			document.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
-		});
-		const chosen = app.sent.find((msg) => msg.type === "window.open");
-		expect(chosen).toEqual({type: "window.open", windowId: "window-1", programId: counterId});
+	it.effect(
+		"resolves a window's renderer by the reference its program names, never by the program id",
+		() =>
+			Effect.gen(function* () {
+				// `tuval/scratch` is a program this page has no entry for; its row names the counter
+				// demo's renderer, and that reference is the whole of what the page resolves against.
+				const scratchRow: TableRow = {...counterRow, programId: ProgramId.make("tuval/scratch")};
+				const app = yield* scripted({rows: [scratchRow]});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={demoRenderers}
+						reducedMotion={true}
+					/>,
+				);
+				yield* settle;
 
-		// The typed line reaches the same Msg, and the core turns both into one `openProgram` Cmd —
-		// the kernel handler that spawns and binds (`../shell/host/effects.ts`).
-		const typed = readCommandLine(`window:open ${counterId}`);
-		expect(typed._tag).toBe("Msg");
-		const cmds = (msg: ShellMsg): readonly ShellCmd[] =>
-			applyMsg(defaultPrefixTable, emptyDesk(), msg)[1];
-		expect(cmds(chosen as ShellMsg)).toEqual([
-			{type: "openProgram", windowId: "window-1", programId: counterId},
-		]);
-		expect(typed._tag === "Msg" ? cmds(typed.msg) : []).toEqual(cmds(chosen as ShellMsg));
-	});
+				assert.deepStrictEqual(
+					screen.getAllByLabelText("Counter value").map((node) => node.textContent),
+					["7", "7"],
+				);
+			}),
+	);
 
-	it("sends a window's own view write back as a Msg, so the two windows' slots stay the kernel's", async () => {
-		const app = await Effect.runPromise(scripted());
-		render(
-			<AttachedDesk
-				page={app.page}
-				shell={app.shell}
-				renderers={demoRenderers}
-				reducedMotion={true}
-			/>,
-		);
-		await settle();
+	it.effect(
+		"holds the window with a placeholder when the process's program is not in the catalog",
+		() =>
+			Effect.gen(function* () {
+				// The empty catalog is also the transient: `programs` replays its initial value, so a table
+				// row can reach the page a frame before the registry frame does.
+				const app = yield* scripted({programs: []});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={demoRenderers}
+						reducedMotion={true}
+					/>,
+				);
+				yield* settle;
 
-		expect(app.sent).toEqual([]);
-		// The desk's own listener is the page's only input path, and it goes to the kernel.
-		act(() => {
-			document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
-		});
-		expect(app.sent).toEqual([{type: "keys.press", key: expect.objectContaining({key: "j"})}]);
-	});
+				assert.lengthOf(
+					screen.getAllByText(
+						`Process ${counterProcess} is running, but no catalog entry on this page for program ${counterId}.`,
+					),
+					2,
+				);
+				assert.isNull(screen.queryByLabelText("Counter value"));
+			}),
+	);
 
-	it("shows no desk until the kernel has sent its key grammar, and no key reaches the kernel", async () => {
-		const app = await Effect.runPromise(scripted({keys: null}));
-		render(
-			<AttachedDesk
-				page={app.page}
-				shell={app.shell}
-				renderers={demoRenderers}
-				reducedMotion={true}
-			/>,
-		);
-		await settle();
+	it.effect(
+		"holds the window with a placeholder when the page answers to no renderer of that name",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted({
+					programs: [
+						{
+							programId: counterId,
+							label: "Counter",
+							renderer: {kind: "host-native", ref: "tuval/demo/absent"},
+						},
+					],
+				});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={demoRenderers}
+						reducedMotion={true}
+					/>,
+				);
+				yield* settle;
 
-		// The snapshot arrived; only the grammar did not, and that alone holds the desk back.
-		expect(screen.queryAllByRole("region", {name: /^Window /})).toEqual([]);
-		expect(screen.getByRole("status").textContent).toBe("Attaching to the Tuval kernel…");
-		act(() => {
-			document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
-		});
-		expect(app.sent).toEqual([]);
-	});
+				assert.lengthOf(
+					screen.getAllByText(
+						`Process ${counterProcess} is running, but this page answers to no renderer named tuval/demo/absent.`,
+					),
+					2,
+				);
+				assert.isNull(screen.queryByLabelText("Counter value"));
+			}),
+	);
+
+	it.effect(
+		"choosing a program from the picker asks for the same open the command line asks for",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted({state: emptyDesk(), rows: []});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={demoRenderers}
+						reducedMotion={true}
+					/>,
+				);
+				yield* settle;
+
+				act(() => {
+					document.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
+				});
+				const chosen = app.sent.find((msg) => msg.type === "window.open");
+				assert.deepStrictEqual(chosen, {
+					type: "window.open",
+					windowId: "window-1",
+					programId: counterId,
+				});
+
+				// The typed line reaches the same Msg, and the core turns both into one `openProgram` Cmd —
+				// the kernel handler that spawns and binds (`../shell/host/effects.ts`).
+				const typed = readCommandLine(`window:open ${counterId}`);
+				assert.strictEqual(typed._tag, "Msg");
+				const cmds = (msg: ShellMsg): readonly ShellCmd[] =>
+					applyMsg(defaultPrefixTable, emptyDesk(), msg)[1];
+				assert.deepStrictEqual(cmds(chosen as ShellMsg), [
+					{type: "openProgram", windowId: "window-1", programId: counterId},
+				]);
+				assert.deepStrictEqual(
+					typed._tag === "Msg" ? cmds(typed.msg) : [],
+					cmds(chosen as ShellMsg),
+				);
+			}),
+	);
+
+	it.effect(
+		"sends a window's own view write back as a Msg, so the two windows' slots stay the kernel's",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted();
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={demoRenderers}
+						reducedMotion={true}
+					/>,
+				);
+				yield* settle;
+
+				assert.deepStrictEqual(app.sent, []);
+				// The desk's own listener is the page's only input path, and it goes to the kernel.
+				act(() => {
+					document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
+				});
+				assert.lengthOf(app.sent, 1);
+				const press = app.sent.at(0);
+				assert.strictEqual(press?.type, "keys.press");
+				assert.include(press?.type === "keys.press" ? press.key : {}, {key: "j"});
+			}),
+	);
+
+	it.effect(
+		"shows no desk until the kernel has sent its key grammar, and no key reaches the kernel",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* scripted({keys: null});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={demoRenderers}
+						reducedMotion={true}
+					/>,
+				);
+				yield* settle;
+
+				// The snapshot arrived; only the grammar did not, and that alone holds the desk back.
+				assert.deepStrictEqual(screen.queryAllByRole("region", {name: /^Window /}), []);
+				assert.strictEqual(
+					screen.getByRole("status").textContent,
+					"Attaching to the Tuval kernel…",
+				);
+				act(() => {
+					document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
+				});
+				assert.deepStrictEqual(app.sent, []);
+			}),
+	);
 });

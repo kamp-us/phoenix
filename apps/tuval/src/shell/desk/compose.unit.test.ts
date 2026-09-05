@@ -4,8 +4,8 @@
  * the bar's left and right the shell's (#7500 rulings 4 and 5).
  */
 
+import {assert, describe, expect, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {describe, expect, it} from "vitest";
 import {ProcessId} from "../../process/process.ts";
 import type {AnyWindowHost} from "../window/host.ts";
 import {WindowId} from "../window/host.ts";
@@ -43,109 +43,127 @@ const declaredDesk = (host: AnyWindowHost, overrides: Partial<DeskSnapshot> = {}
 	});
 
 describe("inspectorFor", () => {
-	it("resolves the focused window's program renderer and the host it mounts into", async () => {
-		const host = await Effect.runPromise(testHost());
-		const region = inspectorFor(declaredDesk(host));
-		expect(region._tag).toBe("Inspector");
-		const rendered =
-			region._tag === "Inspector" ? region.renderer.render(region.host) : {panel: "unreached"};
-		expect(rendered).toEqual({panel: "inspecting window-1"});
-	});
+	it.effect("resolves the focused window's program renderer and the host it mounts into", () =>
+		Effect.gen(function* () {
+			const host = yield* testHost();
+			const region = inspectorFor(declaredDesk(host));
+			assert.strictEqual(region._tag, "Inspector");
+			const rendered =
+				region._tag === "Inspector" ? region.renderer.render(region.host) : {panel: "unreached"};
+			assert.deepStrictEqual(rendered, {panel: "inspecting window-1"});
+		}),
+	);
 
-	it("answers the typed empty case at every step of the walk that does not resolve", async () => {
-		const host = await Effect.runPromise(testHost());
-		const reasonOf = (snapshot: DeskSnapshot): string => {
-			const region = inspectorFor(snapshot);
-			return region._tag === "NoInspector" ? region.reason : "resolved";
-		};
+	it.effect("answers the typed empty case at every step of the walk that does not resolve", () =>
+		Effect.gen(function* () {
+			const host = yield* testHost();
+			const reasonOf = (snapshot: DeskSnapshot): string => {
+				const region = inspectorFor(snapshot);
+				return region._tag === "NoInspector" ? region.reason : "resolved";
+			};
 
-		expect([
-			reasonOf(deskSnapshot({focused: null})),
-			reasonOf(
-				deskSnapshot({
-					focused: {windowId: WindowId.make("window-1"), processId: null, host: null},
-				}),
-			),
-			reasonOf(deskSnapshot({focused: focusedOn(host), processes: {}})),
-			reasonOf(deskSnapshot({focused: focusedOn(host), programs: {}})),
-			reasonOf(deskSnapshot({focused: focusedOn(host)})),
-			reasonOf(declaredDesk(host, {inspectors: {}})),
-			reasonOf(
-				declaredDesk(host, {
-					inspectors: {"counter/inspector": {...inspector, kind: "isolated-frame"}},
-				}),
-			),
-		]).toEqual([
-			"no-focused-window",
-			"window-unbound",
-			"process-unknown",
-			"program-unknown",
-			"not-declared",
-			"unknown-ref",
-			"kind-mismatch",
-		]);
-	});
+			assert.deepStrictEqual(
+				[
+					reasonOf(deskSnapshot({focused: null})),
+					reasonOf(
+						deskSnapshot({
+							focused: {windowId: WindowId.make("window-1"), processId: null, host: null},
+						}),
+					),
+					reasonOf(deskSnapshot({focused: focusedOn(host), processes: {}})),
+					reasonOf(deskSnapshot({focused: focusedOn(host), programs: {}})),
+					reasonOf(deskSnapshot({focused: focusedOn(host)})),
+					reasonOf(declaredDesk(host, {inspectors: {}})),
+					reasonOf(
+						declaredDesk(host, {
+							inspectors: {"counter/inspector": {...inspector, kind: "isolated-frame"}},
+						}),
+					),
+				],
+				[
+					"no-focused-window",
+					"window-unbound",
+					"process-unknown",
+					"program-unknown",
+					"not-declared",
+					"unknown-ref",
+					"kind-mismatch",
+				],
+			);
+		}),
+	);
 
-	it("does not throw on a program that declares no inspector", async () => {
-		const host = await Effect.runPromise(testHost());
-		const region = inspectorFor(deskSnapshot({focused: focusedOn(host)}));
-		expect(region).toEqual({_tag: "NoInspector", reason: "not-declared"});
-	});
+	it.effect("does not throw on a program that declares no inspector", () =>
+		Effect.gen(function* () {
+			const host = yield* testHost();
+			const region = inspectorFor(deskSnapshot({focused: focusedOn(host)}));
+			assert.deepStrictEqual(region, {_tag: "NoInspector", reason: "not-declared"});
+		}),
+	);
 });
 
 describe("statusFor", () => {
-	it("puts the program's segments in the middle and composes the shell's own two sides", async () => {
-		const host = await Effect.runPromise(testHost());
-		const bar = statusFor(declaredDesk(host));
-		expect(bar.left).toEqual([{id: "workspace", text: "workspace-0"}]);
-		expect(bar.middle).toEqual([
-			{id: "mode", text: "normal"},
-			{id: "window", text: "window-1"},
-		]);
-		expect(bar.right).toEqual([
-			{id: "processes", text: "1 process"},
-			{id: "revision", text: "rev 7"},
-		]);
-		expect(bar.middleEmpty).toBeNull();
-	});
+	it.effect(
+		"puts the program's segments in the middle and composes the shell's own two sides",
+		() =>
+			Effect.gen(function* () {
+				const host = yield* testHost();
+				const bar = statusFor(declaredDesk(host));
+				assert.deepStrictEqual(bar.left, [{id: "workspace", text: "workspace-0"}]);
+				assert.deepStrictEqual(bar.middle, [
+					{id: "mode", text: "normal"},
+					{id: "window", text: "window-1"},
+				]);
+				assert.deepStrictEqual(bar.right, [
+					{id: "processes", text: "1 process"},
+					{id: "revision", text: "rev 7"},
+				]);
+				assert.strictEqual(bar.middleEmpty, null);
+			}),
+	);
 
-	it("a program cannot write the left or the right, whatever segments it returns", async () => {
-		const host = await Effect.runPromise(testHost());
-		const greedy = statusRenderer("host-native", () => [
-			{id: "workspace", text: "hijacked"},
-			{id: "processes", text: "hijacked"},
-			{id: "revision", text: "hijacked"},
-		]);
-		const shellOnly = statusFor(deskSnapshot({focused: focusedOn(host)}));
-		const withProgram = statusFor(declaredDesk(host, {statuses: {"counter/status": greedy}}));
+	it.effect("a program cannot write the left or the right, whatever segments it returns", () =>
+		Effect.gen(function* () {
+			const host = yield* testHost();
+			const greedy = statusRenderer("host-native", () => [
+				{id: "workspace", text: "hijacked"},
+				{id: "processes", text: "hijacked"},
+				{id: "revision", text: "hijacked"},
+			]);
+			const shellOnly = statusFor(deskSnapshot({focused: focusedOn(host)}));
+			const withProgram = statusFor(declaredDesk(host, {statuses: {"counter/status": greedy}}));
 
-		expect(withProgram.left).toEqual(shellOnly.left);
-		expect(withProgram.right).toEqual(shellOnly.right);
-		expect(withProgram.middle.map((segment) => segment.text)).toEqual([
-			"hijacked",
-			"hijacked",
-			"hijacked",
-		]);
-	});
+			assert.deepStrictEqual(withProgram.left, shellOnly.left);
+			assert.deepStrictEqual(withProgram.right, shellOnly.right);
+			assert.deepStrictEqual(
+				withProgram.middle.map((segment) => segment.text),
+				["hijacked", "hijacked", "hijacked"],
+			);
+		}),
+	);
 
-	it("leaves the middle empty and says why when no program fills it", async () => {
-		const host = await Effect.runPromise(testHost());
-		const bar = statusFor(deskSnapshot({focused: focusedOn(host)}));
-		expect(bar.middle).toEqual([]);
-		expect(bar.middleEmpty).toBe("not-declared");
-		expect(bar.left).toEqual([{id: "workspace", text: "workspace-0"}]);
-		expect(statusFor(deskSnapshot({focused: null})).middleEmpty).toBe("no-focused-window");
-	});
+	it.effect("leaves the middle empty and says why when no program fills it", () =>
+		Effect.gen(function* () {
+			const host = yield* testHost();
+			const bar = statusFor(deskSnapshot({focused: focusedOn(host)}));
+			assert.deepStrictEqual(bar.middle, []);
+			assert.strictEqual(bar.middleEmpty, "not-declared");
+			assert.deepStrictEqual(bar.left, [{id: "workspace", text: "workspace-0"}]);
+			assert.strictEqual(statusFor(deskSnapshot({focused: null})).middleEmpty, "no-focused-window");
+		}),
+	);
 
-	it("reads the program's own selection state out of the host's view slot", async () => {
-		const host = await Effect.runPromise(testHost());
-		await Effect.runPromise(host.setView({selected: "node-4"}));
-		const selecting = statusRenderer("host-native", (mounted: AnyWindowHost) => [
-			{id: "selected", text: String((mounted.view() as Selection).selected)},
-		]);
-		const bar = statusFor(declaredDesk(host, {statuses: {"counter/status": selecting}}));
-		expect(bar.middle).toEqual([{id: "selected", text: "node-4"}]);
-	});
+	it.effect("reads the program's own selection state out of the host's view slot", () =>
+		Effect.gen(function* () {
+			const host = yield* testHost();
+			yield* host.setView({selected: "node-4"});
+			const selecting = statusRenderer("host-native", (mounted: AnyWindowHost) => [
+				{id: "selected", text: String((mounted.view() as Selection).selected)},
+			]);
+			const bar = statusFor(declaredDesk(host, {statuses: {"counter/status": selecting}}));
+			assert.deepStrictEqual(bar.middle, [{id: "selected", text: "node-4"}]);
+		}),
+	);
 
 	it("counts a desk with no process as unbound rather than resolving a stale program", () => {
 		const bar = statusFor(

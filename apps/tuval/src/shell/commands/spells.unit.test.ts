@@ -4,8 +4,8 @@
  * by dispatching exactly the Msg the row would have produced on its own.
  */
 
+import {assert, describe, expect, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
-import {describe, expect, it} from "vitest";
 import {SpellExecutor} from "../../commands/executor.ts";
 import {buildRegistry, SpellRegistry} from "../../commands/registry.ts";
 import {type Client, WindowIndex} from "../../commands/scope.ts";
@@ -38,18 +38,16 @@ const layerFor = (dispatched: Array<ShellMsg>) =>
 	Layer.mergeAll(executorLayer, ShellDispatch.scripted(dispatched));
 
 /** Run one call against the shell's spells alone, collecting whatever it dispatched. */
-const run = async (
-	path: SpellPath,
-	args: unknown,
-): Promise<{readonly reply: SpellReply; readonly dispatched: ReadonlyArray<ShellMsg>}> => {
-	const dispatched: Array<ShellMsg> = [];
-	const reply = await Effect.runPromise(
-		Effect.flatMap(SpellExecutor, (executor) => executor.execute(call(path, args), client)).pipe(
+const run = (path: SpellPath, args: unknown) =>
+	Effect.suspend(() => {
+		const dispatched: Array<ShellMsg> = [];
+		return Effect.flatMap(SpellExecutor, (executor) =>
+			executor.execute(call(path, args), client),
+		).pipe(
 			Effect.provide(layerFor(dispatched)),
-		),
-	);
-	return {reply, dispatched};
-};
+			Effect.map((reply) => ({reply, dispatched: dispatched as ReadonlyArray<ShellMsg>})),
+		);
+	});
 
 const failure = (reply: SpellReply) => {
 	if (reply.ok) throw new Error(`expected a refusal, got ${JSON.stringify(reply)}`);
@@ -66,35 +64,47 @@ describe("the shell's rows as spells", () => {
 		);
 	});
 
-	it("registers, and every one describes without throwing", async () => {
-		const table = await Effect.runPromise(buildRegistry({core: shellSpells, programs: []}));
-		expect(table.rows.map((row) => row.path.join(":"))).toEqual(
-			shellCommands.map((command) => String(commandName(command.path))),
-		);
-		for (const row of table.rows) {
-			expect(`${row.path.join(":")}: ${typeof row.paramsDocument}`).toBe(
-				`${row.path.join(":")}: object`,
+	it.effect("registers, and every one describes without throwing", () =>
+		Effect.gen(function* () {
+			const table = yield* buildRegistry({core: shellSpells, programs: []});
+			assert.deepStrictEqual(
+				table.rows.map((row) => row.path.join(":")),
+				shellCommands.map((command) => String(commandName(command.path))),
 			);
-		}
-	});
+			for (const row of table.rows) {
+				assert.strictEqual(
+					`${row.path.join(":")}: ${typeof row.paramsDocument}`,
+					`${row.path.join(":")}: object`,
+				);
+			}
+		}),
+	);
 });
 
 describe("running a row's spell", () => {
-	it("dispatches exactly the Msg the row builds, and answers with its type", async () => {
-		const {reply, dispatched} = await run(["workspace", "activate"], {workspace: "ws-2"});
-		expect(dispatched).toEqual([{type: "workspace.activate", workspaceId: "ws-2"}]);
-		expect(reply.ok ? reply.result : failure(reply)).toEqual({msg: "workspace.activate"});
-	});
+	it.effect("dispatches exactly the Msg the row builds, and answers with its type", () =>
+		Effect.gen(function* () {
+			const {reply, dispatched} = yield* run(["workspace", "activate"], {workspace: "ws-2"});
+			assert.deepStrictEqual(dispatched, [{type: "workspace.activate", workspaceId: "ws-2"}]);
+			assert.deepStrictEqual(reply.ok ? reply.result : failure(reply), {
+				msg: "workspace.activate",
+			});
+		}),
+	);
 
-	it("refuses arguments the row's own schema refuses, without dispatching", async () => {
-		const {reply, dispatched} = await run(["workspace", "activate"], {workspace: ""});
-		expect(dispatched).toEqual([]);
-		expect(failure(reply).tag).toBe("tuval/commands/BadArgs");
-	});
+	it.effect("refuses arguments the row's own schema refuses, without dispatching", () =>
+		Effect.gen(function* () {
+			const {reply, dispatched} = yield* run(["workspace", "activate"], {workspace: ""});
+			assert.deepStrictEqual(dispatched, []);
+			assert.strictEqual(failure(reply).tag, "tuval/commands/BadArgs");
+		}),
+	);
 
-	it("refuses a path no row carries", async () => {
-		const {reply, dispatched} = await run(["window", "quit"], {});
-		expect(dispatched).toEqual([]);
-		expect(failure(reply).tag).toBe("tuval/commands/UnknownSpell");
-	});
+	it.effect("refuses a path no row carries", () =>
+		Effect.gen(function* () {
+			const {reply, dispatched} = yield* run(["window", "quit"], {});
+			assert.deepStrictEqual(dispatched, []);
+			assert.strictEqual(failure(reply).tag, "tuval/commands/UnknownSpell");
+		}),
+	);
 });
