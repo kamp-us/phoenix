@@ -9,6 +9,7 @@
  * share: what carries across is the checkpoint on disk, which is the thing under test.
  */
 
+import {promptItemId} from "../../core/index.ts";
 import type {AgentEvent} from "../../events.ts";
 import type {ItemId, PermissionRequest, TranscriptItem} from "../../ports/index.ts";
 import {aiAgentProgram} from "../../program.ts";
@@ -81,7 +82,9 @@ export const resendTurn: ReadonlyArray<AgentEvent> = [
 
 /** The item ids the tail holds after the cut, and after the resend that follows the restore. */
 export const afterTheCut = ["u1", "a1", "u2", "a2", "u3", "a3"];
-export const afterTheResend = [...afterTheCut, "a4"];
+// The resend's own row is the core's, keyed on the send (#7978): this script's layer echoes the
+// three earlier turns and has no echo for this one, so it is the only turn named by its key here.
+export const afterTheResend = [...afterTheCut, promptItemId("k4"), "a4"];
 
 const script: AgentScript = {
 	sessionId: SESSION,

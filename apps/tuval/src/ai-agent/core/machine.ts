@@ -18,24 +18,17 @@ import {
 	modeUnsupported,
 	noSessionToResume,
 	promptRefused,
-	START_ERROR,
 	startRefused,
 	unknownRequest,
 } from "./failures.ts";
-import {foldEvent, foldItem, promptItem, type WindowLimits} from "./fold.ts";
+import {foldEvent, foldItem, phaseAfterFailure, promptItem, type WindowLimits} from "./fold.ts";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
 	type AiAgentSessionSub,
 	eventsSub,
 } from "./messages.ts";
-import {
-	type AgentFailure,
-	type AiAgentSessionState,
-	initialState,
-	lastAssistantId,
-	restore,
-} from "./state.ts";
+import {type AiAgentSessionState, initialState, lastAssistantId, restore} from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
 	/** The working directory a fresh session starts in. */
@@ -61,29 +54,6 @@ const busy = (state: AiAgentSessionState): boolean =>
 /** An open is already in flight, so a second one would build a second transport. */
 const opening = (state: AiAgentSessionState): boolean =>
 	state.phase === "starting" || state.phase === "reconnecting";
-
-/** The backend does not hold the session this resume named. */
-const sessionGone = (failure: AgentFailure): boolean =>
-	failure.tag === START_ERROR && failure.reason === "session-not-found";
-
-/**
- * Where a failure leaves a session: back where it was before the act that failed.
- *
- * A resume is the exception, because there is nowhere before it to go back to. A refused resume
- * ends the session at `gone` — the id the checkpoint carried names nothing the backend still
- * holds, and the one thing that must never happen is a fresh session opening quietly in its place
- * (#7514). Any other reconnect failure is a transport that can be tried again, so it lands on
- * `idle` rather than staying at `reconnecting`, which the reconnect guard itself would refuse.
- */
-const phaseAfterFailure = (
-	state: AiAgentSessionState,
-	failure: AgentFailure,
-): AiAgentSessionState["phase"] => {
-	if (state.phase === "reconnecting") return sessionGone(failure) ? "gone" : "idle";
-	if (state.phase === "starting") return "idle";
-	if (state.phase === "prompting") return "ready";
-	return state.phase;
-};
 
 export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSessionMachine => {
 	const limits: WindowLimits = {

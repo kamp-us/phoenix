@@ -10,7 +10,7 @@
  * plus the running total of what the bounds dropped.
  */
 
-import type {Phase} from "../events.ts";
+import type {AgentFailure, Phase} from "../events.ts";
 import type {
 	ItemId,
 	Mode,
@@ -47,17 +47,8 @@ export interface ModelState {
 	readonly available: ReadonlyArray<ModelRef>;
 }
 
-/**
- * The last thing that went wrong, as data. The layer's typed errors are classes; the core keeps
- * only the tag, the case and the detail, because the window renders by tag (ruling 3, #7570) and
- * a class instance is not something a checkpoint can carry.
- */
-export interface AgentFailure {
-	readonly tag: string;
-	/** The error's own `reason` case, or `null` for an error class that enumerates none. */
-	readonly reason: string | null;
-	readonly detail: string;
-}
+// A layer pushes one of these on the event stream too, so it is declared beside `Phase`.
+export type {AgentFailure} from "../events.ts";
 
 /** One page of older history exactly as the backend returned it. Replaced, never accumulated. */
 export interface HistoryPage {

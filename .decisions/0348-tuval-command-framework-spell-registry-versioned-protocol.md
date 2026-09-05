@@ -89,6 +89,29 @@ and migrating later, and a second 2026-09-03 ruling took it off this epic's tail
 own PR against main once three things are true, that #7556 and #7561 have closed and that the epic
 PR [#7687](https://github.com/kamp-us/phoenix/pull/7687) has merged.
 
+### The palette matching correction, 2026-09-05
+
+R1.5 and the correction above both read as one rule over both surfaces: exact prefix on the paths the
+system defines. Built that way, the palette narrowed only on the segment under the caret, so `zoom`
+answered "No spell matches what you have typed" while `window zoom` sat in the unfiltered list — a
+reader who remembers the verb and not the group could reach nothing
+([#8002](https://github.com/kamp-us/phoenix/issues/8002)).
+
+Put to the founder as one question — does the listbox loosen while Tab stays exact-prefix? — and
+ruled 2026-09-05, "yes to both"
+([the ruling comment](https://github.com/kamp-us/phoenix/issues/8002#issuecomment-5554612396)).
+
+**R1.5's exact-prefix rule is scoped to completion, not to finding.** `candidatesFor` — Tab, the `:`
+line — stays exactly as R1.5 says. The palette's listbox ranks in three tiers: exact prefix on the
+next segment first, then a substring of the rest of the path, then a substring of the spell's
+`describe` sentence. Accepting any of them types the whole remaining path, so the parser reads what
+the palette listed. The value half of R1.5 is untouched: a window id or a workspace name still ranks
+fuzzily on recency.
+
+The argument behind R1.5's rule 1 survives the scoping. "A system name is something to recall, not
+something to search" is about what a *completion* offers to type next, where a loose offer types a
+word the reader did not mean. A palette is the surface where recall has already failed.
+
 ### The tail review rulings, 2026-09-03
 
 The tail review of the epic PR ([#7687](https://github.com/kamp-us/phoenix/pull/7687)) found two

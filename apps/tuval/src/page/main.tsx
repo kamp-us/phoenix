@@ -29,6 +29,10 @@ import {pageRenderers} from "./renderers.tsx";
 import "@manti-ui/styles/index.css";
 import "@kampus/design/fonts.css";
 import "@kampus/design/tokens.css";
+// Tuval's own markup carries `kp-visually-hidden` too (`shell/chat/ToolRow.tsx`), so the page takes
+// the package's rule directly rather than inheriting it from whichever design component happens to
+// be in the bundle (#7984).
+import "@kampus/design/visually-hidden.css";
 import "../shell/ui/tokens.css";
 import "./page.css";
 

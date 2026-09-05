@@ -6,6 +6,13 @@
  * through `planTranscriptPage`, never accumulated here. Re-derived by hand from the frozen POC
  * `packages/tuval/src/backend/coding-agent-transcript.ts` on `epic/7140`, which planned the same
  * two bounds over Pi's own transcript type; this one is model-blind and refuses instead of throwing.
+ *
+ * The newest group in range is the one exception to both bounds: it is carried whole even when it
+ * alone exceeds them, the same clause `planTranscriptPage` carries. One agentic turn is one group,
+ * so a turn of forty tool calls crosses the item bound on its own — and an empty tail is not a
+ * refusal, so `foldItem` would commit it and the operator's live transcript would collapse to the
+ * paging control with the tail unreachable from state (#8031). Exceeding a bound by one turn is
+ * recoverable; losing the turn is not.
  */
 
 import type {TranscriptItem, TranscriptPayload, WindowOmission} from "../ports/index.ts";
@@ -101,7 +108,7 @@ export const planTranscriptWindow = (
 		const group = groups[index];
 		if (group === undefined) break;
 		const stop = stoppedBy(group, {items, bytes}, {items: itemLimit, bytes: byteLimit});
-		if (stop !== null) {
+		if (stop !== null && taken.length > 0) {
 			reason = stop;
 			break;
 		}

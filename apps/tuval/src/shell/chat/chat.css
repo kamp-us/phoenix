@@ -85,24 +85,6 @@
 	inline-size: 100%;
 }
 
-/*
- * `@kampus/design` components mark a screen-reader-only label with this class, but the rule that
- * hides it lives in apps/web's own `global.css` — app-owned by the #7561 extraction, and Tuval is
- * not that app. Without it every hidden label paints: a real browser load showed "Add an image" and
- * the file input's own chrome sitting in the composer. Same clip-rect declaration as the web app's.
- */
-.tuval-chat .kp-visually-hidden {
-	position: absolute;
-	inline-size: 1px;
-	block-size: 1px;
-	margin: -1px;
-	padding: 0;
-	border: 0;
-	overflow: hidden;
-	clip-path: inset(50%);
-	white-space: nowrap;
-}
-
 /* Manti's field root is inline-sized by the consuming app's own reset; the composer fills its box. */
 .tuval-chat [data-scope="field"][data-part="root"] {
 	inline-size: 100%;
