@@ -35,15 +35,23 @@ directional only, not a measurement of the corpus.
 
 ## Status
 
-Verdict: **revise before import.** The five blockers and their evidence are in
-[`ISSUE_DRAFT.md`](warp-skill-doctor-import-poc/ISSUE_DRAFT.md), filed as the
-tracking issue
-[#8035](https://github.com/kamp-us/phoenix/issues/8035) (`status:needs-triage`,
-2026-09-06). Headline: upstream
-has no opencode collector (the only real session source on this machine), a
-Windows/UTF-8 portability bug survives in the scripts, the report ships
-share-by-default with vendor branding, and the import does not yet meet fabrika's
-skill conventions.
+The experiment's verdict at filing time was **revise before import** (`REPORT.md` §11, posted as
+[#8035](https://github.com/kamp-us/phoenix/issues/8035)). Since then the founder ratified the
+path on the issue (2026-09-05,
+[approval comment](https://github.com/kamp-us/phoenix/issues/8035#issuecomment-5555033755)): the
+import proceeds as an epic — the packaged import lands first
+([#8048](https://github.com/kamp-us/phoenix/issues/8048)), the opencode collector next
+([#8049](https://github.com/kamp-us/phoenix/issues/8049)), then portability (#8050),
+skills-corpus discovery (#8051), a fabrika-branded, internal-by-default report (#8052),
+calibration over at least 20 real sessions (#8053), and the report share posture as its own
+`ready-for:human` ADR child (#8054). External sharing is deferred to that child — not a v1
+gate. ADR 0355 (draft PR [#8055](https://github.com/kamp-us/phoenix/pull/8055)) records the
+evidence/import split this folder's evidence PR depends on.
+
+Headline findings still standing while the epic runs: upstream has no opencode collector (#8049
+owns it), the Windows/UTF-8 portability exposure is #8050, and the report's vendor
+branding/share surface is #8052 and #8054. The grade stays unquoted past the 2-session floor
+until #8053's readout.
 
 Upstream pin: `b811c24365ae` (2026-09-03). Originally imported at `0254cbe9`
 (2026-08-28); re-synced byte-exact on 2026-09-06 after upstream landed ZCode/Pi
