@@ -6,7 +6,7 @@
  * agent program. `boundary.unit.test.ts` is the proof.
  */
 
-import {Schema} from "effect";
+import {Predicate, Schema} from "effect";
 
 /** A stable per-item identity: an update to a tool row re-sends the same id with a new status. */
 export const ItemId = Schema.String.pipe(Schema.brand("tuval/ai-agent/ItemId"));
@@ -94,16 +94,13 @@ export const boundToolResult = (text: string, limit = TOOL_RESULT_BYTE_LIMIT): T
 	return {text: decoder.decode(bytes.subarray(0, end)), omitted: {bytes: bytes.length - end}};
 };
 
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value);
-
 export const isJsonValue = (value: unknown): value is JsonValue => {
 	if (value === null) return true;
 	const type = typeof value;
 	if (type === "boolean" || type === "string") return true;
 	if (type === "number") return Number.isFinite(value);
 	if (Array.isArray(value)) return value.every(isJsonValue);
-	return isRecord(value) && Object.values(value).every(isJsonValue);
+	return Predicate.isObject(value) && Object.values(value).every(isJsonValue);
 };
 
 const isId = (value: unknown): value is ItemId => typeof value === "string" && value.length > 0;
@@ -112,9 +109,9 @@ export const isNonNegativeInteger = (value: unknown): boolean =>
 	typeof value === "number" && Number.isInteger(value) && value >= 0;
 
 const isToolResult = (value: unknown): value is ToolResult =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.text === "string" &&
-	isRecord(value.omitted) &&
+	Predicate.isObject(value.omitted) &&
 	isNonNegativeInteger(value.omitted.bytes) &&
 	byteLength(value.text) <= TOOL_RESULT_BYTE_LIMIT;
 
@@ -122,7 +119,8 @@ const statuses: ReadonlySet<string> = new Set<ToolStatus>(["running", "ok", "err
 
 /** The port predicate for one item: identity, clock, kind, and the tool result's own bound. */
 export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
-	if (!isRecord(value) || !isId(value.id) || !Number.isFinite(value.timestamp)) return false;
+	if (!Predicate.isObject(value) || !isId(value.id) || !Number.isFinite(value.timestamp))
+		return false;
 	switch (value.kind) {
 		case "user":
 		case "system":

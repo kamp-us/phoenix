@@ -7,11 +7,10 @@
  * single route between two nodes serves the whole conversation.
  */
 
-import {Schema} from "effect";
+import {Predicate, Schema} from "effect";
 import {
 	isJsonValue,
 	isNonNegativeInteger,
-	isRecord,
 	isTranscriptItems,
 	type JsonValue,
 	type TranscriptItem,
@@ -31,7 +30,7 @@ const reasons: ReadonlySet<string> = new Set<WindowOmission["reason"]>([
 ]);
 
 export const isWindowOmission = (value: unknown): value is WindowOmission =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	isNonNegativeInteger(value.items) &&
 	isNonNegativeInteger(value.bytes) &&
 	typeof value.reason === "string" &&
@@ -44,7 +43,7 @@ export interface TranscriptPayload {
 }
 
 export const isTranscriptPayload = (value: unknown): value is TranscriptPayload =>
-	isRecord(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
+	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
 
 /**
  * `transcript-page` — a request for older history and the page that answers it. `before` is the
@@ -64,7 +63,7 @@ const isCursor = (value: unknown): value is string | null =>
 	value === null || (typeof value === "string" && value.length > 0);
 
 export const isTranscriptPagePayload = (value: unknown): value is TranscriptPagePayload => {
-	if (!isRecord(value)) return false;
+	if (!Predicate.isObject(value)) return false;
 	switch (value.kind) {
 		case "request":
 			return isCursor(value.before) && Number.isInteger(value.limit) && (value.limit as number) > 0;
@@ -88,7 +87,7 @@ export interface PromptPayload {
 }
 
 export const isPromptPayload = (value: unknown): value is PromptPayload =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.text === "string" &&
 	(value.key === undefined || typeof value.key === "string");
 
@@ -125,7 +124,7 @@ export type PermissionPayload =
 	  };
 
 export const isPermissionRequest = (value: unknown): value is PermissionRequest =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.title === "string" &&
 	typeof value.displayName === "string" &&
 	typeof value.description === "string" &&
@@ -133,10 +132,13 @@ export const isPermissionRequest = (value: unknown): value is PermissionRequest 
 	typeof value.offersAlways === "boolean";
 
 export const isPermissionPayload = (value: unknown): value is PermissionPayload => {
-	if (!isRecord(value)) return false;
+	if (!Predicate.isObject(value)) return false;
 	switch (value.kind) {
 		case "pending":
-			return isRecord(value.requests) && Object.values(value.requests).every(isPermissionRequest);
+			return (
+				Predicate.isObject(value.requests) &&
+				Object.values(value.requests).every(isPermissionRequest)
+			);
 		case "decision":
 			return (
 				typeof value.request === "string" &&
@@ -165,7 +167,7 @@ export type ModePayload =
 const isMode = (value: unknown): value is Mode => typeof value === "string" && value.length > 0;
 
 export const isModePayload = (value: unknown): value is ModePayload => {
-	if (!isRecord(value)) return false;
+	if (!Predicate.isObject(value)) return false;
 	switch (value.kind) {
 		case "state":
 			return (

@@ -13,7 +13,7 @@
  * a compile error at `start` rather than a defect at the first call (#7774).
  */
 
-import {Context, Effect, Layer, Schema} from "effect";
+import {Context, Effect, Layer, Predicate, Schema} from "effect";
 import {firstSchemaIssue} from "../protocol/issue.ts";
 import {
 	PROTOCOL_VERSION,
@@ -62,7 +62,7 @@ const nearestPath = (target: string, rows: ReadonlyArray<SpellRow>): string | un
 type NamedError = {readonly _tag: string; readonly message?: unknown};
 
 const isNamed = (value: unknown): value is NamedError =>
-	typeof value === "object" && value !== null && typeof (value as NamedError)._tag === "string";
+	Predicate.isObject(value) && typeof value._tag === "string";
 
 /**
  * The caught value as an error that names itself. One already carrying a `_tag` is its own;
