@@ -17,6 +17,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Fiber, type FileSystem, Schema, type Scope} from "effect";
 import {afterEach} from "vitest";
 import {type Booted, boot, coreSpells, projectDir} from "./boot.ts";
+import type {Binding} from "./commands/bindings/index.ts";
 import {HelpRows} from "./commands/core/help.ts";
 import {SpellExecutor} from "./commands/executor.ts";
 import {ClientId, renderPath, WorkspaceId} from "./commands/spell.ts";
@@ -83,6 +84,43 @@ const spellPaths = (booted: Booted) =>
 		Effect.map((state) => state.table.rows.map((row) => renderPath(row.path))),
 		Effect.provideContext(booted.kernel),
 	);
+
+/** A compiled binding fired the way a key router fires it: its own path and args, no re-parsing. */
+const fire = (booted: Booted, binding: Binding) =>
+	Effect.gen(function* () {
+		const executor = yield* SpellExecutor;
+		return yield* executor.execute(
+			new SpellCall({
+				type: "spell.call",
+				version: PROTOCOL_VERSION,
+				id: CallId.make(`binding-${binding.key}`),
+				path: binding.path,
+				args: binding.args,
+			}),
+			client,
+		);
+	}).pipe(Effect.provideContext(booted.kernel));
+
+/**
+ * Which of the two configs an observed half came from. The table is told apart by the spell only
+ * one generation registers, the bindings by the key only the first still compiles.
+ *
+ * Pairing the two is what catches the direction a membership check cannot see. The second
+ * generation's bindings are a *subset* of the first generation's table, so an old table observed
+ * beside new bindings resolves every one of them and looks entirely well — only the generations
+ * disagree.
+ */
+type Generation = "first" | "second" | "neither";
+
+const tableGeneration = (paths: ReadonlyArray<string>): Generation => {
+	if (paths.includes("alpha.say")) return "first";
+	return paths.includes("alpha.sey") ? "second" : "neither";
+};
+
+const bindingGeneration = (keys: ReadonlyArray<string>): Generation => {
+	if (keys.includes("ctrl-a")) return "first";
+	return keys.includes("ctrl-b") ? "second" : "neither";
+};
 
 /** `help` as a person runs it, through the executor the kernel wired. */
 const help = (booted: Booted) =>
@@ -169,10 +207,23 @@ describe("a config reload", () => {
 					const state = yield* SpellSet.use((set) => set.read).pipe(
 						Effect.provideContext(booted.kernel),
 					);
+					assert.strictEqual(
+						state.bindings.bindings.length,
+						1,
+						"the reload kept a binding it should have dropped, or dropped one it should have kept",
+					);
+					const [surviving] = state.bindings.bindings;
+					assert.isDefined(surviving, "the binding that still compiles did not survive the reload");
+					if (surviving === undefined) return;
+
+					// Running it, not finding its key in the list: a binding whose path or args the
+					// recompile got wrong is still in that list, under the right key, and does nothing.
+					const reply = yield* fire(booted, surviving);
+					assert.isTrue(reply.ok, "the surviving binding did not run");
 					assert.deepStrictEqual(
-						state.bindings.bindings.map((binding) => binding.key),
-						["ctrl-b"],
-						"the binding that still compiles did not survive the reload",
+						reply.ok ? reply.result : undefined,
+						{name: "greet"},
+						"the surviving binding ran something other than the spell it names",
 					);
 				}),
 			),
@@ -187,6 +238,7 @@ describe("a config reload", () => {
 				const observations: Array<{
 					readonly paths: ReadonlyArray<string>;
 					readonly bound: ReadonlyArray<string>;
+					readonly keys: ReadonlyArray<string>;
 				}> = [];
 				const watch = SpellSet.use((set) => set.read).pipe(
 					Effect.flatMap((state) =>
@@ -194,11 +246,15 @@ describe("a config reload", () => {
 							observations.push({
 								paths: state.table.rows.map((row) => renderPath(row.path)),
 								bound: state.bindings.bindings.map((binding) => renderPath(binding.path)),
+								keys: state.bindings.bindings.map((binding) => binding.key),
 							});
 						}),
 					),
 					Effect.provideContext(booted.kernel),
 				);
+				// One sample taken here rather than left to the forked reader to win a race with the
+				// reload: without it the whole pairing below can pass having only ever seen one config.
+				yield* watch;
 				const reader = yield* Effect.forkChild(Effect.forever(watch));
 
 				yield* booted.reload;
@@ -208,9 +264,14 @@ describe("a config reload", () => {
 				yield* Fiber.interrupt(reader);
 
 				assert.isTrue(observations.length > 1, "the reader took no samples across the reload");
+				assert.deepStrictEqual(
+					[...new Set(observations.map((observed) => tableGeneration(observed.paths)))].sort(),
+					["first", "second"],
+					"the reader never saw both configs, so it never watched across the swap",
+				);
 				for (const observed of observations) {
-					// The one thing a half-replaced pair would show: a binding compiled against a table
-					// that no longer holds the spell it points at.
+					// One direction: a binding compiled against a table that no longer holds the spell it
+					// points at — a new table beside old bindings.
 					for (const bound of observed.bound) {
 						assert.include(
 							observed.paths,
@@ -218,6 +279,13 @@ describe("a config reload", () => {
 							"a binding was observed beside a registry that does not hold its spell",
 						);
 					}
+					// The other: an old table beside new bindings, which the check above cannot see
+					// because the second config's bindings all resolve against the first config's table.
+					assert.strictEqual(
+						bindingGeneration(observed.keys),
+						tableGeneration(observed.paths),
+						"one config's table was observed beside the other config's bindings",
+					);
 				}
 				const last = observations.at(-1);
 				assert.include(last?.paths ?? [], "alpha.sey", "the reader never saw the reloaded table");

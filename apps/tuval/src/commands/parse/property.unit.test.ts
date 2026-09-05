@@ -5,6 +5,10 @@
  * failure names one seed and one case, and adding a property costs no dependency in a package whose
  * Effect pin already sits on its own catalog. Every prefix of every generated line is checked, which
  * is the whole space for that line rather than a sample of it.
+ *
+ * Arguments are written in all four spellings a config author can use — bare, quoted, backslash
+ * escaped, and `name=value` — because those are the four places `tokenize.ts` and `reading.ts`
+ * hand-roll, and a corpus of bare lowercase words never reaches any of them.
  */
 
 import {describe, expect, it} from "vitest";
@@ -30,15 +34,50 @@ const SEGMENTS = ["window", "workspace", "process", "layout", "focus", "swap", "
 const VALUES = ["ax-1", "ax-2", "zeta", "quux-3", "vv", "nought"];
 const LITERALS = ["left", "right", "up", "down"];
 
+/**
+ * Values that only survive the round trip if the lexer's quoting and escaping work: a separator
+ * inside a value, a quote, a backslash, and an `=` that must not be read as a parameter name —
+ * `a` is not a parameter of any generated spell, so `a=b` is one positional value and not a
+ * binding.
+ */
+const AWKWARD = ["ax 1", 'say "hi"', "c:\\tmp", "a=b", "two  spaces"];
+
+/** A value the lexer reads back unchanged with no quoting and no escaping. */
+const BARE = /^[A-Za-z0-9_-]+$/;
+
+const quoted = (value: string): string => `"${value.replace(/[\\"]/g, (mark) => `\\${mark}`)}"`;
+
+const escaped = (value: string): string => value.replace(/[\\"\s]/g, (mark) => `\\${mark}`);
+
+/**
+ * How one argument is written on the line. `named` is the only spelling that changes where the
+ * value binds; the other three are four ways of writing the same token text.
+ */
+type Spelling = "bare" | "quoted" | "escaped" | "named";
+
+const write = (value: string, spelling: Spelling, name: string): string => {
+	if (spelling === "bare") return BARE.test(value) ? value : quoted(value);
+	if (spelling === "quoted") return quoted(value);
+	if (spelling === "escaped") return escaped(value);
+	return `${name}=${BARE.test(value) ? value : quoted(value)}`;
+};
+
+/** One generated line: the text, and the call the parser owes for it. */
+interface Case {
+	readonly line: string;
+	readonly path: ReadonlyArray<string>;
+	readonly args: Readonly<Record<string, string>>;
+}
+
 interface Generated {
 	readonly registry: SpellIndex;
-	readonly lines: ReadonlyArray<string>;
+	readonly cases: ReadonlyArray<Case>;
 }
 
 const generate = (seed: number): Generated => {
 	const next = seeded(seed);
 	const descriptions: Array<RegistryDescription[number]> = [];
-	const lines: Array<string> = [];
+	const cases: Array<Case> = [];
 	const taken = new Set<string>();
 
 	for (let index = 0; index < 12; index += 1) {
@@ -69,23 +108,89 @@ const generate = (seed: number): Generated => {
 			capabilities: [],
 		});
 
-		const args = names.map((_, position) =>
-			position === enumAt ? LITERALS[next(LITERALS.length)]! : VALUES[next(VALUES.length)]!,
-		);
-		lines.push([...path, ...args].join(" "));
+		const args: Record<string, string> = {};
+		const written = names.map((name, position) => {
+			// An enum parameter refuses anything outside its literals, so its value is always one of
+			// them; only how it is written varies. `named` is left to the free parameters, whose
+			// value is unconstrained and so cannot turn a truncated prefix into a refusal.
+			const isEnum = position === enumAt;
+			const value = isEnum
+				? LITERALS[next(LITERALS.length)]!
+				: next(2) === 0
+					? VALUES[next(VALUES.length)]!
+					: AWKWARD[next(AWKWARD.length)]!;
+			const spelling: Spelling = isEnum
+				? (["bare", "quoted", "escaped"] as const)[next(3)]!
+				: (["bare", "quoted", "escaped", "named"] as const)[next(4)]!;
+			args[name] = value;
+			return write(value, spelling, name);
+		});
+		cases.push({line: [...path, ...written].join(" "), path, args});
 	}
 
-	return {registry: buildSpellIndex(descriptions), lines};
+	return {registry: buildSpellIndex(descriptions), cases};
 };
+
+const corpus = (seeds: number): ReadonlyArray<Generated> =>
+	Array.from({length: seeds}, (_, index) => generate(index + 1));
+
+describe("the generated corpus", () => {
+	it("reaches the syntax the lexer and the reader hand-roll", () => {
+		const lines = corpus(40).flatMap((generated) => generated.cases.map((one) => one.line));
+		const values = corpus(40).flatMap((generated) =>
+			generated.cases.flatMap((one) => Object.values(one.args)),
+		);
+
+		expect(
+			lines.some((line) => line.includes('"')),
+			"no line carries a quote",
+		).toBe(true);
+		expect(
+			lines.some((line) => line.includes("\\")),
+			"no line carries a backslash",
+		).toBe(true);
+		expect(
+			lines.some((line) => line.includes("=")),
+			"no line carries an =",
+		).toBe(true);
+		expect(
+			lines.some((line) => / (?:workspace|second)=/.test(line)),
+			"no line binds an argument by name",
+		).toBe(true);
+		// A line can carry a quote without any value needing one, so the values are checked too: a
+		// corpus whose quotes are all decoration proves nothing about the unquoting.
+		expect(
+			values.some((value) => / /.test(value)),
+			"no value carries a separator",
+		).toBe(true);
+		expect(
+			values.some((value) => value.includes('"')),
+			"no value carries a quote",
+		).toBe(true);
+		expect(
+			values.some((value) => value.includes("\\")),
+			"no value carries a backslash",
+		).toBe(true);
+		expect(
+			values.some((value) => value.includes("=")),
+			"no value carries an =",
+		).toBe(true);
+	});
+});
 
 describe("every prefix of a complete line is Partial or Complete", () => {
 	it("never refuses and never throws, over 40 generated registries", () => {
 		const offenders: Array<string> = [];
 		for (let seed = 1; seed <= 40; seed += 1) {
-			const {registry, lines} = generate(seed);
-			for (const line of lines) {
-				// The line itself must parse, or the case proves nothing about its prefixes.
-				expect(parse(line, registry, snapshot)._tag, `seed ${seed}: ${line}`).toBe("Complete");
+			const {registry, cases} = generate(seed);
+			for (const {line, path, args} of cases) {
+				// The line itself must parse, and to the call it was written for: a quoted or escaped
+				// value read back as its raw text is a Complete line carrying the wrong arguments.
+				const whole = parse(line, registry, snapshot);
+				expect(whole._tag, `seed ${seed}: ${line}`).toBe("Complete");
+				if (whole._tag === "Complete") {
+					expect(whole.call, `seed ${seed}: ${line}`).toEqual({path, args});
+				}
 				for (let length = 0; length <= line.length; length += 1) {
 					const prefix = line.slice(0, length);
 					const result = parse(prefix, registry, snapshot);
@@ -100,8 +205,8 @@ describe("every prefix of a complete line is Partial or Complete", () => {
 describe("ranking is deterministic", () => {
 	it("returns an equal list for equal input and snapshot, over every generated prefix", () => {
 		for (let seed = 1; seed <= 20; seed += 1) {
-			const {registry, lines} = generate(seed);
-			for (const line of lines) {
+			const {registry, cases} = generate(seed);
+			for (const {line} of cases) {
 				for (let length = 0; length <= line.length; length += 1) {
 					const prefix = line.slice(0, length);
 					expect(complete(prefix, registry, snapshot)).toEqual(
