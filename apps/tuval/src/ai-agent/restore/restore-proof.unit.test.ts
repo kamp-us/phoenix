@@ -28,7 +28,6 @@ import {type ProcessHandle, ProcessId} from "../../process/process.ts";
 import {type AiAgentSessionState, isAiAgentSessionState} from "../core/index.ts";
 import {aiAgentPortNames} from "../handlers/index.ts";
 import type {PermissionPayload, TranscriptPayload} from "../ports/index.ts";
-import {resumeMessages} from "./checkpoint.ts";
 import {
 	AGENT_NODE,
 	afterTheCut,
@@ -135,6 +134,8 @@ interface FirstRun {
 	readonly sessionId: string | null;
 	readonly rendered: ReadonlyArray<string>;
 	readonly restoredCount: number;
+	/** How much the window had heard when the app stopped: the mark the second boot reads past. */
+	readonly arrivals: number;
 }
 
 interface SecondRun {
@@ -167,9 +168,18 @@ const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSyst
 		yield* until("the second reply", () => rendered(window).includes("a2"));
 
 		yield* say(window, "delete the build dir", "k3");
-		yield* until("the cut turn's half-written reply", () => rendered(window).includes("a3"));
+		// The window's copy is published from the Sub's own projection, which runs ahead of the core
+		// committing the same event — so a stop taken on the window's word alone can checkpoint a
+		// tail without the cut turn in it, and the second boot then has nothing to mark. Wait for
+		// the committed state, which is what the checkpoint is.
+		yield* until("the cut turn's half-written reply, committed", () =>
+			sessionOf(agent).transcript.items.some((item) => item.id === "a3"),
+		);
 		yield* until("the permission card", () =>
 			(pendingIn(arrivalsOf(window)).at(-1) ?? []).includes(CARD),
+		);
+		yield* until("the card to reach the committed state", () =>
+			Object.hasOwn(sessionOf(agent).permissions, CARD),
 		);
 
 		return {
@@ -177,20 +187,24 @@ const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSyst
 			sessionId: sessionOf(agent).sessionId,
 			rendered: rendered(window),
 			restoredCount: booted.report.restoredCount,
+			arrivals: arrivalsOf(window).length,
 		} satisfies FirstRun;
 	}).pipe(Effect.scoped);
 
-/** Boot the same project back, resume, then send one deliberate resend. */
+/**
+ * Boot the same project back, then send one deliberate resend. Nothing here dispatches the resume:
+ * the kernel does it for every restored process (`durability/resume.ts`, #7877), so what settles
+ * below is what a real restart does.
+ */
 const runFromTheCheckpoint = (
 	project: string,
+	beforeResume: number,
 ): Effect.Effect<SecondRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const booted = yield* boot({global: configModule, project});
 		const {agent, window} = yield* handlesOf(booted);
 		const restored = sessionOf(agent);
-		const beforeResume = arrivalsOf(window).length;
 
-		for (const msg of resumeMessages(restored)) yield* agent.dispatch(msg);
 		yield* until("the reconnect to settle", () => sessionOf(agent).phase === "ready");
 		yield* quiet(window);
 
@@ -228,7 +242,7 @@ const proof = Effect.fnUntraced(function* () {
 	assert.deepStrictEqual(first.rendered, afterTheCut, "the first run's tail is not the cut tail");
 	assert.strictEqual(first.restoredCount, 0, "the first boot restored something already on disk");
 
-	const second = yield* runFromTheCheckpoint(project);
+	const second = yield* runFromTheCheckpoint(project, first.arrivals);
 	return {first, second};
 });
 

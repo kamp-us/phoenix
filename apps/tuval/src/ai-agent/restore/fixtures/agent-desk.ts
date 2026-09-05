@@ -9,23 +9,17 @@
  * share: what carries across is the checkpoint on disk, which is the thing under test.
  */
 
-import {defineMachine} from "@demlik/tea";
-import {Effect} from "effect";
-import {ProcessPorts} from "../../../ports/ProcessPorts.ts";
-import type {AnyProgram, Program} from "../../../registry/program.ts";
-import {ProgramId} from "../../../registry/program.ts";
 import type {AgentEvent} from "../../events.ts";
-import {aiAgentPortNames} from "../../handlers/index.ts";
 import type {ItemId, PermissionRequest, TranscriptItem} from "../../ports/index.ts";
-import {mode, permission, prompt, transcript, transcriptPage} from "../../ports/index.ts";
 import {aiAgentProgram} from "../../program.ts";
 import type {AgentScript} from "../../service/index.ts";
 import {ScriptedAiAgent} from "../../service/index.ts";
+import {agentRoutes, WINDOW_PROGRAM, windowProgram, windowRoutes} from "./window.ts";
 
 export const AGENT_NODE = "agent";
 export const WINDOW_NODE = "window";
 export const AGENT_PROGRAM = "ai-agent-desk";
-export const WINDOW_PROGRAM = "window-stand-in";
+export {WINDOW_PROGRAM};
 
 export const CWD = "/work";
 export const SESSION = "session-restore-proof";
@@ -105,67 +99,6 @@ const script: AgentScript = {
 	resumeAtTurn: 3,
 };
 
-type WindowState = {
-	readonly seen: ReadonlyArray<{readonly port: string; readonly payload: unknown}>;
-};
-type WindowMsg =
-	| {readonly type: "took"; readonly port: string; readonly payload: unknown}
-	| {readonly type: "say"; readonly port: string; readonly payload: unknown};
-type WindowCmd = {readonly type: "emit"; readonly port: string; readonly payload: unknown};
-
-const took =
-	(port: string) =>
-	(payload: unknown): WindowMsg => ({type: "took", port, payload});
-
-/**
- * The window the proof reads through: it records every payload that reached it, in arrival order,
- * and emits whatever it is told to say. Its own state is checkpointed like any process, so what it
- * saw before the restart is still there after it, and the proof reads the new arrivals as the tail
- * past that mark.
- */
-const windowProgram: AnyProgram = {
-	id: ProgramId.make(WINDOW_PROGRAM),
-	core: defineMachine<WindowState, WindowMsg, WindowCmd, never, unknown>({
-		init: (loaded) => [loaded ?? {seen: []}, []],
-		update: {
-			took: (state, msg) => [{seen: [...state.seen, {port: msg.port, payload: msg.payload}]}, []],
-			say: (state, msg) => [state, [{type: "emit", port: msg.port, payload: msg.payload}]],
-		},
-		interpret: {emit: () => Promise.resolve()},
-	}),
-	ports: {
-		[aiAgentPortNames.transcript]: transcript.inbound(),
-		[aiAgentPortNames.pageRequest]: transcriptPage.outbound(),
-		[aiAgentPortNames.pageReply]: transcriptPage.inbound(),
-		[aiAgentPortNames.prompt]: prompt.outbound(),
-		[aiAgentPortNames.permissionPending]: permission.inbound(),
-		[aiAgentPortNames.permissionDecision]: permission.outbound(),
-		[aiAgentPortNames.modeState]: mode.inbound(),
-		[aiAgentPortNames.modeSet]: mode.outbound(),
-	},
-	receive: {
-		[aiAgentPortNames.transcript]: took(aiAgentPortNames.transcript),
-		[aiAgentPortNames.pageReply]: took(aiAgentPortNames.pageReply),
-		[aiAgentPortNames.permissionPending]: took(aiAgentPortNames.permissionPending),
-		[aiAgentPortNames.modeState]: took(aiAgentPortNames.modeState),
-	},
-	handlers: {
-		emit: (cmd: WindowCmd) =>
-			Effect.gen(function* () {
-				yield* (yield* ProcessPorts).emit(cmd.port, cmd.payload);
-				return [] as ReadonlyArray<WindowMsg>;
-			}),
-	},
-	capabilities: [],
-	identity: {
-		package: "@kampus/tuval",
-		program: WINDOW_PROGRAM,
-		version: "1.0.0",
-		digest: `sha256:${WINDOW_PROGRAM}`,
-	},
-	placement: {host: "local"},
-} satisfies Program<WindowState, WindowMsg, WindowCmd, never, unknown, unknown, ProcessPorts>;
-
 const agentRow = aiAgentProgram({
 	id: AGENT_PROGRAM,
 	layer: ScriptedAiAgent.layer(script),
@@ -177,44 +110,8 @@ export default {
 	programs: [agentRow, windowProgram],
 	graph: {
 		nodes: [
-			{
-				id: AGENT_NODE,
-				program: AGENT_PROGRAM,
-				on: [
-					{
-						port: aiAgentPortNames.transcript,
-						to: {node: WINDOW_NODE, port: aiAgentPortNames.transcript},
-					},
-					{
-						port: aiAgentPortNames.pageReply,
-						to: {node: WINDOW_NODE, port: aiAgentPortNames.pageReply},
-					},
-					{
-						port: aiAgentPortNames.permissionPending,
-						to: {node: WINDOW_NODE, port: aiAgentPortNames.permissionPending},
-					},
-					{
-						port: aiAgentPortNames.modeState,
-						to: {node: WINDOW_NODE, port: aiAgentPortNames.modeState},
-					},
-				],
-			},
-			{
-				id: WINDOW_NODE,
-				program: WINDOW_PROGRAM,
-				on: [
-					{port: aiAgentPortNames.prompt, to: {node: AGENT_NODE, port: aiAgentPortNames.prompt}},
-					{
-						port: aiAgentPortNames.pageRequest,
-						to: {node: AGENT_NODE, port: aiAgentPortNames.pageRequest},
-					},
-					{
-						port: aiAgentPortNames.permissionDecision,
-						to: {node: AGENT_NODE, port: aiAgentPortNames.permissionDecision},
-					},
-					{port: aiAgentPortNames.modeSet, to: {node: AGENT_NODE, port: aiAgentPortNames.modeSet}},
-				],
-			},
+			{id: AGENT_NODE, program: AGENT_PROGRAM, on: agentRoutes(WINDOW_NODE)},
+			{id: WINDOW_NODE, program: WINDOW_PROGRAM, on: windowRoutes(AGENT_NODE)},
 		],
 	},
 };

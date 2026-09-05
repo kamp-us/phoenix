@@ -10,6 +10,7 @@
  * test must not write into the operator's home to prove a session persisted.
  */
 
+import {readdirSync} from "node:fs";
 import {join} from "node:path";
 import {
 	type AgentSession,
@@ -33,6 +34,13 @@ export interface AgentSessionHostOptions {
 	readonly sessionDir?: (cwd: string) => string;
 	/** Built-in tool suppression, passed straight through to `createAgentSession`. */
 	readonly noTools?: "all" | "builtin" | undefined;
+	/**
+	 * The cwd a session resumed by id is looked up under — the project root that booted the kernel
+	 * (founder ruling, 2026-09-02). One process runs one project, so one root locates every JSONL
+	 * this host could be asked to re-open. Absent means this host resumes nothing, and every
+	 * `resume` refuses.
+	 */
+	readonly projectRoot?: string;
 }
 
 const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
@@ -98,6 +106,86 @@ const call = <A>(
 			}),
 	});
 
+/**
+ * One session's JSONL, by id, in the directory this host writes them to.
+ *
+ * `SessionManager.create` names a file `<timestamp>_<sessionId>.jsonl` (`dist/core/session-manager.js`),
+ * so the id locates the file and no second index has to be kept in step. Raw `node:fs` under
+ * `.patterns/effect-platform-access.md`'s "a `node:*`-only API the platform service doesn't expose"
+ * case, for the reason the Pi agent layer's own `readBranch` reads that way: `SessionManager.open`
+ * does its own synchronous reads with no seam to substitute.
+ */
+const sessionFile = (dir: string, sessionId: string): string | undefined => {
+	const name = readdirSync(dir).find((entry) => entry.endsWith(`_${sessionId}.jsonl`));
+	return name === undefined ? undefined : join(dir, name);
+};
+
+/**
+ * The handle over a live `AgentSession`. Everything the ownership table and the dispatch see of Pi
+ * is this record, whether the session was created fresh or re-opened off its store.
+ */
+const handleOf = (
+	options: AgentSessionHostOptions,
+	session: AgentSession,
+	cwd: string,
+): Effect.Effect<PiSessionHandle> =>
+	Effect.gen(function* () {
+		const changes = yield* Queue.make<void>({capacity: 1, strategy: "sliding"});
+		/**
+		 * Every session event coalesces into one pending change. The server reads the session's
+		 * state when it wakes, so a burst of deltas costs one snapshot rather than one per event —
+		 * and a slow reader can never fall behind by more than a revision.
+		 */
+		const unsubscribe = session.subscribe(() => {
+			Queue.offerUnsafe(changes, undefined);
+		});
+		const createdAt = Date.now();
+		return {
+			id: session.sessionId,
+			cwd,
+			file: session.sessionFile,
+			createdAt,
+			read: Effect.sync(
+				(): PiSessionView => ({
+					phase: phaseOf(session),
+					model: {
+						provider: session.model?.provider ?? "unknown",
+						id: session.model?.id ?? "unknown",
+					},
+					thinkingLevel: session.thinkingLevel as ThinkingLevel,
+					transcript: projectTranscript(session.messages as ReadonlyArray<SourceMessage>),
+					name: session.sessionName,
+					queuedSteer: session.getSteeringMessages(),
+				}),
+			),
+			prompt: (text) =>
+				call(session, "prompt", () => session.prompt(text, {expandPromptTemplates: false})),
+			steer: (text) => call(session, "steer", () => session.steer(text)),
+			abort: call(session, "abort", () => session.abort()),
+			setModel: (ref: ModelRef) =>
+				Effect.suspend(() => {
+					const target = options.modelRuntime.getModel(ref.provider, ref.id);
+					if (target === undefined) {
+						return Effect.fail(
+							new SessionCallFailed({
+								sessionId: session.sessionId,
+								call: "set_model",
+								detail: `no model ${ref.provider}/${ref.id}`,
+							}),
+						);
+					}
+					return call(session, "set_model", () => session.setModel(target));
+				}),
+			setThinkingLevel: (level) =>
+				call(session, "set_thinking", () => session.setThinkingLevel(level)),
+			changes: Queue.take(changes),
+			dispose: Effect.sync(() => {
+				unsubscribe();
+				session.dispose();
+			}),
+		} satisfies PiSessionHandle;
+	});
+
 export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHost> =>
 	Layer.succeed(PiSessionHost, {
 		models: Effect.sync(() =>
@@ -123,7 +211,6 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 
 		open: (request) =>
 			Effect.gen(function* () {
-				const changes = yield* Queue.make<void>({capacity: 1, strategy: "sliding"});
 				const sessionDir = (options.sessionDir ?? defaultSessionDir)(request.cwd);
 				const model =
 					request.model === undefined
@@ -147,62 +234,44 @@ export const layer = (options: AgentSessionHostOptions): Layer.Layer<PiSessionHo
 				});
 
 				if (request.name !== undefined) session.setSessionName(request.name);
+				return yield* handleOf(options, session, request.cwd);
+			}),
 
-				/**
-				 * Every session event coalesces into one pending change. The server reads the
-				 * session's state when it wakes, so a burst of deltas costs one snapshot rather
-				 * than one per event — and a slow reader can never fall behind by more than a
-				 * revision.
-				 */
-				const unsubscribe = session.subscribe(() => {
-					Queue.offerUnsafe(changes, undefined);
+		/**
+		 * `SessionManager.open` on the saved file, handed to `createAgentSession` — Pi's own
+		 * documented way to continue a previous session (`dist/core/sdk.d.ts`'s `sessionManager`
+		 * option and its "Continue previous session" example). The session comes back under its own
+		 * id, because `AgentSession.sessionId` reads the manager's (`dist/core/agent-session.js`),
+		 * so a resume can never mint a new one and pass it off as the old.
+		 */
+		resume: (sessionId) =>
+			Effect.gen(function* () {
+				const cwd = options.projectRoot;
+				if (cwd === undefined) {
+					return yield* new SessionOpenFailed({
+						cwd: "",
+						detail: `this host holds no project root, so session ${sessionId} cannot be re-opened`,
+					});
+				}
+				const dir = (options.sessionDir ?? defaultSessionDir)(cwd);
+				const refuse = (detail: string) => new SessionOpenFailed({cwd, detail});
+				const file = yield* Effect.try({
+					try: () => sessionFile(dir, sessionId),
+					catch: (error) => refuse(detailOf(error)),
 				});
+				if (file === undefined) return yield* refuse(`no session file for ${sessionId} in ${dir}`);
 
-				const createdAt = Date.now();
-				const handle: PiSessionHandle = {
-					id: session.sessionId,
-					cwd: request.cwd,
-					file: session.sessionFile,
-					createdAt,
-					read: Effect.sync(
-						(): PiSessionView => ({
-							phase: phaseOf(session),
-							model: {
-								provider: session.model?.provider ?? "unknown",
-								id: session.model?.id ?? "unknown",
-							},
-							thinkingLevel: session.thinkingLevel as ThinkingLevel,
-							transcript: projectTranscript(session.messages as ReadonlyArray<SourceMessage>),
-							name: session.sessionName,
-							queuedSteer: session.getSteeringMessages(),
-						}),
-					),
-					prompt: (text) =>
-						call(session, "prompt", () => session.prompt(text, {expandPromptTemplates: false})),
-					steer: (text) => call(session, "steer", () => session.steer(text)),
-					abort: call(session, "abort", () => session.abort()),
-					setModel: (ref: ModelRef) =>
-						Effect.suspend(() => {
-							const target = options.modelRuntime.getModel(ref.provider, ref.id);
-							if (target === undefined) {
-								return Effect.fail(
-									new SessionCallFailed({
-										sessionId: session.sessionId,
-										call: "set_model",
-										detail: `no model ${ref.provider}/${ref.id}`,
-									}),
-								);
-							}
-							return call(session, "set_model", () => session.setModel(target));
-						}),
-					setThinkingLevel: (level) =>
-						call(session, "set_thinking", () => session.setThinkingLevel(level)),
-					changes: Queue.take(changes),
-					dispose: Effect.sync(() => {
-						unsubscribe();
-						session.dispose();
-					}),
-				};
-				return handle;
+				const session = yield* Effect.tryPromise({
+					try: () =>
+						createAgentSession({
+							cwd,
+							modelRuntime: options.modelRuntime,
+							sessionManager: SessionManager.open(file, dir, cwd),
+							settingsManager: SettingsManager.create(cwd, options.agentDir),
+							...(options.noTools === undefined ? {} : {noTools: options.noTools}),
+						}).then((result) => result.session),
+					catch: (error) => refuse(detailOf(error)),
+				});
+				return yield* handleOf(options, session, cwd);
 			}),
 	});

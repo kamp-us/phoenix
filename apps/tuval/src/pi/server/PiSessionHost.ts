@@ -54,6 +54,17 @@ export interface OpenSessionOptions {
 export interface PiSessionHostApi {
 	readonly models: Effect.Effect<ReadonlyArray<ModelMetadata>>;
 	readonly open: (options: OpenSessionOptions) => Effect.Effect<PiSessionHandle, SessionOpenFailed>;
+	/**
+	 * Re-open a session this host does not hold, off the store it left behind.
+	 *
+	 * The table is per server and a server is per process, so after a restart every session a
+	 * checkpoint names is one this host never opened — and an `attach` that could only claim a live
+	 * record would answer `not_found` for a session whose whole transcript is on disk (#7609). A
+	 * host with nowhere to look answers `SessionOpenFailed`, which the dispatch reads as the same
+	 * `not_found` it would have given, so "the backend does not hold this session" stays one fact
+	 * with one wire code.
+	 */
+	readonly resume: (sessionId: string) => Effect.Effect<PiSessionHandle, SessionOpenFailed>;
 }
 
 export class PiSessionHost extends Context.Service<PiSessionHost, PiSessionHostApi>()(
