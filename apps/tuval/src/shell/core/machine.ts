@@ -11,11 +11,12 @@
  * typed command line run the same row. A name the table does not hold — a user's own binding —
  * leaves as a `runCommand` Cmd for whoever runs the desk.
  *
- * **The prefix timer is the host's, and there is exactly one.** The core says when a window opens
- * (`startPrefixTimer`, carrying its length in ms) and when it closes (`cancelPrefixTimer`); the
- * host keeps one outstanding timer, replaces it on `startPrefixTimer` and drops it on
- * `cancelPrefixTimer`, then feeds `prefix.timeout` back when it fires. Without the cancel a timer
- * armed for a sequence that has since completed would disarm a prefix the user has just re-armed.
+ * **The only timer is the repeat window's, and there is exactly one.** An armed prefix waits
+ * indefinitely, as tmux does (#7842), so nothing here dates a plain arm. tmux's `repeat-time` is
+ * still bounded: after a `repeatable: true` binding the core asks for `startRepeatTimer` carrying
+ * that window's length in ms, and `cancelRepeatTimer` when it closes; the host keeps one
+ * outstanding timer and feeds `prefix.repeatLapsed` back when it fires. Without the cancel a timer
+ * left over from a spent repeat window would disarm a prefix the user has since re-armed.
  */
 
 import {defineMachine} from "@demlik/tea";
@@ -72,8 +73,8 @@ export type ShellCmd =
 			readonly windowId: WindowId;
 			readonly key: string;
 	  }
-	| {readonly type: "startPrefixTimer"; readonly timeoutMs: number}
-	| {readonly type: "cancelPrefixTimer"}
+	| {readonly type: "startRepeatTimer"; readonly timeoutMs: number}
+	| {readonly type: "cancelRepeatTimer"}
 	| {readonly type: "runCommand"; readonly name: CommandName}
 	| {readonly type: "openProgram"; readonly windowId: WindowId; readonly programId: string}
 	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
@@ -112,7 +113,7 @@ export type ShellMsg =
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
 	| {readonly type: "keys.press"; readonly key: Key}
-	| {readonly type: "prefix.timeout"};
+	| {readonly type: "prefix.repeatLapsed"};
 
 /** What every cell returns: the state that follows, and what the host is asked to do. */
 export type Step = readonly [ShellState, readonly ShellCmd[]];
@@ -148,18 +149,35 @@ export const initialState = (): ShellState => {
 
 const toRouter = (snapshot: PrefixSnapshot): PrefixState =>
 	snapshot.armed
-		? {_tag: "Armed", pending: snapshot.pending, timeout: Duration.millis(snapshot.timeoutMs)}
+		? {
+				_tag: "Armed",
+				pending: snapshot.pending,
+				repeatWindow:
+					snapshot.repeatWindowMs === null ? null : Duration.millis(snapshot.repeatWindowMs),
+			}
 		: idle;
 
 const fromRouter = (state: PrefixState): PrefixSnapshot =>
 	state._tag === "Armed"
-		? {armed: true, pending: state.pending, timeoutMs: Duration.toMillis(state.timeout)}
+		? {
+				armed: true,
+				pending: state.pending,
+				repeatWindowMs: state.repeatWindow === null ? null : Duration.toMillis(state.repeatWindow),
+			}
 		: disarmed;
 
-/** Opening a window replaces the outstanding timer; closing one drops it. Staying idle asks nothing. */
+/** How long the prefix's repeat window has left to run, or `null` when it is not in one. */
+const repeatWindowOf = (snapshot: PrefixSnapshot): number | null =>
+	snapshot.armed ? snapshot.repeatWindowMs : null;
+
+/**
+ * Opening a repeat window replaces the outstanding timer; leaving one drops it. A plain arm asks
+ * for neither, which is what makes waiting forever the shape rather than a large number.
+ */
 const timerCmds = (before: PrefixSnapshot, after: PrefixSnapshot): readonly ShellCmd[] => {
-	if (after.armed) return [{type: "startPrefixTimer", timeoutMs: after.timeoutMs}];
-	return before.armed ? [{type: "cancelPrefixTimer"}] : NO_CMDS;
+	const window = repeatWindowOf(after);
+	if (window !== null) return [{type: "startRepeatTimer", timeoutMs: window}];
+	return repeatWindowOf(before) === null ? NO_CMDS : [{type: "cancelRepeatTimer"}];
 };
 
 /**
@@ -437,8 +455,12 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"command.open": (state) => [state, [{type: "openCommandLine"}]],
 		"config.reload": (state) => [state, [{type: "reloadConfig"}]],
 		"keys.press": pressKey,
-		"prefix.timeout": (state) =>
-			state.prefix.armed ? [{...state, prefix: disarmed}, NO_CMDS] : [state, NO_CMDS],
+		// A lapse disarms a repeat window and nothing else: a timer left over from a spent window
+		// must not drop a prefix the user has since armed by hand, which waits indefinitely.
+		"prefix.repeatLapsed": (state) =>
+			state.prefix.armed && state.prefix.repeatWindowMs !== null
+				? [{...state, prefix: disarmed}, NO_CMDS]
+				: [state, NO_CMDS],
 	};
 
 	return cells;
@@ -473,8 +495,8 @@ export const shellCore = ({table}: ShellCoreOptions) =>
 		// never reads it (#7576). The shell's Effect handlers land with its registry row (#7558).
 		interpret: {
 			forwardKey: () => Promise.resolve(),
-			startPrefixTimer: () => Promise.resolve(),
-			cancelPrefixTimer: () => Promise.resolve(),
+			startRepeatTimer: () => Promise.resolve(),
+			cancelRepeatTimer: () => Promise.resolve(),
 			runCommand: () => Promise.resolve(),
 			openProgram: () => Promise.resolve(),
 			attachProcess: () => Promise.resolve(),

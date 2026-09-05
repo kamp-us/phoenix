@@ -11,7 +11,7 @@
  *
  * The desk holds no desk state. Workspaces, layout, focus and view slots come from the snapshot the
  * kernel sent and go back as Msgs; what lives here is tab-ephemeral and nothing else — whether the
- * command line is open, and the prefix countdown (#7556).
+ * command line is open, and the repeat window's countdown (#7556).
  */
 
 import type {ReactElement, ReactNode} from "react";
@@ -106,25 +106,29 @@ export function Desk({
 		return () => target.removeEventListener("keydown", onKeyDown as EventListener);
 	}, [keyTarget, onKeyDown]);
 
-	// The core's prefix timer is a Cmd, and Cmds do not cross the transport — but the snapshot
-	// carries the window's length, so the surface runs the countdown off state alone.
+	// The core's repeat timer is a Cmd, and Cmds do not cross the transport — but the snapshot
+	// carries the repeat window's length, so the surface runs that one countdown off state alone.
+	// An armed prefix carrying no window is not timed at all: it waits indefinitely, as tmux does
+	// (#7842), and this effect is the only clock the desk ever ran.
 	//
 	// The dependency is the prefix's *value*, spelled out, and never the `state.prefix` object: every
 	// snapshot arrives JSON-decoded, so that object is new on each one and an effect keyed on it
 	// re-armed the countdown on unrelated kernel traffic — a demo counter ticking once a second
 	// starved an armed prefix indefinitely (#7782).
-	const armed = state.prefix.armed;
-	const timeoutMs = state.prefix.armed ? state.prefix.timeoutMs : 0;
+	const repeatWindowMs = state.prefix.armed ? state.prefix.repeatWindowMs : null;
 	const pending = state.prefix.armed ? state.prefix.pending.join("") : "";
 	useEffect(() => {
-		if (!armed) return;
+		if (repeatWindowMs === null) return;
 		// Through the ref, so the caller's `dispatch` identity is not a dependency either — the same
 		// starvation, from the other direction.
-		const timer = setTimeout(() => latest.current.dispatch({type: "prefix.timeout"}), timeoutMs);
+		const timer = setTimeout(
+			() => latest.current.dispatch({type: "prefix.repeatLapsed"}),
+			repeatWindowMs,
+		);
 		return () => clearTimeout(timer);
-		// `pending` is a dependency because each key typed into an armed sequence restarts the window,
-		// exactly as `startPrefixTimer` restarts the host's one timer.
-	}, [armed, timeoutMs, pending]);
+		// `pending` is a dependency because each key typed into the window restarts it, exactly as
+		// `startRepeatTimer` restarts the host's one timer.
+	}, [repeatWindowMs, pending]);
 
 	const closeCommandLine = useCallback(() => {
 		setCommandLineOpen(false);

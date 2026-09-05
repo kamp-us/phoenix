@@ -74,6 +74,11 @@ const arm = (): void => {
 	fireEvent.keyDown(document, {key: "b", ctrlKey: true, code: "KeyB"});
 };
 
+/** `<c-l>` — `workspace:next`, the repeatable binding that opens tmux's `repeat-time` window. */
+const repeat = (): void => {
+	fireEvent.keyDown(document, {key: "l", ctrlKey: true, code: "KeyL"});
+};
+
 describe("the desk renders the workspace's layout tree", () => {
 	it("nests the splits the way the tree does, and marks the focused window once", () => {
 		render(<Harness initial={threeWindowDesk("window-3")} sent={[]} />);
@@ -284,18 +289,21 @@ function DecodedHarness({
 	);
 }
 
-describe("the prefix countdown", () => {
-	it("times out on its own clock, however much unrelated kernel traffic arrives (#7782)", () => {
+describe("the repeat window's countdown", () => {
+	it("lapses on its own clock, however much unrelated kernel traffic arrives (#7782)", () => {
 		vi.useFakeTimers();
 		try {
 			const sent: Array<ShellMsg> = [];
 			const view = render(<DecodedHarness sent={sent} snapshots={0} />);
+			// `<c-l>` is `workspace:next`, a `repeatable: true` binding: it leaves the prefix armed
+			// for the table's 500ms repeat window, the one bounded window left.
 			act(arm);
+			act(repeat);
 
-			// Ten snapshots over one armed second: a demo counter ticking at 100ms, and nothing about
-			// the prefix changing. A countdown keyed on the snapshot object re-armed on every one of
+			// Snapshots across the window: a demo counter ticking at 100ms, and nothing about the
+			// prefix changing. A countdown keyed on the snapshot object re-armed on every one of
 			// these and never fired.
-			for (let tick = 1; tick <= 10; tick++) {
+			for (let tick = 1; tick <= 4; tick++) {
 				act(() => {
 					view.rerender(<DecodedHarness sent={sent} snapshots={tick} />);
 					vi.advanceTimersByTime(100);
@@ -303,9 +311,36 @@ describe("the prefix countdown", () => {
 			}
 			act(() => void vi.advanceTimersByTime(200));
 
-			expect(sent.filter((msg) => msg.type === "prefix.timeout")).toHaveLength(1);
+			expect(sent.filter((msg) => msg.type === "prefix.repeatLapsed")).toHaveLength(1);
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it("never runs for a prefix armed by hand: that one waits indefinitely (#7842)", () => {
+		vi.useFakeTimers();
+		try {
+			const sent: Array<ShellMsg> = [];
+			render(<DecodedHarness sent={sent} snapshots={0} />);
+			act(arm);
+
+			act(() => void vi.advanceTimersByTime(30_000));
+
+			expect(sent.filter((msg) => msg.type === "prefix.repeatLapsed")).toHaveLength(0);
+			expect(vi.getTimerCount()).toBe(0);
+			expect(screen.getByText("armed")).toBeTruthy();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("Escape drops the armed prefix back to idle", () => {
+		const sent: Array<ShellMsg> = [];
+		render(<DecodedHarness sent={sent} snapshots={0} />);
+		act(arm);
+		expect(screen.getByText("armed")).toBeTruthy();
+
+		act(() => void fireEvent.keyDown(document, {key: "Escape", code: "Escape"}));
+		expect(screen.getByText("idle")).toBeTruthy();
 	});
 });

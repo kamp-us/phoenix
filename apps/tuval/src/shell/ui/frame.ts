@@ -30,7 +30,10 @@ export const routerPrefix = (state: ShellState): PrefixState =>
 		? {
 				_tag: "Armed",
 				pending: state.prefix.pending,
-				timeout: Duration.millis(state.prefix.timeoutMs),
+				repeatWindow:
+					state.prefix.repeatWindowMs === null
+						? null
+						: Duration.millis(state.prefix.repeatWindowMs),
 			}
 		: idle;
 

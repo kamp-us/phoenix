@@ -60,7 +60,7 @@ export type ShellEffects<E = never, R = never> = HostHandlers<ShellMsg, ShellCmd
 
 /**
  * The only effects this slice ships: none of the four do anything. That is honest rather than
- * convenient — forwarding a key needs the transport (#7556 wires it) and the prefix timer needs a
+ * convenient — forwarding a key needs the transport (#7556 wires it) and the repeat timer needs a
  * host that can dispatch back later, which a kernel handler cannot do (it returns its follow-ups,
  * it does not hold a dispatcher). Until the surface lands (#7557, #7559) a desk booted with these
  * splits and focuses through direct Msgs and answers no key. Each drop is logged at debug so the
@@ -71,12 +71,12 @@ export const unwiredShellEffects: ShellEffects = {
 		Effect.logDebug(`shell: forwardKey "${cmd.key}" dropped — no surface attached`).pipe(
 			Effect.as([]),
 		),
-	startPrefixTimer: (cmd) =>
+	startRepeatTimer: (cmd) =>
 		Effect.logDebug(
-			`shell: startPrefixTimer ${cmd.timeoutMs}ms dropped — no surface attached`,
+			`shell: startRepeatTimer ${cmd.timeoutMs}ms dropped — no surface attached`,
 		).pipe(Effect.as([])),
-	cancelPrefixTimer: () =>
-		Effect.logDebug("shell: cancelPrefixTimer dropped — no surface attached").pipe(Effect.as([])),
+	cancelRepeatTimer: () =>
+		Effect.logDebug("shell: cancelRepeatTimer dropped — no surface attached").pipe(Effect.as([])),
 	runCommand: (cmd) =>
 		Effect.logDebug(`shell: runCommand "${cmd.name}" names no command row — dropped`).pipe(
 			Effect.as([]),

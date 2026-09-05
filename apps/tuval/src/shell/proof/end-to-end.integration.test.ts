@@ -198,13 +198,14 @@ const press = (desk: Desk, ...spellings: ReadonlyArray<string>) =>
 	});
 
 /**
- * The prefix countdown, fired by hand. `startPrefixTimer` is a Cmd the kernel cannot run — a handler
- * returns its follow-ups and cannot dispatch one a second later — so the page owns the countdown off
- * the armed window's length in the snapshot (`../ui/Desk.tsx`). A repeatable binding (`<c-h>`,
- * `<c-l>`) deliberately leaves the prefix armed, so a proof driving the kernel with no page in it
- * has to be that countdown itself.
+ * The repeat window's countdown, fired by hand. `startRepeatTimer` is a Cmd the kernel cannot run —
+ * a handler returns its follow-ups and cannot dispatch one later — so the page owns that countdown
+ * off the window's length in the snapshot (`../ui/Desk.tsx`). A repeatable binding (`<c-h>`,
+ * `<c-l>`) deliberately leaves the prefix armed for it, so a proof driving the kernel with no page
+ * in it has to be that countdown itself. A prefix armed by hand needs none: it waits indefinitely
+ * (#7842) until a sequence fires or Escape drops it.
  */
-const disarm = (desk: Desk) => desk.send({type: "prefix.timeout"});
+const disarm = (desk: Desk) => desk.send({type: "prefix.repeatLapsed"});
 
 /** A page attached to the shell process, with its state stream already running. */
 const attachDesk = Effect.fn("proof.attachDesk")(function* (url: string) {
