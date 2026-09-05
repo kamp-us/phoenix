@@ -39,16 +39,78 @@ const resultOf = (reply: SpellReply): unknown => {
 	return reply.ok ? reply.result : undefined;
 };
 
-/** The state a mutation writes, so a `Patch` has a real change to carry rather than a staged one. */
+/** The desk at one count: the protocol fixtures' own, with the workspace name that count implies. */
+const snapshotOf = (rev: number, registry: RegistryDescription, count: number): Snapshot =>
+	new Snapshot({
+		type: "snapshot",
+		version: PROTOCOL_VERSION,
+		rev: Revision.make(rev),
+		desk: {
+			workspaces: {
+				[deskWorkspace]: {
+					id: deskWorkspace,
+					name: `count ${count}`,
+					layout: {kind: "leaf", window: leftWindow},
+					focused: leftWindow,
+				},
+			},
+			activeWorkspace: deskWorkspace,
+		},
+		windows: {[leftWindow]: {id: leftWindow, recency: 1}},
+		processes: [counterRow],
+		registry,
+	});
+
+/**
+ * The kernel's state behind the two count spells: the count, the desk whose workspace name it
+ * names, and the patches its mutations emitted.
+ *
+ * `bump` writes all three in one step, which is what lets the `Patch` leg below assert over the
+ * patch the mutation produced. A patch the test writes proves only that `applyPatch` applies a
+ * patch: a kernel emitting the wrong change, or none, passes it unchanged.
+ */
 class Counter extends Context.Service<
 	Counter,
-	{readonly read: Effect.Effect<number>; readonly bump: Effect.Effect<number>}
+	{
+		readonly read: Effect.Effect<number>;
+		readonly bump: Effect.Effect<number>;
+		/** The desk as the kernel holds it now — what a page that applied every patch must match. */
+		readonly desk: Effect.Effect<Snapshot>;
+		readonly emitted: Effect.Effect<ReadonlyArray<Patch>>;
+	}
 >()("tuval/wireProof/Counter") {
-	static readonly layer: Layer.Layer<Counter> = Layer.effect(
+	static readonly layer: Layer.Layer<Counter, never, SpellRegistry> = Layer.effect(
 		Counter,
-		Effect.map(Ref.make(0), (cell) =>
-			Counter.of({read: Ref.get(cell), bump: Ref.updateAndGet(cell, (count) => count + 1)}),
-		),
+		Effect.gen(function* () {
+			const registry = yield* SpellRegistry.use((held) => held.describe);
+			const desk = yield* Ref.make(snapshotOf(1, registry, 0));
+			const patches = yield* Ref.make<ReadonlyArray<Patch>>([]);
+			const count = yield* Ref.make(0);
+			return Counter.of({
+				read: Ref.get(count),
+				desk: Ref.get(desk),
+				emitted: Ref.get(patches),
+				bump: Effect.gen(function* () {
+					const next = yield* Ref.updateAndGet(count, (held) => held + 1);
+					const current = yield* Ref.get(desk);
+					const patch = new Patch({
+						type: "patch",
+						version: PROTOCOL_VERSION,
+						rev: Revision.make(current.rev + 1),
+						changes: [
+							{
+								op: "replace",
+								path: ["desk", "workspaces", deskWorkspace, "name"],
+								value: `count ${next}`,
+							},
+						],
+					});
+					yield* Ref.set(desk, snapshotOf(patch.rev, registry, next));
+					yield* Ref.update(patches, (held) => [...held, patch]);
+					return next;
+				}),
+			});
+		}),
 	);
 }
 
@@ -104,28 +166,6 @@ const exchange = Effect.fn("wireProof.exchange")(function* (
 	return {callId, reply: back as SpellReply};
 });
 
-/** The desk a page is holding when the registry arrives: the protocol fixtures' own, plus rows. */
-const snapshotOf = (rev: number, registry: RegistryDescription): Snapshot =>
-	new Snapshot({
-		type: "snapshot",
-		version: PROTOCOL_VERSION,
-		rev: Revision.make(rev),
-		desk: {
-			workspaces: {
-				[deskWorkspace]: {
-					id: deskWorkspace,
-					name: "count 0",
-					layout: {kind: "leaf", window: leftWindow},
-					focused: leftWindow,
-				},
-			},
-			activeWorkspace: deskWorkspace,
-		},
-		windows: {[leftWindow]: {id: leftWindow, recency: 1}},
-		processes: [counterRow],
-		registry,
-	});
-
 describe("the wire", () => {
 	it.effect("answers one reply per call, each carrying that call's own id", () =>
 		Effect.gen(function* () {
@@ -142,7 +182,7 @@ describe("the wire", () => {
 	it.effect("carries the registry in a Snapshot, over the same codec", () =>
 		Effect.gen(function* () {
 			const registry = yield* SpellRegistry.use((held) => held.describe);
-			const sent = yield* encodeKernelMessage(snapshotOf(1, registry)).pipe(Effect.orDie);
+			const sent = yield* encodeKernelMessage(snapshotOf(1, registry, 0)).pipe(Effect.orDie);
 			const back = yield* decodeKernelMessage(sent).pipe(Effect.orDie);
 
 			assert.instanceOf(back, Snapshot);
@@ -158,27 +198,39 @@ describe("the wire", () => {
 
 	it.effect("delivers what a mutation changed as a Patch the page applies over its snapshot", () =>
 		Effect.gen(function* () {
-			const registry = yield* SpellRegistry.use((held) => held.describe);
-			const before = snapshotOf(1, registry);
+			const counter = yield* Counter;
+			const before = yield* counter.desk;
+			assert.deepStrictEqual(yield* counter.emitted, [], "a patch was emitted before any call");
+
+			yield* exchange("c-4", ["count", "read"], {});
+			assert.deepStrictEqual(
+				yield* counter.emitted,
+				[],
+				"a read emitted a patch, so a patch is not what a mutation changed",
+			);
 
 			const {reply} = yield* exchange("c-3", ["count", "bump"], {});
 			assert.deepStrictEqual(resultOf(reply), {count: 1});
 
-			const sent = yield* encodeKernelMessage(
-				new Patch({
-					type: "patch",
-					version: PROTOCOL_VERSION,
-					rev: Revision.make(2),
-					changes: [
-						{op: "replace", path: ["desk", "workspaces", deskWorkspace, "name"], value: "count 1"},
-					],
-				}),
-			).pipe(Effect.orDie);
+			const emitted = yield* counter.emitted;
+			assert.strictEqual(emitted.length, 1, "the mutation did not emit exactly one patch");
+			const [produced] = emitted;
+			assert.isDefined(produced, "the mutation emitted no patch");
+			if (produced === undefined) return;
+
+			const sent = yield* encodeKernelMessage(produced).pipe(Effect.orDie);
 			const delivered = yield* decodeKernelMessage(sent).pipe(Effect.orDie);
 			assert.instanceOf(delivered, Patch);
 
 			const after = yield* applyPatch(before, delivered as Patch);
-			assert.strictEqual(after.rev, 2);
+			// The page's rebuilt desk against the kernel's own: a patch that carried less than the
+			// mutation changed leaves the two disagreeing, which no assertion over the patch's own
+			// text would show.
+			assert.deepStrictEqual(
+				after,
+				yield* counter.desk,
+				"the page that applied the patch is not holding the desk the kernel holds",
+			);
 			assert.strictEqual(after.desk.workspaces[deskWorkspace]?.name, "count 1");
 			assert.strictEqual(
 				before.desk.workspaces[deskWorkspace]?.name,
