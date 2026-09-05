@@ -155,7 +155,10 @@ export function AttachedDesk({
 			if (row === undefined || process === undefined) return processGone(id);
 			const program = catalog.get(row.programId);
 			if (program === undefined) {
-				return noRenderer(id, `program ${row.programId} declares no window renderer`);
+				// Not "declares no renderer": a miss is also what an empty catalog looks like, and both
+				// `rows` and `programs` replay their initial value, so a page can render once before the
+				// registry frame lands. The honest sentence names this page's own catalog, not the kernel's.
+				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`);
 			}
 			const resolved = resolveRenderer(program.renderer);
 			if (resolved._tag !== "Resolved") {

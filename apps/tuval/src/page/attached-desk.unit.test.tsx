@@ -109,6 +109,7 @@ interface Scripted {
 const scripted = Effect.fn("test.scripted")(function* (options?: {
 	readonly state?: ShellState;
 	readonly rows?: ReadonlyArray<TableRow>;
+	readonly programs?: ReadonlyArray<WireProgram>;
 }) {
 	const desk = yield* SubscriptionRef.make<ProcessView<unknown>>(
 		live(options?.state ?? twoWindowDesk()),
@@ -125,7 +126,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 
 	const page: PageAttachment = {
 		rows: Stream.succeed(options?.rows ?? [counterRow]),
-		programs: Stream.succeed(catalog),
+		programs: Stream.succeed(options?.programs ?? catalog),
 		attachProcess: ((processId: ProcessId) =>
 			Effect.sync(() => {
 				attaches.push(processId);
@@ -221,6 +222,58 @@ describe("the attached desk", () => {
 			"7",
 			"7",
 		]);
+	});
+
+	it("holds the window with a placeholder when the process's program is not in the catalog", async () => {
+		// The empty catalog is also the transient: `programs` replays its initial value, so a table row
+		// can reach the page a frame before the registry frame does.
+		const app = await Effect.runPromise(scripted({programs: []}));
+		render(
+			<AttachedDesk
+				page={app.page}
+				shell={app.shell}
+				renderers={demoRenderers}
+				reducedMotion={true}
+			/>,
+		);
+		await settle();
+
+		expect(
+			screen.getAllByText(
+				`Process ${counterProcess} is running, but no catalog entry on this page for program ${counterId}.`,
+			),
+		).toHaveLength(2);
+		expect(screen.queryByLabelText("Counter value")).toBeNull();
+	});
+
+	it("holds the window with a placeholder when the page answers to no renderer of that name", async () => {
+		const app = await Effect.runPromise(
+			scripted({
+				programs: [
+					{
+						programId: counterId,
+						label: "Counter",
+						renderer: {kind: "host-native", ref: "tuval/demo/absent"},
+					},
+				],
+			}),
+		);
+		render(
+			<AttachedDesk
+				page={app.page}
+				shell={app.shell}
+				renderers={demoRenderers}
+				reducedMotion={true}
+			/>,
+		);
+		await settle();
+
+		expect(
+			screen.getAllByText(
+				`Process ${counterProcess} is running, but this page answers to no renderer named tuval/demo/absent.`,
+			),
+		).toHaveLength(2);
+		expect(screen.queryByLabelText("Counter value")).toBeNull();
 	});
 
 	it("choosing a program from the picker asks for the same open the command line asks for", async () => {

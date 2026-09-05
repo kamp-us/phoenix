@@ -19,7 +19,7 @@
 
 import type {IncomingMessage} from "node:http";
 import {NodeSocketServer} from "@effect/platform-node";
-import {Context, Deferred, Effect, type Option, type Redacted, Stream} from "effect";
+import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessChange, ProcessHandle, ProcessId} from "../../process/process.ts";
@@ -65,8 +65,9 @@ export interface TransportServer {
 	/**
 	 * Re-read the registry and send its windowed programs to every attached page. A reload changes
 	 * what a kernel offers, and a page cannot ask — a spell call is the only message it may send
-	 * (#7617) — so the kernel pushes. Nothing calls this on the reload path yet: `Booted.reload`
-	 * replaces the spell registry and leaves the program registry alone (#7743).
+	 * (#7617) — so the kernel pushes. Nothing calls this in production yet, and nothing can usefully:
+	 * `Registry.layer` builds one frozen map, so every call today would re-send the catalog the
+	 * socket already got on open (#7841). `Booted.reload` writes only the spell registry (#7743).
 	 */
 	readonly publishRegistry: Effect.Effect<void>;
 	/** The one URL the launch prints: the address plus the launch token, and nothing else secret. */
@@ -161,18 +162,26 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	admitLoopbackPort(address.port);
 
 	const pages: Attached = new Set();
+	// One permit over every catalog write, held by a greet and by `publishRegistry` alike: a page
+	// takes it to send its first catalog and join `pages`, so no publish can land in between and be
+	// lost to a page that is neither on the socket yet nor in the set.
+	const catalogLock = yield* Semaphore.make(1);
 	yield* Effect.forkScoped(
 		server.run((socket) =>
-			Effect.scoped(session(socket, options.handles, pages)).pipe(Effect.provideContext(services)),
+			Effect.scoped(session(socket, options.handles, pages, catalogLock)).pipe(
+				Effect.provideContext(services),
+			),
 		),
 	);
 
-	const publishRegistry = Effect.gen(function* () {
-		const frame = registryFrame(yield* registry.list);
-		// One page at a time: a write is a queued frame, not a round trip, and a serial walk keeps the
-		// publish a single point in time for every page rather than a fan nothing orders.
-		yield* Effect.forEach(pages, (send) => send(frame), {discard: true, concurrency: 1});
-	});
+	const publishRegistry = Semaphore.withPermit(catalogLock)(
+		Effect.gen(function* () {
+			const frame = registryFrame(yield* registry.list);
+			// One page at a time: a write is a queued frame, not a round trip, and a serial walk keeps
+			// the publish a single point in time for every page rather than a fan nothing orders.
+			yield* Effect.forEach(pages, (send) => send(frame), {discard: true, concurrency: 1});
+		}),
+	);
 
 	return {
 		port: address.port,
@@ -186,6 +195,7 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 	socket: Socket.Socket,
 	handles: Handles,
 	pages: Attached,
+	catalogLock: Semaphore.Semaphore,
 ) {
 	const table = yield* ProcessTable;
 	const tablePort = yield* ProcessTablePort;
@@ -312,13 +322,19 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 			),
 			scope,
 		);
-		yield* send(registryFrame(yield* registry.list));
-		for (const row of yield* tablePort.rows) {
-			yield* send({kind: TABLE_KIND, event: "spawned", row: toWireRow(row)});
-		}
-		// Registered last: `send` writes through a writer the read loop's latch opens, so a publish
-		// racing this greet would deadlock the very socket it is greeting.
-		yield* Effect.sync(() => void pages.add(send));
+		yield* Semaphore.withPermit(catalogLock)(
+			Effect.gen(function* () {
+				yield* send(registryFrame(yield* registry.list));
+				for (const row of yield* tablePort.rows) {
+					yield* send({kind: TABLE_KIND, event: "spawned", row: toWireRow(row)});
+				}
+				// Registered last: `send` writes through a writer the read loop's latch opens, so a
+				// publish racing this greet would deadlock the very socket it is greeting. The permit is
+				// what makes "last" safe rather than lossy — a publish waiting on it runs after the add
+				// and reaches this page too.
+				yield* Effect.sync(() => void pages.add(send));
+			}),
+		);
 		yield* Effect.ignore(Deferred.succeed(ready, undefined));
 	});
 
