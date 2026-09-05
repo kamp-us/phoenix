@@ -35,7 +35,7 @@ import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
 import {userItem, withTranscript} from "./chat.testing.ts";
-import type {ChatView} from "./view.ts";
+import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
 
@@ -62,9 +62,8 @@ const openComposer = async (): Promise<void> => {
 			withTranscript([userItem("a", "do it")]),
 		),
 	);
-	const view: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
 	const host: ChatWindowHost = await Effect.runPromise(
-		process.window<ChatView>(WindowId.make("w1"), view),
+		process.window<ChatView>(WindowId.make("w1"), initialChatView),
 	);
 	render(chatWindow({scrollCommitMs: 0, scrollToFn: () => {}}).render(host) as ReactElement);
 	await screen.findByRole("log", {name: "Transcript"});
