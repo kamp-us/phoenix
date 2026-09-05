@@ -30,6 +30,12 @@ export type {
 export {Card, Surface} from "./Card";
 export {CaylakBadge} from "./CaylakBadge";
 export {Collapsible} from "./Collapsible";
+export type {
+	CommandPaletteItem,
+	CommandPaletteProps,
+	CommandPaletteScope,
+} from "./CommandPalette";
+export {CommandPalette} from "./CommandPalette";
 export type {CopyLinkButtonProps} from "./CopyLinkButton";
 export {CopyLinkButton} from "./CopyLinkButton";
 export type {CountToggleProps} from "./CountToggle";

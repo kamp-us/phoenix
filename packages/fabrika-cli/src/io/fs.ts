@@ -207,3 +207,25 @@ export const writeFile = (
 	}).pipe(
 		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
 	);
+
+/**
+ * Move `path` to `to`, creating the destination's parent.
+ *
+ * The one primitive that relocates a directory without reading it: a copy-then-remove would read
+ * every byte of an append-only log and re-emit it, which is a rewrite the reader cannot tell from
+ * the original. A rename moves the inode, so the bytes a caller moved are provably the bytes that
+ * were there. Like every write here, a rename that did not land FAILS — a caller never reports the
+ * path as moved.
+ */
+export const rename = (
+	path: string,
+	to: string,
+): Effect.Effect<void, WriteFailed, FileSystem.FileSystem | Path.Path> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem.FileSystem;
+		const pathService = yield* Path.Path;
+		yield* fs.makeDirectory(pathService.dirname(to), {recursive: true});
+		yield* fs.rename(path, to);
+	}).pipe(
+		Effect.catchTag("PlatformError", (cause) => new WriteFailed({path, reason: cause.message})),
+	);

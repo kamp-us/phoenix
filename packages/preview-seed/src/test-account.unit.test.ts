@@ -5,8 +5,11 @@
  * statement it is handed and the assertions read that record.
  */
 
+import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
 import {assert, describe, it} from "@effect/vitest";
-import {toRestParams} from "@kampus/d1-rest";
+import {type ResolvedDatabaseName, resolveDatabaseName, toRestParams} from "@kampus/d1-rest";
+import {Layer} from "effect";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {
 	type CaylakStanding,
 	isThrowawayDatabaseName,
@@ -20,9 +23,35 @@ import {
 	TEST_ACCOUNTS,
 } from "./test-account.ts";
 
+/**
+ * Both names are minted the one way production mints one: through `resolveDatabaseName`, over a
+ * stubbed Cloudflare answer. Nothing here composes a `ResolvedDatabaseName` by hand, because nothing
+ * can — that is the invariant the fence's parameter now carries, so the tests exercise it by obeying
+ * it rather than by asserting about it (#7740).
+ */
+const resolved = (name: string): Promise<ResolvedDatabaseName> =>
+	resolveDatabaseName({
+		accountId: "acc",
+		databaseId: "db",
+		layer: Layer.mergeAll(
+			FetchHttpClient.layer.pipe(
+				Layer.provide(
+					Layer.succeed(FetchHttpClient.Fetch)(
+						async () =>
+							new Response(JSON.stringify({result: {uuid: "db", name}}), {
+								status: 200,
+								headers: {"content-type": "application/json"},
+							}),
+					),
+				),
+			),
+			fromApiToken({apiToken: "test-token"}),
+		),
+	});
+
 /** A per-PR preview's real shape: alchemy's `phoenix-phoenix-db-pr-<n>-<hash>` (PR #7717's). */
-const PREVIEW_NAME = "phoenix-phoenix-db-pr-7717-td6ketak4e75f6i4";
-const PROD_NAME = "phoenix-phoenix-db-prod-9f2c1a7be4d05613";
+const PREVIEW_NAME = await resolved("phoenix-phoenix-db-pr-7717-td6ketak4e75f6i4");
+const PROD_NAME = await resolved("phoenix-phoenix-db-prod-9f2c1a7be4d05613");
 
 interface Recorded {
 	readonly sql: string;
@@ -137,6 +166,25 @@ describe("provisionTestAccounts", () => {
 		const outcome = await provisionTestAccounts(makeTestAccountDb(d1), PREVIEW_NAME, {
 			yazar: TOKEN,
 		});
+		assert.strictEqual(outcome._tag, "Provisioned");
+		assert.lengthOf(batched, 3);
+	});
+
+	/**
+	 * The fence's parameter, pinned where a runtime assertion cannot reach: this label's TEXT would
+	 * pass `isThrowawayDatabaseName`, and the run below provisions on it, so the type is the only
+	 * thing refusing a name no `resolveDatabaseName` ever returned. Widen `databaseName` back to
+	 * `string` and the directive stops suppressing anything — TS2578 reds `pnpm typecheck` (#7740).
+	 */
+	it("refuses a caller-composed database name at the type level", async () => {
+		assert.isNotNull(TOKEN);
+		const {d1, batched} = fakeD1([]);
+		const outcome = await provisionTestAccounts(
+			makeTestAccountDb(d1),
+			// @ts-expect-error TS2345 — `resolveDatabaseName` is `ResolvedDatabaseName`'s only mint.
+			"phoenix-phoenix-db-pr-1-x",
+			{yazar: TOKEN},
+		);
 		assert.strictEqual(outcome._tag, "Provisioned");
 		assert.lengthOf(batched, 3);
 	});

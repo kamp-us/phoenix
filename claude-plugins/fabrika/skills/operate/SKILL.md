@@ -467,7 +467,11 @@ node <fabrika> lane migrate           # migrate the ones the swap provably does 
 
 It writes only where the lane's own event log folds to the same state through both machines. Exit
 `37` names the lanes it would have moved and leaves them alone — that is a human's call, not a
-re-run's.
+re-run's. One of those calls is now a verb: a lane whose issue is closed AND whose log will never
+replay leaves both sweeps through `node <fabrika> lane archive <lane>`, which moves its directory to
+the archived root and touches no log (ADR
+[0352](../../../../.decisions/0352-an-unreplayable-lane-is-archived-not-sealed.md)). It refuses at
+`49` on an open issue and `50` on a log that replays, so it can never hide live work.
 
 The sweep also judges each issue-keyed lane's machine against its issue's type and sub-issue links,
 because staleness was the only wrongness it could see and a coder-template lane booted on an epic

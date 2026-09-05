@@ -42,9 +42,40 @@ export type Misroute =
 	| {readonly _tag: "Settled"; readonly why: string}
 	| {readonly _tag: "Unreplayable"; readonly defects: ReadonlyArray<string>};
 
+/** The key a correction names its target by — the pair {@link applyCorrections} matches on. */
+const correctsKey = (task: string, at: string): string => `${task}\u0000${at}`;
+
 /**
- * The latest recorded event that took a {@link CompiledLane} partial-guarded cell's fallthrough for
- * want of a payload.
+ * Whether this line's routing payload is still open — it never carried one, or it carried a `false`
+ * naming no evidence that no correction has settled yet.
+ *
+ * ADR 0351 (#7800) taught the ship stage to record `partial: false` on a closing merge so a sweep
+ * would never buy that read twice. But until #7457 the answer came out of the nominator, which
+ * cannot see the subject — a merged `Part of #N` is a node in neither half of the union — so a
+ * `false` written before that fix is the fallthrough wearing an answer's clothes, and trusting it is
+ * the permissive fold this whole module undoes.
+ *
+ * The two are told apart by what the line names, never by when it was written. A `false` the fixed
+ * stage wrote carries the `landed` pull requests its read stood on; the nominator's fallthrough had
+ * none to name and carries none. A wall-clock cutoff would have answered the same question only for
+ * as long as the fix's own merge beat the instant it guessed at — every `DONE` the unfixed code
+ * recorded past that instant would read as its own answer, folding its lane to a terminal over an
+ * open issue with no sweep left to reach it.
+ *
+ * The `corrected` arm is what makes termination hold. A `false` is re-nominated at most once per
+ * line: the sweep appends a correction whichever way the board answers, and the correction is what
+ * closes the line — never the polarity it lands on, which would leave a confirmed-`false` line
+ * nominating itself forever.
+ */
+const unanswered = (entry: LogEntry, corrected: ReadonlySet<string>): boolean => {
+	if (entry.partial === undefined) return true;
+	if (entry.partial) return false;
+	return entry.landed === undefined && !corrected.has(correctsKey(entry.task, entry.at));
+};
+
+/**
+ * The latest recorded event that reached a {@link CompiledLane} partial-guarded cell carrying no
+ * answer its reader can trust.
  *
  * Latest rather than every one, because a lane that merged partially, went round and merged again
  * has two such lines and only the last one still describes where the lane sits — correcting an
@@ -58,13 +89,17 @@ export const findMisroute = (lane: CompiledLane, entries: ReadonlyArray<LogEntry
 	const resolved = applyCorrections(entries);
 	if (resolved._tag === "Undecidable") return {_tag: "Unreplayable", defects: resolved.defects};
 	const log = resolved.entries;
+	const corrected = new Set(
+		entries.flatMap((entry) =>
+			bareEvent(entry.event) === CORRECTED_EVENT && entry.corrects !== undefined
+				? [correctsKey(entry.task, entry.corrects)]
+				: [],
+		),
+	);
 	let found: Misroute | null = null;
 	for (const [index, entry] of log.entries()) {
 		const task = lane.tasks[entry.task];
-		// Any recorded `partial` is the line's own answer, either polarity: this nominates a line that
-		// recorded none, never one that recorded `false`, which would re-nominate the same corrected
-		// line on every run forever.
-		if (task === undefined || entry.partial !== undefined) continue;
+		if (task === undefined || !unanswered(entry, corrected)) continue;
 		const before = foldLog(lane, log.slice(0, index));
 		if (before._tag === "Unreplayable") return before;
 		const state = before.states[entry.task];
@@ -109,7 +144,13 @@ export const pullNumberIn = (ref: string | null): number | null => {
 };
 
 export type ClosureRead =
-	| {readonly _tag: "Read"; readonly closure: Closure}
+	/**
+	 * `landed` is the merged pull requests the judgement stood on, and it is never empty — an empty
+	 * one is the `Unknown` arm. It rides the answer so the recorded line can name its own evidence:
+	 * that is what tells a later sweep a `partial` was read rather than fallen through to, which no
+	 * timestamp on the line can say ({@link unanswered}).
+	 */
+	| {readonly _tag: "Read"; readonly closure: Closure; readonly landed: ReadonlyArray<number>}
 	/**
 	 * The board did not answer, or answered and proved nothing. Never read as `Closes` — that is the
 	 * permissive fold #7433 exists to undo.
@@ -129,7 +170,9 @@ export type ClosureRead =
  * every `Part of` number when it does.
  *
  * So the absence of a closure proof is `Unknown`, and only a merged pull request that really links
- * this issue reaches the judgement. `lane prove`'s own use of `traceClosure` is untouched (#7457).
+ * this issue reaches the judgement. Both verbs land on it: `lane prove`'s ship stage reaches
+ * `traceClosure` through `./closure.ts` and this function, never directly, so no caller reads that
+ * permissive default raw (#7457).
  */
 export const provenClosure = (issue: number, facts: ReadonlyArray<PullFact>): ClosureRead => {
 	const landed = landedFor(issue, facts);
@@ -139,7 +182,11 @@ export const provenClosure = (issue: number, facts: ReadonlyArray<PullFact>): Cl
 			reason: `the board named no merged pull request whose body links #${issue}, so nothing read proves this merge closed it`,
 		};
 	}
-	return {_tag: "Read", closure: traceClosure(issue, landed)};
+	return {
+		_tag: "Read",
+		closure: traceClosure(issue, landed),
+		landed: landed.map((fact) => fact.number),
+	};
 };
 
 /**

@@ -63,17 +63,19 @@ const make = Effect.fn("Tuval.SpellBridge.make")(function* (options: {
 	return SpellBridge.of({list: registry.describe, call});
 });
 
-export class SpellBridge extends Context.Service<
-	SpellBridge,
-	{
-		readonly list: Effect.Effect<ReadonlyArray<SpellDescription>>;
-		readonly call: (
-			path: SpellPath,
-			args: unknown,
-			scope: Scope,
-		) => Effect.Effect<unknown, SpellFailure | SpellNotAllowed>;
-	}
->()("tuval/SpellBridge") {
+/** The bridge's whole surface, named so a caller can hold one without holding the service. */
+export interface SpellBridgeApi {
+	readonly list: Effect.Effect<ReadonlyArray<SpellDescription>>;
+	readonly call: (
+		path: SpellPath,
+		args: unknown,
+		scope: Scope,
+	) => Effect.Effect<unknown, SpellFailure | SpellNotAllowed>;
+}
+
+export class SpellBridge extends Context.Service<SpellBridge, SpellBridgeApi>()(
+	"tuval/SpellBridge",
+) {
 	static readonly layer = (options: {
 		readonly allow: ReadonlyArray<SpellPath>;
 	}): Layer.Layer<SpellBridge, never, SpellExecutor | SpellRegistry> =>

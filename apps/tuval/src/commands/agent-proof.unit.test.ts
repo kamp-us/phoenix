@@ -19,6 +19,12 @@ import {randomUUID} from "node:crypto";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Deferred, Effect, Layer, Schema} from "effect";
+import {isAiAgentSessionState} from "../ai-agent/core/index.ts";
+import {aiAgentPortNames} from "../ai-agent/handlers/index.ts";
+import type {TranscriptPayload} from "../ai-agent/ports/index.ts";
+import {aiAgentProgram} from "../ai-agent/program.ts";
+import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "../ai-agent/service/index.ts";
+import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
 import {coreSpells} from "../boot.ts";
 import {Checkpoints} from "../durability/Checkpoints.ts";
 import {memoryStores} from "../durability/stores.ts";
@@ -43,13 +49,22 @@ import {
 import {RegistryDescription, type SpellDescription} from "../protocol/registry-description.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import {SpellBridge, type SpellBridgeApi} from "./bridge/index.ts";
 import {HelpRows} from "./core/help.ts";
 import {SpawnedProcesses} from "./core/process.ts";
 import {SpellExecutor} from "./executor.ts";
 import {type ParamSpec, readParams} from "./parse/spell-index.ts";
 import {SpellRegistry, type SpellRow} from "./registry.ts";
 import {type Client, WindowIndex, type WindowPlacement} from "./scope.ts";
-import {ClientId, defineSpell, renderPath, type SpellPath, WindowId, WorkspaceId} from "./spell.ts";
+import {
+	ClientId,
+	defineSpell,
+	renderPath,
+	type SpellPath,
+	type Scope as SpellScope,
+	WindowId,
+	WorkspaceId,
+} from "./spell.ts";
 import {SpellSet} from "./spell-set.ts";
 
 const workspace = WorkspaceId.make("ws-1");
@@ -57,8 +72,14 @@ const agentWindow = WindowId.make("w-agent");
 const agentProcess = ProcessId.make("p-agent");
 const client: Client = {id: ClientId.make("agent"), workspace};
 
+/** The second run's process, built by `aiAgentProgram` rather than written out as a row here. */
+const serviceAgentId = ProgramId.make("ai-agent");
+const serviceProcess = ProcessId.make("p-ai-agent");
+const serviceWindow = WindowId.make("w-ai-agent");
+
 const placements: Readonly<Record<string, WindowPlacement>> = {
 	[agentWindow]: {process: agentProcess, workspace},
+	[serviceWindow]: {process: serviceProcess, workspace},
 };
 
 const WORD_KIND = "text/v1";
@@ -418,6 +439,218 @@ describe("the agent proof", () => {
 			assert.isString(spawned.process);
 			assert.deepStrictEqual(answerAt("process.send"), {delivered: true});
 			assert.deepStrictEqual(answerAt("echo.repeat"), {word: "haha"});
+		}),
+	);
+});
+
+/**
+ * The same script, re-run on the real agent service (#7731).
+ *
+ * The process above is a plain program row standing in for an agent. This one is built by
+ * `aiAgentProgram` over `ScriptedAiAgent.layer` — the factory and the layer every AI agent program
+ * in Tuval uses — and it reaches the registry through `SpellBridge`, which is what an agent
+ * program's SDK tool wraps. What the script does is unchanged: `spell list`, `spell describe` on
+ * every path it returned, then every listed spell with args generated from its `params`.
+ */
+
+const serviceScope: SpellScope = {
+	client: ClientId.make("ai-agent"),
+	workspace,
+	window: serviceWindow,
+};
+
+const readList = Schema.decodeUnknownSync(RegistryDescription);
+
+/** What `process spawn` answered, which is the one argument a later call in the pass needs. */
+const learnedFrom = (
+	answered: ReadonlyArray<ScriptedAnswer>,
+): Readonly<Record<string, unknown>> => {
+	const spawned = answered.find((entry) => renderPath(entry.request.path) === "process.spawn");
+	const id = (spawned?.answer as {readonly process?: unknown} | undefined)?.process;
+	return id === undefined ? {} : {process: id};
+};
+
+/**
+ * The agent's next call, out of what it has already been answered: discovery first, then a
+ * describe per listed path, then one call per listed spell. Registry order puts `process spawn`
+ * ahead of `process send` and `process read`, so the process id is learned before they are reached.
+ */
+const planStep: ScriptedPlan = (answered) => {
+	const [listing, ...rest] = answered;
+	if (listing === undefined) return {path: ["spell", "list"], args: {}};
+	const listed = readList(listing.answer);
+	const firstPath = listed[0]?.path.join(" ") ?? "";
+	if (rest.length < listed.length) {
+		const next = listed[rest.length];
+		return next === undefined
+			? null
+			: {path: ["spell", "describe"], args: {path: next.path.join(" ")}};
+	}
+	const target = listed[rest.length - listed.length];
+	if (target === undefined) return null;
+	return {path: asPath(target.path), args: argumentsFor(target, learnedFrom(answered), firstPath)};
+};
+
+/** The events reach the transcript through a Sub, so the tail settles after `dispatch` returns. */
+const eventually = (check: () => boolean) =>
+	Effect.gen(function* () {
+		for (let attempt = 0; attempt < 400 && !check(); attempt += 1) yield* Effect.sleep("5 millis");
+	});
+
+interface Emission {
+	readonly port: string;
+	readonly payload: unknown;
+}
+
+const lastTranscript = (emitted: ReadonlyArray<Emission>): TranscriptPayload | undefined =>
+	[...emitted].reverse().find((entry) => entry.port === aiAgentPortNames.transcript)?.payload as
+		| TranscriptPayload
+		| undefined;
+
+const runServiceAgent = Effect.gen(function* () {
+	const emitted: Array<Emission> = [];
+	let answered: ReadonlyArray<ScriptedAnswer> = [];
+	const latch = yield* Deferred.make<SpellBridgeApi>();
+	// The bridge reaches the executor this same app builds, and the row has to exist before that
+	// app can be built at all, so the row holds a latch the app fills on its way in.
+	const reach: SpellBridgeApi = {
+		list: Effect.flatMap(Deferred.await(latch), (bridge) => bridge.list),
+		call: (path, args, scope) =>
+			Effect.flatMap(Deferred.await(latch), (bridge) => bridge.call(path, args, scope)),
+	};
+	const script: AgentScript = {
+		sessionId: "spell-proof",
+		history: [],
+		modes: {current: null, available: []},
+		interrupt: [],
+		spells: {bridge: reach, scope: serviceScope},
+		turns: [
+			{
+				events: [],
+				plan: (seen) => {
+					answered = seen;
+					return planStep(seen);
+				},
+			},
+		],
+	};
+	const rows = [
+		aiAgentProgram({
+			id: serviceAgentId,
+			layer: ScriptedAiAgent.layer(script),
+			// Bounds above anything this registry can produce, so the tail a window would render is
+			// the whole run rather than a cut of it.
+			config: {cwd: "/tuval", itemLimit: 500, byteLimit: 5_000_000},
+		}),
+		echoProgram(),
+	];
+	return yield* Effect.gen(function* () {
+		const processes = yield* Processes;
+		const rowsInRegistry = yield* SpellRegistry.use((registry) => registry.list);
+		const bridge = yield* Effect.provide(
+			SpellBridge,
+			SpellBridge.layer({allow: rowsInRegistry.map((row) => row.path)}),
+		);
+		yield* Deferred.succeed(latch, bridge);
+		const agent = yield* processes.spawn(serviceAgentId, {
+			id: serviceProcess,
+			services: Context.make(ProcessPorts, {
+				emit: (port: string, payload: unknown) =>
+					Effect.sync(() => {
+						emitted.push({port, payload});
+						return [];
+					}),
+			}),
+		});
+		yield* agent.dispatch({type: "start", cwd: "/tuval", resume: null});
+		yield* eventually(() => {
+			const state = agent.getState();
+			return isAiAgentSessionState(state) && state.sessionId !== null;
+		});
+		yield* agent.dispatch({type: "prompt", text: "call every spell you can", key: "k1"});
+		yield* eventually(() => (lastTranscript(emitted)?.items.length ?? 0) >= answered.length);
+		const help = yield* overTheWire(["help"], {});
+		return {answered, rowsInRegistry, help, transcript: lastTranscript(emitted)};
+	}).pipe(Effect.provide(app(rows)));
+});
+
+describe("the agent proof, on the agent service", () => {
+	it.live("reaches every spell through SpellBridge from an aiAgentProgram process", () =>
+		Effect.gen(function* () {
+			const {answered, rowsInRegistry, help} = yield* runServiceAgent;
+
+			for (const entry of answered) {
+				assert.isTrue(
+					entry.ok,
+					`${renderPath(entry.request.path)} failed: ${JSON.stringify(entry.answer)}`,
+				);
+			}
+
+			const registered = rowsInRegistry.map((row) => row.path.join(" "));
+			const calls = answered.map((entry) => renderPath(entry.request.path));
+			assert.strictEqual(calls[0], "spell.list", "the agent did not start by asking what exists");
+			assert.strictEqual(
+				answered.length,
+				1 + registered.length * 2,
+				"the run is not one discovery call, one describe per path and one call per spell",
+			);
+
+			const describedEvery = answered
+				.slice(1, 1 + registered.length)
+				.map((entry) => String((entry.request.args as {readonly path?: unknown}).path));
+			assert.deepStrictEqual(
+				[...describedEvery].sort(),
+				[...registered].sort(),
+				"the agent did not describe every path it was listed",
+			);
+
+			const helpRows = yield* Schema.decodeUnknownEffect(HelpRows)(resultOf(help)).pipe(
+				Effect.orDie,
+			);
+			assert.deepStrictEqual(
+				[...new Set(calls)].sort(),
+				helpRows.map((row) => row.path.split(" ").join(".")).sort(),
+				"the set the agent process called is not the set help lists",
+			);
+
+			const byPath = new Map<string, SpellRow>(
+				rowsInRegistry.map((row) => [renderPath(row.path), row]),
+			);
+			for (const entry of answered) {
+				const rendered = renderPath(entry.request.path);
+				const row = byPath.get(rendered);
+				assert.isDefined(row, `${rendered} is not a registered spell`);
+				yield* Schema.decodeUnknownEffect(row?.spell.result ?? Schema.Unknown)(entry.answer).pipe(
+					Effect.mapError(
+						(error) => new Error(`${rendered} answered off its result: ${error.message}`),
+					),
+					Effect.orDie,
+				);
+			}
+		}),
+	);
+
+	it.live("records every call and every reply on the session's own transcript", () =>
+		Effect.gen(function* () {
+			const {answered, transcript} = yield* runServiceAgent;
+			assert.isDefined(transcript, "the agent published no transcript");
+			const items = transcript?.items ?? [];
+			assert.deepStrictEqual(
+				items.map((item) => (item.kind === "tool" ? item.name : item.kind)),
+				answered.map((entry) => renderPath(entry.request.path)),
+				"the transcript is not the run the agent made",
+			);
+			items.forEach((item, index) => {
+				const entry = answered[index];
+				assert.strictEqual(item.kind, "tool");
+				if (item.kind !== "tool" || entry === undefined) return;
+				assert.strictEqual(item.status, "ok");
+				assert.deepStrictEqual(item.input, entry.request.args);
+				assert.isTrue(
+					JSON.stringify(entry.answer)?.startsWith(item.result.text) ?? false,
+					`${item.name} recorded a reply that is not the one it was answered`,
+				);
+			});
 		}),
 	);
 });
