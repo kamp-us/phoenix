@@ -39,6 +39,7 @@
 		"@types/react-dom": "catalog:",
 		"@types/ws": "catalog:",
 		"@vitejs/plugin-react": "catalog:",
+		"axe-core": "catalog:",
 		"fast-check": "catalog:",
 		"jsdom": "catalog:",
 		"typescript": "catalog:",
