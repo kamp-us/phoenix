@@ -21,7 +21,7 @@ moved.
 | [`spell-set.ts`](../apps/tuval/src/commands/spell-set.ts) | `SpellSet`: the table and the key bindings compiled against it, in one cell |
 | [`scope.ts`](../apps/tuval/src/commands/scope.ts) | `WindowIndex`, `WindowPlacement`, `Client`, `resolveScope` |
 | [`executor.ts`](../apps/tuval/src/commands/executor.ts) | `SpellExecutor`: one `SpellCall` in, one `SpellReply` out |
-| [`errors.ts`](../apps/tuval/src/commands/errors.ts) | `DuplicateSpellPath`, `SpellNotDescribable`, `SpellNotFound`, `NoSuchWindow`, `UnknownSpell`, `BadArgs`, `BadResult` |
+| [`errors.ts`](../apps/tuval/src/commands/errors.ts) | `DuplicateSpellPath`, `SpellNotDescribable`, `SpellNotFound`, `NoSuchWindow`, `UnknownSpell`, `BadArgs`, `BadResult`, `SpellFailed` |
 | [`index.ts`](../apps/tuval/src/commands/index.ts) | a partial barrel: `bindings/`, `errors`, `executor`, `parse/`, `registry`, `scope` and `spell`, but not `core/` or `bridge/`, which are imported from their own directories |
 | [`parse/tokenize.ts`](../apps/tuval/src/commands/parse/tokenize.ts) | the command line's lexer |
 | [`parse/reading.ts`](../apps/tuval/src/commands/parse/reading.ts) | the single walk `parse` and `complete` share |
@@ -170,11 +170,17 @@ The steps are lookup, decode the args, resolve the scope, run, encode the result
 | no spell at the path | `UnknownSpell`, carrying the nearest registered path when one is near enough. The measure is Levenshtein and the budget is `Math.max(1, Math.ceil(path.length / 3))`, so a short path still tolerates one edit |
 | `params` refuses the args | `BadArgs`, carrying the offending argument and what was expected |
 | the window is unknown | `NoSuchWindow` |
-| the spell's own error | a failure whose `tag` and `message` come off the error |
+| the spell's own tagged error | a failure whose `tag` and `message` come off the error |
+| the spell's own untagged failure (a bare string, a plain record, a thrown value) | `SpellFailed`, carrying the value on `original` and rendering it into the message; the executor also logs it through `Effect.logError` |
 | `result` refuses the return value | `BadResult`, and the fiber **dies**; that is the spell author's bug, not the caller's |
 
 A failure's `path` is always the call's own, so a spell's private error cannot claim a different
 one.
+
+Every `tag` a reply can carry is read off an error object's `_tag`, never composed as a literal:
+`AnySpell` erases the spell's error type, so a failure with no `_tag` is wrapped in `SpellFailed`
+before the reply is built. That is what keeps a page's `switch` on `tag` matching names that
+resolve to a declared class.
 
 `AnySpell` erases each spell's requirements, so nothing checks that the runtime carries what a
 registered spell needs. The composition root that builds the registry owes those services.
