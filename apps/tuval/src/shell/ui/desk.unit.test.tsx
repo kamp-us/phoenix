@@ -159,6 +159,120 @@ describe("the picker's activedescendant", () => {
 	});
 });
 
+/**
+ * A window renderer that reads its own keys, so a click can land inside a text entry the way it
+ * does in a chat composer. `boundEverywhere` renders a paragraph, which focuses nothing.
+ */
+const composerEverywhere: MountResolver = (windowId, processId) =>
+	processId === null
+		? empty
+		: {
+				_tag: "Bound",
+				host: {
+					windowId,
+					processId: ProcessId.make(processId),
+					readProcess: undefined as never,
+					dispatch: undefined as never,
+					view: () => null,
+					setView: undefined as never,
+				},
+				render: (host) => <input aria-label={`composer for ${String(host.processId)}`} />,
+			};
+
+const focusedWindowId = (): string | null => {
+	const marked = screen
+		.getAllByRole("region", {name: /^Window /})
+		.filter((node) => node.getAttribute("data-focused") === "true");
+	expect(marked).toHaveLength(1);
+	return marked[0]?.getAttribute("data-window-id") ?? null;
+};
+
+const focusMsgs = (sent: Array<ShellMsg>): Array<ShellMsg> =>
+	sent.filter((msg) => msg.type === "window.focus");
+
+describe("pointer focus (#7848)", () => {
+	it("focuses the window a pointer goes down on, and hands its renderer DOM focus", () => {
+		const sent: Array<ShellMsg> = [];
+		render(<Harness initial={threeWindowDesk("window-1")} sent={sent} />);
+		expect(focusedWindowId()).toBe("window-1");
+
+		fireEvent.pointerDown(screen.getByLabelText("Window window-2"));
+
+		expect(focusMsgs(sent)).toEqual([{type: "window.focus", windowId: "window-2"}]);
+		expect(focusedWindowId()).toBe("window-2");
+		// window-2 is the empty one, so its picker is the renderer — and desk focus and DOM focus
+		// agree without this handler ever calling `focus()`.
+		expect(document.activeElement).toBe(screen.getByRole("listbox", {name: /Open a program/}));
+	});
+
+	it("sends nothing when the window is already the focused one", () => {
+		const sent: Array<ShellMsg> = [];
+		render(<Harness initial={threeWindowDesk("window-1")} sent={sent} />);
+
+		fireEvent.pointerDown(screen.getByLabelText("Window window-1"));
+
+		expect(focusMsgs(sent)).toEqual([]);
+		expect(focusedWindowId()).toBe("window-1");
+	});
+
+	it("leaves focus alone for a separator press, and for a drag that travels over a window", () => {
+		const sent: Array<ShellMsg> = [];
+		const {container} = render(<Harness initial={threeWindowDesk("window-1")} sent={sent} />);
+		const separator = container.querySelector(".tuval-separator");
+		expect(separator).not.toBeNull();
+
+		// A separator is a sibling of the panels, never a descendant of a window, so the press does
+		// not bubble through one — and a drag fires no second pointerdown wherever it travels.
+		fireEvent.pointerDown(separator as Element);
+		const window2 = screen.getByLabelText("Window window-2");
+		fireEvent.pointerMove(window2);
+		fireEvent.pointerUp(window2);
+
+		expect(focusMsgs(sent)).toEqual([]);
+		expect(focusedWindowId()).toBe("window-1");
+	});
+
+	it("focuses the window a composer sits in without pulling DOM focus off the composer", () => {
+		const sent: Array<ShellMsg> = [];
+		render(
+			<Harness
+				initial={threeWindowDesk("window-1")}
+				sent={sent}
+				resolveMount={composerEverywhere}
+			/>,
+		);
+		const composer = screen.getByLabelText("composer for process-3");
+		// What the gesture's own default does before the desk re-renders: the caret is in the input.
+		composer.focus();
+
+		fireEvent.pointerDown(composer);
+
+		expect(focusMsgs(sent)).toEqual([{type: "window.focus", windowId: "window-3"}]);
+		expect(focusedWindowId()).toBe("window-3");
+		expect(document.activeElement).toBe(composer);
+	});
+
+	it("walks focus by keyboard exactly as before, with the pointer path in place", () => {
+		render(<Harness initial={threeWindowDesk("window-1")} sent={[]} />);
+
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "l", code: "KeyL"}));
+		expect(focusedWindowId()).toBe("window-2");
+
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "j", code: "KeyJ"}));
+		expect(focusedWindowId()).toBe("window-3");
+
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "ArrowUp", code: "ArrowUp"}));
+		expect(focusedWindowId()).toBe("window-2");
+
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "ArrowLeft", code: "ArrowLeft"}));
+		expect(focusedWindowId()).toBe("window-1");
+	});
+});
+
 describe("the single application-level keyboard listener", () => {
 	let added: Array<string>;
 
@@ -181,6 +295,13 @@ describe("the single application-level keyboard listener", () => {
 
 		fireEvent.keyDown(document, {key: "j"});
 		expect(sent).toEqual([{type: "keys.press", key: expect.objectContaining({key: "j"})}]);
+	});
+
+	it("adds none for the pointer path: a pointer handler is not a keyboard listener", () => {
+		render(<Harness initial={threeWindowDesk("window-1")} sent={[]} />);
+		fireEvent.pointerDown(screen.getByLabelText("Window window-2"));
+
+		expect(added.filter((type) => type === "keydown")).toHaveLength(1);
 	});
 
 	it("adds no second listener when the command line opens", () => {
