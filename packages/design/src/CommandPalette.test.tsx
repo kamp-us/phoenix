@@ -279,4 +279,98 @@ describe("CommandPalette", () => {
 		expect(footers[0]?.querySelector(".kp-command-palette__scopes")).not.toBeNull();
 		expect(footers[0]?.querySelector(".kp-command-palette__legend")?.textContent).toBe("gezin");
 	});
+
+	it("hands a caller the key and the active option before moving the selection itself", () => {
+		const onKeyDown = vi.fn();
+		renderPalette({onKeyDown});
+		const input = screen.getByRole("combobox");
+		fireEvent.keyDown(input, {key: "ArrowDown"});
+
+		expect(onKeyDown).toHaveBeenCalledTimes(1);
+		expect(onKeyDown.mock.calls[0]?.[1]).toEqual(items[0]);
+		// The caller looked and let it through, so the palette's own movement still ran.
+		expect(input.getAttribute("aria-activedescendant")).toBe(screen.getAllByRole("option")[1]?.id);
+	});
+
+	it("lets a caller claim a key with preventDefault, arrows and all", () => {
+		const onKeyDown = vi.fn((event: React.KeyboardEvent) => event.preventDefault());
+		const onSelect = vi.fn();
+		renderPalette({onKeyDown, onSelect});
+		const input = screen.getByRole("combobox");
+		const first = screen.getAllByRole("option")[0]?.id;
+
+		fireEvent.keyDown(input, {key: "Tab"});
+		fireEvent.keyDown(input, {key: "ArrowDown"});
+		fireEvent.keyDown(input, {key: "Enter"});
+
+		expect(input.getAttribute("aria-activedescendant")).toBe(first);
+		expect(onSelect).not.toHaveBeenCalled();
+	});
+
+	it("spends Enter on the caller's action when its precedence claims the key", () => {
+		const onSelect = vi.fn();
+		const onEnter = vi.fn(() => true);
+		const {rerender} = renderPalette({onEnter, onSelect});
+		fireEvent.keyDown(screen.getByRole("combobox"), {key: "Enter"});
+		expect(onEnter).toHaveBeenCalledTimes(1);
+		expect(onSelect).not.toHaveBeenCalled();
+
+		// A `false` answer is the caller declining this press, not opting out of the prop.
+		rerender(
+			<CommandPalette
+				items={items}
+				title="kamp.us'ta ara"
+				placeholder="ara"
+				emptyLabel="sonuç yok"
+				open
+				shortcut={false}
+				onEnter={() => false}
+				onSelect={onSelect}
+			/>,
+		);
+		fireEvent.keyDown(screen.getByRole("combobox"), {key: "Enter"});
+		expect(onSelect).toHaveBeenCalledWith(items[0]);
+	});
+
+	it("holds a caller's announcement in a polite region the caller alone replaces", () => {
+		const {rerender} = renderPalette();
+		expect(document.querySelector(".kp-command-palette__announce")).toBeNull();
+
+		const withAnnouncement = (announcement: string) => (
+			<CommandPalette
+				items={items}
+				title="kamp.us'ta ara"
+				placeholder="ara"
+				emptyLabel="sonuç yok"
+				open
+				shortcut={false}
+				announcement={announcement}
+			/>
+		);
+		rerender(withAnnouncement("3 sonuç"));
+		const region = document.querySelector('[aria-live="polite"]');
+		expect(region?.textContent).toBe("3 sonuç");
+
+		// Typing does not clear it: the sentence stands until the caller writes another.
+		fireEvent.change(screen.getByRole("combobox"), {target: {value: "functional"}});
+		expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe("3 sonuç");
+		rerender(withAnnouncement("1 sonuç"));
+		expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe("1 sonuç");
+	});
+
+	it("marks the field invalid with a caller's refusal without touching the announcement", () => {
+		renderPalette({error: "böyle bir şey yok"});
+		const input = screen.getByRole("combobox");
+		expect(input.getAttribute("aria-invalid")).toBe("true");
+		expect(screen.getByText("böyle bir şey yok")).not.toBeNull();
+		expect(document.querySelector(".kp-command-palette__announce")).toBeNull();
+	});
+
+	it("stops claiming an expanded popup once the list holds no option", () => {
+		renderPalette();
+		const input = screen.getByRole("combobox");
+		expect(input.getAttribute("aria-expanded")).toBe("true");
+		fireEvent.change(input, {target: {value: "bulunamaz"}});
+		expect(input.getAttribute("aria-expanded")).toBe("false");
+	});
 });
