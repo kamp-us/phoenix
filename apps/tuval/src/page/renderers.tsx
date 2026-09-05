@@ -2,11 +2,11 @@
  * The page's renderer table. The table lives here and not on the program row because a row is
  * kernel-side data that must stay free of React.
  *
- * It is keyed by **program id**, not by the row's `RendererRef.ref`, and that is forced rather than
- * chosen: the process-table wire (`../shell/transport/wire.ts`) carries a row's id, program, parent,
- * ports and state summary, and no renderer field — so the ref a row declares never reaches the page.
- * A row's `renderer` still decides whether the picker offers it at all
- * (`../shell/picker/entries.ts`), which is the whole reason the demo rows carry one.
+ * It is keyed by the `RendererRef.ref` a program row declares, and the kernel sends that reference
+ * over the registry frame (`../shell/transport/wire.ts`, #7788). So a program names its own renderer
+ * and this table answers by name: a fourth windowed program that reuses one of these references
+ * needs no edit here, and a reference nothing answers is a placeholder in the window rather than a
+ * missing entry nobody can see.
  *
  * Both renderers below are the demo programs' (#7517). Each reads its process through the window
  * contract's `readProcess` and nothing else: no store, no fetch, no socket.
@@ -15,10 +15,10 @@
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, ReactNode} from "react";
 import {useEffect, useState} from "react";
-import {type CounterState, counterId} from "../demo/counter.ts";
-import {type LogState, logId} from "../demo/log.ts";
-import type {ReactWindowRenderer} from "../shell/ui/index.ts";
-import type {AnyWindowHost, ProcessView} from "../shell/window/index.ts";
+import type {CounterState} from "../demo/counter.ts";
+import type {LogState} from "../demo/log.ts";
+import type {AnyWindowHost, AnyWindowRenderer, ProcessView} from "../shell/window/index.ts";
+import {windowRenderer} from "../shell/window/index.ts";
 
 /**
  * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
@@ -82,11 +82,14 @@ function LogRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
 	);
 }
 
-/** Every renderer the page knows, by program id. */
-export const demoRenderers: ReadonlyMap<string, ReactWindowRenderer> = new Map<
-	string,
-	ReactWindowRenderer
->([
-	[counterId, (host): ReactNode => <CounterRenderer host={host} />],
-	[logId, (host): ReactNode => <LogRenderer host={host} />],
-]);
+/** Every renderer the page knows, by the reference a program row names it with. */
+export const demoRenderers: Readonly<Record<string, AnyWindowRenderer>> = {
+	"tuval/demo/counter": windowRenderer(
+		"host-native",
+		(host: AnyWindowHost): ReactNode => <CounterRenderer host={host} />,
+	),
+	"tuval/demo/log": windowRenderer(
+		"host-native",
+		(host: AnyWindowHost): ReactNode => <LogRenderer host={host} />,
+	),
+};

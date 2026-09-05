@@ -59,18 +59,27 @@ rest are inert:
 | `openProgram`, `attachProcess` | the kernel — `runPickerIntent`, whose answer is the follow-up Msgs |
 | `forwardKey` | the kernel — `Processes.handle(id)` then `dispatch({type: "key", key})` |
 | `runCommand` | nobody: the name is a user binding the command table does not hold; logged at debug |
-| `startPrefixTimer`, `cancelPrefixTimer` | **the surface** — see below |
+| `startRepeatTimer`, `cancelRepeatTimer` | **the surface** — see below |
 | `openCommandLine` | the surface — the line is a page element, not a process |
 | `reloadConfig` | nobody yet: `Booted.reload` sits above the kernel, out of a handler's reach (#7743) |
 
-**The prefix countdown is the surface's, and that is structural.** A kernel handler returns its
-follow-up Msgs and has no way to dispatch one a second later, so it cannot run a timer. The snapshot
-carries the armed window's length, so the page runs the countdown off state alone (`Desk.tsx`). Two
-consequences a caller must hold:
+**An armed prefix is never timed, and the only countdown is the repeat window's.** tmux waits
+indefinitely after its prefix and phoenix follows it (founder ruling on #7842), so `PrefixTable` has
+no arm-timeout field, `KeysConfig` has none to merge, and the armed snapshot carries
+`repeatWindowMs: null`. The prefix drops on a completed sequence, an unbound key (Escape is one), or
+a lapsed repeat window — never on its own. The one bounded window is tmux's `repeat-time`, which a
+`repeatable: true` binding opens.
+
+**That countdown is the surface's, and that is structural.** A kernel handler returns its follow-up
+Msgs and has no way to dispatch one later, so it cannot run a timer. The snapshot carries the repeat
+window's length, so the page runs the countdown off state alone (`Desk.tsx`). Three consequences a
+caller must hold:
 
 - Anything driving the kernel with no page attached — a test, a script — has to fire
-  `{type: "prefix.timeout"}` itself. A repeatable binding (`<c-h>`, `<c-l>`) deliberately leaves the
-  prefix armed, and with no countdown it stays armed forever, swallowing the next key.
+  `{type: "prefix.repeatLapsed"}` itself after a repeatable binding (`<c-h>`, `<c-l>`), which
+  deliberately leaves the prefix armed; with no countdown it stays armed, swallowing the next key.
+- That Msg disarms **only** a repeat window. A stale one cannot drop a prefix armed by hand, which
+  is what keeps the indefinite wait indefinite.
 - The countdown's effect must depend on the prefix's **value**, never on the snapshot object. Every
   snapshot arrives freshly decoded, so an effect keyed on `state.prefix` re-arms on unrelated kernel
   traffic and never fires — a demo counter ticking once a second starved it indefinitely (#7782).
@@ -85,19 +94,92 @@ debug, because a keystroke is not worth ending a desk over and the shell's error
 
 ## What the page can and cannot see
 
-The page reads two things off the wire: the shell process's state, and the process table. There is
-**no registry frame**, and that shapes two decisions:
+The page reads three things off the wire: the shell process's state, the process table, and the
+**catalog of windowed programs** — the `registry` frame (#7788). The catalog is what a page could
+spawn, never what a process holds, so the frames stay program-blind: a process's state still crosses
+as `unknown`.
 
-- The page's renderer table (`src/page/renderers.tsx`) is keyed by **program id**, not by the
-  `RendererRef` a row declares — the table wire carries no renderer field. A row's `renderer` still
-  decides whether the picker offers it at all (`showsInAWindow`), which is why every windowed program
-  declares one.
-- The page's picker offers **running processes only**; its programs section is empty and says so,
-  because a page cannot enumerate what it could spawn. Opening by name still works through
-  `prefix : window:open <program>`, which needs no list.
+- The kernel decides what is in the catalog, and it decides with `showsInAWindow`
+  (`src/shell/picker/entries.ts`) — the one place the headless test lives. A row with no `renderer`
+  never crosses, so `WireProgram.renderer` is required and a page cannot be offered a program it
+  would then fail to render.
+- The page's renderer table (`src/page/renderers.tsx`) is keyed by the `RendererRef.ref` a row
+  declares, and `resolverFromTable` (`src/shell/window/renderer.ts`) resolves it — kind checked, so
+  an `isolated-frame` reference is never answered by the `host-native` renderer of the same name. A
+  fourth windowed program that names a reference this table already answers needs no edit here.
+- The page's picker offers both sections: every windowed program, and every running process. Opening
+  by name still works through `prefix : window:open <program>`, and both routes end in the same
+  `window.open` Msg, so the picker and the command line cannot drift into two spawn paths.
+- **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
+  message (#7617 R1.3), so the catalog goes out as the socket opens and again on
+  `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
+  Nothing calls it in production, and a call would change nothing: `Registry.layer` builds one frozen
+  map, so the catalog is fixed for the life of the kernel process and every publish would re-send
+  what the socket already got on open (#7841). `Booted.reload` writes only the spell registry
+  (#7743).
 
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.
+
+## A program declares three renderers; the shell composes two of them
+
+A program never draws outside its own window (#7500 ruling 4). The two surfaces outside it — the
+desk inspector beside the tiling area, and the middle of the status bar — are therefore renderers a
+program *declares* and the shell composes from the Snapshot, never regions a program pushes into.
+The row carries three optional references (`src/registry/program.ts`): `renderer` for its window,
+`inspector`, and `status`.
+
+- The two desk renderers take the same `WindowHost` the window renderer takes, so all three are
+  transport-blind and all three read the program's selection state out of the one process the
+  focused window shows.
+- **An inspector renders whatever its surface renders**, so its output is a free `Out`, exactly like
+  a window renderer's. **A status renderer returns segments**, a fixed `{id, text, tone?}` list — not
+  a bar. That is the ruling as a type: the shell owns the left (the workspace) and the right (kernel
+  facts) because `statusFor` derives them itself and a program's segments can only ever arrive in
+  `middle` (#7500 ruling 5).
+- `inspectorFor` and `statusFor` (`src/shell/desk/compose.ts`) walk one chain — focused window → its
+  process → its program row → the reference it declares → the renderer that reference names — and
+  answer with a value on every step that does not resolve (`DeskEmptyReason`). A region is never a
+  hole and never a throw; the surface renders its placeholder and reads nothing else.
+- **The inspector's open/collapsed flag is desk state, not workspace state**: it lives on
+  `ShellState.desk` (`src/shell/desk/state.ts`), so a workspace switch leaves it exactly as it was.
+  `desk.inspector.toggle` is the one Msg that writes it, reachable from the `desk:inspector-toggle`
+  command row like any other.
+- `src/shell/desk/` imports no socket, no React and nothing from `src/shell/ui/` — its own boundary
+  test is the gate, as `src/shell/window/`'s is.
+
+## Two error boundaries, and what each one is allowed to cost
+
+A render throw with nothing above it unmounts React's whole tree, and on this surface that is a
+black tab with the reason only in a console nobody is reading. It has cost the project twice —
+#7560, then a `<c-b> |` that took the desk down on its own headline key
+([#7839](https://github.com/kamp-us/phoenix/issues/7839)). `ErrorBoundary` in
+`src/shell/ui/ErrorBoundary.tsx` is the answer, and it is mounted in exactly two places, each sized
+to what a throw there may cost:
+
+| Where | Wraps | What survives |
+|---|---|---|
+| `Desk.tsx` | the tiling area alone | the status line, the command line, the desk's keyboard |
+| `main.tsx` | everything the page renders | the tab, with the reason on it |
+
+**Recovery is not a button that re-throws.** The boundary takes `resetKeys`, and the desk hands it
+`layoutSignature(workspace.layout)` — the layout tree serialized to one string
+(`src/shell/layout/tree.ts`) — so the next kernel snapshot that changes the layout clears the panel
+with no gesture at all. The button is the fallback for the case where nothing new arrives.
+
+**The key is a signature and never the layout object**, and that is the whole rule for anything else
+mounting this boundary: `resetKeys` are compared with `Object.is`, and every snapshot the page
+receives is decoded afresh, so a tree object is a new identity on every frame whether or not
+anything moved. Keyed on the object, the panel is unmounted and rebuilt on unrelated kernel traffic
+— `<details>` snaps shut, focus on the reset button is lost with the node, and `role="alert"`
+re-announces once per frame, which is the reader's whole recovery gone in the exact case the panel
+exists for. It is the same identity trap the desk's prefix countdown avoids by depending on the
+prefix's *values* (#7782); `error-boundary.unit.test.tsx` drives the boundary with JSON-decoded
+snapshots to pin it.
+
+The panel is a `role="alert"` carrying the throw's own message plus its component stack in a
+`<details>`, because the reason a founder can paste is the point; showing "something went wrong" is
+the failure mode again in nicer words.
 
 ## `pnpm dev` is one process
 

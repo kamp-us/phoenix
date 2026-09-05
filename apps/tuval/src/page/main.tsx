@@ -18,6 +18,7 @@ import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
 import type {ShellMsg} from "../shell/core/index.ts";
 import {attach, SHELL_PROGRAM_ID} from "../shell/transport/browser.ts";
+import {ErrorBoundary} from "../shell/ui/index.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {demoRenderers} from "./renderers.tsx";
 import "../shell/ui/tokens.css";
@@ -116,7 +117,16 @@ const boot = Effect.gen(function* () {
 			),
 		),
 	);
-	root.render(<StrictMode>{shown}</StrictMode>);
+	// The outer net. `Desk` catches a throw from the tiling area and keeps its own chrome, so this
+	// one is for everything above that — the attach panels, the status line, the command line — where
+	// the alternative is the blank tab of #7839 and #7560 again.
+	root.render(
+		<StrictMode>
+			<ErrorBoundary label="Tuval" className="tuval-surface">
+				{shown}
+			</ErrorBoundary>
+		</StrictMode>,
+	);
 	// The scope must outlive the render. `attach` acquires the socket against it and forks the read
 	// loop with `Effect.forkScoped` (`../shell/transport/client.ts`), so an `Effect.scoped` that
 	// closes when this effect completes interrupts the read loop and runs the socket's finalizer the

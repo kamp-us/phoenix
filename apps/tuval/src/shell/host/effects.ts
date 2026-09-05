@@ -65,8 +65,8 @@ export const wiredShellEffects = ({
 	shellProcessId,
 }: WiredShellOptions): ShellEffects<never, ShellHostServices> => ({
 	forwardKey: (cmd) => Effect.as(forwardKey(cmd.processId, cmd.key), []),
-	startPrefixTimer: () => Effect.succeed([]),
-	cancelPrefixTimer: () => Effect.succeed([]),
+	startRepeatTimer: () => Effect.succeed([]),
+	cancelRepeatTimer: () => Effect.succeed([]),
 	openCommandLine: () => Effect.succeed([]),
 	runCommand: (cmd) =>
 		Effect.as(

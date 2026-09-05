@@ -309,6 +309,30 @@ export function unzoom(tree: LayoutTree): LayoutTree {
 	return tree.zoomed === null ? tree : {...tree, zoomed: null};
 }
 
+/**
+ * One tree as one string, so a consumer that compares by identity can still ask "is this the same
+ * layout?". Every snapshot the page receives is decoded afresh, so two snapshots carrying an
+ * identical tree hold two objects `Object.is` calls different (#7782, #7839); two identical trees
+ * produce one string here, and any change to structure, order, orientation, sizes, a window's
+ * process or the zoomed window produces another.
+ *
+ * Ids are arbitrary strings, so the shape is built as nested arrays and serialized rather than
+ * joined with a delimiter a window could be named after.
+ */
+export function layoutSignature(tree: LayoutTree): string {
+	return JSON.stringify([tree.zoomed, nodeShape(tree.root)]);
+}
+
+function nodeShape(node: LayoutNode): unknown {
+	if (node.tag === "window") return ["w", node.id, node.processId];
+	return [
+		"s",
+		node.id,
+		node.orientation,
+		node.children.map((child) => [nodeShape(child), node.sizes[child.id] ?? null]),
+	];
+}
+
 function mapStack(
 	stack: StackNode,
 	stackId: StackId,

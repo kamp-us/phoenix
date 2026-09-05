@@ -30,13 +30,12 @@ export interface Binding {
 }
 
 /**
- * The whole grammar as data. Both durations are the core's to run: this module says how long an
- * armed window lasts, and firing the timer is the core's Cmd.
+ * The whole grammar as data. There is no arm timeout and no field to hold one: an armed prefix
+ * waits indefinitely, as tmux does (founder ruling on #7842, 2026-09-04). The one bounded window
+ * is `repeatTimeout`, tmux's `repeat-time`, and firing that timer is the core's Cmd.
  */
 export interface PrefixTable {
 	readonly prefix: string;
-	/** How long the prefix stays armed waiting for a sequence. tmux has no default; Runekeeper's buffer flush is 1s. */
-	readonly armTimeout: Duration.Duration;
 	/** How long a repeatable command leaves the prefix armed. tmux's `repeat-time` default. */
 	readonly repeatTimeout: Duration.Duration;
 	readonly bindings: ReadonlyArray<Binding>;
@@ -47,7 +46,6 @@ const command = (name: string): CommandName => CommandName.make(name);
 /** The founder's tmux bindings. Workspaces number from 1 (tmux `base-index 1`). */
 export const defaultPrefixTable: PrefixTable = {
 	prefix: "<c-b>",
-	armTimeout: Duration.millis(1000),
 	repeatTimeout: Duration.millis(500),
 	bindings: [
 		{sequence: "|", command: command("window:split-vertical"), repeatable: false},
@@ -113,7 +111,6 @@ export const normalizeSequence = (
  */
 export interface KeysConfig {
 	readonly prefix?: string;
-	readonly armTimeout?: Duration.Duration;
 	readonly repeatTimeout?: Duration.Duration;
 	readonly bindings?: ReadonlyArray<Binding>;
 }
@@ -152,7 +149,6 @@ export const applyKeysConfig = (
 
 	return Result.succeed({
 		prefix,
-		armTimeout: config.armTimeout ?? table.armTimeout,
 		repeatTimeout: config.repeatTimeout ?? table.repeatTimeout,
 		bindings: merged,
 	});

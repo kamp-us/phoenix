@@ -9,11 +9,17 @@
  * the process table erases it (`../../table/row.ts`). And there is **no shell frame** — the shell
  * process's state travels as an ordinary `process-state` frame, so the page finds its shell by
  * reading the table for the shell program's row like it would find any other process (#7556).
+ *
+ * The `registry` frame is a catalog and not an exception to the first of those. What it carries is
+ * what the *registry* knows about a program a window could show — its id, the name a surface calls
+ * it, and the reference naming its renderer — and nothing a running process holds: no state, no Msg,
+ * no private vocabulary. A page that reads it learns what it may spawn and which renderer a program
+ * asks for, and still learns every process's state as `unknown` (#7788).
  */
 
 import {Option} from "effect";
 import type {Lifecycle, ProcessId} from "../../process/process.ts";
-import type {ProgramId} from "../../registry/program.ts";
+import type {ProgramId, RendererKind, RendererRef} from "../../registry/program.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
 import type {UndecodableReason} from "./errors.ts";
 
@@ -25,6 +31,7 @@ export const TABLE_KIND = "tuval/transport/table/v1";
 export const PROCESS_STATE_KIND = "tuval/transport/process-state/v1";
 export const ATTACH_REFUSED_KIND = "tuval/transport/attach-refused/v1";
 export const DISPATCHED_KIND = "tuval/transport/dispatched/v1";
+export const REGISTRY_KIND = "tuval/transport/registry/v1";
 
 /** Attach to one process: from here its state arrives as `process-state` frames for as long as it lives. */
 export interface AttachFrame {
@@ -101,7 +108,34 @@ export interface DispatchedFrame {
 		| {readonly _tag: "ProcessGone"; readonly processId: ProcessId};
 }
 
-export type ServerFrame = TableFrame | ProcessStateFrame | AttachRefusedFrame | DispatchedFrame;
+/**
+ * One registry row a window can show. `renderer` is required rather than optional because a headless
+ * row never crosses: the kernel filters the catalog with `showsInAWindow` (`../picker/entries.ts`),
+ * so "on the wire" and "can fill a window" are the same fact and a page cannot be handed a program
+ * it could offer and then fail to render.
+ */
+export interface WireProgram {
+	readonly programId: ProgramId;
+	readonly label: string;
+	readonly renderer: RendererRef;
+}
+
+/**
+ * Every windowed program this kernel has, whole. A later frame replaces the list rather than
+ * amending it, so a page that reloads its catalog cannot end up holding a program the registry
+ * dropped.
+ */
+export interface RegistryFrame {
+	readonly kind: typeof REGISTRY_KIND;
+	readonly programs: ReadonlyArray<WireProgram>;
+}
+
+export type ServerFrame =
+	| TableFrame
+	| ProcessStateFrame
+	| AttachRefusedFrame
+	| DispatchedFrame
+	| RegistryFrame;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null;
@@ -122,6 +156,18 @@ const tableEventKinds: ReadonlySet<string> = new Set<TableEventKind>([
 	"stopped",
 	"state-changed",
 ]);
+
+const rendererKinds: ReadonlySet<string> = new Set<RendererKind>([
+	"host-native",
+	"host-declarative",
+	"isolated-frame",
+]);
+
+const isRendererRef = (value: unknown): value is RendererRef =>
+	isRecord(value) &&
+	typeof value.kind === "string" &&
+	rendererKinds.has(value.kind) &&
+	typeof value.ref === "string";
 
 const isSummary = (value: unknown): value is WireRow["stateSummary"] =>
 	isRecord(value) &&
@@ -187,6 +233,18 @@ export const isDispatchedFrame = (value: unknown): value is DispatchedFrame =>
 	(value.result._tag === "Delivered" ||
 		(value.result._tag === "ProcessGone" && isProcessIdString(value.result.processId)));
 
+export const isWireProgram = (value: unknown): value is WireProgram =>
+	isRecord(value) &&
+	typeof value.programId === "string" &&
+	typeof value.label === "string" &&
+	isRendererRef(value.renderer);
+
+export const isRegistryFrame = (value: unknown): value is RegistryFrame =>
+	isRecord(value) &&
+	value.kind === REGISTRY_KIND &&
+	Array.isArray(value.programs) &&
+	value.programs.every(isWireProgram);
+
 /** Decoded, or the one reason it was not. A refusal is a value: the caller decides what to close. */
 export type Decoded<F> =
 	| {readonly _tag: "Frame"; readonly frame: F}
@@ -233,8 +291,8 @@ export const decodeClientFrame: (text: string) => Decoded<ClientFrame> = decodeW
 );
 
 export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeWith<ServerFrame>(
-	new Set([TABLE_KIND, PROCESS_STATE_KIND, ATTACH_REFUSED_KIND, DISPATCHED_KIND]),
-	[isTableFrame, isProcessStateFrame, isAttachRefusedFrame, isDispatchedFrame],
+	new Set([TABLE_KIND, PROCESS_STATE_KIND, ATTACH_REFUSED_KIND, DISPATCHED_KIND, REGISTRY_KIND]),
+	[isTableFrame, isProcessStateFrame, isAttachRefusedFrame, isDispatchedFrame, isRegistryFrame],
 );
 
 export const encodeFrame = (frame: ClientFrame | ServerFrame): string => JSON.stringify(frame);

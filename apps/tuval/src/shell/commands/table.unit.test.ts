@@ -34,6 +34,7 @@ describe("the command table", () => {
 			"workspace:activate",
 			"workspace:previous",
 			"workspace:next",
+			"desk:inspector-toggle",
 			"command:open",
 			"config:reload",
 		]);
@@ -110,6 +111,13 @@ describe("each row's Msg", () => {
 	it("carries the two surface rows as Msgs of their own", () => {
 		expect(msgOf("command:open")).toEqual({type: "command.open"});
 		expect(msgOf("config:reload")).toEqual({type: "config.reload"});
+	});
+
+	it("reaches the desk inspector from one row, argument-free so a key can run it", () => {
+		expect(msgOf("desk:inspector-toggle")).toEqual({type: "desk.inspector.toggle"});
+		expect(msgForCommandName(commandName(["desk", "inspector-toggle"]))).toEqual({
+			type: "desk.inspector.toggle",
+		});
 	});
 });
 

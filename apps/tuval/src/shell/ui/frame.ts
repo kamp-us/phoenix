@@ -30,7 +30,10 @@ export const routerPrefix = (state: ShellState): PrefixState =>
 		? {
 				_tag: "Armed",
 				pending: state.prefix.pending,
-				timeout: Duration.millis(state.prefix.timeoutMs),
+				repeatWindow:
+					state.prefix.repeatWindowMs === null
+						? null
+						: Duration.millis(state.prefix.repeatWindowMs),
 			}
 		: idle;
 
@@ -117,9 +120,23 @@ export const defaultLayoutOf = (stack: StackNode): Record<string, number> => {
 };
 
 /**
+ * Does the group already hold exactly this stack's children as panels? A `setLayout` naming any
+ * other set throws rather than no-ops, and one gesture — a split or a close — leaves the two out of
+ * step for a commit (`.patterns/layout-tree-with-resizable-panels.md`, Rule 2).
+ */
+export const holdsPanels = (
+	stack: StackNode,
+	reported: Readonly<Record<NodeId, number>>,
+): boolean =>
+	Object.keys(reported).length === stack.children.length &&
+	stack.children.every((child) => reported[child.id] !== undefined);
+
+/**
  * Is the layout the library reports the one the tree already holds? Compared per key against the
  * tree's own tolerance, because a released drag reports percentages the browser rounded and an
  * equality test on raw floats would call every mirror a change and loop.
+ *
+ * Sizes only — the panel set is `holdsPanels`'s question, and the two are asked in that order.
  */
 export const sameLayout = (
 	stack: StackNode,
