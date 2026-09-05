@@ -8,7 +8,8 @@
 		".": "./src/index.ts",
 		"./a11y": "./src/a11y/check.ts",
 		"./tokens.css": "./src/tokens.css",
-		"./fonts.css": "./src/fonts.css"
+		"./fonts.css": "./src/fonts.css",
+		"./visually-hidden.css": "./src/visually-hidden.css"
 	},
 	"scripts": {
 		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
