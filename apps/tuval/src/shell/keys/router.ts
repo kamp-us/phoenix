@@ -1,7 +1,8 @@
 /**
  * The router: one table, one prefix state and one key event in; one answer out. A pure function —
- * it holds nothing between calls, reads no clock and touches no global. The armed window's timer
- * is the core's Cmd; this module only says how long that window lasts, on the state it hands back.
+ * it holds nothing between calls, reads no clock and touches no global. An armed prefix is
+ * unbounded, so the only window this module dates is the repeat one, on the state it hands back;
+ * firing that timer is the core's Cmd.
  *
  * Every answer carries the state that follows it, so the caller never derives the next state from
  * the answer's shape and the two can never disagree.
@@ -19,22 +20,29 @@ export interface Idle {
 
 /**
  * The prefix is armed. `pending` is the sequence typed since it armed — empty right after the
- * prefix, or after a repeatable command re-armed it. `timeout` is how long this window lasts.
+ * prefix, or after a repeatable command re-armed it.
+ *
+ * `repeatWindow` is `null` for an ordinary arm, and that absence is the ruling on #7842: the shell
+ * waits indefinitely for the sequence, as tmux does. A duration appears only when a
+ * `repeatable: true` binding re-armed the prefix — tmux's `repeat-time`, the one bounded window.
  */
 export interface Armed {
 	readonly _tag: "Armed";
 	readonly pending: ReadonlyArray<string>;
-	readonly timeout: Duration.Duration;
+	readonly repeatWindow: Duration.Duration | null;
 }
 
 export type PrefixState = Idle | Armed;
 
 export const idle: PrefixState = {_tag: "Idle"};
 
-const armed = (pending: ReadonlyArray<string>, timeout: Duration.Duration): PrefixState => ({
+const armed = (
+	pending: ReadonlyArray<string>,
+	repeatWindow: Duration.Duration | null,
+): PrefixState => ({
 	_tag: "Armed",
 	pending,
-	timeout,
+	repeatWindow,
 });
 
 /** The key belongs to the focused window, verbatim. */
@@ -92,7 +100,7 @@ export const route = (table: PrefixTable, state: PrefixState, event: Key): Route
 
 	if (state._tag === "Idle") {
 		return key === Result.getOrElse(normalize(table.prefix), () => table.prefix)
-			? {_tag: "Arm", next: armed([], table.armTimeout)}
+			? {_tag: "Arm", next: armed([], null)}
 			: {_tag: "ToWindow", key, next: idle};
 	}
 
@@ -107,7 +115,9 @@ export const route = (table: PrefixTable, state: PrefixState, event: Key): Route
 		};
 	}
 
+	// A half-typed sequence carries the repeat window forward rather than clearing it, so typing
+	// into a repeat-armed prefix cannot escape the bound tmux puts on it.
 	return table.bindings.some((binding) => startsWith(keysOf(binding), pending))
-		? {_tag: "Pending", next: armed(pending, table.armTimeout)}
+		? {_tag: "Pending", next: armed(pending, state.repeatWindow)}
 		: {_tag: "Unbound", sequence: pending.join(""), next: idle};
 };

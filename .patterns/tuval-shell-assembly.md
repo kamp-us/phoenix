@@ -59,18 +59,27 @@ rest are inert:
 | `openProgram`, `attachProcess` | the kernel — `runPickerIntent`, whose answer is the follow-up Msgs |
 | `forwardKey` | the kernel — `Processes.handle(id)` then `dispatch({type: "key", key})` |
 | `runCommand` | nobody: the name is a user binding the command table does not hold; logged at debug |
-| `startPrefixTimer`, `cancelPrefixTimer` | **the surface** — see below |
+| `startRepeatTimer`, `cancelRepeatTimer` | **the surface** — see below |
 | `openCommandLine` | the surface — the line is a page element, not a process |
 | `reloadConfig` | nobody yet: `Booted.reload` sits above the kernel, out of a handler's reach (#7743) |
 
-**The prefix countdown is the surface's, and that is structural.** A kernel handler returns its
-follow-up Msgs and has no way to dispatch one a second later, so it cannot run a timer. The snapshot
-carries the armed window's length, so the page runs the countdown off state alone (`Desk.tsx`). Two
-consequences a caller must hold:
+**An armed prefix is never timed, and the only countdown is the repeat window's.** tmux waits
+indefinitely after its prefix and phoenix follows it (founder ruling on #7842), so `PrefixTable` has
+no arm-timeout field, `KeysConfig` has none to merge, and the armed snapshot carries
+`repeatWindowMs: null`. The prefix drops on a completed sequence, an unbound key (Escape is one), or
+a lapsed repeat window — never on its own. The one bounded window is tmux's `repeat-time`, which a
+`repeatable: true` binding opens.
+
+**That countdown is the surface's, and that is structural.** A kernel handler returns its follow-up
+Msgs and has no way to dispatch one later, so it cannot run a timer. The snapshot carries the repeat
+window's length, so the page runs the countdown off state alone (`Desk.tsx`). Three consequences a
+caller must hold:
 
 - Anything driving the kernel with no page attached — a test, a script — has to fire
-  `{type: "prefix.timeout"}` itself. A repeatable binding (`<c-h>`, `<c-l>`) deliberately leaves the
-  prefix armed, and with no countdown it stays armed forever, swallowing the next key.
+  `{type: "prefix.repeatLapsed"}` itself after a repeatable binding (`<c-h>`, `<c-l>`), which
+  deliberately leaves the prefix armed; with no countdown it stays armed, swallowing the next key.
+- That Msg disarms **only** a repeat window. A stale one cannot drop a prefix armed by hand, which
+  is what keeps the indefinite wait indefinite.
 - The countdown's effect must depend on the prefix's **value**, never on the snapshot object. Every
   snapshot arrives freshly decoded, so an effect keyed on `state.prefix` re-arms on unrelated kernel
   traffic and never fires — a demo counter ticking once a second starved it indefinitely (#7782).

@@ -3,7 +3,7 @@
  * checkpoints through the kernel like any other process (#7514), so a value that cannot survive
  * `JSON.parse(JSON.stringify(x))` byte-equal must not be able to enter. That rules out a closure,
  * an Effect value, a DOM node and — the one that nearly slipped in — a `Duration.Duration`, which
- * is why the armed prefix window is stored as `timeoutMs` rather than the router's own `Armed`.
+ * is why the repeat window is stored as `repeatWindowMs` rather than the router's own `Armed`.
  *
  * Workspaces are a keyed map beside an active id, re-derived from the founder's Studio
  * (`monorepo/packages/studio/studio.ts`). Two things the port does not carry over: Studio reads
@@ -30,13 +30,18 @@ export interface Workspace {
 }
 
 /**
- * The prefix, as state can hold it. `pending` is the sequence typed since the prefix armed and
- * `timeoutMs` how long this window lasts — the router's `Armed` carries a `Duration.Duration`,
- * which is an object with methods and so cannot be checkpointed.
+ * The prefix, as state can hold it. `pending` is the sequence typed since the prefix armed;
+ * `repeatWindowMs` is `null` unless a repeatable binding re-armed it, and an armed prefix carrying
+ * `null` waits indefinitely (#7842). The router's `Armed` carries a `Duration.Duration`, which is
+ * an object with methods and so cannot be checkpointed, so this side holds milliseconds.
  */
 export type PrefixSnapshot =
 	| {readonly armed: false}
-	| {readonly armed: true; readonly pending: readonly string[]; readonly timeoutMs: number};
+	| {
+			readonly armed: true;
+			readonly pending: readonly string[];
+			readonly repeatWindowMs: number | null;
+	  };
 
 export const disarmed: PrefixSnapshot = {armed: false};
 
@@ -66,7 +71,7 @@ export const isPrefixSnapshot = (value: unknown): value is PrefixSnapshot => {
 		value.armed === true &&
 		Array.isArray(value.pending) &&
 		value.pending.every((key) => typeof key === "string") &&
-		typeof value.timeoutMs === "number"
+		(value.repeatWindowMs === null || typeof value.repeatWindowMs === "number")
 	);
 };
 

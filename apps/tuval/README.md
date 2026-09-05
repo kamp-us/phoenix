@@ -337,17 +337,20 @@ like any other process's state; the type-level proof is in `boundary.unit.test.t
 ```ts
 const [state, cmds] = applyMsg(defaultPrefixTable, initialState(), {
 	type: "keys.press",
-	key: {key: "b", ctrlKey: true},   // the prefix arms: cmds is [{type: "startPrefixTimer", …}]
+	key: {key: "b", ctrlKey: true},   // the prefix arms, untimed: cmds is []
 });
 applyMsg(defaultPrefixTable, state, {type: "keys.press", key: {key: "|"}}); // splits, side by side
 ```
 
 Two shapes are worth knowing. **A bound key runs its command's Msg in the same transition** — one
 press is one commit and one checkpoint — and a name the core does not own (`command:open`,
-`config:reload`, one of yours) leaves as a `runCommand` Cmd for the command rows instead. **The
-prefix timer is the host's, and there is exactly one**: the core says when a window opens
-(`startPrefixTimer`, carrying its length in ms) and when it closes (`cancelPrefixTimer`), and the
-host feeds `prefix.timeout` back when it fires.
+`config:reload`, one of yours) leaves as a `runCommand` Cmd for the command rows instead. **An armed
+prefix waits indefinitely, as tmux does** (#7842): nothing times it, there is no field to configure
+one, and it drops on a completed sequence, an unbound key (Escape is one), or a lapsed repeat
+window. **That repeat window's timer is the host's, and there is exactly one**: after a
+`repeatable: true` binding the core says when the window opens (`startRepeatTimer`, carrying its
+length in ms) and when it closes (`cancelRepeatTimer`), and the host feeds `prefix.repeatLapsed`
+back when it fires.
 
 Two refusals and one absence carry the model. The last window of a workspace does not close and the
 last workspace is not removed, for the same reason: a desk with nothing on it has no layout to
