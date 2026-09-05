@@ -5,13 +5,18 @@
 	color: var(--text-secondary);
 }
 
+/*
+ * The composer fills its parent's inline size, and the parent owns any reading-width cap. A
+ * package default that capped and auto-centred here was authored against apps/web's centred page
+ * and was wrong in every other host: Tuval's chat window is the whole width of a desk window, and
+ * the cap left dead columns beside a full-width transcript (#7989). A consumer that wants a
+ * reading width sets one on the element it mounts this into.
+ */
 .kp-agent-chat {
 	display: flex;
 	flex-direction: column;
 	gap: var(--s-3);
-	width: 100%;
-	max-width: calc(var(--s-8) * 16);
-	margin: 0 auto;
+	inline-size: 100%;
 }
 
 .kp-agent-chat__composer {
