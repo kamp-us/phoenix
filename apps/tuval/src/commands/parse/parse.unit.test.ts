@@ -1,11 +1,32 @@
 import {describe, expect, it} from "vitest";
+import {emptyParams} from "../../protocol/fixtures.ts";
 import {complete} from "./complete.ts";
 import {didYouMean} from "./did-you-mean.ts";
-import {registry, snapshot} from "./fixtures.ts";
+import {jsonSchema, registry, snapshot} from "./fixtures.ts";
 import {parse} from "./parse.ts";
 import {buildSpellIndex} from "./spell-index.ts";
 
 const run = (input: string) => parse(input, registry, snapshot);
+
+/**
+ * One spell, reached through a node with a single child, taking a parameter with a single literal
+ * beside one with two. It is the shape where a suggestion can only repeat the expectation, on both
+ * the segment path and the literal path, with the two-literal parameter as the control.
+ */
+const solo = buildSpellIndex([
+	{
+		path: ["alpha", "sey"],
+		describe: "Say something.",
+		params: jsonSchema(
+			{
+				mode: {type: "string", enum: ["wide"]},
+				size: {type: "string", enum: ["small", "large"]},
+			},
+			["mode"],
+		),
+		capabilities: [],
+	},
+]);
 
 describe("parse", () => {
 	it("completes a spell that takes no arguments", () => {
@@ -68,6 +89,30 @@ describe("parse", () => {
 		});
 	});
 
+	it("drops a suggestion that only repeats the expectation, on both paths that can produce one", () => {
+		// One candidate makes the expectation and the nearest match the same string, so the line
+		// would read `expected sey; did you mean "sey"?` — a refusal for the word it just asked for.
+		expect(parse("alpah sey", solo, snapshot)).toEqual({
+			_tag: "Refused",
+			position: 0,
+			expected: "alpha",
+		});
+		expect(parse("alpha sey wode", solo, snapshot)).toEqual({
+			_tag: "Refused",
+			position: 10,
+			expected: "wide",
+		});
+	});
+
+	it("keeps a literal's suggestion when it says something the expectation does not", () => {
+		expect(parse("alpha sey wide size=smoll", solo, snapshot)).toEqual({
+			_tag: "Refused",
+			position: 15,
+			expected: "small|large",
+			didYouMean: "small",
+		});
+	});
+
 	it("refuses a token past the last parameter", () => {
 		const result = run("window close extra");
 		expect(result).toEqual({_tag: "Refused", position: 13, expected: "no further arguments"});
@@ -87,13 +132,13 @@ describe("parse", () => {
 			{
 				path: ["focus", "layout"],
 				describe: "Show the layout.",
-				params: undefined,
+				params: emptyParams,
 				capabilities: [],
 			},
 			{
 				path: ["focus", "layout", "close"],
 				describe: "Close the layout view.",
-				params: undefined,
+				params: emptyParams,
 				capabilities: [],
 			},
 		]);

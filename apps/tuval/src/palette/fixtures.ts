@@ -9,6 +9,7 @@
 import {jsonSchema} from "../commands/parse/fixtures.ts";
 import {buildSpellIndex, type SpellIndex} from "../commands/parse/spell-index.ts";
 import {ProcessId, ProgramId, type SpellPath, WindowId, WorkspaceId} from "../protocol/ids.ts";
+import type {JsonSchemaDocument} from "../protocol/json-schema-document.ts";
 import {PROTOCOL_VERSION, Snapshot} from "../protocol/messages.ts";
 import type {ProcessRow} from "../protocol/process-row.ts";
 import type {RegistryDescription, SpellDescription} from "../protocol/registry-description.ts";
@@ -16,12 +17,11 @@ import type {RegistryDescription, SpellDescription} from "../protocol/registry-d
 const text = {type: "string"} as const;
 const direction = {type: "string", enum: ["left", "right", "up", "down"]} as const;
 
-const spell = (path: SpellPath, describe: string, params: unknown): SpellDescription => ({
-	path,
-	describe,
-	params,
-	capabilities: [],
-});
+const spell = (
+	path: SpellPath,
+	describe: string,
+	params: JsonSchemaDocument,
+): SpellDescription => ({path, describe, params, capabilities: []});
 
 export const descriptions: RegistryDescription = [
 	spell(["window", "close"], "Close the focused window.", jsonSchema({}, [])),

@@ -501,6 +501,19 @@ the revision just below it") have always said; the check used to be wider than b
 [`protocol/issue.ts`](../apps/tuval/src/protocol/issue.ts) turns an Effect `SchemaError` into
 `{expected, at}`, which is what every refusal in the slice interpolates.
 
+It takes the failing input as a second operand, and that operand serves one case: a direction union
+whose discriminants rule out every member. The parser narrows a union by its literal fields before
+it tries a member, so when `type` or `version` matches nothing there is no member left to fail and
+the `AnyOf` carries no issue — Effect then formats it as a dump of all four candidate shapes, at no
+path. `issue.ts` reads that empty `AnyOf` itself: it re-derives each member's literal fields off the
+public `SchemaAST` nodes, narrows them in declaration order against the input, and answers with the
+field that emptied the set — `Expected 1, got 2 at version` for a snapshot from a different build,
+`Expected "spell.call", got "spell.cast" at type` for a name nothing owns. A message whose
+discriminants do pick a member keeps that member's own issue unchanged. A non-object frame keeps the
+dump: no field is at fault there. Why this is worth the AST walk is
+[#7760](https://github.com/kamp-us/phoenix/issues/7760) — `version` is exactly what
+`PROTOCOL_VERSION` exists to catch, and the dump never mentioned it.
+
 ## The shell's command rows
 
 The shell declares its named commands under

@@ -58,6 +58,9 @@ describe("readParams", () => {
 		expect(readParams(undefined)).toEqual([]);
 		expect(readParams("not a schema")).toEqual([]);
 		expect(readParams({schema: {type: "object"}})).toEqual([]);
+		// The bare JSON Schema object the wire type refuses (#7758): the reader no longer reads it
+		// as a root, so the drift it used to hide cannot come back through here.
+		expect(readParams({type: "object", properties: {name: {type: "string"}}})).toEqual([]);
 		// A ref into definitions that hold nothing of that name stays total.
 		expect(readParams({schema: {$ref: "#/$defs/Missing"}, definitions: {}})).toEqual([]);
 	});
