@@ -40,7 +40,7 @@ import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const PROGRAM = "pi-ai-agent-publishes-the-send-test";
 const CWD = "/tuval/send";
-const TRANSPORT_ERROR = "tuval/ai-agent/TransportError";
+const PROMPT_ERROR = "tuval/ai-agent/PromptError";
 const SESSION: PiSessionRef = {id: "session-8018", cwd: CWD};
 
 const wired: ReadonlySet<string> = new Set(Object.values(aiAgentPortNames));
@@ -95,8 +95,12 @@ interface Pin {
 	readonly hasEnded: () => boolean;
 }
 
-/** A `PiClientService` whose turn ends only when the test says so. */
-const pin = (options: {readonly refuse?: boolean} = {}): Effect.Effect<Pin> =>
+/**
+ * A `PiClientService` whose turn ends only when the test says so, and which refuses its first
+ * `refusals` sends. Counted rather than a flag, because the case #8018's last round missed is the
+ * send *after* a refusal: a pin that refuses forever cannot tell a live stream from a dead one.
+ */
+const pin = (options: {readonly refusals?: number} = {}): Effect.Effect<Pin> =>
 	Effect.gen(function* () {
 		const sends: Array<string> = [];
 		const turn = yield* Deferred.make<void>();
@@ -112,7 +116,7 @@ const pin = (options: {readonly refuse?: boolean} = {}): Effect.Effect<Pin> =>
 			prompt: (_sessionId, text) =>
 				Effect.gen(function* () {
 					sends.push(text);
-					if (options.refuse === true) {
+					if (sends.length <= (options.refusals ?? 0)) {
 						return yield* new SessionLocked({
 							sessionId: SESSION.id,
 							detail: "another connection holds the lease",
@@ -176,7 +180,7 @@ const prompted = (handle: ProcessHandle, text: string, key: string, timestamp: n
  * nothing this watcher misses can be mistaken for a commit that never published.
  */
 const onAReadySession = <A, E>(
-	options: {readonly refuse?: boolean},
+	options: {readonly refusals?: number},
 	body: (
 		handle: ProcessHandle,
 		pinned: Pin,
@@ -263,7 +267,7 @@ describe("a Pi send whose turn has not ended", () => {
 
 describe("a Pi send the pin refuses", () => {
 	it.live("reaches the window as a failed Msg and gives the idempotency key back", () =>
-		onAReadySession({refuse: true}, (handle, pinned) =>
+		onAReadySession({refusals: 1}, (handle, pinned) =>
 			Effect.gen(function* () {
 				yield* prompted(handle, "hello", "k1", 1);
 
@@ -272,7 +276,7 @@ describe("a Pi send the pin refuses", () => {
 					() => sessionOf(handle).failure !== null,
 				);
 				const failure = sessionOf(handle).failure;
-				assert.strictEqual(failure?.tag, TRANSPORT_ERROR);
+				assert.strictEqual(failure?.tag, PROMPT_ERROR);
 				assert.strictEqual(failure?.reason, "refused");
 				assert.strictEqual(
 					sessionOf(handle).phase,
@@ -285,6 +289,47 @@ describe("a Pi send the pin refuses", () => {
 				yield* prompted(handle, "hello", "k1", 2);
 				yield* eventually("the retry to reach the pin", () => pinned.sends.length === 2);
 				assert.deepStrictEqual(pinned.sends, ["hello", "hello"]);
+			}),
+		),
+	);
+
+	/**
+	 * The regression the fix's first round shipped: the refusal rode the event queue's *failure*
+	 * channel, which is terminal. `Stream.fromQueue` ended, the generic events Sub's `runForEach`
+	 * returned, and the host will not re-arm a Sub under an id whose lifetime ended — so the window
+	 * sat at `ready` with no stream, and every later turn painted nothing.
+	 */
+	it.live("leaves the stream alive, so the next turn still reaches the window", () =>
+		onAReadySession({refusals: 1}, (handle, pinned, published) =>
+			Effect.gen(function* () {
+				yield* prompted(handle, "hello", "k1", 1);
+				yield* eventually(
+					"the refusal to reach the window",
+					() => sessionOf(handle).failure !== null,
+				);
+
+				// Forked: this send is not refused, so its handler is the one that used to park.
+				yield* Effect.forkChild(prompted(handle, "again", "k2", 2));
+				yield* eventually("the second send to reach the pin", () => pinned.sends.length === 2);
+
+				yield* pinned.push(snapshotOf([reply("still here")], "turn", 2));
+				yield* eventually("the next turn's reply on a published state", () =>
+					published.some((state) => assistantText(state).includes("still here")),
+				);
+				assert.isFalse(
+					pinned.hasEnded(),
+					"the turn ended before the assertion could mean anything",
+				);
+
+				// Phase too, and `ready` is the one the core cannot have set itself: the second
+				// prompt put it at `prompting`, so only a live stream brings it back.
+				yield* pinned.push(snapshotOf([reply("still here")], "idle", 3));
+				yield* eventually(
+					"the turn's end to reach the window",
+					() => sessionOf(handle).phase === "ready",
+				);
+
+				yield* pinned.endTurn;
 			}),
 		),
 	);

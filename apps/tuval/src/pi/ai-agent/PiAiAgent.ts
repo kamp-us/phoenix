@@ -14,7 +14,10 @@
  * `TransportError` and nothing dials again; the generic handlers decide to reconnect, and the way
  * back in is another `start({cwd, resume})`, which re-dials and reacquires the session by id. That
  * is why `events` resolves the live queue at subscription time rather than closing over one: a
- * subscription taken after the re-`start` is live, and one taken before is not resurrected.
+ * subscription taken after the re-`start` is live, and one taken before is not resurrected. That
+ * exit is the dropped socket's alone: a turn the session refuses rides `events` as a `failure`
+ * event, because the session is still there and every later turn still has to reach the window
+ * (#8018).
  *
  * Pi offers no permission prompts and no modes at this pin, so `permission` emits nothing, `mode`
  * advertises an empty list, and `answer` and `setMode` refuse as data rather than throwing.
@@ -49,8 +52,9 @@ import {
 import {pageItems} from "./entries.ts";
 import {emptyProjection, eventsOf} from "./items.ts";
 import {
+	promptDropOf,
 	promptErrorOf,
-	promptRefusalOf,
+	promptFailureOf,
 	startErrorOf,
 	storeUnreadable,
 	transportErrorOf,
@@ -240,7 +244,16 @@ const make = (
 					// A send that never landed is not a turn this session has seen, so the key goes
 					// back and a retry of it is admitted.
 					Effect.tapError(() => (key === undefined ? Effect.void : Ref.update(keys, without(key)))),
-					Effect.catch((refusal) => Queue.fail(open, promptRefusalOf(refusal))),
+					// The refusal has no caller left to raise to, so it rides the stream the send's own
+					// turn would have used. It rides it as an event, not as the queue's failure: a
+					// failed queue is terminal and its Sub is never re-armed under the same id, so
+					// ending it here would take every later turn's output with it (#8018). Only a
+					// dead transport takes that exit, because for that one there is no later turn.
+					Effect.catch((refusal) =>
+						refusal.reason === "disconnected"
+							? Queue.fail(open, promptDropOf(refusal))
+							: emit(open, [{kind: "failure", failure: promptFailureOf(refusal)}]),
+					),
 					Effect.asVoid,
 				),
 				scope,
