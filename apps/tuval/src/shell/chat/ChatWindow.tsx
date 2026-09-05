@@ -22,9 +22,10 @@
  * **Four writes move the transcript, and one pin decides between them.** A window resting on its
  * newest turn follows every turn that lands; one whose reader scrolled up is left alone, and so is
  * one anchored on a history page or on a row it just expanded. That is `view.pinned`: it is set
- * from the scroll offset on every scroll, cleared by expanding a row, and set again by sending. The
- * two anchoring effects reach the viewport only while it is clear: paging is asked for at the top,
- * where the pin is already off, and expanding turns it off itself.
+ * from the scroll offset on every scroll, cleared by expanding a row or asking for a page of
+ * history, and set again by sending. The two anchoring effects reach the viewport only while it is
+ * clear, and each clears it itself rather than trusting the geometry to have done so: a transcript
+ * barely taller than its viewport is inside the top threshold and the bottom one at once.
  *
  * **Nothing is ever auto-resent.** An `interrupted` marker renders the cut turn and offers a
  * resend; the resend is a deliberate new send and mints a fresh idempotency key (ruling 2, #7570),
@@ -266,6 +267,12 @@ function ChatWindow({
 	const commit = useCallback((next: (current: ChatView) => ChatView) => {
 		setViewLocal((current) => {
 			const value = next(current);
+			// The identity has to stop the host write and not just the local one: `window.setView`
+			// rebuilds `ShellState` wholesale (`../core/machine.ts`), so a no-change write from
+			// `onScroll` re-renders every subscriber of the desk once per scroll frame — the cost
+			// the `scrollCommitMs` debounce beside it exists to bound — while React's bail-out on
+			// the returned identity hides it from this window.
+			if (value === current) return current;
 			void Effect.runFork(hostRef.current.setView(value));
 			return value;
 		});
@@ -350,8 +357,14 @@ function ChatWindow({
 		if (before === null) return;
 		anchorRef.current = before;
 		setLoading(true);
+		// Asking for history is leaving the newest turn, and the pin has to say so or the re-anchor
+		// below loses. On a transcript barely taller than its viewport every offset is within *both*
+		// thresholds, so the top that fires this still reads as resting on the newest turn — and
+		// when the page lands the follow effect, declared after the re-anchor, overrides it and
+		// throws the reader to the bottom of the history they just asked for.
+		commit((current) => (current.pinned ? {...current, pinned: false} : current));
 		dispatch({type: "page", before, limit: options.pageLimit});
-	}, [loading, view.atOldest, rows, dispatch, options.pageLimit]);
+	}, [loading, view.atOldest, rows, commit, dispatch, options.pageLimit]);
 
 	// `lastPage` is shared session state, so every mounted window sees a page any one of them asked
 	// for (#7860). A window consumes one only while its own request is out: without the `loading`

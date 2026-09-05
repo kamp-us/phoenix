@@ -36,6 +36,8 @@ interface Harness {
 	readonly host: ChatWindowHost;
 	/** Every offset the window asked the transcript to scroll to, in order. */
 	readonly scrolls: ReadonlyArray<number>;
+	/** Every value the window pushed at its own view slot, in order. */
+	readonly writes: ReadonlyArray<ChatView>;
 	readonly keys: ReadonlyArray<string>;
 }
 
@@ -49,9 +51,18 @@ const openWindow = async (
 	);
 	const scrolls: Array<number> = [];
 	const keys: Array<string> = [];
-	const host = await Effect.runPromise(
+	const bound = await Effect.runPromise(
 		process.window<ChatView>(WindowId.make("w1"), initialView ?? initialChatView),
 	);
+	const writes: Array<ChatView> = [];
+	const host: ChatWindowHost = {
+		...bound,
+		setView: (next) =>
+			Effect.suspend(() => {
+				writes.push(next);
+				return bound.setView(next);
+			}),
+	};
 	const resolved: ChatWindowOptions = {
 		newKey: () => {
 			const key = `k${keys.length}`;
@@ -65,7 +76,7 @@ const openWindow = async (
 	const element = chatWindow(resolved).render(host) as ReactElement;
 	render(element);
 	giveScrollBox(await screen.findByRole("log", {name: "Transcript"}));
-	return {process, host, scrolls, keys, view: () => host.view()};
+	return {process, host, scrolls, writes, keys, view: () => host.view()};
 };
 
 /**
@@ -198,6 +209,28 @@ describe("following the newest turn", () => {
 
 		await waitFor(() => expect(view().pinned).toBe(true));
 	});
+
+	it("writes the view slot on a pin flip and not on every scroll event", async () => {
+		const {writes, view} = await openWindow(withTranscript(transcriptOf(20)));
+		await scrollTo(400);
+		await waitFor(() => expect(view().pinned).toBe(false));
+		await settle();
+
+		// Same offset, same pin: three events that change nothing about the slot. A write here is a
+		// wholesale `ShellState` rebuild for every subscriber of the desk, once per scroll frame.
+		const settled = writes.length;
+		await scrollTo(400);
+		await scrollTo(400);
+		await scrollTo(400);
+		await settle();
+		expect(writes.length).toBe(settled);
+
+		// …and the flip itself still lands, so the guard above is an identity check and not a mute.
+		await scrollToNewest();
+		await settle();
+		expect(writes.length).toBeGreaterThan(settled);
+		expect(view().pinned).toBe(true);
+	});
 });
 
 describe("paging", () => {
@@ -239,6 +272,33 @@ describe("paging", () => {
 		expect(landed).toBeLessThan(SCROLL_BOX - TEST_VIEWPORT.height);
 		expect(await screen.findByText("older prompt")).toBeDefined();
 		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+	});
+
+	it("stops following the newest turn when it is the top that asked for the page", async () => {
+		// A transcript barely taller than its viewport sits inside the top threshold and the bottom
+		// one at once, so the geometry alone still reads the top that asks for history as resting on
+		// the newest turn. Every row measures a full viewport here, so the overlap is staged from
+		// the threshold rather than from the row count; the invariant is the same either way.
+		const {process, scrolls, view} = await openWindow(withTranscript(transcriptOf(20)), {
+			bottomThreshold: SCROLL_BOX,
+		});
+		await scrollToNewest();
+		await waitFor(() => expect(view().pinned).toBe(true));
+
+		await scrollTo(0);
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		expect(view().pinned).toBe(false);
+
+		const before = scrolls.length;
+		await act(async () => {
+			await Effect.runPromise(process.commit(withTranscript(transcriptOf(20), {lastPage: page})));
+		});
+		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before));
+		await settle();
+
+		// The re-anchor put the reader back on the row they were reading. Nothing pulled them to the
+		// bottom of the history they just asked for.
+		expect(scrolls[scrolls.length - 1] ?? -1).toBeLessThan(SCROLL_BOX - TEST_VIEWPORT.height);
 	});
 
 	it("records the page cursor in its own view slot", async () => {
