@@ -69,7 +69,9 @@ const counterProgram = (probe: Probe, stores: CheckpointStores, version = "1.0.0
 const kernel = (rows: ReadonlyArray<AnyProgram>, stores: CheckpointStores) =>
 	Processes.layer.pipe(
 		Layer.provideMerge(Checkpoints.layer(stores)),
-		Layer.provide(Registry.layer(rows)),
+		// Merged, not provided: `restore.ts` reads the row back to ask it what a restored process
+		// should be sent, so the Registry has to still be in the context it runs under.
+		Layer.provideMerge(Registry.layer(rows)),
 	);
 
 describe("durability", () => {

@@ -100,6 +100,18 @@ the guard's own error message names. Keep it as a pure function of the restored 
 `resumeMessages(state)` — so a spawner asks the row what to send instead of encoding the row's
 lifecycle at the call site, and a state with nothing to resume answers with an empty list.
 
+**That function belongs on the row, under `resume`, or nothing sends it.** A rule only a test calls
+is not a restore: for two months every caller of `resumeMessages` was a proof, so a real restart
+left the session holding a live id and no transport
+([#7877](https://github.com/kamp-us/phoenix/issues/7877)). The row declares
+`resume: (state) => ReadonlyArray<Msg>` ([`registry/program.ts`](../apps/tuval/src/registry/program.ts)),
+and both spawners dispatch it through one shared step
+([`durability/resume.ts`](../apps/tuval/src/durability/resume.ts)) — `src/launch/` for a graph node
+whose checkpoint existed, `durability/restore.ts` for a checkpointed process the graph does not
+plan. Launch dispatches after **every** node is spawned and pumped, never inside the loop, because a
+resume republishes on its out-ports and a reader that has not launched yet would leave those
+payloads in a queue nobody drains.
+
 **A restored process publishes nothing until something republishes it.** Out-ports are event-driven:
 a projection leaves when the fold moves it. A process brought back from a checkpoint has a full
 state and no events coming, so a window attached to it renders nothing — and a pending request the

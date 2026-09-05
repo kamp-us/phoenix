@@ -50,6 +50,7 @@ import {
 	transcript,
 	transcriptPage,
 } from "./ports/index.ts";
+import {resumeMessages} from "./restore/checkpoint.ts";
 import type {TuvalAiAgent} from "./service/index.ts";
 
 export interface AiAgentProgramConfig {
@@ -152,6 +153,7 @@ export const aiAgentProgram = (options: AiAgentProgramOptions): AiAgentProgram =
 		},
 		handlers,
 		subs,
+		resume: resumeMessages,
 		capabilities: options.capabilities ?? [],
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
 		identity: {
