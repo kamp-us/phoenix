@@ -152,6 +152,13 @@
 	overflow-wrap: anywhere;
 }
 
+/* The agent reply is a rendered markdown block (`@kampus/design`). It carries its own type and
+   spacing; what it needs from the row is a width to wrap and scroll inside. */
+.tuval-chat-markdown {
+	min-inline-size: 0;
+	max-inline-size: 100%;
+}
+
 .tuval-chat-row[data-kind="user"] .tuval-chat-text {
 	color: var(--text-secondary);
 }

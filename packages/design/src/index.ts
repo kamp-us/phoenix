@@ -51,6 +51,7 @@ export type {
 	DesignTranslate,
 } from "./i18n";
 export {DesignTranslationProvider} from "./i18n";
+export {Markdown} from "./Markdown";
 export type {MenuItem, MenuProps} from "./Menu";
 export {Menu} from "./Menu";
 export type {MetaRowProps} from "./MetaRow";

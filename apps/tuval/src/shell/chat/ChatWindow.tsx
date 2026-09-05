@@ -24,7 +24,7 @@
  * never a retry of the key the interrupted turn used.
  */
 
-import {AgentChatInput, Button, DesignTranslationProvider, Kbd} from "@kampus/design";
+import {AgentChatInput, Button, DesignTranslationProvider, Kbd, Markdown} from "@kampus/design";
 import {useVirtualizer, type VirtualizerOptions} from "@tanstack/react-virtual";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEvent} from "react";
@@ -151,6 +151,38 @@ const who: Readonly<Record<TranscriptItem["kind"], string>> = {
 	system: "session",
 };
 
+/**
+ * The three treatments an item's body gets. An agent reply is markdown by default and renders
+ * through the shared block, which paints synchronously so the row's measurement still holds
+ * (#8012); a `user` or `system` line is shown exactly as it arrived, so what the operator typed is
+ * never reinterpreted as syntax.
+ */
+function ItemBody({
+	item,
+	expanded,
+	onToggleTool,
+}: {
+	readonly item: TranscriptItem;
+	readonly expanded: boolean;
+	readonly onToggleTool: (id: string, open: boolean) => void;
+}): ReactElement {
+	if (item.kind === "tool") {
+		return (
+			<ToolRow item={item} expanded={expanded} onToggle={(open) => onToggleTool(item.id, open)} />
+		);
+	}
+	if (item.kind === "assistant") {
+		// The transcript is a region inside the desk, so a `#` heading in a reply is a subsection of
+		// it rather than a page title.
+		return (
+			<Markdown className="tuval-chat-markdown" headingBase={3}>
+				{item.text}
+			</Markdown>
+		);
+	}
+	return <p className="tuval-chat-text">{item.text}</p>;
+}
+
 function ItemRow({
 	item,
 	interrupted,
@@ -167,11 +199,7 @@ function ItemRow({
 	return (
 		<>
 			<span className="tuval-chat-who">{who[item.kind]}</span>
-			{item.kind === "tool" ? (
-				<ToolRow item={item} expanded={expanded} onToggle={(open) => onToggleTool(item.id, open)} />
-			) : (
-				<p className="tuval-chat-text">{item.text}</p>
-			)}
+			<ItemBody item={item} expanded={expanded} onToggleTool={onToggleTool} />
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">
 					<span className="tuval-chat-interrupted-mark">interrupted</span>

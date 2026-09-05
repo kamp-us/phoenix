@@ -23,7 +23,8 @@
 		"@manti-ui/react": "catalog:",
 		"@fontsource/ibm-plex-sans": "catalog:",
 		"@fontsource/jetbrains-mono": "catalog:",
-		"lucide-react": "catalog:"
+		"lucide-react": "catalog:",
+		"marked": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
