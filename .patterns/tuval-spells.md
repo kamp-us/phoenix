@@ -544,7 +544,50 @@ a window's box, the way VS Code, Neovim and tmux do it. The focused window suppl
 spell run from the palette still targets the focused window, because scope comes from focus and not
 from where the palette sits.
 
-It is not built yet ([ADR 0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md)
-carries the why and the sequencing). What the parser and the completion engine above owe it is
-already here: a total per-keystroke read, ranked candidates, and a refusal that points at a
-character offset.
+It lives in [`apps/tuval/src/palette/`](../apps/tuval/src/palette)
+([ADR 0348](../.decisions/0348-tuval-command-framework-spell-registry-versioned-protocol.md) carries
+the why and the sequencing), and it is the second door onto the command table the `<prefix> :` line
+already opens — never a second mechanism.
+
+| File | What is in it |
+|---|---|
+| [`Palette.tsx`](../apps/tuval/src/palette/Palette.tsx) | The overlay: one combobox, the ranked list, the focused row's sentence, the last refusal |
+| [`candidates.ts`](../apps/tuval/src/palette/candidates.ts) | `paletteCandidates`, `acceptCandidate` — what the list holds and what accepting a row types |
+| [`call.ts`](../apps/tuval/src/palette/call.ts) | `spellCallFor`, `failureLine` — a read line into a `SpellCall`, a `SpellFailure` into one sentence |
+| [`use-palette.ts`](../apps/tuval/src/palette/use-palette.ts) | `usePalette`: open/closed, the opener's window, the element the caret goes back to |
+| [`palette.css`](../apps/tuval/src/palette/palette.css) | Geometry only. Every colour is a `@kampus/design` role token; `tokens.unit.test.ts` scans for a literal one |
+
+**The palette lists spells; the command line completes segments.** `complete` above answers with the
+*segment* under the caret, which is what a line being typed wants — one more word. A palette wants
+the runnable thing, so `paletteCandidates` walks the trie past the matching segment and lists every
+spell beneath it with its `describe`: typing `win` offers `window close`, `window move` and
+`window focus`, not the bare word `window`. On a value slot it hands straight back to
+`candidatesFor`, so the fuzzy-on-recency rule is unchanged. Prefix on the paths the system defines,
+fuzzy on the values a user named — one rule per slot, the same split `complete` makes.
+
+**One field, and the rows are never focusable.** The ARIA combobox pattern: the caret stays in the
+input for the palette's whole life and the active row is named by `aria-activedescendant`. That is
+what frees Tab to mean "accept this completion" the way a shell does, and it is also what closes the
+focus trap — the input is the only tabbable element in the dialog, so Tab from it comes back to it.
+Enter runs a line the parser can already read and spends itself on the completion otherwise.
+
+**Nothing focuses a row, so the component owes two things the browser would otherwise do.** It
+scrolls the active row into view itself on every `aria-activedescendant` change
+(`scrollIntoView({block: "nearest"})`, with the list's `scroll-behavior` pinned to `auto` so it is a
+jump under either motion preference) — without it, End on a list taller than its own box moves a
+selection out of sight. And it speaks: one visually-hidden `aria-live="polite"` region carries the
+refusal while there is one and the result count otherwise, since a reader with no sight of the list
+learns a keystroke's effect from nothing else. `aria-expanded` follows the list rather than sitting
+at a literal `true`, so it and `aria-activedescendant` never disagree about whether a popup exists.
+
+**A reply is a prop, not `onCall`'s return.** Replies arrive on the page's one socket rather than per
+call, so the caller forwards every reply and the palette consumes the one whose `id` matches the call
+it sent — once, keyed on the value passed rather than on the id, since the id is the caller's to
+mint. An `ok: false` keeps the palette open with the kernel's own words under the input; the next
+`ok: true` closes it.
+
+**Who supplies the registry and runs the call** is
+[`shell/ui/PaletteHost.tsx`](../apps/tuval/src/shell/ui/PaletteHost.tsx): it describes the shell's
+own rows as `SpellDescription`s, builds the `Snapshot` the completion engine reads, and — until the
+page-to-kernel spell transport lands — decodes a call against the row's real `params` and dispatches
+its Msg, exactly as `readCommandLine` does with a typed line.
