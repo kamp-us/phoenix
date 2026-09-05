@@ -121,6 +121,15 @@
 	gap: var(--s-1);
 }
 
+/*
+ * A subagent's row, indented under the call that spawned it. The indent is the second signal only —
+ * the row already says "subagent" in words above it (ADR 0162, Pillar 4).
+ */
+.tuval-chat-row[data-nested="true"] {
+	padding-inline-start: var(--s-6);
+	border-inline-start: 2px solid var(--border-faint);
+}
+
 .tuval-chat-who {
 	font: var(--t-micro);
 	color: var(--text-muted);
@@ -190,6 +199,10 @@
 
 .tuval-chat-tool-status[data-status="running"] {
 	color: var(--accent);
+}
+
+.tuval-chat-tool-folded {
+	color: var(--text-muted);
 }
 
 .tuval-chat-tool-detail {

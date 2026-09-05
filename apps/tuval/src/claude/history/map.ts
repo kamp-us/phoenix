@@ -16,7 +16,15 @@
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {boundToolOutput} from "../../ai-agent/history/index.ts";
 import type {ItemId, JsonValue, TranscriptItem} from "../../ai-agent/ports/index.ts";
-import {isRecord, outputOf, textOf, timestampOf, toolResultsOf, toolUsesOf} from "./blocks.ts";
+import {
+	isRecord,
+	outputOf,
+	parentToolUseIdOf,
+	textOf,
+	timestampOf,
+	toolResultsOf,
+	toolUsesOf,
+} from "./blocks.ts";
 
 /** `ports` mints an `ItemId` through an effect `Schema` brand, and this directory imports no effect. */
 const itemId = (value: string): ItemId => value as ItemId;
@@ -30,6 +38,8 @@ export interface ToolCall {
 	readonly name: string;
 	readonly input: JsonValue;
 	readonly at: number;
+	/** The subagent-spawning call this one ran inside, or `null` for one the agent made itself. */
+	readonly parentId: string | null;
 }
 
 export interface Mapping {
@@ -106,9 +116,10 @@ export const assistantEvents = (
 			}),
 		);
 	}
+	const parentId = parentToolUseIdOf(message);
 	let toolCalls = mapping.toolCalls;
 	for (const use of toolUsesOf(body)) {
-		toolCalls = withCall(toolCalls, use.id, {name: use.name, input: use.input, at});
+		toolCalls = withCall(toolCalls, use.id, {name: use.name, input: use.input, at, parentId});
 		events.push(
 			item(
 				boundToolOutput(
@@ -120,6 +131,7 @@ export const assistantEvents = (
 						input: use.input,
 						status: "running",
 						output: "",
+						...(parentId === null ? {} : {parentId: itemId(parentId)}),
 					},
 					options.toolResultLimit,
 				),
@@ -151,6 +163,7 @@ export const userEvents = (
 		const id = typeof message.uuid === "string" ? message.uuid : `user-${at}`;
 		return {mapping, events: [item({kind: "user", id: itemId(id), timestamp: at, text})]};
 	}
+	const framedParentId = parentToolUseIdOf(message);
 	let toolCalls = mapping.toolCalls;
 	let skipped = mapping.skipped;
 	const events: AgentEvent[] = [];
@@ -161,6 +174,10 @@ export const userEvents = (
 			continue;
 		}
 		toolCalls = withoutCall(toolCalls, result.toolUseId);
+		// The call that opened the row is authoritative — the row must not change parent when it
+		// settles — and this frame's own field is the fallback, so a result arriving on a subagent
+		// frame is still marked when the call it answers was opened without one.
+		const parentId = call.parentId ?? framedParentId;
 		events.push(
 			item(
 				boundToolOutput(
@@ -172,6 +189,7 @@ export const userEvents = (
 						input: call.input,
 						status: result.failed ? "error" : "ok",
 						output: result.text.length > 0 ? result.text : outputOf(message.tool_use_result),
+						...(parentId === null ? {} : {parentId: itemId(parentId)}),
 					},
 					options.toolResultLimit,
 				),

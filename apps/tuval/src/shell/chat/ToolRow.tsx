@@ -73,13 +73,20 @@ function DetailView({detail}: {readonly detail: ToolDetail}): ReactElement {
 	);
 }
 
+/** The group head's own line: the volume the fold is hiding, as words rather than a bare number. */
+const foldedLine = (nestedCount: number): string =>
+	nestedCount === 1 ? "1 nested call" : `${nestedCount} nested calls`;
+
 export function ToolRow({
 	item,
 	expanded,
+	nestedCount,
 	onToggle,
 }: {
 	readonly item: ToolItem;
 	readonly expanded: boolean;
+	/** How many subagent rows are folded under this one; zero means it heads no group. */
+	readonly nestedCount: number;
 	readonly onToggle: (open: boolean) => void;
 }): ReactElement {
 	const detail = toolDetail(item);
@@ -95,6 +102,9 @@ export function ToolRow({
 					<span className="tuval-chat-tool-status" data-status={item.status}>
 						{item.status}
 					</span>
+					{nestedCount > 0 ? (
+						<span className="tuval-chat-tool-folded">{foldedLine(nestedCount)}</span>
+					) : null}
 				</span>
 			}
 		>

@@ -156,19 +156,29 @@ function ItemRow({
 	interrupted,
 	onResend,
 	expanded,
+	nestedCount,
+	nested,
 	onToggleTool,
 }: {
 	readonly item: TranscriptItem;
 	readonly interrupted: boolean;
 	readonly onResend: (() => void) | null;
 	readonly expanded: boolean;
+	readonly nestedCount: number;
+	readonly nested: boolean;
 	readonly onToggleTool: (id: string, open: boolean) => void;
 }): ReactElement {
 	return (
 		<>
-			<span className="tuval-chat-who">{who[item.kind]}</span>
+			{/* A nested row says whose call it was in words; the indent beside it is the second signal. */}
+			<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
 			{item.kind === "tool" ? (
-				<ToolRow item={item} expanded={expanded} onToggle={(open) => onToggleTool(item.id, open)} />
+				<ToolRow
+					item={item}
+					expanded={expanded}
+					nestedCount={nestedCount}
+					onToggle={(open) => onToggleTool(item.id, open)}
+				/>
 			) : (
 				<p className="tuval-chat-text">{item.text}</p>
 			)}
@@ -224,6 +234,8 @@ function RowView({
 			interrupted={row.item.id === interruptedId}
 			onResend={row.item.id === interruptedId ? onResend : null}
 			expanded={expanded.has(row.item.id)}
+			nestedCount={row.nestedCount}
+			nested={row.nested}
 			onToggleTool={onToggleTool}
 		/>
 	);
@@ -297,8 +309,9 @@ function ChatWindow({
 				omitted: state?.transcript.omitted.items ?? 0,
 				loading,
 				atOldest: view.atOldest,
+				expanded,
 			}),
-		[older, state, loading, view.atOldest],
+		[older, state, loading, view.atOldest, expanded],
 	);
 
 	/** The row the viewport was resting on when the current page was asked for. */
@@ -375,8 +388,9 @@ function ChatWindow({
 		openedRef.current = null;
 		const index = rowIndexOfItem(rows, opened);
 		if (index >= 0) virtualizer.scrollToIndex(index, {align: "start"});
-		// `view.expanded` is the dependency that matters: opening a row leaves `rows` untouched —
-		// the list is the same items — so an effect keyed on `rows` alone would never run.
+		// `view.expanded` is the dependency that matters: opening an ordinary row leaves `rows`
+		// untouched — the list is the same items — so an effect keyed on `rows` alone would never run
+		// for it. A group head is the case where both change, and the index lookup covers either.
 	}, [view.expanded, rows, virtualizer]);
 
 	// First paint lands where a chat belongs: on the newest turn, or back on the offset this window
@@ -514,6 +528,7 @@ function ChatWindow({
 								className="tuval-chat-row"
 								data-index={virtual.index}
 								data-kind={row.kind === "item" ? row.item.kind : row.kind}
+								data-nested={row.kind === "item" && row.nested ? "true" : undefined}
 								ref={virtualizer.measureElement}
 								style={{transform: `translateY(${virtual.start}px)`}}
 							>

@@ -5,7 +5,7 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {assistantItem, transcriptOf, userItem} from "./chat.testing.ts";
+import {assistantItem, call, transcriptOf, userItem} from "./chat.testing.ts";
 import {chatRows, mergeOlder, oldestLoadedId, rowIndexOfItem, rowKey} from "./rows.ts";
 
 const base = {older: [], tail: [], omitted: 0, loading: false, atOldest: false};
@@ -42,6 +42,59 @@ describe("chatRows", () => {
 			"b",
 			"c",
 			"d",
+		]);
+	});
+});
+
+describe("chatRows folds a subagent's calls under the call that spawned it", () => {
+	const group = [
+		call("agent", {name: "Agent"}),
+		call("child-1", {parentId: "agent"}),
+		call("child-2", {parentId: "agent"}),
+		call("own", {name: "Bash"}),
+	];
+
+	it("shows the group head with its count and hides the calls under it while collapsed", () => {
+		const rows = chatRows({...base, tail: group, atOldest: true});
+		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
+			"agent",
+			"own",
+		]);
+		const head = rows[0];
+		expect(head?.kind === "item" && head.nestedCount).toBe(2);
+		expect(head?.kind === "item" && head.nested).toBe(false);
+	});
+
+	it("lays the folded calls out under the head once it is expanded, marked nested", () => {
+		const rows = chatRows({
+			...base,
+			tail: group,
+			atOldest: true,
+			expanded: new Set(["agent"]),
+		});
+		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
+			"agent",
+			"child-1",
+			"child-2",
+			"own",
+		]);
+		expect(rows.flatMap((row) => (row.kind === "item" && row.nested ? [row.item.id] : []))).toEqual(
+			["child-1", "child-2"],
+		);
+	});
+
+	it("leaves a row whose parent is not loaded in place, marked nested and heading nothing", () => {
+		const orphan = call("child-1", {parentId: "agent"});
+		const rows = chatRows({...base, tail: [orphan], atOldest: true});
+		expect(rows).toEqual([{kind: "item", item: orphan, nestedCount: 0, nested: true}]);
+	});
+
+	it("leaves a transcript with no parent marked on it exactly as it was", () => {
+		const flat = [call("a"), call("b")];
+		const rows = chatRows({...base, tail: flat, atOldest: true});
+		expect(rows).toEqual([
+			{kind: "item", item: flat[0], nestedCount: 0, nested: false},
+			{kind: "item", item: flat[1], nestedCount: 0, nested: false},
 		]);
 	});
 });
@@ -88,7 +141,9 @@ describe("the page cursor and the prepend anchor", () => {
 
 describe("rowKey", () => {
 	it("keys an item on its own id, so a status update does not remount its row", () => {
-		expect(rowKey({kind: "item", item: assistantItem("x")})).toBe("item:x");
+		expect(rowKey({kind: "item", item: assistantItem("x"), nestedCount: 0, nested: false})).toBe(
+			"item:x",
+		);
 		expect(rowKey({kind: "loading"})).toBe("loading");
 		expect(rowKey({kind: "older", items: 3})).toBe("older");
 	});
