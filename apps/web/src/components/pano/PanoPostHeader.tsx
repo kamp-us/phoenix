@@ -2,6 +2,18 @@
  * fate-shaped post-detail header. The page derives `isAuthor` and passes it in;
  * the edit/delete affordances hang off it.
  */
+
+import {
+	Button,
+	CopyLinkButton,
+	EditedIndicator,
+	MetaRow,
+	ReportButton,
+	type ReportOutcome,
+	SandboxMarker,
+	Tag,
+	type TagKind,
+} from "@kampus/design";
 import {useLiveView, type ViewRef, view} from "react-fate";
 import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
@@ -12,13 +24,6 @@ import {tagClass} from "../../lib/panoTags";
 import {actorLabel} from "../moderation/actor-identity";
 import {PostReactionBar} from "../reaction/PostReactionBar";
 import {ReactionBarSlot} from "../reaction/ReactionBarSlot";
-import {Tag, type TagKind} from "../ui/atoms";
-import {Button} from "../ui/Button";
-import {CopyLinkButton} from "../ui/CopyLinkButton";
-import {EditedIndicator} from "../ui/EditedIndicator";
-import {MetaRow} from "../ui/MetaRow";
-import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {SandboxMarker} from "../ui/SandboxMarker";
 import {commentCountLabel} from "./commentCount";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 

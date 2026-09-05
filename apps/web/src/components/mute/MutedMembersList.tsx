@@ -1,6 +1,7 @@
 // No flag check here: `mute.listMine` is flag-gated server-side and `MutesPage` self-gates
 // the whole route, so this only ever renders on the on-path.
 
+import {Button, EmptyState} from "@kampus/design";
 import {VolumeX} from "lucide-react";
 import {useState} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -8,8 +9,6 @@ import type {MutedMember} from "../../../worker/features/fate/views";
 import {useT} from "../../i18n";
 import {Icon} from "../Icon";
 import {actorLabel} from "../moderation/actor-identity";
-import {Button} from "../ui/Button";
-import {EmptyState} from "../ui/EmptyState";
 import {useMemberMute} from "./useMemberMute";
 import "./MutedMembersList.css";
 

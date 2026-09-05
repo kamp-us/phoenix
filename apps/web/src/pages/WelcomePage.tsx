@@ -15,6 +15,8 @@
  * (`welcomeSeen.ts`), so a reload or repeat login lands in the gate's `return` state and
  * bounces straight to the original `returnTo`.
  */
+
+import {Button} from "@kampus/design";
 import {useEffect, useState} from "react";
 import {Navigate, useLocation, useNavigate} from "react-router";
 import {useSession} from "../auth/client";
@@ -37,7 +39,6 @@ import {
 	useSharedAuthorshipStanding,
 	vouchExistsLabelKey,
 } from "../components/profile/CaylakStatusBlock";
-import {Button} from "../components/ui/Button";
 import {PHOENIX_WELCOME} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {useT} from "../i18n";

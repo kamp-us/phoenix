@@ -565,6 +565,14 @@ jobs:
       # closed, exactly as a `test:unit` failure does.
       - run: pnpm --filter './apps/**' test:client
 
+      # apps/tuval's `integration` project (#7556): the page-to-kernel transport over a real
+      # loopback WebSocket. Named for the socket it binds, not for ADR 0082's remote-D1 tier —
+      # it takes no creds and no service, which is why it can run in this creds-free job while
+      # `@kampus/web`'s `test:integration` (real remote D1) cannot. Scoped to the one app for
+      # exactly that reason: `--filter './apps/**' test:integration` would drag web's D1 suite
+      # into a job with no Cloudflare token.
+      - run: pnpm --filter @kampus/tuval test:integration
+
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
   # ships a `test` script (fabrika-cli — the single home for the consolidated guard/tooling
   # logic — plus ci-required, …) but CI ran only `@kampus/web`'s — so a
@@ -756,6 +764,11 @@ jobs:
       - name: Build SPA
         run: pnpm --filter './apps/**' build
 
+      # Two apps answer this filter and their `integration` projects mean different
+      # things. `apps/tuval`'s is slow-not-remote — a real Pi session over a real
+      # loopback socket, no credentials (see `.glossary/LANGUAGE.md`). The rest of
+      # this note is `apps/web`'s, which is the remote tier ADR 0082 defines.
+      #
       # The `integration` vitest project (ADR 0082): each file deploys the alchemy
       # stack to real remote Cloudflare under its own per-file isolated stage via
       # `Test.make`, so D1 is ALWAYS real (no offline D1) and the suite needs real

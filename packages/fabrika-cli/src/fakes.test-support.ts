@@ -84,6 +84,8 @@ export interface FakeFsOptions {
 	readonly directories?: ReadonlyArray<string>;
 	/** Paths whose removal fails — distinct from a removal that lands and leaves the path behind. */
 	readonly unremovable?: ReadonlyArray<string>;
+	/** Paths whose rename fails — a move that did not land, distinct from one that landed nowhere. */
+	readonly unrenamable?: ReadonlyArray<string>;
 	/** Paths a removal is scripted to NOT actually remove, so the re-probe has something to catch. */
 	readonly survivesRemoval?: ReadonlyArray<string>;
 	/**
@@ -150,6 +152,50 @@ export const fakeFs = (options: FakeFsOptions): FakeFs => {
 				return Effect.void;
 			},
 			realPath: (path: string) => Effect.succeed(options.real?.[path] ?? path),
+			// A directory rename moves everything under the prefix, which is the whole reason a lane
+			// archive is one call: a per-file copy would touch the log's bytes.
+			rename: (path: string, to: string) => {
+				if (options.unrenamable?.includes(path) === true) return denied("rename", path);
+				if (!directories.has(path) && !Object.hasOwn(dirs, path) && !Object.hasOwn(files, path)) {
+					return notFound("rename", path);
+				}
+				const moved = (key: string): string | null =>
+					key === path ? to : key.startsWith(`${path}/`) ? `${to}${key.slice(path.length)}` : null;
+				for (const key of Object.keys(files)) {
+					const next = moved(key);
+					if (next === null) continue;
+					const text = files[key] ?? null;
+					files[next] = text;
+					written.set(next, text ?? "");
+					delete files[key];
+				}
+				for (const key of Object.keys(dirs)) {
+					const next = moved(key);
+					if (next === null) continue;
+					dirs[next] = dirs[key] ?? null;
+					delete dirs[key];
+				}
+				for (const key of [...directories]) {
+					const next = moved(key);
+					if (next === null) continue;
+					directories.add(next);
+					directories.delete(key);
+				}
+				// The parent listings move with it, because a sweep reads `readDirectory` and a fake
+				// that still listed the moved entry under its old parent would green a sweep that
+				// cannot happen — the exact claim an archive rests on.
+				const parent = (of: string): [string, string] => {
+					const cut = of.lastIndexOf("/");
+					return cut === -1 ? ["", of] : [of.slice(0, cut), of.slice(cut + 1)];
+				};
+				const [fromDir, fromName] = parent(path);
+				const [toDir, toName] = parent(to);
+				const listed = dirs[fromDir];
+				if (listed != null) dirs[fromDir] = listed.filter((name) => name !== fromName);
+				const target = dirs[toDir];
+				if (target != null) dirs[toDir] = [...target, toName];
+				return Effect.void;
+			},
 			remove: (path: string) => {
 				if (options.unremovable?.includes(path) === true) return denied("remove", path);
 				if (options.survivesRemoval?.includes(path) === true) return Effect.void;

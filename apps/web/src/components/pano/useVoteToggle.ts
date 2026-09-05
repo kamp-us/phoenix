@@ -3,10 +3,11 @@
  * `UNAUTHORIZED` / `VOTE_REQUIRES_YAZAR` stay silent: these sites have no inline
  * error slot — see `.patterns/fate-mutations-client.md`.
  */
+
+import {useToast} from "@kampus/design";
 import {useCallback} from "react";
 import {useNavigate} from "react-router";
 import {useSession} from "../../auth/client";
-import {useToast} from "../../components/ui/Toast";
 import {codeOf} from "../../fate/wire";
 import {messageForCode} from "../../fate/wireMessages";
 import {type Translate, useT} from "../../i18n/LocaleProvider";

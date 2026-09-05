@@ -574,6 +574,8 @@ snapshot. Lane state is local and never committed.
 | `lane assembly` / `push` | an epic run's assembly worktree, and its published branch |
 | `lane integrate` | one reviewed child merged into that worktree, its dependencies reconciled from the merged lockfile, then judged by the repo's `codeValidators` — last stdout line on exit 0 is `INTEGRATE-VERDICT: MERGED`, the line above it the merged head; every refusal below the merge resets the branch to `ORIG_HEAD` and pushes nothing |
 | `lane stale` | which lanes have gone quiet with something owed on them — offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
+| `lane reconcile` | which lanes recorded a merge closure the board never confirmed, and the `<TASK>.CORRECTED` line that records what the board says — `partial: true` sends the lane round again (`corrected`), `partial: false` confirms the closure and moves no task (`confirmed`); either way the lane stops nominating, so a sweep costs one PR read per never-confirmed lane rather than hundreds every time (ADR 0351). Two kinds of line nominate: one carrying no `partial`, and one whose `partial: false` names no `landed` evidence, which is the mark of the nominator blind to a merged `Part of #N` that wrote every `false` before the ship stage began reading closures off the named PR. The evidence is what tells the two apart, never the line's timestamp: a cutoff date would hold only while that fix's own merge beat it (#7457). `--check` reports and appends nothing, so it buys nothing for the next sweep and pays the same reads twice; a read that proves no closure is `unknown`, never `closes`; ordered after `lane migrate`, which is what an `unmigrated` row names (ADR 0350) |
+| `lane archive` | one lane whose log will never replay, moved out of the swept root — refused unless BOTH the lane's issue reads closed AND the log fails the same `Unreplayable` judgement `lane migrate` makes, so a genuinely broken lane still shows up on every sweep. The archived root is a sibling of the lanes root, so `reconcile` and `migrate` are never handed it and need no skip rule; the record stays readable through `lane history --root <archived-root>` (ADR 0352) |
 | `lane claim` / `release` | who is driving this lane |
 
 **Exit codes.** `4` the lane read in full and is not the shape · `7` the lane is absent · `8` the
@@ -592,7 +594,7 @@ outside the closed park-cause set · `36` the `UNBLOCKED` would restore a state 
 — read the refusal for which budget: retries want a recorded `CLEARED` (`build clear`), waits want
 the grant on this same resume (`--grant-wait`, else `recipe unpark`) · `47` the `--grant-wait` is
 not a whole grant of at least one wait, or rides on an event that is not `UNBLOCKED`
-· `37` a booted lane's machine cannot be replaced by the template without moving the lane · `38`
+· `37` a booted lane's machine cannot be replaced by the template without moving the lane · `49` an archive was aimed at a lane whose issue is still open · `50` an archive was aimed at a lane whose log replays, so every sweep can judge it · `38`
 the `--class` is outside the review classes · `39` the cwd is not in a repository · `40` another
 writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
 branch · `42` the child conflicts and the merge was aborted · `43` the merged lockfile does not

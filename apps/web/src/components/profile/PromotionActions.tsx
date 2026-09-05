@@ -7,14 +7,14 @@
  * (`user.vouch`), but its UI is held back pending the open
  * sandbox-visibility-for-yazars question (#1205).
  */
+
+import {Alert, Button} from "@kampus/design";
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {PromotionReceipt} from "../../../worker/features/fate/views";
 import {codeOf} from "../../fate/wire";
 import {type CatalogKey, useT} from "../../i18n";
 import {promoteRefreshWarranted, promoteVisible} from "../divan/divanGating";
-import {Alert} from "../ui/Alert";
-import {Button} from "../ui/Button";
 
 export function shouldShowPromotionActions(isModerator: boolean, isOwnProfile: boolean): boolean {
 	return promoteVisible(isModerator) && !isOwnProfile;

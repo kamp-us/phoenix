@@ -17,7 +17,7 @@ has exactly one source of truth, and a sync only ever flows *from* that source:
 | Layer | Source of truth | A round-trip may… | A round-trip may **never**… |
 |---|---|---|---|
 | **Tokens / style** — color, spacing, radius, elevation, type scale, the visual surface | the visual tool (Claude Design) | rewrite role-token *values* and CSS declarations (paint) | — |
-| **Component logic + a11y** — focus rings, aria roles/labels/state, keyboard order & operability, `prefers-reduced-motion` respect, event wiring | the repo primitive (`apps/web/src/components/**`) | — | drop, weaken, or re-author the behavioral shell |
+| **Component logic + a11y** — focus rings, aria roles/labels/state, keyboard order & operability, `prefers-reduced-motion` respect, event wiring | the repo primitive (`packages/design/src/**`) | — | drop, weaken, or re-author the behavioral shell |
 
 Read it as two sentences:
 
@@ -39,7 +39,7 @@ the new paint looks.
 Tokens and behavior are orthogonal seams that meet at the primitive. The token layer
 (re-stratification, role-token values) is iterated **on hold behind visual design**;
 this behavioral contract is independent of it and is buildable now. The two never
-contend for the same fact: a token change moves a value in `styles/tokens.css`; a
+contend for the same fact: a token change moves a value in `packages/design/src/tokens.css`; a
 behavioral change moves logic in a primitive. `/design-sync` keeps them one-directional
 so neither round-trip clobbers the other's layer.
 
@@ -48,7 +48,7 @@ so neither round-trip clobbers the other's layer.
 The rule is only law if a broken round-trip fails a gate. Two rungs enforce it:
 
 - **The property-based a11y loop** ([property-based-a11y.md](./property-based-a11y.md),
-  `apps/web/src/components/ui/a11y/`) — a standing generic gate over *every* `ui/`
+  `packages/design/src/a11y/`) — a standing generic gate over *every* `@kampus/design`
   primitive: axe name/ARIA/focusability invariants over randomized valid props. A
   reskin that drops a name or breaks ARIA on any primitive fails it.
 - **The entry-row spine lock**

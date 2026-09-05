@@ -163,7 +163,7 @@
 	color: var(--text-primary);
 	font-weight: 600;
 }
-/* Row shell + shared child treatment is the MetaRow primitive (ui/MetaRow.css,
+/* Row shell + shared child treatment is the MetaRow primitive (packages/design/src/MetaRow.css,
    #2163). Only this footer's own tuning stays here, at a specificity that outranks
    the primitive's defaults so the fold is order-free: its t-meta font + 10px gap +
    top-margin, its right-aligned actions cluster, and its text-primary button hover

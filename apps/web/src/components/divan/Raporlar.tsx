@@ -4,10 +4,11 @@
  * server-side, so a non-moderator's read denies the invisible `UNAUTHORIZED`, caught by the
  * page's `<Screen>`).
  */
+
+import {Badge} from "@kampus/design";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {OpenReport} from "../../../worker/features/fate/views";
 import {plural, useLocale, useT} from "../../i18n";
-import {Badge} from "../ui/Badge";
 import {itemKindLabel} from "./divanGating";
 import {
 	reasonText,

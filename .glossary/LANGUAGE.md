@@ -134,6 +134,18 @@ as D1*. There is **no in-memory SQL tier**; the helper is deleted.)
   pure-logic-dominant files and per-file dedicated stages for the few that need isolation
   (`tests/integration/_integration.ts`). Examples: `search.test.ts`, `fate-live-posts.test.ts`.
 
+**`integration` names two different fidelities, one per app.** The paragraph above is
+`apps/web`'s and stays the definition ADR 0082 fixed: real remote Cloudflare, real D1, real
+credentials. `apps/tuval` deploys nothing and has no D1, so its `integration` project means
+the *other* half of what the tier was always for — the fidelity a claim needs that a
+substituted seam cannot give. There it is a real Pi `AgentSession` behind a real loopback
+socket and a real WebSocket codec, on Pi's own faux provider, so the tier is **slow but not
+remote** and needs no cloud credentials (`apps/tuval/vitest.config.ts`; epic
+[#7497](https://github.com/kamp-us/phoenix/issues/7497)). Two rules hold across both: the
+split is by fidelity and never by folder, and a claim that only a real engine could falsify
+belongs in `integration` whichever app it is in. What you may not do is read one app's
+`integration` and expect the other's — say which app you mean.
+
 **One `Database` seam.** A single `Database` tag holds the raw `D1Database` handle; both
 the `Drizzle` service and the better-auth adapter *derive* from it, so they share one
 underlying handle by construction — the one-handle invariant is type-enforced by the layer
@@ -422,6 +434,45 @@ slice of epic [#7496](https://github.com/kamp-us/phoenix/issues/7496) under `app
 "Widget" and "actor" are **retired** for Tuval's own surfaces — an older doc that says either
 means program (definition) or process (running instance). "Grain" (Orleans' virtual actor) is
 noted as a future-feeling alternative and is not adopted.
+
+### Tuval: stack, orientation, size, zoom
+
+The layout tree's four nouns, first used in code by
+[`apps/tuval/src/shell/layout/`](../apps/tuval/src/shell/layout/) (#7551).
+
+- **stack** — a node holding an ordered list of child windows and stacks. Windows are the leaves;
+  a stack is never empty, and only the root may hold a single child.
+- **orientation** — how a stack lays its children out. **`"horizontal"` means the children sit side
+  by side in a row**; `"vertical"` means they stack top to bottom. Studio's `layout-tree` inverts
+  this at its render boundary (its `orentationFromDirection` maps left/right to `"vertical"`);
+  phoenix does not, and no orientation flip appears anywhere in the port.
+- **size** — a child's share of its stack's extent, in **percent, never pixels**: every tab mirrors
+  one desk at a different width, so a pixel would mean something different in each. Min and max are
+  render-time props of the panel component and live nowhere in the tree.
+- **zoom** — the one window rendered alone, `zoomed` on the tree. Setting or clearing it never
+  writes a size, so unzoom restores the layout exactly.
+
+### Tuval: workspace, prefix, attach
+
+The shell's three nouns, first used in code by
+[`apps/tuval/src/shell/core/`](../apps/tuval/src/shell/core/) (#7554). English technical terms,
+per §3, and named in the epic's own vocabulary ruling
+([#7499](https://github.com/kamp-us/phoenix/issues/7499)).
+
+- **workspace** — one named desk: a layout tree and the window focus sits in. The shell holds many
+  and exactly one is active; the last one cannot be removed, because a shell with no desk has
+  nothing to show. Re-derived from the founder's Studio, where workspaces are a keyed map beside an
+  `activeWorkspace` id (`monorepo/packages/studio/studio.ts`).
+- **prefix** — the one key that arms the shell for the sequence after it (`<c-b>` by default,
+  tmux's shape). With the prefix unarmed every key belongs to the focused window; there is no
+  shell-wide mode, and "mode" is **retired** with the Runekeeper lineage.
+- **attach** — a page joining the running kernel over one socket, the tmux client sense. A restart
+  is literal: kill Node, boot Node, re-attach the page, and the desk that comes back is the
+  checkpointed one.
+
+"Pane" is **not adopted**: the tmux word for what Vim calls a window stays **window**. "Widget"
+and "rune" are retired with the same lineage; "spell" is re-coined below as a Tuval command, not
+the Studio widget verb.
 
 ### Tuval: spell, registry, palette, scope, the Tuval protocol
 

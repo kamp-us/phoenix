@@ -16,28 +16,36 @@ import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
 import {SHIP_CLASS_NAMES} from "../review/classes.ts";
 import {refuse, type VerbOutcome} from "../verb.ts";
+import {closedReader, runArchive} from "./archive-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
+import {closureReader} from "./closure.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
 import {runEmit} from "./emit-verb.ts";
 import {expectationReader} from "./expectation.ts";
 import {deriveRepoRoot, onGround, repoGroundRefusal, resolveRootOrRefuse} from "./ground.ts";
 import {runHistory} from "./history-verb.ts";
 import {runIntegrate} from "./integrate-verb.ts";
-import {defaultRoot, type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
+import {archivedRoot, defaultRoot, type LaneKey, laneRef, parseKey, templateFile} from "./key.ts";
 import {runMigrate} from "./migrate-verb.ts";
 import {runOpen} from "./open-verb.ts";
 import {runPrint} from "./print-verb.ts";
 import {runProve} from "./prove-verb.ts";
 import {runPush} from "./push-verb.ts";
+import {type ReconcileRoot, runReconcile} from "./reconcile-verb.ts";
 import {keyRefusal} from "./refusals.ts";
 import {classesForEvent, PARK_CAUSE_TOKENS} from "./report.ts";
 import {runReport} from "./report-verb.ts";
 import {DEFAULT_STALE_MINUTES} from "./stale.ts";
 import {runStale} from "./stale-verb.ts";
 import {runStatus} from "./status-verb.ts";
-import {DEFAULT_CHORES_ROOT, DEFAULT_LANES_ROOT, type LaneRef} from "./store.ts";
+import {
+	DEFAULT_ARCHIVED_LANES_ROOT,
+	DEFAULT_CHORES_ROOT,
+	DEFAULT_LANES_ROOT,
+	type LaneRef,
+} from "./store.ts";
 import {runTransition} from "./transition-verb.ts";
 import {DEFAULT_VIEW_PORT, listeningAt, runView} from "./view-verb.ts";
 
@@ -239,7 +247,7 @@ const report = leafCommand(
 ).pipe(
 	Command.withShortDescription("Record a shell's terminal token, mapped to one operator event."),
 	Command.withDescription(
-		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, the mapped event is then proven exactly as `lane prove` proves it — a token is a self-report, so a DONE and a PASS reach the log only with their artifact behind them, a reviewer's park only while no FAIL at the head says the run reached a verdict, every other event answering not-required without a board read — and only then does the append ride transition's exact path, validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history), a repeatable --class lands the lane classes standing at the event (what the machine's `class:<name>` arms route on), and an optional --cause names why a BLOCKED parked, from a closed set in code — the key `recipe unpark` seats the park against, without which every BLOCKED is novel and costs a human UNBLOCKED. One more field lands on the line and it is the prover's, never a flag: `deferred` names the namespaces the proof subtracted from this cell's bar and handed to a later one — the routed `review-ui` an epic child owes its epic's tail (ADR 0285) — and is absent wherever the bar was whole. `partial` is the second of that kind and rides the ship stage's DONE: it says the merge behind this terminal carried `Part of #N` and left the issue open, which is what the machine's `merge:partial` arm routes on (ADR 0343), and it is absent on a closing merge and on every other event. stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the proof deferred anything and `partial` when the merge closed nothing. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, names no issue, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS or park, several candidates — log unappended, remedies unchanged), 32 (the token is no shell's terminal token — refused, never interpreted), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED), 38 (--class is outside the closed lane-class set), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane report 5736 --token SHIPPED-PR --pr https://github.com/kamp-us/phoenix/pull/5760",
+		"Record a spawned shell's terminal token on the lane's append-only log: the token→event map in code (report.ts) picks one of the operator's six, the mapped event is then proven exactly as `lane prove` proves it — a token is a self-report, so a DONE and a PASS reach the log only with their artifact behind them, a reviewer's park only while no FAIL at the head says the run reached a verdict, every other event answering not-required without a board read — and only then does the append ride transition's exact path, validated against the folded state first, refused unappended otherwise. Optional --pr/--comment refs land on the event line itself, so the event names its evidence (visible via lane history), a repeatable --class lands the lane classes standing at the event (what the machine's `class:<name>` arms route on), and an optional --cause names why a BLOCKED parked, from a closed set in code — the key `recipe unpark` seats the park against, without which every BLOCKED is novel and costs a human UNBLOCKED. One more field lands on the line and it is the prover's, never a flag: `deferred` names the namespaces the proof subtracted from this cell's bar and handed to a later one — the routed `review-ui` an epic child owes its epic's tail (ADR 0285) — and is absent wherever the bar was whole. `partial` is the second of that kind and rides the ship stage's DONE: it says whether the merge behind this terminal carried `Part of #N` and left the issue open, which is what the machine's `merge:partial` arm routes on (ADR 0343). It rides at BOTH polarities — `true` on a partial merge, `false` on a closing one — so the line records that the closure was read and `lane reconcile` never buys that read again (ADR 0351); it is absent wherever no closure was read, which is every event but the ship stage's DONE, plus a ship DONE whose read answered `unknown`. `landed` rides beside it as that read's evidence — the merged PRs the closure judged, absent wherever `partial` is — so a recorded `false` says which reader wrote it and not only which way it fell, which is what `lane reconcile` reads to tell a real answer from the old nominator's fallthrough (#7457). --pr is what that read reads: the ref is handed to the prover as well as recorded on the line, because the closure is judged off exactly that PR. stdout is `{token, previous, event, current, taskAffected}` plus the refs, plus `deferred` when the proof deferred anything, `partial` at whichever polarity the closure read answered, and `landed` where it answered at all. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 8 (the append did not land — the event is NOT recorded), 11 (a lane, board or tree read failed — whether the event is proven is UNKNOWN), 12 (the mapped event is refused, log unappended), 13 (the task is not in the machine, names no issue, or --task omitted on a multi-task lane), 21 (the key is not a lane key), 22/23/24/25 (`lane prove`'s own refusals — artifact provably absent, a namespace with no still-binding verdict, a FAIL under a claimed PASS or park, several candidates — log unappended, remedies unchanged), 32 (the token is no shell's terminal token — refused, never interpreted), 35 (--cause is outside the closed park-cause set or rides on an event that is not BLOCKED), 38 (--class is outside the closed lane-class set), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane report 5736 --token SHIPPED-PR --pr https://github.com/kamp-us/phoenix/pull/5760",
 	),
 );
 
@@ -255,6 +263,12 @@ const prove = leafCommand(
 			Flag.optional,
 			Flag.withDescription("the task the event addresses; omittable on a single-task lane"),
 		),
+		pr: Flag.string("pr").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the PR URL the event names; the ship stage's closure is read off exactly this PR",
+			),
+		),
 		classes: classFlag,
 		repo: Flag.string("repo").pipe(
 			Flag.optional,
@@ -263,7 +277,7 @@ const prove = leafCommand(
 			),
 		),
 	},
-	Effect.fn(function* ({lane, event, root, task, classes, repo}) {
+	Effect.fn(function* ({lane, event, root, task, pr, classes, repo}) {
 		const classed = classesForEvent(classes);
 		if (classed._tag === "Rejected") {
 			yield* emit(refuse(CLASS_UNRECOGNISED, `fabrika lane prove: ${classed.reason}.`));
@@ -276,6 +290,7 @@ const prove = leafCommand(
 					event,
 					task: Option.getOrNull(task),
 					classes: classed.classes,
+					pr: Option.getOrNull(pr),
 					repo: Option.getOrNull(repo),
 					cwd: process.cwd(),
 					env: process.env,
@@ -286,7 +301,7 @@ const prove = leafCommand(
 ).pipe(
 	Command.withShortDescription("Prove a lane event against the board before recording it."),
 	Command.withDescription(
-		"Read the artifact a lane event claims — artifacts over self-reports. Three events carry a claim, and which artifact answers them is the task's shape. On a single-issue lane and on an epic run's tail: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included — minus, and only minus, a routed namespace this very event's arm hands to a later cell of this lane's own machine (`--class ui` into `review:ui`; ADR 0320), which then proves the whole set. On an epic run's child, which opens no PR at all (ADR 0285): a DONE out of `build` claims the commits its lane branch adds over `epic/<n>` in THIS tree, and a PASS out of `review` claims a range-scoped verdict on the child issue still bound to the content that range carries now (ADR 0276), for every namespace that range derives except the routed one — a child's deferral is unconditional and its creditor is the tail (ADR 0340). The third is the reviewer's park — a BLOCKED out of `review` or `review:ui` on a lane that owns a PR — and it is the one negative claim: it says the run reached no verdict, so a still-binding FAIL refuses it at 24 and every unreadable half records it. Every other event answers `not-required` at exit 0. A DONE out of `ship` or `ship:queued` answers `not-required` too and reads one thing more on the way: whether the merged PR linking this issue closed it or carried `Part of #N`, answered as a `closure` field reading `closes` or `partial` beside the usual ones and relayed onto the recorded line by `lane report` (ADR 0343). It is a routing fact, not a claim — it refuses nothing about the merge, and only an unreadable board refuses, at 11. Writes nothing — the append stays `lane transition`'s. The refusals are artifact-independent, so the range arms take no new seat. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane, board or tree read failed — the proof is UNKNOWN, never proven; an epic branch this tree does not carry is UNKNOWN too, as is a shallow clone whose graft boundary is the assembly tip or the child's fork point, where the stderr names `git fetch --deepen=25`), 13 (the task is not in the machine, or names no issue), 21 (the key is not a lane key), 22 (the artifact is provably not there), 23 (a required namespace has no current or still-binding verdict — re-read, record nothing), 24 (a FAIL under a claimed PASS, or under a reviewer's claimed park), 25 (several open PRs link the issue, or several lane branches carry the child's commits). Exits 38 too (--class is outside the closed lane-class set), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane prove 5673 DONE",
+		"Read the artifact a lane event claims — artifacts over self-reports. Three events carry a claim, and which artifact answers them is the task's shape. On a single-issue lane and on an epic run's tail: a DONE out of `build` claims an open PR whose body links the task's issue (or, for an investigation, the diagnosis comment a no-PR builder posted since the task entered build), and a PASS out of `review` claims a current-head verdict in every namespace that PR's diff derives, governance included — minus, and only minus, a routed namespace this very event's arm hands to a later cell of this lane's own machine (`--class ui` into `review:ui`; ADR 0320), which then proves the whole set. On an epic run's child, which opens no PR at all (ADR 0285): a DONE out of `build` claims the commits its lane branch adds over `epic/<n>` in THIS tree, and a PASS out of `review` claims a range-scoped verdict on the child issue still bound to the content that range carries now (ADR 0276), for every namespace that range derives except the routed one — a child's deferral is unconditional and its creditor is the tail (ADR 0340). The third is the reviewer's park — a BLOCKED out of `review` or `review:ui` on a lane that owns a PR — and it is the one negative claim: it says the run reached no verdict, so a still-binding FAIL refuses it at 24 and every unreadable half records it. Every other event answers `not-required` at exit 0. A DONE out of `ship` or `ship:queued` answers `not-required` too and reads one thing more on the way: whether the merge behind it closed this issue or carried `Part of #N`, answered as a `closure` field reading `closes`, `partial` or `unknown` beside the usual ones, with a `landed` field naming the merged PRs an answered read stood on, both relayed onto the recorded line by `lane report` (ADR 0343). That closure is read off the PR --pr names and NOT off the nominator, which cannot see the subject — GitHub builds the closing edge from closing keywords and the search half pins `is:open`, so a merged `Part of #N` is a node in neither (#7457). It is a routing fact, not a claim: it refuses nothing about the merge and nothing about the board either — no --pr, or a PR read that failed, answers `unknown`, which records NO `partial` and leaves the line for `lane reconcile` to read again rather than stranding the shipper. Writes nothing — the append stays `lane transition`'s. The refusals are artifact-independent, so the range arms take no new seat. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (a lane, board or tree read failed — the proof is UNKNOWN, never proven; an epic branch this tree does not carry is UNKNOWN too, as is a shallow clone whose graft boundary is the assembly tip or the child's fork point, where the stderr names `git fetch --deepen=25`), 13 (the task is not in the machine, or names no issue), 21 (the key is not a lane key), 22 (the artifact is provably not there), 23 (a required namespace has no current or still-binding verdict — re-read, record nothing), 24 (a FAIL under a claimed PASS, or under a reviewer's claimed park), 25 (several open PRs link the issue, or several lane branches carry the child's commits). Exits 38 too (--class is outside the closed lane-class set), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane prove 5673 DONE",
 	),
 );
 
@@ -299,7 +314,7 @@ const history = leafCommand(
 ).pipe(
 	Command.withShortDescription("The lane's append-only event log, verbatim."),
 	Command.withDescription(
-		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order, carrying the optional `pr`/`comment` refs where the event was recorded with one as its evidence, the `round` a `CLEARED` clears, the `classes` a class-carrying event named, and the `deferred` namespaces a proof subtracted from that event's bar and handed to a later cell — the routed `review-ui` an epic child owes its epic's tail (ADR 0285), absent wherever the bar was whole, and the `partial` a ship's DONE carries when the merge behind it left the issue open (ADR 0343), absent on a closing merge; the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane history 5673",
+		"The lane's append-only event log, verbatim — one `{task, event, at}` per recorded event, in append order, carrying the optional `pr`/`comment` refs where the event was recorded with one as its evidence, the `round` a `CLEARED` clears, the `classes` a class-carrying event named, and the `deferred` namespaces a proof subtracted from that event's bar and handed to a later cell — the routed `review-ui` an epic child owes its epic's tail (ADR 0285), absent wherever the bar was whole, and the `partial` a ship's DONE carries at either polarity once its closure was read — `true` where the merge left the issue open (ADR 0343), `false` where it closed it (ADR 0351), absent where nobody read it, and the `landed` PRs that read stood on beside it (#7457); the log IS the history, and `from`/`to` are reconstructible by folding, never stored. A lane with no events yet answers `[]`. Exits 4 (lane record read in full and not the shape), 7 (no lane there), 11 (the lane could not be read), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane history 5673",
 	),
 );
 
@@ -762,6 +777,126 @@ const migrate = leafCommand(
 	),
 );
 
+const archive = leafCommand(
+	"archive",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		archivedRoot: Flag.string("archived-root").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				`where the lane moves to (default: the owning repository's ${DEFAULT_ARCHIVED_LANES_ROOT}, a sibling of the lanes root and swept by nothing)`,
+			),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the closure read reads (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, archivedRoot: archived, repo}) {
+		const parsed = parseKey(lane);
+		if (parsed._tag === "Malformed") {
+			yield* emit(keyRefusal(parsed));
+			return;
+		}
+		const path = yield* Path.Path;
+		let source: string;
+		let destination: string;
+		if (Option.isSome(root) && Option.isSome(archived)) {
+			source = root.value;
+			destination = archived.value;
+		} else {
+			const ground = yield* deriveRepoRoot(process.cwd());
+			if (ground._tag !== "Derived") {
+				yield* emit(repoGroundRefusal("fabrika lane archive", ground));
+				return;
+			}
+			source = Option.getOrElse(root, () => path.join(ground.repoRoot, defaultRoot(parsed.key)));
+			destination = Option.getOrElse(archived, () => path.join(ground.repoRoot, archivedRoot()));
+		}
+		const ref = laneRef(parsed.key, source);
+		yield* emit(
+			yield* onGround("archive", [ref.root, destination], process.cwd(), () =>
+				runArchive({
+					ref,
+					archivedRoot: destination,
+					// A relocated root holds whatever was opened into it, so both templates are
+					// candidates and the lane's own machine id picks — never the root's position.
+					templatePaths: [templatePath("Issue"), templatePath("Chore")],
+					issue: parsed.key._tag === "Issue" ? Number(parsed.key.lane) : null,
+					closed: closedReader(Option.getOrNull(repo), process.env),
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Move one lane whose log will never replay out of the swept root."),
+	Command.withDescription(
+		'Move one lane directory from the lanes root to the archived root, so the sweeps stop reporting a lane they can never judge. `lane reconcile` reads such a lane "unreadable" and `lane migrate` "unsafe" on every run, forever: the fault is an event the machine has no cell for, and neither verb may rewrite an append-only log to fix it — sealing writes a line for something that did not happen (ADR 0350) and widening `frozen` lets a lane at its retry cap ship with no unblock. So the record moves aside instead, and nothing in it is touched (ADR 0352). BOTH gates hold or nothing moves: the lane\'s issue must read closed on the board, AND the log must fail to replay under the same judgement `lane migrate` makes — through the lane\'s own machine or through the committed template. Anything else is refused with the directory where it was, so a genuinely broken lane still shows up on every sweep. The replay judgement runs first because it is local and free, so a replaying lane costs no board read. The archived root is a SIBLING of the lanes root, never a directory under it, which is why no sweep needs a skip rule: `reconcile` and `migrate` read the roots they are handed and are never handed this one. The record stays readable — `fabrika lane history <lane> --root <archived-root>` and `fabrika lane brief` read an archived lane when pointed at it. stdout is {answer:"archived", lane, issue, from, to, through, defects}, where `through` is "current" or "candidate" — which machine refused the log — and `defects` names why. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there), 8 (the move did not land — the lane is NOT archived), 9 (the move reported success and the destination does not read back), 11 (the lane, a committed template, the destination probe or the board could not be read, or no candidate machine could be built to judge the log against — UNKNOWN, never a move), 14 (the archived root already holds a lane by this key — a move onto it would bury a record), 19 (the key names no issue, so the closed-issue gate can never be satisfied; a chore lane is not archivable), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default roots), 49 (the lane\'s issue is open — drive the lane, or close it first), 50 (the log replays, so every sweep can judge it and there is nothing to move out of scope). Example: fabrika lane archive 6037',
+	),
+);
+
+const reconcile = leafCommand(
+	"reconcile",
+	{
+		root: rootFlag,
+		check: Flag.boolean("check").pipe(
+			Flag.withDescription("judge every lane and report, appending nothing"),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the closure read uses (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({root, check, repo}) {
+		let roots: ReadonlyArray<ReconcileRoot>;
+		if (Option.isSome(root)) {
+			// A relocated root holds whatever was opened into it, so both templates are candidates and
+			// the lane's own machine id picks — never the root's position.
+			roots = [{root: root.value, templatePaths: [templatePath("Issue"), templatePath("Chore")]}];
+		} else {
+			const ground = yield* deriveRepoRoot(process.cwd());
+			if (ground._tag !== "Derived") {
+				yield* emit(repoGroundRefusal("fabrika lane reconcile", ground));
+				return;
+			}
+			roots = [
+				{
+					root: `${ground.repoRoot}/${DEFAULT_LANES_ROOT}`,
+					templatePaths: [templatePath("Issue")],
+				},
+				{
+					root: `${ground.repoRoot}/${DEFAULT_CHORES_ROOT}`,
+					templatePaths: [templatePath("Chore")],
+				},
+			];
+		}
+		yield* emit(
+			yield* onGround(
+				"reconcile",
+				roots.map((swept) => swept.root),
+				process.cwd(),
+				() =>
+					runReconcile({
+						roots,
+						check,
+						closures: closureReader(Option.getOrNull(repo), process.env),
+						now: new Date().toISOString(),
+					}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Which lanes folded on a merge the board says closed nothing."),
+	Command.withDescription(
+		'Sweep every lane on disk and answer which ones recorded a merge closure the board disagrees with, then append the line that corrects it. ADR 0343 sends a merged `Part of #N` back to `queued` instead of folding the lane to a terminal, but the routing fact rides the recorded event as a `partial` payload — so every lane shipped before that field existed replays through the guard\'s fallthrough and still folds to `complete` over an open, buildable issue, which is #7433. The log is append-only and no recorded line is ever rewritten: the repair is a `<TASK>.CORRECTED` line naming the earlier line\'s own `at` and carrying the payload it should have had, which the fold resolves before any message reaches the machine (ADR 0350). A lane is nominated OFFLINE — the latest recorded event that reached a `merge:partial` cell carrying no answer its reader can trust, located off the compiled machine, so a region declaring no partial arm (an epic tail) nominates nothing — and only such a lane costs a board read. Two lines qualify: one that recorded no `partial` at all, and one whose `partial: false` names no `landed` evidence, which is the mark of the nominator blind to a merged `Part of #N` that wrote every `false` between ADR 0351 and the fix that read closures off the named PR. It is the evidence that tells the two apart and never the line\'s timestamp, since a cutoff date would hold only while that fix\'s own merge beat it (#7457). The second kind is re-read at most once — the correction this sweep appends is what settles the line, never the polarity it lands on. Budget that as ONE read per never-confirmed lane, not hundreds per sweep: whichever way the board answers, the answer is appended as a correction — `partial: true` on a merge that left its issue open, `partial: false` on one that closed it — so the line carries its own answer and never nominates again (ADR 0351), and the ship stage now records `false` too. The first pass over a pre-0351 backlog is still hundreds (228 of phoenix\'s 298 guard-declaring lanes when it was counted, and a run has exhausted a rate limit part-way through), but it is paid once: every pass after it costs only the lanes shipped since, and a rate-limited run leaves every lane it did confirm confirmed, so re-running resumes rather than restarts. --check withholds the append, so it buys nothing for the next sweep and pays the same reads twice. That read is ONE pull request: the line being corrected already names the merge it stands on, and it is read directly rather than nominated, because a MERGED `Part of #N` is invisible to both nomination reads (the closing edge is built from closing keywords, the search half is `is:open`) — the union finds nothing for exactly the case this verb catches. A line naming no PR falls back to the nominator at open-or-merged. Each lane carries one verdict: "current" (no recorded event reached the guard without its answer), "misrouted" (the board proves the merge partial, --check withheld the append), "corrected" (judged partial and appended, which sends the lane round again), "closes" (the board proves the merge closed the issue, --check withheld the append), "confirmed" (judged closing and appended — the lane still folds to complete, and the line now says so, so the next sweep skips it), "unmigrated" (this lane\'s own machine declares no merge-closure guard and the committed template it booted from does, so nothing here can judge its merge — run `fabrika lane migrate` and re-run this sweep; an emitted epic machine and an epic tail declare none by design and read "current"), "unknown" (the board did not answer, it answered and named no merged PR linking the issue, or the lane drives no issue — a read that proves no closure is never read as "closes"), "unreadable" (the lane record or its log could not be read, or the log does not replay — a row, since nothing here caused it and nothing here can fix it) or "unappended" (this run tried to append and could not). Every judged row carries corrects: {task, at, state, pr} and the from/to stateValue the correction moves the lane between — equal on a closing read, which is the row saying it moved no task; a misrouted or corrected row also carries the merged prs proving the merge partial, and a closes or confirmed row the board\'s own why instead. stdout is {check, scanned, summary, lanes}. Both default roots are swept unless --root names one, which is read as a relocated root whose lanes may have booted from either committed template; an absent root holds no lanes and is not a fault. Exits 8 (at least one append this run tried did not land, so whether that lane still needs a correction is UNKNOWN — those lanes are named on stderr and so are the ones that were corrected), 11 (a committed template could not be read, or a root is there and could not be listed — the lane set is UNKNOWN, never empty), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT "no lane here", so never a boot). Examples: fabrika lane reconcile --check · fabrika lane reconcile',
+	),
+);
+
 const view = leafCommand(
 	"view",
 	{
@@ -815,6 +950,8 @@ export const laneCommand = Command.make("lane").pipe(
 		pushLane,
 		stale,
 		migrate,
+		reconcile,
+		archive,
 		claim,
 		release,
 		adopt,

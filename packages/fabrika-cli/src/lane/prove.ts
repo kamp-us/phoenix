@@ -64,9 +64,9 @@ export const REVIEW_UI_STATE = "review:ui";
  * The two leaves a shipper runs in — `ship` and the queue dwell it re-enters (ADR 0313).
  *
  * A `DONE` out of either claims no artifact ({@link claimOf} answers `None` for both), and that is
- * unchanged: what the merge closed is a *routing* question, not a proof, so it is read by
- * {@link traceClosure} beside the proof rather than folded into it. A refused proof would strand the
- * shipper with no legal terminal over a merge that really did land.
+ * unchanged: what the merge closed is a *routing* question, not a proof, so `./closure.ts` reads it
+ * beside the proof rather than folded into it. A refused proof would strand the shipper with no
+ * legal terminal over a merge that really did land.
  */
 export const SHIP_STATES: ReadonlyArray<string> = ["ship", "ship:queued"];
 
@@ -391,8 +391,15 @@ export type Closure =
 	| {readonly _tag: "Closes"; readonly why: string}
 	| {readonly _tag: "Partial"; readonly prs: ReadonlyArray<number>};
 
+/**
+ * The merged pull requests whose body links this issue — the evidence every closure judgement rests
+ * on, named once so a second reader cannot drift from what {@link traceClosure} counts as landed.
+ */
+export const landedFor = (issue: number, facts: ReadonlyArray<PullFact>): ReadonlyArray<PullFact> =>
+	facts.filter((fact) => fact.merged && fact.linkedIssues.includes(issue));
+
 export const traceClosure = (issue: number, facts: ReadonlyArray<PullFact>): Closure => {
-	const landed = facts.filter((fact) => fact.merged && fact.linkedIssues.includes(issue));
+	const landed = landedFor(issue, facts);
 	if (landed.length === 0) return {_tag: "Closes", why: `no merged PR's body links #${issue}`};
 	const closing = landed.filter((fact) => fact.linkKind === "fixes");
 	return closing.length > 0

@@ -10,9 +10,13 @@
  * prover's rather than the caller's: `deferred`, relayed off the proof's own answer and never
  * recomposed here, says this `PASS` was proven over a set short the namespaces named — the routed
  * `review-ui` an epic child hands to its epic's tail, which nothing else in the ledger records
- * (#7041). `partial` is the second of that kind and rides the ship stage's `DONE`: it says the merge
- * behind this terminal carried `Part of #N` and left the issue open, which is the whole input to the
- * machine's `merge:partial` arm (ADR 0343).
+ * (#7041). `partial` is the second of that kind and rides the ship stage's `DONE`: it says whether
+ * the merge behind this terminal carried `Part of #N` and left the issue open, which is the whole
+ * input to the machine's `merge:partial` arm (ADR 0343). It rides at both polarities — a closing
+ * merge records `partial: false` — so the line says the closure was read rather than leaving a
+ * later sweep to read it again (ADR 0351). `landed` is that read's evidence and rides beside it:
+ * the merged PRs the closure judged, so a recorded `false` says which reader wrote it and not only
+ * which way it fell (#7457).
  *
  * **The append is proof-gated.** A token is still a self-report, and moving the recorder from the
  * operator into the shell must not move the bar: between the machine's acceptance and the append
@@ -117,6 +121,9 @@ export const runReport = <R>(
 			// The same classes the append carries, so the proof asks about the arm this event actually
 			// takes rather than the one the lane stood on before it (#6664).
 			classes: classed.classes,
+			// The ship stage's closure is read off this very PR, so the ref has to reach the proof and
+			// not only the line it lands on — nominating for it cannot see a merged `Part of #N` (#7457).
+			pr: options.pr,
 			repo: options.repo,
 			cwd: options.cwd,
 			env: options.env,
@@ -169,6 +176,7 @@ export const runReport = <R>(
 					...(options.comment === null ? {} : {comment: options.comment}),
 					...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 					...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
+					...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 				};
 				const wrote = yield* Effect.result(appendText(fresh.logPath, `${JSON.stringify(entry)}\n`));
 				if (Result.isFailure(wrote)) {
@@ -189,7 +197,8 @@ export const runReport = <R>(
 							...(options.comment === null ? {} : {comment: options.comment}),
 							...(caused._tag === "Caused" ? {cause: caused.cause} : {}),
 							...(proved.deferred.length === 0 ? {} : {deferred: proved.deferred}),
-							...(proved.partial ? {partial: true} : {}),
+							...(proved.partial === null ? {} : {partial: proved.partial}),
+							...(proved.landed.length === 0 ? {} : {landed: proved.landed}),
 						},
 						null,
 						2,

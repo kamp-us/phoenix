@@ -9,11 +9,17 @@ import {defineMachine} from "@demlik/tea";
 import {Effect} from "effect";
 import type {PayloadRejected, PortNotWired} from "../ports/errors.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
-import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
+import {type AnyProgram, type Program, ProgramId, type RendererRef} from "../registry/program.ts";
 import {COUNT_KIND, isCount} from "./count.ts";
 
 export type CounterState = {readonly count: number};
-export type CounterMsg = {readonly type: "tick"};
+/**
+ * `key` is a keystroke the shell forwarded in. With the prefix unarmed every key belongs to the
+ * focused window, and the shell's `forwardKey` Cmd delivers it into that window's process as this
+ * Msg. A counter answers one exactly as it answers a tick: the point is that the keyboard reaches a
+ * real program, not that a counter has anything clever to do with a key.
+ */
+export type CounterMsg = {readonly type: "tick"} | {readonly type: "key"; readonly key: string};
 export type Announce = {readonly type: "announce"; readonly count: number};
 
 export interface CounterOptions {
@@ -30,6 +36,7 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 			init: (loaded) => [loaded ?? {count: 0}, []],
 			update: {
 				tick: (state) => [{count: state.count + 1}, [{type: "announce", count: state.count + 1}]],
+				key: (state) => [{count: state.count + 1}, [{type: "announce", count: state.count + 1}]],
 			},
 			subs:
 				everyMs === null
@@ -56,6 +63,11 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 				}),
 		},
 		capabilities: [],
+		// A row with no renderer is headless and can never bind a window (`../shell/picker/entries.ts`),
+		// so a demo program the shell opens declares one. The reference is not what a surface resolves
+		// against — the process-table wire carries no renderer field, so the page keys its own table by
+		// program id (`../page/renderers.tsx`). Nothing here names React either way.
+		renderer: {kind: "host-native", ref: "tuval/demo/counter"} satisfies RendererRef,
 		identity: {
 			package: "@kampus/tuval",
 			program: "counter",

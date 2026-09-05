@@ -1,0 +1,40 @@
+/* Phoenix's compact switch dimensions mapped onto Manti anatomy. */
+.kp-switch[data-scope="switch"][data-part="root"] {
+	--manti-switch-track-width: 28px;
+	--manti-switch-track-height: 16px;
+	--manti-switch-track-padding: 1px;
+}
+
+/* The ring is an inset shadow, never a border. Manti derives both the thumb size
+   (track-height - 2 * track-padding) and its travel (track-width - track-height) from the raw
+   track vars, so under its own `* { box-sizing: border-box }` reset a border steals 2px from the
+   content box while the travel stays 12px — the thumb then lands flush on the right edge when
+   checked (measured L=14/R=0) and 2px in when unchecked. A shadow consumes no layout box.
+   @manti-ui/styles@0.9.0 dist/index.css, [data-scope=switch] rules. */
+.kp-switch [data-part="control"] {
+	background: var(--surface-raised);
+	border: 0;
+	box-shadow: inset 0 0 0 1px var(--border);
+}
+.kp-switch [data-part="control"][data-state="checked"] {
+	background: var(--accent-9);
+	box-shadow: inset 0 0 0 1px var(--accent-9);
+}
+.kp-switch [data-part="thumb"] {
+	background: var(--accent-fg);
+	box-shadow: none;
+}
+
+/* Manti's press affordance squashes the thumb by shrinking its `height` — a flat -.25rem tuned
+   for its own 18px thumb (@layer manti.components, `[data-scope=switch][data-part=control]`,
+   nested `&:active [data-part=thumb]`). height is a layout property and our root is inline-flex,
+   so on our 14px thumb the squash moves the root's synthesized baseline and drops the whole
+   switch ~1.8px, springing back on release. Re-express it as a scale: same squash, no layout box.
+   The ratio is the one Manti gets at its own size (14/18). Unlayered, so this wins the cascade. */
+.kp-switch [data-part="control"]:active [data-part="thumb"] {
+	height: var(--_thumb-size);
+	scale: 1 0.78;
+	transition:
+		transform var(--manti-duration-base) var(--manti-ease-smooth),
+		scale var(--manti-duration-base) var(--manti-ease-smooth);
+}

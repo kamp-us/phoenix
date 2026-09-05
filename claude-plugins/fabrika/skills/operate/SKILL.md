@@ -467,7 +467,11 @@ node <fabrika> lane migrate           # migrate the ones the swap provably does 
 
 It writes only where the lane's own event log folds to the same state through both machines. Exit
 `37` names the lanes it would have moved and leaves them alone — that is a human's call, not a
-re-run's.
+re-run's. One of those calls is now a verb: a lane whose issue is closed AND whose log will never
+replay leaves both sweeps through `node <fabrika> lane archive <lane>`, which moves its directory to
+the archived root and touches no log (ADR
+[0352](../../../../.decisions/0352-an-unreplayable-lane-is-archived-not-sealed.md)). It refuses at
+`49` on an open issue and `50` on a log that replays, so it can never hide live work.
 
 The sweep also judges each issue-keyed lane's machine against its issue's type and sub-issue links,
 because staleness was the only wrongness it could see and a coder-template lane booted on an epic
@@ -941,6 +945,14 @@ with `lane history $lane_key` appended the same way when the event log adds anyt
 show. Name the terminal state in the comment. End `LANE-TERMINAL`. On a chore lane the pipe has no
 issue to land on: print the same two verbs and hand their bytes to your caller, who owns where a
 chore's transcript is posted.
+
+**A `complete` fold over an issue the board still calls buildable is a defect, and it has a repair.**
+It means the merge behind the ship's `DONE` carried `Part of #N` and the recorded line never said so,
+so the lane folded past the arm that would have sent it round again (ADR 0343). Report the terminal
+as it reads — nothing here is yours to change — and name the two verbs that fix it:
+`fabrika lane migrate` where the lane's machine predates the guard, then
+`fabrika lane reconcile --check`, which says which lanes are in this state and appends the correcting
+line when re-run without the flag (ADR 0350).
 
 **A `tripped` fold is not automatically a terminal** — read which state its error task sits in. On
 `frozen` and on `human:epic-review` the run ends `LANE-PARKED` with the transcript and the need

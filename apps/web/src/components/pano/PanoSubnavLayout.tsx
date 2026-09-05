@@ -1,9 +1,9 @@
+import {Button} from "@kampus/design";
 import {createContext, type ReactNode, useContext, useState} from "react";
 import {Outlet} from "react-router";
 import {useT} from "../../i18n";
 import type {SubnavFilter} from "../layout/Subnav";
 import {SubnavShell} from "../layout/SubnavShell";
-import {Button} from "../ui/Button";
 import {PanoSubnavCta} from "./PanoSubnavCta";
 
 /**

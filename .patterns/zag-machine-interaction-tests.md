@@ -23,7 +23,7 @@ expect(control.getAttribute("data-state")).toBe("checked");
 ```
 
 `await waitFor(...)` works too, and is what the already-correct tests in
-`apps/web/src/components/ui/Dialog.test.tsx` and
+`packages/design/src/Dialog.test.tsx` and
 `apps/web/src/components/bildirim/BildirimPopover.test.tsx` rely on. Prefer `act` when you
 know the machine settles in one microtask; reach for `waitFor` when a later async source
 (a fate mutation resolving, a `useEffect` chain) also has to land.
@@ -94,7 +94,7 @@ is a bare global read — so once Vitest tears the jsdom environment down at the
 read throws `ReferenceError: document is not defined` rather than yielding `undefined`, and Vitest
 collects it as an unhandled error that reds a fully-green run.
 
-`apps/web/tests/client/setup.ts` drains those queues in an `afterAll` — two animation frames
+`packages/design/test-setup.ts` drains those queues in an `afterAll` — two animation frames
 (`raf.mjs`'s `nextTick` double-nests) plus one macrotask — so the work runs inside the
 environment's life. **You inherit this; do not re-solve it per test.** What it means for you: a
 `client`-tier test may leave Zag work pending without reding the run, but a test that deletes or
@@ -102,7 +102,7 @@ stubs `document` itself still has to restore it before its own teardown.
 
 ## Related
 
-- [property-based-a11y.md](./property-based-a11y.md) — the other `ui/` test surface; it
+- [property-based-a11y.md](./property-based-a11y.md) — the other `@kampus/design` test surface; it
   asserts static structure, so it needs no flush.
 - [unconditional-test-assertions.md](./unconditional-test-assertions.md) — the sibling
   silent-pass shape.

@@ -5,7 +5,7 @@
  */
 
 import type {Cmd, Machine, Sub} from "@demlik/tea";
-import {type Effect, Schema} from "effect";
+import {type Effect, Schema, type Scope} from "effect";
 // Type-only, so the commands slice's runtime dependency on this file stays one-directional.
 import type {AnySpell} from "../commands/spell.ts";
 
@@ -55,6 +55,20 @@ export type HostHandlers<M extends {readonly type: string}, C extends Cmd, E, R>
 };
 
 /**
+ * A Sub is long-lived scoped work, so its handler is an Effect the host forks into a Scope of the
+ * Sub's own and pushes Msgs from through `dispatch` — a stream has many answers over time, which
+ * is the whole difference from a Cmd handler's one list of follow-ups. It lives on the row beside
+ * `handlers` rather than on the core machine because a Sub that needs a service has nowhere to ask
+ * for one on Demlik's Promise-shaped `subscribe`: the core stays plain data, the Effect stays here.
+ */
+export type HostSubs<M, U extends Sub, E, R> = {
+	readonly [K in U["type"]]: (
+		sub: Extract<U, {readonly type: K}>,
+		dispatch: (msg: M) => void,
+	) => Effect.Effect<void, E, R | Scope.Scope>;
+};
+
+/**
  * `never` so a program types its receiver at the port's payload (`(count: number) => Msg`); the
  * wiring ran the port's `accepts` before enqueueing, so whatever it is called with passed it.
  */
@@ -98,9 +112,13 @@ export interface CapabilityRequest {
 	readonly detail?: string;
 }
 
-/** Where the program is placed. `local` is the only host today; the host chooses placement. */
+/**
+ * Where the program is placed. `local` means the Node kernel runs it, and it is the only host
+ * anything runs on today; `browser` is named so a transport can refuse it (#7556) rather than skip
+ * it silently, and nothing spawns one until the browser tier lands.
+ */
 export interface Placement {
-	readonly host: "local";
+	readonly host: "local" | "browser";
 }
 
 export interface Program<
@@ -113,6 +131,8 @@ export interface Program<
 	R,
 > {
 	readonly id: ProgramId;
+	/** What a surface calls this program. Absent means `identity.program` — read it through `programLabel`. */
+	readonly label?: string;
 	/** Private: read by the host that runs the program and by no other process. */
 	readonly core: Machine<S, M, C, U, Ctx>;
 	/** Public: the only thing another process may see of this program. */
@@ -130,6 +150,8 @@ export interface Program<
 	 */
 	readonly receive?: Readonly<Record<string, Receiver<M>>>;
 	readonly handlers: HostHandlers<M, C, E, R>;
+	/** Effect-valued Sub handlers, one per Sub the core subscribes to. A row with none omits it. */
+	readonly subs?: HostSubs<M, U, E, R>;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	readonly renderer?: RendererRef;
 	readonly identity: DefinitionIdentity;
@@ -145,3 +167,10 @@ export type AnyProgram = Program<any, any, any, any, any, any, any>;
 /** The row's provenance as a refusal names it: `package/program@version (digest)`. */
 export const provenanceOf = (row: AnyProgram): string =>
 	`${row.identity.package}/${row.identity.program}@${row.identity.version} (${row.identity.digest})`;
+
+/**
+ * The human-readable name a program shows under. Optional on the row and defaulted from
+ * `identity.program`, so the picker (#7557) can list a row "by id and label" without every author
+ * writing one out.
+ */
+export const programLabel = (row: AnyProgram): string => row.label ?? row.identity.program;

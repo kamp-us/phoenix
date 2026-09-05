@@ -7,7 +7,7 @@ name: design-token-guard
 # tokens.css, and no raw px > 2px beyond each file's grandfathered ceiling (the 4px grid
 # sanctions only 1px/2px). It runs `fabrika guard design-token-guard check` and fails
 # closed on zero CSS files or a malformed allow-list config (ADR 0092). The bounded
-# allow-lists (apps/web/src/styles/design-token-lint.config.json) grandfather the
+# allow-lists (packages/design/design-token-lint.config.json) grandfather the
 # pre-existing debt so the gate is green on main. The scan lives once in fabrika-cli's
 # `guard` group (#6093), which every ported guard shares.
 on:

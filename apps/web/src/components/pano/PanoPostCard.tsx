@@ -2,6 +2,8 @@
  * fate-shaped card for the pano feed. Rank and hide belong to the parent —
  * list-position state, not Post state.
  */
+
+import {Button, MetaRow, SandboxMarker, Tag, type TagKind} from "@kampus/design";
 import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Post} from "../../../worker/features/fate/views";
@@ -19,10 +21,6 @@ import {
 import {actorLabel} from "../moderation/actor-identity";
 import {MuteButton} from "../mute/MuteButton";
 import {useMutedMembers} from "../mute/useMemberMute";
-import {Tag, type TagKind} from "../ui/atoms";
-import {Button} from "../ui/Button";
-import {MetaRow} from "../ui/MetaRow";
-import {SandboxMarker} from "../ui/SandboxMarker";
 import {commentCountLabel} from "./commentCount";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";

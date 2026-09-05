@@ -16,8 +16,8 @@ The route is intentionally absent from `alchemy dev`, the worker, and production
 | Layer | Owns |
 |---|---|
 | `apps/web/piHarness.ts` | Local Pi process, JSONL correlation, local file search, `/__pi/*` Vite endpoints |
-| `src/components/agent/piHarness.ts` | Browser transport and EventSource subscription |
-| `src/components/agent/AgentChatInput.tsx` | Phoenix composition, input completion, attachments, streamed activity, extension dialogs |
+| `apps/web/src/components/agent/piHarness.ts` | Browser transport and EventSource subscription; supplied to the shared composer as its bridge |
+| `packages/design/src/AgentChatInput.tsx` | Shared Phoenix composition, input completion, attachments, streamed activity, extension dialogs |
 | Cloudflare Worker | Nothing — no child process, local filesystem, or Pi credentials |
 
 The Atölye exhibit opts into `mockWhenUnavailable`: when a deployed preview has no `/__pi/*`
@@ -74,10 +74,10 @@ state without inventing a second extension protocol.
 ## Adding a capability
 
 1. Find the documented Pi RPC command or event first.
-2. Add it to `piHarness.ts` as a narrow bridge endpoint, retaining JSONL request correlation.
-3. Add the browser transport shape under `src/components/agent/piHarness.ts`.
-4. Expose it through a Phoenix shared primitive; retain the shared focus, button, dialog, and role
-   token layers.
+2. Add it to `apps/web/piHarness.ts` as a narrow bridge endpoint, retaining JSONL request correlation.
+3. Add the browser transport shape under `apps/web/src/components/agent/piHarness.ts`.
+4. Expose it through the `AgentChatInputBridge` prop on `packages/design/src/AgentChatInput.tsx`;
+   retain the shared focus, button, dialog, and role token layers.
 5. Keep it at `/lab/atolye/agent-chat-input` until a separately designed production broker exists.
 
 Do not add a worker route, a public WebSocket endpoint, or a browser-side Pi credential flow as a

@@ -8,7 +8,7 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Effect, Fiber, Layer, Option} from "effect";
+import {Context, Effect, Fiber, Layer, Option} from "effect";
 import {TestClock} from "effect/testing";
 import {counterId, counterProgram} from "../../demo/counter.ts";
 import {logId, logProgram} from "../../demo/log.ts";
@@ -146,7 +146,7 @@ const failure = (reply: SpellReply) => {
 
 /** The caller itself: a live process the window points at, spawned outside the spells. */
 const startCaller = Effect.flatMap(Processes, (processes) =>
-	processes.spawn(counterId, {id: caller}),
+	processes.spawn(counterId, {id: caller, services: Context.empty()}),
 );
 
 const spawnThrough = (program: ProgramId) =>
