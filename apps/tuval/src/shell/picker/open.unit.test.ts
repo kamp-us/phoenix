@@ -9,6 +9,7 @@ import {Effect} from "effect";
 import type {AnyProgram} from "../../registry/program.ts";
 import {readCommandLine} from "../commands/line.ts";
 import type {ShellMsg} from "../core/machine.ts";
+import {shellId, shellProgram, unwiredShellEffects} from "../program.ts";
 import {noEntries, type PickerEntries, programEntries} from "./entries.ts";
 import {
 	pickerHarness,
@@ -28,6 +29,11 @@ const rows: ReadonlyArray<AnyProgram> = [
 	programRow("counter", {label: "Counter"}),
 	programRow("indexer", {renderer: false}),
 ];
+/** The registry a real desk serves: the shipped shell row beside the rows a window can hold. */
+const withShell: ReadonlyArray<AnyProgram> = [
+	shellProgram({effects: unwiredShellEffects}),
+	...rows,
+];
 
 interface Run {
 	readonly msgs: ReadonlyArray<ShellMsg>;
@@ -37,6 +43,7 @@ interface Run {
 const run = (
 	intent: PickerIntent,
 	options?: {
+		readonly rows?: ReadonlyArray<AnyProgram>;
 		readonly seed?: ReadonlyArray<readonly [string, string, string | undefined]>;
 		readonly spawnFails?: string;
 	},
@@ -44,7 +51,7 @@ const run = (
 	Effect.scoped(
 		Effect.gen(function* () {
 			const harness = yield* pickerHarness(
-				rows,
+				options?.rows ?? rows,
 				options?.spawnFails === undefined ? undefined : {spawnFails: options.spawnFails},
 			);
 			for (const [id, program, parent] of options?.seed ?? []) {
@@ -99,6 +106,20 @@ describe("choosing a program", () => {
 		}),
 	);
 
+	it.effect("refuses the shell's own row, so no second desk is spawned into a window (#7946)", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(openProgram(window, shellId), {rows: withShell});
+			assert.deepStrictEqual(answer.spawns, []);
+			assert.deepStrictEqual(answer.msgs, [
+				{
+					type: "window.setView",
+					windowId: window,
+					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "shell"}},
+				},
+			]);
+		}),
+	);
+
 	it.effect("turns a failed spawn into a refusal rather than a failure the caller must catch", () =>
 		Effect.gen(function* () {
 			const answer = yield* run(openProgram(window, programId("counter")), {
@@ -143,6 +164,22 @@ describe("attaching to a running process", () => {
 					type: "window.setView",
 					windowId: window,
 					view: {cursor: 0, refusal: {_tag: "ProcessGone", processId: "p-gone"}},
+				},
+			]);
+		}),
+	);
+
+	it.effect("refuses the live shell process, which is the desk and not a window's contents", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(attachProcess(window, shellProcessId), {
+				rows: withShell,
+				seed: [[shellProcessId, shellId, undefined]],
+			});
+			assert.deepStrictEqual(answer.msgs, [
+				{
+					type: "window.setView",
+					windowId: window,
+					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "shell"}},
 				},
 			]);
 		}),
@@ -198,6 +235,24 @@ describe("the picker row and the command line are one handler", () => {
 			assert.deepStrictEqual(fromRow.spawns, [{programId: "counter", parent: shellProcessId}]);
 			assert.deepStrictEqual(fromLine.spawns, fromRow.spawns);
 			assert.deepStrictEqual(fromLine.msgs, fromRow.msgs);
+		}),
+	);
+
+	it.effect("`open shell` is refused on the command line too, not just in the picker (#7946)", () =>
+		Effect.gen(function* () {
+			const typed = typedIntent("open shell");
+			assert.isNotNull(typed);
+			if (typed === null) return;
+
+			const answer = yield* run(typed, {rows: withShell});
+			assert.deepStrictEqual(answer.spawns, []);
+			assert.deepStrictEqual(answer.msgs, [
+				{
+					type: "window.setView",
+					windowId: window,
+					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "shell"}},
+				},
+			]);
 		}),
 	);
 
