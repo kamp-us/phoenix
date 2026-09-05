@@ -7,8 +7,9 @@
  * `params` and is answerable for it.
  *
  * The kernel has no window noun (#7632 R1.2), so `WindowIndex` is an interface this slice declares
- * and the shell (#7499) implements when it adopts the registry. Until then `WindowIndex.scripted`
- * answers from a fixture — the founder's 2026-09-03 ruling on #7638.
+ * and the shell implements: `shellWindowIndexKernel` (`../shell/commands/kernel.ts`) reads the live
+ * desk, and boot provides it (#7894). `WindowIndex.scripted` answers from a fixture, for a test
+ * that wants a fixed table rather than a running desk.
  */
 
 import {Context, Effect, Layer} from "effect";

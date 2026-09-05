@@ -393,11 +393,11 @@ frames, so "the card opened and closed exactly once" cannot be asked of the queu
 frames that would answer it are gone. The watcher pushes each published value into an array as well
 as the queue, and the count is taken off the array at the end.
 
-**Standing a second `SpellExecutor` up over a booted kernel needs two deliberate moves.** A proof that
-must resolve a caller's window — to parent a `process spawn`, say — supplies its own `WindowIndex`,
-because `boot` builds that index empty until the shell owns one (#7894). Composing it with
-`Layer.provide` does not work and does not look broken: `SpellExecutor.layer` is one module-level
-`Layer` value `boot` has already built, so the build hands back the memoized executor holding the
-empty index, and every call answers `NoSuchWindow` while the wiring reads correct. Wrap it in
-`Layer.fresh`, and merge the contexts one step at a time — `Context.merge(self, that)` lets `that`
-override, so each step names its winner rather than leaving it to composition order.
+**Standing a second `SpellExecutor` up over a booted kernel needs two deliberate moves.** `boot`'s
+own `WindowIndex` reads the running desk (#7894), so a proof with no desk — one that names a window
+and the process behind it directly, to parent a `process spawn` — has to supply its own. Composing
+it with `Layer.provide` does not work and does not look broken: `SpellExecutor.layer` is one
+module-level `Layer` value `boot` has already built, so the build hands back the memoized executor
+holding boot's index, and every call answers `NoSuchWindow` while the wiring reads correct. Wrap it
+in `Layer.fresh`, and merge the contexts one step at a time — `Context.merge(self, that)` lets
+`that` override, so each step names its winner rather than leaving it to composition order.
