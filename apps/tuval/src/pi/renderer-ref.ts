@@ -1,5 +1,6 @@
 /**
- * The renderer reference the `pi-session` row declares, as a leaf both ends can import.
+ * The `pi-session` row's two names — its program id and its renderer reference — as a leaf both
+ * ends can import.
  *
  * The row is kernel-side and must stay free of React (`../page/renderers.tsx` says why the page's
  * table is keyed by program id); the renderer is browser-side and must reach no Pi transport. So the
@@ -14,6 +15,15 @@
  */
 
 import type {RendererRef} from "../registry/program.ts";
+
+/**
+ * The row's program id. The page's renderer table is keyed by program id
+ * (`../page/renderers.tsx` says why), so the page needs this string; importing it from
+ * `./program.ts` would pull `node:path`, Pi's model runtime and the whole kernel-side row into the
+ * browser bundle, which is the failure #7836 closed. `./program.ts` re-exports it, so there is one
+ * declaration and the row and the table cannot name two different programs.
+ */
+export const PI_SESSION_PROGRAM = "pi-session";
 
 export const PI_CHAT_WINDOW_REF: RendererRef = {
 	kind: "host-native",

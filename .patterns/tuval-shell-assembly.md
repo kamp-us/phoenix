@@ -113,6 +113,16 @@ Three files, and the split between them is forced rather than stylistic.
   excluded from it whole because it imports `@kampus/design`, which needs the relaxed lens
   (`tsconfig.design.json`). A file the row imports out of an excluded directory is a `TS6307` on
   every build.
+- **The leaf carries the program id too, and the page's renderer table keys on it.** The table is
+  keyed by program id rather than by the `RendererRef.ref`, because the process-table wire carries a
+  row's program and no renderer field (`src/page/renderers.tsx`). Importing that id from the row
+  would pull `node:path` and Pi's model runtime into the page bundle, which is the black page of
+  #7836 — so `PI_SESSION_PROGRAM` is declared on the leaf and `src/pi/program.ts` re-exports it.
+- **The page's three React modules moved to the relaxed lens with it.** `main.tsx`,
+  `AttachedDesk.tsx` and `renderers.tsx` reach `@kampus/design` through the table, so they are named
+  in `tsconfig.json`'s `exclude` and in `tsconfig.design.json`'s `include`. `src/page/dev-server.ts`
+  stays in the strict lens: it is Node-side and `src/bin.ts` imports it, so excluding `src/page`
+  whole would `TS6307` the bin.
 - **The renderer is a thin binding, and its extras go through one slot.** Both AI-agent programs
   render the one shared `ChatWindow` (founder ruling 2026-09-02, amended on #7572 / #7584):
   `chatWindow({extras})` takes a `(state) => ReactNode` that lands in the window's status bar beside
@@ -167,11 +177,17 @@ bundler plugin beside it:
   "compilerOptions": {
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": []                       // no @types/node in scope
+    "types": [],                      // no @types/node in scope
+    "exactOptionalPropertyTypes": false
   },
   "include": ["src/page/main.tsx", "src/page/assets.d.ts"]
 }
 ```
+
+`exactOptionalPropertyTypes: false` rides along because the entry reaches `@kampus/design` through
+the page's renderer table (#7573), and the package is source-consumed under that flag —
+`tsconfig.design.json` carries the same relaxation for the same reason. This lens exists for
+`types: []`; relaxing the other flag costs it nothing it was built to catch.
 
 `types: []` is what does it: with no `@types/node`, `node:crypto` resolves to nothing, so any module
 in this project's file set that imports one is a plain `tsc` error —
@@ -216,3 +232,17 @@ Two mechanics worth copying. A dispatch is acknowledged when the Msg reaches the
 frame is a *separate* write on the same socket, so assert by waiting for the next state that
 satisfies a predicate (`deskWhere`) and not on the ack. And give that wait its own timeout that dies
 naming the last desk it saw — a bare vitest timeout tells you nothing about which key was lost.
+
+A third mechanic the Pi vertical added (`src/pi/proof/pi-vertical.integration.test.ts`): the desk
+stops emitting once the keys stop, so a predicate wait asked for a state that has *already gone past*
+blocks until its timeout. Reading "what does it look like now" is a separate move — drain whatever is
+queued with a short per-take timeout and keep the last frame (`settled`).
+
+**A proof that reads off the transport says nothing about paint, so a range that renders ships a
+browser harness beside it.** jsdom has no layout, so height, scroll and contrast are unfalsifiable in
+the unit tier; the harness is what lets a reviewer reproduce a load instead of taking a report for it
+(#7610). Two shapes exist and they answer different questions: a Vite page over a test double for one
+component (`pnpm proof:chat`, `pnpm proof:pi-window`), and a bin that boots the whole app on a faux
+provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi/proof/serve.ts`) for a claim
+about the assembled surface. The second one found `.tuval-window` sizing to its content rather than
+to its panel — a 302px window in a 775px panel, transcript 2px — which no headless proof could see.
