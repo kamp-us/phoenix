@@ -291,6 +291,21 @@
 	white-space: nowrap;
 }
 
+.kp-agent-chat__picker-option {
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-1);
+	min-width: 0;
+}
+
+.kp-agent-chat__picker-note {
+	overflow: hidden;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .kp-agent-chat__picker-menu:where([data-scope="menu"][data-part="content"]) {
 	width: calc(var(--s-8) * 6);
 	max-width: calc(100vw - var(--s-4));
