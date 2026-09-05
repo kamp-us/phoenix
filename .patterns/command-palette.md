@@ -30,6 +30,37 @@ data and selection behavior, so the design package never imports an app router o
   It carries no per-mode override: one formula follows the compact/normal/spacious values already
   owned by `tokens.css`, so changing the global ramp changes the palette with the rest of Kampüs.
 
+## Caller hooks
+
+A consumer whose keys or copy differ takes one of these rather than building a second palette —
+the ARIA spine, the movement and the scroll-into-view stay here, which is the whole point of the
+component. Tuval's spell palette
+([`apps/tuval/src/palette/Palette.tsx`](../apps/tuval/src/palette/Palette.tsx)) is the worked
+example: it used to hand-roll all of it, and #7882 folded it back onto these six.
+
+- `onKeyDown(event, active)` runs before the palette's own key handling and receives the option
+  `aria-activedescendant` currently names. `preventDefault` claims the key; anything else falls
+  through to arrow / Home / End / Enter unchanged. Tuval claims `Tab` (accept the completion) and
+  `Escape` (its opener owns where the caret goes back to).
+- `onEnter()` is asked before Enter selects the active item. `true` spends the key on the caller's
+  action; anything else leaves the default — active item wins — in place. Tuval returns whether the
+  typed line parsed into a runnable spell, so an unfinished line still completes.
+- `onActiveChange(active)` reports the active option, for a caller that describes it beside the
+  list. It reports, it never moves the selection.
+- `announcement` holds a sentence in a visually-hidden polite live region until the caller replaces
+  it. The caret never leaves the field, so this is the only thing that tells a screen-reader user
+  what a keystroke did; the `emptyLabel` / `loadingLabel` `role="status"` copy is separate and
+  visible. The region is in the DOM for the palette's whole open life, empty until the caller writes
+  into it — a region that arrives already holding its first sentence is a mutation nothing was
+  watching, so that first sentence would go unread.
+- `error` marks the field invalid and shows the message under it. It is the reply-correlated
+  refusal, not a validation of the query.
+- `closeOnEscape={false}` hands Escape to `onKeyDown` alone, so a caller owning focus restoration
+  is not racing the dialog's own close.
+
+`aria-expanded` follows the rendered options rather than being pinned to `true`: an empty or
+loading list is not an expanded popup.
+
 ## Scope sigils
 
 `scopes` declares the leading-sigil prefixes that narrow a search, each a `{sigil, label}` pair.

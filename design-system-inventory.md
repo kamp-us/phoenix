@@ -95,6 +95,8 @@ _Source: packages/design/src/CommandPalette.tsx_
 **Slots:**
 - `trigger` — Optional element that opens the palette. Rendered disabled, not removed, when the palette is disabled.
 - `footer` — Optional key legend or contextual hint below the results.
+- `announcement` — Optional sentence for the palette's polite live region, held until the caller replaces it. It is heard, never seen — the visible copy is the caller's own.
+- `error` — Optional refusal for the search field: the invalid state and the message under it.
 
 ## CopyLinkButton
 
