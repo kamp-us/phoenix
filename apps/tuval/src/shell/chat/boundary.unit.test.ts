@@ -25,6 +25,7 @@ import type {ChatView} from "./view.ts";
  * the rule this file exists to hold.
  */
 const chatViewFitsTheSlot: ViewState = {
+	pinned: true,
 	scroll: 0,
 	draft: "",
 	cursor: null,
@@ -38,6 +39,7 @@ const chatViewFitsTheSlot: ViewState = {
  * later declaration may widen an interface.
  */
 interface ChatViewAsInterface {
+	readonly pinned: boolean;
 	readonly scroll: number;
 	readonly draft: string;
 	readonly cursor: string | null;
@@ -45,6 +47,7 @@ interface ChatViewAsInterface {
 	readonly expanded: ReadonlyArray<string>;
 }
 const asInterface = {
+	pinned: true,
 	scroll: 0,
 	draft: "",
 	cursor: null,
@@ -98,6 +101,7 @@ const importLines = (source: string): ReadonlyArray<string> =>
 describe("chat window boundary", () => {
 	it("the view slot admits this window's record and refuses an interface-shaped one", () => {
 		expect(chatViewFitsTheSlot).toEqual({
+			pinned: true,
 			scroll: 0,
 			draft: "",
 			cursor: null,

@@ -29,7 +29,7 @@ import {
 	userItem,
 	withTranscript,
 } from "../chat.testing.ts";
-import type {ChatView} from "../view.ts";
+import {type ChatView, initialChatView} from "../view.ts";
 import "../../ui/tokens.css";
 import "./proof.css";
 
@@ -61,7 +61,7 @@ const state: AiAgentSessionState = withTranscript(
 	},
 );
 
-const view: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
+const view: ChatView = initialChatView;
 
 const mount = Effect.gen(function* () {
 	const host = document.getElementById("proof");
