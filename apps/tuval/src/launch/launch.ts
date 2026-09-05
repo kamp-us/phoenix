@@ -26,9 +26,21 @@ export interface LaunchedProcess {
 	readonly restored: boolean;
 }
 
+export interface LaunchOptions {
+	/**
+	 * Provided to every launched process's handlers beside its own `ProcessPorts`. A program row's
+	 * `R` is the kernel's to satisfy, and `boot` passes the kernel context here: the shell's Cmds
+	 * spawn processes and read the process table, and this is the only seam those services can
+	 * arrive through, since `SpawnOptions.services` is per-process and this is what spawns a planned
+	 * node. Local program code is fully trusted (#7484 R1.1), so this is wiring, not a grant.
+	 */
+	readonly services?: Context.Context<never>;
+}
+
 export const launch = Effect.fn("Tuval.launch")(function* (
 	compiled: CompiledGraph,
 	wiring: Wiring,
+	options?: LaunchOptions,
 ) {
 	const registry = yield* Registry;
 	const processes = yield* Processes;
@@ -57,7 +69,10 @@ export const launch = Effect.fn("Tuval.launch")(function* (
 		const handle = yield* processes.spawn(node.program, {
 			id,
 			...(Option.isSome(parent) ? {parent: parent.value} : {}),
-			services: Context.make(ProcessPorts, ports),
+			services: Context.merge(
+				options?.services ?? Context.empty(),
+				Context.make(ProcessPorts, ports),
+			),
 		});
 		const receive = receivers.get(node.id) ?? {};
 		for (const port of Object.keys(node.inPorts)) {

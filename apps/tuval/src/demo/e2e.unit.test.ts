@@ -5,7 +5,7 @@
  */
 
 import {readdirSync, readFileSync} from "node:fs";
-import {mkdtemp, readdir, rm} from "node:fs/promises";
+import {mkdtemp, readdir, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {assert, describe, it} from "@effect/vitest";
@@ -92,7 +92,7 @@ describe("tuval end to end", () => {
 							["count 1", "count 2", "count 3"],
 						);
 						assert.deepStrictEqual(app.counter.handle.getState(), {count: 3});
-						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3]});
+						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3], keys: []});
 					}),
 				);
 
@@ -108,7 +108,7 @@ describe("tuval end to end", () => {
 						);
 						assert.deepStrictEqual(app.started.restored, []);
 						assert.deepStrictEqual(app.counter.handle.getState(), {count: 3});
-						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3]});
+						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3], keys: []});
 						assert.deepStrictEqual(yield* tableShape(app.rows), [
 							["counter", "counter", null],
 							["log", "log", "counter"],
@@ -117,7 +117,41 @@ describe("tuval end to end", () => {
 						yield* app.tick;
 						assert.strictEqual(yield* Queue.take(app.lines), "count 4");
 						assert.strictEqual(yield* Queue.size(app.lines), 0);
-						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3, 4]});
+						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1, 2, 3, 4], keys: []});
+					}),
+				);
+			}),
+	);
+
+	it.effect(
+		"a log checkpoint written before `keys` existed restores whole, so the first forwarded key does not spread undefined",
+		() =>
+			Effect.gen(function* () {
+				const stateDir = yield* tempDir;
+				yield* Effect.scoped(
+					Effect.gen(function* () {
+						const app = yield* bootDemo(stateDir);
+						yield* app.tick;
+						assert.strictEqual(yield* Queue.take(app.lines), "count 1");
+					}),
+				);
+
+				// The `.tuval/` of anyone who booted the build that landed before `keys` did: the field
+				// is simply absent, and `state` is `Schema.Unknown`, so nothing on the way back rejects it.
+				const file = join(stateDir, "processes", "log.json");
+				const saved = JSON.parse(yield* io(() => readFile(file, "utf8"))) as {
+					state: Record<string, unknown>;
+				};
+				delete saved.state.keys;
+				yield* io(() => writeFile(file, JSON.stringify(saved)));
+
+				yield* Effect.scoped(
+					Effect.gen(function* () {
+						const app = yield* bootDemo(stateDir);
+						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1], keys: []});
+						yield* app.log.handle.dispatch({type: "key", key: "c"});
+						assert.strictEqual(yield* Queue.take(app.lines), "key c");
+						assert.deepStrictEqual(app.log.handle.getState(), {lines: [1], keys: ["c"]});
 					}),
 				);
 			}),
