@@ -7,10 +7,12 @@
  */
 
 import {act, render, screen} from "@testing-library/react";
+import {Result} from "effect";
 import type {ReactElement} from "react";
 import {useCallback} from "react";
 import {describe, expect, it} from "vitest";
 import {initialState} from "../core/index.ts";
+import {applyKeysConfig, defaultPrefixTable} from "../keys/index.ts";
 import {type AttachEvent, attachInitial, onAttachEvent, useDeskAttachment} from "./attach.ts";
 import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";
@@ -55,6 +57,17 @@ describe("the attachment machine", () => {
 		const refused = onAttachEvent(shown, {_tag: "Snapshot", state: {workspaces: "not a map"}});
 		expect(refused.refusedSnapshots).toBe(1);
 		expect(refused.desk).toEqual(desk);
+	});
+
+	it("keeps the grammar the kernel sent across a drop, and takes a fresh one over it", () => {
+		const told = onAttachEvent(attachInitial, {_tag: "Keys", table: defaultPrefixTable});
+		expect(told.table).toEqual(defaultPrefixTable);
+		expect(onAttachEvent(told, {_tag: "Dropped", reason: "socket closed"}).table).toEqual(
+			defaultPrefixTable,
+		);
+
+		const rebound = Result.getOrThrow(applyKeysConfig(defaultPrefixTable, {prefix: "<c-a>"}));
+		expect(onAttachEvent(told, {_tag: "Keys", table: rebound}).table).toEqual(rebound);
 	});
 
 	it("takes a fresh desk over the one it was holding", () => {

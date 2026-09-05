@@ -51,8 +51,10 @@ its `announce` handler wants `ProcessPorts`.
 
 ## Which Cmds the kernel runs, and which the surface does
 
-The shell core emits eight Cmds. `src/shell/host/effects.ts` runs three of them and states why the
-rest are inert:
+The shell core emits eight Cmds, and the type says which side runs each: `KernelCmd` and `PageCmd`
+in `src/shell/core/machine.ts`, with `ShellCmd` defined as their union so a ninth arm has to land on
+a side ([ADR 0353](../.decisions/0353-kernel-sends-the-prefix-table.md)).
+`src/shell/host/effects.ts` runs three of the five kernel arms and states why the rest are inert:
 
 | Cmd | Who runs it |
 |---|---|
@@ -72,8 +74,8 @@ a lapsed repeat window — never on its own. The one bounded window is tmux's `r
 
 **That countdown is the surface's, and that is structural.** A kernel handler returns its follow-up
 Msgs and has no way to dispatch one later, so it cannot run a timer. The snapshot carries the repeat
-window's length, so the page runs the countdown off state alone (`Desk.tsx`). Three consequences a
-caller must hold:
+window's length, so the page runs the countdown off state alone (`Desk.tsx`) — over the table the
+kernel sent it, and no other (ADR 0353). Three consequences a caller must hold:
 
 - Anything driving the kernel with no page attached — a test, a script — has to fire
   `{type: "prefix.repeatLapsed"}` itself after a repeatable binding (`<c-h>`, `<c-l>`), which
@@ -92,12 +94,25 @@ With the prefix unarmed every key belongs to the focused window, and the core an
 program that wants the keyboard declares a `key` cell; one that does not simply drops the key at
 debug, because a keystroke is not worth ending a desk over and the shell's error channel is `never`.
 
+**One keystroke has two deliveries, and only one of them is the Cmd.** Beside the kernel's dispatch
+into the process, the page hands the same key to that window's React renderer — off its own
+`surfaceKey` answer, not off a Cmd, because Cmds do not cross the wire. That is why `forwardKey` is
+a `KernelCmd` despite the page also acting on the key, and why the walk in
+`src/shell/ui/key-agreement.unit.test.ts` compares the two sides' *routing decision* rather than
+their Cmd lists.
+
 ## What the page can and cannot see
 
-The page reads three things off the wire: the shell process's state, the process table, and the
-**catalog of windowed programs** — the `registry` frame (#7788). The catalog is what a page could
-spawn, never what a process holds, so the frames stay program-blind: a process's state still crosses
-as `unknown`.
+The page reads four things off the wire: the shell process's state, the process table, the **catalog
+of windowed programs** (the `registry` frame, #7788), and the **prefix table** (the `keys` frame,
+ADR 0353). The catalog is what a page could spawn, never what a process holds, so the frames stay
+program-blind: a process's state still crosses as `unknown`.
+
+- The prefix table is the one frame that is neither state nor catalog — it is the grammar the page
+  routes keys over, and it may route over no other. `DeskProps.table` is required and
+  `AttachedDesk` renders the placeholder until the frame lands, so a page that has been told no
+  grammar shows no desk rather than inventing one. `Duration` does not survive JSON, so the frame
+  carries `repeatTimeoutMs` and `toWirePrefixTable`/`fromWirePrefixTable` convert.
 
 - The kernel decides what is in the catalog, and it decides with `showsInAWindow`
   (`src/shell/picker/entries.ts`) — the one place the headless test lives. A row with no `renderer`

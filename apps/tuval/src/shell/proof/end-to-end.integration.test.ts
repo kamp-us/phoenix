@@ -28,7 +28,7 @@ import {readCommandLine} from "../commands/index.ts";
 import {activeWorkspace, type ShellMsg, type ShellState, windowIds} from "../core/index.ts";
 import {wiredShellEffects} from "../host/effects.ts";
 import {serveDesk} from "../host/serve.ts";
-import {type Key, parse} from "../keys/index.ts";
+import {defaultPrefixTable, type Key, parse} from "../keys/index.ts";
 import {windows} from "../layout/index.ts";
 import {
 	mountPicker,
@@ -74,7 +74,7 @@ const bootDesk = Effect.fn("proof.bootDesk")(function* (stateDir: string) {
 		graph: {nodes: [shellGraphNode, ...demoGraph.nodes]},
 		stateDir,
 	});
-	const server = yield* serveDesk({kernel: started.kernel, port: 0});
+	const server = yield* serveDesk({kernel: started.kernel, port: 0, table: defaultPrefixTable});
 	const entries = yield* readEntries.pipe(Effect.provideContext(started.kernel));
 	return {started, server, lines, entries};
 });

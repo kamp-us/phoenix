@@ -12,7 +12,7 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import type {Duration, Effect} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import type {ShellCmd, ShellMsg} from "./machine.ts";
+import type {KernelCmd, PageCmd, ShellCmd, ShellMsg} from "./machine.ts";
 import type {PrefixSnapshot, ShellState, Workspace} from "./state.ts";
 
 /**
@@ -44,6 +44,16 @@ const stateIsData: NoFunctions<ShellState> = true;
 const workspaceIsData: NoFunctions<Workspace> = true;
 const prefixIsData: NoFunctions<PrefixSnapshot> = true;
 
+/** `true` when the two sides name exactly the Cmd vocabulary — no arm missing, none invented. */
+type Partitions<A extends string, B extends string, W extends string> = [A | B] extends [W]
+	? [W] extends [A | B]
+		? true
+		: false
+	: false;
+
+const armsPartition: Partitions<KernelCmd["type"], PageCmd["type"], ShellCmd["type"]> = true;
+const anArmOffTheSides: Partitions<KernelCmd["type"], "openCommandLine", ShellCmd["type"]> = false;
+
 const bareFunction: NoFunctions<{readonly onKey: () => void}> = false;
 const nestedFunction: NoFunctions<{readonly views: {readonly render: () => string}}> = false;
 const functionInAList: NoFunctions<{readonly cells: ReadonlyArray<() => void>}> = false;
@@ -70,6 +80,16 @@ describe("shell core boundary", () => {
 			| "openCommandLine"
 			| "reloadConfig"
 		>();
+	});
+
+	it("every arm names the side that runs it, and the two sides are the whole vocabulary", () => {
+		expectTypeOf<PageCmd["type"]>().toEqualTypeOf<
+			"startRepeatTimer" | "cancelRepeatTimer" | "openCommandLine"
+		>();
+		expectTypeOf<KernelCmd["type"]>().toEqualTypeOf<
+			"forwardKey" | "runCommand" | "openProgram" | "attachProcess" | "reloadConfig"
+		>();
+		expect([armsPartition, anArmOffTheSides]).toEqual([true, false]);
 	});
 
 	it("every Msg the epic names has a place in the union", () => {

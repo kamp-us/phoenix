@@ -14,7 +14,7 @@ import {ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
 import {readCommandLine} from "../shell/commands/index.ts";
 import {applyMsg, type ShellCmd, type ShellMsg, type ShellState} from "../shell/core/index.ts";
-import {defaultPrefixTable} from "../shell/keys/index.ts";
+import {defaultPrefixTable, type PrefixTable} from "../shell/keys/index.ts";
 import {createStack, createTree, createWindow} from "../shell/layout/index.ts";
 import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/browser.ts";
 import {installDomShims} from "../shell/ui/dom.testing.ts";
@@ -112,6 +112,8 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	readonly state?: ShellState;
 	readonly rows?: ReadonlyArray<TableRow>;
 	readonly programs?: ReadonlyArray<WireProgram>;
+	/** `null` scripts a kernel that has not sent its grammar yet — the desk must not render. */
+	readonly keys?: PrefixTable | null;
 }) {
 	const desk = yield* SubscriptionRef.make<ProcessView<unknown>>(
 		live(options?.state ?? twoWindowDesk()),
@@ -129,6 +131,8 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	const page: PageAttachment = {
 		rows: Stream.succeed(options?.rows ?? [counterRow]),
 		programs: Stream.succeed(options?.programs ?? catalog),
+		keys:
+			options?.keys === null ? Stream.never : Stream.succeed(options?.keys ?? defaultPrefixTable),
 		attachProcess: ((processId: ProcessId) =>
 			Effect.sync(() => {
 				attaches.push(processId);
@@ -326,5 +330,26 @@ describe("the attached desk", () => {
 			document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
 		});
 		expect(app.sent).toEqual([{type: "keys.press", key: expect.objectContaining({key: "j"})}]);
+	});
+
+	it("shows no desk until the kernel has sent its key grammar, and no key reaches the kernel", async () => {
+		const app = await Effect.runPromise(scripted({keys: null}));
+		render(
+			<AttachedDesk
+				page={app.page}
+				shell={app.shell}
+				renderers={demoRenderers}
+				reducedMotion={true}
+			/>,
+		);
+		await settle();
+
+		// The snapshot arrived; only the grammar did not, and that alone holds the desk back.
+		expect(screen.queryAllByRole("region", {name: /^Window /})).toEqual([]);
+		expect(screen.getByRole("status").textContent).toBe("Attaching to the Tuval kernel…");
+		act(() => {
+			document.dispatchEvent(new KeyboardEvent("keydown", {key: "j", bubbles: true}));
+		});
+		expect(app.sent).toEqual([]);
 	});
 });

@@ -4,6 +4,8 @@ export {
 	applyMsg,
 	cellsFor,
 	initialState,
+	type KernelCmd,
+	type PageCmd,
 	type ShellCells,
 	type ShellCmd,
 	type ShellCoreOptions,

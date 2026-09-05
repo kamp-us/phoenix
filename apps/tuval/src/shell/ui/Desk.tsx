@@ -23,7 +23,7 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import {usePalette} from "../../palette/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
-import {defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
+import type {Key, PrefixTable} from "../keys/index.ts";
 import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
@@ -44,8 +44,11 @@ export interface DeskProps {
 	readonly dispatch: (msg: ShellMsg) => void;
 	readonly resolveMount: MountResolver;
 	readonly entries?: PickerEntries;
-	/** The grammar both the core and this surface route against. One table, or the two disagree. */
-	readonly table?: PrefixTable;
+	/**
+	 * The grammar both the core and this surface route against — the table the kernel sent, and no
+	 * other. Required: a default here is a page inventing a grammar nobody gave it (ADR 0353).
+	 */
+	readonly table: PrefixTable;
 	/** The listener's home. `document` in a page; a container in a test that wants two desks. */
 	readonly keyTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener"> | null;
 	readonly reducedMotion?: boolean;
@@ -56,7 +59,7 @@ export function Desk({
 	dispatch,
 	resolveMount,
 	entries = noEntries,
-	table = defaultPrefixTable,
+	table,
 	keyTarget,
 	reducedMotion = false,
 }: DeskProps): ReactElement {

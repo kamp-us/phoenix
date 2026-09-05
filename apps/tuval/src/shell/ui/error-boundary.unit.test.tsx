@@ -65,6 +65,7 @@ function DeskHarness({
 				setState((current) => applyMsg(defaultPrefixTable, current, msg)[0])
 			}
 			resolveMount={throwingMount(throwing)}
+			table={defaultPrefixTable}
 		/>
 	);
 }
@@ -167,7 +168,14 @@ describe("recovery under live kernel traffic", () => {
 		readonly state: ShellState;
 		readonly throwing: boolean;
 	}): ReactElement {
-		return <Desk state={state} dispatch={() => {}} resolveMount={throwingMount(throwing)} />;
+		return (
+			<Desk
+				state={state}
+				dispatch={() => {}}
+				resolveMount={throwingMount(throwing)}
+				table={defaultPrefixTable}
+			/>
+		);
 	}
 
 	const resetButton = () => screen.getByRole("button", {name: "Render it again"});
