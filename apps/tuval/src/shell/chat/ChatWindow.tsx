@@ -6,7 +6,7 @@
  * `../../ai-agent/core/`. Both of those are `import type` only, so this module pulls no agent code
  * into the browser bundle at all.
  *
- * Three things here are not obvious from the code:
+ * Four things here are not obvious from the code:
  *
  * **The composer is not wrapped, it is driven through its bridge.** `AgentChatInput`
  * (`@kampus/design`, #7561) has no `onSubmit` — it sends through an `AgentChatInputBridge` and
@@ -18,6 +18,13 @@
  * the id of the oldest row it held, finds that row again in the new list and scrolls back onto it —
  * which is stable whether the head row stayed (more history behind) or disappeared (the beginning
  * of history).
+ *
+ * **Four writes move the transcript, and one pin decides between them.** A window resting on its
+ * newest turn follows every turn that lands; one whose reader scrolled up is left alone, and so is
+ * one anchored on a history page or on a row it just expanded. That is `view.pinned`: it is set
+ * from the scroll offset on every scroll, cleared by expanding a row, and set again by sending. The
+ * two anchoring effects reach the viewport only while it is clear: paging is asked for at the top,
+ * where the pin is already off, and expanding turns it off itself.
  *
  * **Nothing is ever auto-resent.** An `interrupted` marker renders the cut turn and offers a
  * resend; the resend is a deliberate new send and mints a fresh idempotency key (ruling 2, #7570),
@@ -76,6 +83,8 @@ export interface ChatWindowOptions {
 	readonly estimateRowHeight?: number;
 	/** How close to the top counts as "at the top" for the next page, in pixels. */
 	readonly topThreshold?: number;
+	/** How much tail may hang below the fold and still count as "on the newest turn", in pixels. */
+	readonly bottomThreshold?: number;
 	/** How long the scroll offset settles before it is written to the view slot. */
 	readonly scrollCommitMs?: number;
 	/**
@@ -92,6 +101,7 @@ interface ResolvedOptions {
 	readonly overscan: number;
 	readonly estimateRowHeight: number;
 	readonly topThreshold: number;
+	readonly bottomThreshold: number;
 	readonly scrollCommitMs: number;
 	readonly scrollToFn?: VirtualizerOptions<HTMLDivElement, Element>["scrollToFn"];
 }
@@ -103,6 +113,7 @@ const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	overscan: options.overscan ?? 6,
 	estimateRowHeight: options.estimateRowHeight ?? 72,
 	topThreshold: options.topThreshold ?? 64,
+	bottomThreshold: options.bottomThreshold ?? 64,
 	scrollCommitMs: options.scrollCommitMs ?? 150,
 	...(options.scrollToFn === undefined ? {} : {scrollToFn: options.scrollToFn}),
 });
@@ -133,6 +144,14 @@ const swallowBareCharacter = (event: ReactKeyboardEvent<HTMLDivElement>): void =
 	const bare = !event.ctrlKey && !event.metaKey && !event.altKey && [...event.key].length === 1;
 	if (bare) event.stopPropagation();
 };
+
+/**
+ * Is the transcript resting on its newest turn? The list is virtualized, so the mounted rows are
+ * the overscan window and their heights are not the transcript's height — the tail hanging below
+ * the fold is the virtualizer's total size against the scroller's own viewport.
+ */
+const onNewest = (scroller: HTMLDivElement | null, totalSize: number, threshold: number): boolean =>
+	scroller !== null && totalSize - (scroller.scrollTop + scroller.clientHeight) <= threshold;
 
 const Placeholder = ({children}: {readonly children: ReactNode}): ReactElement => (
 	<p className="tuval-chat-placeholder" role="status">
@@ -269,6 +288,9 @@ function ChatWindow({
 				if (held === open) return current;
 				return {
 					...current,
+					// The effect below anchors an opened row to the top, and a window still following
+					// its newest turn would pull the viewport straight back off it.
+					pinned: open ? false : current.pinned,
 					expanded: open
 						? [...current.expanded, id]
 						: current.expanded.filter((other) => other !== id),
@@ -319,6 +341,8 @@ function ChatWindow({
 		useFlushSync: false,
 		...(options.scrollToFn === undefined ? {} : {scrollToFn: options.scrollToFn}),
 	});
+
+	const totalSize = virtualizer.getTotalSize();
 
 	const requestOlder = useCallback(() => {
 		if (loading || view.atOldest || rows.length === 0) return;
@@ -377,13 +401,24 @@ function ChatWindow({
 
 	// First paint lands where a chat belongs: on the newest turn, or back on the offset this window
 	// was left at. Once, and never again — a later re-render must not yank the operator's scroll.
+	// A window left following its newest turn is restored onto the newest row and not onto its saved
+	// offset: that offset was the bottom when it was written, and the transcript has grown since.
 	const placedRef = useRef(false);
 	useLayoutEffect(() => {
 		if (placedRef.current || rows.length === 0) return;
 		placedRef.current = true;
-		if (view.scroll > 0) virtualizer.scrollToOffset(view.scroll);
+		if (!view.pinned && view.scroll > 0) virtualizer.scrollToOffset(view.scroll);
 		else virtualizer.scrollToIndex(rows.length - 1, {align: "end"});
-	}, [rows.length, view.scroll, virtualizer]);
+	}, [rows.length, view.pinned, view.scroll, virtualizer]);
+
+	// …and after that, the transcript follows the newest turn only while it is already resting on
+	// it. `totalSize` carries both cases the follow owes: a row appended, and the last row measuring
+	// taller than the estimate — which lands a render late, because `useFlushSync: false` above
+	// defers `measureElement`'s notification to React's own scheduling.
+	useLayoutEffect(() => {
+		if (!view.pinned || rows.length === 0) return;
+		virtualizer.scrollToIndex(rows.length - 1, {align: "end"});
+	}, [view.pinned, rows.length, totalSize, virtualizer]);
 
 	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	useEffect(
@@ -396,6 +431,10 @@ function ChatWindow({
 	const onScroll = useCallback(
 		(event: UIEvent<HTMLDivElement>) => {
 			const offset = event.currentTarget.scrollTop;
+			// The pin is written on the transition and not through the debounce below: a turn landing
+			// inside the settle window would otherwise read a pin the operator has already left.
+			const pinned = onNewest(event.currentTarget, totalSize, options.bottomThreshold);
+			commit((current) => (current.pinned === pinned ? current : {...current, pinned}));
 			if (commitTimer.current !== null) clearTimeout(commitTimer.current);
 			commitTimer.current = setTimeout(() => {
 				commitTimer.current = null;
@@ -403,7 +442,14 @@ function ChatWindow({
 			}, options.scrollCommitMs);
 			if (offset <= options.topThreshold) requestOlder();
 		},
-		[commit, options.scrollCommitMs, options.topThreshold, requestOlder],
+		[
+			commit,
+			options.bottomThreshold,
+			options.scrollCommitMs,
+			options.topThreshold,
+			requestOlder,
+			totalSize,
+		],
 	);
 
 	const phase = state?.phase ?? "idle";
@@ -413,7 +459,9 @@ function ChatWindow({
 				initialPhase: phase,
 				onPrompt: (text) => {
 					dispatch({type: "prompt", text, key: options.newKey()});
-					commit((current) => (current.draft === "" ? current : {...current, draft: ""}));
+					// Sending is the operator asking for the answer, so the window re-pins: one who
+					// scrolled up to read history and then typed sees their own turn and the reply.
+					commit((current) => ({...current, draft: "", pinned: true}));
 				},
 				onInterrupt: () => dispatch({type: "interrupt"}),
 			}),
@@ -500,7 +548,7 @@ function ChatWindow({
 				// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
 				tabIndex={0}
 			>
-				<div className="tuval-chat-spacer" style={{height: `${virtualizer.getTotalSize()}px`}}>
+				<div className="tuval-chat-spacer" style={{height: `${totalSize}px`}}>
 					{virtualizer.getVirtualItems().map((virtual) => {
 						const row = rows[virtual.index];
 						if (row === undefined) return null;

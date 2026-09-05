@@ -12,6 +12,7 @@ describe("asChatView", () => {
 	it("reads a slot this window wrote", () => {
 		expect(
 			asChatView({
+				pinned: false,
 				scroll: 420,
 				draft: "hello",
 				cursor: "i7",
@@ -19,6 +20,7 @@ describe("asChatView", () => {
 				expanded: ["t1", "t2"],
 			}),
 		).toEqual({
+			pinned: false,
 			scroll: 420,
 			draft: "hello",
 			cursor: "i7",
@@ -43,6 +45,7 @@ describe("asChatView", () => {
 			asChatView({scroll: "far", draft: 3, cursor: 9, atOldest: "yes", expanded: "t1"}),
 		).toEqual(initialChatView);
 		expect(asChatView({scroll: 12, cursor: "i1"})).toEqual({
+			pinned: true,
 			scroll: 12,
 			draft: "",
 			cursor: "i1",
@@ -53,6 +56,15 @@ describe("asChatView", () => {
 
 	it("keeps only the string ids out of an expanded list another writer left something else in", () => {
 		expect(asChatView({expanded: ["t1", 7, null, "t2", {}]}).expanded).toEqual(["t1", "t2"]);
+	});
+
+	// A slot written before the window followed anything carries no pin, and one written by another
+	// program carries whatever that program wrote. Both read as pinned: a window is following its
+	// newest turn until its reader scrolls off it, and only the literal `false` is a reader who did.
+	it("reads a missing or unrecognised pin as a window that is following its newest turn", () => {
+		expect(asChatView({scroll: 900}).pinned).toBe(true);
+		expect(asChatView({pinned: "no"}).pinned).toBe(true);
+		expect(asChatView({pinned: false}).pinned).toBe(false);
 	});
 
 	it("refuses a non-finite scroll offset, which would take the virtualizer with it", () => {

@@ -25,7 +25,7 @@ import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
 import {assistantItem, toolItem, transcriptOf, userItem, withTranscript} from "./chat.testing.ts";
 import {phaseLines} from "./phase.ts";
-import type {ChatView} from "./view.ts";
+import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
 
@@ -50,10 +50,7 @@ const openWindow = async (
 	const scrolls: Array<number> = [];
 	const keys: Array<string> = [];
 	const host = await Effect.runPromise(
-		process.window<ChatView>(
-			WindowId.make("w1"),
-			initialView ?? {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []},
-		),
+		process.window<ChatView>(WindowId.make("w1"), initialView ?? initialChatView),
 	);
 	const resolved: ChatWindowOptions = {
 		newKey: () => {
@@ -96,6 +93,19 @@ const scrollTo = async (offset: number): Promise<void> => {
 	});
 };
 
+/**
+ * Past every row there is: the virtualizer's total size is bounded by the rows it holds, so an
+ * offset beyond the stubbed box is unambiguously "resting on the newest turn".
+ */
+const scrollToNewest = (): Promise<void> => scrollTo(SCROLL_BOX);
+
+/** Let a render the virtualizer scheduled off a measurement land before a scroll count is read. */
+const settle = async (): Promise<void> => {
+	await act(async () => {
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	});
+};
+
 const composer = (): HTMLTextAreaElement =>
 	screen.getByRole("combobox", {name: "Write a message to the agent"}) as HTMLTextAreaElement;
 
@@ -132,6 +142,61 @@ describe("the transcript", () => {
 		await openWindow(withTranscript(transcriptOf(2)));
 		const window = document.querySelector(".tuval-chat");
 		expect(window?.getAttribute("data-scheme")).toBe("dark");
+	});
+});
+
+describe("following the newest turn", () => {
+	it("scrolls to the newest row when a turn lands while the transcript is resting on it", async () => {
+		const {process, scrolls, view} = await openWindow(withTranscript(transcriptOf(4)));
+		await scrollToNewest();
+		await waitFor(() => expect(view().pinned).toBe(true));
+		await settle();
+		const before = scrolls.length;
+		const landedBefore = scrolls[scrolls.length - 1] ?? -1;
+
+		await act(async () => {
+			await Effect.runPromise(process.commit(withTranscript(transcriptOf(5))));
+		});
+
+		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before));
+		// The appended row ends below where the last one did, so following it is never a scroll back
+		// up the transcript. Not *strictly* below: the virtualizer clamps every offset to
+		// `scrollHeight - clientHeight` (`virtual-core@3.17.8`, `getMaxScrollOffset`), and against
+		// this file's stubbed box a tall enough transcript is already sitting on that ceiling.
+		expect(scrolls[scrolls.length - 1] ?? -1).toBeGreaterThanOrEqual(landedBefore);
+	});
+
+	// The other arm, and the reason the pin is a fact the window keeps rather than a follow that
+	// always fires: a reader who scrolled up to read history is not yanked back down by a turn
+	// landing behind them. It reds against a follow that ignores the pin.
+	it("leaves the offset alone when a turn lands after the reader scrolled up", async () => {
+		const {process, scrolls, view} = await openWindow(withTranscript(transcriptOf(20)));
+		await scrollTo(400);
+		await waitFor(() => expect(view().pinned).toBe(false));
+		await settle();
+		const before = scrolls.length;
+
+		await act(async () => {
+			await Effect.runPromise(process.commit(withTranscript(transcriptOf(21))));
+		});
+
+		await settle();
+		expect(scrolls.length).toBe(before);
+		expect(view().pinned).toBe(false);
+	});
+
+	it("re-pins on a send, so the operator sees the turn they just typed", async () => {
+		const {view} = await openWindow(withTranscript(transcriptOf(20)));
+		await scrollTo(400);
+		await waitFor(() => expect(view().pinned).toBe(false));
+
+		const input = composer();
+		await act(async () => {
+			fireEvent.change(input, {target: {value: "ship it"}});
+			fireEvent.keyDown(input, {key: "Enter"});
+		});
+
+		await waitFor(() => expect(view().pinned).toBe(true));
 	});
 });
 
@@ -240,13 +305,7 @@ describe("the composer", () => {
 		await openWindow(
 			withTranscript(transcriptOf(2)),
 			{},
-			{
-				scroll: 0,
-				draft: "half-written",
-				cursor: null,
-				atOldest: false,
-				expanded: [],
-			},
+			{...initialChatView, draft: "half-written"},
 		);
 		expect(composer().value).toBe("half-written");
 	});
@@ -346,7 +405,7 @@ describe("the phase line and the contract's two placeholders", () => {
 			processId,
 			readProcess: Stream.never,
 			dispatch: () => Effect.succeed({_tag: "Delivered"} as const),
-			view: () => ({scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []}),
+			view: () => initialChatView,
 			setView: () => Effect.void,
 		};
 		render(chatWindow({}).render(silent) as ReactElement);
@@ -378,7 +437,7 @@ describe("two windows over one process", () => {
 		const process = await Effect.runPromise(
 			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
 		);
-		const initial: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
+		const initial: ChatView = initialChatView;
 		const left = await Effect.runPromise(process.window<ChatView>(WindowId.make("left"), initial));
 		const right = await Effect.runPromise(
 			process.window<ChatView>(WindowId.make("right"), initial),
