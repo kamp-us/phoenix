@@ -17,7 +17,13 @@
 
 import {Context, type Effect, type Stream} from "effect";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, ModelRef, PermissionDecision, TranscriptItem} from "../ports/index.ts";
+import type {
+	CommandRef,
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	TranscriptItem,
+} from "../ports/index.ts";
 import type {
 	ModelUnsupported,
 	ModeUnsupported,
@@ -71,6 +77,17 @@ export interface TuvalAiAgentApi {
 	 * event, exactly as the mode list does.
 	 */
 	readonly setModel: (model: ModelRef) => Effect.Effect<void, ModelUnsupported>;
+	/**
+	 * The slash commands this session offers, as the composer's picker lists them — the ninth member
+	 * (#8060). A read rather than a setter, because nothing selects a command: the picker inserts one
+	 * and it reaches the backend as ordinary prompt text.
+	 *
+	 * The catalog is the session's, so this answers empty before `start` and on a backend that offers
+	 * none. Changes arrive on `events` as a `commands` event rather than down a second stream — one
+	 * subscription, one ordering (ruling 1, #7570) — and this read always answers what the last such
+	 * event carried.
+	 */
+	readonly commands: Effect.Effect<ReadonlyArray<CommandRef>>;
 	/**
 	 * History is backend-owned (ruling 5): this reads the backend's own store through the
 	 * transport. Tuval keeps no second copy beyond the live tail the core holds.

@@ -223,6 +223,20 @@ function modelValue(model: Pick<PiModel, "provider" | "id">): string {
 }
 
 /** A pushed catalog, admitted row by row. A malformed push leaves the held list alone. */
+function commandList(value: unknown): readonly PiCommand[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const rows: PiCommand[] = [];
+	for (const row of value) {
+		if (!isRecord(row)) return undefined;
+		const name = stringValue(row, "name");
+		if (!name) return undefined;
+		const description = stringValue(row, "description");
+		const source = stringValue(row, "source");
+		rows.push({name, ...(description ? {description} : {}), ...(source ? {source} : {})});
+	}
+	return rows;
+}
+
 function modelList(value: unknown): readonly PiModel[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	const rows: PiModel[] = [];
@@ -489,6 +503,14 @@ export function AgentChatInput({
 	}, [commands, completion, completionDismissed, files]);
 	const activeSuggestionId =
 		suggestions.length > 0 ? `${suggestionsId}-${activeSuggestion}` : undefined;
+	// A harness that offers no commands does not advertise the sigil: typing `/` against an empty
+	// catalog opens nothing, and a hint promising a picker that never appears reads as a fault.
+	const commandHint =
+		commands.length > 0 ? (
+			<>
+				<Kbd>/</Kbd> {t("admin.agent.hint.command")} ·{" "}
+			</>
+		) : null;
 
 	useEffect(() => setActiveSuggestion(0), [completion?.kind, completion?.query]);
 
@@ -536,6 +558,10 @@ export function AgentChatInput({
 			// other way in that does not restart the whole composer.
 			const nextModels = status && modelList(status.models);
 			if (nextModels) setModels(nextModels);
+			// Replaced, never merged: a host pushes its whole command list, so a merge would keep one
+			// it has just withdrawn.
+			const nextCommands = status && commandList(status.commands);
+			if (nextCommands) setCommands(nextCommands);
 			const nextModel = status && isRecord(status.model) ? status.model : undefined;
 			if (nextModel) setState((current) => ({...(current ?? {}), model: nextModel}));
 			if (status && booleanValue(status, "available") === false) setConnection("unavailable");
@@ -1167,13 +1193,13 @@ export function AgentChatInput({
 				{variant === "harness" ? (
 					<p className="kp-agent-chat__hint">
 						<Kbd>Enter</Kbd> {t("admin.agent.hint.send")} · <Kbd>Shift+Enter</Kbd>{" "}
-						{t("admin.agent.hint.newline")} · <Kbd>/</Kbd> {t("admin.agent.hint.command")} ·{" "}
+						{t("admin.agent.hint.newline")} · {commandHint}
 						<Kbd>@</Kbd> {t("admin.agent.hint.file")} · {t("admin.agent.hint.pasteImage")}
 					</p>
 				) : (
 					<p className="kp-agent-chat__hint">
-						<Kbd>/</Kbd> {t("admin.agent.hint.command")} · <Kbd>@</Kbd> {t("admin.agent.hint.file")}{" "}
-						· {t("admin.agent.hint.addOrPasteImage")}
+						{commandHint}
+						<Kbd>@</Kbd> {t("admin.agent.hint.file")} · {t("admin.agent.hint.addOrPasteImage")}
 					</p>
 				)}
 				{error ? (

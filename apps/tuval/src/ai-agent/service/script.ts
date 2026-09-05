@@ -11,7 +11,7 @@
 import type {SpellBridgeApi} from "../../commands/bridge/index.ts";
 import type {SpellPath, Scope as SpellScope} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, ModelRef, TranscriptItem} from "../ports/index.ts";
+import type {CommandRef, Mode, ModelRef, TranscriptItem} from "../ports/index.ts";
 import type {TransportError} from "./errors.ts";
 
 /** One spell a turn calls: the path and the args, exactly as they cross the wire. */
@@ -84,6 +84,11 @@ export interface AgentScript {
 	readonly resumed?: ReadonlyArray<AgentEvent>;
 	readonly modes: ScriptedModes;
 	readonly models: ScriptedModels;
+	/**
+	 * What this scripted backend offers the slash-command picker, announced by `start`. Absent is a
+	 * backend with no commands — the shape every fixture written before #8060 stands for.
+	 */
+	readonly commands?: ReadonlyArray<CommandRef>;
 	/** One entry per prompt, consumed in order. */
 	readonly turns: ReadonlyArray<ScriptedTurn>;
 	/**

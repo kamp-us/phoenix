@@ -52,9 +52,11 @@ interface Probe {
 	released: number;
 	/** Prompts the layer was actually asked for; a refused prompt has to reach none of them. */
 	prompts: number;
+	/** The text of each, so a test reads what the backend was sent rather than that it was sent. */
+	sent: Array<string>;
 }
 
-const probeOf = (): Probe => ({acquired: 0, released: 0, prompts: 0});
+const probeOf = (): Probe => ({acquired: 0, released: 0, prompts: 0, sent: []});
 
 /** A backend that holds no session at all, whatever it is asked to open. */
 const refusesEveryStart = (options: StartOptions) =>
@@ -96,6 +98,7 @@ const countingLayer = (
 				prompt: (text: string, key?: string) =>
 					Effect.suspend(() => {
 						probe.prompts += 1;
+						probe.sent.push(text);
 						return agent.prompt(text, key);
 					}),
 			};
@@ -325,6 +328,30 @@ describe("the AI agent handlers under a process", () => {
 				yield* eventually(() => sessionOf(handle).models.current?.id === sonnet.id);
 				assert.deepStrictEqual(sessionOf(handle).models.current, sonnet);
 				assert.isNull(sessionOf(handle).failure);
+			}),
+		);
+	});
+
+	// The picker's half of this — a pick becoming a `prompt` Msg carrying `/compact` — is proven in
+	// `shell/chat/agent-controls.unit.test.tsx`; this is the other half, that such a Msg reaches the
+	// backend as prompt text and as nothing else. A command runs as a prompt, so no port carries it.
+	it.live("folds the catalog into state and sends a picked command as ordinary prompt text", () => {
+		const probe = probeOf();
+		const compact = {name: "compact", description: "Summarise the conversation."};
+		return withKernel({...plainReply, commands: [compact]}, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).commands.length === 1);
+				assert.deepStrictEqual(sessionOf(handle).commands, [compact]);
+
+				yield* handle.dispatch({
+					type: "prompt",
+					text: "/compact",
+					key: "k1",
+					timestamp: Date.now(),
+				});
+				yield* eventually(() => probe.sent.length === 1);
+				assert.deepStrictEqual(probe.sent, ["/compact"]);
 			}),
 		);
 	});

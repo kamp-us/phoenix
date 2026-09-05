@@ -166,6 +166,10 @@ export const foldEvent = (
 			return {...state, modes: {current: event.current, available: event.available}};
 		case "model":
 			return {...state, models: {current: event.current, available: event.available}};
+		// Replaced, never merged: the push carries the whole list, so a merge would keep a command
+		// the backend has just withdrawn.
+		case "commands":
+			return {...state, commands: event.available};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
 		// The same landing the `failed` Msg gives a failure the handlers saw, so a refusal reads the

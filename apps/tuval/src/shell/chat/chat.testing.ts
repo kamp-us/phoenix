@@ -95,6 +95,9 @@ export const models = (
 	available: available.map((id) => ({provider: "anthropic", id, name: id})),
 });
 
+export const commands = (names: ReadonlyArray<string>): AiAgentSessionState["commands"] =>
+	names.map((name) => ({name, description: `what /${name} does`}));
+
 export const withTranscript = (
 	items: ReadonlyArray<TranscriptItem>,
 	overrides: Partial<AiAgentSessionState> = {},
