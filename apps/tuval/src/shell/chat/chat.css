@@ -161,26 +161,172 @@
 	font: var(--t-body-sm);
 }
 
-/* One collapsed line per tool call in this slice; the expandable row is the next one. */
+/* The tool row is a `Collapsible`; this is the box around it, not the disclosure's own anatomy. */
 .tuval-chat-tool {
-	display: flex;
-	gap: var(--s-2);
-	align-items: baseline;
+	min-inline-size: 0;
 	font: var(--t-mono);
 	color: var(--text-secondary);
+}
+
+/*
+ * The disclosure's own anatomy. `@kampus/design`'s `Collapsible` is a bare re-export of the Manti
+ * primitive and ships no sizing, so a consuming app supplies it — apps/web does in its own sheets,
+ * and Tuval is not that app (#7853). Without these two rules a real browser load renders the
+ * trigger's state chevron at its intrinsic 56px, stacked under the row rather than beside it.
+ */
+.tuval-chat-tool [data-scope="collapsible"][data-part="trigger"] {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-2);
+	inline-size: 100%;
+	min-block-size: var(--tap-min);
+	text-align: start;
+}
+
+.tuval-chat-tool [data-scope="collapsible"][data-part="indicator"] svg {
+	inline-size: 14px;
+	block-size: 14px;
+	color: var(--text-muted);
+}
+
+.tuval-chat-tool-head {
+	display: inline-flex;
+	gap: var(--s-2);
+	align-items: baseline;
 	min-inline-size: 0;
 }
 
-.tuval-chat-tool-input {
-	color: var(--text-muted);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+.tuval-chat-tool-name {
+	color: var(--text-primary);
 }
 
 /* Pillar 4: the status is a word, never the colour alone. */
 .tuval-chat-tool-status[data-status="error"] {
 	color: var(--danger);
+}
+
+.tuval-chat-tool-status[data-status="running"] {
+	color: var(--accent);
+}
+
+.tuval-chat-tool-detail {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	padding-block-start: var(--s-2);
+	min-inline-size: 0;
+}
+
+.tuval-chat-tool-label {
+	margin: 0;
+	font: var(--t-micro);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.tuval-chat-pre {
+	margin: 0;
+	padding: var(--s-2);
+	border-radius: var(--r-md);
+	background: var(--surface-raised);
+	font: var(--t-mono);
+	color: var(--text-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tuval-chat-omission {
+	margin: 0;
+	/* Meaning, so it sits on `--text-muted` and never on `--text-faint` (Pillar 4). */
+	font: var(--t-micro);
+	color: var(--text-muted);
+}
+
+.tuval-chat-diff {
+	border-collapse: collapse;
+	inline-size: 100%;
+	font: var(--t-mono);
+}
+
+/*
+ * `width: 1%` plus `nowrap` is the shrink-to-fit idiom for an auto-layout table: the marker column
+ * takes exactly its own text and the line column takes the rest. A `table-layout: fixed` with an
+ * explicit `9ch` was tried first and a real browser split the row evenly down the middle anyway.
+ */
+.tuval-chat-diff-kind {
+	width: 1%;
+	white-space: nowrap;
+	padding-inline-end: var(--s-2);
+	text-align: start;
+	vertical-align: top;
+	font: var(--t-micro);
+	font-weight: 400;
+	color: var(--text-muted);
+}
+
+.tuval-chat-diff-text {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--text-secondary);
+}
+
+.tuval-chat-diff [data-line="removed"] .tuval-chat-diff-text {
+	background: color-mix(in oklab, var(--danger) 14%, transparent);
+}
+
+.tuval-chat-diff [data-line="added"] .tuval-chat-diff-text {
+	background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+/* The phase line and the mode control are one header row above the transcript. */
+.tuval-chat-bar {
+	display: flex;
+	gap: var(--s-3);
+	align-items: center;
+	justify-content: space-between;
+}
+
+.tuval-chat-mode {
+	flex: 0 0 auto;
+}
+
+/*
+ * The cards sit between the transcript and the composer. Bounded, because a program may raise
+ * several at once and an unbounded stack would push the composer off the window.
+ */
+.tuval-chat-permissions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	max-block-size: 40vh;
+	overflow-y: auto;
+}
+
+.tuval-chat-permission-title {
+	margin: 0;
+	font: var(--t-body);
+	color: var(--text-primary);
+}
+
+.tuval-chat-permission-name {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-permission-description {
+	margin: var(--s-1) 0 var(--s-2);
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-permission-actions {
+	display: flex;
+	gap: var(--s-2);
+	flex-wrap: wrap;
+	padding-block-start: var(--s-2);
 }
 
 .tuval-chat-head {

@@ -18,7 +18,13 @@ export type AiAgentSessionMsg =
 	/** `key` is the idempotency key the window mints per deliberate send (ruling 2, #7570). */
 	| {readonly type: "prompt"; readonly text: string; readonly key: string}
 	| {readonly type: "event"; readonly sessionId: string; readonly event: AgentEvent}
-	| {readonly type: "answer"; readonly request: string; readonly decision: PermissionDecision}
+	/** `message` is the operator's optional note; the window offers one on every decision. */
+	| {
+			readonly type: "answer";
+			readonly request: string;
+			readonly decision: PermissionDecision;
+			readonly message?: string;
+	  }
 	| {readonly type: "setMode"; readonly mode: Mode}
 	| {readonly type: "page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "paged"; readonly page: HistoryPage}
@@ -33,6 +39,7 @@ export type AiAgentSessionCmd =
 			readonly type: "aiAgent.answer";
 			readonly request: string;
 			readonly decision: PermissionDecision;
+			readonly message?: string;
 	  }
 	| {readonly type: "aiAgent.setMode"; readonly mode: Mode}
 	| {readonly type: "aiAgent.page"; readonly before: string | null; readonly limit: number}

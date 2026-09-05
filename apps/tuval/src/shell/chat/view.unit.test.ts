@@ -10,11 +10,20 @@ import {asChatView, initialChatView} from "./view.ts";
 
 describe("asChatView", () => {
 	it("reads a slot this window wrote", () => {
-		expect(asChatView({scroll: 420, draft: "hello", cursor: "i7", atOldest: true})).toEqual({
+		expect(
+			asChatView({
+				scroll: 420,
+				draft: "hello",
+				cursor: "i7",
+				atOldest: true,
+				expanded: ["t1", "t2"],
+			}),
+		).toEqual({
 			scroll: 420,
 			draft: "hello",
 			cursor: "i7",
 			atOldest: true,
+			expanded: ["t1", "t2"],
 		});
 	});
 
@@ -30,15 +39,20 @@ describe("asChatView", () => {
 	});
 
 	it("keeps the fields it recognises and defaults the rest, field by field", () => {
-		expect(asChatView({scroll: "far", draft: 3, cursor: 9, atOldest: "yes"})).toEqual(
-			initialChatView,
-		);
+		expect(
+			asChatView({scroll: "far", draft: 3, cursor: 9, atOldest: "yes", expanded: "t1"}),
+		).toEqual(initialChatView);
 		expect(asChatView({scroll: 12, cursor: "i1"})).toEqual({
 			scroll: 12,
 			draft: "",
 			cursor: "i1",
 			atOldest: false,
+			expanded: [],
 		});
+	});
+
+	it("keeps only the string ids out of an expanded list another writer left something else in", () => {
+		expect(asChatView({expanded: ["t1", 7, null, "t2", {}]}).expanded).toEqual(["t1", "t2"]);
 	});
 
 	it("refuses a non-finite scroll offset, which would take the virtualizer with it", () => {

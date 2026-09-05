@@ -60,10 +60,36 @@ class MeasuringResizeObserver implements ResizeObserver {
 	disconnect(): void {}
 }
 
+/**
+ * A do-nothing `IntersectionObserver`, which jsdom also lacks.
+ *
+ * `@floating-ui/dom`'s `autoUpdate` builds one to watch a popup's anchor
+ * (`floating-ui.dom.mjs`, `observeMove`), and `@zag-js/popper` calls `autoUpdate` from inside a
+ * `raf` — so a portaled Manti primitive that was opened and then unmounted schedules the
+ * construction *after* the test that opened it, and the `ReferenceError` lands as an unhandled
+ * rejection Vitest collects against a green run (`.patterns/zag-machine-interaction-tests.md`, the
+ * mirror-image section). Nothing here needs the callback to fire: no test asserts a popup's
+ * position, and jsdom has no layout to observe a change in.
+ */
+class NoopIntersectionObserver implements IntersectionObserver {
+	readonly root = null;
+	readonly rootMargin = "";
+	readonly scrollMargin = "";
+	readonly thresholds: ReadonlyArray<number> = [];
+
+	observe(): void {}
+	unobserve(): void {}
+	disconnect(): void {}
+	takeRecords(): Array<IntersectionObserverEntry> {
+		return [];
+	}
+}
+
 /** Call once at the top of a component test file, before `render`. */
 export const installDomShims = (): void => {
 	const scope = globalThis as Record<string, unknown>;
 	scope.ResizeObserver = MeasuringResizeObserver;
+	scope.IntersectionObserver ??= NoopIntersectionObserver;
 	scope.PointerEvent ??= globalThis.MouseEvent;
 	Element.prototype.getBoundingClientRect = box;
 	Element.prototype.scrollIntoView ??= function scrollIntoView(): void {};

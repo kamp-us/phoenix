@@ -52,7 +52,7 @@ const openWindow = async (
 	const host = await Effect.runPromise(
 		process.window<ChatView>(
 			WindowId.make("w1"),
-			initialView ?? {scroll: 0, draft: "", cursor: null, atOldest: false},
+			initialView ?? {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []},
 		),
 	);
 	const resolved: ChatWindowOptions = {
@@ -123,8 +123,9 @@ describe("the transcript", () => {
 		expect(await screen.findByText("do it")).toBeDefined();
 		expect(screen.getByText("done")).toBeDefined();
 		expect(screen.getByText("resumed")).toBeDefined();
-		expect(screen.getByText("read_file")).toBeDefined();
-		expect(screen.getByText("ok")).toBeDefined();
+		// The tool call is its disclosure trigger, and the trigger's own content is its accessible
+		// name: the tool and its status, both as words.
+		expect(screen.getByRole("button", {name: "read_file ok"})).toBeDefined();
 	});
 
 	it("is dark whatever it is mounted inside", async () => {
@@ -244,6 +245,7 @@ describe("the composer", () => {
 				draft: "half-written",
 				cursor: null,
 				atOldest: false,
+				expanded: [],
 			},
 		);
 		expect(composer().value).toBe("half-written");
@@ -305,7 +307,7 @@ describe("the phase line and the contract's two placeholders", () => {
 			processId,
 			readProcess: Stream.never,
 			dispatch: () => Effect.succeed({_tag: "Delivered"} as const),
-			view: () => ({scroll: 0, draft: "", cursor: null, atOldest: false}),
+			view: () => ({scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []}),
 			setView: () => Effect.void,
 		};
 		render(chatWindow({}).render(silent) as ReactElement);
@@ -327,7 +329,7 @@ describe("two windows over one process", () => {
 		const shared = await Effect.runPromise(
 			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
 		);
-		const initial: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false};
+		const initial: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
 		const left = await Effect.runPromise(shared.window<ChatView>(WindowId.make("left"), initial));
 		const right = await Effect.runPromise(shared.window<ChatView>(WindowId.make("right"), initial));
 		const renderer = chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined});

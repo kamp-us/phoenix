@@ -29,6 +29,7 @@ const chatViewFitsTheSlot: ViewState = {
 	draft: "",
 	cursor: null,
 	atOldest: false,
+	expanded: [],
 } satisfies ChatView;
 
 /**
@@ -41,8 +42,15 @@ interface ChatViewAsInterface {
 	readonly draft: string;
 	readonly cursor: string | null;
 	readonly atOldest: boolean;
+	readonly expanded: ReadonlyArray<string>;
 }
-const asInterface = {scroll: 0, draft: "", cursor: null, atOldest: false} as ChatViewAsInterface;
+const asInterface = {
+	scroll: 0,
+	draft: "",
+	cursor: null,
+	atOldest: false,
+	expanded: [],
+} as ChatViewAsInterface;
 // @ts-expect-error — an interface-shaped view record is not a `Schema.Json` member, so no window
 // could hold it and `ChatView` must not become one.
 const interfaceMisfitsTheSlot: ViewState = asInterface;
@@ -89,7 +97,13 @@ const importLines = (source: string): ReadonlyArray<string> =>
 
 describe("chat window boundary", () => {
 	it("the view slot admits this window's record and refuses an interface-shaped one", () => {
-		expect(chatViewFitsTheSlot).toEqual({scroll: 0, draft: "", cursor: null, atOldest: false});
+		expect(chatViewFitsTheSlot).toEqual({
+			scroll: 0,
+			draft: "",
+			cursor: null,
+			atOldest: false,
+			expanded: [],
+		});
 		expect(interfaceMisfitsTheSlot).toBe(asInterface);
 		expect(isWindowRenderer).toBe(true);
 	});

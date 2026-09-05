@@ -100,6 +100,17 @@ environment's life. **You inherit this; do not re-solve it per test.** What it m
 `client`-tier test may leave Zag work pending without reding the run, but a test that deletes or
 stubs `document` itself still has to restore it before its own teardown.
 
+A third path escapes the same way, and it is the one an app outside `packages/design` meets first:
+opening a **popup** primitive (`Select`, `Menu`, `Popover`, `Dialog`) schedules
+`@zag-js/popper`'s `getPlacement` inside a `raf`, which calls `@floating-ui/dom`'s `autoUpdate`,
+which constructs an `IntersectionObserver`. jsdom ships none, so the deferred call throws
+`ReferenceError: IntersectionObserver is not defined` after the test that opened the popup has
+ended, and Vitest collects it as an unhandled rejection against an otherwise-green run. A no-op
+`IntersectionObserver` on `globalThis` is the whole fix — nothing asserts a popup's position, and
+jsdom has no layout to observe a change in. `apps/tuval/src/shell/ui/dom.testing.ts` installs one
+beside its other shims. `packages/design/test-setup.ts` shims `ResizeObserver` and not this one, so
+a design test that opens a popup and unmounts it has the same exposure.
+
 ## Related
 
 - [property-based-a11y.md](./property-based-a11y.md) — the other `@kampus/design` test surface; it
