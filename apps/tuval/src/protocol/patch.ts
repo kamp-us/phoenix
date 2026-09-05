@@ -8,10 +8,9 @@
  * and a page that disagree about the shape should stop, not diverge quietly.
  */
 
-import {Effect, Schema} from "effect";
+import {Effect, Predicate, Schema} from "effect";
 import {PatchRefused, ProtocolRefused} from "./errors.ts";
 import {describeSchemaError} from "./issue.ts";
-import {isRecord} from "./json.ts";
 import type {Patch} from "./messages.ts";
 import {Snapshot} from "./messages.ts";
 
@@ -58,7 +57,7 @@ const replaceAt = (target: unknown, path: ReadonlyArray<string>, value: unknown)
 		next[index] = inner.value;
 		return {ok: true, value: next};
 	}
-	if (!isRecord(target)) return {ok: false, reason: `nothing addressable at "${head}"`};
+	if (!Predicate.isObject(target)) return {ok: false, reason: `nothing addressable at "${head}"`};
 	if (!Object.hasOwn(target, head)) return {ok: false, reason: `no key "${head}" there`};
 	const inner = replaceAt(target[head], rest, value);
 	if (!inner.ok) return inner;
@@ -107,7 +106,7 @@ export const applyPatch = (
 			}
 			current = replaced.value;
 		}
-		const withRevision = isRecord(current) ? {...current, rev: patch.rev} : current;
+		const withRevision = Predicate.isObject(current) ? {...current, rev: patch.rev} : current;
 		return yield* decodeSnapshot(withRevision).pipe(
 			Effect.mapError(
 				(error) =>

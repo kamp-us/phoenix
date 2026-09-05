@@ -7,6 +7,8 @@
  * that puts one of these in the window, which is what "a typed refusal shown in the window" means.
  */
 
+import {Predicate} from "effect";
+
 export type PickerRefusal =
 	| {readonly _tag: "UnknownProgram"; readonly programId: string}
 	| {readonly _tag: "ProgramHeadless"; readonly programId: string}
@@ -38,9 +40,6 @@ export const unreadableCommand = (line: string, reason: string): PickerRefusal =
 	reason,
 });
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value);
-
 const strings = (value: Record<string, unknown>, fields: ReadonlyArray<string>): boolean =>
 	fields.every((field) => typeof value[field] === "string");
 
@@ -51,7 +50,7 @@ const strings = (value: Record<string, unknown>, fields: ReadonlyArray<string>):
  * an arm-shaped value missing a field would reach `refusalMessage` and render `undefined`.
  */
 export const isPickerRefusal = (value: unknown): value is PickerRefusal => {
-	if (!isRecord(value)) return false;
+	if (!Predicate.isObject(value)) return false;
 	switch (value._tag) {
 		case "UnknownProgram":
 		case "ProgramHeadless":

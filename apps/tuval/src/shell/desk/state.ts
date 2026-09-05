@@ -11,6 +11,8 @@
 /** One desk-level Msg today. It lands here, beside the state it writes, not in the core's own list. */
 export type DeskMsg = {readonly type: "desk.inspector.toggle"};
 
+import {Predicate} from "effect";
+
 export interface DeskState {
 	readonly inspectorOpen: boolean;
 }
@@ -19,10 +21,7 @@ export interface DeskState {
 export const initialDesk: DeskState = {inspectorOpen: false};
 
 export const isDeskState = (value: unknown): value is DeskState =>
-	typeof value === "object" &&
-	value !== null &&
-	!Array.isArray(value) &&
-	typeof (value as {readonly inspectorOpen?: unknown}).inspectorOpen === "boolean";
+	Predicate.isObject(value) && typeof value.inspectorOpen === "boolean";
 
 /** The whole reducer piece behind `desk.inspector.toggle`. */
 export const toggleInspector = (desk: DeskState): DeskState => ({
