@@ -341,6 +341,51 @@
 	padding-block-start: var(--s-2);
 }
 
+.tuval-chat-unsent {
+	max-block-size: 30vh;
+	overflow-y: auto;
+}
+
+.tuval-chat-unsent-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tuval-chat-unsent-item {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	padding: var(--s-2);
+	border: 1px solid var(--border-faint);
+	border-inline-start: 2px solid var(--danger);
+	border-radius: var(--r-lg);
+}
+
+.tuval-chat-unsent-reason {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--danger);
+}
+
+.tuval-chat-unsent-text {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tuval-chat-unsent-actions {
+	display: flex;
+	gap: var(--s-2);
+	flex-wrap: wrap;
+	padding-block-start: var(--s-1);
+}
+
 .tuval-chat-head {
 	display: flex;
 	gap: var(--s-2);

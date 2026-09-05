@@ -14,6 +14,7 @@ describe("asChatView", () => {
 			asChatView({
 				scroll: 420,
 				draft: "hello",
+				outgoing: [{key: "k1", text: "unsent"}],
 				cursor: "i7",
 				atOldest: true,
 				expanded: ["t1", "t2"],
@@ -22,6 +23,7 @@ describe("asChatView", () => {
 		).toEqual({
 			scroll: 420,
 			draft: "hello",
+			outgoing: [{key: "k1", text: "unsent"}],
 			cursor: "i7",
 			atOldest: true,
 			expanded: ["t1", "t2"],
@@ -54,6 +56,7 @@ describe("asChatView", () => {
 		expect(asChatView({scroll: 12, cursor: "i1"})).toEqual({
 			scroll: 12,
 			draft: "",
+			outgoing: [],
 			cursor: "i1",
 			atOldest: false,
 			expanded: [],

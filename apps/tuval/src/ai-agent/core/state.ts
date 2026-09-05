@@ -20,6 +20,7 @@ import type {
 	TranscriptPayload,
 	WindowOmission,
 } from "../ports/index.ts";
+import type {SendOutcome} from "./sends.ts";
 
 /** Cumulative for the session: the core owns the running totals, the layer reports the deltas. */
 export interface UsageTotals {
@@ -78,6 +79,12 @@ export interface AiAgentSessionState {
 	readonly models: ModelState;
 	/** The text of the last prompt sent, for the resend affordance. */
 	readonly lastPrompt: string | null;
+	/**
+	 * What became of each deliberate send, under its own idempotency key (`./sends.ts`). The window
+	 * that minted a key holds that send's text until this says the layer took it, which is what keeps
+	 * a refused or unconfirmed prompt recoverable instead of cleared at dispatch.
+	 */
+	readonly sends: ReadonlyArray<SendOutcome>;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
 	readonly lastPage: HistoryPage | null;
 	readonly failure: AgentFailure | null;
@@ -112,6 +119,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
 	lastPrompt: null,
+	sends: [],
 	lastPage: null,
 	failure: null,
 });
@@ -152,6 +160,11 @@ const markInterrupted = (
  * `failure` and `lastPage` are dropped. Both describe the run that ended: a refusal nobody can act
  * on any more, and a page the window asked a transport that no longer exists for.
  *
+ * A send still in flight comes back `uncertain` rather than dropped. The process went away between
+ * handing the text to the layer and hearing what became of it, so nobody can say whether it landed
+ * — and a window that reopens on this session offers its operator that text rather than resending
+ * it.
+ *
  * Demlik's `init` may transform what the store loaded — that branch is the migration/parse hook —
  * but must emit no Cmds (`@demlik/tea` 0.12 `replay`, the "TEA contract violation" guard), so the
  * reconnect is a Msg the spawner dispatches (`../restore/checkpoint.ts`), never one scheduled here.
@@ -163,6 +176,9 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 		phase: loaded.phase === "gone" ? "gone" : "idle",
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
+		sends: loaded.sends.map((send) =>
+			send.state === "pending" ? {key: send.key, state: "uncertain", failure: null} : send,
+		),
 		lastPage: null,
 		failure: null,
 	};

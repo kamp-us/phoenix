@@ -11,6 +11,7 @@ export {
 	PROMPT_ERROR,
 	portRefused,
 	START_ERROR,
+	TRANSPORT_ERROR,
 	UNKNOWN_REQUEST,
 } from "./failures.ts";
 export {
@@ -35,6 +36,17 @@ export {
 	eventsSub,
 	eventsSubId,
 } from "./messages.ts";
+export {
+	noteSend,
+	pendingSend,
+	type SendOutcome,
+	sendAfterFailure,
+	sendLimit,
+	sendOutcome,
+	settleAccepted,
+	settledBy,
+	settlePending,
+} from "./sends.ts";
 export {isAiAgentSessionState, parseSessionState} from "./snapshot.ts";
 export {
 	type AgentFailure,

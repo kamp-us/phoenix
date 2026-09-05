@@ -27,6 +27,7 @@ import type {ChatView} from "./view.ts";
 const chatViewFitsTheSlot: ViewState = {
 	scroll: 0,
 	draft: "",
+	outgoing: [],
 	cursor: null,
 	atOldest: false,
 	expanded: [],
@@ -102,6 +103,7 @@ describe("chat window boundary", () => {
 		expect(chatViewFitsTheSlot).toEqual({
 			scroll: 0,
 			draft: "",
+			outgoing: [],
 			cursor: null,
 			atOldest: false,
 			expanded: [],

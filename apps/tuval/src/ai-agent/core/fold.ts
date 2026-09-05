@@ -22,6 +22,7 @@ import {
 	type WindowOmission,
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
+import {settlePending} from "./sends.ts";
 import type {AiAgentSessionState, UsageTotals} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
@@ -156,8 +157,14 @@ export const foldEvent = (
 	switch (event.kind) {
 		case "item":
 			return {...state, transcript: foldItem(state.transcript, event.item, limits)};
+		// A session that went `gone` under a send in flight can never answer for it, so that send
+		// stops being pending and becomes recoverable. Every other phase is left alone: a layer that
+		// is still narrating is a layer that can still say what it did with the text.
 		case "phase":
-			return coreOwned(event.phase) ? state : {...state, phase: event.phase};
+			if (coreOwned(event.phase)) return state;
+			return event.phase === "gone"
+				? {...state, phase: event.phase, sends: settlePending(state.sends, null)}
+				: {...state, phase: event.phase};
 		case "permission":
 			return {...state, permissions: {...state.permissions, [event.request]: event.detail}};
 		case "permission-resolved":
@@ -177,6 +184,7 @@ export const foldEvent = (
 				...state,
 				phase: phaseAfterFailure(state, event.failure),
 				failure: event.failure,
+				sends: settlePending(state.sends, event.failure),
 			};
 	}
 };

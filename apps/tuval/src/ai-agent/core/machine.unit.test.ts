@@ -498,6 +498,97 @@ describe("failed", () => {
 	});
 });
 
+/**
+ * Three points in one send's life, kept apart: the core admitted it, the layer answered for it, and
+ * the session lost its footing under it. Nothing here reads the phase to decide what became of a
+ * send — a phase is a session-wide fact and a send's outcome is one key's — which is the same reason
+ * a Pi layer whose `prompt` resolves when its turn ends and a Claude layer whose `prompt` returns
+ * once the session holds the input are both just `sent`.
+ */
+describe("a send's outcome, under its own key", () => {
+	const prompt = (key: string): AiAgentSessionMsg => ({
+		type: "prompt",
+		text: "ship it",
+		key,
+		timestamp: SENT_AT,
+	});
+
+	it("records an admission refusal against the key that earned it", () => {
+		const [refused, cmds] = apply(started({phase: "prompting"}), prompt("k1"));
+		expect(cmds).toEqual([]);
+		expect(refused.sends).toEqual([{key: "k1", state: "refused", failure: refused.failure}]);
+		expect(refused.failure?.tag).toBe("tuval/ai-agent/PromptError");
+	});
+
+	it("leaves an admitted send pending until the layer answers for it", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		expect(admitted.sends).toEqual([{key: "k1", state: "pending"}]);
+
+		const [landed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		expect(landed.sends).toEqual([{key: "k1", state: "accepted"}]);
+		expect(landed.phase).toBe("prompting");
+	});
+
+	it("settles a backend refusal on its own key, and walks the phase back as `failed` would", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "refused",
+			detail: "the backend refused",
+		};
+		const [answered] = apply(admitted, {type: "sent", key: "k1", failure});
+		expect(answered.sends).toEqual([{key: "k1", state: "refused", failure}]);
+		expect(answered).toMatchObject({phase: "ready", failure});
+	});
+
+	it("leaves a send the transport died under uncertain, never refused", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const failure = {
+			tag: "tuval/ai-agent/TransportError",
+			reason: "disconnected",
+			detail: "the socket closed",
+		};
+		const [lost] = apply(admitted, {type: "failed", failure});
+		expect(lost.sends).toEqual([{key: "k1", state: "uncertain", failure}]);
+	});
+
+	it("leaves a send uncertain when the session goes away under it", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [gone] = apply(admitted, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "gone"},
+		});
+		expect(gone.sends).toEqual([{key: "k1", state: "uncertain", failure: null}]);
+	});
+
+	it("accepts the send a turn is running under when the operator interrupts it", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [cut] = apply(admitted, {type: "interrupt"});
+		expect(cut.sends).toEqual([{key: "k1", state: "accepted"}]);
+	});
+
+	/**
+	 * The two-window race, at the core. One window's prompt is admitted and the other's is refused
+	 * because the session is no longer `ready`; both outcomes stand, each under its own key, so
+	 * neither window can read the other's answer as its own.
+	 */
+	it("keeps two racing windows' outcomes apart", () => {
+		const [first] = apply(started(), prompt("k-left"));
+		const [both] = apply(first, prompt("k-right"));
+		expect(both.sends).toEqual([
+			{key: "k-left", state: "pending"},
+			{key: "k-right", state: "refused", failure: both.failure},
+		]);
+
+		const [answered] = apply(both, {type: "sent", key: "k-left", failure: null});
+		expect(answered.sends).toEqual([
+			{key: "k-right", state: "refused", failure: both.failure},
+			{key: "k-left", state: "accepted"},
+		]);
+	});
+});
+
 describe("the Cmd each Msg answers for", () => {
 	const cases: ReadonlyArray<
 		readonly [AiAgentSessionState, AiAgentSessionMsg, ReadonlyArray<AiAgentSessionCmd["type"]>]
@@ -505,6 +596,7 @@ describe("the Cmd each Msg answers for", () => {
 		[initialState("/repo"), {type: "start", cwd: "/repo", resume: null}, ["aiAgent.start"]],
 		[started({phase: "starting"}), {type: "started", sessionId: "s"}, []],
 		[started(), {type: "prompt", text: "hi", key: "k", timestamp: SENT_AT}, ["aiAgent.prompt"]],
+		[started({phase: "prompting"}), {type: "sent", key: "k", failure: null}, []],
 		[
 			started(),
 			{type: "event", sessionId: "session-1", event: {kind: "phase", phase: "ready"}},

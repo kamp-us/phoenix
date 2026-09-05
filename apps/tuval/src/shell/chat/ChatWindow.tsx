@@ -21,7 +21,9 @@
  *
  * **Nothing is ever auto-resent.** An `interrupted` marker renders the cut turn and offers a
  * resend; the resend is a deliberate new send and mints a fresh idempotency key (ruling 2, #7570),
- * never a retry of the key the interrupted turn used.
+ * never a retry of the key the interrupted turn used. The same holds for a send that never landed:
+ * the window keeps the text (`./outgoing.ts`) and offers it back, and putting it in the composer is
+ * as far as recovery goes.
  */
 
 import {AgentChatInput, Button, DesignTranslationProvider, Kbd} from "@kampus/design";
@@ -36,6 +38,7 @@ import {windowRenderer} from "../window/index.ts";
 import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
+import {dropSend, holdSend, readHeld, recoverInto} from "./outgoing.ts";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
 import {isWorking, statusLine} from "./phase.ts";
 import {
@@ -47,6 +50,7 @@ import {
 	rowKey,
 } from "./rows.ts";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
+import {UnsentMessages} from "./UnsentMessages.tsx";
 import {asChatView, type ChatView} from "./view.ts";
 import "./chat.css";
 
@@ -470,9 +474,17 @@ function ChatWindow({
 			composerBridge({
 				initialPhase: phase,
 				initialModels: models ?? {current: null, available: []},
+				// The draft clears and the text is held under the send's own key in the same commit:
+				// the composer empties as it always did, and nothing is thrown away until the session
+				// says the layer took it (#8005).
 				onPrompt: (text) => {
-					dispatch({type: "prompt", text, key: options.newKey(), timestamp: options.now()});
-					commit((current) => (current.draft === "" ? current : {...current, draft: ""}));
+					const key = options.newKey();
+					dispatch({type: "prompt", text, key, timestamp: options.now()});
+					commit((current) => ({
+						...current,
+						draft: "",
+						outgoing: holdSend(current.outgoing, {key, text}),
+					}));
 				},
 				onInterrupt: () => dispatch({type: "interrupt"}),
 				onSetModel: (model) => dispatch({type: "setModel", model}),
@@ -486,6 +498,39 @@ function ChatWindow({
 	useEffect(() => {
 		if (models !== null) composer.setModels(models);
 	}, [composer, models]);
+
+	// A held send leaves this window on the session's word rather than on this window's own read of
+	// what it dispatched: `sends` answers per idempotency key, so a refusal the other window earned
+	// settles the other window's copy and never this one's (#8005).
+	const sends = state?.sends ?? null;
+	const held = useMemo(() => readHeld(view.outgoing, sends ?? []), [view.outgoing, sends]);
+
+	useEffect(() => {
+		if (held.landed.length === 0) return;
+		commit((current) => ({
+			...current,
+			outgoing: current.outgoing.filter((send) => !held.landed.includes(send.key)),
+		}));
+	}, [held.landed, commit]);
+
+	const restoreSend = useCallback(
+		(key: string) =>
+			commit((current) => {
+				const saved = current.outgoing.find((send) => send.key === key);
+				if (saved === undefined) return current;
+				return {
+					...current,
+					draft: recoverInto(current.draft, saved.text),
+					outgoing: dropSend(current.outgoing, key),
+				};
+			}),
+		[commit],
+	);
+
+	const discardSend = useCallback(
+		(key: string) => commit((current) => ({...current, outgoing: dropSend(current.outgoing, key)})),
+		[commit],
+	);
 
 	const interruptedId = state?.interrupted ?? null;
 	const lastPrompt = state?.lastPrompt ?? null;
@@ -601,6 +646,12 @@ function ChatWindow({
 			</div>
 			<DesignTranslationProvider translate={tuvalDesignTranslate}>
 				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />
+				<UnsentMessages
+					windowId={host.windowId}
+					unsent={held.unsent}
+					onRestore={restoreSend}
+					onDiscard={discardSend}
+				/>
 				<AgentChatInput
 					variant="focused"
 					bridge={composer.bridge}

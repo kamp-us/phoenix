@@ -28,6 +28,7 @@ import {
 	type AiAgentSessionSub,
 	eventsSub,
 } from "./messages.ts";
+import {noteSend, settleAccepted, settledBy, settlePending} from "./sends.ts";
 import {type AiAgentSessionState, initialState, lastAssistantId, restore} from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
@@ -123,9 +124,22 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			// The turn goes onto the tail here, not when a layer reports it back: the message exists
 			// because the operator sent it, and a backend's echo habits are not what a chat window
 			// showing your own message should depend on (#7978).
+			//
+			// Both arms record the send under its key (`./sends.ts`), because both are outcomes the
+			// window that minted that key is waiting on: an admission refusal is final, and an
+			// admitted send is in the layer's hands until `sent` says otherwise. Without it the
+			// window has only "I dispatched something", which is what cleared a draft the core then
+			// refused (#8005).
 			prompt: (state, msg) =>
 				state.phase !== "ready"
-					? [{...state, failure: promptRefused(state.phase)}, noCmds]
+					? [
+							{
+								...state,
+								failure: promptRefused(state.phase),
+								sends: noteSend(state.sends, settledBy(msg.key, promptRefused(state.phase))),
+							},
+							noCmds,
+						]
 					: [
 							{
 								...state,
@@ -133,9 +147,27 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								lastPrompt: msg.text,
 								interrupted: null,
 								transcript: foldItem(state.transcript, promptItem(msg), limits),
+								sends: noteSend(state.sends, {key: msg.key, state: "pending"}),
 								failure: null,
 							},
 							[{type: "aiAgent.prompt", text: msg.text, key: msg.key}],
+						],
+
+			// The prompt handler's own answer, and the only refusal that arrives already correlated
+			// to the send it is about. A refusal lands the session exactly where the `failed` cell
+			// would — same phase walk, same rendered failure — and additionally settles the send, so
+			// the prompt path has one Msg rather than two that could disagree.
+			sent: (state, msg) =>
+				msg.failure === null
+					? [{...state, sends: noteSend(state.sends, {key: msg.key, state: "accepted"})}, noCmds]
+					: [
+							{
+								...state,
+								phase: phaseAfterFailure(state, msg.failure),
+								failure: msg.failure,
+								sends: noteSend(state.sends, settledBy(msg.key, msg.failure)),
+							},
+							noCmds,
 						],
 
 			// A closed session keeps whatever it ended with: a late frame from a torn-down transport
@@ -189,6 +221,9 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 
 			paged: (state, msg) => [{...state, lastPage: msg.page}, noCmds],
 
+			// Stopping a turn settles the send that started it: a turn nobody could interrupt is a turn
+			// the layer never took. The cut turn's own resend affordance is the recovery from here,
+			// so holding the text a second time in the window would offer it twice.
 			interrupt: (state) =>
 				state.phase !== "prompting"
 					? [state, noCmds]
@@ -197,6 +232,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								...state,
 								phase: "ready",
 								interrupted: lastAssistantId(state.transcript.items),
+								sends: settleAccepted(state.sends),
 							},
 							[{type: "aiAgent.interrupt"}],
 						],
@@ -218,7 +254,12 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			},
 
 			failed: (state, msg) => [
-				{...state, phase: phaseAfterFailure(state, msg.failure), failure: msg.failure},
+				{
+					...state,
+					phase: phaseAfterFailure(state, msg.failure),
+					failure: msg.failure,
+					sends: settlePending(state.sends, msg.failure),
+				},
 				noCmds,
 			],
 		},

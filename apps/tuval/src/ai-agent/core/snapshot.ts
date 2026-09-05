@@ -62,6 +62,23 @@ const isFailure = (value: unknown): boolean =>
 		isNullOrString(value.reason) &&
 		typeof value.detail === "string");
 
+const sendStates: ReadonlyArray<string> = ["pending", "accepted", "refused", "uncertain"];
+
+/**
+ * A settled send's failure is the one field the state's arms disagree on, so the check is by arm:
+ * a `refused` row carries a failure and the other three do not have to.
+ */
+const isSend = (value: unknown): boolean =>
+	Predicate.isObject(value) &&
+	typeof value.key === "string" &&
+	typeof value.state === "string" &&
+	sendStates.includes(value.state) &&
+	(value.state === "refused"
+		? value.failure !== null && isFailure(value.failure)
+		: value.state !== "uncertain" || isFailure(value.failure));
+
+const isSends = (value: unknown): boolean => Array.isArray(value) && value.every(isSend);
+
 export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionState =>
 	Predicate.isObject(value) &&
 	typeof value.phase === "string" &&
@@ -76,6 +93,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isModes(value.modes) &&
 	isModels(value.models) &&
 	isNullOrString(value.lastPrompt) &&
+	isSends(value.sends) &&
 	isPage(value.lastPage) &&
 	isFailure(value.failure);
 

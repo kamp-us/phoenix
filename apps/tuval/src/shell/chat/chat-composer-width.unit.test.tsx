@@ -31,7 +31,7 @@ import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
 import {sessionState} from "./chat.testing.ts";
-import type {ChatView} from "./view.ts";
+import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
 
@@ -46,14 +46,7 @@ beforeAll(() => {
 	document.head.appendChild(style);
 });
 
-const emptyView: ChatView = {
-	scroll: 0,
-	draft: "",
-	cursor: null,
-	atOldest: false,
-	expanded: [],
-	unfolded: [],
-};
+const emptyView: ChatView = initialChatView;
 
 /** Mounts the window inside a parent of a known inline size, the way a desk window sizes it. */
 const openWindowIn = async (parentWidth: number): Promise<void> => {

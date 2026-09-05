@@ -16,6 +16,7 @@ export const UNKNOWN_REQUEST = "tuval/ai-agent/UnknownRequest";
 export const MODE_UNSUPPORTED = "tuval/ai-agent/ModeUnsupported";
 export const MODEL_UNSUPPORTED = "tuval/ai-agent/ModelUnsupported";
 export const PAGE_ERROR = "tuval/ai-agent/PageError";
+export const TRANSPORT_ERROR = "tuval/ai-agent/TransportError";
 
 /**
  * An inbound payload this end of a port cannot act on, written against that port's own tag.

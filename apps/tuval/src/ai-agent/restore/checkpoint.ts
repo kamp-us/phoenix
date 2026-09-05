@@ -31,6 +31,7 @@ export const checkpointFields = [
 	"modes",
 	"models",
 	"lastPrompt",
+	"sends",
 	"lastPage",
 	"failure",
 ] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
