@@ -7,11 +7,13 @@
  *
  * Two things are load-bearing here and neither is obvious from the props.
  *
- * The library is **not prop-controlled**: `defaultLayout` is read once at mount
- * (`lib/hooks/useStableObject.ts`, `Group.tsx`), so a later `sizes` from the kernel — another tab's
- * drag — would never reach the DOM if that prop were the whole binding. `useGroupRef().setLayout`
- * is what pushes it in, and it no-ops when the layout already matches, which is why the effect
- * cannot loop against its own write.
+ * The library is **not prop-controlled** *within one panel set*: `defaultLayout` is read when the
+ * group registers, so a later `sizes` from the kernel — another tab's drag — would never reach the
+ * DOM if that prop were the whole binding. `useGroupRef().setLayout` is what pushes it in, and it
+ * no-ops when the layout already matches, which is why the effect cannot loop against its own
+ * write. But it **throws** when the layout names a panel set the group does not hold, and a split
+ * or a close leaves it not holding one for a commit — so the write is guarded on `holdsPanels` and
+ * a panel-set change is carried by `defaultLayout` instead.
  *
  * Zoom is a **conditional render**, never `collapse()`. The zoomed window is rendered alone and the
  * split is unmounted; RRP restores it from its own panel-id cache on remount, and `sizes` is never
@@ -24,7 +26,7 @@ import {Group, type LayoutChangedMeta, Panel, Separator, useGroupRef} from "reac
 import type {ShellMsg} from "../core/index.ts";
 import {type LayoutNode, SIZE_TOLERANCE, type StackNode} from "../layout/index.ts";
 import {WindowId} from "../window/index.ts";
-import {defaultLayoutOf, sameLayout} from "./frame.ts";
+import {defaultLayoutOf, holdsPanels, sameLayout} from "./frame.ts";
 
 export interface LayoutViewProps {
 	readonly root: StackNode;
@@ -59,10 +61,16 @@ function StackView({stack, renderWindow, dispatch}: StackViewProps): ReactElemen
 	useEffect(() => {
 		const group = groupRef.current;
 		if (group === null) return;
+		const reported = group.getLayout();
+		// This gesture changed the panel set, and the group has not re-registered yet. Writing here
+		// is the crash of #7839, and there is nothing to write: re-registration takes its layout from
+		// the `defaultLayout` prop below for any set the group has not laid out before, so the
+		// kernel's sizes arrive by that route.
+		if (!holdsPanels(stack, reported)) return;
 		// A `sizes` the kernel holds that this group does not is another tab's finished drag, or a
 		// restored desk. `setLayout` no-ops when the two already agree, so the guard is about the
 		// Msg round trip below, not about the write.
-		if (sameLayout(stack, group.getLayout(), SIZE_TOLERANCE)) return;
+		if (sameLayout(stack, reported, SIZE_TOLERANCE)) return;
 		group.setLayout(defaultLayoutOf(stack));
 	}, [stack, groupRef]);
 

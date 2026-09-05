@@ -19,10 +19,12 @@ import {useCallback, useEffect, useRef, useState} from "react";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import {defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
+import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
 import {WindowId} from "../window/index.ts";
 import {CommandLine} from "./CommandLine.tsx";
+import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {routerPrefix, statusFrame, surfaceKey, zoomedWindow} from "./frame.ts";
 import {LayoutView} from "./LayoutView.tsx";
@@ -154,18 +156,30 @@ export function Desk({
 	return (
 		<div className="tuval-surface" ref={desk} tabIndex={-1} data-scheme="dark">
 			<ForwardedKeyProvider value={forwarded}>
-				{workspace === undefined ? (
-					<div className="tuval-tiling tuval-placeholder" role="status">
-						<p>This desk has no active workspace. Open one with the command line.</p>
-					</div>
-				) : (
-					<LayoutView
-						root={workspace.layout.root}
-						zoomed={zoomedWindow(workspace)}
-						renderWindow={renderWindow}
-						dispatch={dispatch}
-					/>
-				)}
+				{/* The tiling area alone, so a throw costs the founder the windows and not the status
+				    line, the command line or the keyboard. The reset key is the layout's *signature*
+				    and never the layout object, for the same reason the countdown above is keyed on
+				    values: the boundary compares its keys with `Object.is`, and a decoded object is
+				    new on every snapshot, so the panel would be torn down and rebuilt on unrelated
+				    kernel traffic — losing focus on its button and the stack a founder came to read
+				    (#7839). */}
+				<ErrorBoundary
+					label="The desk layout"
+					resetKeys={[workspace === undefined ? null : layoutSignature(workspace.layout)]}
+				>
+					{workspace === undefined ? (
+						<div className="tuval-tiling tuval-placeholder" role="status">
+							<p>This desk has no active workspace. Open one with the command line.</p>
+						</div>
+					) : (
+						<LayoutView
+							root={workspace.layout.root}
+							zoomed={zoomedWindow(workspace)}
+							renderWindow={renderWindow}
+							dispatch={dispatch}
+						/>
+					)}
+				</ErrorBoundary>
 			</ForwardedKeyProvider>
 			{commandLineOpen ? <CommandLine dispatch={dispatch} onClose={closeCommandLine} /> : null}
 			<StatusLine frame={statusFrame(state)} prefixKey={table.prefix} />

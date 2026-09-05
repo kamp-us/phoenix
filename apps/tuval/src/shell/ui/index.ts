@@ -11,6 +11,7 @@ export {
 } from "./attach.ts";
 export {CommandLine, type CommandLineProps} from "./CommandLine.tsx";
 export {Desk, type DeskProps} from "./Desk.tsx";
+export {ErrorBoundary, type ErrorBoundaryProps} from "./ErrorBoundary.tsx";
 export {
 	type ForwardedKey,
 	ForwardedKeyProvider,
@@ -19,6 +20,7 @@ export {
 export {
 	COMMAND_LINE_COMMAND,
 	defaultLayoutOf,
+	holdsPanels,
 	panelWindows,
 	routerPrefix,
 	type StatusFrame,

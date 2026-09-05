@@ -1,10 +1,11 @@
 import {describe, expect, it} from "vitest";
 import {checkTree} from "./invariants.ts";
-import {createStack, createTree, createWindow, type StackNode} from "./node.ts";
+import {createStack, createTree, createWindow, type LayoutTree, type StackNode} from "./node.ts";
 import {
 	find,
 	findChildWindow,
 	findSibling,
+	layoutSignature,
 	remove,
 	resize,
 	setProcess,
@@ -276,6 +277,40 @@ describe("layout.setProcess", () => {
 			processId: "process-1",
 		});
 		expect(find(setProcess(attached, "b", null), (w) => w.id === "b")?.processId).toBeNull();
+	});
+});
+
+describe("layout.layoutSignature", () => {
+	/** A snapshot as the page receives one, where every object is new whatever the tree says. */
+	const overTheWire = (tree: LayoutTree): LayoutTree => JSON.parse(JSON.stringify(tree));
+
+	it("is equal across two decoded snapshots of one tree, which identity is not", () => {
+		const tree = threeWindows();
+		const next = overTheWire(tree);
+
+		expect(next).not.toBe(tree);
+		expect(layoutSignature(next)).toBe(layoutSignature(tree));
+	});
+
+	it("changes on a split, a close, a resize, a zoom, a reorder and a process moving", () => {
+		const tree = threeWindows();
+		const base = layoutSignature(tree);
+
+		expect(layoutSignature(split(tree, "a", "vertical", ids("d", "s2")))).not.toBe(base);
+		expect(layoutSignature(remove(tree, "b"))).not.toBe(base);
+		expect(layoutSignature(resize(tree, "root", {a: 70, s: 30}))).not.toBe(base);
+		expect(layoutSignature(zoom(tree, "a"))).not.toBe(base);
+		expect(layoutSignature(setProcess(tree, "a", "process-1"))).not.toBe(base);
+		expect(
+			layoutSignature(
+				createTree(
+					createStack("root", "horizontal", [
+						createStack("s", "vertical", [createWindow("b"), createWindow("c")]),
+						createWindow("a"),
+					]),
+				),
+			),
+		).not.toBe(base);
 	});
 });
 
