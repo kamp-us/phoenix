@@ -6,6 +6,13 @@
  *
  * The focused marker is carried twice: `data-focused` paints the border, and the `▸` in the title
  * plus `aria-current` say the same thing without colour (`design-system-manifest.md`, Pillar 4).
+ *
+ * A pointer-down here is the mouse's whole route to focus (#7848): it dispatches `window.focus` and
+ * does nothing else — no `preventDefault`, no `focus()` call, no tabindex. That restraint is the
+ * design. The gesture's own default still lands DOM focus wherever it pointed, so a click into a
+ * renderer's composer focuses the window without moving the caret out of it, and the focused
+ * window's picker claims DOM focus off the next snapshot (`./PickerView.tsx`) rather than from a
+ * second focus mechanism racing this one.
  */
 
 import type {ReactElement} from "react";
@@ -50,6 +57,9 @@ export function WindowView({
 	return (
 		<section
 			className="tuval-window"
+			// Already the focused window: the Msg would be a no-op in the core, and sending it anyway
+			// would put a snapshot on the wire for every click a founder makes inside one window.
+			onPointerDown={focused ? undefined : () => dispatch({type: "window.focus", windowId})}
 			data-focused={focused}
 			data-window-id={windowId}
 			aria-label={`Window ${windowId}`}

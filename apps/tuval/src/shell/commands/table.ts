@@ -21,6 +21,7 @@ import type {ShellMsg} from "../core/machine.ts";
 import type {CommandName} from "../keys/table.ts";
 import type {Direction} from "../layout/index.ts";
 import {type PickerCommand, pickerCommands} from "../picker/intent.ts";
+import {WindowId} from "../window/index.ts";
 import {
 	type AnyShellCommand,
 	commandName,
@@ -102,6 +103,12 @@ export const shellCommands: ReadonlyArray<AnyShellCommand> = [
 	focusRow("right"),
 	focusRow("up"),
 	focusRow("down"),
+	defineCommand({
+		path: ["window", "focus"],
+		describe: "Move focus to the window with this id.",
+		params: Schema.Struct({window: Schema.NonEmptyString}),
+		toMsg: ({window}) => ({type: "window.focus", windowId: WindowId.make(window)}),
+	}),
 	...pickerCommands.map(pickerRow),
 	defineCommand({
 		path: ["workspace", "create"],

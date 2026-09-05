@@ -27,6 +27,7 @@ describe("the command table", () => {
 			"window:focus-right",
 			"window:focus-up",
 			"window:focus-down",
+			"window:focus",
 			"window:open",
 			"window:attach",
 			"workspace:create",
@@ -86,6 +87,16 @@ describe("each row's Msg", () => {
 		expect(msgOf("window:focus-down")).toEqual({type: "window.focusDirection", direction: "down"});
 	});
 
+	it("focuses a window the caller names by id — the pointer's row, typeable and spell-visible", () => {
+		expect(msgOf("window:focus", {window: "window-2"})).toEqual({
+			type: "window.focus",
+			windowId: "window-2",
+		});
+		// A row with an argument cannot ride a key sequence, so the core leaves the name for a
+		// surface to open the command line over.
+		expect(msgForCommandName(commandName(["window", "focus"]))).toBeNull();
+	});
+
 	it("opens and attaches by naming the thing to show, leaving the spawn to the Cmd", () => {
 		expect(msgOf("window:open", {program: "counter"})).toEqual({
 			type: "window.open",
@@ -128,6 +139,7 @@ describe("resolving a name", () => {
 		expect(resolveVerb("attach")?.path).toEqual(["window", "attach"]);
 		expect(resolveVerb("reload")?.path).toEqual(["config", "reload"]);
 		expect(resolveVerb("create")?.path).toEqual(["workspace", "create"]);
+		expect(resolveVerb("focus")?.path).toEqual(["window", "focus"]);
 	});
 
 	it("resolves nothing for a name no row carries", () => {
