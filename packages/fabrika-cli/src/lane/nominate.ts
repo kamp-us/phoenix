@@ -16,7 +16,10 @@
  * dropping it: a merged PR that closed its issue and one that carried `Part of #N` are the same
  * merge to every reader that keeps only the numbers, which is how a partial ship folded its lane to
  * a terminal over an issue still open and still buildable (#7382). `traceClosure` in `./prove.ts`
- * is the one reader of that field, and it reads it from here so the question keeps one nominator.
+ * is the one reader of that field, and every *nominated* fact carries it from here so the question
+ * keeps one nominator. One other path feeds that reader, and it nominates nothing: `./closure.ts`
+ * builds the field off the single PR a recorded ship line names, because a merged `Part of #N` is
+ * invisible to both reads above and that is the case the read exists for (#7457).
  *
  * **Why it is shared rather than copied.** `lane prove` unioned both reads while `lane brief` read
  * the edge alone, so a `Part of #N` PR proved a `DONE`, folded the lane to `review`, and then had no

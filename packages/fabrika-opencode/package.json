@@ -24,13 +24,14 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json && node ./scripts/sync-bundle.mjs",
 		"prepublishOnly": "pnpm run build",
-		"typecheck": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run"
 	},
 	"dependencies": {
 		"yaml": "catalog:"
 	},
 	"devDependencies": {
+		"@effect/tsgo": "catalog:",
 		"@opencode-ai/plugin": "catalog:",
 		"@opencode-ai/sdk": "catalog:",
 		"@types/node": "catalog:",

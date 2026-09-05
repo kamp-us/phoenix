@@ -4,7 +4,6 @@ import {describe, expect, it} from "vitest";
 import {type FakeFsOptions, fakeFs} from "../fakes.test-support.ts";
 import {APPEND_UNKNOWN, LANE_UNREADABLE} from "./codes.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
-import type {Closure} from "./prove.ts";
 import type {ClosureRead} from "./reconcile.ts";
 import {runReconcile} from "./reconcile-verb.ts";
 import {DEFAULT_LANES_ROOT} from "./store.ts";
@@ -74,8 +73,17 @@ const tree = (lanes: ReadonlyArray<LaneFixture>, extra: FakeFsOptions = {}) => {
 	});
 };
 
-const partial = (prs: ReadonlyArray<number>): Closure => ({_tag: "Partial", prs});
-const closes = (why: string): Closure => ({_tag: "Closes", why});
+/** An answered read, which always names the merged PRs it stood on — an empty set is `Unknown`. */
+const partial = (prs: ReadonlyArray<number>): ClosureRead => ({
+	_tag: "Read",
+	closure: {_tag: "Partial", prs},
+	landed: prs,
+});
+const closes = (why: string, landed: ReadonlyArray<number>): ClosureRead => ({
+	_tag: "Read",
+	closure: {_tag: "Closes", why},
+	landed,
+});
 
 /** The sweep with a scripted closure reader, and every `(issue, pr)` pair it asked the board about. */
 const sweep = (
@@ -106,10 +114,9 @@ const rows = (stdout: string): ReadonlyArray<Record<string, unknown>> =>
 
 describe("runReconcile", () => {
 	it("corrects a lane whose merged PR did not close its issue, by appending", async () => {
-		const {outcome, fs} = await sweep(tree([{lane: "6980", log: SHIPPED_LOG}]), () => ({
-			_tag: "Read",
-			closure: partial([7328]),
-		}));
+		const {outcome, fs} = await sweep(tree([{lane: "6980", log: SHIPPED_LOG}]), () =>
+			partial([7328]),
+		);
 		expect(outcome.code).toBe(0);
 		expect(rows(outcome.stdout)).toEqual([
 			{
@@ -133,11 +140,43 @@ describe("runReconcile", () => {
 		});
 	});
 
+	/**
+	 * Lane 7740's shape (#7457). Between ADR 0351 and the fix that read the closure off the named PR,
+	 * the ship stage wrote `partial: false` out of a nominator blind to a merged `Part of #N` — so
+	 * that `false` is the fallthrough, not an answer, and the sweep has to reach it. The correction
+	 * settles the line whichever way the board answers, so it is re-read at most once.
+	 */
+	it("corrects a `partial: false` the ship stage wrote before it read the named PR", async () => {
+		const shipLine = `${JSON.stringify({task: "issue", event: "ISSUE.DONE", at: at(3), partial: false, pr: SHIPPED_PR})}\n`;
+		const log = `${line("WIP", at(0))}${line("DONE", at(1))}${line("PASS", at(2))}${shipLine}`;
+		const read = (): ClosureRead => partial([7806]);
+
+		const first = await sweep(tree([{lane: "7740", log}]), read);
+		expect(first.outcome.code).toBe(0);
+		expect(first.asked).toEqual([[7740, SHIPPED_PR]]);
+		expect(rows(first.outcome.stdout)).toMatchObject([
+			{
+				key: "7740",
+				verdict: "corrected",
+				corrects: {task: "issue", at: at(3), state: "ship", pr: SHIPPED_PR},
+				prs: [7806],
+				from: "complete",
+				to: JSON.stringify({pipeline: {issue: "queued"}}),
+			},
+		]);
+
+		const corrected = first.fs.written.get(`${DEFAULT_LANES_ROOT}/7740/events.jsonl`) ?? "";
+		const second = await sweep(tree([{lane: "7740", log: corrected}]), read);
+		expect(second.asked).toEqual([]);
+		expect(rows(second.outcome.stdout)).toEqual([
+			{key: "7740", root: DEFAULT_LANES_ROOT, verdict: "current"},
+		]);
+	});
+
 	it("records a merged PR that closed its issue, and moves no task doing it", async () => {
-		const {outcome, fs} = await sweep(tree([{lane: "6981", log: SHIPPED_LOG}]), () => ({
-			_tag: "Read",
-			closure: closes("#7329 closes #6981 on merge"),
-		}));
+		const {outcome, fs} = await sweep(tree([{lane: "6981", log: SHIPPED_LOG}]), () =>
+			closes("#7329 closes #6981 on merge", [7329]),
+		);
 		expect(outcome.code).toBe(0);
 		expect(rows(outcome.stdout)).toMatchObject([
 			{key: "6981", verdict: "confirmed", from: "complete", to: "complete"},
@@ -155,10 +194,7 @@ describe("runReconcile", () => {
 
 	it("reads the board once across two sweeps of a lane whose merge closed its issue", async () => {
 		const fs = tree([{lane: "6981", log: SHIPPED_LOG}]);
-		const read = (): ClosureRead => ({
-			_tag: "Read",
-			closure: closes("#7329 closes #6981 on merge"),
-		});
+		const read = (): ClosureRead => closes("#7329 closes #6981 on merge", [7329]);
 		const first = await sweep(fs, read);
 		const second = await sweep(fs, read);
 		expect(first.asked).toEqual([[6981, SHIPPED_PR]]);
@@ -171,7 +207,7 @@ describe("runReconcile", () => {
 	it("withholds the confirming append under --check, so the read is bought again", async () => {
 		const {outcome, fs} = await sweep(
 			tree([{lane: "6981", log: SHIPPED_LOG}]),
-			() => ({_tag: "Read", closure: closes("#7329 closes #6981 on merge")}),
+			() => closes("#7329 closes #6981 on merge", [7329]),
 			true,
 		);
 		expect(rows(outcome.stdout)).toMatchObject([{key: "6981", verdict: "closes"}]);
@@ -181,7 +217,7 @@ describe("runReconcile", () => {
 	it("reports without appending under --check", async () => {
 		const {outcome, fs} = await sweep(
 			tree([{lane: "6980", log: SHIPPED_LOG}]),
-			() => ({_tag: "Read", closure: partial([7328])}),
+			() => partial([7328]),
 			true,
 		);
 		expect(rows(outcome.stdout)).toMatchObject([{key: "6980", verdict: "misrouted"}]);
@@ -191,7 +227,7 @@ describe("runReconcile", () => {
 	it("names a lane whose own machine predates the guard rather than calling it current", async () => {
 		const {outcome, asked, fs} = await sweep(
 			tree([{lane: "6980", log: SHIPPED_LOG, workflow: preGuardWorkflow()}]),
-			() => ({_tag: "Read", closure: partial([7328])}),
+			() => partial([7328]),
 		);
 		expect(outcome.code).toBe(0);
 		expect(rows(outcome.stdout)).toMatchObject([{key: "6980", verdict: "unmigrated"}]);
@@ -207,7 +243,7 @@ describe("runReconcile", () => {
 		emitted.id = "epic-7140";
 		const {outcome} = await sweep(
 			tree([{lane: "7140", log: SHIPPED_LOG, workflow: JSON.stringify(emitted, null, "\t")}]),
-			() => ({_tag: "Read", closure: partial([7328])}),
+			() => partial([7328]),
 		);
 		expect(rows(outcome.stdout)).toEqual([
 			{key: "7140", root: DEFAULT_LANES_ROOT, verdict: "current"},
@@ -221,7 +257,7 @@ describe("runReconcile", () => {
 				{lane: "6982", log: line("WIP", at(0))},
 				{lane: "6983"},
 			]),
-			() => ({_tag: "Read", closure: partial([7328])}),
+			() => partial([7328]),
 		);
 		expect(asked).toEqual([[6980, SHIPPED_PR]]);
 	});
@@ -244,7 +280,7 @@ describe("runReconcile", () => {
 			],
 			{unwritable: [`${DEFAULT_LANES_ROOT}/6984/events.jsonl`], files: {}, dirs: {}},
 		);
-		const {outcome} = await sweep(blocked, () => ({_tag: "Read", closure: partial([7328])}));
+		const {outcome} = await sweep(blocked, () => partial([7328]));
 		expect(outcome.code).toBe(APPEND_UNKNOWN);
 		expect(outcome.stdout).toBe("");
 		expect(outcome.stderr.join(" ")).toContain("6984");
@@ -259,7 +295,7 @@ describe("runReconcile", () => {
 				{lane: "6985", log: "{not json\n"},
 				{lane: "6980", log: SHIPPED_LOG},
 			]),
-			() => ({_tag: "Read", closure: partial([7328])}),
+			() => partial([7328]),
 		);
 		expect(outcome.code).toBe(0);
 		expect(rows(outcome.stdout)).toMatchObject([
@@ -275,7 +311,7 @@ describe("runReconcile", () => {
 			directories: [DEFAULT_LANES_ROOT],
 			unreadable: [DEFAULT_LANES_ROOT],
 		});
-		const {outcome} = await sweep(fs, () => ({_tag: "Read", closure: partial([7328])}));
+		const {outcome} = await sweep(fs, () => partial([7328]));
 		expect(outcome.code).toBe(LANE_UNREADABLE);
 		expect(outcome.stdout).toBe("");
 	});
@@ -286,14 +322,14 @@ describe("runReconcile", () => {
 			dirs: {[DEFAULT_LANES_ROOT]: []},
 			directories: [DEFAULT_LANES_ROOT],
 		});
-		const {outcome} = await sweep(fs, () => ({_tag: "Read", closure: partial([7328])}));
+		const {outcome} = await sweep(fs, () => partial([7328]));
 		expect(outcome.code).toBe(LANE_UNREADABLE);
 		expect(outcome.stdout).toBe("");
 	});
 
 	it("answers an absent root as no lanes rather than as a fault", async () => {
 		const fs = fakeFs({files: {[TEMPLATE]: coderTemplateText()}, dirs: {}, directories: []});
-		const {outcome} = await sweep(fs, () => ({_tag: "Read", closure: partial([7328])}));
+		const {outcome} = await sweep(fs, () => partial([7328]));
 		expect(outcome.code).toBe(0);
 		expect(rows(outcome.stdout)).toEqual([]);
 	});

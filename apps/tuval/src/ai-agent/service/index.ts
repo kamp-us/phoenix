@@ -26,7 +26,15 @@ export {
 	UnknownRequest,
 } from "./errors.ts";
 export {ScriptedAiAgent} from "./ScriptedAiAgent.ts";
-export type {AgentScript, ScriptedModes, ScriptedTurn} from "./script.ts";
+export type {
+	AgentScript,
+	ScriptedAnswer,
+	ScriptedModes,
+	ScriptedPlan,
+	ScriptedRequest,
+	ScriptedSpells,
+	ScriptedTurn,
+} from "./script.ts";
 export {
 	type StartedSession,
 	type StartOptions,

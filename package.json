@@ -16,8 +16,7 @@
 		"lint:worktree": "node scripts/biome-worktree.mjs check",
 		"format": "case \"$PWD\" in */.claude/worktrees/*) pnpm run format:worktree ;; *) biome check --write . ;; esac",
 		"format:worktree": "node scripts/biome-worktree.mjs write",
-		"prepare": "if [ \"$(git rev-parse --git-dir 2>/dev/null)\" = \"$(git rev-parse --git-common-dir 2>/dev/null)\" ]; then lefthook install || true; else echo 'prepare: linked worktree — skipping lefthook install (git hooks are primary-checkout-managed)'; fi",
-		"postinstall": "node scripts/patch-effect-tsgo.mjs"
+		"prepare": "if [ \"$(git rev-parse --git-dir 2>/dev/null)\" = \"$(git rev-parse --git-common-dir 2>/dev/null)\" ]; then lefthook install || true; else echo 'prepare: linked worktree — skipping lefthook install (git hooks are primary-checkout-managed)'; fi"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",

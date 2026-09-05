@@ -66,8 +66,35 @@ describe("findMisroute", () => {
 		expect(findMisroute(lane(), shipped({partial: true}))._tag).toBe("Settled");
 	});
 
-	it("reads a recorded `partial: false` as that line's own answer too", () => {
-		expect(findMisroute(lane(), shipped({partial: false}))._tag).toBe("Settled");
+	/**
+	 * The cases a recorded `false` splits into (#7457). Between ADR 0351 and that fix the ship stage
+	 * wrote `false` off a nominator that could not see a merged `Part of #N`, so such a line carries
+	 * the fallthrough rather than a read — and it is the `landed` evidence that tells the two apart,
+	 * never the line's timestamp. The correction, not the polarity it lands on, is what settles it.
+	 */
+	it("nominates a `partial: false` the ship stage wrote before closures were read off the PR", () => {
+		expect(findMisroute(lane(), shipped({partial: false}))._tag).toBe("Correctable");
+	});
+
+	it("reads a `partial: false` naming the PRs it stood on as the line's own answer", () => {
+		const read = shipped({partial: false, landed: [7329]});
+		expect(findMisroute(lane(), read)._tag).toBe("Settled");
+	});
+
+	/**
+	 * The direction a wall-clock cutoff got wrong. This line is recorded well after any date the fix
+	 * could have guessed at and still names no evidence, so the unfixed stage is what wrote it — and
+	 * a reader keying on `at` would trust it, leaving the lane folded to a terminal over an open
+	 * issue with no sweep left to reach it.
+	 */
+	it("nominates a late `partial: false` the fixed ship stage did not write", () => {
+		const late = shipped({partial: false, at: "2026-12-01T00:00:00.000Z"});
+		expect(findMisroute(lane(), late)._tag).toBe("Correctable");
+	});
+
+	it("nominates an unread `partial: false` once — a correction confirming it settles the line", () => {
+		const log = [...shipped({partial: false}), correctionEntry("issue", at(3), at(8), false)];
+		expect(findMisroute(lane(), log)._tag).toBe("Settled");
 	});
 
 	it("nominates nothing on a log that never reached a merge-closure guard", () => {
@@ -160,13 +187,15 @@ describe("provenClosure", () => {
 		expect(provenClosure(6980, [fact()])).toEqual({
 			_tag: "Read",
 			closure: {_tag: "Partial", prs: [7328]},
+			landed: [7328],
 		});
 	});
 
-	it("proves the closure where that merged PR carries a closing keyword", () => {
+	it("names the merged PRs it stood on, so the recorded line says which reader wrote it", () => {
 		expect(provenClosure(6980, [fact({linkKind: "fixes"})])).toMatchObject({
 			_tag: "Read",
 			closure: {_tag: "Closes"},
+			landed: [7328],
 		});
 	});
 

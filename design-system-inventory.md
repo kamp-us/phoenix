@@ -86,6 +86,16 @@ _Source: packages/design/src/Collapsible.tsx_
 - `trigger` — The disclosure control supplied through the `trigger` prop.
 - `children` — The region shown while the disclosure is open.
 
+## CommandPalette
+
+_Source: packages/design/src/CommandPalette.tsx_
+
+**When to use:** A modal, keyboard-first search surface over a caller-owned result set. The caller owns copy, filtering overrides and what selecting a result does.
+
+**Slots:**
+- `trigger` — Optional element that opens the palette. Rendered disabled, not removed, when the palette is disabled.
+- `footer` — Optional key legend or contextual hint below the results.
+
 ## CopyLinkButton
 
 _Source: packages/design/src/CopyLinkButton.tsx_

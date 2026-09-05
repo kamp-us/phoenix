@@ -112,9 +112,13 @@ export interface CapabilityRequest {
 	readonly detail?: string;
 }
 
-/** Where the program is placed. `local` is the only host today; the host chooses placement. */
+/**
+ * Where the program is placed. `local` means the Node kernel runs it, and it is the only host
+ * anything runs on today; `browser` is named so a transport can refuse it (#7556) rather than skip
+ * it silently, and nothing spawns one until the browser tier lands.
+ */
 export interface Placement {
-	readonly host: "local";
+	readonly host: "local" | "browser";
 }
 
 export interface Program<
@@ -127,6 +131,8 @@ export interface Program<
 	R,
 > {
 	readonly id: ProgramId;
+	/** What a surface calls this program. Absent means `identity.program` — read it through `programLabel`. */
+	readonly label?: string;
 	/** Private: read by the host that runs the program and by no other process. */
 	readonly core: Machine<S, M, C, U, Ctx>;
 	/** Public: the only thing another process may see of this program. */
@@ -161,3 +167,10 @@ export type AnyProgram = Program<any, any, any, any, any, any, any>;
 /** The row's provenance as a refusal names it: `package/program@version (digest)`. */
 export const provenanceOf = (row: AnyProgram): string =>
 	`${row.identity.package}/${row.identity.program}@${row.identity.version} (${row.identity.digest})`;
+
+/**
+ * The human-readable name a program shows under. Optional on the row and defaulted from
+ * `identity.program`, so the picker (#7557) can list a row "by id and label" without every author
+ * writing one out.
+ */
+export const programLabel = (row: AnyProgram): string => row.label ?? row.identity.program;
