@@ -76,5 +76,12 @@ than the harness: **only jsdom-decidable invariants are asserted** — never con
 which have no layout engine to measure — and **the probe carries a planted violation** it must
 report, so a rule set that silently matches nothing cannot pass.
 
+The desk inspector is the second
+([`apps/tuval/src/programs/desk-renderers/a11y.unit.test.tsx`](../apps/tuval/src/programs/desk-renderers/a11y.unit.test.tsx),
+issue [#7696](https://github.com/kamp-us/phoenix/issues/7696)), and it adds the one thing a
+multi-arm surface needs: **the arbitrary covers every arm**, so the empty and gone states are
+generated beside the populated one rather than left to a single example test. A component with an
+arm the property never reaches is a component whose property proves less than it reads as proving.
+
 A local instance is not registered anywhere and gets no fail-closed coverage; that guarantee belongs
 to the `packages/design` harness and stays there.

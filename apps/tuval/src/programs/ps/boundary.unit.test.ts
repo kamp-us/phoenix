@@ -1,6 +1,6 @@
 /**
  * The boundary this program keeps: the order, the columns, the state and the attach address are
- * plain data, so only the two `.tsx` files may reach React or the DOM. Keeping the pure half free of
+ * plain data, so only the `.tsx` files may reach React or the DOM. Keeping the pure half free of
  * both is what lets the ordering and sorting be tested with no jsdom at all — and it is what stops a
  * later renderer change from quietly moving domain logic into a component.
  *

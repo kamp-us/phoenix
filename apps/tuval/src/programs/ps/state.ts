@@ -112,3 +112,10 @@ export const isPsState = (value: unknown): value is PsState => {
 		(state.selectedProcessId === null || typeof state.selectedProcessId === "string")
 	);
 };
+
+/**
+ * This program's selection, read off a state the desk erased. Total on purpose: the desk inspector
+ * holds an `AnyWindowHost` and must not assume the state it finds there is this program's.
+ */
+export const psSelection = (state: unknown): ProcessId | null =>
+	isPsState(state) ? state.selectedProcessId : null;
