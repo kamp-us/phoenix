@@ -7,6 +7,7 @@
  */
 
 import {ProcessId, ProgramId, WindowId, WorkspaceId} from "../../protocol/ids.ts";
+import type {JsonSchemaDocument} from "../../protocol/json-schema-document.ts";
 import {PROTOCOL_VERSION, Snapshot} from "../../protocol/messages.ts";
 import type {ProcessRow} from "../../protocol/process-row.ts";
 import type {RegistryDescription, SpellDescription} from "../../protocol/registry-description.ts";
@@ -20,7 +21,7 @@ interface Property {
 export const jsonSchema = (
 	properties: Readonly<Record<string, Property>>,
 	required: ReadonlyArray<string>,
-): unknown => ({
+): JsonSchemaDocument => ({
 	dialect: "draft-2020-12",
 	schema: {type: "object", properties, required, additionalProperties: false},
 	definitions: {},
@@ -32,7 +33,7 @@ const direction: Property = {type: "string", enum: ["left", "right", "up", "down
 const spell = (
 	path: ReadonlyArray<string>,
 	describe: string,
-	params: unknown,
+	params: JsonSchemaDocument,
 ): SpellDescription => ({path, describe, params, capabilities: []});
 
 export const descriptions: RegistryDescription = [
