@@ -8,6 +8,15 @@ export {
 	type NodeSize,
 } from "./layout.ts";
 export {
+	ENGINE_VIEW_RENDERER_REF,
+	type EngineViewMsg,
+	type EngineViewState,
+	engineViewCore,
+	engineViewId,
+	engineViewInitial,
+	engineViewProgram,
+} from "./program.ts";
+export {
 	type EngineEdge,
 	type EngineGraph,
 	type EngineNode,
