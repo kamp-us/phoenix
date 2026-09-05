@@ -1,8 +1,7 @@
 import {Schema} from "effect";
 import {describe, expect, it} from "vitest";
-import {emptyParams} from "../../protocol/fixtures.ts";
 import {registry} from "./fixtures.ts";
-import {buildSpellIndex, describeExpected, readParams} from "./spell-index.ts";
+import {describeExpected, readParams} from "./spell-index.ts";
 
 describe("readParams", () => {
 	// The whole index rests on two properties of the JSON Schema a `SpellDescription` carries, so
@@ -86,13 +85,5 @@ describe("buildSpellIndex", () => {
 		expect([...(window?.children.keys() ?? [])]).toEqual(["close", "move", "focus"]);
 		expect(window?.spell).toBeUndefined();
 		expect(window?.children.get("close")?.spell?.path).toEqual(["window", "close"]);
-	});
-
-	it("drops a row whose path decode would have refused, staying total", () => {
-		const index = buildSpellIndex([
-			{path: [], describe: "unreachable", params: emptyParams, capabilities: []},
-			{path: ["ok"], describe: "reachable", params: emptyParams, capabilities: []},
-		]);
-		expect(index.spells.map((spell) => spell.path)).toEqual([["ok"]]);
 	});
 });

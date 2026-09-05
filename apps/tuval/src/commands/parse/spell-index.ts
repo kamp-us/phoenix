@@ -128,11 +128,7 @@ export const buildSpellIndex = (descriptions: RegistryDescription): SpellIndex =
 	const spells: Array<IndexedSpell> = [];
 
 	for (const description of descriptions) {
-		const [head, ...rest] = description.path;
-		// The protocol's `SpellPath` is non-empty by decode, but the type only says `readonly
-		// string[]`, so an undecoded row can still reach here. Dropping it keeps the parser total.
-		if (head === undefined) continue;
-		const path: SpellPath = [head, ...rest];
+		const path: SpellPath = description.path;
 		const spell: IndexedSpell = {
 			path,
 			describe: description.describe,
