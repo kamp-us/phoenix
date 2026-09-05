@@ -89,13 +89,14 @@ in [`ai-agent/restore/`](../apps/tuval/src/ai-agent/restore/).
 
 **The rehydrating `init` transforms and emits nothing.** Demlik throws on a non-null `loaded` whose
 `init` returns any Cmd (`@demlik/tea` 0.12 `runtime-types.ts`) — that branch is the migration and
-parse boundary, not a boot hook. So the transform states what a saved state *is* now: a connection
-the process no longer holds comes back closed, a run-scoped field (a stale refusal, a page fetched
-from a transport that is gone) comes back empty, and a phase that means "work in flight" comes back
-marked rather than pretending the work is still running.
+parse boundary, not a boot hook. So the transform states what a saved state *is* now: a process that
+holds no transport any more comes back `idle` (every phase but the terminal `gone`), a run-scoped
+field — a stale refusal, a page fetched from a transport that is gone — comes back empty, and a turn
+that was mid-reply when the process died comes back marked interrupted rather than pretending the
+work is still running.
 
-**Whatever the restore has to *do* is a Msg someone dispatches after the spawn.** The sanctioned
-route the guard's own message names. Keep it as a pure function of the restored state — Tuval's is
+**Whatever the restore has to *do* is a Msg someone dispatches after the spawn** — that is the route
+the guard's own error message names. Keep it as a pure function of the restored state — Tuval's is
 `resumeMessages(state)` — so a spawner asks the row what to send instead of encoding the row's
 lifecycle at the call site, and a state with nothing to resume answers with an empty list.
 
