@@ -7,7 +7,10 @@
  *
  * `AnySpell` erases each spell's requirements, so nothing checks that the runtime carries what a
  * registered spell needs — the composition root that builds the registry owes those services, and
- * the single conversion in `runSpell` is where that obligation is spent.
+ * the single conversion in `runSpell` is where that obligation is spent. `src/boot.ts` is that
+ * root and discharges it there: `WindowIndex` and `ShellDispatch.kernel` are built into the same
+ * `Kernel` context a caller runs a spell under, and `Kernel` names both, so a dropped provider is
+ * a compile error at `start` rather than a defect at the first call (#7774).
  */
 
 import {Context, Effect, Layer, Schema} from "effect";

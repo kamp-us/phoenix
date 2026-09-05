@@ -109,7 +109,8 @@ export interface ShellProgramOptions<E = never, R = never> {
  * `spells` is the command table (`./commands/`), so every named row is registered under
  * `[shellId, ...path]` and reachable through the one registry — the palette, `help`, and an agent's
  * bridge all read the shell's commands there rather than from a second catalogue. Running one needs
- * `ShellDispatch`, which `AnySpell` erases: whoever builds the registry owes that service.
+ * `ShellDispatch`, which `AnySpell` erases; `src/boot.ts` owes it and pays it with
+ * `ShellDispatch.kernel(shellId)`, which finds this row's live process and dispatches into it.
  */
 export const shellProgram = <E = never, R = never>({
 	table = defaultPrefixTable,

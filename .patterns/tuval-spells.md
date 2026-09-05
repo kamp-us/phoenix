@@ -533,9 +533,21 @@ picker put them so the argument grammar would sit beside the handler that consum
 reads their name, sentence and argument kind off that list rather than re-typing them.
 
 `shellSpells` wraps each row as a spell whose `execute` builds the Msg and hands it to
-`ShellDispatch`, an interface this slice declares and whoever runs the desk implements — the same
-shape `WindowIndex` takes above. `AnySpell` erases that requirement, so the composition root that
-builds the registry owes the service.
+`ShellDispatch`, an interface this slice declares — the same shape `WindowIndex` takes above.
+`AnySpell` erases that requirement, so the composition root that builds the registry owes the
+service, and [`boot.ts`](../apps/tuval/src/boot.ts) pays it: `ShellDispatch.kernel(shellId)` sits in
+the same merge as `SpellBridge`, finds the live process of the shell's program row through
+`ProcessTable` per dispatch, and puts the Msg on it. `Kernel` names `ShellDispatch` and `Context` is
+contravariant in its services, so dropping that layer stops `start` compiling rather than leaving a
+defect for the first caller.
+
+`dispatch` fails typed rather than dying, because a desk is a process: a config that registers the
+shell row but plans no node for it answers `NoDesk`, and a desk that stopped mid-call answers the
+actor's own `DispatchError`. Either way the executor turns it into a `SpellReplyError`, so `help`,
+a typed line and an agent's bridge all read a refusal instead of meeting a defect. The proof is
+[`src/shell/proof/dispatch.unit.test.ts`](../apps/tuval/src/shell/proof/dispatch.unit.test.ts),
+which boots, calls a row through both the executor and the bridge, reads the desk back, and takes
+the service out of the returned kernel to show the same call dying without it.
 
 ## The palette
 
