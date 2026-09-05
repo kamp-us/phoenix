@@ -7,11 +7,12 @@
  * config, their tools and their extras and in nothing else.
  *
  * The row provides `KernelBridge.live` under the layer, so the three kernel tools reach the kernel
- * through the program-blind `SpellBridge` and what `aiAgentProgram` is handed asks for nothing
- * (#7510, grill #7578 R2.2). The bridge's own `SpellBridge` requirement is closed here rather than
- * inferred onto the row because `aiAgentProgram` takes a `Layer<TuvalAiAgent>` and `agentSlot`
- * builds it inside a handler declared to need only `ProcessSelf`
- * ([#7951](https://github.com/kamp-us/phoenix/issues/7951)).
+ * through the program-blind `SpellBridge` (#7510, grill #7578 R2.2). That `SpellBridge` is left
+ * **open** and rides out as the row's own requirement, satisfied at spawn from the spawner's kernel
+ * context ([#7951](https://github.com/kamp-us/phoenix/issues/7951), and
+ * `.patterns/tuval-shell-assembly.md`). Closing it here is what a config module could not do: the
+ * loader evaluates a config module inside `boot`, before the bridge exists
+ * ([#7958](https://github.com/kamp-us/phoenix/issues/7958)).
  *
  * The program id and the renderer reference are `./renderer-ref.ts`'s, imported rather than
  * retyped, for the reason that file states: the row is kernel-side and reaches the Agent SDK, the
@@ -53,14 +54,6 @@ export const CLAUDE_SESSION_CAPABILITIES: ReadonlyArray<CapabilityRequest> = [
 	},
 ];
 
-/** What the three kernel tools reach, and the calling process's scope every call carries. */
-export interface ClaudeSessionKernel {
-	/** The caller's own scope — its window, workspace and client. `KernelBridge.live` takes it. */
-	readonly scope: SpellScope;
-	/** The kernel's program-blind bridge, which `KernelBridge.live` speaks through. */
-	readonly spells: Layer.Layer<SpellBridge>;
-}
-
 interface ClaudeSessionBase {
 	/** The project root that booted the kernel: the cwd a fresh session opens in (#7509). */
 	readonly cwd: string;
@@ -70,36 +63,40 @@ interface ClaudeSessionBase {
 }
 
 /**
- * Either the row builds its own layer over the kernel, or a caller hands one in — never both and
- * never neither. A proof that must spawn no subprocess supplies `ScriptedAiAgent.layer`; a process
- * supplies the kernel and gets the real thing.
+ * Either the row builds the real layer over the kernel tools, or a caller hands a layer in — never
+ * both and never neither. A proof that must spawn no subprocess supplies `ScriptedAiAgent.layer`; a
+ * config module names the `scope` its tool calls carry and gets the real thing.
+ *
+ * `scope` is all the kernel arm needs, and that is the point: a scope is four plain ids, which is
+ * exactly what a config module evaluated before the kernel exists can write down. Naming no
+ * `window` makes a tool `spawn` a **root** process rather than a child of the Claude one — the
+ * kernel resolves a parent from the caller's window through `WindowIndex`, and no shell owns one
+ * yet ([#7894](https://github.com/kamp-us/phoenix/issues/7894)).
  */
 export type ClaudeSessionProgramOptions =
-	| (ClaudeSessionBase & {readonly kernel: ClaudeSessionKernel; readonly layer?: undefined})
-	| (ClaudeSessionBase & {readonly layer: Layer.Layer<TuvalAiAgent>; readonly kernel?: undefined});
+	| (ClaudeSessionBase & {readonly scope: SpellScope; readonly layer?: undefined})
+	| (ClaudeSessionBase & {readonly layer: Layer.Layer<TuvalAiAgent>; readonly scope?: undefined});
 
 /**
- * The layer the row hands `aiAgentProgram`, closed over the kernel seam.
+ * The layer the row hands `aiAgentProgram`, with `SpellBridge` left open for the spawner.
  *
- * Exported so a type-level test can pin it: what reaches the factory has to be a
- * `Layer<TuvalAiAgent>` with no requirement left, and an assignability check would pass one that
- * grew a second.
+ * Exported so a type-level test can pin it: what reaches the factory asks for `SpellBridge` and
+ * nothing else, and an assignability check would pass one that grew a second requirement.
  */
 export const claudeSessionLayer = (
 	settings: ClaudeSessionSettings,
-	kernel: ClaudeSessionKernel,
-): Layer.Layer<TuvalAiAgent> =>
-	ClaudeAiAgent.layer(settings).pipe(
-		Layer.provide(KernelBridge.live(kernel.scope)),
-		Layer.provide(kernel.spells),
-	);
+	scope: SpellScope,
+): Layer.Layer<TuvalAiAgent, never, SpellBridge> =>
+	ClaudeAiAgent.layer(settings).pipe(Layer.provide(KernelBridge.live(scope)));
 
-export const claudeSession = (options: ClaudeSessionProgramOptions): AiAgentProgram => {
+export const claudeSession = (
+	options: ClaudeSessionProgramOptions,
+): AiAgentProgram<SpellBridge> => {
 	const settings = claudeSessionSettings(options.claude ?? {});
-	return aiAgentProgram({
+	return aiAgentProgram<SpellBridge>({
 		id: CLAUDE_SESSION_PROGRAM,
 		layer:
-			options.layer === undefined ? claudeSessionLayer(settings, options.kernel) : options.layer,
+			options.layer === undefined ? claudeSessionLayer(settings, options.scope) : options.layer,
 		config: {
 			cwd: options.cwd,
 			...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),

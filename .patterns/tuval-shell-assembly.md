@@ -68,6 +68,11 @@ visible is the row's own type: `aiAgentProgram` is generic over the leftover req
 it is handed (`src/ai-agent/program.ts`), so an agent row over a layer that still needs `SpellBridge`
 says `SpellBridge` on its services rather than closing it.
 
+The `claude-session` row in `apps/tuval/.tuval/tuval.config.ts` is the live instance, and it is why
+the seam has to work this way: a config module is imported inside `boot`, before the bridge exists,
+so the only thing it can name is the `scope` its kernel tools call under — the bridge itself has to
+arrive at spawn (#7958).
+
 ## Which Cmds the kernel runs, and which the surface does
 
 The shell core emits eight Cmds, and the type says which side runs each: `KernelCmd` and `PageCmd`

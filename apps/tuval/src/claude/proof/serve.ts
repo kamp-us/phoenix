@@ -33,7 +33,6 @@ import {boot, projectDir} from "../../boot.ts";
 import {servePage} from "../../page/dev-server.ts";
 import {serveDesk} from "../../shell/host/index.ts";
 import {defaultPrefixTable} from "../../shell/keys/index.ts";
-import {handOverKernel} from "./late.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";
 
 /** `apps/tuval` — `index.html`'s home, and so the page server's root, as `src/bin.ts` computes it. */
@@ -60,9 +59,6 @@ const proof = Command.make(
 		process.env[PROJECT_ROOT_VAR] = project;
 
 		const booted = yield* boot({global: configModule, project});
-		// Before any window is opened, because the row's layer reads it when the founder opens one.
-		handOverKernel(booted.kernel);
-
 		const transport = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
 		const page = yield* servePage({root: appRoot, transport, port: pagePort}).pipe(Effect.orDie);
 		yield* Console.log(`claude-real proof: project ${project}`);

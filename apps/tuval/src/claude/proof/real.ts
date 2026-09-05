@@ -7,13 +7,15 @@
  * and is the founder's alone** (founder ruling on #7582 and #7586). It is reachable only through
  * `./serve.ts`, which no workflow runs; the variant CI runs is `./desk.ts`, on scripted layers.
  *
- * The kernel seam comes from `./late.ts` rather than from an argument, because a config module is
- * evaluated inside `boot` and the bridge it wants does not exist until `boot` returns — that file
- * says why the indirection is a module rather than a field.
+ * The row names its `scope` and nothing else of the kernel: the `SpellBridge` its tools speak
+ * through rides out as the row's own requirement and arrives at spawn from the shell's kernel
+ * context (#7951/#7958). That is the same shape `../../../.tuval/tuval.config.ts` registers, so
+ * this module differs from the tracked one only in taking its project root from the environment
+ * and planning no graph node.
  *
- * The scope the kernel tools call under names a workspace and no window, so a tool `spawn` starts
- * a **root** process rather than a child of the Claude one: the kernel resolves a parent from the
- * caller's window through `WindowIndex`, and no shell owns one yet
+ * The scope names a workspace and no window, so a tool `spawn` starts a **root** process rather
+ * than a child of the Claude one: the kernel resolves a parent from the caller's window through
+ * `WindowIndex`, and no shell owns one yet
  * ([#7894](https://github.com/kamp-us/phoenix/issues/7894)). The delegation the scripted variant
  * proves is parented, because it stands that index up itself (`./kernel-tools.ts`).
  */
@@ -25,7 +27,6 @@ import {ProcessId} from "../../process/process.ts";
 import {wiredShellEffects} from "../../shell/host/index.ts";
 import {shellGraphNode, shellNode, shellProgram} from "../../shell/program.ts";
 import {claudeSession} from "../program.ts";
-import {lateSpellBridge} from "./late.ts";
 import {PROJECT_ROOT_VAR} from "./names.ts";
 
 const projectRoot = (): string => {
@@ -42,12 +43,9 @@ export default {
 		shellProgram({effects: wiredShellEffects({shellProcessId: ProcessId.make(shellNode)})}),
 		claudeSession({
 			cwd: root,
-			kernel: {
-				scope: {
-					workspace: WorkspaceId.make("default"),
-					client: ClientId.make("claude-real-cli-proof"),
-				},
-				spells: lateSpellBridge,
+			scope: {
+				workspace: WorkspaceId.make("default"),
+				client: ClientId.make("claude-real-cli-proof"),
 			},
 		}),
 		piSessionProgram({cwd: root}),
