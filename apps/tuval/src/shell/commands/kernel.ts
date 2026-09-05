@@ -16,7 +16,8 @@ import {NoDesk, ShellDispatch} from "./dispatch.ts";
 /**
  * The row is resolved per dispatch rather than at layer build, because the kernel is built before
  * any process exists and a desk can be stopped and spawned again under the same program id.
- * `program` is a parameter because `shellId` lives in `../program.ts`, which the page also reaches — boot names it, and a boot whose config registered no shell row answers `NoDesk`.
+ * `program` is a parameter so this module stays a layer over the process table and nothing else:
+ * boot names the shell row's id, and a boot whose config registered no shell row answers `NoDesk`.
  */
 export const shellDispatchKernel = (
 	program: ProgramId,

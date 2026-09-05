@@ -84,9 +84,11 @@ describe("the page's import graph", () => {
 	});
 
 	it("reads runtime edges only: an import type is not an edge", () => {
-		// Flip-verified: `commands/kernel.ts` reads the process table, so a walk that counted its
-		// runtime edge from a page module would list it; the page reaches no such edge.
+		// `shell/commands/dispatch.ts` is in the graph and type-imports `process/errors.ts`; a walk
+		// that counted that edge would list the target. Flip-verified by dropping the `type` test in
+		// `specifiersOf`: the module appears and this fails.
+		expect(graph.modules).toContain("shell/commands/dispatch.ts");
+		expect(graph.modules).not.toContain("process/errors.ts");
 		expect(graph.modules).not.toContain("shell/commands/kernel.ts");
-		expect(graph.modules).not.toContain("process/Processes.ts");
 	});
 });
