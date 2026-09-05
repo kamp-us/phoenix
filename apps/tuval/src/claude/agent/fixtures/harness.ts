@@ -29,13 +29,14 @@ export const MODES: ReadonlyArray<Mode> = [
 export const START_EVENTS = 3;
 
 /**
- * Those three plus the `system`/`init` frame's own two — its ready phase and the model it names.
+ * Those three plus the one event the `system`/`init` frame carries: the model it names.
  *
- * The two are no longer part of `start`: the frame belongs to the first turn (`sdk.d.ts`), so on a
- * scripted run whose `opening` begins with `init` the pump emits them just after, and a test that
- * wants the turn behind them counts from here.
+ * That one is not part of `start` — the frame belongs to the first turn (`sdk.d.ts`), so on a
+ * scripted run whose `opening` begins with `init` the pump emits it just after, and a test that
+ * wants the turn behind it counts from here. `init` carries no phase: a turn's `ready` rides its
+ * `result` instead (#7963).
  */
-export const OPENED_EVENTS = START_EVENTS + 2;
+export const OPENED_EVENTS = START_EVENTS + 1;
 
 export const messages = (name: Parameters<typeof loadFixture>[0]): ReadonlyArray<SDKMessage> =>
 	loadFixture(name) as ReadonlyArray<SDKMessage>;

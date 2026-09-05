@@ -37,10 +37,9 @@ const items = (events: ReadonlyArray<AgentEvent>) =>
 	events.flatMap((event) => (event.kind === "item" ? [event.item] : []));
 
 describe("toAgentEvents over a captured init", () => {
-	it("reports the ready phase and the model the session named", () => {
+	it("reports the model the session named, and no phase", () => {
 		const {events, mapping} = run([message("init")]);
 		expect(events).toEqual([
-			{kind: "phase", phase: "ready"},
 			{kind: "usage", model: "claude-fable-5-1", inputTokens: 0, outputTokens: 0, cost: 0},
 		]);
 		expect(mapping.model).toBe("claude-fable-5-1");
@@ -49,9 +48,24 @@ describe("toAgentEvents over a captured init", () => {
 	it("reads a resumed session's init the same way", () => {
 		const {events} = run([message("resumed-init")]);
 		expect(events).toEqual([
-			{kind: "phase", phase: "ready"},
 			{kind: "usage", model: "claude-fable-5-1", inputTokens: 0, outputTokens: 0, cost: 0},
 		]);
+	});
+});
+
+describe("the mapping narrates no phase at all", () => {
+	// A phase is a session's, and this file reads one message at a time: `init` leads a turn and
+	// `result` ends one, so a phase read out of either here would fire on a history replay too
+	// (#7963). The layer says where a turn ends; `phases.unit.test.ts` is where that is proven.
+	it("emits no phase event over any captured stream", () => {
+		const streams = [
+			run([message("init")]),
+			run(messages("assistant-turn")),
+			run(messages("tool-turn")),
+			run([message("error-result")]),
+			run([message("permission-denied")]),
+		];
+		expect(streams.flatMap(({events}) => events.filter((one) => one.kind === "phase"))).toEqual([]);
 	});
 });
 

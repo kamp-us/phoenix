@@ -13,10 +13,10 @@ import {CWD, MODES, messages, OPENED_EVENTS, on, settled} from "./fixtures/harne
 
 /**
  * The tool turn's four frames after `init`, folded: the call opens `running`, its answer settles it
- * `ok`, the reply lands, and the result reports spend. The first assistant frame carries only the
- * `tool_use` block, so it earns no text item of its own.
+ * `ok`, the reply lands, and the result reports spend and then ends the turn. The first assistant
+ * frame carries only the `tool_use` block, so it earns no text item of its own.
  */
-const TURN_EVENTS = 4;
+const TURN_EVENTS = 5;
 
 describe("events over a captured tool turn", () => {
 	it.effect("carries the turn's items and its usage in one ordered stream", () =>
@@ -28,9 +28,9 @@ describe("events over a captured tool turn", () => {
 				);
 				assert.deepStrictEqual(
 					events.map((event) => event.kind),
-					// The start's own three, then the first turn's `init` — its ready phase and the
-					// model it names — and then the turn itself.
-					["phase", "phase", "mode", "phase", "usage", "item", "item", "item", "usage"],
+					// The start's own three, then the first turn's `init` — the model it names, and
+					// nothing else — then the turn, which ends on the `ready` its `result` carries.
+					["phase", "phase", "mode", "usage", "item", "item", "item", "usage", "phase"],
 				);
 			}),
 		),
@@ -64,7 +64,8 @@ describe("events over a captured tool turn", () => {
 				const events = yield* Stream.runCollect(
 					Stream.take(agent.events, OPENED_EVENTS + TURN_EVENTS),
 				);
-				const usage = events[OPENED_EVENTS + TURN_EVENTS - 1];
+				// Second to last: the turn's own `ready` is the last event on it.
+				const usage = events[OPENED_EVENTS + TURN_EVENTS - 2];
 				assert.strictEqual(usage?.kind, "usage");
 				assert.strictEqual(usage?.kind === "usage" ? usage.model : "", "claude-fable-5-1");
 			}),
@@ -101,12 +102,12 @@ describe("every kind rides the one stream", () => {
 						"phase",
 						"phase",
 						"mode",
+						"usage",
+						"item",
+						"item",
+						"item",
+						"usage",
 						"phase",
-						"usage",
-						"item",
-						"item",
-						"item",
-						"usage",
 						"permission",
 						"permission-resolved",
 						"mode",

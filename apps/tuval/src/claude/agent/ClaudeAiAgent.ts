@@ -321,7 +321,16 @@ const make = (
 					const step = toAgentEvents(pulled.message, mapping, {at: Date.now()});
 					mapping = step.mapping;
 					yield* emit(open, step.events);
-					if (pulled.message.type === "result") current.state.settled = true;
+					if (pulled.message.type === "result") {
+						current.state.settled = true;
+						// A turn's end is the layer's to narrate, and `result` is where it lands:
+						// `SDKResultMessage` is "the outcome of a turn … treat it as the turn-complete
+						// signal" (`sdk.d.ts`). The discriminant is the whole test, so every
+						// `SDKResultError` subtype ends the turn exactly as a success does — a failed
+						// turn that stayed at `prompting` would refuse every later prompt (#7963).
+						// After `step.events`, so the turn's own spend or failure line precedes it.
+						yield* emit(open, [{kind: "phase", phase: "ready"}]);
+					}
 				}
 			});
 
