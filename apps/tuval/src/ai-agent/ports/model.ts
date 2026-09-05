@@ -13,8 +13,9 @@
  *
  * This is the one deliberate exception to the model-blind rule `boundary.unit.test.ts` holds over
  * this directory. The founder wants the model chosen from the composer, so the generic interface
- * has to carry a model; every payload a port carries stays blind, and that file skips this source
- * by name rather than widening its ban.
+ * has to carry a model; every payload a port carries stays blind, and that file scans this source
+ * under a narrowed ban rather than skipping it by name: `model` and `provider` are exempt here, and
+ * the other seven banned words still bind.
  */
 
 import {Predicate} from "effect";

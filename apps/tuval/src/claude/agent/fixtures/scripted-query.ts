@@ -4,8 +4,8 @@
  *
  * It replays golden fixtures (`../../history/fixtures/PROVENANCE.md`) rather than hand-written
  * envelopes, and it records the control calls the layer makes — `close`, `interrupt`,
- * `setPermissionMode`, `setModel` — plus the `Options` it was opened with. That record is the assertion surface
- * for everything the layer is supposed to hand the SDK.
+ * `setPermissionMode`, `setModel` — plus the `Options` it was opened with. That record is the
+ * assertion surface for everything the layer is supposed to hand the SDK.
  *
  * It also models the one thing the SDK owns that a scripted generator otherwise would not: the
  * subprocess. Constructing the query calls the `spawnClaudeCodeProcess` on the `Options` it was
