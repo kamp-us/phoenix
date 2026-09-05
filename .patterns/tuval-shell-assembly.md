@@ -384,3 +384,20 @@ component (`pnpm proof:chat`, `pnpm proof:pi-window`), and a bin that boots the 
 provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi/proof/serve.ts`) for a claim
 about the assembled surface. The second one found `.tuval-window` sizing to its content rather than
 to its panel — a 302px window in a 775px panel, transcript 2px — which no headless proof could see.
+
+Two more mechanics the Claude vertical added
+(`apps/tuval/src/claude/proof/claude-vertical.integration.test.ts`).
+
+**Keep a log beside the queue when the claim is about the whole sequence.** A predicate wait consumes
+frames, so "the card opened and closed exactly once" cannot be asked of the queue afterwards — the
+frames that would answer it are gone. The watcher pushes each published value into an array as well
+as the queue, and the count is taken off the array at the end.
+
+**Standing a second `SpellExecutor` up over a booted kernel needs two deliberate moves.** A proof that
+must resolve a caller's window — to parent a `process spawn`, say — supplies its own `WindowIndex`,
+because `boot` builds that index empty until the shell owns one (#7894). Composing it with
+`Layer.provide` does not work and does not look broken: `SpellExecutor.layer` is one module-level
+`Layer` value `boot` has already built, so the build hands back the memoized executor holding the
+empty index, and every call answers `NoSuchWindow` while the wiring reads correct. Wrap it in
+`Layer.fresh`, and merge the contexts one step at a time — `Context.merge(self, that)` lets `that`
+override, so each step names its winner rather than leaving it to composition order.

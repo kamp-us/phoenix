@@ -25,6 +25,8 @@ pnpm test:unit        # the unit tier
 pnpm test:integration # the slow tier: a real Pi AgentSession on a real loopback socket, no creds
 pnpm typecheck
 pnpm proof:chat       # the chat window in a real browser, on fixtures — see "Paint proofs"
+pnpm proof:pi-vertical   # the Pi vertical in a real browser, on Pi's faux provider — free
+pnpm proof:claude-real   # the Claude vertical on the REAL CLI — the founder's run, spends tokens
 ```
 
 ### Paint proofs
@@ -719,3 +721,40 @@ History is Pi's own: `page(before, limit)` reads the session's JSONL through
 `SessionManager.getBranch()` and bounds it with the shared page planner, so Tuval keeps no second
 copy. Pi raises no permission requests and offers no modes at this pin, so `answer` and `setMode`
 refuse as data.
+
+## The vertical proofs
+
+A vertical proof is one product opened in the real shell, from the real picker, over the real
+transport, and driven to the far end of what it claims: chatted with, restarted, re-attached. There
+are two, `src/pi/proof/` and `src/claude/proof/`, and they are the same proof with the layer
+swapped — same kernel, same `serveDesk` socket, same page `attach`, same keys-and-Msgs vocabulary.
+Every assertion reads process state off the transport, never off a `ProcessHandle` and never off a
+DOM, so what a case proves is what a window would see.
+
+**The Claude one runs in two variants, and only one of them is CI's.**
+
+`claude-vertical.integration.test.ts` is the scripted variant: the `claude-session` row registered
+through a user's config module (`desk.ts`) with `ScriptedAiAgent.layer` where the Agent SDK goes,
+and `pi-session` beside it on Pi's own faux provider. It calls no model API and spends nothing, so
+`pnpm test:integration` runs it and so does CI. Five cases: the picker opening a Claude chat under
+the shell with a tool row that runs and settles, one permission card answered and one mode switched;
+Pi and Claude side by side with process-table rows that differ only by program id and state summary;
+a restart that brings the transcript back with the cut turn interrupted; a dropped socket re-attached;
+and a child spawned through the three kernel tools, prompted with `send` and read back with `read`.
+
+`pnpm proof:claude-real` is the real-CLI variant, and it is **local only — the founder's own run, on
+their own Claude Code login, spending real tokens.** No workflow reaches it and none may: it boots
+`src/claude/proof/real.ts`, which is `ClaudeAiAgent.layer` over the `claude` CLI with the real
+`pi-session` row beside it. It serves an empty desk and chats nothing, because what the run is
+evidence of is a person doing it: open the picker, chat, answer a real card, switch the mode,
+Ctrl-C, run it again with the same `--project`, and find the chat where it was with Pi in the other
+split. The evidence is a comment on [#7625](https://github.com/kamp-us/phoenix/issues/7625) naming
+the SDK and CLI versions the start log printed, and whether the resumed CLI re-asked for a tool call
+left unanswered.
+
+Two seams the scripted variant has to stand up for itself, both because no shell owns them yet.
+`kernel-tools.ts` builds a `WindowIndex` so a tool `spawn` is parented by the Claude process — the
+kernel resolves a parent from the caller's window and `boot` leaves that index empty (#7894). And
+`late.ts` hands the real variant's config module a `SpellBridge` that does not exist when the loader
+evaluates it (#7958). Both are the proof's own scaffolding; neither writes anything under `src/ai-agent/` or
+changes what a row is.
