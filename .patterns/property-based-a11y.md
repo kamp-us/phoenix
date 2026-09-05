@@ -57,3 +57,24 @@ it `interactive` (with a `selector` for its control) or `presentational`; if it 
 composition/portal/provider context to be representative, make it `deferred` with the
 reason. Keep arbitraries generating only **valid** props — the harness asserts that a
 correctly-used primitive is accessible, not that misuse is caught.
+
+## The method outside `packages/design`
+
+The harness above is keyed to one package: its coverage test reads
+`packages/design/src/index.ts`, so it cannot cover a surface that is not an exported
+primitive. The *method* travels anyway, and a surface whose whole reason to exist is
+accessibility should carry it — a colocated `a11y.unit.test.tsx` that generates valid
+inputs with `fast-check`, renders each in jsdom, and asserts the same enforced rule set
+through `axe-core` plus a focus probe.
+
+`apps/tuval`'s `ps` table is the first instance
+([`apps/tuval/src/programs/ps/a11y.unit.test.tsx`](../apps/tuval/src/programs/ps/a11y.unit.test.tsx),
+issue [#7695](https://github.com/kamp-us/phoenix/issues/7695)): it is the screen-reader-friendly
+twin of the engine-view canvas, so a regression there is the feature failing rather than a
+primitive drifting. Two rules carry over unchanged and are the point of copying the method rather
+than the harness: **only jsdom-decidable invariants are asserted** — never contrast or tap-target,
+which have no layout engine to measure — and **the probe carries a planted violation** it must
+report, so a rule set that silently matches nothing cannot pass.
+
+A local instance is not registered anywhere and gets no fail-closed coverage; that guarantee belongs
+to the `packages/design` harness and stays there.
