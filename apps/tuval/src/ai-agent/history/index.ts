@@ -13,6 +13,7 @@ export {
 	type NonEmpty,
 	type TranscriptGroup,
 } from "./groups.ts";
+export {withoutLocalEchoes} from "./local-turns.ts";
 export {
 	type PageOptions,
 	planTranscriptPage,

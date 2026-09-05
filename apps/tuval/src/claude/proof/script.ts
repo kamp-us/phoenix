@@ -11,6 +11,15 @@
  * `ScriptedAiAgent.layer` is the whole backend (founder ruling on #7582 and #7586): the scripted
  * variant calls no model API and spends nothing, and the real CLI is the founder's own local run
  * (`./serve.ts`), never a CI job.
+ *
+ * **No turn and no history row here carries the operator's own text.** The Claude CLI never echoes
+ * a submitted prompt back on its output stream — `SDKUserMessage` is what the CLI "emits for
+ * user-role content it adds to the conversation itself, chiefly the `tool_result` blocks"
+ * (`@anthropic-ai/claude-agent-sdk@0.3.259`, `sdk.d.ts`) — and `ScriptedAiAgent` replays `history`
+ * as live item events on a resume, which is a second thing the real layer does not do. A user row
+ * in either place is traffic no Claude session can produce, so the proof asserted a tail the script
+ * itself supplied (#7979). The operator's half of every turn now comes from the one place that
+ * really produces it: the core's `prompt` cell, under `promptItemId(key)` (#7978).
  */
 
 import {promptItemId} from "../../ai-agent/core/index.ts";
@@ -24,18 +33,7 @@ import type {
 import {Mode} from "../../ai-agent/ports/index.ts";
 import type {AgentScript} from "../../ai-agent/service/index.ts";
 import {CLAUDE_MODES} from "../config.ts";
-import {
-	CARD,
-	CHILD_PROMPT,
-	CHILD_REPLY,
-	PROMPT_1,
-	PROMPT_2,
-	PROMPT_3,
-	REPLY_1,
-	REPLY_2,
-	REPLY_3,
-	REPLY_4,
-} from "./names.ts";
+import {CARD, CHILD_REPLY, REPLY_1, REPLY_2, REPLY_3, REPLY_4} from "./names.ts";
 
 export const SESSION = "claude-vertical-proof-session";
 export const CHILD_SESSION = "claude-vertical-proof-child-session";
@@ -48,13 +46,6 @@ export const OFFERED: ReadonlyArray<Mode> = CLAUDE_MODES.map((mode) => Mode.make
 
 const id = (value: string): ItemId => value as ItemId;
 const at = (offset: number): number => 1_760_000_000_000 + offset;
-
-const user = (value: string, text: string, offset: number): TranscriptItem => ({
-	kind: "user",
-	id: id(value),
-	timestamp: at(offset),
-	text,
-});
 
 const assistant = (value: string, text: string, offset: number): TranscriptItem => ({
 	kind: "assistant",
@@ -94,7 +85,6 @@ export const card: PermissionRequest = {
 /** Turn one: a tool call that runs and then settles under one item id. */
 const firstTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
-	{kind: "item", item: user("u1", PROMPT_1, 1)},
 	{kind: "item", item: runningRead},
 	{kind: "item", item: settledRead},
 	{kind: "item", item: assistant("a1", REPLY_1, 3)},
@@ -104,7 +94,6 @@ const firstTurn: ReadonlyArray<AgentEvent> = [
 /** Turn two: the card. The turn finishes either way — answering it is the operator's move. */
 const secondTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
-	{kind: "item", item: user("u2", PROMPT_2, 4)},
 	{kind: "permission", request: CARD, detail: card},
 	{kind: "item", item: assistant("a2", REPLY_2, 5)},
 	{kind: "phase", phase: "ready"},
@@ -117,7 +106,6 @@ const secondTurn: ReadonlyArray<AgentEvent> = [
  */
 const cutTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
-	{kind: "item", item: user("u3", PROMPT_3, 6)},
 	{kind: "item", item: assistant("a3", REPLY_3, 7)},
 ];
 
@@ -132,24 +120,25 @@ const resendTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "ready"},
 ];
 
-/** The item ids the tail holds after each turn, by position within one boot. */
-export const afterTheFirstTurn = ["u1", "t1", "a1"];
-export const afterTheSecondTurn = [...afterTheFirstTurn, "u2", "a2"];
-export const afterTheCut = [...afterTheSecondTurn, "u3", "a3"];
+/** The idempotency keys the proof sends its four prompts under; the tail names each turn by one. */
+export const PROMPT_1_KEY = "k1";
+export const PROMPT_2_KEY = "k2";
+export const PROMPT_3_KEY = "k3";
 export const RESEND_KEY = "k4";
+
+/** The item ids the tail holds after each turn, by position within one boot. */
+export const afterTheFirstTurn = [promptItemId(PROMPT_1_KEY), "t1", "a1"];
+export const afterTheSecondTurn = [...afterTheFirstTurn, promptItemId(PROMPT_2_KEY), "a2"];
+export const afterTheCut = [...afterTheSecondTurn, promptItemId(PROMPT_3_KEY), "a3"];
 export const afterTheResend = [...afterTheCut, promptItemId(RESEND_KEY), "a4"];
 
 export const claudeScript: AgentScript = {
 	sessionId: SESSION,
 	// The backend's own store: the turns that completed. The cut turn is not in it, because it
-	// never did — so replaying history on resume reconciles the tail without touching the cut.
-	history: [
-		user("u1", PROMPT_1, 1),
-		settledRead,
-		assistant("a1", REPLY_1, 3),
-		user("u2", PROMPT_2, 4),
-		assistant("a2", REPLY_2, 5),
-	],
+	// never did — so replaying history on resume reconciles the tail without touching the cut. The
+	// operator's own rows are absent for the reason at the top of this file: `ScriptedAiAgent`
+	// replays this array as live item events, and a Claude resume emits no user frame at all.
+	history: [settledRead, assistant("a1", REPLY_1, 3), assistant("a2", REPLY_2, 5)],
 	modes: {current: null, available: OFFERED},
 	interrupt: [],
 	turns: [{events: firstTurn}, {events: secondTurn}, {events: cutTurn}, {events: resendTurn}],
@@ -170,7 +159,6 @@ export const childScript: AgentScript = {
 		{
 			events: [
 				{kind: "phase", phase: "prompting"},
-				{kind: "item", item: user("c1", CHILD_PROMPT, 1)},
 				{kind: "item", item: assistant("c2", CHILD_REPLY, 2)},
 				{kind: "phase", phase: "ready"},
 			],
