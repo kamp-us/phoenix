@@ -2,7 +2,9 @@
  * Three things a turn owes that only a held-open or refused transport can show: the idempotency key
  * is recorded at the send, so the in-flight retry it exists for is dropped (ruling 2, #7570), a
  * failed `start` leaves a terminal phase on the one stream rather than `starting` (ruling 1), and a
- * model switch reaches the session's own lease rather than opening a second one (#7981).
+ * model switch reaches the session's own lease rather than opening a second one — including the two
+ * arms only a stub can drive, a switch the server refuses and a pick made before any session exists
+ * (#7981).
  *
  * Both turn on *when* a `prompt` or `attach` settles, which is the one thing a real socket does not
  * hand a test, so they run over a stub `PiClientService` — the mapping half alone, no server and no
@@ -55,6 +57,8 @@ interface StubOptions {
 	readonly lockAttach?: boolean;
 	/** The server's `hello` catalog, as `PiClientApi.models` answers it. */
 	readonly catalog?: ReadonlyArray<ModelMetadata>;
+	/** Refuses `set_model`, which is what a session the server will not move meets. */
+	readonly refuseSwitch?: boolean;
 }
 
 /** One catalog row, with everything the layer does not read left at a plausible constant. */
@@ -76,11 +80,16 @@ const stub = (options: StubOptions) =>
 	Effect.gen(function* () {
 		const sends = yield* Ref.make<ReadonlyArray<string>>([]);
 		const switched = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
+		const opens = yield* Ref.make<ReadonlyArray<ModelRef | undefined>>([]);
 		const api: PiClientApi = {
 			connect: Effect.void,
 			reconnect: Effect.void,
 			connected: Effect.succeed(true),
-			createSession: () => Effect.succeed(SESSION),
+			createSession: (_cwd, opened) =>
+				Effect.as(
+					Ref.update(opens, (seen) => [...seen, opened?.model]),
+					SESSION,
+				),
 			attachSession: (sessionId) =>
 				options.lockAttach === true
 					? Effect.fail(new SessionLocked({sessionId, detail: "another connection holds it"}))
@@ -94,10 +103,13 @@ const stub = (options: StubOptions) =>
 					return yield* Effect.never;
 				}),
 			abort: () => Effect.never,
-			setModel: (_sessionId, model) =>
-				Effect.as(
+			setModel: (sessionId, model) =>
+				Effect.flatMap(
 					Ref.update(switched, (seen) => [...seen, model]),
-					{...SNAPSHOT, model},
+					() =>
+						options.refuseSwitch === true
+							? Effect.fail(new SessionLocked({sessionId, detail: "the server refused the switch"}))
+							: Effect.succeed({...SNAPSHOT, model}),
 				),
 			models: Effect.succeed(options.catalog ?? []),
 			snapshots: () => Stream.never,
@@ -107,6 +119,7 @@ const stub = (options: StubOptions) =>
 			layer: Layer.succeed(PiClientService, api),
 			sends: Ref.get(sends),
 			switched: Ref.get(switched),
+			opens: Ref.get(opens),
 		};
 	});
 
@@ -171,6 +184,68 @@ describe("the model switch", () => {
 					[{provider: "anthropic", id: "sonnet"}],
 					"the wire ref carries the provider and the id, never the picker's label",
 				);
+				assert.deepStrictEqual(
+					(yield* buffered(agent.events)).filter((event) => event.kind === "model").at(-1),
+					{
+						kind: "model",
+						current: {provider: "anthropic", id: "sonnet", name: "Sonnet 5"},
+						available: [
+							{provider: "anthropic", id: "opus", name: "Opus 5"},
+							{provider: "anthropic", id: "sonnet", name: "Sonnet 5"},
+						],
+					},
+				);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	it.effect("keeps the session's own model when the server refuses the switch", () =>
+		Effect.gen(function* () {
+			const client = yield* stub({catalog: CATALOG, refuseSwitch: true});
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				// A refused switch is not `ModelUnsupported`, so this resolves rather than failing.
+				yield* agent.setModel({provider: "anthropic", id: "sonnet", name: "Sonnet 5"});
+
+				assert.deepStrictEqual(
+					yield* client.switched,
+					[{provider: "anthropic", id: "sonnet"}],
+					"the switch was attempted; it is the announcement that must not move",
+				);
+				assert.deepStrictEqual(
+					(yield* buffered(agent.events)).filter((event) => event.kind === "model").at(-1),
+					{
+						kind: "model",
+						current: {provider: "anthropic", id: "opus", name: "Opus 5"},
+						available: [
+							{provider: "anthropic", id: "opus", name: "Opus 5"},
+							{provider: "anthropic", id: "sonnet", name: "Sonnet 5"},
+						],
+					},
+				);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	it.effect("holds a pick made before start and opens the next session on it", () =>
+		Effect.gen(function* () {
+			const client = yield* stub({catalog: CATALOG});
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				// No `start` yet. This used to fail `ModelUnsupported` listing the very model it
+				// refused among the available ones (#7981).
+				yield* agent.setModel({provider: "anthropic", id: "sonnet", name: "Sonnet 5"});
+				assert.deepStrictEqual(
+					yield* client.switched,
+					[],
+					"there is no lease to send set_model on before a session exists",
+				);
+
+				yield* agent.start({cwd: CWD});
+				assert.deepStrictEqual(yield* client.opens, [{provider: "anthropic", id: "sonnet"}]);
 				assert.deepStrictEqual(
 					(yield* buffered(agent.events)).filter((event) => event.kind === "model").at(-1),
 					{

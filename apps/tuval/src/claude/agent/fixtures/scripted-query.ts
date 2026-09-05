@@ -59,6 +59,10 @@ export interface ScriptedBehaviour {
 	readonly endsAtOnce?: boolean;
 	/** What `supportedModels()` answers. Absent is a CLI that offers none, which is the old shape. */
 	readonly models?: ReadonlyArray<ModelInfo>;
+	/** A `setModel` the CLI refuses. The call is still recorded, so a test sees it was attempted. */
+	readonly modelSwitchFails?: Error;
+	/** A `supportedModels()` that throws, which is a session with no picker rather than no session. */
+	readonly catalogFails?: Error;
 }
 
 export const scriptedQuery = (
@@ -155,8 +159,12 @@ export const scriptedQuery = (
 		},
 		setModel: async (model?: string) => {
 			record.models.push(model);
+			if (behaviour.modelSwitchFails !== undefined) throw behaviour.modelSwitchFails;
 		},
-		supportedModels: async () => behaviour.models ?? [],
+		supportedModels: async () => {
+			if (behaviour.catalogFails !== undefined) throw behaviour.catalogFails;
+			return behaviour.models ?? [];
+		},
 		close: () => {
 			record.closes += 1;
 			stopped = true;

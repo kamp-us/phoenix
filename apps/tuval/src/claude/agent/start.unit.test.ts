@@ -325,6 +325,48 @@ describe("setModel", () => {
 		),
 	);
 
+	it.effect("keeps the announced model when the CLI refuses the switch", () =>
+		on(
+			{models: CATALOG, modelSwitchFails: new Error("the CLI would not switch")},
+			(agent, scripted) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					// A refused switch is not `ModelUnsupported`, so this resolves rather than failing.
+					yield* agent.setModel({id: "sonnet", name: "Sonnet 5"});
+					assert.deepStrictEqual(
+						scripted.opened[0]?.record.models,
+						["sonnet"],
+						"the switch was attempted; it is the announcement that must not move",
+					);
+					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
+					assert.deepStrictEqual(events[START_EVENTS], {
+						kind: "model",
+						current: null,
+						available: [
+							{id: "opus", name: "Opus 5"},
+							{id: "sonnet", name: "Sonnet 5"},
+						],
+					});
+				}),
+		),
+	);
+
+	it.effect("opens on an empty catalog when the CLI cannot list its models", () =>
+		on({catalogFails: new Error("supportedModels blew up")}, (agent) =>
+			Effect.gen(function* () {
+				// An absent picker is a session you can still prompt, so the open resolves.
+				const session = yield* agent.start({cwd: CWD});
+				assert.strictEqual(session.sessionId, SESSION_ID);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(events[START_EVENTS - 1], {
+					kind: "model",
+					current: null,
+					available: [],
+				});
+			}),
+		),
+	);
+
 	it.effect("refuses a model the CLI's catalog does not offer", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(

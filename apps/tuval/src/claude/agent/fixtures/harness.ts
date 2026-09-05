@@ -107,6 +107,10 @@ export const on = <A, E>(
 			...(harness.deferOpening === undefined ? {} : {deferOpening: harness.deferOpening}),
 			...(harness.endsAtOnce === undefined ? {} : {endsAtOnce: harness.endsAtOnce}),
 			...(harness.models === undefined ? {} : {models: harness.models}),
+			...(harness.modelSwitchFails === undefined
+				? {}
+				: {modelSwitchFails: harness.modelSwitchFails}),
+			...(harness.catalogFails === undefined ? {} : {catalogFails: harness.catalogFails}),
 		});
 		return Effect.gen(function* () {
 			const agent = yield* TuvalAiAgent;
