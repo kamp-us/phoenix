@@ -1,0 +1,10 @@
+{
+	"type": "system",
+	"subtype": "permission_denied",
+	"tool_name": "Bash",
+	"tool_use_id": "toolu_00000000000000000020",
+	"decision_reason_type": "subcommandResults",
+	"message": "Permission to use Bash with command echo denied-please has been denied.",
+	"uuid": "00000000-0000-4000-8000-000000000021",
+	"session_id": "00000000-0000-4000-8000-000000000022"
+}

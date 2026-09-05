@@ -601,8 +601,11 @@ whole exchanges only, and Tuval keeps no second copy.
 
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
-`layer`, `cwd` and the identity. `PiAiAgent.layer` is the first layer to fill it; `ClaudeAiAgent` is
-next ([#7618](https://github.com/kamp-us/phoenix/issues/7618)).
+`layer`, `cwd` and the identity. Two layers fill it today: `PiAiAgent.layer` was the first, and
+`ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) is the second — a
+`Layer<TuvalAiAgent, never, KernelBridge>` over the Claude Agent SDK, never-failing, asking only for
+the kernel-tools bridge the row provides. The `claude-session` row that wires it into the config
+graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
 

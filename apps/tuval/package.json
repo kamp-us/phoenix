@@ -12,17 +12,21 @@
 		"test:integration": "vitest run --project integration"
 	},
 	"dependencies": {
+		"@anthropic-ai/claude-agent-sdk": "catalog:",
+		"@anthropic-ai/sdk": "catalog:",
 		"@demlik/tea": "catalog:",
 		"@earendil-works/pi-ai": "catalog:",
 		"@earendil-works/pi-client": "catalog:",
 		"@earendil-works/pi-coding-agent": "catalog:",
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:tuval",
+		"@modelcontextprotocol/sdk": "catalog:",
 		"effect": "catalog:tuval",
 		"react": "catalog:",
 		"react-dom": "catalog:",
 		"react-resizable-panels": "catalog:",
-		"ws": "catalog:"
+		"ws": "catalog:",
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",

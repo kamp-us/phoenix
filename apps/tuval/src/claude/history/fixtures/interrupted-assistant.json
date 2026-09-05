@@ -1,0 +1,38 @@
+{
+	"type": "assistant",
+	"message": {
+		"model": "claude-opus-5",
+		"id": "msg_00000000000000000023",
+		"type": "message",
+		"role": "assistant",
+		"content": [
+			{
+				"type": "text",
+				"text": "# The Sea\n\n## I. The First Fact\n\nBegin with the arithmetic, because the arithmetic is already strange. The sea covers seventy-one percent of the Earth's surface and holds something like ninety-seven percent of its water. If you were to average the depth of all that water across the whole globe — flattening the mountains, filling the trenches, smoothing the planet into a sphere of uniform stone — the ocean would stand nearly two and a half miles deep over every inch of it. Life on land is not the normal condition of life on this planet. It is a coastal experiment, a thin green fringe on the edge of the actual world.\n\nWe do not think this way, of course. We name the planet Earth, after the smaller part. Our maps place the continents at the center and let the water spill off the margins, and even the word *ocean* carries a faint sense of the peripheral — the thing that surrounds, that lies beyond, that is crossed on the way to somewhere solid. But this is a trick of where our feet happen to be. Seen from any honest distance, the Earth is a water world with some rock showing, and every history we have written is the history of a species clinging to the rim of a vast dark room it has barely entered.\n\n## II. Where It Came From\n\nNobody is entirely sure how the water got here. The inner solar system, where Earth formed, was too hot to hold onto much of it; the young sun would have boiled away the volatiles from any rock that condensed this close in. So the water arrived, most likely, as freight. Comets brought some, though the isotopic signature of cometary ice does not quite match our own. Carbonaceous asteroids from beyond the frost line"
+			}
+		],
+		"stop_reason": null,
+		"stop_sequence": null,
+		"stop_details": null,
+		"usage": {
+			"input_tokens": 2,
+			"cache_creation_input_tokens": 0,
+			"cache_read_input_tokens": 13013,
+			"cache_creation": {
+				"ephemeral_5m_input_tokens": 0,
+				"ephemeral_1h_input_tokens": 0
+			},
+			"output_tokens": 2,
+			"service_tier": "standard",
+			"inference_geo": "not_available"
+		},
+		"diagnostics": null,
+		"context_management": null
+	},
+	"parent_tool_use_id": null,
+	"session_id": "00000000-0000-4000-8000-000000000024",
+	"uuid": "00000000-0000-4000-8000-000000000025",
+	"timestamp": "2026-09-04T18:28:51.840Z",
+	"request_id": "req_00000000000000000026",
+	"aborted": true
+}
