@@ -223,7 +223,11 @@ describe("the AI agent interface over a compiled graph", () => {
 		onGraph(plainReply, (agent, window, seen) =>
 			Effect.gen(function* () {
 				yield* started(agent);
-				yield* window.say(aiAgentPortNames.prompt, {text: "hello", key: "k1"});
+				yield* window.say(aiAgentPortNames.prompt, {
+					text: "hello",
+					key: "k1",
+					timestamp: Date.now(),
+				});
 				yield* eventually("both turn items on the transcript port", () => {
 					const payload = latest(seen(), aiAgentPortNames.transcript) as
 						| TranscriptPayload
@@ -268,7 +272,11 @@ describe("the AI agent interface over a compiled graph", () => {
 		onGraph(permissionTurn, (agent, window, seen) =>
 			Effect.gen(function* () {
 				yield* started(agent);
-				yield* window.say(aiAgentPortNames.prompt, {text: "delete it", key: "k1"});
+				yield* window.say(aiAgentPortNames.prompt, {
+					text: "delete it",
+					key: "k1",
+					timestamp: Date.now(),
+				});
 				const pending = () =>
 					latest(seen(), aiAgentPortNames.permissionPending) as PermissionPayload | undefined;
 				const keys = () => {

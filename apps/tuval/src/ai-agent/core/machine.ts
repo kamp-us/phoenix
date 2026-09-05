@@ -20,7 +20,7 @@ import {
 	startRefused,
 	unknownRequest,
 } from "./failures.ts";
-import {foldEvent, type WindowLimits} from "./fold.ts";
+import {foldEvent, foldItem, promptItem, type WindowLimits} from "./fold.ts";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
@@ -148,6 +148,9 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 							noCmds,
 						],
 
+			// The turn goes onto the tail here, not when a layer reports it back: the message exists
+			// because the operator sent it, and a backend's echo habits are not what a chat window
+			// showing your own message should depend on (#7978).
 			prompt: (state, msg) =>
 				state.phase !== "ready"
 					? [{...state, failure: promptRefused(state.phase)}, noCmds]
@@ -157,6 +160,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								phase: "prompting",
 								lastPrompt: msg.text,
 								interrupted: null,
+								transcript: foldItem(state.transcript, promptItem(msg), limits),
 								failure: null,
 							},
 							[{type: "aiAgent.prompt", text: msg.text, key: msg.key}],

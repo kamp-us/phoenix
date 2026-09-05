@@ -73,6 +73,7 @@ import {
 	afterTheResend,
 	afterTheSecondTurn,
 	OFFERED,
+	RESEND_KEY,
 	SESSION,
 	SWITCHED_TO,
 	TOOL_ITEM,
@@ -340,7 +341,7 @@ const chat = Effect.fn("claudeVertical.chat")(function* (
 	key: string,
 ) {
 	const was = replies(before).length;
-	yield* session.send({type: "prompt", text, key});
+	yield* session.send({type: "prompt", text, key, timestamp: Date.now()});
 	const after = yield* liveWhere(
 		session.seen,
 		`the reply to "${text}"`,
@@ -748,7 +749,12 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 
 									// The third turn writes half a reply and never reports `ready`. Waiting on
 									// the committed item is what makes the stop land inside it.
-									yield* session.send({type: "prompt", text: PROMPT_3, key: "k3"});
+									yield* session.send({
+										type: "prompt",
+										text: PROMPT_3,
+										key: "k3",
+										timestamp: Date.now(),
+									});
 									const cut = yield* liveWhere(
 										session.seen,
 										"the cut turn's half-written reply",
@@ -799,10 +805,15 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 							);
 
 							// Not `chat`: the resend answers the prompt the restart cut, so its turn carries no
-							// user item and the tail must not grow a second copy of `u3`. What one deliberate
-							// send has to produce is one reply, and that is what is waited for.
+							// user item from the layer and the tail must not grow a second copy of `u3`. What
+							// one deliberate send has to produce is one reply, and that is what is waited for.
 							const was = replies(restored).length;
-							yield* session.send({type: "prompt", text: PROMPT_4, key: "k4"});
+							yield* session.send({
+								type: "prompt",
+								text: PROMPT_4,
+								key: RESEND_KEY,
+								timestamp: Date.now(),
+							});
 							const grown = yield* liveWhere(
 								session.seen,
 								`the reply to the resend "${PROMPT_4}"`,
@@ -960,7 +971,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 									tools.handlers.send({
 										process: spawned.process,
 										port: "prompt",
-										payload: {text: CHILD_PROMPT, key: "child-1"},
+										payload: {text: CHILD_PROMPT, key: "child-1", timestamp: Date.now()},
 									}),
 								),
 							) as {readonly delivered: boolean};

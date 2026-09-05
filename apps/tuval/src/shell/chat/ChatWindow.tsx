@@ -70,6 +70,8 @@ export interface ChatWindowOptions {
 	readonly extras?: (state: AiAgentSessionState) => ReactNode;
 	/** Mints one idempotency key per deliberate send (ruling 2, #7570). */
 	readonly newKey?: () => string;
+	/** The clock a send stamps its turn with, so no update cell has to read one (#7978). */
+	readonly now?: () => number;
 	readonly pageLimit?: number;
 	readonly overscan?: number;
 	/** First guess per row, before the row is rendered and measured. */
@@ -88,6 +90,7 @@ export interface ChatWindowOptions {
 interface ResolvedOptions {
 	readonly extras: ((state: AiAgentSessionState) => ReactNode) | null;
 	readonly newKey: () => string;
+	readonly now: () => number;
 	readonly pageLimit: number;
 	readonly overscan: number;
 	readonly estimateRowHeight: number;
@@ -99,6 +102,7 @@ interface ResolvedOptions {
 const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	extras: options.extras ?? null,
 	newKey: options.newKey ?? (() => crypto.randomUUID()),
+	now: options.now ?? (() => Date.now()),
 	pageLimit: options.pageLimit ?? 50,
 	overscan: options.overscan ?? 6,
 	estimateRowHeight: options.estimateRowHeight ?? 72,
@@ -401,7 +405,7 @@ function ChatWindow({
 			composerBridge({
 				initialPhase: phase,
 				onPrompt: (text) => {
-					dispatch({type: "prompt", text, key: options.newKey()});
+					dispatch({type: "prompt", text, key: options.newKey(), timestamp: options.now()});
 					commit((current) => (current.draft === "" ? current : {...current, draft: ""}));
 				},
 				onInterrupt: () => dispatch({type: "interrupt"}),
@@ -409,7 +413,7 @@ function ChatWindow({
 		// `phase` seeds the bridge and is deliberately not a dependency: `AgentChatInput` re-runs its
 		// whole load on a new bridge identity, so a bridge rebuilt per phase would drop the composer
 		// back into `loading` on every turn. The phase reaches it through `setPhase` below instead.
-		[dispatch, commit, options.newKey],
+		[dispatch, commit, options.newKey, options.now],
 	);
 	useEffect(() => composer.setPhase(phase), [composer, phase]);
 
@@ -417,8 +421,8 @@ function ChatWindow({
 	const lastPrompt = state?.lastPrompt ?? null;
 	const resend = useCallback(() => {
 		if (lastPrompt === null) return;
-		dispatch({type: "prompt", text: lastPrompt, key: options.newKey()});
-	}, [dispatch, lastPrompt, options.newKey]);
+		dispatch({type: "prompt", text: lastPrompt, key: options.newKey(), timestamp: options.now()});
+	}, [dispatch, lastPrompt, options.newKey, options.now]);
 
 	const onKeyDown = useCallback(
 		(event: ReactKeyboardEvent<HTMLDivElement>) => {

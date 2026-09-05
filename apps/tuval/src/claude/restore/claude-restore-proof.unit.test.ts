@@ -130,7 +130,11 @@ const handlesOf = (booted: Booted) =>
 
 /** One prompt, sent the way a window sends one: out of the window's own out-port. */
 const say = (window: ProcessHandle, text: string, key: string) =>
-	window.dispatch({type: "say", port: aiAgentPortNames.prompt, payload: {text, key}});
+	window.dispatch({
+		type: "say",
+		port: aiAgentPortNames.prompt,
+		payload: {text, key, timestamp: Date.now()},
+	});
 
 const answerCard = (window: ProcessHandle) =>
 	window.dispatch({

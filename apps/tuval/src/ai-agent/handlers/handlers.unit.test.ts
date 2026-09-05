@@ -210,7 +210,7 @@ describe("the AI agent handlers under a process", () => {
 			Effect.gen(function* () {
 				const handle = yield* spawn;
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(() => sessionOf(handle).transcript.items.length === 2);
 
 				assert.deepStrictEqual(
@@ -250,7 +250,12 @@ describe("the AI agent handlers under a process", () => {
 			Effect.gen(function* () {
 				const handle = yield* spawn;
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "delete it", key: "k1"});
+				yield* handle.dispatch({
+					type: "prompt",
+					text: "delete it",
+					key: "k1",
+					timestamp: Date.now(),
+				});
 				yield* eventually(() => sessionOf(handle).permissions[PERMISSION_REQUEST] !== undefined);
 
 				const pending = lastOn(log, aiAgentPortNames.permissionPending) as PermissionPayload;
@@ -353,7 +358,12 @@ describe("the AI agent handlers under a process", () => {
 				Effect.gen(function* () {
 					const handle = yield* spawn;
 					yield* eventually(() => sessionOf(handle).failure !== null);
-					yield* handle.dispatch({type: "prompt", text: "too early", key: "k1"});
+					yield* handle.dispatch({
+						type: "prompt",
+						text: "too early",
+						key: "k1",
+						timestamp: Date.now(),
+					});
 					assert.deepStrictEqual(
 						[sessionOf(handle).failure?.tag, probe.prompts],
 						["tuval/ai-agent/PromptError", 0],
@@ -369,7 +379,7 @@ describe("the AI agent handlers under a process", () => {
 			Effect.gen(function* () {
 				const handle = yield* spawn;
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(() => sessionOf(handle).failure?.tag === "tuval/ai-agent/TransportError");
 				assert.deepStrictEqual(
 					[sessionOf(handle).failure?.tag, sessionOf(handle).failure?.reason],
@@ -388,7 +398,7 @@ describe("the AI agent handlers under a process", () => {
 			Effect.gen(function* () {
 				const handle = yield* spawn;
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(() => sessionOf(handle).failure?.tag === "tuval/ai-agent/TransportError");
 				const downAt = log.length;
 
@@ -419,7 +429,7 @@ describe("the AI agent handlers under a process", () => {
 			Effect.gen(function* () {
 				const handle = yield* spawn;
 				yield* eventually(() => sessionOf(handle).phase === "ready");
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(() => sessionOf(handle).failure !== null);
 				yield* handle.dispatch({type: "reconnect"});
 				yield* eventually(() => probe.acquired === 2);
@@ -439,7 +449,7 @@ describe("the AI agent handlers under a process", () => {
 				Effect.gen(function* () {
 					const handle = yield* spawn;
 					yield* eventually(() => sessionOf(handle).phase === "ready");
-					yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+					yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 					yield* eventually(() => sessionOf(handle).transcript.items.length === 2);
 					assert.deepStrictEqual(log, []);
 				}),
