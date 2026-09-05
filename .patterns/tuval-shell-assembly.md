@@ -130,8 +130,9 @@ The row carries three optional references (`src/registry/program.ts`): `renderer
 `inspector`, and `status`.
 
 - The two desk renderers take the same `WindowHost` the window renderer takes, so all three are
-  transport-blind and all three read the program's selection state out of the one process the
-  focused window shows.
+  transport-blind and all three are typed at the one process the focused window shows. What each can
+  actually *read* off that host differs, and the next section says how a renderer is written around
+  it.
 - **An inspector renders whatever its surface renders**, so its output is a free `Out`, exactly like
   a window renderer's. **A status renderer returns segments**, a fixed `{id, text, tone?}` list — not
   a bar. That is the ruling as a type: the shell owns the left (the workspace) and the right (kernel
@@ -147,6 +148,32 @@ The row carries three optional references (`src/registry/program.ts`): `renderer
   command row like any other.
 - `src/shell/desk/` imports no socket, no React and nothing from `src/shell/ui/` — its own boundary
   test is the gate, as `src/shell/window/`'s is.
+
+## Writing the two desk renderers: mint them from facts, not from a context
+
+`engine-view` and `ps` are the first consumers of the mechanism above (#7696), and the shape they
+established is the one to copy. **A desk renderer is minted per `DeskSnapshot`, by a factory taking
+the snapshot's rows** — `engineViewInspectorRenderer(processes)`, `psStatusRenderer({processes,
+state})` — and the shell puts the result in the `inspectors` / `statuses` table it composes that
+snapshot with. Two constraints force it, and neither is negotiable:
+
+- **A React context cannot reach the inspector.** A program's window renderer reads the process
+  table through its own provider (`programs/engine-view/ui/desk.tsx`,
+  `programs/ps/source.tsx`), and those are mounted *inside* the program's window. The inspector is a
+  desk-level region beside the tiling area, so no provider of the focused window is above it.
+- **`segments` is synchronous and a host is not.** A `WindowHost` carries one process and reads it
+  as a `Stream`, so a status renderer can read neither the process table nor its own program's
+  committed state off the host. It has to be handed both.
+
+The inspector still uses its host, and for the one thing a host is good for here: the selection,
+read live off `readProcess` through `programs/desk-renderers/selection.ts`. Each program supplies a
+total `SelectionReader` over its own erased state (`engineViewSelection`, `psSelection`) — total
+because the desk holds an `AnyWindowHost` and must not assume the state it finds is that program's.
+
+Everything below the selection is shared: `programs/desk-renderers/` owns the facts
+(`processDetail`), the component that draws them (`ProcessDetailView`) and the two segments both
+programs state. Two programs looking at one Snapshot must not be able to disagree about one
+selection, and one implementation is the only way to guarantee that rather than re-test it.
 
 ## Two error boundaries, and what each one is allowed to cost
 

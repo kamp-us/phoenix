@@ -14,6 +14,7 @@
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "catalog:",
 		"@anthropic-ai/sdk": "catalog:",
+		"@dagrejs/dagre": "catalog:",
 		"@demlik/tea": "catalog:",
 		"@earendil-works/pi-ai": "catalog:",
 		"@earendil-works/pi-client": "catalog:",
@@ -23,6 +24,7 @@
 		"@kampus/design": "workspace:*",
 		"@manti-ui/styles": "catalog:",
 		"@modelcontextprotocol/sdk": "catalog:",
+		"@xyflow/react": "catalog:",
 		"effect": "catalog:tuval",
 		"react": "catalog:",
 		"react-dom": "catalog:",
