@@ -151,6 +151,19 @@ export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerS
 
 		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId),
 
+		// The one handler that reads the committed state rather than folding forward from it: there
+		// is no event to fold, which is the whole point — a restored session's tail and its pending
+		// cards are already in state and nothing else will ever push them out (#7608).
+		"aiAgent.republish": () =>
+			Effect.gen(function* () {
+				const state = yield* readSession;
+				if (state === null) return nothing;
+				yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
+				yield* emit(aiAgentPortNames.permissionPending, pendingOf(state));
+				yield* emit(aiAgentPortNames.modeState, modeStateOf(state));
+				return nothing;
+			}),
+
 		"aiAgent.prompt": (cmd) =>
 			withAgent(
 				(agent) => agent.prompt(cmd.text, cmd.key),

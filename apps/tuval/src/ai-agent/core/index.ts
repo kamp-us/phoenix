@@ -36,7 +36,6 @@ export {
 	lastAssistantId,
 	type ModeState,
 	phases,
-	replyPending,
 	restore,
 	type UsageTotals,
 } from "./state.ts";

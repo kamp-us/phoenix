@@ -155,12 +155,22 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			yield* emit([{kind: "phase", phase: "starting"}]);
 			if (options.resume !== undefined) {
 				yield* emit(script.history.map((item) => ({kind: "item", item}) as const));
+				const resumed = script.resumed ?? [];
+				yield* emit(resumed);
+				yield* Ref.update(state, (previous) => ({
+					...previous,
+					pending: foldPending(previous.pending, resumed),
+				}));
 			}
 			yield* emit([
 				{kind: "mode", current: current.mode, available: script.modes.available},
 				{kind: "phase", phase: "ready"},
 			]);
-			yield* Ref.update(state, (previous) => ({...previous, started: true}));
+			yield* Ref.update(state, (previous) => ({
+				...previous,
+				started: true,
+				...(options.resume === undefined ? {} : {turn: script.resumeAtTurn ?? previous.turn}),
+			}));
 			return {sessionId: script.sessionId};
 		});
 
