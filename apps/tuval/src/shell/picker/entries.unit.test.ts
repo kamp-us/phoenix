@@ -1,5 +1,5 @@
+import {assert, describe, expect, it} from "@effect/vitest";
 import {Effect, Option} from "effect";
-import {describe, expect, it} from "vitest";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
@@ -54,9 +54,9 @@ describe("picker entries", () => {
 		]);
 	});
 
-	it("reads both lists off the live registry and process table", async () => {
-		const answer = await Effect.runPromise(
-			Effect.scoped(
+	it.effect("reads both lists off the live registry and process table", () =>
+		Effect.gen(function* () {
+			const answer = yield* Effect.scoped(
 				Effect.gen(function* () {
 					const harness = yield* pickerHarness([
 						programRow("counter", {label: "Counter"}),
@@ -66,10 +66,16 @@ describe("picker entries", () => {
 					yield* harness.seed("p-9", "indexer");
 					return yield* readEntries.pipe(Effect.provide(harness.layer));
 				}),
-			),
-		);
-		expect(answer.programs.map((entry) => entry.programId)).toEqual([ProgramId.make("counter")]);
-		expect(answer.processes.map((entry) => entry.processId)).toEqual(["p-1"]);
-		expect(flatten(answer)).toHaveLength(2);
-	});
+			);
+			assert.deepStrictEqual(
+				answer.programs.map((entry) => entry.programId),
+				[ProgramId.make("counter")],
+			);
+			assert.deepStrictEqual(
+				answer.processes.map((entry) => entry.processId),
+				["p-1"],
+			);
+			assert.lengthOf(flatten(answer), 2);
+		}),
+	);
 });

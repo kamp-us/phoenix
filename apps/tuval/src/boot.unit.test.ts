@@ -4,8 +4,9 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
-import {Effect} from "effect";
-import {afterEach, describe, expect, it} from "vitest";
+import {assert, describe, it} from "@effect/vitest";
+import {Effect, Schema} from "effect";
+import {afterEach, expect} from "vitest";
 import {boot, coreSpells, defaultGlobalConfig, projectConfig, projectDir} from "./boot.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
 
@@ -111,30 +112,35 @@ const seededProject = (version: string) => {
 	return project;
 };
 
+class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
+
+const io = <A>(run: () => Promise<A>) =>
+	Effect.tryPromise({try: run, catch: (cause) => new TestIo({cause})});
+
 const bootDirect = (global: string, project: string) =>
-	Effect.runPromise(
-		boot({global, project}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
-	);
+	boot({global, project}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
 
 afterEach(() => {
 	for (const dir of tempDirs.splice(0)) rmSync(dir, {recursive: true, force: true});
 });
 
 describe("boot", () => {
-	it("registers the rows the config module exports and reports their count", async () => {
-		const project = freshProject();
-		const {report} = await bootDirect(fixture("two-rows"), project);
-		expect(report).toEqual({
-			sources: [fixture("two-rows")],
-			programCount: 2,
-			spellCount: CORE_SPELLS,
-			bindingCount: 0,
-			bindingErrors: [],
-			stateDir: projectDir(project),
-			processCount: 0,
-			restoredCount: 0,
-		});
-	});
+	it.effect("registers the rows the config module exports and reports their count", () =>
+		Effect.gen(function* () {
+			const project = freshProject();
+			const {report} = yield* bootDirect(fixture("two-rows"), project);
+			assert.deepStrictEqual(report, {
+				sources: [fixture("two-rows")],
+				programCount: 2,
+				spellCount: CORE_SPELLS,
+				bindingCount: 0,
+				bindingErrors: [],
+				stateDir: projectDir(project),
+				processCount: 0,
+				restoredCount: 0,
+			});
+		}),
+	);
 
 	it("exits on its own when the config plans no process", () => {
 		const project = freshProject();
@@ -208,26 +214,27 @@ describe("boot", () => {
 		spawnBudget(2),
 	);
 
-	it(
+	it.effect(
 		"restores every checkpointed process from the project's state through Demlik's fileStore",
-		async () => {
-			const project = seededProject("1.0.0");
-			const {report} = await bootDirect(fixture("one-counter"), project);
-			expect(report).toMatchObject({processCount: 1, restoredCount: 1});
-			const result = await runUntilRunning([
-				"--config",
-				fixture("one-counter"),
-				"--project",
-				project,
-			]);
-			expect(result.status).toBe(0);
-			expect(result.stdout).toContain(
-				`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${projectDir(project)}\n`,
-			);
-			expect(result.stdout).toContain(
-				"tuval: process p-1 program=counter parent=- ports=- state=running@0\n",
-			);
-		},
+		() =>
+			Effect.gen(function* () {
+				const project = seededProject("1.0.0");
+				const {report} = yield* bootDirect(fixture("one-counter"), project);
+				assert.strictEqual(report.processCount, 1);
+				assert.strictEqual(report.restoredCount, 1);
+				const result = yield* io(() =>
+					runUntilRunning(["--config", fixture("one-counter"), "--project", project]),
+				);
+				assert.strictEqual(result.status, 0);
+				assert.include(
+					result.stdout,
+					`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${projectDir(project)}\n`,
+				);
+				assert.include(
+					result.stdout,
+					"tuval: process p-1 program=counter parent=- ports=- state=running@0\n",
+				);
+			}),
 		spawnBudget(1),
 	);
 

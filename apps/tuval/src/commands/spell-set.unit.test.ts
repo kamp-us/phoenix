@@ -15,8 +15,8 @@
  * several yields and a second writer always gets its window.
  */
 
+import {assert, describe, it} from "@effect/vitest";
 import {Effect, Schema} from "effect";
-import {describe, expect, it} from "vitest";
 import {type BindingSource, type CompiledBindings, compileBindings} from "./bindings/index.ts";
 import {buildRegistry, type RegistryTable, SpellRegistry} from "./registry.ts";
 import {type AnySpell, defineSpell, renderPath, type SpellPath} from "./spell.ts";
@@ -96,13 +96,11 @@ const withSet = <A, E>(
 		readonly set: SpellSet["Service"];
 		readonly registry: SpellRegistry["Service"];
 	}) => Effect.Effect<A, E>,
-): Promise<A> =>
-	Effect.runPromise(
-		Effect.all({set: SpellSet, registry: SpellRegistry}, {concurrency: 1}).pipe(
-			Effect.flatMap(body),
-			Effect.provide(SpellSet.layer(input)),
-			Effect.orDie,
-		),
+): Effect.Effect<A> =>
+	Effect.all({set: SpellSet, registry: SpellRegistry}, {concurrency: 1}).pipe(
+		Effect.flatMap(body),
+		Effect.provide(SpellSet.layer(input)),
+		Effect.orDie,
 	);
 
 /**
@@ -114,131 +112,139 @@ const distinct = (states: ReadonlyArray<SpellSetState>): ReadonlyArray<SpellSetS
 	states.filter((state, index) => state !== states[index - 1]);
 
 /** Fails unless a state's bindings are what its own table and sources compile to. */
-const expectWhole = (state: SpellSetState): Promise<void> =>
-	Effect.runPromise(
-		Effect.map(recompile(state.table, state.keys), (fresh) => {
-			expect(state.bindings).toEqual(fresh);
+const expectWhole = (state: SpellSetState): Effect.Effect<void> =>
+	Effect.map(recompile(state.table, state.keys), (fresh) => {
+		assert.deepStrictEqual(state.bindings, fresh);
+	});
+
+describe("SpellSet.read", () => {
+	it.effect("returns the table, its sources and their bindings as one generation", () =>
+		Effect.gen(function* () {
+			const state = yield* withSet(gen0.input, ({set}) => set.read);
+			yield* expectWhole(state);
+			assert.deepStrictEqual(paths(state.table), [gen0.path]);
+			assert.deepStrictEqual(keysOf(state), [gen0.source.file]);
+			assert.deepStrictEqual(boundKeys(state), gen0.keys);
 		}),
 	);
 
-describe("SpellSet.read", () => {
-	it("returns the table, its sources and their bindings as one generation", async () => {
-		const state = await withSet(gen0.input, ({set}) => set.read);
-		await expectWhole(state);
-		expect(paths(state.table)).toEqual([gen0.path]);
-		expect(keysOf(state)).toEqual([gen0.source.file]);
-		expect(boundKeys(state)).toEqual(gen0.keys);
-	});
+	it.effect("never returns a table beside bindings compiled from another generation", () =>
+		Effect.gen(function* () {
+			const seen = yield* withSet(gen0.input, ({set}) =>
+				Effect.gen(function* () {
+					const observations: Array<SpellSetState> = [];
+					const read = Effect.gen(function* () {
+						for (let round = 0; round < 200; round++) {
+							observations.push(yield* set.read);
+							yield* Effect.yieldNow;
+						}
+					});
+					yield* Effect.all([read, read, set.reload(gen1.input)], {concurrency: "unbounded"});
+					return observations;
+				}),
+			);
 
-	it("never returns a table beside bindings compiled from another generation", async () => {
-		const seen = await withSet(gen0.input, ({set}) =>
-			Effect.gen(function* () {
-				const observations: Array<SpellSetState> = [];
-				const read = Effect.gen(function* () {
-					for (let round = 0; round < 200; round++) {
-						observations.push(yield* set.read);
-						yield* Effect.yieldNow;
-					}
-				});
-				yield* Effect.all([read, read, set.reload(gen1.input)], {concurrency: "unbounded"});
-				return observations;
-			}),
-		);
-
-		for (const state of distinct(seen)) {
-			await expectWhole(state);
-			// A generation is the pair, so both halves must name the same one and every binding it
-			// declares must have compiled — a table beside another generation's source compiles to
-			// no bindings at all.
-			const which = keysOf(state).at(0) === gen0.source.file ? gen0 : gen1;
-			expect(paths(state.table)).toEqual([which.path]);
-			expect(boundKeys(state)).toEqual(which.keys);
-		}
-		expect(keysOf(seen[0] as SpellSetState)).toEqual([gen0.source.file]);
-		expect(keysOf(seen.at(-1) as SpellSetState)).toEqual([gen1.source.file]);
-	});
+			for (const state of distinct(seen)) {
+				yield* expectWhole(state);
+				// A generation is the pair, so both halves must name the same one and every binding it
+				// declares must have compiled — a table beside another generation's source compiles to
+				// no bindings at all.
+				const which = keysOf(state).at(0) === gen0.source.file ? gen0 : gen1;
+				assert.deepStrictEqual(paths(state.table), [which.path]);
+				assert.deepStrictEqual(boundKeys(state), which.keys);
+			}
+			assert.deepStrictEqual(keysOf(seen[0] as SpellSetState), [gen0.source.file]);
+			assert.deepStrictEqual(keysOf(seen.at(-1) as SpellSetState), [gen1.source.file]);
+		}),
+	);
 });
 
 describe("SpellSet.reload", () => {
-	it("installs the fresh table and the freshly compiled bindings together", async () => {
-		const [before, after] = await withSet(gen0.input, ({set}) =>
-			Effect.gen(function* () {
-				const first = yield* set.read;
-				yield* set.reload(gen1.input);
-				return [first, yield* set.read] as const;
-			}),
-		);
+	it.effect("installs the fresh table and the freshly compiled bindings together", () =>
+		Effect.gen(function* () {
+			const [before, after] = yield* withSet(gen0.input, ({set}) =>
+				Effect.gen(function* () {
+					const first = yield* set.read;
+					yield* set.reload(gen1.input);
+					return [first, yield* set.read] as const;
+				}),
+			);
 
-		expect(paths(before.table)).toEqual([gen0.path]);
-		expect(boundKeys(before)).toEqual(gen0.keys);
-		expect(paths(after.table)).toEqual([gen1.path]);
-		expect(keysOf(after)).toEqual([gen1.source.file]);
-		expect(boundKeys(after)).toEqual(gen1.keys);
-		await expectWhole(after);
-	});
+			assert.deepStrictEqual(paths(before.table), [gen0.path]);
+			assert.deepStrictEqual(boundKeys(before), gen0.keys);
+			assert.deepStrictEqual(paths(after.table), [gen1.path]);
+			assert.deepStrictEqual(keysOf(after), [gen1.source.file]);
+			assert.deepStrictEqual(boundKeys(after), gen1.keys);
+			yield* expectWhole(after);
+		}),
+	);
 });
 
 describe("SpellRegistry over the set", () => {
-	it("reads the installed generation after a reload", async () => {
-		const answers = await withSet(gen0.input, ({set, registry}) =>
-			Effect.gen(function* () {
-				const missing = yield* Effect.flip(registry.lookup(["window", gen1.name]));
-				yield* set.reload(gen1.input);
-				return {
-					missing: missing.path,
-					found: renderPath((yield* registry.lookup(["window", gen1.name])).path),
-					gone: (yield* Effect.flip(registry.lookup(["window", gen0.name]))).path,
-					listed: (yield* registry.list).map((row) => renderPath(row.path)),
-					described: (yield* registry.describe).map((one) => one.path.join(".")),
-				};
-			}),
-		);
+	it.effect("reads the installed generation after a reload", () =>
+		Effect.gen(function* () {
+			const answers = yield* withSet(gen0.input, ({set, registry}) =>
+				Effect.gen(function* () {
+					const missing = yield* Effect.flip(registry.lookup(["window", gen1.name]));
+					yield* set.reload(gen1.input);
+					return {
+						missing: missing.path,
+						found: renderPath((yield* registry.lookup(["window", gen1.name])).path),
+						gone: (yield* Effect.flip(registry.lookup(["window", gen0.name]))).path,
+						listed: (yield* registry.list).map((row) => renderPath(row.path)),
+						described: (yield* registry.describe).map((one) => one.path.join(".")),
+					};
+				}),
+			);
 
-		expect(answers.missing).toBe(gen1.path);
-		expect(answers.found).toBe(gen1.path);
-		expect(answers.gone).toBe(gen0.path);
-		expect(answers.listed).toEqual([gen1.path]);
-		expect(answers.described).toEqual([gen1.path]);
-	});
+			assert.strictEqual(answers.missing, gen1.path);
+			assert.strictEqual(answers.found, gen1.path);
+			assert.strictEqual(answers.gone, gen0.path);
+			assert.deepStrictEqual(answers.listed, [gen1.path]);
+			assert.deepStrictEqual(answers.described, [gen1.path]);
+		}),
+	);
 
-	it("loses no update when two swaps and a reload race", async () => {
-		const tableA = await Effect.runPromise(tableOf(genA));
-		const tableB = await Effect.runPromise(tableOf(genB));
+	it.effect("loses no update when two swaps and a reload race", () =>
+		Effect.gen(function* () {
+			const tableA = yield* tableOf(genA);
+			const tableB = yield* tableOf(genB);
 
-		const {observations, final} = await withSet(gen0.input, ({set, registry}) =>
-			Effect.gen(function* () {
-				const seen: Array<SpellSetState> = [];
-				const read = Effect.gen(function* () {
-					for (let round = 0; round < 200; round++) {
-						seen.push(yield* set.read);
-						yield* Effect.yieldNow;
-					}
-				});
-				// The reload goes first on purpose. `swap` carries the sources forward, so the only
-				// update it can drop belongs to a writer that changes them, and it drops that one
-				// only by reading before that write and storing after it. Starting the reload ahead
-				// of the swaps puts its write inside their compiles, which is that window exactly.
-				yield* Effect.all(
-					[set.reload(gen1.input), registry.swap(tableA), registry.swap(tableB), read],
-					{concurrency: "unbounded"},
-				);
-				return {observations: seen, final: yield* set.read};
-			}),
-		);
+			const {observations, final} = yield* withSet(gen0.input, ({set, registry}) =>
+				Effect.gen(function* () {
+					const seen: Array<SpellSetState> = [];
+					const read = Effect.gen(function* () {
+						for (let round = 0; round < 200; round++) {
+							seen.push(yield* set.read);
+							yield* Effect.yieldNow;
+						}
+					});
+					// The reload goes first on purpose. `swap` carries the sources forward, so the only
+					// update it can drop belongs to a writer that changes them, and it drops that one
+					// only by reading before that write and storing after it. Starting the reload ahead
+					// of the swaps puts its write inside their compiles, which is that window exactly.
+					yield* Effect.all(
+						[set.reload(gen1.input), registry.swap(tableA), registry.swap(tableB), read],
+						{concurrency: "unbounded"},
+					);
+					return {observations: seen, final: yield* set.read};
+				}),
+			);
 
-		expect(keysOf(final)).toEqual([gen1.source.file]);
-		await expectWhole(final);
-		expect([[genA.path], [genB.path], [gen1.path]]).toContainEqual(paths(final.table));
+			assert.deepStrictEqual(keysOf(final), [gen1.source.file]);
+			yield* expectWhole(final);
+			assert.deepInclude([[genA.path], [genB.path], [gen1.path]], paths(final.table));
 
-		// No reader ever walks back either: once the reload's sources are installed nothing
-		// reinstates the generation they replaced, and every state on the way is whole.
-		let reloaded = false;
-		for (const state of distinct(observations)) {
-			await expectWhole(state);
-			const isReloaded = keysOf(state).at(0) === gen1.source.file;
-			expect(isReloaded || !reloaded).toBe(true);
-			reloaded ||= isReloaded;
-		}
-		expect(reloaded).toBe(true);
-	});
+			// No reader ever walks back either: once the reload's sources are installed nothing
+			// reinstates the generation they replaced, and every state on the way is whole.
+			let reloaded = false;
+			for (const state of distinct(observations)) {
+				yield* expectWhole(state);
+				const isReloaded = keysOf(state).at(0) === gen1.source.file;
+				assert.isTrue(isReloaded || !reloaded);
+				reloaded ||= isReloaded;
+			}
+			assert.isTrue(reloaded);
+		}),
+	);
 });
