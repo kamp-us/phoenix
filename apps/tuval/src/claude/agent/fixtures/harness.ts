@@ -12,7 +12,7 @@ import {KernelBridge} from "../../tools/index.ts";
 import {ClaudeAiAgent} from "../ClaudeAiAgent.ts";
 import type {ClaudeAiAgentOptions} from "../options.ts";
 import type {SpawnClaudeCodeProcess} from "../subprocess.ts";
-import {type ScriptedSdk, scriptedSdk} from "./scripted-query.ts";
+import {type ScriptedBehaviour, type ScriptedSdk, scriptedSdk} from "./scripted-query.ts";
 
 export const CWD = "/tmp/tuval-capture";
 export const SESSION_ID = "00000000-0000-4000-8000-000000000001";
@@ -25,8 +25,17 @@ export const MODES: ReadonlyArray<Mode> = [
 	Mode.make("plan"),
 ];
 
-/** `start` emits: starting, the init's ready phase, the init's usage, then the mode list. */
-export const START_EVENTS = 4;
+/** What `start` itself emits: starting, the handshake's ready phase, then the mode list. */
+export const START_EVENTS = 3;
+
+/**
+ * Those three plus the `system`/`init` frame's own two — its ready phase and the model it names.
+ *
+ * The two are no longer part of `start`: the frame belongs to the first turn (`sdk.d.ts`), so on a
+ * scripted run whose `opening` begins with `init` the pump emits them just after, and a test that
+ * wants the turn behind them counts from here.
+ */
+export const OPENED_EVENTS = START_EVENTS + 2;
 
 export const messages = (name: Parameters<typeof loadFixture>[0]): ReadonlyArray<SDKMessage> =>
 	loadFixture(name) as ReadonlyArray<SDKMessage>;
@@ -37,7 +46,11 @@ export const message = (name: Parameters<typeof loadFixture>[0]): SDKMessage =>
 export const rows = (): ReadonlyArray<SessionMessage> =>
 	loadFixture("session-messages") as ReadonlyArray<SessionMessage>;
 
-export interface HarnessOptions {
+export interface HarnessOptions extends ScriptedBehaviour {
+	/**
+	 * What the query puts on its stream. Empty by default, because a real session says nothing until
+	 * a turn starts — a test that wants the `init` frame names it.
+	 */
 	readonly opening?: ReadonlyArray<SDKMessage>;
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	readonly readFails?: Error;
@@ -69,6 +82,9 @@ const buildOptions = (harness: HarnessOptions, scripted: ScriptedSdk): ClaudeAiA
 	modes: harness.modes ?? MODES,
 	allowedTools: harness.allowedTools ?? [],
 	sdk: scripted.sdk,
+	// Pinned rather than random so the id the layer opens under is the one the captured `init`
+	// fixtures name, which is what lets a test read the two as one session.
+	newSessionId: () => SESSION_ID,
 	...(harness.model === undefined ? {} : {model: harness.model}),
 	...(harness.spawn === undefined ? {} : {spawn: harness.spawn}),
 });
@@ -83,10 +99,12 @@ export const on = <A, E>(
 ): Effect.Effect<A, E> =>
 	Effect.suspend(() => {
 		const scripted = scriptedSdk({
-			opening: harness.opening ?? [message("init")],
+			opening: harness.opening ?? [],
 			...(harness.rows === undefined ? {} : {rows: harness.rows}),
 			...(harness.readFails === undefined ? {} : {readFails: harness.readFails}),
 			...(harness.version === undefined ? {} : {version: harness.version}),
+			...(harness.deferOpening === undefined ? {} : {deferOpening: harness.deferOpening}),
+			...(harness.endsAtOnce === undefined ? {} : {endsAtOnce: harness.endsAtOnce}),
 		});
 		return Effect.gen(function* () {
 			const agent = yield* TuvalAiAgent;

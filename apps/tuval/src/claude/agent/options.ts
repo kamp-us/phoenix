@@ -38,6 +38,11 @@ export interface ClaudeAiAgentOptions {
 	readonly sdk?: AgentSdk;
 	/** Absent leaves the SDK's own local spawn, which is what runs the `claude` on `PATH`. */
 	readonly spawn?: SpawnClaudeCodeProcess;
+	/**
+	 * The id a fresh session opens under. Absent mints a v4 UUID, which is what a run does; a test
+	 * pins it so the scripted `init` frame and the id the layer opened on name one session.
+	 */
+	readonly newSessionId?: () => string;
 }
 
 /** The modes this row actually offers, in the order it named them, minus the two never offered. */
@@ -80,9 +85,21 @@ export const sessionEnv = (
 	USER: base.USER === undefined || base.USER.length === 0 ? username() : base.USER,
 });
 
+/**
+ * Which session one `query()` opens, as the one shape that cannot name both.
+ *
+ * The SDK refuses the pair: `sessionId` "cannot be used with `continue` or `resume` unless
+ * `forkSession` is also set" (`sdk.d.ts`, `Options.sessionId`), and this layer never forks. A
+ * `fresh` id goes to the CLI as its own `--session-id`, which is what gives the session an id
+ * before the first turn; a `resume` id is the id the CLI already stored, and goes to `resume`.
+ */
+export type SessionChoice =
+	| {readonly kind: "fresh"; readonly sessionId: string}
+	| {readonly kind: "resume"; readonly sessionId: string};
+
 export interface QueryOptionsInput {
 	readonly cwd: string;
-	readonly resume?: string | undefined;
+	readonly session: SessionChoice;
 	readonly server: TuvalToolServer;
 	readonly canUseTool: NonNullable<Options["canUseTool"]>;
 	readonly env: Record<string, string | undefined>;
@@ -103,9 +120,11 @@ export const queryOptionsOf = (
 		mcpServers: servers,
 		canUseTool: input.canUseTool,
 		env: input.env,
+		...(input.session.kind === "fresh"
+			? {sessionId: input.session.sessionId}
+			: {resume: input.session.sessionId}),
 		// `exactOptionalPropertyTypes` refuses an explicit `undefined` on an optional field, so an
 		// absent option stays absent rather than being forwarded as one.
-		...(input.resume === undefined ? {} : {resume: input.resume}),
 		...(options.model === undefined ? {} : {model: options.model}),
 		...(input.spawn === undefined ? {} : {spawnClaudeCodeProcess: input.spawn}),
 	};

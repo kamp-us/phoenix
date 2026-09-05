@@ -11,7 +11,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Option, Stream} from "effect";
 import {DENIED_MESSAGE} from "./cards.ts";
 import {fakeSpawn} from "./fixtures/fake-spawn.ts";
-import {CWD, message, onScripted, START_EVENTS, settled} from "./fixtures/harness.ts";
+import {CWD, onScripted, START_EVENTS, settled} from "./fixtures/harness.ts";
 import {scriptedSdk} from "./fixtures/scripted-query.ts";
 
 const options = (spawn: ReturnType<typeof fakeSpawn>) => ({spawn: spawn.spawn});
@@ -20,7 +20,7 @@ describe("closing the Scope", () => {
 	it.effect("calls Query.close exactly once and kills the subprocess", () =>
 		Effect.gen(function* () {
 			const spawn = fakeSpawn();
-			const scripted = scriptedSdk({opening: [message("init")]});
+			const scripted = scriptedSdk({opening: []});
 			yield* onScripted(options(spawn), scripted, (agent) => agent.start({cwd: CWD}));
 			assert.lengthOf(spawn.spawns, 1);
 			assert.strictEqual(scripted.opened[0]?.record.closes, 1);
@@ -31,7 +31,7 @@ describe("closing the Scope", () => {
 	it.effect("closes once even when the run already asked for a second session", () =>
 		Effect.gen(function* () {
 			const spawn = fakeSpawn();
-			const scripted = scriptedSdk({opening: [message("init")]});
+			const scripted = scriptedSdk({opening: []});
 			yield* onScripted(options(spawn), scripted, (agent) =>
 				Effect.gen(function* () {
 					yield* agent.start({cwd: CWD});
@@ -49,7 +49,7 @@ describe("closing the Scope", () => {
 	it.effect("resolves every parked permission as denied, so nothing stays blocked", () =>
 		Effect.gen(function* () {
 			const spawn = fakeSpawn();
-			const scripted = scriptedSdk({opening: [message("init")]});
+			const scripted = scriptedSdk({opening: []});
 			let parked: Promise<unknown> | null = null;
 			yield* onScripted(options(spawn), scripted, (agent) =>
 				Effect.gen(function* () {
@@ -80,7 +80,7 @@ describe("a subprocess that goes before its turn produced a result", () => {
 	it.effect("fails the stream with a TransportError naming the exit", () =>
 		Effect.gen(function* () {
 			const spawn = fakeSpawn();
-			const scripted = scriptedSdk({opening: [message("init")]});
+			const scripted = scriptedSdk({opening: []});
 			const exit = yield* onScripted(options(spawn), scripted, (agent) =>
 				Effect.gen(function* () {
 					yield* agent.start({cwd: CWD});
@@ -104,7 +104,7 @@ describe("a subprocess that goes before its turn produced a result", () => {
 	it.effect("does not respawn: one spawn, one query, and no second open", () =>
 		Effect.gen(function* () {
 			const spawn = fakeSpawn();
-			const scripted = scriptedSdk({opening: [message("init")]});
+			const scripted = scriptedSdk({opening: []});
 			yield* onScripted(options(spawn), scripted, (agent) =>
 				Effect.gen(function* () {
 					yield* agent.start({cwd: CWD});
@@ -122,7 +122,7 @@ describe("a subprocess that goes before its turn produced a result", () => {
 	it.effect("ends the stream cleanly when the turn had already settled", () =>
 		Effect.gen(function* () {
 			const spawn = fakeSpawn();
-			const scripted = scriptedSdk({opening: [message("init")]});
+			const scripted = scriptedSdk({opening: []});
 			const exit = yield* onScripted(options(spawn), scripted, (agent) =>
 				Effect.gen(function* () {
 					yield* agent.start({cwd: CWD});

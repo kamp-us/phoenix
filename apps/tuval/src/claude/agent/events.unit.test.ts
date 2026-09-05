@@ -9,7 +9,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {Effect, Stream} from "effect";
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {Mode} from "../../ai-agent/ports/index.ts";
-import {CWD, MODES, messages, on, START_EVENTS, settled} from "./fixtures/harness.ts";
+import {CWD, MODES, messages, OPENED_EVENTS, on, settled} from "./fixtures/harness.ts";
 
 /**
  * The tool turn's four frames after `init`, folded: the call opens `running`, its answer settles it
@@ -24,11 +24,13 @@ describe("events over a captured tool turn", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				const events = yield* Stream.runCollect(
-					Stream.take(agent.events, START_EVENTS + TURN_EVENTS),
+					Stream.take(agent.events, OPENED_EVENTS + TURN_EVENTS),
 				);
 				assert.deepStrictEqual(
 					events.map((event) => event.kind),
-					["phase", "phase", "usage", "mode", "item", "item", "item", "usage"],
+					// The start's own three, then the first turn's `init` — its ready phase and the
+					// model it names — and then the turn itself.
+					["phase", "phase", "mode", "phase", "usage", "item", "item", "item", "usage"],
 				);
 			}),
 		),
@@ -39,7 +41,7 @@ describe("events over a captured tool turn", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				const events = yield* Stream.runCollect(
-					Stream.take(agent.events, START_EVENTS + TURN_EVENTS),
+					Stream.take(agent.events, OPENED_EVENTS + TURN_EVENTS),
 				);
 				const tools = events.flatMap((event: AgentEvent) =>
 					event.kind === "item" && event.item.kind === "tool" ? [event.item] : [],
@@ -60,9 +62,9 @@ describe("events over a captured tool turn", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				const events = yield* Stream.runCollect(
-					Stream.take(agent.events, START_EVENTS + TURN_EVENTS),
+					Stream.take(agent.events, OPENED_EVENTS + TURN_EVENTS),
 				);
-				const usage = events[START_EVENTS + TURN_EVENTS - 1];
+				const usage = events[OPENED_EVENTS + TURN_EVENTS - 1];
 				assert.strictEqual(usage?.kind, "usage");
 				assert.strictEqual(usage?.kind === "usage" ? usage.model : "", "claude-fable-5-1");
 			}),
@@ -76,7 +78,7 @@ describe("every kind rides the one stream", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				const turn = yield* Stream.runCollect(
-					Stream.take(agent.events, START_EVENTS + TURN_EVENTS),
+					Stream.take(agent.events, OPENED_EVENTS + TURN_EVENTS),
 				);
 				const ask = scripted.opened[0]?.record.options.canUseTool as CanUseTool;
 				const pending = ask(
@@ -98,8 +100,9 @@ describe("every kind rides the one stream", () => {
 					[
 						"phase",
 						"phase",
-						"usage",
 						"mode",
+						"phase",
+						"usage",
 						"item",
 						"item",
 						"item",

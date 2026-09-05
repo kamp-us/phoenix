@@ -3,7 +3,7 @@
  *
  * Every message the scripted `Query` replays is a golden fixture captured from a real run
  * (`../history/fixtures/PROVENANCE.md`): the `Options` object is ours to assert, but the frames the
- * layer reads to find the session id are not something a test may invent.
+ * layer folds are not something a test may invent.
  */
 
 import {assert, describe, it} from "@effect/vitest";
@@ -13,7 +13,9 @@ import {TUVAL_SERVER_NAME, wireNameOf} from "../tools/index.ts";
 import {
 	CWD,
 	MODES,
+	message,
 	messages,
+	OPENED_EVENTS,
 	on,
 	rows,
 	SESSION_ID,
@@ -47,7 +49,7 @@ const failure = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?: st
 		: {};
 
 describe("start opens one streaming query", () => {
-	it.effect("resolves the session id the init frame named", () =>
+	it.effect("resolves the session id it opened the query under", () =>
 		on({}, (agent) =>
 			Effect.gen(function* () {
 				const session = yield* agent.start({cwd: CWD});
@@ -95,9 +97,18 @@ describe("start opens one streaming query", () => {
 		),
 	);
 
-	it.effect("logs the SDK pin beside the CLI version the init frame named", () =>
+	it.effect("logs the SDK pin beside the CLI version, once the init frame names one", () =>
 		Effect.gen(function* () {
-			const lines = yield* logged(on({version: "9.9.9-test"}, (agent) => agent.start({cwd: CWD})));
+			const lines = yield* logged(
+				on({version: "9.9.9-test", opening: [message("init")]}, (agent) =>
+					Effect.gen(function* () {
+						yield* agent.start({cwd: CWD});
+						// The pair rides the `init` frame, which belongs to the first turn rather than to
+						// the open, so the line lands only once the pump has read it.
+						yield* Stream.runCollect(Stream.take(agent.events, OPENED_EVENTS));
+					}),
+				),
+			);
 			// `claude_code_version` off the captured `init` fixture, which is a real run's frame.
 			const line = lines.find((each) => each.includes("SDK 9.9.9-test"));
 			assert.isDefined(line);
@@ -106,14 +117,13 @@ describe("start opens one streaming query", () => {
 		}),
 	);
 
-	it.effect("emits starting, the init's own events, then the mode list", () =>
+	it.effect("emits starting, the handshake's ready phase, then the mode list", () =>
 		on({modes: MODES}, (agent) =>
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS)), [
 					{kind: "phase", phase: "starting"},
 					{kind: "phase", phase: "ready"},
-					{kind: "usage", model: "claude-fable-5-1", inputTokens: 0, outputTokens: 0, cost: 0},
 					// The opening mode, not the layer's raw held `null`: nothing has called `setMode`, so
 					// what the query opened on is the row's own `permissionMode` (#7828).
 					{kind: "mode", current: Mode.make("default"), available: MODES},
@@ -135,6 +145,76 @@ describe("start opens one streaming query", () => {
 				});
 			}),
 		),
+	);
+});
+
+describe("start against a CLI that says nothing until the first prompt", () => {
+	// The defect this shape exists for (#7962): in streaming-input mode `init` is a turn's frame, the
+	// machine refuses a prompt outside `ready`, and an open that waited for `init` was waiting for
+	// the prompt only a ready session could send.
+	const withheld = {opening: [message("init")], deferOpening: true} as const;
+
+	it.effect("reaches ready with no prompt sent", () =>
+		on(withheld, (agent, scripted) =>
+			Effect.gen(function* () {
+				const session = yield* agent.start({cwd: CWD});
+				assert.strictEqual(session.sessionId, SESSION_ID);
+				assert.lengthOf(scripted.opened[0]?.record.prompts ?? [], 0);
+				assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS)), [
+					{kind: "phase", phase: "starting"},
+					{kind: "phase", phase: "ready"},
+					{kind: "mode", current: Mode.make("default"), available: MODES},
+				]);
+			}),
+		),
+	);
+
+	it.effect("opens the query under the id it hands back, which is the CLI's own", () =>
+		on(withheld, (agent, scripted) =>
+			Effect.gen(function* () {
+				const session = yield* agent.start({cwd: CWD});
+				assert.strictEqual(scripted.opened[0]?.record.options.sessionId, session.sessionId);
+				// The two cannot ride one query (`sdk.d.ts`, `Options.sessionId`).
+				assert.isUndefined(scripted.opened[0]?.record.options.resume);
+			}),
+		),
+	);
+
+	it.effect("records the session id and the CLI version once the init frame arrives", () =>
+		Effect.gen(function* () {
+			const lines = yield* logged(
+				on(withheld, (agent) =>
+					Effect.gen(function* () {
+						yield* agent.start({cwd: CWD});
+						yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+						yield* agent.prompt("hello");
+						assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, 2)), [
+							{kind: "phase", phase: "ready"},
+							{
+								kind: "usage",
+								model: "claude-fable-5-1",
+								inputTokens: 0,
+								outputTokens: 0,
+								cost: 0,
+							},
+						]);
+					}),
+				),
+			);
+			const line = lines.find((each) => each.includes(SESSION_ID));
+			assert.isDefined(line);
+			assert.include(line ?? "", "CLI 2.1.259");
+		}),
+	);
+
+	it.effect("fails the start when the query ends before its handshake comes back", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				on({...withheld, endsAtOnce: true}, (agent) => agent.start({cwd: CWD})),
+			);
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/StartError");
+			assert.strictEqual(failure(exit).reason, "transport");
+		}),
 	);
 });
 

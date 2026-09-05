@@ -41,11 +41,27 @@ export interface QueryRecord {
 	readonly child: SpawnedProcess | null;
 }
 
+/** How a scripted query behaves at the two seams a real one has: the handshake and the first turn. */
+export interface ScriptedBehaviour {
+	/**
+	 * `true` withholds `opening` until the first user message is written, which is what the real CLI
+	 * does in streaming-input mode — `init` is "session metadata the CLI emits at the start of each
+	 * turn" (`sdk.d.ts`), and there is no turn before a prompt.
+	 */
+	readonly deferOpening?: boolean;
+	/**
+	 * `true` ends the query the moment it is opened, as a subprocess that died on spawn does — which
+	 * takes the handshake down with it, exactly as tearing a real query down does.
+	 */
+	readonly endsAtOnce?: boolean;
+}
+
 export const scriptedQuery = (
 	params: {readonly prompt: AsyncIterable<SDKUserMessage>; readonly options: Options},
 	opening: ReadonlyArray<SDKMessage>,
+	behaviour: ScriptedBehaviour = {},
 ): ScriptedQuery => {
-	const buffered: Array<SDKMessage> = [...opening];
+	const buffered: Array<SDKMessage> = behaviour.deferOpening === true ? [] : [...opening];
 	let waiting: ((message: SDKMessage | null) => void) | null = null;
 	let stopped = false;
 
@@ -68,11 +84,16 @@ export const scriptedQuery = (
 		child,
 	};
 
-	// The operator's turns are read off the input iterable exactly as the SDK reads them, so a test
-	// asserts what `prompt` actually sent rather than what it meant to send.
-	void (async () => {
-		for await (const message of params.prompt) record.prompts.push(message);
-	})();
+	// The `initialize` control request, as a promise settled the way the SDK settles it: it comes
+	// back on connect, and tearing the query down rejects it along with every other pending control
+	// request (`sdk.mjs`, `performCleanup`). The `catch` is the SDK's own guard against an unhandled
+	// rejection on a query nobody asked the handshake of.
+	let refuseHandshake: ((cause: unknown) => void) | null = null;
+	const handshake = new Promise<unknown>((resolve, reject) => {
+		if (behaviour.endsAtOnce !== true) resolve({commands: [], agents: [], models: []});
+		refuseHandshake = reject;
+	});
+	handshake.catch(() => {});
 
 	const deliver = (message: SDKMessage | null): void => {
 		const waiter = waiting;
@@ -83,6 +104,16 @@ export const scriptedQuery = (
 		waiting = null;
 		waiter(message);
 	};
+
+	// The operator's turns are read off the input iterable exactly as the SDK reads them, so a test
+	// asserts what `prompt` actually sent rather than what it meant to send.
+	void (async () => {
+		for await (const message of params.prompt) {
+			const first = record.prompts.length === 0;
+			record.prompts.push(message);
+			if (first && behaviour.deferOpening === true) for (const frame of opening) deliver(frame);
+		}
+	})();
 
 	const next = (): Promise<SDKMessage | null> => {
 		const held = buffered.shift();
@@ -104,7 +135,11 @@ export const scriptedQuery = (
 		}
 	}
 
+	const abandonHandshake = (): void =>
+		refuseHandshake?.(new Error("Query closed before response received"));
+
 	const query: ScriptedQuery = Object.assign(stream(), {
+		initializationResult: () => handshake,
 		interrupt: async () => {
 			record.interrupts += 1;
 			return undefined;
@@ -116,16 +151,19 @@ export const scriptedQuery = (
 			record.closes += 1;
 			stopped = true;
 			child?.kill("SIGTERM");
+			abandonHandshake();
 			deliver(null);
 		},
 		say: (message: SDKMessage) => deliver(message),
 		stop: () => {
 			stopped = true;
+			abandonHandshake();
 			deliver(null);
 		},
 		record,
 	});
 
+	if (behaviour.endsAtOnce === true) query.stop();
 	return query;
 };
 
@@ -137,8 +175,8 @@ export interface ScriptedSdk {
 	readonly reads: Array<{sessionId: string; dir: string | undefined}>;
 }
 
-export interface ScriptedSdkOptions {
-	/** The messages a fresh `query()` replays before the layer stops reading, ending with `init`. */
+export interface ScriptedSdkOptions extends ScriptedBehaviour {
+	/** The messages a fresh `query()` puts on its stream, in order. */
 	readonly opening: ReadonlyArray<SDKMessage>;
 	/** What `getSessionMessages` answers. Absent answers an empty session, which is the resume miss. */
 	readonly rows?: ReadonlyArray<SessionMessage>;
@@ -156,7 +194,7 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 		sdk: {
 			version: options.version ?? "0.0.0-scripted",
 			query: (params) => {
-				const query = scriptedQuery(params, options.opening);
+				const query = scriptedQuery(params, options.opening, options);
 				opened.push(query);
 				return query;
 			},
