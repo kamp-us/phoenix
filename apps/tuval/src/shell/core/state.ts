@@ -13,6 +13,7 @@
  * a restored desk keeps minting where it left off.
  */
 
+import {type DeskState, isDeskState} from "../desk/state.ts";
 import {isLayoutTree, type LayoutTree, type WindowId, windows} from "../layout/index.ts";
 import {isViewState, type ViewState} from "../window/host.ts";
 
@@ -56,6 +57,8 @@ export interface ShellState {
 	readonly order: readonly WorkspaceId[];
 	readonly activeWorkspace: WorkspaceId;
 	readonly views: Readonly<Record<WindowId, ViewState>>;
+	/** Desk-level surfaces, held beside the workspaces so a switch leaves them alone (#7500 ruling 4). */
+	readonly desk: DeskState;
 	readonly prefix: PrefixSnapshot;
 	/** The next mint. Every id the shell hands out is `<kind>-<n>` for one `n`, spent once. */
 	readonly nextId: number;
@@ -100,6 +103,7 @@ export const isShellState = (value: unknown): value is ShellState =>
 	typeof value.activeWorkspace === "string" &&
 	isRecord(value.views) &&
 	Object.values(value.views).every(isViewState) &&
+	isDeskState(value.desk) &&
 	isPrefixSnapshot(value.prefix) &&
 	typeof value.nextId === "number";
 

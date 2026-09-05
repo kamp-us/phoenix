@@ -58,6 +58,7 @@ const emptyDesk = (): ShellState => ({
 	order: ["workspace-0"],
 	activeWorkspace: "workspace-0",
 	views: {},
+	desk: {inspectorOpen: false},
 	prefix: {armed: false},
 	nextId: 2,
 });
@@ -79,6 +80,7 @@ const twoWindowDesk = (): ShellState => ({
 	order: ["workspace-0"],
 	activeWorkspace: "workspace-0",
 	views: {},
+	desk: {inspectorOpen: false},
 	prefix: {armed: false},
 	nextId: 3,
 });

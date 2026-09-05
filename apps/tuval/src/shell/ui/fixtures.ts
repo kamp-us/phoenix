@@ -5,6 +5,7 @@
 
 import type {ShellState, Workspace} from "../core/index.ts";
 import {disarmed} from "../core/index.ts";
+import {initialDesk} from "../desk/state.ts";
 import {createStack, createTree, createWindow, type LayoutTree} from "../layout/index.ts";
 import {WindowId} from "../window/index.ts";
 
@@ -32,6 +33,7 @@ export const deskWith = (layout: LayoutTree, focused = "window-1"): ShellState =
 		order: [workspace.id],
 		activeWorkspace: workspace.id,
 		views: {},
+		desk: initialDesk,
 		prefix: disarmed,
 		nextId: 4,
 	};

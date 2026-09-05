@@ -134,6 +134,12 @@ export const shellCommands: ReadonlyArray<AnyShellCommand> = [
 		toMsg: () => ({type: "workspace.step", direction: "next"}),
 	}),
 	defineCommand({
+		path: ["desk", "inspector-toggle"],
+		describe: "Show or hide the desk inspector beside the tiling area.",
+		params: noParams,
+		toMsg: () => ({type: "desk.inspector.toggle"}),
+	}),
+	defineCommand({
 		path: ["command", "open"],
 		describe: "Open the command line.",
 		params: noParams,

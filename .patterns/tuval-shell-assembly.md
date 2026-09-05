@@ -121,6 +121,33 @@ as `unknown`.
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.
 
+## A program declares three renderers; the shell composes two of them
+
+A program never draws outside its own window (#7500 ruling 4). The two surfaces outside it — the
+desk inspector beside the tiling area, and the middle of the status bar — are therefore renderers a
+program *declares* and the shell composes from the Snapshot, never regions a program pushes into.
+The row carries three optional references (`src/registry/program.ts`): `renderer` for its window,
+`inspector`, and `status`.
+
+- The two desk renderers take the same `WindowHost` the window renderer takes, so all three are
+  transport-blind and all three read the program's selection state out of the one process the
+  focused window shows.
+- **An inspector renders whatever its surface renders**, so its output is a free `Out`, exactly like
+  a window renderer's. **A status renderer returns segments**, a fixed `{id, text, tone?}` list — not
+  a bar. That is the ruling as a type: the shell owns the left (the workspace) and the right (kernel
+  facts) because `statusFor` derives them itself and a program's segments can only ever arrive in
+  `middle` (#7500 ruling 5).
+- `inspectorFor` and `statusFor` (`src/shell/desk/compose.ts`) walk one chain — focused window → its
+  process → its program row → the reference it declares → the renderer that reference names — and
+  answer with a value on every step that does not resolve (`DeskEmptyReason`). A region is never a
+  hole and never a throw; the surface renders its placeholder and reads nothing else.
+- **The inspector's open/collapsed flag is desk state, not workspace state**: it lives on
+  `ShellState.desk` (`src/shell/desk/state.ts`), so a workspace switch leaves it exactly as it was.
+  `desk.inspector.toggle` is the one Msg that writes it, reachable from the `desk:inspector-toggle`
+  command row like any other.
+- `src/shell/desk/` imports no socket, no React and nothing from `src/shell/ui/` — its own boundary
+  test is the gate, as `src/shell/window/`'s is.
+
 ## `pnpm dev` is one process
 
 `src/bin.ts` boots the kernel, calls `serveDesk` (ephemeral port, a launch token minted in memory),
