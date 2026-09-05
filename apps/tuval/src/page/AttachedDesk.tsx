@@ -85,7 +85,7 @@ export function AttachedDesk({
 	const source = useCallback<DeskSource>(
 		(emit) => {
 			emit({_tag: "Attached"} satisfies AttachEvent);
-			const fiber = Effect.runFork(
+			const snapshots = Effect.runFork(
 				Stream.runForEach(shell.readProcess, (view) =>
 					Effect.sync(() =>
 						emit(
@@ -96,9 +96,18 @@ export function AttachedDesk({
 					),
 				),
 			);
-			return () => void Effect.runFork(Fiber.interrupt(fiber));
+			// The grammar rides the same machine as the snapshot, so a drop keeps both (ADR 0353).
+			const keys = Effect.runFork(
+				Stream.runForEach(page.keys, (table) =>
+					Effect.sync(() => emit({_tag: "Keys", table} satisfies AttachEvent)),
+				),
+			);
+			return () => {
+				Effect.runFork(Fiber.interrupt(snapshots));
+				Effect.runFork(Fiber.interrupt(keys));
+			};
 		},
-		[shell],
+		[shell, page],
 	);
 	const attachment = useDeskAttachment(source);
 	const desk = attachment.desk;
@@ -182,7 +191,9 @@ export function AttachedDesk({
 
 	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
 
-	if (desk === null) {
+	// The grammar gates the desk beside the snapshot: a surface routing keys over a table nobody sent
+	// it is the thing ADR 0353 took away, so it waits for one exactly as it waits for a desk.
+	if (desk === null || attachment.table === null) {
 		return (
 			<div className="tuval-surface" data-scheme="dark">
 				<p className="tuval-placeholder" role="status">
@@ -200,6 +211,7 @@ export function AttachedDesk({
 			dispatch={dispatch}
 			resolveMount={resolveMount}
 			entries={entries}
+			table={attachment.table}
 			reducedMotion={reducedMotion}
 		/>
 	);

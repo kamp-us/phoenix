@@ -24,6 +24,7 @@ import {
 } from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
+import {defaultPrefixTable} from "../keys/index.ts";
 import type {ProcessView} from "../window/host.ts";
 import {attach} from "./client.ts";
 import {PlacementUnsupported} from "./errors.ts";
@@ -134,6 +135,7 @@ const served = Effect.fn("test.served")(function* (
 	const server = yield* serve({
 		token,
 		port: 0,
+		table: defaultPrefixTable,
 		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
 	return {...built, token, server};
@@ -208,6 +210,7 @@ describe("the page-to-kernel transport", () => {
 				const server = yield* serve({
 					token: mintLaunchToken(),
 					port: 0,
+					table: defaultPrefixTable,
 					handles: (id) =>
 						Effect.sync(() =>
 							id === shellProcess
@@ -359,6 +362,19 @@ describe("the page-to-kernel transport", () => {
 						[shellProgramId, shellProgramId, "tuval/shell"],
 					],
 				);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a page is sent the key grammar the kernel serves, over a real socket and back through JSON",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const told = yield* Stream.runHead(attached.keys);
+				// Value-equal, not the same object: it crossed as JSON and its `Duration` was rebuilt.
+				assert.deepStrictEqual(Option.getOrNull(told), defaultPrefixTable);
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

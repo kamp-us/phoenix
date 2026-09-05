@@ -15,12 +15,17 @@
  * it, and the reference naming its renderer — and nothing a running process holds: no state, no Msg,
  * no private vocabulary. A page that reads it learns what it may spawn and which renderer a program
  * asks for, and still learns every process's state as `unknown` (#7788).
+ *
+ * The `keys` frame is the one thing here that is neither state nor catalog: it is the grammar the
+ * page routes over, and the page may route over no other
+ * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
  */
 
-import {Option} from "effect";
+import {Duration, Option} from "effect";
 import type {Lifecycle, ProcessId} from "../../process/process.ts";
 import type {ProgramId, RendererKind, RendererRef} from "../../registry/program.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
+import {type Binding, CommandName, type PrefixTable} from "../keys/table.ts";
 import type {UndecodableReason} from "./errors.ts";
 
 export const ATTACH_KIND = "tuval/transport/attach/v1";
@@ -32,6 +37,7 @@ export const PROCESS_STATE_KIND = "tuval/transport/process-state/v1";
 export const ATTACH_REFUSED_KIND = "tuval/transport/attach-refused/v1";
 export const DISPATCHED_KIND = "tuval/transport/dispatched/v1";
 export const REGISTRY_KIND = "tuval/transport/registry/v1";
+export const KEYS_KIND = "tuval/transport/keys/v1";
 
 /** Attach to one process: from here its state arrives as `process-state` frames for as long as it lives. */
 export interface AttachFrame {
@@ -130,12 +136,36 @@ export interface RegistryFrame {
 	readonly programs: ReadonlyArray<WireProgram>;
 }
 
+/** One binding as JSON. `command` is a branded string, so only its type is erased. */
+export interface WireBinding {
+	readonly sequence: string;
+	readonly command: string;
+	readonly repeatable: boolean;
+}
+
+/** The prefix table as JSON: `repeatTimeout`'s `Duration` is milliseconds, and nothing else changes. */
+export interface WirePrefixTable {
+	readonly prefix: string;
+	readonly repeatTimeoutMs: number;
+	readonly bindings: ReadonlyArray<WireBinding>;
+}
+
+/**
+ * The grammar the kernel routes keys against, sent as the socket opens. A later frame replaces the
+ * table rather than amending it, the same way the catalog is replaced whole.
+ */
+export interface KeysFrame {
+	readonly kind: typeof KEYS_KIND;
+	readonly table: WirePrefixTable;
+}
+
 export type ServerFrame =
 	| TableFrame
 	| ProcessStateFrame
 	| AttachRefusedFrame
 	| DispatchedFrame
-	| RegistryFrame;
+	| RegistryFrame
+	| KeysFrame;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null;
@@ -245,6 +275,23 @@ export const isRegistryFrame = (value: unknown): value is RegistryFrame =>
 	Array.isArray(value.programs) &&
 	value.programs.every(isWireProgram);
 
+export const isWireBinding = (value: unknown): value is WireBinding =>
+	isRecord(value) &&
+	typeof value.sequence === "string" &&
+	typeof value.command === "string" &&
+	typeof value.repeatable === "boolean";
+
+export const isWirePrefixTable = (value: unknown): value is WirePrefixTable =>
+	isRecord(value) &&
+	typeof value.prefix === "string" &&
+	typeof value.repeatTimeoutMs === "number" &&
+	Number.isFinite(value.repeatTimeoutMs) &&
+	Array.isArray(value.bindings) &&
+	value.bindings.every(isWireBinding);
+
+export const isKeysFrame = (value: unknown): value is KeysFrame =>
+	isRecord(value) && value.kind === KEYS_KIND && isWirePrefixTable(value.table);
+
 /** Decoded, or the one reason it was not. A refusal is a value: the caller decides what to close. */
 export type Decoded<F> =
 	| {readonly _tag: "Frame"; readonly frame: F}
@@ -291,8 +338,22 @@ export const decodeClientFrame: (text: string) => Decoded<ClientFrame> = decodeW
 );
 
 export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeWith<ServerFrame>(
-	new Set([TABLE_KIND, PROCESS_STATE_KIND, ATTACH_REFUSED_KIND, DISPATCHED_KIND, REGISTRY_KIND]),
-	[isTableFrame, isProcessStateFrame, isAttachRefusedFrame, isDispatchedFrame, isRegistryFrame],
+	new Set([
+		TABLE_KIND,
+		PROCESS_STATE_KIND,
+		ATTACH_REFUSED_KIND,
+		DISPATCHED_KIND,
+		REGISTRY_KIND,
+		KEYS_KIND,
+	]),
+	[
+		isTableFrame,
+		isProcessStateFrame,
+		isAttachRefusedFrame,
+		isDispatchedFrame,
+		isRegistryFrame,
+		isKeysFrame,
+	],
 );
 
 export const encodeFrame = (frame: ClientFrame | ServerFrame): string => JSON.stringify(frame);
@@ -317,4 +378,31 @@ export const tableFrame = (event: TableEvent): TableFrame => ({
 	kind: TABLE_KIND,
 	event: event.kind,
 	row: toWireRow(event.row),
+});
+
+export const toWirePrefixTable = (table: PrefixTable): WirePrefixTable => ({
+	prefix: table.prefix,
+	repeatTimeoutMs: Duration.toMillis(table.repeatTimeout),
+	bindings: table.bindings.map((binding) => ({
+		sequence: binding.sequence,
+		command: binding.command,
+		repeatable: binding.repeatable,
+	})),
+});
+
+export const fromWirePrefixTable = (table: WirePrefixTable): PrefixTable => ({
+	prefix: table.prefix,
+	repeatTimeout: Duration.millis(table.repeatTimeoutMs),
+	bindings: table.bindings.map(
+		(binding): Binding => ({
+			sequence: binding.sequence,
+			command: CommandName.make(binding.command),
+			repeatable: binding.repeatable,
+		}),
+	),
+});
+
+export const keysFrame = (table: PrefixTable): KeysFrame => ({
+	kind: KEYS_KIND,
+	table: toWirePrefixTable(table),
 });

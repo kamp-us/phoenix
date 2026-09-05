@@ -8,9 +8,10 @@
  * core runs it too and answers with Cmds — but Cmds are the kernel's, and the transport carries no
  * Cmd frame (`../transport/wire.ts`): a page learns state, never instructions. So the two effects
  * a *surface* owns — opening the command line and forwarding a key into the focused window's
- * renderer — have to be derived here. They cannot disagree with the core, because both call the one
- * pure `route` over the one `PrefixTable` — an argument, not a guard, which is
- * [#7781](https://github.com/kamp-us/phoenix/issues/7781).
+ * renderer — are derived here, deliberately
+ * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)). Both sides call
+ * the one pure `route`, and the `PrefixTable` they call it over is one table because the kernel
+ * sends it; that they answer alike is held by `./key-agreement.unit.test.ts`, not by argument.
  */
 
 import {Duration} from "effect";

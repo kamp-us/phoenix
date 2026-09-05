@@ -15,6 +15,10 @@
  *
  * The catalog of windowed programs goes out the same way: read off the registry as the socket opens,
  * and re-read on `publishRegistry`, never held as a snapshot taken when the server started (#7788).
+ *
+ * The prefix table goes out first of all, ahead of the catalog and the rows. It is the one thing
+ * here that is not state: it is the grammar the page routes keys over, and the page routes over no
+ * other ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
  */
 
 import type {IncomingMessage} from "node:http";
@@ -26,6 +30,7 @@ import type {ProcessChange, ProcessHandle, ProcessId} from "../../process/proces
 import {type AnyProgram, programLabel} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
+import type {PrefixTable} from "../keys/table.ts";
 import {showsInAWindow} from "../picker/entries.ts";
 import {checkHandshake, launchUrl, loopbackOrigins} from "./handshake.ts";
 import {
@@ -34,6 +39,7 @@ import {
 	DISPATCHED_KIND,
 	decodeClientFrame,
 	encodeFrame,
+	keysFrame,
 	PROCESS_STATE_KIND,
 	type ProcessStateFrame,
 	REGISTRY_KIND,
@@ -58,6 +64,12 @@ export interface ServeOptions {
 	readonly port: number;
 	readonly host?: string;
 	readonly handles: Handles;
+	/**
+	 * The key grammar the kernel routes against, sent to every page as its socket opens. Required
+	 * rather than defaulted: a page routes over this table and no other (ADR 0353), so a server that
+	 * guessed one would be inventing the grammar the ruling took away from the page.
+	 */
+	readonly table: PrefixTable;
 }
 
 export interface TransportServer {
@@ -168,7 +180,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	const catalogLock = yield* Semaphore.make(1);
 	yield* Effect.forkScoped(
 		server.run((socket) =>
-			Effect.scoped(session(socket, options.handles, pages, catalogLock)).pipe(
+			Effect.scoped(session(socket, options.handles, options.table, pages, catalogLock)).pipe(
 				Effect.provideContext(services),
 			),
 		),
@@ -194,6 +206,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 const session = Effect.fn("Tuval.transport.session")(function* (
 	socket: Socket.Socket,
 	handles: Handles,
+	keyTable: PrefixTable,
 	pages: Attached,
 	catalogLock: Semaphore.Semaphore,
 ) {
@@ -324,6 +337,9 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 		);
 		yield* Semaphore.withPermit(catalogLock)(
 			Effect.gen(function* () {
+				// The grammar first: a page that has been told nothing routes nothing, so every frame
+				// after this one reaches a surface that can already answer a key (ADR 0353).
+				yield* send(keysFrame(keyTable));
 				yield* send(registryFrame(yield* registry.list));
 				for (const row of yield* tablePort.rows) {
 					yield* send({kind: TABLE_KIND, event: "spawned", row: toWireRow(row)});

@@ -66,6 +66,7 @@ function Harness({initial, sent, resolveMount = boundEverywhere}: HarnessProps):
 			}}
 			resolveMount={resolveMount}
 			entries={entries}
+			table={defaultPrefixTable}
 		/>
 	);
 }
@@ -406,6 +407,7 @@ function DecodedHarness({
 			}}
 			resolveMount={boundEverywhere}
 			entries={entries}
+			table={defaultPrefixTable}
 		/>
 	);
 }

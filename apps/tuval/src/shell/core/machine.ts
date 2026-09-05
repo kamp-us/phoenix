@@ -59,28 +59,46 @@ import {
 } from "./state.ts";
 
 /**
- * What the core asks its host to do. The absence is the point: there is no stop-a-process arm, so
- * closing a window cannot end the process it was showing — a window is a view onto a process, and
- * the last view closing says nothing about the process's lifetime.
- *
- * `openProgram` and `attachProcess` are the picker's (`../picker/open.ts` runs both): spawning
- * needs the registry and the process table, which a pure reducer cannot reach, so the core names
- * the window and the thing to show in it and stops there.
+ * The arms the kernel's own `HostHandlers` answer (`../host/effects.ts`). `openProgram` and
+ * `attachProcess` are the picker's (`../picker/open.ts` runs both): spawning needs the registry and
+ * the process table, which a pure reducer cannot reach, so the core names the window and the thing
+ * to show in it and stops there. `forwardKey` is here too — a key belongs to the focused window's
+ * *process*, and delivering it is a dispatch into that process. `runCommand` and `reloadConfig`
+ * have no runner yet and are still the kernel's: resolving a name the command table does not hold
+ * needs the spell registry, and `Booted.reload` sits above the kernel (#7743).
  */
-export type ShellCmd =
+export type KernelCmd =
 	| {
 			readonly type: "forwardKey";
 			readonly processId: string;
 			readonly windowId: WindowId;
 			readonly key: string;
 	  }
-	| {readonly type: "startRepeatTimer"; readonly timeoutMs: number}
-	| {readonly type: "cancelRepeatTimer"}
 	| {readonly type: "runCommand"; readonly name: CommandName}
 	| {readonly type: "openProgram"; readonly windowId: WindowId; readonly programId: string}
 	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
-	| {readonly type: "openCommandLine"}
 	| {readonly type: "reloadConfig"};
+
+/**
+ * The arms no kernel handler can answer, which the browser surface answers instead: the command
+ * line is a page element, and a handler returns its follow-up Msgs rather than holding a dispatcher
+ * it could fire a timer through. Cmds do not cross the transport, so the page derives these for
+ * itself by running the key router a second time over the table the kernel sent it — deliberate
+ * duplication, held by a test rather than by an argument
+ * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
+ */
+export type PageCmd =
+	| {readonly type: "startRepeatTimer"; readonly timeoutMs: number}
+	| {readonly type: "cancelRepeatTimer"}
+	| {readonly type: "openCommandLine"};
+
+/**
+ * What the core asks its host to do, as the two halves that answer it. The absence is the point:
+ * there is no stop-a-process arm, so closing a window cannot end the process it was showing — a
+ * window is a view onto a process, and the last view closing says nothing about the process's
+ * lifetime. A ninth arm joins `KernelCmd` or `PageCmd`; there is nowhere else to put one.
+ */
+export type ShellCmd = KernelCmd | PageCmd;
 
 /**
  * Every Msg the shell core takes. `windowId` and `workspaceId` are optional wherever the focused

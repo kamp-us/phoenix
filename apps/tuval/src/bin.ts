@@ -19,6 +19,7 @@ import {boot, defaultGlobalConfig} from "./boot.ts";
 import {renderBindingErrors} from "./commands/bindings/index.ts";
 import {servePage} from "./page/dev-server.ts";
 import {serveDesk} from "./shell/host/index.ts";
+import {defaultPrefixTable} from "./shell/keys/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
 
@@ -90,7 +91,9 @@ const tuval = Command.make(
 
 		// The socket first: the page is handed its URL, so the transport has to be bound before the
 		// dev server that will answer with it.
-		const transport = yield* serveDesk({kernel, port: 0});
+		// The default is the shell row's too, because nothing passes `shellProgram` a table yet; a
+		// config that does would reach only the row, which is #7890.
+		const transport = yield* serveDesk({kernel, port: 0, table: defaultPrefixTable});
 		yield* Console.log(`tuval: transport on 127.0.0.1:${transport.port}`);
 		if (noPage) {
 			yield* Console.log("tuval: no page served (--no-page)");
