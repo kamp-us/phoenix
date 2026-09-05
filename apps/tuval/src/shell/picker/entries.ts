@@ -10,7 +10,12 @@
 
 import {Effect} from "effect";
 import type {ProcessId} from "../../process/process.ts";
-import {type AnyProgram, type ProgramId, programLabel} from "../../registry/program.ts";
+import {
+	type AnyProgram,
+	type ProgramId,
+	programLabel,
+	type RendererRef,
+} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
 import type {TableRow} from "../../table/row.ts";
@@ -40,8 +45,16 @@ export interface PickerEntries {
 
 export const noEntries: PickerEntries = {programs: [], processes: []};
 
-/** Can this row show in a window at all? The whole headless test, in one place. */
-export const showsInAWindow = (row: AnyProgram): boolean => row.renderer !== undefined;
+/**
+ * Can this row show in a window at all? The whole headless test, in one place. A type predicate, so
+ * a caller that filters with it holds rows whose `renderer` is present to the checker too — the
+ * transport's catalog builds a wire program off exactly that (`../transport/server.ts`).
+ */
+export const showsInAWindow = (row: AnyProgram): row is WindowedProgram =>
+	row.renderer !== undefined;
+
+/** A registry row that declares a renderer: what `showsInAWindow` admits. */
+export type WindowedProgram = AnyProgram & {readonly renderer: RendererRef};
 
 export const programEntries = (rows: ReadonlyArray<AnyProgram>): ReadonlyArray<ProgramEntry> =>
 	rows.filter(showsInAWindow).map((row) => ({

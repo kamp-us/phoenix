@@ -25,6 +25,7 @@ export {
 } from "./handshake.ts";
 export {
 	type Handles,
+	registryFrame,
 	type ServeOptions,
 	type SocketSession,
 	serve,
@@ -47,12 +48,17 @@ export {
 	decodeServerFrame,
 	encodeFrame,
 	fromWireRow,
+	isRegistryFrame,
+	isWireProgram,
 	PROCESS_STATE_KIND,
 	type ProcessStateFrame,
+	REGISTRY_KIND,
+	type RegistryFrame,
 	type ServerFrame,
 	TABLE_KIND,
 	type TableFrame,
 	tableFrame,
 	toWireRow,
+	type WireProgram,
 	type WireRow,
 } from "./wire.ts";

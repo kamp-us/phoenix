@@ -15,25 +15,22 @@ import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {ProcessId} from "../process/process.ts";
+import type {ProgramId} from "../registry/program.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
 import {windows} from "../shell/layout/index.ts";
 import type {PickerEntries} from "../shell/picker/index.ts";
-import type {AttachedProcess, PageAttachment} from "../shell/transport/index.ts";
-import type {
-	AttachEvent,
-	DeskSource,
-	MountResolver,
-	ReactWindowRenderer,
-} from "../shell/ui/index.ts";
+import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/index.ts";
+import type {AttachEvent, DeskSource, MountResolver} from "../shell/ui/index.ts";
 import {boundMount, Desk, noRenderer, useDeskAttachment} from "../shell/ui/index.ts";
-import {empty, processGone, type ViewState} from "../shell/window/index.ts";
+import type {AnyWindowRenderer} from "../shell/window/index.ts";
+import {empty, processGone, resolverFromTable, type ViewState} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
 
 export interface AttachedDeskProps {
 	readonly page: PageAttachment;
 	readonly shell: AttachedProcess<unknown, ShellMsg>;
-	/** One React renderer per program id — `./renderers.tsx` says why the key is the program. */
-	readonly renderers: ReadonlyMap<string, ReactWindowRenderer>;
+	/** One renderer per `RendererRef.ref` — `./renderers.tsx` says why the key is the reference. */
+	readonly renderers: Readonly<Record<string, AnyWindowRenderer>>;
 	readonly reducedMotion: boolean;
 }
 
@@ -51,13 +48,19 @@ const shownProcesses = (state: ShellState): ReadonlySet<string> => {
 };
 
 /**
- * What the picker can offer this page. The programs section is empty and says so, because the
- * process-table wire carries rows and no registry listing — a page cannot enumerate what it could
- * spawn, only what is already running. Opening by name still works through
- * `prefix : window:open <program>`, which needs no list.
+ * What the picker can offer this page: the kernel's windowed programs as they arrived on the
+ * registry frame, and the processes already running. The headless test is not repeated here — a row
+ * that cannot fill a window never crosses the wire (`../shell/transport/server.ts`).
  */
-const entriesFrom = (rows: ReadonlyMap<ProcessId, TableRow>): PickerEntries => ({
-	programs: [],
+const entriesFrom = (
+	rows: ReadonlyMap<ProcessId, TableRow>,
+	catalog: ReadonlyMap<ProgramId, WireProgram>,
+): PickerEntries => ({
+	programs: [...catalog.values()].map((program) => ({
+		_tag: "Program" as const,
+		programId: program.programId,
+		label: program.label,
+	})),
 	processes: [...rows.values()].map((row) => ({
 		_tag: "Process" as const,
 		processId: row.id,
@@ -74,6 +77,7 @@ export function AttachedDesk({
 	reducedMotion,
 }: AttachedDeskProps): ReactElement {
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
+	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
 	const [attached, setAttached] = useState<ReadonlyMap<string, AttachedProcess>>(new Map());
 	/** Ids an attach has already been started for; a second window must not open a second socket read. */
 	const asked = useRef(new Set<string>());
@@ -109,6 +113,15 @@ export function AttachedDesk({
 	}, [page]);
 
 	useEffect(() => {
+		const fiber = Effect.runFork(
+			Stream.runForEach(page.programs, (next) =>
+				Effect.sync(() => setCatalog(new Map(next.map((program) => [program.programId, program])))),
+			),
+		);
+		return () => void Effect.runFork(Fiber.interrupt(fiber));
+	}, [page]);
+
+	useEffect(() => {
 		if (desk === null) return;
 		for (const processId of shownProcesses(desk)) {
 			if (asked.current.has(processId)) continue;
@@ -132,6 +145,7 @@ export function AttachedDesk({
 	);
 
 	const views = desk?.views ?? {};
+	const resolveRenderer = useMemo(() => resolverFromTable(renderers), [renderers]);
 	const resolveMount = useCallback<MountResolver>(
 		(windowId, processId) => {
 			if (processId === null) return empty;
@@ -139,8 +153,14 @@ export function AttachedDesk({
 			const row = rows.get(id);
 			const process = attached.get(processId);
 			if (row === undefined || process === undefined) return processGone(id);
-			const render = renderers.get(row.programId);
-			if (render === undefined) return noRenderer(id, "this page has no renderer for its program");
+			const program = catalog.get(row.programId);
+			if (program === undefined) {
+				return noRenderer(id, `program ${row.programId} declares no window renderer`);
+			}
+			const resolved = resolveRenderer(program.renderer);
+			if (resolved._tag !== "Resolved") {
+				return noRenderer(id, `this page answers to no renderer named ${program.renderer.ref}`);
+			}
 			return boundMount(
 				{
 					windowId,
@@ -151,13 +171,13 @@ export function AttachedDesk({
 					setView: (next: ViewState) =>
 						Effect.sync(() => dispatch({type: "window.setView", windowId, view: next})),
 				},
-				render,
+				resolved.renderer.render,
 			);
 		},
-		[rows, attached, renderers, views, dispatch],
+		[rows, attached, catalog, resolveRenderer, views, dispatch],
 	);
 
-	const entries = useMemo(() => entriesFrom(rows), [rows]);
+	const entries = useMemo(() => entriesFrom(rows, catalog), [rows, catalog]);
 
 	if (desk === null) {
 		return (

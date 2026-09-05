@@ -21,6 +21,7 @@ import {
 	encodeFrame,
 	fromWireRow,
 	PROCESS_STATE_KIND,
+	REGISTRY_KIND,
 	type ServerFrame,
 	TABLE_KIND,
 	tableFrame,
@@ -63,6 +64,17 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 	},
 	{kind: DISPATCHED_KIND, seq: 4, result: {_tag: "Delivered"}},
 	{kind: DISPATCHED_KIND, seq: 5, result: {_tag: "ProcessGone", processId: processId("counter")}},
+	{
+		kind: REGISTRY_KIND,
+		programs: [
+			{
+				programId: "counter" as ProgramId,
+				label: "Counter",
+				renderer: {kind: "host-native", ref: "tuval/demo/counter"},
+			},
+		],
+	},
+	{kind: REGISTRY_KIND, programs: []},
 ];
 
 describe("the transport wire", () => {
@@ -94,12 +106,27 @@ describe("the transport wire", () => {
 			decodeClientFrame(JSON.stringify({kind: DISPATCH_KIND, seq: 1.5, processId: "a", msg: {}})),
 			decodeServerFrame("[]"),
 			decodeServerFrame(JSON.stringify({kind: TABLE_KIND, event: "invented", row: toWireRow(row)})),
+			// A catalog row with no renderer is the headless row the kernel filters out, so the wire
+			// refuses it too rather than handing the page a program it could offer and never render.
+			decodeServerFrame(
+				JSON.stringify({kind: REGISTRY_KIND, programs: [{programId: "daemon", label: "Daemon"}]}),
+			),
+			decodeServerFrame(
+				JSON.stringify({
+					kind: REGISTRY_KIND,
+					programs: [
+						{programId: "counter", label: "Counter", renderer: {kind: "canvas", ref: "c"}},
+					],
+				}),
+			),
 		]).toEqual([
 			{_tag: "Undecodable", reason: "not-json"},
 			{_tag: "Undecodable", reason: "unknown-kind"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "unknown-kind"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 		]);
 	});

@@ -84,16 +84,27 @@ debug, because a keystroke is not worth ending a desk over and the shell's error
 
 ## What the page can and cannot see
 
-The page reads two things off the wire: the shell process's state, and the process table. There is
-**no registry frame**, and that shapes two decisions:
+The page reads three things off the wire: the shell process's state, the process table, and the
+**catalog of windowed programs** — the `registry` frame (#7788). The catalog is what a page could
+spawn, never what a process holds, so the frames stay program-blind: a process's state still crosses
+as `unknown`.
 
-- The page's renderer table (`src/page/renderers.tsx`) is keyed by **program id**, not by the
-  `RendererRef` a row declares — the table wire carries no renderer field. A row's `renderer` still
-  decides whether the picker offers it at all (`showsInAWindow`), which is why every windowed program
-  declares one.
-- The page's picker offers **running processes only**; its programs section is empty and says so,
-  because a page cannot enumerate what it could spawn. Opening by name still works through
-  `prefix : window:open <program>`, which needs no list.
+- The kernel decides what is in the catalog, and it decides with `showsInAWindow`
+  (`src/shell/picker/entries.ts`) — the one place the headless test lives. A row with no `renderer`
+  never crosses, so `WireProgram.renderer` is required and a page cannot be offered a program it
+  would then fail to render.
+- The page's renderer table (`src/page/renderers.tsx`) is keyed by the `RendererRef.ref` a row
+  declares, and `resolverFromTable` (`src/shell/window/renderer.ts`) resolves it — kind checked, so
+  an `isolated-frame` reference is never answered by the `host-native` renderer of the same name. A
+  fourth windowed program that names a reference this table already answers needs no edit here.
+- The page's picker offers both sections: every windowed program, and every running process. Opening
+  by name still works through `prefix : window:open <program>`, and both routes end in the same
+  `window.open` Msg, so the picker and the command line cannot drift into two spawn paths.
+- **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
+  message (#7617 R1.3), so the catalog goes out as the socket opens and again on
+  `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
+  Nothing calls it on a reload path yet: `Booted.reload` replaces the spell registry and leaves the
+  program registry alone (#7743).
 
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.

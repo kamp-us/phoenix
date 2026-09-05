@@ -11,9 +11,12 @@ import {Effect, Option, Stream, SubscriptionRef} from "effect";
 import {describe, expect, it} from "vitest";
 import {counterId} from "../demo/counter.ts";
 import {ProcessId} from "../process/process.ts";
-import type {ShellMsg, ShellState} from "../shell/core/index.ts";
+import {ProgramId} from "../registry/program.ts";
+import {readCommandLine} from "../shell/commands/index.ts";
+import {applyMsg, type ShellCmd, type ShellMsg, type ShellState} from "../shell/core/index.ts";
+import {defaultPrefixTable} from "../shell/keys/index.ts";
 import {createStack, createTree, createWindow} from "../shell/layout/index.ts";
-import type {AttachedProcess, PageAttachment} from "../shell/transport/index.ts";
+import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/index.ts";
 import {installDomShims} from "../shell/ui/dom.testing.ts";
 import type {ProcessView} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
@@ -23,6 +26,41 @@ import {demoRenderers} from "./renderers.tsx";
 installDomShims();
 
 const counterProcess = ProcessId.make("counter");
+
+/** The catalog as the kernel sends it: three windowed programs, one of them the counter demo. */
+const catalog: ReadonlyArray<WireProgram> = [
+	{
+		programId: counterId,
+		label: "Counter",
+		renderer: {kind: "host-native", ref: "tuval/demo/counter"},
+	},
+	{
+		programId: ProgramId.make("tuval/log"),
+		label: "Log",
+		renderer: {kind: "host-native", ref: "tuval/demo/log"},
+	},
+	{
+		programId: ProgramId.make("tuval/scratch"),
+		label: "Scratch",
+		renderer: {kind: "host-native", ref: "tuval/demo/counter"},
+	},
+];
+
+/** One window bound to nothing: what mounts the picker, and so what the catalog is read for. */
+const emptyDesk = (): ShellState => ({
+	workspaces: {
+		"workspace-0": {
+			id: "workspace-0",
+			layout: createTree(createStack("stack-root", "horizontal", [createWindow("window-1")])),
+			focused: "window-1",
+		},
+	},
+	order: ["workspace-0"],
+	activeWorkspace: "workspace-0",
+	views: {},
+	prefix: {armed: false},
+	nextId: 2,
+});
 
 /** Two windows over one process — the Vim buffer case, and the reason `attaches` is counted. */
 const twoWindowDesk = (): ShellState => ({
@@ -68,8 +106,13 @@ interface Scripted {
 	readonly sent: ReadonlyArray<ShellMsg>;
 }
 
-const scripted = Effect.fn("test.scripted")(function* () {
-	const desk = yield* SubscriptionRef.make<ProcessView<unknown>>(live(twoWindowDesk()));
+const scripted = Effect.fn("test.scripted")(function* (options?: {
+	readonly state?: ShellState;
+	readonly rows?: ReadonlyArray<TableRow>;
+}) {
+	const desk = yield* SubscriptionRef.make<ProcessView<unknown>>(
+		live(options?.state ?? twoWindowDesk()),
+	);
 	const counter = yield* SubscriptionRef.make<ProcessView<unknown>>(live({count: 7}));
 	const attaches: Array<ProcessId> = [];
 	const sent: Array<ShellMsg> = [];
@@ -81,7 +124,8 @@ const scripted = Effect.fn("test.scripted")(function* () {
 	});
 
 	const page: PageAttachment = {
-		rows: Stream.succeed([counterRow]),
+		rows: Stream.succeed(options?.rows ?? [counterRow]),
+		programs: Stream.succeed(catalog),
 		attachProcess: ((processId: ProcessId) =>
 			Effect.sync(() => {
 				attaches.push(processId);
@@ -131,6 +175,82 @@ describe("the attached desk", () => {
 			"7",
 			"7",
 		]);
+	});
+
+	it("offers every program the kernel sent, by id and label, instead of the empty-section message", async () => {
+		const app = await Effect.runPromise(scripted({state: emptyDesk(), rows: []}));
+		render(
+			<AttachedDesk
+				page={app.page}
+				shell={app.shell}
+				renderers={demoRenderers}
+				reducedMotion={true}
+			/>,
+		);
+		await settle();
+
+		const programs = screen.getByRole("group", {name: "Programs"});
+		expect(
+			[...programs.querySelectorAll('[role="option"]')].map((node) =>
+				node.getAttribute("aria-label"),
+			),
+		).toEqual([
+			`Counter — program ${counterId}`,
+			"Log — program tuval/log",
+			"Scratch — program tuval/scratch",
+		]);
+		expect(screen.queryByText("No registered program can fill a window.")).toBeNull();
+	});
+
+	it("resolves a window's renderer by the reference its program names, never by the program id", async () => {
+		// `tuval/scratch` is a program this page has no entry for; its row names the counter demo's
+		// renderer, and that reference is the whole of what the page resolves against.
+		const scratchRow: TableRow = {...counterRow, programId: ProgramId.make("tuval/scratch")};
+		const app = await Effect.runPromise(scripted({rows: [scratchRow]}));
+		render(
+			<AttachedDesk
+				page={app.page}
+				shell={app.shell}
+				renderers={demoRenderers}
+				reducedMotion={true}
+			/>,
+		);
+		await settle();
+
+		expect(screen.getAllByLabelText("Counter value").map((node) => node.textContent)).toEqual([
+			"7",
+			"7",
+		]);
+	});
+
+	it("choosing a program from the picker asks for the same open the command line asks for", async () => {
+		const app = await Effect.runPromise(scripted({state: emptyDesk(), rows: []}));
+		render(
+			<AttachedDesk
+				page={app.page}
+				shell={app.shell}
+				renderers={demoRenderers}
+				reducedMotion={true}
+			/>,
+		);
+		await settle();
+
+		act(() => {
+			document.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
+		});
+		const chosen = app.sent.find((msg) => msg.type === "window.open");
+		expect(chosen).toEqual({type: "window.open", windowId: "window-1", programId: counterId});
+
+		// The typed line reaches the same Msg, and the core turns both into one `openProgram` Cmd —
+		// the kernel handler that spawns and binds (`../shell/host/effects.ts`).
+		const typed = readCommandLine(`window:open ${counterId}`);
+		expect(typed._tag).toBe("Msg");
+		const cmds = (msg: ShellMsg): readonly ShellCmd[] =>
+			applyMsg(defaultPrefixTable, emptyDesk(), msg)[1];
+		expect(cmds(chosen as ShellMsg)).toEqual([
+			{type: "openProgram", windowId: "window-1", programId: counterId},
+		]);
+		expect(typed._tag === "Msg" ? cmds(typed.msg) : []).toEqual(cmds(chosen as ShellMsg));
 	});
 
 	it("sends a window's own view write back as a Msg, so the two windows' slots stay the kernel's", async () => {

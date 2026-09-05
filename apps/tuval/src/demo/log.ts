@@ -70,8 +70,8 @@ export const logProgram = ({write}: LogOptions): AnyProgram =>
 			print: (cmd: Print) => Effect.as(write(cmd.line), [] as ReadonlyArray<LogMsg>),
 		},
 		capabilities: [],
-		// Headless rows never bind a window (`../shell/picker/entries.ts`); see `./counter.ts` for why
-		// the page's own table is keyed by program id rather than by this reference.
+		// Headless rows never bind a window (`../shell/picker/entries.ts`); this reference is the name
+		// the page's renderer table answers to, as `./counter.ts` says.
 		renderer: {kind: "host-native", ref: "tuval/demo/log"} satisfies RendererRef,
 		identity: {
 			package: "@kampus/tuval",
