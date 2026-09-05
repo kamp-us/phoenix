@@ -6,7 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node src/bin.ts",
-		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.browser.json && effect-tsgo diagnostics --project tsconfig.browser.json --strict",
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration"
