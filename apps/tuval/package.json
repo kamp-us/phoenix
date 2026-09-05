@@ -6,7 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node src/bin.ts",
-		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.browser.json && effect-tsgo diagnostics --project tsconfig.browser.json --strict",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.design.json && effect-tsgo diagnostics --project tsconfig.design.json --strict && tsc -p tsconfig.browser.json && effect-tsgo diagnostics --project tsconfig.browser.json --strict",
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration"
@@ -20,7 +20,9 @@
 		"@earendil-works/pi-coding-agent": "catalog:",
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:tuval",
+		"@kampus/design": "workspace:*",
 		"@modelcontextprotocol/sdk": "catalog:",
+		"@tanstack/react-virtual": "catalog:",
 		"effect": "catalog:tuval",
 		"react": "catalog:",
 		"react-dom": "catalog:",

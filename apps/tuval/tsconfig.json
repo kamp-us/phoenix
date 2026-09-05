@@ -14,5 +14,9 @@
 		"jsx": "react-jsx",
 		"types": ["node"]
 	},
-	"include": ["src", ".tuval/tuval.config.ts", "vitest.config.ts"]
+	"include": ["src", ".tuval/tuval.config.ts", "vitest.config.ts"],
+	// The one slice that imports `@kampus/design` has its own lens, `tsconfig.design.json`, because
+	// the package is source-consumed and is authored with `exactOptionalPropertyTypes: false`.
+	// Excluding it here is what keeps the kernel on the strict flag; `typecheck` runs both.
+	"exclude": ["node_modules", "src/shell/chat"]
 }

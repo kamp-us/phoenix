@@ -1,8 +1,9 @@
 /**
- * The boundaries this slice keeps, and it is the only slice whose boundaries point *outward*: every
- * other one under `src/shell/` forbids React and the DOM (`../picker/boundary.unit.test.ts`,
- * `../core/boundary.unit.test.ts`), and this is where both are allowed to live. So the claims here
- * are the inverse ones — nothing outside `ui/` may depend on `ui/`, and the page's one
+ * The boundaries this slice keeps, and it is one of the two whose boundaries point *outward*: the
+ * logic slices under `src/shell/` forbid React and the DOM (`../picker/boundary.unit.test.ts`,
+ * `../core/boundary.unit.test.ts`), and rendering is allowed in exactly two — this one, the desk
+ * itself, and `../chat/`, the shared chat window a program's renderer resolves to (#7604). So the
+ * claims here are the inverse ones — nothing outside `ui/` may depend on `ui/`, and the page's one
  * application-level keyboard listener is registered in exactly one file.
  *
  * Every `=` probe below is a claim on the right of an assignment and each was flip-verified — see
@@ -34,6 +35,9 @@ const sourcesIn = (dir: string): ReadonlyArray<readonly [string, string]> =>
 const specifiersOf = (source: string): ReadonlyArray<string> =>
 	[...source.matchAll(/from\s+"([^"]+)"/g)].map((match) => match[1] ?? "");
 
+/** The two slices under `src/shell/` that render. A third one is a decision, not a drift. */
+const rendering: ReadonlySet<string> = new Set(["ui", "chat"]);
+
 describe("ui boundary", () => {
 	it("stores nothing in a window's slot that the slot cannot hold", () => {
 		expect(pickerViewFits).toBe(true);
@@ -44,10 +48,10 @@ describe("ui boundary", () => {
 		expect(mountArms).toEqual(["Bound", "NoRenderer", "ProcessGone", "Empty"]);
 	});
 
-	it("is the only slice under src/shell/ that any React import lives in", () => {
+	it("is one of the two rendering slices, and React lives in no other one", () => {
 		const shell = dirname(import.meta.dirname);
 		const offenders = readdirSync(shell, {withFileTypes: true})
-			.filter((entry) => entry.isDirectory() && entry.name !== "ui")
+			.filter((entry) => entry.isDirectory() && !rendering.has(entry.name))
 			.flatMap((entry) =>
 				sourcesIn(join(shell, entry.name)).flatMap(([name, source]) =>
 					specifiersOf(source)
