@@ -278,6 +278,69 @@
 	color: var(--text-muted);
 }
 
+/*
+ * The failure panel `./ErrorBoundary.tsx` paints where a region used to be. `--text-muted` for the
+ * throw's own words and for the stack, never `--text-faint`: both sit inside a `role="alert"`, and
+ * the faint rung is the 3:1 decorative one `design-system-manifest.md` forbids meaning from.
+ */
+.tuval-boundary {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	/* Top-aligned, not centred: this panel replaces a whole region, and a message floating at its
+	   midpoint reads as decoration rather than as the thing that just failed. */
+	justify-content: flex-start;
+	gap: var(--s-2);
+	padding: var(--s-4);
+	min-block-size: 0;
+	overflow: auto;
+}
+
+.tuval-boundary p {
+	margin: 0;
+}
+
+.tuval-boundary-reason,
+.tuval-boundary-stack {
+	color: var(--text-muted);
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
+}
+
+.tuval-boundary-stack {
+	margin: 0;
+	white-space: pre-wrap;
+	font:
+		var(--t-meta) ui-monospace,
+		monospace;
+}
+
+.tuval-boundary-where summary {
+	color: var(--text-secondary);
+	font:
+		var(--t-body-sm) system-ui,
+		sans-serif;
+	cursor: pointer;
+}
+
+.tuval-boundary button {
+	color: var(--accent-fg);
+	background: var(--accent);
+	border: 1px solid transparent;
+	border-radius: var(--r-md);
+	padding: var(--s-1) var(--s-3);
+	cursor: pointer;
+	font:
+		var(--t-body-sm) system-ui,
+		sans-serif;
+	transition: background var(--motion-fast) ease;
+}
+
+.tuval-boundary button:hover {
+	background: var(--accent-11);
+}
+
 /* Every transition collapses to an instant swap. Honouring this is part of the behavioural spine
    the design manifest calls code-authoritative, and Pillar 4 forbids carrying meaning on motion in
    the first place, so nothing is lost when it collapses. */

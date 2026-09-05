@@ -12,6 +12,7 @@ export {
 } from "./handshake.ts";
 export {
 	type Handles,
+	registryFrame,
 	type ServeOptions,
 	type SocketSession,
 	serve,

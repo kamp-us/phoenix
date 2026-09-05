@@ -11,7 +11,7 @@
  *
  * The desk holds no desk state. Workspaces, layout, focus and view slots come from the snapshot the
  * kernel sent and go back as Msgs; what lives here is tab-ephemeral and nothing else — whether the
- * command line is open, whether the palette is, and the prefix countdown (#7556).
+ * command line is open, whether the palette is, and the repeat window's countdown (#7556).
  *
  * The command line and the palette are two doors onto one command table, never two mechanisms: the
  * `<prefix> :` line is the address you already know, `⌘K` the one you go looking through, and both
@@ -24,10 +24,12 @@ import {usePalette} from "../../palette/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import {defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
+import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
 import {WindowId} from "../window/index.ts";
 import {CommandLine} from "./CommandLine.tsx";
+import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {routerPrefix, statusFrame, surfaceKey, zoomedWindow} from "./frame.ts";
 import {LayoutView} from "./LayoutView.tsx";
@@ -123,25 +125,29 @@ export function Desk({
 		return () => target.removeEventListener("keydown", onKeyDown as EventListener);
 	}, [keyTarget, onKeyDown]);
 
-	// The core's prefix timer is a Cmd, and Cmds do not cross the transport — but the snapshot
-	// carries the window's length, so the surface runs the countdown off state alone.
+	// The core's repeat timer is a Cmd, and Cmds do not cross the transport — but the snapshot
+	// carries the repeat window's length, so the surface runs that one countdown off state alone.
+	// An armed prefix carrying no window is not timed at all: it waits indefinitely, as tmux does
+	// (#7842), and this effect is the only clock the desk ever ran.
 	//
 	// The dependency is the prefix's *value*, spelled out, and never the `state.prefix` object: every
 	// snapshot arrives JSON-decoded, so that object is new on each one and an effect keyed on it
 	// re-armed the countdown on unrelated kernel traffic — a demo counter ticking once a second
 	// starved an armed prefix indefinitely (#7782).
-	const armed = state.prefix.armed;
-	const timeoutMs = state.prefix.armed ? state.prefix.timeoutMs : 0;
+	const repeatWindowMs = state.prefix.armed ? state.prefix.repeatWindowMs : null;
 	const pending = state.prefix.armed ? state.prefix.pending.join("") : "";
 	useEffect(() => {
-		if (!armed) return;
+		if (repeatWindowMs === null) return;
 		// Through the ref, so the caller's `dispatch` identity is not a dependency either — the same
 		// starvation, from the other direction.
-		const timer = setTimeout(() => latest.current.dispatch({type: "prefix.timeout"}), timeoutMs);
+		const timer = setTimeout(
+			() => latest.current.dispatch({type: "prefix.repeatLapsed"}),
+			repeatWindowMs,
+		);
 		return () => clearTimeout(timer);
-		// `pending` is a dependency because each key typed into an armed sequence restarts the window,
-		// exactly as `startPrefixTimer` restarts the host's one timer.
-	}, [armed, timeoutMs, pending]);
+		// `pending` is a dependency because each key typed into the window restarts it, exactly as
+		// `startRepeatTimer` restarts the host's one timer.
+	}, [repeatWindowMs, pending]);
 
 	const closeCommandLine = useCallback(() => {
 		setCommandLineOpen(false);
@@ -179,18 +185,30 @@ export function Desk({
 	return (
 		<div className="tuval-surface" ref={desk} tabIndex={-1} data-scheme="dark">
 			<ForwardedKeyProvider value={forwarded}>
-				{workspace === undefined ? (
-					<div className="tuval-tiling tuval-placeholder" role="status">
-						<p>This desk has no active workspace. Open one with the command line.</p>
-					</div>
-				) : (
-					<LayoutView
-						root={workspace.layout.root}
-						zoomed={zoomedWindow(workspace)}
-						renderWindow={renderWindow}
-						dispatch={dispatch}
-					/>
-				)}
+				{/* The tiling area alone, so a throw costs the founder the windows and not the status
+				    line, the command line or the keyboard. The reset key is the layout's *signature*
+				    and never the layout object, for the same reason the countdown above is keyed on
+				    values: the boundary compares its keys with `Object.is`, and a decoded object is
+				    new on every snapshot, so the panel would be torn down and rebuilt on unrelated
+				    kernel traffic — losing focus on its button and the stack a founder came to read
+				    (#7839). */}
+				<ErrorBoundary
+					label="The desk layout"
+					resetKeys={[workspace === undefined ? null : layoutSignature(workspace.layout)]}
+				>
+					{workspace === undefined ? (
+						<div className="tuval-tiling tuval-placeholder" role="status">
+							<p>This desk has no active workspace. Open one with the command line.</p>
+						</div>
+					) : (
+						<LayoutView
+							root={workspace.layout.root}
+							zoomed={zoomedWindow(workspace)}
+							renderWindow={renderWindow}
+							dispatch={dispatch}
+						/>
+					)}
+				</ErrorBoundary>
 			</ForwardedKeyProvider>
 			{commandLineOpen ? <CommandLine dispatch={dispatch} onClose={closeCommandLine} /> : null}
 			{palette.open ? (
