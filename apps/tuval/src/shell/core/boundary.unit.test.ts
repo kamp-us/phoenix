@@ -91,6 +91,7 @@ describe("shell core boundary", () => {
 			| "workspace.step"
 			| "command.open"
 			| "config.reload"
+			| "desk.inspector.toggle"
 			| "keys.press"
 			| "prefix.repeatLapsed"
 		>();

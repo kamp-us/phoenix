@@ -41,6 +41,7 @@ describe("shell core: the reducer's cells", () => {
 		expect(Object.keys(cellsFor(table)).sort()).toEqual([
 			"command.open",
 			"config.reload",
+			"desk.inspector.toggle",
 			"keys.press",
 			"layout.resize",
 			"layout.zoom",
@@ -68,6 +69,41 @@ describe("shell core: the reducer's cells", () => {
 		expect(focusedProcess(state)).toBeNull();
 		expect(state.order).toEqual([state.activeWorkspace]);
 		expect(state.prefix).toEqual({armed: false});
+		expect(state.desk).toEqual({inspectorOpen: false});
+	});
+});
+
+describe("shell core: the desk inspector", () => {
+	it("desk.inspector.toggle opens the inspector and closes it again", () => {
+		const [opened] = apply(initialState(), {type: "desk.inspector.toggle"});
+		const [closed, cmds] = apply(opened, {type: "desk.inspector.toggle"});
+
+		expect(opened.desk.inspectorOpen).toBe(true);
+		expect(closed.desk.inspectorOpen).toBe(false);
+		expect(cmds).toEqual([]);
+	});
+
+	it("holds the inspector open across a workspace switch, a create and a remove", () => {
+		const opened = fold(initialState(), {type: "desk.inspector.toggle"});
+		const first = opened.activeWorkspace;
+		const created = fold(opened, {type: "workspace.create"});
+		const switched = fold(created, {type: "workspace.activate", workspaceId: first});
+		const stepped = fold(switched, {type: "workspace.step", direction: "next"});
+		const removed = fold(stepped, {type: "workspace.remove"});
+
+		expect(created.activeWorkspace).not.toBe(first);
+		expect([
+			created.desk.inspectorOpen,
+			switched.desk.inspectorOpen,
+			stepped.desk.inspectorOpen,
+			removed.desk.inspectorOpen,
+		]).toEqual([true, true, true, true]);
+	});
+
+	it("survives a checkpoint round trip, like the rest of the shell's state", () => {
+		const opened = fold(initialState(), {type: "desk.inspector.toggle"});
+		const restored = JSON.parse(JSON.stringify(opened)) as ShellState;
+		expect(restored.desk).toEqual({inspectorOpen: true});
 	});
 });
 

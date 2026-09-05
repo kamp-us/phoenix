@@ -22,6 +22,7 @@
 import {defineMachine} from "@demlik/tea";
 import {Duration} from "effect";
 import {msgForCommandName} from "../commands/table.ts";
+import {type DeskMsg, initialDesk, toggleInspector} from "../desk/state.ts";
 import type {CommandName, Key, PrefixState, PrefixTable} from "../keys/index.ts";
 import {idle, route} from "../keys/index.ts";
 import {
@@ -113,7 +114,8 @@ export type ShellMsg =
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
 	| {readonly type: "keys.press"; readonly key: Key}
-	| {readonly type: "prefix.repeatLapsed"};
+	| {readonly type: "prefix.repeatLapsed"}
+	| DeskMsg;
 
 /** What every cell returns: the state that follows, and what the host is asked to do. */
 export type Step = readonly [ShellState, readonly ShellCmd[]];
@@ -142,6 +144,7 @@ export const initialState = (): ShellState => {
 		order: [ids.workspace],
 		activeWorkspace: ids.workspace,
 		views: {},
+		desk: initialDesk,
 		prefix: disarmed,
 		nextId: 1,
 	};
@@ -454,6 +457,8 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		// would be a loop. Each gets the arm that says what it is.
 		"command.open": (state) => [state, [{type: "openCommandLine"}]],
 		"config.reload": (state) => [state, [{type: "reloadConfig"}]],
+		// Desk-level, so every workspace cell above leaves it untouched by spreading `...state`.
+		"desk.inspector.toggle": (state) => [{...state, desk: toggleInspector(state.desk)}, NO_CMDS],
 		"keys.press": pressKey,
 		// A lapse disarms a repeat window and nothing else: a timer left over from a spent window
 		// must not drop a prefix the user has since armed by hand, which waits indefinitely.
