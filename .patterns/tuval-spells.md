@@ -314,6 +314,16 @@ token under the caret. Two rules, and they never mix:
    workspace names off the snapshot. The caret's characters must appear in order; the tighter and
    earlier the run, the higher the rank. `scr` reaches `scratch`.
 
+**Both rules ignore case** (#7757). One `fold` in the module lowercases each side for the prefix
+filter and the subsequence scorer alike, so `W` offers exactly what `w` offers at a segment, a
+literal, a program id and a window id. Rule 1's "recall, don't search" argument is about the matching
+rule, not about capitalization.
+
+**The fuzzy rank is over the tightest run in the value, not the first run found** (#7757). The scorer
+tries every start the query's first character reaches and keeps the lowest
+`(span * 1000) + first` — `a-xb-ab` matches `ab` scattered at 0-3 and contiguous at 5-6, and it is
+ranked by 5-6.
+
 Which live set a parameter draws from is decided by its own name: a parameter named for a window, a
 process, a program or a workspace offers that set, and one named for none of them offers no live
 values.
