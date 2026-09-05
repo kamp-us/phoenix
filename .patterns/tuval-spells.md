@@ -152,9 +152,17 @@ name the window it called from and nothing else: the process and the workspace a
 `WindowIndex`, so a page cannot address another process by putting an id on the wire. A spell that
 legitimately targets another process takes that id as a parameter of its own `params`.
 
-`WindowIndex` is an interface this slice declares and the shell implements. Until the shell adopts
-it, `WindowIndex.scripted(table)` answers from a fixture. A window the index does not hold is
-`NoSuchWindow`.
+`WindowIndex` is an interface this slice declares and the shell implements:
+`shellWindowIndexKernel(shellId)`
+([`shell/commands/kernel.ts`](../apps/tuval/src/shell/commands/kernel.ts)) reads the desk process's
+live state per resolve, and [`boot.ts`](../apps/tuval/src/boot.ts) provides it beside
+`shellDispatchKernel` for the same reasons and out of the same module (#7894). It answers a window's
+own workspace, plus the process that window shows when the table still holds it; a window bound to a
+process that has stopped resolves to its workspace and no process, the way the desk keeps such a
+window as a placeholder. A window the index does not hold — including every window when no desk is
+running — is `NoSuchWindow`. `WindowIndex.scripted(table)` stays, for a test that wants a fixed
+table rather than a running desk. The proof is
+[`src/shell/proof/window-index.unit.test.ts`](../apps/tuval/src/shell/proof/window-index.unit.test.ts).
 
 ## The executor
 

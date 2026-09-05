@@ -8,14 +8,11 @@
  * window on it and the executor re-resolves the process through `WindowIndex` (#7617 R2.2) — so a
  * spawn is parented by the index and by nothing else.
  *
- * `boot` builds that index empty, because the shell does not own one yet: the comment at
- * `src/boot.ts`'s `WindowIndex.scripted({})` says so, and `src/commands/scope.ts` names the shell
- * (#7499) as the implementer. So this module stands one up over the kernel's own registry — the
- * real `SpellExecutor` over the real `Registry`, `Processes` and `SpawnedProcesses` — with the one
- * entry the desk actually holds: the window the picker bound to the Claude process. Everything a
- * call then touches is the booted kernel's; the only thing supplied here is the answer to "whose
- * child is this", which the shell will supply once it adopts the registry
- * ([#7894](https://github.com/kamp-us/phoenix/issues/7894)).
+ * `boot` now builds a live index over the running desk (`shellWindowIndexKernel`, #7894), so a
+ * process this proof reached through a real desk window would resolve there. This module still
+ * stands its own up over the kernel's own registry — the real `SpellExecutor` over the real
+ * `Registry`, `Processes` and `SpawnedProcesses` — because it has no desk: it names the window and
+ * the process directly, which is the one thing a proof with no shell row cannot read off state.
  *
  * Two things below look like ceremony and are not. The contexts are merged one step at a time
  * rather than composed with `Layer.provide`, because the booted kernel already carries a
@@ -23,7 +20,7 @@
  * which of each pair wins: `Context.merge(self, that)` is documented to let `that` override, so
  * each step names its winner. And `SpellExecutor.layer` is wrapped in `Layer.fresh`, because it is
  * one module-level `Layer` value that `boot` has already built — without the wrapper the build
- * hands back boot's memoized executor, the one holding the empty index, and every `spawn` here
+ * hands back boot's memoized executor, the one holding boot's own index, and every `spawn` here
  * answers `NoSuchWindow` while looking correctly wired.
  */
 

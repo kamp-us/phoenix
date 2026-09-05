@@ -8,7 +8,7 @@ import {processSpells, SpawnedProcesses} from "./commands/core/process.ts";
 import type {DuplicateSpellPath, SpellNotDescribable} from "./commands/errors.ts";
 import {SpellExecutor} from "./commands/executor.ts";
 import type {SpellRegistry} from "./commands/registry.ts";
-import {WindowIndex} from "./commands/scope.ts";
+import type {WindowIndex} from "./commands/scope.ts";
 import type {AnySpell} from "./commands/spell.ts";
 import {SpellSet} from "./commands/spell-set.ts";
 import {type ConfigLoadError, loadLayeredConfig} from "./config.ts";
@@ -25,7 +25,7 @@ import type {ProcessHandle} from "./process/process.ts";
 import type {AnyProgram} from "./registry/program.ts";
 import {Registry} from "./registry/Registry.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
-import {shellDispatchKernel} from "./shell/commands/kernel.ts";
+import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
 import {shellId} from "./shell/program.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
@@ -110,9 +110,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	).pipe(
 		Layer.provideMerge(SpellExecutor.layer),
 		Layer.provideMerge(
-			// No shell holds windows yet (#7499), so the index is empty: a call naming a window is
-			// `NoSuchWindow`, and a call naming none is workspace-wide.
-			Layer.mergeAll(Layer.succeedContext(spells), WindowIndex.scripted({})),
+			Layer.mergeAll(Layer.succeedContext(spells), shellWindowIndexKernel(shellId)),
 		),
 	);
 	const kernel = yield* Layer.build(
