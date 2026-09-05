@@ -16,12 +16,6 @@ import type {ReactElement} from "react";
 import type {ToolItem} from "../../ai-agent/ports/index.ts";
 import {omissionLine, type ToolDetail, toolDetail} from "./tool-detail.ts";
 
-const statusWords: Readonly<Record<ToolItem["status"], string>> = {
-	running: "running",
-	ok: "ok",
-	error: "error",
-};
-
 function DetailView({detail}: {readonly detail: ToolDetail}): ReactElement {
 	if (detail.kind === "edit") {
 		return (
@@ -99,7 +93,7 @@ export function ToolRow({
 				<span className="tuval-chat-tool-head">
 					<span className="tuval-chat-tool-name">{item.name}</span>
 					<span className="tuval-chat-tool-status" data-status={item.status}>
-						{statusWords[item.status]}
+						{item.status}
 					</span>
 				</span>
 			}

@@ -9,7 +9,8 @@
 		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.design.json && effect-tsgo diagnostics --project tsconfig.design.json --strict && tsc -p tsconfig.browser.json && effect-tsgo diagnostics --project tsconfig.browser.json --strict",
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
-		"test:integration": "vitest run --project integration"
+		"test:integration": "vitest run --project integration",
+		"proof:chat": "vite --config src/shell/chat/proof/vite.config.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "catalog:",

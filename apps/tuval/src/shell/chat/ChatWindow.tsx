@@ -312,6 +312,12 @@ function ChatWindow({
 	// guard a window that scrolled nowhere gets the other's history prepended and its `atOldest`
 	// advanced, which is what made the per-window cursor a slot that never diverged. The seen-marker
 	// is set either way, so a window that ignored a page does not merge it later when it does ask.
+	//
+	// The guard is a proxy, not a correlation, and #7860 stays open on the residual: `loading`
+	// answers "is *my* request out", but `lastPage` carries no requester and `page` (`core/machine.ts`)
+	// issues its Cmd with no in-flight guard — so two windows whose requests overlap each still merge
+	// whichever reply lands first. Closing that needs the reply to name the window that asked, which
+	// is a change to the Msg and the core rather than to this effect.
 	useEffect(() => {
 		const page = state?.lastPage ?? null;
 		if (page === null || page === seenPageRef.current) return;
