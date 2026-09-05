@@ -119,21 +119,45 @@ export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | 
 	return null;
 };
 
-/**
- * A reply landed only if the newest item is the assistant's. A tail ending on the operator's own
- * turn, or on a tool call, is a turn that was still running when the process went away.
- */
-export const replyPending = (items: ReadonlyArray<TranscriptItem>): boolean =>
-	items.length > 0 && items[items.length - 1]?.kind !== "assistant";
+/** The cut-short turn, marked in the tail so a window renders the break off the transcript alone. */
+const markInterrupted = (
+	items: ReadonlyArray<TranscriptItem>,
+	cut: ItemId | null,
+): ReadonlyArray<TranscriptItem> =>
+	cut === null
+		? items
+		: items.map((item) =>
+				item.id === cut && item.kind === "assistant" ? {...item, interrupted: true} : item,
+			);
 
 /**
- * The checkpoint's parse boundary: a state saved mid-turn comes back marked, not mid-turn.
+ * The checkpoint's parse boundary: what a saved session comes back as.
  *
- * Demlik's `init` may transform what the store loaded — that branch is the migration/parse hook
- * — but must emit no Cmds (`@demlik/tea` 0.12 `replay`, the "TEA contract violation" guard), so
- * the reconnect itself is the host's `reconnect` Msg, never something this function schedules.
+ * A booted process holds no transport — the layer is built by the open, not by the spawn (ruling
+ * 4, #7570) — so every phase but `gone` comes back `idle`, which is also the one phase a
+ * `reconnect` is admissible from. `gone` stays `gone`: that session is over, and resuming it
+ * anyway is the silent fresh session #7514 refuses.
+ *
+ * The saved phase is the whole interruption test. `prompting` means the layer never reported the
+ * turn's `ready`, so the reply was still running when the process went away — whatever the tail
+ * ends on, which is why a "does the tail end on an assistant item" predicate is the wrong reader:
+ * a half-written assistant item reads as a completed reply to it.
+ *
+ * `failure` and `lastPage` are dropped. Both describe the run that ended: a refusal nobody can act
+ * on any more, and a page the window asked a transport that no longer exists for.
+ *
+ * Demlik's `init` may transform what the store loaded — that branch is the migration/parse hook —
+ * but must emit no Cmds (`@demlik/tea` 0.12 `replay`, the "TEA contract violation" guard), so the
+ * reconnect is a Msg the spawner dispatches (`../restore/checkpoint.ts`), never one scheduled here.
  */
-export const restore = (loaded: AiAgentSessionState): AiAgentSessionState =>
-	loaded.phase === "prompting" && replyPending(loaded.transcript.items)
-		? {...loaded, phase: "reconnecting", interrupted: lastAssistantId(loaded.transcript.items)}
-		: loaded;
+export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
+	const cut = loaded.phase === "prompting" ? lastAssistantId(loaded.transcript.items) : null;
+	return {
+		...loaded,
+		phase: loaded.phase === "gone" ? "gone" : "idle",
+		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
+		interrupted: cut ?? loaded.interrupted,
+		lastPage: null,
+		failure: null,
+	};
+};

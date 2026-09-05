@@ -16,6 +16,7 @@ import {
 	modeUnsupported,
 	noSessionToResume,
 	promptRefused,
+	START_ERROR,
 	startRefused,
 	unknownRequest,
 } from "./failures.ts";
@@ -26,7 +27,13 @@ import {
 	type AiAgentSessionSub,
 	eventsSub,
 } from "./messages.ts";
-import {type AiAgentSessionState, initialState, lastAssistantId, restore} from "./state.ts";
+import {
+	type AgentFailure,
+	type AiAgentSessionState,
+	initialState,
+	lastAssistantId,
+	restore,
+} from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
 	/** The working directory a fresh session starts in. */
@@ -53,8 +60,24 @@ const busy = (state: AiAgentSessionState): boolean =>
 const opening = (state: AiAgentSessionState): boolean =>
 	state.phase === "starting" || state.phase === "reconnecting";
 
-/** Where a failure leaves a session: back where it was before the act that failed. */
-const phaseAfterFailure = (state: AiAgentSessionState): AiAgentSessionState["phase"] => {
+/** The backend does not hold the session this resume named. */
+const sessionGone = (failure: AgentFailure): boolean =>
+	failure.tag === START_ERROR && failure.reason === "session-not-found";
+
+/**
+ * Where a failure leaves a session: back where it was before the act that failed.
+ *
+ * A resume is the exception, because there is nowhere before it to go back to. A refused resume
+ * ends the session at `gone` — the id the checkpoint carried names nothing the backend still
+ * holds, and the one thing that must never happen is a fresh session opening quietly in its place
+ * (#7514). Any other reconnect failure is a transport that can be tried again, so it lands on
+ * `idle` rather than staying at `reconnecting`, which the reconnect guard itself would refuse.
+ */
+const phaseAfterFailure = (
+	state: AiAgentSessionState,
+	failure: AgentFailure,
+): AiAgentSessionState["phase"] => {
+	if (state.phase === "reconnecting") return sessionGone(failure) ? "gone" : "idle";
 	if (state.phase === "starting") return "idle";
 	if (state.phase === "prompting") return "ready";
 	return state.phase;
@@ -172,14 +195,19 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				// The same guard `start` carries, for the same reason: the handler rebuilds the layer,
 				// so two overlapping opens would build two transports into one process Scope.
 				if (opening(state)) return [{...state, failure: startRefused(state.phase)}, noCmds];
+				// The republish goes first so a window attached to a restored session paints the saved
+				// tail and its pending cards before the transport is back, rather than after it.
 				return [
 					{...state, phase: "reconnecting"},
-					[{type: "aiAgent.reconnect", cwd: state.cwd, sessionId: state.sessionId}],
+					[
+						{type: "aiAgent.republish"},
+						{type: "aiAgent.reconnect", cwd: state.cwd, sessionId: state.sessionId},
+					],
 				];
 			},
 
 			failed: (state, msg) => [
-				{...state, phase: phaseAfterFailure(state), failure: msg.failure},
+				{...state, phase: phaseAfterFailure(state, msg.failure), failure: msg.failure},
 				noCmds,
 			],
 		},
@@ -204,6 +232,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			"aiAgent.page": noWork,
 			"aiAgent.interrupt": noWork,
 			"aiAgent.reconnect": noWork,
+			"aiAgent.republish": noWork,
 		},
 		subscribe: {"aiAgent.events": () => () => {}},
 	});

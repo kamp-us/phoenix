@@ -70,9 +70,21 @@ export interface AgentScript {
 	 * and `page` serves it — the two halves of "history is backend-owned" (ruling 5, #7569).
 	 */
 	readonly history: ReadonlyArray<TranscriptItem>;
+	/**
+	 * What a resumed `start` reports about the session beyond replaying `history` — the events a
+	 * real backend sends when it is picked back up: the cards it is still waiting on, and a
+	 * `permission-resolved` for one it has since settled on its own.
+	 */
+	readonly resumed?: ReadonlyArray<AgentEvent>;
 	readonly modes: ScriptedModes;
 	/** One entry per prompt, consumed in order. */
 	readonly turns: ReadonlyArray<ScriptedTurn>;
+	/**
+	 * Which turn a *resumed* session's next prompt replays. A resumed session is one an earlier run
+	 * already spent turns on, and this layer's turn cursor lives in the build it hands back, so a
+	 * rebuilt layer starts at zero unless the script says where the conversation had got to.
+	 */
+	readonly resumeAtTurn?: number;
 	/**
 	 * What this session's turns call, and from where. A script whose turns carry no `plan` needs
 	 * none; a turn that plans a call while this is absent is a fixture bug the layer dies on.
