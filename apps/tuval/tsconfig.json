@@ -12,6 +12,13 @@
 		// itself that way through its own `boundary.unit.test.ts`.
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
 		"jsx": "react-jsx",
+		// Off for the cause apps/web's `tsconfig.app.json` turns it off: `@kampus/design` is consumed
+		// as source, and the `@manti-ui/react` declarations under it spell an optional prop `foo?: T`
+		// where React's own attribute types spell `foo?: T | undefined` — under
+		// `exactOptionalPropertyTypes` that is an error in the design package's files, not in ours,
+		// and no edit here can fix it. Nothing in `src/` leans on the looser rule: the optional-key
+		// idiom (`...(x === undefined ? {} : {x})`) stays the shape every module here is written in.
+		"exactOptionalPropertyTypes": false,
 		"types": ["node"]
 	},
 	"include": ["src", ".tuval/tuval.config.ts", "vitest.config.ts"]

@@ -175,6 +175,33 @@ So `src/shell/ui/` and `src/page/` import `../picker/browser.ts` and `../transpo
 Node-only module to a slice means adding it to `index.ts`, never to `browser.ts`; getting that wrong
 reddens the browser project rather than the page.
 
+## The design layer on the page
+
+`apps/tuval` consumes `@kampus/design`, and three things about that are not obvious from the import.
+
+**Three stylesheets, in this order, in `src/page/main.tsx`.** Manti's base first
+(`@manti-ui/styles/index.css`) — a `@kampus/design` primitive *is* a Manti component, and without the
+base its dialog has no positioning at all and lands in the document flow, which is what a palette
+rendered full-width at the bottom of the desk looks like. Then `@kampus/design`'s fonts and tokens,
+then `src/shell/ui/tokens.css`. The last two both declare role tokens at `:root`, and the desk's own
+values have to win that tie, which is what the order buys.
+
+**The theme is two attributes on `index.html`.** `data-theme="dark"` and
+`data-color-theme="indigo"`. The desk is dark-only window chrome — there is no light branch and
+nothing reads `prefers-color-scheme` — and `indigo` is the accent nearest the desk's own blue, so the
+palette and the surface behind it read as one system. A component sets neither: it inherits.
+
+**`exactOptionalPropertyTypes` is off in both tsconfigs, and it is not a preference.** The
+`@manti-ui/react` declarations spell an optional prop `foo?: T` where React's own attribute types
+spell `foo?: T | undefined`; under the flag that is an error in the *design package's* files, which
+no edit in `apps/tuval` can reach. `apps/web/tsconfig.app.json` turns it off for the same cause.
+Nothing in `apps/tuval/src` leans on the looser rule — the optional-key idiom
+(`...(x === undefined ? {} : {x})`) is still the shape every module here is written in.
+
+A slice that is browser-only end to end keeps one `index.ts` rather than the `index.ts`/`browser.ts`
+pair a *shared* slice needs; `src/palette/` is the one today. What still binds it is the rule above:
+no module the page reaches may import `node:*`, and `tsconfig.browser.json` is what says so.
+
 ## The proofs
 
 `src/shell/proof/end-to-end.integration.test.ts` is the shape to copy for anything driving the whole

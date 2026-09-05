@@ -11,11 +11,16 @@
  *
  * The desk holds no desk state. Workspaces, layout, focus and view slots come from the snapshot the
  * kernel sent and go back as Msgs; what lives here is tab-ephemeral and nothing else — whether the
- * command line is open, and the prefix countdown (#7556).
+ * command line is open, whether the palette is, and the prefix countdown (#7556).
+ *
+ * The command line and the palette are two doors onto one command table, never two mechanisms: the
+ * `<prefix> :` line is the address you already know, `⌘K` the one you go looking through, and both
+ * end at the rows in `../commands/table.ts` (#7643, `./PaletteHost.tsx`).
  */
 
 import type {ReactElement, ReactNode} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
+import {usePalette} from "../../palette/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import {defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
@@ -27,6 +32,7 @@ import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {routerPrefix, statusFrame, surfaceKey, zoomedWindow} from "./frame.ts";
 import {LayoutView} from "./LayoutView.tsx";
 import type {MountResolver} from "./mount.ts";
+import {focusedWindowOf, PaletteHost} from "./PaletteHost.tsx";
 import {StatusLine} from "./StatusLine.tsx";
 import {isTextEntry} from "./text-entry.ts";
 import {WindowView} from "./WindowView.tsx";
@@ -60,14 +66,25 @@ export function Desk({
 	const workspace = activeWorkspace(state);
 	const focused = workspace?.focused ?? null;
 
+	const palette = usePalette();
+
 	// Read through a ref so the listener is attached once per target and never re-attached on a
 	// snapshot: a re-attach between two presses of one sequence would drop the second.
-	const latest = useRef({state, table, focused, commandLineOpen, dispatch});
-	latest.current = {state, table, focused, commandLineOpen, dispatch};
+	const latest = useRef({state, table, focused, commandLineOpen, dispatch, palette});
+	latest.current = {state, table, focused, commandLineOpen, dispatch, palette};
 
 	const onKeyDown = useCallback((event: KeyboardEvent): void => {
 		const {state: current, table: grammar, focused: window, commandLineOpen: open} = latest.current;
-		if (open || isTextEntry(event.target)) return;
+		const overlay = latest.current.palette;
+		if (open || overlay.open || isTextEntry(event.target)) return;
+
+		// The palette's own door, beside the `<prefix> :` line rather than instead of it: one is the
+		// address you already know, the other is the one you go looking through (#7643).
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+			event.preventDefault();
+			overlay.openPalette(focusedWindowOf(latest.current.state));
+			return;
+		}
 
 		const key: Key = {
 			key: event.key,
@@ -131,6 +148,13 @@ export function Desk({
 		desk.current?.focus();
 	}, []);
 
+	const closePalette = useCallback(() => {
+		palette.closePalette();
+		// The hook hands the caret back to whatever held it. `document.body` is what holds it on a
+		// desk nobody has clicked yet, and it cannot take focus, so the desk takes it instead.
+		if (globalThis.document.activeElement === globalThis.document.body) desk.current?.focus();
+	}, [palette]);
+
 	const renderWindow = (windowId: WindowId): ReactNode => (
 		<WindowView
 			key={windowId}
@@ -164,6 +188,14 @@ export function Desk({
 				)}
 			</ForwardedKeyProvider>
 			{commandLineOpen ? <CommandLine dispatch={dispatch} onClose={closeCommandLine} /> : null}
+			{palette.open ? (
+				<PaletteHost
+					state={state}
+					dispatch={dispatch}
+					window={palette.window}
+					onClose={closePalette}
+				/>
+			) : null}
 			<StatusLine frame={statusFrame(state)} prefixKey={table.prefix} />
 		</div>
 	);
