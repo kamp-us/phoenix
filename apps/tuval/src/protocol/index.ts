@@ -26,6 +26,7 @@ export {
 	WorkspaceId,
 } from "./ids.ts";
 export {describeSchemaError, firstSchemaIssue, type SchemaIssueSummary} from "./issue.ts";
+export {JsonSchemaDocument, JsonSchemaNode} from "./json-schema-document.ts";
 export {
 	isSpellReply,
 	KernelToPage,

@@ -8,8 +8,9 @@
  * founder's 2026-09-03 walk on #7639). A `RegistryTable` would carry richer types and the page
  * cannot hold one: it has descriptions, never the spells' closures.
  *
- * `SpellDescription.params` is `Schema.Unknown` on the wire, and what actually arrives is the
- * spell's `params` as JSON Schema. Two properties of that rendering are load-bearing and both were
+ * `SpellDescription.params` is a `JsonSchemaDocument` on the wire: the spell's `params` as the
+ * JSON Schema document `Schema.toJsonSchemaDocument` emits. Two properties of that rendering are
+ * load-bearing and both were
  * read off `Schema.toJsonSchemaDocument` at the `catalogs.tuval` pin (effect 4.0.0-rc.112): the
  * `properties` object's key order is the declaration order of `Schema.Struct`, which is the
  * positional order of the parameters, and a `Schema.Literals` parameter arrives as
@@ -89,7 +90,10 @@ const followRef = (schema: Record<string, unknown> | undefined, params: unknown)
 };
 
 export const readParams = (params: unknown): ReadonlyArray<ParamSpec> => {
-	const root = asRecord(asRecord(params)?.schema) ?? asRecord(params);
+	// Only the document's own `schema`, never a bare JSON Schema object: `SpellDescription.params`
+	// is a `JsonSchemaDocument` and the bare form is refused at decode (#7758). The argument stays
+	// `unknown` so an undecoded row still reads as no parameters rather than throwing.
+	const root = asRecord(asRecord(params)?.schema);
 	const schema = followRef(root, params);
 	const properties = asRecord(schema?.properties);
 	if (properties === undefined) return [];

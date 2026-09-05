@@ -208,7 +208,11 @@ describe("Snapshot.registry", () => {
 		{
 			path: ["help"],
 			describe: "Show what a spell does.",
-			params: {type: "object", properties: {path: {type: "array"}}},
+			params: {
+				dialect: "draft-2020-12",
+				schema: {type: "object", properties: {path: {type: "array"}}, required: ["path"]},
+				definitions: {},
+			},
 			capabilities: [],
 		},
 		fixtures.spellDescription,

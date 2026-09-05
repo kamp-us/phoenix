@@ -1,4 +1,5 @@
 import {describe, expect, it} from "vitest";
+import {emptyParams} from "../../protocol/fixtures.ts";
 import {complete} from "./complete.ts";
 import {didYouMean} from "./did-you-mean.ts";
 import {registry, snapshot} from "./fixtures.ts";
@@ -87,13 +88,13 @@ describe("parse", () => {
 			{
 				path: ["focus", "layout"],
 				describe: "Show the layout.",
-				params: undefined,
+				params: emptyParams,
 				capabilities: [],
 			},
 			{
 				path: ["focus", "layout", "close"],
 				describe: "Close the layout view.",
-				params: undefined,
+				params: emptyParams,
 				capabilities: [],
 			},
 		]);
