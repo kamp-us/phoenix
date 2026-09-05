@@ -477,14 +477,16 @@ function ChatWindow({
 					<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
 				</div>
 			</div>
+			{/* The scroll container is the only way to older turns on a plain transcript, so a keyboard
+			user must be able to focus it (axe scrollable-region-focusable); `log` is not interactive to
+			Biome, but a scroll region is. */}
+			{/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus */}
 			<div
 				ref={scrollRef}
 				className="tuval-chat-transcript"
 				onScroll={onScroll}
 				role="log"
 				aria-label="Transcript"
-				// The scroll container is the only way to older turns on a plain transcript, so a
-				// keyboard user must be able to focus it (axe scrollable-region-focusable).
 				tabIndex={0}
 			>
 				<div className="tuval-chat-spacer" style={{height: `${virtualizer.getTotalSize()}px`}}>
