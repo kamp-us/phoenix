@@ -41,7 +41,8 @@ import {aiAgentOverClient} from "./PiAiAgent.ts";
 const PROGRAM = "pi-ai-agent-publishes-the-send-test";
 const CWD = "/tuval/send";
 const PROMPT_ERROR = "tuval/ai-agent/PromptError";
-const SESSION: PiSessionRef = {id: "session-8018", cwd: CWD};
+const PI_MODEL = {provider: "faux", id: "faux-1"} as const;
+const SESSION: PiSessionRef = {id: "session-8018", cwd: CWD, model: PI_MODEL};
 
 const wired: ReadonlySet<string> = new Set(Object.values(aiAgentPortNames));
 
@@ -62,7 +63,7 @@ const snapshotOf = (
 	createdAt: 0,
 	updatedAt: 0,
 	phase,
-	model: {provider: "faux", id: "faux-1"},
+	model: PI_MODEL,
 	thinkingLevel: "off",
 	attached: true,
 	locked: false,
@@ -127,6 +128,8 @@ const pin = (options: {readonly refusals?: number} = {}): Effect.Effect<Pin> =>
 					return snapshotOf([], "idle", 9);
 				}),
 			abort: () => Effect.never,
+			setModel: () => Effect.succeed(snapshotOf([], "idle", 0)),
+			models: Effect.succeed([]),
 			snapshots: () => Stream.fromQueue(pushed),
 			disconnections: Stream.never,
 		};

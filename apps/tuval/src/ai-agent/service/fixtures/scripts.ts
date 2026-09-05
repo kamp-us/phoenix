@@ -12,7 +12,7 @@
 import type {AgentEvent} from "../../events.ts";
 import type {ItemId, Mode, PermissionRequest, ToolItem, TranscriptItem} from "../../ports/index.ts";
 import {TransportError} from "../errors.ts";
-import type {AgentScript} from "../script.ts";
+import type {AgentScript, ScriptedModels} from "../script.ts";
 
 export const SESSION_ID = "session-7599";
 
@@ -25,6 +25,15 @@ export const modes = {
 	current: mode("normal"),
 	available: [mode("normal"), mode("plan")],
 } as const;
+
+/** Two, because the composer's picker stays disabled on a list shorter than two (#7981). */
+export const models = {
+	current: {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
+	available: [
+		{provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
+		{provider: "anthropic", id: "claude-sonnet-5", name: "Sonnet 5"},
+	],
+} as const satisfies ScriptedModels;
 
 const item = (value: TranscriptItem): TranscriptItem => value;
 
@@ -40,7 +49,7 @@ export const history: ReadonlyArray<TranscriptItem> = Array.from({length: 9}, (_
 	}),
 );
 
-const empty = {sessionId: SESSION_ID, history, modes, turns: [], interrupt: []} as const;
+const empty = {sessionId: SESSION_ID, history, modes, models, turns: [], interrupt: []} as const;
 
 export const plainReplyTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},

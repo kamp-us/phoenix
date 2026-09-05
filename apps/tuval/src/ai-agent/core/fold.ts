@@ -164,6 +164,8 @@ export const foldEvent = (
 			return dropRequest(state, event.request);
 		case "mode":
 			return {...state, modes: {current: event.current, available: event.available}};
+		case "model":
+			return {...state, models: {current: event.current, available: event.available}};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
 		// The same landing the `failed` Msg gives a failure the handlers saw, so a refusal reads the

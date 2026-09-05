@@ -127,6 +127,40 @@ function installHarnessFetch(): {
 	return {fetch, bridge};
 }
 
+/**
+ * A host that knows nothing at mount and pushes its catalog once it does. This is the shape a host
+ * whose agent starts after the composer does has to take: the four loads run once per bridge
+ * identity, so rebuilding the bridge to deliver a late catalog would drop the composer back to
+ * `loading` on every change.
+ */
+function lateCatalogBridge(): {
+	bridge: AgentChatInputBridge;
+	push: (event: {readonly type: string; readonly [key: string]: unknown}) => void;
+} {
+	let listener: ((event: {readonly type: string; readonly [key: string]: unknown}) => void) | null =
+		null;
+	const bridge: AgentChatInputBridge = {
+		loadPiState: async () => ({isStreaming: false}),
+		loadPiCommands: async () => [],
+		loadPiModels: async () => [],
+		loadPiThinkingLevels: async () => [],
+		loadPiFiles: async () => [],
+		setPiModel: async () => undefined,
+		setPiThinkingLevel: async () => undefined,
+		setPiProjectTrust: async () => undefined,
+		sendPiPrompt: async () => undefined,
+		abortPi: async () => undefined,
+		answerPiExtension: async () => undefined,
+		subscribeToPiEvents: (onEvent) => {
+			listener = onEvent;
+			return () => {
+				listener = null;
+			};
+		},
+	};
+	return {bridge, push: (event) => listener?.(event)};
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AgentChatInput", () => {
@@ -242,6 +276,30 @@ describe("AgentChatInput", () => {
 				}),
 			);
 		});
+	});
+
+	it("takes a catalog pushed after mount and enables the picker on it", async () => {
+		const {bridge, push} = lateCatalogBridge();
+		render(<AgentChatInput bridge={bridge} variant="focused" />);
+
+		const before = await screen.findByRole("button", {name: /model/i});
+		expect(before.getAttribute("disabled")).not.toBeNull();
+
+		push({
+			type: "harness_status",
+			status: {
+				models: [
+					{provider: "anthropic", id: "opus", name: "Opus 5"},
+					{provider: "anthropic", id: "sonnet", name: "Sonnet 5"},
+				],
+				model: {provider: "anthropic", id: "sonnet", name: "Sonnet 5"},
+			},
+		});
+
+		const picker = await screen.findByRole("button", {name: "model: Sonnet 5"});
+		await waitFor(() => expect(picker.getAttribute("disabled")).toBeNull());
+		fireEvent.click(picker);
+		expect(await screen.findByRole("menuitemradio", {name: "Opus 5"})).toBeTruthy();
 	});
 
 	it("omits off effort returned by the bridge on load and model refresh", async () => {

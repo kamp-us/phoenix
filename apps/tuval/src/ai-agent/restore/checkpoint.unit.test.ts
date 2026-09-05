@@ -47,6 +47,14 @@ const saved: AiAgentSessionState = {
 	usage: {model: "claude-opus-5", inputTokens: 1_200, outputTokens: 340, cost: 0.031},
 	permissions: {"req-1": card},
 	modes: {current: Mode.make("plan"), available: [Mode.make("plan"), Mode.make("build")]},
+	models: {
+		current: {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
+		available: [
+			{provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
+			// No provider: a backend that names a model by a bare id, which the predicate admits.
+			{id: "haiku", name: "Haiku"},
+		],
+	},
 	lastPrompt: "make the README",
 	lastPage: {items: [userItem("older-0")], hasMore: true},
 	failure: {tag: "tuval/ai-agent/PromptError", reason: "disconnected", detail: "socket closed"},
@@ -64,6 +72,12 @@ describe("what a checkpoint carries", () => {
 		expect(parsed?.permissions["req-1"]).toEqual(card);
 		expect(parsed?.usage).toEqual(saved.usage);
 		expect(parsed?.transcript.items).toEqual(saved.transcript.items);
+		expect(parsed?.models).toEqual(saved.models);
+	});
+
+	it("refuses a saved model list whose rows are not model refs", () => {
+		expect(parseSessionState({...saved, models: {current: null, available: [{id: 1}]}})).toBeNull();
+		expect(parseSessionState({...saved, models: {current: "opus", available: []}})).toBeNull();
 	});
 
 	it("carries nothing a JSON round trip would lose", () => {
@@ -81,6 +95,7 @@ describe("restoring a saved session", () => {
 		expect(restored.usage).toEqual(saved.usage);
 		expect(restored.permissions).toEqual(saved.permissions);
 		expect(restored.modes).toEqual(saved.modes);
+		expect(restored.models).toEqual(saved.models);
 		expect(restored.lastPrompt).toBe("make the README");
 	});
 

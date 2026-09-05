@@ -44,6 +44,7 @@ const script: AgentScript = {
 	sessionId: SESSION,
 	history: [],
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
 	interrupt: [],
 	turns: [],
 };

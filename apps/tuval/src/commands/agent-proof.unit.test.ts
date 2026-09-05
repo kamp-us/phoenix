@@ -558,6 +558,7 @@ const runServiceAgent = Effect.gen(function* () {
 		sessionId: "spell-proof",
 		history: [],
 		modes: {current: null, available: []},
+		models: {current: null, available: []},
 		interrupt: [],
 		spells: {bridge: reach, scope: serviceScope},
 		turns: [

@@ -10,6 +10,7 @@
 
 import {Predicate} from "effect";
 import {
+	isModelRef,
 	isPermissionRequest,
 	isTranscriptItems,
 	isWindowOmission,
@@ -39,6 +40,12 @@ const isModes = (value: unknown): boolean =>
 	Array.isArray(value.available) &&
 	value.available.every((mode) => typeof mode === "string");
 
+const isModels = (value: unknown): boolean =>
+	Predicate.isObject(value) &&
+	(value.current === null || isModelRef(value.current)) &&
+	Array.isArray(value.available) &&
+	value.available.every(isModelRef);
+
 const isTranscript = (value: unknown): boolean =>
 	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
 
@@ -67,6 +74,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isUsage(value.usage) &&
 	isPermissions(value.permissions) &&
 	isModes(value.modes) &&
+	isModels(value.models) &&
 	isNullOrString(value.lastPrompt) &&
 	isPage(value.lastPage) &&
 	isFailure(value.failure);

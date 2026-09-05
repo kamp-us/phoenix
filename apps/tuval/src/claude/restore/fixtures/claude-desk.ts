@@ -139,6 +139,7 @@ const script: AgentScript = {
 	// never did — so replaying history on resume reconciles the tail without touching the cut.
 	history: [settledRead, assistant("a1", "here it is", 3), assistant("a2", "all green", 5)],
 	modes: {current: null, available: OFFERED},
+	models: {current: null, available: []},
 	interrupt: [],
 	turns: [{events: firstTurn}, {events: secondTurn}, {events: cutTurn}, {events: resendTurn}],
 	resumeAtTurn: 3,
