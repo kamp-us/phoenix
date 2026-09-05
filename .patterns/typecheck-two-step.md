@@ -1,6 +1,9 @@
 # The two-step `typecheck` script
 
-Every workspace package's `typecheck` script runs two commands, in this order:
+Every workspace package's `typecheck` script runs the same two commands per tsconfig, in this
+order (a package with two lenses, such as `apps/tuval` with its browser entry's
+`tsconfig.browser.json`, runs the pair once per lens; see
+[tuval-shell-assembly.md](./tuval-shell-assembly.md)):
 
 ```jsonc
 "typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict"

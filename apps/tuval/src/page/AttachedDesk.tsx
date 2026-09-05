@@ -17,8 +17,8 @@ import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {ProcessId} from "../process/process.ts";
 import type {ShellMsg, ShellState} from "../shell/core/index.ts";
 import {windows} from "../shell/layout/index.ts";
-import type {PickerEntries} from "../shell/picker/index.ts";
-import type {AttachedProcess, PageAttachment} from "../shell/transport/index.ts";
+import type {PickerEntries} from "../shell/picker/browser.ts";
+import type {AttachedProcess, PageAttachment} from "../shell/transport/browser.ts";
 import type {
 	AttachEvent,
 	DeskSource,
