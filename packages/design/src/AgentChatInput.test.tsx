@@ -322,4 +322,40 @@ describe("AgentChatInput", () => {
 		expect(await screen.findByRole("menuitemradio", {name: "minimal"})).toBeTruthy();
 		expect(screen.queryByRole("menuitemradio", {name: "kapalı"})).toBeNull();
 	});
+
+	it("reports every draft edit, including the clear a sent prompt performs", async () => {
+		const {bridge} = installHarnessFetch();
+		const drafts: string[] = [];
+		render(<AgentChatInput bridge={bridge} onDraftChange={(draft) => drafts.push(draft)} />);
+		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
+
+		fireEvent.change(input, {target: {value: "gönder"}});
+		fireEvent.keyDown(input, {key: "Enter"});
+
+		await waitFor(() => expect(drafts).toEqual(["gönder", ""]));
+	});
+
+	it("does not echo the value a consumer feeds back in as initialValue", async () => {
+		const {bridge} = installHarnessFetch();
+		const drafts: string[] = [];
+		const {rerender} = render(
+			<AgentChatInput bridge={bridge} initialValue="" onDraftChange={(d) => drafts.push(d)} />,
+		);
+		await screen.findByLabelText("Pi'ye mesaj yaz");
+
+		rerender(
+			<AgentChatInput
+				bridge={bridge}
+				initialValue="restored"
+				onDraftChange={(d) => drafts.push(d)}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect((screen.getByLabelText("Pi'ye mesaj yaz") as HTMLTextAreaElement).value).toBe(
+				"restored",
+			),
+		);
+		expect(drafts).toEqual([]);
+	});
 });

@@ -312,6 +312,12 @@ export interface AgentChatInputProps {
 	readonly disabled?: boolean;
 	readonly variant?: "harness" | "focused";
 	readonly mockWhenUnavailable?: boolean;
+	/**
+	 * Called with the composer's text whenever an edit changes it — a keystroke, an accepted
+	 * completion, an extension's `set_editor_text`, or the clear a successful send performs. For a
+	 * consumer that persists the draft somewhere of its own; the component still owns the value.
+	 */
+	readonly onDraftChange?: (draft: string) => void;
 }
 
 export function AgentChatInput({
@@ -320,6 +326,7 @@ export function AgentChatInput({
 	disabled = false,
 	variant = "harness",
 	mockWhenUnavailable = false,
+	onDraftChange,
 }: AgentChatInputProps) {
 	const activeBridge = bridge ?? unavailableBridge;
 	const t = useDesignT();
@@ -349,6 +356,16 @@ export function AgentChatInput({
 	const [usingMockHarness, setUsingMockHarness] = useState(false);
 
 	useEffect(() => setDraft(initialValue), [initialValue]);
+
+	// Only edits notify. The `initialValue` sync above is the consumer's own write coming back, and
+	// echoing it would loop a consumer that feeds `onDraftChange` into `initialValue`.
+	const draftRef = useRef(draft);
+	draftRef.current = draft;
+	const editDraft = (next: string | ((current: string) => string)) => {
+		const value = typeof next === "function" ? next(draftRef.current) : next;
+		setDraft(value);
+		onDraftChange?.(value);
+	};
 
 	useEffect(() => {
 		let current = true;
@@ -526,7 +543,7 @@ export function AgentChatInput({
 		}
 		if (method === "set_editor_text") {
 			const text = stringValue(event, "text");
-			if (text !== undefined) setDraft(text);
+			if (text !== undefined) editDraft(text);
 			return;
 		}
 		if (method === "setTitle") {
@@ -539,7 +556,7 @@ export function AgentChatInput({
 		if (!completion) return;
 		const replacement =
 			suggestion.kind === "command" ? `/${suggestion.command.name}` : `@${suggestion.path}`;
-		setDraft(
+		editDraft(
 			(current) =>
 				`${current.slice(0, completion.start)}${replacement} ${current.slice(completion.end)}`,
 		);
@@ -553,7 +570,7 @@ export function AgentChatInput({
 		if (usingMockHarness) {
 			addActivity(t("admin.agent.mock.prompted"));
 			setAssistantText(t("admin.agent.mock.reply"));
-			setDraft("");
+			editDraft("");
 			setImages([]);
 			return;
 		}
@@ -584,7 +601,7 @@ export function AgentChatInput({
 								: "admin.agent.activity.followUpQueued",
 				),
 			);
-			setDraft("");
+			editDraft("");
 			setImages([]);
 			setAssistantText("");
 		} catch (cause) {
@@ -920,7 +937,7 @@ export function AgentChatInput({
 							placeholder={t("admin.agent.compose.placeholder")}
 							value={draft}
 							onChange={(event) => {
-								setDraft(event.currentTarget.value);
+								editDraft(event.currentTarget.value);
 								setCompletionDismissed(false);
 							}}
 							onPaste={onPaste}

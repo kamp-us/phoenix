@@ -1,0 +1,21 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"composite": false,
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.design.tsbuildinfo",
+		// `@kampus/design` is source-consumed, so its `.tsx` files enter whatever program imports
+		// them and are checked under *that* project's options. The package itself is authored with
+		// `exactOptionalPropertyTypes: false` (`packages/design/tsconfig.json`), as is its other
+		// consumer (`apps/web/tsconfig.app.json`), and eight of its files do not hold under the
+		// strict flag. So the slice that imports it gets the package's own lens, and the kernel
+		// keeps the strict one it was written under (#7604).
+		"exactOptionalPropertyTypes": false
+	},
+	// Not composite, so this project needs no full file list: the slice's own imports come along
+	// and are re-checked here under the relaxed flag, which is the point.
+	// `assets.d.ts` carries the app's `*.css` module declaration, which the design package's own
+	// side-effect stylesheet imports need as much as this slice's do.
+	"include": ["src/shell/chat", "src/page/assets.d.ts"],
+	// `exclude` is inherited, and the base excludes exactly this directory.
+	"exclude": ["node_modules"]
+}

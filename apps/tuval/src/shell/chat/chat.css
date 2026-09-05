@@ -1,0 +1,240 @@
+/*
+ * The chat window's own layout, and the one adapter between two role-token layers.
+ *
+ * Tuval declares its roles in `../ui/tokens.css` and apps/web declares the same names in
+ * `packages/design/src/tokens.css`, at two different shapes. The typography roles are the ones that
+ * actually differ: the package's `--t-*` are whole `font` shorthands with the family baked in
+ * (`--t-meta: 12px / 1.4 var(--font-body)`) while Tuval's carry size and line-height only and each
+ * call site appends its own family. A `@kampus/design` stylesheet's `font: var(--t-meta)` is an
+ * invalid shorthand under Tuval's values and the whole declaration is dropped — an unstyled
+ * composer, silently.
+ *
+ * So this scope re-declares the roles the package's sheets read, in the package's own shape, off
+ * Tuval's own scale. It is the only place the two layers meet; nothing under `.tuval-chat` may use
+ * Tuval's two-part `font: var(--t-body) system-ui, sans-serif` form, because inside this scope
+ * `--t-body` already carries a family.
+ */
+
+.tuval-chat {
+	/* The window is dark whatever it is mounted inside; Tuval is chrome, not a document. */
+	color-scheme: dark;
+
+	--font-body: system-ui, sans-serif;
+	--font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+	--t-body: 14px / 1.5 var(--font-body);
+	--t-body-sm: 13px / 1.45 var(--font-body);
+	--t-meta: 12px / 1.4 var(--font-body);
+	--t-micro: 11px / 1.4 var(--font-body);
+	--t-mono: 13px / 1.5 var(--font-mono);
+
+	--r-lg: 6px;
+	--s-8: 40px;
+	--tap-min: 36px;
+	--ease-standard: ease-out;
+
+	/* The one role Tuval's layer has no member of. Same hue as the manifest's, at this scale's
+	   lightness so it clears 4.5:1 on `--surface` (`design-system-manifest.md`, Pillar 4). */
+	--danger: oklch(0.72 0.16 25);
+
+	--shadow-raised: 0 1px 3px 0 rgb(0 0 0 / 40%);
+	--shadow-dropdown: 0 6px 16px -4px rgb(0 0 0 / 50%);
+	--shadow-overlay: 0 16px 40px -8px rgb(0 0 0 / 60%);
+
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	min-block-size: 0;
+	block-size: 100%;
+	font: var(--t-body);
+	color: var(--text-primary);
+}
+
+/*
+ * The reset `@kampus/design` is authored against. Its components assume the consuming app supplies
+ * one — apps/web does, in its own `styles/global.css`, which #7561 deliberately left app-owned —
+ * and without it a real browser load renders every design `Button` with native button chrome and
+ * every field at the browser's default width. Scoped to this window rather than to
+ * `.tuval-surface`, because the desk's own components are authored against no reset at all.
+ */
+.tuval-chat *,
+.tuval-chat *::before,
+.tuval-chat *::after {
+	box-sizing: border-box;
+}
+
+.tuval-chat button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: 0;
+	cursor: pointer;
+}
+
+/* A Manti anatomy button owns its own spacing through its `[data-scope][data-part]` rules. */
+.tuval-chat button:not([data-scope][data-part]) {
+	padding: 0;
+}
+
+.tuval-chat :is(input, textarea, select) {
+	font: inherit;
+	color: inherit;
+}
+
+.tuval-chat [data-scope="field"][data-part="input"] {
+	inline-size: 100%;
+}
+
+/*
+ * `@kampus/design` components mark a screen-reader-only label with this class, but the rule that
+ * hides it lives in apps/web's own `global.css` — app-owned by the #7561 extraction, and Tuval is
+ * not that app. Without it every hidden label paints: a real browser load showed "Add an image" and
+ * the file input's own chrome sitting in the composer. Same clip-rect declaration as the web app's.
+ */
+.tuval-chat .kp-visually-hidden {
+	position: absolute;
+	inline-size: 1px;
+	block-size: 1px;
+	margin: -1px;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* Manti's field root is inline-sized by the consuming app's own reset; the composer fills its box. */
+.tuval-chat [data-scope="field"][data-part="root"] {
+	inline-size: 100%;
+}
+
+/*
+ * The scroller. `overflow-anchor: none` because this window does its own prepend anchoring
+ * (`./ChatWindow.tsx`) and the browser's scroll anchoring would fight it.
+ */
+.tuval-chat-transcript {
+	flex: 1 1 auto;
+	min-block-size: 0;
+	overflow-y: auto;
+	overflow-anchor: none;
+	contain: strict;
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	background: var(--surface-sunken);
+}
+
+/* The virtualizer positions rows absolutely inside a spacer of the full transcript height. */
+.tuval-chat-spacer {
+	position: relative;
+	inline-size: 100%;
+}
+
+.tuval-chat-row {
+	position: absolute;
+	inset-inline: 0;
+	inset-block-start: 0;
+	padding: var(--s-2) var(--s-3);
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.tuval-chat-who {
+	font: var(--t-micro);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.tuval-chat-text {
+	margin: 0;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tuval-chat-row[data-kind="user"] .tuval-chat-text {
+	color: var(--text-secondary);
+}
+
+.tuval-chat-row[data-kind="system"] .tuval-chat-text {
+	color: var(--text-muted);
+	font: var(--t-body-sm);
+}
+
+/* One collapsed line per tool call in this slice; the expandable row is the next one. */
+.tuval-chat-tool {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	font: var(--t-mono);
+	color: var(--text-secondary);
+	min-inline-size: 0;
+}
+
+.tuval-chat-tool-input {
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Pillar 4: the status is a word, never the colour alone. */
+.tuval-chat-tool-status[data-status="error"] {
+	color: var(--danger);
+}
+
+.tuval-chat-head {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	justify-content: center;
+	font: var(--t-meta);
+	color: var(--text-muted);
+	border-block-end: 1px dashed var(--border-faint);
+}
+
+.tuval-chat-interrupted {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	flex-wrap: wrap;
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-interrupted-mark {
+	color: var(--danger);
+}
+
+.tuval-chat-phase {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+/* The phase is carried by a word, so the dot is decoration and never the only signal. */
+.tuval-chat-phase-dot {
+	inline-size: 6px;
+	block-size: 6px;
+	border-radius: 50%;
+	background: var(--text-faint);
+}
+
+.tuval-chat-phase[data-phase="ready"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="prompting"] .tuval-chat-phase-dot {
+	background: var(--accent);
+}
+
+.tuval-chat-phase[data-phase="gone"] .tuval-chat-phase-dot {
+	background: var(--danger);
+}
+
+.tuval-chat-placeholder {
+	margin: 0;
+	padding: var(--s-4);
+	color: var(--text-muted);
+	font: var(--t-body-sm);
+}
