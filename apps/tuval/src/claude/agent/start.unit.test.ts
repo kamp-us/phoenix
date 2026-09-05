@@ -117,7 +117,7 @@ describe("start opens one streaming query", () => {
 		}),
 	);
 
-	it.effect("emits starting, the handshake's ready phase, then the mode list", () =>
+	it.effect("emits starting, the handshake's ready phase, then the mode and model lists", () =>
 		on({modes: MODES}, (agent) =>
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
@@ -127,6 +127,7 @@ describe("start opens one streaming query", () => {
 					// The opening mode, not the layer's raw held `null`: nothing has called `setMode`, so
 					// what the query opened on is the row's own `permissionMode` (#7828).
 					{kind: "mode", current: Mode.make("default"), available: MODES},
+					{kind: "model", current: null, available: []},
 				]);
 			}),
 		),
@@ -137,7 +138,7 @@ describe("start opens one streaming query", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
-				const announced = events[START_EVENTS - 1];
+				const announced = events[START_EVENTS - 2];
 				assert.deepStrictEqual(announced, {
 					kind: "mode",
 					current: Mode.make(scripted.opened[0]?.record.options.permissionMode ?? ""),
@@ -164,6 +165,7 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 					{kind: "phase", phase: "starting"},
 					{kind: "phase", phase: "ready"},
 					{kind: "mode", current: Mode.make("default"), available: MODES},
+					{kind: "model", current: null, available: []},
 				]);
 			}),
 		),
@@ -279,6 +281,78 @@ describe("start on a resume", () => {
 	);
 });
 
+describe("setModel", () => {
+	const CATALOG = [
+		{value: "opus", displayName: "Opus 5", description: "the deep one"},
+		{value: "sonnet", displayName: "Sonnet 5", description: "the fast one"},
+	];
+
+	it.effect("announces the SDK's own catalog on the open", () =>
+		on({models: CATALOG}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(events[START_EVENTS - 1], {
+					kind: "model",
+					current: null,
+					available: [
+						{id: "opus", name: "Opus 5"},
+						{id: "sonnet", name: "Sonnet 5"},
+					],
+				});
+			}),
+		),
+	);
+
+	it.effect("reaches Query.setModel on the live session and announces the new state", () =>
+		on({models: CATALOG}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setModel({id: "sonnet", name: "Sonnet 5"});
+				// The live switch, not a respawn: one query was opened and it took the call.
+				assert.lengthOf(scripted.opened, 1);
+				assert.deepStrictEqual(scripted.opened[0]?.record.models, ["sonnet"]);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
+				assert.deepStrictEqual(events[START_EVENTS], {
+					kind: "model",
+					current: {id: "sonnet", name: "Sonnet 5"},
+					available: [
+						{id: "opus", name: "Opus 5"},
+						{id: "sonnet", name: "Sonnet 5"},
+					],
+				});
+			}),
+		),
+	);
+
+	it.effect("refuses a model the CLI's catalog does not offer", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				on({models: CATALOG}, (agent) =>
+					Effect.gen(function* () {
+						yield* agent.start({cwd: CWD});
+						yield* agent.setModel({id: "gpt", name: "GPT"});
+					}),
+				),
+			);
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/ModelUnsupported");
+		}),
+	);
+
+	it.effect("opens a later session on the model it announced", () =>
+		on({models: CATALOG}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setModel({id: "sonnet", name: "Sonnet 5"});
+				yield* agent.start({cwd: CWD});
+				// The query still opens on the row's static model — the SDK's `sessionId`/`resume`
+				// options carry no model — so the switch is re-applied against the new session.
+				assert.deepStrictEqual(scripted.opened[1]?.record.models, ["sonnet"]);
+			}),
+		),
+	);
+});
+
 describe("setMode", () => {
 	it.effect("reaches Query.setPermissionMode and announces the new state", () =>
 		on({}, (agent, scripted) =>
@@ -314,7 +388,7 @@ describe("setMode", () => {
 				yield* agent.start({cwd: CWD});
 				assert.strictEqual(scripted.opened[0]?.record.options.permissionMode, "plan");
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
-				assert.deepStrictEqual(events[START_EVENTS - 1], {
+				assert.deepStrictEqual(events[START_EVENTS - 2], {
 					kind: "mode",
 					current: Mode.make("plan"),
 					available: MODES,
@@ -345,7 +419,7 @@ describe("setMode", () => {
 					Effect.gen(function* () {
 						yield* agent.start({cwd: CWD});
 						const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
-						assert.deepStrictEqual(events[START_EVENTS - 1], {
+						assert.deepStrictEqual(events[START_EVENTS - 2], {
 							kind: "mode",
 							current: Mode.make("default"),
 							available: [Mode.make("default")],

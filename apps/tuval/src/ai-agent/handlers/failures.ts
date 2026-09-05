@@ -13,6 +13,7 @@
 import {Cause} from "effect";
 import type {AgentFailure} from "../core/index.ts";
 import {
+	ModelUnsupported,
 	ModeUnsupported,
 	type PageError,
 	type PromptError,
@@ -27,11 +28,17 @@ export type AgentServiceError =
 	| PromptError
 	| UnknownRequest
 	| ModeUnsupported
+	| ModelUnsupported
 	| PageError
 	| TransportError;
 
+/** The three classes that enumerate no `reason` case; every other one carries its own. */
 const reasonOf = (error: AgentServiceError): string | null =>
-	error instanceof UnknownRequest || error instanceof ModeUnsupported ? null : error.reason;
+	error instanceof UnknownRequest ||
+	error instanceof ModeUnsupported ||
+	error instanceof ModelUnsupported
+		? null
+		: error.reason;
 
 export const failureOf = (error: AgentServiceError): AgentFailure => ({
 	tag: error._tag,

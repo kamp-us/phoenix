@@ -94,6 +94,7 @@ const script: AgentScript = {
 		assistant("a2", "all green", 4),
 	],
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
 	interrupt: [],
 	turns: [{events: firstTurn}, {events: secondTurn}, {events: cutTurn}, {events: resendTurn}],
 	resumeAtTurn: 3,

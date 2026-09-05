@@ -6,6 +6,7 @@
 
 export {
 	MODE_UNSUPPORTED,
+	MODEL_UNSUPPORTED,
 	PAGE_ERROR,
 	PROMPT_ERROR,
 	portRefused,
@@ -34,6 +35,7 @@ export {
 	type HistoryPage,
 	initialState,
 	lastAssistantId,
+	type ModelState,
 	type ModeState,
 	phases,
 	restore,

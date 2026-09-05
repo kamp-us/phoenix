@@ -14,6 +14,7 @@ import type {Phase} from "../events.ts";
 import type {
 	ItemId,
 	Mode,
+	ModelRef,
 	PermissionRequest,
 	TranscriptItem,
 	TranscriptPayload,
@@ -32,6 +33,18 @@ export interface UsageTotals {
 export interface ModeState {
 	readonly current: Mode | null;
 	readonly available: ReadonlyArray<Mode>;
+}
+
+/**
+ * What the session runs on, and what it may be switched to.
+ *
+ * `available` is the layer's *offered* set and never a backend's raw catalog: this state is
+ * checkpointed whole, and Pi's runtime catalog is four figures at its pin — a checkpoint that grew
+ * by it would be paying storage per session for a menu nobody can scroll (#7981).
+ */
+export interface ModelState {
+	readonly current: ModelRef | null;
+	readonly available: ReadonlyArray<ModelRef>;
 }
 
 /**
@@ -71,6 +84,7 @@ export interface AiAgentSessionState {
 	/** Pending permission cards by request id: one arrives with an event, one leaves with an answer. */
 	readonly permissions: Readonly<Record<string, PermissionRequest>>;
 	readonly modes: ModeState;
+	readonly models: ModelState;
 	/** The text of the last prompt sent, for the resend affordance. */
 	readonly lastPrompt: string | null;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
@@ -105,6 +119,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	usage: emptyUsage,
 	permissions: {},
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
 	lastPrompt: null,
 	lastPage: null,
 	failure: null,

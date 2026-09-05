@@ -17,8 +17,9 @@
 
 import {Context, type Effect, type Stream} from "effect";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, PermissionDecision, TranscriptItem} from "../ports/index.ts";
+import type {Mode, ModelRef, PermissionDecision, TranscriptItem} from "../ports/index.ts";
 import type {
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
@@ -57,6 +58,13 @@ export interface TuvalAiAgentApi {
 		decision: PermissionDecision,
 	) => Effect.Effect<void, UnknownRequest>;
 	readonly setMode: (mode: Mode) => Effect.Effect<void, ModeUnsupported>;
+	/**
+	 * Switch the model this session runs on — the eighth member (#7981). The founder picks the model
+	 * from the composer, so it is an act of the generic interface rather than of a backend. A ref
+	 * outside the layer's offered set fails; the offered set itself arrives on `events` as a `model`
+	 * event, exactly as the mode list does.
+	 */
+	readonly setModel: (model: ModelRef) => Effect.Effect<void, ModelUnsupported>;
 	/**
 	 * History is backend-owned (ruling 5): this reads the backend's own store through the
 	 * transport. Tuval keeps no second copy beyond the live tail the core holds.

@@ -29,6 +29,7 @@ export const checkpointFields = [
 	"usage",
 	"permissions",
 	"modes",
+	"models",
 	"lastPrompt",
 	"lastPage",
 	"failure",

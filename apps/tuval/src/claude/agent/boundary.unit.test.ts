@@ -57,9 +57,9 @@ describe("the layer's type", () => {
 		expectTypeOf(composed).toEqualTypeOf<Layer.Layer<TuvalAiAgent, never, SpellBridge>>();
 	});
 
-	it("implements exactly the seven generic members, and no eighth", () => {
+	it("implements exactly the eight generic members, and no ninth", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
-			"start" | "prompt" | "interrupt" | "answer" | "setMode" | "page" | "events"
+			"start" | "prompt" | "interrupt" | "answer" | "setMode" | "setModel" | "page" | "events"
 		>();
 	});
 });

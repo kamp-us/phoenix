@@ -9,7 +9,7 @@ import {applyCellChecked} from "@demlik/tea";
 import {describe, expect, it} from "vitest";
 import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import type {AgentEvent} from "../events.ts";
-import {Mode, type PermissionRequest} from "../ports/index.ts";
+import {Mode, type ModelRef, type PermissionRequest} from "../ports/index.ts";
 import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
 import {type AiAgentSessionState, initialState} from "./state.ts";
@@ -21,6 +21,9 @@ const apply = (
 	msg: AiAgentSessionMsg,
 ): readonly [AiAgentSessionState, ReadonlyArray<AiAgentSessionCmd>] =>
 	applyCellChecked<AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd>(machine, state, msg);
+
+const opus: ModelRef = {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"};
+const sonnet: ModelRef = {provider: "anthropic", id: "claude-sonnet-5", name: "Sonnet 5"};
 
 const card: PermissionRequest = {
 	title: "Write README.md",
@@ -294,6 +297,31 @@ describe("setMode", () => {
 	});
 });
 
+describe("setModel", () => {
+	const offering = started({models: {current: opus, available: [opus, sonnet]}});
+
+	it("asks the layer for a model it offers", () => {
+		const [, cmds] = apply(offering, {type: "setModel", model: sonnet});
+		expect(cmds).toEqual([{type: "aiAgent.setModel", model: sonnet}]);
+	});
+
+	it("matches on provider and id, never on the label a picker sent", () => {
+		const [, cmds] = apply(offering, {type: "setModel", model: {...sonnet, name: "whatever"}});
+		expect(cmds).toEqual([{type: "aiAgent.setModel", model: {...sonnet, name: "whatever"}}]);
+	});
+
+	it("refuses a model it does not offer, including when it offers none", () => {
+		const [offered, noCmd] = apply(offering, {
+			type: "setModel",
+			model: {provider: "openai", id: "gpt", name: "GPT"},
+		});
+		expect(offered.failure?.tag).toBe("tuval/ai-agent/ModelUnsupported");
+		expect(noCmd).toEqual([]);
+		const [none] = apply(started(), {type: "setModel", model: opus});
+		expect(none.failure?.tag).toBe("tuval/ai-agent/ModelUnsupported");
+	});
+});
+
 describe("paging older history", () => {
 	it("asks the layer for the page", () => {
 		const [state, cmds] = apply(started(), {type: "page", before: "i7", limit: 20});
@@ -405,6 +433,11 @@ describe("the Cmd each Msg answers for", () => {
 			started({modes: {current: null, available: [Mode.make("plan")]}}),
 			{type: "setMode", mode: Mode.make("plan")},
 			["aiAgent.setMode"],
+		],
+		[
+			started({models: {current: null, available: [opus]}}),
+			{type: "setModel", model: opus},
+			["aiAgent.setModel"],
 		],
 		[started(), {type: "page", before: null, limit: 10}, ["aiAgent.page"]],
 		[started(), {type: "paged", page: {items: [], hasMore: false}}, []],

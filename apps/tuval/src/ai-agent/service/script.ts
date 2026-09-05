@@ -11,7 +11,7 @@
 import type {SpellBridgeApi} from "../../commands/bridge/index.ts";
 import type {SpellPath, Scope as SpellScope} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, TranscriptItem} from "../ports/index.ts";
+import type {Mode, ModelRef, TranscriptItem} from "../ports/index.ts";
 import type {TransportError} from "./errors.ts";
 
 /** One spell a turn calls: the path and the args, exactly as they cross the wire. */
@@ -63,6 +63,12 @@ export interface ScriptedModes {
 	readonly available: ReadonlyArray<Mode>;
 }
 
+/** What this scripted backend offers a picker. A script with nothing to pick names an empty list. */
+export interface ScriptedModels {
+	readonly current: ModelRef | null;
+	readonly available: ReadonlyArray<ModelRef>;
+}
+
 export interface AgentScript {
 	readonly sessionId: string;
 	/**
@@ -77,6 +83,7 @@ export interface AgentScript {
 	 */
 	readonly resumed?: ReadonlyArray<AgentEvent>;
 	readonly modes: ScriptedModes;
+	readonly models: ScriptedModels;
 	/** One entry per prompt, consumed in order. */
 	readonly turns: ReadonlyArray<ScriptedTurn>;
 	/**

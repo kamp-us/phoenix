@@ -4,7 +4,7 @@
  *
  * It replays golden fixtures (`../../history/fixtures/PROVENANCE.md`) rather than hand-written
  * envelopes, and it records the control calls the layer makes — `close`, `interrupt`,
- * `setPermissionMode` — plus the `Options` it was opened with. That record is the assertion surface
+ * `setPermissionMode`, `setModel` — plus the `Options` it was opened with. That record is the assertion surface
  * for everything the layer is supposed to hand the SDK.
  *
  * It also models the one thing the SDK owns that a scripted generator otherwise would not: the
@@ -14,6 +14,7 @@
  */
 
 import type {
+	ModelInfo,
 	Options,
 	PermissionMode,
 	SDKMessage,
@@ -36,6 +37,8 @@ export interface QueryRecord {
 	readonly options: Options;
 	readonly prompts: Array<SDKUserMessage>;
 	readonly modes: Array<string>;
+	/** Every model the layer switched to, in order, so a test asserts the live call was made. */
+	readonly models: Array<string | undefined>;
 	closes: number;
 	interrupts: number;
 	readonly child: SpawnedProcess | null;
@@ -54,6 +57,8 @@ export interface ScriptedBehaviour {
 	 * takes the handshake down with it, exactly as tearing a real query down does.
 	 */
 	readonly endsAtOnce?: boolean;
+	/** What `supportedModels()` answers. Absent is a CLI that offers none, which is the old shape. */
+	readonly models?: ReadonlyArray<ModelInfo>;
 }
 
 export const scriptedQuery = (
@@ -79,6 +84,7 @@ export const scriptedQuery = (
 		options: params.options,
 		prompts: [],
 		modes: [],
+		models: [],
 		closes: 0,
 		interrupts: 0,
 		child,
@@ -147,6 +153,10 @@ export const scriptedQuery = (
 		setPermissionMode: async (mode: PermissionMode) => {
 			record.modes.push(mode);
 		},
+		setModel: async (model?: string) => {
+			record.models.push(model);
+		},
+		supportedModels: async () => behaviour.models ?? [],
 		close: () => {
 			record.closes += 1;
 			stopped = true;

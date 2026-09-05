@@ -7,6 +7,7 @@ export type {
 	AgentEvent,
 	ItemEvent,
 	ModeEvent,
+	ModelEvent,
 	PermissionEvent,
 	PermissionResolvedEvent,
 	Phase,
@@ -14,6 +15,7 @@ export type {
 	UsageEvent,
 } from "../events.ts";
 export {
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	type PageReason,
@@ -29,6 +31,7 @@ export {ScriptedAiAgent} from "./ScriptedAiAgent.ts";
 export type {
 	AgentScript,
 	ScriptedAnswer,
+	ScriptedModels,
 	ScriptedModes,
 	ScriptedPlan,
 	ScriptedRequest,

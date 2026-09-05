@@ -64,14 +64,22 @@ describe("the AI agent interface is model-blind", () => {
 		expectTypeOf<ModelSpecificKeysOf<AgentPortPayload>>().toEqualTypeOf<never>();
 	});
 
+	/**
+	 * `model.ts` is the one source outside the ban, and it is skipped by name rather than by
+	 * widening the pattern: the founder wants the model chosen from the composer, so the interface
+	 * carries a `ModelRef` (#7981) while every payload a port carries stays blind. Widening the
+	 * pattern would let `provider` back onto `TranscriptItem` too.
+	 */
 	it("names no model-specific field in the sources either, comments aside", () => {
 		const banned = /\b(model|modelName|provider|cost|usage|tokens|session|sessionId|sdk)\b/i;
-		const offenders = sources().flatMap(({name, text}) =>
-			stripComments(text)
-				.split("\n")
-				.filter((line) => banned.test(line))
-				.map((line) => `${name}: ${line.trim()}`),
-		);
+		const offenders = sources()
+			.filter(({name}) => name !== "model.ts")
+			.flatMap(({name, text}) =>
+				stripSpecifiers(stripComments(text))
+					.split("\n")
+					.filter((line) => banned.test(line))
+					.map((line) => `${name}: ${line.trim()}`),
+			);
 		expect(offenders).toEqual([]);
 	});
 });
@@ -134,6 +142,9 @@ const sources = () => {
 };
 
 const importsOf = (text: string) => [...text.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1] ?? "");
+
+/** A module path is not a field name, and `./model.ts` is one this directory now imports. */
+const stripSpecifiers = (text: string) => text.replace(/from\s+"[^"]+"/g, "");
 
 const stripComments = (text: string) =>
 	text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");

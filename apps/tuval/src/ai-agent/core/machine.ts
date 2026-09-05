@@ -12,7 +12,9 @@
  */
 
 import {defineMachine, type Machine} from "@demlik/tea";
+import {sameModel} from "../ports/index.ts";
 import {
+	modelUnsupported,
 	modeUnsupported,
 	noSessionToResume,
 	promptRefused,
@@ -193,6 +195,22 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 					? [{...state, failure: null}, [{type: "aiAgent.setMode", mode: msg.mode}]]
 					: [{...state, failure: modeUnsupported(msg.mode, state.modes.available)}, noCmds],
 
+			// The offered list is the whole guard, exactly as `setMode`'s is: a pick the layer never
+			// advertised is refused here rather than being sent for the layer to refuse again.
+			setModel: (state, msg) =>
+				state.models.available.some((offered) => sameModel(offered, msg.model))
+					? [{...state, failure: null}, [{type: "aiAgent.setModel", model: msg.model}]]
+					: [
+							{
+								...state,
+								failure: modelUnsupported(
+									msg.model.id,
+									state.models.available.map((offered) => offered.id),
+								),
+							},
+							noCmds,
+						],
+
 			page: (state, msg) => [state, [{type: "aiAgent.page", before: msg.before, limit: msg.limit}]],
 
 			paged: (state, msg) => [{...state, lastPage: msg.page}, noCmds],
@@ -249,6 +267,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			"aiAgent.prompt": noWork,
 			"aiAgent.answer": noWork,
 			"aiAgent.setMode": noWork,
+			"aiAgent.setModel": noWork,
 			"aiAgent.page": noWork,
 			"aiAgent.interrupt": noWork,
 			"aiAgent.reconnect": noWork,

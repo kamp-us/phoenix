@@ -221,6 +221,21 @@ function modelValue(model: Pick<PiModel, "provider" | "id">): string {
 	return `${model.provider}/${model.id}`;
 }
 
+/** A pushed catalog, admitted row by row. A malformed push leaves the held list alone. */
+function modelList(value: unknown): readonly PiModel[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const rows: PiModel[] = [];
+	for (const row of value) {
+		if (!isRecord(row)) return undefined;
+		const provider = stringValue(row, "provider");
+		const id = stringValue(row, "id");
+		const name = stringValue(row, "name");
+		if (!provider || !id || !name) return undefined;
+		rows.push({provider, id, name});
+	}
+	return rows;
+}
+
 function selectedModelValue(state: Record<string, unknown> | undefined): string | undefined {
 	const model = state && isRecord(state.model) ? state.model : undefined;
 	if (!model) return undefined;
@@ -515,6 +530,13 @@ export function AgentChatInput({
 			const status = isRecord(event.status) ? event.status : undefined;
 			const nextProjectTrust = status && projectTrustValue(status.projectTrust);
 			if (nextProjectTrust) setProjectTrust(nextProjectTrust);
+			// A harness whose catalog is not known at mount pushes it here. The four loads run once
+			// per bridge identity, so a host that only learns its models after connecting has no
+			// other way in that does not restart the whole composer.
+			const nextModels = status && modelList(status.models);
+			if (nextModels) setModels(nextModels);
+			const nextModel = status && isRecord(status.model) ? status.model : undefined;
+			if (nextModel) setState((current) => ({...(current ?? {}), model: nextModel}));
 			if (status && booleanValue(status, "available") === false) setConnection("unavailable");
 			return;
 		}
