@@ -130,15 +130,6 @@ const sessionGone = (failure: AgentFailure): boolean =>
 	failure.tag === START_ERROR && failure.reason === "session-not-found";
 
 /**
- * Where a failure leaves a session: back where it was before the act that failed.
- *
- * A resume is the exception, because there is nowhere before it to go back to. A refused resume
- * ends the session at `gone` — the id the checkpoint carried names nothing the backend still
- * holds, and the one thing that must never happen is a fresh session opening quietly in its place
- * (#7514). Any other reconnect failure is a transport that can be tried again, so it lands on
- * `idle` rather than staying at `reconnecting`, which the reconnect guard itself would refuse.
- */
-/**
  * What is left of an outstanding interruption once the session lands on `phase`.
  *
  * The request is a question — "has the turn stopped?" — and the session leaving `prompting` is the
@@ -151,6 +142,15 @@ export const interruptionAfter = (
 	phase: AiAgentSessionState["phase"],
 ): AiAgentSessionState["interruption"] => (phase === "prompting" ? state.interruption : null);
 
+/**
+ * Where a failure leaves a session: back where it was before the act that failed.
+ *
+ * A resume is the exception, because there is nowhere before it to go back to. A refused resume
+ * ends the session at `gone` — the id the checkpoint carried names nothing the backend still
+ * holds, and the one thing that must never happen is a fresh session opening quietly in its place
+ * (#7514). Any other reconnect failure is a transport that can be tried again, so it lands on
+ * `idle` rather than staying at `reconnecting`, which the reconnect guard itself would refuse.
+ */
 export const phaseAfterFailure = (
 	state: AiAgentSessionState,
 	failure: AgentFailure,

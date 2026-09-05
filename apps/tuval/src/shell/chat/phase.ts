@@ -56,7 +56,7 @@ export const interruptionGraceMillis = 5_000;
  * channel, and both layers log the refusal rather than putting it on the stream — so "not
  * confirmed" is the whole of what is known, and saying more would be inventing it.
  */
-export const interruptionLine = (interruption: Interruption, now: number): string =>
+const interruptionLine = (interruption: Interruption, now: number): string =>
 	now - interruption.requestedAt < interruptionGraceMillis
 		? "Interrupting — waiting for the agent to confirm…"
 		: "Interrupting — the agent has not confirmed. The turn may still be running.";

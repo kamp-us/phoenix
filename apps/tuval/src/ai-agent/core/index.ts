@@ -17,7 +17,6 @@ export {
 	addUsage,
 	foldEvent,
 	foldItem,
-	interruptionAfter,
 	promptItem,
 	promptItemId,
 	upsertItem,
