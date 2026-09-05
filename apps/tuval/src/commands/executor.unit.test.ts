@@ -3,6 +3,7 @@ import {describe, expect, expectTypeOf, it} from "vitest";
 import {ProcessId} from "../process/process.ts";
 import {CallId} from "../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages.ts";
+import {SpellFailed} from "./errors.ts";
 import {SpellExecutor} from "./executor.ts";
 import {SpellRegistry} from "./registry.ts";
 import {type Client, WindowIndex, type WindowPlacement} from "./scope.ts";
@@ -52,6 +53,33 @@ const refuse = defineSpell({
 	capabilities: [],
 });
 
+const swear = defineSpell({
+	path: ["window", "swear"],
+	describe: "Fail with a bare string.",
+	params: Schema.Struct({}),
+	result: Schema.Boolean,
+	execute: () => Effect.fail("the compositor said no"),
+	capabilities: [],
+});
+
+const mutter = defineSpell({
+	path: ["window", "mutter"],
+	describe: "Fail with a record carrying no tag.",
+	params: Schema.Struct({}),
+	result: Schema.Boolean,
+	execute: () => Effect.fail({reason: "the disk is full"}),
+	capabilities: [],
+});
+
+const hush = defineSpell({
+	path: ["window", "hush"],
+	describe: "Fail with a tag and no message.",
+	params: Schema.Struct({}),
+	result: Schema.Boolean,
+	execute: () => Effect.fail({_tag: "test/Silent"}),
+	capabilities: [],
+});
+
 // Written as an erased `AnySpell` rather than through `defineSpell`, which is exactly the compile
 // error this spell exists to get past: a spell whose value its own `result` refuses.
 const lie: AnySpell = {
@@ -63,7 +91,7 @@ const lie: AnySpell = {
 	capabilities: [],
 };
 
-const spells: ReadonlyArray<AnySpell> = [close, refuse, lie];
+const spells: ReadonlyArray<AnySpell> = [close, refuse, swear, mutter, hush, lie];
 
 const layer = SpellExecutor.layer.pipe(
 	Layer.provide(Layer.mergeAll(SpellRegistry.scripted(spells), WindowIndex.scripted(placements))),
@@ -170,6 +198,34 @@ describe("SpellExecutor", () => {
 			message: "refused: the window is pinned",
 			path: ["window", "explode"],
 		});
+	});
+
+	it("names SpellFailed when a spell fails with a bare string, and quotes the string", async () => {
+		const reply = await execute(call({path: ["window", "swear"], args: {}}));
+		expect(failure(reply)).toEqual({
+			tag: "tuval/commands/SpellFailed",
+			message: 'spell "window.swear" failed with "the compositor said no"',
+			path: ["window", "swear"],
+		});
+	});
+
+	it("names SpellFailed when a spell fails with an untagged record, and renders it", async () => {
+		const error = failure(await execute(call({path: ["window", "mutter"], args: {}})));
+		expect(error.tag).toBe("tuval/commands/SpellFailed");
+		expect(error.message).toContain("the disk is full");
+		expect(error.message).not.toBe(`the call failed with ${error.tag}`);
+	});
+
+	it("keeps the untagged value on the error rather than dropping it", () => {
+		const original = {reason: "the disk is full"};
+		const failed = new SpellFailed({path: "window.mutter", original});
+		expect(failed.original).toBe(original);
+		expect(failed._tag).toBe("tuval/commands/SpellFailed");
+	});
+
+	it("falls back to the tag only when a named error carries no message", async () => {
+		const reply = await execute(call({path: ["window", "hush"], args: {}}));
+		expect(failure(reply).message).toBe("the call failed with test/Silent");
 	});
 
 	it("dies rather than replies when a spell's value its own result schema refuses", async () => {
