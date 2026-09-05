@@ -38,10 +38,11 @@ const started = (over: Partial<AiAgentSessionState> = {}): AiAgentSessionState =
 });
 
 describe("init", () => {
-	it("opens a fresh session idle in the configured directory", () => {
+	it("opens a fresh session idle in the configured directory, and asks to boot it", () => {
 		const [state, cmds] = machine.init(null, {});
 		expect(state).toEqual(initialState("/repo"));
-		expect(cmds).toEqual([]);
+		// Spawning the program is the whole act: nothing else in the tree dispatches `start` (#7925).
+		expect(cmds).toEqual([{type: "aiAgent.boot", cwd: "/repo"}]);
 	});
 
 	it("restores a loaded state and emits no Cmd, as Demlik's rehydrate contract demands", () => {
@@ -402,10 +403,12 @@ describe("the Cmd each Msg answers for", () => {
 		}
 	});
 
-	it("emits every Cmd the union declares across the table", () => {
-		const emitted = new Set(
-			cases.flatMap(([state, msg]) => apply(state, msg)[1].map((c) => c.type)),
-		);
+	// `init` is the second emitter: the fresh arm's boot Cmd is the one no Msg answers for (#7925).
+	it("emits every Cmd the union declares, across the table and the fresh init", () => {
+		const emitted = new Set([
+			...machine.init(null, {})[1].map((cmd) => cmd.type),
+			...cases.flatMap(([state, msg]) => apply(state, msg)[1].map((c) => c.type)),
+		]);
 		expect(emitted).toEqual(new Set(Object.keys(machine.interpret ?? {})));
 	});
 });

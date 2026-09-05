@@ -119,8 +119,12 @@ describe("what a spawner dispatches into a restored process", () => {
 		expect(resumeMessages(restore(saved))).toEqual([{type: "reconnect"}]);
 	});
 
-	it("dispatches nothing into a session that was never opened", () => {
-		expect(resumeMessages(initialState("/repo"))).toEqual([]);
+	// Written down between the spawn and the first `started`: nothing to reconnect to, and no id a
+	// fresh open could duplicate, so it takes the route a fresh spawn takes (#7925).
+	it("starts a session that was checkpointed before it was ever opened", () => {
+		expect(resumeMessages(initialState("/repo"))).toEqual([
+			{type: "start", cwd: "/repo", resume: null},
+		]);
 	});
 
 	it("dispatches nothing into a session the backend already refused", () => {

@@ -91,6 +91,39 @@ there is nothing to fail into. A payload the port's predicate admits but this en
 refusal as data, never a throw: a throw here happens inside the launcher's pump, where nobody is
 waiting for it.
 
+## Starting fresh: the boot Cmd a fresh `init` emits
+
+A process whose whole point is a live connection has to open one, and the place that decides to is
+the machine's **fresh** `init` arm. Demlik's guard is scoped to rehydration — it reds only on a
+non-null `loaded` whose `init` returned Cmds (`replay` in `@demlik/tea` 0.12) — so a fresh `init`
+emitting a Cmd is inside the contract, and it is the one place in the tree that knows the process is
+new. `aiAgentSessionMachine` is the worked example: `loaded === null` answers with
+`[{type: "aiAgent.boot", cwd}]`, and a restored one still answers `noCmds` and leaves the reconnect
+to the resume rule below.
+
+**Put it there rather than on a spawn path.** A hook on one spawner is a hook the next spawner
+forgets, and that is not hypothetical: `pi-session` shipped with no production `start` caller at all,
+so the picker opened a window over a session that never began and refused every prompt
+([#7925](https://github.com/kamp-us/phoenix/issues/7925)). The core covers the picker, the launcher
+and a test kernel at once, and there is no second place to keep in step. A window is not the home
+either — two windows over one process would race into a refusal, and a window is a view rather than
+the owner of a session's lifetime.
+
+**The Cmd's handler answers with a Msg and does no work.** `runInterpret` awaits an init Cmd's
+handler before `make` returns (`host/actor.ts`), and a spawn runs inside the *spawning* process's
+serial step — so a boot handler that opened the connection itself would freeze the shell for as long
+as the backend took, or for the row's whole start deadline when the open fails. Answering with the
+Msg instead costs nothing at spawn and puts the real work on the new process's own tail: the boot
+Cmd is a trampoline from `init`, which cannot dispatch a Msg, into the cell that already owns the
+transition and its "one open at a time" guard.
+
+**A follow-up Msg can be interrupted before its fiber starts, so count it on the Exit.** The host
+forks each unawaited follow-up into the process Scope and settles its pending count on the fiber's
+Exit rather than inside its body: a stop taken in the same tick as the dispatch — ordinary once a
+session opens itself at spawn — interrupts a fiber that never ran, which produces an Exit and runs no
+`ensuring`, and an in-body decrement leaves the actor's stop waiting on a count that never reaches
+zero.
+
 ## Coming back from a checkpoint: a resume Msg, and a Cmd that republishes
 
 Durability is the kernel's ([`durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts)),
@@ -109,7 +142,11 @@ work is still running.
 **Whatever the restore has to *do* is a Msg someone dispatches after the spawn** — that is the route
 the guard's own error message names. Keep it as a pure function of the restored state — Tuval's is
 `resumeMessages(state)` — so a spawner asks the row what to send instead of encoding the row's
-lifecycle at the call site, and a state with nothing to resume answers with an empty list.
+lifecycle at the call site, and a state with nothing to resume answers with an empty list. It is
+also where the fresh arm's counterpart goes: a checkpoint written before the session ever opened has
+no id to reconnect to and none a fresh open could duplicate, so it answers with the same open a
+fresh spawn takes — the boot Cmd above belongs to `init`'s fresh arm alone, and a rehydrating one
+may emit none.
 
 **That function belongs on the row, under `resume`, or nothing sends it.** A rule only a test calls
 is not a restore: for two months every caller of `resumeMessages` was a proof, so a real restart

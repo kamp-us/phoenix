@@ -165,7 +165,6 @@ const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSys
 	Effect.gen(function* () {
 		const booted = yield* boot({global: configModule, project});
 		const {agent, window} = yield* handlesOf(booted);
-		yield* agent.dispatch({type: "start", cwd: project, resume: null});
 		const seen = () => ({
 			phase: sessionOf(agent).phase,
 			failure: sessionOf(agent).failure,

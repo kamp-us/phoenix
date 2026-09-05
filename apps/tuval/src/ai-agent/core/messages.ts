@@ -33,6 +33,17 @@ export type AiAgentSessionMsg =
 	| {readonly type: "failed"; readonly failure: AgentFailure};
 
 export type AiAgentSessionCmd =
+	/**
+	 * Open this process's session, because the process is new. The one Cmd a fresh `init` emits.
+	 *
+	 * Its handler does no backend work: it answers with the `start` Msg and nothing else. `init`
+	 * cannot dispatch a Msg — a Cmd is its only channel out — and the transition that opens a
+	 * session belongs to the `start` cell, which is also the one guard against a second open. So
+	 * this Cmd is the trampoline between them, and being trampoline-cheap is what keeps a spawn
+	 * from blocking on the session: the real `aiAgent.start` runs on the process's own tail after
+	 * the spawn has returned, rather than inside it.
+	 */
+	| {readonly type: "aiAgent.boot"; readonly cwd: string}
 	| {readonly type: "aiAgent.start"; readonly cwd: string; readonly resume: string | null}
 	| {readonly type: "aiAgent.prompt"; readonly text: string; readonly key: string}
 	| {

@@ -9,9 +9,9 @@
  * new emission.
  *
  * There is no window and no renderer: a headless row runs the same as a rendered one (founder
- * ruling, #7557). The one thing not driven through a port is `start`, which the interface
- * deliberately does not carry — the shell opens a session, and the ports are what the conversation
- * runs on.
+ * ruling, #7557). Neither boot opens the session by hand: the first spawns fresh and opens itself
+ * (#7925), the second comes back checkpointed and reconnects, and the ports are what the
+ * conversation runs on either way.
  */
 
 import {mkdirSync, mkdtempSync, realpathSync, rmSync} from "node:fs";
@@ -159,7 +159,6 @@ const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSyst
 	Effect.gen(function* () {
 		const booted = yield* boot({global: configModule, project});
 		const {agent, window} = yield* handlesOf(booted);
-		yield* agent.dispatch({type: "start", cwd: CWD, resume: null});
 		yield* until("the session to open", () => sessionOf(agent).sessionId !== null);
 
 		yield* say(window, "list the files", "k1");

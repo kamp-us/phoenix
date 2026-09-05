@@ -44,10 +44,19 @@ export type CheckpointField = (typeof checkpointFields)[number];
  * resume is "a Msg dispatched once from the host after the process is live" (`@demlik/tea` 0.12
  * `runtime-types.ts`, the "TEA contract violation" guard).
  *
- * A session with no id was never opened, and a `gone` one was refused on its last resume; neither
- * has anything to reconnect to, so neither gets a Msg. Everything else reconnects, and the machine
- * turns that into `start({cwd, resume: sessionId})` against a freshly built layer (ruling 4,
- * #7570) — never a new session, and never a re-sent prompt.
+ * A `gone` session was refused on its last resume, so it gets nothing: opening anything in its
+ * place is the silent fresh session #7514 refuses. Everything holding an id reconnects, and the
+ * machine turns that into `start({cwd, resume: sessionId})` against a freshly built layer (ruling
+ * 4, #7570) — never a new session, and never a re-sent prompt.
+ *
+ * A checkpoint with no id was never opened at all — the process was written down between its spawn
+ * and its first `started`. There is nothing to reconnect to and no id a fresh open could duplicate,
+ * so it takes the same route a fresh spawn takes (#7925). Without this it comes back wedged: the
+ * boot Cmd is the fresh `init`'s alone, and a rehydrating one may emit none.
  */
-export const resumeMessages = (state: AiAgentSessionState): ReadonlyArray<AiAgentSessionMsg> =>
-	state.sessionId === null || state.phase === "gone" ? [] : [{type: "reconnect"}];
+export const resumeMessages = (state: AiAgentSessionState): ReadonlyArray<AiAgentSessionMsg> => {
+	if (state.phase === "gone") return [];
+	return state.sessionId === null
+		? [{type: "start", cwd: state.cwd, resume: null}]
+		: [{type: "reconnect"}];
+};

@@ -388,7 +388,6 @@ describe("a Pi session in the Tuval shell, end to end", () => {
 							);
 
 							const session = yield* attachSession(page, agentId);
-							yield* session.send({type: "start", cwd: project, resume: null});
 							const ready = yield* liveWhere(
 								session.seen,
 								"the session to open",
@@ -485,7 +484,6 @@ describe("a Pi session in the Tuval shell, end to end", () => {
 									const opened = yield* openPiFromThePicker(desk, app.entries, only);
 									const agentId = opened.processId;
 									const session = yield* Scope.provide(attachSession(page, agentId), scope);
-									yield* session.send({type: "start", cwd: project, resume: null});
 									const ready = yield* liveWhere(
 										session.seen,
 										"the session to open",
@@ -581,7 +579,6 @@ describe("a Pi session in the Tuval shell, end to end", () => {
 									const opened = yield* openPiFromThePicker(desk, app.entries, window);
 									agentId = opened.processId;
 									const session = yield* Scope.provide(attachSession(page, agentId), scope);
-									yield* session.send({type: "start", cwd: project, resume: null});
 									const ready = yield* liveWhere(
 										session.seen,
 										"the session to open",

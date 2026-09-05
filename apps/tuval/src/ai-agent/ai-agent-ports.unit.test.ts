@@ -2,10 +2,10 @@
  * The five ports, end to end, over a real compiled graph: one `aiAgentProgram` node wired to a
  * stand-in window node, launched by the kernel, with every assertion made on what crossed a port.
  *
- * Nothing here reaches into the agent process's state. The point of the interface is that a window
- * can drive any agent knowing only the eight port keys, so the test drives it the same way — the
- * one call that is not a port is `start`, which the interface deliberately does not carry (the
- * shell opens a session; the five ports are what the conversation runs on).
+ * The point of the interface is that a window can drive any agent knowing only the eight port keys,
+ * so the test drives it the same way. The one read outside a port is the session's own phase, which
+ * is how a caller waits for the open the spawn started (#7925) — nothing dispatches `start`, and
+ * the interface deliberately does not carry it.
  *
  * It sits in the unit tier because it stands nothing up outside this process: the tiers split on
  * that, and the scripted layer talks to nothing.
@@ -24,6 +24,7 @@ import {open} from "../ports/wiring.ts";
 import {Processes} from "../process/Processes.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import {isAiAgentSessionState} from "./core/index.ts";
 import {aiAgentPortNames} from "./handlers/index.ts";
 import type {
 	ModePayload,
@@ -166,7 +167,10 @@ const eventually = (check: () => boolean) =>
 const onGraph = <A, E>(
 	script: AgentScript,
 	body: (
-		agent: {readonly dispatch: (msg: unknown) => Effect.Effect<void, unknown>},
+		agent: {
+			readonly dispatch: (msg: unknown) => Effect.Effect<void, unknown>;
+			readonly state: () => unknown;
+		},
 		window: {readonly say: (port: string, payload: unknown) => Effect.Effect<void, unknown>},
 		seen: () => ReadonlyArray<Arrival>,
 	) => Effect.Effect<A, E, Scope.Scope>,
@@ -182,7 +186,7 @@ const onGraph = <A, E>(
 		const agentHandle = agent!.handle;
 		const windowHandle = window!.handle;
 		return yield* body(
-			{dispatch: (msg) => agentHandle.dispatch(msg as never)},
+			{dispatch: (msg) => agentHandle.dispatch(msg as never), state: () => agentHandle.getState()},
 			{
 				say: (port, payload) => windowHandle.dispatch({type: "say", port, payload} as never),
 			},
@@ -201,8 +205,12 @@ const onGraph = <A, E>(
 const latest = (seen: ReadonlyArray<Arrival>, port: string): unknown =>
 	[...seen].reverse().find((arrival) => arrival.port === port)?.payload;
 
-const started = (agent: {readonly dispatch: (msg: unknown) => Effect.Effect<void, unknown>}) =>
-	agent.dispatch({type: "start", cwd: "/work", resume: null});
+/** Spawning the row is what opens the session (#7925), so a caller only waits for it. */
+const started = (agent: {readonly state: () => unknown}) =>
+	eventually(() => {
+		const state = agent.state();
+		return isAiAgentSessionState(state) && state.phase === "ready";
+	});
 
 describe("the AI agent interface over a compiled graph", () => {
 	it.live("carries a prompt in and the windowed transcript out", () =>

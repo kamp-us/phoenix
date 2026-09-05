@@ -130,7 +130,6 @@ const proof = Command.make(
 			session().transcript.items.filter((item) => item.kind === "assistant").length;
 
 		const seen = () => ({phase: session().phase, failure: session().failure, replies: replies()});
-		yield* agent.dispatch({type: "start", cwd: project, resume: null}).pipe(Effect.orDie);
 		yield* until("the Pi session to open", () => session().phase === "ready", seen);
 		for (const [index, text] of [PROMPT_1, PROMPT_2].entries()) {
 			const before = replies();

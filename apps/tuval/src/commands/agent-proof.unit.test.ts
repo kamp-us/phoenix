@@ -595,7 +595,6 @@ const runServiceAgent = Effect.gen(function* () {
 					}),
 			}),
 		});
-		yield* agent.dispatch({type: "start", cwd: "/tuval", resume: null});
 		yield* eventually(() => {
 			const state = agent.getState();
 			return isAiAgentSessionState(state) && state.sessionId !== null;
