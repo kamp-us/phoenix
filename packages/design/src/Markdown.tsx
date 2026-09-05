@@ -15,8 +15,9 @@
  * links, so the element tree is final the moment it mounts.
  */
 
-import {lexer, type MarkedToken, type Token} from "marked";
+import {lexer, type MarkedToken, type Token, type Tokens} from "marked";
 import {Fragment, type ReactElement, type ReactNode, useMemo} from "react";
+import {useDesignT} from "./i18n";
 import "./Markdown.css";
 
 /**
@@ -96,6 +97,39 @@ function Inline({token}: {readonly token: MarkedToken}): ReactNode {
 	}
 }
 
+/**
+ * The scroller is the wrapper, never the `<table>`: `display: block` on a table drops its implicit
+ * table role in Chrome and Safari, so the assistive-tech reading of an agent's table would be the
+ * cost of making a wide one fit. The wrapper is focusable and named because a scroll container no
+ * keyboard can reach is content a keyboard-only operator cannot read at all (WCAG 2.1.1).
+ */
+function TableBlock({token}: {readonly token: Tokens.Table}): ReactElement {
+	const t = useDesignT();
+	return (
+		// biome-ignore lint/a11y/noNoninteractiveTabindex: the tab stop is the point — a scroll container no keyboard can focus is content a keyboard-only operator cannot reach at all (WCAG 2.1.1), and the accessible name keeps it from being an unexplained stop.
+		<section className="kp-markdown__scroller" tabIndex={0} aria-label={t("ui.markdown.table")}>
+			<table>
+				<thead>
+					<tr>
+						{keyed(token.header, (cell) => (
+							<th data-align={cell.align ?? undefined}>{inlines(cell.tokens)}</th>
+						))}
+					</tr>
+				</thead>
+				<tbody>
+					{keyed(token.rows, (row) => (
+						<tr>
+							{keyed(row, (cell) => (
+								<td data-align={cell.align ?? undefined}>{inlines(cell.tokens)}</td>
+							))}
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</section>
+	);
+}
+
 const blocks = (tokens: readonly Token[], headingBase: number): ReactNode =>
 	keyed(tokens, (token) => <Block token={closed(token)} headingBase={headingBase} />);
 
@@ -147,26 +181,7 @@ function Block({
 			);
 		}
 		case "table":
-			return (
-				<table>
-					<thead>
-						<tr>
-							{keyed(token.header, (cell) => (
-								<th data-align={cell.align ?? undefined}>{inlines(cell.tokens)}</th>
-							))}
-						</tr>
-					</thead>
-					<tbody>
-						{keyed(token.rows, (row) => (
-							<tr>
-								{keyed(row, (cell) => (
-									<td data-align={cell.align ?? undefined}>{inlines(cell.tokens)}</td>
-								))}
-							</tr>
-						))}
-					</tbody>
-				</table>
-			);
+			return <TableBlock token={token} />;
 		// Raw HTML is content, not markup: it prints as the source it is (see the module docblock).
 		case "html":
 			return <p className="kp-markdown__raw">{token.text}</p>;

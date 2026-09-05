@@ -21,7 +21,7 @@
 .kp-markdown ol,
 .kp-markdown pre,
 .kp-markdown blockquote,
-.kp-markdown table {
+.kp-markdown__scroller {
 	margin-block: var(--s-2);
 }
 
@@ -106,15 +106,23 @@
 	margin-block: var(--s-3);
 }
 
-/* A wide table scrolls itself rather than stretching the row it sits in — the transcript row is
-   measured at its rendered height, and a row wider than the viewport would push the whole
-   transcript sideways. */
-.kp-markdown table {
-	display: block;
+/* A wide table scrolls inside its wrapper rather than stretching the row it sits in — the
+   transcript row is measured at its rendered height, and a row wider than the viewport would push
+   the whole transcript sideways. The scroll lives on the wrapper so the table keeps its own
+   display, and with it the implicit role `display: block` would drop (see `Markdown.tsx`). */
+.kp-markdown__scroller {
 	overflow-x: auto;
+	max-inline-size: 100%;
+}
+
+.kp-markdown__scroller:focus-visible {
+	outline: var(--manti-focus-ring-width) solid var(--manti-focus-ring);
+	outline-offset: var(--manti-focus-ring-offset);
+}
+
+.kp-markdown table {
 	border-collapse: collapse;
 	font: var(--t-body-sm);
-	max-inline-size: 100%;
 }
 
 .kp-markdown th,

@@ -192,6 +192,15 @@ _Source: packages/design/src/atoms.tsx_
 **Slots:**
 - `children` — The highlighted text.
 
+## Markdown
+
+_Source: packages/design/src/Markdown.tsx_
+
+**When to use:** Read-only display of markdown an agent produced — a chat transcript row, a tool result, any surface that shows model output. It is a renderer, not an editor: for authoring reach for the app's editor instead.
+
+**Slots:**
+- `children` — The markdown source. Not sanitized upstream and not required to be: raw HTML in it renders as text, never as markup.
+
 ## Menu
 
 _Source: packages/design/src/Menu.tsx_

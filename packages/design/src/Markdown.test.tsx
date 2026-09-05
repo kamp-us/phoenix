@@ -34,6 +34,20 @@ describe("Markdown", () => {
 		expect(within(table).getByRole("cell", {name: "2"}).dataset.align).toBe("right");
 	});
 
+	// A wide table has to scroll somewhere, and doing it on the table itself costs the table role in
+	// Chrome and Safari. jsdom applies no CSS, so the structure is what a test can hold: the scroller
+	// is a wrapper around the table, and it is focusable and named (#8012 criterion 9).
+	it("puts a table's horizontal scroller on a named, focusable wrapper rather than the table", () => {
+		render(<Markdown>{"| a | b |\n|---|---|\n| 1 | 2 |"}</Markdown>);
+
+		const table = screen.getByRole("table");
+		const scroller = screen.getByRole("region");
+		expect(scroller.contains(table)).toBe(true);
+		expect(table.parentElement).toBe(scroller);
+		expect(scroller.tabIndex).toBe(0);
+		expect(scroller.getAttribute("aria-label")).toBeTruthy();
+	});
+
 	it("renders ordered and unordered lists, honouring an ordered list's start", () => {
 		render(<Markdown>{"- one\n- two\n\n3. three\n4. four"}</Markdown>);
 
