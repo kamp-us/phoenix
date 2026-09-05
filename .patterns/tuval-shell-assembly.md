@@ -114,8 +114,19 @@ to what a throw there may cost:
 | `main.tsx` | everything the page renders | the tab, with the reason on it |
 
 **Recovery is not a button that re-throws.** The boundary takes `resetKeys`, and the desk hands it
-the workspace's layout — so the next kernel snapshot that changes the layout clears the panel with
-no gesture at all. The button is the fallback for the case where nothing new arrives.
+`layoutSignature(workspace.layout)` — the layout tree serialized to one string
+(`src/shell/layout/tree.ts`) — so the next kernel snapshot that changes the layout clears the panel
+with no gesture at all. The button is the fallback for the case where nothing new arrives.
+
+**The key is a signature and never the layout object**, and that is the whole rule for anything else
+mounting this boundary: `resetKeys` are compared with `Object.is`, and every snapshot the page
+receives is decoded afresh, so a tree object is a new identity on every frame whether or not
+anything moved. Keyed on the object, the panel is unmounted and rebuilt on unrelated kernel traffic
+— `<details>` snaps shut, focus on the reset button is lost with the node, and `role="alert"`
+re-announces once per frame, which is the reader's whole recovery gone in the exact case the panel
+exists for. It is the same identity trap the desk's prefix countdown avoids by depending on the
+prefix's *values* (#7782); `error-boundary.unit.test.tsx` drives the boundary with JSON-decoded
+snapshots to pin it.
 
 The panel is a `role="alert"` carrying the throw's own message plus its component stack in a
 `<details>`, because the reason a founder can paste is the point; showing "something went wrong" is

@@ -26,6 +26,7 @@ export {
 	findSibling,
 	findStack,
 	findWindow,
+	layoutSignature,
 	remove,
 	resize,
 	type SplitIds,

@@ -83,6 +83,14 @@ the group has not laid out before — which is every set a split or a close prod
 therefore the whole binding across a panel-set change, and `layout.unit.test.tsx` proves it by
 splitting an 80/20 stack and reading the resulting three `flexGrow`s back off the DOM.
 
+That `??` chain has a guard between its first two arms, and it only tightens the rule: registration
+runs `defaultLayout && (panelSetMatches(panels, defaultLayout) || (defaultLayout = undefined))` —
+the minified `Bt`, an exact id-set comparison — and the prop-to-`mutableState` effect already
+refuses a map whose key count differs from the panel count. So a `defaultLayout` naming a *partial*
+set is silently dropped and the group falls through to the even split. `defaultLayoutOf(stack)`
+names exactly `stack.children`, which is the set the group is about to register, so it satisfies
+both checks; a binding that shipped a subset would get an even split rather than its sizes.
+
 So the effect asks two questions in this order, and `LayoutView.tsx` is those two lines:
 
 ```tsx

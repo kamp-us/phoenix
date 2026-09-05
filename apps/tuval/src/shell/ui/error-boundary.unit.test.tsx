@@ -12,7 +12,7 @@ import {useState} from "react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {ProcessId} from "../../process/process.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
-import {applyMsg} from "../core/index.ts";
+import {applyMsg, isShellState} from "../core/index.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow} from "../layout/index.ts";
 import {Desk} from "./Desk.tsx";
@@ -137,6 +137,68 @@ describe("recovery", () => {
 
 		expect(screen.queryByRole("alert")).toBeNull();
 		expect(screen.getByText("the window rendered")).toBeDefined();
+	});
+});
+
+describe("recovery under live kernel traffic", () => {
+	/** The desk after `<c-b> |`: the same stack, one window more. */
+	const splitDesk = (): ShellState =>
+		deskWith(
+			createTree(
+				createStack("stack-root", "horizontal", [
+					createWindow("window-1", "process-1"),
+					createWindow("window-2"),
+				]),
+			),
+			"window-1",
+		);
+
+	/** A snapshot as the page receives one: JSON off the socket, decoded fresh, guarded. */
+	const overTheWire = (state: ShellState): ShellState => {
+		const value: unknown = JSON.parse(JSON.stringify(state));
+		if (!isShellState(value)) throw new Error("the fixture did not survive the wire");
+		return value;
+	};
+
+	function ControlledDesk({
+		state,
+		throwing,
+	}: {
+		readonly state: ShellState;
+		readonly throwing: boolean;
+	}): ReactElement {
+		return <Desk state={state} dispatch={() => {}} resolveMount={throwingMount(throwing)} />;
+	}
+
+	const resetButton = () => screen.getByRole("button", {name: "Render it again"});
+
+	it("holds the panel, its opened <details> and focus through snapshots that leave the layout alone", () => {
+		const {rerender} = render(<ControlledDesk state={desk()} throwing />);
+
+		const alert = screen.getByRole("alert");
+		const where = alert.querySelector("details");
+		if (where === null) throw new Error("the panel showed no component stack to keep open");
+		where.open = true;
+		resetButton().focus();
+
+		// Three snapshots of the same layout: identical content, then an unrelated field moving.
+		rerender(<ControlledDesk state={overTheWire(desk())} throwing />);
+		rerender(<ControlledDesk state={overTheWire(desk())} throwing />);
+		rerender(<ControlledDesk state={overTheWire({...desk(), nextId: 9})} throwing />);
+
+		expect(screen.getByRole("alert")).toBe(alert);
+		expect(alert.querySelector("details")?.open).toBe(true);
+		expect(document.activeElement).toBe(resetButton());
+	});
+
+	it("clears itself when a snapshot does change the layout", () => {
+		const {rerender} = render(<ControlledDesk state={desk()} throwing />);
+		expect(screen.getByRole("alert")).toBeDefined();
+
+		rerender(<ControlledDesk state={overTheWire(splitDesk())} throwing={false} />);
+
+		expect(screen.queryByRole("alert")).toBeNull();
+		expect(screen.getAllByText("the window rendered")).toHaveLength(2);
 	});
 });
 

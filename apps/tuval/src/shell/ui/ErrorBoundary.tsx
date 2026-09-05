@@ -5,8 +5,10 @@
  * is a class component, because `getDerivedStateFromError` and `componentDidCatch` have no hook.
  *
  * Recovery is real rather than a button that re-throws. `resetKeys` clears a caught error whenever
- * the values behind the failed region change, so the next kernel snapshot recovers the desk on its
- * own; the button is for the case where nothing new arrives.
+ * the values behind the failed region change, so a snapshot that changes them recovers the desk on
+ * its own; the button is for the case where nothing new arrives. The keys are compared with
+ * `Object.is`, so a caller passes values and never objects it decoded — a fresh object per snapshot
+ * would clear the panel on every frame, which is the failure this recovers from, not recovery.
  */
 
 import {Component, type ErrorInfo, type ReactNode} from "react";
