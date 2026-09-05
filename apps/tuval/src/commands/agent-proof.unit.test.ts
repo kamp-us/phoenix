@@ -206,12 +206,6 @@ const argumentsFor = (
 	return args;
 };
 
-const asPath = (segments: ReadonlyArray<string>): SpellPath => {
-	const [head, ...rest] = segments;
-	assert.isDefined(head, "a description with an empty path");
-	return [head ?? "", ...rest];
-};
-
 /**
  * One call, encoded to JSON, decoded by the kernel, answered, encoded back and decoded by the
  * caller. A refusal on either codec is a bug in this proof rather than an answer the agent could
@@ -270,7 +264,7 @@ const script = Effect.fn("agentProof.script")(function* () {
 	}
 
 	for (const description of described) {
-		const path = asPath(description.path);
+		const path = description.path;
 		const reply = yield* call(path, argumentsFor(description, learned, firstPath));
 		// `process spawn` is the one call whose answer another call needs, and it is registered
 		// ahead of `process send` and `process read`, so the id is learned before they are reached.
@@ -488,7 +482,7 @@ const planStep: ScriptedPlan = (answered) => {
 	}
 	const target = listed[rest.length - listed.length];
 	if (target === undefined) return null;
-	return {path: asPath(target.path), args: argumentsFor(target, learnedFrom(answered), firstPath)};
+	return {path: target.path, args: argumentsFor(target, learnedFrom(answered), firstPath)};
 };
 
 /** The events reach the transcript through a Sub, so the tail settles after `dispatch` returns. */

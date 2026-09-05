@@ -6,7 +6,7 @@
  * against a real `Schema.Struct` so this hand-written form cannot quietly drift from it.
  */
 
-import {ProcessId, ProgramId, WindowId, WorkspaceId} from "../../protocol/ids.ts";
+import {ProcessId, ProgramId, type SpellPath, WindowId, WorkspaceId} from "../../protocol/ids.ts";
 import {PROTOCOL_VERSION, Snapshot} from "../../protocol/messages.ts";
 import type {ProcessRow} from "../../protocol/process-row.ts";
 import type {RegistryDescription, SpellDescription} from "../../protocol/registry-description.ts";
@@ -29,11 +29,12 @@ export const jsonSchema = (
 const text: Property = {type: "string"};
 const direction: Property = {type: "string", enum: ["left", "right", "up", "down"]};
 
-const spell = (
-	path: ReadonlyArray<string>,
-	describe: string,
-	params: unknown,
-): SpellDescription => ({path, describe, params, capabilities: []});
+const spell = (path: SpellPath, describe: string, params: unknown): SpellDescription => ({
+	path,
+	describe,
+	params,
+	capabilities: [],
+});
 
 export const descriptions: RegistryDescription = [
 	spell(["window", "close"], "Close the focused window.", jsonSchema({}, [])),

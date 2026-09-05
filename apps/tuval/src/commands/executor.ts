@@ -70,9 +70,7 @@ const isNamed = (value: unknown): value is NamedError =>
  * reply's tag is an error object and no reply can carry a tag naming nothing in the tree.
  */
 const named = (call: SpellCall, error: unknown): NamedError =>
-	isNamed(error)
-		? error
-		: new SpellFailed({path: renderPath(call.path as SpellPath), original: error});
+	isNamed(error) ? error : new SpellFailed({path: renderPath(call.path), original: error});
 
 const messageOf = (error: NamedError): string =>
 	typeof error.message === "string" && error.message.length > 0
@@ -168,8 +166,7 @@ const make = Effect.fn("Tuval.SpellExecutor.make")(function* () {
 		client: Client,
 	) {
 		const attempt = Effect.gen(function* () {
-			// The wire schema checks the path is non-empty, so an empty one is unrepresentable here.
-			const row = yield* lookup(call.path as SpellPath);
+			const row = yield* lookup(call.path);
 			const args = yield* decodeArgs(row, call);
 			const scope = yield* resolveScope(call, client);
 			const value = yield* runSpell(row, args, scope);
