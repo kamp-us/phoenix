@@ -31,6 +31,7 @@ export {
 	parameterOf,
 	type SchemaIssueSummary,
 } from "./issue.ts";
+export {JsonSchemaDocument, JsonSchemaNode} from "./json-schema-document.ts";
 export {
 	isSpellReply,
 	KernelToPage,
