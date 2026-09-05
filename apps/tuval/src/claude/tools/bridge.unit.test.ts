@@ -4,10 +4,11 @@
  * bridge, so a spawn is a real process and the parent link is the one the table reports.
  *
  * The target is a scripted echo program, not a process built by `aiAgentProgram` on
- * `ScriptedAiAgent.layer`: those are the sibling epic's (#7599, #7603) and are not on this branch.
- * The founder ruled the same substitution for the kernel's own agent proof on 2026-09-03 (recorded
- * on #7645 and in `commands/agent-proof.unit.test.ts`), and re-running this on a real
- * `aiAgentProgram` process is a later child's.
+ * `ScriptedAiAgent.layer`. The founder ruled that substitution on 2026-09-03 for the kernel's own
+ * agent proof (#7645, and `commands/agent-proof.unit.test.ts` runs under it): what a bridge spawn
+ * has to prove is the parent link on the real kernel, and any real program proves it. The re-run on
+ * an `aiAgentProgram` process over `ScriptedAiAgent.layer` belongs to #7623, whose own row is the
+ * headless proof on `ScriptedAiAgent`.
  *
  * Every refusal here is also the pin on the four kernel tags `KernelBridge` re-reads off the wire:
  * a renamed `tuval/commands/*` tag stops arriving as its `tuval/claude/*` counterpart and this file
