@@ -425,22 +425,129 @@ describe("paging older history", () => {
 });
 
 describe("interrupt", () => {
-	it("cuts the running turn and marks the assistant item it cut", () => {
-		const running = started({
+	const running = (over: Partial<AiAgentSessionState> = {}): AiAgentSessionState =>
+		started({
 			phase: "prompting",
 			transcript: {
 				items: [userItem("u0"), assistantItem("a1"), toolItem("t2")],
 				omitted: initialState("/x").transcript.omitted,
 			},
+			...over,
 		});
-		const [state, cmds] = apply(running, {type: "interrupt"});
-		expect(state.phase).toBe("ready");
+
+	const phaseEvent = (phase: AiAgentSessionState["phase"]): AiAgentSessionMsg => ({
+		type: "event",
+		sessionId: "session-1",
+		event: {kind: "phase", phase},
+	});
+
+	it("asks the layer to stop and marks the turn, without declaring the session ready", () => {
+		const [state, cmds] = apply(running(), {type: "interrupt", at: SENT_AT});
+		expect(state.phase).toBe("prompting");
+		expect(state.interruption).toEqual({requestedAt: SENT_AT});
 		expect(state.interrupted).toBe("a1");
 		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
 	});
 
+	it("keeps refusing a prompt while the interruption is outstanding", () => {
+		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [next, cmds] = apply(asked, {
+			type: "prompt",
+			text: "never mind, do this",
+			key: "k9",
+			timestamp: SENT_AT + 1,
+		});
+		expect(next.failure?.reason).toBe("no-session");
+		expect(cmds).toEqual([]);
+	});
+
+	// The delayed case: the abort is in flight and the backend has said nothing yet, so the request
+	// is still outstanding and the turn's own items keep landing on the tail.
+	it("stays outstanding while the turn's events keep arriving", () => {
+		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [next] = apply(asked, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "item", item: assistantItem("a3", "still going")},
+		});
+		expect(next.phase).toBe("prompting");
+		expect(next.interruption).toEqual({requestedAt: SENT_AT});
+	});
+
+	// The refusal case as the generic contract can see it: `interrupt` declares no error channel and
+	// both layers log a refused abort, so a refusal reaches the core as nothing at all. The session
+	// must therefore stay busy with the request on the record, never fall back to ready.
+	it("leaves a refused abort outstanding rather than fabricating a stop", () => {
+		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [again, cmds] = apply(asked, {type: "interrupt", at: SENT_AT + 3_000});
+		expect(again.phase).toBe("prompting");
+		// The clock is the operator's first ask, so a second press does not restart the wait.
+		expect(again.interruption).toEqual({requestedAt: SENT_AT});
+		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
+	});
+
+	it("comes back to ready only on the layer's own confirming event", () => {
+		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [confirmed] = apply(asked, phaseEvent("ready"));
+		expect(confirmed.phase).toBe("ready");
+		expect(confirmed.interruption).toBeNull();
+		expect(confirmed.interrupted).toBe("a1");
+	});
+
+	it("settles the request on a failed turn too, since that turn has stopped as well", () => {
+		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [failed] = apply(asked, {
+			type: "event",
+			sessionId: "session-1",
+			event: {
+				kind: "failure",
+				failure: {tag: "tuval/ai-agent/PromptError", reason: "refused", detail: "no"},
+			},
+		});
+		expect(failed.phase).toBe("ready");
+		expect(failed.interruption).toBeNull();
+	});
+
+	it("takes a deliberate prompt once the confirmation landed, and sends nothing on its own", () => {
+		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [confirmed, idle] = apply(asked, phaseEvent("ready"));
+		expect(idle).toEqual([]);
+		const [sent, cmds] = apply(confirmed, {
+			type: "prompt",
+			text: "try again",
+			key: "k4",
+			timestamp: SENT_AT + 10,
+		});
+		expect(sent.phase).toBe("prompting");
+		expect(sent.interrupted).toBeNull();
+		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "try again", key: "k4"}]);
+	});
+
+	// A late `ready` from the settled interruption, and a late frame from a session this process has
+	// already replaced: neither may re-open a request nobody made.
+	it("leaves a settled interruption settled when a late event arrives", () => {
+		const [asked] = apply(running(), {type: "interrupt", at: SENT_AT});
+		const [confirmed] = apply(asked, phaseEvent("ready"));
+		const [late] = apply(confirmed, phaseEvent("ready"));
+		expect(late.interruption).toBeNull();
+		expect(machine.identity?.ofMsg?.(phaseEvent("ready"))).toBe("session-1");
+	});
+
+	// Stopping a turn, ending the backend's session and stopping the process are three acts, and
+	// this is only the first: nothing here tears a session down or drops what the backend owns.
+	it("asks for the turn only, leaving the session and its history alone", () => {
+		const before = running();
+		const [state, cmds] = apply(before, {type: "interrupt", at: SENT_AT});
+		expect(cmds).toEqual([{type: "aiAgent.interrupt"}]);
+		expect(state.sessionId).toBe(before.sessionId);
+		expect(state.connection).toBe(before.connection);
+		expect(state.phase).not.toBe("gone");
+		expect(state.transcript.items).toEqual(before.transcript.items);
+		expect(state.permissions).toEqual(before.permissions);
+	});
+
 	it("does nothing when no turn is running", () => {
-		const [state, cmds] = apply(started(), {type: "interrupt"});
+		const [state, cmds] = apply(started(), {type: "interrupt", at: SENT_AT});
 		expect(state).toEqual(started());
 		expect(cmds).toEqual([]);
 	});
@@ -527,7 +634,7 @@ describe("the Cmd each Msg answers for", () => {
 		],
 		[started(), {type: "page", before: null, limit: 10}, ["aiAgent.page"]],
 		[started(), {type: "paged", page: {items: [], hasMore: false}}, []],
-		[started({phase: "prompting"}), {type: "interrupt"}, ["aiAgent.interrupt"]],
+		[started({phase: "prompting"}), {type: "interrupt", at: SENT_AT}, ["aiAgent.interrupt"]],
 		[started(), {type: "reconnect"}, ["aiAgent.republish", "aiAgent.reconnect"]],
 		[
 			started(),

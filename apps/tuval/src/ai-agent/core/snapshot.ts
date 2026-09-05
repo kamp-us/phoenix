@@ -16,7 +16,13 @@ import {
 	isWindowOmission,
 	type PermissionRequest,
 } from "../ports/index.ts";
-import {type AiAgentSessionState, type HistoryPage, phases, type UsageTotals} from "./state.ts";
+import {
+	type AiAgentSessionState,
+	type HistoryPage,
+	type Interruption,
+	phases,
+	type UsageTotals,
+} from "./state.ts";
 
 const isNullOrString = (value: unknown): value is string | null =>
 	value === null || typeof value === "string";
@@ -55,6 +61,9 @@ const isPage = (value: unknown): value is HistoryPage | null =>
 		isTranscriptItems(value.items) &&
 		typeof value.hasMore === "boolean");
 
+const isInterruption = (value: unknown): value is Interruption | null =>
+	value === null || (Predicate.isObject(value) && isFiniteNumber(value.requestedAt));
+
 const isFailure = (value: unknown): boolean =>
 	value === null ||
 	(Predicate.isObject(value) &&
@@ -71,6 +80,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	typeof value.cwd === "string" &&
 	isTranscript(value.transcript) &&
 	isNullOrString(value.interrupted) &&
+	isInterruption(value.interruption) &&
 	isUsage(value.usage) &&
 	isPermissions(value.permissions) &&
 	isModes(value.modes) &&
