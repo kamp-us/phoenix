@@ -1,0 +1,148 @@
+/* The read-only markdown block for agent output. Element selectors rather than a class per node:
+   the elements are generated from a token stream, so there is nothing to hang a class on. Role
+   tokens only — the block inherits its host's surface and reads correctly in either scheme. */
+.kp-markdown {
+	font: var(--t-body);
+	color: var(--text-primary);
+	overflow-wrap: anywhere;
+	min-inline-size: 0;
+}
+
+.kp-markdown > :first-child {
+	margin-block-start: 0;
+}
+
+.kp-markdown > :last-child {
+	margin-block-end: 0;
+}
+
+.kp-markdown p,
+.kp-markdown ul,
+.kp-markdown ol,
+.kp-markdown pre,
+.kp-markdown blockquote,
+.kp-markdown table {
+	margin-block: var(--s-2);
+}
+
+.kp-markdown h1,
+.kp-markdown h2,
+.kp-markdown h3 {
+	font: var(--t-h-feed);
+	font-weight: 600;
+	color: var(--text-primary);
+	margin-block: var(--s-3) var(--s-2);
+}
+
+.kp-markdown h4,
+.kp-markdown h5,
+.kp-markdown h6 {
+	font: var(--t-body);
+	font-weight: 600;
+	color: var(--text-secondary);
+	margin-block: var(--s-3) var(--s-1);
+}
+
+.kp-markdown a {
+	color: var(--link);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.kp-markdown strong {
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.kp-markdown del {
+	color: var(--text-muted);
+}
+
+.kp-markdown ul,
+.kp-markdown ol {
+	padding-inline-start: var(--s-5);
+}
+
+.kp-markdown li {
+	margin-block: var(--s-1);
+}
+
+/* A list item holds block children, so its paragraphs would otherwise open a gap per bullet. */
+.kp-markdown li > p {
+	margin-block: 0;
+}
+
+.kp-markdown code {
+	font: var(--t-mono);
+	background: var(--surface-raised);
+	border-radius: var(--r-sm);
+	padding: 0 var(--s-1);
+}
+
+.kp-markdown pre {
+	background: var(--surface-sunken);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	padding: var(--s-2) var(--s-3);
+	overflow-x: auto;
+}
+
+.kp-markdown pre code {
+	background: none;
+	padding: 0;
+	white-space: pre;
+}
+
+.kp-markdown blockquote {
+	border-inline-start: 2px solid var(--border-strong);
+	padding-inline-start: var(--s-3);
+	color: var(--text-secondary);
+	margin-inline: 0;
+}
+
+.kp-markdown hr {
+	border: 0;
+	border-block-start: 1px solid var(--border-faint);
+	margin-block: var(--s-3);
+}
+
+/* A wide table scrolls itself rather than stretching the row it sits in — the transcript row is
+   measured at its rendered height, and a row wider than the viewport would push the whole
+   transcript sideways. */
+.kp-markdown table {
+	display: block;
+	overflow-x: auto;
+	border-collapse: collapse;
+	font: var(--t-body-sm);
+	max-inline-size: 100%;
+}
+
+.kp-markdown th,
+.kp-markdown td {
+	border: 1px solid var(--border-faint);
+	padding: var(--s-1) var(--s-2);
+	text-align: start;
+	vertical-align: top;
+}
+
+.kp-markdown th {
+	background: var(--surface-raised);
+	color: var(--text-secondary);
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.kp-markdown [data-align="center"] {
+	text-align: center;
+}
+
+.kp-markdown [data-align="right"] {
+	text-align: end;
+}
+
+/* Raw HTML the source carried, printed as the text it is (see `Markdown.tsx`). */
+.kp-markdown__raw {
+	font: var(--t-mono);
+	color: var(--text-muted);
+	white-space: pre-wrap;
+}

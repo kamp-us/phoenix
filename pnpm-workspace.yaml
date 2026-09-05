@@ -88,6 +88,10 @@ catalog:
   jsdom: ^26.1.0
   lefthook: ^2.1.9
   lucide-react: 1.23.0
+  # Pinned to the exact 18.0.5 an existing lockfile parent already links (@earendil-works/pi-tui),
+  # so no third `marked` enters the tree beside it and @tiptap/markdown's 17.0.6. @kampus/design's
+  # `Markdown` uses the lexer only — the token stream, never `marked()`'s HTML string (#8012).
+  marked: 18.0.5
   react: 19.2.6
   react-dom: 19.2.6
   react-fate: 1.3.1

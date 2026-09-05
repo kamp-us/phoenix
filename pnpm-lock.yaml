@@ -177,6 +177,9 @@ catalogs:
     lucide-react:
       specifier: 1.23.0
       version: 1.23.0
+    marked:
+      specifier: 18.0.5
+      version: 18.0.5
     react:
       specifier: 19.2.6
       version: 19.2.6
@@ -861,6 +864,9 @@ importers:
       lucide-react:
         specifier: 'catalog:'
         version: 1.23.0(react@19.2.6)
+      marked:
+        specifier: 'catalog:'
+        version: 18.0.5
       react:
         specifier: 'catalog:'
         version: 19.2.6
