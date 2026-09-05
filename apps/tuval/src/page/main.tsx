@@ -20,7 +20,7 @@ import type {ShellMsg} from "../shell/core/index.ts";
 import {attach, SHELL_PROGRAM_ID} from "../shell/transport/browser.ts";
 import {ErrorBoundary} from "../shell/ui/index.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
-import {demoRenderers} from "./renderers.tsx";
+import {pageRenderers} from "./renderers.tsx";
 // Manti's base first — a `@kampus/design` primitive is a Manti component, and without this its
 // dialog has no positioning at all and lands in the document flow. Then the design token layer, then
 // Tuval's: both declare role tokens at `:root` and the desk's own values have to win that tie. The
@@ -99,7 +99,7 @@ const desk = Effect.fn("tuval.page.desk")(function* () {
 		<AttachedDesk
 			page={page}
 			shell={shell}
-			renderers={demoRenderers}
+			renderers={pageRenderers}
 			reducedMotion={reducedMotion}
 		/>
 	);

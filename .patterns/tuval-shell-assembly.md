@@ -136,6 +136,43 @@ program-blind: a process's state still crosses as `unknown`.
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.
 
+## A windowed program: the reference, the shared window, the extras slot
+
+Three files, and the split between them is forced rather than stylistic.
+
+- **The row names the window and reaches none of it.** A row is kernel-side data and must stay free
+  of React, so the `RendererRef` it declares lives on a leaf that imports one type and nothing else
+  — `src/pi/renderer-ref.ts` for `pi-session`. Retyping the name at both ends instead would drift
+  silently: an unresolved reference is a returned value, never a throw
+  (`src/shell/window/renderer.ts`), so the window comes up blank and nothing fails.
+- **That leaf sits beside the row, not inside the renderer's directory.** The strict lens
+  (`tsconfig.json`) is `composite` and must list every file it compiles, and a renderer directory is
+  excluded from it whole because it imports `@kampus/design`, which needs the relaxed lens
+  (`tsconfig.design.json`). A file the row imports out of an excluded directory is a `TS6307` on
+  every build.
+- **The leaf carries the program id too, and both names are imported rather than retyped.** The
+  page's table keys on the `RendererRef.ref` the row declares (`src/page/renderers.tsx`), and it
+  reads that reference off the leaf through `src/pi/window/index.ts`. The program id sits on the
+  same leaf for the same reason: importing it from the row would pull `node:path` and Pi's model
+  runtime into the page bundle, which is the black page of #7836 — so `PI_SESSION_PROGRAM` is
+  declared on the leaf and `src/pi/program.ts` re-exports it.
+- **The page's three React modules moved to the relaxed lens with it.** `main.tsx`,
+  `AttachedDesk.tsx` and `renderers.tsx` reach `@kampus/design` through the table, so they are named
+  in `tsconfig.json`'s `exclude` and in `tsconfig.design.json`'s `include`. `src/page/dev-server.ts`
+  stays in the strict lens: it is Node-side and `src/bin.ts` imports it, so excluding `src/page`
+  whole would `TS6307` the bin.
+- **The renderer is a thin binding, and its extras go through one slot.** Both AI-agent programs
+  render the one shared `ChatWindow` (founder ruling 2026-09-02, amended on #7572 / #7584):
+  `chatWindow({extras})` takes a `(state) => ReactNode` that lands in the window's status bar beside
+  the phase line and the mode switch, and that is the whole of what a program adds. Pi's is its
+  usage line — model, cumulative cost, token counts, off `state.usage`
+  (`src/pi/window/PiChatWindow.tsx`). It is a function of the live state because a renderer *is*
+  `f(state, view)`; a renderer that accumulated its own totals would disagree with the checkpoint
+  and with the other window over the same process. Wrapping the shared window in a program-specific
+  container is the wrong shape for a second reason: `chat.css` re-declares the `@kampus/design`
+  typography roles inside `.tuval-chat`, so a package primitive mounted *outside* that scope reads
+  Tuval's two-part `--t-*` values as invalid shorthand and loses its whole `font` declaration.
+
 ## A program declares three renderers; the shell composes two of them
 
 A program never draws outside its own window (#7500 ruling 4). The two surfaces outside it — the
@@ -238,11 +275,17 @@ bundler plugin beside it:
   "compilerOptions": {
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": []                       // no @types/node in scope
+    "types": [],                      // no @types/node in scope
+    "exactOptionalPropertyTypes": false
   },
   "include": ["src/page/main.tsx", "src/page/assets.d.ts"]
 }
 ```
+
+`exactOptionalPropertyTypes: false` rides along because the entry reaches `@kampus/design` through
+the page's renderer table (#7573), and the package is source-consumed under that flag —
+`tsconfig.design.json` carries the same relaxation for the same reason. This lens exists for
+`types: []`; relaxing the other flag costs it nothing it was built to catch.
 
 `types: []` is what does it: with no `@types/node`, `node:crypto` resolves to nothing, so any module
 in this project's file set that imports one is a plain `tsc` error —
@@ -323,3 +366,17 @@ Two mechanics worth copying. A dispatch is acknowledged when the Msg reaches the
 frame is a *separate* write on the same socket, so assert by waiting for the next state that
 satisfies a predicate (`deskWhere`) and not on the ack. And give that wait its own timeout that dies
 naming the last desk it saw — a bare vitest timeout tells you nothing about which key was lost.
+
+A third mechanic the Pi vertical added (`src/pi/proof/pi-vertical.integration.test.ts`): the desk
+stops emitting once the keys stop, so a predicate wait asked for a state that has *already gone past*
+blocks until its timeout. Reading "what does it look like now" is a separate move — drain whatever is
+queued with a short per-take timeout and keep the last frame (`settled`).
+
+**A proof that reads off the transport says nothing about paint, so a range that renders ships a
+browser harness beside it.** jsdom has no layout, so height, scroll and contrast are unfalsifiable in
+the unit tier; the harness is what lets a reviewer reproduce a load instead of taking a report for it
+(#7610). Two shapes exist and they answer different questions: a Vite page over a test double for one
+component (`pnpm proof:chat`, `pnpm proof:pi-window`), and a bin that boots the whole app on a faux
+provider and serves the real desk (`pnpm proof:pi-vertical`, `src/pi/proof/serve.ts`) for a claim
+about the assembled surface. The second one found `.tuval-window` sizing to its content rather than
+to its panel — a 302px window in a 775px panel, transcript 2px — which no headless proof could see.

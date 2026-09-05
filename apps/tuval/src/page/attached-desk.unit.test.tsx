@@ -21,7 +21,7 @@ import {installDomShims} from "../shell/ui/dom.testing.ts";
 import type {ProcessView} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
-import {demoRenderers} from "./renderers.tsx";
+import {pageRenderers} from "./renderers.tsx";
 
 installDomShims();
 
@@ -179,7 +179,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={demoRenderers}
+						renderers={pageRenderers}
 						reducedMotion={true}
 					/>,
 				);
@@ -208,7 +208,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={demoRenderers}
+						renderers={pageRenderers}
 						reducedMotion={true}
 					/>,
 				);
@@ -241,7 +241,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={demoRenderers}
+						renderers={pageRenderers}
 						reducedMotion={true}
 					/>,
 				);
@@ -265,7 +265,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={demoRenderers}
+						renderers={pageRenderers}
 						reducedMotion={true}
 					/>,
 				);
@@ -298,7 +298,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={demoRenderers}
+						renderers={pageRenderers}
 						reducedMotion={true}
 					/>,
 				);
@@ -323,7 +323,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={demoRenderers}
+						renderers={pageRenderers}
 						reducedMotion={true}
 					/>,
 				);
@@ -364,7 +364,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={demoRenderers}
+						renderers={pageRenderers}
 						reducedMotion={true}
 					/>,
 				);
@@ -391,7 +391,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={demoRenderers}
+						renderers={pageRenderers}
 						reducedMotion={true}
 					/>,
 				);

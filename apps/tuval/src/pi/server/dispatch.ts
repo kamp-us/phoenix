@@ -116,7 +116,19 @@ export const dispatch = (context: DispatchContext, command: Command): Effect.Eff
 
 		case "attach": {
 			const outcome = context.records.claim(command.sessionId, context.connection);
-			if (outcome._tag === "NotFound") return Effect.succeed(notFound(command.sessionId));
+			// A session this table never held is not thereby gone: the table is per server and a
+			// server is per process, so after a restart every session a checkpoint names is one only
+			// the store still knows. The host re-opens it, and a host that cannot is the `not_found`
+			// this used to answer straight away (#7609).
+			if (outcome._tag === "NotFound") {
+				return context.host.resume(command.sessionId).pipe(
+					Effect.flatMap((handle) =>
+						snapshotOf(context, context.records.insert(handle, context.connection, context.now())),
+					),
+					Effect.map((session): Answer => ({ok: true, result: {command: "attach", session}})),
+					Effect.orElseSucceed(() => notFound(command.sessionId)),
+				);
+			}
 			if (outcome._tag === "Locked") return Effect.succeed(locked(command.sessionId));
 			return snapshotOf(context, outcome.record).pipe(
 				Effect.map((session): Answer => ({ok: true, result: {command: "attach", session}})),

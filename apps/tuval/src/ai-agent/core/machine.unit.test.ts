@@ -53,7 +53,9 @@ describe("init", () => {
 			},
 		});
 		const [state, cmds] = machine.init(loaded, {});
-		expect(state.phase).toBe("reconnecting");
+		// `idle`, not `reconnecting`: a booted process holds no transport, and `idle` is the phase a
+		// `reconnect` Msg is admissible from (`../restore/checkpoint.ts`).
+		expect(state.phase).toBe("idle");
 		expect(state.interrupted).toBe("a1");
 		expect(cmds).toEqual([]);
 	});
@@ -305,10 +307,13 @@ describe("interrupt", () => {
 });
 
 describe("reconnect", () => {
-	it("asks the layer to re-attach the session it holds", () => {
+	it("republishes what it holds, then asks the layer to re-attach the session", () => {
 		const [state, cmds] = apply(started({phase: "gone"}), {type: "reconnect"});
 		expect(state.phase).toBe("reconnecting");
-		expect(cmds).toEqual([{type: "aiAgent.reconnect", cwd: "/repo", sessionId: "session-1"}]);
+		expect(cmds).toEqual([
+			{type: "aiAgent.republish"},
+			{type: "aiAgent.reconnect", cwd: "/repo", sessionId: "session-1"},
+		]);
 	});
 
 	it("refuses when there is no session to re-attach", () => {
@@ -335,41 +340,54 @@ describe("failed", () => {
 		expect(fromPrompt).toMatchObject({phase: "ready", failure});
 		const [fromStart] = apply(started({phase: "starting"}), {type: "failed", failure});
 		expect(fromStart.phase).toBe("idle");
+		// A reconnect has nowhere before it to go back to, so it lands on `idle` — staying at
+		// `reconnecting` is the one phase the reconnect guard itself refuses a retry from.
 		const [fromReconnect] = apply(started({phase: "reconnecting"}), {type: "failed", failure});
-		expect(fromReconnect.phase).toBe("reconnecting");
+		expect(fromReconnect.phase).toBe("idle");
+	});
+
+	it("ends a resume the backend refused at gone, never anywhere a fresh session can open", () => {
+		const failure = {
+			tag: "tuval/ai-agent/StartError",
+			reason: "session-not-found",
+			detail: "the backend holds no session-1",
+		};
+		const [refused] = apply(started({phase: "reconnecting"}), {type: "failed", failure});
+		expect(refused).toMatchObject({phase: "gone", sessionId: "session-1", failure});
+		expect(machine.subscriptions?.(refused)).toEqual([]);
 	});
 });
 
 describe("the Cmd each Msg answers for", () => {
 	const cases: ReadonlyArray<
-		readonly [AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd["type"] | null]
+		readonly [AiAgentSessionState, AiAgentSessionMsg, ReadonlyArray<AiAgentSessionCmd["type"]>]
 	> = [
-		[initialState("/repo"), {type: "start", cwd: "/repo", resume: null}, "aiAgent.start"],
-		[started({phase: "starting"}), {type: "started", sessionId: "s"}, null],
-		[started(), {type: "prompt", text: "hi", key: "k"}, "aiAgent.prompt"],
+		[initialState("/repo"), {type: "start", cwd: "/repo", resume: null}, ["aiAgent.start"]],
+		[started({phase: "starting"}), {type: "started", sessionId: "s"}, []],
+		[started(), {type: "prompt", text: "hi", key: "k"}, ["aiAgent.prompt"]],
 		[
 			started(),
 			{type: "event", sessionId: "session-1", event: {kind: "phase", phase: "ready"}},
-			null,
+			[],
 		],
 		[
 			started({permissions: {"req-1": card}}),
 			{type: "answer", request: "req-1", decision: "deny"},
-			"aiAgent.answer",
+			["aiAgent.answer"],
 		],
 		[
 			started({modes: {current: null, available: [Mode.make("plan")]}}),
 			{type: "setMode", mode: Mode.make("plan")},
-			"aiAgent.setMode",
+			["aiAgent.setMode"],
 		],
-		[started(), {type: "page", before: null, limit: 10}, "aiAgent.page"],
-		[started(), {type: "paged", page: {items: [], hasMore: false}}, null],
-		[started({phase: "prompting"}), {type: "interrupt"}, "aiAgent.interrupt"],
-		[started(), {type: "reconnect"}, "aiAgent.reconnect"],
+		[started(), {type: "page", before: null, limit: 10}, ["aiAgent.page"]],
+		[started(), {type: "paged", page: {items: [], hasMore: false}}, []],
+		[started({phase: "prompting"}), {type: "interrupt"}, ["aiAgent.interrupt"]],
+		[started(), {type: "reconnect"}, ["aiAgent.republish", "aiAgent.reconnect"]],
 		[
 			started(),
 			{type: "failed", failure: {tag: "tuval/ai-agent/PageError", reason: null, detail: "x"}},
-			null,
+			[],
 		],
 	];
 
@@ -380,7 +398,7 @@ describe("the Cmd each Msg answers for", () => {
 	it("emits exactly that Cmd, and nothing else", () => {
 		for (const [state, msg, expected] of cases) {
 			const [, cmds] = apply(state, msg);
-			expect(cmds.map((cmd) => cmd.type)).toEqual(expected === null ? [] : [expected]);
+			expect(cmds.map((cmd) => cmd.type)).toEqual(expected);
 		}
 	});
 

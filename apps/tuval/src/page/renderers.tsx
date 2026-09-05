@@ -8,8 +8,14 @@
  * needs no edit here, and a reference nothing answers is a placeholder in the window rather than a
  * missing entry nobody can see.
  *
- * Both renderers below are the demo programs' (#7517). Each reads its process through the window
- * contract's `readProcess` and nothing else: no store, no fetch, no socket.
+ * The two demo renderers below are the demo programs' (#7517). Each reads its process through the
+ * window contract's `readProcess` and nothing else: no store, no fetch, no socket.
+ *
+ * The Pi entry is `PiChatWindow` (#7611), and it is why this module is out of the kernel's strict
+ * lens and inside `tsconfig.design.json`'s: the chat window is built on `@kampus/design`, which is
+ * source-consumed and authored with `exactOptionalPropertyTypes: false`. Its key is the reference
+ * the Pi row itself declares, imported rather than retyped, so the row and this table cannot name
+ * two different renderers.
  */
 
 import {Effect, Fiber, Stream} from "effect";
@@ -17,6 +23,7 @@ import type {ReactElement, ReactNode} from "react";
 import {useEffect, useState} from "react";
 import type {CounterState} from "../demo/counter.ts";
 import type {LogState} from "../demo/log.ts";
+import {PI_CHAT_WINDOW_REF, PiChatWindow} from "../pi/window/index.ts";
 import type {AnyWindowHost, AnyWindowRenderer, ProcessView} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
 
@@ -83,7 +90,7 @@ function LogRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
 }
 
 /** Every renderer the page knows, by the reference a program row names it with. */
-export const demoRenderers: Readonly<Record<string, AnyWindowRenderer>> = {
+export const pageRenderers: Readonly<Record<string, AnyWindowRenderer>> = {
 	"tuval/demo/counter": windowRenderer(
 		"host-native",
 		(host: AnyWindowHost): ReactNode => <CounterRenderer host={host} />,
@@ -92,4 +99,5 @@ export const demoRenderers: Readonly<Record<string, AnyWindowRenderer>> = {
 		"host-native",
 		(host: AnyWindowHost): ReactNode => <LogRenderer host={host} />,
 	),
+	[PI_CHAT_WINDOW_REF.ref]: PiChatWindow,
 };

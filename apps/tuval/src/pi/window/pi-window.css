@@ -1,0 +1,20 @@
+/*
+ * The usage line's own tuning, and nothing else.
+ *
+ * `MetaRow` owns the row: its gap, its `--t-body-sm` type role and its `--text-muted` colour are the
+ * primitive's (`packages/design/src/MetaRow.css`), and re-declaring any of them here would be the
+ * hand-laid meta row `design-system-manifest.md` forbids. What is left is where the line sits in the
+ * chat bar, which is this surface's own divergence and belongs on this paired class.
+ *
+ * The line carries no colour, no size and no separator of its own. It renders dark because the
+ * window it mounts in is (`../../shell/chat/chat.css` sets `color-scheme: dark` on `.tuval-chat`),
+ * not because anything here says so.
+ */
+
+.tuval-pi-usage {
+	/* Shrink before the mode switch does, and wrap rather than push it off the end of the bar —
+	   `MetaRow` already wraps, so a narrow window gets a second line instead of a clipped model. */
+	flex: 0 1 auto;
+	min-inline-size: 0;
+	justify-content: flex-end;
+}

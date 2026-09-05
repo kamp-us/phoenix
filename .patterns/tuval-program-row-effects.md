@@ -90,3 +90,43 @@ there is nothing to fail into. A payload the port's predicate admits but this en
 `page` half of a `transcript-page` arriving where a request belongs) becomes a Msg that records the
 refusal as data, never a throw: a throw here happens inside the launcher's pump, where nobody is
 waiting for it.
+
+## Coming back from a checkpoint: a resume Msg, and a Cmd that republishes
+
+Durability is the kernel's ([`durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts)),
+so a row does not write its own snapshot. What a row owes is the other half: what its state means
+after a restart, and what has to happen before it is usable again. Three rules, all of them visible
+in [`ai-agent/restore/`](../apps/tuval/src/ai-agent/restore/).
+
+**The rehydrating `init` transforms and emits nothing.** Demlik throws on a non-null `loaded` whose
+`init` returns any Cmd (`@demlik/tea` 0.12 `runtime-types.ts`) — that branch is the migration and
+parse boundary, not a boot hook. So the transform states what a saved state *is* now: a process that
+holds no transport any more comes back `idle` (every phase but the terminal `gone`), a run-scoped
+field — a stale refusal, a page fetched from a transport that is gone — comes back empty, and a turn
+that was mid-reply when the process died comes back marked interrupted rather than pretending the
+work is still running.
+
+**Whatever the restore has to *do* is a Msg someone dispatches after the spawn** — that is the route
+the guard's own error message names. Keep it as a pure function of the restored state — Tuval's is
+`resumeMessages(state)` — so a spawner asks the row what to send instead of encoding the row's
+lifecycle at the call site, and a state with nothing to resume answers with an empty list.
+
+**That function belongs on the row, under `resume`, or nothing sends it.** A rule only a test calls
+is not a restore: for two months every caller of `resumeMessages` was a proof, so a real restart
+left the session holding a live id and no transport
+([#7877](https://github.com/kamp-us/phoenix/issues/7877)). The row declares
+`resume: (state) => ReadonlyArray<Msg>` ([`registry/program.ts`](../apps/tuval/src/registry/program.ts)),
+and both spawners dispatch it through one shared step
+([`durability/resume.ts`](../apps/tuval/src/durability/resume.ts)) — `src/launch/` for a graph node
+whose checkpoint existed, `durability/restore.ts` for a checkpointed process the graph does not
+plan. Launch dispatches after **every** node is spawned and pumped, never inside the loop, because a
+resume republishes on its out-ports and a reader that has not launched yet would leave those
+payloads in a queue nobody drains.
+
+**A restored process publishes nothing until something republishes it.** Out-ports are event-driven:
+a projection leaves when the fold moves it. A process brought back from a checkpoint has a full
+state and no events coming, so a window attached to it renders nothing — and a pending request the
+backend is still waiting on wedges, because the event that would clear it only arrives after it is
+answered. The fix is a Cmd whose handler reads the committed state and emits the projections again,
+scheduled by the same Msg that resumes. It is the one handler that reads `ProcessSelf.state()`
+rather than folding forward, and the reason is that there is no event to fold.

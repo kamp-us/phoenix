@@ -152,6 +152,18 @@ export interface Program<
 	readonly handlers: HostHandlers<M, C, E, R>;
 	/** Effect-valued Sub handlers, one per Sub the core subscribes to. A row with none omits it. */
 	readonly subs?: HostSubs<M, U, E, R>;
+	/**
+	 * What a spawner dispatches into a process of this program that came back from a checkpoint.
+	 *
+	 * Pure and total: a state with nothing to resume answers with an empty list. It exists because
+	 * Demlik refuses a rehydrating `init` that emits Cmds (`@demlik/tea` 0.12 `runtime-types.ts`),
+	 * so the last step of a restore has to be a Msg someone sends after the spawn — and before this
+	 * field the only senders were tests, which left every restored session holding a live id and no
+	 * transport (#7877). Both spawners read it: `src/launch/` for a graph node whose checkpoint
+	 * existed, and `src/durability/restore.ts` for one the graph does not plan. The kernel never
+	 * reads what the Msgs mean.
+	 */
+	readonly resume?: (state: S) => ReadonlyArray<M>;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	readonly renderer?: RendererRef;
 	/**

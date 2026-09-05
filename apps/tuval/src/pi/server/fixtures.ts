@@ -7,6 +7,7 @@
 
 import type {ModelMetadata, TranscriptItem} from "@earendil-works/pi-protocol";
 import {Effect, Layer, Queue} from "effect";
+import {SessionOpenFailed} from "./errors.ts";
 import {type PiSessionHandle, PiSessionHost, type PiSessionView} from "./PiSessionHost.ts";
 
 export const scriptedModel: ModelMetadata = {
@@ -30,83 +31,106 @@ export interface ScriptedHost {
 	readonly openCount: () => number;
 }
 
-export const makeScriptedHost = (options: {readonly promptDelayMs?: number} = {}): ScriptedHost => {
+export interface ScriptedHostOptions {
+	readonly promptDelayMs?: number;
+	/**
+	 * Whether this host can re-open a session it does not hold, the way a real host reads one back
+	 * off its JSONL. `false` — the default — is a host with no store, whose refusal the dispatch
+	 * reads as `not_found`.
+	 */
+	readonly resumable?: boolean;
+}
+
+export const makeScriptedHost = (options: ScriptedHostOptions = {}): ScriptedHost => {
 	const disposals = new Map<string, number>();
 	let opened = 0;
 
-	const layer = Layer.succeed(PiSessionHost, {
-		models: Effect.succeed([scriptedModel]),
-		open: (request) =>
-			Effect.gen(function* () {
-				const id = `scripted-session-${++opened}`;
-				const changes = yield* Queue.make<void>({capacity: 1, strategy: "sliding"});
-				const transcript: TranscriptItem[] = [];
-				let phase: PiSessionView["phase"] = "idle";
-				const steer: string[] = [];
+	const openAt = (
+		id: string,
+		request: {readonly cwd: string; readonly name?: string | undefined},
+	) =>
+		Effect.gen(function* () {
+			const changes = yield* Queue.make<void>({capacity: 1, strategy: "sliding"});
+			const transcript: TranscriptItem[] = [];
+			let phase: PiSessionView["phase"] = "idle";
+			const steer: string[] = [];
 
-				const append = (role: "user" | "assistant", text: string): void => {
-					transcript.push(
-						role === "user"
-							? {
-									id: `item-${transcript.length}`,
-									role: "user",
-									content: [{type: "text", text}],
-									timestamp: transcript.length,
-								}
-							: {
-									id: `item-${transcript.length}`,
-									role: "assistant",
-									content: [{type: "text", text}],
-									model: {provider: scriptedModel.provider, id: scriptedModel.id},
-									timestamp: transcript.length,
-									status: "complete",
-									stopReason: "stop",
-								},
-					);
-					Queue.offerUnsafe(changes, undefined);
-				};
-
-				const handle: PiSessionHandle = {
-					id,
-					cwd: request.cwd,
-					file: undefined,
-					createdAt: 0,
-					read: Effect.sync(() => ({
-						phase,
-						model: {provider: scriptedModel.provider, id: scriptedModel.id},
-						thinkingLevel: "off",
-						transcript: [...transcript],
-						name: request.name,
-						queuedSteer: [...steer],
-					})),
-					prompt: (text) =>
-						Effect.gen(function* () {
-							phase = "turn";
-							append("user", text);
-							if (options.promptDelayMs !== undefined) {
-								yield* Effect.sleep(`${options.promptDelayMs} millis`);
+			const append = (role: "user" | "assistant", text: string): void => {
+				transcript.push(
+					role === "user"
+						? {
+								id: `item-${transcript.length}`,
+								role: "user",
+								content: [{type: "text", text}],
+								timestamp: transcript.length,
 							}
-							append("assistant", `echo: ${text}`);
-							phase = "idle";
-						}),
-					steer: (text) =>
-						Effect.sync(() => {
-							steer.push(text);
-							Queue.offerUnsafe(changes, undefined);
-						}),
-					abort: Effect.sync(() => {
+						: {
+								id: `item-${transcript.length}`,
+								role: "assistant",
+								content: [{type: "text", text}],
+								model: {provider: scriptedModel.provider, id: scriptedModel.id},
+								timestamp: transcript.length,
+								status: "complete",
+								stopReason: "stop",
+							},
+				);
+				Queue.offerUnsafe(changes, undefined);
+			};
+
+			const handle: PiSessionHandle = {
+				id,
+				cwd: request.cwd,
+				file: undefined,
+				createdAt: 0,
+				read: Effect.sync(() => ({
+					phase,
+					model: {provider: scriptedModel.provider, id: scriptedModel.id},
+					thinkingLevel: "off",
+					transcript: [...transcript],
+					name: request.name,
+					queuedSteer: [...steer],
+				})),
+				prompt: (text) =>
+					Effect.gen(function* () {
+						phase = "turn";
+						append("user", text);
+						if (options.promptDelayMs !== undefined) {
+							yield* Effect.sleep(`${options.promptDelayMs} millis`);
+						}
+						append("assistant", `echo: ${text}`);
 						phase = "idle";
+					}),
+				steer: (text) =>
+					Effect.sync(() => {
+						steer.push(text);
 						Queue.offerUnsafe(changes, undefined);
 					}),
-					setModel: () => Effect.void,
-					setThinkingLevel: () => Effect.void,
-					changes: Queue.take(changes),
-					dispose: Effect.sync(() => {
-						disposals.set(id, (disposals.get(id) ?? 0) + 1);
-					}),
-				};
-				return handle;
-			}),
+				abort: Effect.sync(() => {
+					phase = "idle";
+					Queue.offerUnsafe(changes, undefined);
+				}),
+				setModel: () => Effect.void,
+				setThinkingLevel: () => Effect.void,
+				changes: Queue.take(changes),
+				dispose: Effect.sync(() => {
+					disposals.set(id, (disposals.get(id) ?? 0) + 1);
+				}),
+			};
+			return handle;
+		});
+
+	const layer = Layer.succeed(PiSessionHost, {
+		models: Effect.succeed([scriptedModel]),
+		open: (request) => openAt(`scripted-session-${++opened}`, request),
+		resume: (sessionId) =>
+			options.resumable === true
+				? openAt(sessionId, {cwd: "/resumed"})
+				: Effect.fail(
+						new SessionOpenFailed({
+							cwd: "",
+							detail: `the scripted host has no store to re-open ${sessionId} from`,
+						}),
+					),
 	});
 
 	return {layer, disposals, openCount: () => opened};

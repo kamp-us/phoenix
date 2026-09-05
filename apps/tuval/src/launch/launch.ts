@@ -10,12 +10,13 @@
 
 import {Context, Effect, Option, Queue} from "effect";
 import {Checkpoints} from "../durability/Checkpoints.ts";
+import {dispatchResume} from "../durability/resume.ts";
 import type {CompiledGraph, CompiledNode} from "../ports/graph.ts";
 import {ProcessPorts} from "../ports/ProcessPorts.ts";
 import type {Wiring} from "../ports/wiring.ts";
 import {Processes} from "../process/Processes.ts";
 import {type Message, type ProcessHandle, ProcessId} from "../process/process.ts";
-import type {Receiver} from "../registry/program.ts";
+import type {AnyProgram, Receiver} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {NoReceiver} from "./errors.ts";
 
@@ -47,8 +48,10 @@ export const launch = Effect.fn("Tuval.launch")(function* (
 	const checkpoints = yield* Checkpoints;
 
 	const receivers = new Map<CompiledNode["id"], Readonly<Record<string, Receiver<Message>>>>();
+	const rows = new Map<CompiledNode["id"], AnyProgram>();
 	for (const node of compiled.nodes) {
 		const row = yield* registry.resolve(node.program);
+		rows.set(node.id, row);
 		const receive = (row.receive ?? {}) as Readonly<Record<string, Receiver<Message>>>;
 		for (const port of Object.keys(node.inPorts)) {
 			if (receive[port] === undefined) {
@@ -80,6 +83,13 @@ export const launch = Effect.fn("Tuval.launch")(function* (
 			yield* pump(handle, inbox, receive[port] as Receiver<Message>);
 		}
 		launched.push({node: node.id, handle, restored: checkpointed.has(id)});
+	}
+	// After every node is spawned and pumped, never inside the loop: a resume republishes on its
+	// out-ports, and a node whose reader has not been launched yet would publish into a queue no
+	// process is draining.
+	for (const process of launched) {
+		if (!process.restored) continue;
+		yield* dispatchResume(rows.get(process.node), process.handle);
 	}
 	return launched as ReadonlyArray<LaunchedProcess>;
 });

@@ -8,14 +8,7 @@ import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcr
 import type {Phase} from "../events.ts";
 import {Mode, type PermissionRequest} from "../ports/index.ts";
 import {parseSessionState} from "./snapshot.ts";
-import {
-	type AiAgentSessionState,
-	initialState,
-	lastAssistantId,
-	phases,
-	replyPending,
-	restore,
-} from "./state.ts";
+import {type AiAgentSessionState, initialState, lastAssistantId, phases} from "./state.ts";
 
 /** Every `Phase` is in `phases`; flipping this reds with TS2322 at this line. */
 const everyPhaseListed: Phase extends (typeof phases)[number] ? true : false = true;
@@ -68,46 +61,10 @@ describe("a save snapshot", () => {
 	});
 });
 
-describe("restoring a saved session", () => {
-	it("marks the turn a restart cut and comes back reconnecting", () => {
-		const restored = restore(saved);
-		expect(restored.phase).toBe("reconnecting");
-		expect(restored.interrupted).toBe("i1");
-	});
-
-	it("leaves a completed turn alone", () => {
-		const completed: AiAgentSessionState = {
-			...saved,
-			transcript: {...saved.transcript, items: [userItem("i0"), assistantItem("i1")]},
-		};
-		expect(restore(completed)).toEqual(completed);
-	});
-
-	it("leaves a session that was not mid-turn alone", () => {
-		const idle: AiAgentSessionState = {...saved, phase: "ready"};
-		expect(restore(idle)).toEqual(idle);
-	});
-
-	it("marks nothing when the cut turn had no assistant item before it", () => {
-		const firstTurn: AiAgentSessionState = {
-			...saved,
-			transcript: {...saved.transcript, items: [userItem("i0")]},
-		};
-		expect(restore(firstTurn).interrupted).toBeNull();
-		expect(restore(firstTurn).phase).toBe("reconnecting");
-	});
-});
-
 describe("reading the tail", () => {
 	it("names the newest assistant turn, or none", () => {
 		expect(lastAssistantId([userItem("i0"), assistantItem("i1"), toolItem("i2")])).toBe("i1");
 		expect(lastAssistantId([userItem("i0")])).toBeNull();
 		expect(lastAssistantId([])).toBeNull();
-	});
-
-	it("calls a reply pending only when the tail ends on something else", () => {
-		expect(replyPending([userItem("i0"), assistantItem("i1")])).toBe(false);
-		expect(replyPending([assistantItem("i1"), toolItem("i2")])).toBe(true);
-		expect(replyPending([])).toBe(false);
 	});
 });

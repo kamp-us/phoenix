@@ -50,6 +50,7 @@ import {
 	transcript,
 	transcriptPage,
 } from "./ports/index.ts";
+import {resumeMessages} from "./restore/checkpoint.ts";
 import type {TuvalAiAgent} from "./service/index.ts";
 
 export interface AiAgentProgramConfig {
@@ -138,7 +139,12 @@ export const aiAgentProgram = (options: AiAgentProgramOptions): AiAgentProgram =
 					: refuse(PAGE_ERROR, "a page arrived on the request end of transcript-page"),
 			[aiAgentPortNames.permissionDecision]: (payload: PermissionPayload) =>
 				payload.kind === "decision"
-					? {type: "answer", request: payload.request, decision: payload.decision}
+					? {
+							type: "answer",
+							request: payload.request,
+							decision: payload.decision,
+							...(payload.message === undefined ? {} : {message: payload.message}),
+						}
 					: refuse(UNKNOWN_REQUEST, "a pending set arrived on the answer end of permission"),
 			[aiAgentPortNames.modeSet]: (payload: ModePayload) =>
 				payload.kind === "set"
@@ -147,6 +153,7 @@ export const aiAgentProgram = (options: AiAgentProgramOptions): AiAgentProgram =
 		},
 		handlers,
 		subs,
+		resume: resumeMessages,
 		capabilities: options.capabilities ?? [],
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
 		identity: {

@@ -18,7 +18,13 @@ export type AiAgentSessionMsg =
 	/** `key` is the idempotency key the window mints per deliberate send (ruling 2, #7570). */
 	| {readonly type: "prompt"; readonly text: string; readonly key: string}
 	| {readonly type: "event"; readonly sessionId: string; readonly event: AgentEvent}
-	| {readonly type: "answer"; readonly request: string; readonly decision: PermissionDecision}
+	/** `message` is the operator's optional note; the window offers one on every decision. */
+	| {
+			readonly type: "answer";
+			readonly request: string;
+			readonly decision: PermissionDecision;
+			readonly message?: string;
+	  }
 	| {readonly type: "setMode"; readonly mode: Mode}
 	| {readonly type: "page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "paged"; readonly page: HistoryPage}
@@ -33,11 +39,22 @@ export type AiAgentSessionCmd =
 			readonly type: "aiAgent.answer";
 			readonly request: string;
 			readonly decision: PermissionDecision;
+			readonly message?: string;
 	  }
 	| {readonly type: "aiAgent.setMode"; readonly mode: Mode}
 	| {readonly type: "aiAgent.page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "aiAgent.interrupt"}
-	| {readonly type: "aiAgent.reconnect"; readonly cwd: string; readonly sessionId: string};
+	| {readonly type: "aiAgent.reconnect"; readonly cwd: string; readonly sessionId: string}
+	/**
+	 * Publish the committed state's three outbound projections again, with no backend call.
+	 *
+	 * The outbound ports are event-driven — a projection leaves only when the fold moved it — so a
+	 * window attached to a session that was restored from a checkpoint has nothing to render until
+	 * the next event arrives. A restored session's pending permission cards are exactly the case
+	 * that wedges: the cards are in state, the agent is still waiting on them, and no event is
+	 * coming until one is answered (#7608).
+	 */
+	| {readonly type: "aiAgent.republish"};
 
 /**
  * The one subscription: this session's event stream, keyed by the session *and* the connection.

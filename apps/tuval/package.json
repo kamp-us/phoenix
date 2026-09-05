@@ -6,10 +6,13 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node src/bin.ts",
-		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.browser.json && effect-tsgo diagnostics --project tsconfig.browser.json --strict",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.design.json && effect-tsgo diagnostics --project tsconfig.design.json --strict && tsc -p tsconfig.browser.json && effect-tsgo diagnostics --project tsconfig.browser.json --strict",
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
-		"test:integration": "vitest run --project integration"
+		"test:integration": "vitest run --project integration",
+		"proof:chat": "vite --config src/shell/chat/proof/vite.config.ts",
+		"proof:pi-window": "vite --config src/pi/window/proof/vite.config.ts",
+		"proof:pi-vertical": "node src/pi/proof/serve.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "catalog:",
@@ -23,6 +26,7 @@
 		"@kampus/design": "workspace:*",
 		"@manti-ui/styles": "catalog:",
 		"@modelcontextprotocol/sdk": "catalog:",
+		"@tanstack/react-virtual": "catalog:",
 		"effect": "catalog:tuval",
 		"react": "catalog:",
 		"react-dom": "catalog:",

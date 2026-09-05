@@ -151,6 +151,19 @@ export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerS
 
 		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId),
 
+		// The one handler that reads the committed state rather than folding forward from it: there
+		// is no event to fold, which is the whole point — a restored session's tail and its pending
+		// cards are already in state and nothing else will ever push them out (#7608).
+		"aiAgent.republish": () =>
+			Effect.gen(function* () {
+				const state = yield* readSession;
+				if (state === null) return nothing;
+				yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
+				yield* emit(aiAgentPortNames.permissionPending, pendingOf(state));
+				yield* emit(aiAgentPortNames.modeState, modeStateOf(state));
+				return nothing;
+			}),
+
 		"aiAgent.prompt": (cmd) =>
 			withAgent(
 				(agent) => agent.prompt(cmd.text, cmd.key),
@@ -165,6 +178,10 @@ export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerS
 
 		"aiAgent.answer": (cmd) =>
 			withAgent(
+				// `cmd.message` is not forwarded: the founder's pinned `answer` signature (#7570 ruling 3,
+				// held by `../service/boundary.unit.test.ts`) takes the request and the decision only.
+				// The note rides the Cmd so nothing between the window and here loses it; #7875 tracks
+				// the last hop, which needs a ruling before that signature can widen.
 				(agent) => agent.answer(cmd.request, cmd.decision),
 				() => nothing,
 			),

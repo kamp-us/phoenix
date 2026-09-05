@@ -186,6 +186,33 @@ describe("PiServerService", () => {
 		);
 	});
 
+	it.live("attaches a session this server never held, off the host's own store", () => {
+		const host = makeScriptedHost({resumable: true});
+		return withServer(host, (server) =>
+			Effect.gen(function* () {
+				const client = yield* dial(server);
+				yield* client.next((message) => message.type === "hello");
+				// The table is per server and a server is per process, so after a restart the only
+				// trace of a session is the store. An attach the table cannot answer goes there.
+				yield* client.request("a1", {command: "attach", sessionId: "session-from-before"});
+				const session = sessionOf(yield* responseOf(client, "a1"));
+				assert.strictEqual(session.id, "session-from-before");
+				assert.isTrue(session.attached, "the resumed session was not claimed by the attacher");
+
+				yield* client.request("p1", {
+					command: "prompt",
+					sessionId: "session-from-before",
+					text: "still here",
+				});
+				assert.deepStrictEqual(
+					sessionOf(yield* responseOf(client, "p1")).transcript.map((item) => item.role),
+					["user", "assistant"],
+					"the resumed session did not take a prompt on the lease the attach issued",
+				);
+			}),
+		);
+	});
+
 	it.live("closes a socket that sends a frame over the declared bound", () => {
 		const host = makeScriptedHost();
 		return withServer(

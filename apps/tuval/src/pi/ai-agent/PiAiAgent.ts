@@ -65,6 +65,13 @@ export interface PiAiAgentOptions {
 	/** Where this session's JSONL lives, from its cwd. Defaults to the host's own convention. */
 	readonly sessionDir?: (cwd: string) => string;
 	/**
+	 * The project root that booted the kernel: where a `start({cwd, resume})` after a restart looks
+	 * for the saved session's JSONL, since the server it is dialling has never held that session.
+	 * Absent means this layer resumes nothing across a restart and a saved id answers
+	 * `session-not-found`.
+	 */
+	readonly projectRoot?: string;
+	/**
 	 * Pi's config directory for this process — its credentials and its model catalog. Defaults to
 	 * Pi's own (`$PI_AGENT_DIR`, else `~/.pi/agent`).
 	 */
@@ -327,6 +334,7 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 				modelRuntime,
 				agentDir,
 				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
+				...(options.projectRoot === undefined ? {} : {projectRoot: options.projectRoot}),
 			});
 		}),
 	);
