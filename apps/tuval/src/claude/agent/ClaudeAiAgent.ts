@@ -53,7 +53,13 @@ import {emptyMapping, type Mapping, toAgentEvents, toHistoryItems} from "../hist
 import {KernelBridge, type ToolRuntime, tuvalToolServer} from "../tools/index.ts";
 import {cardOf, resultOf} from "./cards.ts";
 import {type InputChannel, inputChannel, userMessage} from "./input.ts";
-import {advertisedModes, type ClaudeAiAgentOptions, queryOptionsOf, sessionEnv} from "./options.ts";
+import {
+	advertisedModes,
+	type ClaudeAiAgentOptions,
+	openingMode,
+	queryOptionsOf,
+	sessionEnv,
+} from "./options.ts";
 import {
 	controlRefused,
 	noSession,
@@ -399,7 +405,12 @@ const make = (
 				opened.session.scope,
 			);
 
-			yield* emit(out, [{kind: "mode", current: held, available}]);
+			// The announced mode is resolved by the same call `open` opened the query with, never the
+			// raw `held`: `held` is null until an operator calls `setMode`, so a row carrying any
+			// non-default `permissionMode` would run on that mode and tell every subscriber it has
+			// none — a `current: null` beside a non-empty `available` is not a state `ModePayload`
+			// defines (#7828).
+			yield* emit(out, [{kind: "mode", current: openingMode(options, held) as Mode, available}]);
 			// A card the layer does not hold cannot be answered, so a window restored with one would
 			// wedge on it. Resolving it is what lets the generic restore drop it (#7608).
 			yield* emit(
