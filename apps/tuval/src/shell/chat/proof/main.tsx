@@ -61,7 +61,14 @@ const state: AiAgentSessionState = withTranscript(
 	},
 );
 
-const view: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
+const view: ChatView = {
+	scroll: 0,
+	draft: "",
+	cursor: null,
+	atOldest: false,
+	expanded: [],
+	unfolded: [],
+};
 
 const mount = Effect.gen(function* () {
 	const host = document.getElementById("proof");

@@ -61,8 +61,9 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 			"own",
 		]);
 		const head = rows[0];
-		expect(head?.kind === "item" && head.nestedCount).toBe(2);
+		expect(head?.kind === "item" && head.nestedIds).toEqual(["child-1", "child-2"]);
 		expect(head?.kind === "item" && head.nested).toBe(false);
+		expect(head?.kind === "item" && head.depth).toBe(0);
 	});
 
 	it("lays the folded calls out under the head once it is expanded, marked nested", () => {
@@ -70,7 +71,7 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 			...base,
 			tail: group,
 			atOldest: true,
-			expanded: new Set(["agent"]),
+			unfolded: new Set(["agent"]),
 		});
 		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
 			"agent",
@@ -86,15 +87,54 @@ describe("chatRows folds a subagent's calls under the call that spawned it", () 
 	it("leaves a row whose parent is not loaded in place, marked nested and heading nothing", () => {
 		const orphan = call("child-1", {parentId: "agent"});
 		const rows = chatRows({...base, tail: [orphan], atOldest: true});
-		expect(rows).toEqual([{kind: "item", item: orphan, nestedCount: 0, nested: true}]);
+		expect(rows).toEqual([{kind: "item", item: orphan, nestedIds: [], nested: true, depth: 1}]);
+	});
+
+	it("gives a folded row that is itself a group head its own count and its own children", () => {
+		// The one-level fold used to drop this shape whole: the grandchild was skipped by the head
+		// loop because its parent was present, and pushed by no other loop, so it appeared nowhere and
+		// its parent's head line read no count (#8027).
+		const deep = [
+			call("agent", {name: "Agent"}),
+			call("inner", {name: "Agent", parentId: "agent"}),
+			call("leaf", {parentId: "inner"}),
+		];
+		const both = chatRows({
+			...base,
+			tail: deep,
+			atOldest: true,
+			unfolded: new Set(["agent", "inner"]),
+		});
+		expect(both).toEqual([
+			{kind: "item", item: deep[0], nestedIds: ["inner"], nested: false, depth: 0},
+			{kind: "item", item: deep[1], nestedIds: ["leaf"], nested: true, depth: 1},
+			{kind: "item", item: deep[2], nestedIds: [], nested: true, depth: 2},
+		]);
+
+		const outerOnly = chatRows({...base, tail: deep, atOldest: true, unfolded: new Set(["agent"])});
+		expect(outerOnly.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
+			"agent",
+			"inner",
+		]);
+		expect(outerOnly[1]?.kind === "item" && outerOnly[1].nestedIds).toEqual(["leaf"]);
+	});
+
+	it("emits every marked row exactly once even when the parent chain loops back on itself", () => {
+		const cycle = [call("a", {parentId: "b"}), call("b", {parentId: "a"}), call("free")];
+		const rows = chatRows({...base, tail: cycle, atOldest: true, unfolded: new Set(["a", "b"])});
+		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
+			"free",
+			"a",
+			"b",
+		]);
 	});
 
 	it("leaves a transcript with no parent marked on it exactly as it was", () => {
 		const flat = [call("a"), call("b")];
 		const rows = chatRows({...base, tail: flat, atOldest: true});
 		expect(rows).toEqual([
-			{kind: "item", item: flat[0], nestedCount: 0, nested: false},
-			{kind: "item", item: flat[1], nestedCount: 0, nested: false},
+			{kind: "item", item: flat[0], nestedIds: [], nested: false, depth: 0},
+			{kind: "item", item: flat[1], nestedIds: [], nested: false, depth: 0},
 		]);
 	});
 });
@@ -141,9 +181,9 @@ describe("the page cursor and the prepend anchor", () => {
 
 describe("rowKey", () => {
 	it("keys an item on its own id, so a status update does not remount its row", () => {
-		expect(rowKey({kind: "item", item: assistantItem("x"), nestedCount: 0, nested: false})).toBe(
-			"item:x",
-		);
+		expect(
+			rowKey({kind: "item", item: assistantItem("x"), nestedIds: [], nested: false, depth: 0}),
+		).toBe("item:x");
 		expect(rowKey({kind: "loading"})).toBe("loading");
 		expect(rowKey({kind: "older", items: 3})).toBe("older");
 	});

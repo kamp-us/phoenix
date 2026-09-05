@@ -21,10 +21,16 @@ export type ChatRow =
 	| {
 			readonly kind: "item";
 			readonly item: TranscriptItem;
-			/** How many rows are folded under this one. Zero for everything but a group head. */
-			readonly nestedCount: number;
+			/**
+			 * The rows folded directly under this one, in list order. Empty for everything but a group
+			 * head. The ids rather than a count, so "the head says 14" and "14 rows appear" cannot
+			 * disagree, and so the head's disclosure can name the rows it controls (#8027).
+			 */
+			readonly nestedIds: ReadonlyArray<ItemId>;
 			/** This row ran inside another tool call — a subagent's, not the agent's own. */
 			readonly nested: boolean;
+			/** How many folds deep this row sits. Zero for a row the agent itself opened. */
+			readonly depth: number;
 	  };
 
 export interface ChatRowsInput {
@@ -36,8 +42,8 @@ export interface ChatRowsInput {
 	readonly omitted: number;
 	readonly loading: boolean;
 	readonly atOldest: boolean;
-	/** The ids of the rows this window has expanded, off its own view slot. */
-	readonly expanded?: ReadonlySet<string>;
+	/** The ids of the group heads whose folded rows are showing, off this window's own view slot. */
+	readonly unfolded?: ReadonlySet<string>;
 }
 
 /**
@@ -69,14 +75,23 @@ const parentOf = (item: TranscriptItem): ItemId | undefined =>
  *
  * A tool row naming a parent that is also in this list is **folded under it** (founder ruling,
  * 2026-09-05): the group head carries the count and the folded rows appear only while it is
- * expanded, which is what keeps a fifty-call subagent from flooding the window. A row whose parent
+ * unfolded, which is what keeps a fifty-call subagent from flooding the window. A row whose parent
  * is not in the list — its group head is older than the pages walked back to — stays where it is,
  * marked nested, because dropping it would hide work that happened.
+ *
+ * The walk is depth-first, which is what makes that last sentence true of *every* shape the backend
+ * can mark rather than only of a one-level fold: a subagent that spawns a subagent gives a folded
+ * row children of its own, counted and rendered like any other head.
+ *
+ * `reachable` is walked separately from the render because the two ask different questions. A row
+ * behind a folded head is hidden on purpose and must stay hidden; a row whose parent chain loops
+ * back on itself belongs to no head at all and would otherwise vanish. Only the second is swept in
+ * at the end, so no marked row is dropped and none is un-hidden.
  */
 export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	const inTail = new Set(input.tail.map((item) => item.id));
 	const items = [...input.older.filter((item) => !inTail.has(item.id)), ...input.tail];
-	const expanded = input.expanded ?? new Set<string>();
+	const unfolded = input.unfolded ?? new Set<string>();
 	const present = new Set(items.map((item) => item.id));
 	const folded = new Map<string, Array<TranscriptItem>>();
 	for (const item of items) {
@@ -90,13 +105,35 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	if (!input.atOldest && items.length > 0) {
 		rows.push(input.loading ? {kind: "loading"} : {kind: "older", items: input.omitted});
 	}
-	for (const item of items) {
+	const roots = items.filter((item) => {
 		const parent = parentOf(item);
-		if (parent !== undefined && present.has(parent)) continue;
+		return parent === undefined || !present.has(parent);
+	});
+	const reachable = new Set<string>();
+	const mark = (item: TranscriptItem): void => {
+		if (reachable.has(item.id)) return;
+		reachable.add(item.id);
+		for (const child of folded.get(item.id) ?? []) mark(child);
+	};
+	for (const item of roots) mark(item);
+	const seen = new Set<string>();
+	const emit = (item: TranscriptItem, depth: number): void => {
+		if (seen.has(item.id)) return;
+		seen.add(item.id);
 		const group = folded.get(item.id) ?? [];
-		rows.push({kind: "item", item, nestedCount: group.length, nested: parent !== undefined});
-		if (!expanded.has(item.id)) continue;
-		for (const child of group) rows.push({kind: "item", item: child, nestedCount: 0, nested: true});
+		rows.push({
+			kind: "item",
+			item,
+			nestedIds: group.map((child) => child.id),
+			nested: depth > 0,
+			depth,
+		});
+		if (!unfolded.has(item.id)) return;
+		for (const child of group) emit(child, depth + 1);
+	};
+	for (const item of roots) emit(item, parentOf(item) === undefined ? 0 : 1);
+	for (const item of items) {
+		if (!reachable.has(item.id)) emit(item, 1);
 	}
 	return rows;
 };
