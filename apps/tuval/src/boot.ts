@@ -24,7 +24,8 @@ import {ProcessTable} from "./process/ProcessTable.ts";
 import type {ProcessHandle} from "./process/process.ts";
 import type {AnyProgram} from "./registry/program.ts";
 import {Registry} from "./registry/Registry.ts";
-import {ShellDispatch} from "./shell/commands/dispatch.ts";
+import type {ShellDispatch} from "./shell/commands/dispatch.ts";
+import {shellDispatchKernel} from "./shell/commands/kernel.ts";
 import {shellId} from "./shell/program.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
@@ -50,7 +51,7 @@ export type Kernel =
 	| SpellExecutor
 	| SpellBridge
 	// Naming it here is what makes the provider load-bearing to the checker: `Context` is
-	// contravariant in its services, so dropping `ShellDispatch.kernel` below stops `start`'s
+	// contravariant in its services, so dropping `shellDispatchKernel` below stops `start`'s
 	// answer from satisfying `Started` rather than leaving a defect for the first caller (#7774).
 	| ShellDispatch;
 
@@ -107,7 +108,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 		// registry erases that requirement, so the composition root is where it is owed (#7774).
 		// The desk stays a program row like any other: a config that registers no shell row leaves
 		// this dispatcher with no process to find, which is a `NoDesk` refusal, not a failed boot.
-		ShellDispatch.kernel(shellId),
+		shellDispatchKernel(shellId),
 	).pipe(
 		Layer.provideMerge(SpellExecutor.layer),
 		Layer.provideMerge(

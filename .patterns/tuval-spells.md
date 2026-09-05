@@ -564,11 +564,15 @@ reads their name, sentence and argument kind off that list rather than re-typing
 `shellSpells` wraps each row as a spell whose `execute` builds the Msg and hands it to
 `ShellDispatch`, an interface this slice declares — the same shape `WindowIndex` takes above.
 `AnySpell` erases that requirement, so the composition root that builds the registry owes the
-service, and [`boot.ts`](../apps/tuval/src/boot.ts) pays it: `ShellDispatch.kernel(shellId)` sits in
-the same merge as `SpellBridge`, finds the live process of the shell's program row through
+service, and [`boot.ts`](../apps/tuval/src/boot.ts) pays it: `shellDispatchKernel(shellId)`
+([`shell/commands/kernel.ts`](../apps/tuval/src/shell/commands/kernel.ts)) sits in the same merge
+as `SpellBridge`, finds the live process of the shell's program row through
 `ProcessTable` per dispatch, and puts the Msg on it. `Kernel` names `ShellDispatch` and `Context` is
 contravariant in its services, so dropping that layer stops `start` compiling rather than leaving a
-defect for the first caller.
+defect for the first caller. The layer lives in its own module rather than beside the tag because
+`dispatch.ts` is on the page's import path and the process table reads `node:crypto` at load; the
+page's boundary test walks the runtime import graph from `src/page/main.tsx` and refuses any
+`node:` specifier, so the split is proven rather than remembered (#7910).
 
 `dispatch` fails typed rather than dying, because a desk is a process: a config that registers the
 shell row but plans no node for it answers `NoDesk`, and a desk that stopped mid-call answers the
