@@ -147,6 +147,13 @@ export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerS
 	};
 
 	const handlers: AiAgentHandlerSet["handlers"] = {
+		// The one handler that calls nothing. It answers the fresh `init`'s Cmd with the Msg that
+		// opens the session, and the `start` cell does the rest — including refusing a second open.
+		// Doing the work here instead would run it inside the spawn (`host/actor.ts` awaits an init
+		// Cmd's handler before `make` returns), which would hold the spawning process's own tail
+		// for as long as the backend takes to answer.
+		"aiAgent.boot": (cmd) => Effect.succeed([{type: "start", cwd: cmd.cwd, resume: null}]),
+
 		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume),
 
 		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId),

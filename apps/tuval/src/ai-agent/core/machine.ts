@@ -95,7 +95,26 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		AiAgentSessionSub,
 		unknown
 	>({
-		init: (loaded) => [loaded === null ? initialState(options.cwd) : restore(loaded), noCmds],
+		/**
+		 * A fresh process opens its own session; a restored one is left to its resume rule.
+		 *
+		 * Spawning the program is the whole act (#7925): before this, every `start` in the tree was
+		 * a test's, so a picker-opened window sat at `idle` refusing every prompt. The fresh arm is
+		 * the home because it is the only place that knows the process is new, and it covers every
+		 * spawner at once — the picker, the launcher, a test kernel — where a hook on one spawn path
+		 * is a hook the next spawn path forgets, which is the bug itself. The window is not the home
+		 * either: two windows over one process would race into `startRefused`, and a window is a
+		 * view rather than the owner of a session's lifetime.
+		 *
+		 * Demlik allows this exactly here. Its guard reds only on a **non-null** `loaded` whose
+		 * `init` returns Cmds — the rehydrate branch is the migration/parse boundary (`replay` in
+		 * `@demlik/tea` 0.12) — so the restored arm stays `noCmds` and its reconnect stays the Msg
+		 * `restore/checkpoint.ts` hands a spawner.
+		 */
+		init: (loaded) =>
+			loaded === null
+				? [initialState(options.cwd), [{type: "aiAgent.boot", cwd: options.cwd}]]
+				: [restore(loaded), noCmds],
 		update: {
 			start: (state, msg) =>
 				busy(state)
@@ -225,6 +244,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		// Demlik's `Machine` demands a Promise `interpret` and a `subscribe` beside the row's own
 		// Effect handlers; the host reads neither (#7576).
 		interpret: {
+			"aiAgent.boot": noWork,
 			"aiAgent.start": noWork,
 			"aiAgent.prompt": noWork,
 			"aiAgent.answer": noWork,

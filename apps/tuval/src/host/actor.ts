@@ -172,10 +172,11 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		pending++;
 		quiet.closeUnsafe();
 	};
-	const leave = Effect.sync(() => {
+	const leave = (): void => {
 		pending--;
 		if (pending === 0) quiet.openUnsafe();
-	});
+	};
+	const leaving = Effect.sync(leave);
 
 	const closeSub = (sub: Scope.Closeable) =>
 		Scope.close(sub, Exit.void).pipe(Effect.catchCause(reportCause("sub-cleanup")));
@@ -187,16 +188,26 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 		}
 		enter();
 		Effect.runFork(
-			Effect.forkIn(
-				enqueue(msg).pipe(
-					Effect.catchCause((cause) => {
-						const error = Cause.squash(cause);
-						return report(error, error instanceof DispatchDiscardedError ? "discard" : "follow-up");
-					}),
-					Effect.ensuring(leave),
-					Effect.provideContext(services),
+			Effect.flatMap(
+				Effect.forkIn(
+					enqueue(msg).pipe(
+						Effect.catchCause((cause) => {
+							const error = Cause.squash(cause);
+							return report(
+								error,
+								error instanceof DispatchDiscardedError ? "discard" : "follow-up",
+							);
+						}),
+						Effect.provideContext(services),
+					),
+					scope,
 				),
-				scope,
+				// The count is settled on the fiber's Exit, never inside its body: a follow-up forked
+				// into the process Scope and interrupted before it ever starts — a stop taken in the
+				// same tick as the dispatch, which is what a session opening itself at spawn makes
+				// ordinary (#7925) — produces an Exit and runs no `ensuring`, so an in-body decrement
+				// leaves `pending` above zero and `stop` waits on `quiet` for ever.
+				(fiber) => Effect.sync(() => fiber.addObserver(leave)),
 			),
 		);
 	};
@@ -451,7 +462,7 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 	const dispatchOnce = (msg: M): Effect.Effect<void, DispatchError<E>> =>
 		Effect.suspend(() => {
 			enter();
-			return enqueue(msg).pipe(Effect.ensuring(leave), Effect.provideContext(services));
+			return enqueue(msg).pipe(Effect.ensuring(leaving), Effect.provideContext(services));
 		});
 
 	const idle: Effect.Effect<void> = quiet.await;

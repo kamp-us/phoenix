@@ -38,10 +38,11 @@ const started = (over: Partial<AiAgentSessionState> = {}): AiAgentSessionState =
 });
 
 describe("init", () => {
-	it("opens a fresh session idle in the configured directory", () => {
+	it("opens a fresh session idle in the configured directory, and asks to boot it", () => {
 		const [state, cmds] = machine.init(null, {});
 		expect(state).toEqual(initialState("/repo"));
-		expect(cmds).toEqual([]);
+		// Spawning the program is the whole act: nothing else in the tree dispatches `start` (#7925).
+		expect(cmds).toEqual([{type: "aiAgent.boot", cwd: "/repo"}]);
 	});
 
 	it("restores a loaded state and emits no Cmd, as Demlik's rehydrate contract demands", () => {
@@ -205,13 +206,38 @@ describe("event", () => {
 		expect(settled.permissions).toEqual({});
 	});
 
-	it("takes the phase the layer reports", () => {
+	it("takes a phase the layer reports that the core does not own", () => {
 		const [state] = apply(started(), {
 			type: "event",
 			sessionId: "session-1",
 			event: {kind: "phase", phase: "prompting"},
 		});
 		expect(state.phase).toBe("prompting");
+	});
+
+	// Every layer narrates its own open on the same stream (`PiAiAgent.start` emits `starting` then
+	// `ready`), and that stream is opened by the `started` the open already answered — so the
+	// `starting` a Sub reads first always lands on a session that is already ready (#7925).
+	it("ignores an opening phase the layer replays, so a ready session still takes a prompt", () => {
+		const [state] = apply(started(), {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "starting"},
+		});
+		expect(state.phase).toBe("ready");
+
+		const [prompted, cmds] = apply(state, {type: "prompt", text: "hello", key: "k1"});
+		expect(prompted.failure).toBeNull();
+		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "hello", key: "k1"}]);
+	});
+
+	it("ignores a replayed reconnecting phase for the same reason", () => {
+		const [state] = apply(started(), {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "reconnecting"},
+		});
+		expect(state.phase).toBe("ready");
 	});
 
 	it("is discarded once the session is gone", () => {
@@ -402,10 +428,12 @@ describe("the Cmd each Msg answers for", () => {
 		}
 	});
 
-	it("emits every Cmd the union declares across the table", () => {
-		const emitted = new Set(
-			cases.flatMap(([state, msg]) => apply(state, msg)[1].map((c) => c.type)),
-		);
+	// `init` is the second emitter: the fresh arm's boot Cmd is the one no Msg answers for (#7925).
+	it("emits every Cmd the union declares, across the table and the fresh init", () => {
+		const emitted = new Set([
+			...machine.init(null, {})[1].map((cmd) => cmd.type),
+			...cases.flatMap(([state, msg]) => apply(state, msg)[1].map((c) => c.type)),
+		]);
 		expect(emitted).toEqual(new Set(Object.keys(machine.interpret ?? {})));
 	});
 });
