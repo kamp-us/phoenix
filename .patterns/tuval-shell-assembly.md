@@ -142,7 +142,8 @@ Three files, and the split between them is forced rather than stylistic.
 
 - **The row names the window and reaches none of it.** A row is kernel-side data and must stay free
   of React, so the `RendererRef` it declares lives on a leaf that imports one type and nothing else
-  — `src/pi/renderer-ref.ts` for `pi-session`. Retyping the name at both ends instead would drift
+  — `src/pi/renderer-ref.ts` for `pi-session`, `src/claude/renderer-ref.ts` for `claude-session`.
+  Retyping the name at both ends instead would drift
   silently: an unresolved reference is a returned value, never a throw
   (`src/shell/window/renderer.ts`), so the window comes up blank and nothing fails.
 - **That leaf sits beside the row, not inside the renderer's directory.** The strict lens
@@ -166,7 +167,10 @@ Three files, and the split between them is forced rather than stylistic.
   `chatWindow({extras})` takes a `(state) => ReactNode` that lands in the window's status bar beside
   the phase line and the mode switch, and that is the whole of what a program adds. Pi's is its
   usage line — model, cumulative cost, token counts, off `state.usage`
-  (`src/pi/window/PiChatWindow.tsx`). It is a function of the live state because a renderer *is*
+  (`src/pi/window/PiChatWindow.tsx`); Claude's is that line plus a session line — session id and
+  cwd, off `state.sessionId` and `state.cwd` (`src/claude/window/ClaudeChatWindow.tsx`). Each
+  renderer directory is named in `tsconfig.json`'s `exclude` and `tsconfig.design.json`'s `include`,
+  for the lens reason above. It is a function of the live state because a renderer *is*
   `f(state, view)`; a renderer that accumulated its own totals would disagree with the checkpoint
   and with the other window over the same process. Wrapping the shared window in a program-specific
   container is the wrong shape for a second reason: `chat.css` re-declares the `@kampus/design`
