@@ -6,23 +6,27 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node src/bin.ts",
-		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict && tsc -p tsconfig.browser.json && effect-tsgo diagnostics --project tsconfig.browser.json --strict",
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration"
 	},
 	"dependencies": {
+		"@anthropic-ai/claude-agent-sdk": "catalog:",
+		"@anthropic-ai/sdk": "catalog:",
 		"@demlik/tea": "catalog:",
 		"@earendil-works/pi-ai": "catalog:",
 		"@earendil-works/pi-client": "catalog:",
 		"@earendil-works/pi-coding-agent": "catalog:",
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:tuval",
+		"@modelcontextprotocol/sdk": "catalog:",
 		"effect": "catalog:tuval",
 		"react": "catalog:",
 		"react-dom": "catalog:",
 		"react-resizable-panels": "catalog:",
-		"ws": "catalog:"
+		"ws": "catalog:",
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",

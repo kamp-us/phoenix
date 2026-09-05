@@ -10,7 +10,7 @@
 
 import type {ReactElement} from "react";
 import type {ShellMsg} from "../core/index.ts";
-import type {PickerEntries} from "../picker/index.ts";
+import type {PickerEntries} from "../picker/browser.ts";
 import type {ViewState, WindowId} from "../window/index.ts";
 import type {WindowMount} from "./mount.ts";
 import {asPickerView, PickerView} from "./PickerView.tsx";

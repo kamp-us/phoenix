@@ -2,9 +2,10 @@
 
 **Reference.** How `apps/tuval` goes from a config module to a desk a founder drives by keyboard —
 what runs each of the shell core's Cmds, how a program row's services reach its handlers, who serves
-the page, and how the three end-to-end proofs are written. Read it before touching
-`apps/tuval/src/shell/host/`, `apps/tuval/src/page/`, `apps/tuval/src/bin.ts`, or the launch/spawn
-seam in `apps/tuval/src/launch/`.
+the page, which of the app's two entries a module belongs to, and how the three end-to-end proofs
+are written. Read it before touching `apps/tuval/src/shell/host/`, `apps/tuval/src/page/`,
+`apps/tuval/src/bin.ts`, `apps/tuval/tsconfig.browser.json`, or the launch/spawn seam in
+`apps/tuval/src/launch/`.
 
 The parts below it are their own docs: the command framework is
 [tuval-spells.md](./tuval-spells.md), the layout binding is
@@ -122,6 +123,57 @@ moment Vite binds, so serving a page and admitting its origin are one act and no
 first without the second. A change to either half owes the proof in
 `src/shell/proof/end-to-end.integration.test.ts` that replays the upgrade **with** an `Origin`
 header; nothing that attaches the ordinary way can fail when this breaks.
+
+## Two entry points, two import surfaces
+
+The app has exactly two entries and they run on different platforms: `src/bin.ts` under Node, and
+`src/page/main.tsx` in the browser. **A module the browser entry reaches may not import `node:*`.**
+Vite externalizes those specifiers, so the import survives the bundle and throws on first access —
+the page is black before React mounts anything, and no test that drives the page's code under Node
+can see it (#7836).
+
+`apps/tuval/tsconfig.browser.json` is the whole guard, and there is deliberately no lint rule and no
+bundler plugin beside it:
+
+```jsonc
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": []                       // no @types/node in scope
+  },
+  "include": ["src/page/main.tsx", "src/page/assets.d.ts"]
+}
+```
+
+`types: []` is what does it: with no `@types/node`, `node:crypto` resolves to nothing, so any module
+in this project's file set that imports one is a plain `tsc` error —
+
+```
+src/shell/ui/Desk.tsx(1,26): error TS2591: Cannot find name 'node:crypto'. Do you need to install
+type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field
+in your tsconfig.
+```
+
+The `include` is the entry alone. Everything else in the browser surface arrives by import, which is
+what makes the project's file set *the entry's import graph* and nothing wider — a module no browser
+entry reaches is not judged here, and that is correct. `apps/tuval`'s `typecheck` script runs this
+project after the Node one, so both lenses are in the one gate.
+
+**A barrel is the usual way a `node:` import gets in, so a shared slice keeps two.** `index.ts` is
+the whole slice, for the kernel; `browser.ts` is the half a page may reach, and `index.ts` re-exports
+it. Two slices carry the split today, and both were live routes into the black page:
+
+| Slice | `browser.ts` | What `index.ts` adds |
+|---|---|---|
+| `src/shell/transport/` | `client.ts`, `errors.ts`, `wire.ts` | `handshake.ts` (`node:crypto`), `server.ts` (`node:http`) |
+| `src/shell/picker/` | everything but `open.ts` | `open.ts` → `src/process/Processes.ts` (`node:crypto`) |
+
+So `src/shell/ui/` and `src/page/` import `../picker/browser.ts` and `../transport/browser.ts`, and
+`src/shell/host/effects.ts` — the kernel side — keeps importing `../picker/index.ts`. Adding a
+Node-only module to a slice means adding it to `index.ts`, never to `browser.ts`; getting that wrong
+reddens the browser project rather than the page.
 
 ## The proofs
 

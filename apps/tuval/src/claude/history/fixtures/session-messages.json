@@ -1,0 +1,160 @@
+[
+	{
+		"type": "user",
+		"uuid": "00000000-0000-4000-8000-000000000028",
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"message": {
+			"role": "user",
+			"content": [
+				{
+					"type": "text",
+					"text": "Run the bash command: echo hello-tuval"
+				}
+			]
+		},
+		"parent_tool_use_id": null,
+		"parent_agent_id": null,
+		"timestamp": "2026-09-04T18:23:21.494Z"
+	},
+	{
+		"type": "assistant",
+		"uuid": "00000000-0000-4000-8000-000000000011",
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"message": {
+			"model": "claude-fable-5-1",
+			"id": "msg_00000000000000000009",
+			"type": "message",
+			"role": "assistant",
+			"content": [
+				{
+					"type": "tool_use",
+					"id": "toolu_00000000000000000010",
+					"name": "Bash",
+					"input": {
+						"command": "echo hello-tuval",
+						"description": "Echo hello-tuval"
+					},
+					"caller": {
+						"type": "direct"
+					}
+				}
+			],
+			"stop_reason": "tool_use",
+			"stop_sequence": null,
+			"stop_details": null,
+			"usage": {
+				"input_tokens": 2,
+				"cache_creation_input_tokens": 28010,
+				"cache_read_input_tokens": 0,
+				"output_tokens": 83,
+				"output_tokens_details": {
+					"thinking_tokens": 0
+				},
+				"server_tool_use": {
+					"web_search_requests": 0,
+					"web_fetch_requests": 0
+				},
+				"service_tier": "standard",
+				"cache_creation": {
+					"ephemeral_1h_input_tokens": 28010,
+					"ephemeral_5m_input_tokens": 0
+				},
+				"inference_geo": "not_available",
+				"iterations": [
+					{
+						"input_tokens": 2,
+						"output_tokens": 83,
+						"cache_read_input_tokens": 0,
+						"cache_creation_input_tokens": 28010,
+						"cache_creation": {
+							"ephemeral_5m_input_tokens": 0,
+							"ephemeral_1h_input_tokens": 28010
+						},
+						"type": "message"
+					}
+				],
+				"speed": "standard"
+			},
+			"diagnostics": null
+		},
+		"parent_tool_use_id": null,
+		"parent_agent_id": null,
+		"timestamp": "2026-09-04T18:23:24.205Z"
+	},
+	{
+		"type": "user",
+		"uuid": "00000000-0000-4000-8000-000000000013",
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"message": {
+			"role": "user",
+			"content": [
+				{
+					"tool_use_id": "toolu_00000000000000000010",
+					"type": "tool_result",
+					"content": "hello-tuval",
+					"is_error": false
+				}
+			]
+		},
+		"parent_tool_use_id": null,
+		"parent_agent_id": null,
+		"timestamp": "2026-09-04T18:23:24.714Z"
+	},
+	{
+		"type": "assistant",
+		"uuid": "00000000-0000-4000-8000-000000000015",
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"message": {
+			"model": "claude-fable-5-1",
+			"id": "msg_00000000000000000014",
+			"type": "message",
+			"role": "assistant",
+			"content": [
+				{
+					"type": "text",
+					"text": "Done. Output: `hello-tuval`"
+				}
+			],
+			"stop_reason": "end_turn",
+			"stop_sequence": null,
+			"stop_details": null,
+			"usage": {
+				"input_tokens": 56,
+				"cache_creation_input_tokens": 94,
+				"cache_read_input_tokens": 28010,
+				"output_tokens": 16,
+				"output_tokens_details": {
+					"thinking_tokens": 0
+				},
+				"server_tool_use": {
+					"web_search_requests": 0,
+					"web_fetch_requests": 0
+				},
+				"service_tier": "standard",
+				"cache_creation": {
+					"ephemeral_1h_input_tokens": 94,
+					"ephemeral_5m_input_tokens": 0
+				},
+				"inference_geo": "not_available",
+				"iterations": [
+					{
+						"input_tokens": 56,
+						"output_tokens": 16,
+						"cache_read_input_tokens": 28010,
+						"cache_creation_input_tokens": 94,
+						"cache_creation": {
+							"ephemeral_5m_input_tokens": 0,
+							"ephemeral_1h_input_tokens": 94
+						},
+						"type": "message"
+					}
+				],
+				"speed": "standard"
+			},
+			"diagnostics": null
+		},
+		"parent_tool_use_id": null,
+		"parent_agent_id": null,
+		"timestamp": "2026-09-04T18:23:26.379Z"
+	}
+]
