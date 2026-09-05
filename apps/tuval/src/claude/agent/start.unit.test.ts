@@ -114,8 +114,25 @@ describe("start opens one streaming query", () => {
 					{kind: "phase", phase: "starting"},
 					{kind: "phase", phase: "ready"},
 					{kind: "usage", model: "claude-fable-5-1", inputTokens: 0, outputTokens: 0, cost: 0},
-					{kind: "mode", current: null, available: MODES},
+					// The opening mode, not the layer's raw held `null`: nothing has called `setMode`, so
+					// what the query opened on is the row's own `permissionMode` (#7828).
+					{kind: "mode", current: Mode.make("default"), available: MODES},
 				]);
+			}),
+		),
+	);
+
+	it.effect("announces the mode the query was opened on, not the layer's held null (#7828)", () =>
+		on({permissionMode: Mode.make("plan"), modes: MODES}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				const announced = events[START_EVENTS - 1];
+				assert.deepStrictEqual(announced, {
+					kind: "mode",
+					current: Mode.make(scripted.opened[0]?.record.options.permissionMode ?? ""),
+					available: MODES,
+				});
 			}),
 		),
 	);
@@ -251,7 +268,7 @@ describe("setMode", () => {
 						const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
 						assert.deepStrictEqual(events[START_EVENTS - 1], {
 							kind: "mode",
-							current: null,
+							current: Mode.make("default"),
 							available: [Mode.make("default")],
 						});
 						yield* agent.setMode(Mode.make("bypassPermissions"));
