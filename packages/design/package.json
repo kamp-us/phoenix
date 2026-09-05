@@ -10,7 +10,7 @@
 		"./fonts.css": "./src/fonts.css"
 	},
 	"scripts": {
-		"typecheck": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run --config vitest.config.ts",
 		"test:a11y": "vitest run --config vitest.a11y.config.ts"
 	},
@@ -25,6 +25,7 @@
 		"lucide-react": "catalog:"
 	},
 	"devDependencies": {
+		"@effect/tsgo": "catalog:",
 		"@testing-library/react": "catalog:",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",

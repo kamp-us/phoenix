@@ -8,7 +8,7 @@
 		"destroy:depo": "alchemy destroy depo.ts",
 		"deploy:doorman": "alchemy deploy doorman.ts",
 		"destroy:doorman": "alchemy destroy doorman.ts",
-		"typecheck": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run"
 	},
 	"dependencies": {

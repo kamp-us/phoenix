@@ -6,7 +6,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node src/bin.ts",
-		"typecheck": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration"
@@ -25,6 +25,7 @@
 		"ws": "catalog:"
 	},
 	"devDependencies": {
+		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:tuval",
 		"@testing-library/dom": "catalog:",
 		"@testing-library/react": "catalog:",
