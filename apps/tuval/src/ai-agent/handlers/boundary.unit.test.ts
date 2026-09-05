@@ -9,20 +9,26 @@
  * `R`: `TuvalAiAgent` must not appear on it, because `aiAgentProgram` provides the layer itself and
  * a row still asking for the service would make every spawn need one.
  *
- * The import scan is the third: nothing under this directory names a backend, so the one generic
+ * The third reads the other half of that `R`: a layer's *own* leftover requirement does ride out
+ * onto the row, so a row built over one needing `SpellBridge` says so and a context lacking it
+ * cannot satisfy the spawn (#7951).
+ *
+ * The import scan is the fourth: nothing under this directory names a backend, so the one generic
  * handler set stays generic by construction rather than by intention.
  */
 
 import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
-import type {Effect, Layer, Stream} from "effect";
+import {Context, Effect, Layer, type Stream} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
+import {SpellBridge} from "../../commands/bridge/index.ts";
 import type {ProcessPorts} from "../../ports/index.ts";
 import type {ProcessSelf} from "../../process/self.ts";
 import type {JsonValue} from "../ports/index.ts";
 import type {AgentPortPayload} from "../ports/ports.ts";
-import type {AiAgentProgram} from "../program.ts";
-import type {TuvalAiAgent} from "../service/index.ts";
+import {type AiAgentProgram, aiAgentProgram} from "../program.ts";
+import {plainReply} from "../service/fixtures/scripts.ts";
+import {ScriptedAiAgent, type TuvalAiAgent} from "../service/index.ts";
 import type {AiAgentHandlerServices} from "./index.ts";
 
 type Primitive = string | number | boolean | null | undefined;
@@ -77,6 +83,47 @@ describe("the row's inferred requirements", () => {
 			? R
 			: never;
 		expectTypeOf<Extract<RowServices, TuvalAiAgent>>().toEqualTypeOf<never>();
+	});
+});
+
+/**
+ * The agent layer behind a `SpellBridge` it never closes — the shape a Claude row's layer has, with
+ * no Claude import. `Layer.unwrap` defers the effect, so building this runs nothing.
+ */
+const requiringLayer = Layer.unwrap(
+	Effect.map(SpellBridge, () => ScriptedAiAgent.layer(plainReply)),
+);
+
+const requiringRow = aiAgentProgram({
+	id: "requires-spell-bridge",
+	layer: requiringLayer,
+	config: {cwd: "/tmp"},
+});
+
+describe("a row over a layer that still asks for a service", () => {
+	it("carries that requirement out instead of closing it", () => {
+		expectTypeOf(requiringLayer).toEqualTypeOf<Layer.Layer<TuvalAiAgent, never, SpellBridge>>();
+		expectTypeOf(requiringRow).toEqualTypeOf<AiAgentProgram<SpellBridge>>();
+		expectTypeOf<AiAgentHandlerServices<SpellBridge>>().toEqualTypeOf<
+			ProcessSelf | ProcessPorts | SpellBridge
+		>();
+	});
+
+	it("still keeps the agent service off its own R", () => {
+		expectTypeOf<
+			Extract<AiAgentHandlerServices<SpellBridge>, TuvalAiAgent>
+		>().toEqualTypeOf<never>();
+	});
+
+	it("cannot be spawned with a context that lacks the service", () => {
+		// `Processes.spawn` erases `services` to `Context.Context<never>`, so the pairing is only
+		// checkable where the row's own `R` is still named. `Context` is contravariant in its services
+		// (`effect/Context` rc.112 declares `Context<in Services>`), so one missing a member of that
+		// union is not assignable.
+		const spawnServices = (_services: Context.Context<AiAgentHandlerServices<SpellBridge>>) => {};
+		// @ts-expect-error — `Context.empty()` names no `SpellBridge`.
+		spawnServices(Context.empty());
+		expect(typeof spawnServices).toBe("function");
 	});
 });
 

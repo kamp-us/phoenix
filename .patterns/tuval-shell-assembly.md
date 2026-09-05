@@ -26,11 +26,11 @@ One rule holds the whole picture together: **the desk is the shell process's sta
 a view of it.** Nothing on the page is authoritative, which is why two tabs show one desk and why a
 dropped socket is repaired by attaching again rather than by replaying anything.
 
-## A program row's `R` is satisfied at launch, not by the row
+## A program row's `R` is satisfied at spawn, not by the row
 
 `shellProgram({effects})` needs `Registry`, `Processes` and `ProcessTable` to run `openProgram` and
 `attachProcess` — the picker spawns. A row is pure data built before the kernel exists, so it cannot
-close over them; it declares them as its `R` instead, and `launch` provides them:
+close over them; it declares them as its `R` instead, and the spawner provides them:
 
 ```ts
 // src/boot.ts
@@ -40,14 +40,24 @@ const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
 ```
 
 `launch` merges that context into each spawn's `SpawnOptions.services` beside the node's own
-`ProcessPorts`. This is the only seam a program row's requirements can arrive through, and it is a
-wiring decision rather than a capability grant — local program code is fully trusted, there is no
-sandbox (#7484 R1.1).
+`ProcessPorts`. `SpawnOptions.services` is the only seam a program row's requirements can arrive
+through, and handing them over is a wiring decision rather than a capability grant — local program
+code is fully trusted, there is no sandbox (#7484 R1.1).
 
-**A restored process gets no such context.** `restore` spawns checkpointed processes the graph did
-not plan (everything the picker opened), with no services. So a program that a *picker* may open must
-have handlers that need nothing — `src/demo/log.ts` qualifies, `src/demo/counter.ts` does not, since
-its `announce` handler wants `ProcessPorts`.
+**Every spawner hands over that same kernel context, so a program a picker may open may require
+kernel services** (#7951). `restore` gets it from `start` for the checkpointed processes the graph
+did not plan; the picker passes on the context its own shell process was launched with
+(`src/shell/picker/open.ts`). `src/demo/counter.ts` is the example: its `announce` handler wants
+`ProcessPorts`, and it comes up under either spawner. What each of those two paths does *not* pass on
+is the spawner's own `ProcessPorts` — a port binding emits from one node — so each builds the process
+one of its own, un-wired where the graph owns no route (#7789).
+
+**Nothing checks the pairing, so the failure is at the handler.** `SpawnOptions.services` is typed
+`Context.Context<never>`, which every context satisfies, so a row asking for a service its spawner
+does not hold spawns fine and dies on the first handler that reaches for it. Where the requirement is
+visible is the row's own type: `aiAgentProgram` is generic over the leftover requirement of the layer
+it is handed (`src/ai-agent/program.ts`), so an agent row over a layer that still needs `SpellBridge`
+says `SpellBridge` on its services rather than closing it.
 
 ## Which Cmds the kernel runs, and which the surface does
 

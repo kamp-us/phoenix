@@ -1,6 +1,6 @@
 import {homedir} from "node:os";
 import {join} from "node:path";
-import {Context, Effect, type FileSystem, Layer} from "effect";
+import {type Context, Effect, type FileSystem, Layer} from "effect";
 import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
 import {everyRegistered, SpellBridge} from "./commands/bridge/index.ts";
 import {helpSpells} from "./commands/core/index.ts";
@@ -127,9 +127,10 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
 		Effect.provideContext(kernel),
 	);
-	// Boot holds no ambient per-process services of its own, so what a restored process gets is
-	// the `ProcessPorts` restore builds for it — un-wired, since the graph does not own it (#7789).
-	const restored = yield* restore(Context.empty()).pipe(Effect.provideContext(kernel));
+	// The same kernel a launched process gets, so a row's `R` is satisfied whichever spawner brings
+	// it up (#7951). What still differs is the ports: the graph does not own a restored process, so
+	// restore builds it an un-wired `ProcessPorts` of its own (#7789).
+	const restored = yield* restore(kernel).pipe(Effect.provideContext(kernel));
 	return {kernel, launched, restored} satisfies Started;
 });
 
