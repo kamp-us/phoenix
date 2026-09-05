@@ -5,6 +5,7 @@ import {createStack, createTree, createWindow, SIZE_TOLERANCE} from "../layout/i
 import {deskWith, threeWindowDesk, threeWindowTree} from "./fixtures.ts";
 import {
 	defaultLayoutOf,
+	holdsPanels,
 	panelWindows,
 	routerPrefix,
 	sameLayout,
@@ -89,6 +90,18 @@ describe("the panel layout", () => {
 			true,
 		);
 		expect(sameLayout(stack, {"window-1": 70, "stack-right": 30}, SIZE_TOLERANCE)).toBe(false);
+	});
+
+	it("answers the panel set separately from the sizes, in both directions", () => {
+		// `sameLayout` alone cannot tell these apart: a child the group never registered reports
+		// `undefined`, which its per-key predicate waves through as agreement (#7839).
+		const stack = threeWindowTree().root;
+		expect(holdsPanels(stack, {"window-1": 60, "stack-right": 40})).toBe(true);
+		expect(holdsPanels(stack, {"window-1": 100})).toBe(false);
+		expect(holdsPanels(stack, {"window-1": 40, "stack-right": 30, "window-9": 30})).toBe(false);
+		expect(holdsPanels(stack, {})).toBe(false);
+		expect(sameLayout(stack, {"window-1": 100}, SIZE_TOLERANCE)).toBe(false);
+		expect(sameLayout(stack, {"window-1": 60}, SIZE_TOLERANCE)).toBe(true);
 	});
 
 	it("reads zoom off the tree, and refuses a `zoomed` naming no window", () => {
