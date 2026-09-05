@@ -318,11 +318,11 @@ export function CommandPalette({
 				/>
 			</div>
 
-			{announcement === undefined ? null : (
-				<div className="kp-command-palette__announce" aria-live="polite">
-					{announcement}
-				</div>
-			)}
+			{/* Mounted empty rather than conditionally: a region inserted with its first sentence
+			    already inside it is a mutation no screen reader was watching for. */}
+			<div className="kp-command-palette__announce" aria-live="polite">
+				{announcement}
+			</div>
 
 			<div
 				id={`${baseId}-results`}

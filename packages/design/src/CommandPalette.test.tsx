@@ -334,7 +334,11 @@ describe("CommandPalette", () => {
 
 	it("holds a caller's announcement in a polite region the caller alone replaces", () => {
 		const {rerender} = renderPalette();
-		expect(document.querySelector(".kp-command-palette__announce")).toBeNull();
+		// The region is there from open, empty, so the caller's first sentence is a mutation
+		// inside a region a screen reader was already watching.
+		const empty = document.querySelector(".kp-command-palette__announce");
+		expect(empty).not.toBeNull();
+		expect(empty?.textContent).toBe("");
 
 		const withAnnouncement = (announcement: string) => (
 			<CommandPalette
@@ -363,7 +367,31 @@ describe("CommandPalette", () => {
 		const input = screen.getByRole("combobox");
 		expect(input.getAttribute("aria-invalid")).toBe("true");
 		expect(screen.getByText("böyle bir şey yok")).not.toBeNull();
-		expect(document.querySelector(".kp-command-palette__announce")).toBeNull();
+		expect(document.querySelector(".kp-command-palette__announce")?.textContent).toBe("");
+	});
+
+	it("reports the active option to a caller without moving the selection itself", () => {
+		const onActiveChange = vi.fn();
+		renderPalette({onActiveChange});
+		expect(onActiveChange).toHaveBeenLastCalledWith(items[0]);
+
+		const input = screen.getByRole("combobox");
+		fireEvent.keyDown(input, {key: "ArrowDown"});
+		expect(onActiveChange).toHaveBeenLastCalledWith(items[1]);
+		expect(input.getAttribute("aria-activedescendant")).toBe(screen.getAllByRole("option")[1]?.id);
+
+		fireEvent.change(input, {target: {value: "bulunamaz"}});
+		expect(onActiveChange).toHaveBeenLastCalledWith(undefined);
+	});
+
+	it("hands Escape to the caller and leaves the palette open when closeOnEscape is off", () => {
+		const onKeyDown = vi.fn((event: React.KeyboardEvent) => event.preventDefault());
+		renderPalette({closeOnEscape: false, onKeyDown});
+		fireEvent.keyDown(screen.getByRole("combobox"), {key: "Escape"});
+
+		expect(onKeyDown).toHaveBeenCalledTimes(1);
+		expect(onKeyDown.mock.calls[0]?.[0]?.key).toBe("Escape");
+		expect(screen.queryByRole("combobox")).not.toBeNull();
 	});
 
 	it("stops claiming an expanded popup once the list holds no option", () => {
@@ -372,5 +400,44 @@ describe("CommandPalette", () => {
 		expect(input.getAttribute("aria-expanded")).toBe("true");
 		fireEvent.change(input, {target: {value: "bulunamaz"}});
 		expect(input.getAttribute("aria-expanded")).toBe("false");
+	});
+});
+
+// Escape-to-dismiss belongs to the dialog's dismissable layer, which never registers under jsdom
+// ("[@zag-js/dismissable] node is `null` or `undefined`"), so the closing itself is unobservable in
+// this tier. What the palette owes is that the caller's answer reaches the dialog that owns it.
+describe("CommandPalette closeOnEscape", () => {
+	const forwarded = async (props: {closeOnEscape?: boolean}) => {
+		const seen: Array<boolean | undefined> = [];
+		vi.resetModules();
+		vi.doMock("./Dialog", () => ({
+			Dialog: ({children, closeOnEscape}: {children: React.ReactNode; closeOnEscape?: boolean}) => {
+				seen.push(closeOnEscape);
+				return <div>{children}</div>;
+			},
+		}));
+		const {CommandPalette: Mocked} = await import("./CommandPalette");
+		render(
+			<Mocked
+				items={items}
+				title="kamp.us'ta ara"
+				placeholder="ara"
+				emptyLabel="sonuç yok"
+				defaultOpen
+				shortcut={false}
+				{...props}
+			/>,
+		);
+		vi.doUnmock("./Dialog");
+		vi.resetModules();
+		return seen.at(-1);
+	};
+
+	it("keeps the dialog's own Escape by default", async () => {
+		expect(await forwarded({})).toBe(true);
+	});
+
+	it("takes Escape away from the dialog when a caller claims it", async () => {
+		expect(await forwarded({closeOnEscape: false})).toBe(false);
 	});
 });

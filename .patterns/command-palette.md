@@ -36,7 +36,7 @@ A consumer whose keys or copy differ takes one of these rather than building a s
 the ARIA spine, the movement and the scroll-into-view stay here, which is the whole point of the
 component. Tuval's spell palette
 ([`apps/tuval/src/palette/Palette.tsx`](../apps/tuval/src/palette/Palette.tsx)) is the worked
-example: it used to hand-roll all of it, and #7882 folded it back onto these five.
+example: it used to hand-roll all of it, and #7882 folded it back onto these six.
 
 - `onKeyDown(event, active)` runs before the palette's own key handling and receives the option
   `aria-activedescendant` currently names. `preventDefault` claims the key; anything else falls
@@ -50,7 +50,9 @@ example: it used to hand-roll all of it, and #7882 folded it back onto these fiv
 - `announcement` holds a sentence in a visually-hidden polite live region until the caller replaces
   it. The caret never leaves the field, so this is the only thing that tells a screen-reader user
   what a keystroke did; the `emptyLabel` / `loadingLabel` `role="status"` copy is separate and
-  visible.
+  visible. The region is in the DOM for the palette's whole open life, empty until the caller writes
+  into it — a region that arrives already holding its first sentence is a mutation nothing was
+  watching, so that first sentence would go unread.
 - `error` marks the field invalid and shows the message under it. It is the reply-correlated
   refusal, not a validation of the query.
 - `closeOnEscape={false}` hands Escape to `onKeyDown` alone, so a caller owning focus restoration
