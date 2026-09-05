@@ -1,6 +1,7 @@
 /**
- * The boundary the row keeps: what it hands `aiAgentProgram` is a closed `Layer<TuvalAiAgent>`, the
- * row it returns is the generic program type, and no file that builds the row names the Agent SDK.
+ * The boundary the row keeps: what it hands `aiAgentProgram` is a `Layer<TuvalAiAgent>` asking for
+ * `SpellBridge` and nothing else, the row it returns is the generic program type over that one
+ * requirement, and no file that builds the row names the Agent SDK.
  *
  * The type pins are exact rather than "assignable to". An assignability check passes a layer that
  * grew a second requirement and a row that grew a Claude-shaped state, which is the whole thing
@@ -19,6 +20,7 @@ import type {
 } from "../ai-agent/core/index.ts";
 import type {AiAgentProgram} from "../ai-agent/program.ts";
 import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
+import type {SpellBridge} from "../commands/bridge/index.ts";
 import type {PortSchema, Program} from "../registry/program.ts";
 import {claudeSession, claudeSessionLayer} from "./program.ts";
 
@@ -48,14 +50,16 @@ const sourcesUnder = (dir: string): ReadonlyArray<{name: string; text: string}> 
 	});
 
 describe("what the row hands the factory", () => {
-	it("is a TuvalAiAgent layer with nothing left to provide", () => {
-		expectTypeOf(claudeSessionLayer).returns.toEqualTypeOf<Layer.Layer<TuvalAiAgent>>();
+	it("is a TuvalAiAgent layer asking for the kernel bridge and nothing else", () => {
+		expectTypeOf(claudeSessionLayer).returns.toEqualTypeOf<
+			Layer.Layer<TuvalAiAgent, never, SpellBridge>
+		>();
 	});
 });
 
 describe("the row's own type", () => {
-	it("is the generic program type, so no SDK type is reachable through it", () => {
-		expectTypeOf(claudeSession).returns.toEqualTypeOf<AiAgentProgram>();
+	it("is the generic program type over SpellBridge, so no SDK type is reachable through it", () => {
+		expectTypeOf(claudeSession).returns.toEqualTypeOf<AiAgentProgram<SpellBridge>>();
 	});
 
 	it("carries the generic state, Msg, Cmd and Sub, which name nothing Claude-shaped", () => {
