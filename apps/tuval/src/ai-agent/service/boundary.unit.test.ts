@@ -12,8 +12,9 @@ import {join} from "node:path";
 import type {Effect, Stream} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, PermissionDecision} from "../ports/index.ts";
+import type {Mode, ModelRef, PermissionDecision} from "../ports/index.ts";
 import type {
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
@@ -28,8 +29,14 @@ import type {
 	TuvalAiAgentApi,
 } from "./TuvalAiAgent.ts";
 
+/**
+ * The founder's seven grew to eight on #7981: he wants the agent's model picked from the chat
+ * composer, and a picker over a generic window has to read and write the model through the generic
+ * interface. `setModel` is that eighth member, and both pins below count eight so the growth reads
+ * as the deliberate act it was rather than as drift.
+ */
 describe("the TuvalAiAgent surface", () => {
-	it("carries the founder's seven members, each at its declared type", () => {
+	it("carries the founder's seven members plus #7981's eighth, each at its declared type", () => {
 		expectTypeOf<TuvalAiAgentApi["start"]>().toEqualTypeOf<
 			(options: StartOptions) => Effect.Effect<StartedSession, StartError>
 		>();
@@ -43,6 +50,9 @@ describe("the TuvalAiAgent surface", () => {
 		expectTypeOf<TuvalAiAgentApi["setMode"]>().toEqualTypeOf<
 			(mode: Mode) => Effect.Effect<void, ModeUnsupported>
 		>();
+		expectTypeOf<TuvalAiAgentApi["setModel"]>().toEqualTypeOf<
+			(model: ModelRef) => Effect.Effect<void, ModelUnsupported>
+		>();
 		expectTypeOf<TuvalAiAgentApi["page"]>().toEqualTypeOf<
 			(before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>
 		>();
@@ -51,9 +61,9 @@ describe("the TuvalAiAgent surface", () => {
 		>();
 	});
 
-	it("has exactly those seven members and no eighth", () => {
+	it("has exactly those eight members and no ninth", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
-			"start" | "prompt" | "interrupt" | "answer" | "setMode" | "page" | "events"
+			"start" | "prompt" | "interrupt" | "answer" | "setMode" | "setModel" | "page" | "events"
 		>();
 	});
 });

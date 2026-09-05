@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * The three agent controls the window adds on top of the transcript: the collapsible tool row, the
- * permission cards, and the mode switch. Same test double as the transcript's own tests
- * (`../window/fixtures.ts`) — no kernel, no socket, no agent layer.
+ * The four agent controls the window adds on top of the transcript: the collapsible tool row, the
+ * permission cards, the mode switch, and the composer's model picker. Same test double as the
+ * transcript's own tests (`../window/fixtures.ts`) — no kernel, no socket, no agent layer.
  *
  * Every control here is Manti-backed, so a click and a same-tick read prove nothing: Zag defers the
  * transition by at least one microtask (`.patterns/zag-machine-interaction-tests.md`). Each
@@ -20,7 +20,7 @@ import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
-import {call, modes, permissionRequest, userItem, withTranscript} from "./chat.testing.ts";
+import {call, models, modes, permissionRequest, userItem, withTranscript} from "./chat.testing.ts";
 import {initialChatView} from "./view.ts";
 
 installDomShims();
@@ -239,6 +239,74 @@ describe("the mode switch", () => {
 		await click(await screen.findByRole("option", {name: "plan"}));
 		await waitFor(() => expect(screen.queryByRole("option", {name: "plan"})).toBeNull());
 		expect(process.inbox()).toEqual([]);
+	});
+});
+
+/**
+ * The composer's own picker, driven through the bridge rather than through a port (#7981). The
+ * catalog is not known when the composer mounts — the agent has not started — so every case here
+ * also proves the push: the control is enabled by a list that arrived after the loads ran.
+ */
+describe("the composer's model picker", () => {
+	const picker = () => screen.findByRole("button", {name: /^model: /});
+
+	it("stays disabled on a list shorter than two", async () => {
+		await open(
+			withTranscript([userItem("u1", "go")], {models: models(["claude-opus-5"], "claude-opus-5")}),
+		);
+		expect((await picker()).getAttribute("disabled")).not.toBeNull();
+	});
+
+	it("shows the session's current model and lists the offered catalog", async () => {
+		await open(
+			withTranscript([userItem("u1", "go")], {
+				models: models(["claude-opus-5", "claude-sonnet-5"], "claude-opus-5"),
+			}),
+		);
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		expect(trigger.textContent).toContain("claude-opus-5");
+		await click(trigger);
+		expect(await screen.findByRole("menuitemradio", {name: "claude-sonnet-5"})).toBeTruthy();
+	});
+
+	it("dispatches one setModel carrying the session's own ref", async () => {
+		const {process} = await open(
+			withTranscript([userItem("u1", "go")], {
+				models: models(["claude-opus-5", "claude-sonnet-5"], "claude-opus-5"),
+			}),
+		);
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		await click(trigger);
+		await click(await screen.findByRole("menuitemradio", {name: "claude-sonnet-5"}));
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		expect(process.inbox()[0]).toEqual({
+			type: "setModel",
+			model: {provider: "anthropic", id: "claude-sonnet-5", name: "claude-sonnet-5"},
+		});
+	});
+
+	it("shows the switched model once the session commits it", async () => {
+		const state = withTranscript([userItem("u1", "go")], {
+			models: models(["claude-opus-5", "claude-sonnet-5"], "claude-opus-5"),
+		});
+		const {process} = await open(state);
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		// What the layer's `model` event folds into state, which is the only thing that moves the
+		// selected row: the pick itself never writes it, so a refused switch shows the old one.
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit({
+					...state,
+					models: models(["claude-opus-5", "claude-sonnet-5"], "claude-sonnet-5"),
+				}),
+			);
+		});
+		await waitFor(() =>
+			expect(screen.getByRole("button", {name: "model: claude-sonnet-5"})).toBeTruthy(),
+		);
 	});
 });
 

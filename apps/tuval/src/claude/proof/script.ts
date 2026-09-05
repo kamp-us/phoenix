@@ -151,6 +151,7 @@ export const claudeScript: AgentScript = {
 		assistant("a2", REPLY_2, 5),
 	],
 	modes: {current: null, available: OFFERED},
+	models: {current: null, available: []},
 	interrupt: [],
 	turns: [{events: firstTurn}, {events: secondTurn}, {events: cutTurn}, {events: resendTurn}],
 	// The cut turn is index 2, so a resumed session's next prompt is the resend at index 3.
@@ -165,6 +166,7 @@ export const childScript: AgentScript = {
 	sessionId: CHILD_SESSION,
 	history: [],
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
 	interrupt: [],
 	turns: [
 		{

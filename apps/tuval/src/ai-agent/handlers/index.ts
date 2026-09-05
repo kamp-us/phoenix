@@ -211,6 +211,12 @@ export const aiAgentHandlers = <RIn = never>(
 				() => nothing,
 			),
 
+		"aiAgent.setModel": (cmd) =>
+			withAgent(
+				(agent) => agent.setModel(cmd.model),
+				() => nothing,
+			),
+
 		// The page goes back two ways: the `paged` Msg tells the core what the last page was, and
 		// the payload rides `pageReply` so the window that asked gets the items themselves.
 		"aiAgent.page": (cmd) =>

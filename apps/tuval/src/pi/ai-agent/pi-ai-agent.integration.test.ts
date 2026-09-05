@@ -125,7 +125,12 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				const events = yield* drain(agent);
 
 				assert.deepEqual(
-					events.slice(0, 3),
+					events.slice(0, 4).map((event) => event.kind),
+					["phase", "mode", "model", "phase"],
+					"start advertises the mode and model lists before settling on ready",
+				);
+				assert.deepEqual(
+					[events[0], events[1], events[3]],
 					[
 						{kind: "phase", phase: "starting"},
 						{kind: "mode", current: null, available: []},
@@ -133,6 +138,18 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					],
 					"start advertises no modes and settles on ready",
 				);
+				// The offered set is the server's own `hello` catalog, so the session's model is one of
+				// the rows the picker would list rather than a name this test invents.
+				const announced = events[2];
+				assert.strictEqual(announced?.kind, "model");
+				if (announced?.kind === "model") {
+					assert.isNotNull(announced.current);
+					assert.includeDeepMembers(
+						[...announced.available],
+						announced.current === null ? [] : [announced.current],
+						"the session's model is one the catalog offers",
+					);
+				}
 
 				const kinds = new Set(items(events).map((item) => item.kind));
 				assert.isTrue(

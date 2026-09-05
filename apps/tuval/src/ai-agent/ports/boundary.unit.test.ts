@@ -2,6 +2,9 @@
  * The two boundaries this module keeps: no payload type names anything model-specific (type-level,
  * so `tsc` over this file is half the proof and a scan of the sources is the other half), and the
  * interface travels alone — importing it reaches nothing else under `src/ai-agent/`.
+ *
+ * The source scan is per file rather than global, because one source is allowed one word: see
+ * `EXEMPT` at the foot of this file.
  */
 
 import {readdirSync, readFileSync} from "node:fs";
@@ -65,14 +68,22 @@ describe("the AI agent interface is model-blind", () => {
 	});
 
 	it("names no model-specific field in the sources either, comments aside", () => {
-		const banned = /\b(model|modelName|provider|cost|usage|tokens|session|sessionId|sdk)\b/i;
-		const offenders = sources().flatMap(({name, text}) =>
-			stripComments(text)
+		const offenders = sources().flatMap(({name, text}) => {
+			const banned = banFor(name);
+			return stripSpecifiers(stripComments(text))
 				.split("\n")
 				.filter((line) => banned.test(line))
-				.map((line) => `${name}: ${line.trim()}`),
-		);
+				.map((line) => `${name}: ${line.trim()}`);
+		});
 		expect(offenders).toEqual([]);
+	});
+
+	it("still guards the seven other words in the one file the model exemption covers", () => {
+		const banned = banFor("model.ts");
+		expect(banned.test("readonly provider?: string;")).toBe(false);
+		for (const word of ["cost", "usage", "tokens", "session", "sessionId", "sdk", "modelName"]) {
+			expect(banned.test(`readonly ${word}: string;`), word).toBe(true);
+		}
 	});
 });
 
@@ -134,6 +145,36 @@ const sources = () => {
 };
 
 const importsOf = (text: string) => [...text.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1] ?? "");
+
+const BANNED = [
+	"modelName",
+	"model",
+	"provider",
+	"cost",
+	"usage",
+	"tokens",
+	"sessionId",
+	"session",
+	"sdk",
+] as const;
+
+/**
+ * The words one source may say, and the only ones. `model.ts` is where the interface names a model
+ * (#7981), so it is scanned under a narrowed ban rather than skipped by name: exempting `model` and
+ * `provider` there leaves the other seven binding, where skipping the file stopped guarding `cost`,
+ * `usage`, `tokens`, `session`, `sessionId` and `sdk` in the one source most likely to reach for
+ * them.
+ */
+const EXEMPT: Readonly<Record<string, ReadonlyArray<string>>> = {"model.ts": ["model", "provider"]};
+
+const banFor = (name: string) => {
+	const exempt = new Set(EXEMPT[name] ?? []);
+	const words = BANNED.filter((word) => !exempt.has(word));
+	return new RegExp(String.raw`\b(${words.join("|")})\b`, "i");
+};
+
+/** A module path is not a field name, and `./model.ts` is one this directory now imports. */
+const stripSpecifiers = (text: string) => text.replace(/from\s+"[^"]+"/g, "");
 
 const stripComments = (text: string) =>
 	text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");

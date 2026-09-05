@@ -140,6 +140,8 @@ export const foldEvent = (
 			return dropRequest(state, event.request);
 		case "mode":
 			return {...state, modes: {current: event.current, available: event.available}};
+		case "model":
+			return {...state, models: {current: event.current, available: event.available}};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
 	}

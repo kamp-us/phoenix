@@ -15,7 +15,13 @@
  * (#7601).
  */
 
-import type {Mode, PermissionDecision, PermissionRequest, TranscriptItem} from "./ports/index.ts";
+import type {
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	PermissionRequest,
+	TranscriptItem,
+} from "./ports/index.ts";
 
 /**
  * Where a session is, as the core's `ai-agent-session` machine names it (#7497). The layer
@@ -54,6 +60,17 @@ export interface ModeEvent {
 	readonly available: ReadonlyArray<Mode>;
 }
 
+/**
+ * What the session is running on now, and what it may be switched to. `available` is the layer's
+ * *offered* set — Pi's authenticated, describable models rather than its whole runtime catalog —
+ * because this list is checkpointed with the rest of the session state (#7981).
+ */
+export interface ModelEvent {
+	readonly kind: "model";
+	readonly current: ModelRef | null;
+	readonly available: ReadonlyArray<ModelRef>;
+}
+
 /** Plain numbers and a plain model name: no backend's usage type reaches the core. */
 export interface UsageEvent {
 	readonly kind: "usage";
@@ -69,4 +86,5 @@ export type AgentEvent =
 	| PermissionEvent
 	| PermissionResolvedEvent
 	| ModeEvent
+	| ModelEvent
 	| UsageEvent;

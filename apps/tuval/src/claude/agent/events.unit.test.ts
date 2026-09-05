@@ -28,9 +28,9 @@ describe("events over a captured tool turn", () => {
 				);
 				assert.deepStrictEqual(
 					events.map((event) => event.kind),
-					// The start's own three, then the first turn's `init` — the model it names, and
+					// The start's own four, then the first turn's `init` — the model it names, and
 					// nothing else — then the turn, which ends on the `ready` its `result` carries.
-					["phase", "phase", "mode", "usage", "item", "item", "item", "usage", "phase"],
+					["phase", "phase", "mode", "model", "usage", "item", "item", "item", "usage", "phase"],
 				);
 			}),
 		),
@@ -102,6 +102,7 @@ describe("every kind rides the one stream", () => {
 						"phase",
 						"phase",
 						"mode",
+						"model",
 						"usage",
 						"item",
 						"item",

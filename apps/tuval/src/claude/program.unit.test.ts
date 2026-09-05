@@ -67,6 +67,7 @@ const script = {
 	sessionId: "claude-program-test",
 	history: [],
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
 	interrupt: [],
 	turns: [],
 };

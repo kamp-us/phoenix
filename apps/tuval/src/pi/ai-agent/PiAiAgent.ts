@@ -17,7 +17,10 @@
  * subscription taken after the re-`start` is live, and one taken before is not resurrected.
  *
  * Pi offers no permission prompts and no modes at this pin, so `permission` emits nothing, `mode`
- * advertises an empty list, and `answer` and `setMode` refuse as data rather than throwing.
+ * advertises an empty list, and `answer` and `setMode` refuse as data rather than throwing. Models
+ * it does offer: the `hello` frame's catalog is the list, `set_model` is the switch, and it applies
+ * to the running session rather than to the next one. A pick made before any session exists is held
+ * and opens the next one, so "not offered" and "no session yet" stay two different answers (#7981).
  */
 
 import {readdirSync} from "node:fs";
@@ -25,9 +28,11 @@ import {join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
-import type {Mode, PermissionDecision} from "../../ai-agent/ports/index.ts";
+import type {Mode, ModelRef, PermissionDecision} from "../../ai-agent/ports/index.ts";
+import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
@@ -104,6 +109,17 @@ const readBranch = (dir: string, sessionId: string, cwd: string) =>
 		catch: storeUnreadable,
 	});
 
+/**
+ * One catalog row as the interface names a model. The server's `hello` frame already carries the
+ * `offered()` set — authenticated and describable — so nothing here filters again, and the raw
+ * runtime catalog (four figures at this pin) never reaches the core.
+ */
+const refOf = (model: {
+	readonly provider: string;
+	readonly id: string;
+	readonly name: string;
+}): ModelRef => ({provider: model.provider, id: model.id, name: model.name});
+
 const without =
 	(key: string) =>
 	(seen: ReadonlySet<string>): ReadonlySet<string> => {
@@ -121,6 +137,9 @@ const make = (
 		const sessionDir = options.sessionDir ?? defaultSessionDir;
 
 		const session = yield* Ref.make<PiSessionRef | null>(null);
+		// The pick an operator made before a session existed. It survives to the next `start`,
+		// which opens on it — the shape `ClaudeAiAgent` holds one across a respawn.
+		const pendingModel = yield* Ref.make<ModelSelection | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const dialled = yield* Ref.make(false);
 		const pump = yield* Ref.make<Fiber.Fiber<void, never> | null>(null);
@@ -159,6 +178,49 @@ const make = (
 				yield* Effect.race(snapshots, dropped);
 			});
 
+		const offeredModels: Effect.Effect<ReadonlyArray<ModelRef>> = Effect.map(pi.models, (models) =>
+			models.map(refOf),
+		);
+
+		/**
+		 * The session's model as the offered list names it. The wire ref carries no display name, so
+		 * the catalog row is what a menu renders; a session on a model the catalog does not offer is
+		 * still reported, labelled by its id, rather than read as no model at all.
+		 */
+		const currentOf = (
+			offered: ReadonlyArray<ModelRef>,
+			wire: {readonly provider: string; readonly id: string},
+		): ModelRef =>
+			offered.find((candidate) => sameModel(candidate, {...wire, name: wire.id})) ?? {
+				...wire,
+				name: wire.id,
+			};
+
+		const announce = (current: ModelRef, offered: ReadonlyArray<ModelRef>): Effect.Effect<void> =>
+			Effect.flatMap(Ref.get(queue), (open) =>
+				emit(open, [{kind: "model", current, available: offered}]),
+			);
+
+		/**
+		 * The live switch. The `setModel` error channel declares only `ModelUnsupported`, and a
+		 * refused switch is not that: the model did not change, so the caller's fallback is
+		 * re-announced rather than a lie being put on the stream.
+		 */
+		const applySwitch = (
+			sessionId: string,
+			selection: ModelSelection,
+			fallback: PiSessionRef["model"],
+		): Effect.Effect<PiSessionRef["model"]> =>
+			pi.setModel(sessionId, selection).pipe(
+				Effect.map((answered) => answered.model),
+				Effect.catch((refusal) =>
+					Effect.as(
+						Effect.logWarning(`the model switch was refused: ${refusal.message}`),
+						fallback,
+					),
+				),
+			);
+
 		/** Dials on the first `start`, and re-dials on a later one — the pin's `reconnect()` refuses a live client. */
 		const dial = Effect.gen(function* () {
 			if (yield* pi.connected) return;
@@ -181,11 +243,11 @@ const make = (
 
 			const acquire = Effect.gen(function* () {
 				yield* dial;
+				// A held pick outranks the layer's static option: it is the later choice, and this
+				// open is the one it was made for.
+				const opening = (yield* Ref.get(pendingModel)) ?? options.model;
 				return options_.resume === undefined
-					? yield* pi.createSession(
-							options_.cwd,
-							options.model === undefined ? {} : {model: options.model},
-						)
+					? yield* pi.createSession(options_.cwd, opening === undefined ? {} : {model: opening})
 					: yield* pi.attachSession(options_.resume);
 			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
 
@@ -195,12 +257,24 @@ const make = (
 				Effect.tapError(() => emit(open, [{kind: "phase", phase: "gone"}])),
 			);
 
-			yield* Ref.set(session, ref);
+			// A `start({resume})` reattaches to a session already on its own stored model, and a
+			// create can answer on another, so a held pick is applied here rather than assumed to
+			// have landed. Spending it either way is what stops it re-applying on every later start.
+			const pick = yield* Ref.get(pendingModel);
+			const running =
+				pick === null || (ref.model.provider === pick.provider && ref.model.id === pick.id)
+					? ref.model
+					: yield* applySwitch(ref.id, pick, ref.model);
+			yield* Ref.set(pendingModel, null);
+
+			yield* Ref.set(session, {...ref, model: running});
 			// Forked into the layer's own scope, not the caller's, so the fan lives exactly as long
 			// as the transport it reads and dies with it.
 			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open), scope));
+			const offered = yield* offeredModels;
 			yield* emit(open, [
 				{kind: "mode", current: null, available: []},
+				{kind: "model", current: currentOf(offered, running), available: offered},
 				{kind: "phase", phase: "ready"},
 			]);
 			return {sessionId: ref.id};
@@ -244,6 +318,30 @@ const make = (
 			);
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
 
+		const setModel = Effect.fn("TuvalAiAgent.setModel")(function* (model: ModelRef) {
+			const catalog = yield* pi.models;
+			const picked = catalog.find((row) => sameModel(refOf(row), model));
+			if (picked === undefined) {
+				return yield* new ModelUnsupported({
+					model: model.id,
+					available: catalog.map((row) => row.id),
+				});
+			}
+			const offered = catalog.map(refOf);
+			const selection: ModelSelection = {provider: picked.provider, id: picked.id};
+			const current = yield* Ref.get(session);
+			if (current === null) {
+				// No session yet is not "not offered". Refusing here answered `ModelUnsupported`
+				// with the refused model listed among the available ones, which contradicts itself
+				// (#7981); the pick is held instead and the next `start` opens on it.
+				yield* Ref.set(pendingModel, selection);
+				return yield* announce(refOf(picked), offered);
+			}
+			const snapshot = yield* applySwitch(current.id, selection, current.model);
+			yield* Ref.set(session, {...current, model: snapshot});
+			yield* announce(currentOf(offered, snapshot), offered);
+		});
+
 		const page = Effect.fn("TuvalAiAgent.page")(function* (before: string | null, limit: number) {
 			const current = yield* Ref.get(session);
 			if (current === null) {
@@ -276,6 +374,7 @@ const make = (
 			answer: (request: string, _decision: PermissionDecision) =>
 				Effect.fail(new UnknownRequest({request})),
 			setMode: (mode: Mode) => Effect.fail(new ModeUnsupported({mode, available: []})),
+			setModel,
 			page,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};

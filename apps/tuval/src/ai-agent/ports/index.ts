@@ -5,6 +5,7 @@
  * implementation. `boundary.unit.test.ts` holds that closure.
  */
 
+export {isModelRef, type ModelRef, sameModel} from "./model.ts";
 export {
 	isModePayload,
 	isPermissionPayload,

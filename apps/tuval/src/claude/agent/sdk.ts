@@ -12,6 +12,7 @@
 
 import type {
 	GetSessionMessagesOptions,
+	ModelInfo,
 	Options,
 	PermissionMode,
 	SDKMessage,
@@ -43,6 +44,14 @@ export interface AgentSession extends AsyncGenerator<SDKMessage, void> {
 	initializationResult(): Promise<unknown>;
 	interrupt(): Promise<unknown>;
 	setPermissionMode(mode: PermissionMode): Promise<void>;
+	/**
+	 * The model switch, declared beside `setPermissionMode` and with the same precondition: the
+	 * pin's `sdk.d.ts` says both are "only available in streaming input mode", which is the mode
+	 * this layer's `AsyncIterable` prompt already puts every session in. It applies to subsequent
+	 * responses on the live session — no respawn (#7981).
+	 */
+	setModel(model?: string): Promise<void>;
+	supportedModels(): Promise<ReadonlyArray<ModelInfo>>;
 	close(): void;
 }
 
