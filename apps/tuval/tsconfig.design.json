@@ -18,6 +18,7 @@
 	"include": [
 		"src/shell/chat",
 		"src/pi/window",
+		"src/claude/window",
 		"src/page/main.tsx",
 		"src/page/AttachedDesk.tsx",
 		"src/page/renderers.tsx",
