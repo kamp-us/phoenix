@@ -1,19 +1,6 @@
-export {
-	type AttachedProcess,
-	type AttachOptions,
-	attach,
-	type PageAttachment,
-	SHELL_PROGRAM_ID,
-} from "./client.ts";
-export {
-	type AttachRefused,
-	type HandshakeRefusal,
-	HandshakeRefused,
-	NoSuchProcess,
-	PlacementUnsupported,
-	UndecodableMessage,
-	type UndecodableReason,
-} from "./errors.ts";
+/** The whole transport, page half and kernel half. A browser module imports `./browser.ts` instead. */
+
+export * from "./browser.ts";
 export {
 	checkHandshake,
 	type HandshakeRequest,
@@ -31,34 +18,3 @@ export {
 	serve,
 	type TransportServer,
 } from "./server.ts";
-export {
-	ATTACH_KIND,
-	ATTACH_REFUSED_KIND,
-	type AttachFrame,
-	type AttachRefusedFrame,
-	type ClientFrame,
-	DETACH_KIND,
-	type Decoded,
-	type DetachFrame,
-	DISPATCH_KIND,
-	DISPATCHED_KIND,
-	type DispatchedFrame,
-	type DispatchFrame,
-	decodeClientFrame,
-	decodeServerFrame,
-	encodeFrame,
-	fromWireRow,
-	isRegistryFrame,
-	isWireProgram,
-	PROCESS_STATE_KIND,
-	type ProcessStateFrame,
-	REGISTRY_KIND,
-	type RegistryFrame,
-	type ServerFrame,
-	TABLE_KIND,
-	type TableFrame,
-	tableFrame,
-	toWireRow,
-	type WireProgram,
-	type WireRow,
-} from "./wire.ts";

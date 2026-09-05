@@ -383,6 +383,31 @@ names one spell at a time out of the answers the turn already has, and the scrip
 the `SpellBridgeApi` those calls go through plus the `Scope` each one carries. Every answer lands on
 the session's transcript as a `tool` item, so the run reads back as the conversation it was.
 
+### An agent program's adapter over the bridge
+
+The Claude program's is the first one, under
+[`apps/tuval/src/claude/tools/`](../apps/tuval/src/claude/tools). It is the shape every later agent
+program copies, and it is three files:
+
+- [`KernelBridge.ts`](../apps/tuval/src/claude/tools/KernelBridge.ts) — `spawn`, `send` and `read` as
+  Effects. `KernelBridge.live(scope)` calls the three `process` spells through `SpellBridge` with the
+  calling process's own `Scope`; `KernelBridge.scripted(table)` is the deterministic fake, and each
+  build of it gets its own state.
+- [`errors.ts`](../apps/tuval/src/claude/tools/errors.ts) — the four the adapter answers with. The
+  executor flattens a spell's typed error to a `SpellFailure`'s `tag` and sentence, so an adapter
+  re-reads that tag into an error of its own; the fields the caller already knows are its own, and
+  whatever else the kernel said rides in `detail`. That is where `PortRefused` names the port's kind,
+  since the wire carries no field for it.
+- [`server.ts`](../apps/tuval/src/claude/tools/server.ts) — `tuvalToolServer(bridge, run)`, three
+  `tool()` definitions on one `createSdkMcpServer({name: "tuval"})`. The server name is half of every
+  wire name (`mcp__tuval__spawn`), so it is written once and `wireNames` is derived from it. Handlers
+  are plain `async` functions and the Effect runs *inside* one, through a `ToolRuntime` the calling
+  process built: the SDK offers no hook for handing it a runtime.
+
+No program id is written in that directory, and
+[`boundary.unit.test.ts`](../apps/tuval/src/claude/tools/boundary.unit.test.ts) is what keeps it that
+way.
+
 ## The Tuval protocol
 
 One versioned page-to-kernel wire

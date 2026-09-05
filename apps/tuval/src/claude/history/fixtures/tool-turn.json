@@ -1,0 +1,276 @@
+[
+	{
+		"type": "system",
+		"subtype": "init",
+		"cwd": "/tmp/tuval-capture",
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"tools": ["Task", "Bash", "CronCreate"],
+		"mcp_servers": [
+			{
+				"name": "plugin:playwright:playwright",
+				"status": "connected"
+			},
+			{
+				"name": "plugin:accessibility:binclusive",
+				"status": "needs-auth"
+			},
+			{
+				"name": "effect-docs",
+				"status": "connected"
+			}
+		],
+		"model": "claude-fable-5-1",
+		"permissionMode": "bypassPermissions",
+		"slash_commands": ["find-skills", "pr-review-canvas", "sound"],
+		"terminal_slash_commands": ["doctor", "color"],
+		"apiKeySource": "none",
+		"claude_code_version": "2.1.259",
+		"output_style": "default",
+		"agents": ["claude", "Explore", "fabrika:builder"],
+		"skills": ["find-skills", "pr-review-canvas", "sound"],
+		"plugins": [
+			{
+				"name": "frontend-design",
+				"path": "/home/user/.claude/plugins/cache/claude-plugins-official/frontend-design/0120fb83da5d",
+				"source": "frontend-design@claude-plugins-official"
+			},
+			{
+				"name": "typescript-lsp",
+				"path": "/home/user/.claude/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0",
+				"source": "typescript-lsp@claude-plugins-official",
+				"version": "1.0.0"
+			},
+			{
+				"name": "feature-dev",
+				"path": "/home/user/.claude/plugins/cache/claude-plugins-official/feature-dev/0120fb83da5d",
+				"source": "feature-dev@claude-plugins-official"
+			}
+		],
+		"capabilities": ["interrupt_receipt_v1", "interrupt_cancel_queued_v1", "msg_lifecycle_v1"],
+		"analytics_disabled": false,
+		"product_feedback_disabled": false,
+		"uuid": "00000000-0000-4000-8000-000000000008",
+		"memory_paths": {
+			"auto": "/home/user/.claude/projects/-tmp-tuval-capture/memory/"
+		},
+		"messaging_socket_path": "/tmp/cc-socks/32266.sock",
+		"fast_mode_state": "off",
+		"fast_mode_disabled_reason": "sdk_opt_in_required"
+	},
+	{
+		"type": "assistant",
+		"message": {
+			"model": "claude-fable-5-1",
+			"id": "msg_00000000000000000009",
+			"type": "message",
+			"role": "assistant",
+			"content": [
+				{
+					"type": "tool_use",
+					"id": "toolu_00000000000000000010",
+					"name": "Bash",
+					"input": {
+						"command": "echo hello-tuval",
+						"description": "Echo hello-tuval"
+					},
+					"caller": {
+						"type": "direct"
+					}
+				}
+			],
+			"stop_reason": null,
+			"stop_sequence": null,
+			"stop_details": null,
+			"usage": {
+				"input_tokens": 2,
+				"cache_creation_input_tokens": 28010,
+				"cache_read_input_tokens": 0,
+				"cache_creation": {
+					"ephemeral_5m_input_tokens": 0,
+					"ephemeral_1h_input_tokens": 28010
+				},
+				"output_tokens": 20,
+				"service_tier": "standard",
+				"inference_geo": "not_available"
+			},
+			"diagnostics": null,
+			"context_management": null
+		},
+		"parent_tool_use_id": null,
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"uuid": "00000000-0000-4000-8000-000000000011",
+		"timestamp": "2026-09-04T18:23:24.205Z",
+		"request_id": "req_00000000000000000012"
+	},
+	{
+		"type": "user",
+		"message": {
+			"role": "user",
+			"content": [
+				{
+					"tool_use_id": "toolu_00000000000000000010",
+					"type": "tool_result",
+					"content": "hello-tuval",
+					"is_error": false
+				}
+			]
+		},
+		"parent_tool_use_id": null,
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"uuid": "00000000-0000-4000-8000-000000000013",
+		"timestamp": "2026-09-04T18:23:24.714Z",
+		"tool_use_result": {
+			"stdout": "hello-tuval",
+			"stderr": "",
+			"interrupted": false,
+			"isImage": false,
+			"noOutputExpected": false
+		}
+	},
+	{
+		"type": "assistant",
+		"message": {
+			"model": "claude-fable-5-1",
+			"id": "msg_00000000000000000014",
+			"type": "message",
+			"role": "assistant",
+			"content": [
+				{
+					"type": "text",
+					"text": "Done. Output: `hello-tuval`"
+				}
+			],
+			"stop_reason": null,
+			"stop_sequence": null,
+			"stop_details": null,
+			"usage": {
+				"input_tokens": 56,
+				"cache_creation_input_tokens": 94,
+				"cache_read_input_tokens": 28010,
+				"cache_creation": {
+					"ephemeral_5m_input_tokens": 0,
+					"ephemeral_1h_input_tokens": 94
+				},
+				"output_tokens": 2,
+				"service_tier": "standard",
+				"inference_geo": "not_available"
+			},
+			"diagnostics": null,
+			"context_management": null
+		},
+		"parent_tool_use_id": null,
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"uuid": "00000000-0000-4000-8000-000000000015",
+		"timestamp": "2026-09-04T18:23:26.379Z",
+		"request_id": "req_00000000000000000016"
+	},
+	{
+		"duration_api_ms": 5426,
+		"stop_reason": "end_turn",
+		"session_id": "00000000-0000-4000-8000-000000000007",
+		"total_cost_usd": 0.5755745000000001,
+		"usage": {
+			"input_tokens": 58,
+			"cache_creation_input_tokens": 28104,
+			"cache_read_input_tokens": 28010,
+			"output_tokens": 99,
+			"output_tokens_details": {
+				"thinking_tokens": 0
+			},
+			"server_tool_use": {
+				"web_search_requests": 0,
+				"web_fetch_requests": 0
+			},
+			"service_tier": "standard",
+			"cache_creation": {
+				"ephemeral_1h_input_tokens": 28104,
+				"ephemeral_5m_input_tokens": 0
+			},
+			"inference_geo": "not_available",
+			"iterations": [
+				{
+					"input_tokens": 56,
+					"output_tokens": 16,
+					"cache_read_input_tokens": 28010,
+					"cache_creation_input_tokens": 94,
+					"cache_creation": {
+						"ephemeral_5m_input_tokens": 0,
+						"ephemeral_1h_input_tokens": 94
+					},
+					"type": "message"
+				}
+			],
+			"speed": "standard"
+		},
+		"modelUsage": {
+			"claude-haiku-4-5-20251001": {
+				"inputTokens": 902,
+				"outputTokens": 12,
+				"cacheReadInputTokens": 0,
+				"cacheCreationInputTokens": 0,
+				"webSearchRequests": 0,
+				"costUSD": 0.0009620000000000001,
+				"contextWindow": 200000,
+				"maxOutputTokens": 32000,
+				"thinkingTokens": 0,
+				"canonicalModel": "claude-haiku-4-5",
+				"provider": "firstParty",
+				"costBasis": "list"
+			},
+			"claude-fable-5-1": {
+				"inputTokens": 58,
+				"outputTokens": 99,
+				"cacheReadInputTokens": 28010,
+				"cacheCreationInputTokens": 28104,
+				"webSearchRequests": 0,
+				"costUSD": 0.5746125000000001,
+				"contextWindow": 1000000,
+				"maxOutputTokens": 64000,
+				"thinkingTokens": 0,
+				"canonicalModel": "claude-fable-5-1",
+				"provider": "firstParty",
+				"costBasis": "list"
+			}
+		},
+		"permission_denials": [],
+		"terminal_reason": "completed",
+		"fast_mode_state": "off",
+		"fast_mode_disabled_reason": "sdk_opt_in_required",
+		"subagent_stats": {
+			"spawned": 0,
+			"requested": {
+				"background": 0,
+				"foreground": 0,
+				"unset": 0
+			},
+			"started_in_background": 0,
+			"max_depth": 0,
+			"spawned_by_subagents": 0,
+			"completed": 0,
+			"failed": 0,
+			"killed": {
+				"parent": 0,
+				"user": 0,
+				"system": 0
+			},
+			"refused": {
+				"depth_limit": 0,
+				"concurrency_limit": 0,
+				"budget": 0
+			},
+			"by_type": {}
+		},
+		"is_error": false,
+		"num_turns": 2,
+		"subtype": "success",
+		"api_error_status": null,
+		"result": "Done. Output: `hello-tuval`",
+		"ttft_ms": 2719,
+		"type": "result",
+		"duration_ms": 4928,
+		"uuid": "00000000-0000-4000-8000-000000000017",
+		"ttft_stream_ms": 1622,
+		"time_to_request_ms": 21,
+		"queued_turn_count": 0
+	}
+]

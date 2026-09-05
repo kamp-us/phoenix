@@ -5,11 +5,11 @@
 		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
 		"noEmit": true,
 		"allowImportingTsExtensions": true,
-		// The browser surface under `src/shell/ui/` is React and reads the DOM; every other slice is
-		// Node-only, and each of those keeps itself that way through its own `boundary.unit.test.ts`
-		// (`src/shell/core/boundary.unit.test.ts` fails on the literal `document` under `core/`). One
-		// project rather than a second composite leaf: the surface imports the kernel's own modules
-		// by path, so splitting them would buy a project reference and nothing else.
+		// This is the Node lens over all of `src`: it has Node types, so a browser-only slice cannot
+		// be caught here. The browser entry has its own lens, `tsconfig.browser.json`, rooted at
+		// `src/page/main.tsx` with no Node types, so a `node:` import reachable from the page is a
+		// plain type error there (#7836). `typecheck` runs both. Each Node-only slice still keeps
+		// itself that way through its own `boundary.unit.test.ts`.
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
 		"jsx": "react-jsx",
 		"types": ["node"]

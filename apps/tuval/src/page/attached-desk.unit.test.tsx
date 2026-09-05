@@ -16,7 +16,7 @@ import {readCommandLine} from "../shell/commands/index.ts";
 import {applyMsg, type ShellCmd, type ShellMsg, type ShellState} from "../shell/core/index.ts";
 import {defaultPrefixTable} from "../shell/keys/index.ts";
 import {createStack, createTree, createWindow} from "../shell/layout/index.ts";
-import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/index.ts";
+import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/browser.ts";
 import {installDomShims} from "../shell/ui/dom.testing.ts";
 import type {ProcessView} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
