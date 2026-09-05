@@ -23,20 +23,11 @@ import type {
 	UpdateForm,
 } from "@demlik/tea";
 import type {Effect, Scope} from "effect";
+import type {SubFailurePolicy} from "../sub-failure.ts";
 import {ActorNameCollisionError} from "./errors.ts";
 
-/**
- * A Sub fiber's failure as the reducer sees it: plain data, so the machine stays pure. ADR 0346
- * makes the absence of a `Cause`, an `Error` instance, a Fiber or a Scope here a binding
- * constraint — the full `Cause` goes to `onError` under `"sub-fiber"` and stops there.
- */
-export interface SubFailure {
-	readonly id: string;
-	readonly type: string;
-	/** `"failure"` is the handler's error channel; `"defect"` is a throw or a die. */
-	readonly reason: "failure" | "defect";
-	readonly message: string;
-}
+/** ADR 0346's failure types live outside both slices (`src/sub-failure.ts`); the host names them here as before. */
+export type {SubFailure, SubFailurePolicy} from "../sub-failure.ts";
 
 /**
  * A Demlik `Machine` minus its Promise-shaped `interpret` and `subscribe` — the pure core plus
@@ -49,11 +40,7 @@ export interface CoreMachine<S, M extends {type: string}, C extends Cmd, U exten
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, M, Ctx>>;
 	readonly identity?: Identity<S, M>;
 	readonly subscriptions?: (state: S) => readonly U[];
-	/**
-	 * What a failed Sub becomes (ADR 0346). Returning a Msg hands the failure to `update`;
-	 * returning `undefined`, or declaring nothing, ends the process instead.
-	 */
-	readonly subFailure?: (sub: U, failure: SubFailure) => M | undefined;
+	readonly subFailure?: SubFailurePolicy<M, U>;
 	readonly __form?: UpdateForm;
 }
 

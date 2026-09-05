@@ -32,8 +32,28 @@ Scope with the failure as its Exit. Marked ids are never re-armed, `ended` ones 
 that returns normally does not restart while the state keeps desiring it. Restart is data: emit the
 Sub under a new id (an attempt counter in the id, or in the dep-keyed `deps` slice) and reconcile
 arms it fresh, which is what makes the retry replay. Catch inside the handler anything you mean to
-survive; let out only what should end the process. Declaring `subFailure` on a program row's `core`
-is not reachable yet — [#7933](https://github.com/kamp-us/phoenix/issues/7933) carries it.
+survive; let out only what should end the process.
+
+**A row declares the policy on its `core`, and the type it writes against lives in
+[`src/sub-failure.ts`](../apps/tuval/src/sub-failure.ts).** `SubFailure` and `SubFailurePolicy` sit
+there rather than in the host, so the registry can name them while still importing nothing from the
+slice that runs a program (`registry/boundary.unit.test.ts` holds that line). A row's `core` is typed
+`ProgramCore`, which is Demlik's `Machine` widened by the optional `subFailure` field:
+
+```ts
+core: {
+  init: (loaded) => [loaded ?? {armed: false, seen: []}, []],
+  update: {…},
+  subscriptions: (state) => (state.armed ? [TICKER] : []),
+  subscribe: {ticker: () => () => {}},
+  subFailure: (sub, failure) => ({type: "noted", note: `${sub.type}:${failure.reason}`}),
+} satisfies ProgramCore<State, Msg, Cmd<never>, Ticker, unknown>,
+```
+
+Write that core as a plain literal, not through `defineMachine` — the helper takes Demlik's
+`Machine`, which has no `subFailure`, and the host detects the update form when `__form` is absent.
+The policy is only consulted for a Sub the `subscriptions` aggregate declared; a dep-keyed Sub has no
+`U` value to hand it, so its failure takes the unaddressed branch.
 
 **A Sub that needs a service belongs in `subs`, not on the machine.** Demlik 0.12's own `subscribe`
 map is Promise-shaped and synchronous (`host/demlik-bridges.ts` is the whole translation), so a cell
