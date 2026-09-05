@@ -5,6 +5,12 @@ Filed 2026-09-06: https://github.com/kamp-us/phoenix/issues/8035
 source of the posted body; the extraction point was the `## Summary` heading to
 EOF. Do not edit the body here expecting the issue to change — edit the issue.
 
+Triage has since replaced the posted body with the typed epic pitch, and the founder
+approved it on 2026-09-05
+([comment 5555033755](https://github.com/kamp-us/phoenix/issues/8035#issuecomment-5555033755)):
+the blockers now live as seven sequenced children (#8048–#8054), not as the prose below.
+This file is the filing-time body source, kept for the record.
+
 Per the maintainer's direction (2026-08-31, the import-experiment session):
 **one tracking issue with five blocker sections, not five noisy issues.** After review,
 split only the sections maintainers agree to pursue.
