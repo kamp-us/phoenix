@@ -1,7 +1,12 @@
 /*
- * The palette's geometry. Every colour, size, radius and type step is a role token from
- * `@kampus/design`'s layer — this file declares no colour of its own, which is what
- * `design-system-manifest.md` (Pillar 2) and this slice's `tokens.unit.test.ts` require.
+ * What Tuval changes about `@kampus/design`'s `CommandPalette`, and nothing else. The dialog, the
+ * field, the rows and the footer are the shared component's paint (`packages/design/src/
+ * CommandPalette.css`); these rules only carry the two things a command line needs it to be —
+ * pinned to the top centre, and set in mono.
+ *
+ * Every colour, size, radius and type step is a role token from `@kampus/design`'s layer. This file
+ * declares no colour of its own, which is what `design-system-manifest.md` (Pillar 2) and this
+ * slice's `tokens.unit.test.ts` require.
  *
  * The one thing worth reading twice is the positioner rule: the palette is pinned to the top centre
  * of the viewport rather than vertically centred, because it is a desk-level overlay and never
@@ -19,130 +24,70 @@
 	/* The positioner above aligns to the top; a dialog's own `margin-block: auto` would re-centre it
 	   inside that box, which is what put the palette back in the middle of the desk. */
 	margin-block: 0;
-	padding: 0;
-	gap: 0;
-	background: var(--surface-raised);
-	border-color: var(--border-strong);
-	box-shadow: var(--shadow-overlay);
 }
 
-/* The dialog's accessible name. Present for assistive tech, never painted: the input's own label
-   and the spell list are what a sighted reader needs. */
-.tuval-palette [data-scope="dialog"][data-part="title"] {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	padding: 0;
-	margin: -1px;
-	overflow: hidden;
-	clip-path: inset(50%);
-	white-space: nowrap;
-	border: 0;
-}
-
-.tuval-palette [data-scope="dialog"][data-part="body"] {
-	display: contents;
-}
-
-.tuval-palette__body {
-	display: flex;
-	flex-direction: column;
-	min-width: 0;
-}
-
-.tuval-palette__input [data-scope="field"][data-part="control"] {
-	min-height: max(var(--tap-min), var(--s-8));
-	background: var(--surface-raised);
-	border: 0;
-	border-bottom: 1px solid var(--border);
-	border-radius: var(--r-lg) var(--r-lg) 0 0;
-}
-
-.tuval-palette__input [data-scope="field"][data-part="input"] {
+.tuval-palette .kp-command-palette__search [data-scope="field"][data-part="input"] {
 	font: var(--t-mono);
-	color: var(--text-primary);
-}
-
-.tuval-palette__input [data-scope="field"][data-part="input"]::placeholder {
-	color: var(--text-faint);
 }
 
 /* The field's own refusal message — manti renders it, and it needs the list's inset so it lines up
    with the rows under it rather than with the flush input above. */
-.tuval-palette__input [data-scope="field"][data-part="error"] {
+.tuval-palette .kp-command-palette__search [data-scope="field"][data-part="error"] {
 	padding: var(--s-2) var(--s-3) 0;
 }
 
-/* Heard, never seen: the visible refusal is the field's own message just above it. */
-.tuval-palette__announce {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	padding: 0;
-	margin: -1px;
-	overflow: hidden;
-	clip-path: inset(50%);
-	white-space: nowrap;
-	border: 0;
+/* A spell path is code, so it is set in mono and never truncated: the describe beside it is what
+   gives way when the row runs out of room. */
+.tuval-palette .kp-command-palette__label {
+	font: var(--t-mono);
+	font-weight: 400;
+	flex: none;
 }
 
-.tuval-palette__list {
-	list-style: none;
-	margin: 0;
-	padding: var(--s-1);
-	max-height: min(24rem, 50vh);
-	overflow-y: auto;
-	overscroll-behavior: contain;
-	/* The component scrolls the active row into view itself, and this pins that to a jump whatever
-	   an ancestor asks for: nothing here carries meaning on motion (Pillar 4), so a reduced-motion
-	   reader and everyone else get the same instant move. */
-	scroll-behavior: auto;
-}
-
-.tuval-palette__option {
+.tuval-palette .kp-command-palette__copy {
 	display: flex;
 	align-items: baseline;
 	gap: var(--s-2);
-	min-height: var(--tap-min);
-	padding: var(--pop-row-y) var(--s-2);
-	border-radius: var(--r-md);
-	color: var(--text-primary);
-	cursor: pointer;
-	transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.tuval-palette .kp-command-palette__description {
+	min-width: 0;
 }
 
 /*
- * The active row is marked twice: a filled background and a leading caret glyph. Pillar 4 forbids
- * signalling state by colour alone, so the glyph is not decoration — it is the second channel.
+ * The active row is marked twice: the shared component's filled background, and a leading caret
+ * glyph added here. Pillar 4 forbids signalling state by colour alone, so the glyph is not
+ * decoration — it is the second channel.
  */
-.tuval-palette__option[data-active] {
-	background: var(--accent-faint);
-}
-
-.tuval-palette__option[data-active]::before {
+.tuval-palette .kp-command-palette__option[data-active]::before {
 	content: "\203A";
 	color: var(--accent);
 	font: var(--t-mono);
 }
 
-.tuval-palette__option:not([data-active])::before {
+.tuval-palette .kp-command-palette__option:not([data-active])::before {
 	content: "";
 	/* Reserves the caret's column so accepting a row does not shift the list sideways. */
 	inline-size: 1ch;
 }
 
-.tuval-palette__label {
-	font: var(--t-mono);
-	flex: none;
+/* The component scrolls the active row into view itself, and this pins that to a jump whatever an
+   ancestor asks for: nothing here carries meaning on motion (Pillar 4), so a reduced-motion reader
+   and everyone else get the same instant move. */
+.tuval-palette .kp-command-palette__results {
+	scroll-behavior: auto;
+	max-height: min(24rem, 50vh);
 }
 
-.tuval-palette__describe {
-	font: var(--t-meta);
-	color: var(--text-muted);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	min-width: 0;
+/* The footer holds two stacked lines rather than one row: what the caret is on, then the keys. */
+.tuval-palette .kp-command-palette__footer {
+	display: block;
+	padding: 0;
+}
+
+.tuval-palette .kp-command-palette__legend {
+	display: block;
+	margin: 0;
 }
 
 .tuval-palette__detail,
@@ -172,12 +117,4 @@
 	display: flex;
 	align-items: center;
 	gap: var(--s-1);
-}
-
-/* Pillar 4 forbids carrying meaning on motion, so nothing is lost when every transition here
-   collapses to an instant swap. */
-@media (prefers-reduced-motion: reduce) {
-	.tuval-palette__option {
-		transition: none;
-	}
 }

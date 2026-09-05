@@ -13,6 +13,7 @@
  * (`./serve.ts`), never a CI job.
  */
 
+import {promptItemId} from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import type {
 	ItemId,
@@ -120,7 +121,11 @@ const cutTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "item", item: assistant("a3", REPLY_3, 7)},
 ];
 
-/** The resend, one item long, so one deliberate send is one new emission on `transcript`. */
+/**
+ * The resend, one item long: Claude's mapping emits no user item of its own, so the reply is the
+ * whole of what this layer reports. The operator's half of that turn is the one the core recorded
+ * when they sent it (#7978), which is why `afterTheResend` names it under the send's own key.
+ */
 const resendTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},
 	{kind: "item", item: assistant("a4", REPLY_4, 8)},
@@ -131,7 +136,8 @@ const resendTurn: ReadonlyArray<AgentEvent> = [
 export const afterTheFirstTurn = ["u1", "t1", "a1"];
 export const afterTheSecondTurn = [...afterTheFirstTurn, "u2", "a2"];
 export const afterTheCut = [...afterTheSecondTurn, "u3", "a3"];
-export const afterTheResend = [...afterTheCut, "a4"];
+export const RESEND_KEY = "k4";
+export const afterTheResend = [...afterTheCut, promptItemId(RESEND_KEY), "a4"];
 
 export const claudeScript: AgentScript = {
 	sessionId: SESSION,

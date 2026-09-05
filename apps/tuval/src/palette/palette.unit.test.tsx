@@ -74,10 +74,10 @@ const type = (input: HTMLInputElement, value: string): void => {
 const optionLabels = (): ReadonlyArray<string> =>
 	screen
 		.getAllByRole("option")
-		.map((option) => option.querySelector(".tuval-palette__label")?.textContent ?? "");
+		.map((option) => option.querySelector(".kp-command-palette__label")?.textContent ?? "");
 
 /** The palette's own polite region — the only thing on the page that speaks for the list. */
-const announced = (): Element | null => document.querySelector(".tuval-palette__announce");
+const announced = (): Element | null => document.querySelector(".kp-command-palette__announce");
 
 /** React mints a fresh `useId` per mount, so two renders differ by id and by nothing else. */
 const withoutIds = (markup: string): string => markup.replaceAll(/_r_[0-9a-z]+_/g, "_id_");

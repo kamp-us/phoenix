@@ -9,12 +9,16 @@ import {applyCellChecked} from "@demlik/tea";
 import {describe, expect, it} from "vitest";
 import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import type {AgentEvent} from "../events.ts";
-import {Mode, type PermissionRequest} from "../ports/index.ts";
+import {Mode, type PermissionRequest, type TranscriptItem} from "../ports/index.ts";
+import {promptItemId} from "./fold.ts";
 import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
 import {type AiAgentSessionState, initialState} from "./state.ts";
 
 const machine = aiAgentSessionMachine({cwd: "/repo"});
+
+/** One fixed send clock, since a prompt now carries the timestamp its recorded turn wears. */
+const SENT_AT = 1_700_000_000_000;
 
 const apply = (
 	state: AiAgentSessionState,
@@ -106,32 +110,109 @@ describe("started", () => {
 });
 
 describe("prompt", () => {
+	const prompt = (text: string, key: string): AiAgentSessionMsg => ({
+		type: "prompt",
+		text,
+		key,
+		timestamp: SENT_AT,
+	});
+
 	it("sends the turn and remembers it for the resend", () => {
-		const [state, cmds] = apply(started({interrupted: null}), {
-			type: "prompt",
-			text: "make the README",
-			key: "k1",
-		});
+		const [state, cmds] = apply(started({interrupted: null}), prompt("make the README", "k1"));
 		expect(state).toMatchObject({phase: "prompting", lastPrompt: "make the README"});
 		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "make the README", key: "k1"}]);
 	});
 
+	it("records the operator's turn on send, before any event is folded", () => {
+		const [state] = apply(started(), prompt("make the README", "k1"));
+		expect(state.transcript.items).toEqual([
+			{
+				kind: "user",
+				id: promptItemId("k1"),
+				timestamp: SENT_AT,
+				text: "make the README",
+				local: true,
+			},
+		]);
+	});
+
+	it("derives the recorded id from the idempotency key, so a replay lands on one item", () => {
+		const [once] = apply(started(), prompt("hi", "k1"));
+		const [twice] = apply({...once, phase: "ready"}, prompt("hi", "k1"));
+		expect(twice.transcript.items.map((item) => item.id)).toEqual([promptItemId("k1")]);
+	});
+
 	it("is refused as data outside ready, and emits nothing", () => {
 		for (const phase of ["idle", "starting", "prompting", "reconnecting", "gone"] as const) {
-			const [state, cmds] = apply(started({phase}), {type: "prompt", text: "hi", key: "k"});
+			const [state, cmds] = apply(started({phase}), prompt("hi", "k"));
 			expect(state.failure?.tag).toBe("tuval/ai-agent/PromptError");
 			expect(state.phase).toBe(phase);
+			expect(state.transcript.items).toEqual([]);
 			expect(cmds).toEqual([]);
 		}
 	});
 
 	it("clears the interrupted marker, because a resend is a new send", () => {
-		const [state] = apply(started({interrupted: assistantItem("a1").id}), {
-			type: "prompt",
-			text: "again",
-			key: "k2",
-		});
+		const [state] = apply(started({interrupted: assistantItem("a1").id}), prompt("again", "k2"));
 		expect(state.interrupted).toBeNull();
+	});
+});
+
+describe("the operator's turn once a layer echoes it", () => {
+	const sent = (over: Partial<AiAgentSessionState> = {}): AiAgentSessionState =>
+		apply(started(over), {
+			type: "prompt",
+			text: "make the README",
+			key: "k1",
+			timestamp: SENT_AT,
+		})[0];
+
+	const echo = (item: TranscriptItem): AiAgentSessionMsg => ({
+		type: "event",
+		sessionId: "session-1",
+		event: {kind: "item", item},
+	});
+
+	it("survives once, in place, under the layer's own id", () => {
+		const [state] = apply(sent(), echo(userItem("pi-7", "make the README")));
+		expect(state.transcript.items).toEqual([
+			{
+				kind: "user",
+				id: userItem("pi-7").id,
+				timestamp: userItem("pi-7").timestamp,
+				text: "make the README",
+			},
+		]);
+	});
+
+	it("keeps its position rather than moving to the end of the tail", () => {
+		const [replied] = apply(sent(), echo(assistantItem("a1", "on it")));
+		const [state] = apply(replied, echo(userItem("pi-7", "make the README")));
+		expect(state.transcript.items.map((item) => item.kind)).toEqual(["user", "assistant"]);
+	});
+
+	it("stays exactly once on a layer that never echoes it", () => {
+		const [replied] = apply(sent(), echo(assistantItem("a1", "on it")));
+		expect(replied.transcript.items).toMatchObject([
+			{kind: "user", id: promptItemId("k1"), local: true},
+			{kind: "assistant", id: assistantItem("a1").id},
+		]);
+	});
+
+	it("does not swallow a second deliberate send of the same text", () => {
+		const [again] = apply(
+			{...sent(), phase: "ready"},
+			{
+				type: "prompt",
+				text: "make the README",
+				key: "k2",
+				timestamp: SENT_AT + 1,
+			},
+		);
+		expect(again.transcript.items.map((item) => item.id)).toEqual([
+			promptItemId("k1"),
+			promptItemId("k2"),
+		]);
 	});
 });
 
@@ -226,7 +307,12 @@ describe("event", () => {
 		});
 		expect(state.phase).toBe("ready");
 
-		const [prompted, cmds] = apply(state, {type: "prompt", text: "hello", key: "k1"});
+		const [prompted, cmds] = apply(state, {
+			type: "prompt",
+			text: "hello",
+			key: "k1",
+			timestamp: SENT_AT,
+		});
 		expect(prompted.failure).toBeNull();
 		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "hello", key: "k1"}]);
 	});
@@ -390,7 +476,7 @@ describe("the Cmd each Msg answers for", () => {
 	> = [
 		[initialState("/repo"), {type: "start", cwd: "/repo", resume: null}, ["aiAgent.start"]],
 		[started({phase: "starting"}), {type: "started", sessionId: "s"}, []],
-		[started(), {type: "prompt", text: "hi", key: "k"}, ["aiAgent.prompt"]],
+		[started(), {type: "prompt", text: "hi", key: "k", timestamp: SENT_AT}, ["aiAgent.prompt"]],
 		[
 			started(),
 			{type: "event", sessionId: "session-1", event: {kind: "phase", phase: "ready"}},
