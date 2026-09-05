@@ -59,9 +59,7 @@ const proof = Command.make(
 		mkdirSync(projectDir(project), {recursive: true});
 		process.env[PROJECT_ROOT_VAR] = project;
 
-		const booted = yield* boot({global: configModule, project});
-		// Before any window is opened, because the row's layer reads it when the founder opens one.
-		handOverKernel(booted.kernel);
+		const booted = yield* boot({global: configModule, project, onKernel: handOverKernel});
 
 		const transport = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
 		const page = yield* servePage({root: appRoot, transport, port: pagePort}).pipe(Effect.orDie);

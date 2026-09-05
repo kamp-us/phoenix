@@ -1,6 +1,6 @@
 import {homedir} from "node:os";
 import {join} from "node:path";
-import {type Context, Effect, type FileSystem, Layer} from "effect";
+import {type Context, Effect, type FileSystem, Layer, type Scope} from "effect";
 import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
 import {everyRegistered, SpellBridge} from "./commands/bridge/index.ts";
 import {helpSpells} from "./commands/core/index.ts";
@@ -70,6 +70,17 @@ export interface StartOptions {
 	 * Absent for a caller that has no config layers to offer, which is every caller but `boot`.
 	 */
 	readonly keys?: ReadonlyArray<BindingSource>;
+	/**
+	 * Run once the kernel context exists and before anything is spawned from it — before `launch`
+	 * and before `restore`.
+	 *
+	 * A row whose layer needs a kernel service that only the booting caller can supply has to be
+	 * given it before the first spawn builds that layer, and the first spawn is inside `start`. A
+	 * caller that filled its holder after `boot` returned was already too late for every
+	 * checkpointed row (#7976), so the ordering lives here rather than in a call site's discipline.
+	 * The hook runs in the caller's Scope, so it can register the teardown that clears what it set.
+	 */
+	readonly onKernel?: (kernel: Context.Context<Kernel>) => Effect.Effect<void, never, Scope.Scope>;
 }
 
 export interface Started {
@@ -86,12 +97,17 @@ export interface Started {
  * nothing written; the wiring opens next and the kernel after it, so a stop takes the processes
  * down — pumps included — before their queues close. A snapshot under another definition
  * refuses the boot at its spawn, with nothing fresh-booted (#7467, #7514).
+ *
+ * `onKernel` runs between the kernel's build and the first spawn — `launch`, then `restore` — so a
+ * caller that has to put a kernel service somewhere a row's layer reads has done it before any row
+ * is built (#7976).
  */
 export const start = Effect.fn("Tuval.start")(function* ({
 	programs,
 	graph,
 	stateDir,
 	keys,
+	onKernel,
 }: StartOptions) {
 	const registry = yield* Layer.build(Registry.layer(programs));
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
@@ -120,6 +136,7 @@ export const start = Effect.fn("Tuval.start")(function* ({
 			Layer.provideMerge(Layer.succeedContext(registry)),
 		),
 	);
+	if (onKernel !== undefined) yield* onKernel(kernel);
 	// The kernel rides into every launched process's handlers: the shell row's Cmds spawn programs
 	// and read the process table, and a program row declares exactly those needs as its `R`.
 	const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
@@ -137,6 +154,8 @@ export interface BootOptions {
 	readonly global: string;
 	/** The project directory; its `.tuval/` holds the project config and the state. */
 	readonly project: string;
+	/** `StartOptions.onKernel`, handed through: the kernel exists, nothing has been spawned yet. */
+	readonly onKernel?: StartOptions["onKernel"];
 }
 
 export interface BootReport {
@@ -183,7 +202,13 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	// Config rows are trusted local code (#7484 R1.1); the loader checks each row's id, not its shape.
 	const programs = config.programs as ReadonlyArray<AnyProgram>;
 	const stateDir = projectDir(options.project);
-	const started = yield* start({programs, graph: config.graph, stateDir, keys: config.keys});
+	const started = yield* start({
+		programs,
+		graph: config.graph,
+		stateDir,
+		keys: config.keys,
+		...(options.onKernel === undefined ? {} : {onKernel: options.onKernel}),
+	});
 	const live = yield* ProcessTable.use((table) => table.list).pipe(
 		Effect.provideContext(started.kernel),
 	);

@@ -22,6 +22,16 @@ export const PROJECT_ROOT_VAR = "CLAUDE_VERTICAL_PROOF_ROOT";
  */
 export const CHILD_PROGRAM = "ai-agent-session";
 
+/**
+ * The row `./holder-desk.ts` registers: an agent session whose layer reads the late holder the way
+ * `./real.ts`'s `claude-session` does. It is its own program rather than `claude-session` because
+ * that row's layer is the real CLI's, and the holder's ordering is what that proof is about.
+ */
+export const HOLDER_PROGRAM = "holder-session";
+
+/** The session id that row's scripted backend holds, and so the id its restart resumes. */
+export const HOLDER_SESSION = "holder-restart-proof-session";
+
 /** The permission request id the second turn raises, as the SDK spells a tool-use id. */
 export const CARD = "toolu_01claudevertical";
 

@@ -6,7 +6,15 @@
  * `Layer<SpellBridge>` at the moment the config module is evaluated (`../program.ts`) — and the
  * loader evaluates that module inside `boot`, before there is a bridge to hand it. So the harness
  * boots, takes the bridge out of the kernel context, and puts it here; the row's layer is built
- * later, when the founder opens the window, and reads it then.
+ * later — when the founder opens the window, or when a restored row reconnects — and reads it then.
+ *
+ * **The hand-over happens inside `boot`, before `restore`.** `start` calls `handOverKernel` through
+ * its `onKernel` hook (`../../boot.ts`), between the kernel's build and the first spawn, because
+ * `restore` runs inside `boot` and its spawns build the rows' layers: a harness that filled this
+ * holder after `boot` returned was too late for every checkpointed row, which is the restart the
+ * harness exists to demonstrate ([#7976](https://github.com/kamp-us/phoenix/issues/7976)). The
+ * hook's Scope is the booted app's, so a stop empties the holder rather than leaving a dead
+ * kernel's bridge readable by the next boot.
  *
  * **This module is what makes that work, and only because the loader does not cache-bust it.**
  * `src/config.ts` stamps a load number on the *config module's* URL so each boot re-evaluates it;
@@ -19,16 +27,24 @@
  * [#7958](https://github.com/kamp-us/phoenix/issues/7958).
  */
 
-import {Context, Effect, Layer} from "effect";
+import {Context, Effect, Layer, type Scope} from "effect";
 import type {Kernel} from "../../boot.ts";
 import {SpellBridge} from "../../commands/bridge/index.ts";
 
 let held: Context.Context<SpellBridge> | null = null;
 
-/** Called once per boot by the harness, before any Claude window is opened. */
-export const handOverKernel = (kernel: Context.Context<Kernel>): void => {
-	held = Context.make(SpellBridge, Context.get(kernel, SpellBridge));
-};
+/** `boot`'s `onKernel` hook: fill the holder, and empty it again when the booted app stops. */
+export const handOverKernel = (
+	kernel: Context.Context<Kernel>,
+): Effect.Effect<void, never, Scope.Scope> =>
+	Effect.gen(function* () {
+		held = Context.make(SpellBridge, Context.get(kernel, SpellBridge));
+		yield* Effect.addFinalizer(() =>
+			Effect.sync(() => {
+				held = null;
+			}),
+		);
+	});
 
 /**
  * The bridge as a layer the row can hold before it exists. It dies rather than answering an empty
