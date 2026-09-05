@@ -2,7 +2,7 @@ import {homedir} from "node:os";
 import {join} from "node:path";
 import {Context, Effect, type FileSystem, Layer} from "effect";
 import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
-import {SpellBridge} from "./commands/bridge/index.ts";
+import {everyRegistered, SpellBridge} from "./commands/bridge/index.ts";
 import {helpSpells} from "./commands/core/index.ts";
 import {processSpells, SpawnedProcesses} from "./commands/core/process.ts";
 import type {DuplicateSpellPath, SpellNotDescribable} from "./commands/errors.ts";
@@ -10,7 +10,7 @@ import {SpellExecutor} from "./commands/executor.ts";
 import type {SpellRegistry} from "./commands/registry.ts";
 import {WindowIndex} from "./commands/scope.ts";
 import type {AnySpell} from "./commands/spell.ts";
-import {everyPath, SpellSet} from "./commands/spell-set.ts";
+import {SpellSet} from "./commands/spell-set.ts";
 import {type ConfigLoadError, loadLayeredConfig} from "./config.ts";
 import {Checkpoints} from "./durability/Checkpoints.ts";
 import {restore} from "./durability/restore.ts";
@@ -97,12 +97,10 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
 	const wiring = yield* open(compiled);
 	const spells = yield* Layer.build(SpellSet.layer({core: coreSpells, programs, keys: keys ?? []}));
-	// The bridge's allowlist is whoever builds the layer's, and no program row supplies one yet
-	// (`.patterns/tuval-spells.md`, "The bridge"), so boot allows the whole registry as it stands.
-	// A reload does not revisit it — #7743.
-	const {table} = yield* Context.get(spells, SpellSet).read;
+	// No program row supplies an allowance yet (`.patterns/tuval-spells.md`, "The bridge"), so boot
+	// allows the whole registry — as a rule the bridge re-reads, so a reload moves it (#7743).
 	const commands = Layer.mergeAll(
-		SpellBridge.layer({allow: everyPath(table)}),
+		SpellBridge.layer({allow: everyRegistered}),
 		SpawnedProcesses.layer({readTimeout: READ_TIMEOUT}),
 		// Every shell command row is registered as a spell whose `execute` needs this, and the
 		// registry erases that requirement, so the composition root is where it is owed (#7774).

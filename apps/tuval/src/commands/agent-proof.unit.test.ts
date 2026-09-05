@@ -49,7 +49,7 @@ import {
 import {RegistryDescription, type SpellDescription} from "../protocol/registry-description.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import {SpellBridge, type SpellBridgeApi} from "./bridge/index.ts";
+import {everyRegistered, SpellBridge, type SpellBridgeApi} from "./bridge/index.ts";
 import {HelpRows} from "./core/help.ts";
 import {SpawnedProcesses} from "./core/process.ts";
 import {SpellExecutor} from "./executor.ts";
@@ -547,10 +547,7 @@ const runServiceAgent = Effect.gen(function* () {
 	return yield* Effect.gen(function* () {
 		const processes = yield* Processes;
 		const rowsInRegistry = yield* SpellRegistry.use((registry) => registry.list);
-		const bridge = yield* Effect.provide(
-			SpellBridge,
-			SpellBridge.layer({allow: rowsInRegistry.map((row) => row.path)}),
-		);
+		const bridge = yield* Effect.provide(SpellBridge, SpellBridge.layer({allow: everyRegistered}));
 		yield* Deferred.succeed(latch, bridge);
 		const agent = yield* processes.spawn(serviceAgentId, {
 			id: serviceProcess,
