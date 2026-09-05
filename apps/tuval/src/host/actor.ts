@@ -21,7 +21,18 @@ import {
 	type Supervision,
 	structuralHash,
 } from "@demlik/tea";
-import {Cause, type Context, Effect, Exit, Latch, Layer, Result, Scope, Semaphore} from "effect";
+import {
+	Cause,
+	type Context,
+	Effect,
+	Exit,
+	type Fiber,
+	Latch,
+	Layer,
+	Result,
+	Scope,
+	Semaphore,
+} from "effect";
 import type {
 	ActorDefinition,
 	ErrorOf,
@@ -29,6 +40,7 @@ import type {
 	InterpretHandlers,
 	OnError,
 	ServicesOf,
+	SubFailure,
 	SubscribeHandlers,
 } from "./definition.ts";
 import {subDisposerBridge} from "./demlik-bridges.ts";
@@ -80,6 +92,35 @@ type Reduced<S, C> =
 
 type Probe = {readonly kind: "inactive"} | {readonly kind: "active"; readonly id: string};
 
+/**
+ * A Sub the host has armed. `mark` is its lifetime: `"running"` until its fiber exits, then
+ * `"failed"` or `"ended"` — and reconcile re-arms neither, because the same id means the same
+ * lifetime (ADR 0346). The Scope outlives the mark: it is the Sub's registration, and its close is
+ * where a Demlik-bridged `Dispose` runs, so only the state ceasing to desire the Sub releases it.
+ */
+type ArmedSub = {
+	readonly scope: Scope.Closeable;
+	readonly mark: "running" | "failed" | "ended";
+};
+
+/**
+ * One armed Sub as the failure policy sees it. `declared` is the `U` the machine's `subFailure`
+ * projection takes, and a dep-keyed Sub has none — Demlik keys those on a state slice, not on a
+ * declared Sub value — so a dep-keyed failure can never be addressed and always ends the process.
+ */
+type SubSite<U> = {
+	readonly id: string;
+	readonly type: string;
+	readonly declared: U | undefined;
+	/** Records the mark, or answers `false` when this Sub's entry has already moved on. */
+	readonly settle: (mark: "failed" | "ended") => boolean;
+};
+
+const squashMessage = (cause: Cause.Cause<unknown>): string => {
+	const squashed = Cause.squash(cause);
+	return squashed instanceof Error ? squashed.message : String(squashed);
+};
+
 export const make = Effect.fn("Tuval.host.make")(function* <
 	S,
 	M extends {type: string},
@@ -110,15 +151,22 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 	let stopping = false;
 	let pending = 0;
 	let inFlightCmds = 0;
-	const manualSubs = new Map<string, Scope.Closeable>();
-	const keyedSubs = new Map<number, {readonly id: string; readonly scope: Scope.Closeable}>();
+	const manualSubs = new Map<string, ArmedSub>();
+	const keyedSubs = new Map<number, ArmedSub & {readonly id: string}>();
 
 	const report = (error: unknown, phase: HostErrorPhase) =>
 		onError(error, {phase}).pipe(
 			Effect.catchCause((cause) => Effect.logError(Cause.squash(cause))),
 		);
+	/**
+	 * A cause carrying nothing but interrupts is a stop the host asked for, so `onError` never sees
+	 * it: squashing one yields `All fibers interrupted without error`, which read as a real failure
+	 * at ERROR on every clean teardown (#7779).
+	 */
 	const reportCause = (phase: HostErrorPhase) => (cause: Cause.Cause<unknown>) =>
-		report(Cause.squash(cause), phase);
+		Cause.hasInterruptsOnly(cause)
+			? Effect.logDebug(Cause.pretty(cause))
+			: report(Cause.squash(cause), phase);
 
 	const enter = (): void => {
 		pending++;
@@ -152,6 +200,100 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 			),
 		);
 	};
+
+	/** `subFailure`'s answer, or `undefined` when it is undeclared, has no `U` to read, or throws. */
+	const addressFailure = (site: SubSite<U>, cause: Cause.Cause<unknown>) =>
+		Effect.suspend((): Effect.Effect<M | undefined> => {
+			const project = machine.subFailure;
+			const declared = site.declared;
+			if (project === undefined || declared === undefined) return Effect.succeed(undefined);
+			const failure: SubFailure = {
+				id: site.id,
+				type: site.type,
+				reason: Cause.hasFails(cause) ? "failure" : "defect",
+				message: squashMessage(cause),
+			};
+			return Effect.try({
+				try: () => project(declared, failure) ?? undefined,
+				catch: (thrown) => new UserCodeThrew({cause: thrown}),
+			}).pipe(
+				Effect.catch((error: UserCodeThrew) =>
+					report(error, "sub-fiber").pipe(Effect.as(undefined)),
+				),
+			);
+		});
+
+	/**
+	 * ADR 0346 §Decision, mechanics 1 to 5 in their stated order: report the `Cause` under
+	 * `"sub-fiber"`, mark the id `failed`, hand the machine its `subFailure` Msg through the same
+	 * unawaited follow-up path a Sub's own `dispatch` uses, and close the process's Scope with the
+	 * failure as its Exit when nothing addressed it.
+	 */
+	const onSubFailure = (site: SubSite<U>, cause: Cause.Cause<unknown>) =>
+		Effect.gen(function* () {
+			yield* report(Cause.squash(cause), "sub-fiber");
+			if (!site.settle("failed")) return;
+			const msg = yield* addressFailure(site, cause);
+			if (msg !== undefined) {
+				dispatchUnawaited(msg);
+				return;
+			}
+			yield* Scope.close(scope, Exit.failCause(cause));
+		});
+
+	/**
+	 * Fork one Sub's work into its own Scope. `startImmediately` runs the handler's synchronous head
+	 * before this returns (`forkIn`, `effect/Effect` rc.112), which is what lets the dep-keyed caller
+	 * read an open failure straight off the fiber.
+	 */
+	const armSub = (
+		work: Effect.Effect<void, E, R | Scope.Scope>,
+		child: Scope.Closeable,
+	): Effect.Effect<Fiber.Fiber<void, E>> =>
+		Effect.forkIn(
+			work.pipe(Effect.provideService(Scope.Scope, child), Effect.provideContext(services)),
+			child,
+			{startImmediately: true},
+		);
+
+	/**
+	 * The Sub's exit, read from a detached fiber: the unaddressed branch closes the process Scope,
+	 * and a fiber living under that Scope would end up waiting on its own interruption.
+	 */
+	const observeSub = (fiber: Fiber.Fiber<void, E>, site: SubSite<U>): void => {
+		fiber.addObserver((exit) => {
+			if (Exit.isSuccess(exit)) {
+				site.settle("ended");
+				return;
+			}
+			if (Cause.hasInterruptsOnly(exit.cause)) return;
+			Effect.runFork(onSubFailure(site, exit.cause));
+		});
+	};
+
+	const manualSite = (sub: U, child: Scope.Closeable): SubSite<U> => ({
+		id: sub.id,
+		type: sub.type,
+		declared: sub,
+		settle: (mark) => {
+			const armed = manualSubs.get(sub.id);
+			if (armed?.scope !== child) return false;
+			manualSubs.set(sub.id, {scope: child, mark});
+			return true;
+		},
+	});
+
+	const keyedSite = (index: number, id: string, child: Scope.Closeable): SubSite<U> => ({
+		id,
+		type: "dep-keyed",
+		declared: undefined,
+		settle: (mark) => {
+			const armed = keyedSubs.get(index);
+			if (armed?.scope !== child) return false;
+			keyedSubs.set(index, {id, scope: child, mark});
+			return true;
+		},
+	});
 
 	const runInterpret = Effect.fn("Tuval.host.interpret")(function* (cmds: readonly C[]) {
 		for (const cmd of cmds) {
@@ -203,16 +345,18 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 			if (keyedSubs.get(index)?.id === probe.id) continue;
 			yield* disposeKeyed(index);
 			const child = yield* Scope.fork(subsScope);
-			const opened = yield* subDisposerBridge(entry, state, dispatchUnawaited, ctx).pipe(
-				Effect.provideService(Scope.Scope, child),
-				Effect.exit,
-			);
-			if (Exit.isFailure(opened)) {
+			keyedSubs.set(index, {id: probe.id, scope: child, mark: "running"});
+			const fiber = yield* armSub(subDisposerBridge(entry, state, dispatchUnawaited, ctx), child);
+			// The source has already run, so an Exit here is the open throwing — which Demlik
+			// propagates out of reconcile with nothing registered (`reconcileDepSubs`, 0.12).
+			const opened = fiber.pollUnsafe();
+			if (opened !== undefined && Exit.isFailure(opened)) {
 				firstError ??= Cause.squash(opened.cause);
+				keyedSubs.delete(index);
 				yield* closeSub(child);
 				continue;
 			}
-			keyedSubs.set(index, {id: probe.id, scope: child});
+			observeSub(fiber, keyedSite(index, probe.id, child));
 		}
 
 		if (machine.subscriptions) {
@@ -225,31 +369,25 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 				}
 				desiredTypeById.set(sub.id, sub.type);
 			}
-			for (const [id, running] of manualSubs) {
+			for (const [id, armed] of manualSubs) {
 				if (desiredTypeById.has(id)) continue;
 				manualSubs.delete(id);
-				yield* closeSub(running);
+				yield* closeSub(armed.scope);
 			}
 			for (const sub of desired) {
+				// A `failed` or `ended` id keeps its entry, so this is also the re-arm refusal: the
+				// same id means the same lifetime, and a restart is a new id from the reducer.
 				if (manualSubs.has(sub.id)) continue;
 				const handler = definition.subscribe[sub.type as U["type"]];
 				if (!handler) continue;
 				const child = yield* Scope.fork(subsScope);
+				manualSubs.set(sub.id, {scope: child, mark: "running"});
 				const work = handler(
 					sub as Extract<U, {type: U["type"]}>,
 					ctx,
 					dispatchUnawaited,
 				) as Effect.Effect<void, E, R | Scope.Scope>;
-				yield* Effect.forkIn(
-					work.pipe(
-						Effect.provideService(Scope.Scope, child),
-						Effect.provideContext(services),
-						Effect.catchCause(reportCause("sub-fiber")),
-					),
-					child,
-					{startImmediately: true},
-				);
-				manualSubs.set(sub.id, child);
+				observeSub(yield* armSub(work, child), manualSite(sub, child));
 			}
 		}
 		if (firstError !== null) return yield* Effect.die(firstError);

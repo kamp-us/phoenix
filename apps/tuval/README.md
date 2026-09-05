@@ -180,9 +180,17 @@ they keep going under the rows they were spawned from.
 
 `src/host/` runs a Demlik core machine as an Effect actor: `make(definition)` is a scoped Effect
 yielding an `ActorHandle`, and `layer(key, definition)` provides that handle as a service. A
-definition is `defineActor({machine, interpret, subscribe, store?})` — the machine is Demlik's pure
-core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
-Effect-valued, and their error and service requirements fall out onto the handle.
+definition is `defineActor({name, machine, interpret, subscribe, store?})` — the machine is Demlik's
+pure core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
+Effect-valued, and their error and service requirements fall out onto the handle. The `name` is the
+definition's nominal identity, unique per process; the instance id is the process's, minted at spawn.
+
+A Sub that fails is the machine's Msg or the process's death, never a host retry (ADR 0346). The
+machine declares `subFailure(sub, failure)` beside `identity` and gets the failure as plain data —
+`id`, `type`, `reason`, `message`, nothing Effect-shaped. Returning a Msg dispatches it as an
+ordinary follow-up; returning `undefined`, or declaring nothing, closes the process's Scope with
+the failure as its Exit. Either way the Sub's id is marked `failed` and reconcile never re-arms it:
+a restart is a new id from the reducer, so it replays.
 
 It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The places it still
 speaks Demlik 0.12's Promise and disposer shapes live in `src/host/demlik-bridges.ts`, which is the

@@ -23,6 +23,7 @@ describe("host actor", () => {
 				};
 				const actor = yield* make(
 					defineActor({
+						name: "test/serialized",
 						machine,
 						interpret: {
 							slow: (cmd) =>
@@ -57,6 +58,7 @@ describe("host actor", () => {
 					state.type === "on" ? [{id: subId("ticker"), type: "ticker"}] : [],
 			};
 			const definition = defineActor({
+				name: "test/sub-scope",
 				machine,
 				interpret: {},
 				subscribe: {
@@ -97,6 +99,7 @@ describe("host actor", () => {
 			const live = layer(
 				Counter,
 				defineActor({
+					name: "test/layered",
 					machine: counterMachine(log),
 					store: recordingStore(saves),
 					interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
@@ -124,6 +127,7 @@ describe("host actor", () => {
 				Effect.gen(function* () {
 					const actor = yield* make(
 						defineActor({
+							name: "test/snapshots",
 							machine: counterMachine([]),
 							store: recordingStore(saves),
 							interpret: {notify: () => Effect.succeed<Msg>({type: "acked"})},
@@ -148,6 +152,7 @@ describe("host actor", () => {
 			"test/Clock",
 		) {}
 		const definition = defineActor({
+			name: "test/typed",
 			machine: counterMachine([]),
 			interpret: {
 				notify: (cmd) =>
@@ -176,6 +181,7 @@ describe("host actor", () => {
 				const log: string[] = [];
 				const actor = yield* make(
 					defineActor({
+						name: "test/commits",
 						machine: counterMachine([]),
 						interpret: {
 							notify: (cmd) =>
