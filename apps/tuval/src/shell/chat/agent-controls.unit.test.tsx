@@ -20,7 +20,15 @@ import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
-import {call, models, modes, permissionRequest, userItem, withTranscript} from "./chat.testing.ts";
+import {
+	call,
+	models,
+	modes,
+	pendingPermission,
+	permissionRequest,
+	userItem,
+	withTranscript,
+} from "./chat.testing.ts";
 import {initialChatView} from "./view.ts";
 
 installDomShims();
@@ -150,7 +158,7 @@ describe("permission cards", () => {
 		withTranscript([userItem("u1", "go")], {permissions: requests});
 
 	it("renders the request's fields as a named region", async () => {
-		await open(pending({r1: permissionRequest()}));
+		await open(pending({r1: pendingPermission()}));
 		const card = await screen.findByRole("region", {name: "Run a command"});
 		expect(within(card).getByText("bash")).toBeDefined();
 		expect(
@@ -160,7 +168,7 @@ describe("permission cards", () => {
 	});
 
 	it("dispatches exactly one answer per action, carrying the decision", async () => {
-		const {process} = await open(pending({r1: permissionRequest()}));
+		const {process} = await open(pending({r1: pendingPermission()}));
 		const card = await screen.findByRole("region", {name: "Run a command"});
 		await click(within(card).getByRole("button", {name: "Allow once"}));
 		await waitFor(() => expect(process.inbox().length).toBe(1));
@@ -168,7 +176,7 @@ describe("permission cards", () => {
 	});
 
 	it("carries the operator's optional message when one was typed", async () => {
-		const {process} = await open(pending({r1: permissionRequest()}));
+		const {process} = await open(pending({r1: pendingPermission()}));
 		const card = await screen.findByRole("region", {name: "Run a command"});
 		await act(async () => {
 			fireEvent.change(within(card).getByRole("textbox", {name: /Message/}), {
@@ -186,20 +194,56 @@ describe("permission cards", () => {
 	});
 
 	it("offers allow-always only when the request says it is on offer", async () => {
-		await open(pending({r1: permissionRequest({offersAlways: false})}));
+		await open(
+			pending({r1: pendingPermission({request: permissionRequest({offersAlways: false})})}),
+		);
 		const card = await screen.findByRole("region", {name: "Run a command"});
 		expect(within(card).queryByRole("button", {name: "Allow always"})).toBeNull();
 		expect(within(card).getByRole("button", {name: "Allow once"})).toBeDefined();
 		expect(within(card).getByRole("button", {name: "Deny"})).toBeDefined();
 	});
 
+	it("stops offering an answer while one is awaiting confirmation, and says so", async () => {
+		await open(
+			pending({
+				r1: pendingPermission({progress: {status: "answering", decision: "allow-once"}}),
+			}),
+		);
+		const card = await screen.findByRole("region", {name: "Run a command"});
+		for (const name of ["Allow once", "Allow always", "Deny"]) {
+			expect(within(card).getByRole("button", {name}).getAttribute("disabled")).not.toBeNull();
+		}
+		expect(
+			within(card)
+				.getByRole("textbox", {name: /Message/})
+				.getAttribute("disabled"),
+		).not.toBeNull();
+		expect(within(card).getByText(/waiting for the agent to confirm/i)).toBeDefined();
+	});
+
+	// No retry: the answer may already have been applied, so the card states the doubt instead of
+	// offering a second authorization (#8006).
+	it("offers no second answer to a card whose outcome is unknown", async () => {
+		await open(
+			pending({r1: pendingPermission({progress: {status: "unresolved", decision: "deny"}})}),
+		);
+		const card = await screen.findByRole("region", {name: "Run a command"});
+		expect(
+			within(card).getByRole("button", {name: "Deny"}).getAttribute("disabled"),
+		).not.toBeNull();
+		expect(within(card).getByText(/was not confirmed/i)).toBeDefined();
+	});
+
 	it("drops a card when the state drops it, and renders none when a process raises none", async () => {
 		const {process} = await open(
-			pending({r1: permissionRequest(), r2: permissionRequest({title: "Read a file"})}),
+			pending({
+				r1: pendingPermission(),
+				r2: pendingPermission({request: permissionRequest({title: "Read a file"})}),
+			}),
 		);
 		expect(await screen.findByRole("region", {name: "Read a file"})).toBeDefined();
 		await act(async () => {
-			await Effect.runPromise(process.commit(pending({r1: permissionRequest()})));
+			await Effect.runPromise(process.commit(pending({r1: pendingPermission()})));
 		});
 		await waitFor(() => expect(screen.queryByRole("region", {name: "Read a file"})).toBeNull());
 		expect(screen.getByRole("region", {name: "Run a command"})).toBeDefined();
@@ -313,7 +357,7 @@ describe("the composer's model picker", () => {
 describe("two windows over one process", () => {
 	it("keep their own expanded rows and share the cards and the mode", async () => {
 		const state = withTranscript([call("t1"), call("t2", {name: "grep"})], {
-			permissions: {r1: permissionRequest()},
+			permissions: {r1: pendingPermission()},
 			modes: modes(["plan", "build"], "plan"),
 		});
 		const shared = await Effect.runPromise(
@@ -351,6 +395,25 @@ describe("two windows over one process", () => {
 		await click(within(cards[0] as HTMLElement).getByRole("button", {name: "Deny"}));
 		await waitFor(() => expect(shared.inbox().length).toBe(1));
 		expect(shared.inbox()[0]).toEqual({type: "answer", request: "r1", decision: "deny"});
+
+		// And the mark that answer leaves reaches both windows, so neither offers a second one.
+		await act(async () => {
+			await Effect.runPromise(
+				shared.commit({
+					...state,
+					permissions: {
+						r1: pendingPermission({progress: {status: "answering", decision: "deny"}}),
+					},
+				}),
+			);
+		});
+		await waitFor(() => {
+			for (const card of screen.getAllByRole("region", {name: "Run a command"})) {
+				expect(
+					within(card).getByRole("button", {name: "Deny"}).getAttribute("disabled"),
+				).not.toBeNull();
+			}
+		});
 		expect(TEST_VIEWPORT.height).toBe(1_000);
 	});
 });

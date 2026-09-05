@@ -25,7 +25,7 @@ import {
 	assistantItem,
 	call,
 	modes,
-	permissionRequest,
+	pendingPermission,
 	userItem,
 	withTranscript,
 } from "../chat.testing.ts";
@@ -56,7 +56,7 @@ const state: AiAgentSessionState = withTranscript(
 		assistantItem("a2", "Done — the guard is per-window now."),
 	],
 	{
-		permissions: {"req-1": permissionRequest()},
+		permissions: {"req-1": pendingPermission()},
 		modes: modes(["default", "plan", "accept edits"], "default"),
 	},
 );
