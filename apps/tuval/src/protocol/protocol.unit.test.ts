@@ -183,6 +183,14 @@ describe("refusals", () => {
 		}),
 	);
 
+	it.effect("an empty spell path, page to kernel", () =>
+		Effect.gen(function* () {
+			const refusal = yield* refusalOf(decodePageMessage(withField(callBody, "path", [])));
+			assert.strictEqual(refusal.direction, "page-to-kernel");
+			assert.include(refusal.reason, "path");
+		}),
+	);
+
 	it.effect("a missing field, kernel to page", () =>
 		Effect.gen(function* () {
 			const {ok: _ok, ...withoutOk} = replyBody;

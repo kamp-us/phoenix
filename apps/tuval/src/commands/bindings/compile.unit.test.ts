@@ -65,6 +65,30 @@ describe("compileBindings", () => {
 			}),
 	);
 
+	it.effect("points at the nested parameter's own token, not at the first argument", () =>
+		Effect.gen(function* () {
+			const command = "window place main 3,wide";
+			const {bindings, errors} = yield* compile({"ctrl+p": command});
+
+			assert.deepStrictEqual(bindings, []);
+			// `at` is `at.row` here and `args` is keyed by the bare `at`: without resolving the path to
+			// its parameter the lookup misses and the caret falls back to `main`, which is fine.
+			assert.strictEqual(errors[0]?.key, "ctrl+p");
+			assert.strictEqual(errors[0]?.position, command.indexOf("3,wide"));
+		}),
+	);
+
+	it.effect("points at the token behind an indexed path segment", () =>
+		Effect.gen(function* () {
+			const command = "window fit main 3,wide";
+			const {errors} = yield* compile({"ctrl+f": command});
+
+			// `sizes[1]` opens on the same parameter name, so `[` ends it exactly as `.` does.
+			assert.strictEqual(errors[0]?.key, "ctrl+f");
+			assert.strictEqual(errors[0]?.position, command.indexOf("3,wide"));
+		}),
+	);
+
 	it.effect("sets `repeat` from the object form and leaves it unset for a bare string", () =>
 		Effect.gen(function* () {
 			const {bindings, errors} = yield* compile({

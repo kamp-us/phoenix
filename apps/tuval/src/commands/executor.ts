@@ -8,12 +8,12 @@
  * `AnySpell` erases each spell's requirements, so nothing checks that the runtime carries what a
  * registered spell needs — the composition root that builds the registry owes those services, and
  * the single conversion in `runSpell` is where that obligation is spent. `src/boot.ts` is that
- * root and discharges it there: `WindowIndex` and `ShellDispatch.kernel` are built into the same
+ * root and discharges it there: `WindowIndex` and `shellDispatchKernel` are built into the same
  * `Kernel` context a caller runs a spell under, and `Kernel` names both, so a dropped provider is
  * a compile error at `start` rather than a defect at the first call (#7774).
  */
 
-import {Context, Effect, Layer, Schema} from "effect";
+import {Context, Effect, Layer, Predicate, Schema} from "effect";
 import {firstSchemaIssue} from "../protocol/issue.ts";
 import {
 	PROTOCOL_VERSION,
@@ -62,7 +62,7 @@ const nearestPath = (target: string, rows: ReadonlyArray<SpellRow>): string | un
 type NamedError = {readonly _tag: string; readonly message?: unknown};
 
 const isNamed = (value: unknown): value is NamedError =>
-	typeof value === "object" && value !== null && typeof (value as NamedError)._tag === "string";
+	Predicate.isObject(value) && typeof value._tag === "string";
 
 /**
  * The caught value as an error that names itself. One already carrying a `_tag` is its own;
@@ -70,9 +70,7 @@ const isNamed = (value: unknown): value is NamedError =>
  * reply's tag is an error object and no reply can carry a tag naming nothing in the tree.
  */
 const named = (call: SpellCall, error: unknown): NamedError =>
-	isNamed(error)
-		? error
-		: new SpellFailed({path: renderPath(call.path as SpellPath), original: error});
+	isNamed(error) ? error : new SpellFailed({path: renderPath(call.path), original: error});
 
 const messageOf = (error: NamedError): string =>
 	typeof error.message === "string" && error.message.length > 0
@@ -168,8 +166,7 @@ const make = Effect.fn("Tuval.SpellExecutor.make")(function* () {
 		client: Client,
 	) {
 		const attempt = Effect.gen(function* () {
-			// The wire schema checks the path is non-empty, so an empty one is unrepresentable here.
-			const row = yield* lookup(call.path as SpellPath);
+			const row = yield* lookup(call.path);
 			const args = yield* decodeArgs(row, call);
 			const scope = yield* resolveScope(call, client);
 			const value = yield* runSpell(row, args, scope);

@@ -2,7 +2,7 @@ import {homedir} from "node:os";
 import {join} from "node:path";
 import {Context, Effect, type FileSystem, Layer} from "effect";
 import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
-import {SpellBridge} from "./commands/bridge/index.ts";
+import {everyRegistered, SpellBridge} from "./commands/bridge/index.ts";
 import {helpSpells} from "./commands/core/index.ts";
 import {processSpells, SpawnedProcesses} from "./commands/core/process.ts";
 import type {DuplicateSpellPath, SpellNotDescribable} from "./commands/errors.ts";
@@ -10,7 +10,7 @@ import {SpellExecutor} from "./commands/executor.ts";
 import type {SpellRegistry} from "./commands/registry.ts";
 import {WindowIndex} from "./commands/scope.ts";
 import type {AnySpell} from "./commands/spell.ts";
-import {everyPath, SpellSet} from "./commands/spell-set.ts";
+import {SpellSet} from "./commands/spell-set.ts";
 import {type ConfigLoadError, loadLayeredConfig} from "./config.ts";
 import {Checkpoints} from "./durability/Checkpoints.ts";
 import {restore} from "./durability/restore.ts";
@@ -24,7 +24,8 @@ import {ProcessTable} from "./process/ProcessTable.ts";
 import type {ProcessHandle} from "./process/process.ts";
 import type {AnyProgram} from "./registry/program.ts";
 import {Registry} from "./registry/Registry.ts";
-import {ShellDispatch} from "./shell/commands/dispatch.ts";
+import type {ShellDispatch} from "./shell/commands/dispatch.ts";
+import {shellDispatchKernel} from "./shell/commands/kernel.ts";
 import {shellId} from "./shell/program.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
@@ -50,7 +51,7 @@ export type Kernel =
 	| SpellExecutor
 	| SpellBridge
 	// Naming it here is what makes the provider load-bearing to the checker: `Context` is
-	// contravariant in its services, so dropping `ShellDispatch.kernel` below stops `start`'s
+	// contravariant in its services, so dropping `shellDispatchKernel` below stops `start`'s
 	// answer from satisfying `Started` rather than leaving a defect for the first caller (#7774).
 	| ShellDispatch;
 
@@ -96,18 +97,16 @@ export const start = Effect.fn("Tuval.start")(function* ({
 	const compiled = yield* compile(graph).pipe(Effect.provideContext(registry));
 	const wiring = yield* open(compiled);
 	const spells = yield* Layer.build(SpellSet.layer({core: coreSpells, programs, keys: keys ?? []}));
-	// The bridge's allowlist is whoever builds the layer's, and no program row supplies one yet
-	// (`.patterns/tuval-spells.md`, "The bridge"), so boot allows the whole registry as it stands.
-	// A reload does not revisit it — #7743.
-	const {table} = yield* Context.get(spells, SpellSet).read;
+	// No program row supplies an allowance yet (`.patterns/tuval-spells.md`, "The bridge"), so boot
+	// allows the whole registry — as a rule the bridge re-reads, so a reload moves it (#7743).
 	const commands = Layer.mergeAll(
-		SpellBridge.layer({allow: everyPath(table)}),
+		SpellBridge.layer({allow: everyRegistered}),
 		SpawnedProcesses.layer({readTimeout: READ_TIMEOUT}),
 		// Every shell command row is registered as a spell whose `execute` needs this, and the
 		// registry erases that requirement, so the composition root is where it is owed (#7774).
 		// The desk stays a program row like any other: a config that registers no shell row leaves
 		// this dispatcher with no process to find, which is a `NoDesk` refusal, not a failed boot.
-		ShellDispatch.kernel(shellId),
+		shellDispatchKernel(shellId),
 	).pipe(
 		Layer.provideMerge(SpellExecutor.layer),
 		Layer.provideMerge(

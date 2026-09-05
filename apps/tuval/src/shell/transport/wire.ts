@@ -21,7 +21,7 @@
  * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
  */
 
-import {Duration, Option} from "effect";
+import {Duration, Option, Predicate} from "effect";
 import type {Lifecycle, ProcessId} from "../../process/process.ts";
 import type {ProgramId, RendererKind, RendererRef} from "../../registry/program.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
@@ -167,16 +167,13 @@ export type ServerFrame =
 	| RegistryFrame
 	| KeysFrame;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null;
-
 const isProcessIdString = (value: unknown): value is ProcessId => typeof value === "string";
 
 const isMessage = (value: unknown): value is DispatchFrame["msg"] =>
-	isRecord(value) && typeof value.type === "string";
+	Predicate.isObject(value) && typeof value.type === "string";
 
 const isPortDeclaration = (value: unknown): value is PortDeclaration =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.kind === "string" &&
 	(value.direction === "in" || value.direction === "out");
 
@@ -194,51 +191,51 @@ const rendererKinds: ReadonlySet<string> = new Set<RendererKind>([
 ]);
 
 const isRendererRef = (value: unknown): value is RendererRef =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.kind === "string" &&
 	rendererKinds.has(value.kind) &&
 	typeof value.ref === "string";
 
 const isSummary = (value: unknown): value is WireRow["stateSummary"] =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.lifecycle === "string" &&
 	lifecycles.has(value.lifecycle) &&
 	typeof value.revision === "number";
 
 export const isWireRow = (value: unknown): value is WireRow =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.id === "string" &&
 	typeof value.programId === "string" &&
 	(value.parentId === null || typeof value.parentId === "string") &&
-	isRecord(value.ports) &&
+	Predicate.isObjectOrArray(value.ports) &&
 	Object.values(value.ports).every(isPortDeclaration) &&
 	isSummary(value.stateSummary);
 
 export const isAttachFrame = (value: unknown): value is AttachFrame =>
-	isRecord(value) && value.kind === ATTACH_KIND && isProcessIdString(value.processId);
+	Predicate.isObject(value) && value.kind === ATTACH_KIND && isProcessIdString(value.processId);
 
 export const isDetachFrame = (value: unknown): value is DetachFrame =>
-	isRecord(value) && value.kind === DETACH_KIND && isProcessIdString(value.processId);
+	Predicate.isObject(value) && value.kind === DETACH_KIND && isProcessIdString(value.processId);
 
 export const isDispatchFrame = (value: unknown): value is DispatchFrame =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	value.kind === DISPATCH_KIND &&
 	Number.isInteger(value.seq) &&
 	isProcessIdString(value.processId) &&
 	isMessage(value.msg);
 
 export const isTableFrame = (value: unknown): value is TableFrame =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	value.kind === TABLE_KIND &&
 	typeof value.event === "string" &&
 	tableEventKinds.has(value.event) &&
 	isWireRow(value.row);
 
 export const isProcessStateFrame = (value: unknown): value is ProcessStateFrame =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	value.kind === PROCESS_STATE_KIND &&
 	isProcessIdString(value.processId) &&
-	isRecord(value.view) &&
+	Predicate.isObject(value.view) &&
 	((value.view._tag === "Live" &&
 		typeof value.view.lifecycle === "string" &&
 		lifecycles.has(value.view.lifecycle) &&
@@ -247,42 +244,42 @@ export const isProcessStateFrame = (value: unknown): value is ProcessStateFrame 
 		value.view._tag === "ProcessGone");
 
 export const isAttachRefusedFrame = (value: unknown): value is AttachRefusedFrame =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	value.kind === ATTACH_REFUSED_KIND &&
 	isProcessIdString(value.processId) &&
-	isRecord(value.refusal) &&
+	Predicate.isObject(value.refusal) &&
 	((value.refusal.reason === "placement-unsupported" &&
 		typeof value.refusal.placement === "string") ||
 		value.refusal.reason === "no-such-process");
 
 export const isDispatchedFrame = (value: unknown): value is DispatchedFrame =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	value.kind === DISPATCHED_KIND &&
 	Number.isInteger(value.seq) &&
-	isRecord(value.result) &&
+	Predicate.isObject(value.result) &&
 	(value.result._tag === "Delivered" ||
 		(value.result._tag === "ProcessGone" && isProcessIdString(value.result.processId)));
 
 export const isWireProgram = (value: unknown): value is WireProgram =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.programId === "string" &&
 	typeof value.label === "string" &&
 	isRendererRef(value.renderer);
 
 export const isRegistryFrame = (value: unknown): value is RegistryFrame =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	value.kind === REGISTRY_KIND &&
 	Array.isArray(value.programs) &&
 	value.programs.every(isWireProgram);
 
 export const isWireBinding = (value: unknown): value is WireBinding =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.sequence === "string" &&
 	typeof value.command === "string" &&
 	typeof value.repeatable === "boolean";
 
 export const isWirePrefixTable = (value: unknown): value is WirePrefixTable =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.prefix === "string" &&
 	typeof value.repeatTimeoutMs === "number" &&
 	Number.isFinite(value.repeatTimeoutMs) &&
@@ -290,7 +287,7 @@ export const isWirePrefixTable = (value: unknown): value is WirePrefixTable =>
 	value.bindings.every(isWireBinding);
 
 export const isKeysFrame = (value: unknown): value is KeysFrame =>
-	isRecord(value) && value.kind === KEYS_KIND && isWirePrefixTable(value.table);
+	Predicate.isObject(value) && value.kind === KEYS_KIND && isWirePrefixTable(value.table);
 
 /** Decoded, or the one reason it was not. A refusal is a value: the caller decides what to close. */
 export type Decoded<F> =
@@ -322,7 +319,7 @@ const decodeWith =
 		const parsed = parse(text);
 		if (!parsed.ok) return undecodable("not-json");
 		const value = parsed.value;
-		if (!isRecord(value) || typeof value.kind !== "string" || !known.has(value.kind)) {
+		if (!Predicate.isObject(value) || typeof value.kind !== "string" || !known.has(value.kind)) {
 			return undecodable("unknown-kind");
 		}
 		for (const admits of predicates) {

@@ -20,6 +20,7 @@
  * are read. Everything else is read defensively — this module is total.
  */
 
+import {Predicate} from "effect";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import type {SpellPath} from "../spell.ts";
 
@@ -52,10 +53,12 @@ export interface SpellIndex {
 export const describeExpected = (param: ParamSpec): string =>
 	param.literals === undefined ? `<${param.name}>` : param.literals.join("|");
 
+/**
+ * A JSON Schema node read as a record, or nothing. `Predicate.isObject` excludes arrays, which is
+ * what every caller here wants: an `enum` array is read as an array, never walked for properties.
+ */
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: undefined;
+	Predicate.isObject(value) ? value : undefined;
 
 const stringLiterals = (property: unknown): ReadonlyArray<string> | undefined => {
 	const choices = asRecord(property)?.enum;
@@ -128,11 +131,7 @@ export const buildSpellIndex = (descriptions: RegistryDescription): SpellIndex =
 	const spells: Array<IndexedSpell> = [];
 
 	for (const description of descriptions) {
-		const [head, ...rest] = description.path;
-		// The protocol's `SpellPath` is non-empty by decode, but the type only says `readonly
-		// string[]`, so an undecoded row can still reach here. Dropping it keeps the parser total.
-		if (head === undefined) continue;
-		const path: SpellPath = [head, ...rest];
+		const path: SpellPath = description.path;
 		const spell: IndexedSpell = {
 			path,
 			describe: description.describe,

@@ -6,7 +6,7 @@
  * against a real `Schema.Struct` so this hand-written form cannot quietly drift from it.
  */
 
-import {ProcessId, ProgramId, WindowId, WorkspaceId} from "../../protocol/ids.ts";
+import {ProcessId, ProgramId, type SpellPath, WindowId, WorkspaceId} from "../../protocol/ids.ts";
 import type {JsonSchemaDocument} from "../../protocol/json-schema-document.ts";
 import {PROTOCOL_VERSION, Snapshot} from "../../protocol/messages.ts";
 import type {ProcessRow} from "../../protocol/process-row.ts";
@@ -31,7 +31,7 @@ const text: Property = {type: "string"};
 const direction: Property = {type: "string", enum: ["left", "right", "up", "down"]};
 
 const spell = (
-	path: ReadonlyArray<string>,
+	path: SpellPath,
 	describe: string,
 	params: JsonSchemaDocument,
 ): SpellDescription => ({path, describe, params, capabilities: []});

@@ -1,7 +1,7 @@
 import {assert, describe, expect, expectTypeOf, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Layer, Schema} from "effect";
 import {ProcessId} from "../process/process.ts";
-import {CallId} from "../protocol/ids.ts";
+import {CallId, type SpellPath} from "../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages.ts";
 import {SpellFailed} from "./errors.ts";
 import {SpellExecutor} from "./executor.ts";
@@ -98,7 +98,7 @@ const layer = SpellExecutor.layer.pipe(
 );
 
 const call = (fields: {
-	readonly path: ReadonlyArray<string>;
+	readonly path: SpellPath;
 	readonly args: unknown;
 	readonly window?: WindowId;
 }): SpellCall =>

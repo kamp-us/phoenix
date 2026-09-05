@@ -76,7 +76,7 @@ stores that, because one table holds spells of every shape.
 The `capabilities` list reuses the kernel's `CapabilityRequest` record from
 [`registry/program.ts`](../apps/tuval/src/registry/program.ts). Nothing grants it, nothing checks
 it, nothing denies it. It is not a security boundary. The only thing standing between a calling
-program and the registry today is the bridge's allowlist, and that list is whatever the caller
+program and the registry today is the bridge's allowance, and that allowance is whatever the caller
 passed to `SpellBridge.layer({allow})`, not a check the kernel makes.
 
 ## A program declares its spells
@@ -230,8 +230,8 @@ which compiles the bindings against the table it is about to store:
 | `SpellSet.reload(input)` | a fresh table from new program rows, fresh bindings, installed in one write |
 | `SpellRegistry.swap(table)` | the narrower entry, which recompiles the bindings rather than leaving them behind, holding the cell across the compile so a concurrent reload cannot land inside it |
 
-`everyPath(table)` is the whole registry as an allowlist, which is what `src/boot.ts` passes the
-bridge today.
+`everyRegistered` is the whole registry as an allowance, which is what `src/boot.ts` passes the
+bridge today — a rule the bridge re-reads per call, so the reload below moves it too.
 
 Boot joins the set, the executor, the bridge and `SpawnedProcesses` to the kernel's layers
 (`start` in [`boot.ts`](../apps/tuval/src/boot.ts)), reports the spell count beside the program
@@ -376,20 +376,23 @@ spells as one list.
 `list` and `call`, and neither mentions a program. An agent program's SDK tool is a wrapper over it,
 so a second agent program costs an adapter and no new spell.
 
-`call(path, args, scope)` refuses a path outside the allowlist with `SpellNotAllowed`
+`call(path, args, scope)` refuses a path outside the allowance with `SpellNotAllowed`
 ([`bridge/errors.ts`](../apps/tuval/src/commands/bridge/errors.ts)) before the executor is reached.
-`SpellBridge.layer({allow})` takes that allowlist from whoever builds the layer, and no program
-row's field is wired into it: `src/boot.ts` passes `everyPath` over the table as it stands at boot,
-and `bridge/bridge.unit.test.ts` passes its own. What makes the file program-blind is that no
+`SpellBridge.layer({allow})` takes that allowance from whoever builds the layer, and no program
+row's field is wired into it. A `SpellAllowance` is a rule and never a snapshot, which is what keeps
+`list` and `call` answering from one config: `everyRegistered` is re-read from the registry on every
+call, so a reload moves both halves together, and `onlyPaths([…])` names constants the caller wrote
+down, which nothing can make stale. `src/boot.ts` passes `everyRegistered`;
+`bridge/bridge.unit.test.ts` passes its own paths, and
+[`bridge/allowlist-reload.unit.test.ts`](../apps/tuval/src/commands/bridge/allowlist-reload.unit.test.ts)
+reloads through the real `SpellSet` in both directions. What makes the file program-blind is that no
 program id is written in it. The intent recorded in the module's own docblock is that a calling
-program's registry row will supply the list, and that wiring is a later child's. Because the layer
-captures the list at build, a config reload leaves it behind while the registry moves on —
-[#7743](https://github.com/kamp-us/phoenix/issues/7743) is filed on that.
+program's registry row will supply the allowance, and that wiring is a later child's.
 
 `call` puts only the scope's window on the wire, so the executor re-resolves the process exactly as
 it does for a page.
 
-`SpellBridge.scripted(table)` answers from a fixed table and runs nothing, so it has no allowlist to
+`SpellBridge.scripted(table)` answers from a fixed table and runs nothing, so it has no allowance to
 enforce.
 
 An AI agent process reaches the bridge through its `TuvalAiAgent` layer, which is where a real
@@ -564,11 +567,15 @@ reads their name, sentence and argument kind off that list rather than re-typing
 `shellSpells` wraps each row as a spell whose `execute` builds the Msg and hands it to
 `ShellDispatch`, an interface this slice declares — the same shape `WindowIndex` takes above.
 `AnySpell` erases that requirement, so the composition root that builds the registry owes the
-service, and [`boot.ts`](../apps/tuval/src/boot.ts) pays it: `ShellDispatch.kernel(shellId)` sits in
-the same merge as `SpellBridge`, finds the live process of the shell's program row through
+service, and [`boot.ts`](../apps/tuval/src/boot.ts) pays it: `shellDispatchKernel(shellId)`
+([`shell/commands/kernel.ts`](../apps/tuval/src/shell/commands/kernel.ts)) sits in the same merge
+as `SpellBridge`, finds the live process of the shell's program row through
 `ProcessTable` per dispatch, and puts the Msg on it. `Kernel` names `ShellDispatch` and `Context` is
 contravariant in its services, so dropping that layer stops `start` compiling rather than leaving a
-defect for the first caller.
+defect for the first caller. The layer lives in its own module rather than beside the tag because
+`dispatch.ts` is on the page's import path and the process table reads `node:crypto` at load; the
+page's boundary test walks the runtime import graph from `src/page/main.tsx` and refuses any
+`node:` specifier, so the split is proven rather than remembered (#7910).
 
 `dispatch` fails typed rather than dying, because a desk is a process: a config that registers the
 shell row but plans no node for it answers `NoDesk`, and a desk that stopped mid-call answers the

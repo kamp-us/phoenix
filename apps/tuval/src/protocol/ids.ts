@@ -42,5 +42,5 @@ export const Recency = Schema.Number.check(Schema.isUint32());
 export type Recency = typeof Recency.Type;
 
 /** A spell path: at least one segment, lowercase English words the registry keys on. */
-export const SpellPath = Schema.Array(Schema.String).check(Schema.isMinLength(1));
+export const SpellPath = Schema.NonEmptyArray(Schema.String);
 export type SpellPath = typeof SpellPath.Type;

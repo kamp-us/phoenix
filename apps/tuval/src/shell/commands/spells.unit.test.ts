@@ -10,7 +10,7 @@ import {SpellExecutor} from "../../commands/executor.ts";
 import {buildRegistry, SpellRegistry} from "../../commands/registry.ts";
 import {type Client, WindowIndex} from "../../commands/scope.ts";
 import {ClientId, WorkspaceId} from "../../commands/spell.ts";
-import {CallId} from "../../protocol/ids.ts";
+import {CallId, type SpellPath} from "../../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../../protocol/messages.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import {ShellDispatch} from "./dispatch.ts";
@@ -20,7 +20,7 @@ import {shellCommands} from "./table.ts";
 
 const client: Client = {id: ClientId.make("cli"), workspace: WorkspaceId.make("ws-1")};
 
-const call = (path: ReadonlyArray<string>, args: unknown): SpellCall =>
+const call = (path: SpellPath, args: unknown): SpellCall =>
 	new SpellCall({
 		type: "spell.call",
 		version: PROTOCOL_VERSION,
@@ -38,7 +38,7 @@ const layerFor = (dispatched: Array<ShellMsg>) =>
 	Layer.mergeAll(executorLayer, ShellDispatch.scripted(dispatched));
 
 /** Run one call against the shell's spells alone, collecting whatever it dispatched. */
-const run = (path: ReadonlyArray<string>, args: unknown) =>
+const run = (path: SpellPath, args: unknown) =>
 	Effect.suspend(() => {
 		const dispatched: Array<ShellMsg> = [];
 		return Effect.flatMap(SpellExecutor, (executor) =>
