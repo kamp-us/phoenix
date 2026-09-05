@@ -19,6 +19,7 @@ import {Socket} from "effect/unstable/socket";
 import type {Message, ProcessId} from "../../process/process.ts";
 import type {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
+import type {PrefixTable} from "../keys/table.ts";
 import {type DispatchResult, delivered, type ProcessView, processGone} from "../window/host.ts";
 import {type AttachRefused, NoSuchProcess, PlacementUnsupported} from "./errors.ts";
 import {
@@ -27,8 +28,10 @@ import {
 	DISPATCH_KIND,
 	decodeServerFrame,
 	encodeFrame,
+	fromWirePrefixTable,
 	fromWireRow,
 	type ServerFrame,
+	type WireProgram,
 } from "./wire.ts";
 
 /**
@@ -49,6 +52,18 @@ export interface AttachedProcess<S = unknown, M extends Message = Message> {
 export interface PageAttachment {
 	/** The kernel's process table, current rows first and then every change. */
 	readonly rows: Stream.Stream<ReadonlyArray<TableRow>>;
+	/**
+	 * Every program this kernel can show in a window — what a picker offers, and the renderer each
+	 * one names. The kernel sends the list as the socket opens and again whenever it changes, so a
+	 * registry change reaches an open page without that page reloading (#7788).
+	 */
+	readonly programs: Stream.Stream<ReadonlyArray<WireProgram>>;
+	/**
+	 * The key grammar the kernel routes against, and the only one a surface on this socket may route
+	 * over ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)). Nothing is
+	 * emitted before the kernel has sent one, so a surface that has been told nothing shows nothing.
+	 */
+	readonly keys: Stream.Stream<PrefixTable>;
 	readonly attachProcess: <S = unknown, M extends Message = Message>(
 		processId: ProcessId,
 	) => Effect.Effect<AttachedProcess<S, M>, AttachRefused | Socket.SocketError>;
@@ -75,6 +90,8 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	const write = yield* socket.writer;
 
 	const rowsRef = yield* SubscriptionRef.make<ReadonlyMap<ProcessId, TableRow>>(new Map());
+	const programsRef = yield* SubscriptionRef.make<ReadonlyArray<WireProgram>>([]);
+	const keysRef = yield* SubscriptionRef.make<PrefixTable | null>(null);
 	const views = new Map<ProcessId, SubscriptionRef.SubscriptionRef<ProcessView<unknown>>>();
 	const pendingAttach = new Map<ProcessId, Deferred.Deferred<void, AttachRefused>>();
 	const pendingDispatch = new Map<number, Deferred.Deferred<DispatchResult>>();
@@ -102,6 +119,10 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 					else next.set(frame.row.id, fromWireRow(frame.row));
 					return next;
 				});
+			case "tuval/transport/registry/v1":
+				return SubscriptionRef.set(programsRef, frame.programs);
+			case "tuval/transport/keys/v1":
+				return SubscriptionRef.set(keysRef, fromWirePrefixTable(frame.table));
 			case "tuval/transport/process-state/v1":
 				return Effect.gen(function* () {
 					const ref = yield* viewRef(frame.processId);
@@ -225,6 +246,11 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 
 	return {
 		rows: Stream.map(SubscriptionRef.changes(rowsRef), (rows) => [...rows.values()]),
+		programs: SubscriptionRef.changes(programsRef),
+		keys: Stream.filter(
+			SubscriptionRef.changes(keysRef),
+			(table): table is PrefixTable => table !== null,
+		),
 		attachProcess,
 		detach,
 		readShell,

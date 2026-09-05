@@ -15,9 +15,16 @@ import {type CheckpointStores, memoryStores} from "../../durability/stores.ts";
 import {Processes} from "../../process/Processes.ts";
 import type {ProcessTable} from "../../process/ProcessTable.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
-import {type AnyProgram, type Program, ProgramId} from "../../registry/program.ts";
+import {type DuplicateProgramId, ProgramNotFound} from "../../registry/errors.ts";
+import {
+	type AnyProgram,
+	type Program,
+	ProgramId,
+	type RendererRef,
+} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
+import {defaultPrefixTable} from "../keys/index.ts";
 import type {ProcessView} from "../window/host.ts";
 import {attach} from "./client.ts";
 import {PlacementUnsupported} from "./errors.ts";
@@ -31,6 +38,8 @@ type DeskMsg = {readonly type: "split"; readonly window: string};
 
 const shellProgramId = ProgramId.make("tuval/shell");
 const painterProgramId = ProgramId.make("tuval/painter");
+const notesProgramId = ProgramId.make("tuval/notes");
+const daemonProgramId = ProgramId.make("tuval/daemon");
 const shellProcess = ProcessId.make("shell");
 const painterProcess = ProcessId.make("painter");
 
@@ -44,20 +53,26 @@ const deskCore = defineMachine<DeskState, DeskMsg, Cmd<never>, never, unknown>({
 	},
 });
 
-const deskRow = (id: ProgramId, host: "local" | "browser"): AnyProgram =>
+const deskRow = (id: ProgramId, host: "local" | "browser", renderer?: RendererRef): AnyProgram =>
 	({
 		id,
 		core: deskCore,
 		ports: {},
 		handlers: {},
 		capabilities: [],
+		...(renderer === undefined ? {} : {renderer}),
 		identity: {package: "@kampus/tuval", program: id, version: "1.0.0", digest: `sha256:${id}`},
 		placement: {host},
 	}) satisfies Program<DeskState, DeskMsg, Cmd<never>, never, unknown, never, never>;
 
+const ref = (name: string): RendererRef => ({kind: "host-native", ref: name});
+
+/** Three rows a window can show and one that cannot: what the catalog must and must not carry. */
 const programs: ReadonlyArray<AnyProgram> = [
-	deskRow(shellProgramId, "local"),
-	deskRow(painterProgramId, "browser"),
+	deskRow(shellProgramId, "local", ref("tuval/shell")),
+	deskRow(painterProgramId, "browser", ref("tuval/painter")),
+	deskRow(notesProgramId, "local", ref("tuval/notes")),
+	deskRow(daemonProgramId, "local"),
 ];
 
 interface Kernel {
@@ -67,13 +82,33 @@ interface Kernel {
 	readonly handles: Map<ProcessId, ProcessHandle>;
 }
 
+/**
+ * A registry whose list is read at call time, so a test can change what the kernel offers while the
+ * socket stays open — the shape a config reload would leave behind (#7743).
+ */
+const movingRegistry = (rows: {current: ReadonlyArray<AnyProgram>}) =>
+	Layer.succeed(
+		Registry,
+		Registry.of({
+			resolve: (id) =>
+				Effect.suspend(() => {
+					const row = rows.current.find((one) => one.id === id);
+					return row === undefined ? Effect.fail(new ProgramNotFound({id})) : Effect.succeed(row);
+				}),
+			list: Effect.sync(() => rows.current),
+		}),
+	);
+
 /** The real kernel over the given stores, with the shell and the browser-placed program spawned. */
-const kernel = Effect.fn("test.kernel")(function* (stores: CheckpointStores) {
+const kernel = Effect.fn("test.kernel")(function* (
+	stores: CheckpointStores,
+	registry: Layer.Layer<Registry, DuplicateProgramId> = Registry.layer(programs),
+) {
 	const context = yield* Layer.build(
 		ProcessTablePort.layer.pipe(
 			Layer.provideMerge(Processes.layer),
 			Layer.provideMerge(Checkpoints.layer(stores)),
-			Layer.provideMerge(Registry.layer(programs)),
+			Layer.provideMerge(registry),
 		),
 	).pipe(Effect.orDie);
 	const processes = Context.get(context, Processes);
@@ -91,12 +126,16 @@ const kernel = Effect.fn("test.kernel")(function* (stores: CheckpointStores) {
 });
 
 /** A kernel plus a served socket on an ephemeral loopback port, torn down with the caller's Scope. */
-const served = Effect.fn("test.served")(function* (stores: CheckpointStores) {
-	const built = yield* kernel(stores);
+const served = Effect.fn("test.served")(function* (
+	stores: CheckpointStores,
+	registry?: Layer.Layer<Registry, DuplicateProgramId>,
+) {
+	const built = yield* kernel(stores, registry);
 	const token = mintLaunchToken();
 	const server = yield* serve({
 		token,
 		port: 0,
+		table: defaultPrefixTable,
 		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
 	return {...built, token, server};
@@ -171,6 +210,7 @@ describe("the page-to-kernel transport", () => {
 				const server = yield* serve({
 					token: mintLaunchToken(),
 					port: 0,
+					table: defaultPrefixTable,
 					handles: (id) =>
 						Effect.sync(() =>
 							id === shellProcess
@@ -299,6 +339,69 @@ describe("the page-to-kernel transport", () => {
 				yield* shellOne.dispatch({type: "split", window: "w2"});
 				assert.deepStrictEqual(stateOf(yield* Queue.take(seenOne)), {windows: ["root", "w2"]});
 				assert.deepStrictEqual(stateOf(yield* Queue.take(seenTwo)), {windows: ["root", "w2"]});
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a page is offered every windowed program the registry holds, and never the headless one",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const offered = yield* Stream.runHead(
+					Stream.filter(attached.programs, (list) => list.length > 0),
+				);
+				assert.deepStrictEqual(
+					Option.getOrElse(offered, () => [])
+						.map((program) => [program.programId, program.label, program.renderer.ref])
+						.sort(),
+					[
+						[notesProgramId, notesProgramId, "tuval/notes"],
+						[painterProgramId, painterProgramId, "tuval/painter"],
+						[shellProgramId, shellProgramId, "tuval/shell"],
+					],
+				);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a page is sent the key grammar the kernel serves, over a real socket and back through JSON",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+				const told = yield* Stream.runHead(attached.keys);
+				// Value-equal, not the same object: it crossed as JSON and its `Duration` was rebuilt.
+				assert.deepStrictEqual(Option.getOrNull(told), defaultPrefixTable);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a registry change reaches a page that is already attached, with no reload of its own",
+		() =>
+			Effect.gen(function* () {
+				const rows: {current: ReadonlyArray<AnyProgram>} = {current: programs};
+				const app = yield* served(memoryStores(), movingRegistry(rows));
+				const attached = yield* page(app.server.launchUrl);
+				const before = yield* Stream.runHead(
+					Stream.filter(attached.programs, (list) => list.length === 3),
+				);
+				assert.strictEqual(Option.getOrElse(before, () => []).length, 3);
+
+				const boardProgramId = ProgramId.make("tuval/board");
+				rows.current = [...programs, deskRow(boardProgramId, "local", ref("tuval/board"))];
+				yield* app.server.publishRegistry;
+
+				const after = yield* Stream.runHead(
+					Stream.filter(attached.programs, (list) => list.length === 4),
+				);
+				assert.include(
+					Option.getOrElse(after, () => []).map((program) => program.programId),
+					boardProgramId,
+				);
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

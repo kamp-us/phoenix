@@ -24,6 +24,7 @@
 		"@earendil-works/pi-protocol": "catalog:",
 		"@effect/platform-node": "catalog:tuval",
 		"@kampus/design": "workspace:*",
+		"@manti-ui/styles": "catalog:",
 		"@modelcontextprotocol/sdk": "catalog:",
 		"@tanstack/react-virtual": "catalog:",
 		"effect": "catalog:tuval",

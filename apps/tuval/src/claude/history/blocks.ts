@@ -14,6 +14,13 @@
 
 import {isJsonValue, type JsonValue} from "../../ai-agent/ports/index.ts";
 
+/**
+ * The one hand-rolled record predicate left under `apps/tuval/src`; every other site reads
+ * `Predicate.isObject` off the `effect` pin, whose guidance bans writing this by hand. This
+ * directory may not import `effect` at all — `boundary.unit.test.ts` enforces it, so the mapping
+ * stays testable without a runtime — so it holds its own copy, defined exactly as
+ * `Predicate.isObject` is: arrays excluded (#7764).
+ */
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 

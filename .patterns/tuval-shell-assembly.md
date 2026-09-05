@@ -51,26 +51,37 @@ its `announce` handler wants `ProcessPorts`.
 
 ## Which Cmds the kernel runs, and which the surface does
 
-The shell core emits eight Cmds. `src/shell/host/effects.ts` runs three of them and states why the
-rest are inert:
+The shell core emits eight Cmds, and the type says which side runs each: `KernelCmd` and `PageCmd`
+in `src/shell/core/machine.ts`, with `ShellCmd` defined as their union so a ninth arm has to land on
+a side ([ADR 0353](../.decisions/0353-kernel-sends-the-prefix-table.md)).
+`src/shell/host/effects.ts` runs three of the five kernel arms and states why the rest are inert:
 
 | Cmd | Who runs it |
 |---|---|
 | `openProgram`, `attachProcess` | the kernel — `runPickerIntent`, whose answer is the follow-up Msgs |
 | `forwardKey` | the kernel — `Processes.handle(id)` then `dispatch({type: "key", key})` |
 | `runCommand` | nobody: the name is a user binding the command table does not hold; logged at debug |
-| `startPrefixTimer`, `cancelPrefixTimer` | **the surface** — see below |
+| `startRepeatTimer`, `cancelRepeatTimer` | **the surface** — see below |
 | `openCommandLine` | the surface — the line is a page element, not a process |
 | `reloadConfig` | nobody yet: `Booted.reload` sits above the kernel, out of a handler's reach (#7743) |
 
-**The prefix countdown is the surface's, and that is structural.** A kernel handler returns its
-follow-up Msgs and has no way to dispatch one a second later, so it cannot run a timer. The snapshot
-carries the armed window's length, so the page runs the countdown off state alone (`Desk.tsx`). Two
-consequences a caller must hold:
+**An armed prefix is never timed, and the only countdown is the repeat window's.** tmux waits
+indefinitely after its prefix and phoenix follows it (founder ruling on #7842), so `PrefixTable` has
+no arm-timeout field, `KeysConfig` has none to merge, and the armed snapshot carries
+`repeatWindowMs: null`. The prefix drops on a completed sequence, an unbound key (Escape is one), or
+a lapsed repeat window — never on its own. The one bounded window is tmux's `repeat-time`, which a
+`repeatable: true` binding opens.
+
+**That countdown is the surface's, and that is structural.** A kernel handler returns its follow-up
+Msgs and has no way to dispatch one later, so it cannot run a timer. The snapshot carries the repeat
+window's length, so the page runs the countdown off state alone (`Desk.tsx`) — over the table the
+kernel sent it, and no other (ADR 0353). Three consequences a caller must hold:
 
 - Anything driving the kernel with no page attached — a test, a script — has to fire
-  `{type: "prefix.timeout"}` itself. A repeatable binding (`<c-h>`, `<c-l>`) deliberately leaves the
-  prefix armed, and with no countdown it stays armed forever, swallowing the next key.
+  `{type: "prefix.repeatLapsed"}` itself after a repeatable binding (`<c-h>`, `<c-l>`), which
+  deliberately leaves the prefix armed; with no countdown it stays armed, swallowing the next key.
+- That Msg disarms **only** a repeat window. A stale one cannot drop a prefix armed by hand, which
+  is what keeps the indefinite wait indefinite.
 - The countdown's effect must depend on the prefix's **value**, never on the snapshot object. Every
   snapshot arrives freshly decoded, so an effect keyed on `state.prefix` re-arms on unrelated kernel
   traffic and never fires — a demo counter ticking once a second starved it indefinitely (#7782).
@@ -83,18 +94,44 @@ With the prefix unarmed every key belongs to the focused window, and the core an
 program that wants the keyboard declares a `key` cell; one that does not simply drops the key at
 debug, because a keystroke is not worth ending a desk over and the shell's error channel is `never`.
 
+**One keystroke has two deliveries, and only one of them is the Cmd.** Beside the kernel's dispatch
+into the process, the page hands the same key to that window's React renderer — off its own
+`surfaceKey` answer, not off a Cmd, because Cmds do not cross the wire. That is why `forwardKey` is
+a `KernelCmd` despite the page also acting on the key, and why the walk in
+`src/shell/ui/key-agreement.unit.test.ts` compares the two sides' *routing decision* rather than
+their Cmd lists.
+
 ## What the page can and cannot see
 
-The page reads two things off the wire: the shell process's state, and the process table. There is
-**no registry frame**, and that shapes two decisions:
+The page reads four things off the wire: the shell process's state, the process table, the **catalog
+of windowed programs** (the `registry` frame, #7788), and the **prefix table** (the `keys` frame,
+ADR 0353). The catalog is what a page could spawn, never what a process holds, so the frames stay
+program-blind: a process's state still crosses as `unknown`.
 
-- The page's renderer table (`src/page/renderers.tsx`) is keyed by **program id**, not by the
-  `RendererRef` a row declares — the table wire carries no renderer field. A row's `renderer` still
-  decides whether the picker offers it at all (`showsInAWindow`), which is why every windowed program
-  declares one.
-- The page's picker offers **running processes only**; its programs section is empty and says so,
-  because a page cannot enumerate what it could spawn. Opening by name still works through
-  `prefix : window:open <program>`, which needs no list.
+- The prefix table is the one frame that is neither state nor catalog — it is the grammar the page
+  routes keys over, and it may route over no other. `DeskProps.table` is required and
+  `AttachedDesk` renders the placeholder until the frame lands, so a page that has been told no
+  grammar shows no desk rather than inventing one. `Duration` does not survive JSON, so the frame
+  carries `repeatTimeoutMs` and `toWirePrefixTable`/`fromWirePrefixTable` convert.
+
+- The kernel decides what is in the catalog, and it decides with `showsInAWindow`
+  (`src/shell/picker/entries.ts`) — the one place the headless test lives. A row with no `renderer`
+  never crosses, so `WireProgram.renderer` is required and a page cannot be offered a program it
+  would then fail to render.
+- The page's renderer table (`src/page/renderers.tsx`) is keyed by the `RendererRef.ref` a row
+  declares, and `resolverFromTable` (`src/shell/window/renderer.ts`) resolves it — kind checked, so
+  an `isolated-frame` reference is never answered by the `host-native` renderer of the same name. A
+  fourth windowed program that names a reference this table already answers needs no edit here.
+- The page's picker offers both sections: every windowed program, and every running process. Opening
+  by name still works through `prefix : window:open <program>`, and both routes end in the same
+  `window.open` Msg, so the picker and the command line cannot drift into two spawn paths.
+- **The kernel pushes the catalog; the page never asks.** A spell call is the only page-to-kernel
+  message (#7617 R1.3), so the catalog goes out as the socket opens and again on
+  `TransportServer.publishRegistry`, which re-reads the registry and writes to every attached page.
+  Nothing calls it in production, and a call would change nothing: `Registry.layer` builds one frozen
+  map, so the catalog is fixed for the life of the kernel process and every publish would re-send
+  what the socket already got on open (#7841). `Booted.reload` writes only the spell registry
+  (#7743).
 
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.
@@ -113,11 +150,12 @@ Three files, and the split between them is forced rather than stylistic.
   excluded from it whole because it imports `@kampus/design`, which needs the relaxed lens
   (`tsconfig.design.json`). A file the row imports out of an excluded directory is a `TS6307` on
   every build.
-- **The leaf carries the program id too, and the page's renderer table keys on it.** The table is
-  keyed by program id rather than by the `RendererRef.ref`, because the process-table wire carries a
-  row's program and no renderer field (`src/page/renderers.tsx`). Importing that id from the row
-  would pull `node:path` and Pi's model runtime into the page bundle, which is the black page of
-  #7836 — so `PI_SESSION_PROGRAM` is declared on the leaf and `src/pi/program.ts` re-exports it.
+- **The leaf carries the program id too, and both names are imported rather than retyped.** The
+  page's table keys on the `RendererRef.ref` the row declares (`src/page/renderers.tsx`), and it
+  reads that reference off the leaf through `src/pi/window/index.ts`. The program id sits on the
+  same leaf for the same reason: importing it from the row would pull `node:path` and Pi's model
+  runtime into the page bundle, which is the black page of #7836 — so `PI_SESSION_PROGRAM` is
+  declared on the leaf and `src/pi/program.ts` re-exports it.
 - **The page's three React modules moved to the relaxed lens with it.** `main.tsx`,
   `AttachedDesk.tsx` and `renderers.tsx` reach `@kampus/design` through the table, so they are named
   in `tsconfig.json`'s `exclude` and in `tsconfig.design.json`'s `include`. `src/page/dev-server.ts`
@@ -134,6 +172,66 @@ Three files, and the split between them is forced rather than stylistic.
   container is the wrong shape for a second reason: `chat.css` re-declares the `@kampus/design`
   typography roles inside `.tuval-chat`, so a package primitive mounted *outside* that scope reads
   Tuval's two-part `--t-*` values as invalid shorthand and loses its whole `font` declaration.
+
+## A program declares three renderers; the shell composes two of them
+
+A program never draws outside its own window (#7500 ruling 4). The two surfaces outside it — the
+desk inspector beside the tiling area, and the middle of the status bar — are therefore renderers a
+program *declares* and the shell composes from the Snapshot, never regions a program pushes into.
+The row carries three optional references (`src/registry/program.ts`): `renderer` for its window,
+`inspector`, and `status`.
+
+- The two desk renderers take the same `WindowHost` the window renderer takes, so all three are
+  transport-blind and all three read the program's selection state out of the one process the
+  focused window shows.
+- **An inspector renders whatever its surface renders**, so its output is a free `Out`, exactly like
+  a window renderer's. **A status renderer returns segments**, a fixed `{id, text, tone?}` list — not
+  a bar. That is the ruling as a type: the shell owns the left (the workspace) and the right (kernel
+  facts) because `statusFor` derives them itself and a program's segments can only ever arrive in
+  `middle` (#7500 ruling 5).
+- `inspectorFor` and `statusFor` (`src/shell/desk/compose.ts`) walk one chain — focused window → its
+  process → its program row → the reference it declares → the renderer that reference names — and
+  answer with a value on every step that does not resolve (`DeskEmptyReason`). A region is never a
+  hole and never a throw; the surface renders its placeholder and reads nothing else.
+- **The inspector's open/collapsed flag is desk state, not workspace state**: it lives on
+  `ShellState.desk` (`src/shell/desk/state.ts`), so a workspace switch leaves it exactly as it was.
+  `desk.inspector.toggle` is the one Msg that writes it, reachable from the `desk:inspector-toggle`
+  command row like any other.
+- `src/shell/desk/` imports no socket, no React and nothing from `src/shell/ui/` — its own boundary
+  test is the gate, as `src/shell/window/`'s is.
+
+## Two error boundaries, and what each one is allowed to cost
+
+A render throw with nothing above it unmounts React's whole tree, and on this surface that is a
+black tab with the reason only in a console nobody is reading. It has cost the project twice —
+#7560, then a `<c-b> |` that took the desk down on its own headline key
+([#7839](https://github.com/kamp-us/phoenix/issues/7839)). `ErrorBoundary` in
+`src/shell/ui/ErrorBoundary.tsx` is the answer, and it is mounted in exactly two places, each sized
+to what a throw there may cost:
+
+| Where | Wraps | What survives |
+|---|---|---|
+| `Desk.tsx` | the tiling area alone | the status line, the command line, the desk's keyboard |
+| `main.tsx` | everything the page renders | the tab, with the reason on it |
+
+**Recovery is not a button that re-throws.** The boundary takes `resetKeys`, and the desk hands it
+`layoutSignature(workspace.layout)` — the layout tree serialized to one string
+(`src/shell/layout/tree.ts`) — so the next kernel snapshot that changes the layout clears the panel
+with no gesture at all. The button is the fallback for the case where nothing new arrives.
+
+**The key is a signature and never the layout object**, and that is the whole rule for anything else
+mounting this boundary: `resetKeys` are compared with `Object.is`, and every snapshot the page
+receives is decoded afresh, so a tree object is a new identity on every frame whether or not
+anything moved. Keyed on the object, the panel is unmounted and rebuilt on unrelated kernel traffic
+— `<details>` snaps shut, focus on the reset button is lost with the node, and `role="alert"`
+re-announces once per frame, which is the reader's whole recovery gone in the exact case the panel
+exists for. It is the same identity trap the desk's prefix countdown avoids by depending on the
+prefix's *values* (#7782); `error-boundary.unit.test.tsx` drives the boundary with JSON-decoded
+snapshots to pin it.
+
+The panel is a `role="alert"` carrying the throw's own message plus its component stack in a
+`<details>`, because the reason a founder can paste is the point; showing "something went wrong" is
+the failure mode again in nicer words.
 
 ## `pnpm dev` is one process
 
@@ -216,6 +314,42 @@ So `src/shell/ui/` and `src/page/` import `../picker/browser.ts` and `../transpo
 `src/shell/host/effects.ts` — the kernel side — keeps importing `../picker/index.ts`. Adding a
 Node-only module to a slice means adding it to `index.ts`, never to `browser.ts`; getting that wrong
 reddens the browser project rather than the page.
+
+## The design layer on the page
+
+`apps/tuval` consumes `@kampus/design`, and three things about that are not obvious from the import.
+
+**Three stylesheets, in this order, in `src/page/main.tsx`.** Manti's base first
+(`@manti-ui/styles/index.css`) — a `@kampus/design` primitive *is* a Manti component, and without the
+base its dialog has no positioning at all and lands in the document flow, which is what a palette
+rendered full-width at the bottom of the desk looks like. Then `@kampus/design`'s fonts and tokens,
+then `src/shell/ui/tokens.css`. The last two both declare role tokens at `:root`, and the desk's own
+values have to win that tie, which is what the order buys.
+
+**The theme is two attributes on `index.html`.** `data-theme="dark"` and
+`data-color-theme="indigo"`. The desk is dark-only window chrome — there is no light branch and
+nothing reads `prefers-color-scheme` — and `indigo` is the accent nearest the desk's own blue, so the
+palette and the surface behind it read as one system. A component sets neither: it inherits.
+
+**`exactOptionalPropertyTypes` is off in both tsconfigs, and it is not a preference.** The
+`@manti-ui/react` declarations spell an optional prop `foo?: T` where React's own attribute types
+spell `foo?: T | undefined`. Turning the flag back on gives 8 errors on each lens, and all 8 are in
+`packages/design/src` — `AgentChatInput.tsx` (×3), `Avatar.tsx`, `Button.tsx`, `CommandPalette.tsx`,
+`CountToggle.tsx`, `Switch.tsx` — measured with `tsc -p <lens> --exactOptionalPropertyTypes` at
+#7851's head. `apps/web/tsconfig.app.json` turns it off for the same cause, and
+[#7856](https://github.com/kamp-us/phoenix/issues/7856) is where it goes back on: fix those sources,
+then drop the opt-out in all three consumers.
+
+**An optional prop authored here spells its own `| undefined`**, so no `apps/tuval` file rides the
+loosened rule and the count above stays a design-package number. `PaletteProps.window` was the one
+that did not, and it put two `apps/tuval` files into that list until #7851 widened it. If you hit a
+TS2375 in your own file under the flag, it is yours to fix at the prop, not something this section
+excuses. The optional-key idiom (`...(x === undefined ? {} : {x})`) is still the shape every module
+here is written in.
+
+A slice that is browser-only end to end keeps one `index.ts` rather than the `index.ts`/`browser.ts`
+pair a *shared* slice needs; `src/palette/` is the one today. What still binds it is the rule above:
+no module the page reaches may import `node:*`, and `tsconfig.browser.json` is what says so.
 
 ## The proofs
 

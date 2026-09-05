@@ -8,6 +8,7 @@
  * beside it would be a second source that drifts. Composing the port predicates keeps one.
  */
 
+import {Predicate} from "effect";
 import {
 	isPermissionRequest,
 	isTranscriptItems,
@@ -16,9 +17,6 @@ import {
 } from "../ports/index.ts";
 import {type AiAgentSessionState, type HistoryPage, phases, type UsageTotals} from "./state.ts";
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value);
-
 const isNullOrString = (value: unknown): value is string | null =>
 	value === null || typeof value === "string";
 
@@ -26,37 +24,39 @@ const isFiniteNumber = (value: unknown): value is number =>
 	typeof value === "number" && Number.isFinite(value);
 
 const isUsage = (value: unknown): value is UsageTotals =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	isNullOrString(value.model) &&
 	isFiniteNumber(value.inputTokens) &&
 	isFiniteNumber(value.outputTokens) &&
 	isFiniteNumber(value.cost);
 
 const isPermissions = (value: unknown): value is Readonly<Record<string, PermissionRequest>> =>
-	isRecord(value) && Object.values(value).every(isPermissionRequest);
+	Predicate.isObject(value) && Object.values(value).every(isPermissionRequest);
 
 const isModes = (value: unknown): boolean =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	isNullOrString(value.current) &&
 	Array.isArray(value.available) &&
 	value.available.every((mode) => typeof mode === "string");
 
 const isTranscript = (value: unknown): boolean =>
-	isRecord(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
+	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
 
 const isPage = (value: unknown): value is HistoryPage | null =>
 	value === null ||
-	(isRecord(value) && isTranscriptItems(value.items) && typeof value.hasMore === "boolean");
+	(Predicate.isObject(value) &&
+		isTranscriptItems(value.items) &&
+		typeof value.hasMore === "boolean");
 
 const isFailure = (value: unknown): boolean =>
 	value === null ||
-	(isRecord(value) &&
+	(Predicate.isObject(value) &&
 		typeof value.tag === "string" &&
 		isNullOrString(value.reason) &&
 		typeof value.detail === "string");
 
 export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionState =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.phase === "string" &&
 	(phases as ReadonlyArray<string>).includes(value.phase) &&
 	isNullOrString(value.sessionId) &&

@@ -192,9 +192,17 @@ they keep going under the rows they were spawned from.
 
 `src/host/` runs a Demlik core machine as an Effect actor: `make(definition)` is a scoped Effect
 yielding an `ActorHandle`, and `layer(key, definition)` provides that handle as a service. A
-definition is `defineActor({machine, interpret, subscribe, store?})` — the machine is Demlik's pure
-core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
-Effect-valued, and their error and service requirements fall out onto the handle.
+definition is `defineActor({name, machine, interpret, subscribe, store?})` — the machine is Demlik's
+pure core (`init`, `update`, dep-keyed `subs`, `identity`, `subscriptions`), the handlers are
+Effect-valued, and their error and service requirements fall out onto the handle. The `name` is the
+definition's nominal identity, unique per process; the instance id is the process's, minted at spawn.
+
+A Sub that fails is the machine's Msg or the process's death, never a host retry (ADR 0346). The
+machine declares `subFailure(sub, failure)` beside `identity` and gets the failure as plain data —
+`id`, `type`, `reason`, `message`, nothing Effect-shaped. Returning a Msg dispatches it as an
+ordinary follow-up; returning `undefined`, or declaring nothing, closes the process's Scope with
+the failure as its Exit. Either way the Sub's id is marked `failed` and reconcile never re-arms it:
+a restart is a new id from the reducer, so it replays.
 
 It stands in for Demlik's own `tea-effect` until kamp-us/demlik#36 ships. The places it still
 speaks Demlik 0.12's Promise and disposer shapes live in `src/host/demlik-bridges.ts`, which is the
@@ -349,17 +357,20 @@ like any other process's state; the type-level proof is in `boundary.unit.test.t
 ```ts
 const [state, cmds] = applyMsg(defaultPrefixTable, initialState(), {
 	type: "keys.press",
-	key: {key: "b", ctrlKey: true},   // the prefix arms: cmds is [{type: "startPrefixTimer", …}]
+	key: {key: "b", ctrlKey: true},   // the prefix arms, untimed: cmds is []
 });
 applyMsg(defaultPrefixTable, state, {type: "keys.press", key: {key: "|"}}); // splits, side by side
 ```
 
 Two shapes are worth knowing. **A bound key runs its command's Msg in the same transition** — one
 press is one commit and one checkpoint — and a name the core does not own (`command:open`,
-`config:reload`, one of yours) leaves as a `runCommand` Cmd for the command rows instead. **The
-prefix timer is the host's, and there is exactly one**: the core says when a window opens
-(`startPrefixTimer`, carrying its length in ms) and when it closes (`cancelPrefixTimer`), and the
-host feeds `prefix.timeout` back when it fires.
+`config:reload`, one of yours) leaves as a `runCommand` Cmd for the command rows instead. **An armed
+prefix waits indefinitely, as tmux does** (#7842): nothing times it, there is no field to configure
+one, and it drops on a completed sequence, an unbound key (Escape is one), or a lapsed repeat
+window. **That repeat window's timer is the host's, and there is exactly one**: after a
+`repeatable: true` binding the core says when the window opens (`startRepeatTimer`, carrying its
+length in ms) and when it closes (`cancelRepeatTimer`), and the host feeds `prefix.repeatLapsed`
+back when it fires.
 
 Two refusals and one absence carry the model. The last window of a workspace does not close and the
 last workspace is not removed, for the same reason: a desk with nothing on it has no layout to

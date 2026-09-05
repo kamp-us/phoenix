@@ -51,6 +51,12 @@ const noDispatch = (): void => {};
  * close — as a scoped acquisition. Opening runs the source under `Effect.acquireRelease`
  * (`LLMS.md` "Managing resources and Scopes"); the Scope's close awaits the `Dispose`, Promise or
  * not, so Demlik's disposer and the Effect finalizer are one shutdown step.
+ *
+ * It then holds instead of returning, so the effect's lifetime is the Sub's lifetime and its error
+ * channel is the Sub's post-open failure channel — the one the host routes through the ADR 0346
+ * policy. A dep-keyed `source` returning a `Dispose` has nothing to put on that channel yet; a
+ * manual `subscribe` handler does return, and its return is the `ended` mark, which is why
+ * `subscribeDisposerBridge` below does not hold.
  */
 export const subDisposerBridge = <S, M, Ctx>(
 	sub: DepKeyedSub<S, M, Ctx>,
@@ -67,7 +73,7 @@ export const subDisposerBridge = <S, M, Ctx>(
 				},
 				catch: (cause) => new SubDisposeError({cause}),
 			}).pipe(Effect.orDie),
-	).pipe(Effect.asVoid);
+	).pipe(Effect.andThen(Effect.never));
 
 /**
  * The same disposer bridge for the manual-Sub map: Demlik 0.12's `subscribe[type]` cells, each

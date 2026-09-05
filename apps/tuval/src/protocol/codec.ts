@@ -20,7 +20,7 @@ const decodeFor =
 			return Effect.fail(refuse(`not JSON: ${parsed.reason}`));
 		}
 		return Schema.decodeUnknownEffect(schema)(parsed.value).pipe(
-			Effect.mapError((error) => refuse(describeSchemaError(error))),
+			Effect.mapError((error) => refuse(describeSchemaError(error, parsed.value))),
 		);
 	};
 
@@ -29,7 +29,7 @@ const encodeFor =
 	(message: S["Type"]): Effect.Effect<string, ProtocolRefused> =>
 		Schema.encodeEffect(schema)(message).pipe(
 			Effect.mapError(
-				(error) => new ProtocolRefused({direction, reason: describeSchemaError(error)}),
+				(error) => new ProtocolRefused({direction, reason: describeSchemaError(error, message)}),
 			),
 			Effect.flatMap((encoded) => {
 				const written = stringifyJson(encoded);

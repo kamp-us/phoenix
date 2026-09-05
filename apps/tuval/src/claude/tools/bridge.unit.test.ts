@@ -19,7 +19,7 @@ import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Option} from "effect";
 import {coreSpells} from "../../boot.ts";
-import {SpellBridge} from "../../commands/bridge/index.ts";
+import {onlyPaths, SpellBridge} from "../../commands/bridge/index.ts";
 import {SpawnedProcesses} from "../../commands/core/process.ts";
 import {SpellExecutor} from "../../commands/executor.ts";
 import {type Client, WindowIndex, type WindowPlacement} from "../../commands/scope.ts";
@@ -138,7 +138,7 @@ const rows: ReadonlyArray<AnyProgram> = [callerProgram(), echoProgram()];
 
 /** The layer set boot builds, over in-memory checkpoints and these two rows. */
 const kernel = Layer.mergeAll(
-	SpellBridge.layer({allow}),
+	SpellBridge.layer({allow: onlyPaths(allow)}),
 	SpawnedProcesses.layer({readTimeout: "1 second"}),
 ).pipe(
 	Layer.provideMerge(SpellExecutor.layer),

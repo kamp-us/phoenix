@@ -23,6 +23,20 @@ import type {
 	UpdateForm,
 } from "@demlik/tea";
 import type {Effect, Scope} from "effect";
+import {ActorNameCollisionError} from "./errors.ts";
+
+/**
+ * A Sub fiber's failure as the reducer sees it: plain data, so the machine stays pure. ADR 0346
+ * makes the absence of a `Cause`, an `Error` instance, a Fiber or a Scope here a binding
+ * constraint — the full `Cause` goes to `onError` under `"sub-fiber"` and stops there.
+ */
+export interface SubFailure {
+	readonly id: string;
+	readonly type: string;
+	/** `"failure"` is the handler's error channel; `"defect"` is a throw or a die. */
+	readonly reason: "failure" | "defect";
+	readonly message: string;
+}
 
 /**
  * A Demlik `Machine` minus its Promise-shaped `interpret` and `subscribe` — the pure core plus
@@ -35,6 +49,11 @@ export interface CoreMachine<S, M extends {type: string}, C extends Cmd, U exten
 	readonly subs?: ReadonlyArray<DepKeyedSub<S, M, Ctx>>;
 	readonly identity?: Identity<S, M>;
 	readonly subscriptions?: (state: S) => readonly U[];
+	/**
+	 * What a failed Sub becomes (ADR 0346). Returning a Msg hands the failure to `update`;
+	 * returning `undefined`, or declaring nothing, ends the process instead.
+	 */
+	readonly subFailure?: (sub: U, failure: SubFailure) => M | undefined;
 	readonly __form?: UpdateForm;
 }
 
@@ -95,6 +114,12 @@ export type ActorDefinition<
 	I extends InterpretHandlers<M, C, Ctx>,
 	B extends SubscribeHandlers<M, U, Ctx>,
 > = CtxArg<Ctx> & {
+	/**
+	 * The definition's nominal identity, unique per process and never derived from state (ADR
+	 * 0346). Demlik's `tea-effect` will mint a service key from it; in Tuval it is the registry
+	 * row's `ProgramId`. The instance id is the host's and lives in the process table.
+	 */
+	readonly name: string;
 	readonly machine: CoreMachine<S, M, C, U, Ctx>;
 	readonly interpret: I;
 	readonly subscribe: B;
@@ -121,6 +146,11 @@ export type DefinitionServices<
 	D extends {readonly interpret: unknown; readonly subscribe: unknown},
 > = ServicesOf<D["interpret"]> | ServicesOf<D["subscribe"]>;
 
+const definedNames = new Set<string>();
+
+/** A bundler re-evaluating this module is not a second definition; Demlik's `definePort` reads the same escape. */
+const underHmr = (): boolean => (import.meta as {hot?: unknown}).hot != null;
+
 export const defineActor = <
 	S,
 	M extends {type: string},
@@ -131,4 +161,10 @@ export const defineActor = <
 	const B extends SubscribeHandlers<M, U, Ctx>,
 >(
 	definition: ActorDefinition<S, M, C, U, Ctx, I, B>,
-): ActorDefinition<S, M, C, U, Ctx, I, B> => definition;
+): ActorDefinition<S, M, C, U, Ctx, I, B> => {
+	if (!underHmr() && definedNames.has(definition.name)) {
+		throw new ActorNameCollisionError({actorName: definition.name});
+	}
+	definedNames.add(definition.name);
+	return definition;
+};

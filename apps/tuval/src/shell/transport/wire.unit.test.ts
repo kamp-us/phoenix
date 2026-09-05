@@ -4,11 +4,12 @@
  * never guessed at.
  */
 
-import {Option} from "effect";
+import {Duration, Option} from "effect";
 import {describe, expect, it} from "vitest";
 import type {ProcessId} from "../../process/process.ts";
 import type {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
+import {defaultPrefixTable} from "../keys/table.ts";
 import {
 	ATTACH_KIND,
 	ATTACH_REFUSED_KIND,
@@ -19,11 +20,15 @@ import {
 	decodeClientFrame,
 	decodeServerFrame,
 	encodeFrame,
+	fromWirePrefixTable,
 	fromWireRow,
+	KEYS_KIND,
 	PROCESS_STATE_KIND,
+	REGISTRY_KIND,
 	type ServerFrame,
 	TABLE_KIND,
 	tableFrame,
+	toWirePrefixTable,
 	toWireRow,
 } from "./wire.ts";
 
@@ -63,6 +68,18 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 	},
 	{kind: DISPATCHED_KIND, seq: 4, result: {_tag: "Delivered"}},
 	{kind: DISPATCHED_KIND, seq: 5, result: {_tag: "ProcessGone", processId: processId("counter")}},
+	{
+		kind: REGISTRY_KIND,
+		programs: [
+			{
+				programId: "counter" as ProgramId,
+				label: "Counter",
+				renderer: {kind: "host-native", ref: "tuval/demo/counter"},
+			},
+		],
+	},
+	{kind: REGISTRY_KIND, programs: []},
+	{kind: KEYS_KIND, table: toWirePrefixTable(defaultPrefixTable)},
 ];
 
 describe("the transport wire", () => {
@@ -86,6 +103,13 @@ describe("the transport wire", () => {
 		});
 	});
 
+	it("the prefix table survives the trip, repeat window and all", () => {
+		expect(fromWirePrefixTable(toWirePrefixTable(defaultPrefixTable))).toEqual(defaultPrefixTable);
+		expect(toWirePrefixTable(defaultPrefixTable).repeatTimeoutMs).toBe(
+			Duration.toMillis(defaultPrefixTable.repeatTimeout),
+		);
+	});
+
 	it("a frame that is not JSON, names no kind this end serves, or carries a bad payload is refused with its reason", () => {
 		expect([
 			decodeClientFrame("{not json"),
@@ -94,12 +118,32 @@ describe("the transport wire", () => {
 			decodeClientFrame(JSON.stringify({kind: DISPATCH_KIND, seq: 1.5, processId: "a", msg: {}})),
 			decodeServerFrame("[]"),
 			decodeServerFrame(JSON.stringify({kind: TABLE_KIND, event: "invented", row: toWireRow(row)})),
+			// A catalog row with no renderer is the headless row the kernel filters out, so the wire
+			// refuses it too rather than handing the page a program it could offer and never render.
+			decodeServerFrame(
+				JSON.stringify({kind: REGISTRY_KIND, programs: [{programId: "daemon", label: "Daemon"}]}),
+			),
+			decodeServerFrame(
+				JSON.stringify({
+					kind: REGISTRY_KIND,
+					programs: [
+						{programId: "counter", label: "Counter", renderer: {kind: "canvas", ref: "c"}},
+					],
+				}),
+			),
+			// A `Duration` cannot cross as itself, so a table still carrying one is not a table.
+			decodeServerFrame(
+				JSON.stringify({kind: KEYS_KIND, table: {...defaultPrefixTable, bindings: []}}),
+			),
 		]).toEqual([
 			{_tag: "Undecodable", reason: "not-json"},
 			{_tag: "Undecodable", reason: "unknown-kind"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "unknown-kind"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 		]);
 	});

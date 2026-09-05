@@ -300,6 +300,9 @@ importers:
       '@kampus/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@manti-ui/styles':
+        specifier: 'catalog:'
+        version: 0.9.0
       '@modelcontextprotocol/sdk':
         specifier: 'catalog:'
         version: 1.30.0(zod@4.4.3)

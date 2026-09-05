@@ -12,7 +12,7 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import type {Duration, Effect} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import type {ShellCmd, ShellMsg} from "./machine.ts";
+import type {KernelCmd, PageCmd, ShellCmd, ShellMsg} from "./machine.ts";
 import type {PrefixSnapshot, ShellState, Workspace} from "./state.ts";
 
 /**
@@ -44,11 +44,21 @@ const stateIsData: NoFunctions<ShellState> = true;
 const workspaceIsData: NoFunctions<Workspace> = true;
 const prefixIsData: NoFunctions<PrefixSnapshot> = true;
 
+/** `true` when the two sides name exactly the Cmd vocabulary — no arm missing, none invented. */
+type Partitions<A extends string, B extends string, W extends string> = [A | B] extends [W]
+	? [W] extends [A | B]
+		? true
+		: false
+	: false;
+
+const armsPartition: Partitions<KernelCmd["type"], PageCmd["type"], ShellCmd["type"]> = true;
+const anArmOffTheSides: Partitions<KernelCmd["type"], "openCommandLine", ShellCmd["type"]> = false;
+
 const bareFunction: NoFunctions<{readonly onKey: () => void}> = false;
 const nestedFunction: NoFunctions<{readonly views: {readonly render: () => string}}> = false;
 const functionInAList: NoFunctions<{readonly cells: ReadonlyArray<() => void>}> = false;
-// The one that nearly landed in state: the router's armed window carries a `Duration`, whose
-// methods make it uncheckpointable. `PrefixSnapshot` holds `timeoutMs` for exactly this reason.
+// The one that nearly landed in state: the router's repeat window carries a `Duration`, whose
+// methods make it uncheckpointable. `PrefixSnapshot` holds `repeatWindowMs` for that reason.
 const durationValue: NoFunctions<{readonly timeout: Duration.Duration}> = false;
 const effectValue: NoFunctions<{readonly boot: Effect.Effect<void>}> = false;
 
@@ -62,14 +72,24 @@ describe("shell core boundary", () => {
 	it("the Cmd vocabulary has no arm that stops a process", () => {
 		expectTypeOf<ShellCmd["type"]>().toEqualTypeOf<
 			| "forwardKey"
-			| "startPrefixTimer"
-			| "cancelPrefixTimer"
+			| "startRepeatTimer"
+			| "cancelRepeatTimer"
 			| "runCommand"
 			| "openProgram"
 			| "attachProcess"
 			| "openCommandLine"
 			| "reloadConfig"
 		>();
+	});
+
+	it("every arm names the side that runs it, and the two sides are the whole vocabulary", () => {
+		expectTypeOf<PageCmd["type"]>().toEqualTypeOf<
+			"startRepeatTimer" | "cancelRepeatTimer" | "openCommandLine"
+		>();
+		expectTypeOf<KernelCmd["type"]>().toEqualTypeOf<
+			"forwardKey" | "runCommand" | "openProgram" | "attachProcess" | "reloadConfig"
+		>();
+		expect([armsPartition, anArmOffTheSides]).toEqual([true, false]);
 	});
 
 	it("every Msg the epic names has a place in the union", () => {
@@ -91,12 +111,13 @@ describe("shell core boundary", () => {
 			| "workspace.step"
 			| "command.open"
 			| "config.reload"
+			| "desk.inspector.toggle"
 			| "keys.press"
-			| "prefix.timeout"
+			| "prefix.repeatLapsed"
 		>();
 	});
 
-	it("runs no clock and reads no host: the prefix timer is the host's, asked for by Cmd", () => {
+	it("runs no clock and reads no host: the repeat timer is the host's, asked for by Cmd", () => {
 		const dir = import.meta.dirname;
 		const sources = readdirSync(dir).filter(
 			(name) => name.endsWith(".ts") && !name.endsWith(".unit.test.ts"),

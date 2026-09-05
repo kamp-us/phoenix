@@ -74,6 +74,7 @@ describe("command row boundary", () => {
 			"dispatch.ts",
 			"errors.ts",
 			"index.ts",
+			"kernel.ts",
 			"line.ts",
 			"row.ts",
 			"spells.ts",

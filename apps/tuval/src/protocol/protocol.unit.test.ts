@@ -115,11 +115,15 @@ describe("refusals", () => {
 		result: null,
 	};
 
+	// Each `reason` here asserts on the offending *value*, never on the field name alone: the
+	// candidate-shape dump this refusal used to be renders every field name, so a name-only
+	// assertion passed while the reason said nothing (#7760).
 	it.effect("a wrong version, page to kernel", () =>
 		Effect.gen(function* () {
 			const refusal = yield* refusalOf(decodePageMessage(withField(callBody, "version", 2)));
 			assert.strictEqual(refusal.direction, "page-to-kernel");
-			assert.include(refusal.reason, "version");
+			assert.include(refusal.reason, "got 2");
+			assert.include(refusal.reason, "at version");
 		}),
 	);
 
@@ -127,7 +131,16 @@ describe("refusals", () => {
 		Effect.gen(function* () {
 			const refusal = yield* refusalOf(decodeKernelMessage(withField(replyBody, "version", 2)));
 			assert.strictEqual(refusal.direction, "kernel-to-page");
-			assert.include(refusal.reason, "version");
+			assert.include(refusal.reason, "got 2");
+			assert.include(refusal.reason, "at version");
+		}),
+	);
+
+	it.effect("a wrong version names only the shape its type picked", () =>
+		Effect.gen(function* () {
+			const snapshotBody = JSON.parse(yield* encodeKernelMessage(fixtures.snapshot));
+			const refusal = yield* refusalOf(decodeKernelMessage(withField(snapshotBody, "version", 2)));
+			assert.strictEqual(refusal.reason, `Expected ${PROTOCOL_VERSION}, got 2 at version`);
 		}),
 	);
 
@@ -137,7 +150,8 @@ describe("refusals", () => {
 				decodePageMessage(withField(callBody, "type", "spell.cast")),
 			);
 			assert.strictEqual(refusal.direction, "page-to-kernel");
-			assert.include(refusal.reason, "type");
+			assert.include(refusal.reason, `"spell.cast"`);
+			assert.include(refusal.reason, "at type");
 		}),
 	);
 
@@ -147,6 +161,16 @@ describe("refusals", () => {
 				decodeKernelMessage(withField(replyBody, "type", "snapshut")),
 			);
 			assert.strictEqual(refusal.direction, "kernel-to-page");
+			assert.include(refusal.reason, `"snapshut"`);
+			assert.include(refusal.reason, "at type");
+		}),
+	);
+
+	it.effect("a message whose type picks one member keeps that member's own issue", () =>
+		Effect.gen(function* () {
+			const snapshotBody = JSON.parse(yield* encodeKernelMessage(fixtures.snapshot));
+			const refusal = yield* refusalOf(decodeKernelMessage(withField(snapshotBody, "rev", "nope")));
+			assert.strictEqual(refusal.reason, "Expected number at rev");
 		}),
 	);
 
@@ -156,6 +180,14 @@ describe("refusals", () => {
 			const refusal = yield* refusalOf(decodePageMessage(JSON.stringify(withoutId)));
 			assert.strictEqual(refusal.direction, "page-to-kernel");
 			assert.include(refusal.reason, "id");
+		}),
+	);
+
+	it.effect("an empty spell path, page to kernel", () =>
+		Effect.gen(function* () {
+			const refusal = yield* refusalOf(decodePageMessage(withField(callBody, "path", [])));
+			assert.strictEqual(refusal.direction, "page-to-kernel");
+			assert.include(refusal.reason, "path");
 		}),
 	);
 
@@ -208,7 +240,11 @@ describe("Snapshot.registry", () => {
 		{
 			path: ["help"],
 			describe: "Show what a spell does.",
-			params: {type: "object", properties: {path: {type: "array"}}},
+			params: {
+				dialect: "draft-2020-12",
+				schema: {type: "object", properties: {path: {type: "array"}}, required: ["path"]},
+				definitions: {},
+			},
 			capabilities: [],
 		},
 		fixtures.spellDescription,

@@ -4,8 +4,8 @@
  * "the same handler" is the claim this slice exists to keep and nothing in the types enforces it.
  */
 
+import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {describe, expect, it} from "vitest";
 import type {AnyProgram} from "../../registry/program.ts";
 import {readCommandLine} from "../commands/line.ts";
 import type {ShellMsg} from "../core/machine.ts";
@@ -40,112 +40,128 @@ const run = (
 		readonly seed?: ReadonlyArray<readonly [string, string, string | undefined]>;
 		readonly spawnFails?: string;
 	},
-): Promise<Run> =>
-	Effect.runPromise(
-		Effect.scoped(
-			Effect.gen(function* () {
-				const harness = yield* pickerHarness(
-					rows,
-					options?.spawnFails === undefined ? undefined : {spawnFails: options.spawnFails},
-				);
-				for (const [id, program, parent] of options?.seed ?? []) {
-					yield* harness.seed(id, program, parent);
-				}
-				const msgs = yield* runPickerIntent(intent, {shellProcessId}).pipe(
-					Effect.provide(harness.layer),
-				);
-				return {
-					msgs,
-					spawns: harness
-						.spawns()
-						.map((call) => ({programId: call.programId, parent: call.parent})),
-				};
-			}),
-		),
+): Effect.Effect<Run> =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const harness = yield* pickerHarness(
+				rows,
+				options?.spawnFails === undefined ? undefined : {spawnFails: options.spawnFails},
+			);
+			for (const [id, program, parent] of options?.seed ?? []) {
+				yield* harness.seed(id, program, parent);
+			}
+			const msgs = yield* runPickerIntent(intent, {shellProcessId}).pipe(
+				Effect.provide(harness.layer),
+			);
+			return {
+				msgs,
+				spawns: harness.spawns().map((call) => ({programId: call.programId, parent: call.parent})),
+			};
+		}),
 	);
 
 describe("choosing a program", () => {
-	it("spawns exactly one process under the shell process and binds it to the window", async () => {
-		const answer = await run(openProgram(window, programId("counter")));
-		expect(answer.spawns).toEqual([{programId: "counter", parent: shellProcessId}]);
-		expect(answer.msgs).toEqual([{type: "window.bind", windowId: window, processId: "process-1"}]);
-	});
+	it.effect("spawns exactly one process under the shell process and binds it to the window", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(openProgram(window, programId("counter")));
+			assert.deepStrictEqual(answer.spawns, [{programId: "counter", parent: shellProcessId}]);
+			assert.deepStrictEqual(answer.msgs, [
+				{type: "window.bind", windowId: window, processId: "process-1"},
+			]);
+		}),
+	);
 
-	it("refuses an unknown program in the window, and spawns nothing", async () => {
-		const answer = await run(openProgram(window, programId("ghost")));
-		expect(answer.spawns).toEqual([]);
-		expect(answer.msgs).toEqual([
-			{
-				type: "window.setView",
-				windowId: window,
-				view: {cursor: 0, refusal: {_tag: "UnknownProgram", programId: "ghost"}},
-			},
-		]);
-	});
+	it.effect("refuses an unknown program in the window, and spawns nothing", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(openProgram(window, programId("ghost")));
+			assert.deepStrictEqual(answer.spawns, []);
+			assert.deepStrictEqual(answer.msgs, [
+				{
+					type: "window.setView",
+					windowId: window,
+					view: {cursor: 0, refusal: {_tag: "UnknownProgram", programId: "ghost"}},
+				},
+			]);
+		}),
+	);
 
-	it("refuses a headless program, which runs but can never fill a window", async () => {
-		const answer = await run(openProgram(window, programId("indexer")));
-		expect(answer.spawns).toEqual([]);
-		expect(answer.msgs).toEqual([
-			{
-				type: "window.setView",
-				windowId: window,
-				view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "indexer"}},
-			},
-		]);
-	});
+	it.effect("refuses a headless program, which runs but can never fill a window", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(openProgram(window, programId("indexer")));
+			assert.deepStrictEqual(answer.spawns, []);
+			assert.deepStrictEqual(answer.msgs, [
+				{
+					type: "window.setView",
+					windowId: window,
+					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "indexer"}},
+				},
+			]);
+		}),
+	);
 
-	it("turns a failed spawn into a refusal rather than a failure the caller must catch", async () => {
-		const answer = await run(openProgram(window, programId("counter")), {spawnFails: "counter"});
-		expect(answer.msgs).toEqual([
-			{
-				type: "window.setView",
-				windowId: window,
-				view: {
-					cursor: 0,
-					refusal: {
-						_tag: "SpawnFailed",
-						programId: "counter",
-						reason: 'no live process has id "counter"',
+	it.effect("turns a failed spawn into a refusal rather than a failure the caller must catch", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(openProgram(window, programId("counter")), {
+				spawnFails: "counter",
+			});
+			assert.deepStrictEqual(answer.msgs, [
+				{
+					type: "window.setView",
+					windowId: window,
+					view: {
+						cursor: 0,
+						refusal: {
+							_tag: "SpawnFailed",
+							programId: "counter",
+							reason: 'no live process has id "counter"',
+						},
 					},
 				},
-			},
-		]);
-	});
+			]);
+		}),
+	);
 });
 
 describe("attaching to a running process", () => {
-	it("binds the window to a live process and spawns nothing", async () => {
-		const answer = await run(attachProcess(window, processId("p-1")), {
-			seed: [["p-1", "counter", undefined]],
-		});
-		expect(answer.spawns).toEqual([]);
-		expect(answer.msgs).toEqual([{type: "window.bind", windowId: window, processId: "p-1"}]);
-	});
+	it.effect("binds the window to a live process and spawns nothing", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(attachProcess(window, processId("p-1")), {
+				seed: [["p-1", "counter", undefined]],
+			});
+			assert.deepStrictEqual(answer.spawns, []);
+			assert.deepStrictEqual(answer.msgs, [
+				{type: "window.bind", windowId: window, processId: "p-1"},
+			]);
+		}),
+	);
 
-	it("refuses a process id that no longer resolves, as a value and never a throw", async () => {
-		const answer = await run(attachProcess(window, processId("p-gone")));
-		expect(answer.msgs).toEqual([
-			{
-				type: "window.setView",
-				windowId: window,
-				view: {cursor: 0, refusal: {_tag: "ProcessGone", processId: "p-gone"}},
-			},
-		]);
-	});
+	it.effect("refuses a process id that no longer resolves, as a value and never a throw", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(attachProcess(window, processId("p-gone")));
+			assert.deepStrictEqual(answer.msgs, [
+				{
+					type: "window.setView",
+					windowId: window,
+					view: {cursor: 0, refusal: {_tag: "ProcessGone", processId: "p-gone"}},
+				},
+			]);
+		}),
+	);
 
-	it("refuses a live process whose program has no renderer to mount", async () => {
-		const answer = await run(attachProcess(window, processId("p-9")), {
-			seed: [["p-9", "indexer", undefined]],
-		});
-		expect(answer.msgs).toEqual([
-			{
-				type: "window.setView",
-				windowId: window,
-				view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "indexer"}},
-			},
-		]);
-	});
+	it.effect("refuses a live process whose program has no renderer to mount", () =>
+		Effect.gen(function* () {
+			const answer = yield* run(attachProcess(window, processId("p-9")), {
+				seed: [["p-9", "indexer", undefined]],
+			});
+			assert.deepStrictEqual(answer.msgs, [
+				{
+					type: "window.setView",
+					windowId: window,
+					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "indexer"}},
+				},
+			]);
+		}),
+	);
 });
 
 describe("the picker row and the command line are one handler", () => {
@@ -167,43 +183,52 @@ describe("the picker row and the command line are one handler", () => {
 			: null;
 	};
 
-	it("`open counter` and choosing the counter row both produce one process", async () => {
-		const chosen = pickerKey(window, entries, mountPicker(), "<enter>");
-		const typed = typedIntent("open counter");
-		expect(chosen._tag).toBe("Chose");
-		expect(typed).not.toBeNull();
-		if (chosen._tag !== "Chose" || typed === null) return;
+	it.effect("`open counter` and choosing the counter row both produce one process", () =>
+		Effect.gen(function* () {
+			const chosen = pickerKey(window, entries, mountPicker(), "<enter>");
+			const typed = typedIntent("open counter");
+			assert.strictEqual(chosen._tag, "Chose");
+			assert.isNotNull(typed);
+			if (chosen._tag !== "Chose" || typed === null) return;
 
-		expect(chosen.intent).toEqual(typed);
-		const [fromRow, fromLine] = await Promise.all([run(chosen.intent), run(typed)]);
-		expect(fromRow.spawns).toEqual([{programId: "counter", parent: shellProcessId}]);
-		expect(fromLine.spawns).toEqual(fromRow.spawns);
-		expect(fromLine.msgs).toEqual(fromRow.msgs);
-	});
+			assert.deepStrictEqual(chosen.intent, typed);
+			const [fromRow, fromLine] = yield* Effect.all([run(chosen.intent), run(typed)], {
+				concurrency: 2,
+			});
+			assert.deepStrictEqual(fromRow.spawns, [{programId: "counter", parent: shellProcessId}]);
+			assert.deepStrictEqual(fromLine.spawns, fromRow.spawns);
+			assert.deepStrictEqual(fromLine.msgs, fromRow.msgs);
+		}),
+	);
 
-	it("`attach <id>` and choosing the process row both bind without spawning", async () => {
-		const withProcess: PickerEntries = {
-			...noEntries,
-			processes: [
-				{
-					_tag: "Process",
-					processId: processId("p-1"),
-					programId: programId("counter"),
-					label: "Counter",
-					parentId: null,
-				},
-			],
-		};
-		const chosen = pickerKey(window, withProcess, mountPicker(), "<enter>");
-		const typed = typedIntent("attach p-1");
-		expect(chosen._tag).toBe("Chose");
-		expect(typed).not.toBeNull();
-		if (chosen._tag !== "Chose" || typed === null) return;
+	it.effect("`attach <id>` and choosing the process row both bind without spawning", () =>
+		Effect.gen(function* () {
+			const withProcess: PickerEntries = {
+				...noEntries,
+				processes: [
+					{
+						_tag: "Process",
+						processId: processId("p-1"),
+						programId: programId("counter"),
+						label: "Counter",
+						parentId: null,
+					},
+				],
+			};
+			const chosen = pickerKey(window, withProcess, mountPicker(), "<enter>");
+			const typed = typedIntent("attach p-1");
+			assert.strictEqual(chosen._tag, "Chose");
+			assert.isNotNull(typed);
+			if (chosen._tag !== "Chose" || typed === null) return;
 
-		expect(chosen.intent).toEqual(typed);
-		const seed = [["p-1", "counter", undefined]] as const;
-		const [fromRow, fromLine] = await Promise.all([run(chosen.intent, {seed}), run(typed, {seed})]);
-		expect(fromRow.spawns).toEqual([]);
-		expect(fromLine.msgs).toEqual(fromRow.msgs);
-	});
+			assert.deepStrictEqual(chosen.intent, typed);
+			const seed = [["p-1", "counter", undefined]] as const;
+			const [fromRow, fromLine] = yield* Effect.all(
+				[run(chosen.intent, {seed}), run(typed, {seed})],
+				{concurrency: 2},
+			);
+			assert.deepStrictEqual(fromRow.spawns, []);
+			assert.deepStrictEqual(fromLine.msgs, fromRow.msgs);
+		}),
+	);
 });

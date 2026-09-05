@@ -9,7 +9,7 @@
  * with a fake and nothing about the desk.
  */
 
-import {act, fireEvent, render, screen, within} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useEffect, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
@@ -66,12 +66,18 @@ function Harness({initial, sent, resolveMount = boundEverywhere}: HarnessProps):
 			}}
 			resolveMount={resolveMount}
 			entries={entries}
+			table={defaultPrefixTable}
 		/>
 	);
 }
 
 const arm = (): void => {
 	fireEvent.keyDown(document, {key: "b", ctrlKey: true, code: "KeyB"});
+};
+
+/** `<c-l>` — `workspace:next`, the repeatable binding that opens tmux's `repeat-time` window. */
+const repeat = (): void => {
+	fireEvent.keyDown(document, {key: "l", ctrlKey: true, code: "KeyL"});
 };
 
 describe("the desk renders the workspace's layout tree", () => {
@@ -154,6 +160,120 @@ describe("the picker's activedescendant", () => {
 	});
 });
 
+/**
+ * A window renderer that reads its own keys, so a click can land inside a text entry the way it
+ * does in a chat composer. `boundEverywhere` renders a paragraph, which focuses nothing.
+ */
+const composerEverywhere: MountResolver = (windowId, processId) =>
+	processId === null
+		? empty
+		: {
+				_tag: "Bound",
+				host: {
+					windowId,
+					processId: ProcessId.make(processId),
+					readProcess: undefined as never,
+					dispatch: undefined as never,
+					view: () => null,
+					setView: undefined as never,
+				},
+				render: (host) => <input aria-label={`composer for ${String(host.processId)}`} />,
+			};
+
+const focusedWindowId = (): string | null => {
+	const marked = screen
+		.getAllByRole("region", {name: /^Window /})
+		.filter((node) => node.getAttribute("data-focused") === "true");
+	expect(marked).toHaveLength(1);
+	return marked[0]?.getAttribute("data-window-id") ?? null;
+};
+
+const focusMsgs = (sent: Array<ShellMsg>): Array<ShellMsg> =>
+	sent.filter((msg) => msg.type === "window.focus");
+
+describe("pointer focus (#7848)", () => {
+	it("focuses the window a pointer goes down on, and hands its renderer DOM focus", () => {
+		const sent: Array<ShellMsg> = [];
+		render(<Harness initial={threeWindowDesk("window-1")} sent={sent} />);
+		expect(focusedWindowId()).toBe("window-1");
+
+		fireEvent.pointerDown(screen.getByLabelText("Window window-2"));
+
+		expect(focusMsgs(sent)).toEqual([{type: "window.focus", windowId: "window-2"}]);
+		expect(focusedWindowId()).toBe("window-2");
+		// window-2 is the empty one, so its picker is the renderer — and desk focus and DOM focus
+		// agree without this handler ever calling `focus()`.
+		expect(document.activeElement).toBe(screen.getByRole("listbox", {name: /Open a program/}));
+	});
+
+	it("sends nothing when the window is already the focused one", () => {
+		const sent: Array<ShellMsg> = [];
+		render(<Harness initial={threeWindowDesk("window-1")} sent={sent} />);
+
+		fireEvent.pointerDown(screen.getByLabelText("Window window-1"));
+
+		expect(focusMsgs(sent)).toEqual([]);
+		expect(focusedWindowId()).toBe("window-1");
+	});
+
+	it("leaves focus alone for a separator press, and for a drag that travels over a window", () => {
+		const sent: Array<ShellMsg> = [];
+		const {container} = render(<Harness initial={threeWindowDesk("window-1")} sent={sent} />);
+		const separator = container.querySelector(".tuval-separator");
+		expect(separator).not.toBeNull();
+
+		// A separator is a sibling of the panels, never a descendant of a window, so the press does
+		// not bubble through one — and a drag fires no second pointerdown wherever it travels.
+		fireEvent.pointerDown(separator as Element);
+		const window2 = screen.getByLabelText("Window window-2");
+		fireEvent.pointerMove(window2);
+		fireEvent.pointerUp(window2);
+
+		expect(focusMsgs(sent)).toEqual([]);
+		expect(focusedWindowId()).toBe("window-1");
+	});
+
+	it("focuses the window a composer sits in without pulling DOM focus off the composer", () => {
+		const sent: Array<ShellMsg> = [];
+		render(
+			<Harness
+				initial={threeWindowDesk("window-1")}
+				sent={sent}
+				resolveMount={composerEverywhere}
+			/>,
+		);
+		const composer = screen.getByLabelText("composer for process-3");
+		// What the gesture's own default does before the desk re-renders: the caret is in the input.
+		composer.focus();
+
+		fireEvent.pointerDown(composer);
+
+		expect(focusMsgs(sent)).toEqual([{type: "window.focus", windowId: "window-3"}]);
+		expect(focusedWindowId()).toBe("window-3");
+		expect(document.activeElement).toBe(composer);
+	});
+
+	it("walks focus by keyboard exactly as before, with the pointer path in place", () => {
+		render(<Harness initial={threeWindowDesk("window-1")} sent={[]} />);
+
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "l", code: "KeyL"}));
+		expect(focusedWindowId()).toBe("window-2");
+
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "j", code: "KeyJ"}));
+		expect(focusedWindowId()).toBe("window-3");
+
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "ArrowUp", code: "ArrowUp"}));
+		expect(focusedWindowId()).toBe("window-2");
+
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "ArrowLeft", code: "ArrowLeft"}));
+		expect(focusedWindowId()).toBe("window-1");
+	});
+});
+
 describe("the single application-level keyboard listener", () => {
 	let added: Array<string>;
 
@@ -176,6 +296,13 @@ describe("the single application-level keyboard listener", () => {
 
 		fireEvent.keyDown(document, {key: "j"});
 		expect(sent).toEqual([{type: "keys.press", key: expect.objectContaining({key: "j"})}]);
+	});
+
+	it("adds none for the pointer path: a pointer handler is not a keyboard listener", () => {
+		render(<Harness initial={threeWindowDesk("window-1")} sent={[]} />);
+		fireEvent.pointerDown(screen.getByLabelText("Window window-2"));
+
+		expect(added.filter((type) => type === "keydown")).toHaveLength(1);
 	});
 
 	it("adds no second listener when the command line opens", () => {
@@ -280,22 +407,26 @@ function DecodedHarness({
 			}}
 			resolveMount={boundEverywhere}
 			entries={entries}
+			table={defaultPrefixTable}
 		/>
 	);
 }
 
-describe("the prefix countdown", () => {
-	it("times out on its own clock, however much unrelated kernel traffic arrives (#7782)", () => {
+describe("the repeat window's countdown", () => {
+	it("lapses on its own clock, however much unrelated kernel traffic arrives (#7782)", () => {
 		vi.useFakeTimers();
 		try {
 			const sent: Array<ShellMsg> = [];
 			const view = render(<DecodedHarness sent={sent} snapshots={0} />);
+			// `<c-l>` is `workspace:next`, a `repeatable: true` binding: it leaves the prefix armed
+			// for the table's 500ms repeat window, the one bounded window left.
 			act(arm);
+			act(repeat);
 
-			// Ten snapshots over one armed second: a demo counter ticking at 100ms, and nothing about
-			// the prefix changing. A countdown keyed on the snapshot object re-armed on every one of
+			// Snapshots across the window: a demo counter ticking at 100ms, and nothing about the
+			// prefix changing. A countdown keyed on the snapshot object re-armed on every one of
 			// these and never fired.
-			for (let tick = 1; tick <= 10; tick++) {
+			for (let tick = 1; tick <= 4; tick++) {
 				act(() => {
 					view.rerender(<DecodedHarness sent={sent} snapshots={tick} />);
 					vi.advanceTimersByTime(100);
@@ -303,9 +434,56 @@ describe("the prefix countdown", () => {
 			}
 			act(() => void vi.advanceTimersByTime(200));
 
-			expect(sent.filter((msg) => msg.type === "prefix.timeout")).toHaveLength(1);
+			expect(sent.filter((msg) => msg.type === "prefix.repeatLapsed")).toHaveLength(1);
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it("never runs for a prefix armed by hand: that one waits indefinitely (#7842)", () => {
+		vi.useFakeTimers();
+		try {
+			const sent: Array<ShellMsg> = [];
+			render(<DecodedHarness sent={sent} snapshots={0} />);
+			act(arm);
+
+			act(() => void vi.advanceTimersByTime(30_000));
+
+			expect(sent.filter((msg) => msg.type === "prefix.repeatLapsed")).toHaveLength(0);
+			expect(vi.getTimerCount()).toBe(0);
+			expect(screen.getByText("armed")).toBeTruthy();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("Escape drops the armed prefix back to idle", () => {
+		const sent: Array<ShellMsg> = [];
+		render(<DecodedHarness sent={sent} snapshots={0} />);
+		act(arm);
+		expect(screen.getByText("armed")).toBeTruthy();
+
+		act(() => void fireEvent.keyDown(document, {key: "Escape", code: "Escape"}));
+		expect(screen.getByText("idle")).toBeTruthy();
+	});
+});
+
+describe("the palette's door", () => {
+	it("opens on Cmd+K and leaves the caret on the desk when nothing else can take it", async () => {
+		const {container} = render(<Harness initial={threeWindowDesk("window-1")} sent={[]} />);
+		// window-1 is bound, so no picker listbox takes the caret and `document.body` holds it: the
+		// desk nobody has clicked yet, which is where Esc used to strand focus.
+		expect(document.activeElement).toBe(document.body);
+
+		fireEvent.keyDown(document, {key: "k", metaKey: true, code: "KeyK"});
+		const input = screen.getByRole("combobox", {name: "Run a spell"});
+		expect(document.activeElement).toBe(input);
+
+		fireEvent.keyDown(input, {key: "Escape"});
+		expect(screen.queryByRole("combobox", {name: "Run a spell"})).toBeNull();
+		// The dialog gives the caret up as it unmounts, a frame after the handler returns.
+		await waitFor(() =>
+			expect(document.activeElement).toBe(container.querySelector(".tuval-surface")),
+		);
 	});
 });

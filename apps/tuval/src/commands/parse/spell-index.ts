@@ -8,8 +8,9 @@
  * founder's 2026-09-03 walk on #7639). A `RegistryTable` would carry richer types and the page
  * cannot hold one: it has descriptions, never the spells' closures.
  *
- * `SpellDescription.params` is `Schema.Unknown` on the wire, and what actually arrives is the
- * spell's `params` as JSON Schema. Two properties of that rendering are load-bearing and both were
+ * `SpellDescription.params` is a `JsonSchemaDocument` on the wire: the spell's `params` as the
+ * JSON Schema document `Schema.toJsonSchemaDocument` emits. Two properties of that rendering are
+ * load-bearing and both were
  * read off `Schema.toJsonSchemaDocument` at the `catalogs.tuval` pin (effect 4.0.0-rc.112): the
  * `properties` object's key order is the declaration order of `Schema.Struct`, which is the
  * positional order of the parameters, and a `Schema.Literals` parameter arrives as
@@ -19,6 +20,7 @@
  * are read. Everything else is read defensively — this module is total.
  */
 
+import {Predicate} from "effect";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import type {SpellPath} from "../spell.ts";
 
@@ -51,10 +53,12 @@ export interface SpellIndex {
 export const describeExpected = (param: ParamSpec): string =>
 	param.literals === undefined ? `<${param.name}>` : param.literals.join("|");
 
+/**
+ * A JSON Schema node read as a record, or nothing. `Predicate.isObject` excludes arrays, which is
+ * what every caller here wants: an `enum` array is read as an array, never walked for properties.
+ */
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-	typeof value === "object" && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: undefined;
+	Predicate.isObject(value) ? value : undefined;
 
 const stringLiterals = (property: unknown): ReadonlyArray<string> | undefined => {
 	const choices = asRecord(property)?.enum;
@@ -89,7 +93,10 @@ const followRef = (schema: Record<string, unknown> | undefined, params: unknown)
 };
 
 export const readParams = (params: unknown): ReadonlyArray<ParamSpec> => {
-	const root = asRecord(asRecord(params)?.schema) ?? asRecord(params);
+	// Only the document's own `schema`, never a bare JSON Schema object: `SpellDescription.params`
+	// is a `JsonSchemaDocument` and the bare form is refused at decode (#7758). The argument stays
+	// `unknown` so an undecoded row still reads as no parameters rather than throwing.
+	const root = asRecord(asRecord(params)?.schema);
 	const schema = followRef(root, params);
 	const properties = asRecord(schema?.properties);
 	if (properties === undefined) return [];
@@ -124,11 +131,7 @@ export const buildSpellIndex = (descriptions: RegistryDescription): SpellIndex =
 	const spells: Array<IndexedSpell> = [];
 
 	for (const description of descriptions) {
-		const [head, ...rest] = description.path;
-		// The protocol's `SpellPath` is non-empty by decode, but the type only says `readonly
-		// string[]`, so an undecoded row can still reach here. Dropping it keeps the parser total.
-		if (head === undefined) continue;
-		const path: SpellPath = [head, ...rest];
+		const path: SpellPath = description.path;
 		const spell: IndexedSpell = {
 			path,
 			describe: description.describe,

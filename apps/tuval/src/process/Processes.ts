@@ -157,6 +157,10 @@ const toDefinition = (
 			);
 	}
 	return {
+		// The definition's nominal identity is the registry row's `ProgramId` (ADR 0346). Built as a
+		// literal, not through `defineActor`: one program is one definition and many processes, and
+		// `defineActor`'s per-process name registry would read the second spawn as a collision.
+		name: program.id,
 		machine: core,
 		store,
 		ctx: {},

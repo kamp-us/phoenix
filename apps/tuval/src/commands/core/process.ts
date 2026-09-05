@@ -193,32 +193,38 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 				),
 			);
 
-		const inboxes = new Map<string, Inbox>();
-		for (const [name, port] of Object.entries(row.ports)) {
-			if (port.direction !== "in") continue;
-			const receive = row.receive?.[name] as Receiver<Message> | undefined;
-			if (receive === undefined) {
-				// `launch` refuses this at boot with `NoReceiver`; there is no boot to refuse here, and a
-				// caller cannot act on another program's authoring bug — so it dies, as the executor dies
-				// on a spell whose value its own `result` schema refuses.
-				return yield* Effect.die(
-					`program "${row.id}" declares in-port "${name}" but no receiver for it`,
-				);
+		// The kernel process is running from here on, under a scope forked from the layer root or the
+		// parent's — nothing ties it to this effect, so a failure below would leave it holding its
+		// ports with no entry in `live` for `entryOf` to find. `onError` catches a defect as well as
+		// a failure, which is what the no-receiver die below is (#7761).
+		yield* Effect.gen(function* () {
+			const inboxes = new Map<string, Inbox>();
+			for (const [name, port] of Object.entries(row.ports)) {
+				if (port.direction !== "in") continue;
+				const receive = row.receive?.[name] as Receiver<Message> | undefined;
+				if (receive === undefined) {
+					// `launch` refuses this at boot with `NoReceiver`; there is no boot to refuse here, and a
+					// caller cannot act on another program's authoring bug — so it dies, as the executor dies
+					// on a spell whose value its own `result` schema refuses.
+					return yield* Effect.die(
+						`program "${row.id}" declares in-port "${name}" but no receiver for it`,
+					);
+				}
+				const queue = yield* Queue.make<unknown>({
+					capacity: port.bound.capacity,
+					strategy: port.bound.overflow,
+				});
+				yield* Scope.addFinalizer(handle.scope, Effect.asVoid(Queue.shutdown(queue)));
+				yield* pump(handle, queue, receive);
+				inboxes.set(name, {port, queue});
 			}
-			const queue = yield* Queue.make<unknown>({
-				capacity: port.bound.capacity,
-				strategy: port.bound.overflow,
-			});
-			yield* Scope.addFinalizer(handle.scope, Effect.asVoid(Queue.shutdown(queue)));
-			yield* pump(handle, queue, receive);
-			inboxes.set(name, {port, queue});
-		}
 
-		live.set(id, {handle, inboxes, outboxes});
-		yield* Scope.addFinalizer(
-			handle.scope,
-			Effect.sync(() => void live.delete(id)),
-		);
+			live.set(id, {handle, inboxes, outboxes});
+			yield* Scope.addFinalizer(
+				handle.scope,
+				Effect.sync(() => void live.delete(id)),
+			);
+		}).pipe(Effect.onError(() => handle.stop));
 		return id;
 	});
 
@@ -256,7 +262,15 @@ export class SpawnedProcesses extends Context.Service<
 			program: ProgramId,
 			parent: Option.Option<ProcessId>,
 		) => Effect.Effect<ProcessId, UnknownProgram | UnknownProcess | OpenError | HandlerFailed>;
-		/** `false` only under a `dropping` in-port bound: the queue was full and refused the payload. */
+		/**
+		 * `Queue.offer`'s own answer, and it covers less than a reader expects. `false` is one of two
+		 * things: a `dropping` in-port at capacity refusing the payload, or a queue that is no longer
+		 * open — the process stopped and the finalizer shut its in-port queues down. `true` is not
+		 * "nothing was lost": a `sliding` bound at capacity takes the oldest queued payload off,
+		 * appends this one and answers `true`, so a payload is dropped and no caller can learn it
+		 * (`Queue.offer` at the `effect@4.0.0-rc.112` pin). Whether `process send` should surface that
+		 * eviction is an open contract question (#7761).
+		 */
 		readonly send: (
 			process: ProcessId,
 			port: string,

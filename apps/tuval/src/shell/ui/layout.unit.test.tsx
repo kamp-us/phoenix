@@ -225,6 +225,88 @@ describe("zoom", () => {
 	});
 });
 
+/**
+ * The desk as a founder finds it: one workspace, one window, the root stack `"horizontal"` — which
+ * is what `workspace.create` builds (`../core/machine.ts`).
+ */
+const singleWindowDesk = (): ShellState =>
+	deskWith(
+		createTree(createStack("stack-root", "horizontal", [createWindow("window-1")])),
+		"window-1",
+	);
+
+const pressed = (state: ShellState, key: string, ctrlKey = false): ShellState =>
+	applyMsg(defaultPrefixTable, state, {type: "keys.press", key: {key, ctrlKey}})[0];
+
+/** `<c-b>` then a sequence key, through the same table the desk routes against. */
+const gesture = (state: ShellState, sequence: string): ShellState =>
+	pressed(pressed(state, "b", true), sequence);
+
+const panelIds = (container: HTMLElement): ReadonlyArray<string> =>
+	[...container.querySelectorAll("[data-panel]")].map((node) => node.id);
+
+/** Render `from`, then hand the tree `to` — the live rerender, which is the only path that throws. */
+const rerenderAcross = (from: ShellState, to: ShellState) => {
+	const {container, rerender} = render(<TreeView state={from} sent={[]} />);
+	act(() => {
+		rerender(<TreeView state={to} sent={[]} />);
+	});
+	return container;
+};
+
+describe("a gesture that changes a stack's panel set", () => {
+	// Every case here is a *rerender*, not a render of the finished state: `defaultLayout` is read
+	// at registration and `setLayout` never runs on a first mount, so mounting the split desk proves
+	// nothing about the effect. Before #7839 three of the four threw out of the library — `Invalid 1
+	// panel layout: 50%, 50%`, `Invalid 2 panel layout: 100%`, `Invalid 2 panel layout: 40%, 40%,
+	// 20%`. `<c-b> -` was the one that passed, and only by accident: it flips the one-child stack's
+	// orientation, which is a dependency of the group's own registration effect, so that group
+	// re-registers in the same commit and is holding both panels by the time this effect runs.
+	// Nothing about the fix rests on that, which is why it is a case here rather than a footnote.
+	it("splits the only window of a stack with <c-b> | and hands the group two panels", () => {
+		const desk = singleWindowDesk();
+		const container = rerenderAcross(desk, gesture(desk, "|"));
+		expect(panelIds(container)).toHaveLength(2);
+	});
+
+	it("splits the only window of a stack with <c-b> -", () => {
+		const desk = singleWindowDesk();
+		const container = rerenderAcross(desk, gesture(desk, "-"));
+		expect(panelIds(container)).toHaveLength(2);
+	});
+
+	it("closes a window with <c-b> x, back from two panels to one", () => {
+		const split = gesture(singleWindowDesk(), "|");
+		const container = rerenderAcross(split, gesture(split, "x"));
+		expect(panelIds(container)).toHaveLength(1);
+	});
+
+	it("carries the kernel's uneven sizes across the change, through defaultLayout", () => {
+		// The write-back is skipped on a panel-set change, so this is the whole proof that the sizes
+		// still arrive: the group reads the current `defaultLayout` prop when it re-registers.
+		const desk = deskWith(
+			createTree(
+				createStack(
+					"stack-root",
+					"horizontal",
+					[createWindow("window-1"), createWindow("window-2")],
+					{"window-1": 80, "window-2": 20},
+				),
+			),
+			"window-1",
+		);
+		const split = gesture(desk, "|");
+		const container = rerenderAcross(desk, split);
+		const root = split.workspaces["workspace-0"]?.layout.root;
+		expect(root?.children).toHaveLength(3);
+		for (const child of root?.children ?? []) {
+			expect(
+				Number(container.querySelector<HTMLElement>(`#${child.id}`)?.style.flexGrow),
+			).toBeCloseTo(root?.sizes[child.id] ?? Number.NaN, 1);
+		}
+	});
+});
+
 describe("a split of a sibling", () => {
 	it("leaves the untouched panel's size where it was", () => {
 		const desk = deskWith(

@@ -9,7 +9,7 @@ import {fileURLToPath} from "node:url";
 import type {Duration} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {PrefixState, RouteAnswer} from "./router.ts";
-import type {Binding, CommandName, PrefixTable} from "./table.ts";
+import type {Binding, CommandName, KeysConfig, PrefixTable} from "./table.ts";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 
@@ -43,13 +43,16 @@ describe("keys boundary", () => {
 		expect([handler, smuggled]).toHaveLength(2);
 	});
 
-	it("the table is plain data too: two durations and a list of bindings", () => {
-		expectTypeOf<keyof PrefixTable>().toEqualTypeOf<
-			"prefix" | "armTimeout" | "repeatTimeout" | "bindings"
-		>();
-		expectTypeOf<PrefixTable["armTimeout"]>().toEqualTypeOf<Duration.Duration>();
+	// The key set is the fence: an armed prefix waits indefinitely (#7842), so a table with nowhere
+	// to put an arm timeout is what stops any config reintroducing one.
+	it("the table is plain data too: one duration, the repeat window, and a list of bindings", () => {
+		expectTypeOf<keyof PrefixTable>().toEqualTypeOf<"prefix" | "repeatTimeout" | "bindings">();
 		expectTypeOf<PrefixTable["repeatTimeout"]>().toEqualTypeOf<Duration.Duration>();
 		expectTypeOf<PrefixTable["bindings"]>().toEqualTypeOf<ReadonlyArray<Binding>>();
+	});
+
+	it("a user config has nowhere to put an arm timeout either", () => {
+		expectTypeOf<keyof KeysConfig>().toEqualTypeOf<"prefix" | "repeatTimeout" | "bindings">();
 	});
 
 	it("every answer carries the state that follows it", () => {

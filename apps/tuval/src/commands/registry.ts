@@ -60,14 +60,14 @@ export const lookupRow = (table: RegistryTable, path: SpellPath): SpellRow | und
 
 /** The serializable face of one spell: what a client is told without being handed the closure. */
 export interface SpellDescription {
-	readonly path: ReadonlyArray<string>;
+	readonly path: SpellPath;
 	readonly describe: string;
 	readonly params: JsonSchema.Document<"draft-2020-12">;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 }
 
 export const describeSpell = (row: SpellRow): SpellDescription => ({
-	path: [...row.path],
+	path: row.path,
 	describe: row.spell.describe,
 	params: row.paramsDocument,
 	capabilities: [...row.spell.capabilities],

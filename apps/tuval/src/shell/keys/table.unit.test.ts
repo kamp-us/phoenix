@@ -2,7 +2,13 @@ import {Duration, Result} from "effect";
 import {describe, expect, it} from "vitest";
 import {idle, route} from "./router.ts";
 import {normalize} from "./syntax.ts";
-import {applyKeysConfig, CommandName, defaultPrefixTable, normalizeSequence} from "./table.ts";
+import {
+	applyKeysConfig,
+	CommandName,
+	defaultPrefixTable,
+	type KeysConfig,
+	normalizeSequence,
+} from "./table.ts";
 
 const rows = defaultPrefixTable.bindings.map(
 	(binding) => [binding.sequence, binding.command, binding.repeatable] as const,
@@ -11,8 +17,8 @@ const rows = defaultPrefixTable.bindings.map(
 describe("defaultPrefixTable", () => {
 	it("is exactly the founder's tmux bindings", () => {
 		expect(defaultPrefixTable.prefix).toBe("<c-b>");
-		expect(Duration.toMillis(defaultPrefixTable.armTimeout)).toBe(1000);
 		expect(Duration.toMillis(defaultPrefixTable.repeatTimeout)).toBe(500);
+		expect(Object.keys(defaultPrefixTable).sort()).toEqual(["bindings", "prefix", "repeatTimeout"]);
 		expect(rows).toEqual([
 			["|", "window:split-vertical", false],
 			["-", "window:split-horizontal", false],
@@ -138,12 +144,21 @@ describe("applyKeysConfig()", () => {
 		});
 	});
 
-	it("takes the timeouts a config sets and keeps the ones it does not", () => {
+	it("takes the repeat window a config sets, and merges no other duration (#7842)", () => {
 		const table = Result.getOrThrow(
 			applyKeysConfig(defaultPrefixTable, {repeatTimeout: Duration.millis(250)}),
 		);
 		expect(Duration.toMillis(table.repeatTimeout)).toBe(250);
-		expect(table.armTimeout).toEqual(defaultPrefixTable.armTimeout);
+		expect(Object.keys(table).sort()).toEqual(["bindings", "prefix", "repeatTimeout"]);
+	});
+
+	// The type says a config cannot name an arm timeout; this says the merge does not carry an
+	// untyped one through either, so a JS config module cannot smuggle a bounded arm back in.
+	it("drops an arm timeout a config module smuggles past the type", () => {
+		const table = Result.getOrThrow(
+			applyKeysConfig(defaultPrefixTable, {armTimeout: Duration.millis(1000)} as KeysConfig),
+		);
+		expect(Object.keys(table).sort()).toEqual(["bindings", "prefix", "repeatTimeout"]);
 	});
 
 	it("refuses the whole config on one unreadable sequence, so no table is half-applied", () => {

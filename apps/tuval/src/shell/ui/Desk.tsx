@@ -11,22 +11,30 @@
  *
  * The desk holds no desk state. Workspaces, layout, focus and view slots come from the snapshot the
  * kernel sent and go back as Msgs; what lives here is tab-ephemeral and nothing else — whether the
- * command line is open, and the prefix countdown (#7556).
+ * command line is open, whether the palette is, and the repeat window's countdown (#7556).
+ *
+ * The command line and the palette are two doors onto one command table, never two mechanisms: the
+ * `<prefix> :` line is the address you already know, `⌘K` the one you go looking through, and both
+ * end at the rows in `../commands/table.ts` (#7643, `./PaletteHost.tsx`).
  */
 
 import type {ReactElement, ReactNode} from "react";
 import {useCallback, useEffect, useRef, useState} from "react";
+import {usePalette} from "../../palette/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
-import {defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
+import type {Key, PrefixTable} from "../keys/index.ts";
+import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
 import {WindowId} from "../window/index.ts";
 import {CommandLine} from "./CommandLine.tsx";
+import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {routerPrefix, statusFrame, surfaceKey, zoomedWindow} from "./frame.ts";
 import {LayoutView} from "./LayoutView.tsx";
 import type {MountResolver} from "./mount.ts";
+import {focusedWindowOf, PaletteHost} from "./PaletteHost.tsx";
 import {StatusLine} from "./StatusLine.tsx";
 import {isTextEntry} from "./text-entry.ts";
 import {WindowView} from "./WindowView.tsx";
@@ -36,8 +44,11 @@ export interface DeskProps {
 	readonly dispatch: (msg: ShellMsg) => void;
 	readonly resolveMount: MountResolver;
 	readonly entries?: PickerEntries;
-	/** The grammar both the core and this surface route against. One table, or the two disagree. */
-	readonly table?: PrefixTable;
+	/**
+	 * The grammar both the core and this surface route against — the table the kernel sent, and no
+	 * other. Required: a default here is a page inventing a grammar nobody gave it (ADR 0353).
+	 */
+	readonly table: PrefixTable;
 	/** The listener's home. `document` in a page; a container in a test that wants two desks. */
 	readonly keyTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener"> | null;
 	readonly reducedMotion?: boolean;
@@ -48,7 +59,7 @@ export function Desk({
 	dispatch,
 	resolveMount,
 	entries = noEntries,
-	table = defaultPrefixTable,
+	table,
 	keyTarget,
 	reducedMotion = false,
 }: DeskProps): ReactElement {
@@ -60,14 +71,25 @@ export function Desk({
 	const workspace = activeWorkspace(state);
 	const focused = workspace?.focused ?? null;
 
+	const palette = usePalette();
+
 	// Read through a ref so the listener is attached once per target and never re-attached on a
 	// snapshot: a re-attach between two presses of one sequence would drop the second.
-	const latest = useRef({state, table, focused, commandLineOpen, dispatch});
-	latest.current = {state, table, focused, commandLineOpen, dispatch};
+	const latest = useRef({state, table, focused, commandLineOpen, dispatch, palette});
+	latest.current = {state, table, focused, commandLineOpen, dispatch, palette};
 
 	const onKeyDown = useCallback((event: KeyboardEvent): void => {
 		const {state: current, table: grammar, focused: window, commandLineOpen: open} = latest.current;
-		if (open || isTextEntry(event.target)) return;
+		const overlay = latest.current.palette;
+		if (open || overlay.open || isTextEntry(event.target)) return;
+
+		// The palette's own door, beside the `<prefix> :` line rather than instead of it: one is the
+		// address you already know, the other is the one you go looking through (#7643).
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+			event.preventDefault();
+			overlay.openPalette(focusedWindowOf(latest.current.state));
+			return;
+		}
 
 		const key: Key = {
 			key: event.key,
@@ -106,30 +128,46 @@ export function Desk({
 		return () => target.removeEventListener("keydown", onKeyDown as EventListener);
 	}, [keyTarget, onKeyDown]);
 
-	// The core's prefix timer is a Cmd, and Cmds do not cross the transport — but the snapshot
-	// carries the window's length, so the surface runs the countdown off state alone.
+	// The core's repeat timer is a Cmd, and Cmds do not cross the transport — but the snapshot
+	// carries the repeat window's length, so the surface runs that one countdown off state alone.
+	// An armed prefix carrying no window is not timed at all: it waits indefinitely, as tmux does
+	// (#7842), and this effect is the only clock the desk ever ran.
 	//
 	// The dependency is the prefix's *value*, spelled out, and never the `state.prefix` object: every
 	// snapshot arrives JSON-decoded, so that object is new on each one and an effect keyed on it
 	// re-armed the countdown on unrelated kernel traffic — a demo counter ticking once a second
 	// starved an armed prefix indefinitely (#7782).
-	const armed = state.prefix.armed;
-	const timeoutMs = state.prefix.armed ? state.prefix.timeoutMs : 0;
+	const repeatWindowMs = state.prefix.armed ? state.prefix.repeatWindowMs : null;
 	const pending = state.prefix.armed ? state.prefix.pending.join("") : "";
 	useEffect(() => {
-		if (!armed) return;
+		if (repeatWindowMs === null) return;
 		// Through the ref, so the caller's `dispatch` identity is not a dependency either — the same
 		// starvation, from the other direction.
-		const timer = setTimeout(() => latest.current.dispatch({type: "prefix.timeout"}), timeoutMs);
+		const timer = setTimeout(
+			() => latest.current.dispatch({type: "prefix.repeatLapsed"}),
+			repeatWindowMs,
+		);
 		return () => clearTimeout(timer);
-		// `pending` is a dependency because each key typed into an armed sequence restarts the window,
-		// exactly as `startPrefixTimer` restarts the host's one timer.
-	}, [armed, timeoutMs, pending]);
+		// `pending` is a dependency because each key typed into the window restarts it, exactly as
+		// `startRepeatTimer` restarts the host's one timer.
+	}, [repeatWindowMs, pending]);
 
 	const closeCommandLine = useCallback(() => {
 		setCommandLineOpen(false);
 		desk.current?.focus();
 	}, []);
+
+	const closePalette = useCallback(() => {
+		palette.closePalette();
+		// The hook hands the caret back to whatever held it, and `document.body` is what held it on a
+		// desk nobody has clicked yet — it cannot take focus, so the desk takes it instead. The check
+		// runs a frame later because the dialog only gives the caret up as it unmounts, after this
+		// handler returns: read synchronously it still sees the palette's own input and never fires.
+		globalThis.requestAnimationFrame(() => {
+			const active = globalThis.document.activeElement;
+			if (active === null || active === globalThis.document.body) desk.current?.focus();
+		});
+	}, [palette]);
 
 	const renderWindow = (windowId: WindowId): ReactNode => (
 		<WindowView
@@ -150,20 +188,40 @@ export function Desk({
 	return (
 		<div className="tuval-surface" ref={desk} tabIndex={-1} data-scheme="dark">
 			<ForwardedKeyProvider value={forwarded}>
-				{workspace === undefined ? (
-					<div className="tuval-tiling tuval-placeholder" role="status">
-						<p>This desk has no active workspace. Open one with the command line.</p>
-					</div>
-				) : (
-					<LayoutView
-						root={workspace.layout.root}
-						zoomed={zoomedWindow(workspace)}
-						renderWindow={renderWindow}
-						dispatch={dispatch}
-					/>
-				)}
+				{/* The tiling area alone, so a throw costs the founder the windows and not the status
+				    line, the command line or the keyboard. The reset key is the layout's *signature*
+				    and never the layout object, for the same reason the countdown above is keyed on
+				    values: the boundary compares its keys with `Object.is`, and a decoded object is
+				    new on every snapshot, so the panel would be torn down and rebuilt on unrelated
+				    kernel traffic — losing focus on its button and the stack a founder came to read
+				    (#7839). */}
+				<ErrorBoundary
+					label="The desk layout"
+					resetKeys={[workspace === undefined ? null : layoutSignature(workspace.layout)]}
+				>
+					{workspace === undefined ? (
+						<div className="tuval-tiling tuval-placeholder" role="status">
+							<p>This desk has no active workspace. Open one with the command line.</p>
+						</div>
+					) : (
+						<LayoutView
+							root={workspace.layout.root}
+							zoomed={zoomedWindow(workspace)}
+							renderWindow={renderWindow}
+							dispatch={dispatch}
+						/>
+					)}
+				</ErrorBoundary>
 			</ForwardedKeyProvider>
 			{commandLineOpen ? <CommandLine dispatch={dispatch} onClose={closeCommandLine} /> : null}
+			{palette.open ? (
+				<PaletteHost
+					state={state}
+					dispatch={dispatch}
+					window={palette.window}
+					onClose={closePalette}
+				/>
+			) : null}
 			<StatusLine frame={statusFrame(state)} prefixKey={table.prefix} />
 		</div>
 	);
