@@ -49,6 +49,7 @@ import {type DesignCatalogKey, type DesignTranslate, useDesignT} from "./i18n";
 import {Menu, type MenuItem} from "./Menu";
 import {Select, type SelectItem} from "./Select";
 import "./AgentChatInput.css";
+import "./visually-hidden.css";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
