@@ -10,7 +10,8 @@
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration",
-		"proof:chat": "vite --config src/shell/chat/proof/vite.config.ts"
+		"proof:chat": "vite --config src/shell/chat/proof/vite.config.ts",
+		"proof:pi-window": "vite --config src/pi/window/proof/vite.config.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/claude-agent-sdk": "catalog:",

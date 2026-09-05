@@ -99,6 +99,32 @@ The page reads two things off the wire: the shell process's state, and the proce
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.
 
+## A windowed program: the reference, the shared window, the extras slot
+
+Three files, and the split between them is forced rather than stylistic.
+
+- **The row names the window and reaches none of it.** A row is kernel-side data and must stay free
+  of React, so the `RendererRef` it declares lives on a leaf that imports one type and nothing else
+  — `src/pi/renderer-ref.ts` for `pi-session`. Retyping the name at both ends instead would drift
+  silently: an unresolved reference is a returned value, never a throw
+  (`src/shell/window/renderer.ts`), so the window comes up blank and nothing fails.
+- **That leaf sits beside the row, not inside the renderer's directory.** The strict lens
+  (`tsconfig.json`) is `composite` and must list every file it compiles, and a renderer directory is
+  excluded from it whole because it imports `@kampus/design`, which needs the relaxed lens
+  (`tsconfig.design.json`). A file the row imports out of an excluded directory is a `TS6307` on
+  every build.
+- **The renderer is a thin binding, and its extras go through one slot.** Both AI-agent programs
+  render the one shared `ChatWindow` (founder ruling 2026-09-02, amended on #7572 / #7584):
+  `chatWindow({extras})` takes a `(state) => ReactNode` that lands in the window's status bar beside
+  the phase line and the mode switch, and that is the whole of what a program adds. Pi's is its
+  usage line — model, cumulative cost, token counts, off `state.usage`
+  (`src/pi/window/PiChatWindow.tsx`). It is a function of the live state because a renderer *is*
+  `f(state, view)`; a renderer that accumulated its own totals would disagree with the checkpoint
+  and with the other window over the same process. Wrapping the shared window in a program-specific
+  container is the wrong shape for a second reason: `chat.css` re-declares the `@kampus/design`
+  typography roles inside `.tuval-chat`, so a package primitive mounted *outside* that scope reads
+  Tuval's two-part `--t-*` values as invalid shorthand and loses its whole `font` declaration.
+
 ## `pnpm dev` is one process
 
 `src/bin.ts` boots the kernel, calls `serveDesk` (ephemeral port, a launch token minted in memory),

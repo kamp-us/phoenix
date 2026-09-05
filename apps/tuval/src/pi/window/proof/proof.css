@@ -1,0 +1,45 @@
+/*
+ * The two panes the desk would give these windows. Nothing here is the window's own paint — that is
+ * `../../../shell/chat/chat.css` and `../pi-window.css` — and the separation is the point: a rule
+ * that belongs to the harness must never be mistaken for one the product ships.
+ *
+ * `.tuval-surface` is a flex *column* (`../../../shell/ui/tokens.css`), so the row direction is
+ * re-declared at equal specificity and wins on order. Every ancestor carries `min-block-size: 0`,
+ * because the transcript is a flex child that scrolls: without it the default `min-height: auto`
+ * sizes each pane to its content and the transcript collapses to nothing.
+ */
+
+html,
+body {
+	block-size: 100%;
+	margin: 0;
+	background: var(--page-backdrop);
+}
+
+#proof {
+	block-size: 100%;
+}
+
+.proof-desk {
+	flex-direction: row;
+	min-block-size: 0;
+}
+
+.proof-pane {
+	display: flex;
+	flex: 1 1 0;
+	min-inline-size: 0;
+	min-block-size: 0;
+	padding: var(--s-3, 12px);
+	border-inline-end: 1px solid var(--border);
+}
+
+.proof-pane:last-child {
+	border-inline-end: 0;
+}
+
+.proof-pane > * {
+	flex: 1 1 auto;
+	min-inline-size: 0;
+	min-block-size: 0;
+}
