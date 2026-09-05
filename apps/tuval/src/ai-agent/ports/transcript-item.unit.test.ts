@@ -49,6 +49,14 @@ describe("transcript item union", () => {
 		expect(isTranscriptItem({...tool, status: "pending"})).toBe(false);
 	});
 
+	it("takes a tool item with or without a parent, and refuses an empty parent id", () => {
+		expect(isTranscriptItem({...tool, parentId: "toolu_agent"})).toBe(true);
+		expect(isTranscriptItem({...tool, parentId: undefined})).toBe(true);
+		expect(isTranscriptItem({...tool, parentId: ""})).toBe(false);
+		expect(isTranscriptItem({...tool, parentId: 7})).toBe(false);
+		expect(isTranscriptItem({...tool, parentId: null})).toBe(false);
+	});
+
 	it("refuses a tool result past the per-item byte bound, however it was built", () => {
 		const oversized = "x".repeat(TOOL_RESULT_BYTE_LIMIT + 1);
 		expect(isTranscriptItem({...tool, result: {text: oversized, omitted: {bytes: 0}}})).toBe(false);

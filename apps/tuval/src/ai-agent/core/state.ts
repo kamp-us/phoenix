@@ -10,10 +10,11 @@
  * plus the running total of what the bounds dropped.
  */
 
-import type {Phase} from "../events.ts";
+import type {AgentFailure, Phase} from "../events.ts";
 import type {
 	ItemId,
 	Mode,
+	ModelRef,
 	PermissionRequest,
 	TranscriptItem,
 	TranscriptPayload,
@@ -35,16 +36,19 @@ export interface ModeState {
 }
 
 /**
- * The last thing that went wrong, as data. The layer's typed errors are classes; the core keeps
- * only the tag, the case and the detail, because the window renders by tag (ruling 3, #7570) and
- * a class instance is not something a checkpoint can carry.
+ * What the session runs on, and what it may be switched to.
+ *
+ * `available` is the layer's *offered* set and never a backend's raw catalog: this state is
+ * checkpointed whole, and Pi's runtime catalog is four figures at its pin — a checkpoint that grew
+ * by it would be paying storage per session for a menu nobody can scroll (#7981).
  */
-export interface AgentFailure {
-	readonly tag: string;
-	/** The error's own `reason` case, or `null` for an error class that enumerates none. */
-	readonly reason: string | null;
-	readonly detail: string;
+export interface ModelState {
+	readonly current: ModelRef | null;
+	readonly available: ReadonlyArray<ModelRef>;
 }
+
+// A layer pushes one of these on the event stream too, so it is declared beside `Phase`.
+export type {AgentFailure} from "../events.ts";
 
 /** One page of older history exactly as the backend returned it. Replaced, never accumulated. */
 export interface HistoryPage {
@@ -71,6 +75,7 @@ export interface AiAgentSessionState {
 	/** Pending permission cards by request id: one arrives with an event, one leaves with an answer. */
 	readonly permissions: Readonly<Record<string, PermissionRequest>>;
 	readonly modes: ModeState;
+	readonly models: ModelState;
 	/** The text of the last prompt sent, for the resend affordance. */
 	readonly lastPrompt: string | null;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
@@ -105,6 +110,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	usage: emptyUsage,
 	permissions: {},
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
 	lastPrompt: null,
 	lastPage: null,
 	failure: null,

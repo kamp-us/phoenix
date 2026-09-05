@@ -213,6 +213,21 @@ Three files, and the split between them is forced rather than stylistic.
   typography roles inside `.tuval-chat`, so a package primitive mounted *outside* that scope reads
   Tuval's two-part `--t-*` values as invalid shorthand and loses its whole `font` declaration.
 
+- **The composer is driven through its bridge, and the bridge is built once and pushed to.**
+  `AgentChatInput` takes no `onSubmit`: it reads its whole world off an `AgentChatInputBridge` and
+  re-runs all four of its loads whenever that object's identity changes, so a bridge rebuilt per
+  state change drops the composer back to `loading` on every turn.
+  `src/shell/chat/composer-bridge.ts` is therefore built once in a `useMemo` whose dependencies are
+  only the dispatch closures — `phase` and `models` *seed* it and are deliberately not dependencies
+  — and each later change reaches the mounted composer through a setter that pushes one event at the
+  bridge's own subscription: `setPhase` pushes `agent_start` / `agent_settled`, `setModels` pushes a
+  `harness_status` carrying the offered catalog and the current model (#7981). Two rules make that
+  work. The bridge answers a capability it does not have **empty, never a rejection** — a rejection
+  puts the composer in `unavailable` and disables the send button, while an empty answer only hides
+  the control. And a setter **also replays on subscribe**: the composer subscribes *after* its four
+  loads resolve, so a catalog that landed in that window was pushed at a listener that did not exist
+  yet, and on a session nobody switches again the next event never comes.
+
 ## A program declares three renderers; the shell composes two of them
 
 A program never draws outside its own window (#7500 ruling 4). The two surfaces outside it — the

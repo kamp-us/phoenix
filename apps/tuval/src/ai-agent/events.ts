@@ -10,12 +10,23 @@
  * exactly what the interface refuses to put on a port so one window can render any agent — and it
  * is consumed only by the core, which owns the cumulative totals.
  *
+ * `failure` is how a live session reports a turn that went wrong. Ending the stream is the other
+ * way, and it is reserved for a transport that is actually gone: a queue failed once stays failed,
+ * and the host will not re-arm the Sub under the same id, so failing it for a refusal the session
+ * survived leaves a window that renders nothing ever again (#8018).
+ *
  * It sits above `service/` rather than inside it because both sides of the seam speak it: the
  * layers push it and the core machine folds it, and the core may import nothing from `service/`
  * (#7601).
  */
 
-import type {Mode, PermissionDecision, PermissionRequest, TranscriptItem} from "./ports/index.ts";
+import type {
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	PermissionRequest,
+	TranscriptItem,
+} from "./ports/index.ts";
 
 /**
  * Where a session is, as the core's `ai-agent-session` machine names it (#7497). The layer
@@ -54,6 +65,42 @@ export interface ModeEvent {
 	readonly available: ReadonlyArray<Mode>;
 }
 
+/**
+ * What the session is running on now, and what it may be switched to. `available` is the layer's
+ * *offered* set — Pi's authenticated, describable models rather than its whole runtime catalog —
+ * because this list is checkpointed with the rest of the session state (#7981).
+ */
+export interface ModelEvent {
+	readonly kind: "model";
+	readonly current: ModelRef | null;
+	readonly available: ReadonlyArray<ModelRef>;
+}
+
+/**
+ * The last thing that went wrong, as data. The layer's typed errors are classes; this keeps only
+ * the tag, the case and the detail, because the window renders by tag (ruling 3, #7570) and a
+ * class instance is not something a checkpoint can carry.
+ *
+ * It lives here beside `Phase` rather than in `core/state.ts` because both sides of the seam now
+ * speak it: the core stores it, and a layer reporting a failed turn puts one on this stream.
+ */
+export interface AgentFailure {
+	readonly tag: string;
+	/** The error's own `reason` case, or `null` for an error class that enumerates none. */
+	readonly reason: string | null;
+	readonly detail: string;
+}
+
+/**
+ * A turn failed and the session is still live — the non-terminal half of what used to be a failed
+ * queue. The core folds it exactly as it folds the `failed` Msg, so the window renders the same
+ * refusal, and the next turn's items still arrive on this same stream.
+ */
+export interface FailureEvent {
+	readonly kind: "failure";
+	readonly failure: AgentFailure;
+}
+
 /** Plain numbers and a plain model name: no backend's usage type reaches the core. */
 export interface UsageEvent {
 	readonly kind: "usage";
@@ -69,4 +116,6 @@ export type AgentEvent =
 	| PermissionEvent
 	| PermissionResolvedEvent
 	| ModeEvent
-	| UsageEvent;
+	| ModelEvent
+	| UsageEvent
+	| FailureEvent;

@@ -57,12 +57,18 @@ export interface AssistantItem extends ItemBase {
 	readonly interrupted?: boolean;
 }
 
+/**
+ * `parentId` is the id of the tool call this one ran *inside*, when a backend nests calls — an
+ * agent-spawning tool whose worker makes calls of its own. Absent means the call is the agent's
+ * own, which is every call a backend with no nesting concept ever emits.
+ */
 export interface ToolItem extends ItemBase {
 	readonly kind: "tool";
 	readonly name: string;
 	readonly input: JsonValue;
 	readonly result: ToolResult;
 	readonly status: ToolStatus;
+	readonly parentId?: ItemId;
 }
 
 export interface SystemItem extends ItemBase {
@@ -145,7 +151,8 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 				isJsonValue(value.input) &&
 				isToolResult(value.result) &&
 				typeof value.status === "string" &&
-				statuses.has(value.status)
+				statuses.has(value.status) &&
+				(value.parentId === undefined || isId(value.parentId))
 			);
 		default:
 			return false;

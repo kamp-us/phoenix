@@ -12,7 +12,7 @@
  * (#7978). That is the item `upsertItem`'s echo join exists for.
  */
 
-import type {AgentEvent, Phase} from "../events.ts";
+import type {AgentEvent, AgentFailure, Phase} from "../events.ts";
 import {isRefusal, planTranscriptWindow} from "../history/index.ts";
 import {
 	ItemId,
@@ -21,6 +21,7 @@ import {
 	type UserItem,
 	type WindowOmission,
 } from "../ports/index.ts";
+import {START_ERROR} from "./failures.ts";
 import type {AiAgentSessionState, UsageTotals} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
@@ -124,6 +125,29 @@ export const dropRequest = (state: AiAgentSessionState, request: string): AiAgen
  */
 const coreOwned = (phase: Phase): boolean => phase === "starting" || phase === "reconnecting";
 
+/** The backend does not hold the session this resume named. */
+const sessionGone = (failure: AgentFailure): boolean =>
+	failure.tag === START_ERROR && failure.reason === "session-not-found";
+
+/**
+ * Where a failure leaves a session: back where it was before the act that failed.
+ *
+ * A resume is the exception, because there is nowhere before it to go back to. A refused resume
+ * ends the session at `gone` — the id the checkpoint carried names nothing the backend still
+ * holds, and the one thing that must never happen is a fresh session opening quietly in its place
+ * (#7514). Any other reconnect failure is a transport that can be tried again, so it lands on
+ * `idle` rather than staying at `reconnecting`, which the reconnect guard itself would refuse.
+ */
+export const phaseAfterFailure = (
+	state: AiAgentSessionState,
+	failure: AgentFailure,
+): AiAgentSessionState["phase"] => {
+	if (state.phase === "reconnecting") return sessionGone(failure) ? "gone" : "idle";
+	if (state.phase === "starting") return "idle";
+	if (state.phase === "prompting") return "ready";
+	return state.phase;
+};
+
 export const foldEvent = (
 	state: AiAgentSessionState,
 	event: AgentEvent,
@@ -140,7 +164,19 @@ export const foldEvent = (
 			return dropRequest(state, event.request);
 		case "mode":
 			return {...state, modes: {current: event.current, available: event.available}};
+		case "model":
+			return {...state, models: {current: event.current, available: event.available}};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
+		// The same landing the `failed` Msg gives a failure the handlers saw, so a refusal reads the
+		// same to the window whichever channel carried it. Routing it through `event` is what keeps
+		// the machine's identity filter over it: a late refusal from a session this process has
+		// already replaced is dropped rather than failing its successor (#8018).
+		case "failure":
+			return {
+				...state,
+				phase: phaseAfterFailure(state, event.failure),
+				failure: event.failure,
+			};
 	}
 };

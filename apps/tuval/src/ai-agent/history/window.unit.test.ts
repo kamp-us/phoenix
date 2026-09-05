@@ -17,6 +17,16 @@ import {
 const bytesOf = (items: ReadonlyArray<TranscriptItem>) =>
 	items.reduce((total, item) => total + itemBytes(item), 0);
 
+/** One prompt and the tool calls it produced: `count` items the bounds may never cut apart. */
+const oneExchange = (
+	prefix: string,
+	count: number,
+	output = "ok",
+): ReadonlyArray<TranscriptItem> => [
+	userItem(`${prefix}-u`),
+	...Array.from({length: count - 1}, (_, index) => toolItem(`${prefix}-t${index}`, output)),
+];
+
 describe("the live-tail window", () => {
 	it("declares both bounds", () => {
 		expect(TRANSCRIPT_WINDOW_ITEM_LIMIT).toBe(40);
@@ -67,13 +77,47 @@ describe("the live-tail window", () => {
 		expect(plan.omitted.reason).toBe("byte-limit");
 	});
 
-	it("returns an empty window rather than half an exchange the bound cannot hold", () => {
+	it("keeps the newest exchange whole rather than emptying the tail the bound cannot hold", () => {
 		const history = [userItem("u1"), assistantItem("a1"), toolItem("t1")];
 		const plan = planTranscriptWindow(history, {itemLimit: 2});
 		expect(plan.kind).toBe("window");
 		if (plan.kind !== "window") return;
-		expect(plan.items).toEqual([]);
-		expect(plan.omitted).toEqual({items: 3, bytes: bytesOf(history), reason: "item-limit"});
+		expect(plan.items.map((item) => item.id)).toEqual(["u1", "a1", "t1"]);
+		expect(plan.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
+	});
+
+	it("carries a turn of 45 tool calls whole, over the item bound on its own", () => {
+		const history = oneExchange("big", 45);
+		const plan = planTranscriptWindow(history);
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+		expect(history.length).toBeGreaterThan(TRANSCRIPT_WINDOW_ITEM_LIMIT);
+		expect(plan.items).toEqual(history);
+		expect(plan.omitted.items).toBe(0);
+	});
+
+	it("carries a turn past the byte bound whole too", () => {
+		const history = oneExchange("heavy", 34, "x".repeat(8_000));
+		const plan = planTranscriptWindow(history);
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+		expect(history.length).toBeLessThanOrEqual(TRANSCRIPT_WINDOW_ITEM_LIMIT);
+		expect(bytesOf(history)).toBeGreaterThan(TRANSCRIPT_WINDOW_BYTE_LIMIT);
+		expect(plan.items).toEqual(history);
+		expect(plan.omitted.items).toBe(0);
+	});
+
+	it("drops the older exchanges around a newest one the bounds cannot hold", () => {
+		const history = [userItem("u1"), assistantItem("a1"), ...oneExchange("big", 45)];
+		const plan = planTranscriptWindow(history, {itemLimit: 5});
+		expect(plan.kind).toBe("window");
+		if (plan.kind !== "window") return;
+		expect(plan.items).toEqual(history.slice(2));
+		expect(plan.omitted).toEqual({
+			items: 2,
+			bytes: bytesOf(history.slice(0, 2)),
+			reason: "item-limit",
+		});
 	});
 
 	it("ends just older than a cursor that opens a group", () => {
@@ -124,7 +168,7 @@ describe("the window refuses rather than cutting", () => {
 });
 
 describe("the window holds both bounds over random transcripts", () => {
-	it("never exceeds either bound and never splits a group, across 200 seeds", () => {
+	it("holds both bounds except over the newest group, and never splits one, across 200 seeds", () => {
 		const failures: Array<string> = [];
 		for (let seed = 1; seed <= 200; seed += 1) {
 			const random = randomStream(seed * 7919);
@@ -138,9 +182,16 @@ describe("the window holds both bounds over random transcripts", () => {
 			}
 			const ids = plan.items.map((item) => item.id);
 			const tail = history.slice(plan.start).map((item) => item.id);
-			if (plan.items.length > itemLimit)
+			const newest = groupTranscript(history).at(-1);
+			const newestIds = (newest?.items ?? []).map((item) => item.id);
+			// The newest group is the excepted one: a window that is exactly it may sit over either
+			// bound, and a window carrying anything older than it may not.
+			const exceptedByNewest = JSON.stringify(ids) === JSON.stringify(newestIds);
+			if (ids.length === 0) failures.push(`seed ${seed}: empty window over a live tail`);
+			if (!exceptedByNewest && plan.items.length > itemLimit)
 				failures.push(`seed ${seed}: ${ids.length} > ${itemLimit}`);
-			if (bytesOf(plan.items) > byteLimit) failures.push(`seed ${seed}: over the byte bound`);
+			if (!exceptedByNewest && bytesOf(plan.items) > byteLimit)
+				failures.push(`seed ${seed}: over the byte bound`);
 			if (JSON.stringify(ids) !== JSON.stringify(tail)) {
 				failures.push(`seed ${seed}: window is not the newest tail`);
 			}

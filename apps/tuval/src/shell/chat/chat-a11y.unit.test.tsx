@@ -18,7 +18,7 @@
 
 import type {PrimitiveSpec} from "@kampus/design/a11y";
 import {runEnforcedInvariants} from "@kampus/design/a11y";
-import {render, screen} from "@testing-library/react";
+import {render, screen, waitFor} from "@testing-library/react";
 import {Effect} from "effect";
 import fc from "fast-check";
 import type {ReactElement} from "react";
@@ -30,7 +30,7 @@ import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
-import {call, modes, permissionRequest, userItem, withTranscript} from "./chat.testing.ts";
+import {call, models, modes, permissionRequest, userItem, withTranscript} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
@@ -112,23 +112,27 @@ const probeFocus = async (root: HTMLElement, control: HTMLElement) => {
 	return found.filter((violation) => violation.id === "focusable");
 };
 
-const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<string>> => {
+const mountWindow = async (state: AiAgentSessionState, view: ChatView = initialChatView) => {
 	const process = await Effect.runPromise(
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), state),
 	);
-	// The rows are opened through the slot rather than by clicking, so the property spends no Zag
-	// microtask flush per row per run — and an open panel is what puts the diff table in the tree.
-	const view: ChatView = {
-		...initialChatView,
-		expanded: state.transcript.items
-			.filter((item) => item.kind === "tool")
-			.map((item) => String(item.id)),
-	};
 	const host = await Effect.runPromise(process.window(WindowId.make("w1"), view));
 	const rendered = render(
 		chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined}).render(host) as ReactElement,
 	);
 	await screen.findByRole("log", {name: "Transcript"});
+	return rendered;
+};
+
+const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<string>> => {
+	// The rows are opened through the slot rather than by clicking, so the property spends no Zag
+	// microtask flush per row per run — and an open panel is what puts the diff table in the tree.
+	const rendered = await mountWindow(state, {
+		...initialChatView,
+		expanded: state.transcript.items
+			.filter((item) => item.kind === "tool")
+			.map((item) => String(item.id)),
+	});
 	const root = rendered.container.firstElementChild as HTMLElement;
 
 	const found: Array<{readonly id: string; readonly detail: string}> = [];
@@ -155,6 +159,34 @@ const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<
 // Vitest's 5s default passes them alone and times the property out inside a loaded full run.
 const SLOW = 60_000;
 
+/**
+ * The composer's agent-settings group, with a model list present (#7981).
+ *
+ * Scoped to the settings fieldset rather than to the whole composer, because the composer's own
+ * textarea carries the `role="combobox"` that fails `aria-allowed-role` today — #7876, a defect in
+ * `@kampus/design` this window can neither cause nor fix, and the reason `REGIONS` leaves the
+ * composer out. The fieldset does not contain that textarea, so the same `runEnforcedInvariants`
+ * runs over it whole, and every control inside it is probed for keyboard reach.
+ */
+const settingsViolationsFor = async (
+	state: AiAgentSessionState,
+): Promise<ReadonlyArray<string>> => {
+	const rendered = await mountWindow(state);
+	const root = rendered.container.firstElementChild as HTMLElement;
+	// The list reaches the picker through a pushed event after the composer's own loads resolve,
+	// so the enabled control is what proves the push landed as well as what is being scanned.
+	const picker = await screen.findByRole("button", {name: /^model: /});
+	await waitFor(() => expect(picker.getAttribute("disabled")).toBeNull());
+	const settings = root.querySelector<HTMLElement>(".kp-agent-chat__settings");
+	expect(settings).not.toBeNull();
+	const found = [...(await runEnforcedInvariants(settings as HTMLElement, presentational))];
+	for (const control of (settings as HTMLElement).querySelectorAll<HTMLElement>(CONTROLS)) {
+		found.push(...(await probeFocus(root, control)));
+	}
+	rendered.unmount();
+	return found.map((violation) => `${violation.id}: ${violation.detail}`);
+};
+
 describe("the window's own primitives hold the enforced pillar-4 invariants", () => {
 	it(
 		"over a generated cross-product of tool rows, permission cards and mode states",
@@ -180,6 +212,18 @@ describe("the window's own primitives hold the enforced pillar-4 invariants", ()
 				},
 			);
 			expect(await violationsFor(state)).toEqual([]);
+		},
+		SLOW,
+	);
+
+	it(
+		"holds them over the composer's agent settings with a model list present",
+		async () => {
+			const state = withTranscript([userItem("u1", "go")], {
+				modes: modes(["plan", "build"], "plan"),
+				models: models(["claude-opus-5", "claude-sonnet-5"]),
+			});
+			expect(await settingsViolationsFor(state)).toEqual([]);
 		},
 		SLOW,
 	);

@@ -222,6 +222,44 @@ describe("toAgentEvents over the captured failure frames", () => {
 	});
 });
 
+describe("toAgentEvents over a subagent's frames", () => {
+	/**
+	 * No committed capture holds a non-null `parent_tool_use_id`, because forcing one needs a live
+	 * subagent run — an operator act with real spend (`fixtures/PROVENANCE.md`). So this case is the
+	 * golden `tool-turn` stream with exactly that one field stamped over its assistant and user
+	 * frames. The SDK types it `string | null` on both `SDKAssistantMessage` and `SDKUserMessage`,
+	 * "non-null when the message was produced inside a subagent started by that tool_use"
+	 * (`sdk.d.ts`, 0.3.259), and the capture already carries it as `null` — so the value is the whole
+	 * difference and every other key stays the captured shape.
+	 */
+	const PARENT = "toolu_01SubagentParent";
+
+	const insideSubagent = (stream: ReadonlyArray<SDKMessage>): ReadonlyArray<SDKMessage> =>
+		stream.map((one) =>
+			one.type === "assistant" || one.type === "user"
+				? ({...one, parent_tool_use_id: PARENT} as SDKMessage)
+				: one,
+		);
+
+	const toolItems = (stream: ReadonlyArray<SDKMessage>) =>
+		items(run(stream).events).filter((one) => one.kind === "tool");
+
+	it("marks every tool row a subagent opened with the call that spawned it", () => {
+		const tools = toolItems(insideSubagent(messages("tool-turn")));
+		expect(tools.length).toBeGreaterThan(0);
+		expect(tools.map((one) => one.kind === "tool" && one.parentId)).toEqual(
+			tools.map(() => PARENT),
+		);
+		expect(tools.map((one) => one.kind === "tool" && one.status)).toContain("ok");
+	});
+
+	it("leaves the captured top-level stream carrying no parent at all", () => {
+		const tools = toolItems(messages("tool-turn"));
+		expect(tools.length).toBeGreaterThan(0);
+		expect(tools.map((one) => "parentId" in one)).toEqual(tools.map(() => false));
+	});
+});
+
 describe("toAgentEvents over a message it has no shape for", () => {
 	it("emits nothing, counts it, and does not throw", () => {
 		const step = toAgentEvents(message("unknown-message"), emptyMapping, {at: AT});

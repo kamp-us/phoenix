@@ -7,8 +7,9 @@
  * declared data rather than hiding in a layer (#7371).
  *
  * A prompt replays its turn's events verbatim, so a fixture reads as the conversation it stands
- * for. The three calls that carry an argument the script cannot know — `answer`, `setMode`, and
- * `start`'s resume — emit events built from that argument, and nothing else is synthesized.
+ * for. The four calls that carry an argument the script cannot know — `answer`, `setMode`,
+ * `setModel` and `start`'s resume — emit events built from that argument, and nothing else is
+ * synthesized.
  *
  * A turn may also carry a `plan`, and then this layer is where a scripted session reaches the
  * kernel: the plan names one spell at a time out of what it has already been answered, the call
@@ -26,11 +27,14 @@ import {
 	isJsonValue,
 	type JsonValue,
 	type Mode,
+	type ModelRef,
 	type PermissionDecision,
 	type PermissionRequest,
+	sameModel,
 	type TranscriptItem,
 } from "../ports/index.ts";
 import {
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
@@ -49,6 +53,7 @@ interface ScriptState {
 	readonly keys: ReadonlySet<string>;
 	readonly pending: ReadonlyMap<string, PermissionRequest>;
 	readonly mode: Mode | null;
+	readonly model: ModelRef | null;
 	/** False once a scripted disconnect landed. Nothing sets it back — that is the point. */
 	readonly live: boolean;
 }
@@ -59,6 +64,7 @@ const initial = (script: AgentScript): ScriptState => ({
 	keys: new Set(),
 	pending: new Map(),
 	mode: script.modes.current,
+	model: script.models.current,
 	live: true,
 });
 
@@ -164,6 +170,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			}
 			yield* emit([
 				{kind: "mode", current: current.mode, available: script.modes.available},
+				{kind: "model", current: current.model, available: script.models.available},
 				{kind: "phase", phase: "ready"},
 			]);
 			yield* Ref.update(state, (previous) => ({
@@ -236,6 +243,20 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			yield* emit([{kind: "mode", current: mode, available: script.modes.available}]);
 		});
 
+		const setModel = Effect.fn("TuvalAiAgent.setModel")(function* (model: ModelRef) {
+			const offered = script.models.available.find((candidate) => sameModel(candidate, model));
+			if (offered === undefined) {
+				return yield* new ModelUnsupported({
+					model: model.id,
+					available: script.models.available.map((candidate) => candidate.id),
+				});
+			}
+			// The script's own ref is what lands, not the caller's: the label a picker sent is the
+			// picker's, and the session runs on the model the backend named.
+			yield* Ref.update(state, (previous) => ({...previous, model: offered}));
+			yield* emit([{kind: "model", current: offered, available: script.models.available}]);
+		});
+
 		const page = Effect.fn("TuvalAiAgent.page")(function* (before: string | null, limit: number) {
 			const current = yield* Ref.get(state);
 			if (!current.live) {
@@ -269,6 +290,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			interrupt,
 			answer,
 			setMode,
+			setModel,
 			page,
 			events: Stream.fromQueue(queue),
 		};

@@ -35,8 +35,8 @@ import {type AgentScript, ScriptedAiAgent, TuvalAiAgent} from "./service/index.t
 const CWD = "/work";
 const SENT_AT = 1_700_000_000_000;
 
-/** `start` queues three events before any turn: starting, the mode list, ready. */
-const START_EVENTS = 3;
+/** `start` queues four events before any turn: starting, the mode list, the model list, ready. */
+const START_EVENTS = 4;
 
 const machine = aiAgentSessionMachine({cwd: CWD});
 
@@ -48,7 +48,7 @@ const apply = (
 
 const ready: AiAgentSessionState = {...initialState(CWD), phase: "ready", sessionId: SESSION_ID};
 
-/** What one scripted turn puts on the stream, with `start`'s own three dropped. */
+/** What one scripted turn puts on the stream, with `start`'s own four dropped. */
 const turnEvents = (
 	script: AgentScript,
 	text: string,

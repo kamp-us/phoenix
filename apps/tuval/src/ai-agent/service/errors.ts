@@ -66,6 +66,20 @@ export class ModeUnsupported extends Schema.TaggedError<ModeUnsupported>()(
 	}
 }
 
+/**
+ * `setModel` named a model this agent does not offer. `available` is the offered set — the
+ * auth-filtered list the layer advertised, never a backend's raw catalog (#7981) — as the ids a
+ * window would render, so nothing backend-shaped rides the error either.
+ */
+export class ModelUnsupported extends Schema.TaggedError<ModelUnsupported>()(
+	"tuval/ai-agent/ModelUnsupported",
+	{model: Schema.String, available: Schema.Array(Schema.String)},
+) {
+	override get message(): string {
+		return `model "${this.model}" is not offered; available: ${this.available.join(", ") || "none"}`;
+	}
+}
+
 /** Why a page of history did not come back. History is the backend's store, so it can be missing. */
 export const PageReason = Schema.Literals(["unknown-cursor", "store-unreadable", "disconnected"]);
 export type PageReason = typeof PageReason.Type;

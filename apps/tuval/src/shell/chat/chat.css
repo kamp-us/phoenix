@@ -121,6 +121,17 @@
 	gap: var(--s-1);
 }
 
+/*
+ * A subagent's row, indented under the call that spawned it, one step per fold it sits inside. The
+ * indent is the second signal only — the row already says "subagent" in words above it (ADR 0162,
+ * Pillar 4). `--nest-depth` is set per row by `ChatWindow`; the fallback keeps the rule honest for a
+ * row marked nested whose head is older than the pages this window walked back to.
+ */
+.tuval-chat-row[data-nested="true"] {
+	padding-inline-start: calc(var(--s-6) * var(--nest-depth, 1));
+	border-inline-start: 2px solid var(--border-faint);
+}
+
 .tuval-chat-who {
 	font: var(--t-micro);
 	color: var(--text-muted);
@@ -190,6 +201,15 @@
 
 .tuval-chat-tool-status[data-status="running"] {
 	color: var(--accent);
+}
+
+/*
+ * The group head's second control, under the tool line rather than inside it: a button cannot nest
+ * inside the `Collapsible` trigger, which is itself a button, and the two disclosures are separate
+ * facts (#8027).
+ */
+.tuval-chat-tool-fold {
+	align-self: flex-start;
 }
 
 .tuval-chat-tool-detail {

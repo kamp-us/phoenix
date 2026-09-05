@@ -73,6 +73,9 @@ import {
 	afterTheResend,
 	afterTheSecondTurn,
 	OFFERED,
+	PROMPT_1_KEY,
+	PROMPT_2_KEY,
+	PROMPT_3_KEY,
 	RESEND_KEY,
 	SESSION,
 	SWITCHED_TO,
@@ -521,7 +524,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 							);
 
 							// Turn one: the tool row runs and then settles under one item id.
-							const once = yield* chat(session, ready, PROMPT_1, "k1");
+							const once = yield* chat(session, ready, PROMPT_1, PROMPT_1_KEY);
 							assert.deepStrictEqual(ids(once), afterTheFirstTurn);
 							assert.strictEqual(
 								toolStatus(once, TOOL_ITEM),
@@ -532,7 +535,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 
 							// Turn two raises the card. The turn finishes either way; answering it is the
 							// operator's move, and the card stays open until they make it.
-							const twice = yield* chat(session, once, PROMPT_2, "k2");
+							const twice = yield* chat(session, once, PROMPT_2, PROMPT_2_KEY);
 							assert.deepStrictEqual(ids(twice), afterTheSecondTurn);
 							assert.deepStrictEqual(
 								openCards(twice),
@@ -744,15 +747,15 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 										"the session to open",
 										(s) => s.phase === "ready",
 									);
-									const once = yield* chat(session, ready, PROMPT_1, "k1");
-									yield* chat(session, once, PROMPT_2, "k2");
+									const once = yield* chat(session, ready, PROMPT_1, PROMPT_1_KEY);
+									yield* chat(session, once, PROMPT_2, PROMPT_2_KEY);
 
 									// The third turn writes half a reply and never reports `ready`. Waiting on
 									// the committed item is what makes the stop land inside it.
 									yield* session.send({
 										type: "prompt",
 										text: PROMPT_3,
-										key: "k3",
+										key: PROMPT_3_KEY,
 										timestamp: Date.now(),
 									});
 									const cut = yield* liveWhere(
@@ -885,7 +888,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 										"the session to open",
 										(s) => s.phase === "ready",
 									);
-									before = yield* chat(session, ready, PROMPT_1, "k1");
+									before = yield* chat(session, ready, PROMPT_1, PROMPT_1_KEY);
 									deskBefore = JSON.stringify(yield* settled(desk.seen, opened.desk));
 								}),
 							);
@@ -906,7 +909,7 @@ describe("a Claude session in the Tuval shell, end to end", () => {
 								ids(left as AiAgentSessionState),
 								"the re-attached page saw a different transcript",
 							);
-							return yield* chat(session, seenAgain, PROMPT_2, "k2");
+							return yield* chat(session, seenAgain, PROMPT_2, PROMPT_2_KEY);
 						}),
 					);
 					noLiveHttp(calls);

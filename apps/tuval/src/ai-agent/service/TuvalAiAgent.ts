@@ -17,8 +17,9 @@
 
 import {Context, type Effect, type Stream} from "effect";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, PermissionDecision, TranscriptItem} from "../ports/index.ts";
+import type {Mode, ModelRef, PermissionDecision, TranscriptItem} from "../ports/index.ts";
 import type {
+	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
@@ -46,6 +47,12 @@ export interface TranscriptPage {
 export interface TuvalAiAgentApi {
 	readonly start: (options: StartOptions) => Effect.Effect<StartedSession, StartError>;
 	/**
+	 * Returns at the send, never at the end of the turn (#8018). The generic host awaits a Cmd
+	 * handler before publishing the commit that handler came from, so a layer that resolves this at
+	 * the turn's end holds the operator's own message off the window until the reply lands. A
+	 * backend whose send is one turn-long call forks the await and routes what it can no longer
+	 * return onto `events`.
+	 *
 	 * `key` is the idempotency key (ruling 2): a second prompt carrying a key this session already
 	 * saw is dropped rather than re-sent, so a transport-level retry of one send is free. A
 	 * deliberate resend — the one the window offers after an interrupted turn — mints a new key.
@@ -57,6 +64,13 @@ export interface TuvalAiAgentApi {
 		decision: PermissionDecision,
 	) => Effect.Effect<void, UnknownRequest>;
 	readonly setMode: (mode: Mode) => Effect.Effect<void, ModeUnsupported>;
+	/**
+	 * Switch the model this session runs on — the eighth member (#7981). The founder picks the model
+	 * from the composer, so it is an act of the generic interface rather than of a backend. A ref
+	 * outside the layer's offered set fails; the offered set itself arrives on `events` as a `model`
+	 * event, exactly as the mode list does.
+	 */
+	readonly setModel: (model: ModelRef) => Effect.Effect<void, ModelUnsupported>;
 	/**
 	 * History is backend-owned (ruling 5): this reads the backend's own store through the
 	 * transport. Tuval keeps no second copy beyond the live tail the core holds.
