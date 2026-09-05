@@ -274,18 +274,41 @@ describe("shell core: workspaces", () => {
 
 describe("shell core: keys", () => {
 	it("an unarmed press forwards exactly one key to the focused window's process", () => {
-		const bound = fold(initialState(), {type: "window.bind", processId: "process-pi"});
+		const bound = fold(initialState(), {
+			type: "window.bind",
+			processId: "process-counter",
+			takesKeys: true,
+		});
 		const [after, cmds] = apply(bound, press("j"));
 
 		expect(cmds).toEqual([
 			{
 				type: "forwardKey",
-				processId: "process-pi",
+				processId: "process-counter",
 				windowId: active(bound).focused,
 				key: "j",
 			},
 		]);
 		expect(after.prefix).toEqual({armed: false});
+	});
+
+	it("a window whose program never declared keys is forwarded none (#7973)", () => {
+		const bound = fold(initialState(), {type: "window.bind", processId: "process-pi"});
+		const [after, cmds] = apply(bound, press("j"));
+
+		expect(cmds).toEqual([]);
+		expect(after.prefix).toEqual({armed: false});
+		expect(after.workspaces).toEqual(bound.workspaces);
+	});
+
+	it("unbinding drops the key declaration with the process", () => {
+		const rebound = fold(
+			initialState(),
+			{type: "window.bind", processId: "process-counter", takesKeys: true},
+			{type: "window.unbind"},
+			{type: "window.bind", processId: "process-pi"},
+		);
+		expect(apply(rebound, press("j"))[1]).toEqual([]);
 	});
 
 	it("an unarmed press over an empty window forwards nothing", () => {

@@ -4,7 +4,7 @@ import {Context, Effect, Exit, Fiber, Schema, type Scope} from "effect";
 import {expectTypeOf} from "vitest";
 import {type ActorHandle, layer, make} from "./actor.ts";
 import {type CoreMachine, defineActor} from "./definition.ts";
-import type {ActorStoppedError, StoreError} from "./errors.ts";
+import type {ActorStoppedError, MsgNotAcceptedError, StoreError} from "./errors.ts";
 import {counterMachine, type Msg, recordingStore, type State} from "./fixtures.ts";
 
 describe("host actor", () => {
@@ -120,6 +120,57 @@ describe("host actor", () => {
 		}),
 	);
 
+	it.effect("refuses a Msg with no cell and leaves the process open (#7973)", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				type S = {readonly count: number};
+				// The wire shape a forwarded key arrives in. `Reducer` demands a cell per member of a
+				// closed `M`, so the machine that meets this bug is one whose Msg type is open — which
+				// is what a process handle erased to `AnyProgram` hands the shell's `forwardKey`.
+				type M = {readonly type: string; readonly key?: string};
+				const machine: CoreMachine<S, M, never, never, NoCtx> = {
+					init: () => [{count: 0}, []],
+					update: {tick: (state) => [{count: state.count + 1}, []]},
+				};
+				const actor = yield* make(
+					defineActor({name: "test/no-cell", machine, interpret: {}, subscribe: {}}),
+				);
+
+				const refused = yield* actor.dispatch({type: "key", key: "x"}).pipe(Effect.flip);
+				assert.strictEqual(refused._tag, "tuval/host/MsgNotAcceptedError");
+
+				yield* actor.dispatch({type: "tick"});
+				assert.deepStrictEqual(actor.getState(), {count: 1});
+			}),
+		),
+	);
+
+	it.effect("a cell that genuinely throws still closes the gate under the stop default", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				type S = {readonly count: number};
+				type M = {readonly type: "tick"};
+				const machine: CoreMachine<S, M, never, never, NoCtx> = {
+					init: () => [{count: 0}, []],
+					update: {
+						tick: () => {
+							throw new Error("boom");
+						},
+					},
+				};
+				const actor = yield* make(
+					defineActor({name: "test/throwing-cell", machine, interpret: {}, subscribe: {}}),
+				);
+
+				const died = yield* Effect.exit(actor.dispatch({type: "tick"}));
+				assert.isTrue(Exit.isFailure(died));
+
+				const refused = yield* actor.dispatch({type: "tick"}).pipe(Effect.flip);
+				assert.strictEqual(refused._tag, "tuval/host/ActorStoppedError");
+			}),
+		),
+	);
+
 	it.effect("keeps every save snapshot JSON-round-trippable", () =>
 		Effect.gen(function* () {
 			const saves: State[] = [];
@@ -170,7 +221,7 @@ describe("host actor", () => {
 		expectTypeOf<Effect.Success<typeof built>>().toEqualTypeOf<ActorHandle<State, Msg, Boom>>();
 		type Dispatched = ReturnType<Effect.Success<typeof built>["dispatch"]>;
 		expectTypeOf<Effect.Error<Dispatched>>().toEqualTypeOf<
-			Boom | StoreError | DispatchDiscardedError | ActorStoppedError
+			Boom | StoreError | DispatchDiscardedError | ActorStoppedError | MsgNotAcceptedError
 		>();
 		expectTypeOf<Effect.Services<Dispatched>>().toEqualTypeOf<never>();
 	});

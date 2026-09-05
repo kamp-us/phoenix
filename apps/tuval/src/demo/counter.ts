@@ -63,6 +63,7 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 				}),
 		},
 		capabilities: [],
+		takesKeys: true,
 		// A row with no renderer is headless and can never bind a window (`../shell/picker/entries.ts`),
 		// so a demo program the shell opens declares one. The reference is what the page's own table
 		// answers by name (`../page/renderers.tsx`); nothing here names React.

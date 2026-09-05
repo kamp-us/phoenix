@@ -14,7 +14,7 @@ import {ProcessPorts} from "../../ports/ProcessPorts.ts";
 import {Processes} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessId} from "../../process/process.ts";
-import type {ProgramId} from "../../registry/program.ts";
+import {type AnyProgram, type ProgramId, takesForwardedKeys} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import type {WindowId} from "../window/host.ts";
@@ -48,8 +48,16 @@ const refuse = (
 	{type: "window.setView", windowId, view: withRefusal(options.view ?? mountPicker(), refusal)},
 ];
 
-const bind = (windowId: WindowId, processId: ProcessId): ReadonlyArray<ShellMsg> => [
-	{type: "window.bind", windowId, processId},
+/**
+ * The binding carries the row's key declaration: a window may only be sent a key its program asked
+ * for, and this is the one place both are known at once (#7973).
+ */
+const bind = (
+	windowId: WindowId,
+	processId: ProcessId,
+	row: AnyProgram,
+): ReadonlyArray<ShellMsg> => [
+	{type: "window.bind", windowId, processId, takesKeys: takesForwardedKeys(row)},
 ];
 
 const open = Effect.fn("Tuval.Picker.open")(function* (
@@ -79,7 +87,7 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	);
 	return spawned._tag === "Failure"
 		? refuse(windowId, options, spawnFailed(programId, spawned.failure.message))
-		: bind(windowId, spawned.success.id);
+		: bind(windowId, spawned.success.id, row.success);
 });
 
 const attach = Effect.fn("Tuval.Picker.attach")(function* (
@@ -97,7 +105,7 @@ const attach = Effect.fn("Tuval.Picker.attach")(function* (
 	const program = yield* Effect.result(registry.resolve(row.success.programId));
 	return program._tag === "Failure" || !showsInAWindow(program.success)
 		? refuse(windowId, options, programHeadless(row.success.programId))
-		: bind(windowId, processId);
+		: bind(windowId, processId, program.success);
 });
 
 /**

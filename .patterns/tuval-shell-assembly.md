@@ -109,9 +109,21 @@ kernel sent it, and no other (ADR 0353). Three consequences a caller must hold:
 ## `forwardKey` delivers a program's own `key` Msg
 
 With the prefix unarmed every key belongs to the focused window, and the core answers with a
-`forwardKey` Cmd naming the window's process. The host dispatches `{type: "key", key}` into it. A
-program that wants the keyboard declares a `key` cell; one that does not simply drops the key at
+`forwardKey` Cmd naming the window's process. The host dispatches `{type: "key", key}` into it.
+
+**A program is only sent a key it asked for, and asking is a row field.** `Program.takesKeys`
+(`src/registry/program.ts`) is `true` or absent; the picker reads it off the row it just resolved
+and the `window.bind` Msg carries it, so the window node holds it beside `processId` and the core's
+`keys.press` cell emits `forwardKey` only for a window that declared one. A program with no `key`
+cell — every agent session — is therefore never sent a key at all (#7973). Best-effort delivery
+stays underneath that: a process that stopped between the Cmd and the dispatch drops the key at
 debug, because a keystroke is not worth ending a desk over and the shell's error channel is `never`.
+
+The declaration is the shell's half. The host's half is that a wire `Msg` with no update cell fails
+that one dispatch as `MsgNotAcceptedError` (`src/host/errors.ts`) instead of reaching supervision as
+`UserCodeThrew` — Demlik throws `NoCellError` before any of the machine's own code runs, so it says
+the program does not take the Msg, never that the program is faulty. Without that split one stray
+key closed the process gate under the `stop` default and every later prompt was refused.
 
 **One keystroke has two deliveries, and only one of them is the Cmd.** Beside the kernel's dispatch
 into the process, the page hands the same key to that window's React renderer — off its own

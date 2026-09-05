@@ -179,6 +179,14 @@ export interface Program<
 	 */
 	readonly resume?: (state: S) => ReadonlyArray<M>;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
+	/**
+	 * The program takes keys the shell forwards from its focused window, as its own `key` Msg. Only
+	 * `true` or absent: a row that never asked for keys is never sent one, so a keystroke landing on
+	 * a window outside its composer cannot reach a program with no cell for it (#7973). The row
+	 * carries the declaration and nothing else, as it does for `renderer` — what a forwarded key
+	 * becomes is the program's own Msg, and the shell never reads it.
+	 */
+	readonly takesKeys?: true;
 	readonly renderer?: RendererRef;
 	/**
 	 * The two desk-level renderers, both optional: what this program shows in the desk inspector,
@@ -199,6 +207,9 @@ export interface Program<
  * holds programs of every shape. The host recovers the concrete types when it runs one.
  */
 export type AnyProgram = Program<any, any, any, any, any, any, any>;
+
+/** Does the shell forward a key to a window bound to this program? Declared on the row, or not at all. */
+export const takesForwardedKeys = (row: AnyProgram): boolean => row.takesKeys === true;
 
 /** The row's provenance as a refusal names it: `package/program@version (digest)`. */
 export const provenanceOf = (row: AnyProgram): string =>

@@ -13,6 +13,7 @@ import {
 	type Cmd,
 	DispatchDiscardedError,
 	IdentityDropNotice,
+	NoCellError,
 	RuntimeDiscardedError,
 	RuntimeDiscardNotice,
 	type Store,
@@ -44,9 +45,14 @@ import type {
 	SubscribeHandlers,
 } from "./definition.ts";
 import {subDisposerBridge} from "./demlik-bridges.ts";
-import {ActorStoppedError, StoreError, UserCodeThrew} from "./errors.ts";
+import {ActorStoppedError, MsgNotAcceptedError, StoreError, UserCodeThrew} from "./errors.ts";
 
-export type DispatchError<E> = E | StoreError | DispatchDiscardedError | ActorStoppedError;
+export type DispatchError<E> =
+	| E
+	| StoreError
+	| DispatchDiscardedError
+	| ActorStoppedError
+	| MsgNotAcceptedError;
 
 export interface ActorHandle<S, M extends {type: string}, E = never> {
 	/** Apply `msg`, then wait for every transitive follow-up — Demlik's `dispatch`. */
@@ -428,12 +434,20 @@ export const make = Effect.fn("Tuval.host.make")(function* <
 				const [next, cmds] = applyCellChecked<S, M, C>(machine, state, msg);
 				return {kind: "applied", next, cmds};
 			},
-			catch: (cause) => new UserCodeThrew({cause}),
+			// Demlik throws `NoCellError` before any of the machine's own code runs, so it says the
+			// program does not take this Msg — never that the program is faulty. Supervision must not
+			// see it: one stray wire Msg would otherwise close the gate under the `stop` default (#7973).
+			catch: (cause): UserCodeThrew | MsgNotAcceptedError =>
+				cause instanceof NoCellError
+					? new MsgNotAcceptedError({msgType: cause.msgType, stateName: cause.stateName})
+					: new UserCodeThrew({cause}),
 		});
 
 	const step = Effect.fn("Tuval.host.step")(function* (msg: M) {
 		const reduced = yield* reduce(msg).pipe(Effect.result);
 		if (Result.isFailure(reduced)) {
+			if (reduced.failure instanceof MsgNotAcceptedError)
+				return yield* Effect.fail(reduced.failure);
 			const error = reduced.failure.cause;
 			yield* report(error, "reduce");
 			switch (supervision.strategy) {
