@@ -25,7 +25,12 @@ export {
 	WindowId,
 	WorkspaceId,
 } from "./ids.ts";
-export {describeSchemaError, firstSchemaIssue, type SchemaIssueSummary} from "./issue.ts";
+export {
+	describeSchemaError,
+	firstSchemaIssue,
+	parameterOf,
+	type SchemaIssueSummary,
+} from "./issue.ts";
 export {
 	isSpellReply,
 	KernelToPage,

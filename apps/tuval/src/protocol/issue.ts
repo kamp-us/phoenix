@@ -30,6 +30,17 @@ export const firstSchemaIssue = (error: Schema.SchemaError): SchemaIssueSummary 
 	};
 };
 
+/**
+ * The parameter an `at` blames — its leading segment, or `""` when it blames no single one.
+ *
+ * The inverse of `renderPath`, and it lives beside it so the two cannot drift: a caller holding a
+ * flat record keyed by parameter name has to strip the nesting before it can look the value up,
+ * and `renderPath` is the only thing that decides where a name ends. Both separators it can emit
+ * end one — `.` before a key, `[` before an index — and a path opening on `[` names an index
+ * rather than a parameter, so it blames none.
+ */
+export const parameterOf = (at: string): string => at.split(/[.[]/, 1)[0] ?? "";
+
 /** The first issue as one line — what was wrong, and where. A refusal interpolates this. */
 export const describeSchemaError = (error: Schema.SchemaError): string => {
 	const {expected, at} = firstSchemaIssue(error);
