@@ -4,6 +4,7 @@
  */
 
 import {describe, expect, it} from "vitest";
+import {pendingPermission} from "../../ai-agent-fixtures/permissions.ts";
 import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import type {Phase} from "../events.ts";
 import {Mode, type PermissionRequest} from "../ports/index.ts";
@@ -30,7 +31,8 @@ const saved: AiAgentSessionState = {
 		omitted: {items: 3, bytes: 120, reason: "item-limit"},
 	},
 	usage: {model: "claude-opus-5", inputTokens: 1_200, outputTokens: 340, cost: 0.031},
-	permissions: {"req-1": card},
+	permissions: {"req-1": pendingPermission({request: card, seq: 3})},
+	permissionsRaised: 3,
 	modes: {current: Mode.make("plan"), available: [Mode.make("plan"), Mode.make("build")]},
 	lastPrompt: "make the README",
 	lastPage: {items: [userItem("older-0")], hasMore: true},
@@ -41,7 +43,7 @@ describe("a save snapshot", () => {
 	it("round-trips through JSON with its permission cards and usage intact", () => {
 		const parsed = parseSessionState(JSON.parse(JSON.stringify(saved)));
 		expect(parsed).toEqual(saved);
-		expect(parsed?.permissions["req-1"]).toEqual(card);
+		expect(parsed?.permissions["req-1"]?.request).toEqual(card);
 		expect(parsed?.usage).toEqual(saved.usage);
 	});
 
@@ -54,6 +56,14 @@ describe("a save snapshot", () => {
 		expect(parseSessionState({...saved, phase: "thinking"})).toBeNull();
 		expect(parseSessionState({...saved, usage: {model: "m"}})).toBeNull();
 		expect(parseSessionState({...saved, permissions: {"req-1": {title: "no fields"}}})).toBeNull();
+		// A card with no answering state at all is the pre-#8006 shape, and it is not readable.
+		expect(parseSessionState({...saved, permissions: {"req-1": card}})).toBeNull();
+		expect(
+			parseSessionState({
+				...saved,
+				permissions: {"req-1": {request: card, seq: 1, progress: {status: "sent"}}},
+			}),
+		).toBeNull();
 		expect(
 			parseSessionState({...saved, transcript: {items: [{kind: "user"}], omitted: null}}),
 		).toBeNull();
