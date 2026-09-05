@@ -16,7 +16,7 @@
 		"deploy": "pnpm build && alchemy deploy",
 		"db:migrate": "drizzle-kit migrate --config=worker/db/drizzle.config.ts",
 		"destroy": "alchemy destroy",
-		"typecheck": "pnpm fate:generate && tsc -b tsconfig.worker.json tsconfig.node.json && tsc -p tsconfig.app.json --composite false",
+		"typecheck": "pnpm fate:generate && tsc -b tsconfig.worker.json tsconfig.node.json && tsc -p tsconfig.app.json --composite false && effect-tsgo diagnostics --project tsconfig.json --strict",
 		"test": "vitest run --config vitest.config.ts",
 		"test:unit": "vitest run --config vitest.config.ts --project unit",
 		"test:client": "vitest run --config vitest.config.ts --project client",

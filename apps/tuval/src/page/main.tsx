@@ -17,7 +17,7 @@ import {Socket} from "effect/unstable/socket";
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
 import type {ShellMsg} from "../shell/core/index.ts";
-import {attach, SHELL_PROGRAM_ID} from "../shell/transport/index.ts";
+import {attach, SHELL_PROGRAM_ID} from "../shell/transport/browser.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {demoRenderers} from "./renderers.tsx";
 import "../shell/ui/tokens.css";

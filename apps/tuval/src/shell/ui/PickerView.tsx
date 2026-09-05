@@ -22,7 +22,7 @@ import {
 	type PickerView as PickerViewState,
 	pickerFrame,
 	pickerKey,
-} from "../picker/index.ts";
+} from "../picker/browser.ts";
 import type {WindowId} from "../window/index.ts";
 import {useForwardedKey} from "./forwarded-key.tsx";
 import {isTextEntry} from "./text-entry.ts";

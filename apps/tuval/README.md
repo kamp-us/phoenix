@@ -467,6 +467,10 @@ none of them and logs each drop at debug; the set that runs them against the ker
 React or the DOM is allowed to appear. Every other slice forbids both in its own
 `boundary.unit.test.ts`, and this one asserts the inverse: nothing outside `ui/` may import it.
 
+It is also on the far side of the app's **browser/Node line**: nothing this slice reaches may import
+`node:*`, because Vite externalizes those and the page throws at module load instead of rendering.
+See [The two entry points](#the-two-entry-points) below.
+
 ```tsx
 <Desk state={snapshot} dispatch={send} resolveMount={mounts} entries={picker} />
 ```
@@ -525,6 +529,28 @@ Two things the page cannot do yet, both because the wire carries rows and no reg
 picker offers running processes only (open by name through `prefix : window:open <program>`), and its
 renderer table is keyed by program id rather than by the `renderer` reference a row declares.
 
+## The two entry points
+
+`src/bin.ts` runs under Node; `src/page/main.tsx` runs in a browser. They share slices but not import
+surfaces, and the line between them is enforced by a second TypeScript project rather than by a lint
+rule or a bundler plugin:
+
+```bash
+pnpm typecheck   # tsc -p tsconfig.json … && tsc -p tsconfig.browser.json …
+```
+
+`tsconfig.browser.json` is rooted at the browser entry alone and carries `"types": []` — no
+`@types/node` in scope. So `node:crypto` resolves to nothing, and any module the entry reaches that
+imports one is a plain `tsc` error. That error is the point: without it the import survives Vite,
+which externalizes `node:*`, and the page throws at module load and paints black before React mounts
+(#7836).
+
+A slice both sides use keeps two barrels. `index.ts` is the whole slice; `browser.ts` is the half a
+page may reach, and `index.ts` re-exports it — `src/shell/transport/browser.ts` leaves out the
+handshake and the server, `src/shell/picker/browser.ts` leaves out `open.ts` and the kernel behind
+it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and the reasons are
+[`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
+
 ## The AI agent slice
 
 `src/ai-agent/` is the backend-blind half of running an AI agent as a Tuval program. Nothing under
@@ -572,8 +598,11 @@ whole exchanges only, and Tuval keeps no second copy.
 
 **The row.** `aiAgentProgram` (`src/ai-agent/program.ts`) assembles all of it into one program row:
 the core, the eight port keys, the `receive` translations, the handlers and the Sub. A caller varies
-`layer`, `cwd` and the identity. `PiAiAgent.layer` is the first layer to fill it; `ClaudeAiAgent` is
-next ([#7618](https://github.com/kamp-us/phoenix/issues/7618)).
+`layer`, `cwd` and the identity. Two layers fill it today: `PiAiAgent.layer` was the first, and
+`ClaudeAiAgent.layer` (`src/claude/agent/ClaudeAiAgent.ts`) is the second — a
+`Layer<TuvalAiAgent, never, KernelBridge>` over the Claude Agent SDK, never-failing, asking only for
+the kernel-tools bridge the row provides. The `claude-session` row that wires it into the config
+graph is [#7623](https://github.com/kamp-us/phoenix/issues/7623).
 
 Shape and rationale: [tuval-program-row-effects.md](../../.patterns/tuval-program-row-effects.md).
 

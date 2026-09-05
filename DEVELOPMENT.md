@@ -9,7 +9,7 @@ This is the builder's door. For what kamp.us *is* — the products and the ethos
 ```bash
 pnpm install
 pnpm dev          # vite (SPA + HMR) + alchemy dev (worker on local workerd)
-pnpm typecheck    # tsc (Effect-patched) across project references
+pnpm typecheck    # tsc, then effect-tsgo diagnostics --strict, across project references
 pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolation)
 ```
 
@@ -27,7 +27,7 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 | DB | Drizzle on D1 | `Drizzle` is a worker-level singleton; feature code calls its `run`/`batch` capability methods. |
 | Live state | `LiveDO` on `state.storage` KV | One Durable Object fans out SSE. State is KV — subscriber rows + a per-connection counter. No DO SQL, no DO migrations. |
 | Frontend | React 19 + Vite 8 + react-fate | Components declare views; one batched `useRequest` per screen; declarative mutations; live views over SSE. |
-| Type-check | `typescript@7` + `@effect/tsgo` | One compiler: the native `tsc`, patched at install with Effect's language service so its diagnostics reach the CLI gate (ADR [0271](./.decisions/0271-one-compiler-effect-patched-tsc.md)). |
+| Type-check | `typescript@7` + `@effect/tsgo` | Two steps per package: the native `tsc`, then `effect-tsgo diagnostics --project tsconfig.json --strict`. No install-time compiler patch, so CI, an agent worktree and your machine run the same gate ([.patterns/typecheck-two-step.md](./.patterns/typecheck-two-step.md), ADR [0271](./.decisions/0271-one-compiler-effect-patched-tsc.md) as history). |
 | Lint / format | Biome 2 | Tabs, 100 col, no bracket spacing. |
 | Package manager | pnpm 10 (workspace catalog) | All commands use `pnpm`; `pnpm dlx`, never `npx`. |
 
@@ -96,6 +96,7 @@ apps/tuval/
 │   ├── durability/        # saving and restoring process state
 │   ├── ai-agent/          # the backend-blind AI agent slice: core machine, ports, handlers, history
 │   ├── pi/                # the Pi backend: loopback server, lease client, the `TuvalAiAgent` layer
+│   ├── claude/            # the Claude backend: the Agent SDK layer, SDK-message mapping, the generic kernel tools
 │   └── demo/              # the programs that ship in the box
 └── vitest.config.ts       # two projects, `unit` and `integration`; the repo-wide unit gate resolves here
 ```
@@ -110,7 +111,7 @@ apps/tuval/
 | `pnpm dev:worker` | Just `alchemy dev` (worker only). |
 | `pnpm build` | `vite build` into `dist/client`. |
 | `pnpm deploy` | `pnpm build && alchemy deploy`. Append `--stage <name>` for an isolated worker + D1 + DO. |
-| `pnpm typecheck` | `tsc` (Effect-patched) across project references. |
+| `pnpm typecheck` | `tsc`, then `effect-tsgo diagnostics --strict`, across project references. |
 | `pnpm test` | Integration suite — boots the stack on local workerd in `globalSetup`, runs the black-box HTTP suite against it. |
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
@@ -166,7 +167,7 @@ CI runs the base build (`ci.yml` — Biome lint/format, `pnpm typecheck`, the in
 
 | Guard | What it checks | What trips it |
 |---|---|---|
-| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (Effect-patched `tsc`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
+| [`ci`](./.github/workflows/ci.yml) | The base build: Biome lint + format, `pnpm typecheck` (`tsc`, then `effect-tsgo diagnostics --strict`), the integration suite, the deploy-preview e2e. | A lint/format violation, a type error, a failing test, or a red preview e2e. |
 | [`leak-guard`](./.github/workflows/leak-guard.yml) | Changed doc **and shell** surfaces (markdown, `.decisions/`/`.patterns/`, and `.sh`) carry no machine-local/home path or operator PII (the no-local-paths rule). | A `~/`, an absolute home path, a vault, or a sibling-repo path — or an operator email — in a changed doc or script. |
 | [`gitleaks`](./.github/workflows/gitleaks.yml) | The files this PR adds or edits, read at HEAD, for secrets (API keys, tokens, private keys) — the merge result, not the branch's commits (ADR 0338). | A credential standing in a changed file at HEAD. Removing it at head clears the gate; a secret added and reverted inside the PR is not caught. |
 | [`fanout-guard`](./.github/workflows/fanout-guard.yml) | Every `Fate.mutation` is classified fanned/not, and each fanned mutation's feature publishes the `/fate/live` invalidation (ADR 0155). | An unclassified mutation, or a fanned mutation whose feature omits the `WorkerLivePublisher` publish. |
