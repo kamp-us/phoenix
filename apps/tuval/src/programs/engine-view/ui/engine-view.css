@@ -1,0 +1,113 @@
+/*
+ * The canvas, themed from Tuval's role tokens (`../../../shell/ui/tokens.css`) rather than React
+ * Flow's defaults. Every value below is a role alias and nothing under it, per
+ * `design-system-manifest.md`.
+ *
+ * React Flow's own stylesheet reads a `--xy-*` variable per painted surface and falls back to a
+ * `-default` twin, so re-declaring the variables on this scope re-themes the library's chrome —
+ * background, edges, handles, controls, minimap — without overriding a single library selector.
+ * Dark is the only scheme here, as it is for the whole desk: Tuval is window chrome, not a
+ * document, so there is no light branch.
+ */
+
+.engine-view {
+	block-size: 100%;
+	inline-size: 100%;
+	min-block-size: 0;
+
+	--xy-background-color: var(--surface-sunken);
+	--xy-background-pattern-color: var(--border-faint);
+
+	--xy-edge-stroke: var(--border-strong);
+	--xy-edge-stroke-selected: var(--accent);
+	--xy-edge-stroke-width: 1;
+
+	--xy-handle-background-color: var(--border-strong);
+	--xy-handle-border-color: var(--surface-sunken);
+
+	--xy-controls-button-background-color: var(--surface-raised);
+	--xy-controls-button-background-color-hover: var(--surface);
+	--xy-controls-button-color: var(--text-secondary);
+	--xy-controls-button-color-hover: var(--text-primary);
+	--xy-controls-button-border-color: var(--border);
+	--xy-controls-box-shadow: none;
+
+	--xy-minimap-background-color: var(--surface);
+	--xy-minimap-node-background-color: var(--border-strong);
+	--xy-minimap-node-stroke-color: var(--border);
+	--xy-minimap-mask-background-color: color-mix(in oklab, var(--surface-sunken) 70%, transparent);
+	--xy-minimap-mask-stroke-color: var(--border);
+
+	--xy-attribution-background-color: transparent;
+}
+
+/* No row gap, and exactly `--s-2` / `--s-3` padding: `../layout.ts` measures a node as
+   `lines × 20px + 16px` wide by `longest line × 8px + 24px`, and dagre placed the graph on that
+   box. A painted box larger than the measured one is two nodes drifting towards each other. */
+.engine-node {
+	display: flex;
+	flex-direction: column;
+	box-sizing: border-box;
+	block-size: 100%;
+	padding: var(--s-2) var(--s-3);
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	color: var(--text-primary);
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
+	overflow: hidden;
+}
+
+/* The selected node is marked twice over — a heavier border and the accent bar — because pillar 4
+   forbids carrying state on colour alone, and the desk's focused window is marked the same way. */
+.engine-node[data-selected="true"] {
+	border-color: var(--accent);
+	box-shadow: inset var(--s-1) 0 0 0 var(--accent);
+}
+
+.engine-node p {
+	margin: 0;
+	white-space: nowrap;
+}
+
+.engine-node-id {
+	color: var(--text-primary);
+}
+
+.engine-node-program {
+	color: var(--text-secondary);
+}
+
+.engine-node-state {
+	display: flex;
+	gap: var(--s-2);
+	color: var(--text-muted);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+}
+
+.engine-node-lifecycle {
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.engine-node-ports {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	color: var(--text-muted);
+	font:
+		var(--t-meta) ui-monospace,
+		monospace;
+}
+
+.engine-node-port-arrow {
+	color: var(--text-secondary);
+}
+
+.engine-node-port-kind {
+	color: var(--text-faint);
+}
