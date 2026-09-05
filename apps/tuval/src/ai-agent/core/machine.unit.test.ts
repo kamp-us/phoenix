@@ -206,13 +206,38 @@ describe("event", () => {
 		expect(settled.permissions).toEqual({});
 	});
 
-	it("takes the phase the layer reports", () => {
+	it("takes a phase the layer reports that the core does not own", () => {
 		const [state] = apply(started(), {
 			type: "event",
 			sessionId: "session-1",
 			event: {kind: "phase", phase: "prompting"},
 		});
 		expect(state.phase).toBe("prompting");
+	});
+
+	// Every layer narrates its own open on the same stream (`PiAiAgent.start` emits `starting` then
+	// `ready`), and that stream is opened by the `started` the open already answered — so the
+	// `starting` a Sub reads first always lands on a session that is already ready (#7925).
+	it("ignores an opening phase the layer replays, so a ready session still takes a prompt", () => {
+		const [state] = apply(started(), {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "starting"},
+		});
+		expect(state.phase).toBe("ready");
+
+		const [prompted, cmds] = apply(state, {type: "prompt", text: "hello", key: "k1"});
+		expect(prompted.failure).toBeNull();
+		expect(cmds).toEqual([{type: "aiAgent.prompt", text: "hello", key: "k1"}]);
+	});
+
+	it("ignores a replayed reconnecting phase for the same reason", () => {
+		const [state] = apply(started(), {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "reconnecting"},
+		});
+		expect(state.phase).toBe("ready");
 	});
 
 	it("is discarded once the session is gone", () => {

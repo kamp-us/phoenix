@@ -8,7 +8,7 @@
  * the planner answers with data rather than throwing, so this does too.
  */
 
-import type {AgentEvent} from "../events.ts";
+import type {AgentEvent, Phase} from "../events.ts";
 import {isRefusal, planTranscriptWindow} from "../history/index.ts";
 import type {TranscriptItem, TranscriptPayload, WindowOmission} from "../ports/index.ts";
 import type {AiAgentSessionState, UsageTotals} from "./state.ts";
@@ -68,6 +68,19 @@ export const dropRequest = (state: AiAgentSessionState, request: string): AiAgen
 	permissions: without(state.permissions, request),
 });
 
+/**
+ * The two phases only the core's own cells may enter. `start` and `reconnect` are what put a
+ * session into an open, and `started` or `failed` are the only ways out of one, so a layer cannot
+ * tell the core about an open the core did not start.
+ *
+ * Every layer narrates its own open on the event stream — `PiAiAgent.start` and
+ * `ClaudeAiAgent.start` both emit `starting` and then `ready` — and that stream is opened by the
+ * `started` the open already answered (`machine.ts`, `subscriptions`). So the `starting` a Sub
+ * reads first is always a report about an open that is finished, and folding it walks a ready
+ * session backwards into a phase that refuses every prompt (#7925).
+ */
+const coreOwned = (phase: Phase): boolean => phase === "starting" || phase === "reconnecting";
+
 export const foldEvent = (
 	state: AiAgentSessionState,
 	event: AgentEvent,
@@ -77,7 +90,7 @@ export const foldEvent = (
 		case "item":
 			return {...state, transcript: foldItem(state.transcript, event.item, limits)};
 		case "phase":
-			return {...state, phase: event.phase};
+			return coreOwned(event.phase) ? state : {...state, phase: event.phase};
 		case "permission":
 			return {...state, permissions: {...state.permissions, [event.request]: event.detail}};
 		case "permission-resolved":

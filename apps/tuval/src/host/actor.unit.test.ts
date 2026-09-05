@@ -1,6 +1,6 @@
 import {type DispatchDiscardedError, type NoCtx, subId} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Schema, type Scope} from "effect";
+import {Context, Effect, Exit, Fiber, Schema, type Scope} from "effect";
 import {expectTypeOf} from "vitest";
 import {type ActorHandle, layer, make} from "./actor.ts";
 import {type CoreMachine, defineActor} from "./definition.ts";
@@ -206,5 +206,42 @@ describe("host actor", () => {
 				]);
 			}),
 		),
+	);
+
+	it.live(
+		"settles a follow-up interrupted before it ran, so a stop in the same tick completes",
+		() =>
+			Effect.gen(function* () {
+				type S = {readonly followed: boolean};
+				type M = {readonly type: "follow"};
+				type C = {readonly type: "boot"};
+				const machine: CoreMachine<S, M, C, never, NoCtx> = {
+					init: () => [{followed: false}, [{type: "boot"}]],
+					update: {follow: () => [{followed: true}, []]},
+				};
+				const definition = defineActor({
+					name: "test/stop-in-the-same-tick",
+					machine,
+					interpret: {boot: () => Effect.succeed({type: "follow"} as const)},
+					subscribe: {},
+				});
+
+				// The tick is the whole test: nothing is awaited between `make` returning and the scope
+				// closing, so the boot's follow-up — forked into that same scope — is interrupted before
+				// it ever starts. An in-body `ensuring` never registers on such a fiber, which leaves
+				// `pending` above zero and hangs `stop` on `quiet` for ever; `addObserver` settles it on
+				// the Exit instead (#7925).
+				// Detached, so a regression hangs this assertion rather than the test fiber's own teardown.
+				const running = yield* Effect.forkDetach(Effect.scoped(Effect.asVoid(make(definition))));
+				const stopped = yield* Fiber.join(running).pipe(
+					Effect.timeout("5 seconds"),
+					Effect.exit,
+					Effect.map(Exit.isSuccess),
+				);
+				assert.isTrue(
+					stopped,
+					"the actor's stop never completed: a pending follow-up never settled",
+				);
+			}),
 	);
 });

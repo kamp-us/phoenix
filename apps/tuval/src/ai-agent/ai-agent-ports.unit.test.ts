@@ -159,9 +159,15 @@ const agentRow = (script: AgentScript) =>
 		config: {cwd: "/work"},
 	});
 
-const eventually = (check: () => boolean) =>
+/**
+ * A wait that names what did not happen. Falling through on a spent budget leaves the body running
+ * against a state that never arrived, and the failure then surfaces as a `TypeError` several lines
+ * later instead of as the condition (#7925).
+ */
+const eventually = (what: string, check: () => boolean) =>
 	Effect.gen(function* () {
 		for (let i = 0; i < 400 && !check(); i++) yield* Effect.sleep("5 millis");
+		assert.isTrue(check(), `timed out after 2s waiting for ${what}`);
 	});
 
 const onGraph = <A, E>(
@@ -207,7 +213,7 @@ const latest = (seen: ReadonlyArray<Arrival>, port: string): unknown =>
 
 /** Spawning the row is what opens the session (#7925), so a caller only waits for it. */
 const started = (agent: {readonly state: () => unknown}) =>
-	eventually(() => {
+	eventually("the spawned session to reach ready", () => {
 		const state = agent.state();
 		return isAiAgentSessionState(state) && state.phase === "ready";
 	});
@@ -218,7 +224,7 @@ describe("the AI agent interface over a compiled graph", () => {
 			Effect.gen(function* () {
 				yield* started(agent);
 				yield* window.say(aiAgentPortNames.prompt, {text: "hello", key: "k1"});
-				yield* eventually(() => {
+				yield* eventually("both turn items on the transcript port", () => {
 					const payload = latest(seen(), aiAgentPortNames.transcript) as
 						| TranscriptPayload
 						| undefined;
@@ -243,7 +249,10 @@ describe("the AI agent interface over a compiled graph", () => {
 					before: null,
 					limit: 3,
 				});
-				yield* eventually(() => latest(seen(), aiAgentPortNames.pageReply) !== undefined);
+				yield* eventually(
+					"a page on the pageReply port",
+					() => latest(seen(), aiAgentPortNames.pageReply) !== undefined,
+				);
 				const page = latest(seen(), aiAgentPortNames.pageReply) as TranscriptPagePayload;
 				assert.strictEqual(page.kind, "page");
 				if (page.kind !== "page") return;
@@ -266,7 +275,9 @@ describe("the AI agent interface over a compiled graph", () => {
 					const payload = pending();
 					return payload?.kind === "pending" ? Object.keys(payload.requests) : null;
 				};
-				yield* eventually(() => (keys() ?? []).includes(PERMISSION_REQUEST));
+				yield* eventually("the permission card to be raised", () =>
+					(keys() ?? []).includes(PERMISSION_REQUEST),
+				);
 				assert.deepStrictEqual(keys(), [PERMISSION_REQUEST]);
 
 				yield* window.say(aiAgentPortNames.permissionDecision, {
@@ -274,7 +285,7 @@ describe("the AI agent interface over a compiled graph", () => {
 					request: PERMISSION_REQUEST,
 					decision: "allow-once",
 				});
-				yield* eventually(() => keys()?.length === 0);
+				yield* eventually("the answered card to close", () => keys()?.length === 0);
 				assert.deepStrictEqual(keys(), []);
 			}),
 		),
@@ -288,11 +299,11 @@ describe("the AI agent interface over a compiled graph", () => {
 					const payload = latest(seen(), aiAgentPortNames.modeState) as ModePayload | undefined;
 					return payload?.kind === "state" ? payload.current : null;
 				};
-				yield* eventually(() => current() === modes.current);
+				yield* eventually("the mode list on the modeState port", () => current() === modes.current);
 				assert.strictEqual(current(), modes.current);
 
 				yield* window.say(aiAgentPortNames.modeSet, {kind: "set", mode: modeBrand("plan")});
-				yield* eventually(() => current() === modeBrand("plan"));
+				yield* eventually("the set mode to come back", () => current() === modeBrand("plan"));
 				assert.strictEqual(current(), modeBrand("plan"));
 			}),
 		),

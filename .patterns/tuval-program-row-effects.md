@@ -124,6 +124,16 @@ session opens itself at spawn — interrupts a fiber that never ran, which produ
 `ensuring`, and an in-body decrement leaves the actor's stop waiting on a count that never reaches
 zero.
 
+**The core owns the phases that mean "an open is in flight"; a layer's event may not enter one.**
+Every layer narrates its own open on the same event stream it publishes everything else on —
+`PiAiAgent.start` and `ClaudeAiAgent.start` both emit `starting` and then `ready` — but that stream
+is a Sub the core opens only once `started` has committed, which is *after* the open answered. So
+the `starting` a Sub reads first is always a report about an open that is already finished, and
+folding it walks a ready session backwards into a phase that refuses the first prompt the founder
+types. `foldEvent` therefore drops a `phase` event carrying `starting` or `reconnecting`: those two
+belong to the `start` and `reconnect` cells, and `started` or `failed` are the only ways out of
+them. Every other phase the layer reports is news and folds normally.
+
 ## Coming back from a checkpoint: a resume Msg, and a Cmd that republishes
 
 Durability is the kernel's ([`durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts)),

@@ -56,9 +56,11 @@ const kernel = Processes.layer.pipe(
 	Layer.provideMerge(Registry.layer([row])),
 );
 
-const eventually = (check: () => boolean) =>
+/** A spent budget asserts rather than falling through, so a timeout names itself (#7925). */
+const eventually = (what: string, check: () => boolean) =>
 	Effect.gen(function* () {
 		for (let attempt = 0; attempt < 400 && !check(); attempt += 1) yield* Effect.sleep("5 millis");
+		assert.isTrue(check(), `timed out after 2s waiting for ${what}`);
 	});
 
 const sessionOf = (handle: ProcessHandle): AiAgentSessionState => {
@@ -84,7 +86,10 @@ describe("a freshly spawned agent session", () => {
 	it.live("opens itself, with no caller dispatching start", () =>
 		onAFreshSpawn((handle) =>
 			Effect.gen(function* () {
-				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* eventually(
+					"the spawned session to reach ready",
+					() => sessionOf(handle).phase === "ready",
+				);
 				const session = sessionOf(handle);
 				assert.strictEqual(session.phase, "ready", "the spawned session never opened");
 				assert.strictEqual(session.sessionId, SESSION_ID);
@@ -97,9 +102,15 @@ describe("a freshly spawned agent session", () => {
 	it.live("takes a prompt and puts the reply on the transcript port", () =>
 		onAFreshSpawn((handle, log) =>
 			Effect.gen(function* () {
-				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* eventually(
+					"the spawned session to reach ready",
+					() => sessionOf(handle).phase === "ready",
+				);
 				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
-				yield* eventually(() => sessionOf(handle).transcript.items.length === 2);
+				yield* eventually(
+					"both turn items on the session transcript",
+					() => sessionOf(handle).transcript.items.length === 2,
+				);
 
 				const session = sessionOf(handle);
 				assert.isNull(session.failure, "the first prompt into a fresh session was refused");
