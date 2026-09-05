@@ -8,8 +8,16 @@
  * `window focus`, not the bare word `window`. On a value slot it hands straight back to
  * `candidatesFor`, so a window id or a workspace name still ranks fuzzily on recency (#7617 R1.5).
  *
- * That split is the founder's ruling made concrete: prefix on the paths the system defines, fuzzy on
- * the values a user named (the 2026-09-03 walk on #7643; ADR 0348, `.patterns/tuval-spells.md`).
+ * A path slot lists more than the prefix reaches. R1.5's exact-prefix rule is scoped to *completion*
+ * — Tab and the `:` line, where `candidatesFor` is untouched — while this listbox also lists a spell
+ * whose remaining path or whose sentence merely contains what was typed, so `zoom` finds
+ * `window zoom` (the founder's 2026-09-05 ruling on
+ * [#8002](https://github.com/kamp-us/phoenix/issues/8002#issuecomment-5554612396)). Three tiers, in
+ * this order: an exact prefix on the next segment, then a substring of the rest of the path, then a
+ * substring of the sentence.
+ *
+ * The value half is the founder's earlier ruling unchanged: fuzzy on the values a user named (the
+ * 2026-09-03 walk on #7643; ADR 0348, `.patterns/tuval-spells.md`).
  *
  * Everything here is pure and synchronous. The palette runs it on every keystroke against the
  * snapshot the page already holds, and never awaits the kernel to complete (#7617 R1.5).
@@ -72,6 +80,30 @@ const dedupe = (rows: ReadonlyArray<PaletteCandidate>): ReadonlyArray<PaletteCan
 	});
 };
 
+/** The one case rule every match here applies, the same fold `complete` applies to its own. */
+const fold = (text: string): string => text.toLowerCase();
+
+/**
+ * How a spell reached the list, low first. The order is the ruling: what the reader typed beats what
+ * they half-remembered of the path, which beats a word the palette only found in the sentence.
+ */
+const PREFIX = 0;
+const PATH = 1;
+const SENTENCE = 2;
+
+/** The tier a spell is listed at, or `undefined` for a spell the typed text does not reach at all. */
+const rankOf = (
+	needle: string,
+	prefixed: boolean,
+	remainingPath: string,
+	describe: string,
+): number | undefined => {
+	if (prefixed) return PREFIX;
+	if (fold(remainingPath).includes(needle)) return PATH;
+	if (fold(describe).includes(needle)) return SENTENCE;
+	return undefined;
+};
+
 export const paletteCandidates = (
 	input: string,
 	registry: SpellIndex,
@@ -92,19 +124,24 @@ export const paletteCandidates = (
 	// In a segment slot every token before the caret matched a segment, so the caret sits exactly
 	// `depth` segments deep and a spell's remaining path is what accepting the row types.
 	const {depth} = caretToken(input);
-	const rows: Array<PaletteCandidate> = [];
+	const needle = fold(slot.token.text);
+	const ranked: Array<{readonly rank: number; readonly row: PaletteCandidate}> = [];
 	for (const [segment, child] of slot.node.children) {
-		if (!segment.startsWith(slot.token.text)) continue;
+		const prefixed = fold(segment).startsWith(needle);
 		for (const spell of spellsUnder(child)) {
-			rows.push({
-				value: spell.path.slice(depth).join(" "),
-				label: spell.path.join(" "),
-				kind: "spell",
-				describe: spell.describe,
+			// Accepting any row types the whole remaining path, so a spell found through its sentence
+			// still leaves a line the parser reads as that spell's path.
+			const value = spell.path.slice(depth).join(" ");
+			const rank = rankOf(needle, prefixed, value, spell.describe);
+			if (rank === undefined) continue;
+			ranked.push({
+				rank,
+				row: {value, label: spell.path.join(" "), kind: "spell", describe: spell.describe},
 			});
 		}
 	}
-	return rows;
+	// Registry order survives inside a tier: ECMA-262 requires the sort to be stable (§23.1.3.30).
+	return ranked.sort((left, right) => left.rank - right.rank).map((entry) => entry.row);
 };
 
 /**
