@@ -1,0 +1,59 @@
+name: skill-doctor-tests
+
+# Landing child #8048 (epic #8035): the vendored Warp Skill Doctor carries two upstream
+# unittest suites, and conventions §8 makes running them the skill's ship gate. R1.1 on
+# #8035 established the repo tracks zero other Python, so this job owns its interpreter
+# setup instead of borrowing ci.yml's. Both suites run under PYTHONUTF8=1; the native
+# Windows encoding exposure is child #8050's to fix — ubuntu is UTF-8 by default.
+#
+# KNOWN RED until a maintainer rules on the test adaptation (see PR #… for the proposal):
+# three render_report tests (`test_skill_*`) assert verbatim strings from upstream's own
+# SKILL.md — its startup table and Warp Factories labels. Landing child #8048 replaces
+# that SKILL.md with the fabrika-authored routing surface, so those three assertions fail
+# by construction against the landed packaging. They are NOT suppressed here: this job
+# runs the suite plain and is expected red on exactly those three until the adaptation
+# (upstream patch or ruled local deviation) is approved and landed.
+on:
+  pull_request:
+    paths:
+      - "claude-plugins/fabrika/skills/skill-doctor/**"
+      - ".github/workflows/skill-doctor-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "claude-plugins/fabrika/skills/skill-doctor/**"
+      - ".github/workflows/skill-doctor-tests.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-unittests:
+    name: upstream unittest suites (python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: collect_sessions suite
+        working-directory: claude-plugins/fabrika/skills/skill-doctor/scripts
+        env:
+          PYTHONUTF8: "1"
+        run: python test_collect_sessions.py
+
+      - name: render_report suite
+        working-directory: claude-plugins/fabrika/skills/skill-doctor/scripts
+        env:
+          PYTHONUTF8: "1"
+        # Expected red on exactly three tests until the SKILL.md-coupling adaptation is
+        # ruled: test_skill_startup_contract_is_centralized,
+        # test_skill_output_uses_report_and_warp_factories_labels,
+        # test_skill_edits_only_use_failed_conversations. Any other failure is real.
+        run: python test_render_report.py
