@@ -160,8 +160,8 @@ homes
 milestone	24	Geçit
 milestone	25	Mecmua v2 — PARKED (reading-experience arc, unstarted)
 milestone	42	Taste-Skill Library
-milestone	46	fabrika fast follows	running: p0/blocker only
-milestone	47	fabrika everywhere	running: p0/blocker only
+milestone	46	fabrika fast follows	running: p0/p1 or blocker
+milestone	47	fabrika everywhere	running: p0/p1 or blocker
 lane	wayfinder:backlog	fog — uncharted work upstream of any arc
 lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 ```

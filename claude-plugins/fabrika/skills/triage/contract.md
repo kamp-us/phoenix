@@ -31,7 +31,7 @@ makes the implementer guess ([#4734](https://github.com/kamp-us/phoenix/issues/4
 | `triage claim` | take one lane's claim on one issue, proven by read-back | a marker write plus an earliest-claim tiebreak is a protocol, not a decision |
 | `triage scratch` | the per-lane directory this lane's working files go under | keying a namespace on the claim nonce is mechanical; what the file holds is judgment |
 | `triage provenance` | was this issue reported by an agent or hand-typed by a human | a structural marker test over a fetched body, plus a membership test over the configured operator set — an empty body fails closed to `human`, an unreadable one refuses rather than guessing; what to *do* about a human filing stays in the skill |
-| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes this repo declares AND carries the labels for, with every `active` campaign's milestone marked `running` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
+| `triage homes` | the assignable homes — open milestones joined to their ROADMAP rows, plus the standing lanes this repo declares AND carries the labels for, with every `active` campaign's milestone marked `running: p0/p1 or blocker` | the join, the open-milestone filter and reading the campaigns table are mechanical; picking which home fits, and whether an exception applies, is judgment |
 | `triage split` | create one split child, once, keyed on the parent back-reference | idempotency keyed on a durable reference is mechanical; deciding a report *is* a bundle is judgment |
 | `triage enrich` | replace the body with your rewrite — or, for an epic, your pitch — over a preserved, leak-redacted original | envelope assembly, redaction and read-back are mechanical; what the rewrite says is judgment |
 | `triage apply` | apply the whole triaged transition — type, priority, audience, home — and read it back | closed-vocabulary validation and an atomic label envelope are mechanical; the classification is judgment |
@@ -833,9 +833,10 @@ With `--json`, an object with keys `outcome`, `milestones` (array of `{number, t
 `lanes` (array of `{label, meaning}`), and `scanned`.
 
 **Every `active` campaign's milestone is marked `running`.** That campaign is closed to new intake
-unless the work is `p0` or blocks one of that milestone's own in-flight lanes, so its row carries a
-fourth tab-separated column, verbatim `running: p0/blocker only`, and its `--json` object carries
-`"running": "p0/blocker only"` as a fourth key. Every other row is unchanged on both channels — no
+unless the work is `p0` or `p1`, or blocks one of that milestone's own in-flight lanes (ADR 0354), so
+its row carries a fourth tab-separated column, verbatim `running: p0/p1 or blocker`, and its `--json`
+object carries `"running": "running: p0/p1 or blocker"` as a fourth key — one constant behind both
+channels, so the marker reads the same either way. Every other row is unchanged on both channels — no
 fourth column, and no `running` key — so a reader written against the pre-marker shape still parses.
 A marked milestone is still listed: the two exceptions are real work, and a removed row cannot
 carry them. This verb states the subtraction and stops; where excluded work goes instead is the
@@ -980,14 +981,14 @@ hands a byte-reading caller two rows and no token.
 $ fabrika triage homes
 homes
 milestone	47	Sözlük — search and discovery
-milestone	52	Merge-Gate Reliability	running: p0/blocker only
+milestone	52	Merge-Gate Reliability	running: p0/p1 or blocker
 lane	wayfinder:backlog	fog — uncharted work upstream of any arc
 lane	axis:pipeline-hardening	the standing pipeline and reliability lane
 ```
 
 ```
 $ fabrika triage homes --json
-{"outcome":"homes","milestones":[{"number":47,"title":"Sözlük — search and discovery","roadmapRow":"Geçit"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null,"running":"p0/blocker only"}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
+{"outcome":"homes","milestones":[{"number":47,"title":"Sözlük — search and discovery","roadmapRow":"Geçit"},{"number":52,"title":"Merge-Gate Reliability","roadmapRow":null,"running":"running: p0/p1 or blocker"}],"lanes":[{"label":"wayfinder:backlog","meaning":"fog — uncharted work upstream of any arc"},{"label":"axis:pipeline-hardening","meaning":"the standing pipeline and reliability lane"}],"scanned":2}
 ```
 
 **Grounding**

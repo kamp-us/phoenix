@@ -240,6 +240,10 @@ describe("runHomes and the running-campaign marker", () => {
 	const withActive = (milestone: string) =>
 		ROADMAP.replace("| #44 | paused |", `| ${milestone} | active |`);
 
+	it("states the admitted bands verbatim — the channels below read this constant, so nothing else pins its text", () => {
+		expect(RUNNING_MARKER).toBe("running: p0/p1 or blocker");
+	});
+
 	it("marks the active campaign's milestone row and leaves every other row exactly as today", async () => {
 		const out = await run([twoMilestones], {"ROADMAP.md": withActive("#44")});
 		expect(out.code).toBe(ANSWER);

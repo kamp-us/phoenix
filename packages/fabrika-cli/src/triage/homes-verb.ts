@@ -17,7 +17,8 @@
  * milestone reports as a valid home.
  *
  * A row can carry a **running** marker: an `active` campaign is closed to new intake unless the work
- * is p0 or blocks one of that milestone's own in-flight lanes (#6080). Which milestones those are, is
+ * is p0 or p1, or blocks one of that milestone's own in-flight lanes (#6080, widened to p1 by ADR
+ * 0354). Which milestones those are, is
  * data — `ROADMAP.md`'s `## Campaigns` table, the same permission `build pick` fences on, read
  * through the same parser off the roadmap text this verb already has open. A marked row is still
  * offered: the two exceptions are real, and a removed row cannot carry them.
@@ -44,7 +45,7 @@ type RoadmapSide =
 	| {readonly _tag: "Present"; readonly text: string; readonly rows: RoadmapRows};
 
 /** What the marked row says, on both channels — the subtraction, not a routing instruction. */
-export const RUNNING_MARKER = "running: p0/blocker only";
+export const RUNNING_MARKER = "running: p0/p1 or blocker";
 
 export interface HomesOptions {
 	readonly roadmap: string;
