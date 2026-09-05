@@ -46,6 +46,14 @@ Everything else — `stop_reason`, the `usage` and `modelUsage` blocks, `total_c
 `is_error`, `subtype`, `aborted`, `tool_use_result` — is verbatim. `boundary.unit.test.ts` reds if
 any operator path returns and if the fixture set loses a member.
 
+## What is not captured
+
+**A subagent's frames.** Every capture here is a top-level run, so `parent_tool_use_id` is `null` on
+all of them. `events.unit.test.ts` covers the non-null case by stamping that one field over the
+golden `tool-turn` stream, which is a derived shape and says so at the case. Forcing a real one needs
+a run that spawns the Agent tool, so it is an operator act like every other capture below —
+[#8038](https://github.com/kamp-us/phoenix/issues/8038) tracks taking it.
+
 ## Re-capturing
 
 There is no committed capture script: a run needs live credentials and writes real spend, so it is

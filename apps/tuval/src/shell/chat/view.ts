@@ -1,11 +1,15 @@
 /**
  * What one chat window keeps in its own `view` slot, and how a slot of unknown shape is read back.
  *
- * Four facts live here and nothing else: where the transcript was scrolled to, what was typed and
- * not yet sent, how far back into history this window has walked, and which tool rows it has opened.
- * Two windows over one process share the transcript and own one of these each (#7484 R1.1), so
- * everything here is per-window — including `expanded`, which is why the same tool call can be open
- * in one window and closed in the other.
+ * Five facts live here and nothing else: where the transcript was scrolled to, what was typed and
+ * not yet sent, how far back into history this window has walked, which tool rows it has opened, and
+ * which group heads have their folded rows showing. Two windows over one process share the
+ * transcript and own one of these each (#7484 R1.1), so everything here is per-window — including
+ * `expanded`, which is why the same tool call can be open in one window and closed in the other.
+ *
+ * `expanded` and `unfolded` are two facts, not one: opening a call's input panel and revealing the
+ * subagent rows it heads are different asks, and one control doing both is what left the revealed
+ * rows unannounced to assistive tech (#8027).
  *
  * `ChatView` is a **type alias and not an interface** on purpose. The slot is `Schema.Json`
  * (`../window/host.ts`), and TypeScript gives an object *type alias* the implicit index signature
@@ -26,6 +30,8 @@ export type ChatView = {
 	readonly atOldest: boolean;
 	/** The ids of the tool rows this window has expanded. A row absent from it is collapsed. */
 	readonly expanded: ReadonlyArray<string>;
+	/** The ids of the group heads whose folded rows this window is showing. Absent means folded. */
+	readonly unfolded: ReadonlyArray<string>;
 };
 
 export const initialChatView: ChatView = {
@@ -34,6 +40,7 @@ export const initialChatView: ChatView = {
 	cursor: null,
 	atOldest: false,
 	expanded: [],
+	unfolded: [],
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -53,6 +60,9 @@ export const asChatView = (value: ViewState | undefined): ChatView => {
 		atOldest: value.atOldest === true,
 		expanded: Array.isArray(value.expanded)
 			? value.expanded.filter((id): id is string => typeof id === "string")
+			: [],
+		unfolded: Array.isArray(value.unfolded)
+			? value.unfolded.filter((id): id is string => typeof id === "string")
 			: [],
 	};
 };

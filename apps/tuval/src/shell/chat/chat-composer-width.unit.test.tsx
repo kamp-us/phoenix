@@ -46,7 +46,14 @@ beforeAll(() => {
 	document.head.appendChild(style);
 });
 
-const emptyView: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
+const emptyView: ChatView = {
+	scroll: 0,
+	draft: "",
+	cursor: null,
+	atOldest: false,
+	expanded: [],
+	unfolded: [],
+};
 
 /** Mounts the window inside a parent of a known inline size, the way a desk window sizes it. */
 const openWindowIn = async (parentWidth: number): Promise<void> => {

@@ -46,7 +46,7 @@ import {
 	rowIndexOfItem,
 	rowKey,
 } from "./rows.ts";
-import {ToolRow} from "./ToolRow.tsx";
+import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {asChatView, type ChatView} from "./view.ts";
 import "./chat.css";
 
@@ -156,19 +156,29 @@ function ItemRow({
 	interrupted,
 	onResend,
 	expanded,
+	fold,
+	nested,
 	onToggleTool,
 }: {
 	readonly item: TranscriptItem;
 	readonly interrupted: boolean;
 	readonly onResend: (() => void) | null;
 	readonly expanded: boolean;
+	readonly fold: ToolFold | null;
+	readonly nested: boolean;
 	readonly onToggleTool: (id: string, open: boolean) => void;
 }): ReactElement {
 	return (
 		<>
-			<span className="tuval-chat-who">{who[item.kind]}</span>
+			{/* A nested row says whose call it was in words; the indent beside it is the second signal. */}
+			<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
 			{item.kind === "tool" ? (
-				<ToolRow item={item} expanded={expanded} onToggle={(open) => onToggleTool(item.id, open)} />
+				<ToolRow
+					item={item}
+					expanded={expanded}
+					fold={fold}
+					onToggle={(open) => onToggleTool(item.id, open)}
+				/>
 			) : (
 				<p className="tuval-chat-text">{item.text}</p>
 			)}
@@ -186,20 +196,32 @@ function ItemRow({
 	);
 }
 
+/**
+ * The DOM id of the row carrying one item, scoped to the window so two windows over one process
+ * never mint the same id. A group head's fold points `aria-controls` at these.
+ */
+const rowDomId = (windowId: string, itemId: string): string => `tuval-row-${windowId}-${itemId}`;
+
 function RowView({
 	row,
+	windowId,
 	interruptedId,
 	onResend,
 	onOlder,
 	expanded,
+	unfolded,
 	onToggleTool,
+	onToggleFold,
 }: {
 	readonly row: ChatRow;
+	readonly windowId: string;
 	readonly interruptedId: string | null;
 	readonly onResend: (() => void) | null;
 	readonly onOlder: () => void;
 	readonly expanded: ReadonlySet<string>;
+	readonly unfolded: ReadonlySet<string>;
 	readonly onToggleTool: (id: string, open: boolean) => void;
+	readonly onToggleFold: (id: string, open: boolean) => void;
 }): ReactElement {
 	if (row.kind === "loading") {
 		return (
@@ -218,12 +240,23 @@ function RowView({
 			</span>
 		);
 	}
+	const open = unfolded.has(row.item.id);
 	return (
 		<ItemRow
 			item={row.item}
 			interrupted={row.item.id === interruptedId}
 			onResend={row.item.id === interruptedId ? onResend : null}
 			expanded={expanded.has(row.item.id)}
+			fold={
+				row.nestedIds.length === 0
+					? null
+					: {
+							rowIds: row.nestedIds.map((id) => rowDomId(windowId, id)),
+							open,
+							onToggle: (next) => onToggleFold(row.item.id, next),
+						}
+			}
+			nested={row.nested}
 			onToggleTool={onToggleTool}
 		/>
 	);
@@ -261,6 +294,7 @@ function ChatWindow({
 	}, []);
 
 	const expanded = useMemo(() => new Set(view.expanded), [view.expanded]);
+	const unfolded = useMemo(() => new Set(view.unfolded), [view.unfolded]);
 
 	/** The row just opened, until the layout effect below has scrolled its trigger back into view. */
 	const openedRef = useRef<string | null>(null);
@@ -282,6 +316,23 @@ function ChatWindow({
 		[commit],
 	);
 
+	const toggleFold = useCallback(
+		(id: string, open: boolean) => {
+			if (open) openedRef.current = id;
+			commit((current) => {
+				const held = current.unfolded.includes(id);
+				if (held === open) return current;
+				return {
+					...current,
+					unfolded: open
+						? [...current.unfolded, id]
+						: current.unfolded.filter((other) => other !== id),
+				};
+			});
+		},
+		[commit],
+	);
+
 	const answerPermission = useCallback(
 		(answer: PermissionAnswer) => dispatch({type: "answer", ...answer}),
 		[dispatch],
@@ -297,8 +348,9 @@ function ChatWindow({
 				omitted: state?.transcript.omitted.items ?? 0,
 				loading,
 				atOldest: view.atOldest,
+				unfolded,
 			}),
-		[older, state, loading, view.atOldest],
+		[older, state, loading, view.atOldest, unfolded],
 	);
 
 	/** The row the viewport was resting on when the current page was asked for. */
@@ -375,9 +427,10 @@ function ChatWindow({
 		openedRef.current = null;
 		const index = rowIndexOfItem(rows, opened);
 		if (index >= 0) virtualizer.scrollToIndex(index, {align: "start"});
-		// `view.expanded` is the dependency that matters: opening a row leaves `rows` untouched —
-		// the list is the same items — so an effect keyed on `rows` alone would never run.
-	}, [view.expanded, rows, virtualizer]);
+		// `view.expanded` and `view.unfolded` are the dependencies that matter: opening an ordinary row
+		// leaves `rows` untouched — the list is the same items — so an effect keyed on `rows` alone
+		// would never run for it. A fold is the case where both change, and the lookup covers either.
+	}, [view.expanded, view.unfolded, rows, virtualizer]);
 
 	// First paint lands where a chat belongs: on the newest turn, or back on the offset this window
 	// was left at. Once, and never again — a later re-render must not yank the operator's scroll.
@@ -517,19 +570,29 @@ function ChatWindow({
 						return (
 							<div
 								key={virtual.key}
+								id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
 								className="tuval-chat-row"
 								data-index={virtual.index}
 								data-kind={row.kind === "item" ? row.item.kind : row.kind}
+								data-nested={row.kind === "item" && row.nested ? "true" : undefined}
 								ref={virtualizer.measureElement}
-								style={{transform: `translateY(${virtual.start}px)`}}
+								style={{
+									transform: `translateY(${virtual.start}px)`,
+									// One indent step per fold the row sits inside, so a subagent's own subagent
+									// reads as a further step in rather than as another row at the same level.
+									...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
+								}}
 							>
 								<RowView
 									row={row}
+									windowId={host.windowId}
 									interruptedId={interruptedId}
 									onResend={lastPrompt === null ? null : resend}
 									onOlder={requestOlder}
 									expanded={expanded}
+									unfolded={unfolded}
 									onToggleTool={toggleTool}
+									onToggleFold={toggleFold}
 								/>
 							</div>
 						);

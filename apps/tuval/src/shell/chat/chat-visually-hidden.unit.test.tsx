@@ -62,7 +62,14 @@ const openComposer = async (): Promise<void> => {
 			withTranscript([userItem("a", "do it")]),
 		),
 	);
-	const view: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
+	const view: ChatView = {
+		scroll: 0,
+		draft: "",
+		cursor: null,
+		atOldest: false,
+		expanded: [],
+		unfolded: [],
+	};
 	const host: ChatWindowHost = await Effect.runPromise(
 		process.window<ChatView>(WindowId.make("w1"), view),
 	);

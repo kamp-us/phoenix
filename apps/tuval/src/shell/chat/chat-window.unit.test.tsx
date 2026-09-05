@@ -23,7 +23,14 @@ import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
-import {assistantItem, toolItem, transcriptOf, userItem, withTranscript} from "./chat.testing.ts";
+import {
+	assistantItem,
+	call,
+	toolItem,
+	transcriptOf,
+	userItem,
+	withTranscript,
+} from "./chat.testing.ts";
 import {phaseLines} from "./phase.ts";
 import type {ChatView} from "./view.ts";
 
@@ -55,7 +62,14 @@ const openWindow = async (
 	const host = await Effect.runPromise(
 		process.window<ChatView>(
 			WindowId.make("w1"),
-			initialView ?? {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []},
+			initialView ?? {
+				scroll: 0,
+				draft: "",
+				cursor: null,
+				atOldest: false,
+				expanded: [],
+				unfolded: [],
+			},
 		),
 	);
 	const resolved: ChatWindowOptions = {
@@ -255,6 +269,7 @@ describe("the composer", () => {
 				cursor: null,
 				atOldest: false,
 				expanded: [],
+				unfolded: [],
 			},
 		);
 		expect(composer().value).toBe("half-written");
@@ -360,7 +375,14 @@ describe("the phase line and the contract's two placeholders", () => {
 			processId,
 			readProcess: Stream.never,
 			dispatch: () => Effect.succeed({_tag: "Delivered"} as const),
-			view: () => ({scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []}),
+			view: () => ({
+				scroll: 0,
+				draft: "",
+				cursor: null,
+				atOldest: false,
+				expanded: [],
+				unfolded: [],
+			}),
 			setView: () => Effect.void,
 		};
 		render(chatWindow({}).render(silent) as ReactElement);
@@ -392,7 +414,14 @@ describe("two windows over one process", () => {
 		const process = await Effect.runPromise(
 			testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
 		);
-		const initial: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
+		const initial: ChatView = {
+			scroll: 0,
+			draft: "",
+			cursor: null,
+			atOldest: false,
+			expanded: [],
+			unfolded: [],
+		};
 		const left = await Effect.runPromise(process.window<ChatView>(WindowId.make("left"), initial));
 		const right = await Effect.runPromise(
 			process.window<ChatView>(WindowId.make("right"), initial),
@@ -484,5 +513,79 @@ describe("two windows over one process", () => {
 		expect(within(windowBox("right")).getByText("Loading earlier messages…")).toBeDefined();
 		expect(within(windowBox("right")).queryByText("older prompt")).toBeNull();
 		expect(right.view().cursor).toBeNull();
+	});
+});
+
+describe("a group head's fold, as a control assistive tech can read", () => {
+	const group = [
+		call("agent", {name: "Agent"}),
+		call("child-1", {name: "bash", parentId: "agent"}),
+		call("child-2", {name: "grep", parentId: "agent"}),
+	];
+
+	const foldButton = (): HTMLElement => screen.getByRole("button", {name: /nested calls?$/});
+
+	it("names the rows it reveals and announces the reveal, separately from the call's own panel", async () => {
+		await openWindow(withTranscript(group));
+
+		const fold = foldButton();
+		expect(fold.textContent).toBe("Show 2 nested calls");
+		expect(fold.getAttribute("aria-expanded")).toBe("false");
+		// Collapsed, the rows do not exist, so the control names nothing rather than naming ghosts.
+		expect(fold.getAttribute("aria-controls")).toBeNull();
+		expect(document.getElementById("tuval-row-w1-child-1")).toBeNull();
+
+		await act(async () => {
+			fireEvent.click(fold);
+		});
+
+		const opened = foldButton();
+		expect(opened.textContent).toBe("Hide 2 nested calls");
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		const controls = opened.getAttribute("aria-controls")?.split(" ") ?? [];
+		expect(controls).toEqual(["tuval-row-w1-child-1", "tuval-row-w1-child-2"]);
+		for (const id of controls) expect(document.getElementById(id)).not.toBeNull();
+	});
+
+	it("leaves the call's own input panel shut, so reading a row does not burst its group open", async () => {
+		const harness = await openWindow(withTranscript(group));
+
+		const trigger = screen.getByRole("button", {name: /^Agent/});
+		await act(async () => {
+			fireEvent.click(trigger);
+		});
+		expect(harness.view().expanded).toEqual(["agent"]);
+		expect(harness.view().unfolded).toEqual([]);
+		expect(document.getElementById("tuval-row-w1-child-1")).toBeNull();
+
+		await act(async () => {
+			fireEvent.click(foldButton());
+		});
+		expect(harness.view().unfolded).toEqual(["agent"]);
+		expect(harness.view().expanded).toEqual(["agent"]);
+	});
+
+	it("gives a folded row that heads its own group a fold of its own", async () => {
+		await openWindow(
+			withTranscript([
+				call("agent", {name: "Agent"}),
+				call("inner", {name: "Agent", parentId: "agent"}),
+				call("leaf", {name: "bash", parentId: "inner"}),
+			]),
+			{},
+			{scroll: 0, draft: "", cursor: null, atOldest: false, expanded: [], unfolded: ["agent"]},
+		);
+
+		const folds = screen.getAllByRole("button", {name: /nested calls?$/});
+		expect(folds.map((button) => button.textContent)).toEqual([
+			"Hide 1 nested call",
+			"Show 1 nested call",
+		]);
+		expect(document.getElementById("tuval-row-w1-leaf")).toBeNull();
+
+		await act(async () => {
+			fireEvent.click(folds[1] as HTMLElement);
+		});
+		expect(document.getElementById("tuval-row-w1-leaf")).not.toBeNull();
 	});
 });

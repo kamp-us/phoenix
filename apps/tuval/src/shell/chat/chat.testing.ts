@@ -54,6 +54,8 @@ export const call = (
 		readonly output?: string;
 		readonly resultLimit?: number;
 		readonly status?: ToolStatus;
+		/** The call this one ran inside, for the subagent-fold cases. */
+		readonly parentId?: string;
 	} = {},
 ): ToolItem => ({
 	kind: "tool",
@@ -63,6 +65,7 @@ export const call = (
 	input: options.input ?? {path: "README.md"},
 	result: boundToolResult(options.output ?? "ok", options.resultLimit),
 	status: options.status ?? "ok",
+	...(options.parentId === undefined ? {} : {parentId: ItemId.make(options.parentId)}),
 });
 
 export const permissionRequest = (
