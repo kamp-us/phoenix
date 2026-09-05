@@ -24,6 +24,17 @@ Both records' `E` and `R` are inferred onto the row (`Program<S, M, C, U, Ctx, E
 program's failures and its service needs fall out of the code rather than being hand-declared. Never
 widen `R` by hand to make a spawn typecheck — the spawn is what has to supply it.
 
+**A Sub handler's failure ends the process, so treat returning as the only clean exit.** ADR
+[0346](../.decisions/0346-sub-failure-policy-actor-identity.md) makes a failed Sub the machine's Msg
+or the process's death, never a host retry: the host reports the `Cause` under `"sub-fiber"`, marks
+that Sub's id `failed`, and — with no `subFailure` projection to address it — closes the process's
+Scope with the failure as its Exit. Marked ids are never re-armed, `ended` ones included, so a Sub
+that returns normally does not restart while the state keeps desiring it. Restart is data: emit the
+Sub under a new id (an attempt counter in the id, or in the dep-keyed `deps` slice) and reconcile
+arms it fresh, which is what makes the retry replay. Catch inside the handler anything you mean to
+survive; let out only what should end the process. Declaring `subFailure` on a program row's `core`
+is not reachable yet — [#7933](https://github.com/kamp-us/phoenix/issues/7933) carries it.
+
 **A Sub that needs a service belongs in `subs`, not on the machine.** Demlik 0.12's own `subscribe`
 map is Promise-shaped and synchronous (`host/demlik-bridges.ts` is the whole translation), so a cell
 there has nowhere to ask for a service. `Processes` prefers a row's `subs` entry over the bridged

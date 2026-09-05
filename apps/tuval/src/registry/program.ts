@@ -166,6 +166,16 @@ export interface Program<
 	readonly resume?: (state: S) => ReadonlyArray<M>;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	readonly renderer?: RendererRef;
+	/**
+	 * The two desk-level renderers, both optional: what this program shows in the desk inspector,
+	 * and the segments it contributes to the middle of the status bar while one of its windows is
+	 * focused (#7500 rulings 4 and 5). A row declaring neither is a whole row — most programs draw
+	 * only in their window, which is the only surface they own. The shapes these resolve to are
+	 * `InspectorRenderer` and `StatusRenderer` (`src/shell/desk/renderer.ts`); this row carries the
+	 * reference and nothing else, as it does for the window renderer.
+	 */
+	readonly inspector?: RendererRef;
+	readonly status?: RendererRef;
 	readonly identity: DefinitionIdentity;
 	readonly placement: Placement;
 }

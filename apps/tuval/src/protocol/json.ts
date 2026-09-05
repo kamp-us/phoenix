@@ -38,6 +38,3 @@ export const stringifyJson = (value: unknown): JsonStringify => {
 		return {_tag: "Failed", reason: (cause as Error).message};
 	}
 };
-
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value);

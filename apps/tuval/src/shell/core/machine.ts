@@ -11,16 +11,18 @@
  * typed command line run the same row. A name the table does not hold — a user's own binding —
  * leaves as a `runCommand` Cmd for whoever runs the desk.
  *
- * **The prefix timer is the host's, and there is exactly one.** The core says when a window opens
- * (`startPrefixTimer`, carrying its length in ms) and when it closes (`cancelPrefixTimer`); the
- * host keeps one outstanding timer, replaces it on `startPrefixTimer` and drops it on
- * `cancelPrefixTimer`, then feeds `prefix.timeout` back when it fires. Without the cancel a timer
- * armed for a sequence that has since completed would disarm a prefix the user has just re-armed.
+ * **The only timer is the repeat window's, and there is exactly one.** An armed prefix waits
+ * indefinitely, as tmux does (#7842), so nothing here dates a plain arm. tmux's `repeat-time` is
+ * still bounded: after a `repeatable: true` binding the core asks for `startRepeatTimer` carrying
+ * that window's length in ms, and `cancelRepeatTimer` when it closes; the host keeps one
+ * outstanding timer and feeds `prefix.repeatLapsed` back when it fires. Without the cancel a timer
+ * left over from a spent repeat window would disarm a prefix the user has since re-armed.
  */
 
 import {defineMachine} from "@demlik/tea";
 import {Duration} from "effect";
 import {msgForCommandName} from "../commands/table.ts";
+import {type DeskMsg, initialDesk, toggleInspector} from "../desk/state.ts";
 import type {CommandName, Key, PrefixState, PrefixTable} from "../keys/index.ts";
 import {idle, route} from "../keys/index.ts";
 import {
@@ -57,28 +59,46 @@ import {
 } from "./state.ts";
 
 /**
- * What the core asks its host to do. The absence is the point: there is no stop-a-process arm, so
- * closing a window cannot end the process it was showing — a window is a view onto a process, and
- * the last view closing says nothing about the process's lifetime.
- *
- * `openProgram` and `attachProcess` are the picker's (`../picker/open.ts` runs both): spawning
- * needs the registry and the process table, which a pure reducer cannot reach, so the core names
- * the window and the thing to show in it and stops there.
+ * The arms the kernel's own `HostHandlers` answer (`../host/effects.ts`). `openProgram` and
+ * `attachProcess` are the picker's (`../picker/open.ts` runs both): spawning needs the registry and
+ * the process table, which a pure reducer cannot reach, so the core names the window and the thing
+ * to show in it and stops there. `forwardKey` is here too — a key belongs to the focused window's
+ * *process*, and delivering it is a dispatch into that process. `runCommand` and `reloadConfig`
+ * have no runner yet and are still the kernel's: resolving a name the command table does not hold
+ * needs the spell registry, and `Booted.reload` sits above the kernel (#7743).
  */
-export type ShellCmd =
+export type KernelCmd =
 	| {
 			readonly type: "forwardKey";
 			readonly processId: string;
 			readonly windowId: WindowId;
 			readonly key: string;
 	  }
-	| {readonly type: "startPrefixTimer"; readonly timeoutMs: number}
-	| {readonly type: "cancelPrefixTimer"}
 	| {readonly type: "runCommand"; readonly name: CommandName}
 	| {readonly type: "openProgram"; readonly windowId: WindowId; readonly programId: string}
 	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
-	| {readonly type: "openCommandLine"}
 	| {readonly type: "reloadConfig"};
+
+/**
+ * The arms no kernel handler can answer, which the browser surface answers instead: the command
+ * line is a page element, and a handler returns its follow-up Msgs rather than holding a dispatcher
+ * it could fire a timer through. Cmds do not cross the transport, so the page derives these for
+ * itself by running the key router a second time over the table the kernel sent it — deliberate
+ * duplication, held by a test rather than by an argument
+ * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
+ */
+export type PageCmd =
+	| {readonly type: "startRepeatTimer"; readonly timeoutMs: number}
+	| {readonly type: "cancelRepeatTimer"}
+	| {readonly type: "openCommandLine"};
+
+/**
+ * What the core asks its host to do, as the two halves that answer it. The absence is the point:
+ * there is no stop-a-process arm, so closing a window cannot end the process it was showing — a
+ * window is a view onto a process, and the last view closing says nothing about the process's
+ * lifetime. A ninth arm joins `KernelCmd` or `PageCmd`; there is nowhere else to put one.
+ */
+export type ShellCmd = KernelCmd | PageCmd;
 
 /**
  * Every Msg the shell core takes. `windowId` and `workspaceId` are optional wherever the focused
@@ -112,7 +132,8 @@ export type ShellMsg =
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
 	| {readonly type: "keys.press"; readonly key: Key}
-	| {readonly type: "prefix.timeout"};
+	| {readonly type: "prefix.repeatLapsed"}
+	| DeskMsg;
 
 /** What every cell returns: the state that follows, and what the host is asked to do. */
 export type Step = readonly [ShellState, readonly ShellCmd[]];
@@ -141,6 +162,7 @@ export const initialState = (): ShellState => {
 		order: [ids.workspace],
 		activeWorkspace: ids.workspace,
 		views: {},
+		desk: initialDesk,
 		prefix: disarmed,
 		nextId: 1,
 	};
@@ -148,18 +170,35 @@ export const initialState = (): ShellState => {
 
 const toRouter = (snapshot: PrefixSnapshot): PrefixState =>
 	snapshot.armed
-		? {_tag: "Armed", pending: snapshot.pending, timeout: Duration.millis(snapshot.timeoutMs)}
+		? {
+				_tag: "Armed",
+				pending: snapshot.pending,
+				repeatWindow:
+					snapshot.repeatWindowMs === null ? null : Duration.millis(snapshot.repeatWindowMs),
+			}
 		: idle;
 
 const fromRouter = (state: PrefixState): PrefixSnapshot =>
 	state._tag === "Armed"
-		? {armed: true, pending: state.pending, timeoutMs: Duration.toMillis(state.timeout)}
+		? {
+				armed: true,
+				pending: state.pending,
+				repeatWindowMs: state.repeatWindow === null ? null : Duration.toMillis(state.repeatWindow),
+			}
 		: disarmed;
 
-/** Opening a window replaces the outstanding timer; closing one drops it. Staying idle asks nothing. */
+/** How long the prefix's repeat window has left to run, or `null` when it is not in one. */
+const repeatWindowOf = (snapshot: PrefixSnapshot): number | null =>
+	snapshot.armed ? snapshot.repeatWindowMs : null;
+
+/**
+ * Opening a repeat window replaces the outstanding timer; leaving one drops it. A plain arm asks
+ * for neither, which is what makes waiting forever the shape rather than a large number.
+ */
 const timerCmds = (before: PrefixSnapshot, after: PrefixSnapshot): readonly ShellCmd[] => {
-	if (after.armed) return [{type: "startPrefixTimer", timeoutMs: after.timeoutMs}];
-	return before.armed ? [{type: "cancelPrefixTimer"}] : NO_CMDS;
+	const window = repeatWindowOf(after);
+	if (window !== null) return [{type: "startRepeatTimer", timeoutMs: window}];
+	return repeatWindowOf(before) === null ? NO_CMDS : [{type: "cancelRepeatTimer"}];
 };
 
 /**
@@ -436,9 +475,15 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		// would be a loop. Each gets the arm that says what it is.
 		"command.open": (state) => [state, [{type: "openCommandLine"}]],
 		"config.reload": (state) => [state, [{type: "reloadConfig"}]],
+		// Desk-level, so every workspace cell above leaves it untouched by spreading `...state`.
+		"desk.inspector.toggle": (state) => [{...state, desk: toggleInspector(state.desk)}, NO_CMDS],
 		"keys.press": pressKey,
-		"prefix.timeout": (state) =>
-			state.prefix.armed ? [{...state, prefix: disarmed}, NO_CMDS] : [state, NO_CMDS],
+		// A lapse disarms a repeat window and nothing else: a timer left over from a spent window
+		// must not drop a prefix the user has since armed by hand, which waits indefinitely.
+		"prefix.repeatLapsed": (state) =>
+			state.prefix.armed && state.prefix.repeatWindowMs !== null
+				? [{...state, prefix: disarmed}, NO_CMDS]
+				: [state, NO_CMDS],
 	};
 
 	return cells;
@@ -473,8 +518,8 @@ export const shellCore = ({table}: ShellCoreOptions) =>
 		// never reads it (#7576). The shell's Effect handlers land with its registry row (#7558).
 		interpret: {
 			forwardKey: () => Promise.resolve(),
-			startPrefixTimer: () => Promise.resolve(),
-			cancelPrefixTimer: () => Promise.resolve(),
+			startRepeatTimer: () => Promise.resolve(),
+			cancelRepeatTimer: () => Promise.resolve(),
 			runCommand: () => Promise.resolve(),
 			openProgram: () => Promise.resolve(),
 			attachProcess: () => Promise.resolve(),

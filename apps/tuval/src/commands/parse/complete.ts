@@ -9,6 +9,13 @@
  *    workspace names the snapshot carries. The caret's characters must appear in order; the tighter
  *    and earlier the run, the higher the rank. `scr` reaches `scratch`.
  *
+ * Both rules ignore case, through the one `fold` below (#7757). `W` offers exactly what `w` offers,
+ * at a segment and at a window alike: the recall-don't-search argument behind rule 1 is about the
+ * matching rule, not about capitalization, and a capitalized id offering nothing reads as broken.
+ *
+ * The fuzzy rank is over the *tightest* run in the value, not the first one found. `a-xb-ab` matches
+ * `ab` at 0-3 and again at 5-6, and the run it is ranked by is 5-6.
+ *
  * A fuzzy tie breaks on recency, most recent first (#7617 R1.5): every window and process row on the
  * snapshot carries the kernel's `recency` stamp, so two equally tight matches are ordered by which
  * one was focused or spawned last. Values with no stamp of their own — a workspace name, a
@@ -91,30 +98,42 @@ const liveValues = (param: ParamSpec, snapshot: Snapshot): LiveSet => {
 	return EMPTY;
 };
 
-/** How tightly `query` sits inside `value` as a subsequence: `undefined` when it does not. */
-const subsequenceScore = (value: string, query: string): number | undefined => {
+/** The one case rule both matchers apply. */
+const fold = (text: string): string => text.toLowerCase();
+
+/**
+ * How tightly `query` sits inside `value` as a subsequence: `undefined` when it does not.
+ *
+ * Exported for the ranking tests, which pin the score of a named value against the run they name.
+ */
+export const subsequenceScore = (value: string, query: string): number | undefined => {
 	if (query === "") return 0;
-	const haystack = value.toLowerCase();
-	const needle = query.toLowerCase();
-	let first = -1;
-	let cursor = 0;
-	for (let index = 0; index < haystack.length && cursor < needle.length; index += 1) {
-		if (haystack[index] !== needle[cursor]) continue;
-		if (first < 0) first = index;
-		cursor += 1;
-		if (cursor === needle.length) {
-			// Earlier beats later, and a tight run beats a scattered one; the span dominates so a
-			// contiguous match late in a name still outranks a scattered one near its front.
-			return (index - first) * 1000 + first;
+	const haystack = fold(value);
+	const needle = fold(query);
+	let best: number | undefined;
+	for (let start = 0; start < haystack.length; start += 1) {
+		if (haystack[start] !== needle[0]) continue;
+		let cursor = 1;
+		let index = start + 1;
+		for (; index < haystack.length && cursor < needle.length; index += 1) {
+			if (haystack[index] === needle[cursor]) cursor += 1;
 		}
+		// A start that cannot complete leaves every later start less room, so none can either.
+		if (cursor < needle.length) break;
+		// Earlier beats later, and a tight run beats a scattered one; the span dominates so a
+		// contiguous match late in a name still outranks a scattered one near its front.
+		const score = (index - 1 - start) * 1000 + start;
+		if (best === undefined || score < best) best = score;
 	}
-	return undefined;
+	return best;
 };
 
-const byPrefix = (values: ReadonlyArray<Ranked>, query: string): ReadonlyArray<Candidate> =>
-	values
-		.filter((ranked) => ranked.candidate.value.startsWith(query))
+const byPrefix = (values: ReadonlyArray<Ranked>, query: string): ReadonlyArray<Candidate> => {
+	const needle = fold(query);
+	return values
+		.filter((ranked) => fold(ranked.candidate.value).startsWith(needle))
 		.map((ranked) => ranked.candidate);
+};
 
 const byFuzz = (values: ReadonlyArray<Ranked>, query: string): ReadonlyArray<Candidate> =>
 	values

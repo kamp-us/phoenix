@@ -1,5 +1,11 @@
 <!doctype html>
-<html lang="en">
+<!--
+	`data-theme` and `data-color-theme` are how `@kampus/design`'s token layer is switched, and the
+	desk is dark-only window chrome: there is no light branch to fall back to and nothing reads
+	`prefers-color-scheme`. `indigo` is the accent nearest the desk's own blue, so the palette and the
+	surface behind it read as one system.
+-->
+<html lang="en" data-theme="dark" data-color-theme="indigo">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />

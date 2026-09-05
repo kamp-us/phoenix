@@ -36,7 +36,7 @@ import {
 	windowIds,
 } from "../../shell/core/index.ts";
 import {serveDesk} from "../../shell/host/index.ts";
-import {type Key, parse} from "../../shell/keys/index.ts";
+import {defaultPrefixTable, type Key, parse} from "../../shell/keys/index.ts";
 import {windows} from "../../shell/layout/index.ts";
 import {
 	mountPicker,
@@ -83,7 +83,7 @@ const freshProject = (): string => {
  */
 const bootDesk = Effect.fn("piVertical.bootDesk")(function* (project: string) {
 	const booted = yield* boot({global: configModule, project});
-	const server = yield* serveDesk({kernel: booted.kernel, port: 0});
+	const server = yield* serveDesk({kernel: booted.kernel, port: 0, table: defaultPrefixTable});
 	const entries = yield* readEntries.pipe(Effect.provideContext(booted.kernel));
 	return {booted, server, entries};
 });

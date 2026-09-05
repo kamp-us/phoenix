@@ -1,5 +1,5 @@
+import {assert, describe, expect, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {describe, expect, it} from "vitest";
 import {agentSide, windowSide} from "../../ai-agent-fixtures/programs.ts";
 import {compile} from "../../ports/compile.ts";
 import {IncompatibleRoute} from "../../ports/errors.ts";
@@ -20,9 +20,8 @@ const node = (id: string, program: string, on: Graph["nodes"][number]["on"] = []
 
 const to = (node: string, port: string) => ({node: NodeId.make(node), port});
 
-const compiled = (graph: Graph) => Effect.runPromise(Effect.provide(compile(graph), registry));
-const refusal = (graph: Graph) =>
-	Effect.runPromise(Effect.flip(Effect.provide(compile(graph), registry)));
+const compiled = (graph: Graph) => Effect.provide(compile(graph), registry);
+const refusal = (graph: Graph) => Effect.flip(Effect.provide(compile(graph), registry));
 
 describe("the five AI agent ports", () => {
 	it("declares five ports, each with its own kind", () => {
@@ -65,34 +64,39 @@ describe("the five AI agent ports", () => {
 });
 
 describe("route compatibility over the five ports", () => {
-	it("compiles the whole interface when the two halves mirror each other", async () => {
-		const graph = await compiled({
-			nodes: [
-				node("agent", "ai-agent-fixture", [
-					{port: "transcript", to: to("window", "transcript")},
-					{port: "pageReply", to: to("window", "pageReply")},
-					{port: "permissionPending", to: to("window", "permissionPending")},
-					{port: "modeState", to: to("window", "modeState")},
-				]),
-				node("window", "ai-agent-window-fixture", [
-					{port: "prompt", to: to("agent", "prompt")},
-					{port: "pageRequest", to: to("agent", "pageRequest")},
-					{port: "permissionDecision", to: to("agent", "permissionDecision")},
-					{port: "modeSet", to: to("agent", "modeSet")},
-				]),
-			],
-		});
-		expect(graph.routes.map((route) => route.kind)).toEqual([
-			transcript.kind,
-			transcriptPage.kind,
-			permission.kind,
-			mode.kind,
-			prompt.kind,
-			transcriptPage.kind,
-			permission.kind,
-			mode.kind,
-		]);
-	});
+	it.effect("compiles the whole interface when the two halves mirror each other", () =>
+		Effect.gen(function* () {
+			const graph = yield* compiled({
+				nodes: [
+					node("agent", "ai-agent-fixture", [
+						{port: "transcript", to: to("window", "transcript")},
+						{port: "pageReply", to: to("window", "pageReply")},
+						{port: "permissionPending", to: to("window", "permissionPending")},
+						{port: "modeState", to: to("window", "modeState")},
+					]),
+					node("window", "ai-agent-window-fixture", [
+						{port: "prompt", to: to("agent", "prompt")},
+						{port: "pageRequest", to: to("agent", "pageRequest")},
+						{port: "permissionDecision", to: to("agent", "permissionDecision")},
+						{port: "modeSet", to: to("agent", "modeSet")},
+					]),
+				],
+			});
+			assert.deepStrictEqual(
+				graph.routes.map((route) => route.kind),
+				[
+					transcript.kind,
+					transcriptPage.kind,
+					permission.kind,
+					mode.kind,
+					prompt.kind,
+					transcriptPage.kind,
+					permission.kind,
+					mode.kind,
+				],
+			);
+		}),
+	);
 
 	const agentNode = {node: "agent", program: "ai-agent-fixture"} as const;
 	const windowNode = {node: "window", program: "ai-agent-window-fixture"} as const;
@@ -150,28 +154,29 @@ describe("route compatibility over the five ports", () => {
 		{at: windowNode, from: "modeSet", to: agentNode, into: "prompt", src: mode, dst: prompt},
 	] as const;
 
-	it.each(
-		crossings,
-	)("refuses $from routed into a $into port before boot, naming both kinds", async ({
-		at,
-		from,
-		to: target,
-		into,
-		src,
-		dst,
-	}) => {
-		const error = await refusal({
-			nodes: [
-				node(at.node, at.program, [{port: from, to: to(target.node, into)}]),
-				node(target.node, target.program),
-			],
-		});
-		expect(error).toBeInstanceOf(IncompatibleRoute);
-		expect(error).toMatchObject({
-			source: {program: at.program, port: from, kind: src.kind},
-			target: {program: target.program, port: into, kind: dst.kind},
-		});
-		expect(error.message).toContain(src.kind);
-		expect(error.message).toContain(dst.kind);
-	});
+	it.effect.each(crossings)(
+		"refuses $from routed into a $into port before boot, naming both kinds",
+		({at, from, to: target, into, src, dst}) =>
+			Effect.gen(function* () {
+				const error = yield* refusal({
+					nodes: [
+						node(at.node, at.program, [{port: from, to: to(target.node, into)}]),
+						node(target.node, target.program),
+					],
+				});
+				assert.instanceOf(error, IncompatibleRoute);
+				assert.deepStrictEqual(error.source, {
+					program: ProgramId.make(at.program),
+					port: from,
+					kind: src.kind,
+				});
+				assert.deepStrictEqual(error.target, {
+					program: ProgramId.make(target.program),
+					port: into,
+					kind: dst.kind,
+				});
+				assert.include(error.message, src.kind);
+				assert.include(error.message, dst.kind);
+			}),
+	);
 });

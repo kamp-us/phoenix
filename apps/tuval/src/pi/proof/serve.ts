@@ -35,6 +35,7 @@ import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
 import {activeWorkspace, type ShellState, windowIds} from "../../shell/core/index.ts";
 import {serveDesk} from "../../shell/host/index.ts";
+import {defaultPrefixTable} from "../../shell/keys/index.ts";
 import {windows} from "../../shell/layout/index.ts";
 import {shellNode} from "../../shell/program.ts";
 import {WindowId} from "../../shell/window/index.ts";
@@ -137,7 +138,7 @@ const proof = Command.make(
 			yield* until(`the reply to "${text}"`, () => replies() > before, seen);
 		}
 
-		const transport = yield* serveDesk({kernel, port: 0});
+		const transport = yield* serveDesk({kernel, port: 0, table: defaultPrefixTable});
 		const page = yield* servePage({root: appRoot, transport, port: pagePort}).pipe(Effect.orDie);
 		yield* Console.log(`pi-vertical proof: project ${project}`);
 		yield* Console.log(

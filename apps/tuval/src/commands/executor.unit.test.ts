@@ -1,8 +1,9 @@
-import {Effect, Layer, Schema} from "effect";
-import {describe, expect, expectTypeOf, it} from "vitest";
+import {assert, describe, expect, expectTypeOf, it} from "@effect/vitest";
+import {Cause, Effect, Exit, Layer, Schema} from "effect";
 import {ProcessId} from "../process/process.ts";
-import {CallId} from "../protocol/ids.ts";
+import {CallId, type SpellPath} from "../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages.ts";
+import {SpellFailed} from "./errors.ts";
 import {SpellExecutor} from "./executor.ts";
 import {SpellRegistry} from "./registry.ts";
 import {type Client, WindowIndex, type WindowPlacement} from "./scope.ts";
@@ -52,6 +53,33 @@ const refuse = defineSpell({
 	capabilities: [],
 });
 
+const swear = defineSpell({
+	path: ["window", "swear"],
+	describe: "Fail with a bare string.",
+	params: Schema.Struct({}),
+	result: Schema.Boolean,
+	execute: () => Effect.fail("the compositor said no"),
+	capabilities: [],
+});
+
+const mutter = defineSpell({
+	path: ["window", "mutter"],
+	describe: "Fail with a record carrying no tag.",
+	params: Schema.Struct({}),
+	result: Schema.Boolean,
+	execute: () => Effect.fail({reason: "the disk is full"}),
+	capabilities: [],
+});
+
+const hush = defineSpell({
+	path: ["window", "hush"],
+	describe: "Fail with a tag and no message.",
+	params: Schema.Struct({}),
+	result: Schema.Boolean,
+	execute: () => Effect.fail({_tag: "test/Silent"}),
+	capabilities: [],
+});
+
 // Written as an erased `AnySpell` rather than through `defineSpell`, which is exactly the compile
 // error this spell exists to get past: a spell whose value its own `result` refuses.
 const lie: AnySpell = {
@@ -63,14 +91,14 @@ const lie: AnySpell = {
 	capabilities: [],
 };
 
-const spells: ReadonlyArray<AnySpell> = [close, refuse, lie];
+const spells: ReadonlyArray<AnySpell> = [close, refuse, swear, mutter, hush, lie];
 
 const layer = SpellExecutor.layer.pipe(
 	Layer.provide(Layer.mergeAll(SpellRegistry.scripted(spells), WindowIndex.scripted(placements))),
 );
 
 const call = (fields: {
-	readonly path: ReadonlyArray<string>;
+	readonly path: SpellPath;
 	readonly args: unknown;
 	readonly window?: WindowId;
 }): SpellCall =>
@@ -83,14 +111,13 @@ const call = (fields: {
 		...(fields.window === undefined ? {} : {window: fields.window}),
 	});
 
-const execute = (one: SpellCall): Promise<SpellReply> => {
-	seen = undefined;
-	return Effect.runPromise(
-		Effect.flatMap(SpellExecutor, (executor) => executor.execute(one, client)).pipe(
+const execute = (one: SpellCall) =>
+	Effect.suspend(() => {
+		seen = undefined;
+		return Effect.flatMap(SpellExecutor, (executor) => executor.execute(one, client)).pipe(
 			Effect.provide(layer),
-		),
-	);
-};
+		);
+	});
 
 const failure = (reply: SpellReply) => {
 	if (reply.ok) throw new Error(`expected a refusal, got ${JSON.stringify(reply)}`);
@@ -104,77 +131,130 @@ describe("SpellExecutor", () => {
 		>();
 	});
 
-	it("takes the process and workspace from the index when the call names a window", async () => {
-		const reply = await execute(
-			call({path: ["window", "close"], args: {id: "w-1"}, window: leftWindow}),
-		);
-		expect(reply.ok).toBe(true);
-		expect(reply.ok ? reply.result : undefined).toEqual({closed: true});
-		expect(seen).toEqual({
-			window: leftWindow,
-			process: counterProcess,
-			workspace: otherWorkspace,
-			client: client.id,
-		});
-	});
-
-	it("runs a windowless call in the client's workspace, naming no process", async () => {
-		await execute(call({path: ["window", "close"], args: {id: "w-1"}}));
-		expect(seen).toEqual({workspace, client: client.id});
-	});
-
-	it("never reads the scope off the call's args — a forged process is ignored", async () => {
-		await execute(
-			call({
-				path: ["window", "close"],
-				args: {id: "w-1", process: forgedProcess},
+	it.effect("takes the process and workspace from the index when the call names a window", () =>
+		Effect.gen(function* () {
+			const reply = yield* execute(
+				call({path: ["window", "close"], args: {id: "w-1"}, window: leftWindow}),
+			);
+			assert.strictEqual(reply.ok, true);
+			assert.deepStrictEqual(reply.ok ? reply.result : undefined, {closed: true});
+			assert.deepStrictEqual(seen, {
 				window: leftWindow,
-			}),
-		);
-		expect(seen?.process).toBe(counterProcess);
+				process: counterProcess,
+				workspace: otherWorkspace,
+				client: client.id,
+			});
+		}),
+	);
+
+	it.effect("runs a windowless call in the client's workspace, naming no process", () =>
+		Effect.gen(function* () {
+			yield* execute(call({path: ["window", "close"], args: {id: "w-1"}}));
+			assert.deepStrictEqual(seen, {workspace, client: client.id});
+		}),
+	);
+
+	it.effect("never reads the scope off the call's args — a forged process is ignored", () =>
+		Effect.gen(function* () {
+			yield* execute(
+				call({
+					path: ["window", "close"],
+					args: {id: "w-1", process: forgedProcess},
+					window: leftWindow,
+				}),
+			);
+			assert.strictEqual(seen?.process, counterProcess);
+		}),
+	);
+
+	it.effect("refuses a window the index does not hold", () =>
+		Effect.gen(function* () {
+			const reply = yield* execute(
+				call({path: ["window", "close"], args: {id: "w-1"}, window: missingWindow}),
+			);
+			assert.deepStrictEqual(failure(reply), {
+				tag: "tuval/commands/NoSuchWindow",
+				message: 'no window "w-9" is open',
+				path: ["window", "close"],
+			});
+			assert.strictEqual(seen, undefined);
+		}),
+	);
+
+	it.effect("refuses an unknown path, naming the nearest one it holds", () =>
+		Effect.gen(function* () {
+			const reply = yield* execute(call({path: ["window", "clos"], args: {id: "w-1"}}));
+			const error = failure(reply);
+			assert.strictEqual(error.tag, "tuval/commands/UnknownSpell");
+			assert.strictEqual(error.didYouMean, "window.close");
+			assert.deepStrictEqual(error.path, ["window", "clos"]);
+		}),
+	);
+
+	it.effect("refuses args the spell's params refuse, naming the argument and the expectation", () =>
+		Effect.gen(function* () {
+			const reply = yield* execute(call({path: ["window", "close"], args: {id: 3}}));
+			const error = failure(reply);
+			assert.strictEqual(error.tag, "tuval/commands/BadArgs");
+			assert.match(error.expected ?? "", /string/i);
+			assert.include(error.message, '"id"');
+			assert.include(error.message, '"window.close"');
+		}),
+	);
+
+	it.effect("carries a spell's own tagged error through as the refusal's tag", () =>
+		Effect.gen(function* () {
+			const reply = yield* execute(call({path: ["window", "explode"], args: {}}));
+			assert.deepStrictEqual(failure(reply), {
+				tag: "test/Refused",
+				message: "refused: the window is pinned",
+				path: ["window", "explode"],
+			});
+		}),
+	);
+
+	it.effect("names SpellFailed when a spell fails with a bare string, and quotes the string", () =>
+		Effect.gen(function* () {
+			const reply = yield* execute(call({path: ["window", "swear"], args: {}}));
+			assert.deepStrictEqual(failure(reply), {
+				tag: "tuval/commands/SpellFailed",
+				message: 'spell "window.swear" failed with "the compositor said no"',
+				path: ["window", "swear"],
+			});
+		}),
+	);
+
+	it.effect("names SpellFailed when a spell fails with an untagged record, and renders it", () =>
+		Effect.gen(function* () {
+			const error = failure(yield* execute(call({path: ["window", "mutter"], args: {}})));
+			assert.strictEqual(error.tag, "tuval/commands/SpellFailed");
+			assert.include(error.message, "the disk is full");
+			assert.notStrictEqual(error.message, `the call failed with ${error.tag}`);
+		}),
+	);
+
+	it("keeps the untagged value on the error rather than dropping it", () => {
+		const original = {reason: "the disk is full"};
+		const failed = new SpellFailed({path: "window.mutter", original});
+		expect(failed.original).toBe(original);
+		expect(failed._tag).toBe("tuval/commands/SpellFailed");
 	});
 
-	it("refuses a window the index does not hold", async () => {
-		const reply = await execute(
-			call({path: ["window", "close"], args: {id: "w-1"}, window: missingWindow}),
-		);
-		expect(failure(reply)).toEqual({
-			tag: "tuval/commands/NoSuchWindow",
-			message: 'no window "w-9" is open',
-			path: ["window", "close"],
-		});
-		expect(seen).toBeUndefined();
-	});
+	it.effect("falls back to the tag only when a named error carries no message", () =>
+		Effect.gen(function* () {
+			const reply = yield* execute(call({path: ["window", "hush"], args: {}}));
+			assert.strictEqual(failure(reply).message, "the call failed with test/Silent");
+		}),
+	);
 
-	it("refuses an unknown path, naming the nearest one it holds", async () => {
-		const reply = await execute(call({path: ["window", "clos"], args: {id: "w-1"}}));
-		const error = failure(reply);
-		expect(error.tag).toBe("tuval/commands/UnknownSpell");
-		expect(error.didYouMean).toBe("window.close");
-		expect(error.path).toEqual(["window", "clos"]);
-	});
-
-	it("refuses args the spell's params refuse, naming the argument and the expectation", async () => {
-		const reply = await execute(call({path: ["window", "close"], args: {id: 3}}));
-		const error = failure(reply);
-		expect(error.tag).toBe("tuval/commands/BadArgs");
-		expect(error.expected).toMatch(/string/i);
-		expect(error.message).toContain('"id"');
-		expect(error.message).toContain('"window.close"');
-	});
-
-	it("carries a spell's own tagged error through as the refusal's tag", async () => {
-		const reply = await execute(call({path: ["window", "explode"], args: {}}));
-		expect(failure(reply)).toEqual({
-			tag: "test/Refused",
-			message: "refused: the window is pinned",
-			path: ["window", "explode"],
-		});
-	});
-
-	it("dies rather than replies when a spell's value its own result schema refuses", async () => {
-		await expect(execute(call({path: ["window", "lie"], args: {}}))).rejects.toThrow(
-			/result its own schema refuses/,
-		);
-	});
+	it.effect("dies rather than replies when a spell's value its own result schema refuses", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(execute(call({path: ["window", "lie"], args: {}})));
+			assert.strictEqual(Exit.isFailure(exit), true);
+			assert.match(
+				Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "",
+				/result its own schema refuses/,
+			);
+		}),
+	);
 });

@@ -18,7 +18,7 @@
 
 import {Effect, Schema} from "effect";
 import {WorkspaceId} from "../../protocol/ids.ts";
-import {firstSchemaIssue} from "../../protocol/issue.ts";
+import {firstSchemaIssue, parameterOf} from "../../protocol/issue.ts";
 import {PROTOCOL_VERSION, Snapshot} from "../../protocol/messages.ts";
 import {buildSpellIndex, describeExpected, parse, tokenize} from "../parse/index.ts";
 import {describeSpell, lookupRow, type RegistryTable} from "../registry.ts";
@@ -144,7 +144,9 @@ const compileOne = Effect.fn("Tuval.Commands.compileBinding")(function* (
 
 	if (decoded._tag === "Failure") {
 		const {expected, at} = firstSchemaIssue(decoded.failure);
-		return refuse(argumentPosition(command, path, args[at]), expected);
+		// `at` reaches inside the decoded value; `args` is the parser's flat record, one entry per
+		// parameter, so only the parameter the path opens on can be looked up in it.
+		return refuse(argumentPosition(command, path, args[parameterOf(at)]), expected);
 	}
 
 	const binding: Binding = {

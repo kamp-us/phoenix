@@ -5,9 +5,12 @@
  * to bottom. Studio inverts this at its render boundary — this port does not, and no orientation
  * flip appears anywhere here (#7551).
  *
- * Ids are plain strings: `Schema.brand` would pull Effect into a module the ticket keeps free of
- * it, and `.glossary/LANGUAGE.md` rejects the hand-rolled phantom-symbol brand as the substitute.
+ * Ids are plain strings: `Schema.brand` would put an Effect type on every id this module hands
+ * out, and `.glossary/LANGUAGE.md` rejects the hand-rolled phantom-symbol brand as the substitute.
+ * The one `effect` import here is `Predicate.isObject`, a pure guard the pin's own guidance says to
+ * use instead of a hand-rolled `isRecord` (#7764); it touches no id and pulls in no runtime.
  */
+import {Predicate} from "effect";
 
 /** A window id. The shell mints it; this module never generates one. */
 export type WindowId = string;
@@ -79,12 +82,9 @@ export function createTree(root: StackNode, zoomed: WindowId | null = null): Lay
 	return {root, zoomed};
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value);
-
 export function isWindowNode(value: unknown): value is WindowNode {
 	return (
-		isRecord(value) &&
+		Predicate.isObject(value) &&
 		value.tag === "window" &&
 		typeof value.id === "string" &&
 		(value.processId === null || typeof value.processId === "string")
@@ -93,13 +93,13 @@ export function isWindowNode(value: unknown): value is WindowNode {
 
 export function isStackNode(value: unknown): value is StackNode {
 	return (
-		isRecord(value) &&
+		Predicate.isObject(value) &&
 		value.tag === "stack" &&
 		typeof value.id === "string" &&
 		(value.orientation === "horizontal" || value.orientation === "vertical") &&
 		Array.isArray(value.children) &&
 		value.children.every(isLayoutNode) &&
-		isRecord(value.sizes) &&
+		Predicate.isObject(value.sizes) &&
 		Object.values(value.sizes).every((size) => typeof size === "number")
 	);
 }
@@ -117,7 +117,7 @@ export function isLayoutNode(value: unknown): value is LayoutNode {
 /** `sizes` is checked for number values and not for its sum — `resolveSizes` re-derives that. */
 export function isLayoutTree(value: unknown): value is LayoutTree {
 	return (
-		isRecord(value) &&
+		Predicate.isObject(value) &&
 		isStackNode(value.root) &&
 		(value.zoomed === null || typeof value.zoomed === "string")
 	);

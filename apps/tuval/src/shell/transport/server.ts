@@ -12,16 +12,26 @@
  *
  * There is no shell frame here. The shell process's state leaves on the same `process-state` frame
  * as any other process's, and the page finds its shell by reading the table.
+ *
+ * The catalog of windowed programs goes out the same way: read off the registry as the socket opens,
+ * and re-read on `publishRegistry`, never held as a snapshot taken when the server started (#7788).
+ *
+ * The prefix table goes out first of all, ahead of the catalog and the rows. It is the one thing
+ * here that is not state: it is the grammar the page routes keys over, and the page routes over no
+ * other ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
  */
 
 import type {IncomingMessage} from "node:http";
 import {NodeSocketServer} from "@effect/platform-node";
-import {Context, Deferred, Effect, type Option, type Redacted, Stream} from "effect";
+import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream} from "effect";
 import {Socket, type SocketServer} from "effect/unstable/socket";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessChange, ProcessHandle, ProcessId} from "../../process/process.ts";
+import {type AnyProgram, programLabel} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
+import type {PrefixTable} from "../keys/table.ts";
+import {showsInAWindow} from "../picker/entries.ts";
 import {checkHandshake, launchUrl, loopbackOrigins} from "./handshake.ts";
 import {
 	ATTACH_REFUSED_KIND,
@@ -29,8 +39,11 @@ import {
 	DISPATCHED_KIND,
 	decodeClientFrame,
 	encodeFrame,
+	keysFrame,
 	PROCESS_STATE_KIND,
 	type ProcessStateFrame,
+	REGISTRY_KIND,
+	type RegistryFrame,
 	type ServerFrame,
 	TABLE_KIND,
 	tableFrame,
@@ -51,10 +64,24 @@ export interface ServeOptions {
 	readonly port: number;
 	readonly host?: string;
 	readonly handles: Handles;
+	/**
+	 * The key grammar the kernel routes against, sent to every page as its socket opens. Required
+	 * rather than defaulted: a page routes over this table and no other (ADR 0353), so a server that
+	 * guessed one would be inventing the grammar the ruling took away from the page.
+	 */
+	readonly table: PrefixTable;
 }
 
 export interface TransportServer {
 	readonly port: number;
+	/**
+	 * Re-read the registry and send its windowed programs to every attached page. A reload changes
+	 * what a kernel offers, and a page cannot ask — a spell call is the only message it may send
+	 * (#7617) — so the kernel pushes. Nothing calls this in production yet, and nothing can usefully:
+	 * `Registry.layer` builds one frozen map, so every call today would re-send the catalog the
+	 * socket already got on open (#7841). `Booted.reload` writes only the spell registry (#7743).
+	 */
+	readonly publishRegistry: Effect.Effect<void>;
 	/** The one URL the launch prints: the address plus the launch token, and nothing else secret. */
 	readonly launchUrl: string;
 	/**
@@ -76,6 +103,23 @@ export interface SocketSession {
 }
 
 const CLOSE_POLICY = 1008;
+
+/** Every attached page's writer. A catalog change reaches the pages already open through these. */
+type Attached = Set<(frame: ServerFrame) => Effect.Effect<void>>;
+
+/**
+ * The registry's windowed programs, as one frame. `showsInAWindow` is the filter, so the headless
+ * test stays in the one place that owns it (`../picker/entries.ts`) and never grows a second reading
+ * here.
+ */
+export const registryFrame = (rows: ReadonlyArray<AnyProgram>): RegistryFrame => ({
+	kind: REGISTRY_KIND,
+	programs: rows.filter(showsInAWindow).map((row) => ({
+		programId: row.id,
+		label: programLabel(row),
+		renderer: row.renderer,
+	})),
+});
 
 const stateFrame = (processId: ProcessId, change: ProcessChange): ProcessStateFrame => {
 	if (change.kind === "stopped") {
@@ -129,22 +173,42 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	}
 	admitLoopbackPort(address.port);
 
+	const pages: Attached = new Set();
+	// One permit over every catalog write, held by a greet and by `publishRegistry` alike: a page
+	// takes it to send its first catalog and join `pages`, so no publish can land in between and be
+	// lost to a page that is neither on the socket yet nor in the set.
+	const catalogLock = yield* Semaphore.make(1);
 	yield* Effect.forkScoped(
 		server.run((socket) =>
-			Effect.scoped(session(socket, options.handles)).pipe(Effect.provideContext(services)),
+			Effect.scoped(session(socket, options.handles, options.table, pages, catalogLock)).pipe(
+				Effect.provideContext(services),
+			),
 		),
+	);
+
+	const publishRegistry = Semaphore.withPermit(catalogLock)(
+		Effect.gen(function* () {
+			const frame = registryFrame(yield* registry.list);
+			// One page at a time: a write is a queued frame, not a round trip, and a serial walk keeps
+			// the publish a single point in time for every page rather than a fan nothing orders.
+			yield* Effect.forEach(pages, (send) => send(frame), {discard: true, concurrency: 1});
+		}),
 	);
 
 	return {
 		port: address.port,
 		launchUrl: launchUrl({port: address.port, token: options.token, host}),
 		admitLoopbackPort,
+		publishRegistry,
 	} satisfies TransportServer;
 });
 
 const session = Effect.fn("Tuval.transport.session")(function* (
 	socket: Socket.Socket,
 	handles: Handles,
+	keyTable: PrefixTable,
+	pages: Attached,
+	catalogLock: Semaphore.Semaphore,
 ) {
 	const table = yield* ProcessTable;
 	const tablePort = yield* ProcessTablePort;
@@ -156,6 +220,7 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 	const send = (frame: ServerFrame) => Effect.ignore(write(encodeFrame(frame)));
 	const close = (reason: string) =>
 		Effect.ignore(write(new Socket.CloseEvent(CLOSE_POLICY, reason)));
+	yield* Effect.addFinalizer(() => Effect.sync(() => void pages.delete(send)));
 
 	const attach = Effect.fn("Tuval.transport.attach")(function* (processId: ProcessId) {
 		const row = yield* Effect.option(table.get(processId));
@@ -270,9 +335,22 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 			),
 			scope,
 		);
-		for (const row of yield* tablePort.rows) {
-			yield* send({kind: TABLE_KIND, event: "spawned", row: toWireRow(row)});
-		}
+		yield* Semaphore.withPermit(catalogLock)(
+			Effect.gen(function* () {
+				// The grammar first: a page that has been told nothing routes nothing, so every frame
+				// after this one reaches a surface that can already answer a key (ADR 0353).
+				yield* send(keysFrame(keyTable));
+				yield* send(registryFrame(yield* registry.list));
+				for (const row of yield* tablePort.rows) {
+					yield* send({kind: TABLE_KIND, event: "spawned", row: toWireRow(row)});
+				}
+				// Registered last: `send` writes through a writer the read loop's latch opens, so a
+				// publish racing this greet would deadlock the very socket it is greeting. The permit is
+				// what makes "last" safe rather than lossy — a publish waiting on it runs after the add
+				// and reaches this page too.
+				yield* Effect.sync(() => void pages.add(send));
+			}),
+		);
 		yield* Effect.ignore(Deferred.succeed(ready, undefined));
 	});
 

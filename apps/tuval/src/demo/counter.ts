@@ -64,9 +64,8 @@ export const counterProgram = ({everyMs}: CounterOptions): AnyProgram =>
 		},
 		capabilities: [],
 		// A row with no renderer is headless and can never bind a window (`../shell/picker/entries.ts`),
-		// so a demo program the shell opens declares one. The reference is not what a surface resolves
-		// against — the process-table wire carries no renderer field, so the page keys its own table by
-		// program id (`../page/renderers.tsx`). Nothing here names React either way.
+		// so a demo program the shell opens declares one. The reference is what the page's own table
+		// answers by name (`../page/renderers.tsx`); nothing here names React.
 		renderer: {kind: "host-native", ref: "tuval/demo/counter"} satisfies RendererRef,
 		identity: {
 			package: "@kampus/tuval",

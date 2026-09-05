@@ -49,7 +49,7 @@ import {
 import {RegistryDescription, type SpellDescription} from "../protocol/registry-description.ts";
 import {type AnyProgram, type Program, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
-import {SpellBridge, type SpellBridgeApi} from "./bridge/index.ts";
+import {everyRegistered, SpellBridge, type SpellBridgeApi} from "./bridge/index.ts";
 import {HelpRows} from "./core/help.ts";
 import {SpawnedProcesses} from "./core/process.ts";
 import {SpellExecutor} from "./executor.ts";
@@ -178,7 +178,13 @@ const world: Readonly<Record<string, unknown>> = {
  * One argument, from the parameter's own schema first and the desk second: an enum takes its first
  * literal, a parameter naming a spell path takes a registered one, and anything the schema cannot
  * settle comes from the desk or from what an earlier call in this script returned.
+ *
+ * A parameter none of those settle is `unsettled`, never an empty string. Substituting `""` let the
+ * proof pass on a spell nobody had taught it: the kernel was handed empty text for a value the
+ * script knew nothing about, and the run counted the call as a spell the agent had reached.
  */
+const unsettled = Symbol("unsettled");
+
 const argumentFor = (
 	spell: string,
 	param: ParamSpec,
@@ -190,26 +196,31 @@ const argumentFor = (
 	if (param.literals !== undefined) return param.literals[0];
 	if (param.name === "path") return firstPath;
 	const carried = learned[param.name];
-	return carried === undefined ? "" : carried;
+	return carried === undefined ? unsettled : carried;
 };
 
-const argumentsFor = (
+/** The generated call, plus every parameter neither the world map nor the schema could settle. */
+interface Generated {
+	readonly args: Readonly<Record<string, unknown>>;
+	readonly unsettled: ReadonlyArray<string>;
+}
+
+const generateArguments = (
 	description: SpellDescription,
 	learned: Readonly<Record<string, unknown>>,
 	firstPath: string,
-): Readonly<Record<string, unknown>> => {
+): Generated => {
 	const spell = description.path.join(".");
 	const args: Record<string, unknown> = {};
+	const missing: Array<string> = [];
 	for (const param of readParams(description.params)) {
-		args[param.name] = argumentFor(spell, param, learned, firstPath);
+		const value = argumentFor(spell, param, learned, firstPath);
+		// Left out rather than filled with a placeholder, so the kernel refuses the call against its
+		// own `params` and the transcript cannot record an unsettled parameter as a reply.
+		if (value === unsettled) missing.push(`${spell}.${param.name}`);
+		else args[param.name] = value;
 	}
-	return args;
-};
-
-const asPath = (segments: ReadonlyArray<string>): SpellPath => {
-	const [head, ...rest] = segments;
-	assert.isDefined(head, "a description with an empty path");
-	return [head ?? "", ...rest];
+	return {args, unsettled: missing};
 };
 
 /**
@@ -249,6 +260,7 @@ const resultOf = (reply: SpellReply): unknown => (reply.ok ? reply.result : unde
 const script = Effect.fn("agentProof.script")(function* () {
 	const transcript: Array<Exchange> = [];
 	const learned: Record<string, unknown> = {};
+	const unfilled: Array<string> = [];
 
 	const call = Effect.fn("agentProof.exchange")(function* (
 		path: SpellPath,
@@ -270,8 +282,10 @@ const script = Effect.fn("agentProof.script")(function* () {
 	}
 
 	for (const description of described) {
-		const path = asPath(description.path);
-		const reply = yield* call(path, argumentsFor(description, learned, firstPath));
+		const path = description.path;
+		const generated = generateArguments(description, learned, firstPath);
+		unfilled.push(...generated.unsettled);
+		const reply = yield* call(path, generated.args);
 		// `process spawn` is the one call whose answer another call needs, and it is registered
 		// ahead of `process send` and `process read`, so the id is learned before they are reached.
 		if (renderPath(path) === "process.spawn") {
@@ -280,8 +294,17 @@ const script = Effect.fn("agentProof.script")(function* () {
 		}
 	}
 
-	return transcript as ReadonlyArray<Exchange>;
+	return {
+		transcript: transcript as ReadonlyArray<Exchange>,
+		unsettled: unfilled as ReadonlyArray<string>,
+	};
 });
+
+/** What the script produced: the exchanges it made, and the parameters it could not generate. */
+interface Run {
+	readonly transcript: ReadonlyArray<Exchange>;
+	readonly unsettled: ReadonlyArray<string>;
+}
 
 type AgentState = {readonly started: boolean};
 type AgentMsg = {readonly type: "begin"} | {readonly type: "finished"};
@@ -295,7 +318,7 @@ const agentId = ProgramId.make("agent");
  * `init` because the script starts a process of its own, and a process started from inside its
  * parent's own boot has no live parent to hang on yet.
  */
-const agentProgram = (done: Deferred.Deferred<ReadonlyArray<Exchange>>): AnyProgram =>
+const agentProgram = (done: Deferred.Deferred<Run>): AnyProgram =>
 	({
 		id: agentId,
 		core: defineMachine<AgentState, AgentMsg, Drive, never, unknown>({
@@ -341,7 +364,7 @@ const app = (rows: ReadonlyArray<AnyProgram>) =>
 
 /** One `begin` starts the script, so awaiting the transcript is awaiting the agent's whole run. */
 const runAgent = Effect.gen(function* () {
-	const done = yield* Deferred.make<ReadonlyArray<Exchange>>();
+	const done = yield* Deferred.make<Run>();
 	const rows = [agentProgram(done), echoProgram()];
 	return yield* Effect.gen(function* () {
 		const processes = yield* Processes;
@@ -351,10 +374,10 @@ const runAgent = Effect.gen(function* () {
 			services: Context.make(SpellExecutor, executor),
 		});
 		yield* agent.dispatch({type: "begin"});
-		const transcript = yield* Deferred.await(done);
+		const {transcript, unsettled} = yield* Deferred.await(done);
 		const rowsInRegistry = yield* SpellRegistry.use((registry) => registry.list);
 		const help = yield* overTheWire(["help"], {});
-		return {transcript, rowsInRegistry, help};
+		return {transcript, unsettled, rowsInRegistry, help};
 	}).pipe(Effect.provide(app(rows)));
 });
 
@@ -366,7 +389,15 @@ const failureOf = (reply: SpellReply): SpellFailure | undefined =>
 describe("the agent proof", () => {
 	it.live("enumerates every spell over the wire and calls each one, every reply decoding", () =>
 		Effect.gen(function* () {
-			const {transcript, rowsInRegistry, help} = yield* runAgent;
+			const {transcript, unsettled, rowsInRegistry, help} = yield* runAgent;
+
+			// Before the replies, because a call whose argument the script could not generate is a
+			// spell this proof never reached — and one filled with a placeholder answers anyway.
+			assert.deepStrictEqual(
+				[...unsettled],
+				[],
+				"the script could not generate an argument for these parameters",
+			);
 
 			const registered = rowsInRegistry.map((row) => renderPath(row.path));
 			assert.includeMembers(
@@ -475,21 +506,25 @@ const learnedFrom = (
  * describe per listed path, then one call per listed spell. Registry order puts `process spawn`
  * ahead of `process send` and `process read`, so the process id is learned before they are reached.
  */
-const planStep: ScriptedPlan = (answered) => {
-	const [listing, ...rest] = answered;
-	if (listing === undefined) return {path: ["spell", "list"], args: {}};
-	const listed = readList(listing.answer);
-	const firstPath = listed[0]?.path.join(" ") ?? "";
-	if (rest.length < listed.length) {
-		const next = listed[rest.length];
-		return next === undefined
-			? null
-			: {path: ["spell", "describe"], args: {path: next.path.join(" ")}};
-	}
-	const target = listed[rest.length - listed.length];
-	if (target === undefined) return null;
-	return {path: asPath(target.path), args: argumentsFor(target, learnedFrom(answered), firstPath)};
-};
+const planStep =
+	(unfilled: Array<string>): ScriptedPlan =>
+	(answered) => {
+		const [listing, ...rest] = answered;
+		if (listing === undefined) return {path: ["spell", "list"], args: {}};
+		const listed = readList(listing.answer);
+		const firstPath = listed[0]?.path.join(" ") ?? "";
+		if (rest.length < listed.length) {
+			const next = listed[rest.length];
+			return next === undefined
+				? null
+				: {path: ["spell", "describe"], args: {path: next.path.join(" ")}};
+		}
+		const target = listed[rest.length - listed.length];
+		if (target === undefined) return null;
+		const generated = generateArguments(target, learnedFrom(answered), firstPath);
+		unfilled.push(...generated.unsettled);
+		return {path: target.path, args: generated.args};
+	};
 
 /** The events reach the transcript through a Sub, so the tail settles after `dispatch` returns. */
 const eventually = (check: () => boolean) =>
@@ -509,6 +544,7 @@ const lastTranscript = (emitted: ReadonlyArray<Emission>): TranscriptPayload | u
 
 const runServiceAgent = Effect.gen(function* () {
 	const emitted: Array<Emission> = [];
+	const unfilled: Array<string> = [];
 	let answered: ReadonlyArray<ScriptedAnswer> = [];
 	const latch = yield* Deferred.make<SpellBridgeApi>();
 	// The bridge reaches the executor this same app builds, and the row has to exist before that
@@ -529,7 +565,7 @@ const runServiceAgent = Effect.gen(function* () {
 				events: [],
 				plan: (seen) => {
 					answered = seen;
-					return planStep(seen);
+					return planStep(unfilled)(seen);
 				},
 			},
 		],
@@ -547,10 +583,7 @@ const runServiceAgent = Effect.gen(function* () {
 	return yield* Effect.gen(function* () {
 		const processes = yield* Processes;
 		const rowsInRegistry = yield* SpellRegistry.use((registry) => registry.list);
-		const bridge = yield* Effect.provide(
-			SpellBridge,
-			SpellBridge.layer({allow: rowsInRegistry.map((row) => row.path)}),
-		);
+		const bridge = yield* Effect.provide(SpellBridge, SpellBridge.layer({allow: everyRegistered}));
 		yield* Deferred.succeed(latch, bridge);
 		const agent = yield* processes.spawn(serviceAgentId, {
 			id: serviceProcess,
@@ -570,14 +603,26 @@ const runServiceAgent = Effect.gen(function* () {
 		yield* agent.dispatch({type: "prompt", text: "call every spell you can", key: "k1"});
 		yield* eventually(() => (lastTranscript(emitted)?.items.length ?? 0) >= answered.length);
 		const help = yield* overTheWire(["help"], {});
-		return {answered, rowsInRegistry, help, transcript: lastTranscript(emitted)};
+		return {
+			answered,
+			unsettled: unfilled as ReadonlyArray<string>,
+			rowsInRegistry,
+			help,
+			transcript: lastTranscript(emitted),
+		};
 	}).pipe(Effect.provide(app(rows)));
 });
 
 describe("the agent proof, on the agent service", () => {
 	it.live("reaches every spell through SpellBridge from an aiAgentProgram process", () =>
 		Effect.gen(function* () {
-			const {answered, rowsInRegistry, help} = yield* runServiceAgent;
+			const {answered, unsettled, rowsInRegistry, help} = yield* runServiceAgent;
+
+			assert.deepStrictEqual(
+				[...unsettled],
+				[],
+				"the script could not generate an argument for these parameters",
+			);
 
 			for (const entry of answered) {
 				assert.isTrue(

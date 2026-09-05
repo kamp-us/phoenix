@@ -41,10 +41,11 @@ describe("shell core: the reducer's cells", () => {
 		expect(Object.keys(cellsFor(table)).sort()).toEqual([
 			"command.open",
 			"config.reload",
+			"desk.inspector.toggle",
 			"keys.press",
 			"layout.resize",
 			"layout.zoom",
-			"prefix.timeout",
+			"prefix.repeatLapsed",
 			"window.attach",
 			"window.bind",
 			"window.close",
@@ -68,6 +69,41 @@ describe("shell core: the reducer's cells", () => {
 		expect(focusedProcess(state)).toBeNull();
 		expect(state.order).toEqual([state.activeWorkspace]);
 		expect(state.prefix).toEqual({armed: false});
+		expect(state.desk).toEqual({inspectorOpen: false});
+	});
+});
+
+describe("shell core: the desk inspector", () => {
+	it("desk.inspector.toggle opens the inspector and closes it again", () => {
+		const [opened] = apply(initialState(), {type: "desk.inspector.toggle"});
+		const [closed, cmds] = apply(opened, {type: "desk.inspector.toggle"});
+
+		expect(opened.desk.inspectorOpen).toBe(true);
+		expect(closed.desk.inspectorOpen).toBe(false);
+		expect(cmds).toEqual([]);
+	});
+
+	it("holds the inspector open across a workspace switch, a create and a remove", () => {
+		const opened = fold(initialState(), {type: "desk.inspector.toggle"});
+		const first = opened.activeWorkspace;
+		const created = fold(opened, {type: "workspace.create"});
+		const switched = fold(created, {type: "workspace.activate", workspaceId: first});
+		const stepped = fold(switched, {type: "workspace.step", direction: "next"});
+		const removed = fold(stepped, {type: "workspace.remove"});
+
+		expect(created.activeWorkspace).not.toBe(first);
+		expect([
+			created.desk.inspectorOpen,
+			switched.desk.inspectorOpen,
+			stepped.desk.inspectorOpen,
+			removed.desk.inspectorOpen,
+		]).toEqual([true, true, true, true]);
+	});
+
+	it("survives a checkpoint round trip, like the rest of the shell's state", () => {
+		const opened = fold(initialState(), {type: "desk.inspector.toggle"});
+		const restored = JSON.parse(JSON.stringify(opened)) as ShellState;
+		expect(restored.desk).toEqual({inspectorOpen: true});
 	});
 });
 
@@ -258,18 +294,47 @@ describe("shell core: keys", () => {
 		expect(after.prefix).toEqual({armed: false});
 	});
 
-	it("the prefix arms and asks the host for one timer", () => {
+	it("the prefix arms with no window and asks the host for no timer (#7842)", () => {
 		const [after, cmds] = apply(initialState(), prefix);
-		expect(after.prefix).toEqual({armed: true, pending: [], timeoutMs: 1000});
-		expect(cmds).toEqual([{type: "startPrefixTimer", timeoutMs: 1000}]);
+		expect(after.prefix).toEqual({armed: true, pending: [], repeatWindowMs: null});
+		expect(cmds).toEqual([]);
 	});
 
-	it("prefix.timeout disarms, and does nothing when the prefix is already down", () => {
-		const armed = fold(initialState(), prefix);
-		const [after, cmds] = apply(armed, {type: "prefix.timeout"});
+	it("a plain arm survives any number of unrelated Msgs — it waits indefinitely (#7842)", () => {
+		const after = fold(
+			initialState(),
+			prefix,
+			{type: "window.setView", view: {scroll: 1, marks: []}},
+			{type: "window.setView", view: {scroll: 2, marks: []}},
+			{type: "prefix.repeatLapsed"},
+		);
+		expect(after.prefix).toEqual({armed: true, pending: [], repeatWindowMs: null});
+	});
+
+	it("prefix.repeatLapsed disarms a repeat window, and does nothing when the prefix is down", () => {
+		const two = fold(initialState(), {type: "workspace.create"});
+		const repeating = fold(two, prefix, press("l", {ctrlKey: true}));
+		const [after, cmds] = apply(repeating, {type: "prefix.repeatLapsed"});
 		expect(after.prefix).toEqual({armed: false});
 		expect(cmds).toEqual([]);
-		expect(apply(after, {type: "prefix.timeout"})[0]).toEqual(after);
+		expect(apply(after, {type: "prefix.repeatLapsed"})[0]).toEqual(after);
+	});
+
+	it("Escape disarms an armed prefix and forwards nothing", () => {
+		const bound = fold(initialState(), {type: "window.bind", processId: "process-pi"}, prefix);
+		const [after, cmds] = apply(bound, press("Escape"));
+
+		expect(after.prefix).toEqual({armed: false});
+		expect(cmds).toEqual([]);
+	});
+
+	it("Escape disarms a repeat window too, cancelling the host's timer", () => {
+		const two = fold(initialState(), {type: "workspace.create"});
+		const repeating = fold(two, prefix, press("l", {ctrlKey: true}));
+		const [after, cmds] = apply(repeating, press("Escape"));
+
+		expect(after.prefix).toEqual({armed: false});
+		expect(cmds).toEqual([{type: "cancelRepeatTimer"}]);
 	});
 
 	it("a bound sequence runs that command's Msg in the same transition", () => {
@@ -282,17 +347,17 @@ describe("shell core: keys", () => {
 		expect(after.workspaces).toEqual(direct.workspaces);
 		expect(after.nextId).toBe(direct.nextId);
 		expect(after.prefix).toEqual({armed: false});
-		expect(cmds).toEqual([{type: "cancelPrefixTimer"}]);
+		expect(cmds).toEqual([]);
 	});
 
-	it("a repeatable command re-arms the prefix on the repeat timeout", () => {
+	it("a repeatable command re-arms the prefix on the repeat window, the one timer left", () => {
 		const two = fold(initialState(), {type: "workspace.create"});
 		const armed = fold(two, prefix);
 		const [after, cmds] = apply(armed, press("l", {ctrlKey: true}));
 
 		expect(after.activeWorkspace).toBe(two.order[0]);
-		expect(after.prefix).toEqual({armed: true, pending: [], timeoutMs: 500});
-		expect(cmds).toEqual([{type: "startPrefixTimer", timeoutMs: 500}]);
+		expect(after.prefix).toEqual({armed: true, pending: [], repeatWindowMs: 500});
+		expect(cmds).toEqual([{type: "startRepeatTimer", timeoutMs: 500}]);
 	});
 
 	it("a bound name runs the command table's Msg — `r` reaches the reload Cmd", () => {
@@ -300,7 +365,7 @@ describe("shell core: keys", () => {
 		const [after, cmds] = apply(armed, press("r"));
 
 		expect(after.workspaces).toEqual(armed.workspaces);
-		expect(cmds).toEqual([{type: "cancelPrefixTimer"}, {type: "reloadConfig"}]);
+		expect(cmds).toEqual([{type: "reloadConfig"}]);
 	});
 
 	it("a name the command table does not hold leaves as a runCommand Cmd", () => {
@@ -312,10 +377,7 @@ describe("shell core: keys", () => {
 		const [after, cmds] = applyMsg(own, armed, press("z"));
 
 		expect(after.workspaces).toEqual(armed.workspaces);
-		expect(cmds).toEqual([
-			{type: "cancelPrefixTimer"},
-			{type: "runCommand", name: "mine:something"},
-		]);
+		expect(cmds).toEqual([{type: "runCommand", name: "mine:something"}]);
 	});
 
 	it("an unbound sequence disarms and forwards nothing", () => {
@@ -323,14 +385,14 @@ describe("shell core: keys", () => {
 		const [after, cmds] = apply(bound, press("z"));
 
 		expect(after.prefix).toEqual({armed: false});
-		expect(cmds).toEqual([{type: "cancelPrefixTimer"}]);
+		expect(cmds).toEqual([]);
 	});
 
 	it("a partial sequence keeps the prefix armed with what has been typed", () => {
 		const armed = fold(initialState(), prefix);
 		const [after, cmds] = apply(armed, press("Control"));
-		expect(after.prefix).toEqual({armed: true, pending: [], timeoutMs: 1000});
-		expect(cmds).toEqual([{type: "startPrefixTimer", timeoutMs: 1000}]);
+		expect(after.prefix).toEqual({armed: true, pending: [], repeatWindowMs: null});
+		expect(cmds).toEqual([]);
 	});
 });
 
@@ -349,7 +411,7 @@ describe("shell core: the state is a checkpoint", () => {
 			{type: "workspace.remove"},
 			prefix,
 			press("|"),
-			{type: "prefix.timeout"},
+			{type: "prefix.repeatLapsed"},
 			{type: "window.close"},
 		);
 

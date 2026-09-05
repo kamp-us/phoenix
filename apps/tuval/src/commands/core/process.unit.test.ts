@@ -8,7 +8,7 @@ import {readdirSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Fiber, Layer, Option} from "effect";
+import {Context, Effect, Exit, Fiber, Layer, Option} from "effect";
 import {TestClock} from "effect/testing";
 import {counterId, counterProgram} from "../../demo/counter.ts";
 import {logId, logProgram} from "../../demo/log.ts";
@@ -89,6 +89,22 @@ const echoProgram = (): AnyProgram =>
 		ProcessPorts
 	>;
 
+const deafId = ProgramId.make("deaf");
+
+/**
+ * `echo` with its receiver taken away: an in-port nothing translates for. `launch` refuses that
+ * shape at boot with `NoReceiver`, and `process spawn` has no boot to refuse at — so its wiring
+ * loop dies with the kernel process already running.
+ */
+const deafProgram = (): AnyProgram => {
+	const {receive: _unwired, ...rest} = echoProgram();
+	return {
+		...rest,
+		id: deafId,
+		identity: {...rest.identity, program: "deaf", digest: "sha256:deaf"},
+	};
+};
+
 const workspace = WorkspaceId.make("ws-1");
 const agentWindow = WindowId.make("w-1");
 const caller = ProcessId.make("p-1");
@@ -103,6 +119,7 @@ const rows: ReadonlyArray<AnyProgram> = [
 	counterProgram({everyMs: null}),
 	logProgram({write: () => Effect.void}),
 	echoProgram(),
+	deafProgram(),
 ];
 
 const kernel = SpawnedProcesses.layer({readTimeout: "1 second"}).pipe(
@@ -276,6 +293,23 @@ describe("the process spells", () => {
 				yield* invoke(["process", "send"], {process: caller, port: "ticks", payload: 1}),
 			);
 			assert.strictEqual(error?.tag, "tuval/commands/UnknownProcess");
+		}).pipe(Effect.provide(app)),
+	);
+
+	it.effect("a spawn that dies wiring an unwired in-port leaves no process running", () =>
+		Effect.gen(function* () {
+			yield* startCaller;
+			const spawned = yield* SpawnedProcesses;
+			const table = yield* ProcessTable;
+
+			// Through the service, not the spell: the die is a defect, and the executor lets it through.
+			const exit = yield* Effect.exit(spawned.spawn(deafId, Option.some(caller)));
+			assert.isTrue(Exit.hasDies(exit), `expected a die, got ${JSON.stringify(exit)}`);
+
+			// The kernel process the loop died halfway through is stopped, not orphaned holding its
+			// ports with nothing able to address it — the table has no row of that program left.
+			const orphans = (yield* table.list).filter((row) => row.programId === deafId);
+			assert.deepStrictEqual(orphans, []);
 		}).pipe(Effect.provide(app)),
 	);
 

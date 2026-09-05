@@ -4,8 +4,9 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {NodeFileSystem} from "@effect/platform-node";
-import {Effect} from "effect";
-import {afterEach, describe, expect, it} from "vitest";
+import {assert, describe, it} from "@effect/vitest";
+import {Effect, Schema} from "effect";
+import {afterEach, expect} from "vitest";
 import {boot, coreSpells, defaultGlobalConfig, projectConfig, projectDir} from "./boot.ts";
 import {shellSpells} from "./shell/commands/spells.ts";
 
@@ -30,6 +31,16 @@ interface Run {
 const run = (args: ReadonlyArray<string>, env: NodeJS.ProcessEnv = process.env): Run =>
 	spawnSync(process.execPath, [bin, ...args], {encoding: "utf8", env});
 
+/** How long one `runUntilRunning` waits before it SIGKILLs the child and reports what it captured. */
+const SPAWN_GUARD_MS = 15_000;
+
+/**
+ * A spawning test's vitest budget must outlast every spawn's guard, or vitest kills the test first
+ * and the reader gets a bare `Test timed out` instead of the child's stdout/stderr (#7742). Slack
+ * covers the unspawned work — a `bootDirect`, the temp dirs, the assertions.
+ */
+const spawnBudget = (spawns: number) => spawns * SPAWN_GUARD_MS + 5_000;
+
 /** A boot with live processes stays up until a signal: send SIGINT once it says it is running. */
 const runUntilRunning = (
 	args: ReadonlyArray<string>,
@@ -43,7 +54,7 @@ const runUntilRunning = (
 		const timer = setTimeout(() => {
 			child.kill("SIGKILL");
 			reject(new Error(`bin never said it was running:\n${stdout}\n${stderr}`));
-		}, 15_000);
+		}, SPAWN_GUARD_MS);
 		child.stdout!.setEncoding("utf8").on("data", (chunk: string) => {
 			stdout += chunk;
 			if (!signalled && stdout.includes("tuval: running")) {
@@ -101,30 +112,35 @@ const seededProject = (version: string) => {
 	return project;
 };
 
+class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defect()}) {}
+
+const io = <A>(run: () => Promise<A>) =>
+	Effect.tryPromise({try: run, catch: (cause) => new TestIo({cause})});
+
 const bootDirect = (global: string, project: string) =>
-	Effect.runPromise(
-		boot({global, project}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
-	);
+	boot({global, project}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer));
 
 afterEach(() => {
 	for (const dir of tempDirs.splice(0)) rmSync(dir, {recursive: true, force: true});
 });
 
 describe("boot", () => {
-	it("registers the rows the config module exports and reports their count", async () => {
-		const project = freshProject();
-		const {report} = await bootDirect(fixture("two-rows"), project);
-		expect(report).toEqual({
-			sources: [fixture("two-rows")],
-			programCount: 2,
-			spellCount: CORE_SPELLS,
-			bindingCount: 0,
-			bindingErrors: [],
-			stateDir: projectDir(project),
-			processCount: 0,
-			restoredCount: 0,
-		});
-	});
+	it.effect("registers the rows the config module exports and reports their count", () =>
+		Effect.gen(function* () {
+			const project = freshProject();
+			const {report} = yield* bootDirect(fixture("two-rows"), project);
+			assert.deepStrictEqual(report, {
+				sources: [fixture("two-rows")],
+				programCount: 2,
+				spellCount: CORE_SPELLS,
+				bindingCount: 0,
+				bindingErrors: [],
+				stateDir: projectDir(project),
+				processCount: 0,
+				restoredCount: 0,
+			});
+		}),
+	);
 
 	it("exits on its own when the config plans no process", () => {
 		const project = freshProject();
@@ -165,53 +181,62 @@ describe("boot", () => {
 		);
 	});
 
-	it("boots the box config: the shell and the two demo processes, the table on the terminal, and all three back after a restart", async () => {
-		const project = freshProject();
-		const args = ["--config", boxConfig, "--project", project];
-		const first = await runUntilRunning(args);
-		expect(first.stderr).toBe("");
-		expect(first.status).toBe(0);
-		expect(first.stdout).toContain(
-			`tuval: booted — 4 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
-		);
-		expect(first.stdout).toContain(
-			"tuval: process shell program=shell parent=- ports=- state=running@0\n",
-		);
-		expect(first.stdout).toContain(
-			"tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0\n",
-		);
-		expect(first.stdout).toContain(
-			"tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0\n",
-		);
-		expect(first.stdout).toContain("tuval: running — Ctrl-C stops and checkpoints\n");
-		expect(first.stdout.trimEnd().endsWith("tuval: stopping")).toBe(true);
+	it(
+		"boots the box config: the shell and the two demo processes, the table on the terminal, and all three back after a restart",
+		async () => {
+			const project = freshProject();
+			const args = ["--config", boxConfig, "--project", project];
+			const first = await runUntilRunning(args);
+			expect(first.stderr).toBe("");
+			expect(first.status).toBe(0);
+			expect(first.stdout).toContain(
+				`tuval: booted — 4 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			);
+			expect(first.stdout).toContain(
+				"tuval: process shell program=shell parent=- ports=- state=running@0\n",
+			);
+			expect(first.stdout).toContain(
+				"tuval: process counter program=counter parent=- ports=ticks:out(count/v1) state=running@0\n",
+			);
+			expect(first.stdout).toContain(
+				"tuval: process log program=log parent=counter ports=ticks:in(count/v1) state=running@0\n",
+			);
+			expect(first.stdout).toContain("tuval: running — Ctrl-C stops and checkpoints\n");
+			expect(first.stdout.trimEnd().endsWith("tuval: stopping")).toBe(true);
 
-		const second = await runUntilRunning(args);
-		expect(second.status).toBe(0);
-		expect(second.stdout).toContain(
-			`tuval: booted — 4 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
-		);
-		expect(second.stdout).toContain("tuval: process log program=log parent=counter");
-	}, 20_000);
+			const second = await runUntilRunning(args);
+			expect(second.status).toBe(0);
+			expect(second.stdout).toContain(
+				`tuval: booted — 4 program(s), ${BOX_SPELLS} spell(s) registered from ${boxConfig}; 3 process(es) live, 3 restored from ${projectDir(project)}\n`,
+			);
+			expect(second.stdout).toContain("tuval: process log program=log parent=counter");
+		},
+		spawnBudget(2),
+	);
 
-	it("restores every checkpointed process from the project's state through Demlik's fileStore", async () => {
-		const project = seededProject("1.0.0");
-		const {report} = await bootDirect(fixture("one-counter"), project);
-		expect(report).toMatchObject({processCount: 1, restoredCount: 1});
-		const result = await runUntilRunning([
-			"--config",
-			fixture("one-counter"),
-			"--project",
-			project,
-		]);
-		expect(result.status).toBe(0);
-		expect(result.stdout).toContain(
-			`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${projectDir(project)}\n`,
-		);
-		expect(result.stdout).toContain(
-			"tuval: process p-1 program=counter parent=- ports=- state=running@0\n",
-		);
-	}, 20_000);
+	it.effect(
+		"restores every checkpointed process from the project's state through Demlik's fileStore",
+		() =>
+			Effect.gen(function* () {
+				const project = seededProject("1.0.0");
+				const {report} = yield* bootDirect(fixture("one-counter"), project);
+				assert.strictEqual(report.processCount, 1);
+				assert.strictEqual(report.restoredCount, 1);
+				const result = yield* io(() =>
+					runUntilRunning(["--config", fixture("one-counter"), "--project", project]),
+				);
+				assert.strictEqual(result.status, 0);
+				assert.include(
+					result.stdout,
+					`tuval: booted — 1 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("one-counter")}; 1 process(es) live, 1 restored from ${projectDir(project)}\n`,
+				);
+				assert.include(
+					result.stdout,
+					"tuval: process p-1 program=counter parent=- ports=- state=running@0\n",
+				);
+			}),
+		spawnBudget(1),
+	);
 
 	it("refuses to boot on a snapshot under another program version, naming the process and both versions", () => {
 		const project = seededProject("0.9.0");

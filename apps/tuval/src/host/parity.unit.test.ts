@@ -21,8 +21,9 @@ const script: readonly Msg[] = [
 	{type: "halt"},
 ];
 
-const definitionFor = (log: string[], store: Store<State>) =>
+const definitionFor = (name: string, log: string[], store: Store<State>) =>
 	defineActor({
+		name,
 		machine: counterMachine(log),
 		store,
 		interpret: {
@@ -39,7 +40,7 @@ const throughHost = Effect.scoped(
 	Effect.gen(function* () {
 		const log: string[] = [];
 		const saves: State[] = [];
-		const actor = yield* make(definitionFor(log, recordingStore(saves)));
+		const actor = yield* make(definitionFor("parity/host", log, recordingStore(saves)));
 		const states: State[] = [];
 		for (const msg of script) {
 			yield* actor.dispatch(msg);
@@ -61,8 +62,10 @@ const throughDemlik = Effect.tryPromise({
 		const log: string[] = [];
 		const saves: State[] = [];
 		const store = recordingStore(saves);
-		const runtime = await run(toDemlikMachine(definitionFor(log, store), Context.empty()), {store})
-			.ready;
+		const runtime = await run(
+			toDemlikMachine(definitionFor("parity/demlik", log, store), Context.empty()),
+			{store},
+		).ready;
 		const states: State[] = [];
 		for (const msg of script) {
 			await runtime.dispatch(msg);

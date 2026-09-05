@@ -5,7 +5,7 @@ import {SpellRegistry} from "../registry.ts";
 import {type Client, WindowIndex, type WindowPlacement} from "../scope.ts";
 import {type AnySpell, ClientId, defineSpell, type Scope, WindowId, WorkspaceId} from "../spell.ts";
 import {SpellNotAllowed} from "./errors.ts";
-import {SpellBridge} from "./SpellBridge.ts";
+import {onlyPaths, SpellBridge} from "./SpellBridge.ts";
 
 const workspace = WorkspaceId.make("ws-1");
 const agentWindow = WindowId.make("w-1");
@@ -49,7 +49,7 @@ const spells: ReadonlyArray<AnySpell> = [allowedSpell, forbiddenSpell];
 
 const registry = SpellRegistry.scripted(spells);
 
-const app = SpellBridge.layer({allow: [allowedSpell.path]}).pipe(
+const app = SpellBridge.layer({allow: onlyPaths([allowedSpell.path])}).pipe(
 	Layer.provideMerge(
 		Layer.mergeAll(
 			SpellExecutor.layer.pipe(

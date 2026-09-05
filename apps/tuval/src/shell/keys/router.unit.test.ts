@@ -47,11 +47,10 @@ describe("route() with the prefix unarmed", () => {
 		expect(route(table, idle, {key: "x"})).toEqual({_tag: "ToWindow", key: "x", next: idle});
 	});
 
-	it("arms on the prefix, and the armed window lasts the table's arm timeout", () => {
+	it("arms on the prefix, and the armed state carries no window: it waits forever (#7842)", () => {
 		const answer = route(table, idle, ctrl("b"));
 		expect(answer._tag).toBe("Arm");
-		expect(answer.next).toEqual({_tag: "Armed", pending: [], timeout: table.armTimeout});
-		expect(Duration.toMillis(table.armTimeout)).toBe(1000);
+		expect(answer.next).toEqual({_tag: "Armed", pending: [], repeatWindow: null});
 	});
 });
 
@@ -82,7 +81,7 @@ describe("route() with the prefix armed", () => {
 		expect(route(table, armed, ctrl("h"))).toEqual({
 			_tag: "Command",
 			name: CommandName.make("workspace:previous"),
-			next: {_tag: "Armed", pending: [], timeout: table.repeatTimeout},
+			next: {_tag: "Armed", pending: [], repeatWindow: table.repeatTimeout},
 		});
 	});
 });
@@ -94,7 +93,7 @@ describe("route() and repeatable bindings", () => {
 		const [, first, second] = answers;
 		expect(first).toMatchObject({name: CommandName.make("workspace:next")});
 		expect(second).toMatchObject({name: CommandName.make("workspace:next")});
-		expect(first?.next).toEqual({_tag: "Armed", pending: [], timeout: table.repeatTimeout});
+		expect(first?.next).toEqual({_tag: "Armed", pending: [], repeatWindow: table.repeatTimeout});
 		expect(Duration.toMillis(table.repeatTimeout)).toBe(500);
 	});
 
@@ -122,7 +121,7 @@ describe("route() and multi-key sequences", () => {
 		expect(answers[1]?.next).toEqual({
 			_tag: "Armed",
 			pending: ["g"],
-			timeout: twoKey.armTimeout,
+			repeatWindow: null,
 		});
 	});
 

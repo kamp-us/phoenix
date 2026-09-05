@@ -18,8 +18,17 @@ import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
 import type {ShellMsg} from "../shell/core/index.ts";
 import {attach, SHELL_PROGRAM_ID} from "../shell/transport/browser.ts";
+import {ErrorBoundary} from "../shell/ui/index.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {pageRenderers} from "./renderers.tsx";
+// Manti's base first — a `@kampus/design` primitive is a Manti component, and without this its
+// dialog has no positioning at all and lands in the document flow. Then the design token layer, then
+// Tuval's: both declare role tokens at `:root` and the desk's own values have to win that tie. The
+// design layer is what the palette resolves against (`../palette/palette.css`); the desk keeps its
+// dark-only scale (`../shell/ui/tokens.css`).
+import "@manti-ui/styles/index.css";
+import "@kampus/design/fonts.css";
+import "@kampus/design/tokens.css";
 import "../shell/ui/tokens.css";
 import "./page.css";
 
@@ -116,7 +125,16 @@ const boot = Effect.gen(function* () {
 			),
 		),
 	);
-	root.render(<StrictMode>{shown}</StrictMode>);
+	// The outer net. `Desk` catches a throw from the tiling area and keeps its own chrome, so this
+	// one is for everything above that — the attach panels, the status line, the command line — where
+	// the alternative is the blank tab of #7839 and #7560 again.
+	root.render(
+		<StrictMode>
+			<ErrorBoundary label="Tuval" className="tuval-surface">
+				{shown}
+			</ErrorBoundary>
+		</StrictMode>,
+	);
 	// The scope must outlive the render. `attach` acquires the socket against it and forks the read
 	// loop with `Effect.forkScoped` (`../shell/transport/client.ts`), so an `Effect.scoped` that
 	// closes when this effect completes interrupts the read loop and runs the socket's finalizer the

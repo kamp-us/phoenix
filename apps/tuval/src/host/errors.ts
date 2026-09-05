@@ -22,6 +22,20 @@ export class UserCodeThrew extends Schema.TaggedError<UserCodeThrew>()("tuval/ho
 	cause: Schema.Defect(),
 }) {}
 
+/**
+ * `defineActor` was handed a name this process already defined (ADR 0346). Thrown, not failed:
+ * a definition is built at module scope, outside any Effect, the way Demlik's `definePort` throws
+ * `PortNameCollisionError`.
+ */
+export class ActorNameCollisionError extends Schema.TaggedError<ActorNameCollisionError>()(
+	"tuval/host/ActorNameCollisionError",
+	{actorName: Schema.String},
+) {
+	override get message(): string {
+		return `defineActor: an actor named "${this.actorName}" was already defined. Each definition needs a unique name; two modules needing one actor import it from the module that defines it.`;
+	}
+}
+
 /** A Demlik `Dispose` threw or rejected; surfaces from the Sub scope's close for the host to route. */
 export class SubDisposeError extends Schema.TaggedError<SubDisposeError>()(
 	"tuval/host/SubDisposeError",
