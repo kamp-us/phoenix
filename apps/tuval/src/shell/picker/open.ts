@@ -10,6 +10,7 @@
  */
 
 import {Context, Effect} from "effect";
+import {ProcessPorts} from "../../ports/ProcessPorts.ts";
 import {Processes} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessId} from "../../process/process.ts";
@@ -63,12 +64,18 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	if (row._tag === "Failure") return refuse(windowId, options, unknownProgram(programId));
 	if (!showsInAWindow(row.success)) return refuse(windowId, options, programHeadless(programId));
 
-	// Nothing ambient to give: a picker-opened process is not in the graph, so it comes back from a
-	// checkpoint with no services either, and a program the picker may open must need none
-	// (`.patterns/tuval-shell-assembly.md`). Said with `Context.empty()` rather than by omission —
-	// the silent omission is what #7789 closed.
+	// A picker-opened program may require kernel services, and this is where they arrive: the shell
+	// process's own context is the kernel one `launch` handed it (`src/boot.ts`), so the child gets
+	// the same. `Effect.context()` reads the running fiber's whole services map (`effect` rc.112,
+	// `internal/effect.ts`), which is why nothing here has to name what it passes on.
+	//
+	// `ProcessPorts` is the one thing dropped rather than passed: a port binding emits from *this*
+	// node, so handing it down would send the child's payloads out of the shell's own ports. Removing
+	// it leaves the child with none, where restore overrides the inherited one with an un-wired
+	// `ProcessPorts` of its own (`src/durability/restore.ts`).
+	const services = Context.omit(ProcessPorts)(yield* Effect.context());
 	const spawned = yield* Effect.result(
-		processes.spawn(programId, {parent: options.shellProcessId, services: Context.empty()}),
+		processes.spawn(programId, {parent: options.shellProcessId, services}),
 	);
 	return spawned._tag === "Failure"
 		? refuse(windowId, options, spawnFailed(programId, spawned.failure.message))

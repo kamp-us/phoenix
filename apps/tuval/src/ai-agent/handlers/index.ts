@@ -54,28 +54,35 @@ import {agentSlot} from "./session.ts";
 
 /** What every handler on this row may fail with, and what it needs to run. */
 export type AiAgentHandlerError = PayloadRejected;
-export type AiAgentHandlerServices = ProcessSelf | ProcessPorts;
+/**
+ * The process's own two services, plus whatever the layer under the row still asks for.
+ *
+ * `RIn` rides out rather than being closed here, so a row built over a layer that needs a kernel
+ * service says so and the spawner supplies it (#7951). A layer that needs nothing leaves `RIn`
+ * `never`, which is the union unchanged.
+ */
+export type AiAgentHandlerServices<RIn = never> = ProcessSelf | ProcessPorts | RIn;
 
-export interface AiAgentHandlerOptions extends WindowLimits {
-	readonly layer: Layer.Layer<TuvalAiAgent>;
+export interface AiAgentHandlerOptions<RIn = never> extends WindowLimits {
+	readonly layer: Layer.Layer<TuvalAiAgent, never, RIn>;
 	/** The working directory the Sub's projection falls back to when nothing is checkpointed. */
 	readonly cwd: string;
 	/** Declared data, read by `start` and the reconnect that repeats it (#7371). */
 	readonly policy?: AiAgentRetryPolicy;
 }
 
-export interface AiAgentHandlerSet {
+export interface AiAgentHandlerSet<RIn = never> {
 	readonly handlers: HostHandlers<
 		AiAgentSessionMsg,
 		AiAgentSessionCmd,
 		AiAgentHandlerError,
-		AiAgentHandlerServices
+		AiAgentHandlerServices<RIn>
 	>;
 	readonly subs: HostSubs<
 		AiAgentSessionMsg,
 		AiAgentSessionSub,
 		AiAgentHandlerError,
-		AiAgentHandlerServices
+		AiAgentHandlerServices<RIn>
 	>;
 }
 
@@ -92,7 +99,9 @@ const noSession: AgentFailure = {
 	detail: "no agent has been started in this process",
 };
 
-export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerSet => {
+export const aiAgentHandlers = <RIn = never>(
+	options: AiAgentHandlerOptions<RIn>,
+): AiAgentHandlerSet<RIn> => {
 	const policy = options.policy ?? defaultRetryPolicy;
 	const limits: WindowLimits = {
 		...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),
@@ -118,7 +127,10 @@ export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerS
 	 * "rebuild the layer, then start": the transport lives in the layer's build, so resuming a
 	 * session id against the handle a disconnect already killed reaches nothing.
 	 */
-	const open = (cwd: string, resume: string | null): Effect.Effect<Follow, never, ProcessSelf> =>
+	const open = (
+		cwd: string,
+		resume: string | null,
+	): Effect.Effect<Follow, never, ProcessSelf | RIn> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.rebuild;
 			const started = yield* Effect.result(
@@ -146,7 +158,7 @@ export const aiAgentHandlers = (options: AiAgentHandlerOptions): AiAgentHandlerS
 		return {kind: "page", items: planned.items, omitted: planned.omitted, next};
 	};
 
-	const handlers: AiAgentHandlerSet["handlers"] = {
+	const handlers: AiAgentHandlerSet<RIn>["handlers"] = {
 		// The one handler that calls nothing. It answers the fresh `init`'s Cmd with the Msg that
 		// opens the session, and the `start` cell does the rest — including refusing a second open.
 		// Doing the work here instead would run it inside the spawn (`host/actor.ts` awaits an init

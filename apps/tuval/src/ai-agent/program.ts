@@ -61,9 +61,14 @@ export interface AiAgentProgramConfig {
 	readonly policy?: AiAgentRetryPolicy;
 }
 
-export interface AiAgentProgramOptions {
+export interface AiAgentProgramOptions<RIn = never> {
 	readonly id: string;
-	readonly layer: Layer.Layer<TuvalAiAgent>;
+	/**
+	 * What this row runs on. A leftover requirement is not closed here: it lands on the row's own
+	 * services and is satisfied at spawn, which is how a Claude row reaches the kernel services its
+	 * bridge needs (#7951).
+	 */
+	readonly layer: Layer.Layer<TuvalAiAgent, never, RIn>;
 	readonly config: AiAgentProgramConfig;
 	readonly renderer?: RendererRef;
 	/** Merged over the row's own identity, for a caller that ships this program in its package. */
@@ -71,14 +76,14 @@ export interface AiAgentProgramOptions {
 	readonly capabilities?: ReadonlyArray<CapabilityRequest>;
 }
 
-export type AiAgentProgram = Program<
+export type AiAgentProgram<RIn = never> = Program<
 	AiAgentSessionState,
 	AiAgentSessionMsg,
 	AiAgentSessionCmd,
 	AiAgentSessionSub,
 	unknown,
 	AiAgentHandlerError,
-	AiAgentHandlerServices
+	AiAgentHandlerServices<RIn>
 >;
 
 /**
@@ -111,8 +116,10 @@ const portsOf = (): Readonly<Record<string, PortSchema>> => ({
 	[aiAgentPortNames.modeSet]: mode.inbound(),
 });
 
-export const aiAgentProgram = (options: AiAgentProgramOptions): AiAgentProgram => {
-	const {handlers, subs} = aiAgentHandlers({
+export const aiAgentProgram = <RIn = never>(
+	options: AiAgentProgramOptions<RIn>,
+): AiAgentProgram<RIn> => {
+	const {handlers, subs} = aiAgentHandlers<RIn>({
 		layer: options.layer,
 		cwd: options.config.cwd,
 		...(options.config.itemLimit === undefined ? {} : {itemLimit: options.config.itemLimit}),

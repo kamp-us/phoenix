@@ -20,9 +20,15 @@ import {Context, Effect, Exit, Layer, Scope} from "effect";
 import {ProcessSelf} from "../../process/self.ts";
 import {TuvalAiAgent, type TuvalAiAgentApi} from "../service/index.ts";
 
-export interface AgentSlot {
-	/** Tear down this process's previous connection, then build the layer into a fresh child Scope. */
-	readonly rebuild: Effect.Effect<TuvalAiAgentApi, never, ProcessSelf>;
+export interface AgentSlot<RIn = never> {
+	/**
+	 * Tear down this process's previous connection, then build the layer into a fresh child Scope.
+	 *
+	 * `RIn` is what the layer still asks for. `Layer.buildWithScope` puts a layer's leftover
+	 * requirement on the built Effect's own `R` (`effect/Layer` rc.112), and the row carries it out
+	 * to the spawn instead of closing it here (#7951).
+	 */
+	readonly rebuild: Effect.Effect<TuvalAiAgentApi, never, ProcessSelf | RIn>;
 	/** What the last `rebuild` left for this process, or `null` when nothing has opened one yet. */
 	readonly current: Effect.Effect<TuvalAiAgentApi | null, never, ProcessSelf>;
 }
@@ -32,7 +38,9 @@ interface Connection {
 	readonly agent: TuvalAiAgentApi;
 }
 
-export const agentSlot = (layer: Layer.Layer<TuvalAiAgent>): AgentSlot => {
+export const agentSlot = <RIn = never>(
+	layer: Layer.Layer<TuvalAiAgent, never, RIn>,
+): AgentSlot<RIn> => {
 	const held = new WeakMap<Scope.Scope, Connection>();
 
 	const rebuild = Effect.gen(function* () {
