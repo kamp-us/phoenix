@@ -483,6 +483,9 @@ function ChatWindow({
 				onScroll={onScroll}
 				role="log"
 				aria-label="Transcript"
+				// The scroll container is the only way to older turns on a plain transcript, so a
+				// keyboard user must be able to focus it (axe scrollable-region-focusable).
+				tabIndex={0}
 			>
 				<div className="tuval-chat-spacer" style={{height: `${virtualizer.getTotalSize()}px`}}>
 					{virtualizer.getVirtualItems().map((virtual) => {

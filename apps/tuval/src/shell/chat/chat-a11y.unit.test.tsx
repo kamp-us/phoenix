@@ -140,6 +140,12 @@ const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<
 			found.push(...(await probeFocus(root, control)));
 		}
 	}
+	// The transcript is a scroll container and the only way to older turns on a plain transcript, so
+	// it is a control in its own right and must take focus (#7610 criterion 4). axe's
+	// scrollable-region-focusable is not in the enforced set and jsdom lays nothing out, so the
+	// harness's focus probe is what proves it; dropping the scroller's tabIndex reds this.
+	const transcript = root.querySelector<HTMLElement>(".tuval-chat-transcript");
+	if (transcript !== null) found.push(...(await probeFocus(root, transcript)));
 	rendered.unmount();
 	return found.map((violation) => `${violation.id}: ${violation.detail}`);
 };
