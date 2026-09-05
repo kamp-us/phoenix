@@ -39,6 +39,7 @@ upstream at the pinned commit.
 |---|---|
 | `SKILL.md` | Fabrika routing and orientation surface (conventions §1/§2). States what the skill is, when to fire it, the step flow with literal commands, and pointers into `contract.md` by section. |
 | `contract.md` | The derived contract: collector flags, scoring contract, report artifacts — read by section via `fabrika wire doc-section`. |
+| `scripts/test_fabrika_conformance.py` | Fabrika packaging conformance tests (#8048): doc-level checks that the authored surface carries session scoping, the scoring contract, failed-conversation-only edit gating, section addressability, and the documented limitations. Doc-level only — upstream behavior is the baseline target's job. |
 | `PROVENANCE.md` | This file: the byte-exact/editable split and the re-sync procedure. |
 
 Later epic children extend the fabrika-authored surface or land new byte-exact re-copies —

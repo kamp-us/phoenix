@@ -1,18 +1,25 @@
 name: skill-doctor-tests
 
-# Landing child #8048 (epic #8035): the vendored Warp Skill Doctor carries two upstream
-# unittest suites, and conventions §8 makes running them the skill's ship gate. R1.1 on
-# #8035 established the repo tracks zero other Python, so this job owns its interpreter
-# setup instead of borrowing ci.yml's. Both suites run under PYTHONUTF8=1; the native
-# Windows encoding exposure is child #8050's to fix — ubuntu is UTF-8 by default.
+# Landing child #8048 (epic #8035). Two separate test targets; the job fails if
+# EITHER fails. No skips, no failure allowlists, no continue-on-error, no output
+# parsing.
 #
-# KNOWN RED until a maintainer rules on the test adaptation (see PR #… for the proposal):
-# three render_report tests (`test_skill_*`) assert verbatim strings from upstream's own
-# SKILL.md — its startup table and Warp Factories labels. Landing child #8048 replaces
-# that SKILL.md with the fabrika-authored routing surface, so those three assertions fail
-# by construction against the landed packaging. They are NOT suppressed here: this job
-# runs the suite plain and is expected red on exactly those three until the adaptation
-# (upstream patch or ruled local deviation) is approved and landed.
+# Target 1 — upstream baseline. Both UNCHANGED upstream suites run in an isolated
+# temporary tree: the byte-exact vendored files plus upstream's ORIGINAL SKILL.md,
+# downloaded from the pinned commit and hash-verified before use. The shipped
+# fabrika SKILL.md is never part of this tree, so upstream's packaging assertions
+# run against the artifact they were written for. Green here proves the vendored
+# code matches its own packaging — nothing about fabrika's integration.
+#
+# Target 2 — fabrika conformance. `test_fabrika_conformance.py` (fabrika-authored,
+# see PROVENANCE.md) checks the SHIPPED SKILL.md and contract.md for this child's
+# contracts: session scoping, the scoring contract, failed-conversation-only edit
+# gating, section addressability, documented collector/discovery limitations, and
+# §4 plain-literal commands. Doc-level only; it proves the documentation exists
+# where the skill reads it, not runtime behavior.
+#
+# interpreter: R1.1 on #8035 — zero other Python in the repo, so this job owns its
+# setup. PYTHONUTF8=1 throughout; the native Windows encoding exposure is #8050's.
 on:
   pull_request:
     paths:
@@ -31,9 +38,13 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  upstream-unittests:
-    name: upstream unittest suites (python 3.12)
+  skill-doctor:
+    name: upstream baseline + fabrika conformance (python 3.12)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -42,18 +53,42 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: collect_sessions suite
-        working-directory: claude-plugins/fabrika/skills/skill-doctor/scripts
+      - name: "target 1 — upstream baseline (vendored files + upstream SKILL.md @ b811c243)"
         env:
           PYTHONUTF8: "1"
-        run: python test_collect_sessions.py
+          UPSTREAM_SKILL_MD_SHA: "9fd7d77d3b3944cbda2b09137001c25af08f598d"
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/skill-doctor-upstream-baseline"
+          mkdir -p "$BASELINE/scripts" "$BASELINE/references" "$BASELINE/assets"
+          # Exactly the five upstream scripts — the fabrika conformance test must
+          # never enter the baseline tree, so the copy names them instead of *.py.
+          for f in collect_sessions.py render_report.py test_collect_sessions.py test_render_report.py warp_decoder.py; do
+            cp "claude-plugins/fabrika/skills/skill-doctor/scripts/$f" "$BASELINE/scripts/$f"
+          done
+          cp claude-plugins/fabrika/skills/skill-doctor/references/*.md "$BASELINE/references/"
+          cp claude-plugins/fabrika/skills/skill-doctor/assets/* "$BASELINE/assets/"
+          if [ -e "$BASELINE/scripts/test_fabrika_conformance.py" ]; then
+            echo "isolation failure: fabrika conformance test leaked into the baseline tree" >&2
+            exit 1
+          fi
+          if ! curl -fsSL "https://raw.githubusercontent.com/warpdotdev/common-skills/b811c24365ae505bfc9646458957b886e29110b5/.agents/skills/skill-doctor/SKILL.md" \
+            -o "$BASELINE/SKILL.md"; then
+            echo "provenance failure: could not download upstream SKILL.md at the pinned commit" >&2
+            exit 1
+          fi
+          got="$(git hash-object "$BASELINE/SKILL.md")"
+          echo "upstream SKILL.md blob: $got"
+          if [ "$got" != "$UPSTREAM_SKILL_MD_SHA" ]; then
+            echo "provenance failure: downloaded SKILL.md blob does not match the pinned blob" >&2
+            exit 1
+          fi
+          cd "$BASELINE/scripts"
+          python test_collect_sessions.py
+          python test_render_report.py
 
-      - name: render_report suite
+      - name: "target 2 — fabrika conformance (shipped SKILL.md + contract.md)"
         working-directory: claude-plugins/fabrika/skills/skill-doctor/scripts
         env:
           PYTHONUTF8: "1"
-        # Expected red on exactly three tests until the SKILL.md-coupling adaptation is
-        # ruled: test_skill_startup_contract_is_centralized,
-        # test_skill_output_uses_report_and_warp_factories_labels,
-        # test_skill_edits_only_use_failed_conversations. Any other failure is real.
-        run: python test_render_report.py
+        run: python test_fabrika_conformance.py
