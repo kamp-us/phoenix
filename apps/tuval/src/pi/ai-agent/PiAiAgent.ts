@@ -48,7 +48,13 @@ import {
 } from "../server/index.ts";
 import {pageItems} from "./entries.ts";
 import {emptyProjection, eventsOf} from "./items.ts";
-import {promptErrorOf, startErrorOf, storeUnreadable, transportErrorOf} from "./refusals.ts";
+import {
+	promptErrorOf,
+	promptRefusalOf,
+	startErrorOf,
+	storeUnreadable,
+	transportErrorOf,
+} from "./refusals.ts";
 
 /** A model this process may run, named the way Pi's catalog names one. */
 export interface ModelSelection {
@@ -221,14 +227,23 @@ const make = (
 				// key recorded after `pi.prompt` resolves could never see it.
 				yield* Ref.update(keys, (seen) => new Set(seen).add(key));
 			}
-			// The pin answers a `prompt` request with the snapshot the turn ended on, so this
-			// resolves at the end of the turn rather than at the send. The events the turn produced
-			// have already been pushed and folded by then; nothing waits on this returning.
-			yield* pi.prompt(current.id, text).pipe(
-				Effect.mapError(promptErrorOf),
-				// A send that never landed is not a turn this session has seen, so the key goes
-				// back and a retry of it is admitted.
-				Effect.tapError(() => (key === undefined ? Effect.void : Ref.update(keys, without(key)))),
+			const open = yield* Ref.get(queue);
+			// The pin answers a `prompt` request with the snapshot the turn ended on, so awaiting it
+			// here would return at the end of the turn rather than at the send — and the generic
+			// host awaits a Cmd handler before it publishes the commit that handler came from, so
+			// the operator's own message would not paint until the reply landed (#8018). Forked into
+			// the layer's scope, this returns at the send, as the Claude layer's does. The turn's
+			// own events are pushed by `follow` and nothing reads the snapshot this discards.
+			yield* Effect.forkIn(
+				pi.prompt(current.id, text).pipe(
+					Effect.mapError(promptErrorOf),
+					// A send that never landed is not a turn this session has seen, so the key goes
+					// back and a retry of it is admitted.
+					Effect.tapError(() => (key === undefined ? Effect.void : Ref.update(keys, without(key)))),
+					Effect.catch((refusal) => Queue.fail(open, promptRefusalOf(refusal))),
+					Effect.asVoid,
+				),
+				scope,
 			);
 		});
 

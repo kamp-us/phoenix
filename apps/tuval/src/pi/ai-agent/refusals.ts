@@ -44,6 +44,20 @@ export const promptErrorOf = (refusal: SessionRefusal): PromptError => {
 export const transportErrorOf = (dropped: Disconnected): TransportError =>
 	new TransportError({reason: "disconnected", detail: dropped.detail});
 
+/**
+ * A refused send, as the event stream's own failure.
+ *
+ * `prompt` returns at the send (#8018), so by the time the pin refuses one there is no caller left
+ * holding a `PromptError` channel. The event stream is the only outbound channel the layer still
+ * owns, and failing it is what the generic Sub turns into the `failed` Msg the window renders —
+ * the same route a dropped socket takes, and the same way back in.
+ */
+export const promptRefusalOf = (refusal: PromptError): TransportError =>
+	new TransportError({
+		reason: refusal.reason === "disconnected" ? "disconnected" : "refused",
+		detail: refusal.detail,
+	});
+
 export const storeUnreadable = (cause: unknown): PageError =>
 	new PageError({
 		reason: "store-unreadable",
