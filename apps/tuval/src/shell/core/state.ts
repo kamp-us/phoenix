@@ -13,6 +13,7 @@
  * a restored desk keeps minting where it left off.
  */
 
+import {Predicate} from "effect";
 import {type DeskState, isDeskState} from "../desk/state.ts";
 import {isLayoutTree, type LayoutTree, type WindowId, windows} from "../layout/index.ts";
 import {isViewState, type ViewState} from "../window/host.ts";
@@ -64,11 +65,8 @@ export interface ShellState {
 	readonly nextId: number;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null && !Array.isArray(value);
-
 export const isPrefixSnapshot = (value: unknown): value is PrefixSnapshot => {
-	if (!isRecord(value)) return false;
+	if (!Predicate.isObject(value)) return false;
 	if (value.armed === false) return true;
 	return (
 		value.armed === true &&
@@ -79,7 +77,7 @@ export const isPrefixSnapshot = (value: unknown): value is PrefixSnapshot => {
 };
 
 export const isWorkspace = (value: unknown): value is Workspace =>
-	isRecord(value) &&
+	Predicate.isObject(value) &&
 	typeof value.id === "string" &&
 	isLayoutTree(value.layout) &&
 	typeof value.focused === "string";
@@ -95,13 +93,13 @@ export const isWorkspace = (value: unknown): value is Workspace =>
  * answers `undefined` rather than throwing when a desk breaks them.
  */
 export const isShellState = (value: unknown): value is ShellState =>
-	isRecord(value) &&
-	isRecord(value.workspaces) &&
+	Predicate.isObject(value) &&
+	Predicate.isObject(value.workspaces) &&
 	Object.values(value.workspaces).every(isWorkspace) &&
 	Array.isArray(value.order) &&
 	value.order.every((id) => typeof id === "string") &&
 	typeof value.activeWorkspace === "string" &&
-	isRecord(value.views) &&
+	Predicate.isObject(value.views) &&
 	Object.values(value.views).every(isViewState) &&
 	isDeskState(value.desk) &&
 	isPrefixSnapshot(value.prefix) &&

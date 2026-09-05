@@ -223,12 +223,6 @@ const generateArguments = (
 	return {args, unsettled: missing};
 };
 
-const asPath = (segments: ReadonlyArray<string>): SpellPath => {
-	const [head, ...rest] = segments;
-	assert.isDefined(head, "a description with an empty path");
-	return [head ?? "", ...rest];
-};
-
 /**
  * One call, encoded to JSON, decoded by the kernel, answered, encoded back and decoded by the
  * caller. A refusal on either codec is a bug in this proof rather than an answer the agent could
@@ -288,7 +282,7 @@ const script = Effect.fn("agentProof.script")(function* () {
 	}
 
 	for (const description of described) {
-		const path = asPath(description.path);
+		const path = description.path;
 		const generated = generateArguments(description, learned, firstPath);
 		unfilled.push(...generated.unsettled);
 		const reply = yield* call(path, generated.args);
@@ -529,7 +523,7 @@ const planStep =
 		if (target === undefined) return null;
 		const generated = generateArguments(target, learnedFrom(answered), firstPath);
 		unfilled.push(...generated.unsettled);
-		return {path: asPath(target.path), args: generated.args};
+		return {path: target.path, args: generated.args};
 	};
 
 /** The events reach the transcript through a Sub, so the tail settles after `dispatch` returns. */

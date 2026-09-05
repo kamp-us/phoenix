@@ -12,6 +12,7 @@
  */
 
 import {describe, expect, it} from "vitest";
+import type {SpellPath} from "../../protocol/ids.ts";
 import type {RegistryDescription} from "../../protocol/registry-description.ts";
 import {complete} from "./complete.ts";
 import {jsonSchema, snapshot} from "./fixtures.ts";
@@ -82,7 +83,8 @@ const generate = (seed: number): Generated => {
 
 	for (let index = 0; index < 12; index += 1) {
 		const depth = 1 + next(3);
-		const path = Array.from({length: depth}, () => SEGMENTS[next(SEGMENTS.length)]!);
+		const segment = () => SEGMENTS[next(SEGMENTS.length)]!;
+		const path: SpellPath = [segment(), ...Array.from({length: depth - 1}, segment)];
 		const key = path.join("\u0000");
 		// A path that already carries a spell, or that runs through one, would re-address it.
 		if (taken.has(key)) continue;
