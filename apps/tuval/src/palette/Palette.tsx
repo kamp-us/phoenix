@@ -41,7 +41,7 @@ export interface PaletteProps {
 	readonly snapshot: Snapshot;
 	readonly registry: SpellIndex;
 	/** The window focused when the palette opened. It is the call's scope, never the layout's. */
-	readonly window?: WindowId;
+	readonly window?: WindowId | undefined;
 	/**
 	 * The kernel's answer to the call this palette sent. A reply for any other call is ignored, so a
 	 * page holding one socket for the whole desk can hand every reply to every palette.
@@ -53,6 +53,15 @@ export interface PaletteProps {
 	/** The correlation id mint. The platform's `crypto.randomUUID` unless a test pins it. */
 	readonly mintCallId?: MintCallId;
 }
+
+/** One string, two readers: the sentence under an empty list and the sentence the region speaks. */
+const NO_MATCH = "No spell matches what you have typed.";
+
+/** What the polite region says as the line changes — how many spells match, or why none do. */
+const resultLine = (count: number, runnable: boolean): string => {
+	if (count === 0) return runnable ? "No completions left; the line is ready to run." : NO_MATCH;
+	return count === 1 ? "1 spell matches." : `${count} spells match.`;
+};
 
 /** The sentence for the spell the line names, whether or not the line is finished. */
 const describeLine = (reading: ParseResult, registry: SpellIndex): string | undefined => {
@@ -74,6 +83,7 @@ export function Palette({
 }: PaletteProps): ReactElement {
 	const baseId = useId();
 	const input = useRef<HTMLInputElement>(null);
+	const list = useRef<HTMLDivElement>(null);
 	const [line, setLine] = useState(initialInput);
 	const [active, setActive] = useState(0);
 	const [error, setError] = useState<string | null>(null);
@@ -179,6 +189,16 @@ export function Palette({
 
 	const listId = `${baseId}-list`;
 	const activeId = index < 0 ? undefined : `${baseId}-option-${index}`;
+	// A row is never focused — `aria-activedescendant` names it instead — so the browser scrolls
+	// nothing of its own, and End on a list taller than its box moves the selection out of sight.
+	// The list's `scroll-behavior` is pinned to `auto` in `./palette.css`, so this is a jump under
+	// either motion preference.
+	useEffect(() => {
+		if (activeId === undefined) return;
+		const row = list.current?.querySelector(`[id="${activeId}"]`);
+		if (row instanceof HTMLElement) row.scrollIntoView({block: "nearest"});
+	}, [activeId, candidates]);
+
 	const expected = reading._tag === "Partial" ? reading.cursorArg : undefined;
 	// The focused row's own sentence when it has one; otherwise the spell the line already names,
 	// which is what a caret sitting on an argument is still describing. The band is never blank while
@@ -204,7 +224,7 @@ export function Palette({
 					role="combobox"
 					aria-label="Run a spell"
 					aria-autocomplete="list"
-					aria-expanded
+					aria-expanded={candidates.length > 0}
 					aria-controls={listId}
 					aria-activedescendant={activeId}
 					// `error` rather than a hand-rolled message: the field primitive owns the invalid
@@ -222,18 +242,26 @@ export function Palette({
 					onKeyDown={onKeyDown}
 				/>
 
-				{/* The field's own message is what a reader sees. This is what a screen reader hears: the
-				    caret is already in the field when a call is refused, so the `aria-describedby` the
-				    field wires up is never re-announced and only a live region carries the refusal. */}
+				{/* What a screen reader hears as the line changes: the refusal when there is one, and the
+				    result count otherwise. The caret is already in the field when a call is refused, so
+				    the `aria-describedby` the field wires up is never re-announced and this region is the
+				    only thing that speaks the refusal — and, with nothing focusable in the list, the only
+				    thing that tells a reader how many spells a keystroke left standing. */}
 				<div className="tuval-palette__announce" aria-live="polite">
-					{error ?? ""}
+					{error ?? resultLine(candidates.length, reading._tag === "Complete")}
 				</div>
 
 				{/* `div`s rather than a `ul`/`li` pair, the shape `@kampus/design`'s own `CommandPalette`
 				    uses: a list element carrying an interactive role is two contradicting semantics, and
 				    `tabIndex={-1}` is what keeps a row addressable by `aria-activedescendant` without
 				    putting it in the tab order the input owns. */}
-				<div className="tuval-palette__list" id={listId} role="listbox" aria-label="Spells">
+				<div
+					ref={list}
+					className="tuval-palette__list"
+					id={listId}
+					role="listbox"
+					aria-label="Spells"
+				>
 					{candidates.map((candidate, position) => (
 						<div
 							key={`${candidate.kind}:${candidate.label}`}
@@ -258,9 +286,7 @@ export function Palette({
 				</div>
 
 				<p className="tuval-palette__detail">
-					{candidates.length === 0 && reading._tag !== "Complete"
-						? "No spell matches what you have typed."
-						: detail}
+					{candidates.length === 0 && reading._tag !== "Complete" ? NO_MATCH : detail}
 					{expected === undefined ? null : (
 						<span className="tuval-palette__expected"> {describeExpected(expected)}</span>
 					)}

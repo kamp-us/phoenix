@@ -93,6 +93,10 @@
 	max-height: min(24rem, 50vh);
 	overflow-y: auto;
 	overscroll-behavior: contain;
+	/* The component scrolls the active row into view itself, and this pins that to a jump whatever
+	   an ancestor asks for: nothing here carries meaning on motion (Pillar 4), so a reduced-motion
+	   reader and everyone else get the same instant move. */
+	scroll-behavior: auto;
 }
 
 .tuval-palette__option {

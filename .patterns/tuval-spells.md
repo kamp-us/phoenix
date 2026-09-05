@@ -571,6 +571,15 @@ what frees Tab to mean "accept this completion" the way a shell does, and it is 
 focus trap — the input is the only tabbable element in the dialog, so Tab from it comes back to it.
 Enter runs a line the parser can already read and spends itself on the completion otherwise.
 
+**Nothing focuses a row, so the component owes two things the browser would otherwise do.** It
+scrolls the active row into view itself on every `aria-activedescendant` change
+(`scrollIntoView({block: "nearest"})`, with the list's `scroll-behavior` pinned to `auto` so it is a
+jump under either motion preference) — without it, End on a list taller than its own box moves a
+selection out of sight. And it speaks: one visually-hidden `aria-live="polite"` region carries the
+refusal while there is one and the result count otherwise, since a reader with no sight of the list
+learns a keystroke's effect from nothing else. `aria-expanded` follows the list rather than sitting
+at a literal `true`, so it and `aria-activedescendant` never disagree about whether a popup exists.
+
 **A reply is a prop, not `onCall`'s return.** Replies arrive on the page's one socket rather than per
 call, so the caller forwards every reply and the palette consumes the one whose `id` matches the call
 it sent — once, keyed on the value passed rather than on the id, since the id is the caller's to

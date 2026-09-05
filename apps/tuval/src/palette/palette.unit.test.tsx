@@ -76,6 +76,9 @@ const optionLabels = (): ReadonlyArray<string> =>
 		.getAllByRole("option")
 		.map((option) => option.querySelector(".tuval-palette__label")?.textContent ?? "");
 
+/** The palette's own polite region — the only thing on the page that speaks for the list. */
+const announced = (): Element | null => document.querySelector(".tuval-palette__announce");
+
 /** React mints a fresh `useId` per mount, so two renders differ by id and by nothing else. */
 const withoutIds = (markup: string): string => markup.replaceAll(/_r_[0-9a-z]+_/g, "_id_");
 
@@ -208,6 +211,64 @@ describe("Palette", () => {
 		expect(screen.getAllByRole("option")).toHaveLength(3);
 		expect(input.getAttribute("aria-controls")).toBe(screen.getByRole("listbox").id);
 		expect(input.getAttribute("aria-expanded")).toBe("true");
+	});
+
+	it("scrolls the active option into view every time the activedescendant moves", () => {
+		const scrolled: Array<{readonly row: Element; readonly options: unknown}> = [];
+		const spy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function record(
+			this: Element,
+			options?: unknown,
+		): void {
+			scrolled.push({row: this, options});
+		});
+		try {
+			const {input} = open();
+			// The whole fixture registry, which is more rows than the list's own box holds. Nothing
+			// focuses a row, so without this the selection walks out of sight (#7643 criterion 10).
+			const rows = screen.getAllByRole("option");
+			expect(rows).toHaveLength(7);
+
+			scrolled.length = 0;
+			fireEvent.keyDown(input, {key: "End"});
+			expect(input.getAttribute("aria-activedescendant")).toBe(rows.at(-1)?.id);
+			expect(scrolled.at(-1)).toEqual({row: rows.at(-1), options: {block: "nearest"}});
+
+			fireEvent.keyDown(input, {key: "Home"});
+			expect(scrolled.at(-1)?.row).toBe(rows[0]);
+
+			fireEvent.keyDown(input, {key: "ArrowUp"});
+			expect(scrolled.at(-1)?.row).toBe(rows.at(-1));
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it("announces the result count as the line changes, and says so when nothing matches", () => {
+		const {input} = open();
+		expect(announced()?.getAttribute("aria-live")).toBe("polite");
+		expect(announced()?.textContent).toBe("7 spells match.");
+
+		type(input, "win");
+		expect(announced()?.textContent).toBe("3 spells match.");
+
+		type(input, "wizard");
+		expect(announced()?.textContent).toBe("1 spell matches.");
+
+		type(input, "zzz");
+		expect(screen.queryAllByRole("option")).toHaveLength(0);
+		// The visible sentence and the announced one are one string, so a reader who cannot see the
+		// empty list is told the same thing a reader who can is shown.
+		expect(screen.getAllByText("No spell matches what you have typed.")).toHaveLength(2);
+		// The listbox holds nothing, and the combobox says so rather than claiming a popup.
+		expect(input.getAttribute("aria-expanded")).toBe("false");
+	});
+
+	it("gives the region to the refusal while there is one", () => {
+		const {input, rerenderWith} = open();
+		type(input, "workspace new scratch");
+		fireEvent.keyDown(input, {key: "Enter"});
+		act(() => rerenderWith(reply(false)));
+		expect(announced()?.textContent).toBe('name "scratch" already exists');
 	});
 
 	it("reports no axe violations", async () => {

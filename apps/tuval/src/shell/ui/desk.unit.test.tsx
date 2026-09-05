@@ -9,7 +9,7 @@
  * with a fake and nothing about the desk.
  */
 
-import {act, fireEvent, render, screen, within} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import type {ReactElement} from "react";
 import {useEffect, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
@@ -307,5 +307,25 @@ describe("the prefix countdown", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe("the palette's door", () => {
+	it("opens on Cmd+K and leaves the caret on the desk when nothing else can take it", async () => {
+		const {container} = render(<Harness initial={threeWindowDesk("window-1")} sent={[]} />);
+		// window-1 is bound, so no picker listbox takes the caret and `document.body` holds it: the
+		// desk nobody has clicked yet, which is where Esc used to strand focus.
+		expect(document.activeElement).toBe(document.body);
+
+		fireEvent.keyDown(document, {key: "k", metaKey: true, code: "KeyK"});
+		const input = screen.getByRole("combobox", {name: "Run a spell"});
+		expect(document.activeElement).toBe(input);
+
+		fireEvent.keyDown(input, {key: "Escape"});
+		expect(screen.queryByRole("combobox", {name: "Run a spell"})).toBeNull();
+		// The dialog gives the caret up as it unmounts, a frame after the handler returns.
+		await waitFor(() =>
+			expect(document.activeElement).toBe(container.querySelector(".tuval-surface")),
+		);
 	});
 });

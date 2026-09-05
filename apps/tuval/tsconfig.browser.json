@@ -8,7 +8,8 @@
 		// reaches that imports one is a plain `tsc` error rather than a blank page (#7836).
 		"lib": ["ES2024", "DOM", "DOM.Iterable"],
 		"jsx": "react-jsx",
-		// See `./tsconfig.json` — the page reaches `@kampus/design`, so the same flag holds here.
+		// See `./tsconfig.json` — the page reaches `@kampus/design`, so the same flag holds here, and
+		// the same 8 `packages/design/src` errors are the whole of what turning it back on gives.
 		"exactOptionalPropertyTypes": false,
 		"types": [],
 		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.browser.tsbuildinfo"

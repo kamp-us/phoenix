@@ -193,10 +193,19 @@ palette and the surface behind it read as one system. A component sets neither: 
 
 **`exactOptionalPropertyTypes` is off in both tsconfigs, and it is not a preference.** The
 `@manti-ui/react` declarations spell an optional prop `foo?: T` where React's own attribute types
-spell `foo?: T | undefined`; under the flag that is an error in the *design package's* files, which
-no edit in `apps/tuval` can reach. `apps/web/tsconfig.app.json` turns it off for the same cause.
-Nothing in `apps/tuval/src` leans on the looser rule — the optional-key idiom
-(`...(x === undefined ? {} : {x})`) is still the shape every module here is written in.
+spell `foo?: T | undefined`. Turning the flag back on gives 8 errors on each lens, and all 8 are in
+`packages/design/src` — `AgentChatInput.tsx` (×3), `Avatar.tsx`, `Button.tsx`, `CommandPalette.tsx`,
+`CountToggle.tsx`, `Switch.tsx` — measured with `tsc -p <lens> --exactOptionalPropertyTypes` at
+#7851's head. `apps/web/tsconfig.app.json` turns it off for the same cause, and
+[#7856](https://github.com/kamp-us/phoenix/issues/7856) is where it goes back on: fix those sources,
+then drop the opt-out in all three consumers.
+
+**An optional prop authored here spells its own `| undefined`**, so no `apps/tuval` file rides the
+loosened rule and the count above stays a design-package number. `PaletteProps.window` was the one
+that did not, and it put two `apps/tuval` files into that list until #7851 widened it. If you hit a
+TS2375 in your own file under the flag, it is yours to fix at the prop, not something this section
+excuses. The optional-key idiom (`...(x === undefined ? {} : {x})`) is still the shape every module
+here is written in.
 
 A slice that is browser-only end to end keeps one `index.ts` rather than the `index.ts`/`browser.ts`
 pair a *shared* slice needs; `src/palette/` is the one today. What still binds it is the rule above:

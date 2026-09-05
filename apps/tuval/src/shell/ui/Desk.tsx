@@ -150,9 +150,14 @@ export function Desk({
 
 	const closePalette = useCallback(() => {
 		palette.closePalette();
-		// The hook hands the caret back to whatever held it. `document.body` is what holds it on a
-		// desk nobody has clicked yet, and it cannot take focus, so the desk takes it instead.
-		if (globalThis.document.activeElement === globalThis.document.body) desk.current?.focus();
+		// The hook hands the caret back to whatever held it, and `document.body` is what held it on a
+		// desk nobody has clicked yet — it cannot take focus, so the desk takes it instead. The check
+		// runs a frame later because the dialog only gives the caret up as it unmounts, after this
+		// handler returns: read synchronously it still sees the palette's own input and never fires.
+		globalThis.requestAnimationFrame(() => {
+			const active = globalThis.document.activeElement;
+			if (active === null || active === globalThis.document.body) desk.current?.focus();
+		});
 	}, [palette]);
 
 	const renderWindow = (windowId: WindowId): ReactNode => (
