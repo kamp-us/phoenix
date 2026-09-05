@@ -7,6 +7,11 @@ export {
 	type EngineViewCanvasProps,
 } from "./EngineViewCanvas.tsx";
 export {
+	EngineViewInspector,
+	type EngineViewInspectorProps,
+	engineViewInspectorRenderer,
+} from "./inspector.tsx";
+export {
 	PROCESS_NODE_TYPE,
 	type ProcessFlowNode,
 	ProcessNode,

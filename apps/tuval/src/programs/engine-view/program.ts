@@ -29,6 +29,15 @@ export const engineViewId = ProgramId.make("engine-view");
 /** The name the row's renderer reference resolves under (`src/shell/window/renderer.ts`). */
 export const ENGINE_VIEW_RENDERER_REF = "tuval/engine-view";
 
+/**
+ * The two desk-level references, resolved by the shell's own tables rather than the window one
+ * (`src/shell/desk/compose.ts`). Separate names because they are separate tables: an inspector and a
+ * status renderer of one program are not interchangeable, and a shared name would let a
+ * mis-assembled page answer one reference with the other.
+ */
+export const ENGINE_VIEW_INSPECTOR_REF = "tuval/engine-view/inspector";
+export const ENGINE_VIEW_STATUS_REF = "tuval/engine-view/status";
+
 /** The whole state: which process the view is pointing at, or none. */
 export interface EngineViewState {
 	readonly selected: ProcessId | null;
@@ -67,6 +76,19 @@ export const engineViewCore = defineMachine<
 	},
 });
 
+export const isEngineViewState = (value: unknown): value is EngineViewState => {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const selected = (value as {readonly selected?: unknown}).selected;
+	return selected === null || typeof selected === "string";
+};
+
+/**
+ * This program's selection, read off a state the desk erased. Total on purpose: the desk inspector
+ * holds an `AnyWindowHost` and must not assume the state it finds there is this program's.
+ */
+export const engineViewSelection = (state: unknown): ProcessId | null =>
+	isEngineViewState(state) ? state.selected : null;
+
 export const engineViewProgram = (): AnyProgram =>
 	({
 		id: engineViewId,
@@ -80,6 +102,11 @@ export const engineViewProgram = (): AnyProgram =>
 		// picker never offers it (`../../shell/picker/entries.ts`), so the reference is what makes this
 		// program windowable at all.
 		renderer: {kind: "host-native", ref: ENGINE_VIEW_RENDERER_REF} satisfies RendererRef,
+		// The desk-level half (#7500 rulings 4 and 5): node detail goes to the shell's one inspector
+		// region and the counts to the middle of its bar. Both are references like the window one —
+		// this row still declares no surface and owns none.
+		inspector: {kind: "host-native", ref: ENGINE_VIEW_INSPECTOR_REF} satisfies RendererRef,
+		status: {kind: "host-native", ref: ENGINE_VIEW_STATUS_REF} satisfies RendererRef,
 		identity: {
 			package: "@kampus/tuval",
 			program: "engine-view",

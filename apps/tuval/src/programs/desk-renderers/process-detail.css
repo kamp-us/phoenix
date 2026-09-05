@@ -1,0 +1,101 @@
+/*
+ * The inspector's paint. Every colour, size and radius is a role token from
+ * `../../shell/ui/tokens.css` — nothing here reaches under the role layer and nothing declares a
+ * value of its own (`design-system-manifest.md`). Tuval's role layer is dark only, so this surface
+ * is dark by default with no scheme branch to pick.
+ */
+
+.tuval-detail {
+	block-size: 100%;
+	overflow: auto;
+	padding: var(--s-3);
+	color: var(--text-secondary);
+	font:
+		var(--t-body-sm) system-ui,
+		sans-serif;
+}
+
+.tuval-detail-placeholder {
+	display: flex;
+	align-items: center;
+	color: var(--text-muted);
+}
+
+.tuval-detail-title {
+	margin: 0 0 var(--s-3);
+	color: var(--text-primary);
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
+	word-break: break-all;
+}
+
+.tuval-detail-fields {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: var(--s-1) var(--s-3);
+	margin: 0;
+}
+
+.tuval-detail-fields dt {
+	color: var(--text-muted);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.tuval-detail-fields dd {
+	margin: 0;
+	color: var(--text-primary);
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
+	word-break: break-all;
+}
+
+.tuval-detail-ports {
+	display: grid;
+	gap: var(--s-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tuval-detail-ports li {
+	display: grid;
+	grid-template-columns: 1fr auto auto;
+	gap: var(--s-2);
+	align-items: baseline;
+	padding: var(--s-1) var(--s-2);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-sm);
+	background: var(--surface-raised);
+}
+
+.tuval-detail-port-direction {
+	color: var(--text-muted);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+}
+
+.tuval-detail-port-kind {
+	color: var(--text-faint);
+	font:
+		var(--t-meta) system-ui,
+		sans-serif;
+}
+
+.tuval-detail-empty-ports {
+	margin: 0;
+	color: var(--text-muted);
+}
+
+.tuval-detail code {
+	font:
+		var(--t-mono) ui-monospace,
+		monospace;
+	color: var(--text-primary);
+}

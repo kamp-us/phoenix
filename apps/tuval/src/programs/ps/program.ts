@@ -28,6 +28,18 @@ export const PS_RENDERER_REF = "tuval/ps";
 
 export const psRendererRef: RendererRef = {kind: "host-native", ref: PS_RENDERER_REF};
 
+/**
+ * The two desk-level references, resolved by the shell's own tables rather than the window one
+ * (`../../shell/desk/compose.ts`). Separate names because they are separate tables: an inspector and
+ * a status renderer of one program are not interchangeable, and a shared name would let a
+ * mis-assembled page answer one reference with the other.
+ */
+export const PS_INSPECTOR_REF = "tuval/ps/inspector";
+export const PS_STATUS_REF = "tuval/ps/status";
+
+export const psInspectorRef: RendererRef = {kind: "host-native", ref: PS_INSPECTOR_REF};
+export const psStatusRef: RendererRef = {kind: "host-native", ref: PS_STATUS_REF};
+
 export const psProgram: AnyProgram = {
 	id: psId,
 	label: "Process table",
@@ -36,6 +48,11 @@ export const psProgram: AnyProgram = {
 	handlers: {},
 	capabilities: [],
 	renderer: psRendererRef,
+	// The desk-level half (#7500 rulings 4 and 5): the selected row's detail goes to the shell's one
+	// inspector region and the table's own facts to the middle of its bar. Both are references like
+	// the window one — this row still declares no surface and owns none.
+	inspector: psInspectorRef,
+	status: psStatusRef,
 	identity: {
 		package: "@kampus/tuval",
 		program: "ps",

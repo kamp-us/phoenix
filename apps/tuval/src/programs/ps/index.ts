@@ -18,6 +18,12 @@ export {
 	type SortKey,
 } from "./columns.ts";
 export {
+	type PsHost,
+	PsInspector,
+	type PsInspectorProps,
+	psInspectorRenderer,
+} from "./inspector.tsx";
+export {
 	defaultOrder,
 	orderedRows,
 	resolveSelection,
@@ -25,7 +31,16 @@ export {
 	sortRows,
 } from "./order.ts";
 export {PsTable, type PsTableProps} from "./PsTable.tsx";
-export {PS_RENDERER_REF, psId, psProgram, psRendererRef} from "./program.ts";
+export {
+	PS_INSPECTOR_REF,
+	PS_RENDERER_REF,
+	PS_STATUS_REF,
+	psId,
+	psInspectorRef,
+	psProgram,
+	psRendererRef,
+	psStatusRef,
+} from "./program.ts";
 export {psReactRenderer, psWindowRenderer} from "./renderer.tsx";
 export {
 	type PsSource,
@@ -41,6 +56,8 @@ export {
 	psCore,
 	psInitialState,
 	psSelect,
+	psSelection,
 	psSortBy,
 	psStateFrom,
 } from "./state.ts";
+export {type PsStatusFacts, psStatusRenderer, psStatusSegments} from "./status.ts";
