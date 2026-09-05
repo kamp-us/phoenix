@@ -13,7 +13,15 @@ export {
 	START_ERROR,
 	UNKNOWN_REQUEST,
 } from "./failures.ts";
-export {addUsage, foldEvent, foldItem, upsertItem, type WindowLimits} from "./fold.ts";
+export {
+	addUsage,
+	foldEvent,
+	foldItem,
+	promptItem,
+	promptItemId,
+	upsertItem,
+	type WindowLimits,
+} from "./fold.ts";
 export {
 	type AiAgentSessionMachine,
 	type AiAgentSessionOptions,

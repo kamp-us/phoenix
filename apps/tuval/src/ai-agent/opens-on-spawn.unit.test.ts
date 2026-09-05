@@ -106,7 +106,7 @@ describe("a freshly spawned agent session", () => {
 					"the spawned session to reach ready",
 					() => sessionOf(handle).phase === "ready",
 				);
-				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1"});
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "k1", timestamp: Date.now()});
 				yield* eventually(
 					"both turn items on the session transcript",
 					() => sessionOf(handle).transcript.items.length === 2,

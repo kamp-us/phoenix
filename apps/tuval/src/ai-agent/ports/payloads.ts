@@ -80,16 +80,23 @@ export const isTranscriptPagePayload = (value: unknown): value is TranscriptPage
  * `prompt` — one turn of operator text. `key` is the idempotency key: a second prompt carrying a
  * key the session already saw is dropped rather than re-sent, so a transport retry is free while
  * a deliberate resend mints a new key.
+ *
+ * Both `key` and `timestamp` are optional on the wire and refused by the receiver when absent
+ * (`program.ts`), because the payload predicate is the port's compatibility contract and a field
+ * required there is a sender this end can no longer read at all.
  */
 export interface PromptPayload {
 	readonly text: string;
 	readonly key?: string;
+	/** Epoch milliseconds, stamped by the sender: the turn's clock, since the core reads none. */
+	readonly timestamp?: number;
 }
 
 export const isPromptPayload = (value: unknown): value is PromptPayload =>
 	Predicate.isObject(value) &&
 	typeof value.text === "string" &&
-	(value.key === undefined || typeof value.key === "string");
+	(value.key === undefined || typeof value.key === "string") &&
+	(value.timestamp === undefined || Number.isFinite(value.timestamp));
 
 /** One card the window renders while the program waits for an answer. */
 export interface PermissionRequest {

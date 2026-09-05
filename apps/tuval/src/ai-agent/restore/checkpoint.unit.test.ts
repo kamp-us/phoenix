@@ -8,7 +8,13 @@
 
 import {describe, expect, it} from "vitest";
 import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
-import {type AiAgentSessionState, initialState, parseSessionState, restore} from "../core/index.ts";
+import {
+	type AiAgentSessionState,
+	initialState,
+	parseSessionState,
+	promptItemId,
+	restore,
+} from "../core/index.ts";
 import {Mode, type PermissionRequest} from "../ports/index.ts";
 import {checkpointFields, resumeMessages} from "./checkpoint.ts";
 
@@ -126,6 +132,28 @@ describe("restoring a saved session", () => {
 
 	it("leaves a session the backend already refused gone", () => {
 		expect(restore({...saved, phase: "gone"}).phase).toBe("gone");
+	});
+
+	it("brings back a send no layer had echoed yet, once and unchanged", () => {
+		const unechoed: AiAgentSessionState = {
+			...saved,
+			transcript: {
+				...saved.transcript,
+				items: [
+					{...userItem(promptItemId("k1"), "make the README"), local: true},
+					assistantItem("i1"),
+				],
+			},
+		};
+		const restored = restore(unechoed);
+		expect(restored.transcript.items[0]).toEqual({
+			...userItem(promptItemId("k1"), "make the README"),
+			local: true,
+		});
+		expect(restored.transcript.items).toHaveLength(2);
+		// The cut-short marking is the other half of a `prompting` checkpoint and is untouched by it.
+		expect(restored.interrupted).toBe("i1");
+		expect(restored.transcript.items[1]).toEqual({...assistantItem("i1"), interrupted: true});
 	});
 });
 

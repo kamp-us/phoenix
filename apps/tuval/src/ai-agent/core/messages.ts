@@ -15,8 +15,17 @@ import type {AgentFailure, HistoryPage} from "./state.ts";
 export type AiAgentSessionMsg =
 	| {readonly type: "start"; readonly cwd: string; readonly resume: string | null}
 	| {readonly type: "started"; readonly sessionId: string}
-	/** `key` is the idempotency key the window mints per deliberate send (ruling 2, #7570). */
-	| {readonly type: "prompt"; readonly text: string; readonly key: string}
+	/**
+	 * `key` is the idempotency key the window mints per deliberate send (ruling 2, #7570), and the
+	 * id of the turn the `prompt` cell records is derived from it. `timestamp` rides along because
+	 * that turn needs a clock and no update cell may read one (#7978).
+	 */
+	| {
+			readonly type: "prompt";
+			readonly text: string;
+			readonly key: string;
+			readonly timestamp: number;
+	  }
 	| {readonly type: "event"; readonly sessionId: string; readonly event: AgentEvent}
 	/** `message` is the operator's optional note; the window offers one on every decision. */
 	| {

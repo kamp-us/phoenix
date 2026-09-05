@@ -154,7 +154,7 @@ const runToTheCut = (stores: CheckpointStores, starts: Array<StartOptions>) =>
 				services: Context.make(ProcessPorts, recorder(log)),
 			});
 			yield* eventually(() => sessionOf(handle.getState()).sessionId !== null);
-			yield* handle.dispatch({type: "prompt", text: "delete it", key: "k1"});
+			yield* handle.dispatch({type: "prompt", text: "delete it", key: "k1", timestamp: Date.now()});
 			yield* eventually(() => Object.keys(sessionOf(handle.getState()).permissions).length === 2);
 			assert.strictEqual(
 				sessionOf(handle.getState()).phase,

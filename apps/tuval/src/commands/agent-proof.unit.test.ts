@@ -600,7 +600,12 @@ const runServiceAgent = Effect.gen(function* () {
 			const state = agent.getState();
 			return isAiAgentSessionState(state) && state.sessionId !== null;
 		});
-		yield* agent.dispatch({type: "prompt", text: "call every spell you can", key: "k1"});
+		yield* agent.dispatch({
+			type: "prompt",
+			text: "call every spell you can",
+			key: "k1",
+			timestamp: Date.now(),
+		});
 		yield* eventually(() => (lastTranscript(emitted)?.items.length ?? 0) >= answered.length);
 		const help = yield* overTheWire(["help"], {});
 		return {

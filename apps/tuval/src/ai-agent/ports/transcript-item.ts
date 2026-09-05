@@ -40,9 +40,14 @@ interface ItemBase {
 	readonly timestamp: number;
 }
 
+/**
+ * `local` marks a turn the core recorded when the operator sent it, before any layer confirmed it.
+ * The flag is gone the moment the layer echoes the turn back, because the echo replaces the item.
+ */
 export interface UserItem extends ItemBase {
 	readonly kind: "user";
 	readonly text: string;
+	readonly local?: boolean;
 }
 
 /** `interrupted` marks a turn the operator cut short; the resend is a fresh prompt, not a retry. */
@@ -123,6 +128,10 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 		return false;
 	switch (value.kind) {
 		case "user":
+			return (
+				typeof value.text === "string" &&
+				(value.local === undefined || typeof value.local === "boolean")
+			);
 		case "system":
 			return typeof value.text === "string";
 		case "assistant":

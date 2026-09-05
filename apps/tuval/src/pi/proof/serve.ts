@@ -133,7 +133,9 @@ const proof = Command.make(
 		yield* until("the Pi session to open", () => session().phase === "ready", seen);
 		for (const [index, text] of [PROMPT_1, PROMPT_2].entries()) {
 			const before = replies();
-			yield* agent.dispatch({type: "prompt", text, key: `harness-${index}`}).pipe(Effect.orDie);
+			yield* agent
+				.dispatch({type: "prompt", text, key: `harness-${index}`, timestamp: Date.now()})
+				.pipe(Effect.orDie);
 			yield* until(`the reply to "${text}"`, () => replies() > before, seen);
 		}
 
