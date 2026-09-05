@@ -61,6 +61,8 @@ export const registry: SpellIndex = buildSpellIndex(descriptions);
 const carrier = WorkspaceId.make("ws-1");
 const scratch = WorkspaceId.make("ws-2");
 const main = WorkspaceId.make("ws-3");
+const tightLate = WorkspaceId.make("ws-4");
+const looseEarly = WorkspaceId.make("ws-5");
 export const leftWindow = WindowId.make("w-left");
 export const rightWindow = WindowId.make("w-right");
 export const counterProcess = ProcessId.make("p-counter");
@@ -93,6 +95,11 @@ export const snapshot = new Snapshot({
 			[carrier]: workspace(carrier, "super-carrier"),
 			[scratch]: workspace(scratch, "scratch"),
 			[main]: workspace(main, "main"),
+			// The greedy-scorer case of #7757, verbatim: `a-xb-ab` holds `ab` scattered at 0-3 and
+			// contiguous at 5-6, and `a-b` holds one looser run. Ranked by the tightest run,
+			// `a-xb-ab` (1005) comes first; ranked by the first run found, `a-b` (2000) would.
+			[tightLate]: workspace(tightLate, "a-xb-ab"),
+			[looseEarly]: workspace(looseEarly, "a-b"),
 		},
 		activeWorkspace: main,
 	},
