@@ -13,7 +13,7 @@
  * `init`.
  */
 
-import type {AgentEvent, Phase} from "../../ai-agent/events.ts";
+import type {AgentEvent} from "../../ai-agent/events.ts";
 import {boundToolOutput} from "../../ai-agent/history/index.ts";
 import type {ItemId, JsonValue, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {isRecord, outputOf, textOf, timestampOf, toolResultsOf, toolUsesOf} from "./blocks.ts";
@@ -239,17 +239,20 @@ export const resultEvents = (
 	};
 };
 
-/** `init` is where a session says which model it is, and the only place it ever says so. */
+/**
+ * `init` is where a session says which model it is, and the only place it ever says so.
+ *
+ * It carries no phase. `init` is "session metadata the CLI emits at the start of each turn"
+ * (`sdk.d.ts`), so a `ready` here fires mid-turn and never at a turn's end — the binding that left
+ * the core at `prompting` after every reply (#7963). Where a turn ends is the layer's to say, off
+ * the `result` message the SDK calls the turn-complete signal.
+ */
 export const initEvents = (message: unknown, mapping: Mapping): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
 	const model = typeof message.model === "string" ? message.model : mapping.model;
-	const ready: Phase = "ready";
 	return {
 		mapping: {...mapping, model},
-		events: [
-			{kind: "phase", phase: ready},
-			{kind: "usage", model, inputTokens: 0, outputTokens: 0, cost: 0},
-		],
+		events: [{kind: "usage", model, inputTokens: 0, outputTokens: 0, cost: 0}],
 	};
 };
 

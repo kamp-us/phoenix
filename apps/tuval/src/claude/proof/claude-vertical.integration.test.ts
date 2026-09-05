@@ -326,10 +326,12 @@ const attachSession = Effect.fn("claudeVertical.attachSession")(function* (
 /**
  * One prompt and the one reply it must produce.
  *
- * The wait is on the reply *count* rather than on the phase, because a turn can end with the core
- * still at `prompting`, and on the count rather than on the reply's text, because a boot's script
- * starts at the head — the same text can legitimately appear twice in one transcript across a
- * restart, and a text match would have passed on the older copy.
+ * The wait is on the reply *count* rather than on the phase, because the phase this turn ends at is
+ * the one it started from: a `ready` seen while waiting can be the session's own pre-prompt frame,
+ * and the count moves only once the turn has produced something. It is on the count rather than on
+ * the reply's text because a boot's script starts at the head — the same text can legitimately
+ * appear twice in one transcript across a restart, and a text match would have passed on the older
+ * copy.
  */
 const chat = Effect.fn("claudeVertical.chat")(function* (
 	session: Session,
