@@ -43,7 +43,7 @@ export const shellNode = NodeId.make("shell");
  * The definition version a snapshot is checked against. Bumping it refuses every desk saved under
  * the old one rather than replaying it into a changed state shape (#7467).
  */
-export const SHELL_VERSION = "1.0.0";
+export const SHELL_VERSION = "1.1.0";
 
 /**
  * The surface's renderer, by reference. The reference is all a row carries: the browser surface
