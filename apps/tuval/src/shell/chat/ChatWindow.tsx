@@ -37,7 +37,7 @@ import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
-import {isWorking, phaseLine} from "./phase.ts";
+import {isWorking, statusLine} from "./phase.ts";
 import {
 	type ChatRow,
 	chatRows,
@@ -470,7 +470,7 @@ function ChatWindow({
 			<div className="tuval-chat-bar">
 				<p className="tuval-chat-phase" data-phase={phase} role="status">
 					<span className="tuval-chat-phase-dot" aria-hidden="true" />
-					{phaseLine(phase)}
+					{statusLine(phase, state?.failure ?? null)}
 				</p>
 				<div className="tuval-chat-bar-end">
 					{options.extras === null ? null : options.extras(process.state)}

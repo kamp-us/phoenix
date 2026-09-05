@@ -137,6 +137,23 @@ describe("chat window boundary", () => {
 		expect(offenders).toEqual([]);
 	});
 
+	it("writes only failure tags the core's own refusals declare", () => {
+		const failures = readFileSync(
+			join(import.meta.dirname, "..", "..", "ai-agent", "core", "failures.ts"),
+			"utf8",
+		);
+		const declared = new Set(
+			[...failures.matchAll(/"(tuval\/ai-agent\/[A-Za-z]+)"/g)].map((match) => match[1]),
+		);
+		const written = sourceFiles().flatMap(([name, source]) =>
+			[...source.matchAll(/"(tuval\/ai-agent\/[A-Za-z]+)"/g)].map(
+				(match) => [name, match[1]] as const,
+			),
+		);
+		expect(written.length).toBeGreaterThan(0);
+		expect(written.filter(([, tag]) => tag === undefined || !declared.has(tag))).toEqual([]);
+	});
+
 	it("every agent import is type-only, so no agent code reaches the browser bundle", () => {
 		const offenders = sourceFiles().flatMap(([name, source]) =>
 			importLines(source)

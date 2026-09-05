@@ -26,6 +26,7 @@
  * is the same atomicity a `Ref` would buy.
  */
 
+import {randomUUID} from "node:crypto";
 import type {
 	PermissionMode,
 	PermissionResult,
@@ -58,16 +59,18 @@ import {
 	type ClaudeAiAgentOptions,
 	openingMode,
 	queryOptionsOf,
+	type SessionChoice,
 	sessionEnv,
 } from "./options.ts";
 import {
 	controlRefused,
+	detailOf,
 	noSession,
 	noSessionToPage,
 	promptDisconnected,
 	sessionNotFound,
 	startTransport,
-	startWithoutInit,
+	startWithoutHandshake,
 	storeUnreadable,
 	streamFailed,
 	subprocessGone,
@@ -94,6 +97,11 @@ interface TurnState {
 	closing: boolean;
 }
 
+/** Whether the `system`/`init` frame has been read yet. It arrives once per turn; this logs once. */
+interface IntroState {
+	seen: boolean;
+}
+
 interface Session {
 	readonly id: string;
 	readonly cwd: string;
@@ -101,6 +109,7 @@ interface Session {
 	readonly input: InputChannel;
 	readonly watch: SubprocessWatch | null;
 	readonly state: TurnState;
+	readonly intro: IntroState;
 	/**
 	 * The pump's scope, which is this session's and not the layer's.
 	 *
@@ -258,6 +267,35 @@ const make = (
 				void runtime.runPromise(publish([{kind: "permission", request, detail: card}]));
 			});
 
+		/**
+		 * The first `init` frame of a session, which is the first turn's rather than the open's.
+		 *
+		 * It carries the two values the handshake does not — `SDKControlInitializeResponse` declares
+		 * neither `session_id` nor `claude_code_version` (`sdk.d.ts`) — so the drift line is written
+		 * here. The id is checked rather than adopted: the layer told the CLI which session to open
+		 * (`--session-id`), the events Sub and every later store read are keyed on it, and a CLI that
+		 * named a different one has broken the resume path silently.
+		 */
+		const readIntro = (
+			current: Session,
+			message: Extract<SDKMessage, {type: "system"; subtype: "init"}>,
+		): Effect.Effect<void> =>
+			Effect.suspend(() => {
+				if (current.intro.seen) return Effect.void;
+				current.intro.seen = true;
+				const line = Effect.logInfo(
+					`claude session ${message.session_id} opened — SDK ${sdk.version}, CLI ${message.claude_code_version}`,
+				);
+				return message.session_id === current.id
+					? line
+					: Effect.andThen(
+							line,
+							Effect.logWarning(
+								`the CLI opened session ${message.session_id}, not the ${current.id} this session is keyed on`,
+							),
+						);
+			});
+
 		const drive = (
 			open: EventQueue,
 			iterator: AsyncIterator<SDKMessage>,
@@ -279,6 +317,7 @@ const make = (
 							: Queue.fail(open, subprocessGone(exitDetail(current.watch?.exit() ?? null)));
 						return;
 					}
+					if (isInit(pulled.message)) yield* readIntro(current, pulled.message);
 					const step = toAgentEvents(pulled.message, mapping, {at: Date.now()});
 					mapping = step.mapping;
 					yield* emit(open, step.events);
@@ -287,14 +326,16 @@ const make = (
 			});
 
 		/**
-		 * Open the session and read it up to its `init`, which is the only frame that names the
-		 * session id. The frames read on the way are the session's first events and are handed back
-		 * rather than dropped.
+		 * Open the session, and wait for the CLI's connect-time handshake rather than for a message.
+		 *
+		 * Nothing is read off the message iterator here. In streaming-input mode every frame belongs
+		 * to a turn, `init` included, and there is no turn before a prompt — so an open that waited
+		 * for `init` waited for a prompt the machine would not let anyone send, which is the deadlock
+		 * this replaces (#7962). The whole message stream is the pump's from the first frame on.
 		 */
 		const open = Effect.fn("TuvalAiAgent.start.open")(function* (
 			cwd: string,
 			resume: string | undefined,
-			out: EventQueue,
 			held: Mode | null,
 		) {
 			const stale: Array<string> = [];
@@ -310,6 +351,13 @@ const make = (
 				stale.push(...unsettledToolIds(items).filter((id) => !parked.has(id)));
 			}
 
+			// A resumed session already has the CLI's id; a fresh one is opened under an id this layer
+			// mints, which is what lets `started` name a session before the first turn exists.
+			const choice: SessionChoice =
+				resume === undefined
+					? {kind: "fresh", sessionId: (options.newSessionId ?? randomUUID)()}
+					: {kind: "resume", sessionId: resume};
+
 			const watch = options.spawn === undefined ? null : watchSubprocess(options.spawn);
 			const input = inputChannel();
 			const handle = yield* Effect.try({
@@ -322,7 +370,7 @@ const make = (
 							canUseTool,
 							env: sessionEnv(),
 							held,
-							...(resume === undefined ? {} : {resume}),
+							session: choice,
 							...(watch === null ? {} : {spawn: watch.spawn}),
 						}),
 					}),
@@ -333,41 +381,25 @@ const make = (
 				handle.close();
 			});
 
-			const iterator = handle[Symbol.asyncIterator]();
-			const first: Array<AgentEvent> = [];
-			let mapping = emptyMapping;
-			while (true) {
-				const pulled = yield* pull(iterator);
-				if (pulled.kind === "failed") {
-					yield* abandon;
-					return yield* startTransport(cwd, pulled.error.detail);
-				}
-				if (pulled.kind === "done") {
-					yield* abandon;
-					return yield* startWithoutInit(cwd, exitDetail(watch?.exit() ?? null));
-				}
-				const step = toAgentEvents(pulled.message, mapping, {at: Date.now()});
-				mapping = step.mapping;
-				first.push(...step.events);
-				if (!isInit(pulled.message)) continue;
+			yield* Effect.tryPromise({
+				try: () => handle.initializationResult(),
+				catch: (cause) => startWithoutHandshake(cwd, detailOf(cause)),
+			}).pipe(Effect.tapError(() => abandon));
 
-				const current: Session = {
-					id: pulled.message.session_id,
+			return {
+				session: {
+					id: choice.sessionId,
 					cwd,
 					handle,
 					input,
 					watch,
 					state: {settled: false, closing: false},
+					intro: {seen: false},
 					scope: yield* Scope.make(),
-				};
-				// The one line that makes SDK/CLI drift visible: the pin is ours, the CLI is whatever
-				// is on PATH, and nothing else in the run reports the pair (founder ruling on #7580).
-				yield* Effect.logInfo(
-					`claude session ${current.id} opened — SDK ${sdk.version}, CLI ${pulled.message.claude_code_version}`,
-				);
-				yield* emit(out, first);
-				return {session: current, iterator, mapping, stale: stale as ReadonlyArray<string>};
-			}
+				} satisfies Session,
+				iterator: handle[Symbol.asyncIterator](),
+				stale: stale as ReadonlyArray<string>,
+			};
 		});
 
 		const start = Effect.fn("TuvalAiAgent.start")(function* (startOptions: {
@@ -388,7 +420,7 @@ const make = (
 			const held = yield* Ref.get(mode);
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
-			const opened = yield* open(startOptions.cwd, startOptions.resume, out, held).pipe(
+			const opened = yield* open(startOptions.cwd, startOptions.resume, held).pipe(
 				Effect.tapError((_error: StartError) => emit(out, [{kind: "phase", phase: "gone"}])),
 			);
 
@@ -398,13 +430,11 @@ const make = (
 			// keys were recorded under is the one case that keeps them.
 			const continuing = previous !== null && startOptions.resume === previous.id;
 			if (!continuing) yield* Ref.set(keys, new Set<string>());
-			// Forked into the session's own scope, so the fan lives exactly as long as the
-			// subprocess it reads and dies with it.
-			yield* Effect.forkIn(
-				drive(out, opened.iterator, opened.mapping, opened.session),
-				opened.session.scope,
-			);
 
+			// The layer's own narration of the open, which the handshake is: the core is already
+			// `ready` off the `started` this call answers, and `coreOwned` drops a layer `starting`
+			// (`ai-agent/core/fold.ts`, #7948) but not this.
+			yield* emit(out, [{kind: "phase", phase: "ready"}]);
 			// The announced mode is resolved by the same call `open` opened the query with, never the
 			// raw `held`: `held` is null until an operator calls `setMode`, so a row carrying any
 			// non-default `permissionMode` would run on that mode and tell every subscriber it has
@@ -418,6 +448,14 @@ const make = (
 				opened.stale.map(
 					(request) => ({kind: "permission-resolved", request, decision: "deny"}) as const,
 				),
+			);
+
+			// Last, and forked into the session's own scope: the fan lives exactly as long as the
+			// subprocess it reads and dies with it, and starting it after the emits above is what
+			// keeps the session's own opening frames behind them on the one stream.
+			yield* Effect.forkIn(
+				drive(out, opened.iterator, emptyMapping, opened.session),
+				opened.session.scope,
 			);
 			return {sessionId: opened.session.id};
 		});

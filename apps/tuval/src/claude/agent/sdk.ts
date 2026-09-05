@@ -28,9 +28,19 @@ export const SDK_VERSION = "0.3.259";
  *
  * Narrower than the SDK's own `Query`, which declares two dozen control requests: a scripted
  * stand-in has to implement what the layer calls, not everything the CLI can be asked. The real
- * `Query` satisfies this structurally, so the seam's default needs no adapter.
+ * `Query` satisfies this structurally, so the seam's default needs no adapter. The return types are
+ * `unknown` where the layer reads nothing off the answer, which keeps a stand-in from having to
+ * mint an SDK payload it never uses.
+ *
+ * `initializationResult` is the layer's opened-ness signal. `sdk.d.ts` at the `0.3.259` pin
+ * documents it as returning "the cached first-connect result" (the contrast `Query.reinitialize`
+ * draws against itself), so the `initialize` control request it settles completes on connect with
+ * no prompt sent. The `system`/`init` message is the other thing and cannot serve: the same file
+ * calls it "session metadata the CLI emits at the start of each turn", and there is no turn before
+ * a prompt.
  */
 export interface AgentSession extends AsyncGenerator<SDKMessage, void> {
+	initializationResult(): Promise<unknown>;
 	interrupt(): Promise<unknown>;
 	setPermissionMode(mode: PermissionMode): Promise<void>;
 	close(): void;

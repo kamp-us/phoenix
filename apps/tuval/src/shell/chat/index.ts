@@ -14,7 +14,7 @@ export {type ComposerBridge, type ComposerHandlers, composerBridge} from "./comp
 export {tuvalDesignMessages, tuvalDesignTranslate} from "./copy.ts";
 export {ModeSwitch} from "./ModeSwitch.tsx";
 export {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
-export {isWorking, phaseLine, phaseLines} from "./phase.ts";
+export {isWorking, phaseLine, phaseLines, statusLine} from "./phase.ts";
 export {
 	type ChatRow,
 	type ChatRowsInput,

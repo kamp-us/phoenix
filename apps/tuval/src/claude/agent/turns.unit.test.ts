@@ -7,8 +7,16 @@
  */
 
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Effect, Exit, Option} from "effect";
-import {CWD, message, on, rows, SESSION_ID, TOOL_SESSION_ID} from "./fixtures/harness.ts";
+import {Cause, Effect, Exit, Logger, Option, Stream} from "effect";
+import {
+	CWD,
+	message,
+	OPENED_EVENTS,
+	on,
+	rows,
+	SESSION_ID,
+	TOOL_SESSION_ID,
+} from "./fixtures/harness.ts";
 
 const sent = (prompts: ReadonlyArray<{message: {content: unknown}}>): ReadonlyArray<unknown> =>
 	prompts.map((one) => one.message.content);
@@ -124,17 +132,48 @@ describe("page", () => {
 		),
 	);
 
-	it.effect("reads through the id the init frame named, not the one resume asked for", () =>
+	it.effect("reads through the id it resumed, which is the id the CLI hands back", () =>
 		on({rows: rows(), opening: [message("resumed-init")]}, (agent, scripted) =>
 			Effect.gen(function* () {
-				yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+				yield* agent.start({cwd: CWD, resume: SESSION_ID});
 				yield* agent.page(null, 10);
-				// The pre-open existence check reads what `resume` asked for; every later read goes
-				// through the session the CLI actually opened, which only `init` names.
-				assert.deepStrictEqual(scripted.reads[0], {sessionId: TOOL_SESSION_ID, dir: CWD});
-				assert.deepStrictEqual(scripted.reads[1], {sessionId: SESSION_ID, dir: CWD});
+				// A plain `resume` keeps the session's id — `resumed-init.json` is a real second
+				// `query()` over the same id (`../history/fixtures/PROVENANCE.md`) — so the existence
+				// check, the query's `resume` and every later store read are one session.
+				assert.strictEqual(scripted.opened[0]?.record.options.resume, SESSION_ID);
+				assert.deepStrictEqual(scripted.reads, [
+					{sessionId: SESSION_ID, dir: CWD},
+					{sessionId: SESSION_ID, dir: CWD},
+				]);
 			}),
 		),
+	);
+
+	it.effect("warns when the CLI's init frame names a session other than the one opened", () =>
+		Effect.gen(function* () {
+			const warnings: Array<string> = [];
+			yield* on({rows: rows(), opening: [message("resumed-init")]}, (agent) =>
+				Effect.gen(function* () {
+					// `resumed-init` names SESSION_ID, so resuming TOOL_SESSION_ID is a CLI that opened
+					// a session other than the one the layer is keyed on — silent, and it would break
+					// every later read.
+					yield* agent.start({cwd: CWD, resume: TOOL_SESSION_ID});
+					yield* Stream.runCollect(Stream.take(agent.events, OPENED_EVENTS));
+				}),
+			).pipe(
+				Effect.provide(
+					Logger.layer([
+						Logger.make(({logLevel, message: line}) => {
+							if (logLevel !== "Warn") return;
+							warnings.push(String(Array.isArray(line) ? line[0] : line));
+						}),
+					]),
+				),
+			);
+			const warned = warnings.find((each) => each.includes(SESSION_ID));
+			assert.isDefined(warned);
+			assert.include(warned ?? "", TOOL_SESSION_ID);
+		}),
 	);
 
 	it.effect("refuses a cursor no item in the store carries", () =>

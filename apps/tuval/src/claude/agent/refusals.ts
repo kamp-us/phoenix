@@ -28,8 +28,14 @@ export const sessionNotFound = (cwd: string, resume: string): StartError =>
 export const startTransport = (cwd: string, cause: unknown): StartError =>
 	new StartError({reason: "transport", cwd, detail: detailOf(cause)});
 
-/** The session ended before it said which session it was, so there is nothing to hand back. */
-export const startWithoutInit = (cwd: string, detail: string): StartError =>
+/**
+ * The query ended before its `initialize` control request came back, so it never opened.
+ *
+ * That rejection is the SDK's own: tearing a query down rejects every pending control request with
+ * "Query closed before response received" (`sdk.mjs`, `performCleanup`), and the handshake is one
+ * of them.
+ */
+export const startWithoutHandshake = (cwd: string, detail: string): StartError =>
 	new StartError({reason: "transport", cwd, detail});
 
 export const noSession = (): PromptError =>
