@@ -99,6 +99,28 @@ The page reads two things off the wire: the shell process's state, and the proce
 `AttachedDesk` opens **one subscription per process**, so two windows over one process are one state
 with two view slots — the Vim buffer model (#7484 R1.3), not two copies.
 
+## Two error boundaries, and what each one is allowed to cost
+
+A render throw with nothing above it unmounts React's whole tree, and on this surface that is a
+black tab with the reason only in a console nobody is reading. It has cost the project twice —
+#7560, then a `<c-b> |` that took the desk down on its own headline key
+([#7839](https://github.com/kamp-us/phoenix/issues/7839)). `ErrorBoundary` in
+`src/shell/ui/ErrorBoundary.tsx` is the answer, and it is mounted in exactly two places, each sized
+to what a throw there may cost:
+
+| Where | Wraps | What survives |
+|---|---|---|
+| `Desk.tsx` | the tiling area alone | the status line, the command line, the desk's keyboard |
+| `main.tsx` | everything the page renders | the tab, with the reason on it |
+
+**Recovery is not a button that re-throws.** The boundary takes `resetKeys`, and the desk hands it
+the workspace's layout — so the next kernel snapshot that changes the layout clears the panel with
+no gesture at all. The button is the fallback for the case where nothing new arrives.
+
+The panel is a `role="alert"` carrying the throw's own message plus its component stack in a
+`<details>`, because the reason a founder can paste is the point; showing "something went wrong" is
+the failure mode again in nicer words.
+
 ## `pnpm dev` is one process
 
 `src/bin.ts` boots the kernel, calls `serveDesk` (ephemeral port, a launch token minted in memory),

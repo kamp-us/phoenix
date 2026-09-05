@@ -43,11 +43,12 @@ keys by `NodeId`.
 
 ## Rule 2 — `defaultLayout` is first paint only; `setLayout` is the write-back
 
-**The library is not prop-controlled.** `defaultLayout` is read once at mount and held through a
-stable-object hook; a later value for that prop does not move the DOM. A binding that passed the
-kernel's `sizes` as `defaultLayout` and stopped there would paint correctly on load and then never
-update — which is exactly the case that matters, because every Tuval tab renders one shared desk and
-a drag in one tab has to land in the others.
+**The library is not prop-controlled *within one panel set*.** `defaultLayout` is read when the group
+registers and held through a stable-object hook; a later value for that prop does not move the DOM
+while the panels stay the same. A binding that passed the kernel's `sizes` as `defaultLayout` and
+stopped there would paint correctly on load and then never update — which is exactly the case that
+matters, because every Tuval tab renders one shared desk and a drag in one tab has to land in the
+others.
 
 So the group also carries a `useGroupRef()`, and an effect pushes the kernel's sizes in through
 `groupRef.current.setLayout(...)` whenever they differ from what the group holds. `setLayout` applies
@@ -56,6 +57,49 @@ own write.
 
 Compare per key against `SIZE_TOLERANCE` (`sameLayout` in `frame.ts`), never by float equality: a
 released drag reports percentages the browser rounded, and an exact test calls every mirror a change.
+
+### 2a — never `setLayout` a panel set the group does not hold; let `defaultLayout` carry that
+
+`setLayout` is not total, and the one thing it will not tolerate is a layout naming a different
+number of panels than the group has registered. Its validator opens with exactly that check
+(`dist/react-resizable-panels.js`, `validatePanelGroupLayout` — the minified `X`):
+
+```js
+if (o.length !== t.length)
+  throw Error(`Invalid ${t.length} panel layout: ${o.map((a) => `${a}%`).join(", ")}`);
+```
+
+`t` is the group's `derivedPanelConstraints`, one entry per registered `Panel`. So a write for a set
+the group has not caught up to is a **throw**, not a no-op, and with no boundary above it that throw
+unmounts the desk. `sameLayout` cannot see it: it walks `stack.children` and treats a `reported[id]`
+of `undefined` as agreement, so a child the group has never heard of scores `true`.
+
+**And there is nothing to write anyway.** Registration takes the group's layout from
+`e.mutableState.layouts[panelIds] ?? e.mutableState.defaultLayout ?? evenSplit(constraints)` (same
+file, the group-registration function — the minified `Wt`), and `mutableState.defaultLayout` is
+refreshed from the `defaultLayout` **prop** by an effect that runs on every commit. For a panel set
+the group has not laid out before — which is every set a split or a close produces — the current
+`defaultLayout` prop *is* what it adopts. Passing `defaultLayoutOf(stack)` on every render is
+therefore the whole binding across a panel-set change, and `layout.unit.test.tsx` proves it by
+splitting an 80/20 stack and reading the resulting three `flexGrow`s back off the DOM.
+
+So the effect asks two questions in this order, and `LayoutView.tsx` is those two lines:
+
+```tsx
+const reported = group.getLayout();
+if (!holdsPanels(stack, reported)) return;               // the set changed — defaultLayout has it
+if (sameLayout(stack, reported, SIZE_TOLERANCE)) return; // the sizes agree — nothing to push
+group.setLayout(defaultLayoutOf(stack));
+```
+
+**Why the group is ever behind, given that React commits the new `Panel` first.** A mounting `Panel`
+registers in a layout effect, and registration only calls the group's force-update — so the group's
+own registration effect, which is what recomputes `derivedPanelConstraints`, does not re-run until
+the *next* commit. `StackView`'s passive effect fires in between. The exception is a change to a
+prop that registration effect already depends on: `orientation` is one, which is why `<c-b> -` on a
+one-window stack never crashed while `<c-b> |` and `<c-b> x` always did — `-` flips the stack's axis,
+so that group re-registers in the same commit ([#7839](https://github.com/kamp-us/phoenix/issues/7839)).
+Nothing in this rule rests on that accident; the guard covers all three the same way.
 
 ## Rule 3 — one Msg per gesture, gated on `isUserInteraction`
 
