@@ -1329,11 +1329,17 @@ export function SettingMenu({label, items, value, onValueChange, disabled}: Sett
 	const t = useDesignT();
 	const [open, setOpen] = useState(false);
 	const selected = items.find((item) => item.value === value);
+	// Two different unselected states, and only one of them is loading: an empty `items` is a host
+	// that has not resolved what it can offer, while a populated `items` with no `value` is a
+	// setting the session simply has not picked yet (#8190). Naming the second one "loading" told
+	// the screen reader something untrue.
+	const unselectedName =
+		items.length === 0 ? t("admin.agent.picker.loading") : t("admin.agent.picker.none");
 	const selectedName = selected
 		? selected.note
 			? `${selected.label} (${selected.note})`
 			: selected.label
-		: t("admin.agent.picker.loading");
+		: unselectedName;
 	return (
 		<Menu
 			open={open}
@@ -1351,7 +1357,7 @@ export function SettingMenu({label, items, value, onValueChange, disabled}: Sett
 					disabled={disabled}
 				>
 					{selected?.icon ? <Icon icon={selected.icon} size={14} /> : null}
-					<span>{selected?.label ?? "…"}</span>
+					<span>{selected?.label ?? unselectedName}</span>
 					{selected?.note ? (
 						<span className="kp-agent-chat__picker-note">{selected.note}</span>
 					) : null}

@@ -6,6 +6,7 @@
 
 import fc from "fast-check";
 import type {ReactElement} from "react";
+import {SettingMenu} from "../AgentChatInput";
 import {Alert} from "../Alert";
 import {Avatar} from "../Avatar";
 import {Code, Kbd, Mark, Skeleton, Tag} from "../atoms";
@@ -170,6 +171,35 @@ const selectArb: fc.Arbitrary<ReactElement> = fc
 		/>
 	));
 
+// The unselected arm (`value: undefined`) is generated on purpose: a settings picker with items
+// and no pick is a real session state, and it is the one the trigger has to keep naming (#8190).
+const settingMenuArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		label: fc.constantFrom("Mode", "Model", "Thinking effort"),
+		items: fc.constantFrom(
+			[{value: "plan", label: "Plan"}],
+			[
+				{value: "plan", label: "Plan"},
+				{value: "build", label: "Build"},
+			],
+			[
+				{value: "plan", label: "Plan"},
+				{value: "build", label: "Build", note: "writes"},
+			],
+		),
+		pick: fc.constantFrom(0, 1, -1),
+		disabled: fc.boolean(),
+	})
+	.map(({label: menuLabel, items, pick, disabled}) => (
+		<SettingMenu
+			label={menuLabel}
+			items={items}
+			value={items[pick]?.value}
+			disabled={disabled}
+			onValueChange={() => {}}
+		/>
+	));
+
 const alertArb: fc.Arbitrary<ReactElement> = fc
 	.record({
 		variant: fc.constantFrom(...(["secondary", "success", "info", "danger"] as const)),
@@ -225,6 +255,7 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	CountToggle: {kind: "interactive", selector: "button", arb: countToggleArb},
 	NumberInput: {kind: "interactive", selector: "input", arb: numberInputArb},
 	Select: {kind: "interactive", selector: "button", arb: selectArb},
+	AgentSettingMenu: {kind: "interactive", selector: "button", arb: settingMenuArb},
 
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},

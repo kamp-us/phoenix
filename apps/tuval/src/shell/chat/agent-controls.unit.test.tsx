@@ -293,6 +293,14 @@ describe("the mode switch", () => {
 		expect(process.inbox()[0]).toEqual({type: "setMode", mode: "build"});
 	});
 
+	it("names itself unselected, not loading, when modes are offered but none is current", async () => {
+		await open(withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], null)}));
+		const trigger = await screen.findByRole("button", {name: /^Mode: /});
+		expect(trigger.getAttribute("aria-label")).toBe("Mode: none selected");
+		expect(trigger.textContent).toContain("none selected");
+		expect(trigger.textContent).not.toContain("loading");
+	});
+
 	it("dispatches nothing when the mode picked is the one already current", async () => {
 		const {process} = await open(
 			withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], "plan")}),

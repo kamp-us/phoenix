@@ -47,7 +47,7 @@ const tokens = new Intl.NumberFormat("en-US");
 const NO_SESSION_YET = "no session yet";
 
 /** The rows this panel shows, in the order it shows them. */
-export const inspectorRows = (
+const inspectorRows = (
 	state: AiAgentSessionState,
 ): ReadonlyArray<readonly [label: string, value: string, className?: string]> => [
 	["Cost", money.format(state.usage.cost)],
@@ -57,11 +57,7 @@ export const inspectorRows = (
 	["Directory", state.cwd, "tuval-agent-inspector-wrap"],
 ];
 
-export function AiAgentInspectorPanel({
-	state,
-}: {
-	readonly state: AiAgentSessionState;
-}): ReactElement {
+function AiAgentInspectorPanel({state}: {readonly state: AiAgentSessionState}): ReactElement {
 	return (
 		// `fieldset` + `legend` is the group, not a `div` with `role="group"` and not the `dl` itself:
 		// a `dl` carries list semantics an ARIA role would override, and a bare role where a semantic

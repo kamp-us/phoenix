@@ -8,11 +8,7 @@
  */
 
 export {AI_AGENT_INSPECTOR_REF, SESSION_LIST_WINDOW_REF} from "../renderer-ref.ts";
-export {
-	AiAgentInspector,
-	AiAgentInspectorPanel,
-	inspectorRows,
-} from "./AiAgentInspector.tsx";
+export {AiAgentInspector} from "./AiAgentInspector.tsx";
 export {
 	listView,
 	type OpenPhase,
