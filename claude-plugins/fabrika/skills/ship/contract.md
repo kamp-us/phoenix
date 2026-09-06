@@ -263,7 +263,7 @@ note that must cite a leak cites it by class root or repo-relative form; the ref
 says so. Two known open issues sit on this seam and are inherited, not resolved here: a body
 that proves path-cleanliness *by example* trips the detector, which is generic by design, and no
 verb can rewrite a comment another account authored; both route to a human, and the refusal text
-says which of the two it hit.
+names the class it hit.
 
 ---
 
