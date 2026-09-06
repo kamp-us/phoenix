@@ -1,6 +1,7 @@
 import {homedir} from "node:os";
 import {join} from "node:path";
-import {type Context, Effect, type FileSystem, Layer} from "effect";
+import {Context, Effect, type FileSystem, Layer} from "effect";
+import {AiAgentSessionList, aiAgentSessionListKernel} from "./ai-agent/session-list.ts";
 import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
 import {everyRegistered, SpellBridge} from "./commands/bridge/index.ts";
 import {helpSpells} from "./commands/core/index.ts";
@@ -40,6 +41,9 @@ export const projectConfig = (project: string): string =>
 
 export type Kernel =
 	| Registry
+	// The session-list spell's own requirement, filled from the built kernel below: the union it
+	// answers builds each backend's layer under the context a spawn of that row would run under.
+	| AiAgentSessionList
 	| Checkpoints
 	| Processes
 	| ProcessTable
@@ -113,13 +117,17 @@ export const start = Effect.fn("Tuval.start")(function* ({
 			Layer.mergeAll(Layer.succeedContext(spells), shellWindowIndexKernel(shellId)),
 		),
 	);
-	const kernel = yield* Layer.build(
+	const built = yield* Layer.build(
 		Layer.mergeAll(ProcessTablePort.layer, commands).pipe(
 			Layer.provideMerge(Processes.layer),
 			Layer.provideMerge(Checkpoints.layer(fileStores(stateDir))),
 			Layer.provideMerge(Layer.succeedContext(registry)),
 		),
 	);
+	// Added to the context it reads rather than layered into it: the session list builds every
+	// registered backend's layer, and those layers need the kernel this call is closing over — a
+	// layer inside the merge above would be asking for itself.
+	const kernel = Context.add(built, AiAgentSessionList, aiAgentSessionListKernel(built));
 	// The kernel rides into every launched process's handlers: the shell row's Cmds spawn programs
 	// and read the process table, and a program row declares exactly those needs as its `R`.
 	const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
