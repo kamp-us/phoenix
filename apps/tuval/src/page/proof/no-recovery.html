@@ -1,0 +1,18 @@
+<!doctype html>
+<!--
+	The negative control's own document. It is `apps/tuval/index.html` with one script swapped, and
+	its theme attributes are copied rather than shared for the same reason that file states them: the
+	desk is dark-only window chrome with no light branch to fall back to.
+-->
+<html lang="en" data-theme="dark" data-color-theme="indigo">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="dark" />
+		<title>Tuval — recovery off</title>
+	</head>
+	<body>
+		<div id="tuval"></div>
+		<script type="module" src="/src/page/proof/no-recovery.tsx"></script>
+	</body>
+</html>

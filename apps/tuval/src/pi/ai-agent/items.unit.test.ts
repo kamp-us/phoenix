@@ -4,11 +4,20 @@
  * cheaper to pin here than to provoke out of a model.
  */
 
+import {applyCellChecked} from "@demlik/tea";
 import type {
 	TranscriptItem as PiTranscriptItem,
 	SessionSnapshot,
 } from "@earendil-works/pi-protocol";
 import {describe, expect, it} from "vitest";
+import {
+	type AiAgentSessionCmd,
+	type AiAgentSessionMsg,
+	type AiAgentSessionState,
+	aiAgentSessionMachine,
+	initialState,
+} from "../../ai-agent/core/index.ts";
+import type {AgentEvent} from "../../ai-agent/events.ts";
 import {TOOL_RESULT_BYTE_LIMIT} from "../../ai-agent/ports/index.ts";
 import {emptyProjection, eventsOf, itemOf, phaseOf} from "./items.ts";
 
@@ -180,5 +189,73 @@ describe("one revision folded into events", () => {
 			{kind: "item", item: itemOf(settledTool)},
 			{kind: "phase", phase: "ready"},
 		]);
+	});
+});
+
+/**
+ * Pi's half of #8007: asking for an abort leaves the session busy, and the confirming event is this
+ * fan's own — the next revision reports the session back at `idle`, which `phaseOf` reads as `ready`.
+ * Folded through the real core, because a mapping that reads right over a core still stuck at
+ * `prompting` would have proved nothing.
+ */
+describe("an interruption over the Pi event path", () => {
+	const machine = aiAgentSessionMachine({cwd: "/workspace"});
+	const SENT_AT = 1_700_000_000_000;
+
+	const apply = (
+		state: AiAgentSessionState,
+		msg: AiAgentSessionMsg,
+	): readonly [AiAgentSessionState, ReadonlyArray<AiAgentSessionCmd>] =>
+		applyCellChecked<AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd>(
+			machine,
+			state,
+			msg,
+		);
+
+	const fold = (
+		state: AiAgentSessionState,
+		events: ReadonlyArray<AgentEvent>,
+	): AiAgentSessionState =>
+		events.reduce(
+			(carried, event) => apply(carried, {type: "event", sessionId: "session-7602", event})[0],
+			state,
+		);
+
+	/** A session mid-turn with the abort already asked for. */
+	const asked = (): {
+		readonly state: AiAgentSessionState;
+		readonly running: ReturnType<typeof eventsOf>["next"];
+	} => {
+		const running = eventsOf(emptyProjection, snapshot([user], "turn"));
+		const opened: AiAgentSessionState = {
+			...initialState("/workspace"),
+			phase: "ready",
+			sessionId: "session-7602",
+		};
+		const [prompting] = apply(opened, {
+			type: "prompt",
+			text: "say hello",
+			key: "k1",
+			timestamp: SENT_AT,
+		});
+		const [state] = apply(fold(prompting, running.events), {type: "interrupt", at: SENT_AT + 1});
+		return {state, running: running.next};
+	};
+
+	it("stays busy with the request outstanding while Pi still reports the turn", () => {
+		const {state, running} = asked();
+		const next = eventsOf(running, snapshot([user, assistant("still going")], "turn", 2));
+		const after = fold(state, next.events);
+		expect(after.phase).toBe("prompting");
+		expect(after.interruption).toEqual({requestedAt: SENT_AT + 1});
+	});
+
+	it("comes back to ready on the revision that reports the session idle", () => {
+		const {state, running} = asked();
+		const settled = eventsOf(running, snapshot([user, assistant("hi back")], "idle", 2));
+		expect(settled.events).toContainEqual({kind: "phase", phase: "ready"});
+		const after = fold(state, settled.events);
+		expect(after.phase).toBe("ready");
+		expect(after.interruption).toBeNull();
 	});
 });

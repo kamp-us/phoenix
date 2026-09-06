@@ -37,7 +37,7 @@ import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
-import {isWorking, statusLine} from "./phase.ts";
+import {interruptionGraceMillis, isWorking, statusLine} from "./phase.ts";
 import {
 	type ChatRow,
 	chatRows,
@@ -504,7 +504,7 @@ function ChatWindow({
 					dispatch({type: "prompt", text, key: options.newKey(), timestamp: options.now()});
 					commit((current) => (current.draft === "" ? current : {...current, draft: ""}));
 				},
-				onInterrupt: () => dispatch({type: "interrupt"}),
+				onInterrupt: () => dispatch({type: "interrupt", at: options.now()}),
 				onSetModel: (model) => dispatch({type: "setModel", model}),
 			}),
 		// `phase` and `models` seed the bridge and are deliberately not dependencies: `AgentChatInput`
@@ -518,6 +518,19 @@ function ChatWindow({
 	}, [composer, models]);
 
 	const interruptedId = state?.interrupted ?? null;
+	const interruption = state?.interruption ?? null;
+	// The status line is time-dependent only while an abort is unanswered, and it changes exactly
+	// once — when the grace runs out. So one timeout at that boundary re-renders it, rather than a
+	// poll ticking for the whole turn.
+	const [, passGrace] = useState(0);
+	useEffect(() => {
+		if (interruption === null) return;
+		const remaining = interruption.requestedAt + interruptionGraceMillis - options.now();
+		if (remaining <= 0) return;
+		const timer = setTimeout(() => passGrace((count) => count + 1), remaining);
+		return () => clearTimeout(timer);
+	}, [interruption, options.now]);
+
 	const lastPrompt = state?.lastPrompt ?? null;
 	const resend = useCallback(() => {
 		if (lastPrompt === null) return;
@@ -529,7 +542,7 @@ function ChatWindow({
 			if (event.defaultPrevented) return;
 			if (event.key === "Escape" && isWorking(phase)) {
 				event.preventDefault();
-				dispatch({type: "interrupt"});
+				dispatch({type: "interrupt", at: options.now()});
 				return;
 			}
 			if (event.altKey && (event.key === "r" || event.key === "R") && interruptedId !== null) {
@@ -537,7 +550,7 @@ function ChatWindow({
 				resend();
 			}
 		},
-		[dispatch, interruptedId, phase, resend],
+		[dispatch, interruptedId, options.now, phase, resend],
 	);
 
 	if (process === null) {
@@ -578,7 +591,12 @@ function ChatWindow({
 				<div className="tuval-chat-bar">
 					<p className="tuval-chat-phase" data-phase={phase} role="status">
 						<span className="tuval-chat-phase-dot" aria-hidden="true" />
-						{statusLine(phase, state?.failure ?? null)}
+						{statusLine({
+							phase,
+							failure: state?.failure ?? null,
+							interruption,
+							now: options.now(),
+						})}
 					</p>
 					<div className="tuval-chat-bar-end">
 						{options.extras === null ? null : options.extras(process.state)}

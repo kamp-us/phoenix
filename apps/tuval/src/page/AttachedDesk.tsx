@@ -9,6 +9,11 @@
  *
  * **The page holds no desk state.** Workspaces, layout, focus and view slots all come from the
  * snapshot and go back as Msgs; the two maps here mirror the wire and die with the socket (#7556).
+ *
+ * **The link is replaced, this component is not.** `./connection.ts` hands a fresh `page` and
+ * `shell` in as props when it re-attaches; the desk, the key grammar and the window subscriptions
+ * are rebuilt around them in place, so a founder keeps looking at the last snapshot through the gap
+ * instead of a blank tab (#8004).
  */
 
 import {Effect, Fiber, Stream} from "effect";
@@ -20,7 +25,7 @@ import type {ShellMsg, ShellState} from "../shell/core/index.ts";
 import {windows} from "../shell/layout/index.ts";
 import type {PickerEntries} from "../shell/picker/browser.ts";
 import type {AttachedProcess, PageAttachment, WireProgram} from "../shell/transport/browser.ts";
-import type {AttachEvent, DeskSource, MountResolver} from "../shell/ui/index.ts";
+import type {AttachEvent, AttachStatus, DeskSource, MountResolver} from "../shell/ui/index.ts";
 import {boundMount, Desk, noRenderer, useDeskAttachment} from "../shell/ui/index.ts";
 import type {AnyWindowRenderer} from "../shell/window/index.ts";
 import {empty, processGone, resolverFromTable, type ViewState} from "../shell/window/index.ts";
@@ -32,7 +37,43 @@ export interface AttachedDeskProps {
 	/** One renderer per `RendererRef.ref` — `./renderers.tsx` says why the key is the reference. */
 	readonly renderers: Readonly<Record<string, AnyWindowRenderer>>;
 	readonly reducedMotion: boolean;
+	/**
+	 * Why the page stopped re-attaching, if it has. Set means the desk below is frozen for good and
+	 * says so; `null` means the lifecycle is still working, whatever the socket is doing right now.
+	 */
+	readonly refusal: string | null;
 }
+
+/**
+ * What the desk under it is worth right now. It sits over the desk rather than replacing it: the
+ * retained snapshot is still the most useful thing on screen, and the one thing a founder must not
+ * do is read it as current (#8004).
+ */
+const ConnectionBanner = ({
+	status,
+	reason,
+	refusal,
+}: {
+	readonly status: AttachStatus;
+	readonly reason: string | null;
+	readonly refusal: string | null;
+}) => {
+	if (refusal !== null) {
+		return (
+			<p className="tuval-connection tuval-connection-refused" role="alert" aria-label="Connection">
+				<strong>Disconnected.</strong> This desk is the last state the kernel sent and it has
+				stopped updating: {refusal}
+			</p>
+		);
+	}
+	if (status !== "reattaching") return null;
+	return (
+		<p className="tuval-connection" role="status" aria-label="Connection">
+			<strong>Reconnecting…</strong> This desk is the last state the kernel sent and it is not
+			updating{reason === null ? "" : ` (${reason})`}.
+		</p>
+	);
+};
 
 /** Every process id the desk currently shows in a window, across every workspace. */
 const shownProcesses = (state: ShellState): ReadonlySet<string> => {
@@ -75,6 +116,7 @@ export function AttachedDesk({
 	shell,
 	renderers,
 	reducedMotion,
+	refusal,
 }: AttachedDeskProps): ReactElement {
 	const [rows, setRows] = useState<ReadonlyMap<ProcessId, TableRow>>(new Map());
 	const [catalog, setCatalog] = useState<ReadonlyMap<ProgramId, WireProgram>>(new Map());
@@ -102,15 +144,32 @@ export function AttachedDesk({
 					Effect.sync(() => emit({_tag: "Keys", table} satisfies AttachEvent)),
 				),
 			);
+			// The socket ending is the drop the machine folds. `readProcess` cannot report it — a
+			// `SubscriptionRef` that stops being written to just goes quiet — so the drop is read off
+			// the socket itself (`../shell/transport/client.ts`).
+			const lost = Effect.runFork(
+				Effect.flatMap(page.closed, (error) =>
+					Effect.sync(() => emit({_tag: "Dropped", reason: error.message} satisfies AttachEvent)),
+				),
+			);
 			return () => {
 				Effect.runFork(Fiber.interrupt(snapshots));
 				Effect.runFork(Fiber.interrupt(keys));
+				Effect.runFork(Fiber.interrupt(lost));
 			};
 		},
 		[shell, page],
 	);
 	const attachment = useDeskAttachment(source);
 	const desk = attachment.desk;
+
+	// A fresh socket makes every held `AttachedProcess` a handle on one that is gone, and every id in
+	// `asked` a claim about a subscription that no longer exists. Dropping both is what makes the
+	// effect below re-open one subscription per shown process instead of adding to a stale set.
+	useEffect(() => {
+		asked.current = new Set();
+		setAttached(new Map());
+	}, [page]);
 
 	useEffect(() => {
 		const fiber = Effect.runFork(
@@ -196,23 +255,27 @@ export function AttachedDesk({
 	if (desk === null || attachment.table === null) {
 		return (
 			<div className="tuval-surface" data-scheme="dark">
-				<p className="tuval-placeholder" role="status">
-					{attachment.status === "reattaching"
-						? "The connection dropped. Attaching again…"
-						: "Attaching to the Tuval kernel…"}
+				<p className="tuval-placeholder" role={refusal === null ? "status" : "alert"}>
+					{refusal ??
+						(attachment.status === "reattaching"
+							? "The connection dropped. Attaching again…"
+							: "Attaching to the Tuval kernel…")}
 				</p>
 			</div>
 		);
 	}
 
 	return (
-		<Desk
-			state={desk}
-			dispatch={dispatch}
-			resolveMount={resolveMount}
-			entries={entries}
-			table={attachment.table}
-			reducedMotion={reducedMotion}
-		/>
+		<>
+			<ConnectionBanner status={attachment.status} reason={attachment.lastDrop} refusal={refusal} />
+			<Desk
+				state={desk}
+				dispatch={dispatch}
+				resolveMount={resolveMount}
+				entries={entries}
+				table={attachment.table}
+				reducedMotion={reducedMotion}
+			/>
+		</>
 	);
 }

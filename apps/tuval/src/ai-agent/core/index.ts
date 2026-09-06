@@ -41,6 +41,7 @@ export {
 	type AiAgentSessionState,
 	emptyUsage,
 	type HistoryPage,
+	type Interruption,
 	initialState,
 	lastAssistantId,
 	type ModelState,

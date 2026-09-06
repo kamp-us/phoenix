@@ -68,3 +68,35 @@ body {
 	padding-inline-start: var(--s-4);
 	color: var(--text-secondary);
 }
+
+/*
+ * The connection banner (`./AttachedDesk.tsx`). It overlays the desk rather than displacing it: a
+ * reconnect must not reflow every window the founder is reading, and the desk under it is the last
+ * state the kernel sent, not a placeholder. `--surface-raised` over `--border-strong` is the same
+ * raised-chrome pair the status line uses, so it reads as chrome and not as one more window.
+ */
+.tuval-connection {
+	position: fixed;
+	inset-block-start: var(--s-2);
+	inset-inline: var(--s-4);
+	z-index: 2;
+	margin: 0;
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-md);
+	background: var(--surface-raised);
+	color: var(--text-secondary);
+	font:
+		var(--t-body-sm) system-ui,
+		sans-serif;
+	text-align: center;
+}
+
+.tuval-connection strong {
+	color: var(--text-primary);
+}
+
+/* The refusal is terminal, so it takes the accent border the desk gives anything it wants read. */
+.tuval-connection-refused {
+	border-color: var(--accent);
+}
