@@ -118,6 +118,62 @@ describe("projectTranscript", () => {
 		});
 	});
 
+	/**
+	 * #8160: Pi holds the reply it is writing in `AgentState.streamingMessage` and pushes it into
+	 * `messages` only on `message_end` (`pi-agent-core` `dist/agent.js`), so a mid-turn snapshot
+	 * without this differs from the one before it in `phase` and `revision` and nothing else.
+	 */
+	describe("the reply still being written", () => {
+		const streaming: SourceMessage = {
+			role: "assistant",
+			content: [{type: "text", text: "on i"}],
+			provider: "faux",
+			model: "faux-1",
+			// `"pending"` is the stopReason a partial carries at this pin (`@earendil-works/pi-ai`
+			// `dist/types.d.ts`, `StopReason`), and the arm that answers `streaming` to it.
+			stopReason: "pending",
+			timestamp: 2,
+		};
+
+		it("is absent from the projection when the session is holding none", () => {
+			assert.strictEqual(projectTranscript(messages).length, messages.length);
+		});
+
+		it("lands as one more assistant item, marked streaming", () => {
+			const items = projectTranscript(messages, streaming);
+			assert.strictEqual(items.length, messages.length + 1);
+			assert.deepStrictEqual(items.at(-1), {
+				id: "item-3",
+				role: "assistant",
+				content: [{type: "text", text: "on i"}],
+				model: {provider: "faux", id: "faux-1"},
+				timestamp: 2,
+				status: "streaming",
+			});
+		});
+
+		// The whole reason it is appended rather than given an id of its own: `message_end` pushes
+		// the finished message at exactly this index, so the partial and the reply that replaces it
+		// are one row to every client, and no join has to be invented for them.
+		it("takes the id the finished reply will take", () => {
+			const partial = projectTranscript(messages, streaming).at(-1);
+			const settled = projectTranscript([
+				...messages,
+				{...streaming, content: [{type: "text", text: "on it"}], stopReason: "stop"},
+			]).at(-1);
+			assert.strictEqual(partial?.id, settled?.id);
+			assert.strictEqual(settled?.role === "assistant" ? settled.status : "", "complete");
+		});
+
+		it("still lets a tool result read its input off a call the partial made", () => {
+			const items = projectTranscript(messages, {
+				...streaming,
+				content: [{type: "toolCall", id: "call-2", name: "read", arguments: {path: "b.txt"}}],
+			});
+			assert.strictEqual(items.length, messages.length + 1);
+		});
+	});
+
 	it("produces items the wire accepts", () => {
 		encodeServerMessage({
 			type: "event",

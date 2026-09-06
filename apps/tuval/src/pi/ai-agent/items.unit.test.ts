@@ -123,6 +123,59 @@ describe("one wire item as a port item", () => {
 		});
 	});
 
+	// #8160: the fourth assistant status, and the only unsettled one. The server projects Pi's
+	// `streamingMessage` under it (`pi/server/transcript.ts`), so this is the row that grows.
+	it("marks a reply the session is still writing as streaming", () => {
+		const streaming: PiTranscriptItem = {
+			id: "item-1",
+			role: "assistant",
+			content: [{type: "text", text: "half a th"}],
+			model: {provider: "faux", id: "faux-1"},
+			timestamp: 11,
+			status: "streaming",
+		};
+		expect(itemOf(streaming)).toEqual({
+			kind: "assistant",
+			id: "item-1",
+			timestamp: 11,
+			text: "half a th",
+			streaming: true,
+		});
+	});
+
+	// The snapshot diff is what makes Pi stream at all: the partial and the finished reply carry the
+	// wire's same positional id, so a growing reply is one item event per revision under one id.
+	it("emits one growing row over the revisions of a streamed reply", () => {
+		const growing = (text: string, status: "streaming" | "complete"): PiTranscriptItem => ({
+			id: "item-1",
+			role: "assistant",
+			content: [{type: "text", text}],
+			model: {provider: "faux", id: "faux-1"},
+			timestamp: 11,
+			...(status === "streaming"
+				? {status: "streaming" as const}
+				: {status: "complete" as const, stopReason: "stop" as const}),
+		});
+		let projection = emptyProjection;
+		const rows: Array<unknown> = [];
+		for (const revision of [
+			growing("ha", "streaming"),
+			growing("half", "streaming"),
+			growing("half", "streaming"),
+			growing("half a thought", "complete"),
+		]) {
+			const folded = eventsOf(projection, snapshot([revision], "turn"));
+			projection = folded.next;
+			rows.push(...folded.events.filter((event) => event.kind === "item").map((one) => one.item));
+		}
+		// Three rows, not four: the repeated revision is the same projection and repaints nothing.
+		expect(rows).toEqual([
+			{kind: "assistant", id: "item-1", timestamp: 11, text: "ha", streaming: true},
+			{kind: "assistant", id: "item-1", timestamp: 11, text: "half", streaming: true},
+			{kind: "assistant", id: "item-1", timestamp: 11, text: "half a thought"},
+		]);
+	});
+
 	it("keys a tool row by its call id and folds the three wire statuses", () => {
 		expect(itemOf(runningTool)).toEqual({
 			kind: "tool",

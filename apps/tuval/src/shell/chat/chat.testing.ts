@@ -18,6 +18,7 @@ import {boundToolResult, ItemId, Mode} from "../../ai-agent/ports/index.ts";
 import {pendingPermission, permissionCard} from "../../ai-agent-fixtures/permissions.ts";
 import {
 	assistantItem,
+	streamingItem,
 	systemItem,
 	toolItem,
 	userItem,
@@ -27,6 +28,7 @@ export {
 	assistantItem,
 	pendingPermission,
 	permissionCard as permissionRequest,
+	streamingItem,
 	systemItem,
 	toolItem,
 	userItem,

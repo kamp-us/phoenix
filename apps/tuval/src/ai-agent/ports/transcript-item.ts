@@ -50,12 +50,35 @@ export interface UserItem extends ItemBase {
 	readonly local?: boolean;
 }
 
-/** `interrupted` marks a turn the operator cut short; the resend is a fresh prompt, not a retry. */
-export interface AssistantItem extends ItemBase {
+interface AssistantBase extends ItemBase {
 	readonly kind: "assistant";
 	readonly text: string;
+}
+
+/**
+ * A reply the backend is still writing. `text` is everything of it that has arrived, and the next
+ * item under this id carries more — the same id, so the fold's `upsertItem` grows one row.
+ *
+ * It carries no `interrupted`, and that is the point of the union rather than a second flag beside
+ * one: `streaming` and `interrupted` are two answers to the one question a reader asks of an
+ * assistant row — has this turn finished? — so an interrupt *settles* a stream instead of
+ * annotating it, and `{streaming: true, interrupted: true}` is a sentence no producer can write.
+ */
+export interface StreamingAssistantItem extends AssistantBase {
+	readonly streaming: true;
+	readonly interrupted?: never;
+}
+
+/**
+ * A reply that is the whole of what the backend produced. `interrupted` marks a turn the operator
+ * cut short; the resend is a fresh prompt, not a retry.
+ */
+export interface SettledAssistantItem extends AssistantBase {
+	readonly streaming?: never;
 	readonly interrupted?: boolean;
 }
+
+export type AssistantItem = StreamingAssistantItem | SettledAssistantItem;
 
 /**
  * `parentId` is the id of the tool call this one ran *inside*, when a backend nests calls — an
@@ -140,11 +163,14 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 			);
 		case "system":
 			return typeof value.text === "string";
+		// The union's admission test, and the one place it is enforced at runtime: a streaming item
+		// may carry no `interrupted`, so a producer that marks a row both ways is refused here
+		// rather than rendered as a contradiction.
 		case "assistant":
-			return (
-				typeof value.text === "string" &&
-				(value.interrupted === undefined || typeof value.interrupted === "boolean")
-			);
+			if (typeof value.text !== "string") return false;
+			return value.streaming === undefined
+				? value.interrupted === undefined || typeof value.interrupted === "boolean"
+				: value.streaming === true && value.interrupted === undefined;
 		case "tool":
 			return (
 				typeof value.name === "string" &&

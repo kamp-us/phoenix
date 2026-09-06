@@ -115,6 +115,11 @@ export const queryOptionsOf = (
 	const servers: Record<string, McpServerConfig> = {[TUVAL_SERVER_NAME]: input.server.server};
 	return {
 		cwd: input.cwd,
+		// The reply as it is written, not only when it lands (#8160). `SDKPartialAssistantMessage`
+		// events "will be emitted during streaming" only when this is true (`sdk.d.ts`, `0.3.259`),
+		// and the complete assistant message still follows every one of them, so nothing a
+		// non-streaming turn produced has gone away.
+		includePartialMessages: true,
 		permissionMode: openingMode(options, input.held ?? null),
 		allowedTools: [...new Set([...input.server.wireNames, ...options.allowedTools])],
 		mcpServers: servers,

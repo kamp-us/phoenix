@@ -33,6 +33,21 @@ describe("transcript item union", () => {
 		expect(isTranscriptItem({...assistant, interrupted: true})).toBe(true);
 	});
 
+	it("admits a reply that is still arriving", () => {
+		expect(isTranscriptItem({...assistant, streaming: true})).toBe(true);
+	});
+
+	// The union's whole point: `streaming` and `interrupted` are two answers to one question, so an
+	// item claiming both is a contradiction the port refuses rather than a row the window renders.
+	it("refuses a reply marked both still arriving and cut short", () => {
+		expect(isTranscriptItem({...assistant, streaming: true, interrupted: true})).toBe(false);
+	});
+
+	it("refuses a streaming marker that is anything but true", () => {
+		expect(isTranscriptItem({...assistant, streaming: false})).toBe(false);
+		expect(isTranscriptItem({...assistant, streaming: "yes"})).toBe(false);
+	});
+
 	it("refuses an item of an unknown kind", () => {
 		expect(isTranscriptItem({...user, kind: "thinking"})).toBe(false);
 	});

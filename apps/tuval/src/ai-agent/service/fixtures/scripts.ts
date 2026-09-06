@@ -50,12 +50,16 @@ const at = (offset: number): number => 1_760_000_000_000 + offset;
 
 /** Nine older items, oldest first — enough for `page` to walk in threes and stop at the beginning. */
 export const history: ReadonlyArray<TranscriptItem> = Array.from({length: 9}, (_, index) =>
-	item({
-		kind: index % 2 === 0 ? "user" : "assistant",
-		id: id(`history-${index}`),
-		timestamp: at(index),
-		text: `turn ${index}`,
-	}),
+	item(
+		index % 2 === 0
+			? {kind: "user", id: id(`history-${index}`), timestamp: at(index), text: `turn ${index}`}
+			: {
+					kind: "assistant",
+					id: id(`history-${index}`),
+					timestamp: at(index),
+					text: `turn ${index}`,
+				},
+	),
 );
 
 const empty = {

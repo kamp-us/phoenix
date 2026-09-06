@@ -66,17 +66,19 @@ export const itemOf = (item: PiTranscriptItem): TranscriptItem => {
 				timestamp: item.timestamp,
 				text: textOf(item.content),
 			};
+		// Three of the wire's four assistant statuses are settled and one is not: `streaming` is the
+		// reply Pi is still writing (`pi/server/transcript.ts` projects `AgentState.streamingMessage`
+		// under the id its finished form will take), so the row grows under one id and the finished
+		// reply supersedes it.
 		case "assistant": {
 			const text = textOf(item.content);
+			const id = itemId(item.id);
+			if (item.status === "streaming") {
+				return {kind: "assistant", id, timestamp: item.timestamp, text, streaming: true};
+			}
 			return item.status === "aborted"
-				? {
-						kind: "assistant",
-						id: itemId(item.id),
-						timestamp: item.timestamp,
-						text,
-						interrupted: true,
-					}
-				: {kind: "assistant", id: itemId(item.id), timestamp: item.timestamp, text};
+				? {kind: "assistant", id, timestamp: item.timestamp, text, interrupted: true}
+				: {kind: "assistant", id, timestamp: item.timestamp, text};
 		}
 		case "tool":
 			return {

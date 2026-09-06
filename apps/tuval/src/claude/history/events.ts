@@ -9,8 +9,9 @@
  * six this transcript has a shape for, and everything else is counted rather than refused. A new
  * message kind must never take a session down.
  *
- * Partial assistant frames are among the counted: streaming granularity here is one whole
- * assistant message, so a run with `includePartialMessages` costs nothing and shows nothing extra.
+ * `stream_event` is the reply as it is written. It is mapped rather than counted because a turn
+ * that shows nothing until it ends reads as a hang (#8160), and the row it grows is claimed by the
+ * complete assistant frame that follows — see `partialEvents` and `assistantEvents` in `map.ts`.
  */
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
@@ -21,6 +22,7 @@ import {
 	type Mapping,
 	type MappingOptions,
 	type MappingStep,
+	partialEvents,
 	permissionDeniedEvents,
 	resultEvents,
 	skipMessage,
@@ -37,6 +39,8 @@ export const toAgentEvents = (
 			return assistantEvents(message, mapping, options);
 		case "user":
 			return userEvents(message, mapping, options);
+		case "stream_event":
+			return partialEvents(message, mapping, options);
 		case "result":
 			return resultEvents(message, mapping, options);
 		case "system":

@@ -153,7 +153,10 @@ const handleOf = (
 						id: session.model?.id ?? "unknown",
 					},
 					thinkingLevel: session.thinkingLevel as ThinkingLevel,
-					transcript: projectTranscript(session.messages as ReadonlyArray<SourceMessage>),
+					transcript: projectTranscript(
+						session.messages as ReadonlyArray<SourceMessage>,
+						session.state.streamingMessage as SourceMessage | undefined,
+					),
 					name: session.sessionName,
 					queuedSteer: session.getSteeringMessages(),
 				}),

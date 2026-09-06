@@ -30,6 +30,7 @@ import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWin
 import {
 	assistantItem,
 	call,
+	streamingItem,
 	toolItem,
 	transcriptOf,
 	userItem,
@@ -138,6 +139,37 @@ const composer = (): HTMLTextAreaElement =>
 
 const rows = (): ReadonlyArray<HTMLElement> =>
 	Array.from(document.querySelectorAll<HTMLElement>(".tuval-chat-row"));
+
+/**
+ * #8160: a reply that is still arriving renders as the text it has so far, marked busy. The marker
+ * is the shared item's own (`ports/transcript-item.ts`), so the window learns it once and every
+ * backend gets it — there is no Claude row and no Pi row.
+ */
+describe("a reply still arriving", () => {
+	const streamed = () =>
+		document.querySelector<HTMLElement>('.tuval-chat-text[data-streaming="true"]');
+
+	it("renders the text it has so far, marked busy for a screen reader", async () => {
+		await openWindow(withTranscript([userItem("u1"), streamingItem("a1", "half a rep")]));
+		const row = streamed();
+		expect(row).not.toBeNull();
+		expect(row?.textContent).toBe("half a rep");
+		expect(row?.getAttribute("aria-busy")).toBe("true");
+	});
+
+	it("carries no marker once the finished reply supersedes it", async () => {
+		const {process} = await openWindow(
+			withTranscript([userItem("u1"), streamingItem("a1", "half a rep")]),
+		);
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withTranscript([userItem("u1"), assistantItem("a1", "half a reply.")])),
+			);
+		});
+		expect(streamed()).toBeNull();
+		expect(rows().at(-1)?.textContent).toContain("half a reply.");
+	});
+});
 
 describe("the transcript", () => {
 	it("renders only the rows the viewport can hold, over a thousand-item transcript", async () => {

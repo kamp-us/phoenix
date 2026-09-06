@@ -164,12 +164,23 @@ const assistantStatus = (stopReason: string, errorMessage: string | undefined): 
  * turn that made the call. An orphan result — the call was compacted away — gets a null input
  * rather than being dropped, because dropping it would leave the client a shorter transcript than
  * the session has.
+ *
+ * `streaming` is the reply the agent is writing right now, which Pi holds aside in
+ * `AgentState.streamingMessage` and pushes into `messages` only on `message_end` (`pi-agent-core`
+ * `dist/agent.js`, `processEvents`) — so without it a mid-turn snapshot differs from the one before
+ * it in `phase` and `revision` and nothing else, and the client has no reply to show until the turn
+ * ends (#8160). It is appended, because `message_end` pushes it at exactly that index: the item id
+ * is the position, so the partial and the reply that replaces it are one row and not two. Its
+ * `stopReason` is `"pending"` while it streams (`@earendil-works/pi-ai` `dist/types.d.ts`,
+ * `StopReason`), which is what `assistantStatus` answers `streaming` to.
  */
 export const projectTranscript = (
 	messages: ReadonlyArray<SourceMessage>,
+	streaming?: SourceMessage | undefined,
 ): ReadonlyArray<TranscriptItem> => {
 	const toolInputs = new Map<string, Record<string, unknown>>();
-	for (const message of messages) {
+	const all = streaming === undefined ? messages : [...messages, streaming];
+	for (const message of all) {
 		if (message.role !== "assistant") continue;
 		for (const content of message.content) {
 			if (content.type === "toolCall") toolInputs.set(content.id, content.arguments);
@@ -177,7 +188,7 @@ export const projectTranscript = (
 	}
 
 	const items: TranscriptItem[] = [];
-	messages.forEach((message, index) => {
+	all.forEach((message, index) => {
 		const id = `item-${index}`;
 		if (message.role === "user") {
 			const content: Array<UserContent> =

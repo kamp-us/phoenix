@@ -40,6 +40,15 @@ export const assistantItem = (
 	...(interrupted === undefined ? {} : {interrupted}),
 });
 
+/** A reply that is still arriving: the marker the layers set while they stream (#8160). */
+export const streamingItem = (id: string, text = "answ", timestamp = AT): AssistantItem => ({
+	kind: "assistant",
+	id: ItemId.make(id),
+	timestamp,
+	text,
+	streaming: true,
+});
+
 export const toolItem = (id: string, output = "ok", timestamp = AT): ToolItem => ({
 	kind: "tool",
 	id: ItemId.make(id),

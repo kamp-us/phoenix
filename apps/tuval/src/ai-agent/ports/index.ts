@@ -53,6 +53,8 @@ export {
 	isTranscriptItems,
 	type JsonValue,
 	type ResultOmission,
+	type SettledAssistantItem,
+	type StreamingAssistantItem,
 	type SystemItem,
 	TOOL_RESULT_BYTE_LIMIT,
 	type ToolItem,

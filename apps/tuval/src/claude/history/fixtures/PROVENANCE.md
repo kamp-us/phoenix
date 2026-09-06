@@ -10,10 +10,10 @@ invented envelope would prove the mapping against a contract nobody emits.
 
 | | |
 |---|---|
-| Captured | 2026-09-04 |
+| Captured | 2026-09-04, plus `partial-assistant-turn.json` on 2026-09-05 |
 | SDK | `@anthropic-ai/claude-agent-sdk` **0.3.259** (the `pnpm-workspace.yaml` catalog pin) |
 | CLI | `claude_code_version` **2.1.259**, as reported by the `init` frame itself |
-| Models | `claude-fable-5-1` on every capture but `interrupted-assistant.json`, which is `claude-opus-5` |
+| Models | `claude-fable-5-1` on every capture but `interrupted-assistant.json` and `partial-assistant-turn.json`, which are `claude-opus-5` |
 
 Each run drove `query()` from a throwaway cwd and wrote every message the async iterator yielded,
 in order.
@@ -26,6 +26,7 @@ in order.
 | `oversized-tool-turn.json` | the same, running `seq 1 2000` — an 8,892-byte result, over the 8,000-byte per-item bound |
 | `error-result.json` | a three-command prompt under `maxTurns: 1`, which ends `error_max_turns` |
 | `permission-denied.json` | `permissionMode: "dontAsk"` with a project `permissions.deny` rule of `Bash(echo:*)` — the tool stays on the list and the *call* is refused, which is what emits the frame; denying `Bash` outright removes the tool instead and emits nothing |
+| `partial-assistant-turn.json` | one prompt, no tools, with `includePartialMessages: true` — the whole run from the `rate_limit_event` to the `result`, so the `stream_event` frames sit in the order the CLI emitted them |
 | `interrupted-assistant.json` | a streaming-input session asked for a long essay, then `query.interrupt()` mid-stream, which stamps `aborted: true` |
 | `session-messages.json` | `getSessionMessages(<the tool-turn session id>, {includeSystemMessages: true})` |
 | `unknown-message.json` | a `rate_limit_event` frame from the plain run — a real member of `SDKMessage` this mapping has no shape for |
@@ -45,6 +46,13 @@ The **key set and the field shapes are the golden part** and are untouched. Subs
 Everything else — `stop_reason`, the `usage` and `modelUsage` blocks, `total_cost_usd`,
 `is_error`, `subtype`, `aborted`, `tool_use_result` — is verbatim. `boundary.unit.test.ts` reds if
 any operator path returns and if the fixture set loses a member.
+
+**The one thing the streaming capture settles that no reading of `sdk.d.ts` does**: the complete
+`assistant` frame for a text block arrives **before** that block's `content_block_stop`, not after
+it. The captured order is `message_start`, `content_block_start`, two `content_block_delta`s,
+`assistant`, `content_block_stop`, `message_delta`, `message_stop`. A mapping that settled the row
+on `content_block_stop` would therefore re-open a finished reply as a partial one, which is why
+`map.ts` claims a streamed row on the complete frame and lets the stop find nothing.
 
 ## What is not captured
 

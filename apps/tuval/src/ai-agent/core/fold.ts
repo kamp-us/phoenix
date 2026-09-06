@@ -25,7 +25,7 @@ import {
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
 import {settleAccepted, settlePending} from "./sends.ts";
-import type {AiAgentSessionState, UsageTotals} from "./state.ts";
+import {type AiAgentSessionState, settleStreaming, type UsageTotals} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
 export interface WindowLimits {
@@ -168,6 +168,24 @@ const sessionGone = (failure: AgentFailure): boolean =>
 	failure.tag === START_ERROR && failure.reason === "session-not-found";
 
 /**
+ * The tail as it stands once the session lands on `phase`.
+ *
+ * Streaming is a claim about a turn that is running, so the turn's end is where the claim expires.
+ * Whichever way the session leaves `prompting` — the reply landed, the turn failed, the transport
+ * went away — a row still marked `streaming` is one no layer will add to again, and it settles as
+ * the cut reply it is (`settleStreaming`). A reply the layer finished is not among them: its final
+ * item carries the streamed row's own id, so it superseded the row before this line ran.
+ */
+export const transcriptAfter = (
+	state: AiAgentSessionState,
+	phase: AiAgentSessionState["phase"],
+): AiAgentSessionState["transcript"] => {
+	if (phase === "prompting") return state.transcript;
+	const items = settleStreaming(state.transcript.items);
+	return items === state.transcript.items ? state.transcript : {...state.transcript, items};
+};
+
+/**
  * What is left of an outstanding interruption once the session lands on `phase`.
  *
  * The request is a question — "has the turn stopped?" — and the session leaving `prompting` is the
@@ -226,6 +244,7 @@ export const foldEvent = (
 				return {
 					...state,
 					phase: event.phase,
+					transcript: transcriptAfter(state, event.phase),
 					interruption: interruptionAfter(state, event.phase),
 					sends: settlePending(state.sends, null),
 				};
@@ -233,6 +252,7 @@ export const foldEvent = (
 			return {
 				...state,
 				phase: event.phase,
+				transcript: transcriptAfter(state, event.phase),
 				interruption: interruptionAfter(state, event.phase),
 				sends: event.phase === "prompting" ? state.sends : settleAccepted(state.sends),
 			};
@@ -273,6 +293,7 @@ export const foldEvent = (
 			return {
 				...state,
 				phase,
+				transcript: transcriptAfter(state, phase),
 				interruption: interruptionAfter(state, phase),
 				failure: event.failure,
 				sends: settlePending(state.sends, event.failure),

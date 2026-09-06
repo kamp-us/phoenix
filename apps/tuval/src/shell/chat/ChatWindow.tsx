@@ -206,7 +206,19 @@ function ItemRow({
 					onToggle={(open) => onToggleTool(item.id, open)}
 				/>
 			) : (
-				<p className="tuval-chat-text">{item.text}</p>
+				<p
+					className="tuval-chat-text"
+					// A reply still arriving is announced as busy rather than as a new message per delta:
+					// `aria-busy` is what stops a live region re-reading the growing row on every repaint.
+					{...(item.kind === "assistant" && item.streaming === true
+						? {"aria-busy": true, "data-streaming": "true"}
+						: {})}
+				>
+					{item.text}
+					{item.kind === "assistant" && item.streaming === true ? (
+						<span className="tuval-chat-caret" aria-hidden="true" />
+					) : null}
+				</p>
 			)}
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">

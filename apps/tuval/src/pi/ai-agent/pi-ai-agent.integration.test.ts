@@ -32,12 +32,20 @@ const MODEL = {provider: "faux", id: "faux-1"} as const;
 /** Long enough for a pushed snapshot to land, short enough to fail inside the suite budget. */
 const SETTLE = "500 millis";
 
-const setUp = (responses = [fauxAssistantMessage("hello from faux")]) => {
+/**
+ * `tokensPerSecond` paces the faux stream (`@earendil-works/pi-ai` `RegisterFauxProviderOptions`).
+ * Absent, a scripted reply arrives in one synchronous burst and the session host's own coalescing —
+ * one pending change, sliding, per burst (`server/AgentSessionHost.ts`) — collapses the whole turn
+ * into a single snapshot. A real model is slower than that tick, so a streaming case that wants to
+ * see what a real one produces has to be.
+ */
+const setUp = (responses = [fauxAssistantMessage("hello from faux")], tokensPerSecond?: number) => {
 	const cwd = mkdtempSync(join(tmpdir(), "tuval-pi-ai-agent-"));
 	const faux = fauxProvider({
 		provider: MODEL.provider,
 		api: "faux",
 		models: [{id: MODEL.id, cost: {input: 3, output: 15, cacheRead: 0, cacheWrite: 0}}],
+		...(tokensPerSecond === undefined ? {} : {tokensPerSecond}),
 	});
 	faux.setResponses([...responses]);
 	return {cwd, faux};
@@ -209,6 +217,66 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				}
 
 				assert.strictEqual(faux.state.callCount, 2, "the tool loop ran two model turns");
+			}).pipe(
+				Effect.scoped,
+				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),
+			);
+		},
+		{timeout: 60_000},
+	);
+
+	/**
+	 * #8160 over the real loop: Pi holds the reply it is writing in `AgentState.streamingMessage`
+	 * and pushes it into `messages` only on `message_end`, so this is the case that reds if the
+	 * server stops projecting it — the window would then see one item, at the end of the turn.
+	 *
+	 * The faux provider chunks a reply by token size and pushes a `text_delta` per chunk
+	 * (`@earendil-works/pi-ai` `dist/providers/faux.js`), so a long enough answer is a real stream
+	 * through the real session, the real snapshot push and the real revision diff.
+	 */
+	it.live(
+		"pushes a reply as it is written, growing one row that the finished reply supersedes",
+		() => {
+			const answer =
+				"One two three four five six seven eight nine ten eleven twelve thirteen fourteen " +
+				"fifteen sixteen seventeen eighteen nineteen twenty.";
+			const {cwd, faux} = setUp([fauxAssistantMessage(answer)], 40);
+			return Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd});
+				yield* agent.prompt("count to twenty", "key-1");
+				yield* turnsRan(faux, 1);
+				const events = yield* drain(agent);
+
+				const replies = items(events).filter((item) => item.kind === "assistant");
+				assert.isAbove(
+					replies.length,
+					1,
+					"the reply reached the window more than once — it streamed rather than landing whole",
+				);
+				assert.strictEqual(
+					new Set(replies.map((item) => item.id)).size,
+					1,
+					"every one of them is the same row, so the window grows one reply and not a list",
+				);
+
+				const growing = replies.slice(0, -1);
+				assert.isNotEmpty(growing);
+				assert.isTrue(
+					growing.every((item) => item.kind === "assistant" && item.streaming === true),
+					"every row before the last says the reply is still arriving",
+				);
+				// Monotonic, which is what makes it a stream and not a set of guesses: each row is a
+				// prefix of the next, and the last is the whole answer with the marker gone.
+				const lengths = replies.map((item) => (item.kind === "assistant" ? item.text.length : 0));
+				assert.deepStrictEqual(
+					[...lengths].sort((left, right) => left - right),
+					lengths,
+					"the row only ever grew",
+				);
+				const settled = replies.at(-1);
+				assert.strictEqual(settled?.kind === "assistant" ? settled.text : "", answer);
+				assert.isUndefined(settled?.kind === "assistant" ? settled.streaming : undefined);
 			}).pipe(
 				Effect.scoped,
 				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),

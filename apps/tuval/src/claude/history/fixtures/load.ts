@@ -15,6 +15,7 @@ export type FixtureName =
 	| "init"
 	| "interrupted-assistant"
 	| "oversized-tool-turn"
+	| "partial-assistant-turn"
 	| "permission-denied"
 	| "resumed-init"
 	| "session-messages"

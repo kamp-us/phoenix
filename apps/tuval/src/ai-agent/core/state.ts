@@ -225,6 +225,43 @@ export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | 
 	return null;
 };
 
+/**
+ * Every streamed item in the tail, settled as the cut reply it turned out to be.
+ *
+ * A `streaming` item is a promise that more of this reply is coming, and only the layer that opened
+ * it can keep that promise. So the moment the turn it belongs to is over — the phase leaves
+ * `prompting` (`fold.ts`), or the process it was streaming into went away (`restore` below) — a row
+ * still marked `streaming` is a reply nobody will finish, and it settles to `interrupted`.
+ *
+ * A reply the backend *did* finish never reaches this: the layer's own final item carries the same
+ * id, so `upsertItem` has already replaced the streamed row with the whole of it.
+ */
+export const settleStreaming = (
+	items: ReadonlyArray<TranscriptItem>,
+): ReadonlyArray<TranscriptItem> =>
+	items.some((item) => item.kind === "assistant" && item.streaming === true)
+		? items.map((item) =>
+				item.kind === "assistant" && item.streaming === true
+					? {
+							kind: "assistant",
+							id: item.id,
+							timestamp: item.timestamp,
+							text: item.text,
+							interrupted: true,
+						}
+					: item,
+			)
+		: items;
+
+/** The newest streamed assistant turn in the tail, which is the one a restart cut mid-reply. */
+export const lastStreamingId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
+	for (let index = items.length - 1; index >= 0; index -= 1) {
+		const item = items[index];
+		if (item?.kind === "assistant" && item.streaming === true) return item.id;
+	}
+	return null;
+};
+
 /** The cut-short turn, marked in the tail so a window renders the break off the transcript alone. */
 const markInterrupted = (
 	items: ReadonlyArray<TranscriptItem>,
@@ -233,7 +270,15 @@ const markInterrupted = (
 	cut === null
 		? items
 		: items.map((item) =>
-				item.id === cut && item.kind === "assistant" ? {...item, interrupted: true} : item,
+				item.id === cut && item.kind === "assistant"
+					? {
+							kind: "assistant",
+							id: item.id,
+							timestamp: item.timestamp,
+							text: item.text,
+							interrupted: true,
+						}
+					: item,
 			);
 
 /**
@@ -244,7 +289,12 @@ const markInterrupted = (
  * `reconnect` is admissible from. `gone` stays `gone`: that session is over, and resuming it
  * anyway is the silent fresh session #7514 refuses.
  *
- * The saved phase is the whole interruption test. `prompting` means the layer never reported the
+ * A half-streamed reply comes back cut, whatever the saved phase says. `settleStreaming` clears the
+ * `streaming` marker — nothing is left to finish that row — and the row is also the cut turn the
+ * resend is offered against, which is a sharper answer than the saved phase can give: a checkpoint
+ * written between the deltas and the turn's end names its own unfinished reply.
+ *
+ * The saved phase is the rest of the interruption test. `prompting` means the layer never reported the
  * turn's `ready`, so the reply was still running when the process went away — whatever the tail
  * ends on, which is why a "does the tail end on an assistant item" predicate is the wrong reader:
  * a half-written assistant item reads as a completed reply to it.
@@ -271,11 +321,16 @@ const markInterrupted = (
  * reconnect is a Msg the spawner dispatches (`../restore/checkpoint.ts`), never one scheduled here.
  */
 export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
-	const cut = loaded.phase === "prompting" ? lastAssistantId(loaded.transcript.items) : null;
+	const streamed = lastStreamingId(loaded.transcript.items);
+	const cut =
+		streamed ?? (loaded.phase === "prompting" ? lastAssistantId(loaded.transcript.items) : null);
 	return {
 		...loaded,
 		phase: loaded.phase === "gone" ? "gone" : "idle",
-		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
+		transcript: {
+			...loaded.transcript,
+			items: markInterrupted(settleStreaming(loaded.transcript.items), cut),
+		},
 		interrupted: cut ?? loaded.interrupted,
 		interruption: null,
 		queued: [],

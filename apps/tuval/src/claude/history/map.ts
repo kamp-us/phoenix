@@ -42,6 +42,36 @@ export interface ToolCall {
 	readonly parentId: string | null;
 }
 
+/**
+ * One text content block of the reply this turn is streaming, and the row it is being written into.
+ *
+ * `messageId` is the join key, and it is the *API* message id off the wrapped
+ * `BetaRawMessageStartEvent` (`@anthropic-ai/sdk` `BetaRawMessageStartEvent.message` is a
+ * `BetaMessage`, whose `id` the complete `SDKAssistantMessage.message` repeats). The frame's own
+ * `SDKPartialAssistantMessage.uuid` cannot be it: that uuid is fresh per delta (`sdk.d.ts` at
+ * `0.3.259`), so a row keyed on it would be a new row per token.
+ */
+export interface StreamedBlock {
+	readonly messageId: string;
+	readonly index: number;
+	readonly id: string;
+	readonly at: number;
+	readonly text: string;
+	/** The complete assistant frame for this block has landed and superseded the row. */
+	readonly claimed: boolean;
+}
+
+/**
+ * How often a growing reply earns an item event. Deltas arrive per token; every one of them folds
+ * into the session state and the whole state is written to the checkpoint store on each fold
+ * (`host/actor.ts`), so an unthrottled stream would rewrite the transcript to disk per token.
+ *
+ * A pure interval read off `MappingOptions.at` rather than a timer: the layer already stamps every
+ * message with `Date.now()`, so the coalescing is a fold over values and a test drives it by
+ * handing in clocks.
+ */
+export const STREAM_EMIT_INTERVAL_MS = 120;
+
 export interface Mapping {
 	/** The model `init` named, which is the only place a Claude session says it. */
 	readonly model: string;
@@ -49,9 +79,123 @@ export interface Mapping {
 	readonly toolCalls: ReadonlyMap<string, ToolCall>;
 	/** How many messages this mapping had nothing to say about. */
 	readonly skipped: number;
+	/** The API message id the last `message_start` opened; `null` outside a streamed message. */
+	readonly streamId: string | null;
+	/** The reply's text blocks as they stream, in the order the model opened them. */
+	readonly blocks: ReadonlyArray<StreamedBlock>;
+	/** When the last partial item event went out, so a burst of deltas costs one event. */
+	readonly emittedAt: number;
 }
 
-export const emptyMapping: Mapping = {model: "", toolCalls: new Map(), skipped: 0};
+export const emptyMapping: Mapping = {
+	model: "",
+	toolCalls: new Map(),
+	skipped: 0,
+	streamId: null,
+	blocks: [],
+	emittedAt: 0,
+};
+
+/** The row one streamed text block is written into. Stable for the life of the block. */
+const streamedItemId = (messageId: string, index: number): string => `stream:${messageId}:${index}`;
+
+const streamingItem = (block: StreamedBlock): TranscriptItem => ({
+	kind: "assistant",
+	id: itemId(block.id),
+	timestamp: block.at,
+	text: block.text,
+	streaming: true,
+});
+
+/**
+ * The streamed row one complete assistant frame supersedes, or `null`.
+ *
+ * The frame names its API message id and nothing finer, and one message can stream several text
+ * blocks — so the claim is the oldest unclaimed block of *that* message. A frame whose message
+ * streamed nothing claims nothing and keeps today's `uuid`-keyed row, which is what a run without
+ * `includePartialMessages` is made entirely of.
+ */
+const claimable = (blocks: ReadonlyArray<StreamedBlock>, messageId: string | null): number =>
+	messageId === null
+		? -1
+		: blocks.findIndex((block) => block.messageId === messageId && !block.claimed);
+
+const claim = (blocks: ReadonlyArray<StreamedBlock>, at: number): ReadonlyArray<StreamedBlock> =>
+	blocks.map((block, index) => (index === at ? {...block, claimed: true} : block));
+
+/**
+ * One `stream_event` frame — the deltas of the reply being written — as the growing row it changes.
+ *
+ * `SDKPartialAssistantMessage.event` is "one Anthropic Messages API streaming event" (`sdk.d.ts`,
+ * `0.3.259`), so the six members this reads are the Messages API's own: `message_start` opens a
+ * message and names its id, `content_block_start` opens a block, `content_block_delta` carries a
+ * `text_delta`, and `content_block_stop` closes one. Thinking, tool-input and signature deltas are
+ * not text and are held out on purpose — the port union is text-only, and a streamed thinking row
+ * is the `thinking` item kind, never folded into the reply.
+ *
+ * Read structurally rather than through the SDK's own event types, for the reason every other
+ * handler in this file is: this directory imports no runtime and must survive a delta kind the pin
+ * has never seen.
+ */
+export const partialEvents = (
+	message: unknown,
+	mapping: Mapping,
+	options: MappingOptions,
+): MappingStep => {
+	if (!isRecord(message) || !isRecord(message.event)) return skipMessage(mapping);
+	const frame = message.event;
+	const at = timestampOf(message, options.at);
+
+	if (frame.type === "message_start") {
+		const body = frame.message;
+		const id = isRecord(body) && typeof body.id === "string" ? body.id : null;
+		return {mapping: {...mapping, streamId: id}, events: []};
+	}
+
+	const streamId = mapping.streamId;
+	if (streamId === null || typeof frame.index !== "number") return skipMessage(mapping);
+	const index = frame.index;
+
+	if (frame.type === "content_block_start") {
+		if (!isRecord(frame.content_block) || frame.content_block.type !== "text") {
+			return skipMessage(mapping);
+		}
+		const block: StreamedBlock = {
+			messageId: streamId,
+			index,
+			id: streamedItemId(streamId, index),
+			at,
+			text: typeof frame.content_block.text === "string" ? frame.content_block.text : "",
+			claimed: false,
+		};
+		return {mapping: {...mapping, blocks: [...mapping.blocks, block]}, events: []};
+	}
+
+	const open = mapping.blocks.findIndex(
+		(block) => block.messageId === streamId && block.index === index && !block.claimed,
+	);
+	if (open < 0) return skipMessage(mapping);
+	const block = mapping.blocks[open] as StreamedBlock;
+
+	if (frame.type === "content_block_delta") {
+		if (!isRecord(frame.delta) || frame.delta.type !== "text_delta") return skipMessage(mapping);
+		const text = block.text + (typeof frame.delta.text === "string" ? frame.delta.text : "");
+		const grown = {...block, text};
+		const blocks = mapping.blocks.map((one, at) => (at === open ? grown : one));
+		// Under the interval the row still grows, it just does not repaint: the next event that does
+		// carries every delta accumulated since, so throttling costs latency and never text.
+		return at - mapping.emittedAt < STREAM_EMIT_INTERVAL_MS
+			? {mapping: {...mapping, blocks}, events: []}
+			: {mapping: {...mapping, blocks, emittedAt: at}, events: [item(streamingItem(grown))]};
+	}
+
+	// A closed block repaints whatever the interval last withheld, so the whole block is on screen
+	// before its complete frame arrives — and stays right even if that frame never does.
+	if (frame.type === "content_block_stop") {
+		return {mapping: {...mapping, emittedAt: at}, events: [item(streamingItem(block))]};
+	}
+	return skipMessage(mapping);
+};
 
 export interface MappingOptions {
 	/** Epoch milliseconds for any message carrying no timestamp of its own. */
@@ -103,14 +247,22 @@ export const assistantEvents = (
 	const body = message.message;
 	const text = textOf(body);
 	const interrupted = message.aborted === true;
-	const id = typeof message.uuid === "string" ? message.uuid : `assistant-${at}`;
 	const events: AgentEvent[] = [];
+	let blocks = mapping.blocks;
 	if (text.length > 0 || interrupted) {
+		const messageId = isRecord(body) && typeof body.id === "string" ? body.id : null;
+		const slot = claimable(blocks, messageId);
+		const streamed = slot < 0 ? undefined : blocks[slot];
+		if (slot >= 0) blocks = claim(blocks, slot);
+		// The streamed row's id, so the whole reply *replaces* the growing one rather than landing
+		// beside it. Absent a stream this is `message.uuid`, exactly as it was before partials.
+		const id =
+			streamed?.id ?? (typeof message.uuid === "string" ? message.uuid : `assistant-${at}`);
 		events.push(
 			item({
 				kind: "assistant",
 				id: itemId(id),
-				timestamp: at,
+				timestamp: streamed?.at ?? at,
 				text,
 				...(interrupted ? {interrupted: true} : {}),
 			}),
@@ -138,7 +290,7 @@ export const assistantEvents = (
 			),
 		);
 	}
-	return {mapping: {...mapping, toolCalls}, events};
+	return {mapping: {...mapping, toolCalls, blocks}, events};
 };
 
 /**
@@ -226,12 +378,16 @@ export const resultEvents = (
 ): MappingStep => {
 	if (!isRecord(message)) return skipMessage(mapping);
 	const at = timestampOf(message, options.at);
+	// The turn is over, so its stream is too. A block left unclaimed here streamed a reply whose
+	// complete frame never came; the core settles that row when the phase leaves `prompting`
+	// (`ai-agent/core/fold.ts`), and holding it any longer would let the next turn claim it.
+	const settled: Mapping = {...mapping, streamId: null, blocks: [], emittedAt: 0};
 	const failed = message.is_error === true || message.subtype !== "success";
 	if (failed) {
 		const id = typeof message.uuid === "string" ? message.uuid : `result-${at}`;
 		const subtype = typeof message.subtype === "string" ? message.subtype : "error";
 		return {
-			mapping,
+			mapping: settled,
 			events: [
 				item({
 					kind: "system",
@@ -244,7 +400,7 @@ export const resultEvents = (
 	}
 	const cost = typeof message.total_cost_usd === "number" ? message.total_cost_usd : 0;
 	return {
-		mapping,
+		mapping: settled,
 		events: [
 			{
 				kind: "usage",

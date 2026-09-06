@@ -559,6 +559,25 @@
 	}
 }
 
+/* Where a reply that is still arriving ends. The text is the signal and the blink only the
+   reassurance, so the reduced-motion block below cancels it. */
+.tuval-chat-caret {
+	display: inline-block;
+	width: 0.5ch;
+	height: 1em;
+	margin-inline-start: 0.15ch;
+	vertical-align: text-bottom;
+	background: currentColor;
+	opacity: 0.7;
+	animation: tuval-chat-caret-blink 1s steps(2, start) infinite;
+}
+
+@keyframes tuval-chat-caret-blink {
+	to {
+		visibility: hidden;
+	}
+}
+
 /* The override must tie or beat the rule it cancels: `@media` is a conditional group rule and
    contributes nothing to specificity, so a bare `.tuval-chat-phase-dot` (0,1,0) would silently lose
    to the pulse rule's (0,3,0) and keep animating for someone who asked for no motion. `[data-phase]`
@@ -568,5 +587,9 @@
 	.tuval-chat-working-dots span {
 		animation: none;
 		opacity: 1;
+	}
+
+	.tuval-chat-caret {
+		animation: none;
 	}
 }
