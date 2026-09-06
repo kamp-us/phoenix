@@ -31,6 +31,7 @@ import {runPatchGuard} from "./patch-verb.ts";
 import {runPathFilterGuard} from "./path-filter-verb.ts";
 import {runPitchGuard} from "./pitch-verb.ts";
 import {runPointerGuard} from "./pointer-verb.ts";
+import {runPortabilityGuard} from "./portability-verb.ts";
 import {runPublishIsolationGuard} from "./publish-isolation-verb.ts";
 import {runReadmeGuard} from "./readme-verb.ts";
 import {runRoadmapGuard} from "./roadmap-verb.ts";
@@ -129,6 +130,33 @@ const noGhGuard = Command.make("no-gh").pipe(
 	Command.withShortDescription("fabrika-cli's source holds no `gh` invocation."),
 	Command.withDescription(
 		"packages/fabrika-cli/src/ must reach GitHub over HTTP and never through the `gh` binary, so that every verb runs from a token alone (ADR 0315).",
+	),
+);
+
+const portabilityCheck = leafCommand(
+	"check",
+	{root: rootFlag},
+	Effect.fn(function* ({root}) {
+		yield* emit(
+			yield* runPortabilityGuard({
+				root: Option.getOrNull(root),
+				cwd: process.cwd(),
+				env: process.env,
+			}),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("Red on a reference in fabrika's text that only resolves here."),
+	Command.withDescription(
+		"Walk claude-plugins/fabrika/ and packages/fabrika-cli/src/ and red on any reference that resolves only in the repository fabrika is developed in: a ticket number, a decision-record number in either spelling, a decision-corpus path, a hosted issue or pull-request URL, and any name declared under the `portability` key of the repo config. A markdown heading, a hex colour and a ticket number that is test data (a string literal in a *.test.ts file, or anything under a fixtures directory) are not references. The allow-list at portability-guard.config.json carries two buckets, each entry with a mandatory `why`: `exempt` is a permanent per-file cap, `unmigrated` is the sweep floor and only shrinks, so a ceiling left above the count reds too. Prints the one-line all-clear on stdout; a red puts the report on stderr, with GitHub ::error annotations beside it under Actions. Exits 7 (zero scope: a root walked to nothing, a directory contributed no file, or the allow-list is unusable — fail-closed), 11 (a read failed, so the verdict is UNKNOWN), 12 (a reference was found, a ceiling was exceeded, or a floor row sits above its count). Example: fabrika guard portability-guard check",
+	),
+);
+
+const portabilityGuard = Command.make("portability-guard").pipe(
+	Command.withSubcommands([portabilityCheck]),
+	Command.withShortDescription("fabrika's shipped text carries no reference to one repository."),
+	Command.withDescription(
+		"claude-plugins/fabrika/ and packages/fabrika-cli/src/ install into repositories that are not this one, so every rationale in them must read without a link only this repository can resolve.",
 	),
 );
 
@@ -691,6 +719,7 @@ const guards = [
 	designInventoryGuard,
 	i18nGuard,
 	noGhGuard,
+	portabilityGuard,
 ];
 
 export const guardCommand = Command.make("guard").pipe(

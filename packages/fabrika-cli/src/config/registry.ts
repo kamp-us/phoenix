@@ -18,6 +18,7 @@ import {dependencyReconcilerKey} from "./keys/dependency-reconciler.ts";
 import {docLeakExemptKey} from "./keys/doc-leak-exempt.ts";
 import {governedRootsKey} from "./keys/governed-roots.ts";
 import {cycleDocKey, decisionsDirKey, designHarnessKey, roadmapFileKey} from "./keys/paths.ts";
+import {portabilityKey} from "./keys/portability.ts";
 import {surfaceDispositionsKey} from "./keys/surface-dispositions.ts";
 import {triageFacetsKey} from "./keys/triage-facets.ts";
 import {workflowValidatorsKey} from "./keys/workflow-validators.ts";
@@ -35,6 +36,7 @@ export const KEY_GROUPS: ReadonlyArray<Registration> = [
 	register(designHarnessKey),
 	register(docLeakExemptKey),
 	register(governedRootsKey),
+	register(portabilityKey),
 	register(roadmapFileKey),
 	register(surfaceDispositionsKey),
 	register(triageFacetsKey),
