@@ -66,7 +66,7 @@ So each of these three is **a real payload inside a re-keyed envelope**:
 |---|---|---|
 | `thinking-turn.json` | the whole `message` body — the reasoning text, the block's key set, `usage`, `stop_reason`; this is the part `blocks.ts` reads, and it is byte-identical in both wire forms | `sessionId` → `session_id`, `requestId` → `request_id`, `parent_tool_use_id: null` added, CLI-only keys dropped |
 | `compact-boundary.json` | every value under the metadata — `manual`, the token counts, the duration, the preserved-segment shape | `compactMetadata` → `compact_metadata` and each of its keys to the snake_case names `SDKCompactBoundaryMessage` declares; `cumulativeDroppedTokens` and `preCompactDiscoveredTools` dropped, since the SDK type declares neither |
-| `informational-notice.json` | `content` and `level`, and the key set — `SDKInformationalMessage` is `{type, subtype, content, level, uuid, session_id}`, which the CLI record matches field for field | `sessionId` → `session_id` only |
+| `informational-notice.json` | `content` and `level`, and the key set — the CLI record carries every required field `SDKInformationalMessage` declares (`type`, `subtype`, `content`, `level`, `uuid`, `session_id`) and neither of its two optional ones (`tool_use_id`, `prevent_continuation`) | `sessionId` → `session_id` only |
 
 The claim each backs is therefore narrower than the golden captures': they prove this mapping reads
 the real payload, not that the SDK emits exactly this envelope. `compact-boundary.json` is the
@@ -80,7 +80,10 @@ field naming a machine or a checkout dropped rather than rewritten.
 
 ## What was sanitized, and what is golden
 
-The **key set and the field shapes are the golden part** and are untouched. Substituted:
+For the `query()` captures, the **key set and the field shapes are the golden part** and are
+untouched. The three excerpted fixtures are re-keyed instead, exactly as the section above records —
+their golden part is the payload inside that envelope, not the envelope. Substituted, in both
+groups:
 
 - every uuid, `toolu_*`, `msg_*` and `req_*` id, consistently, so a cross-reference that was real
   in the capture is still real in the fixture (a `tool_result` still names its `tool_use`);
@@ -109,6 +112,13 @@ one block's `type` and payload field over the golden `thinking-turn` frame, and 
 ## Re-capturing
 
 There is no committed capture script: a run needs live credentials and writes real spend, so it is
-an operator act, not a test fixture generator. To re-capture, drive `query()` from a scratch
-directory exactly as the table above describes, then apply the substitutions above before the JSON
-comes anywhere near this directory.
+an operator act, not a test fixture generator. To re-capture the `query()` fixtures, drive `query()`
+from a scratch directory exactly as the first table describes, then apply the substitutions above
+before the JSON comes anywhere near this directory.
+
+The three excerpted fixtures cannot be re-produced that way — no `query()` run forces reasoning, a
+compaction or a usage-limit notice. Re-producing them means finding the frame again in an operator's
+own local CLI session log and re-keying it against `sdk.d.ts` at the catalog pin, per the table in
+[the section above](#the-three-excerpted-from-a-cli-session-transcript). Replacing them with real
+`query()` captures is [#8038](https://github.com/kamp-us/phoenix/issues/8038)'s live capture run,
+which is where `compact-boundary.json`'s declaration-derived key names get closed.
