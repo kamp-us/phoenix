@@ -11,7 +11,7 @@
 
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import type {ReactElement} from "react";
-import {useEffect, useState} from "react";
+import {StrictMode, useEffect, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
@@ -618,5 +618,108 @@ describe("the palette's door", () => {
 		await waitFor(() =>
 			expect(document.activeElement).toBe(container.querySelector(".tuval-surface")),
 		);
+	});
+});
+
+/**
+ * The desk with a stand-in for the kernel's spawn: `window.open` answers with a Cmd whose reply is
+ * `window.bind` (`../core/machine.ts`), and the harnesses above drop Cmds — so without this the
+ * window never fills, which is the half of the journey below that matters.
+ */
+function PickJourney({
+	initial,
+	sent,
+	rows,
+	strict = false,
+}: {
+	readonly initial: ShellState;
+	readonly sent: Array<ShellMsg>;
+	readonly rows: PickerEntries;
+	readonly strict?: boolean;
+}): ReactElement {
+	const [state, setState] = useState(initial);
+	const dispatch = (msg: ShellMsg): void => {
+		sent.push(msg);
+		setState((current) => {
+			const [next] = applyMsg(defaultPrefixTable, current, msg);
+			if (msg.type !== "window.open") return next;
+			return applyMsg(defaultPrefixTable, next, {
+				type: "window.bind",
+				windowId: msg.windowId,
+				processId: `process-${msg.programId}`,
+				takesKeys: true,
+			})[0];
+		});
+	};
+	const desk = (
+		<Desk
+			state={state}
+			dispatch={dispatch}
+			resolveMount={boundEverywhere}
+			entries={rows}
+			table={defaultPrefixTable}
+		/>
+	);
+	return strict ? <StrictMode>{desk}</StrictMode> : desk;
+}
+
+/** Two rows, so a move has somewhere to go: a one-row picker clamps `j` back onto the cursor. */
+const twoPrograms: PickerEntries = {
+	programs: [
+		{_tag: "Program", programId: ProgramId.make("counter"), label: "Counter"},
+		{_tag: "Program", programId: ProgramId.make("clock"), label: "Clock"},
+	],
+	processes: [],
+};
+
+const bindMsgs = (sent: Array<ShellMsg>): Array<ShellMsg> =>
+	sent.filter((msg) => msg.type === "window.open" || msg.type === "window.attach");
+
+describe("`<c-b> w` on a filled window stays on the picker (#8279)", () => {
+	/** Choose `counter` with `<enter>`, then press `<c-b> w`. Returns what the pick alone sent. */
+	const journey = (strict: boolean): Array<ShellMsg> => {
+		const sent: Array<ShellMsg> = [];
+		render(
+			<PickJourney
+				initial={threeWindowDesk("window-2")}
+				sent={sent}
+				rows={twoPrograms}
+				strict={strict}
+			/>,
+		);
+		act(() => void fireEvent.keyDown(document, {key: "Enter", code: "Enter"}));
+		expect(screen.getByText("renderer for process-counter")).toBeTruthy();
+
+		sent.length = 0;
+		// Two acts, never one: the page routes each press against the snapshot it has, so a `w`
+		// batched with the prefix that armed it is routed as a plain key and forwarded — #8274, a
+		// different bug and a different lane.
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "w", code: "KeyW"}));
+		return sent;
+	};
+
+	it("mounts the picker and re-binds nothing", () => {
+		const sent = journey(false);
+		expect(screen.getByRole("listbox", {name: /Open a program/})).toBeTruthy();
+		expect(bindMsgs(sent)).toEqual([]);
+	});
+
+	it("re-binds nothing under StrictMode either, where a mount effect runs twice", () => {
+		const sent = journey(true);
+		expect(screen.getByRole("listbox", {name: /Open a program/})).toBeTruthy();
+		expect(bindMsgs(sent)).toEqual([]);
+	});
+
+	it("still forwards a key to the picker it just mounted", () => {
+		const sent = journey(false);
+		act(() => void fireEvent.keyDown(document, {key: "j", code: "KeyJ"}));
+
+		// `toMatchObject`, not `toEqual`: the picker's view slot is `picker/view.ts`'s to shape, and
+		// this test owns only that the key reached the picker and moved its cursor.
+		expect(sent.filter((msg) => msg.type === "window.setView")).toMatchObject([
+			{type: "window.setView", windowId: "window-2", view: {cursor: 1, refusal: null}},
+		]);
+		expect(bindMsgs(sent)).toEqual([]);
 	});
 });
