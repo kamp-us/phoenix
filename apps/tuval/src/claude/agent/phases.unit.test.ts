@@ -95,6 +95,60 @@ describe("a turn ends on its result", () => {
 	);
 });
 
+/**
+ * Claude's half of #8007. The layer's `interrupt` declares no error channel and logs a refused
+ * one, so nothing about the abort itself reaches the core — the confirming event is the turn's own
+ * `result`, which the pump emits `ready` for on every subtype including the errors an aborted turn
+ * ends on.
+ */
+describe("an interruption over the Claude event path", () => {
+	const asked = (
+		events: ReadonlyArray<AgentEvent>,
+	): {readonly state: AiAgentSessionState; readonly turn: ReadonlyArray<AgentEvent>} => {
+		const [prompting] = apply(opened, {
+			type: "prompt",
+			text: "hello",
+			key: "k1",
+			timestamp: SENT_AT,
+		});
+		// Every event but the turn's own end, so the abort is asked for mid-turn.
+		const running = fold(prompting, events.slice(0, -1));
+		const [state] = apply(running, {type: "interrupt", at: SENT_AT + 1});
+		return {state, turn: events};
+	};
+
+	it.effect("stays busy with the request outstanding until the result lands", () =>
+		Effect.gen(function* () {
+			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
+			const {state} = asked(events);
+			assert.strictEqual(state.phase, "prompting");
+			assert.deepStrictEqual(state.interruption, {requestedAt: SENT_AT + 1});
+		}),
+	);
+
+	it.effect("comes back to ready on the turn's result and clears the request", () =>
+		Effect.gen(function* () {
+			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
+			const {state, turn} = asked(events);
+			const settled = fold(state, turn.slice(-1));
+			assert.strictEqual(settled.phase, "ready");
+			assert.isNull(settled.interruption);
+		}),
+	);
+
+	// The shape an aborted turn actually ends on: an error subtype rather than a success.
+	it.effect("settles on an error-subtype result exactly as it settles on a success", () =>
+		Effect.gen(function* () {
+			const events = yield* promptedTurn([message("error-result")], 2);
+			const {state, turn} = asked(events);
+			assert.strictEqual(state.phase, "prompting");
+			const settled = fold(state, turn.slice(-1));
+			assert.strictEqual(settled.phase, "ready");
+			assert.isNull(settled.interruption);
+		}),
+	);
+});
+
 describe("the core over what the layer emitted", () => {
 	// `prompting` is the whole claim the window's stop control and its Escape branch read:
 	// `isWorking` is `phase === "prompting"`, and that it is true of that phase alone is pinned in

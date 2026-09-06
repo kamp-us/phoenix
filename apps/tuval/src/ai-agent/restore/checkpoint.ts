@@ -26,6 +26,7 @@ export const checkpointFields = [
 	"cwd",
 	"transcript",
 	"interrupted",
+	"interruption",
 	"usage",
 	"permissions",
 	"permissionsRaised",
