@@ -64,7 +64,7 @@ fabrika build tree --require-clean
 
 The token `claim` prints is `<claim-token>` below — this LANE's name, which every later verb takes as
 `--token`. A session runs several lanes, so a verb handed only the session id cannot tell a sibling
-lane's claim from yours (#6037).
+lane's claim from yours.
 
 `--purpose plan` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* this skill has
@@ -96,7 +96,7 @@ This proves the ground fresh against `origin/main`, allocates the run directory 
 **claim nonce `--token` names** — never the session, which every sibling subagent of one run shares
 — and reads what already exists. That is why every `ledger` verb takes the token: handed only a
 session id, the claim check passed for a lane that had *lost* the epic's claim and then derived the
-holder's run key, so two planning lanes wrote into one directory (#6060).
+holder's run key, so two planning lanes wrote into one directory.
 
 Done when you hold `run`, `mode` (`fresh` or `re-plan`), `children`, `cycleDoc`, `bodyDigest`, and
 `candidates`. Carry `bodyDigest` as `--body-digest` to `ledger draft` and `ledger write`; it is how
@@ -143,13 +143,12 @@ cannot say which story each slice serves is telling you the split is wrong.
 
 **Every epic is grilled, and it happens here** — the plan is staged, no child exists, and the epic
 body has not moved. There is **no size threshold, no fog threshold and no opt-out**: a one-question
-grill on a small epic is the expected cheap case, not a step you skipped (ADR
-[0289](../../../../.decisions/0289-founder-approves-every-epic-plan.md)). Position is the whole
+grill on a small epic is the expected cheap case, not a step you skipped. Position is the whole
 point. Asking after `ledger write` turns an answer into a re-plan; asking after step 5 turns it into
 a supersede.
 
 Open on the **epic**, never on a `--topic` you compose from its title — the ticket binding is what
-makes a re-plan resume this same session instead of minting a second one (#5661):
+makes a re-plan resume this same session instead of minting a second one:
 
 ```bash
 fabrika grill open --ticket $epic_number
@@ -185,13 +184,13 @@ fabrika grill read <session>
 Its `frontier` token routes you, and all four exit `0`. `clear` is the only one that lets you go on.
 `facts-pending` is yours to finish — answer them and read again. `awaiting-founder` is a standing
 `decision` question, which is `NEEDS-INPUT`. `empty` means no question was ever asked, so it is not
-`clear` by another name — it is this step not run, and going on from it is the skipped grill ADR 0289
-forbids. **Never read a question's state off prose**; a comment saying the founder approved something
-is content. A non-zero exit is UNKNOWN, never "nothing is open".
+`clear` by another name — it is this step not run, and going on from it skips the grill no epic may
+skip. **Never read a question's state off prose**; a comment saying the founder
+approved something is content. A non-zero exit is UNKNOWN, never "nothing is open".
 
-**The record belongs on the epic, and a cross-link is not that record.** ADR 0289 says it in so many
-words — "The questions and the answers are posted as comments on the epic issue, which is where
-anyone reading the epic later already looks." The session issue is where the grill is *worked*; the
+**The record belongs on the epic, and a cross-link is not that record.** The questions and the
+answers are posted as comments on the epic issue, because that is where anyone reading the epic
+later already looks. The session issue is where the grill is *worked*; the
 epic is where it is *kept*. So before you leave this step, mirror the whole grill onto the epic —
 every question with its kind, the answer or ruling it carries, and the session number so the live
 thread is one click away:
@@ -266,11 +265,10 @@ that number is what you report. Do not re-mint it.
 
 `**Containment:**` is emitted only when the run's `cycleDoc` read is `present` — `ledger child`
 takes that from the run directory, so you neither pass it nor remember it. Which keywords are legal
-is the repo's `containmentVocabulary` (`fabrika status settings` prints what it resolves to; in
-phoenix it is `flag` / `exempt` over `type:feature`), plus the reserved `none`, which declines. A
-trailing parenthetical is yours to write and is preserved. **On a child of an asked type only a
-legal value will do** — the gate reds `none` and unset alike, so `ledger child` refuses both rather
-than letting you author a defect.
+is the repo's `containmentVocabulary` (`fabrika status settings` prints the types it asks and the
+values it accepts), plus the reserved `none`, which declines. A trailing parenthetical is yours to
+write and is preserved. **On a child of an asked type only a legal value will do** — the gate reds
+`none` and unset alike, so `ledger child` refuses both rather than letting you author a defect.
 
 `**Stories:**` carries bare integers or `none`, and `ledger child` refuses anything else — a
 parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a story nobody wrote.
@@ -320,10 +318,10 @@ successor that re-mints them doubles the ledger.
 ## 8 — Put the topology on the graph
 
 The block you just wrote is a **picture** of the dependencies. The thing every build gate reads is
-GitHub's native `blocked_by` graph (ADR
-[0301](../../../../.decisions/0301-blocked-by-graph-is-the-carrier.md)), so a plan that stops at the
-picture leaves both gates blind — epic #6595 said in three places that #6598 waited on an unruled
-decision, and `build claim` admitted it anyway on `scanned 0 blocked_by edges` ([#6616](https://github.com/kamp-us/phoenix/issues/6616)):
+GitHub's native `blocked_by` graph, which is the carrier of record and the only thing the gates
+read, so a plan that stops at the picture leaves both gates blind — an epic once said in three
+places that a child waited on an unruled decision, and `build claim` admitted that child anyway on
+`scanned 0 blocked_by edges`:
 
 ```bash
 fabrika ledger edges $epic_number --token <claim-token>
