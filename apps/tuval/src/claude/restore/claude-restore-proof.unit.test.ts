@@ -329,13 +329,14 @@ describe("the claude-session row, driven through ports and booted back over its 
 		).toEqual({current: SWITCHED_TO, available: OFFERED});
 	});
 
-	it("re-announces the mode the rebuilt layer opens on, which is not the operator's switch", () => {
-		// Stated rather than left unread: the checkpoint carries the switched mode, then the rebuilt
-		// layer's own `mode` event supersedes it, so the operator's live switch does not survive a
-		// restart. The layer resets its held mode on every build, which is true of `ClaudeAiAgent`
-		// too, and the fix is in the generic fold or the generic resume rule — out of this row's
-		// reach either way. https://github.com/kamp-us/phoenix/issues/7953
-		expect(outcome.second.modeAfterReconnect).toEqual({current: null, available: OFFERED});
+	it("brings the operator's mode switch back, announced by the layer the reconnect rebuilt", () => {
+		// The rebuilt layer holds no mode of its own, so this passes only because the reconnect hands
+		// it the checkpointed one to open on: its own `mode` event, which supersedes the republished
+		// checkpoint, already carries the switch (#7953).
+		expect(outcome.second.modeAfterReconnect).toEqual({
+			current: SWITCHED_TO,
+			available: OFFERED,
+		});
 	});
 
 	it("brings both processes back from the state directory, nothing fresh-booted", () => {

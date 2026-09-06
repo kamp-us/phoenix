@@ -36,8 +36,9 @@ import {
 	type WindowLimits,
 } from "../core/index.ts";
 import {isRefusal, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
-import type {TranscriptPagePayload} from "../ports/index.ts";
+import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
 import {
+	type StartOptions,
 	type TranscriptPage,
 	TransportError,
 	type TuvalAiAgent,
@@ -142,12 +143,16 @@ export const aiAgentHandlers = <RIn = never>(
 	const open = (
 		cwd: string,
 		resume: string | null,
+		mode: Mode | null,
 	): Effect.Effect<Follow, never, ProcessSelf | RIn> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.rebuild;
-			const started = yield* Effect.result(
-				underPolicy(agent.start(resume === null ? {cwd} : {cwd, resume}), policy),
-			);
+			const options: StartOptions = {
+				cwd,
+				...(resume === null ? {} : {resume}),
+				...(mode === null ? {} : {mode}),
+			};
+			const started = yield* Effect.result(underPolicy(agent.start(options), policy));
 			if (Result.isSuccess(started)) {
 				return [{type: "started", sessionId: started.success.sessionId}];
 			}
@@ -178,9 +183,9 @@ export const aiAgentHandlers = <RIn = never>(
 		// for as long as the backend takes to answer.
 		"aiAgent.boot": (cmd) => Effect.succeed([{type: "start", cwd: cmd.cwd, resume: null}]),
 
-		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume),
+		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume, cmd.mode),
 
-		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId),
+		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId, cmd.mode),
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending
