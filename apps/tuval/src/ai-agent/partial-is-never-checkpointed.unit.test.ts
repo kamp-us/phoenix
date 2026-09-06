@@ -64,14 +64,44 @@ const wholeReply: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "ready"},
 ];
 
-const script = (turn: ReadonlyArray<AgentEvent>): AgentScript => ({
+/** A turn that streams and then errors, leaving its partial with nothing to supersede it. */
+const cutByFailure: ReadonlyArray<AgentEvent> = [
+	...cutMidReply,
+	{
+		kind: "failure",
+		failure: {tag: "PromptError", reason: "backend", detail: "the stream died"},
+	},
+];
+
+/** The turn after that one, whole — the state a frozen session would never write. */
+const SECOND = "a2";
+
+const secondReply: ReadonlyArray<AgentEvent> = [
+	{kind: "phase", phase: "prompting"},
+	{
+		kind: "item",
+		item: {kind: "user", id: "u2", timestamp: at(3), text: "again"} as TranscriptItem,
+	},
+	{
+		kind: "item",
+		item: {
+			kind: "assistant",
+			id: SECOND,
+			timestamp: at(4),
+			text: "the second reply",
+		} as TranscriptItem,
+	},
+	{kind: "phase", phase: "ready"},
+];
+
+const script = (...turns: ReadonlyArray<ReadonlyArray<AgentEvent>>): AgentScript => ({
 	sessionId: SESSION_ID,
 	history: [],
 	modes,
 	models,
 	thinking,
 	interrupt: [],
-	turns: [{events: turn}],
+	turns: turns.map((events) => ({events})),
 });
 
 const allPorts: ReadonlySet<string> = new Set(Object.values(aiAgentPortNames));
@@ -84,10 +114,10 @@ const sink = ProcessPorts.of({
 			: Effect.fail(new PortNotWired({node: NodeId.make("test"), port})),
 });
 
-const row = (turn: ReadonlyArray<AgentEvent>): AnyProgram =>
+const row = (...turns: ReadonlyArray<ReadonlyArray<AgentEvent>>): AnyProgram =>
 	aiAgentProgram({
 		id: PROGRAM,
-		layer: ScriptedAiAgent.layer(script(turn)),
+		layer: ScriptedAiAgent.layer(script(...turns)),
 		config: {cwd: CWD},
 	});
 
@@ -126,10 +156,13 @@ const savedState = (stores: CheckpointStores): Effect.Effect<AiAgentSessionState
 	);
 
 /** Spawn the row at a fixed id, run the turn, and hold the process open until `body` returns. */
-const runTurn = <A, E>(
+const runTurns = <A, E>(
 	stores: CheckpointStores,
-	turn: ReadonlyArray<AgentEvent>,
-	body: (live: () => AiAgentSessionState) => Effect.Effect<A, E>,
+	turns: ReadonlyArray<ReadonlyArray<AgentEvent>>,
+	body: (
+		live: () => AiAgentSessionState,
+		prompt: (text: string, key: string) => Effect.Effect<unknown, unknown>,
+	) => Effect.Effect<A, E>,
 ) =>
 	Effect.gen(function* () {
 		const processes = yield* Processes;
@@ -138,9 +171,17 @@ const runTurn = <A, E>(
 			services: Context.make(ProcessPorts, sink),
 		});
 		yield* eventually(() => sessionOf(handle.getState()).modes.available.length > 0);
-		yield* handle.dispatch({type: "prompt", text: "write it", key: "k1", timestamp: at(0)});
-		return yield* body(() => sessionOf(handle.getState()));
-	}).pipe(Effect.scoped, Effect.provide(kernel([row(turn)], stores)));
+		const prompt = (text: string, key: string) =>
+			handle.dispatch({type: "prompt", text, key, timestamp: at(0)});
+		yield* prompt("write it", "k1");
+		return yield* body(() => sessionOf(handle.getState()), prompt);
+	}).pipe(Effect.scoped, Effect.provide(kernel([row(...turns)], stores)));
+
+const runTurn = <A, E>(
+	stores: CheckpointStores,
+	turn: ReadonlyArray<AgentEvent>,
+	body: (live: () => AiAgentSessionState) => Effect.Effect<A, E>,
+) => runTurns(stores, [turn], (live) => body(live));
 
 describe("a partial reply and the checkpoint store", () => {
 	it.live("never reaches it, not even on the stop that ends the process mid-reply", () => {
@@ -148,7 +189,12 @@ describe("a partial reply and the checkpoint store", () => {
 		return Effect.gen(function* () {
 			yield* runTurn(stores, cutMidReply, (live) =>
 				Effect.gen(function* () {
-					yield* eventually(() => repliesIn(live()).some((item) => item.partial === true));
+					// Waited on the text and not on the marker: the first partial carries `"the "`, and both
+					// deltas cross the actor's semaphore with nothing between them, so a wait that ends
+					// on the marker can read the state between them and fail about the wrong thing.
+					yield* eventually(() =>
+						repliesIn(live()).some((item) => item.text === "the whole " && item.partial === true),
+					);
 					assert.deepStrictEqual(
 						repliesIn(live()).map((item) => item.text),
 						["the whole "],
@@ -163,6 +209,37 @@ describe("a partial reply and the checkpoint store", () => {
 			// The scope above closed, which is the host's stop path — and a stop flushes a checkpoint.
 			const afterStop = yield* savedState(stores);
 			assert.deepStrictEqual(repliesIn(afterStop as AiAgentSessionState), []);
+		});
+	});
+
+	// The gate reads the whole tail, so a partial nothing ever supersedes would make every later
+	// state of the session unworthy — the disk copy frozen at the last save before the stream, for
+	// as long as the session lives. A turn that errors settles its own partial (`core/state.ts`,
+	// `settlePartialItems`), so the turn after it is written (#8170, criterion 7).
+	it.live("recovers once a failed turn settles the partial it stranded", () => {
+		const stores = memoryStores();
+		return Effect.gen(function* () {
+			yield* runTurns(stores, [cutByFailure, secondReply], (live, prompt) =>
+				Effect.gen(function* () {
+					yield* eventually(() => live().failure !== null);
+					assert.deepStrictEqual(
+						repliesIn(live()).map((item) => item.partial),
+						[undefined],
+						"the failed turn left its half-written reply marked as still streaming",
+					);
+
+					yield* prompt("again", "k2");
+					yield* eventually(() => repliesIn(live()).length === 2);
+					yield* eventually(() => live().phase === "ready");
+				}),
+			);
+
+			const saved = yield* savedState(stores);
+			assert.deepStrictEqual(
+				repliesIn(saved as AiAgentSessionState).map((item) => item.text),
+				["the whole ", "the second reply"],
+				"the stranded partial froze the session's checkpoint, so the finished turn never landed",
+			);
 		});
 	});
 

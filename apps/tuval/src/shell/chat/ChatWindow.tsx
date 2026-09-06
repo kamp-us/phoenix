@@ -22,7 +22,9 @@
  * **Four writes move the transcript, and one pin decides between them.** A window resting on its
  * newest turn follows every turn that lands; one whose reader scrolled up is left alone, and so is
  * one anchored on a history page, on a row it just expanded or on a fold it just opened. That is
- * `view.pinned`: it is set from the scroll offset on every scroll, cleared by opening a row's own
+ * `view.pinned`: it is set from the scroll offset on every scroll *the reader* makes — a scroll the
+ * window issued itself is exempt, or a follow scroll landing behind a reply that grew again would
+ * clear the pin it was following on — cleared by opening a row's own
  * disclosure, opening a group's fold or asking for a page of history, and set again by sending. Two
  * anchoring effects reach the viewport only while it is clear, and every door into them clears it
  * itself rather than trusting the geometry to have done so: a transcript barely taller than its
@@ -36,7 +38,7 @@
  */
 
 import {AgentChatInput, Button, DesignTranslationProvider, Kbd, Markdown} from "@kampus/design";
-import {useVirtualizer, type VirtualizerOptions} from "@tanstack/react-virtual";
+import {elementScroll, useVirtualizer, type VirtualizerOptions} from "@tanstack/react-virtual";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEvent} from "react";
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
@@ -468,6 +470,27 @@ function ChatWindow({
 	const seenPageRef = useRef<AiAgentSessionState["lastPage"]>(null);
 
 	const scrollRef = useRef<HTMLDivElement | null>(null);
+
+	/**
+	 * The offset this window last asked its scroller for, until the scroll event carrying it lands.
+	 *
+	 * A scroll the window issued itself is not the reader moving, and `onScroll` below reads it as
+	 * one without this: the follow effect scrolls to the newest row once per measurement of a
+	 * growing turn, and each of those lands at an offset the *next* measurement has already put
+	 * behind the content end — so `onNewest` answers "not on the newest turn", the pin clears, and
+	 * the follow stops dead in the middle of a streaming reply (#8174).
+	 */
+	const selfScrollRef = useRef<number | null>(null);
+	const scrollToFn = useCallback<
+		NonNullable<VirtualizerOptions<HTMLDivElement, Element>["scrollToFn"]>
+	>(
+		(offset, scroll, instance) => {
+			selfScrollRef.current = offset + (scroll.adjustments ?? 0);
+			(options.scrollToFn ?? elementScroll)(offset, scroll, instance);
+		},
+		[options.scrollToFn],
+	);
+
 	const virtualizer = useVirtualizer({
 		count: rows.length,
 		getScrollElement: () => scrollRef.current,
@@ -481,7 +504,7 @@ function ChatWindow({
 		// of this window printed sixteen of those errors. Off, the same update lands through React's
 		// own scheduling on the next render.
 		useFlushSync: false,
-		...(options.scrollToFn === undefined ? {} : {scrollToFn: options.scrollToFn}),
+		scrollToFn,
 	});
 
 	const totalSize = virtualizer.getTotalSize();
@@ -580,16 +603,27 @@ function ChatWindow({
 	const onScroll = useCallback(
 		(event: UIEvent<HTMLDivElement>) => {
 			const offset = event.currentTarget.scrollTop;
+			// This event is the arrival of the offset `scrollToFn` above just asked for, so it is the
+			// window hearing its own request rather than the reader moving. Both readings below are
+			// about where the *reader* went — whether they left the newest turn, and whether they
+			// reached the top asking for history — and neither is a question a scroll of the window's
+			// own answers.
+			const asked = selfScrollRef.current;
+			selfScrollRef.current = null;
+			const byReader = asked === null || Math.abs(offset - asked) > 1;
 			// The pin is written on the transition and not through the debounce below: a turn landing
 			// inside the settle window would otherwise read a pin the operator has already left.
-			const pinned = onNewest(event.currentTarget, totalSize, options.bottomThreshold);
-			commit((current) => (current.pinned === pinned ? current : {...current, pinned}));
+			if (byReader) {
+				const pinned = onNewest(event.currentTarget, totalSize, options.bottomThreshold);
+				commit((current) => (current.pinned === pinned ? current : {...current, pinned}));
+			}
+			// The offset is where the transcript rests whoever moved it, so it is committed either way.
 			if (commitTimer.current !== null) clearTimeout(commitTimer.current);
 			commitTimer.current = setTimeout(() => {
 				commitTimer.current = null;
 				commit((current) => (current.scroll === offset ? current : {...current, scroll: offset}));
 			}, options.scrollCommitMs);
-			if (offset <= options.topThreshold) requestOlder();
+			if (byReader && offset <= options.topThreshold) requestOlder();
 		},
 		[
 			commit,
