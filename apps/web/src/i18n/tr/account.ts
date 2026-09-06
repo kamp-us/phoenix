@@ -198,6 +198,9 @@ export const account = {
 	"ui.draftRestore.dismiss": "yoksay",
 	"ui.markdown.table": "tablo",
 	"ui.markdown.code": "kod bloğu",
+	"ui.markdown.diagram": "diyagram",
+	"ui.markdown.diagram.source": "diyagram kaynağı",
+	"ui.markdown.diagram.error": "diyagram çizilemedi: {reason}",
 };
 
 /** `tr` is the source of truth for the key set; `en/account.ts` is checked against this. */

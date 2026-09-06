@@ -163,3 +163,43 @@
 	color: var(--text-muted);
 	white-space: pre-wrap;
 }
+
+/* A rendered mermaid fence (#8128). The block is the fence until the diagram lands, so the margin
+   sits on the wrapper rather than on either child — the row's height changes by the diagram's own
+   size and by nothing else. */
+.kp-markdown__diagram {
+	margin-block: var(--s-2);
+}
+
+/* Mermaid sizes its SVG to the layout it computed, which can be wider than the row it sits in. The
+   same containment the table and code scrollers carry, for the same reason (see above): a scroll
+   container reports its content's width as its min-content size and drags the whole row past the
+   viewport. */
+.kp-markdown__diagram-svg {
+	overflow-x: auto;
+	contain: inline-size;
+	background: var(--surface-sunken);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	padding: var(--s-3);
+}
+
+.kp-markdown__diagram-svg svg {
+	max-inline-size: 100%;
+	block-size: auto;
+}
+
+.kp-markdown__diagram-source > summary {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	cursor: pointer;
+	margin-block-start: var(--s-1);
+}
+
+/* Why the fence below is still the fence, in the operator's words rather than a silent fallback. */
+.kp-markdown__diagram-error {
+	font: var(--t-body-sm);
+	color: var(--danger);
+	margin-block: 0 var(--s-1);
+	white-space: pre-wrap;
+}
