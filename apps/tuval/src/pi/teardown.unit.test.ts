@@ -9,7 +9,12 @@ import {assert, describe, it} from "@effect/vitest";
 import {Duration, Effect, Fiber} from "effect";
 import {boundedTeardown} from "./teardown.ts";
 
-const CEILING = Duration.millis(60);
+/**
+ * Wide enough that a saturated machine cannot beat a settle to it: at 60ms a parallel run's
+ * scheduler delay alone expired the ceiling and reddened the settled case (#8119). The give-up case
+ * pays it in full, so it is the only cost of the width.
+ */
+const CEILING = Duration.millis(500);
 
 const closing = (release: Effect.Effect<void>) =>
 	Effect.acquireRelease(Effect.void, () => release).pipe(Effect.scoped);
@@ -37,6 +42,31 @@ describe("a bounded teardown wait", () => {
 				elapsed,
 				Duration.toMillis(CEILING) * 10,
 				"the finalizer did not return at its ceiling",
+			);
+		}),
+	);
+
+	// `Effect.callback` calls `register` with no try/catch of its own, so an escaping throw would
+	// leave the finalizer with the timer armed and no resume ever taken. Returning below the
+	// ceiling is what proves the throw was folded rather than swallowed: a swallow with no resume
+	// reads as a wait that never settles, and pays the ceiling.
+	it.live("returns below the ceiling when the wait throws synchronously", () =>
+		Effect.gen(function* () {
+			const started = Date.now();
+			yield* closing(
+				boundedTeardown(
+					"a wait that throws",
+					() => {
+						// biome-ignore lint/plugin: the throw is the subject under test — a foreign callback failing the way `PiClient.dispose()` can, not a failure this code models.
+						throw new Error("the wait refused to register");
+					},
+					CEILING,
+				),
+			);
+			assert.isBelow(
+				Date.now() - started,
+				Duration.toMillis(CEILING),
+				"a throwing wait paid the ceiling instead of returning on the throw",
 			);
 		}),
 	);

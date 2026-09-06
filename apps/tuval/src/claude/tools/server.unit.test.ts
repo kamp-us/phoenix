@@ -11,6 +11,8 @@
 import {assert, describe, it} from "@effect/vitest";
 import type {CallToolResult} from "@modelcontextprotocol/sdk/types.js";
 import {type Context, Effect, Schema} from "effect";
+import {aiAgentPortNames} from "../../ai-agent/handlers/index.ts";
+import {prompt} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
 import {KernelBridge, type ScriptedKernel} from "./KernelBridge.ts";
@@ -55,12 +57,12 @@ class TestIo extends Schema.TaggedError<TestIo>()("TestIo", {cause: Schema.Defec
 const answered = <A>(call: () => Promise<A>): Effect.Effect<A> =>
 	Effect.tryPromise({try: call, catch: (cause) => new TestIo({cause})}).pipe(Effect.orDie);
 
-const server = () =>
+const server = (rows: ScriptedKernel = table) =>
 	Effect.gen(function* () {
 		const bridge = yield* KernelBridge;
 		const run = countingRuntime(yield* Effect.context<never>());
 		return {tools: tuvalToolServer(bridge, run), run};
-	}).pipe(Effect.provide(KernelBridge.scripted(table)));
+	}).pipe(Effect.provide(KernelBridge.scripted(rows)));
 
 const textOf = (result: CallToolResult): string => {
 	const first = result.content[0];
@@ -181,6 +183,52 @@ describe("the tuval tool server", () => {
 				return yield* bridge.spawn(ProgramId.make(scriptedProgram));
 			}).pipe(Effect.provide(KernelBridge.scripted(table)));
 			assert.strictEqual(spawned, scriptedProcess);
+		}),
+	);
+});
+
+/**
+ * The AI agent's own `prompt` port behind the scripted kernel, so what a model reads back from
+ * `send` is judged against the predicate production ships rather than a stand-in (#7991).
+ */
+const agentProcess = ProcessId.make("p-agent");
+const agentTable: ScriptedKernel = {
+	[agentProcess]: {
+		program: "ai-agent",
+		inPorts: {[aiAgentPortNames.prompt]: {kind: prompt.kind, accepts: prompt.is}},
+		outPorts: {},
+	},
+};
+
+describe("send, on the AI agent's prompt port", () => {
+	it.effect("refuses an unstamped prompt at the send instead of answering delivered", () =>
+		Effect.gen(function* () {
+			const {tools} = yield* server(agentTable);
+			const refused = yield* answered(() =>
+				tools.handlers.send({
+					process: agentProcess,
+					port: aiAgentPortNames.prompt,
+					payload: {text: "hi", key: "child-1"},
+				}),
+			);
+			assert.isTrue(refused.isError, "an unstamped prompt was reported as delivered");
+			assert.include(textOf(refused), "tuval/claude/PortRefused");
+			assert.include(textOf(refused), prompt.kind);
+		}),
+	);
+
+	it.effect("takes a prompt carrying both the key and the timestamp", () =>
+		Effect.gen(function* () {
+			const {tools} = yield* server(agentTable);
+			const sent = yield* answered(() =>
+				tools.handlers.send({
+					process: agentProcess,
+					port: aiAgentPortNames.prompt,
+					payload: {text: "hi", key: "child-1", timestamp: 1_700_000_000_000},
+				}),
+			);
+			assert.isNotTrue(sent.isError);
+			assert.deepStrictEqual(JSON.parse(textOf(sent)), {delivered: true});
 		}),
 	);
 });

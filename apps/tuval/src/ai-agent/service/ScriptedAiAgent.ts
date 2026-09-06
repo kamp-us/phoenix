@@ -160,6 +160,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 		const start = Effect.fn("TuvalAiAgent.start")(function* (options: {
 			readonly cwd: string;
 			readonly resume?: string;
+			readonly mode?: Mode;
 		}) {
 			const current = yield* Ref.get(state);
 			if (!current.live) {
@@ -186,8 +187,16 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 					pending: foldPending(previous.pending, resumed),
 				}));
 			}
+			// `state` is per build and seeded from the script, so a rebuilt layer holds the script's
+			// mode rather than the operator's. The caller's mode is the session's, and announcing it
+			// here rather than re-applying it later is what keeps the announced mode and the mode the
+			// session runs on one fact (#7953).
+			const openedOn =
+				options.mode !== undefined && script.modes.available.includes(options.mode)
+					? options.mode
+					: current.mode;
 			yield* emit([
-				{kind: "mode", current: current.mode, available: script.modes.available},
+				{kind: "mode", current: openedOn, available: script.modes.available},
 				{kind: "model", current: current.model, available: script.models.available},
 				{kind: "commands", available: script.commands ?? []},
 				{kind: "thinking", current: current.thinking, available: script.thinking.available},
@@ -196,6 +205,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			yield* Ref.update(state, (previous) => ({
 				...previous,
 				started: true,
+				mode: openedOn,
 				...(options.resume === undefined ? {} : {turn: script.resumeAtTurn ?? previous.turn}),
 			}));
 			return {sessionId: script.sessionId};

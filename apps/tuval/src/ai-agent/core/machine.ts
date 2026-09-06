@@ -174,7 +174,14 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								interruption: null,
 								failure: null,
 							},
-							[{type: "aiAgent.start", cwd: msg.cwd, resume: msg.resume}],
+							[
+								{
+									type: "aiAgent.start",
+									cwd: msg.cwd,
+									resume: msg.resume,
+									mode: state.modes.current,
+								},
+							],
 						],
 
 			// The connection bump is what re-opens the events Sub: a reconnect stands a new transport
@@ -410,11 +417,20 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				if (opening(state)) return [{...state, failure: startRefused(state.phase)}, noCmds];
 				// The republish goes first so a window attached to a restored session paints the saved
 				// tail and its pending cards before the transport is back, rather than after it.
+				//
+				// The checkpointed mode rides the reconnect for the same reason it cannot ride a
+				// `setMode` after `started`: a rebuilt layer holds no mode, so one told after the open
+				// would run a stretch of session on the row's configured mode and say so (#7953).
 				return [
 					{...state, phase: "reconnecting", interruption: null},
 					[
 						{type: "aiAgent.republish"},
-						{type: "aiAgent.reconnect", cwd: state.cwd, sessionId: state.sessionId},
+						{
+							type: "aiAgent.reconnect",
+							cwd: state.cwd,
+							sessionId: state.sessionId,
+							mode: state.modes.current,
+						},
 					],
 				];
 			},

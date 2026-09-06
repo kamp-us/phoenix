@@ -167,7 +167,7 @@ describe("start", () => {
 		});
 		expect(state.phase).toBe("starting");
 		expect(state.cwd).toBe("/other");
-		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/other", resume: null}]);
+		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/other", resume: null, mode: null}]);
 	});
 
 	it("carries the resume id for a session the backend already holds", () => {
@@ -176,7 +176,7 @@ describe("start", () => {
 			cwd: "/repo",
 			resume: "session-1",
 		});
-		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/repo", resume: "session-1"}]);
+		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/repo", resume: "session-1", mode: null}]);
 	});
 
 	it("refuses as data while a session is already live", () => {
@@ -914,12 +914,17 @@ describe("interrupt", () => {
 });
 
 describe("reconnect", () => {
-	it("republishes what it holds, then asks the layer to re-attach the session", () => {
-		const [state, cmds] = apply(started({phase: "gone"}), {type: "reconnect"});
+	it("republishes what it holds, then asks the layer to re-attach the session on its mode", () => {
+		const [state, cmds] = apply(
+			started({phase: "gone", modes: {current: Mode.make("plan"), available: [Mode.make("plan")]}}),
+			{type: "reconnect"},
+		);
 		expect(state.phase).toBe("reconnecting");
 		expect(cmds).toEqual([
 			{type: "aiAgent.republish"},
-			{type: "aiAgent.reconnect", cwd: "/repo", sessionId: "session-1"},
+			// The rebuilt layer holds no mode, so the one the session is on has to go out with the
+			// re-attach rather than as a `setMode` after it (#7953).
+			{type: "aiAgent.reconnect", cwd: "/repo", sessionId: "session-1", mode: Mode.make("plan")},
 		]);
 	});
 

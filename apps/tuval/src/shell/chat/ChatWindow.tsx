@@ -178,10 +178,12 @@ const who: Readonly<Record<TranscriptItem["kind"], string>> = {
 };
 
 /**
- * The three treatments an item's body gets. An agent reply is markdown by default and renders
- * through the shared block, which paints synchronously so the row's measurement still holds
- * (#8012); a `user` or `system` line is shown exactly as it arrived, so what the operator typed is
- * never reinterpreted as syntax.
+ * The three treatments an item's body gets. A `tool` call is its own row. Both sides of the
+ * exchange — an agent reply and what the operator typed — render through the shared markdown
+ * block, which paints synchronously so the row's measurement still holds (#8012/#8226): the
+ * transcript reads the same on either side, and a fence the operator sends is the fence the agent
+ * received. A `system` line is the session speaking rather than a person, so it stays exactly as it
+ * arrived.
  */
 function ItemBody({
 	item,
@@ -204,16 +206,16 @@ function ItemBody({
 			/>
 		);
 	}
-	if (item.kind === "assistant") {
-		// The transcript is a region inside the desk, so a `#` heading in a reply is a subsection of
-		// it rather than a page title.
-		return (
-			<Markdown className="tuval-chat-markdown" headingBase={3}>
-				{item.text}
-			</Markdown>
-		);
+	if (item.kind === "system") {
+		return <p className="tuval-chat-text">{item.text}</p>;
 	}
-	return <p className="tuval-chat-text">{item.text}</p>;
+	// The transcript is a region inside the desk, so a `#` heading in a message is a subsection of
+	// it rather than a page title.
+	return (
+		<Markdown className="tuval-chat-markdown" headingBase={3}>
+			{item.text}
+		</Markdown>
+	);
 }
 
 function ItemRow({
