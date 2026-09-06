@@ -191,7 +191,12 @@ describe("the window's scheme", () => {
 
 describe("the row's renderer reference", () => {
 	it("resolves to this renderer in the page's table", () => {
-		expect(pageRenderers[CLAUDE_CHAT_WINDOW_REF.ref]).toBe(ClaudeChatWindow);
+		const entry = pageRenderers[CLAUDE_CHAT_WINDOW_REF.ref];
+		expect(entry?.renderer).toBe(ClaudeChatWindow);
+		// Guarded by the session state's own predicate, so a kernel sending an older shape refuses in
+		// this window instead of throwing through it (#8157).
+		expect(entry?.admits(claudeSessionState())).toBe(true);
+		expect(entry?.admits({phase: "idle"})).toBe(false);
 	});
 });
 
