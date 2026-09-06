@@ -303,8 +303,8 @@ same rows, same order, shared as one implemented module with `review scope`, nev
 copy) with the `ui` class: a changed path matching the repo's UI surface map (its source root,
 excluding `*.test.tsx?` / `*.spec.tsx?`) additionally derives `review-ui`. Namespaces are
 derived from classes by one table in one module; v1 printed the class set from one derivation
-in one script and hand-copied it in another, and the copy dropped a class on a live PR
-. A non-empty diff deriving an empty namespace set is refused (`13`-adjacent but
+in one script and hand-copied it in another, and the copy dropped a class on a live PR. A
+non-empty diff deriving an empty namespace set is refused (`13`-adjacent but
 proven, so: the verb reds on `7`'s vacuous-conjunction arm below) — a merge gated on zero
 gates is vacuously green.
 
@@ -1263,9 +1263,9 @@ fabrika ship evidence 4321 --sha 03135b91 [--repo <owner/name>] [--json]
 evidence that makes it falsifiable from the report. On `present`, the manifest's checks as a
 **status tally**, one line per status, count-descending with ties broken on the status:
 `check\t<status-string>\t<count>` — and the same lines on `failed`, which is a bundle that was read,
-so its check counts are what make the answer falsifiable. `checks` is an evidence-array under ADR
-shape: step 5 routes off the five
-states alone and no reader reads a check by name, so the rows collapse to counts. On `failed` the
+so its check counts are what make the answer falsifiable. `checks` is an evidence-array: step 5
+routes off the five states alone and no reader reads a check by name, so the rows collapse to
+counts. On `failed` the
 non-passing checks are still **named**, on the notes channel.
 
 With `--json`: `{"outcome":…,"sha":…,"run":…,"artifact":…,"checks":{"<status-string>":<count>…}}` —
@@ -2162,7 +2162,7 @@ With `--json`: `{"outcome":…,"flagKey":…,"issue":<n|null>}`.
 
 **Detection is three ground-truth signals over the PR itself, any one sufficient:** (a) the
 diff adds a flag declaration (a `FlagshipFlag(` / `defaultVariation:` addition in the flag
-registry module the shipped default names); (b) the PR body carries a
+registry module `ship release` names); (b) the PR body carries a
 `Flag:` / `Flag key:` line with a kebab-case key (heading/bold tolerated); (c) the body names
 a key **declared in that same registry file at the PR's base ref** inside a gating-context line
 (fence-stripped, whole-token, gating-word-scoped — the context scoping is what keeps a prose

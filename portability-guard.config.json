@@ -20,10 +20,6 @@
 		"packages/fabrika-cli/src/config/keys/doc-leak-exempt.ts": {
 			"ceiling": 2,
 			"why": "The key's own docblock names the repo whose docs the shipped default was drawn from, as the value's provenance rather than a pointer."
-		},
-		"claude-plugins/fabrika/skills/ship/contract.md": {
-			"ceiling": 32,
-			"why": "Every remaining hit is a value rather than a sentence: 24 are the ship verbs' stderr lines quoted verbatim in the Errors tables and worked examples, each a literal of a string that lives in packages/fabrika-cli/src/ship and moves only when that string does, and 8 are the synthetic PR numbers and placeholder owner/repo the worked examples echo back. The prose around them carries no reference at all. The quoted half shrinks to zero when the CLI ship group's own strings are swept; a cap never reds on shrinking."
 		}
 	},
 	"unmigrated": {
@@ -31,6 +27,11 @@
 			"ceiling": 457,
 			"why": "The build skill's text, cleared by #8291, the build sweep child.",
 			"paths": ["claude-plugins/fabrika/skills/build"]
+		},
+		"plugin-ship": {
+			"ceiling": 32,
+			"why": "Every remaining hit is a value rather than a sentence: 24 are the ship verbs' stderr lines quoted verbatim in the Errors tables and worked examples, each a literal of a string that lives in packages/fabrika-cli/src/ship and moves only when that string does, and 8 are the synthetic PR numbers and placeholder owner/repo the worked examples echo back. The prose around them carries no reference at all. The quoted half shrinks to zero when the CLI ship group's own strings are swept, and this floor shrinks with it — #8306, the CLI ship sweep, pays it down.",
+			"paths": ["claude-plugins/fabrika/skills/ship"]
 		},
 		"plugin-docs": {
 			"ceiling": 801,
