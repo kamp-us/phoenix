@@ -29,15 +29,23 @@ const proof = Command.make(
 			Flag.withDescription("Port for the page (default: a free one)"),
 			Flag.withDefault(0),
 		),
+		strictPort: Flag.boolean("strict-port").pipe(
+			Flag.withDescription(
+				"Bind --page-port exactly or fail the start, instead of falling back to the next free port",
+			),
+			Flag.withDefault(false),
+		),
 	},
-	Effect.fn(function* ({pagePort}) {
+	Effect.fn(function* ({pagePort, strictPort}) {
 		const vertical = yield* bootChattedVertical({prompts: [PROMPT_1, PROMPT_2]});
 		const transport = yield* serveDesk({
 			kernel: vertical.kernel,
 			port: 0,
 			table: defaultPrefixTable,
 		});
-		const page = yield* servePage({root: appRoot, transport, port: pagePort}).pipe(Effect.orDie);
+		const page = yield* servePage({root: appRoot, transport, port: pagePort, strictPort}).pipe(
+			Effect.orDie,
+		);
 		yield* Console.log(`pi-vertical proof: project ${vertical.project}`);
 		yield* Console.log(
 			`pi-vertical proof: process ${vertical.agent.id}, ${vertical.replies()} reply(ies) on the tail`,

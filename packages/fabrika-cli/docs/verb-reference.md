@@ -1185,6 +1185,11 @@ Four things are load-bearing:
   **carrying the exact remediation command**.
 - **Absence is answered three ways, never one.** `12`, `13` and `11` are different facts, and the
   skill's prose fallback is legal only in the middle case.
+- **The harness declares apps, not one server.** `design-harness.json` lists every runnable app the
+  repo renders from, each owning a `mount` in the surface namespace; `ui render` sends a surface to
+  the app whose mount is its longest match, starts only the apps some surface resolves to, and
+  allocates each app's port at start rather than reading a declared one — so two worktrees can render
+  concurrently and neither can capture the other's tree. A surface outside every mount is `10`.
 
 `ui render` and `ui evidence` both guard the lane precondition; `ui manifest`, `ui law` and `ui
 golden` are pure reads and take none. Evidence is all-or-nothing: one failed upload or verification

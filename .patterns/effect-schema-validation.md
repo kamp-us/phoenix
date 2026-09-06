@@ -115,10 +115,19 @@ Read the first violation back with `SchemaIssue.makeFormatterStandardSchemaV1`, 
 message that has to name a key the schema cannot know statically (the unexpected one) carries a
 placeholder the formatter fills from `path`.
 
-Defaults and normalisation ride the declaration too: `Schema.withDecodingDefaultTypeKey` for an
-absent key's value, `Schema.decode({decode: SchemaGetter.transform(...)})` for a normalisation like
-stripping a trailing slash. `HarnessConfig` is then `typeof Harness.Type` — one declaration, not an
-interface kept in sync beside it.
+Defaults ride the declaration too: `Schema.withDecodingDefaultTypeKey` for an absent key's value, and
+`Schema.decode({decode: SchemaGetter.transform(...)})` when a value also needs normalising.
+`HarnessConfig` is then `typeof Harness.Type` — one declaration, not an interface kept in sync
+beside it.
+
+**A rule about the whole list runs after the decode, not inside it.** `design-harness.json` declares
+an array of apps, and three of its rules are facts about the array rather than about any one value:
+two apps under one name, two under one mount, and a command with no `{{port}}` placeholder. Those are
+a plain loop over the decoded value, returning the same `Violation` string arm the schema path
+returns, with the wording exported (`LIST_VIOLATION`) so the test pins it exactly as it pins the
+schema's own. Writing them as a struct-level `check` would work and would report them from a path
+nobody can act on; keeping them out of the schema keeps every message field-addressed or
+list-addressed, never both.
 
 ## A boundary whose type is already an interface: a total predicate, not a second declaration
 

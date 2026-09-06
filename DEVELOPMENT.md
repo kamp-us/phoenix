@@ -132,11 +132,21 @@ Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — w
 
 [`design-harness.json`](./design-harness.json) at the repo root is how `fabrika ui render` gets a headless browser onto a phoenix page. Without it every surface refuses on exit `19`, no capture is ever produced, and a rendered change ships judged only from reading CSS ([#7395](https://github.com/kamp-us/phoenix/issues/7395)).
 
-| Key | Value | Why |
+The file declares a **list of apps**, because this repo runs two (ADR [0345](./.decisions/0345-tuval-lives-under-apps.md)) and one base URL could only ever reach one of them ([#7992](https://github.com/kamp-us/phoenix/issues/7992)). Each entry owns a `mount` — a prefix of the surface namespace — and a surface goes to the app whose mount is its longest match. Only the apps some requested surface resolves to are started, so rendering a Tuval proof page never boots `apps/web`.
+
+| Key | Where | Why |
 |---|---|---|
-| `command` | copy `apps/web/.env.example` to `.env` when none is there, then `pnpm dev` | Both dev legs. The copy is what makes a fresh worktree bootable — that file holds throwaway dev values only. Output is redirected to stderr, which is the stream a failed readiness probe quotes back. |
-| `url` | `http://localhost:3000` | Vite's port, which also proxies `/api` and `/fate` to the worker. |
-| `readyPath` | `/api/health` | 200 only once **both** legs answer. `/` would go green on Vite alone, and every capture would then show `şu an yüklenemedi` where the data belongs. |
+| `apps[].name` | required, kebab-case | Names the app in every refusal, so "the harness did not come up" says *which* server. |
+| `apps[].command` | required, must carry `{{port}}`, must bind it strictly | The port is **allocated at start, never declared**: `{{port}}` becomes a free port the render leg just bound and let go, and `{{port:<name>}}` allocates a second one for the same command (that is how `web` passes its worker port to both `alchemy dev` and the Vite proxy). The command has to pass its server's own strict-port flag, so losing the race between the allocation and the bind fails the start loudly. A server that falls back to the next free port instead leaves the capture origin pointing at whatever else answers on the allocated one, which on a machine running several worktrees is a green capture of another tree. Two worktrees can therefore render at once and neither can reach the other's tree. Output goes to stderr, which is the stream a failed readiness probe quotes back. |
+| `apps[].mount` | required, distinct per app | The prefix of the surface namespace this app owns. `/` is the catch-all. |
+| `apps[].basePath` | optional, defaults to `mount` | What the mount maps to on the app's own server. The default is the identity; a Tuval proof server rooted at `/` says `"basePath": "/"` so `/tuval/chat` reaches its `/`. |
+| `apps[].readyPath` | optional, defaults to `/` | Polled for 200 **per app**. `web` uses `/api/health` so a data-backed capture never goes green on Vite alone; `web-lab` uses `/`, because `/lab/*` is client-only and waiting on a worker it does not need was the second half of #7992. |
+
+The five apps declared today: `web` (mount `/`, both dev legs, ready on `/api/health`), `web-lab` (mount `/lab`, Vite alone), and one per rendering `apps/tuval` proof script — `tuval-chat`, `tuval-pi-window`, `tuval-pi-vertical`, each mounted under `/tuval/…` and rooted at `/`.
+
+Two of `apps/tuval`'s proof scripts are deliberately **not** declared. `proof:claude-real` boots the real Claude Code CLI on the operator's own login and spends model tokens ([`apps/tuval/src/claude/proof/serve.ts`](./apps/tuval/src/claude/proof/serve.ts)) — it is the founder's run by hand, so no verb an agent invokes may reach it, and it serves an empty desk anyway, which is nothing to capture. `proof:page-reconnect` is tracked separately. Render either by starting it yourself.
+
+`apps/web` reads both dev ports through [`apps/web/dev-ports.ts`](./apps/web/dev-ports.ts) (`PHOENIX_SPA_PORT`, `PHOENIX_WORKER_PORT`), which is the one place the Vite proxy and the worker it proxies to can agree. Unset, they are the historical `3000` and `1337`, so `pnpm dev` by hand is unchanged.
 
 **Reachable today:** the routes a signed-out visitor can actually see — `/`, `/pano`, `/sozluk`, `/mecmua`, `/divan`, `/search`, `/auth` and `/lab/atolye` among them. Point the harness at one of those and the capture is what a visitor sees.
 
@@ -144,7 +154,9 @@ Run Biome through pnpm — `pnpm lint`, `pnpm format`, or `pnpm biome …` — w
 
 Exit `15` is real but narrower than a UI route: it needs a response that is genuinely `>= 400`, which under this harness means an `/api/*` or `/fate/*` path proxied to a worker that is down. It refuses per surface, so that one path names itself while the rest of the repo still renders, rather than everything falling back to the repo-wide `19`. No SPA path produces it — not even one the router has no route for, which renders `NotFoundPage` at 200.
 
-`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust.
+A surface that falls outside **every** declared mount is exit `10`, and the refusal lists the mounts. That is a hole in the declaration rather than a broken page, so the fix is a new `apps[]` entry, not a retry.
+
+`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment to render anything under the `web` app. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` naming `web` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust. The other four apps need no credentials, so `/lab/*` and every `/tuval/*` surface renders without them.
 
 ## Conventions
 
