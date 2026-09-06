@@ -27,11 +27,20 @@ import type {
 } from "../shell/window/index.ts";
 
 /**
+ * The brand only `readsState` can set. It is a module-private `unique symbol`, so no other module
+ * can name the key at the type level or reach it at runtime: a hand-written table entry carrying an
+ * `admits` of its own does not satisfy `ReadableRenderer` without a cast, which is what makes the
+ * table's type the enforcement of the rule rather than a description of it (ADR 0358).
+ */
+const admitted = Symbol("tuval/page/readsState");
+
+/**
  * A renderer that has declared what it can read. `admits` is the renderer's own predicate, kept on
  * the value rather than closed over, so a table of these can be asked whether every entry really
  * carries one — the rule of `.patterns/window-renderer-admission.md` is checkable, not just typed.
  */
 export interface ReadableRenderer {
+	readonly [admitted]: true;
 	readonly kind: RendererKind;
 	readonly render: (host: AnyWindowHost) => ReactNode;
 	readonly admits: (state: unknown) => boolean;
@@ -108,6 +117,7 @@ export const readsState = <S, M extends Message, V extends ViewState>(
 	admits: (state: unknown) => state is S,
 	renderer: WindowRenderer<ReactNode, S, M, V>,
 ): ReadableRenderer => ({
+	[admitted]: true,
 	kind: renderer.kind,
 	admits,
 	renderer,

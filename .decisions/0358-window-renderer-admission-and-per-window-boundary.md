@@ -38,8 +38,11 @@ gaps are:
 
 **1. A page's renderer table holds `ReadableRenderer`s, and only `readsState` mints one.**
 `readsState(predicate, renderer)` (`apps/tuval/src/page/readable-state.tsx`) ties a renderer to the
-predicate over its own `S`, so a table entry that is unguarded, or guarded by another program's
-predicate, does not typecheck. The guard subscribes to `readProcess` itself and mounts the renderer
+predicate over its own `S`, so a table entry guarded by another program's predicate does not
+typecheck. `ReadableRenderer` carries a module-private `unique symbol` field that only `readsState`
+sets, so an entry written by hand — one that carries an `admits` of its own — is not one either,
+without a cast. The brand is what makes the table's *type* the enforcement rather than a description
+of it; a structural interface would have left the rule to review. The guard subscribes to `readProcess` itself and mounts the renderer
 only once a `Live` state has passed; a refused state renders a `role="alert"` naming the process and
 the action that clears it. The predicate lives with the program whose state it is —
 `isAiAgentSessionState` in the agent core, `isCounterState` / `isLogState` on the demo rows — never

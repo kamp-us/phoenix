@@ -144,6 +144,19 @@ describe("a state the renderer's predicate admits", () => {
 });
 
 describe("the page's renderer table", () => {
+	it("holds a type only `readsState` mints: an entry written by hand is not one", () => {
+		// @ts-expect-error — the brand is a module-private `unique symbol`, so nothing outside
+		// `./readable-state.tsx` can produce a `ReadableRenderer`. This line failing to error is the
+		// rule quietly gone (ADR 0358).
+		const forged: ReadableRenderer = {
+			kind: "host-native",
+			render: () => null,
+			admits: () => true,
+			renderer: claudeEntry.renderer,
+		};
+		expect(forged.admits({})).toBe(true);
+	});
+
 	it("carries an admission test on every entry, and each one refuses an empty object", () => {
 		const entries = Object.values(pageRenderers);
 		expect(entries.length).toBeGreaterThan(0);

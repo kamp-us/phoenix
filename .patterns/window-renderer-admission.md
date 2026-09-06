@@ -8,10 +8,16 @@ never sees a state nothing checked.
 Two invariants, both held in code rather than by review:
 
 1. **Every entry in a page's renderer table declares the predicate over the state it reads.** The
-   table's value type is `ReadableRenderer` (`apps/tuval/src/page/readable-state.tsx`), which only
-   `readsState(predicate, renderer)` mints — so a renderer put in the table unguarded does not
-   typecheck, and the predicate's `S` is the renderer's own `S`, so a renderer paired with another
-   program's predicate does not typecheck either.
+   table's value type is `ReadableRenderer` (`apps/tuval/src/page/readable-state.tsx`). It carries a
+   module-private `unique symbol` field, so only `readsState(predicate, renderer)` can mint one — a
+   renderer put in the table unguarded does not typecheck, and neither does an entry written by hand
+   with an `admits` of its own. The predicate's `S` is the renderer's own `S`, so a renderer paired
+   with another program's predicate does not typecheck either (`TS2345`).
+
+   Brand it, do not merely document it: a structural interface makes the sentence "only `readsState`
+   mints one" a claim a reader leans on and the compiler does not hold. The `@ts-expect-error` case
+   in `readable-state.unit.test.tsx` is what keeps the brand from being quietly removed — that
+   directive going unused is itself a type error.
 2. **Every window renders inside its own error boundary.** `WindowView` wraps `mount.render` in an
    `ErrorBoundary` labelled by the process (`apps/tuval/src/shell/ui/WindowView.tsx`), so a renderer
    that throws anyway costs that one window and not the desk.
@@ -68,7 +74,7 @@ after one window fails:
 
 - `apps/tuval/src/page/readable-state.unit.test.tsx` — a process holding the pre-#8006 permission
   shape renders the refusal in its own window while the sibling window still shows its state; the
-  table's every entry carries an `admits`.
+  table's every entry carries an `admits`; a hand-written entry is not a `ReadableRenderer`.
 - `apps/tuval/src/shell/ui/error-boundary.unit.test.tsx` — one window's renderer throwing leaves the
   sibling rendered, the failed window's title and frame in place, and the status line alive.
 
