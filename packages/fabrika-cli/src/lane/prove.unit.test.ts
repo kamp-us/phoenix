@@ -420,7 +420,7 @@ describe("traceClosure", () => {
 		});
 	});
 
-	/** A PR merged as `Part of N` used to fold its lane to `complete`. */
+	/** A PR merged as `Part of #N` used to fold its lane to `complete`. */
 	it("reads a `Part of #N` merge as leaving the issue open", () => {
 		expect(traceClosure(6980, [merged("part-of")])).toEqual({_tag: "Partial", prs: [7328]});
 	});

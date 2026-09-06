@@ -53,7 +53,7 @@ export const isOperatorEvent = (event: string): event is OperatorEvent =>
 /**
  * The seventh event, and the one no operator records: a founder's cleared repair round, appended by
  * `build clear`. It targets nothing — it raises the budget from its own position in the
- * log forward — so it opens no door out of a park and leaves 0297's transition vocabulary at six.
+ * log forward — so it opens no door out of a park and leaves the transition vocabulary at six.
  */
 export const CLEARED_EVENT = "CLEARED";
 

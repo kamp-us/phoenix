@@ -656,8 +656,8 @@ const readNamespaceRows = (
 						polarity: "ROUTED",
 						commentId: comment.id,
 						sha: route.sha,
-						// Head-bound, never content-bound — a push re-opens the question, so the
-						// route takes the pre-0276 binding and can never gain survival it did not earn.
+						// Head-bound, never content-bound — a push re-opens the question, so a
+						// route can never gain survival it did not earn.
 						content: null,
 					},
 					comment.updatedAt,

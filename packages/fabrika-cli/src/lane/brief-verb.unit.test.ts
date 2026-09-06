@@ -468,7 +468,7 @@ describe("lane brief", () => {
 		expect(out.stderr.join("\n")).toContain("this fabrika's own package root is not on disk");
 	});
 
-	it("refuses a resolved entrypoint node cannot run — a binstub reaching the brief is #5679 again", async () => {
+	it("refuses a resolved entrypoint node cannot run — a binstub must never reach the brief", async () => {
 		const binstub = "/checkout/node_modules/.bin/fabrika";
 		const out = await run(lane("5751", ["WIP"]), [], {
 			entrypoint: {_tag: "Entrypoint", entrypoint: binstub},

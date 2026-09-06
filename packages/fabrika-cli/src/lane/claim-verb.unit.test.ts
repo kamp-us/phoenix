@@ -431,7 +431,7 @@ describe("a driver's claim and the builder it spawns", () => {
 				}),
 				fakeSeams([
 					[BUILD_ISSUE, claimable],
-					[POST, served({id: 9002, html_url: "https://github.com/o/r#c"}, 201)],
+					[POST, served({id: 9002, html_url: "https://forge.example/o/r#c"}, 201)],
 					[/^GET .*\/repos\/o\/r\/issues\/comments\/9002$/, served({body: buildMarker})],
 					[
 						BUILD_COMMENTS,

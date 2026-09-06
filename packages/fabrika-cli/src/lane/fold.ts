@@ -539,8 +539,8 @@ export const applyEvent = (
 		);
 	}
 	const previous = deriveStatus(lane, states);
-	// A task sitting in an open final is parked, not finished: the door out is still walkable (ADR
-	// 0297). This is a fact about the task alone — a phase holding a parked child beside an
+	// A task sitting in an open final is parked, not finished: the door out is still walkable.
+	// This is a fact about the task alone — a phase holding a parked child beside an
 	// unfinished sibling never folds, so the lane's own status says nothing about it.
 	const compiled = lane.tasks[taskId];
 	const state = states[taskId];

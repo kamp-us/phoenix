@@ -66,9 +66,9 @@ export const SHELL_VOCABULARIES = {
 		REFUSED: "BLOCKED",
 		"AWAITING-CP-APPROVAL": "BLOCKED",
 		// A routing terminal names its arm, because the three arms are three different answers to
-		// the machine: repair is work this lane can retry, heal-ci and review are waits it cannot
-		//. A shipper that routed to repair and reported one flat `ROUTED` parked the lane
-		// on a control-plane approval nobody was waiting on.
+		// the machine: repair is work this lane can retry, heal-ci and review are waits it cannot.
+		// A shipper that routes to repair but reports one flat `ROUTED` parks the lane on a
+		// control-plane approval nobody is waiting on.
 		"ROUTED-REPAIR": "FAIL",
 		"ROUTED-HEAL-CI": "BLOCKED",
 		"ROUTED-REVIEW": "BLOCKED",

@@ -582,7 +582,7 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park", () =>
 		expect(budgets(lane, "issue", ejected)).toMatchObject({retries: 1, waits: 0});
 	});
 
-	it("still parks a genuine block out of `ship` on `human:cp-approval` (#5820 untouched)", () => {
+	it("still parks a genuine block out of `ship` on `human:cp-approval`", () => {
 		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "BLOCKED"])).toEqual([
 			...reached,
 			"human:cp-approval",

@@ -768,7 +768,7 @@ describe("lane prove — the §CP advisory carrier", () => {
 		const out = await run(laneAt("review"), seams, "PASS");
 
 		expect(out.code).toBe(PROOF_CONTRADICTED);
-		expect(out.stderr.join("\n")).toContain("invalid emission");
+		expect(out.stderr.join("\n")).toContain("invalid emission; treated as fail");
 	});
 
 	it("refuses an advisory bound to a head the PR has moved past as in-flight, not proven", async () => {
