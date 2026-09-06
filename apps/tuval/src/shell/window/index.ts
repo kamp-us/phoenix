@@ -20,6 +20,8 @@ export {
 } from "./host.ts";
 export {
 	type AnyWindowRenderer,
+	type DeclaredProgram,
+	type ModuleRendererRef,
 	moduleRendererRefs,
 	type RendererLoadFailure,
 	type RendererRefusal,

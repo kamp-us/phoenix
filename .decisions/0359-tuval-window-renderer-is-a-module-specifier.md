@@ -117,3 +117,13 @@ would need is `isolated-frame`, still reserved.
   authoring surface is published is a separate decision; today the demo compiles against a copy.
 - Brushes [0348](0348-tuval-command-framework-spell-registry-versioned-protocol.md): a module
   program's spells register through the same row, so nothing there moves.
+
+> Amendment 2026-09-06: a `kind: "module"` `ref` is **not** resolved from the app root. Decision 1's
+> sentence at line 55 and decision 4's "naming the specifier and the root" were true only while the
+> app root was the sole place a program could be installed. Each ref now resolves from the config
+> module that declared its row — the same base Node already used for the row's kernel half — so a
+> program lives beside the user's config (`~/.tuval`, `<project>/.tuval`) and is never a dependency
+> of the app. The root-relative spelling an in-tree module uses (`/src/demo/module-window.tsx`) is
+> unchanged and still reads against the page root. A specifier that resolves from neither refuses the
+> page at boot naming that config module rather than the root, and the page's file server is allowed
+> the config's directory so the resolved module can be served from outside the workspace. See #8262.

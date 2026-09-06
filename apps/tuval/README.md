@@ -556,8 +556,11 @@ reference outside the tree: `renderer: {kind: "module", ref: "@csirin/tuval-calc
 module the page loads at boot, whose `default` export is a `windowRenderer("module", …)` and whose
 `admits` export is the predicate over the state it reads. A program installed with `pnpm add` and
 registered as one row is then whole — its kernel half runs from the row and its window is found by
-the same string; a specifier that does not resolve refuses the page at boot, and a module that loads
-into something else is the placeholder's sentence. The why and the failure shapes are
+the same string. The specifier resolves from the config module that declared the row, the same base
+Node used for the row itself, so the package lives beside your own `tuval.config.ts` and is never a
+dependency of Tuval; a specifier that resolves from neither that config nor the page root refuses the
+page at boot naming that config, and a module that loads into something else is the placeholder's
+sentence. The why and the failure shapes are
 [ADR 0359](../../.decisions/0359-tuval-window-renderer-is-a-module-specifier.md).
 
 ## The two entry points

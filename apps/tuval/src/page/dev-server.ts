@@ -16,8 +16,10 @@
  * to be told this one, and that is why this module takes the transport rather than its URL (#7560).
  */
 
+import {dirname} from "node:path";
 import {Effect, Schema} from "effect";
 import type {TransportServer} from "../shell/transport/server.ts";
+import type {ModuleRendererRef} from "../shell/window/index.ts";
 
 /** The page did not start. The kernel is unaffected — the bin reports this and keeps running. */
 export class PageServerFailed extends Schema.TaggedError<PageServerFailed>()(
@@ -45,10 +47,11 @@ export interface PageServerOptions {
 	readonly port: number;
 	/**
 	 * The `kind: "module"` renderer specifiers the booted rows declared (`moduleRendererRefs`,
-	 * `../shell/window/renderer.ts`), each one the page has to load (ADR 0359). Absent means none:
-	 * a proof that serves the page over its own rows names none and the page loads nothing.
+	 * `../shell/window/renderer.ts`), each beside the config module that declared it (ADR 0359, as
+	 * amended by #8262). Absent means none: a proof that serves the page over its own rows names none
+	 * and the page loads nothing.
 	 */
-	readonly moduleRenderers?: ReadonlyArray<string>;
+	readonly moduleRenderers?: ReadonlyArray<ModuleRendererRef>;
 }
 
 export interface PageServer {
@@ -101,14 +104,135 @@ export const moduleRenderersSource = (refs: ReadonlyArray<string>): string => {
  */
 const isBareSpecifier = (ref: string): boolean => !ref.startsWith("/") && !ref.startsWith(".");
 
-const moduleRenderersPlugin = (refs: ReadonlyArray<string>) => ({
-	name: "tuval-module-renderers",
-	resolveId(id: string) {
-		return id === MODULE_RENDERERS_ID ? RESOLVED_MODULE_RENDERERS_ID : null;
-	},
-	load(id: string) {
-		return id === RESOLVED_MODULE_RENDERERS_ID ? moduleRenderersSource(refs) : null;
-	},
+/**
+ * A specifier written against the page's own root, the spelling an in-tree module uses
+ * (`/src/demo/module-window.tsx`). It names a file of the app rather than a module the founder
+ * installed, so its base is the root and stays the root: Vite resolves it exactly as it resolves
+ * every other import the app writes, and the plugin below leaves it alone.
+ */
+const isRootRelative = (ref: string): boolean => ref.startsWith("/");
+
+/**
+ * A module reference after resolution. `file` is the module the specifier actually names; `origin`
+ * is the config module that declared the row, kept so a later sentence can name it.
+ */
+export interface ResolvedModuleRenderer {
+	/** The specifier as the row wrote it: the key the loader module and the renderer table share. */
+	readonly ref: string;
+	readonly origin: string;
+	/** Absolute path of the module `ref` resolved to. */
+	readonly file: string;
+}
+
+/**
+ * The dependency-optimiser entries a set of resolved references asks for: the absolute file behind
+ * every bare specifier. Naming them up front is what prebundles a renderer package with the page's
+ * own React and Effect rather than discovering it on first open — the one way a module renderer's
+ * hooks can break at first paint — and it is the absolute path, not the bare specifier, because a
+ * package installed beside the user's config does not resolve from the app root at all (#8262).
+ */
+export const optimizedDepEntries = (
+	resolved: ReadonlyArray<ResolvedModuleRenderer>,
+): ReadonlyArray<string> =>
+	resolved.filter((entry) => isBareSpecifier(entry.ref)).map((entry) => entry.file);
+
+/**
+ * The directories the file server has to be allowed to read from, beside the workspace Vite already
+ * allows: each config module's own directory and each resolved module's, because a program installed
+ * beside `<home>/.tuval/tuval.config.ts` is served from outside the app's workspace entirely.
+ */
+export const servedDirectories = (
+	resolved: ReadonlyArray<ResolvedModuleRenderer>,
+): ReadonlyArray<string> => [
+	...new Set(
+		resolved.flatMap((entry) =>
+			isRootRelative(entry.ref) ? [] : [dirname(entry.origin), dirname(entry.file)],
+		),
+	),
+];
+
+/**
+ * The page's own resolver, told the one thing it cannot work out: which file each specifier the
+ * loader module imports actually names. Only the loader module's imports are answered — the same
+ * specifier written anywhere else in the app is nobody's business but Vite's.
+ */
+const moduleRenderersPlugin = (resolved: ReadonlyArray<ResolvedModuleRenderer>) => {
+	const files = new Map(
+		resolved.filter((entry) => !isRootRelative(entry.ref)).map((entry) => [entry.ref, entry.file]),
+	);
+	return {
+		name: "tuval-module-renderers",
+		resolveId(id: string, importer: string | undefined) {
+			if (id === MODULE_RENDERERS_ID) return RESOLVED_MODULE_RENDERERS_ID;
+			if (importer !== RESOLVED_MODULE_RENDERERS_ID) return null;
+			return files.get(id) ?? null;
+		},
+		load(id: string) {
+			return id === RESOLVED_MODULE_RENDERERS_ID
+				? moduleRenderersSource(resolved.map((entry) => entry.ref))
+				: null;
+		},
+	};
+};
+
+/**
+ * Why a specifier refused the page, in the terms of whoever has to act on it: a package the founder
+ * installed is named against the config module they wrote the row in, and an in-tree path against
+ * the page root it was written for. Neither sentence blames a base the author never named.
+ */
+const unresolvedSentence = (ref: ModuleRendererRef, root: string): string =>
+	isRootRelative(ref.ref)
+		? `renderer module ${JSON.stringify(ref.ref)}, declared by ${ref.origin}, does not resolve from the page root ${root}`
+		: `renderer module ${JSON.stringify(ref.ref)} does not resolve from ${ref.origin}, the config that declared it; is the package installed beside that config?`;
+
+/**
+ * Every reference resolved from the base its own row was declared against, before the page binds
+ * anything. Node resolved the row's kernel half from the config module that declared it, and this is
+ * the same lookup for the row's window half (#8262) — so a program lives beside the user's config
+ * rather than having to be a dependency of the app. A specifier that resolves from neither that
+ * config nor the page root refuses here, naming itself and that config, rather than surfacing as a
+ * failed import in a browser tab: the graph compiler's stance, refuse before anything is shown.
+ *
+ * The resolver is a Vite of its own, in middleware mode — it binds no port and serves nothing. It
+ * has to be a second one because its answers are what the real server's `optimizeDeps.include` and
+ * `server.fs.allow` are built from, and a server reads both once, when it is created.
+ */
+const resolveModuleRenderers = Effect.fn("Tuval.page.resolveModuleRenderers")(function* (
+	createServer: typeof import("vite").createServer,
+	root: string,
+	refs: ReadonlyArray<ModuleRendererRef>,
+) {
+	if (refs.length === 0) return [] as ReadonlyArray<ResolvedModuleRenderer>;
+	const resolver = yield* attempt(() =>
+		createServer({
+			root,
+			configFile: false,
+			appType: "custom",
+			server: {middlewareMode: true, hmr: false, ws: false},
+			// Nothing is served from this one, so nothing needs prebundling; discovery here would
+			// optimise into a cache the real server is about to rebuild anyway.
+			optimizeDeps: {noDiscovery: true, include: []},
+		}),
+	);
+	return yield* Effect.forEach(
+		refs,
+		(ref) =>
+			Effect.gen(function* () {
+				// The importer is the base: the config module for a package or a relative path, and none at
+				// all for the root-relative spelling, which Vite reads against the root it was given.
+				const importer = isRootRelative(ref.ref) ? undefined : ref.origin;
+				const hit = yield* attempt(() =>
+					resolver.environments.ssr.pluginContainer.resolveId(ref.ref, importer),
+				);
+				if (hit === null) {
+					return yield* new PageServerFailed({cause: new Error(unresolvedSentence(ref, root))});
+				}
+				return {ref: ref.ref, origin: ref.origin, file: hit.id} satisfies ResolvedModuleRenderer;
+			}),
+		// Serial on purpose: the first specifier that does not resolve is the one the founder is
+		// told about, and row order is the order they wrote.
+		{concurrency: 1},
+	).pipe(Effect.ensuring(Effect.ignore(attempt(() => resolver.close()))));
 });
 
 interface LaunchResponse {
@@ -118,7 +242,7 @@ interface LaunchResponse {
 
 /** Start the dev server, and close it with the caller's Scope. */
 export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageServerOptions) {
-	const {createServer} = yield* attempt(() => import("vite"));
+	const {createServer, searchForWorkspaceRoot} = yield* attempt(() => import("vite"));
 	// Configured here rather than in a `vite.config.ts` so the one config lives in code the
 	// typechecker reads. React Fast Refresh is what makes editing a renderer bearable.
 	const react = yield* attempt(() => import("@vitejs/plugin-react"));
@@ -131,7 +255,14 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 			}) as never);
 		},
 	};
-	const moduleRenderers = options.moduleRenderers ?? [];
+	// Resolved before the server exists, because the answers are what its optimiser entries and its
+	// file-serving allowance are built from — and because a specifier that resolves from nowhere then
+	// refuses with no port bound and nothing to close.
+	const moduleRenderers = yield* resolveModuleRenderers(
+		createServer,
+		options.root,
+		options.moduleRenderers ?? [],
+	);
 	const server = yield* Effect.acquireRelease(
 		attempt(() =>
 			createServer({
@@ -139,11 +270,22 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 				configFile: false,
 				appType: "spa",
 				plugins: [launchEndpoint, moduleRenderersPlugin(moduleRenderers), react.default()],
-				server: {port: options.port, strictPort: false, host: "127.0.0.1"},
+				server: {
+					port: options.port,
+					strictPort: false,
+					host: "127.0.0.1",
+					// A program installed beside the user's config is outside the app's workspace, and
+					// Vite's default allowance is that workspace alone — so the page would resolve the
+					// module and then refuse to serve it. The workspace stays in the list: the app's own
+					// linked packages are served from it.
+					fs: {
+						allow: [searchForWorkspaceRoot(options.root), ...servedDirectories(moduleRenderers)],
+					},
+				},
 				// Named up front so a renderer package is prebundled with the page's own React rather
 				// than discovered on first open, which would serve it a second React copy until the
 				// re-optimise reload — the one way a module renderer's hooks can break at first paint.
-				optimizeDeps: {include: moduleRenderers.filter(isBareSpecifier)},
+				optimizeDeps: {include: [...optimizedDepEntries(moduleRenderers)]},
 				// A renderer package names React and Effect as peers, and a peer means "the page's copy".
 				// A package linked from another checkout (`link:`, `pnpm link`) carries its own
 				// `node_modules`, and without this the browser gets a second React whose hooks throw
@@ -154,22 +296,6 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 		(dev) => Effect.ignore(attempt(() => dev.close())),
 	);
 	yield* attempt(() => server.listen());
-	// Every specifier the rows named is resolved now, from the same root the loader module's own
-	// `import()` resolves from. One that does not resolve refuses the page here, naming itself, rather
-	// than surfacing as a failed import in a browser tab (the graph compiler's stance: refuse at boot).
-	for (const ref of moduleRenderers) {
-		const resolved = yield* attempt(() =>
-			server.environments.client.pluginContainer.resolveId(ref, RESOLVED_MODULE_RENDERERS_ID),
-		);
-		if (resolved === null) {
-			yield* Effect.ignore(attempt(() => server.close()));
-			return yield* new PageServerFailed({
-				cause: new Error(
-					`renderer module ${JSON.stringify(ref)} does not resolve from ${options.root}; is the package installed here?`,
-				),
-			});
-		}
-	}
 	const url = server.resolvedUrls?.local[0];
 	if (url === undefined) {
 		return yield* new PageServerFailed({cause: new Error("it bound no local address")});
