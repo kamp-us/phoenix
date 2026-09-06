@@ -244,6 +244,23 @@ describe("streamingMessage", () => {
 		);
 	});
 
+	it("leaves the projected transcript the settled messages alone when it is off", () => {
+		const asked: SourceMessage = {
+			role: "user",
+			content: [{type: "text", text: "say hello"}],
+			timestamp: 1,
+		};
+		const items = projectTranscript(
+			[asked, {...inFlight, content: [{type: "text", text: "hello there"}], stopReason: "stop"}],
+			streamingMessage({}, {streamingMessage: inFlight}),
+		);
+		assert.deepStrictEqual(
+			items.map((item) => item.id),
+			["item-0", "item-1"],
+		);
+		assert.isFalse(items.some((item) => "status" in item && item.status === "streaming"));
+	});
+
 	it("is the in-flight message when the flag is on", () => {
 		assert.strictEqual(
 			streamingMessage({streamPartialText: true}, {streamingMessage: inFlight}),

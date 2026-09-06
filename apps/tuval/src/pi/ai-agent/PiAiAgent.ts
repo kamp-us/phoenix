@@ -106,6 +106,11 @@ export interface PiAiAgentOptions {
 	 * Pi's own (`$PI_AGENT_DIR`, else `~/.pi/agent`).
 	 */
 	readonly agentDir?: string;
+	/**
+	 * Project the reply still being written, so the window shows text as the model writes it rather
+	 * than when the turn ends. Absent is off, which is the shape every caller had before this key.
+	 */
+	readonly streamPartialText?: boolean;
 }
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -663,6 +668,9 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 				agentDir,
 				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
 				...(options.projectRoot === undefined ? {} : {projectRoot: options.projectRoot}),
+				...(options.streamPartialText === undefined
+					? {}
+					: {streamPartialText: options.streamPartialText}),
 			});
 		}),
 	);

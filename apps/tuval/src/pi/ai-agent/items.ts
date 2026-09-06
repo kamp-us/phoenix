@@ -73,16 +73,17 @@ export const itemOf = (item: PiTranscriptItem): TranscriptItem => {
 				text: textOf(item.content),
 			};
 		case "assistant": {
-			const text = textOf(item.content);
-			return item.status === "aborted"
-				? {
-						kind: "assistant",
-						id: itemId(item.id),
-						timestamp: item.timestamp,
-						text,
-						interrupted: true,
-					}
-				: {kind: "assistant", id: itemId(item.id), timestamp: item.timestamp, text};
+			const row = {
+				kind: "assistant" as const,
+				id: itemId(item.id),
+				timestamp: item.timestamp,
+				text: textOf(item.content),
+			};
+			if (item.status === "aborted") return {...row, interrupted: true};
+			// `streaming` is the reply mid-flight (`../server/transcript.ts`). The marker is what
+			// keeps it out of the store and tells the window the text is still growing; the settled
+			// revision arrives under this same id and carries none, which is what drops it.
+			return item.status === "streaming" ? {...row, partial: true} : row;
 		}
 		case "tool":
 			return {

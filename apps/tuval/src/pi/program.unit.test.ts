@@ -15,7 +15,12 @@ import {pathToFileURL} from "node:url";
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, Redacted} from "effect";
 import {afterAll, expect} from "vitest";
-import {type AiAgentSessionState, isAiAgentSessionState} from "../ai-agent/core/index.ts";
+import {
+	type AiAgentSessionState,
+	initialState,
+	isAiAgentSessionState,
+} from "../ai-agent/core/index.ts";
+import {ItemId, type TranscriptItem} from "../ai-agent/ports/index.ts";
 import {checkpointFields} from "../ai-agent/restore/index.ts";
 import {ScriptedAiAgent} from "../ai-agent/service/index.ts";
 import {projectConfig} from "../boot.ts";
@@ -26,10 +31,15 @@ import {ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {programEntries, showsInAWindow} from "../shell/picker/entries.ts";
-import {PI_SESSION_PROGRAM, piSessionProgram, projectRootOf} from "./program.ts";
+import {
+	PI_SESSION_PROGRAM,
+	type PiSessionProgramOptions,
+	piSessionProgram,
+	projectRootOf,
+} from "./program.ts";
 import {PI_CHAT_WINDOW_REF} from "./renderer-ref.ts";
 import {makeScriptedHost} from "./server/fixtures.ts";
-import {PiServerService} from "./server/index.ts";
+import {type AgentSessionHostOptions, PiServerService} from "./server/index.ts";
 
 const tempDirs: string[] = [];
 
@@ -98,6 +108,40 @@ describe("the pi-session program row", () => {
 			assert.isNull((state as AiAgentSessionState).sessionId);
 		}).pipe(Effect.scoped, Effect.provide(kernel(CWD_UNDER_TEST))),
 	);
+
+	it("lets a desk config ask for the reply as it is written", () => {
+		const pi = {streamPartialText: true} satisfies NonNullable<PiSessionProgramOptions["pi"]>;
+		// The key a config writes is the host's own option, not a second flag beside it: this is the
+		// whole config path, since the row spreads `pi` straight onto `PiAiAgent.layer`'s options.
+		const forwarded: Pick<AgentSessionHostOptions, "streamPartialText"> = pi;
+		assert.strictEqual(forwarded.streamPartialText, true);
+		assert.strictEqual(
+			piSessionProgram({cwd: tempProject(), pi}).id,
+			ProgramId.make(PI_SESSION_PROGRAM),
+		);
+	});
+
+	/**
+	 * #8170's rule, inherited rather than restated: `aiAgentProgram` sets
+	 * `checkpointWorthy: (state) => !holdsPartialItem(state)`, so a Pi reply mid-flight is a state
+	 * the row refuses to write the moment `itemOf` marks it partial.
+	 */
+	it("writes no checkpoint while a reply is still being written", () => {
+		const declared = row(tempProject());
+		const base = initialState(CWD_UNDER_TEST);
+		const holding = (item: TranscriptItem): AiAgentSessionState => ({
+			...base,
+			transcript: {...base.transcript, items: [item]},
+		});
+		const settled = {
+			kind: "assistant",
+			id: ItemId.make("item-1"),
+			timestamp: 11,
+			text: "hi there",
+		} as const satisfies TranscriptItem;
+		assert.isFalse(declared.checkpointWorthy?.(holding({...settled, partial: true})));
+		assert.isTrue(declared.checkpointWorthy?.(holding(settled)));
+	});
 
 	it("reads the project root back off the config module's own location", () => {
 		const project = tempProject();
