@@ -345,6 +345,9 @@ const make = (
 			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open), scope));
 			const offered = catalog.map(refOf);
 			yield* emit(open, [
+				// `StartOptions.mode` is ignored here, and this is the one layer where that is right:
+				// Pi offers no modes at this pin, so there is no operator switch for a rebuilt layer to
+				// lose and the checkpoint carries the same `null` back (#7953).
 				{kind: "mode", current: null, available: []},
 				{kind: "model", current: currentOf(offered, running), available: offered},
 				{kind: "thinking", current: thinking, available: levels},

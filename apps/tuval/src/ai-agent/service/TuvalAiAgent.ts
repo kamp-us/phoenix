@@ -40,6 +40,17 @@ export interface StartOptions {
 	readonly cwd: string;
 	/** A session id an earlier run returned. Absent starts a new session. */
 	readonly resume?: string;
+	/**
+	 * The mode to open on, which is how a restored session keeps the operator's switch (#7953). A
+	 * layer holds its mode in its own build, so a rebuilt one holds none and would otherwise open on
+	 * the row's configured mode and announce that. Re-applying the mode after `started` landed would
+	 * leave a window in which the session runs on one mode and says another, which is the thing
+	 * #7828 closed — so it is handed over here, before the query exists.
+	 *
+	 * Absent means "whatever the layer would open on anyway". A layer that offers no modes ignores
+	 * it.
+	 */
+	readonly mode?: Mode;
 }
 
 export interface StartedSession {

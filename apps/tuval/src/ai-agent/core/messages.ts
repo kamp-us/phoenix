@@ -79,7 +79,13 @@ export type AiAgentSessionCmd =
 	 * the spawn has returned, rather than inside it.
 	 */
 	| {readonly type: "aiAgent.boot"; readonly cwd: string}
-	| {readonly type: "aiAgent.start"; readonly cwd: string; readonly resume: string | null}
+	| {
+			readonly type: "aiAgent.start";
+			readonly cwd: string;
+			readonly resume: string | null;
+			/** The mode the session is on, so the layer opens on it rather than on the row's (#7953). */
+			readonly mode: Mode | null;
+	  }
 	| {readonly type: "aiAgent.prompt"; readonly text: string; readonly key: string}
 	| {
 			readonly type: "aiAgent.answer";
@@ -93,7 +99,13 @@ export type AiAgentSessionCmd =
 	| {readonly type: "aiAgent.setThinkingLevel"; readonly level: ThinkingLevel}
 	| {readonly type: "aiAgent.page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "aiAgent.interrupt"}
-	| {readonly type: "aiAgent.reconnect"; readonly cwd: string; readonly sessionId: string}
+	| {
+			readonly type: "aiAgent.reconnect";
+			readonly cwd: string;
+			readonly sessionId: string;
+			/** The checkpointed mode, which is the whole reason a restore keeps the switch (#7953). */
+			readonly mode: Mode | null;
+	  }
 	/**
 	 * Publish the committed state's three outbound projections again, with no backend call.
 	 *

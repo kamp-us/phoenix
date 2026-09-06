@@ -16,7 +16,7 @@ import {NodeId} from "../../ports/graph.ts";
 import {PortNotWired, ProcessPorts} from "../../ports/index.ts";
 import {Processes} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
-import {ProcessId} from "../../process/process.ts";
+import {type ProcessHandle, ProcessId} from "../../process/process.ts";
 import {type AnyProgram, ProgramId} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {type AiAgentSessionState, isAiAgentSessionState, START_ERROR} from "../core/index.ts";
@@ -144,7 +144,12 @@ const pendingKeys = (log: ReadonlyArray<Emitted>): ReadonlyArray<ReadonlyArray<s
  * A session run up to the cut and checkpointed: spawn at a fixed id, start, prompt the turn that
  * never lands, then close the kernel's scope so the host flushes its last save.
  */
-const runToTheCut = (stores: CheckpointStores, starts: Array<StartOptions>) =>
+const runToTheCut = (
+	stores: CheckpointStores,
+	starts: Array<StartOptions>,
+	/** What the operator does on the open session before the turn that gets cut. */
+	before: (handle: ProcessHandle) => Effect.Effect<void, unknown> = () => Effect.void,
+) =>
 	Effect.gen(function* () {
 		const log: Array<Emitted> = [];
 		const rows = [row(script(), starts)];
@@ -155,6 +160,7 @@ const runToTheCut = (stores: CheckpointStores, starts: Array<StartOptions>) =>
 				services: Context.make(ProcessPorts, recorder(log)),
 			});
 			yield* eventually(() => sessionOf(handle.getState()).sessionId !== null);
+			yield* before(handle);
 			yield* handle.dispatch({type: "prompt", text: "delete it", key: "k1", timestamp: Date.now()});
 			yield* eventually(() => Object.keys(sessionOf(handle.getState()).permissions).length === 2);
 			assert.strictEqual(
@@ -233,8 +239,8 @@ describe("a restored agent session", () => {
 					const after = yield* settled;
 					assert.deepStrictEqual(
 						starts[1],
-						{cwd: CWD, resume: SESSION_ID},
-						"the reconnect did not resume the checkpointed session id",
+						{cwd: CWD, resume: SESSION_ID, mode: modes.current},
+						"the reconnect did not resume the checkpointed session id on its saved mode",
 					);
 					assert.strictEqual(starts.length, 2, "the resume opened more than one session");
 					assert.strictEqual(after.phase, "ready");
@@ -376,5 +382,33 @@ describe("the mode list", () => {
 				}),
 			);
 		}),
+	);
+
+	// The mode the operator switched to is the one fact of a session that used to be lost on the way
+	// back: the rebuilt layer announced the one it opened on, and that announcement superseded the
+	// republished checkpoint (#7953).
+	it.live(
+		"comes back on the mode the operator switched to, not the one the layer defaults to",
+		() =>
+			Effect.gen(function* () {
+				const stores = memoryStores();
+				const starts: Array<StartOptions> = [];
+				yield* runToTheCut(stores, starts, (handle) =>
+					Effect.gen(function* () {
+						yield* handle.dispatch({type: "setMode", mode: mode("plan")});
+						yield* eventually(() => sessionOf(handle.getState()).modes.current === mode("plan"));
+					}),
+				);
+				yield* resume(stores, script(), starts, (_restored, _log, settled) =>
+					Effect.gen(function* () {
+						const after = yield* settled;
+						assert.strictEqual(
+							after.modes.current,
+							mode("plan"),
+							"the restored session dropped the switch and came back on the script's mode",
+						);
+					}),
+				);
+			}),
 	);
 });
