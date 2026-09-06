@@ -32,6 +32,7 @@ import type {
 	ThinkingLevel,
 } from "@earendil-works/pi-protocol";
 import {Context, Effect, Layer, Queue, Schedule, type Scope, Stream} from "effect";
+import {boundedTeardown} from "../teardown.ts";
 import {
 	type ConnectionRefusal,
 	Disconnected,
@@ -172,13 +173,14 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 						},
 					}),
 			),
-			// A release has no error channel to model into, and the pin's `dispose` resolves an
-			// already-settled promise, so the fold exists to keep the ban's shape rather than to
-			// carry a failure that can happen.
+			// A release has no error channel to model into, so the settle is one arm either way: a
+			// rejection is nothing this scope can act on. The wait is the one thing that matters
+			// here and it runs under `../teardown.ts`'s ceiling, because a `dispose` that never
+			// resolves would hang the close for good.
 			(open) =>
-				Effect.tryPromise({try: () => open.dispose(), catch: connectionRefusalOf}).pipe(
-					Effect.ignore,
-				),
+				boundedTeardown("the Pi client's dispose", (settled) => {
+					open.dispose().then(settled, settled);
+				}),
 		);
 
 		yield* Effect.forkScoped(
