@@ -46,7 +46,6 @@ import type {
 } from "../../ai-agent/ports/index.ts";
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
-	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	type StartError,
@@ -82,12 +81,14 @@ import {
 	sessionNotFound,
 	startTransport,
 	startWithoutHandshake,
+	storeUnlistable,
 	storeUnreadable,
 	streamFailed,
 	subprocessGone,
 	unknownCursor,
 } from "./refusals.ts";
 import {type AgentSession, realAgentSdk} from "./sdk.ts";
+import {claudeSessions} from "./sessions.ts";
 import {exitDetail, type SubprocessWatch, watchSubprocess} from "./subprocess.ts";
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -674,6 +675,19 @@ const make = (
 			return {items: planned.items, hasMore: planned.next !== null};
 		});
 
+		/**
+		 * Every Claude session on this machine, not this layer's own: the CLI's store is read off
+		 * disk, so this answers before `start` and on a layer that never opens a session.
+		 *
+		 * Called with no options at all, which is both "sessions across all projects" (`dir` omitted)
+		 * and `includeProgrammatic` left at its `true` default — epic #8070's ruling 3 wants one
+		 * unified list, which is the opposite of the `/resume` parity the pin documents `false` for.
+		 */
+		const listSessions = Effect.tryPromise({
+			try: () => sdk.listSessions(),
+			catch: storeUnlistable,
+		}).pipe(Effect.map(claudeSessions), Effect.withSpan("TuvalAiAgent.listSessions"));
+
 		return {
 			start,
 			prompt,
@@ -683,15 +697,7 @@ const make = (
 			setModel,
 			commands: Ref.get(commands),
 			page,
-			// Refused rather than answered `[]` until #8098 wraps the SDK's `listSessions`: an empty
-			// list would tell the session list this machine holds no Claude sessions, which is a claim
-			// nothing here has checked.
-			listSessions: Effect.fail(
-				new ListError({
-					reason: "unsupported",
-					detail: "the Claude backend does not enumerate its session store yet (#8098)",
-				}),
-			),
+			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};
 	});

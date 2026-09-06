@@ -1,5 +1,5 @@
 /**
- * `AgentSdk` — the three Agent SDK entry points this layer uses, behind one seam.
+ * `AgentSdk` — the four Agent SDK entry points this layer uses, behind one seam.
  *
  * The default is the real SDK. A test hands in a scripted `Query` instead, which is the only way to
  * drive `start`, the permission callback and the event fold without a Claude Code subprocess and
@@ -12,15 +12,17 @@
 
 import type {
 	GetSessionMessagesOptions,
+	ListSessionsOptions,
 	ModelInfo,
 	Options,
 	PermissionMode,
 	SDKMessage,
+	SDKSessionInfo,
 	SDKUserMessage,
 	SessionMessage,
 	SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
-import {getSessionMessages, query} from "@anthropic-ai/claude-agent-sdk";
+import {getSessionMessages, listSessions, query} from "@anthropic-ai/claude-agent-sdk";
 
 /** The `pnpm-workspace.yaml` catalog pin of `@anthropic-ai/claude-agent-sdk`. */
 export const SDK_VERSION = "0.3.259";
@@ -71,11 +73,23 @@ export interface AgentSdk {
 		sessionId: string,
 		options: GetSessionMessagesOptions,
 	) => Promise<ReadonlyArray<SessionMessage>>;
+	/**
+	 * Every session the CLI's on-disk store holds — the whole machine's, since `dir` omitted is
+	 * "sessions across all projects" (`sdk.d.ts`, `listSessions`).
+	 *
+	 * The layer calls it with no options at all, which leaves `includeProgrammatic` at its `true`
+	 * default. The pin documents `false` as what "IDE session pickers pass for parity with terminal
+	 * `/resume`", and epic #8070's ruling 3 is the opposite of that parity — one unified list where
+	 * every session on the machine appears whatever started it — so the default is the ruled
+	 * behaviour. `sessions.unit.test.ts` pins that nothing is passed.
+	 */
+	readonly listSessions: (options?: ListSessionsOptions) => Promise<ReadonlyArray<SDKSessionInfo>>;
 	readonly version: string;
 }
 
 export const realAgentSdk: AgentSdk = {
 	query: (params) => query(params),
 	getSessionMessages: (sessionId, options) => getSessionMessages(sessionId, options),
+	listSessions: (options) => listSessions(options),
 	version: SDK_VERSION,
 };
