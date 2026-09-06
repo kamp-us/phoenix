@@ -319,17 +319,18 @@ describe("following the newest turn", () => {
 	it("follows the newest row while that row grows, not only when one is appended", async () => {
 		const {scrolls, view} = await openWindow(withTranscript(transcriptOf(4)));
 		trackContentHeight();
-		// The end of the content rather than `scrollToNewest`'s past-everything offset: five rows of
-		// a viewport each, less the viewport.
-		await scrollTo(4_000);
+		// The first paint's `scrollToIndex` resolved against a scroller `giveScrollBox` had not
+		// stubbed yet, so it asked for offset 0 (`getOffsetForAlignment` clamps to a max scroll of
+		// `scrollHeight - clientHeight`, which jsdom answers 0 for). It is still reconciling, and only
+		// the box above lets it reach the content end. Landing it is what leaves the follow effect as
+		// the only thing that can answer the growth below; without this the case passes with
+		// `totalSize` dropped from the effect's dependencies — and landing that stale 0 *after* a
+		// `scrollTo` would instead park the window at the top and unpin it, which is what made this
+		// case red at every head it ran on.
+		await landPendingScroll(scrolls);
+		// Resting on the newest turn: five rows of a viewport each, less the viewport.
 		await waitFor(() => expect(view().pinned).toBe(true));
 		await settle();
-		// Both scrolls this window has asked for so far — the first paint's and the follow's — are
-		// index scrolls, and an index scroll keeps reconciling against every later measurement until
-		// the scroller reaches it. Landing it is what leaves the follow effect as the only thing that
-		// can answer the growth below; without this the case passes with `totalSize` dropped from the
-		// effect's dependencies.
-		await landPendingScroll(scrolls);
 		const before = scrolls.length;
 		const landedBefore = scrolls[scrolls.length - 1] ?? -1;
 		const newest = newestRenderedRow();
@@ -341,10 +342,11 @@ describe("following the newest turn", () => {
 			growObservedElement(newest, TEST_VIEWPORT.height * 2);
 		});
 
-		// Waited for rather than settled once, and on a budget well past the default: `useFlushSync:
-		// false` puts the measurement a render behind the growth, and on a loaded runner that render
-		// is not always inside a second. A follow that never fires still reds — it just reds slowly.
-		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before), {timeout: 5_000});
+		// `useFlushSync: false` puts the measurement a render behind the growth, so the follow lands
+		// on the task after the `act` above rather than inside it. One `settle` is that task — no
+		// wall-clock budget, which is what kept this racing the runner's own 5 s test ceiling.
+		await settle();
+		expect(scrolls.length).toBeGreaterThan(before);
 		// Strictly below where the follow last rested: the last row's `end` alignment resolves to the
 		// scroller's own max scroll, and `trackContentHeight` makes that follow the content — so the
 		// growth is the only thing that moved it.
