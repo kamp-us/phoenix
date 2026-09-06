@@ -13,6 +13,7 @@ import {Badge} from "../Badge";
 import {Button} from "../Button";
 import {Card, Surface} from "../Card";
 import {CountToggle} from "../CountToggle";
+import {Markdown} from "../Markdown";
 import {MetaRow} from "../MetaRow";
 import {NumberInput} from "../NumberInput";
 import {ScrollArea} from "../ScrollArea";
@@ -187,6 +188,29 @@ const scrollAreaArb: fc.Arbitrary<ReactElement> = text.map((children) => (
 	<ScrollArea orientation="vertical">{children}</ScrollArea>
 ));
 
+/**
+ * Markdown source covering every block the renderer emits, so the invariants run over really
+ * rendered markdown rather than a stand-in. Headings stay at one level on purpose: axe's
+ * `heading-order` judges a document outline, so a generator that shuffled levels would red on the
+ * fixture rather than on the block.
+ */
+const markdownArb: fc.Arbitrary<ReactElement> = fc
+	.array(
+		fc.constantFrom(
+			"## a heading",
+			"some **bold** body text",
+			"- one\n- two",
+			"1. first\n2. second",
+			"| a | b |\n|---|---|\n| 1 | 2 |",
+			"```ts\nconst x = 1;\n```",
+			"> quoted",
+			"[kamp.us](https://kamp.us)",
+			"---",
+		),
+		{minLength: 1, maxLength: 4},
+	)
+	.map((parts) => <Markdown>{parts.join("\n\n")}</Markdown>);
+
 const COMPOUND_REASON =
 	"Manti machine primitive — needs required items/trigger/content props or a portal interaction to render a representative surface; covered by composed-usage tests.";
 
@@ -204,6 +228,7 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},
+	Markdown: {kind: "presentational", arb: markdownArb},
 	MetaRow: {kind: "presentational", arb: metaRowArb},
 	SandboxMarker: {
 		kind: "deferred",

@@ -34,8 +34,8 @@ export const MODEL = FAUX_MODEL;
  *
  * A boot re-imports this module and mints a fresh provider, exactly as a restart would; what
  * carries across is the JSONL and the checkpoint, which is the thing under test. Every reply
- * completes, because a stop taken while a Pi turn is in flight never returns (#7896) — the proof
- * stops between turns and says so.
+ * completes, because the proof stops between turns — mid-turn state is unobservable through the
+ * actor's serial step (#7852), not because the stop itself would hang (#7896).
  */
 export const replies = [
 	fauxAssistantMessage("the readme is short"),
