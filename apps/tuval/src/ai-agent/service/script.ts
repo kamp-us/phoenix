@@ -12,7 +12,8 @@ import type {SpellBridgeApi} from "../../commands/bridge/index.ts";
 import type {SpellPath, Scope as SpellScope} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
 import type {CommandRef, Mode, ModelRef, TranscriptItem} from "../ports/index.ts";
-import type {TransportError} from "./errors.ts";
+import type {ListError, TransportError} from "./errors.ts";
+import type {SessionSummary} from "./sessions.ts";
 
 /** One spell a turn calls: the path and the args, exactly as they cross the wire. */
 export interface ScriptedRequest {
@@ -89,6 +90,12 @@ export interface AgentScript {
 	 * backend with no commands — the shape every fixture written before #8060 stands for.
 	 */
 	readonly commands?: ReadonlyArray<CommandRef>;
+	/**
+	 * What this script's session store holds, in any order — `listSessions` sorts. Absent is a store
+	 * with nothing in it, which is a truthful empty list rather than a backend that could not look;
+	 * a `ListError` here is that second case, and is how a test reaches the failure branch.
+	 */
+	readonly sessions?: ReadonlyArray<SessionSummary> | ListError;
 	/** One entry per prompt, consumed in order. */
 	readonly turns: ReadonlyArray<ScriptedTurn>;
 	/**

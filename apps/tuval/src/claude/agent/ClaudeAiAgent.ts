@@ -46,6 +46,7 @@ import type {
 } from "../../ai-agent/ports/index.ts";
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	type StartError,
@@ -682,6 +683,15 @@ const make = (
 			setModel,
 			commands: Ref.get(commands),
 			page,
+			// Refused rather than answered `[]` until #8098 wraps the SDK's `listSessions`: an empty
+			// list would tell the session list this machine holds no Claude sessions, which is a claim
+			// nothing here has checked.
+			listSessions: Effect.fail(
+				new ListError({
+					reason: "unsupported",
+					detail: "the Claude backend does not enumerate its session store yet (#8098)",
+				}),
+			),
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};
 	});

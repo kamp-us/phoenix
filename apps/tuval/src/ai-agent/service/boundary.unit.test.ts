@@ -14,6 +14,7 @@ import {describe, expect, expectTypeOf, it} from "vitest";
 import type {AgentEvent} from "../events.ts";
 import type {CommandRef, Mode, ModelRef, PermissionDecision} from "../ports/index.ts";
 import type {
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -22,6 +23,7 @@ import type {
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
+import type {SessionSummary} from "./sessions.ts";
 import type {
 	StartedSession,
 	StartOptions,
@@ -30,14 +32,15 @@ import type {
 } from "./TuvalAiAgent.ts";
 
 /**
- * The founder's seven grew to eight on #7981 and to nine on #8060: he wants the agent's model
- * picked from the chat composer and its slash commands offered there, and a picker over a generic
- * window has to reach both through the generic interface. `setModel` is the eighth member and
- * `commands` the ninth, and both pins below count nine so each growth reads as the deliberate act
- * it was rather than as drift.
+ * The founder's seven grew to eight on #7981, to nine on #8060 and to ten on #8097: he wants the
+ * agent's model picked from the chat composer, its slash commands offered there, and every session
+ * on his machine listed from one program whatever backend started it. A window over a generic
+ * interface has to reach all three through it, so `setModel` is the eighth member, `commands` the
+ * ninth and `listSessions` the tenth — and both pins below count ten, so each growth reads as the
+ * deliberate act it was rather than as drift.
  */
 describe("the TuvalAiAgent surface", () => {
-	it("carries the seven, #7981's eighth and #8060's ninth, each at its declared type", () => {
+	it("carries the seven, #7981's eighth, #8060's ninth and #8097's tenth, at their types", () => {
 		expectTypeOf<TuvalAiAgentApi["start"]>().toEqualTypeOf<
 			(options: StartOptions) => Effect.Effect<StartedSession, StartError>
 		>();
@@ -60,12 +63,15 @@ describe("the TuvalAiAgent surface", () => {
 		expectTypeOf<TuvalAiAgentApi["page"]>().toEqualTypeOf<
 			(before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>
 		>();
+		expectTypeOf<TuvalAiAgentApi["listSessions"]>().toEqualTypeOf<
+			Effect.Effect<ReadonlyArray<SessionSummary>, ListError>
+		>();
 		expectTypeOf<TuvalAiAgentApi["events"]>().toEqualTypeOf<
 			Stream.Stream<AgentEvent, TransportError>
 		>();
 	});
 
-	it("has exactly those nine members and no tenth", () => {
+	it("has exactly those ten members and no eleventh", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
 			| "start"
 			| "prompt"
@@ -75,8 +81,27 @@ describe("the TuvalAiAgent surface", () => {
 			| "setModel"
 			| "commands"
 			| "page"
+			| "listSessions"
 			| "events"
 		>();
+	});
+
+	/**
+	 * The listing's own boundary. `SDKSessionInfo` and pi's `SessionInfo` disagree on field names,
+	 * on optionality and on whether a time is a `Date`, so an exact pin here is what refuses either
+	 * of them reaching the port. The same pin holds the four absent-able fields absent-able, which
+	 * is the no-plausible-zero rule the row depends on.
+	 */
+	it("returns a summary that names no backend and can leave four fields absent", () => {
+		expectTypeOf<SessionSummary>().toEqualTypeOf<{
+			readonly sessionId: string;
+			readonly lastModified: number;
+			readonly backend: string;
+			readonly firstPrompt?: string | undefined;
+			readonly folder?: string | undefined;
+			readonly branch?: string | undefined;
+			readonly messageCount?: number | undefined;
+		}>();
 	});
 });
 
