@@ -583,7 +583,11 @@ it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and
 the dev server runs `configFile: false` and `publicDir` needs none, so nothing on
 `PageServerOptions` mentions it and nothing should. It holds the tab icon and only the tab icon —
 `favicon-16.png`, `favicon-32.png`, `favicon-192.png` and `apple-touch-icon.png`, each rendered at
-its own size and linked from `index.html` with a `sizes` attribute.
+its own size and linked from `index.html` with a `sizes` attribute so the browser selects a cut
+rather than squashing one. That is why no SVG icon is declared: the mark is line art, and a browser
+scaling one weight down to a 16px tab closes the gaps between the branches into a blob. Each cut
+carries the mark's own near-black plate rather than a transparent ground, so one file reads on a
+light tab strip and on the dark desk alike.
 
 None of those four is editable. `brand/tree-mark.svg` is the source they are cut from — the kamp.us
 tree mark, drawn for this repo in [#8144](https://github.com/kamp-us/phoenix/issues/8144) and the

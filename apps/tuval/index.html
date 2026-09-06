@@ -10,15 +10,7 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="color-scheme" content="dark" />
-		<!--
-			The mark carries its own near-black plate rather than a transparent ground, which is what
-			lets one file sit on a light tab strip and the dark desk alike — a knocked-out tree would
-			vanish on the light one. Each size is a separate `sizes` entry so the browser selects a cut
-			instead of squashing one: the canopy is line art, and letting it downscale to a 16px tab in
-			one step closes the gaps between the branches into a blob. The cuts come off
-			`brand/tree-mark.svg`, which is the editable source; no SVG icon is declared here, because a
-			browser that took it would scale one weight to every size and reopen exactly that problem.
-		-->
+		<!-- Why one cut per size and no SVG icon: README.md, "The static root". -->
 		<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
 		<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
 		<link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />

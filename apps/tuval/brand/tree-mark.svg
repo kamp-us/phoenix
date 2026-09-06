@@ -3,10 +3,15 @@
 	<!--
 		The viewBox is 32 units so one unit is one pixel in the 32px cut and half a pixel in the 16px
 		one, which is what lets a stroke be aimed at the tab's pixel grid rather than at an abstract
-		canvas. The three stroke weights are variables because that is the whole difference between the
-		cuts: the geometry is shared and the weight is re-tuned per size. The 16px cut re-renders this
-		file with `--w-canopy: 2.6; --w-trunk: 3.0; --w-limb: 2.4`, so a halved stroke still lands near
-		a whole device pixel instead of dissolving into it.
+		canvas. The geometry is shared by every cut and the weights are variables so one cut can be
+		re-tuned without touching another — but only one is: the trunk in the 16px cut. It is the
+		mark's one straight vertical, centred at x=16, which at half a pixel per unit is device x 8.0,
+		a pixel boundary; a stroke centred on a boundary paints whole columns only at an even device
+		width, so the base 2.6 (1.3 device px) smears across two columns at 65% and `--w-trunk: 4.0`
+		(2.0 device px) paints both of them solid. `favicon-16.png` is this file rendered at 16px with
+		that one override. Nothing else re-tunes: an arc and a diagonal have no column to land on, and
+		`favicon-32.png`, `favicon-192.png` and `apple-touch-icon.png` are this file rendered at their
+		own size exactly as it stands.
 
 		The canopy is left open at the bottom on purpose — the limbs reach into that mouth without
 		touching the outline, and that ring of unpainted plate is the gap the mark lives or dies by at
