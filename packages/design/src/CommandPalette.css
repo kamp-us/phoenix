@@ -131,6 +131,22 @@
 	background: var(--accent-faint);
 }
 
+/* Every row reserves the caret's column, so moving the active row cannot shift the list sideways.
+   The mono font is what makes `1ch` and the glyph's advance the same width. */
+.kp-command-palette__option::before {
+	content: "";
+	flex: none;
+	inline-size: 1ch;
+	font: var(--t-mono);
+}
+
+/* Pillar 4 forbids signalling state by colour alone, so this glyph is the second channel beside
+   the fill above — not decoration, and not a swap for it. */
+.kp-command-palette__option[data-active]::before {
+	content: "\203A";
+	color: var(--accent);
+}
+
 .kp-command-palette__option[aria-disabled="true"] {
 	color: var(--text-muted);
 	cursor: not-allowed;

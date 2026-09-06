@@ -16,7 +16,7 @@ import {Effect} from "effect";
 import type {GraphNode} from "../ports/graph.ts";
 import {NodeId} from "../ports/graph.ts";
 import {ProcessId} from "../process/process.ts";
-import type {AnyProgram, HostHandlers, Program, RendererRef} from "../registry/program.ts";
+import type {AnyProgram, HostHandlers, Program} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import {shellSpells} from "./commands/spells.ts";
 import {
@@ -44,12 +44,6 @@ export const shellNode = NodeId.make("shell");
  * the old one rather than replaying it into a changed state shape (#7467).
  */
 export const SHELL_VERSION = "1.1.0";
-
-/**
- * The surface's renderer, by reference. The reference is all a row carries: the browser surface
- * (#7559) owns the table that resolves this name to a renderer, so this module names React nowhere.
- */
-export const shellRenderer: RendererRef = {kind: "host-native", ref: "tuval/shell"};
 
 /**
  * What the core asks its host to do, as the kernel's own handler shape. `E` and `R` ride through to
@@ -106,6 +100,11 @@ export interface ShellProgramOptions<E = never, R = never> {
  * The shell's registry row. No public ports and no capability requests: nothing addresses the shell
  * over a port, and the #7467 records ride along as the inert data every row carries.
  *
+ * No `renderer` either, which makes the row headless: the shell *is* the desk, mounted by the page
+ * off its own process (`src/page/main.tsx`), never a window inside itself. A declared renderer put
+ * the row in both picker lists and bound a window to a name the page's table cannot resolve
+ * (#7946).
+ *
  * `spells` is the command table (`./commands/`), so every named row is registered under
  * `[shellId, ...path]` and reachable through the one registry — the palette, `help`, and an agent's
  * bridge all read the shell's commands there rather than from a second catalogue. Running one needs
@@ -123,7 +122,6 @@ export const shellProgram = <E = never, R = never>({
 		spells: shellSpells,
 		handlers: effects,
 		capabilities: [],
-		renderer: shellRenderer,
 		identity: {
 			package: "@kampus/tuval",
 			program: "shell",

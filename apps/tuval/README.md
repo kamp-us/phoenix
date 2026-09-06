@@ -597,7 +597,12 @@ declared data rather than hiding in a layer.
 layer. It holds no Effect and names no backend: each Cmd is the name of work a handler performs, and
 the Sub is the name of the layer's event stream. Every refusal is data — a prompt outside `ready`, an
 answer to a card nobody raised, a mode the agent does not offer each record an `AgentFailure` and
-emit no Cmd, so the window renders the refusal instead of a crash taking the process with it.
+emit no Cmd, so the window renders the refusal instead of a crash taking the process with it. A
+permission card is the one piece of that state with a lifetime of its own: answering marks it
+`answering` and it leaves only on a confirmation naming the same raising of it, so a card that
+disappears means the agent settled the request rather than that a decision was sent
+([#8006](https://github.com/kamp-us/phoenix/issues/8006)). A confirmation that never comes leaves it
+`unresolved`, which offers no second answer — the authorization may already stand.
 
 **The handlers.** `src/ai-agent/handlers/` is the one generic handler set. Each handler yields the
 service and calls one of its members; a layer's typed error becomes a `failed` Msg carrying the tag

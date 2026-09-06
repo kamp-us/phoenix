@@ -232,6 +232,26 @@ describe("composerBridge", () => {
 		expect(handlers.onSetModel.mock.calls).toEqual([[sonnet]]);
 	});
 
+	it("resolves each of two providers' same-named models to its own ref", async () => {
+		const handlers = seam();
+		const openaiLuna: ModelRef = {provider: "openai", id: "gpt-5.6-luna", name: "GPT-5.6 Luna"};
+		const codexLuna: ModelRef = {
+			provider: "openai-codex",
+			id: "gpt-5.6-luna",
+			name: "GPT-5.6 Luna",
+		};
+		const composer = composerBridge({
+			...handlers,
+			initialPhase: "ready",
+			initialModels: {current: openaiLuna, available: [openaiLuna, codexLuna]},
+		});
+
+		await composer.bridge.setPiModel({provider: "openai-codex", id: "gpt-5.6-luna", name: "!"});
+		await composer.bridge.setPiModel({provider: "openai", id: "gpt-5.6-luna", name: "!"});
+
+		expect(handlers.onSetModel.mock.calls).toEqual([[codexLuna], [openaiLuna]]);
+	});
+
 	it("drops a pick the session does not offer rather than rejecting it", async () => {
 		const handlers = seam();
 		const composer = composerBridge({

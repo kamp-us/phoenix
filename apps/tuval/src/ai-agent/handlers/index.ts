@@ -114,16 +114,23 @@ export const aiAgentHandlers = <RIn = never>(
 	const slot = agentSlot(options.layer);
 	const projection = transcriptProjection();
 
+	/**
+	 * `onFail` is how a call whose refusal belongs to something the core is holding open answers for
+	 * it. The default drops the failure into the session's own slot, which is right for a call that
+	 * left nothing behind; `aiAgent.answer` overrides it, because a card marked `answering` is
+	 * cleared by nothing else (#8006).
+	 */
 	const withAgent = <A>(
 		use: (agent: TuvalAiAgentApi) => Effect.Effect<A, AgentServiceError>,
 		onDone: (value: A) => Follow,
+		onFail: (failure: AgentFailure) => Follow = refusal,
 	): Effect.Effect<Follow, never, ProcessSelf> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.current;
-			if (agent === null) return refusal(noSession);
+			if (agent === null) return onFail(noSession);
 			const answered = yield* Effect.result(use(agent));
 			return Result.isFailure(answered)
-				? refusal(failureOf(answered.failure))
+				? onFail(failureOf(answered.failure))
 				: onDone(answered.success);
 		});
 
@@ -177,11 +184,14 @@ export const aiAgentHandlers = <RIn = never>(
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending
-		// cards are already in state and nothing else will ever push them out (#7608).
+		// cards are already in state and nothing else will ever push them out (#7608). The answer
+		// cells emit it for the same reason one step on: an answer's own progress rides no event
+		// (#8006), and re-seeding is what keeps the Sub's projection from folding on past it.
 		"aiAgent.republish": () =>
 			Effect.gen(function* () {
 				const state = yield* readSession;
 				if (state === null) return nothing;
+				yield* projection.seed(state);
 				yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
 				yield* emit(aiAgentPortNames.permissionPending, pendingOf(state));
 				yield* emit(aiAgentPortNames.modeState, modeStateOf(state));
@@ -218,7 +228,8 @@ export const aiAgentHandlers = <RIn = never>(
 				// The note rides the Cmd so nothing between the window and here loses it; #7875 tracks
 				// the last hop, which needs a ruling before that signature can widen.
 				(agent) => agent.answer(cmd.request, cmd.decision),
-				() => nothing,
+				() => [{type: "answered", request: cmd.request, seq: cmd.seq}],
+				(failure) => [{type: "answerFailed", request: cmd.request, seq: cmd.seq, failure}],
 			),
 
 		"aiAgent.setMode": (cmd) =>

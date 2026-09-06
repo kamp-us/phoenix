@@ -11,11 +11,11 @@
 import {Predicate} from "effect";
 import {
 	isModelRef,
-	isPermissionRequest,
+	isPendingPermission,
 	isThinkingLevel,
 	isTranscriptItems,
 	isWindowOmission,
-	type PermissionRequest,
+	type PendingPermission,
 } from "../ports/index.ts";
 import {type AiAgentSessionState, type HistoryPage, phases, type UsageTotals} from "./state.ts";
 
@@ -32,8 +32,8 @@ const isUsage = (value: unknown): value is UsageTotals =>
 	isFiniteNumber(value.outputTokens) &&
 	isFiniteNumber(value.cost);
 
-const isPermissions = (value: unknown): value is Readonly<Record<string, PermissionRequest>> =>
-	Predicate.isObject(value) && Object.values(value).every(isPermissionRequest);
+const isPermissions = (value: unknown): value is Readonly<Record<string, PendingPermission>> =>
+	Predicate.isObject(value) && Object.values(value).every(isPendingPermission);
 
 const isModes = (value: unknown): boolean =>
 	Predicate.isObject(value) &&
@@ -80,6 +80,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isNullOrString(value.interrupted) &&
 	isUsage(value.usage) &&
 	isPermissions(value.permissions) &&
+	isFiniteNumber(value.permissionsRaised) &&
 	isModes(value.modes) &&
 	isModels(value.models) &&
 	isThinking(value.thinking) &&

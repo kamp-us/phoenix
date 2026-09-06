@@ -81,14 +81,47 @@ describe("permission payload", () => {
 		offersAlways: true,
 	};
 
+	const entry = {request, seq: 1, progress: {status: "open"}};
+
 	it("admits the pending set keyed by request id, empty included", () => {
-		expect(isPermissionPayload({kind: "pending", requests: {"req-1": request}})).toBe(true);
+		expect(isPermissionPayload({kind: "pending", requests: {"req-1": entry}})).toBe(true);
 		expect(isPermissionPayload({kind: "pending", requests: {}})).toBe(true);
+	});
+
+	it("admits a card whose answer is out and one whose answer's outcome is unknown", () => {
+		const progresses = [
+			{status: "answering", decision: "allow-once"},
+			{status: "unresolved", decision: "deny"},
+		];
+		expect(
+			progresses.map((progress) =>
+				isPermissionPayload({kind: "pending", requests: {"req-1": {...entry, progress}}}),
+			),
+		).toEqual([true, true]);
 	});
 
 	it("refuses a pending card missing a field the window renders", () => {
 		expect(
-			isPermissionPayload({kind: "pending", requests: {"req-1": {...request, displayName: 4}}}),
+			isPermissionPayload({
+				kind: "pending",
+				requests: {"req-1": {...entry, request: {...request, displayName: 4}}},
+			}),
+		).toBe(false);
+	});
+
+	it("refuses a card with no answering state, no raising, or an unknown one", () => {
+		expect(isPermissionPayload({kind: "pending", requests: {"req-1": request}})).toBe(false);
+		expect(
+			isPermissionPayload({
+				kind: "pending",
+				requests: {"req-1": {request, progress: entry.progress}},
+			}),
+		).toBe(false);
+		expect(
+			isPermissionPayload({
+				kind: "pending",
+				requests: {"req-1": {...entry, progress: {status: "answering"}}},
+			}),
 		).toBe(false);
 	});
 

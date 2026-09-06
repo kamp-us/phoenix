@@ -43,6 +43,7 @@ const cutMidReply: AiAgentSessionState = {
 	interrupted: null,
 	usage: {model: "faux/faux-1", inputTokens: 10, outputTokens: 4, cost: 0},
 	permissions: {},
+	permissionsRaised: 0,
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
 	thinking: {current: null, available: []},

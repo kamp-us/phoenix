@@ -27,6 +27,7 @@ import type {AnyProgram} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {applyMsg, initialState, type ShellMsg} from "./core/index.ts";
 import {defaultPrefixTable} from "./keys/index.ts";
+import {showsInAWindow} from "./picker/entries.ts";
 import {
 	SHELL_VERSION,
 	shellId,
@@ -102,11 +103,13 @@ describe("the shell as a program row", () => {
 		}).pipe(Effect.scoped, Effect.provide(NodeFileSystem.layer)),
 	);
 
-	it("declares no port, requests no capability, names its renderer and is placed where the kernel runs", () => {
+	it("declares no port, requests no capability, is headless and is placed where the kernel runs", () => {
 		const shell = row();
 		assert.deepStrictEqual(shell.ports, {});
 		assert.deepStrictEqual(shell.capabilities, []);
-		assert.deepStrictEqual(shell.renderer, {kind: "host-native", ref: "tuval/shell"});
+		// The desk is not a window it can be opened inside (#7946).
+		assert.isUndefined(shell.renderer);
+		assert.isFalse(showsInAWindow(shell));
 		// The kernel's word for the Node host is `local`; there is no `node` arm on `Placement`.
 		assert.deepStrictEqual(shell.placement, {host: "local"});
 		assert.strictEqual(shell.identity.version, SHELL_VERSION);

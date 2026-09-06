@@ -14,15 +14,26 @@
 import {defineMachine, type Machine} from "@demlik/tea";
 import {sameModel} from "../ports/index.ts";
 import {
+	answerNotOffered,
 	modelUnsupported,
 	modeUnsupported,
 	noSessionToResume,
 	promptRefused,
 	startRefused,
 	thinkingUnsupported,
+	UNKNOWN_REQUEST,
 	unknownRequest,
 } from "./failures.ts";
-import {foldEvent, foldItem, phaseAfterFailure, promptItem, type WindowLimits} from "./fold.ts";
+import {
+	awaitingAnswer,
+	dropRequest,
+	foldEvent,
+	foldItem,
+	phaseAfterFailure,
+	promptItem,
+	unresolvedAnswer,
+	type WindowLimits,
+} from "./fold.ts";
 import {
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
@@ -144,26 +155,62 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			event: (state, msg) =>
 				state.phase === "gone" ? [state, noCmds] : [foldEvent(state, msg.event, limits), noCmds],
 
-			answer: (state, msg) =>
-				state.permissions[msg.request] === undefined
-					? [{...state, failure: unknownRequest(msg.request)}, noCmds]
-					: [
-							{
-								...state,
-								permissions: Object.fromEntries(
-									Object.entries(state.permissions).filter(([id]) => id !== msg.request),
-								),
-								failure: null,
-							},
-							[
-								{
-									type: "aiAgent.answer",
-									request: msg.request,
-									decision: msg.decision,
-									...(msg.message === undefined ? {} : {message: msg.message}),
-								},
-							],
-						],
+			// The card stays, marked `answering`, until a confirmation clears it (#8006): a card that
+			// left on the click would read as an answer that succeeded before its outcome was known,
+			// and the other window over this process would lose it too.
+			answer: (state, msg) => {
+				const held = state.permissions[msg.request];
+				if (held === undefined) return [{...state, failure: unknownRequest(msg.request)}, noCmds];
+				if (held.progress.status !== "open") {
+					return [{...state, failure: answerNotOffered(msg.request, held.progress.status)}, noCmds];
+				}
+				return [
+					{
+						...state,
+						permissions: {
+							...state.permissions,
+							[msg.request]: {...held, progress: {status: "answering", decision: msg.decision}},
+						},
+						failure: null,
+					},
+					// The republish goes first, for `reconnect`'s reason: the pending set is an outbound
+					// projection nothing but an event pushes, and the mark this commit just made rides
+					// no event, so a window routed over the port would never see it (#7979's shape).
+					[
+						{type: "aiAgent.republish"},
+						{
+							type: "aiAgent.answer",
+							request: msg.request,
+							seq: held.seq,
+							decision: msg.decision,
+							...(msg.message === undefined ? {} : {message: msg.message}),
+						},
+					],
+				];
+			},
+
+			answered: (state, msg) =>
+				awaitingAnswer(state, msg.request, msg.seq) === null
+					? [state, noCmds]
+					: [{...dropRequest(state, msg.request), failure: null}, [{type: "aiAgent.republish"}]],
+
+			// The three outcomes the criteria keep apart: the backend says the request is gone, so the
+			// card goes with it; anything else leaves the answer's fate unknown, and an `unresolved`
+			// card offers no second answer, because the authorization it carried may already stand.
+			answerFailed: (state, msg) => {
+				const held = awaitingAnswer(state, msg.request, msg.seq);
+				if (held === null) return [state, noCmds];
+				const settled = msg.failure.tag === UNKNOWN_REQUEST;
+				return [
+					{
+						...(settled
+							? dropRequest(state, msg.request)
+							: unresolvedAnswer(state, msg.request, held)),
+						failure: msg.failure,
+					},
+					[{type: "aiAgent.republish"}],
+				];
+			},
 
 			setMode: (state, msg) =>
 				state.modes.available.includes(msg.mode)

@@ -54,23 +54,6 @@
 	min-width: 0;
 }
 
-/*
- * The active row is marked twice: the shared component's filled background, and a leading caret
- * glyph added here. Pillar 4 forbids signalling state by colour alone, so the glyph is not
- * decoration — it is the second channel.
- */
-.tuval-palette .kp-command-palette__option[data-active]::before {
-	content: "\203A";
-	color: var(--accent);
-	font: var(--t-mono);
-}
-
-.tuval-palette .kp-command-palette__option:not([data-active])::before {
-	content: "";
-	/* Reserves the caret's column so accepting a row does not shift the list sideways. */
-	inline-size: 1ch;
-}
-
 /* The component scrolls the active row into view itself, and this pins that to a jump whatever an
    ancestor asks for: nothing here carries meaning on motion (Pillar 4), so a reduced-motion reader
    and everyone else get the same instant move. */

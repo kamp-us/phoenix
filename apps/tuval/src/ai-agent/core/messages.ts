@@ -34,6 +34,17 @@ export type AiAgentSessionMsg =
 			readonly decision: PermissionDecision;
 			readonly message?: string;
 	  }
+	/**
+	 * The answer's own confirmation, back from the call that carried it. `seq` names which raising
+	 * of the request was answered, so a reply that outlived its card settles nothing (#8006).
+	 */
+	| {readonly type: "answered"; readonly request: string; readonly seq: number}
+	| {
+			readonly type: "answerFailed";
+			readonly request: string;
+			readonly seq: number;
+			readonly failure: AgentFailure;
+	  }
 	| {readonly type: "setMode"; readonly mode: Mode}
 	| {readonly type: "setModel"; readonly model: ModelRef}
 	| {readonly type: "setThinkingLevel"; readonly level: ThinkingLevel}
@@ -60,6 +71,7 @@ export type AiAgentSessionCmd =
 	| {
 			readonly type: "aiAgent.answer";
 			readonly request: string;
+			readonly seq: number;
 			readonly decision: PermissionDecision;
 			readonly message?: string;
 	  }
