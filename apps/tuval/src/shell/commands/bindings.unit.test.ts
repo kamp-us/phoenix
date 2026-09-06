@@ -43,9 +43,11 @@ describe("a table naming a row that is not there", () => {
 			],
 		});
 		expect(drifted._tag).toBe("Success");
-		expect(drifted._tag === "Success" ? dangling(drifted.success) : null).toEqual([
-			"window:quit",
+		// Sorted, because merge order is not the claim: `w` replaces a default in place while `q`
+		// appends, so binding either sequence to a shipped row would rewrite this list's order.
+		expect(drifted._tag === "Success" ? [...dangling(drifted.success)].sort() : null).toEqual([
 			"windo:close",
+			"window:quit",
 		]);
 	});
 });

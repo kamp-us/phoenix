@@ -88,7 +88,9 @@ describe("a window renderer that throws", () => {
 
 		expect(statusLine()).toBeDefined();
 		const alert = screen.getByRole("alert");
-		expect(alert.textContent).toContain("The desk layout stopped rendering.");
+		// The window's own boundary catches it now, so the panel names the process and not the desk
+		// (#8157). The desk-level boundary is still above it, for a throw in the tiling area itself.
+		expect(alert.textContent).toContain("Process process-1 stopped rendering.");
 		expect(alert.textContent).toContain(THROWN);
 		expect(document.body.textContent?.trim()).not.toBe("");
 	});
@@ -101,6 +103,68 @@ describe("a window renderer that throws", () => {
 		});
 
 		expect(statusLine().textContent).toContain("armed");
+	});
+});
+
+/** Two bound windows over two processes, where only the first one's renderer throws (#8157). */
+const oneThrowingMount: MountResolver = (windowId, processId) => ({
+	_tag: "Bound",
+	host: {
+		windowId,
+		processId: ProcessId.make(processId ?? "process-1"),
+		readProcess: undefined as never,
+		dispatch: undefined as never,
+		view: () => null,
+		setView: undefined as never,
+	},
+	render: () => {
+		if (processId === "process-1") throw new Error(THROWN);
+		return <p>{`window over ${processId} rendered`}</p>;
+	},
+});
+
+const twoWindowDesk = (): ShellState =>
+	deskWith(
+		createTree(
+			createStack("stack-root", "horizontal", [
+				createWindow("window-1", "process-1"),
+				createWindow("window-2", "process-2"),
+			]),
+		),
+		"window-1",
+	);
+
+describe("one window's renderer throwing", () => {
+	it("costs that window and no other: the sibling is still rendered", () => {
+		render(
+			<Desk
+				state={twoWindowDesk()}
+				dispatch={() => {}}
+				resolveMount={oneThrowingMount}
+				table={defaultPrefixTable}
+			/>,
+		);
+
+		const alerts = screen.getAllByRole("alert");
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0]?.textContent).toContain("Process process-1 stopped rendering.");
+		expect(screen.getByText("window over process-2 rendered")).toBeDefined();
+		expect(statusLine()).toBeDefined();
+	});
+
+	it("leaves the failed window's own title and frame in place", () => {
+		render(
+			<Desk
+				state={twoWindowDesk()}
+				dispatch={() => {}}
+				resolveMount={oneThrowingMount}
+				table={defaultPrefixTable}
+			/>,
+		);
+
+		const failed = screen.getByRole("region", {name: "Window window-1"});
+		expect(failed.textContent).toContain("process process-1");
+		expect(failed.textContent).toContain(THROWN);
 	});
 });
 
@@ -199,11 +263,21 @@ describe("recovery under live kernel traffic", () => {
 		expect(document.activeElement).toBe(resetButton());
 	});
 
-	it("clears itself when a snapshot does change the layout", () => {
+	it("keeps one window's panel while a window the same snapshot opened renders beside it", () => {
 		const {rerender} = render(<ControlledDesk state={desk()} throwing />);
 		expect(screen.getByRole("alert")).toBeDefined();
 
 		rerender(<ControlledDesk state={overTheWire(splitDesk())} throwing={false} />);
+
+		// A window boundary resets on its own process's identity and not on the layout, so the failed
+		// window holds its panel until the founder presses the button — and the new window renders
+		// regardless, which is the containment #8157 asked for.
+		expect(screen.getAllByRole("alert")).toHaveLength(1);
+		expect(screen.getAllByText("the window rendered")).toHaveLength(1);
+
+		act(() => {
+			fireEvent.click(resetButton());
+		});
 
 		expect(screen.queryByRole("alert")).toBeNull();
 		expect(screen.getAllByText("the window rendered")).toHaveLength(2);

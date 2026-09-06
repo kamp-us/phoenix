@@ -10,6 +10,7 @@
  */
 
 import {Context, Effect} from "effect";
+import {SessionOpening} from "../../ai-agent/opening.ts";
 import {ProcessPorts} from "../../ports/ProcessPorts.ts";
 import {Processes} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
@@ -19,7 +20,7 @@ import {Registry} from "../../registry/Registry.ts";
 import type {ShellMsg} from "../core/machine.ts";
 import type {WindowId} from "../window/host.ts";
 import {showsInAWindow} from "./entries.ts";
-import type {PickerIntent} from "./intent.ts";
+import type {OpenSession, PickerIntent} from "./intent.ts";
 import {
 	type PickerRefusal,
 	processGone,
@@ -64,6 +65,7 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	windowId: WindowId,
 	programId: ProgramId,
 	options: PickerOptions,
+	session: OpenSession | undefined,
 ) {
 	const registry = yield* Registry;
 	const processes = yield* Processes;
@@ -81,7 +83,15 @@ const open = Effect.fn("Tuval.Picker.open")(function* (
 	// node, so handing it down would send the child's payloads out of the shell's own ports. Removing
 	// it leaves the child with none, where restore overrides the inherited one with an un-wired
 	// `ProcessPorts` of its own (`src/durability/restore.ts`).
-	const services = Context.omit(ProcessPorts)(yield* Effect.context());
+	const inherited = Context.omit(ProcessPorts)(yield* Effect.context());
+	// The one thing added rather than inherited. An open carrying a session is the first send on a
+	// row the operator picked out of the session list, and the child has to come up resuming that
+	// session instead of booting a second one beside it (epic #8070, ruling 2). The agent row's
+	// `aiAgent.boot` handler is the only reader (`../../ai-agent/handlers/index.ts`).
+	const services =
+		session === undefined
+			? inherited
+			: Context.add(inherited, SessionOpening, {cwd: session.cwd, resume: session.resume});
 	const spawned = yield* Effect.result(
 		processes.spawn(programId, {parent: options.shellProcessId, services}),
 	);
@@ -117,5 +127,5 @@ export const runPickerIntent = (
 	options: PickerOptions,
 ): Effect.Effect<ReadonlyArray<ShellMsg>, never, Registry | Processes | ProcessTable> =>
 	intent._tag === "OpenProgram"
-		? open(intent.windowId, intent.programId, options)
+		? open(intent.windowId, intent.programId, options, intent.session)
 		: attach(intent.windowId, intent.processId, options);

@@ -118,6 +118,10 @@ export const registryFrame = (rows: ReadonlyArray<AnyProgram>): RegistryFrame =>
 		programId: row.id,
 		label: programLabel(row),
 		renderer: row.renderer,
+		// Spread rather than assigned, so a row declaring neither sends no key at all: an explicit
+		// `inspector: undefined` is a different frame once it has been through `JSON.stringify`.
+		...(row.inspector === undefined ? {} : {inspector: row.inspector}),
+		...(row.status === undefined ? {} : {status: row.status}),
 	})),
 });
 

@@ -1,3 +1,4 @@
+import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {
 	PiClientDisposedError,
 	PiDisconnectedError,
@@ -7,11 +8,13 @@ import {
 } from "@earendil-works/pi-client";
 import type {ClientMessage, ServerMessage, SessionSnapshot} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
-import {Cause, Effect, type Exit, Option, Queue, Stream} from "effect";
+import {Cause, Duration, Effect, type Exit, Option, Queue, Stream} from "effect";
+import {TEARDOWN_CEILING} from "../teardown.ts";
 import {Disconnected, SessionLocked, SessionNotFound} from "./errors.ts";
 import {defaultAnswer, startProtocolServer} from "./fixtures.ts";
 import {PiClientService} from "./PiClientService.ts";
 import {connectionRefusalOf, sessionRefusalOf} from "./refusals.ts";
+import {webSocketTransportFactory} from "./transport.ts";
 
 /** Long enough for a hidden retry to have redialled, if the client held one. */
 const SETTLE_MS = 200;
@@ -198,6 +201,51 @@ describe("the PiClient lease service", () => {
 				const exit = yield* Effect.exit(pi.prompt("s-unknown", "hello"));
 				assert.instanceOf(failureOf(exit), SessionNotFound);
 			}).pipe(Effect.provide(PiClientService.layerWebSocket({url: server.url})));
+		}).pipe(Effect.scoped),
+	);
+});
+
+/**
+ * `PiClient.dispose()` is not `async` at the 0.84.3 pin: its body rejects the pending requests,
+ * calls `#connection.disconnect(error)` and disposes the state before the promise is returned
+ * (`dist/client.js` line 292), and `disconnect` reaches `transport?.close()` with no try/catch
+ * (`dist/connection.js` line 190). A transport whose `close()` throws therefore makes `dispose()`
+ * throw synchronously — into an uninterruptible release, where an escaping throw would leave the
+ * ceiling's timer armed and the stop never resumed.
+ */
+const closeThrows = (url: string): ByteTransportFactory => {
+	const open = webSocketTransportFactory({url});
+	return async (handlers) => {
+		const transport = await open(handlers);
+		return {
+			send: (chunk) => transport.send(chunk),
+			close: () => {
+				transport.close();
+				// biome-ignore lint/plugin: the throw is the subject under test — the pin's own `transport?.close()` call site has no try/catch, so this is how a real one lands.
+				throw new Error("the transport refused to close");
+			},
+		};
+	};
+};
+
+describe("the lease service's release", () => {
+	it.live("returns when the client's dispose throws synchronously", () =>
+		Effect.gen(function* () {
+			const server = yield* startProtocolServer();
+			const started = Date.now();
+			yield* Effect.gen(function* () {
+				const pi = yield* PiClientService;
+				yield* pi.connect;
+				assert.isTrue(yield* pi.connected);
+			}).pipe(
+				Effect.provide(PiClientService.layer({transportFactory: closeThrows(server.url)})),
+				Effect.scoped,
+			);
+			assert.isBelow(
+				Date.now() - started,
+				Duration.toMillis(TEARDOWN_CEILING),
+				"a throwing dispose left the release waiting out the ceiling instead of returning on it",
+			);
 		}).pipe(Effect.scoped),
 	);
 });

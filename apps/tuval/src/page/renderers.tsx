@@ -11,30 +11,39 @@
  * The two demo renderers below are the demo programs' (#7517). Each reads its process through the
  * window contract's `readProcess` and nothing else: no store, no fetch, no socket.
  *
- * The Pi entry is `PiChatWindow` (#7611) and the Claude entry is `ClaudeChatWindow` (#7624), and
- * they are why this module is out of the kernel's strict lens and inside `tsconfig.design.json`'s:
- * the chat window is built on `@kampus/design`, which is source-consumed and authored with
+ * The Pi entry is `PiChatWindow` (#7611), the Claude entry is `ClaudeChatWindow` (#7624) and the
+ * session-list entry is `SessionListWindow` (#8102). They are why this module is out of the
+ * kernel's strict lens and inside `tsconfig.design.json`'s: each is built on `@kampus/design`,
+ * which is source-consumed and authored with
  * `exactOptionalPropertyTypes: false`. Each key is the reference that program's own row declares,
  * imported rather than retyped, so a row and this table cannot name two different renderers.
  */
 
 import {Effect, Fiber, Stream} from "effect";
-import type {ReactElement, ReactNode} from "react";
+import type {ReactElement} from "react";
 import {useEffect, useState} from "react";
+import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
+import {isSessionListState} from "../ai-agent/renderer-ref.ts";
+import {SESSION_LIST_WINDOW_REF, SessionListWindow} from "../ai-agent/window/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, ClaudeChatWindow} from "../claude/window/index.ts";
-import type {CounterState} from "../demo/counter.ts";
-import type {LogState} from "../demo/log.ts";
+import {type CounterState, isCounterState} from "../demo/counter.ts";
+import {isLogState, type LogState} from "../demo/log.ts";
 import {PI_CHAT_WINDOW_REF, PiChatWindow} from "../pi/window/index.ts";
-import type {AnyWindowHost, AnyWindowRenderer, ProcessView} from "../shell/window/index.ts";
+import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
+import {Pending, type ReadableRenderer, readsState} from "./readable-state.tsx";
 
 /**
  * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
  * needs no error arm: `null` means "nothing yet", and a gone process simply stops updating.
+ *
+ * There is no cast here any more. The host arrives typed at the program's own state because the
+ * table below binds every renderer to that program's predicate (`./readable-state.tsx`), and the
+ * renderer is mounted only over a state the predicate admitted (#8157).
  */
-const useProcessState = <S,>(host: AnyWindowHost): S | null => {
+const useProcessState = <S,>(host: WindowHost<S>): S | null => {
 	const [state, setState] = useState<S | null>(null);
-	const read = host.readProcess as Stream.Stream<ProcessView<S>>;
+	const read = host.readProcess;
 	useEffect(() => {
 		const fiber = Effect.runFork(
 			Stream.runForEach(read, (view) =>
@@ -48,14 +57,8 @@ const useProcessState = <S,>(host: AnyWindowHost): S | null => {
 	return state;
 };
 
-const Pending = (): ReactElement => (
-	<p className="tuval-placeholder" role="status">
-		Waiting for the first state from this process.
-	</p>
-);
-
-function CounterRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
-	const state = useProcessState<CounterState>(host);
+function CounterRenderer({host}: {readonly host: WindowHost<CounterState>}): ReactElement {
+	const state = useProcessState(host);
 	if (state === null) return <Pending />;
 	return (
 		<div className="tuval-demo">
@@ -68,8 +71,8 @@ function CounterRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
 	);
 }
 
-function LogRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
-	const state = useProcessState<LogState>(host);
+function LogRenderer({host}: {readonly host: WindowHost<LogState>}): ReactElement {
+	const state = useProcessState(host);
 	if (state === null) return <Pending />;
 	const rows = [
 		...state.lines.map((count) => `count ${count}`),
@@ -90,16 +93,23 @@ function LogRenderer({host}: {readonly host: AnyWindowHost}): ReactElement {
 	);
 }
 
-/** Every renderer the page knows, by the reference a program row names it with. */
-export const pageRenderers: Readonly<Record<string, AnyWindowRenderer>> = {
-	"tuval/demo/counter": windowRenderer(
-		"host-native",
-		(host: AnyWindowHost): ReactNode => <CounterRenderer host={host} />,
+/**
+ * Every renderer the page knows, by the reference a program row names it with — each bound to the
+ * predicate over the state it reads, which is what the `ReadableRenderer` type asks for. A renderer
+ * put here unguarded does not typecheck, so the rule holds at the table and not by review (#8157).
+ */
+export const pageRenderers: Readonly<Record<string, ReadableRenderer>> = {
+	"tuval/demo/counter": readsState(
+		isCounterState,
+		windowRenderer("host-native", (host: WindowHost<CounterState>) => (
+			<CounterRenderer host={host} />
+		)),
 	),
-	"tuval/demo/log": windowRenderer(
-		"host-native",
-		(host: AnyWindowHost): ReactNode => <LogRenderer host={host} />,
+	"tuval/demo/log": readsState(
+		isLogState,
+		windowRenderer("host-native", (host: WindowHost<LogState>) => <LogRenderer host={host} />),
 	),
-	[PI_CHAT_WINDOW_REF.ref]: PiChatWindow,
-	[CLAUDE_CHAT_WINDOW_REF.ref]: ClaudeChatWindow,
+	[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, PiChatWindow),
+	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, ClaudeChatWindow),
+	[SESSION_LIST_WINDOW_REF.ref]: readsState(isSessionListState, SessionListWindow),
 };

@@ -64,6 +64,25 @@ export const promptRefused = (phase: string): AgentFailure => ({
 	detail: `the session is ${phase}, not ready`,
 });
 
+/**
+ * The queue behind a running turn is full, so this prompt waits nowhere (`./queue.ts`).
+ *
+ * `refused` rather than `no-session`, because the session is perfectly alive and the text provably
+ * never crossed — which is also what routes it to the recoverable arm in `./sends.ts`.
+ */
+export const promptQueueFull = (limit: number): AgentFailure => ({
+	tag: PROMPT_ERROR,
+	reason: "refused",
+	detail: `${limit} messages are already waiting behind the running turn`,
+});
+
+/** A queued prompt released back to its window because the turn it was waiting for will not end. */
+export const promptUnqueued = (why: string): AgentFailure => ({
+	tag: PROMPT_ERROR,
+	reason: "refused",
+	detail: `the queued message was not sent: ${why}`,
+});
+
 export const unknownRequest = (request: string): AgentFailure => ({
 	tag: UNKNOWN_REQUEST,
 	reason: null,

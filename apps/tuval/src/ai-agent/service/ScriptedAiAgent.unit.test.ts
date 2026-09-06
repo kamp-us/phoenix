@@ -15,10 +15,13 @@ import {
 	cutShort,
 	disconnects,
 	disconnectTurn,
+	emptySession,
 	history,
 	interruptEvents,
 	interruptedPromptTurn,
 	interruptedTurn,
+	listRefused,
+	listsSessions,
 	mode,
 	models,
 	modes,
@@ -29,6 +32,7 @@ import {
 	plainReplyTurn,
 	runningTool,
 	SESSION_ID,
+	sessions,
 	settledTool,
 	thinking,
 	toolCall,
@@ -113,6 +117,69 @@ describe("start", () => {
 				assert.strictEqual(error._tag, "tuval/ai-agent/StartError");
 				assert.strictEqual(error.reason, "session-not-found");
 			}),
+		),
+	);
+
+	// The other half of that failure: a session the desk never started and that holds nothing
+	// resumes, replaying no items. So silence on a resume says "this session is empty" and only a
+	// miss says "this session is gone" — the two readings a session list cannot afford to share.
+	it.effect("resumes a session that is genuinely empty, replaying nothing", () =>
+		on(emptySession, (agent) =>
+			Effect.gen(function* () {
+				const session = yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				assert.strictEqual(session.sessionId, SESSION_ID);
+				const events = yield* take(agent, START_EVENTS);
+				assert.deepStrictEqual(
+					events.filter((event) => event.kind === "item"),
+					[],
+				);
+			}),
+		),
+	);
+});
+
+describe("listSessions", () => {
+	it.effect("answers the script's store newest first", () =>
+		on(listsSessions, (agent) =>
+			Effect.gen(function* () {
+				const listed = yield* agent.listSessions;
+				assert.deepStrictEqual(
+					listed.map((session) => session.sessionId),
+					["session-claude", "session-pi"],
+				);
+			}),
+		),
+	);
+
+	it.effect("leaves what a backend could not supply absent rather than zero-filled", () =>
+		on(listsSessions, (agent) =>
+			Effect.gen(function* () {
+				const listed = yield* agent.listSessions;
+				assert.deepStrictEqual([...listed], [sessions[1], sessions[0]]);
+				const [claude, pi] = listed;
+				// Claude's listing counts no messages and Pi's knows no branch; Pi's `cwd` for an old
+				// session is the empty string, which is not a folder named "".
+				assert.strictEqual(claude?.messageCount, undefined);
+				assert.strictEqual(pi?.branch, undefined);
+				assert.strictEqual(pi?.folder, undefined);
+				assert.strictEqual(pi?.messageCount, 12);
+			}),
+		),
+	);
+
+	it.effect("fails rather than answering an empty list when the store cannot be read", () =>
+		on(listRefused, (agent) =>
+			Effect.gen(function* () {
+				const error = causeError(yield* Effect.exit(agent.listSessions));
+				assert.strictEqual(error._tag, "tuval/ai-agent/ListError");
+				assert.strictEqual(error.reason, "store-unreadable");
+			}),
+		),
+	);
+
+	it.effect("answers with no session started, because the store is not the session", () =>
+		on(plainReply, (agent) =>
+			Effect.map(agent.listSessions, (listed) => assert.deepStrictEqual([...listed], [])),
 		),
 	);
 });

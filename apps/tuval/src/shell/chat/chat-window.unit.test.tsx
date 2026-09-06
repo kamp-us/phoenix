@@ -1082,8 +1082,8 @@ describe("the two daily rows", () => {
 		// The line is beside the rule and is not a text row: the assistant's turn above is what a
 		// text row looks like, and this is the one other shape the transcript draws.
 		expect(screen.getByText("context compacted").className).toBe("tuval-chat-compaction-label");
-		expect(screen.getByText("done").className).toBe("tuval-chat-text");
-		expect(marker?.querySelector(".tuval-chat-text")).toBeNull();
+		expect(screen.getByText("done").closest(".tuval-chat-markdown")).not.toBeNull();
+		expect(marker?.querySelector(".tuval-chat-markdown")).toBeNull();
 	});
 });
 
@@ -1259,5 +1259,47 @@ describe("the view slot's writer, under StrictMode", () => {
 
 		expect(view().expanded).toEqual(["c", "d"]);
 		expect(writes[writes.length - 1]?.expanded).toEqual(["c", "d"]);
+	});
+});
+
+/**
+ * #8159. The composer offers a "queue" button while a turn runs, so the words an operator writes
+ * then have to be somewhere they can see. They are in the session's queue, and the window renders
+ * that queue rather than anything it remembers itself — which is what makes the same waiting text
+ * visible in the other window over the same process.
+ */
+describe("the messages waiting for the running turn to end", () => {
+	const waiting = (
+		queued: AiAgentSessionState["queued"],
+		over: Partial<AiAgentSessionState> = {},
+	): AiAgentSessionState => withTranscript(transcriptOf(2), {phase: "prompting", queued, ...over});
+
+	it("renders each one, off the session's own queue", async () => {
+		await openWindow(
+			waiting([
+				{key: "q1", text: "then the CHANGELOG", timestamp: SENT_AT},
+				{key: "q2", text: "and tag it", timestamp: SENT_AT + 1},
+			]),
+		);
+		const list = screen.getByRole("list", {name: "Queued messages"});
+		expect(
+			within(list)
+				.getAllByRole("listitem")
+				.map((row) => row.textContent),
+		).toEqual(["then the CHANGELOG", "and tag it"]);
+		expect(screen.getByText("2 messages are waiting for the turn to end.")).toBeDefined();
+	});
+
+	// The ordinary case — everything sent — earns no permanent strip of chrome (ADR 0162, Pillar 3).
+	it("renders nothing at all on an empty queue", async () => {
+		await openWindow(waiting([]));
+		expect(screen.queryByRole("list", {name: "Queued messages"})).toBeNull();
+	});
+
+	// A queued message has reached no backend, so it is not a turn: the tail must not claim one.
+	it("keeps them off the transcript until they are sent", async () => {
+		await openWindow(waiting([{key: "q1", text: "then the CHANGELOG", timestamp: SENT_AT}]));
+		const transcript = screen.getByRole("log", {name: "Transcript"});
+		expect(within(transcript).queryByText("then the CHANGELOG")).toBeNull();
 	});
 });

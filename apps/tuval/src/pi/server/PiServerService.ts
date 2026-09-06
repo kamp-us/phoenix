@@ -8,7 +8,8 @@
  *
  * The service is acquire/release scoped. Closing its scope closes every socket, ends every
  * connection's fibers and disposes every session exactly once — the table is drained before the
- * handles are disposed, so nothing can be disposed twice.
+ * handles are disposed, so nothing can be disposed twice. It returns whether or not a turn is in
+ * flight: the one wait on something outside Effect runs under `../teardown.ts`'s ceiling.
  */
 
 import {randomUUID} from "node:crypto";
@@ -24,6 +25,7 @@ import {
 } from "@earendil-works/pi-protocol";
 import {Context, Effect, FiberSet, Layer, Queue, Redacted, type Scope} from "effect";
 import {type WebSocket, WebSocketServer} from "ws";
+import {boundedTeardown} from "../teardown.ts";
 import {dispatch} from "./dispatch.ts";
 import {FrameRefused, MessageNotEncodable, ServerBindFailed} from "./errors.ts";
 import {
@@ -102,9 +104,9 @@ const refuseUpgrade = (socket: Duplex, refusal: HandshakeRefused): void => {
 };
 
 const closeServer = (server: HttpServer): Effect.Effect<void> =>
-	Effect.callback<void>((resume) => {
+	boundedTeardown("the loopback server's close", (settled) => {
 		server.closeAllConnections();
-		server.close(() => resume(Effect.void));
+		server.close(() => settled());
 	});
 
 const make = (

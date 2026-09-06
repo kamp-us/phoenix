@@ -5,7 +5,7 @@
  */
 
 import {defineMachine} from "@demlik/tea";
-import {Effect} from "effect";
+import {Effect, Predicate} from "effect";
 import {type AnyProgram, type Program, ProgramId, type RendererRef} from "../registry/program.ts";
 import {COUNT_KIND, isCount} from "./count.ts";
 
@@ -14,6 +14,14 @@ export type LogState = {
 	/** Keystrokes the shell forwarded into this process, newest last. See `./counter.ts`. */
 	readonly keys: ReadonlyArray<string>;
 };
+/** As `./counter.ts`'s: the log's own admission test, read by its window renderer (#8157). */
+export const isLogState = (value: unknown): value is LogState =>
+	Predicate.isObject(value) &&
+	Array.isArray(value.lines) &&
+	value.lines.every((line) => typeof line === "number") &&
+	Array.isArray(value.keys) &&
+	value.keys.every((key) => typeof key === "string");
+
 export type LogMsg =
 	| {readonly type: "record"; readonly count: number}
 	| {readonly type: "key"; readonly key: string};

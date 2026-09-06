@@ -20,7 +20,7 @@
  * `prompt` cell when they send it (#7978).
  */
 
-import {Effect, type Layer, Result, Stream} from "effect";
+import {Effect, type Layer, Option, Result, Stream} from "effect";
 import type {PayloadRejected, ProcessPorts} from "../../ports/index.ts";
 import type {ProcessSelf} from "../../process/self.ts";
 import type {HostHandlers, HostSubs} from "../../registry/program.ts";
@@ -36,8 +36,10 @@ import {
 	type WindowLimits,
 } from "../core/index.ts";
 import {isRefusal, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
-import type {TranscriptPagePayload} from "../ports/index.ts";
+import {SessionOpening} from "../opening.ts";
+import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
 import {
+	type StartOptions,
 	type TranscriptPage,
 	TransportError,
 	type TuvalAiAgent,
@@ -142,12 +144,16 @@ export const aiAgentHandlers = <RIn = never>(
 	const open = (
 		cwd: string,
 		resume: string | null,
+		mode: Mode | null,
 	): Effect.Effect<Follow, never, ProcessSelf | RIn> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.rebuild;
-			const started = yield* Effect.result(
-				underPolicy(agent.start(resume === null ? {cwd} : {cwd, resume}), policy),
-			);
+			const options: StartOptions = {
+				cwd,
+				...(resume === null ? {} : {resume}),
+				...(mode === null ? {} : {mode}),
+			};
+			const started = yield* Effect.result(underPolicy(agent.start(options), policy));
 			if (Result.isSuccess(started)) {
 				return [{type: "started", sessionId: started.success.sessionId}];
 			}
@@ -176,11 +182,23 @@ export const aiAgentHandlers = <RIn = never>(
 		// Doing the work here instead would run it inside the spawn (`host/actor.ts` awaits an init
 		// Cmd's handler before `make` returns), which would hold the spawning process's own tail
 		// for as long as the backend takes to answer.
-		"aiAgent.boot": (cmd) => Effect.succeed([{type: "start", cwd: cmd.cwd, resume: null}]),
+		//
+		// The one thing it decides is which session this process comes up on. A spawner that added
+		// `SessionOpening` to the child's context is spawning for a session the operator picked out
+		// of the session list, so the boot resumes that id in that folder instead of minting a new
+		// one beside it (epic #8070, ruling 2); every other spawner adds nothing and the boot is the
+		// fresh one it has always been. Read here rather than at the spawn seam because this is the
+		// only place that knows the process is new (`../core/machine.ts`'s `init`).
+		"aiAgent.boot": (cmd) =>
+			Effect.map(Effect.serviceOption(SessionOpening), (opening) =>
+				Option.isNone(opening)
+					? [{type: "start", cwd: cmd.cwd, resume: null} as const]
+					: [{type: "start", cwd: opening.value.cwd, resume: opening.value.resume} as const],
+			),
 
-		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume),
+		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume, cmd.mode),
 
-		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId),
+		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId, cmd.mode),
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending
