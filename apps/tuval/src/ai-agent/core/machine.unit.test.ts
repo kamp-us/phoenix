@@ -611,6 +611,27 @@ describe("setModel", () => {
 	});
 });
 
+describe("setThinkingLevel", () => {
+	const offering = started({
+		thinking: {current: "low", available: ["low", "medium", "high", "xhigh", "max"]},
+	});
+
+	it("asks the layer for a level it offers", () => {
+		const [, cmds] = apply(offering, {type: "setThinkingLevel", level: "xhigh"});
+		expect(cmds).toEqual([{type: "aiAgent.setThinkingLevel", level: "xhigh"}]);
+	});
+
+	it("refuses a level it does not offer, including when it offers none", () => {
+		// `minimal` is in the vocabulary and outside this session's offered set, which is what the
+		// founder's per-backend ruling looks like from the core (#8062).
+		const [refused, noCmd] = apply(offering, {type: "setThinkingLevel", level: "minimal"});
+		expect(refused.failure?.tag).toBe("tuval/ai-agent/ThinkingUnsupported");
+		expect(noCmd).toEqual([]);
+		const [none] = apply(started(), {type: "setThinkingLevel", level: "high"});
+		expect(none.failure?.tag).toBe("tuval/ai-agent/ThinkingUnsupported");
+	});
+});
+
 describe("paging older history", () => {
 	it("asks the layer for the page", () => {
 		const [state, cmds] = apply(started(), {type: "page", before: "i7", limit: 20});
@@ -808,6 +829,192 @@ describe("failed", () => {
 	});
 });
 
+/**
+ * Four points in one send's life, kept apart: the core admitted it, the layer took the handoff
+ * without refusing, the backend ran the turn, and the session lost its footing under it. The third
+ * is why the turn's end appears here at all — both rows return from `prompt` at the send (#8018),
+ * so the handoff proves nothing about the backend and only the turn's own end does.
+ */
+describe("a send's outcome, under its own key", () => {
+	const turnEnded: AiAgentSessionMsg = {
+		type: "event",
+		sessionId: "session-1",
+		event: {kind: "phase", phase: "ready"},
+	};
+
+	const prompt = (key: string): AiAgentSessionMsg => ({
+		type: "prompt",
+		text: "ship it",
+		key,
+		timestamp: SENT_AT,
+	});
+
+	it("records an admission refusal against the key that earned it", () => {
+		const [refused, cmds] = apply(started({phase: "prompting"}), prompt("k1"));
+		expect(cmds).toEqual([]);
+		expect(refused.sends).toEqual([{key: "k1", state: "refused", failure: refused.failure}]);
+		expect(refused.failure?.tag).toBe("tuval/ai-agent/PromptError");
+	});
+
+	it("leaves an admitted send pending through a handoff nobody refused", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		expect(admitted.sends).toEqual([{key: "k1", state: "pending"}]);
+
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		expect(handed.sends).toEqual([{key: "k1", state: "pending"}]);
+		expect(handed.phase).toBe("prompting");
+	});
+
+	it("accepts the send once the turn the backend ran comes to an end", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [done] = apply(handed, turnEnded);
+		expect(done.sends).toEqual([{key: "k1", state: "accepted"}]);
+		expect(done.phase).toBe("ready");
+	});
+
+	it("holds the send through the turn the layer is still narrating", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [narrating] = apply(admitted, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "prompting"},
+		});
+		expect(narrating.sends).toEqual([{key: "k1", state: "pending"}]);
+	});
+
+	/**
+	 * The refusal #8005 is about: the layer took the text without refusing, and the backend said no
+	 * a round trip later. It has no caller left by then (`pi/ai-agent/refusals.ts`), so it rides the
+	 * event stream — and the send it names is still the one in flight, which is what keeps the text
+	 * recoverable in the window that minted the key.
+	 */
+	it("settles a backend refusal that arrives on the event stream after the handoff", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "refused",
+			detail: "the pin refused the turn",
+		};
+		const [answered] = apply(handed, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "failure", failure},
+		});
+		expect(answered.sends).toEqual([{key: "k1", state: "refused", failure}]);
+		expect(answered).toMatchObject({phase: "ready", failure});
+	});
+
+	/** The other arm of the same story: the transport dies after the handoff, so the stream fails. */
+	it("settles a send the stream failed under after the handoff, uncertain", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const failure = {
+			tag: "tuval/ai-agent/TransportError",
+			reason: "disconnected",
+			detail: "the socket closed mid-turn",
+		};
+		const [lost] = apply(handed, {type: "failed", failure});
+		expect(lost.sends).toEqual([{key: "k1", state: "uncertain", failure}]);
+	});
+
+	/** A turn that ended is a turn the text crossed for, so nothing later reopens the send. */
+	it("leaves an accepted send alone when the session goes away afterwards", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [done] = apply(admitted, turnEnded);
+		const [gone] = apply(done, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "gone"},
+		});
+		expect(gone.sends).toEqual([{key: "k1", state: "accepted"}]);
+	});
+
+	/** The refusal that does reach the caller: the layer refused the handoff itself. */
+	it("settles a refused handoff on its own key, and walks the phase back as `failed` would", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "no-session",
+			detail: "start has not opened a session on this layer",
+		};
+		const [answered] = apply(admitted, {type: "sent", key: "k1", failure});
+		expect(answered.sends).toEqual([{key: "k1", state: "refused", failure}]);
+		expect(answered).toMatchObject({phase: "ready", failure});
+	});
+
+	it("leaves a send the transport died under uncertain, never refused", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const failure = {
+			tag: "tuval/ai-agent/TransportError",
+			reason: "disconnected",
+			detail: "the socket closed",
+		};
+		const [lost] = apply(admitted, {type: "failed", failure});
+		expect(lost.sends).toEqual([{key: "k1", state: "uncertain", failure}]);
+	});
+
+	it("leaves a send uncertain when the session goes away under it", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [gone] = apply(admitted, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "gone"},
+		});
+		expect(gone.sends).toEqual([{key: "k1", state: "uncertain", failure: null}]);
+	});
+
+	/**
+	 * Criterion 8. `prompting` is reached at admission, so an Escape can land while the layer is
+	 * still deciding. The interrupt leaves the send where it stood, and the refusal that arrives a
+	 * moment later still finds it there — which is what leaves the window a copy to offer.
+	 */
+	it("leaves a send in flight alone when the operator interrupts, so a later refusal still settles it", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [cut] = apply(admitted, {type: "interrupt", at: SENT_AT});
+		expect(cut.sends).toEqual([{key: "k1", state: "pending"}]);
+
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "refused",
+			detail: "the pin refused the prompt",
+		};
+		const [answered] = apply(cut, {type: "sent", key: "k1", failure});
+		expect(answered.sends).toEqual([{key: "k1", state: "refused", failure}]);
+	});
+
+	/** The other half: a turn the layer really took still releases its window's copy when it ends. */
+	it("accepts an interrupted send once the layer narrates the turn's end", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [cut] = apply(handed, {type: "interrupt", at: SENT_AT});
+		const [done] = apply(cut, turnEnded);
+		expect(done.sends).toEqual([{key: "k1", state: "accepted"}]);
+	});
+
+	/**
+	 * The two-window race, at the core. One window's prompt is admitted and the other's is refused
+	 * because the session is no longer `ready`; both outcomes stand, each under its own key, so
+	 * neither window can read the other's answer as its own.
+	 */
+	it("keeps two racing windows' outcomes apart", () => {
+		const [first] = apply(started(), prompt("k-left"));
+		const [both] = apply(first, prompt("k-right"));
+		expect(both.sends).toEqual([
+			{key: "k-left", state: "pending"},
+			{key: "k-right", state: "refused", failure: both.failure},
+		]);
+
+		const [handed] = apply(both, {type: "sent", key: "k-left", failure: null});
+		const [answered] = apply(handed, turnEnded);
+		expect(answered.sends).toEqual([
+			{key: "k-right", state: "refused", failure: both.failure},
+			{key: "k-left", state: "accepted"},
+		]);
+	});
+});
+
 describe("the Cmd each Msg answers for", () => {
 	const cases: ReadonlyArray<
 		readonly [AiAgentSessionState, AiAgentSessionMsg, ReadonlyArray<AiAgentSessionCmd["type"]>]
@@ -815,6 +1022,7 @@ describe("the Cmd each Msg answers for", () => {
 		[initialState("/repo"), {type: "start", cwd: "/repo", resume: null}, ["aiAgent.start"]],
 		[started({phase: "starting"}), {type: "started", sessionId: "s"}, []],
 		[started(), {type: "prompt", text: "hi", key: "k", timestamp: SENT_AT}, ["aiAgent.prompt"]],
+		[started({phase: "prompting"}), {type: "sent", key: "k", failure: null}, []],
 		[
 			started(),
 			{type: "event", sessionId: "session-1", event: {kind: "phase", phase: "ready"}},
@@ -863,6 +1071,11 @@ describe("the Cmd each Msg answers for", () => {
 			started({models: {current: null, available: [opus]}}),
 			{type: "setModel", model: opus},
 			["aiAgent.setModel"],
+		],
+		[
+			started({thinking: {current: null, available: ["high"]}}),
+			{type: "setThinkingLevel", level: "high"},
+			["aiAgent.setThinkingLevel"],
 		],
 		[started(), {type: "page", before: null, limit: 10}, ["aiAgent.page"]],
 		[started(), {type: "paged", page: {items: [], hasMore: false}}, []],

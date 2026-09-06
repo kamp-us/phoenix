@@ -17,10 +17,12 @@ import type {
 	Mode,
 	ModelRef,
 	PendingPermission,
+	ThinkingLevel,
 	TranscriptItem,
 	TranscriptPayload,
 	WindowOmission,
 } from "../ports/index.ts";
+import type {SendOutcome} from "./sends.ts";
 
 /** Cumulative for the session: the core owns the running totals, the layer reports the deltas. */
 export interface UsageTotals {
@@ -46,6 +48,15 @@ export interface ModeState {
 export interface ModelState {
 	readonly current: ModelRef | null;
 	readonly available: ReadonlyArray<ModelRef>;
+}
+
+/**
+ * How hard this session thinks, and what it may be switched to. `available` is the layer's offered
+ * set for the model it is running on, so a model switch can change it (#8062).
+ */
+export interface ThinkingState {
+	readonly current: ThinkingLevel | null;
+	readonly available: ReadonlyArray<ThinkingLevel>;
 }
 
 // A layer pushes one of these on the event stream too, so it is declared beside `Phase`.
@@ -106,8 +117,15 @@ export interface AiAgentSessionState {
 	 * one as prompt text.
 	 */
 	readonly commands: ReadonlyArray<CommandRef>;
+	readonly thinking: ThinkingState;
 	/** The text of the last prompt sent, for the resend affordance. */
 	readonly lastPrompt: string | null;
+	/**
+	 * What became of each deliberate send, under its own idempotency key (`./sends.ts`). The window
+	 * that minted a key holds that send's text until this says the backend took it, which is what keeps
+	 * a refused or unconfirmed prompt recoverable instead of cleared at dispatch.
+	 */
+	readonly sends: ReadonlyArray<SendOutcome>;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
 	readonly lastPage: HistoryPage | null;
 	readonly failure: AgentFailure | null;
@@ -154,7 +172,9 @@ export const checkpointFields = [
 	"modes",
 	"models",
 	"commands",
+	"thinking",
 	"lastPrompt",
+	"sends",
 	"lastPage",
 	"failure",
 ] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
@@ -179,7 +199,9 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
 	commands: [],
+	thinking: {current: null, available: []},
 	lastPrompt: null,
+	sends: [],
 	lastPage: null,
 	failure: null,
 });
@@ -221,6 +243,11 @@ const markInterrupted = (
  * refusal nobody can act on any more, a page the window asked a transport that no longer exists
  * for, and an abort in flight to a backend this process no longer holds a transport to.
  *
+ * A send still in flight comes back `uncertain` rather than dropped. The process went away between
+ * handing the text to the layer and hearing what became of it, so nobody can say whether it landed
+ * — and a window that reopens on this session offers its operator that text rather than resending
+ * it.
+ *
  * A card that was `answering` comes back `unresolved`. The call carrying that answer went with the
  * process, so whether the backend applied it is exactly what nobody knows — and an entry restored
  * to `open` would offer a second answer to an authorization that may already stand (#8006).
@@ -237,6 +264,9 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
 		interruption: null,
+		sends: loaded.sends.map((send) =>
+			send.state === "pending" ? {key: send.key, state: "uncertain", failure: null} : send,
+		),
 		permissions: Object.fromEntries(
 			Object.entries(loaded.permissions).map(([id, held]) => [
 				id,

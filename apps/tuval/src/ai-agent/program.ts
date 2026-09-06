@@ -30,6 +30,7 @@ import {
 	PAGE_ERROR,
 	PROMPT_ERROR,
 	portRefused,
+	readCheckpoint,
 	UNKNOWN_REQUEST,
 } from "./core/index.ts";
 import {
@@ -176,6 +177,7 @@ export const aiAgentProgram = <RIn = never>(
 		handlers,
 		subs,
 		resume: resumeMessages,
+		restorable: (raw) => readCheckpoint(raw, options.config.cwd) !== null,
 		capabilities: options.capabilities ?? [],
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
 		identity: {

@@ -211,6 +211,12 @@ const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSyst
 		yield* until("the cut turn's half-written reply, committed", () =>
 			sessionOf(agent).transcript.items.some((item) => item.id === "a3"),
 		);
+		// …and separately for the window's own copy, which is what `rendered` reads below. The
+		// window is its own process and folds each arrival on its own turn, so the agent having
+		// committed `a3` says nothing about the window having folded the publish that carries it.
+		yield* until("the cut turn's half-written reply, as the window has it", () =>
+			rendered(window).includes("a3"),
+		);
 
 		return {
 			phase: sessionOf(agent).phase,

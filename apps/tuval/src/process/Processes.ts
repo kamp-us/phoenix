@@ -235,6 +235,7 @@ function makeServices() {
 					programId,
 					parentId,
 					version: program.identity.version,
+					...(program.restorable === undefined ? {} : {restorable: program.restorable}),
 				});
 				return yield* makeActor(toDefinition(program, checkpoint.store, handlerServices, onCommit));
 			}).pipe(

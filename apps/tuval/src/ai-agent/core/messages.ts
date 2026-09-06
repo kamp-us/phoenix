@@ -9,7 +9,7 @@
 
 import {type Sub, type SubId, subId} from "@demlik/tea";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, ModelRef, PermissionDecision} from "../ports/index.ts";
+import type {Mode, ModelRef, PermissionDecision, ThinkingLevel} from "../ports/index.ts";
 import type {AgentFailure, HistoryPage} from "./state.ts";
 
 export type AiAgentSessionMsg =
@@ -26,6 +26,15 @@ export type AiAgentSessionMsg =
 			readonly key: string;
 			readonly timestamp: number;
 	  }
+	/**
+	 * What the layer did with one deliberate send, under that send's own key — the only Msg that
+	 * answers a *particular* prompt rather than the session as a whole.
+	 *
+	 * `failure: null` means the layer took the text. Anything else is the refusal, and `sends.ts`
+	 * decides from its `reason` whether the text provably never crossed or merely might not have; a
+	 * window keeps a copy of what it sent until this arrives, so neither arm loses it.
+	 */
+	| {readonly type: "sent"; readonly key: string; readonly failure: AgentFailure | null}
 	| {readonly type: "event"; readonly sessionId: string; readonly event: AgentEvent}
 	/** `message` is the operator's optional note; the window offers one on every decision. */
 	| {
@@ -47,6 +56,7 @@ export type AiAgentSessionMsg =
 	  }
 	| {readonly type: "setMode"; readonly mode: Mode}
 	| {readonly type: "setModel"; readonly model: ModelRef}
+	| {readonly type: "setThinkingLevel"; readonly level: ThinkingLevel}
 	| {readonly type: "page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "paged"; readonly page: HistoryPage}
 	/**
@@ -80,6 +90,7 @@ export type AiAgentSessionCmd =
 	  }
 	| {readonly type: "aiAgent.setMode"; readonly mode: Mode}
 	| {readonly type: "aiAgent.setModel"; readonly model: ModelRef}
+	| {readonly type: "aiAgent.setThinkingLevel"; readonly level: ThinkingLevel}
 	| {readonly type: "aiAgent.page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "aiAgent.interrupt"}
 	| {readonly type: "aiAgent.reconnect"; readonly cwd: string; readonly sessionId: string}

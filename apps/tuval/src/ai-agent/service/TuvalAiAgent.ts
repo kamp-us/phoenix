@@ -22,6 +22,7 @@ import type {
 	Mode,
 	ModelRef,
 	PermissionDecision,
+	ThinkingLevel,
 	TranscriptItem,
 } from "../ports/index.ts";
 import type {
@@ -30,6 +31,7 @@ import type {
 	PageError,
 	PromptError,
 	StartError,
+	ThinkingUnsupported,
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
@@ -88,6 +90,13 @@ export interface TuvalAiAgentApi {
 	 * event carried.
 	 */
 	readonly commands: Effect.Effect<ReadonlyArray<CommandRef>>;
+	/**
+	 * How hard the session thinks — the tenth member (#8062), and `setModel`'s shape exactly. The
+	 * founder ruled that each backend offers only the levels it really supports rather than mapping
+	 * the ones it lacks onto something, so the offered set is per backend *and* per model and rides
+	 * `events` as a `thinking` event; a level outside it fails.
+	 */
+	readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void, ThinkingUnsupported>;
 	/**
 	 * History is backend-owned (ruling 5): this reads the backend's own store through the
 	 * transport. Tuval keeps no second copy beyond the live tail the core holds.

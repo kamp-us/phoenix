@@ -24,7 +24,7 @@ import type {AgentEvent} from "../events.ts";
 import {aiAgentPortNames} from "../handlers/index.ts";
 import type {PermissionPayload, PermissionRequest, TranscriptPayload} from "../ports/index.ts";
 import {aiAgentProgram} from "../program.ts";
-import {mode, models, modes, SESSION_ID} from "../service/fixtures/scripts.ts";
+import {mode, models, modes, SESSION_ID, thinking} from "../service/fixtures/scripts.ts";
 import {
 	type AgentScript,
 	ScriptedAiAgent,
@@ -67,6 +67,7 @@ const script = (overrides: Partial<AgentScript> = {}): AgentScript => ({
 	history: [],
 	modes,
 	models,
+	thinking,
 	interrupt: [],
 	turns: [{events: cutTurn}],
 	...overrides,

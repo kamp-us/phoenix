@@ -7,9 +7,9 @@
  * declared data rather than hiding in a layer (#7371).
  *
  * A prompt replays its turn's events verbatim, so a fixture reads as the conversation it stands
- * for. The four calls that carry an argument the script cannot know — `answer`, `setMode`,
- * `setModel` and `start`'s resume — emit events built from that argument, and nothing else is
- * synthesized.
+ * for. The five calls that carry an argument the script cannot know — `answer`, `setMode`,
+ * `setModel`, `setThinkingLevel` and `start`'s resume — emit events built from that argument, and
+ * nothing else is synthesized.
  *
  * A turn may also carry a `plan`, and then this layer is where a scripted session reaches the
  * kernel: the plan names one spell at a time out of what it has already been answered, the call
@@ -32,6 +32,7 @@ import {
 	type PermissionDecision,
 	type PermissionRequest,
 	sameModel,
+	type ThinkingLevel,
 	type TranscriptItem,
 } from "../ports/index.ts";
 import {
@@ -40,6 +41,7 @@ import {
 	PageError,
 	PromptError,
 	StartError,
+	ThinkingUnsupported,
 	type TransportError,
 	UnknownRequest,
 } from "./errors.ts";
@@ -57,6 +59,7 @@ interface ScriptState {
 	readonly model: ModelRef | null;
 	/** What the last `commands` event carried, which is what the `commands` read answers. */
 	readonly commands: ReadonlyArray<CommandRef>;
+	readonly thinking: ThinkingLevel | null;
 	/** False once a scripted disconnect landed. Nothing sets it back — that is the point. */
 	readonly live: boolean;
 }
@@ -69,6 +72,7 @@ const initial = (script: AgentScript): ScriptState => ({
 	mode: script.modes.current,
 	model: script.models.current,
 	commands: [],
+	thinking: script.thinking.current,
 	live: true,
 });
 
@@ -186,6 +190,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 				{kind: "mode", current: current.mode, available: script.modes.available},
 				{kind: "model", current: current.model, available: script.models.available},
 				{kind: "commands", available: script.commands ?? []},
+				{kind: "thinking", current: current.thinking, available: script.thinking.available},
 				{kind: "phase", phase: "ready"},
 			]);
 			yield* Ref.update(state, (previous) => ({
@@ -272,6 +277,16 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			yield* emit([{kind: "model", current: offered, available: script.models.available}]);
 		});
 
+		const setThinkingLevel = Effect.fn("TuvalAiAgent.setThinkingLevel")(function* (
+			level: ThinkingLevel,
+		) {
+			if (!script.thinking.available.includes(level)) {
+				return yield* new ThinkingUnsupported({level, available: script.thinking.available});
+			}
+			yield* Ref.update(state, (previous) => ({...previous, thinking: level}));
+			yield* emit([{kind: "thinking", current: level, available: script.thinking.available}]);
+		});
+
 		const page = Effect.fn("TuvalAiAgent.page")(function* (before: string | null, limit: number) {
 			const current = yield* Ref.get(state);
 			if (!current.live) {
@@ -307,6 +322,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			setMode,
 			setModel,
 			commands: Effect.map(Ref.get(state), (current) => current.commands),
+			setThinkingLevel,
 			page,
 			events: Stream.fromQueue(queue),
 		};

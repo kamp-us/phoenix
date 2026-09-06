@@ -20,6 +20,7 @@ import {
 	noSessionToResume,
 	promptRefused,
 	startRefused,
+	thinkingUnsupported,
 	UNKNOWN_REQUEST,
 	unknownRequest,
 } from "./failures.ts";
@@ -40,6 +41,7 @@ import {
 	type AiAgentSessionSub,
 	eventsSub,
 } from "./messages.ts";
+import {noteSend, settledBy, settlePending} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
 import {type AiAgentSessionState, initialState, lastAssistantId} from "./state.ts";
 
@@ -138,9 +140,22 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			// The turn goes onto the tail here, not when a layer reports it back: the message exists
 			// because the operator sent it, and a backend's echo habits are not what a chat window
 			// showing your own message should depend on (#7978).
+			//
+			// Both arms record the send under its key (`./sends.ts`), because both are outcomes the
+			// window that minted that key is waiting on: an admission refusal is final, and an
+			// admitted send is in the layer's hands until `sent` says otherwise. Without it the
+			// window has only "I dispatched something", which is what cleared a draft the core then
+			// refused (#8005).
 			prompt: (state, msg) =>
 				state.phase !== "ready"
-					? [{...state, failure: promptRefused(state.phase)}, noCmds]
+					? [
+							{
+								...state,
+								failure: promptRefused(state.phase),
+								sends: noteSend(state.sends, settledBy(msg.key, promptRefused(state.phase))),
+							},
+							noCmds,
+						]
 					: [
 							{
 								...state,
@@ -149,9 +164,34 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								interrupted: null,
 								interruption: null,
 								transcript: foldItem(state.transcript, promptItem(msg), limits),
+								sends: noteSend(state.sends, {key: msg.key, state: "pending"}),
 								failure: null,
 							},
 							[{type: "aiAgent.prompt", text: msg.text, key: msg.key}],
+						],
+
+			// The prompt handler's own answer, and the only refusal that arrives already correlated
+			// to the send it is about. A refusal lands the session exactly where the `failed` cell
+			// would — same phase walk, same rendered failure — and additionally settles the send, so
+			// the prompt path has one Msg rather than two that could disagree.
+			//
+			// A `sent` carrying no failure settles nothing, and that is the point. Both rows return
+			// from `prompt` at the send (#8018), so silence here proves only that the layer did not
+			// refuse the handoff — the backend has not answered yet, and a send marked `accepted`
+			// on this Msg would have its window drop the text a refusal two round trips later can
+			// no longer give back (#8005). The send stays `pending` until the turn's end says the
+			// backend had it (`./fold.ts`, the `phase` arm) or a failure settles it.
+			sent: (state, msg) =>
+				msg.failure === null
+					? [state, noCmds]
+					: [
+							{
+								...state,
+								phase: phaseAfterFailure(state, msg.failure),
+								failure: msg.failure,
+								sends: noteSend(state.sends, settledBy(msg.key, msg.failure)),
+							},
+							noCmds,
 						],
 
 			// A closed session keeps whatever it ended with: a late frame from a torn-down transport
@@ -237,6 +277,14 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 							noCmds,
 						],
 
+			// The offered set is the guard, exactly as `setModel`'s is, and it is the set the layer
+			// advertised for the model this session is running on — Claude's five, Pi's seven or its
+			// `off` alone (#8062).
+			setThinkingLevel: (state, msg) =>
+				state.thinking.available.includes(msg.level)
+					? [{...state, failure: null}, [{type: "aiAgent.setThinkingLevel", level: msg.level}]]
+					: [{...state, failure: thinkingUnsupported(msg.level, state.thinking.available)}, noCmds],
+
 			page: (state, msg) => [state, [{type: "aiAgent.page", before: msg.before, limit: msg.limit}]],
 
 			paged: (state, msg) => [{...state, lastPage: msg.page}, noCmds],
@@ -250,6 +298,13 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			 * (`pi/ai-agent/items.ts`, `phaseOf`) and Claude's pump emits it on every `result`
 			 * message, aborted turns included (`claude/agent/ClaudeAiAgent.ts`, `drive`) — so
 			 * waiting for confirmation needs nothing new on the interface.
+			 *
+			 * That is also why the send in flight is left exactly where it stood. `prompting` is
+			 * reached at admission rather than on the layer's confirmation, so an Escape pressed
+			 * while `aiAgent.prompt` is still in flight interrupts a turn the layer may yet refuse;
+			 * the layer's own `sent` settles a refused handoff, and the turn's end accepts a send
+			 * that really ran (`./fold.ts`, the `phase` arm). Neither answer is this cell's to give
+			 * (#8005).
 			 *
 			 * The cut-turn marker is set here rather than on confirmation because it is the
 			 * operator's act being recorded, and the resend it offers is theirs to spend. A second
@@ -288,7 +343,13 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			failed: (state, msg) => {
 				const phase = phaseAfterFailure(state, msg.failure);
 				return [
-					{...state, phase, interruption: interruptionAfter(state, phase), failure: msg.failure},
+					{
+						...state,
+						phase,
+						interruption: interruptionAfter(state, phase),
+						failure: msg.failure,
+						sends: settlePending(state.sends, msg.failure),
+					},
 					noCmds,
 				];
 			},
@@ -313,6 +374,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			"aiAgent.answer": noWork,
 			"aiAgent.setMode": noWork,
 			"aiAgent.setModel": noWork,
+			"aiAgent.setThinkingLevel": noWork,
 			"aiAgent.page": noWork,
 			"aiAgent.interrupt": noWork,
 			"aiAgent.reconnect": noWork,
