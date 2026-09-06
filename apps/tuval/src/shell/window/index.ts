@@ -18,6 +18,7 @@ export {
 	WindowId,
 	type WindowSlot,
 } from "./host.ts";
+export {PREFIX_ARMED_ATTRIBUTE, prefixArmedAround} from "./prefix-signal.ts";
 export {
 	type AnyWindowRenderer,
 	type DeclaredProgram,
