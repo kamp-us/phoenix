@@ -11,7 +11,7 @@
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {describe, expect, it} from "vitest";
 import type {AgentEvent} from "../../ai-agent/events.ts";
-import {byteLength, TOOL_RESULT_BYTE_LIMIT} from "../../ai-agent/ports/index.ts";
+import {byteLength, type ItemId, TOOL_RESULT_BYTE_LIMIT} from "../../ai-agent/ports/index.ts";
 import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";
 import {emptyMapping, type Mapping, type MappingStep} from "./map.ts";
@@ -360,8 +360,109 @@ describe("toAgentEvents over the session notices", () => {
 	});
 });
 
+describe("toAgentEvents over a captured streaming turn", () => {
+	const stream = messages("streaming-turn");
+	const {events, mapping} = run(stream);
+	const MSG = "msg_00000000000000000006";
+
+	it("grows one assistant item across every delta instead of a row apiece", () => {
+		const assistants = items(events).filter((one) => one.kind === "assistant");
+		expect(assistants.length).toBeGreaterThan(1);
+		expect(new Set(assistants.map((one) => one.id))).toEqual(new Set([MSG]));
+		expect(assistants.map((one) => one.kind === "assistant" && one.text)).toEqual([
+			"h",
+			"hello from",
+			"hello from tu",
+			"hello from tuval streaming cap",
+			"hello from tuval streaming capture",
+			"hello from tuval streaming capture",
+		]);
+	});
+
+	// The id is the `msg_*` the wrapped `message_start` announced. Every frame here also carries its
+	// own per-delta `uuid`, and keying on that is the failure this case exists to catch.
+	it("keys the row on the turn's message id, never on the frame's own uuid", () => {
+		const frameUuids = new Set(
+			stream.flatMap((one) => (one.type === "stream_event" ? [one.uuid as string] : [])),
+		);
+		const assistants = items(events).filter((one) => one.kind === "assistant");
+		expect(assistants.filter((one) => frameUuids.has(one.id))).toEqual([]);
+	});
+
+	it("folds the deltas and the finished message into exactly one row, no longer partial", () => {
+		const folded = new Map(
+			items(events)
+				.filter((one) => one.kind === "assistant")
+				.map((one) => [one.id, one]),
+		);
+		expect([...folded.keys()]).toEqual([MSG]);
+		expect(folded.get(MSG as ItemId)).toEqual({
+			kind: "assistant",
+			id: MSG,
+			timestamp: AT,
+			text: "hello from tuval streaming capture",
+		});
+		expect(mapping.partial).toBeNull();
+	});
+
+	it("marks every row but the last as still being written", () => {
+		const assistants = items(events).filter((one) => one.kind === "assistant");
+		expect(assistants.map((one) => one.kind === "assistant" && one.partial)).toEqual([
+			...assistants.slice(0, -1).map(() => true),
+			undefined,
+		]);
+	});
+
+	/**
+	 * The whole no-regression claim of turning `includePartialMessages` on: `sdk.d.ts` warns that a
+	 * streamed turn's finished `assistant` frame "typically holds the single block this message
+	 * delivers and `stop_reason` is still null" (0.3.259, `SDKAssistantMessage`). This capture has
+	 * exactly that shape, and the transcript it folds to is the one a non-streaming turn produces.
+	 */
+	it("folds to the transcript this same turn produces with the flag off", () => {
+		const whole = run(stream.filter((one) => one.type !== "stream_event"));
+		// Everything but the row's key and its clock, which streaming does move: a streamed row is
+		// keyed on the turn's `msg_*` and stamped at the delta that opened it.
+		const folded = (all: ReadonlyArray<AgentEvent>) =>
+			[...new Map(items(all).map((one) => [one.id, one])).values()].map(
+				({id: _id, timestamp: _timestamp, ...rest}) => ({...rest, partial: undefined}),
+			);
+		expect(folded(events)).toEqual(folded(whole.events));
+		expect(whole.events.filter((one) => one.kind === "usage")).toEqual(
+			events.filter((one) => one.kind === "usage"),
+		);
+	});
+});
+
+describe("toAgentEvents over a thinking delta", () => {
+	/**
+	 * No committed capture holds one: whether a turn reasons is the provider's call, not a run's
+	 * (`fixtures/PROVENANCE.md`). So this stamps the delta the SDK declares — a `thinking_delta`
+	 * carrying `thinking` — over the golden streaming turn's own first delta, and every other frame
+	 * stays the captured shape.
+	 */
+	const reasoning = (stream: ReadonlyArray<SDKMessage>): ReadonlyArray<SDKMessage> =>
+		stream.map((one) =>
+			one.type === "stream_event" && one.event.type === "content_block_delta"
+				? ({
+						...one,
+						event: {...one.event, delta: {type: "thinking_delta", thinking: "let me think"}},
+					} as SDKMessage)
+				: one,
+		);
+
+	it("never lets reasoning reach the reply as assistant text", () => {
+		const {events} = run(reasoning(messages("streaming-turn")));
+		const assistants = items(events).filter((one) => one.kind === "assistant");
+		expect(assistants.map((one) => one.kind === "assistant" && one.text)).toEqual([
+			"hello from tuval streaming capture",
+		]);
+		expect(assistants.map((one) => one.kind === "assistant" && one.partial)).toEqual([undefined]);
+	});
+});
+
 describe("toAgentEvents over a message it has no shape for", () => {
-	it("counts a partial assistant frame, so streaming stays whole-message", () => {
+	it("counts a delta that reached it with no message_start to key a row on", () => {
 		const partial: unknown = {
 			type: "stream_event",
 			event: {type: "content_block_delta", delta: {type: "text_delta", text: "hel"}},
