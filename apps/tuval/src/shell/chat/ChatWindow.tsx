@@ -50,6 +50,7 @@ import {ModeSwitch} from "./ModeSwitch.tsx";
 import {dropSend, holdSend, readHeld, recoverInto} from "./outgoing.ts";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
 import {interruptionGraceMillis, isWorking, statusLine} from "./phase.ts";
+import {QueuedMessages} from "./QueuedMessages.tsx";
 import {
 	type ChatRow,
 	chatRows,
@@ -763,6 +764,7 @@ function ChatWindow({
 			) : null}
 			<DesignTranslationProvider translate={tuvalDesignTranslate}>
 				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />
+				<QueuedMessages queued={process.state.queued} />
 				<UnsentMessages
 					windowId={host.windowId}
 					unsent={held.unsent}
