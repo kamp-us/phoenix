@@ -12,6 +12,11 @@
  * therefore renumbers, and the snapshot that carries the renumbering is the client's cue to
  * replace its transcript wholesale — snapshots are authoritative, which is the model the wire's
  * own `TranscriptProgress` comment states.
+ *
+ * An in-flight message is projected at the position it will land at, which is why it is passed as
+ * one more message rather than handled apart: Pi pushes the finished message onto `messages` on
+ * `message_end` (`pi-agent-core` `dist/agent.js:387-388`), so the next free index is the index it
+ * takes, and every snapshot of a growing reply supersedes one item instead of appending a row.
  */
 
 import type {
@@ -164,12 +169,18 @@ const assistantStatus = (stopReason: string, errorMessage: string | undefined): 
  * turn that made the call. An orphan result — the call was compacted away — gets a null input
  * rather than being dropped, because dropping it would leave the client a shorter transcript than
  * the session has.
+ *
+ * `streaming` is the reply still being written, projected as the last item. It carries Pi's
+ * `pending` stop reason, which is the wire's `status: "streaming"` — the marker that tells a
+ * client this text is not the whole reply.
  */
 export const projectTranscript = (
 	messages: ReadonlyArray<SourceMessage>,
+	streaming?: SourceMessage | undefined,
 ): ReadonlyArray<TranscriptItem> => {
+	const all = streaming === undefined ? messages : [...messages, streaming];
 	const toolInputs = new Map<string, Record<string, unknown>>();
-	for (const message of messages) {
+	for (const message of all) {
 		if (message.role !== "assistant") continue;
 		for (const content of message.content) {
 			if (content.type === "toolCall") toolInputs.set(content.id, content.arguments);
@@ -177,7 +188,7 @@ export const projectTranscript = (
 	}
 
 	const items: TranscriptItem[] = [];
-	messages.forEach((message, index) => {
+	all.forEach((message, index) => {
 		const id = `item-${index}`;
 		if (message.role === "user") {
 			const content: Array<UserContent> =
