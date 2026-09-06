@@ -45,6 +45,7 @@ import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {
 	repeatWindowOf,
+	retireAnswered,
 	routerPrefix,
 	samePrefix,
 	shellOwnsKey,
@@ -105,22 +106,19 @@ export function Desk({
 	const latest = useRef({state, table, focused, commandLineOpen, dispatch, palette});
 	latest.current = {state, table, focused, commandLineOpen, dispatch, palette};
 
-	// The prefix the page routes over: the snapshot's, advanced by the page's own presses since.
-	// The snapshot moves only when the kernel answers, so a sequence typed faster than one round
-	// trip used to be routed twice — the page reading `ctrl-b h` as "arm, then `h` to the window"
-	// while the kernel read it as "arm, then focus-left" (#8274). `route` hands back the state that
-	// follows each answer, so both sides now fold one pure function from one start and agree by
-	// construction. Held as state as well as in the ref because the countdown below is an effect.
+	// The prefix the page routes over: the snapshot's, advanced by the page's own presses since
+	// (#8274, `.patterns/tuval-shell-assembly.md`). Held as state as well as in the ref because the
+	// countdown below is an effect, and in the ref because the listener reads it without re-attaching.
 	const [prefix, setPrefix] = useState<PrefixState>(() => routerPrefix(state));
 	const advanced = useRef(prefix);
-	// Has the page advanced past a Msg the kernel has not answered yet? While it has, an arriving
-	// snapshot is older than what the page already routed over, and adopting it would walk the
-	// sequence backwards mid-flight. Sticky until a snapshot arrives carrying the page's own value.
-	const unconfirmed = useRef(false);
+	// The advances the kernel has not answered yet, oldest first, retired by the effect below.
+	const unanswered = useRef<ReadonlyArray<PrefixState>>([]);
 
+	// Closes over refs alone, so the listener holding it is still attached exactly once per target.
 	const advancePrefix = useCallback((next: PrefixState): void => {
-		unconfirmed.current =
-			unconfirmed.current || !samePrefix(next, routerPrefix(latest.current.state));
+		// Only a move the kernel will answer with a frame of its own goes on the ledger: a bare
+		// modifier press folds to the state it started from and changes nothing on either side.
+		if (!samePrefix(next, advanced.current)) unanswered.current = [...unanswered.current, next];
 		advanced.current = next;
 		setPrefix(next);
 	}, []);
@@ -180,7 +178,6 @@ export function Desk({
 				case "Shell":
 					return;
 			}
-			// `advancePrefix` closes over refs alone, so this listener is still attached exactly once.
 		},
 		[advancePrefix],
 	);
@@ -222,22 +219,21 @@ export function Desk({
 	}, [repeatWindowMs, pending, advancePrefix]);
 
 	// Reconciliation, the other half of holding a prefix on the page. Everything that moves the
-	// kernel's prefix is a Msg this page dispatched, so "nothing outstanding" is the one moment the
+	// kernel's prefix is a Msg this page dispatched, so an empty ledger is the one moment the
 	// snapshot is at least as new as the page's own — and then the snapshot wins, which is how a
 	// kernel-side lapse or a fresh socket puts the page back on the kernel's prefix.
 	//
 	// Keyed on the snapshot prefix's values for the reason the countdown is: a decoded object is new
-	// on every frame, and this must not run on kernel traffic that left the prefix alone.
+	// on every frame, and this must not run on kernel traffic that left the prefix alone. So one run
+	// of this effect is one prefix-changing frame, which is what retires one advance.
 	const snapshotArmed = state.prefix.armed;
 	const snapshotWindowMs = state.prefix.armed ? state.prefix.repeatWindowMs : null;
 	const snapshotPending = state.prefix.armed ? state.prefix.pending.join("") : "";
 	useEffect(() => {
 		const kernel = routerPrefix(latest.current.state);
-		if (samePrefix(kernel, advanced.current)) {
-			unconfirmed.current = false;
-			return;
-		}
-		if (unconfirmed.current) return;
+		unanswered.current = retireAnswered(unanswered.current, kernel);
+		if (unanswered.current.length > 0) return;
+		if (samePrefix(kernel, advanced.current)) return;
 		advanced.current = kernel;
 		setPrefix(kernel);
 	}, [snapshotArmed, snapshotWindowMs, snapshotPending]);

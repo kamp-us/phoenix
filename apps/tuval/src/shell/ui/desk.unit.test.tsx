@@ -727,16 +727,65 @@ describe("a sequence typed faster than one kernel round trip (#8274)", () => {
 		const view = render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
 
 		// Two presses in flight. The snapshot the first one produces lands after the page is already
-		// past it, so it is behind on arrival — a page that adopted it would re-arm.
+		// past it, so it is behind on arrival — a page that adopted it would re-arm, and this `w`
+		// would be `window:pick` rather than a `w` the window receives.
 		press({key: "b", ctrlKey: true, code: "KeyB"});
 		press({key: "h", code: "KeyH"});
 		act(() => {
 			view.rerender(<FrozenHarness state={armedDesk} sent={sent} resolveMount={mount} />);
 		});
-		// Re-armed, this `w` is `window:pick` and the window never sees it.
 		press({key: "w", code: "KeyW"});
 
 		expect(received).toEqual(["w"]);
+	});
+
+	// Three presses is where a single "am I ahead?" flag breaks: the sequence has cycled back
+	// through the page's current value, so frame 1 matches it and clears the flag while presses 2
+	// and 3 are still out (#8274, criterion 8).
+	it("stays on its own prefix across three presses, frame by frame", () => {
+		const sent: Array<ShellMsg> = [];
+		const received: Array<string> = [];
+		const mount = spyingOn(received);
+		const view = render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
+
+		press({key: "b", ctrlKey: true, code: "KeyB"});
+		press({key: "h", code: "KeyH"});
+		press({key: "b", ctrlKey: true, code: "KeyB"});
+		// The kernel's answers to presses 1 and 2, one at a time: armed, then idle again.
+		act(() => {
+			view.rerender(<FrozenHarness state={armedDesk} sent={sent} resolveMount={mount} />);
+		});
+		act(() => {
+			view.rerender(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
+		});
+		// The page armed itself on press 3, so `j` is `window:focus-down` and never a key.
+		const prevented = press({key: "j", code: "KeyJ"});
+
+		expect(received).toEqual([]);
+		expect(prevented).toBe(false);
+	});
+
+	// The mirror of it: four presses leave the page idle while the kernel is armed, so a page that
+	// adopted the stale armed frame would swallow the next character instead of forwarding it.
+	it("stays idle across four presses, frame by frame", () => {
+		const sent: Array<ShellMsg> = [];
+		const received: Array<string> = [];
+		const mount = spyingOn(received);
+		const view = render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
+
+		press({key: "b", ctrlKey: true, code: "KeyB"});
+		press({key: "h", code: "KeyH"});
+		press({key: "b", ctrlKey: true, code: "KeyB"});
+		press({key: "h", code: "KeyH"});
+		for (const frame of [armedDesk, idleDesk, armedDesk]) {
+			act(() => {
+				view.rerender(<FrozenHarness state={frame} sent={sent} resolveMount={mount} />);
+			});
+		}
+		const notPrevented = press({key: "j", code: "KeyJ"});
+
+		expect(received).toEqual(["j"]);
+		expect(notPrevented).toBe(true);
 	});
 
 	it("takes the kernel's prefix once nothing is in flight", () => {

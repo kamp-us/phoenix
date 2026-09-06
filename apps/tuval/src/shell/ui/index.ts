@@ -25,6 +25,7 @@ export {
 	holdsPanels,
 	panelWindows,
 	repeatWindowOf,
+	retireAnswered,
 	routerPrefix,
 	type StatusFrame,
 	type SurfaceKeyAnswer,

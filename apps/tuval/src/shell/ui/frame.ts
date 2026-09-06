@@ -60,6 +60,27 @@ export const samePrefix = (a: PrefixState, b: PrefixState): boolean => {
 };
 
 /**
+ * Reconciliation's ledger: the prefix values the page routed over that the kernel has not answered
+ * yet, oldest first, with one arriving snapshot retiring one of them. A single "the page is ahead"
+ * flag cannot hold this — the kernel replays the page's own presses one frame each, and a prefix
+ * sequence cycles idle → armed → idle, so from three presses on the page's *current* value is also
+ * an *older* frame's, that frame clears the flag, and the next one is adopted mid-sequence (#8274).
+ *
+ * Retired by value, earliest match first, so a frame that batched two advances retires both. A
+ * frame matching none of them is one the page never predicted, and it retires the oldest anyway: a
+ * ledger that shrinks only on a match can stick, and a stuck one strands the page on a prefix no
+ * key can clear.
+ */
+export const retireAnswered = (
+	unanswered: ReadonlyArray<PrefixState>,
+	kernel: PrefixState,
+): ReadonlyArray<PrefixState> => {
+	if (unanswered.length === 0) return unanswered;
+	const at = unanswered.findIndex((prefix) => samePrefix(prefix, kernel));
+	return unanswered.slice(at === -1 ? 1 : at + 1);
+};
+
+/**
  * What the *surface* must do about one key, beside always dispatching `keys.press`. Three arms and
  * no fourth: a key either opens the command line, belongs to the focused window's renderer, or is
  * the shell's own business and nothing the page does about it.

@@ -1,6 +1,7 @@
 import {Duration} from "effect";
 import {describe, expect, it} from "vitest";
 import {applyMsg} from "../core/index.ts";
+import type {PrefixState} from "../keys/index.ts";
 import {defaultPrefixTable, idle as idlePrefix} from "../keys/index.ts";
 import {createStack, createTree, createWindow, SIZE_TOLERANCE} from "../layout/index.ts";
 import {deskWith, threeWindowDesk, threeWindowTree} from "./fixtures.ts";
@@ -9,6 +10,7 @@ import {
 	holdsPanels,
 	panelWindows,
 	repeatWindowOf,
+	retireAnswered,
 	routerPrefix,
 	sameLayout,
 	samePrefix,
@@ -81,6 +83,39 @@ describe("samePrefix", () => {
 		expect(repeatWindowOf(armedWith([], Duration.millis(500)))).toBe(500);
 		expect(repeatWindowOf(armedWith([], null))).toBeNull();
 		expect(repeatWindowOf(idlePrefix)).toBeNull();
+	});
+});
+
+describe("retireAnswered", () => {
+	const armed = armedWith([], null);
+
+	it("retires one advance per frame, so three presses outlast their first two answers", () => {
+		// `<c-b> h <c-b>`: the page is armed, and the kernel's own frames replay armed, idle, armed.
+		let ledger: ReadonlyArray<PrefixState> = [armed, idlePrefix, armed];
+
+		ledger = retireAnswered(ledger, armed);
+		expect(ledger).toEqual([idlePrefix, armed]);
+		ledger = retireAnswered(ledger, idlePrefix);
+		expect(ledger).toEqual([armed]);
+		ledger = retireAnswered(ledger, armed);
+		expect(ledger).toEqual([]);
+	});
+
+	it("still holds one advance back after three of a four-press sequence are answered", () => {
+		// `<c-b> h <c-b> h`: the page is idle, and the third frame carries armed — the value a page
+		// holding one boolean adopts while the fourth press is still out.
+		let ledger: ReadonlyArray<PrefixState> = [armed, idlePrefix, armed, idlePrefix];
+		for (const frame of [armed, idlePrefix, armed]) ledger = retireAnswered(ledger, frame);
+		expect(ledger).toEqual([idlePrefix]);
+	});
+
+	it("retires both when one frame batched two advances, and the oldest when none matches", () => {
+		expect(retireAnswered([armed, idlePrefix, armed], idlePrefix)).toEqual([armed]);
+		expect(retireAnswered([armed], armedWith(["h"], null))).toEqual([]);
+	});
+
+	it("leaves an empty ledger empty, which is what lets the snapshot win", () => {
+		expect(retireAnswered([], armed)).toEqual([]);
 	});
 });
 

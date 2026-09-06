@@ -149,14 +149,21 @@ so `Desk.tsx` holds one `PrefixState`, starts it from the snapshot, and replaces
 ADR 0353 binds: the table is still the kernel's, the wire still carries raw `keys.press` and never an
 answer, and the kernel still routes every key.
 
-Reconciling the two is the other half. Everything that moves the kernel's prefix is a Msg the page
-dispatched itself — a `keys.press` (Escape is one: `route` answers `Unbound` and folds to idle) or
-`prefix.repeatLapsed` — so "nothing outstanding" is the one moment the snapshot is at least as new
-as the page's own, and only then does the snapshot win. The page marks itself unconfirmed on any
-advance the snapshot does not already carry, and clears that mark when a snapshot arrives holding
-the page's own value (`samePrefix` in `src/shell/ui/frame.ts`, value equality because every snapshot
-is new JSON). A second page attached to one shell is the exception, and its keys moving this page's
-prefix is the two-pages problem ADR 0353 named, not this rule.
+Reconciling the two is the other half, and it is **a ledger, never a flag**. Everything that moves
+the kernel's prefix is a Msg the page dispatched itself — a `keys.press` (Escape is one: `route`
+answers `Unbound` and folds to idle) or `prefix.repeatLapsed` — so nothing outstanding is the one
+moment the snapshot is at least as new as the page's own, and only then does the snapshot win. The
+page keeps every advance the kernel has not answered yet, oldest first, and one arriving frame
+retires one of them (`retireAnswered` in `src/shell/ui/frame.ts`; the effect that runs it is keyed
+on the snapshot prefix's *values*, so one run is one prefix-changing frame). A single "the page is
+ahead" boolean cannot hold this: the kernel replays the page's presses one frame each and a prefix
+sequence cycles idle → armed → idle, so from three presses on the page's *current* value is also an
+*older* frame's, that frame clears the flag, and the next one is adopted with presses still in
+flight — `<c-b> h <c-b>` then `j` double-routed exactly there. Matching is by value and takes the
+earliest match (`samePrefix`, because every snapshot is new JSON), and a frame matching nothing
+retires the oldest anyway so the ledger cannot stick. A second page attached to one shell is the
+exception, and its keys moving this page's prefix is the two-pages problem ADR 0353 named, not this
+rule.
 
 ## What the page can and cannot see
 
