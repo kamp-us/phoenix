@@ -15,6 +15,9 @@
 	},
 	"include": [
 		"worker",
+		// The dev-port readers the worker's `dev` block and the Vite proxy share; both projects
+		// list it, because a composite project cannot reach a file only its import graph names.
+		"dev-ports.ts",
 		"src/lib/fateWireCodes.ts",
 		"src/lib/panoTags.ts",
 		"src/lib/panoFeedSort.ts",

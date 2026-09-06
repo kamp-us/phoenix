@@ -49,6 +49,17 @@ export type SurfaceKeyAnswer =
 	/** A named command the page does not implement, or an armed/pending/unbound prefix. */
 	| {readonly _tag: "Shell"; readonly command: CommandName | null};
 
+/**
+ * Is this key the shell's, whatever holds DOM focus? tmux's rule, and the whole of #8270: the
+ * prefix is the one key a pane never gets, and once it is armed every key of the sequence is the
+ * shell's too. Everything else typed into a text entry belongs to the text entry.
+ *
+ * Asked of the same `route` the surface routes with, so the two can never disagree about which key
+ * arms the prefix — a second reading of `table.prefix` here is how that drift starts.
+ */
+export const shellOwnsKey = (table: PrefixTable, prefix: PrefixState, event: Key): boolean =>
+	prefix._tag === "Armed" || route(table, prefix, event)._tag === "Arm";
+
 export const surfaceKey = (
 	table: PrefixTable,
 	prefix: PrefixState,

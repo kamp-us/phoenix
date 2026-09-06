@@ -14,8 +14,12 @@
  * two cannot share one control: `Collapsible` wires `aria-expanded`/`aria-controls` over the content
  * it owns, and the folded rows are siblings in the virtualized list outside that content, so a
  * shared trigger announces the input panel while N unrelated rows appear unannounced (#8027, ADR
- * 0162 Pillar 4). The fold button names the rows in `aria-controls` and states the act it performs
- * in its own text, so reading the call's input no longer bursts the group open as a side effect.
+ * 0162 Pillar 4). The fold button states the act it performs in its own text, so reading the call's
+ * input no longer bursts the group open as a side effect.
+ *
+ * That button carries `aria-expanded` and deliberately no `aria-controls`: the rows it reveals are
+ * virtualized, so an idref list names ids the document does not hold, and the APG disclosure pattern
+ * treats the attribute as optional (#8057).
  */
 
 import {Button, Collapsible} from "@kampus/design";
@@ -89,8 +93,8 @@ const foldLine = (count: number, open: boolean): string =>
 
 /** A group head's fold, absent on a row that heads no group — so a count without rows cannot exist. */
 export interface ToolFold {
-	/** The DOM ids of the rows this fold reveals, in list order. */
-	readonly rowIds: ReadonlyArray<string>;
+	/** How many rows this fold reveals — the button counts them rather than naming them. */
+	readonly count: number;
 	readonly open: boolean;
 	readonly onToggle: (open: boolean) => void;
 }
@@ -138,14 +142,9 @@ export function ToolRow({
 					size="sm"
 					className="tuval-chat-tool-fold"
 					aria-expanded={fold.open}
-					// Only while open, because the rows are the referents and they do not exist collapsed.
-					// The virtualizer renders a window of them, so an open fold taller than the viewport
-					// resolves the ids it has mounted and leaves the rest dangling, which assistive tech
-					// ignores rather than mis-reads. #8057 tracks carrying the whole set.
-					aria-controls={fold.open ? fold.rowIds.join(" ") : undefined}
 					onClick={() => fold.onToggle(!fold.open)}
 				>
-					{foldLine(fold.rowIds.length, fold.open)}
+					{foldLine(fold.count, fold.open)}
 				</Button>
 			)}
 		</>

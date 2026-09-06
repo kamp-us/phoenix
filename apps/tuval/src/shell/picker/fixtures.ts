@@ -33,7 +33,11 @@ const core = defineMachine<CountState, CountMsg, Cmd<never>, never, unknown>({
 
 export const programRow = (
 	id: string,
-	options?: {readonly label?: string; readonly renderer?: boolean},
+	options?: {
+		readonly label?: string;
+		readonly renderer?: boolean;
+		readonly takesKeys?: boolean;
+	},
 ): AnyProgram =>
 	({
 		id: ProgramId.make(id),
@@ -42,6 +46,7 @@ export const programRow = (
 		handlers: {},
 		capabilities: [],
 		...(options?.label === undefined ? {} : {label: options.label}),
+		...(options?.takesKeys === true ? {takesKeys: true} : {}),
 		...(options?.renderer === false
 			? {}
 			: {renderer: {kind: "host-native" as const, ref: `tuval/${id}`}}),

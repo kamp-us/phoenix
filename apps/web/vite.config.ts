@@ -1,6 +1,7 @@
 import react from "@vitejs/plugin-react";
 import {fate} from "react-fate/vite";
 import {defineConfig} from "vite";
+import {spaDevPort, workerDevPort} from "./dev-ports.ts";
 import {piHarness} from "./piHarness.ts";
 
 // ── The two-process dev loop (ADR 0030) ──
@@ -11,13 +12,13 @@ import {piHarness} from "./piHarness.ts";
 // `alchemy dev` runs the one worker; Vite proxies the API to it.
 //
 // `alchemy dev` serves the worker *vhost-routed* at
-// `http://phoenix.localhost:1337`. Node can't resolve `*.localhost`, so the
-// proxy must target the IP and FORCE the `Host` header — a
-// `target: "http://phoenix.localhost:1337"` fails with `ENOTFOUND`.
+// `http://phoenix.localhost:<workerDevPort()>`. Node can't resolve `*.localhost`,
+// so the proxy must target the IP and FORCE the `Host` header — a
+// `target: "http://phoenix.localhost:…"` fails with `ENOTFOUND`.
 // `changeOrigin: false` keeps our forced `Host` (changeOrigin would rewrite it
-// to the target's `127.0.0.1:1337`, which the worker's vhost routing rejects).
+// to the target's `127.0.0.1:…`, which the worker's vhost routing rejects).
 const worker = {
-	target: "http://127.0.0.1:1337",
+	target: `http://127.0.0.1:${workerDevPort()}`,
 	changeOrigin: false,
 	headers: {host: "phoenix.localhost"},
 };
@@ -50,7 +51,7 @@ export default defineConfig({
 		react(),
 	],
 	server: {
-		port: 3000,
+		port: spaDevPort(),
 		strictPort: true,
 		// Forward the worker-owned paths to `alchemy dev`. A Vite proxy key is a
 		// prefix match, so `/fate` covers `/fate`, `/fate/live` (SSE — streams
