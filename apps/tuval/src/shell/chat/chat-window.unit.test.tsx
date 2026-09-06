@@ -663,7 +663,7 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 				call("leaf", {name: "bash", parentId: "inner"}),
 			]),
 			{},
-			{scroll: 0, draft: "", cursor: null, atOldest: false, expanded: [], unfolded: ["agent"]},
+			{...initialChatView, unfolded: ["agent"]},
 		);
 
 		const folds = screen.getAllByRole("button", {name: /nested calls?$/});
