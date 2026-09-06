@@ -85,8 +85,8 @@
 			"paths": ["claude-plugins/fabrika/skills/review-ui/contract.md"]
 		},
 		"plugin-triage": {
-			"ceiling": 308,
-			"why": "The triage skill's text, cleared by #8295, the triage sweep child.",
+			"ceiling": 14,
+			"why": "All 14 are verbatim pins of strings the shipped triage verbs print — the exit-code meanings in packages/fabrika-cli/src/triage/codes.ts and the stderr lines in queue-verb.ts, homes-verb.ts, split-verb.ts, enrich-verb.ts, apply-verb.ts, park-verb.ts, provenance-verb.ts, blocked-by.ts and kill-verb.ts, quoted in the Errors tables and echoed in the worked examples. The reference sits inside the quoted string, so it is a copy of behaviour that lives in packages/fabrika-cli/src/triage/ — the source #8308 owns. It shrinks when that child rewrites the strings; changing the pin first would make the contract quote a line no verb prints. The skill's own prose carries no reference at all.",
 			"paths": ["claude-plugins/fabrika/skills/triage"]
 		},
 		"plugin-governance": {
