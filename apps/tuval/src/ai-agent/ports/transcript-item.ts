@@ -71,12 +71,50 @@ export interface ToolItem extends ItemBase {
 	readonly parentId?: ItemId;
 }
 
-export interface SystemItem extends ItemBase {
-	readonly kind: "system";
+/**
+ * The agent's reasoning for one turn, as content and nothing else.
+ *
+ * Model-blind like every other item: no provider signature, no redaction flag, no effort level.
+ * `ports/thinking.ts` is the effort-level *control* and has nothing to do with this row.
+ */
+export interface ThinkingItem extends ItemBase {
+	readonly kind: "thinking";
 	readonly text: string;
 }
 
-export type TranscriptItem = UserItem | AssistantItem | ToolItem | SystemItem;
+/**
+ * The session compacted its context here, and `text` is the line the marker is labelled with.
+ *
+ * Its own kind rather than a `SystemItem` so a window can draw a boundary where the earlier turns
+ * went, instead of one more line of session prose the reader scrolls past.
+ */
+export interface CompactionItem extends ItemBase {
+	readonly kind: "compaction";
+	readonly text: string;
+}
+
+/**
+ * One backend notice, collapsed: `text` is the line always shown, `detail` the body a window may
+ * fold away.
+ *
+ * Every notice a backend raises — status, a hook firing or failing, a local command's output, a
+ * refusal, a rate limit — lands in this one shape. There is deliberately no field naming which of
+ * those it was: a per-subtype field would put the backend's own vocabulary on the port, and the
+ * SDK alone has some fifteen subtypes that would each want one.
+ */
+export interface SystemItem extends ItemBase {
+	readonly kind: "system";
+	readonly text: string;
+	readonly detail?: string;
+}
+
+export type TranscriptItem =
+	| UserItem
+	| AssistantItem
+	| ToolItem
+	| SystemItem
+	| ThinkingItem
+	| CompactionItem;
 
 /** One tool result may spend this many bytes of the window; the rest is omission metadata. */
 export const TOOL_RESULT_BYTE_LIMIT = 8_000;
@@ -139,6 +177,12 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 				(value.local === undefined || typeof value.local === "boolean")
 			);
 		case "system":
+			return (
+				typeof value.text === "string" &&
+				(value.detail === undefined || typeof value.detail === "string")
+			);
+		case "thinking":
+		case "compaction":
 			return typeof value.text === "string";
 		case "assistant":
 			return (
