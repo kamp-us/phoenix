@@ -230,6 +230,17 @@ describe("runRender", () => {
 		expect(outcome.stderr.at(-1)).toContain('app "web" could not start: the command exited with 1');
 	});
 
+	it("refuses on 11 when a ready leg names no origin for an app it was asked to start", async () => {
+		const outcome = await run(LANE_OK, captured, {
+			startHarness: () => Effect.succeed({_tag: "Ready", origins: new Map(), stop: Effect.void}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain(
+			'the render leg reported ready without an origin for app "web"',
+		);
+		expect(outcome.stderr.at(-1)).toContain('surface "/pano" is UNKNOWN');
+	});
+
 	it("refuses a missing harness declaration on 19", async () => {
 		const outcome = await run(LANE_OK, {files: {}});
 		expect(outcome.code).toBe(NO_HARNESS);

@@ -10,8 +10,11 @@
  *
  * Ports are allocated here rather than declared, so two worktrees can render at once and neither can
  * reach the other's server (#7992). The allocation binds `:0`, reads the port the OS chose and lets
- * go, so a declared command should pass the port with its own strict-port flag: losing the race then
- * fails the start loudly instead of silently binding somewhere else.
+ * go, and the origin every capture is taken from is built from that number — so a declared command
+ * **must** pass the port with its own strict-port flag. Losing the race then fails the start loudly;
+ * a server that falls back to the next free port instead leaves the origin pointing at whatever else
+ * answers there, and the readiness probe cannot tell that apart from its own server. An app whose
+ * command cannot be made strict is left undeclared.
  */
 import {spawn} from "node:child_process";
 import {createServer} from "node:net";
@@ -140,6 +143,9 @@ export const spawnHarness: HarnessLeg = (apps: ReadonlyArray<HarnessApp>, root: 
 		catch: legFailed,
 	}).pipe(
 		Effect.catch((cause) =>
-			Effect.succeed<HarnessStart>({_tag: "Failed", app: "?", reason: cause.reason}),
+			// The leg itself threw, so no app owns the failure — the refusal reads `app "the render leg"
+			// could not start`, which is what happened, rather than a placeholder that reads as a bug in
+			// the message.
+			Effect.succeed<HarnessStart>({_tag: "Failed", app: "the render leg", reason: cause.reason}),
 		),
 	);

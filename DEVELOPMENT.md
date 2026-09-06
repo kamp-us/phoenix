@@ -137,12 +137,14 @@ The file declares a **list of apps**, because this repo runs two (ADR [0345](./.
 | Key | Where | Why |
 |---|---|---|
 | `apps[].name` | required, kebab-case | Names the app in every refusal, so "the harness did not come up" says *which* server. |
-| `apps[].command` | required, must carry `{{port}}` | The port is **allocated at start, never declared**: `{{port}}` becomes a free port the render leg just bound and let go, and `{{port:<name>}}` allocates a second one for the same command (that is how `web` passes its worker port to both `alchemy dev` and the Vite proxy). Two worktrees can therefore render at once and neither can reach the other's tree. Output goes to stderr, which is the stream a failed readiness probe quotes back. |
+| `apps[].command` | required, must carry `{{port}}`, must bind it strictly | The port is **allocated at start, never declared**: `{{port}}` becomes a free port the render leg just bound and let go, and `{{port:<name>}}` allocates a second one for the same command (that is how `web` passes its worker port to both `alchemy dev` and the Vite proxy). The command has to pass its server's own strict-port flag, so losing the race between the allocation and the bind fails the start loudly. A server that falls back to the next free port instead leaves the capture origin pointing at whatever else answers on the allocated one, which on a machine running several worktrees is a green capture of another tree. Two worktrees can therefore render at once and neither can reach the other's tree. Output goes to stderr, which is the stream a failed readiness probe quotes back. |
 | `apps[].mount` | required, distinct per app | The prefix of the surface namespace this app owns. `/` is the catch-all. |
 | `apps[].basePath` | optional, defaults to `mount` | What the mount maps to on the app's own server. The default is the identity; a Tuval proof server rooted at `/` says `"basePath": "/"` so `/tuval/chat` reaches its `/`. |
 | `apps[].readyPath` | optional, defaults to `/` | Polled for 200 **per app**. `web` uses `/api/health` so a data-backed capture never goes green on Vite alone; `web-lab` uses `/`, because `/lab/*` is client-only and waiting on a worker it does not need was the second half of #7992. |
 
-The six apps declared today: `web` (mount `/`, both dev legs, ready on `/api/health`), `web-lab` (mount `/lab`, Vite alone), and one per `apps/tuval` proof script — `tuval-chat`, `tuval-pi-window`, `tuval-pi-vertical`, `tuval-claude-real`, each mounted under `/tuval/…` and rooted at `/`.
+The five apps declared today: `web` (mount `/`, both dev legs, ready on `/api/health`), `web-lab` (mount `/lab`, Vite alone), and one per rendering `apps/tuval` proof script — `tuval-chat`, `tuval-pi-window`, `tuval-pi-vertical`, each mounted under `/tuval/…` and rooted at `/`.
+
+Two of `apps/tuval`'s proof scripts are deliberately **not** declared. `proof:claude-real` boots the real Claude Code CLI on the operator's own login and spends model tokens ([`apps/tuval/src/claude/proof/serve.ts`](./apps/tuval/src/claude/proof/serve.ts)) — it is the founder's run by hand, so no verb an agent invokes may reach it, and it serves an empty desk anyway, which is nothing to capture. `proof:page-reconnect` is tracked separately. Render either by starting it yourself.
 
 `apps/web` reads both dev ports through [`apps/web/dev-ports.ts`](./apps/web/dev-ports.ts) (`PHOENIX_SPA_PORT`, `PHOENIX_WORKER_PORT`), which is the one place the Vite proxy and the worker it proxies to can agree. Unset, they are the historical `3000` and `1337`, so `pnpm dev` by hand is unchanged.
 
@@ -154,7 +156,7 @@ Exit `15` is real but narrower than a UI route: it needs a response that is genu
 
 A surface that falls outside **every** declared mount is exit `10`, and the refusal lists the mounts. That is a hole in the declaration rather than a broken page, so the fix is a new `apps[]` entry, not a retry.
 
-`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment to render anything under the `web` app. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` naming `web` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust. The other five apps need no credentials, so `/lab/*` and every `/tuval/*` surface renders without them.
+`alchemy dev` binds real Cloudflare resources — there is no offline emulator, as the Quickstart says — so `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` have to be in your environment to render anything under the `web` app. Without them the worker leg never comes up, readiness times out, and `ui render` exits `11` naming `web` with alchemy's own error on stderr. That is UNKNOWN, not a capture to trust. The other four apps need no credentials, so `/lab/*` and every `/tuval/*` surface renders without them.
 
 ## Conventions
 

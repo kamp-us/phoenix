@@ -218,7 +218,7 @@ Each `apps[]` entry:
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `name` | string, kebab-case | yes | names this app in every refusal, and must be unique across the list |
-| `command` | string | yes | the shell command that starts this app, run from the repo root; `ui render` starts it, waits for readiness, and kills it on exit. It **must** carry the `{{port}}` placeholder — see below |
+| `command` | string | yes | the shell command that starts this app, run from the repo root; `ui render` starts it, waits for readiness, and kills it on exit. It **must** carry the `{{port}}` placeholder and bind it strictly — see below |
 | `mount` | string, `/`-prefixed | yes | the prefix of the surface namespace this app owns, unique across the list. A surface goes to the app whose mount is its longest match, on segment boundaries (`/lab` claims `/lab/x`, never `/laboratory`); `/` is the catch-all |
 | `basePath` | string, `/`-prefixed | no (default: the mount) | what the mount maps to on this app's own server. The default is the identity, so only an app serving those pages at a different root (a proof server rooted at `/`) has to say so |
 | `readyPath` | string | no (default `/`) | path polled for HTTP 200 to detect **this app's** readiness; not ready within 60s is `11` naming the app |
@@ -229,6 +229,13 @@ reach the other's tree. `{{port:<name>}}` allocates a further port for the same 
 occurrence of one name gets the same number — that is how an app passes one port to two processes. A
 command with no unnamed `{{port}}` is refused. The app's base URL is `http://localhost:<the unnamed
 port>`, and a surface resolves to `<base><basePath + the remainder past the mount>`.
+
+The allocation binds `:0`, reads the number and lets go, so the **command must bind that exact port
+or fail** — it passes its server's own strict-port flag. That base URL is otherwise a guess: a server
+that quietly takes the next free port leaves every capture aimed at whatever else answers on the
+allocated one, and the readiness probe returns 200 from a sibling worktree's server without anything
+downstream being able to tell. A tool cannot check this, so it is a rule on the declaration: an app
+whose command cannot be made strict is left undeclared.
 
 A file that exists but violates this schema is `4` from `ui render` — same whole-file rule as the
 registry. A surface that falls outside every declared mount is `10`, and the refusal lists them.

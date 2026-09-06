@@ -117,6 +117,12 @@ interface Placement {
 	readonly url: string;
 }
 
+/** One requested surface bound to the app whose mount claims it. */
+interface Served {
+	readonly surface: string;
+	readonly app: HarnessApp;
+}
+
 /** The apps the requested surfaces resolve to, or the first surface the declaration has no app for. */
 const resolveApps = (
 	config: HarnessConfig,
@@ -132,12 +138,6 @@ const resolveApps = (
 	}
 	return {_tag: "Resolved", served};
 };
-
-/** One requested surface bound to the app whose mount claims it. */
-interface Served {
-	readonly surface: string;
-	readonly app: HarnessApp;
-}
 
 /** A usage/vocabulary refusal on the operands, or `null` when they are well formed. */
 export const checkOperands = (options: RenderOptions): VerbOutcome | null => {
@@ -353,12 +353,22 @@ export const runRender = (
 			);
 		}
 
-		const placements = placed.served.map(
-			({surface, app}): Placement => ({
-				surface,
-				url: surfaceUrl(started.origins.get(app.name) ?? "", app, surface),
-			}),
-		);
+		const placements: Array<Placement> = [];
+		for (const {surface, app} of placed.served) {
+			const origin = started.origins.get(app.name);
+			// `needed` is derived from `placed.served`, so a Ready leg that named no origin for one of
+			// them broke its own contract. Refusing here keeps that a named bug rather than a relative
+			// URL playwright reports as an obscure navigation error.
+			if (origin === undefined) {
+				yield* started.stop;
+				return refuse(
+					PRECONDITION_UNKNOWN,
+					`${VERB}: the render leg reported ready without an origin for app "${app.name}" — surface "${surface}" is UNKNOWN.`,
+					lane.notes,
+				);
+			}
+			placements.push({surface, url: surfaceUrl(origin, app, surface)});
+		}
 		const results = yield* Effect.forEach(
 			placements,
 			(placement) => shoot(options, harness.config, lane.root, setDir, placement),
