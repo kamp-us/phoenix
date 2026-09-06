@@ -8,31 +8,55 @@
  * The two are held together by `session-transcript.unit.test.ts`, which decodes the very items the
  * ports slice's predicate admits.
  *
+ * The schema is written so that anything it decodes the ports predicate also admits: the number
+ * arms are finite, an id is non-empty, and a tool result carries the port's own byte bound. Without
+ * that the wire would admit an "item" `isTranscriptItem` refuses — `NaN` is the miniature case.
+ *
  * `next` is the cursor for the page older than this one, or `null` at the beginning of history —
  * the same grammar `transcript-page`'s payload carries, so a caller that pages here and a window
  * that pages over the live port ask for older history the one way.
  */
 
 import {Schema} from "effect";
-import type {JsonValue} from "../ai-agent/ports/transcript-item.ts";
+import {
+	byteLength,
+	type JsonValue,
+	TOOL_RESULT_BYTE_LIMIT,
+} from "../ai-agent/ports/transcript-item.ts";
 
 /** The spell's address on the session-list program row: `session.transcript`. */
 export const SESSION_TRANSCRIPT_PATH = ["session", "transcript"] as const;
 
-/** A tool's input, as `TranscriptItem` declares it: plain JSON and never a backend's own type. */
+/**
+ * A tool's input, as `TranscriptItem` declares it: plain JSON and never a backend's own type.
+ *
+ * The number arm is `Finite` because `isJsonValue` refuses `NaN` and `Infinity` and because JSON
+ * has no spelling for either — `JSON.stringify` writes them as `null`, so a wire that admitted one
+ * would decode a value it could never carry back.
+ */
 export const Json: Schema.Codec<JsonValue, JsonValue> = Schema.suspend(() =>
 	Schema.Union([
 		Schema.Null,
 		Schema.Boolean,
-		Schema.Number,
+		Schema.Finite,
 		Schema.String,
 		Schema.Array(Json),
 		Schema.Record(Schema.String, Json),
 	]),
 ) as Schema.Codec<JsonValue, JsonValue>;
 
-const ItemId = Schema.String;
-const Timestamp = Schema.Number;
+const ItemId = Schema.NonEmptyString;
+const Timestamp = Schema.Finite;
+
+/** A result already cut to the port's bound, so the wire cannot carry one the predicate refuses. */
+const ToolResult = Schema.Struct({
+	text: Schema.String.check(
+		Schema.makeFilter((value: string) => byteLength(value) <= TOOL_RESULT_BYTE_LIMIT, {
+			message: `Expected a tool result already cut to ${TOOL_RESULT_BYTE_LIMIT} bytes`,
+		}),
+	),
+	omitted: Schema.Struct({bytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))}),
+});
 
 export const UserItem = Schema.Struct({
 	kind: Schema.Literal("user"),
@@ -56,10 +80,7 @@ export const ToolItem = Schema.Struct({
 	timestamp: Timestamp,
 	name: Schema.String,
 	input: Json,
-	result: Schema.Struct({
-		text: Schema.String,
-		omitted: Schema.Struct({bytes: Schema.Number}),
-	}),
+	result: ToolResult,
 	status: Schema.Literals(["running", "ok", "error"]),
 	parentId: Schema.optionalKey(ItemId),
 });
