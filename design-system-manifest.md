@@ -166,9 +166,10 @@ until they land, the rule still governs (do not seed a fresh hand-built instance
 | A functional icon (vote / nav / toolbar / inline) | A drawn **Lucide** icon at the ruled size + role token (the [icon idiom](#the-canonical-icon-idiom) below) | Ship a Unicode functional glyph (`△` `↑` `→` `⌘` `↵`) or a hand-inlined SVG as an icon. |
 
 **One system throughout:** one type ramp, one four-level elevation system, one icon idiom — never
-a second type/elevation system or a fourth icon idiom. The icon idiom's **positive** definition —
-the set, stroke, sizes, color, vote glyph, and function/affect/key-legend partition — is
-[encoded below](#the-canonical-icon-idiom) (ADR [0166](https://github.com/kamp-us/phoenix/blob/main/.decisions/0166-canonical-icon-idiom.md)).
+a second type/elevation system or a fourth icon idiom — and a *partition class* is not an idiom, so
+the boundary rule's state-marker class below adds no second icon system. The icon idiom's
+**positive** definition — the set, stroke, sizes, color, vote glyph, and the
+function/affect/key-legend/state-marker partition — is [encoded below](#the-canonical-icon-idiom) (ADR [0166](https://github.com/kamp-us/phoenix/blob/main/.decisions/0166-canonical-icon-idiom.md)).
 
 ---
 
@@ -222,11 +223,20 @@ migration of the live glyph surfaces to this idiom is a **separate downstream ch
 - **Vote glyph — a drawn triangle** (not a chevron — the HN / lobste.rs vote lineage): filled-accent
   (`--accent`) when active, outline-secondary (`--text-secondary`) when inactive, up/down symmetry,
   36px hit area. This is the one affordance that needs real design; the rest is substitution.
-- **The three-way partition (the boundary rule).** **Function** → a drawn Lucide icon (anywhere).
+- **The four-way partition (the boundary rule).** **Function** → a drawn Lucide icon (anywhere).
   **Affect** → the curated six-emoji reaction set (monochrome-controlled per ADR
   [0139](https://github.com/kamp-us/phoenix/blob/main/.decisions/0139-reaction-curated-palette.md)),
   **only** in the reaction bar. **Key-legends** → `⌘` `⌥` `⇧` `↵` `⎋` are keycap typography, legal
-  **only** inside a `<kbd>` chip — never free-floating, never an icon.
+  **only** inside a `<kbd>` chip — never free-floating, never an icon. **State markers** → a glyph
+  doing **state** work (a `::before` caret on the active row, a check on a set item, a dot on an open
+  section) is **not** an icon and stays legal as typography — delivered either as CSS generated
+  content or on a decorative element kept out of the accessible name — but **only** while both
+  bounds hold: it pairs with a non-visual state signal (the ARIA state the component already exposes
+  — `aria-selected`, `aria-checked`, `aria-expanded` — or a visually-hidden state word, so state
+  never rides on the glyph alone, Pillar 4), **and** it never reaches the accessible name (the
+  alternative-text form `content: "\203A" / ""`, or an `aria-hidden` element). Fail either bound and
+  it is a functional glyph again, under the ban. A glyph naming a *function* is a Lucide icon
+  wherever it is drawn (ADR [0166](https://github.com/kamp-us/phoenix/blob/main/.decisions/0166-canonical-icon-idiom.md) §8).
 
 ---
 
@@ -256,7 +266,14 @@ card / meta-row / count-pill by hand.
 - **Never** ship raw system-emoji glyphs as reaction affordances.
 - **Never** introduce a fourth icon idiom or a second type/elevation system.
 - **Never** ship a Unicode functional glyph (`△` `↑` `→` `⌘` `↵`) or a hand-inlined SVG as an
-  icon — functional icons are drawn Lucide (the [icon idiom](#the-canonical-icon-idiom)).
+  icon — functional icons are drawn Lucide (the [icon idiom](#the-canonical-icon-idiom)). A **state
+  marker** is not an icon and this does not reach it: a state glyph — in CSS generated content or on
+  a decorative element — is legal under the boundary rule's fourth class, inside both of that
+  class's bounds.
+- **Never** ship a state marker outside those bounds — it pairs with the ARIA state or a
+  visually-hidden word (never state on the glyph alone), and it stays out of the accessible name via
+  `content: "\203A" / ""` or an `aria-hidden` element. Outside them it is a functional glyph and the
+  line above governs it.
 - **Never** hardcode an icon's color — icons are `stroke: currentColor` driven by role tokens
   only (the active vote glyph's `--accent` fill is the one exception).
 - **Never** place a keycap glyph (`⌘` `⌥` `⇧` `↵` `⎋`) free-floating as an icon — it is legal only
