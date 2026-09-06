@@ -83,84 +83,27 @@ const open = async (state: AiAgentSessionState, windows = 1): Promise<Opened> =>
 	return {process, hosts};
 };
 
-const usageLine = (): HTMLElement => screen.getByRole("group", {name: "Session usage"});
-const sessionLine = (): HTMLElement => screen.getByRole("group", {name: "Session details"});
-
-describe("the Claude usage line", () => {
-	it("renders the model, the cumulative cost and the token counts off the state", async () => {
+describe("what the Claude window's chat bar carries", () => {
+	// #8190 sent the usage line and the session line to the desk inspector, so the bar is the phase
+	// line and nothing else — and it reads identically to the Pi window's, which is the point of the
+	// ruling. The cwd is the fact that forced it: a raw absolute path wrapped the bar over three
+	// lines at desk width.
+	it("is the phase line, and neither of the two lines it used to add", async () => {
 		await open(
 			claudeSessionState({
 				usage: usageOf({model: "claude-sonnet-4-5", cost: 0.0142, input: 1204, output: 340}),
 			}),
 		);
-		const line = usageLine();
-		expect(within(line).getByText("claude-sonnet-4-5")).toBeDefined();
-		expect(within(line).getByText("$0.0142")).toBeDefined();
-		expect(within(line).getByText("1,204 in")).toBeDefined();
-		expect(within(line).getByText("340 out")).toBeDefined();
-	});
-
-	it("says so rather than blanking before the first usage event names a model", async () => {
-		await open(claudeSessionState());
-		const line = usageLine();
-		expect(within(line).getByText("no model yet")).toBeDefined();
-		expect(within(line).getByText("$0.00")).toBeDefined();
-	});
-
-	it("moves as usage accumulates on the process", async () => {
-		const state = claudeSessionState({
-			usage: usageOf({model: "claude-sonnet-4-5", cost: 0.01, input: 100, output: 10}),
-		});
-		const {process} = await open(state);
-		expect(within(usageLine()).getByText("100 in")).toBeDefined();
-
-		await Effect.runPromise(
-			process.commit({
-				...state,
-				usage: usageOf({model: "claude-opus-4-1", cost: 0.0325, input: 2500, output: 640}),
-			}),
-		);
-
-		await waitFor(() => {
-			const line = usageLine();
-			expect(within(line).getByText("claude-opus-4-1")).toBeDefined();
-			expect(within(line).getByText("$0.0325")).toBeDefined();
-			expect(within(line).getByText("2,500 in")).toBeDefined();
-			expect(within(line).getByText("640 out")).toBeDefined();
-		});
-	});
-});
-
-describe("the Claude session line", () => {
-	it("renders the session id and the cwd off the state", async () => {
-		await open(claudeSessionState());
-		const line = sessionLine();
-		expect(within(line).getByText(`session ${SESSION_ID}`)).toBeDefined();
-		expect(within(line).getByText(CWD)).toBeDefined();
-	});
-
-	it("says so rather than blanking before start has answered with a session id", async () => {
-		await open(claudeSessionState({sessionId: null, phase: "starting"}));
-		expect(within(sessionLine()).getByText("session no session yet")).toBeDefined();
-	});
-
-	it("follows the session id a reconnect replaces", async () => {
-		const state = claudeSessionState({sessionId: null, phase: "starting"});
-		const {process} = await open(state);
-		await Effect.runPromise(process.commit({...state, phase: "ready", sessionId: "second"}));
-		await waitFor(() => expect(within(sessionLine()).getByText("session second")).toBeDefined());
-	});
-});
-
-describe("neither extra line is a live region", () => {
-	// Cost and token counts move on every usage event of a running turn, so a live region here
-	// would narrate the whole turn to a screen-reader user.
-	it("because both change while a turn runs", async () => {
-		await open(claudeSessionState({phase: "prompting"}));
-		for (const line of [usageLine(), sessionLine()]) {
-			expect(line.getAttribute("role")).toBe("group");
-			expect(line.getAttribute("aria-live")).toBeNull();
-		}
+		expect(screen.queryByRole("group", {name: "Session usage"})).toBeNull();
+		expect(screen.queryByRole("group", {name: "Session details"})).toBeNull();
+		expect(document.querySelector(".tuval-claude-extras")).toBeNull();
+		expect(screen.queryByText("claude-sonnet-4-5")).toBeNull();
+		expect(screen.queryByText(CWD)).toBeNull();
+		expect(screen.queryByText(`session ${SESSION_ID}`)).toBeNull();
+		const bar = document.querySelector<HTMLElement>(".tuval-chat-bar");
+		expect(bar).not.toBeNull();
+		expect(bar?.querySelectorAll(".tuval-chat-phase")).toHaveLength(1);
+		expect((bar as HTMLElement).textContent?.trim()).toBe("Ready.");
 	});
 });
 
@@ -170,8 +113,6 @@ describe("two windows over one Claude process", () => {
 		const logs = screen.getAllByRole("log", {name: "Transcript"});
 		expect(logs).toHaveLength(2);
 		for (const log of logs) expect(within(log).getByText(FIRST_PROMPT)).toBeDefined();
-		expect(screen.getAllByRole("group", {name: "Session usage"})).toHaveLength(2);
-		expect(screen.getAllByRole("group", {name: "Session details"})).toHaveLength(2);
 
 		const [left, right] = hosts as readonly [ClaudeHost, ClaudeHost];
 		await Effect.runPromise(left.setView({...initialChatView, draft: "only mine"}));
@@ -279,10 +220,14 @@ describe("what this binding adds to the shared window", () => {
 		expect(controlsIn(claude.rendered.container)).toEqual(controlsIn(shared.rendered.container));
 	});
 
-	it("adds only the two lines, and both are plain text", async () => {
-		const {rendered} = await mount(claudeChatWindow, claudeSessionState());
-		const extras = rendered.container.querySelector<HTMLElement>(".tuval-claude-extras");
-		expect(extras).not.toBeNull();
-		expect(controlsIn(extras as HTMLElement)).toEqual([]);
+	it("adds no markup of its own either, now that both lines are the inspector's", async () => {
+		const state = claudeSessionState();
+		const shared = await mount(chatWindow, state);
+		const claude = await mount(claudeChatWindow, state);
+		// React mints a fresh `useId` per mount, so the two trees differ in every generated id and in
+		// nothing else. Blanking them is what makes "identical markup" a claim about what the binding
+		// renders rather than about the order the two were mounted in.
+		const withoutIds = (root: HTMLElement) => root.innerHTML.replace(/_r_[0-9a-z]+_/g, "_id_");
+		expect(withoutIds(claude.rendered.container)).toEqual(withoutIds(shared.rendered.container));
 	});
 });

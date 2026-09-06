@@ -7,7 +7,8 @@
  * reaches none of this.
  */
 
-export {SESSION_LIST_WINDOW_REF} from "../renderer-ref.ts";
+export {AI_AGENT_INSPECTOR_REF, SESSION_LIST_WINDOW_REF} from "../renderer-ref.ts";
+export {AiAgentInspector} from "./AiAgentInspector.tsx";
 export {
 	listView,
 	type OpenPhase,

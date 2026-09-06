@@ -21,6 +21,7 @@ import {
 import {
 	type ClipboardEvent,
 	type KeyboardEvent,
+	type ReactNode,
 	useEffect,
 	useId,
 	useMemo,
@@ -144,7 +145,8 @@ interface Activity {
 	readonly text: string;
 }
 
-interface PickerItem {
+/** One row of a settings picker. Exported as `AgentSettingItem`, which is what a host's slot binds. */
+export interface PickerItem {
 	readonly value: string;
 	readonly label: string;
 	/** Secondary text beside the label, for a row the label alone does not tell apart. */
@@ -386,6 +388,16 @@ export interface AgentChatInputProps {
 	 * consumer that persists the draft somewhere of its own; the component still owns the value.
 	 */
 	readonly onDraftChange?: (draft: string) => void;
+	/**
+	 * A host's own settings controls, rendered inside the settings fieldset after the ones this
+	 * component owns. It is a slot rather than another bridge method because what belongs here is
+	 * per-host vocabulary the bridge has no words for — Tuval's agent mode is the first — and a
+	 * bridge method would make every implementor answer a question only one of them has.
+	 *
+	 * Build the control out of `AgentSettingMenu` so it reads as one row with the model and thinking
+	 * pickers rather than as a foreign control wedged beside them.
+	 */
+	readonly settings?: ReactNode;
 }
 
 export function AgentChatInput({
@@ -395,6 +407,7 @@ export function AgentChatInput({
 	variant = "harness",
 	mockWhenUnavailable = false,
 	onDraftChange,
+	settings,
 }: AgentChatInputProps) {
 	const activeBridge = bridge ?? unavailableBridge;
 	const t = useDesignT();
@@ -1179,6 +1192,7 @@ export function AgentChatInput({
 										</div>
 									</>
 								)}
+								{settings}
 							</fieldset>
 							{variant === "focused" ? (
 								<Menu
@@ -1297,27 +1311,35 @@ export function AgentChatInput({
 	);
 }
 
-function SettingMenu({
-	label,
-	items,
-	value,
-	onValueChange,
-	disabled,
-}: {
+export interface SettingMenuProps {
+	/** The control's accessible name, and the group heading inside the menu. */
 	readonly label: string;
 	readonly items: readonly PickerItem[];
 	readonly value?: string;
 	readonly onValueChange: (value: string) => void;
 	readonly disabled?: boolean;
-}) {
+}
+
+/**
+ * One settings picker of the composer's fieldset. Exported as `AgentSettingMenu` so a host filling
+ * the `settings` slot builds its control out of this rather than reaching for a bare `Select`,
+ * which would put a differently-shaped control in a row of these.
+ */
+export function SettingMenu({label, items, value, onValueChange, disabled}: SettingMenuProps) {
 	const t = useDesignT();
 	const [open, setOpen] = useState(false);
 	const selected = items.find((item) => item.value === value);
+	// Two different unselected states, and only one of them is loading: an empty `items` is a host
+	// that has not resolved what it can offer, while a populated `items` with no `value` is a
+	// setting the session simply has not picked yet (#8190). Naming the second one "loading" told
+	// the screen reader something untrue.
+	const unselectedName =
+		items.length === 0 ? t("admin.agent.picker.loading") : t("admin.agent.picker.none");
 	const selectedName = selected
 		? selected.note
 			? `${selected.label} (${selected.note})`
 			: selected.label
-		: t("admin.agent.picker.loading");
+		: unselectedName;
 	return (
 		<Menu
 			open={open}
@@ -1335,7 +1357,7 @@ function SettingMenu({
 					disabled={disabled}
 				>
 					{selected?.icon ? <Icon icon={selected.icon} size={14} /> : null}
-					<span>{selected?.label ?? "…"}</span>
+					<span>{selected?.label ?? unselectedName}</span>
 					{selected?.note ? (
 						<span className="kp-agent-chat__picker-note">{selected.note}</span>
 					) : null}

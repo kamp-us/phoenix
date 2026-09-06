@@ -23,6 +23,7 @@
 import {Layer} from "effect";
 import type {AiAgentSessionMsg} from "../ai-agent/core/index.ts";
 import {type AiAgentProgram, aiAgentProgram} from "../ai-agent/program.ts";
+import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
 import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
 import type {SpellBridge} from "../commands/bridge/index.ts";
 import type {Scope as SpellScope} from "../commands/spell.ts";
@@ -117,6 +118,7 @@ export const claudeSession = (options: ClaudeSessionProgramOptions): ClaudeSessi
 				...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 			},
 			renderer: CLAUDE_CHAT_WINDOW_REF,
+			inspector: AI_AGENT_INSPECTOR_REF,
 			capabilities: CLAUDE_SESSION_CAPABILITIES,
 		}),
 		settings,

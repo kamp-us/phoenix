@@ -96,6 +96,7 @@ export const admin = {
 	"admin.agent.image.add": "Görsel ekle",
 	"admin.agent.settings": "Pi ayarları",
 	"admin.agent.picker.loading": "yükleniyor",
+	"admin.agent.picker.none": "seçili değil",
 	"admin.agent.setting.model": "model",
 	"admin.agent.setting.thinking": "düşünme eforu",
 	"admin.agent.select.model": "Pi modeli",

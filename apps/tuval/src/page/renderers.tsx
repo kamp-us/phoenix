@@ -24,11 +24,17 @@ import type {ReactElement} from "react";
 import {useEffect, useState} from "react";
 import {isAiAgentSessionState} from "../ai-agent/core/snapshot.ts";
 import {isSessionListState} from "../ai-agent/renderer-ref.ts";
-import {SESSION_LIST_WINDOW_REF, SessionListWindow} from "../ai-agent/window/index.ts";
+import {
+	AI_AGENT_INSPECTOR_REF,
+	AiAgentInspector,
+	SESSION_LIST_WINDOW_REF,
+	SessionListWindow,
+} from "../ai-agent/window/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, ClaudeChatWindow} from "../claude/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
 import {PI_CHAT_WINDOW_REF, PiChatWindow} from "../pi/window/index.ts";
+import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
 import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
 import {Pending, type ReadableRenderer, readsState} from "./readable-state.tsx";
@@ -112,4 +118,22 @@ export const pageRenderers: Readonly<Record<string, ReadableRenderer>> = {
 	[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, PiChatWindow),
 	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, ClaudeChatWindow),
 	[SESSION_LIST_WINDOW_REF.ref]: readsState(isSessionListState, SessionListWindow),
+};
+
+/**
+ * Every desk-inspector renderer the page knows, by the reference a program row names it with. It is
+ * a second table rather than an arm of the one above because the desk region resolves through
+ * `inspectorFor` and mounts an `InspectorRenderer`, which is a different type from a window
+ * renderer and reaches the region by a different walk (`../shell/desk/compose.ts`).
+ *
+ * There is no `readsState` guard here: the admission wrapper is for a *window* renderer, and this
+ * renderer performs the same check itself at the one place it reads
+ * (`../ai-agent/window/AiAgentInspector.tsx`).
+ *
+ * Without this table `AttachedDesk` takes its empty default, the walk ends at `unknown-ref` and the
+ * region shows a sentence in the running page whatever a row declares — which is what #8218 left
+ * behind and this issue's ruling needs filled.
+ */
+export const pageInspectors: Readonly<Record<string, AnyInspectorRenderer>> = {
+	[AI_AGENT_INSPECTOR_REF.ref]: AiAgentInspector,
 };

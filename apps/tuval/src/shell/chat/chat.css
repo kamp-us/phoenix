@@ -304,8 +304,9 @@
 	justify-content: space-between;
 }
 
-/* The bar's trailing group: the program's own extras, then the mode switch. One flex child, so the
-   bar stays a two-ended row whether or not a renderer passes extras. */
+/* The bar's trailing group: the program's own extras, and nothing else since #8190 sent every fact
+   the bar used to carry to the desk inspector. One flex child, so the bar stays a two-ended row
+   whether or not a renderer passes extras. */
 .tuval-chat-bar-end {
 	display: flex;
 	flex: 0 1 auto;
@@ -314,6 +315,9 @@
 	min-inline-size: 0;
 }
 
+/* The mode picker sits in the composer's settings fieldset now (#8190), where `AgentSettingMenu`
+   owns everything about how it looks. This wrapper carries only its refusal to shrink beside the
+   model and thinking pickers. */
 .tuval-chat-mode {
 	flex: 0 0 auto;
 }

@@ -74,12 +74,14 @@ export type ChatWindowRenderer = WindowRenderer<
 
 export interface ChatWindowOptions {
 	/**
-	 * The program's own extras in the status bar, beside the phase line and the mode switch.
+	 * The program's own extras in the status bar, beside the phase line.
 	 *
 	 * This is the whole of what a thin renderer adds on top of the shared window (founder ruling
 	 * 2026-09-02, amended on #7572 / #7584), and it is a function of the live state because that is
-	 * what a renderer is: `f(state, view)`. Pi's is its usage line (#7611); a program with no extras
-	 * passes none and the bar renders exactly as it did before this slot existed.
+	 * what a renderer is: `f(state, view)`. **No program passes one today**: the founder's 2026-09-05
+	 * ruling (#8190) sent both backends' usage and session lines to the desk inspector, so the bar
+	 * carries the phase line alone. The slot itself stays — retiring it is a separate call — and a
+	 * program with no extras renders exactly the bar both backends render now.
 	 */
 	readonly extras?: (state: AiAgentSessionState) => ReactNode;
 	/** Mints one idempotency key per deliberate send (ruling 2, #7570). */
@@ -735,7 +737,6 @@ function ChatWindow({
 					</p>
 					<div className="tuval-chat-bar-end">
 						{options.extras === null ? null : options.extras(process.state)}
-						<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
 					</div>
 				</div>
 				<div
@@ -810,6 +811,10 @@ function ChatWindow({
 				<AgentChatInput
 					variant="focused"
 					bridge={composer.bridge}
+					// The mode picker rides the composer's `settings` slot rather than the bridge: mode is
+					// this window's vocabulary, and a bridge method would make every other implementor of
+					// `AgentChatInputBridge` answer a question only this one has (#8190).
+					settings={<ModeSwitch modes={process.state.modes} onSetMode={setMode} />}
 					initialValue={view.draft}
 					onDraftChange={(draft) =>
 						commit((current) => (current.draft === draft ? current : {...current, draft}))

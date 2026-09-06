@@ -71,6 +71,8 @@ export interface AiAgentProgramOptions<RIn = never> {
 	readonly layer: Layer.Layer<TuvalAiAgent, never, RIn>;
 	readonly config: AiAgentProgramConfig;
 	readonly renderer?: RendererRef;
+	/** What this row fills the desk inspector with while one of its windows has focus (#8190). */
+	readonly inspector?: RendererRef;
 	/** Merged over the row's own identity, for a caller that ships this program in its package. */
 	readonly identity?: Partial<DefinitionIdentity>;
 	readonly capabilities?: ReadonlyArray<CapabilityRequest>;
@@ -188,6 +190,7 @@ export const aiAgentProgram = <RIn = never>(
 		restorable: (raw) => readCheckpoint(raw, options.config.cwd) !== null,
 		capabilities: options.capabilities ?? [],
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
+		...(options.inspector === undefined ? {} : {inspector: options.inspector}),
 		identity: {
 			package: "@kampus/tuval",
 			program: options.id,
