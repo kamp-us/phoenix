@@ -6,6 +6,11 @@
  * snapshot, refuses one written under another definition, records the process in the manifest
  * and takes the hold; release drops the hold. A refusal fails the spawn — the process is never
  * fresh-booted over its own snapshot (#7467).
+ *
+ * A snapshot the program itself cannot restore (`CheckpointTarget.restorable`) is not refused
+ * here — the program boots on its own refusal — but the store is sealed against writing, so
+ * the bytes it could not read survive every later boot instead of being overwritten by the
+ * state that refused them (#8112).
  */
 
 import type {Store} from "@demlik/tea";
@@ -30,6 +35,12 @@ export interface CheckpointTarget {
 	readonly parentId: Option.Option<ProcessId>;
 	/** The program's current definition version; a snapshot under any other is refused. */
 	readonly version: string;
+	/**
+	 * The program's own read of a raw checkpoint (`Program.restorable`). A snapshot it answers
+	 * `false` for seals this store: nothing is written over those bytes for the process's life.
+	 * Absent means every snapshot is restorable, which is the answer for a program with no parse.
+	 */
+	readonly restorable?: (raw: unknown) => boolean;
 }
 
 export interface OpenedCheckpoint {
@@ -122,9 +133,13 @@ const makeService = (stores: CheckpointStores): Checkpoints["Service"] => {
 		const snapshot = yield* loadSnapshot(target, backing);
 		yield* record(target);
 		held.add(target.id);
+		const sealed = snapshot !== null && target.restorable?.(snapshot.state) === false;
 		const store: Store<unknown> = {
 			load: () => Promise.resolve(snapshot === null ? null : snapshot.state),
-			save: (state) => backing.save({programId: target.programId, version: target.version, state}),
+			save: (state) =>
+				sealed
+					? Promise.resolve()
+					: backing.save({programId: target.programId, version: target.version, state}),
 			migrate: (raw) => raw,
 		};
 		return {store, restored: snapshot !== null} satisfies OpenedCheckpoint;

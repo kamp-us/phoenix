@@ -40,6 +40,7 @@ export {
 	isAiAgentSessionState,
 	loadCheckpoint,
 	parseSessionState,
+	readCheckpoint,
 	withCheckpointDefaults,
 } from "./snapshot.ts";
 export {

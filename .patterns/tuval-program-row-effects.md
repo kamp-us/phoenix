@@ -159,7 +159,8 @@ them. Every other phase the layer reports is news and folds normally.
 Durability is the kernel's ([`durability/Checkpoints.ts`](../apps/tuval/src/durability/Checkpoints.ts)),
 so a row does not write its own snapshot. What a row owes is the other half: what its state means
 after a restart, and what has to happen before it is usable again. Three rules, all of them visible
-in [`ai-agent/restore/`](../apps/tuval/src/ai-agent/restore/).
+in [`ai-agent/restore/`](../apps/tuval/src/ai-agent/restore/), plus one rule about the
+checkpoint a row *cannot* read.
 
 **The rehydrating `init` transforms and emits nothing.** Demlik throws on a non-null `loaded` whose
 `init` returns any Cmd (`@demlik/tea` 0.12 `runtime-types.ts`) — that branch is the migration and
@@ -189,6 +190,21 @@ whose checkpoint existed, `durability/restore.ts` for a checkpointed process the
 plan. Launch dispatches after **every** node is spawned and pumped, never inside the loop, because a
 resume republishes on its out-ports and a reader that has not launched yet would leave those
 payloads in a queue nobody drains.
+
+**A checkpoint the row cannot read is never written over, and the row says so under `restorable`.**
+A row that parses its checkpoint has a refusal branch, and the state that branch returns is a
+perfectly ordinary state — so the save the host runs straight after `init` writes it over the bytes
+it just refused. That costs the operator the transcript with no copy left to diagnose from, and it
+silences the refusal one restart later: the saved refusal state parses fine on the next boot, and
+the restore transform drops `failure` off it, so the window falls from the refusal sentence to the
+bare phase line ([#8112](https://github.com/kamp-us/phoenix/issues/8112)). The row declares
+`restorable: (raw) => boolean` ([`registry/program.ts`](../apps/tuval/src/registry/program.ts)) —
+the same read its `init` does, answered before `init` runs — and a `false` seals that process's
+store: `Checkpoints` hands the host a store whose `save` writes nothing for the process's life, so
+the bytes stay on disk and every later boot re-reads and re-refuses them. Answer it off the one
+function `init` uses, never a second copy of the parse: a store sealing on a different verdict than
+the one the window renders would hold the wrong bytes. A row with no parse of its own omits the
+field and restores whatever loads.
 
 **A restored process publishes nothing until something republishes it.** Out-ports are event-driven:
 a projection leaves when the fold moves it. A process brought back from a checkpoint has a full

@@ -178,6 +178,18 @@ export interface Program<
 	 * reads what the Msgs mean.
 	 */
 	readonly resume?: (state: S) => ReadonlyArray<M>;
+	/**
+	 * Whether this program could restore the raw checkpoint durability loaded for it — the same
+	 * verdict its `init` reaches, asked before `init` runs.
+	 *
+	 * `false` means the process boots on its own refusal, and durability holds the bytes for it: a
+	 * snapshot this refuses is never written over, so it stays on disk to be read and re-refused on
+	 * every later boot (`src/durability/Checkpoints.ts`, #8112). Without it the refusal was
+	 * one-shot — the state carrying it was saved straight back over the checkpoint it refused, and
+	 * the next boot restored that state with no failure on it. A row that omits the field restores
+	 * whatever loads, which is every program with no parse of its own.
+	 */
+	readonly restorable?: (raw: unknown) => boolean;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	/**
 	 * The program takes keys the shell forwards from its focused window, as its own `key` Msg. Only
