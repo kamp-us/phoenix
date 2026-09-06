@@ -6,8 +6,10 @@
  * The three gaps are jsdom's, not React's. There is no `ResizeObserver` and no `PointerEvent`, and
  * every element measures 0×0 — and `react-resizable-panels` needs all three: it sizes a group from
  * a `ResizeObserver` callback and refuses to resize a group it has never measured ("Previous layout
- * not found for panel index 0"). So the observer here *fires*, once, with the box below; a stub
- * that only records the callback leaves the library permanently unmeasured.
+ * not found for panel index 0"). So the observer here *fires* from `observe()`, with the box below;
+ * a stub that only records the callback leaves the library permanently unmeasured. A test that needs
+ * a row to *grow* after that — a streaming message — names the new height through
+ * `growObservedElement`.
  *
  * A separator is the one element that does not report that box. The library hit-tests every pointer
  * event against each separator's measured rect, so a separator measuring the whole viewport claims
@@ -49,33 +51,63 @@ const measure = (element: Element): DOMRect =>
 		? rectAt(SEPARATOR_BAND.left, SEPARATOR_BAND.right)
 		: box();
 
+const entryAt = (target: Element, blockSize: number): ResizeObserverEntry => {
+	const size: ResizeObserverSize = {blockSize, inlineSize: TEST_VIEWPORT.width};
+	return {
+		target,
+		contentRect: rectAt(0, TEST_VIEWPORT.width),
+		borderBoxSize: [size],
+		contentBoxSize: [size],
+		devicePixelContentBoxSize: [size],
+	};
+};
+
+/** Live observers, so `growObservedElement` can reach the ones already watching an element. */
+const observers = new Set<MeasuringResizeObserver>();
+
 class MeasuringResizeObserver implements ResizeObserver {
 	// A field and an assignment rather than a parameter property: `erasableSyntaxOnly` is on
 	// repo-wide (`.patterns/erasable-typescript-syntax.md`).
 	readonly callback: ResizeObserverCallback;
+	readonly observed = new Set<Element>();
 
 	constructor(callback: ResizeObserverCallback) {
 		this.callback = callback;
+		observers.add(this);
 	}
 
 	observe(target: Element): void {
-		const size: ResizeObserverSize = {
-			blockSize: TEST_VIEWPORT.height,
-			inlineSize: TEST_VIEWPORT.width,
-		};
-		const entry: ResizeObserverEntry = {
-			target,
-			contentRect: box(),
-			borderBoxSize: [size],
-			contentBoxSize: [size],
-			devicePixelContentBoxSize: [size],
-		};
-		this.callback([entry], this);
+		this.observed.add(target);
+		this.callback([entryAt(target, TEST_VIEWPORT.height)], this);
 	}
 
-	unobserve(): void {}
-	disconnect(): void {}
+	unobserve(target: Element): void {
+		this.observed.delete(target);
+	}
+
+	disconnect(): void {
+		this.observed.clear();
+		observers.delete(this);
+	}
 }
+
+/**
+ * Grow an already-observed element to `height` and notify: the streaming case, where a row keeps the
+ * key it had and gets taller. Both halves are needed — a consumer that re-measures synchronously
+ * reads `getBoundingClientRect` rather than the entry (`@tanstack/virtual-core@3.17.8`,
+ * `measureElement`), which would undo the growth on the next render. The rect is overridden on the
+ * element itself so the box every other element reports stays the one flat answer above.
+ */
+export const growObservedElement = (element: Element, height: number): void => {
+	const grown = {...rectAt(0, TEST_VIEWPORT.width), bottom: height, height, toJSON: () => ({})};
+	Object.defineProperty(element, "getBoundingClientRect", {
+		configurable: true,
+		value: (): DOMRect => grown as DOMRect,
+	});
+	for (const observer of observers) {
+		if (observer.observed.has(element)) observer.callback([entryAt(element, height)], observer);
+	}
+};
 
 /**
  * A do-nothing `IntersectionObserver`, which jsdom also lacks.
@@ -120,5 +152,10 @@ export const installDomShims = (): void => {
 		configurable: true,
 		get: () => TEST_VIEWPORT.height,
 	});
-	afterEach(cleanup);
+	afterEach(() => {
+		cleanup();
+		// An observer whose owner never disconnected still holds its targets, and the registry is
+		// module-level: without this one test's detached rows outlive it.
+		observers.clear();
+	});
 };

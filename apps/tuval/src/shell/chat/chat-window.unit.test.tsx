@@ -23,7 +23,7 @@ import {
 import {phases} from "../../ai-agent/core/state.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
-import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
+import {growObservedElement, installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
@@ -111,6 +111,24 @@ const giveScrollBox = (element: HTMLElement): void => {
 	});
 };
 
+/**
+ * Let the scroller's `scrollHeight` follow the spacer the virtualizer sizes, the way a real one
+ * does. jsdom never lays out, so `giveScrollBox`'s fixed box answers every follow with the same
+ * number: `getOffsetForIndex` resolves the LAST row's `end` alignment to the scroller's own max
+ * scroll rather than to the row (`@tanstack/virtual-core@3.17.8`, `getOffsetForIndex`), so a row
+ * growing cannot move the offset unless the box grows with it.
+ */
+const trackContentHeight = (): void => {
+	const scroller = screen.getByRole("log", {name: "Transcript"});
+	Object.defineProperty(scroller, "scrollHeight", {
+		configurable: true,
+		get: () => {
+			const spacer = document.querySelector<HTMLElement>(".tuval-chat-spacer");
+			return Number.parseInt(spacer?.style.height ?? "", 10) || SCROLL_BOX;
+		},
+	});
+};
+
 /** jsdom never moves a scroller, so the offset a scroll event reports is set on the element. */
 const scrollTo = async (offset: number): Promise<void> => {
 	const scroller = screen.getByRole("log", {name: "Transcript"});
@@ -138,6 +156,17 @@ const composer = (): HTMLTextAreaElement =>
 
 const rows = (): ReadonlyArray<HTMLElement> =>
 	Array.from(document.querySelectorAll<HTMLElement>(".tuval-chat-row"));
+
+/** The deepest row the virtualizer has rendered — the newest turn, whenever it is on screen. */
+const newestRenderedRow = (): HTMLElement => {
+	const deepest = rows().reduce<HTMLElement | null>(
+		(held, row) =>
+			held === null || Number(row.dataset.index) > Number(held.dataset.index) ? row : held,
+		null,
+	);
+	if (deepest === null) throw new Error("no rows rendered");
+	return deepest;
+};
 
 describe("the transcript", () => {
 	it("renders only the rows the viewport can hold, over a thousand-item transcript", async () => {
@@ -246,6 +275,70 @@ describe("following the newest turn", () => {
 		await settle();
 		expect(writes.length).toBeGreaterThan(settled);
 		expect(view().pinned).toBe(true);
+	});
+
+	// The streaming arm: a turn already on screen grows at its bottom instead of a new row landing.
+	// The row keeps its key, so nothing about `rows` changes — only the measured height does, which
+	// is why the follow effect depends on `totalSize` rather than on the row count alone.
+	it("follows the newest row while that row grows, not only when one is appended", async () => {
+		const {scrolls, view} = await openWindow(withTranscript(transcriptOf(4)));
+		trackContentHeight();
+		// The end of the content rather than `scrollToNewest`'s past-everything offset: five rows of
+		// a viewport each, less the viewport.
+		await scrollTo(4_000);
+		await waitFor(() => expect(view().pinned).toBe(true));
+		await settle();
+		const before = scrolls.length;
+		const landedBefore = scrolls[scrolls.length - 1] ?? -1;
+		const newest = newestRenderedRow();
+		// Four items and the leading older-history row the transcript carries while more history
+		// exists: the newest turn is row 4, and this guard says the growth below lands on it.
+		expect(newest.dataset.index).toBe("4");
+
+		await act(async () => {
+			growObservedElement(newest, TEST_VIEWPORT.height * 2);
+		});
+		await settle();
+
+		expect(scrolls.length).toBeGreaterThan(before);
+		// Strictly below where the follow last rested: the last row's `end` alignment resolves to the
+		// scroller's own max scroll, and `trackContentHeight` makes that follow the content — so the
+		// growth is the only thing that moved it.
+		expect(scrolls[scrolls.length - 1] ?? -1).toBeGreaterThan(landedBefore);
+	});
+
+	it("leaves the offset alone when the newest row grows after the reader scrolled up", async () => {
+		// Restored unpinned at an offset two rows up: far enough from the end to be unpinned, near
+		// enough that the newest row is still rendered — the whole point is that a growth the window
+		// can see does not move it. Restored rather than scrolled there so the only scroll this
+		// window has ever asked for is an offset one, which the virtualizer settles against a fixed
+		// target; a pending `scrollToIndex` re-derives its target from every later measurement
+		// (`@tanstack/virtual-core@3.17.8`, `reconcileScroll`) and would answer the growth itself.
+		const {scrolls, view} = await openWindow(
+			withTranscript(transcriptOf(4)),
+			{},
+			{
+				...initialChatView,
+				pinned: false,
+				scroll: 2_000,
+			},
+		);
+		trackContentHeight();
+		await waitFor(() => expect(rows().length).toBeGreaterThan(0));
+		await settle();
+		const before = scrolls.length;
+		const newest = newestRenderedRow();
+		// Four items and the leading older-history row the transcript carries while more history
+		// exists: the newest turn is row 4, and this guard says the growth below lands on it.
+		expect(newest.dataset.index).toBe("4");
+
+		await act(async () => {
+			growObservedElement(newest, TEST_VIEWPORT.height * 2);
+		});
+		await settle();
+
+		expect(scrolls.length).toBe(before);
+		expect(view().pinned).toBe(false);
 	});
 });
 

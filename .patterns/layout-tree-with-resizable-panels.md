@@ -197,3 +197,9 @@ every resize test dead. The observer has to **fire**, once, with a real box.
 
 With it, a separator's arrow key is a real user gesture through the real library, which is how the
 one-Msg-per-gesture claim is proved rather than asserted.
+
+The shim also grows an element that is already observed. `growObservedElement(element, height)`
+overrides that one element's rect and re-fires the observers watching it, which is the only way a
+test stages a row getting taller while keeping its key — a streaming chat message, as against a new
+row landing. It is scoped to the element it names, so the flat box every other element reports is
+untouched.
