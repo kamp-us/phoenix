@@ -30,6 +30,8 @@ import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWin
 import {
 	assistantItem,
 	call,
+	compactionItem,
+	thinkingItem,
 	toolItem,
 	transcriptOf,
 	userItem,
@@ -1007,6 +1009,80 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 			fireEvent.click(folds[1] as HTMLElement);
 		});
 		expect(document.getElementById("tuval-row-w1-leaf")).not.toBeNull();
+	});
+});
+
+describe("the two daily rows", () => {
+	const REASONING = ["First, read the ledger.", "", "Then decide which lane is stalled."].join(
+		"\n",
+	);
+
+	const reasoning = (): HTMLElement =>
+		screen.getByRole("button", {name: "First, read the ledger."});
+
+	/** The region a disclosure's trigger names, which is where the disclosed text lands. */
+	const panelOf = (trigger: HTMLElement): HTMLElement | null =>
+		document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+
+	it("shows a thinking row collapsed, named by the first line of the reasoning", async () => {
+		await openWindow(withTranscript([userItem("a", "go"), thinkingItem("t", REASONING)]));
+
+		const trigger = reasoning();
+		expect(trigger.getAttribute("aria-expanded")).toBe("false");
+		expect(panelOf(trigger)?.hidden).toBe(true);
+	});
+
+	it("keeps a long line off the collapsed row, so unfolded reasoning cannot flood it (#8027)", async () => {
+		const long = `${"reconciling the ledger against the board ".repeat(6)}done`;
+		await openWindow(withTranscript([thinkingItem("t", long)]));
+
+		const trigger = screen.getByRole("button", {name: /^reconciling the ledger/});
+		expect(trigger.textContent?.length).toBeLessThan(long.length);
+		expect(trigger.textContent?.endsWith("…")).toBe(true);
+	});
+
+	it("names the disclosure even when the reasoning is whitespace", async () => {
+		await openWindow(withTranscript([thinkingItem("t", "  \n\t\n ")]));
+		expect(screen.getByRole("button", {name: "Reasoning"})).toBeDefined();
+	});
+
+	it("discloses the whole reasoning inside the row the virtualizer measures", async () => {
+		const {scrolls, view} = await openWindow(
+			withTranscript([userItem("a", "go"), thinkingItem("t", REASONING)]),
+		);
+		await settle();
+		const before = scrolls.length;
+
+		await act(async () => {
+			fireEvent.click(reasoning());
+		});
+		await settle();
+
+		const trigger = reasoning();
+		expect(trigger.getAttribute("aria-expanded")).toBe("true");
+		const panel = panelOf(trigger);
+		expect(panel?.textContent).toBe(REASONING);
+		// The virtualizer measures `.tuval-chat-row`, so a panel rendered outside one would grow the
+		// transcript without the list ever hearing about it — the row would clip at its estimate.
+		expect(panel?.closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe("thinking");
+		// And opening anchors that row through the virtualizer, the same path an opened tool row takes.
+		expect(scrolls.length).toBeGreaterThan(before);
+		expect(view().expanded).toEqual(["t"]);
+	});
+
+	it("renders a compaction item as a marker, not as one more line the session said", async () => {
+		await openWindow(
+			withTranscript([assistantItem("b", "done"), compactionItem("c", "context compacted")]),
+		);
+
+		const rule = screen.getByRole("separator");
+		const marker = rule.closest(".tuval-chat-row");
+		expect(marker?.getAttribute("data-kind")).toBe("compaction");
+		// The line is beside the rule and is not a text row: the assistant's turn above is what a
+		// text row looks like, and this is the one other shape the transcript draws.
+		expect(screen.getByText("context compacted").className).toBe("tuval-chat-compaction-label");
+		expect(screen.getByText("done").className).toBe("tuval-chat-text");
+		expect(marker?.querySelector(".tuval-chat-text")).toBeNull();
 	});
 });
 
