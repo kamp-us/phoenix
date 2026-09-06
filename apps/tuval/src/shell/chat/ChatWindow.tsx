@@ -302,18 +302,25 @@ function ChatWindow({
 	const [older, setOlder] = useState<ReadonlyArray<TranscriptItem>>([]);
 	const [loading, setLoading] = useState(false);
 
+	// The last committed view, so `commit` can apply `next` and fork the host write out here rather
+	// than inside the `setViewLocal` updater. React documents an updater as pure and re-invokes it —
+	// `StrictMode` does so on every commit, and Tuval only ever runs in development (ADR 0345) — so
+	// a `runFork` in there is two `setView` calls per keystroke. The ref is written in the same tick
+	// as the state, which is what keeps two commits batched into one render composing: the debounced
+	// scroll offset and `toggleTool`'s expanded set both read what the previous commit wrote.
+	const viewRef = useRef(view);
+
 	const commit = useCallback((next: (current: ChatView) => ChatView) => {
-		setViewLocal((current) => {
-			const value = next(current);
-			// The identity has to stop the host write and not just the local one: `window.setView`
-			// rebuilds `ShellState` wholesale (`../core/machine.ts`), so a no-change write from
-			// `onScroll` re-renders every subscriber of the desk once per scroll frame — the cost
-			// the `scrollCommitMs` debounce beside it exists to bound — while React's bail-out on
-			// the returned identity hides it from this window.
-			if (value === current) return current;
-			void Effect.runFork(hostRef.current.setView(value));
-			return value;
-		});
+		const current = viewRef.current;
+		const value = next(current);
+		// The identity has to stop the host write and not just the local one: `window.setView`
+		// rebuilds `ShellState` wholesale (`../core/machine.ts`), so a no-change write from
+		// `onScroll` re-renders every subscriber of the desk once per scroll frame — the cost
+		// the `scrollCommitMs` debounce beside it exists to bound.
+		if (value === current) return;
+		viewRef.current = value;
+		void Effect.runFork(hostRef.current.setView(value));
+		setViewLocal(value);
 	}, []);
 
 	const dispatch = useCallback((msg: AiAgentSessionMsg) => {
