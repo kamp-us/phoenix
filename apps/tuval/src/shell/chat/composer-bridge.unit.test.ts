@@ -70,7 +70,7 @@ describe("composerBridge", () => {
 		expect(seen).toEqual([]);
 	});
 
-	it("answers every capability it does not have as empty, never as a rejection", async () => {
+	it("answers an unheld capability, and a held empty one, empty not rejected", async () => {
 		const {bridge} = composerBridge({...seam(), initialPhase: "ready"});
 		expect(await bridge.loadPiThinkingLevels()).toEqual([]);
 		expect(await bridge.loadPiFiles("src")).toEqual([]);

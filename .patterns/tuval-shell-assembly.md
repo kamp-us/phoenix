@@ -222,11 +222,13 @@ Three files, and the split between them is forced rather than stylistic.
   dependencies — and each later change reaches the mounted composer through a setter that pushes one
   event at the bridge's own subscription: `setPhase` pushes `agent_start` / `agent_settled`, and
   `setModels` / `setCommands` push a `harness_status` carrying the offered models with the current
-  one (#7981) and the slash-command catalog (#8060). Two rules make that work. The bridge answers a capability it does not have **empty, never a rejection** — a rejection
-  puts the composer in `unavailable` and disables the send button, while an empty answer only hides
-  the control. And a setter **also replays on subscribe**: the composer subscribes *after* its four
-  loads resolve, so a catalog that landed in that window was pushed at a listener that did not exist
-  yet, and on a session nobody switches again the next event never comes.
+  one (#7981) and the slash-command catalog (#8060).
+  Two rules make that work. The bridge answers a capability it does not have **empty, never a
+  rejection** — a rejection puts the composer in `unavailable` and disables the send button, while
+  an empty answer only hides the control. And a setter **also replays on subscribe**: the composer
+  subscribes *after* its four loads resolve, so a catalog that landed in that window was pushed at a
+  listener that did not exist yet, and on a session nobody switches again the next event never
+  comes.
 
 ## A program declares three renderers; the shell composes two of them
 

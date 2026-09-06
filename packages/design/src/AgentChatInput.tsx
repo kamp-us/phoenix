@@ -232,7 +232,7 @@ function providersCollide(models: readonly PiModel[]): boolean {
 	return new Set(models.map((model) => model.provider)).size > 1;
 }
 
-/** A pushed catalog, admitted row by row. A malformed push leaves the held list alone. */
+/** A pushed command catalog, admitted row by row. A malformed push leaves the held list alone. */
 function commandList(value: unknown): readonly PiCommand[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	const rows: PiCommand[] = [];
@@ -247,6 +247,7 @@ function commandList(value: unknown): readonly PiCommand[] | undefined {
 	return rows;
 }
 
+/** A pushed model catalog, admitted row by row. A malformed push leaves the held list alone. */
 function modelList(value: unknown): readonly PiModel[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	const rows: PiModel[] = [];

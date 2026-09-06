@@ -9,16 +9,17 @@
  * the two events the composer keys its working/ready state on.
  *
  * Everything the composer asks for and this window does not have (thinking levels, project trust,
- * file completions) — and a backend that offers no commands — is answered empty rather than refused: an empty answer hides the control, a
- * rejection would put the composer in its `unavailable` state and disable the send button.
+ * file completions) — and a backend that offers no commands — is answered empty rather than
+ * refused: an empty answer hides the control, a rejection would put the composer in its
+ * `unavailable` state and disable the send button.
  *
  * Models (#7981) and slash commands (#8060) are the two capabilities this window does have. Both
  * lists are the session's own — `AiAgentSessionState.models` and `.commands`, fed by each layer's
- * `model` and `commands` events — and a model pick becomes a `setModel` Msg while a command pick is
- * just text the composer writes into the draft. Both arrive after mount, because the agent has not
- * started when the composer runs its loads, so they are *pushed* through the same subscription the
- * phase is: `AgentChatInput` re-runs its whole load on a new bridge identity, and rebuilding the
- * bridge per state change would drop the composer back to `loading` on every turn.
+ * `model` and `commands` events — and a model pick becomes a `setModel` Msg while a command pick
+ * is just text the composer writes into the draft. Both arrive after mount, because the agent has
+ * not started when the composer runs its loads, so they are *pushed* through the same subscription
+ * the phase is: `AgentChatInput` re-runs its whole load on a new bridge identity, and rebuilding
+ * the bridge per state change would drop the composer back to `loading` on every turn.
  *
  * Nothing here is React. It is a plain object with a setter, so its behaviour is unit-testable
  * without a DOM — which is what `composer-bridge.unit.test.ts` does.
