@@ -306,18 +306,25 @@ function ChatWindow({
 	const [older, setOlder] = useState<ReadonlyArray<TranscriptItem>>([]);
 	const [loading, setLoading] = useState(false);
 
+	// The last committed view, so `commit` can apply `next` and fork the host write out here rather
+	// than inside the `setViewLocal` updater. React documents an updater as pure and re-invokes it —
+	// `StrictMode` does so on every commit, and Tuval only ever runs in development (ADR 0345) — so
+	// a `runFork` in there is two `setView` calls per keystroke. The ref is written in the same tick
+	// as the state, which is what keeps two commits batched into one render composing: the debounced
+	// scroll offset and `toggleTool`'s expanded set both read what the previous commit wrote.
+	const viewRef = useRef(view);
+
 	const commit = useCallback((next: (current: ChatView) => ChatView) => {
-		setViewLocal((current) => {
-			const value = next(current);
-			// The identity has to stop the host write and not just the local one: `window.setView`
-			// rebuilds `ShellState` wholesale (`../core/machine.ts`), so a no-change write from
-			// `onScroll` re-renders every subscriber of the desk once per scroll frame — the cost
-			// the `scrollCommitMs` debounce beside it exists to bound — while React's bail-out on
-			// the returned identity hides it from this window.
-			if (value === current) return current;
-			void Effect.runFork(hostRef.current.setView(value));
-			return value;
-		});
+		const current = viewRef.current;
+		const value = next(current);
+		// The identity has to stop the host write and not just the local one: `window.setView`
+		// rebuilds `ShellState` wholesale (`../core/machine.ts`), so a no-change write from
+		// `onScroll` re-renders every subscriber of the desk once per scroll frame — the cost
+		// the `scrollCommitMs` debounce beside it exists to bound.
+		if (value === current) return;
+		viewRef.current = value;
+		void Effect.runFork(hostRef.current.setView(value));
+		setViewLocal(value);
 	}, []);
 
 	const dispatch = useCallback((msg: AiAgentSessionMsg) => {
@@ -533,12 +540,14 @@ function ChatWindow({
 	const phase = state?.phase ?? "idle";
 	const models = state?.models ?? null;
 	const commands = state?.commands ?? null;
+	const thinking = state?.thinking ?? null;
 	const composer = useMemo(
 		() =>
 			composerBridge({
 				initialPhase: phase,
 				initialModels: models ?? {current: null, available: []},
 				initialCommands: commands ?? [],
+				initialThinking: thinking ?? {current: null, available: []},
 				// The draft clears and the text is held under the send's own key in the same commit:
 				// the composer empties as it always did, and nothing is thrown away until the session
 				// says the layer took it (#8005).
@@ -556,10 +565,12 @@ function ChatWindow({
 				},
 				onInterrupt: () => dispatch({type: "interrupt", at: options.now()}),
 				onSetModel: (model) => dispatch({type: "setModel", model}),
+				onSetThinkingLevel: (level) => dispatch({type: "setThinkingLevel", level}),
 			}),
-		// `phase`, `models` and `commands` seed the bridge and are deliberately not dependencies:
+		// `phase`, `models`, `commands` and `thinking` seed the bridge and are deliberately not
+		// dependencies:
 		// `AgentChatInput` re-runs its whole load on a new bridge identity, so a bridge rebuilt per
-		// change would drop the composer back into `loading` on every turn. All three reach it
+		// change would drop the composer back into `loading` on every turn. All four reach it
 		// through the setters below.
 		[dispatch, commit, options.newKey, options.now],
 	);
@@ -570,6 +581,9 @@ function ChatWindow({
 	useEffect(() => {
 		if (commands !== null) composer.setCommands(commands);
 	}, [composer, commands]);
+	useEffect(() => {
+		if (thinking !== null) composer.setThinking(thinking);
+	}, [composer, thinking]);
 
 	// A held send leaves this window on the session's word rather than on this window's own read of
 	// what it dispatched: `sends` answers per idempotency key, so a refusal the other window earned

@@ -13,7 +13,7 @@
 
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Effect, Stream} from "effect";
-import type {ReactElement} from "react";
+import {type ReactElement, StrictMode} from "react";
 import {afterEach, describe, expect, it} from "vitest";
 import {
 	type AiAgentSessionMsg,
@@ -59,6 +59,7 @@ const openWindow = async (
 	state: AiAgentSessionState,
 	options: ChatWindowOptions = {},
 	initialView?: ChatView,
+	mount: {readonly strict?: boolean} = {},
 ): Promise<Harness & {readonly view: () => ChatView}> => {
 	const process = await Effect.runPromise(
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
@@ -89,7 +90,7 @@ const openWindow = async (
 		...options,
 	};
 	const element = chatWindow(resolved).render(host) as ReactElement;
-	render(element);
+	render(element, mount.strict === true ? {wrapper: StrictMode} : undefined);
 	giveScrollBox(await screen.findByRole("log", {name: "Transcript"}));
 	return {process, host, scrolls, writes, keys, view: () => host.view()};
 };
@@ -985,5 +986,89 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 			fireEvent.click(folds[1] as HTMLElement);
 		});
 		expect(document.getElementById("tuval-row-w1-leaf")).not.toBeNull();
+	});
+});
+
+/**
+ * React documents a state updater as pure and `StrictMode` re-invokes it, so a host write forked
+ * from inside one lands twice per commit (#8033). Tuval mounts under `StrictMode` and never deploys
+ * (ADR 0345), so that is every commit the desk makes, not a hypothetical.
+ */
+describe("the view slot's writer, under StrictMode", () => {
+	it("forks one host setView per commit on the tool-toggle path", async () => {
+		const {writes} = await openWindow(
+			withTranscript([userItem("a", "do it"), call("c")]),
+			{},
+			undefined,
+			{strict: true},
+		);
+		await settle();
+		const before = writes.length;
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", {name: "read_file ok"}));
+		});
+		await settle();
+
+		expect(writes.length).toBe(before + 1);
+		expect(writes[writes.length - 1]?.expanded).toEqual(["c"]);
+	});
+
+	it("forks one host setView per keystroke on the draft path", async () => {
+		const {writes, view} = await openWindow(withTranscript(transcriptOf(2)), {}, undefined, {
+			strict: true,
+		});
+		await settle();
+		const before = writes.length;
+
+		const input = composer();
+		for (const draft of ["s", "sh", "shi"]) {
+			await act(async () => {
+				fireEvent.change(input, {target: {value: draft}});
+			});
+		}
+		await settle();
+
+		expect(writes.length).toBe(before + 3);
+		expect(view().draft).toBe("shi");
+	});
+
+	// The other half of "exactly once": a `next` handing back what it was given writes nothing at
+	// all, so the doubled write is not traded for an unconditional one.
+	it("forks nothing when a commit changes no field", async () => {
+		const {writes, view} = await openWindow(withTranscript(transcriptOf(20)), {}, undefined, {
+			strict: true,
+		});
+		await scrollTo(400);
+		await waitFor(() => expect(view().pinned).toBe(false));
+		await settle();
+
+		const settled = writes.length;
+		await scrollTo(400);
+		await scrollTo(400);
+		await settle();
+
+		expect(writes.length).toBe(settled);
+	});
+
+	// Two commits inside one batch: the second composes off what the first wrote, not off the view
+	// this render was given. It reds against a ref written from an effect rather than in `commit`.
+	it("composes batched commits off the last committed value", async () => {
+		const {writes, view} = await openWindow(
+			withTranscript([userItem("a", "do it"), call("c"), call("d", {name: "grep"})]),
+			{},
+			undefined,
+			{strict: true},
+		);
+		await settle();
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", {name: "read_file ok"}));
+			fireEvent.click(screen.getByRole("button", {name: "grep ok"}));
+		});
+		await settle();
+
+		expect(view().expanded).toEqual(["c", "d"]);
+		expect(writes[writes.length - 1]?.expanded).toEqual(["c", "d"]);
 	});
 });

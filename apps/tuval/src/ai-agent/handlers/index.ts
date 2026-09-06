@@ -2,7 +2,7 @@
  * The one generic handler set that drives any `TuvalAiAgent` layer.
  *
  * Nothing here names a backend (founder ruling, 2026-09-02): every handler yields the service and
- * calls one of its seven members, so the Pi row and the Claude row differ only in the layer they
+ * calls one of its members, so the Pi row and the Claude row differ only in the layer they
  * hand `aiAgentHandlers`. A layer's typed error never leaves as an error — each becomes a `failed`
  * Msg carrying the tag as data (ruling 3, #7570), because the window renders the refusal and a
  * crash would take the process with it. The one thing that does fail a handler is a
@@ -256,6 +256,12 @@ export const aiAgentHandlers = <RIn = never>(
 		"aiAgent.setModel": (cmd) =>
 			withAgent(
 				(agent) => agent.setModel(cmd.model),
+				() => nothing,
+			),
+
+		"aiAgent.setThinkingLevel": (cmd) =>
+			withAgent(
+				(agent) => agent.setThinkingLevel(cmd.level),
 				() => nothing,
 			),
 

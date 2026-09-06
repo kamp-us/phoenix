@@ -45,6 +45,7 @@ const script: AgentScript = {
 	history: [],
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
+	thinking: {current: null, available: []},
 	interrupt: [],
 	turns: [],
 };

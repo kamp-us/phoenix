@@ -13,6 +13,7 @@ import {
 	isCommandRef,
 	isModelRef,
 	isPendingPermission,
+	isThinkingLevel,
 	isTranscriptItems,
 	isWindowOmission,
 	type PendingPermission,
@@ -58,6 +59,11 @@ const isModels = (value: unknown): boolean =>
 	value.available.every(isModelRef);
 
 const isCommands = (value: unknown): boolean => Array.isArray(value) && value.every(isCommandRef);
+const isThinking = (value: unknown): boolean =>
+	Predicate.isObject(value) &&
+	(value.current === null || isThinkingLevel(value.current)) &&
+	Array.isArray(value.available) &&
+	value.available.every(isThinkingLevel);
 
 const isTranscript = (value: unknown): boolean =>
 	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
@@ -116,6 +122,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isModes(value.modes) &&
 	isModels(value.models) &&
 	isCommands(value.commands) &&
+	isThinking(value.thinking) &&
 	isNullOrString(value.lastPrompt) &&
 	isSends(value.sends) &&
 	isPage(value.lastPage) &&

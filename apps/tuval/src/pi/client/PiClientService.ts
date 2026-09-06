@@ -53,6 +53,8 @@ export interface PiSessionRef {
 	 * this one (#7981).
 	 */
 	readonly model: ModelRef;
+	/** The level the session is thinking at now, off that same snapshot (#8062). */
+	readonly thinkingLevel: ThinkingLevel;
 }
 
 export interface OpenSessionOptions {
@@ -82,6 +84,14 @@ export interface PiClientApi {
 	readonly setModel: (
 		sessionId: string,
 		model: ModelRef,
+	) => Effect.Effect<SessionSnapshot, SessionRefusal>;
+	/**
+	 * Switches how hard the session thinks, over the pin's `set_thinking` verb. Needs the same lease
+	 * `prompt` does, and applies to the running session rather than to the next one.
+	 */
+	readonly setThinkingLevel: (
+		sessionId: string,
+		level: ThinkingLevel,
 	) => Effect.Effect<SessionSnapshot, SessionRefusal>;
 	/**
 	 * The catalog the server put in its `hello` frame, already cut to the authenticated,
@@ -200,6 +210,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 						id: lease.id,
 						cwd: lease.snapshot.cwd,
 						model: lease.snapshot.model,
+						thinkingLevel: lease.snapshot.thinkingLevel,
 					});
 
 		const dial = (open: () => Promise<unknown>): Effect.Effect<void, ConnectionRefusal> =>
@@ -275,6 +286,17 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			});
 		});
 
+		const setThinkingLevel = Effect.fn("PiClientService.setThinkingLevel")(function* (
+			sessionId: string,
+			level: ThinkingLevel,
+		) {
+			const lease = yield* leased(sessionId);
+			return yield* Effect.tryPromise({
+				try: () => lease.setThinking(level),
+				catch: (cause) => sessionRefusalOf(sessionId, cause),
+			});
+		});
+
 		const snapshots = (sessionId: string): Stream.Stream<SessionSnapshot> =>
 			Stream.callback<SessionSnapshot>((queue) =>
 				Effect.acquireRelease(
@@ -313,6 +335,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			prompt,
 			abort,
 			setModel,
+			setThinkingLevel,
 			models: Effect.sync(() => client.snapshot?.models ?? []),
 			snapshots,
 			disconnections,

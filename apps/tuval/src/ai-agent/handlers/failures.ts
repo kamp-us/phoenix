@@ -23,6 +23,7 @@ import {
 	type PageError,
 	type PromptError,
 	type StartError,
+	ThinkingUnsupported,
 	type TransportError,
 	UnknownRequest,
 } from "../service/index.ts";
@@ -34,14 +35,16 @@ export type AgentServiceError =
 	| UnknownRequest
 	| ModeUnsupported
 	| ModelUnsupported
+	| ThinkingUnsupported
 	| PageError
 	| TransportError;
 
-/** The three classes that enumerate no `reason` case; every other one carries its own. */
+/** The four classes that enumerate no `reason` case; every other one carries its own. */
 const reasonOf = (error: AgentServiceError): string | null =>
 	error instanceof UnknownRequest ||
 	error instanceof ModeUnsupported ||
-	error instanceof ModelUnsupported
+	error instanceof ModelUnsupported ||
+	error instanceof ThinkingUnsupported
 		? null
 		: error.reason;
 

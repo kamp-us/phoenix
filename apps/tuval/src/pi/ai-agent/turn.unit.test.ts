@@ -11,7 +11,12 @@
  * wall clock.
  */
 
-import type {ModelMetadata, ModelRef, SessionSnapshot} from "@earendil-works/pi-protocol";
+import type {
+	ModelMetadata,
+	ModelRef,
+	SessionSnapshot,
+	ThinkingLevel,
+} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
 import {Deferred, Effect, Fiber, Layer, Queue, Ref, Stream} from "effect";
 import {type AgentEvent, type TransportError, TuvalAiAgent} from "../../ai-agent/service/index.ts";
@@ -28,6 +33,7 @@ const SESSION: PiSessionRef = {
 	id: "session-1",
 	cwd: CWD,
 	model: {provider: "anthropic", id: "opus"},
+	thinkingLevel: "off",
 };
 
 /** What the server answers a `set_model` with. Only `model` is read; the rest is the wire's shape. */
@@ -57,12 +63,19 @@ interface StubOptions {
 	readonly lockAttach?: boolean;
 	/** The server's `hello` catalog, as `PiClientApi.models` answers it. */
 	readonly catalog?: ReadonlyArray<ModelMetadata>;
+	/** Refuses `set_thinking`, which is what a session the server will not move meets. */
+	readonly refuseThinking?: boolean;
 	/** Refuses `set_model`, which is what a session the server will not move meets. */
 	readonly refuseSwitch?: boolean;
 }
 
 /** One catalog row, with everything the layer does not read left at a plausible constant. */
-const catalogRow = (provider: string, id: string, name: string): ModelMetadata => ({
+const catalogRow = (
+	provider: string,
+	id: string,
+	name: string,
+	supportedThinkingLevels: ReadonlyArray<ThinkingLevel> = ["off"],
+): ModelMetadata => ({
 	provider,
 	id,
 	name,
@@ -72,7 +85,7 @@ const catalogRow = (provider: string, id: string, name: string): ModelMetadata =
 	contextWindow: 200_000,
 	maxTokens: 8_192,
 	cost: {input: 1, output: 1, cacheRead: 1, cacheWrite: 1},
-	supportedThinkingLevels: ["off"],
+	supportedThinkingLevels: [...supportedThinkingLevels],
 	authenticated: true,
 });
 
@@ -80,6 +93,7 @@ const stub = (options: StubOptions) =>
 	Effect.gen(function* () {
 		const sends = yield* Ref.make<ReadonlyArray<string>>([]);
 		const switched = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
+		const levels = yield* Ref.make<ReadonlyArray<ThinkingLevel>>([]);
 		const opens = yield* Ref.make<ReadonlyArray<ModelRef | undefined>>([]);
 		const api: PiClientApi = {
 			connect: Effect.void,
@@ -111,6 +125,14 @@ const stub = (options: StubOptions) =>
 							? Effect.fail(new SessionLocked({sessionId, detail: "the server refused the switch"}))
 							: Effect.succeed({...SNAPSHOT, model}),
 				),
+			setThinkingLevel: (sessionId, level) =>
+				Effect.flatMap(
+					Ref.update(levels, (seen) => [...seen, level]),
+					() =>
+						options.refuseThinking === true
+							? Effect.fail(new SessionLocked({sessionId, detail: "the server refused the switch"}))
+							: Effect.succeed({...SNAPSHOT, thinkingLevel: level}),
+				),
 			models: Effect.succeed(options.catalog ?? []),
 			snapshots: () => Stream.never,
 			disconnections: Stream.never,
@@ -119,6 +141,7 @@ const stub = (options: StubOptions) =>
 			layer: Layer.succeed(PiClientService, api),
 			sends: Ref.get(sends),
 			switched: Ref.get(switched),
+			levels: Ref.get(levels),
 			opens: Ref.get(opens),
 		};
 	});
@@ -271,6 +294,93 @@ describe("the model switch", () => {
 				const refused = yield* Effect.flip(agent.setModel({id: "gpt", name: "GPT"}));
 				assert.strictEqual(refused._tag, "tuval/ai-agent/ModelUnsupported");
 				assert.deepStrictEqual(yield* client.switched, []);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+});
+
+/**
+ * The thinking axis (#8062). Pi's offered set is per model — each catalog row carries its own
+ * `supportedThinkingLevels`, the whole vocabulary for a reasoning model and `off` alone otherwise —
+ * so a model switch moves the picker's rows, which is the one thing the model axis does not do.
+ */
+describe("the thinking switch", () => {
+	const REASONING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+	const CATALOG = [
+		catalogRow("anthropic", "opus", "Opus 5", REASONING),
+		catalogRow("anthropic", "sonnet", "Sonnet 5"),
+	];
+
+	it.effect("sends set_thinking on the session's own lease and announces what came back", () =>
+		Effect.gen(function* () {
+			const client = yield* stub({catalog: CATALOG});
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("high");
+
+				assert.deepStrictEqual(yield* client.levels, ["high"]);
+				assert.deepStrictEqual(
+					(yield* buffered(agent.events)).filter((event) => event.kind === "thinking").at(-1),
+					{kind: "thinking", current: "high", available: [...REASONING]},
+				);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	it.effect("keeps the session's own level when the server refuses the switch", () =>
+		Effect.gen(function* () {
+			const client = yield* stub({catalog: CATALOG, refuseThinking: true});
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				// A refused switch is not `ThinkingUnsupported`, so this resolves rather than failing.
+				yield* agent.setThinkingLevel("max");
+
+				assert.deepStrictEqual(
+					yield* client.levels,
+					["max"],
+					"the switch was attempted; it is the announcement that must not move",
+				);
+				assert.deepStrictEqual(
+					(yield* buffered(agent.events)).filter((event) => event.kind === "thinking").at(-1),
+					{kind: "thinking", current: "off", available: [...REASONING]},
+				);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	it.effect("refuses a level the running model does not offer", () =>
+		Effect.gen(function* () {
+			const client = yield* stub({catalog: CATALOG});
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				// The session opens on `opus`, which reasons; `sonnet` in this catalog does not, and a
+				// level is refused against the running model's row rather than against the union.
+				yield* agent.setModel({provider: "anthropic", id: "sonnet", name: "Sonnet 5"});
+				const refused = yield* Effect.flip(agent.setThinkingLevel("high"));
+				assert.strictEqual(refused._tag, "tuval/ai-agent/ThinkingUnsupported");
+				assert.deepStrictEqual(yield* client.levels, []);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	it.effect("moves the offered set when the model switches under it", () =>
+		Effect.gen(function* () {
+			const client = yield* stub({catalog: CATALOG});
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				yield* agent.start({cwd: CWD});
+				yield* agent.setModel({provider: "anthropic", id: "sonnet", name: "Sonnet 5"});
+				assert.deepStrictEqual(
+					(yield* buffered(agent.events)).filter((event) => event.kind === "thinking").at(-1),
+					{kind: "thinking", current: "off", available: ["off"]},
+				);
 			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
 		}),
 	);
