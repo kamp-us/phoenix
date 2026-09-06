@@ -644,6 +644,18 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		for (const id of controls) expect(document.getElementById(id)).not.toBeNull();
 	});
 
+	it("unpins a following window when a fold opens, the way an opened tool row does (#7994)", async () => {
+		const {view} = await openWindow(withTranscript(group));
+		await waitFor(() => expect(view().pinned).toBe(true));
+
+		await act(async () => {
+			fireEvent.click(foldButton());
+		});
+
+		await waitFor(() => expect(view().pinned).toBe(false));
+		expect(view().unfolded).toEqual(["agent"]);
+	});
+
 	it("leaves the call's own input panel shut, so reading a row does not burst its group open", async () => {
 		const harness = await openWindow(withTranscript(group));
 

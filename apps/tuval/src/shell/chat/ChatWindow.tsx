@@ -353,6 +353,9 @@ function ChatWindow({
 				if (held === open) return current;
 				return {
 					...current,
+					// Same as an opened tool row: a revealed fold is anchored, and a following window
+					// would pull the viewport straight back off it.
+					pinned: open ? false : current.pinned,
 					unfolded: open
 						? [...current.unfolded, id]
 						: current.unfolded.filter((other) => other !== id),
