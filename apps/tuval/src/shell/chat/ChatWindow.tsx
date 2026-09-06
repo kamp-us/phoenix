@@ -22,8 +22,8 @@
  * **Four writes move the transcript, and one pin decides between them.** A window resting on its
  * newest turn follows every turn that lands; one whose reader scrolled up is left alone, and so is
  * one anchored on a history page, on a row it just expanded or on a fold it just opened. That is
- * `view.pinned`: it is set from the scroll offset on every scroll, cleared by opening a tool row,
- * opening a group's fold or asking for a page of history, and set again by sending. The two
+ * `view.pinned`: it is set from the scroll offset on every scroll, cleared by opening a row's own
+ * disclosure, opening a group's fold or asking for a page of history, and set again by sending. Two
  * anchoring effects reach the viewport only while it is clear, and every door into them clears it
  * itself rather than trusting the geometry to have done so: a transcript barely taller than its
  * viewport is inside the top threshold and the bottom one at once.
@@ -44,6 +44,7 @@ import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/i
 import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {windowRenderer} from "../window/index.ts";
+import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
@@ -58,6 +59,7 @@ import {
 	rowIndexOfItem,
 	rowKey,
 } from "./rows.ts";
+import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
 import {asChatView, type ChatView} from "./view.ts";
@@ -178,6 +180,45 @@ const who: Readonly<Record<TranscriptItem["kind"], string>> = {
 	compaction: "compaction",
 };
 
+/**
+ * What a row shows under its label. Three kinds carry a shape of their own and everything else is
+ * text: a tool call and a thinking row are disclosures over this window's one `expanded` set, and a
+ * compaction row is a divider rather than a line of prose.
+ */
+function RowBody({
+	item,
+	expanded,
+	fold,
+	onToggleRow,
+}: {
+	readonly item: TranscriptItem;
+	readonly expanded: boolean;
+	readonly fold: ToolFold | null;
+	readonly onToggleRow: (id: string, open: boolean) => void;
+}): ReactElement {
+	if (item.kind === "tool") {
+		return (
+			<ToolRow
+				item={item}
+				expanded={expanded}
+				fold={fold}
+				onToggle={(open) => onToggleRow(item.id, open)}
+			/>
+		);
+	}
+	if (item.kind === "thinking") {
+		return (
+			<ThinkingRow
+				item={item}
+				expanded={expanded}
+				onToggle={(open) => onToggleRow(item.id, open)}
+			/>
+		);
+	}
+	if (item.kind === "compaction") return <CompactionMarker text={item.text} />;
+	return <p className="tuval-chat-text">{item.text}</p>;
+}
+
 function ItemRow({
 	item,
 	interrupted,
@@ -185,7 +226,7 @@ function ItemRow({
 	expanded,
 	fold,
 	nested,
-	onToggleTool,
+	onToggleRow,
 }: {
 	readonly item: TranscriptItem;
 	readonly interrupted: boolean;
@@ -193,22 +234,13 @@ function ItemRow({
 	readonly expanded: boolean;
 	readonly fold: ToolFold | null;
 	readonly nested: boolean;
-	readonly onToggleTool: (id: string, open: boolean) => void;
+	readonly onToggleRow: (id: string, open: boolean) => void;
 }): ReactElement {
 	return (
 		<>
 			{/* A nested row says whose call it was in words; the indent beside it is the second signal. */}
 			<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
-			{item.kind === "tool" ? (
-				<ToolRow
-					item={item}
-					expanded={expanded}
-					fold={fold}
-					onToggle={(open) => onToggleTool(item.id, open)}
-				/>
-			) : (
-				<p className="tuval-chat-text">{item.text}</p>
-			)}
+			<RowBody item={item} expanded={expanded} fold={fold} onToggleRow={onToggleRow} />
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">
 					<span className="tuval-chat-interrupted-mark">interrupted</span>
@@ -237,7 +269,7 @@ function RowView({
 	onOlder,
 	expanded,
 	unfolded,
-	onToggleTool,
+	onToggleRow,
 	onToggleFold,
 }: {
 	readonly row: ChatRow;
@@ -247,7 +279,7 @@ function RowView({
 	readonly onOlder: () => void;
 	readonly expanded: ReadonlySet<string>;
 	readonly unfolded: ReadonlySet<string>;
-	readonly onToggleTool: (id: string, open: boolean) => void;
+	readonly onToggleRow: (id: string, open: boolean) => void;
 	readonly onToggleFold: (id: string, open: boolean) => void;
 }): ReactElement {
 	if (row.kind === "loading") {
@@ -284,7 +316,7 @@ function RowView({
 						}
 			}
 			nested={row.nested}
-			onToggleTool={onToggleTool}
+			onToggleRow={onToggleRow}
 		/>
 	);
 }
@@ -313,7 +345,7 @@ function ChatWindow({
 	// `StrictMode` does so on every commit, and Tuval only ever runs in development (ADR 0345) — so
 	// a `runFork` in there is two `setView` calls per keystroke. The ref is written in the same tick
 	// as the state, which is what keeps two commits batched into one render composing: the debounced
-	// scroll offset and `toggleTool`'s expanded set both read what the previous commit wrote.
+	// scroll offset and `toggleRow`'s expanded set both read what the previous commit wrote.
 	const viewRef = useRef(view);
 
 	const commit = useCallback((next: (current: ChatView) => ChatView) => {
@@ -339,7 +371,7 @@ function ChatWindow({
 	/** The row just opened, until the layout effect below has scrolled its trigger back into view. */
 	const openedRef = useRef<string | null>(null);
 
-	const toggleTool = useCallback(
+	const toggleRow = useCallback(
 		(id: string, open: boolean) => {
 			if (open) openedRef.current = id;
 			commit((current) => {
@@ -742,7 +774,7 @@ function ChatWindow({
 									onOlder={requestOlder}
 									expanded={expanded}
 									unfolded={unfolded}
-									onToggleTool={toggleTool}
+									onToggleRow={toggleRow}
 									onToggleFold={toggleFold}
 								/>
 							</div>
