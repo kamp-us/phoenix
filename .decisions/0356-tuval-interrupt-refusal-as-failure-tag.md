@@ -36,7 +36,7 @@ The failure-as-data direction agrees with ADR [0346](0346-sub-failure-policy-act
 **Phase.** `phaseAfterFailure` does not decide this one. The fold routes the interrupt tag on its own, in two halves:
 
 - **Refused while the turn is still running** — the phase stays `prompting`, and the window reads that the backend refused to stop rather than that it has not confirmed.
-- **Refused because there is no live turn** — no subprocess, or the turn is already gone. The session records the cut-short turn and moves to `ready`. This is the case that froze the founder's desk on 2026-09-05 at 19:09 PT with `interrupt was refused: Operation aborted`.
+- **Refused because there is no live turn** — no subprocess, or the turn is already gone. The turn ends as `interrupted` and the session moves to `ready`. This is the case that froze the founder's desk on 2026-09-05 at 19:09 PT with `interrupt was refused: Operation aborted`.
 
 **Adapters.** Each adapter emits the tag when its own backend refuses. An adapter with no refusal path emits nothing, and that is not a gap — it is the fence holding. Nothing here is required of a backend that cannot refuse.
 
@@ -45,7 +45,7 @@ The failure-as-data direction agrees with ADR [0346](0346-sub-failure-policy-act
 - `TuvalAiAgent.interrupt`'s signature stays `Effect.Effect<void>`. Giving it an error channel is the rejected option, not a later refinement.
 - The interrupt tag does not pass through `phaseAfterFailure`. A change that routes it there re-opens the premature-ready path #8007 closed.
 - No backend name appears under `apps/tuval/src/ai-agent/core/` as a result of this.
-- No adapter is obliged to emit the tag. A test or a fold that requires it from every layer re-introduces the Claude-only requirement the fence forbids.
+- An adapter whose backend can refuse is obliged to emit the tag; only an adapter with no refusal path is released. Both live adapters have one today — `src/pi/ai-agent/PiAiAgent.ts` on `pi.abort` and `src/claude/agent/ClaudeAiAgent.ts` on `current.handle.interrupt()` — so the obligation binds both. What the fence forbids is requiring the tag from a layer that has nothing to refuse: a test or a fold demanding it everywhere re-introduces the Claude-only requirement.
 
 ## Consequences
 
