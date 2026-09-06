@@ -4,7 +4,7 @@
  * The one verb in the group that reads across lanes rather than into one, because the question it
  * answers is a sweep: a driver (or a cron) asks which lanes are non-terminal and have gone quiet, and
  * gets a list. It writes nothing and stores nothing — the age comes off the `at` each event line
- * already carries (#5897).
+ * already carries.
  *
  * A lane that could not be read is a row, not the end of the sweep: refusing the whole answer over
  * one broken lane would hide every other lane's silence, which is the failure this verb exists to
@@ -12,7 +12,7 @@
  * that leaves the lane set UNKNOWN, and an UNKNOWN lane set is never a short list.
  *
  * The sweep is **offline unless a caller asks for more**. A session limit strands a lane's state and
- * the claim marker its dead builder left on the issue, and only the first is on disk (#6771) — so
+ * the claim marker its dead builder left on the issue, and only the first is on disk — so
  * `claims` pairs the second onto each non-terminal row. It is a reader the caller passes rather than
  * a flag this module reads, which is what keeps the default provable: with no reader there is no
  * seam to reach the board through.
@@ -92,7 +92,7 @@ const VERDICTS: ReadonlyArray<Verdict> = [
 /** How a caller addresses this lane: a chore root's entries are keyed `chore:<name>` (`key.ts`). */
 const keyOf = (root: string, name: string): string =>
 	// Suffix, never equality: the default root arrives absolute once it is derived off the owning
-	// repository (#5815), so a relocated or derived root still keys its chores correctly.
+	// repository, so a relocated or derived root still keys its chores correctly.
 	root.endsWith(DEFAULT_CHORES_ROOT) ? `${CHORE_PREFIX}${name}` : name;
 
 const unreadableRow = (key: string, root: string, reason: string): LaneRow => ({
@@ -291,7 +291,7 @@ export const runStale = <R = never>(
 								? `${VERB}: no non-terminal lane's issue carries a live claim.`
 								: `${VERB}: ${held.length} lane(s) whose issue is still claimed: ${held.join(
 										", ",
-									)} — a claim clears through "fabrika build adopt" then "fabrika build release", never on its own (ADR 0295).`,
+									)} — a claim clears through "fabrika build adopt" then "fabrika build release", never on its own.`,
 						]),
 				...(unknown.length === 0
 					? []

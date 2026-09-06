@@ -1,7 +1,6 @@
 /**
  * The lane compiler — one `workflow.json` machine document in, one flat tea Transitions machine
- * per task out, everything XState's nesting carried reduced to data (#5673; grounded in the
- * recorded spike runs on #5671/#5672).
+ * per task out, everything a nested state library carried reduced to data.
  *
  * Structural recognitions replace every name-driven mechanism, and **two guard spellings are read**:
  * a `guard`/`actions` string is otherwise inert data.
@@ -11,15 +10,15 @@
  *     under the two routing spellings below, whose fallthrough is the ordinary path and carries no
  *     error. The first arm's own spelling picks the guard, and only three kinds exist.
  *     `class:<name>` reads the lane class the event carried (see {@link TaskState}) and spends
- *     nothing: it picks which shell serves the round, and picking is not repairing (ADR 0317).
+ *     nothing: it picks which shell serves the round, and picking is not repairing.
  *     {@link PARTIAL_GUARD} reads whether the merge this event reports closed its issue, and spends
  *     nothing either: a `Part of #N` merge is real work landing, so the lane goes round again rather
- *     than folding to a terminal over an issue the board still calls buildable (ADR 0343). Every
+ *     than folding to a terminal over an issue the board still calls buildable. Every
  *     other spelling is the budget guard, one inline counter comparison in the compiled cell, and
  *     **which counter it spends is the event's own polarity**: `FAIL` is a repair round and spends
  *     `retries`, every other event is a wait and spends `waits`. A queue dwell must not eat the
  *     budget a later repair draws on, and reading that off the event keeps it structural — beyond
- *     the two routing spellings, no guard name is consulted (ADR 0313).
+ *     the two routing spellings, no guard name is consulted.
  *   - A transition **targeting a `history` node** resumes the state the task left, carried as the
  *     `was` field in {@link TaskState} — history-state semantics as data, no pseudo-state.
  *   - A phase's **`onDone` pair** `[{target, guard}, {target}]` names the two workflow terminals
@@ -27,13 +26,13 @@
  *     the tripped one.
  *   - A **`final` carrying an `on`** is a park rather than an end: it stays in `finals`, so its
  *     phase still folds and its trip still reads, and the door out stays walkable — how `frozen`
- *     takes an `UNBLOCKED` without leaving either set (ADR 0297).
+ *     takes an `UNBLOCKED` without leaving either set.
  *
  * Compilation is total over its result type: a document that does not fit comes back as
  * {@link Malformed} with every defect named, never as a machine that half-works.
  *
  * One cell is the compiler's rather than the document's: {@link CLEARED_EVENT}, injected into every
- * state, which raises the retry budget and moves nothing (ADR 0312). A document that declares it is
+ * state, which raises the retry budget and moves nothing. A document that declares it is
  * still a defect — the budget is a fold over recorded events, so a grant is a line in
  * `events.jsonl`, never a field the compiler reads out of mutable context.
  */
@@ -43,7 +42,7 @@ import {budgetWith} from "../cap-clearance.ts";
 import {RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 
-/** The operator's whole event vocabulary — the six, closed (#5570 founder session, 2026-08-15). */
+/** The operator's whole event vocabulary — the six, closed. */
 export const OPERATOR_EVENTS = ["DONE", "PASS", "FAIL", "BLOCKED", "WIP", "UNBLOCKED"] as const;
 
 export type OperatorEvent = (typeof OPERATOR_EVENTS)[number];
@@ -53,14 +52,14 @@ export const isOperatorEvent = (event: string): event is OperatorEvent =>
 
 /**
  * The seventh event, and the one no operator records: a founder's cleared repair round, appended by
- * `build clear` (ADR 0312). It targets nothing — it raises the budget from its own position in the
- * log forward — so it opens no door out of a park and leaves 0297's transition vocabulary at six.
+ * `build clear`. It targets nothing — it raises the budget from its own position in the
+ * log forward — so it opens no door out of a park and leaves the transition vocabulary at six.
  */
 export const CLEARED_EVENT = "CLEARED";
 
 /**
  * The eighth event, and the only line that names another line: a correction, appended by
- * `lane reconcile` to say what a recorded event's routing payload should have been (ADR 0350).
+ * `lane reconcile` to say what a recorded event's routing payload should have been.
  *
  * It reaches no machine at all — no state holds a cell for it, and the fold consumes it before any
  * message is dispatched. That is the design rather than an omission: a correction is a fact about
@@ -104,13 +103,13 @@ export interface LaneMsg {
 	 * It rides the resume rather than arriving as an eighth event, because the point is that ONE
 	 * recorded line both clears the park and buys the read the resumed lane needs: a bare `UNBLOCKED`
 	 * out of `human:queue-stall` restores a state whose wait budget is spent, and the fold refuses
-	 * exactly that (ADR 0313). `recipe unpark` grants it once it has proven the queue moved; a
+	 * exactly that. `recipe unpark` grants it once it has proven the queue moved; a
 	 * human's `lane transition --grant-wait` is the fallback for when that read cannot run.
 	 */
 	readonly waitGrant?: number;
 	/**
 	 * Whether the merge this event reports left its issue undischarged — the `merge:partial` guard's
-	 * whole input, relayed off `lane prove`'s closure read (ADR 0343).
+	 * whole input, relayed off `lane prove`'s closure read.
 	 *
 	 * Unlike {@link TaskState.classes} it is not sticky and folds into no state field: it is a fact
 	 * about *this* merge, so a lane that partially merged, went round and closed properly must read
@@ -133,9 +132,9 @@ export interface CompiledTask {
 	/**
 	 * The states holding a **retries**-guarded cell — the ones whose only non-`PASS` route out is
 	 * gated on `retries < maxRetries`. Read at resume time, where landing in one with the budget
-	 * spent means the state was restored and the budget was not (#6570). A wait-guarded cell is not
+	 * spent means the state was restored and the budget was not. A wait-guarded cell is not
 	 * one of these: its spent fallthrough is a human park that names the stall, not a fall back into
-	 * the error final the resume just left (ADR 0313).
+	 * the error final the resume just left.
 	 */
 	readonly guardedStates: ReadonlySet<string>;
 	/**
@@ -146,7 +145,7 @@ export interface CompiledTask {
 	 * only the name: a retry-guarded state's fallthrough is a final, so `errorFinals` already says
 	 * where a resume came from. A wait park is a plain state, so the pair is what tells the fold that
 	 * a resume lands back in the state whose spent guard produced this very park — rather than in one
-	 * a differently-caused park happens to share (ADR 0313).
+	 * a differently-caused park happens to share.
 	 */
 	readonly waitParks: ReadonlyMap<string, ReadonlySet<string>>;
 	/**
@@ -155,14 +154,14 @@ export interface CompiledTask {
 	 *
 	 * Carried so a reader can locate a misrouted line off the machine instead of off a state-name
 	 * list: which state ships, and which event lands the merge, is the document's call. An epic
-	 * tail's emitted region declares no partial arm, so it yields nothing here — ADR 0343's carve-out
+	 * tail's emitted region declares no partial arm, so it yields nothing here — that carve-out
 	 * falls out of the compilation rather than being restated as a special case.
 	 */
 	readonly partialStates: ReadonlyMap<string, ReadonlySet<string>>;
 	/**
-	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours
-	 * (ADR 0312). Carried so a refusal can name the repair — re-record each as a `CLEARED` event —
-	 * rather than leaving an operator staring at a grant that silently buys nothing.
+	 * Rounds a retired `clearedRounds` context field names, which the compiler no longer honours.
+	 * Carried so a refusal can name the repair — re-record each as a `CLEARED` event — rather than
+	 * leaving an operator staring at a grant that silently buys nothing.
 	 */
 	readonly staleGrants: ReadonlyArray<number>;
 	/** The task's `context` entry minus the two budgets' bookkeeping — passed through to status. */
@@ -175,7 +174,7 @@ export interface CompiledLane {
 	/** The workflow's two terminal names, read off the last phase's `onDone` pair. */
 	readonly terminals: {readonly complete: string; readonly tripped: string};
 	/**
-	 * What fires this lane, as the document declares it — a chore workflow's own field (#5840). Read
+	 * What fires this lane, as the document declares it — a chore workflow's own field. Read
 	 * and carried rather than ignored, so a mistyped declaration is a defect instead of a silence;
 	 * what a trigger name *means* is the caller's, exactly as a guard name is.
 	 */
@@ -207,7 +206,7 @@ const classGuardOf = (arm: unknown): string | undefined => {
  *
  * Namespaced like `class:<name>` rather than spelled bare, because a bare word falls through to the
  * budget guard: a typo would compile, match nothing, spend a wait, and fold the lane to the terminal
- * this arm exists to divert it from — silently, which is the failure ADR 0317 named on the class
+ * this arm exists to divert it from — silently, which is the failure already met on the class
  * axis and this axis inherits.
  */
 export const PARTIAL_GUARD = "merge:partial";
@@ -287,7 +286,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			const msg = bareEvent(eventName);
 			if (msg === CLEARED_EVENT) {
 				defects.push(
-					`task "${taskId}": state "${stateName}" declares "${eventName}" — a clearance is the compiler's own cell on every state, never a document's transition (ADR 0312)`,
+					`task "${taskId}": state "${stateName}" declares "${eventName}" — a clearance is the compiler's own cell on every state, never a document's transition`,
 				);
 				continue;
 			}
@@ -381,7 +380,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	if (defects.length > 0) return {defects};
 
 	// Read BEFORE the clearance cell is injected: an open final is one the DOCUMENT left a door in.
-	// The injected cell targets nothing, so counting it would read every final as a park (ADR 0312).
+	// The injected cell targets nothing, so counting it would read every final as a park.
 	const openFinals = new Set(
 		Object.entries(table)
 			.filter(([name, cells]) => finals.has(name) && Object.keys(cells).length > 0)
@@ -389,10 +388,10 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	);
 
 	// The lane guard and `build verdicts`'s `capReached` spend one grant identically, which is why the
-	// budget is derived there rather than tallied here — see `../cap-clearance.ts` (#5959, #6137).
+	// budget is derived there rather than tallied here — see `../cap-clearance.ts`.
 	const clearedCell: Cell = (s, msg) => {
 		const round = msg.round;
-		// Set-semantic by the round it names, so a re-recorded grant buys nothing (ADR 0312).
+		// Set-semantic by the round it names, so a re-recorded grant buys nothing.
 		if (round === undefined || s.cleared.includes(round)) return [s, []];
 		const cleared = [...s.cleared, round].sort((a, b) => a - b);
 		return [{...s, cleared, maxRetries: budgetWith(declared, cleared)}, []];
@@ -408,7 +407,7 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		? ctx.classes.filter((name): name is string => typeof name === "string")
 		: [];
 	// A cap clearance buys a repair round and never a longer wait: `clearedCell` raises `maxRetries`
-	// alone, so the wait budget is a declared constant no recorded event moves (ADRs 0312, 0313).
+	// alone, so the wait budget is a declared constant no recorded event moves.
 	const maxWaits = typeof ctx.maxWaits === "number" ? ctx.maxWaits : WAIT_BUDGET;
 	const {
 		maxRetries: _max,

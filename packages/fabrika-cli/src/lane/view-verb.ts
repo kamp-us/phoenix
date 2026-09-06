@@ -1,5 +1,5 @@
 /**
- * `lane view` — every lane on disk, on one screen, sorted by what needs a person (#6131).
+ * `lane view` — every lane on disk, on one screen, sorted by what needs a person.
  *
  * The page and the derivation are `@demlik/tea/chart/lane/server`'s, shipped prebuilt. This verb
  * supplies the two facts only fabrika knows: WHERE THE LANES ARE (the sweep `lane stale` does, over

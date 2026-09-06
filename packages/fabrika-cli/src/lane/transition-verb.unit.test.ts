@@ -131,7 +131,7 @@ describe("lane transition — refuse without append", () => {
 	});
 });
 
-describe("lane transition — the park cause a driver-originated BLOCKED carries (#6480)", () => {
+describe("lane transition — the park cause a driver-originated BLOCKED carries", () => {
 	it("records a known cause on the event line", async () => {
 		const fs = freshLane(logLine("WIP"));
 
@@ -142,7 +142,7 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 		expect(appended).toMatchObject({event: "ISSUE.BLOCKED", cause: "worktree-holds-branch"});
 	});
 
-	it("records campaign-paused, the cause a recipe clears by re-reading the row (#7217)", async () => {
+	it("records campaign-paused, the cause a recipe clears by re-reading the row", async () => {
 		const fs = freshLane(logLine("WIP"));
 
 		const out = await run(fs, "BLOCKED", null, "campaign-paused");
@@ -182,7 +182,7 @@ describe("lane transition — the park cause a driver-originated BLOCKED carries
 	});
 });
 
-describe("lane transition — the lane class the `class:<name>` arms route on (ADR 0317)", () => {
+describe("lane transition — the lane class the `class:<name>` arms route on", () => {
 	it("records a known class on the event line and routes the arm that reads it", async () => {
 		const fs = freshLane();
 

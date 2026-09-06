@@ -1,12 +1,13 @@
 /**
  * `lane archive` — move one lane whose log will never replay out of the swept root.
  *
- * The route ADR 0352 ruled for a lane no sweep can judge. `lane reconcile` reports such a lane
+ * The route for a lane no sweep can judge. `lane reconcile` reports such a lane
  * `unreadable` and `lane migrate` refuses it `unsafe` on every run, forever, because the fault is in
  * a log neither may rewrite: an `ISSUE.DONE` appended after the fold reached `frozen` has no update
- * cell and never will. Sealing it would mean appending a line for something that did not happen
- * (ADR 0350 forbids that), and giving `frozen` the cell would let a lane at its retry cap ship with
- * no unblock. So the lane leaves the sweep's scope by moving, and the log is never touched.
+ * cell and never will. Sealing it would mean appending a line for something that did not happen —
+ * the log is append-only and a recorded line is never rewritten — and giving `frozen` the cell
+ * would let a lane at its retry cap ship with no unblock. So the lane leaves the sweep's scope by
+ * moving, and the log is never touched.
  *
  * **Both gates hold or nothing moves**, and that is what keeps a genuinely broken lane visible: a
  * lane whose issue is still open, or whose log replays, is refused with the directory where it was.

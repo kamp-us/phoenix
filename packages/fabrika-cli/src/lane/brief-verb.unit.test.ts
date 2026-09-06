@@ -29,8 +29,8 @@ import {emitMachine} from "./emit.ts";
 import {coderTemplateText} from "./fixtures.test-support.ts";
 
 const ROOT = ".fabrika/lanes";
-const ISSUE_URL = "https://github.com/o/r/issues/5751";
-const PR_URL = "https://github.com/o/r/pull/5790";
+const ISSUE_URL = "https://forge.example/o/r/issues/5751";
+const PR_URL = "https://forge.example/o/r/pull/5790";
 const TITLE = "the operator hand-writes every spawn prompt";
 
 const ISSUE_READ = /^GET .*\/repos\/o\/r\/issues\/5751$/;
@@ -138,8 +138,8 @@ const lane = (
 	});
 
 const EPIC = 5800;
-const EPIC_URL = "https://github.com/o/r/issues/5800";
-const CHILD_URL = "https://github.com/o/r/issues/5828";
+const EPIC_URL = "https://forge.example/o/r/issues/5800";
+const CHILD_URL = "https://forge.example/o/r/issues/5828";
 const EPIC_ISSUE_READ = /^GET .*\/repos\/o\/r\/issues\/5800$/;
 const EPIC_CHILD_READ = /^GET .*\/repos\/o\/r\/issues\/5828$/;
 
@@ -152,7 +152,7 @@ const CHILD_MESSAGE = "feat(lane): resolve the child's range (#5828)";
 const REV = (rev: string) =>
 	new RegExp(`^git rev-parse --verify --quiet ${rev.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}\\^`);
 const BRANCHES = /^git for-each-ref --format=%\(refname:short\) refs\/heads$/;
-/** The shallow probe every range read takes before it trusts an ancestry answer (#6343). */
+/** The shallow probe every range read takes before it trusts an ancestry answer. */
 const COMPLETE_CLONE = [/^git rev-parse --is-shallow-repository$/, okOut("false\n")] as const;
 const LOG_RANGE = /^git log --format=/;
 
@@ -204,9 +204,9 @@ const epicLane = (events: ReadonlyArray<readonly [string, string]>) => {
 };
 
 /**
- * A non-phoenix entrypoint on purpose: every brief these tests read back is the shape a repo that
+ * An out-of-tree entrypoint on purpose: every brief these tests read back is the shape a repo that
  * *installs* fabrika gets, so a path bound back to `packages/fabrika-cli/` fails here rather than in
- * a consuming repo's maiden run (#6012).
+ * a consuming repo's maiden run.
  */
 const ENTRY = "/checkout/node_modules/@kampus/fabrika-cli/dist/bin.js";
 
@@ -404,7 +404,7 @@ describe("lane brief", () => {
 		const out = await run(
 			fs,
 			[
-				[CHILD_READ, issuePayload(5729, "https://github.com/o/r/issues/5729")],
+				[CHILD_READ, issuePayload(5729, "https://forge.example/o/r/issues/5729")],
 				[PR_CLOSERS, closingPulls()],
 			],
 			{lane: "5680", task: "issue_5729"},
@@ -413,7 +413,7 @@ describe("lane brief", () => {
 		expect(out.code).toBe(0);
 		expect(readBrief(out.stdout)).toMatchObject({
 			_tag: "Found",
-			value: {lane: "5680", task: "issue_5729", issue: "https://github.com/o/r/issues/5729"},
+			value: {lane: "5680", task: "issue_5729", issue: "https://forge.example/o/r/issues/5729"},
 		});
 	});
 
@@ -468,7 +468,7 @@ describe("lane brief", () => {
 		expect(out.stderr.join("\n")).toContain("this fabrika's own package root is not on disk");
 	});
 
-	it("refuses a resolved entrypoint node cannot run — a binstub reaching the brief is #5679 again", async () => {
+	it("refuses a resolved entrypoint node cannot run — a binstub must never reach the brief", async () => {
 		const binstub = "/checkout/node_modules/.bin/fabrika";
 		const out = await run(lane("5751", ["WIP"]), [], {
 			entrypoint: {_tag: "Entrypoint", entrypoint: binstub},
@@ -499,7 +499,7 @@ describe("lane brief", () => {
 		expect(out.stdout).toBe("");
 	});
 
-	it("resolves a `Part of #5751` PR the closing edge cannot see — the lane-5981 shape (#6179)", async () => {
+	it("resolves a `Part of #5751` PR the closing edge cannot see — the open-but-not-closing shape", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
 			[PR_CLOSERS, closingPulls()],
@@ -522,7 +522,7 @@ describe("lane brief", () => {
 			[/^GET .*\/repos\/o\/r\/pulls\/5790$/, pullPayload(5790, PR_URL, "Part of #5751.\n")],
 			[
 				/^GET .*\/repos\/o\/r\/pulls\/5791$/,
-				pullPayload(5791, "https://github.com/o/r/pull/5791", "Part of #5751.\n"),
+				pullPayload(5791, "https://forge.example/o/r/pull/5791", "Part of #5751.\n"),
 			],
 		]);
 
@@ -533,7 +533,7 @@ describe("lane brief", () => {
 	it("refuses several open PRs, naming every candidate", async () => {
 		const out = await run(lane("5751", ["WIP", "DONE"]), [
 			[ISSUE_READ, issuePayload(5751, ISSUE_URL)],
-			...linked(5751, [5790, PR_URL], [5791, "https://github.com/o/r/pull/5791"]),
+			...linked(5751, [5790, PR_URL], [5791, "https://forge.example/o/r/pull/5791"]),
 		]);
 
 		expect(out.code).toBe(PR_AMBIGUOUS);
@@ -710,7 +710,7 @@ describe("lane brief on an epic lane", () => {
 				ground: {_tag: "Tail", pr: PR_URL, epic: EPIC_URL},
 			},
 		});
-		// The tail's brief names where each child's build-deviations disclosure lives (#5903).
+		// The tail's brief names where each child's build-deviations disclosure lives.
 		expect(out.stdout).toContain(EPIC_TAIL_RULES);
 		expect(out.stdout).not.toContain(EPIC_RULES);
 	});
@@ -742,7 +742,7 @@ describe("lane brief on an epic lane", () => {
 			]),
 			[
 				[EPIC_ISSUE_READ, issuePayload(EPIC, EPIC_URL)],
-				...linked(EPIC, [5890, PR_URL], [5891, "https://github.com/o/r/pull/5891"]),
+				...linked(EPIC, [5890, PR_URL], [5891, "https://forge.example/o/r/pull/5891"]),
 			],
 			{task: "epic_5800"},
 		);

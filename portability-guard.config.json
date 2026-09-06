@@ -23,6 +23,11 @@
 		}
 	},
 	"unmigrated": {
+		"cli-lane": {
+			"ceiling": 3,
+			"why": "Three fixture paths in `packages/fabrika-cli/src/lane/prove-verb.unit.test.ts` that must start with the rendered-surface prefix `isUiSurface` reads; the prefix has since moved onto config, so these clear on the sweep that follows this unit onto that reader.",
+			"paths": ["packages/fabrika-cli/src/lane"]
+		},
 		"plugin-build": {
 			"ceiling": 457,
 			"why": "The build skill's text, cleared by #8291, the build sweep child.",
@@ -94,11 +99,6 @@
 			"ceiling": 288,
 			"why": "Everything else the plugin ships — the guide, the README, the agents, the hook manifest and the remaining skills — cleared by #8301, the plugin tail sweep child.",
 			"paths": ["claude-plugins/fabrika"]
-		},
-		"cli-lane": {
-			"ceiling": 586,
-			"why": "The lane group's source, cleared by #8302, the lane sweep child.",
-			"paths": ["packages/fabrika-cli/src/lane"]
 		},
 		"cli-guard": {
 			"ceiling": 649,

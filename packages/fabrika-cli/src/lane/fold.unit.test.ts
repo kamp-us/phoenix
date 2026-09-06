@@ -1,6 +1,5 @@
 /**
- * The six-event contract, tested as the spike's recorded runs (#5671 run 8 and 19; the
- * state-ledger rebuild's runs 1–6 recorded on #5570's 2026-08-15 session note are the plan).
+ * The six-event contract, tested as the state-ledger spike's recorded runs.
  */
 import {describe, expect, it} from "vitest";
 import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
@@ -87,7 +86,7 @@ describe("run 1 — a fresh lane's status shape", () => {
 		});
 	});
 
-	it("carries the standing lane classes in status, and nothing when none stand (ADR 0317)", () => {
+	it("carries the standing lane classes in status, and nothing when none stand", () => {
 		const compiled = lane(coderWorkflow());
 		const states = statesOf(compiled, []);
 		const at = "2026-08-16T00:00:00.000Z";
@@ -231,7 +230,7 @@ describe("run 5 — BLOCKED then UNBLOCKED resumes the state it left", () => {
 	});
 });
 
-describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)", () => {
+describe("the frozen park — an UNBLOCKED door out of an error final", () => {
 	const round: ReadonlyArray<readonly [string, string]> = [
 		["issue", "DONE"],
 		["issue", "FAIL"],
@@ -251,7 +250,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		expect(status.context.issue).toMatchObject({retries: RETRY_BUDGET, maxRetries: RETRY_BUDGET});
 	});
 
-	it("refuses the door when the state would come back and the budget would not (#6570)", () => {
+	it("refuses the door when the state would come back and the budget would not", () => {
 		const compiled = lane(coderWorkflow());
 
 		const applied = applyEvent(
@@ -262,7 +261,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 			"2026-08-16T00:00:00.000Z",
 		);
 		// Never a silent `active`/`review` whose only walkable arm is PASS: the resume is refused with
-		// the log unappended, and the refusal names the remedy (ADR 0312).
+		// the log unappended, and the refusal names the remedy.
 		expect(applied).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
 		if (applied._tag !== "Refused") return;
 		expect(applied.reason).toContain("build clear");
@@ -323,7 +322,7 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 		).toMatchObject({_tag: "AlreadyHeld"});
 	});
 
-	it("a grant landing on the park moves nothing — the door out is still UNBLOCKED (ADR 0297)", () => {
+	it("a grant landing on the park moves nothing — the door out is still UNBLOCKED", () => {
 		const compiled = lane(coderWorkflow());
 		const granted = grant(compiled, drive(compiled, freeze), "issue", CAP_ROUND);
 
@@ -443,11 +442,11 @@ describe("the frozen park — an UNBLOCKED door out of an error final (ADR 0297)
 });
 
 /**
- * The incident this slice closes, driven end to end: lane 6462 / PR #6552, where the two halves of
- * one frozen-lane resume were applied in the order a human applies them and produced two defects
- * (#6570, #6578). Both are asserted absent here on the same log.
+ * The incident this slice closes, driven end to end: a lane where the two halves of
+ * one frozen-lane resume were applied in the order a human applies them and produced two defects.
+ * Both are asserted absent here on the same log.
  */
-describe("lane 6462 — an UNBLOCKED, then a `build clear` for that round (#6570, #6578)", () => {
+describe("one lane — an UNBLOCKED, then a `build clear` for that round", () => {
 	const round: ReadonlyArray<readonly [string, string]> = [
 		["issue", "DONE"],
 		["issue", "FAIL"],
@@ -461,7 +460,7 @@ describe("lane 6462 — an UNBLOCKED, then a `build clear` for that round (#6570
 		const compiled = lane(coderWorkflow());
 		const frozen = drive(compiled, freeze);
 
-		// #6570: the fold restored `review` at retries 2 against maxRetries 2, so `ISSUE.PASS` was the
+		// The fold restored `review` at retries 2 against maxRetries 2, so `ISSUE.PASS` was the
 		// only non-error arm and the lane still read `active` — the signal an operator routes on.
 		expect(statusOf(compiled, frozen).context.issue).toMatchObject({
 			retries: RETRY_BUDGET,
@@ -489,7 +488,7 @@ describe("lane 6462 — an UNBLOCKED, then a `build clear` for that round (#6570
 		);
 		const later = grant(compiled, resumed, "issue", CAP_ROUND + 1);
 
-		// #6578: the third FAIL used to re-evaluate against the widened budget, route to `build`
+		// The third FAIL used to re-evaluate against the widened budget, route to `build`
 		// instead of `frozen`, and strand the recorded UNBLOCKED in a state with no cell for it —
 		// every verb then refused on exit 4. The fold is clean, and the FAIL kept its routing.
 		const fold = foldLog(compiled, later);
@@ -554,7 +553,7 @@ describe("run 6 — invalid events refuse, producing nothing to append", () => {
 		const compiled = lane(twoPhaseWorkflow());
 
 		// The cell exists in every state, so nothing in the machine would stop this — the refusal is
-		// what keeps `lane transition` from minting budget nobody granted (ADR 0312).
+		// what keeps `lane transition` from minting budget nobody granted.
 		const applied = applyEvent(
 			compiled,
 			statesOf(compiled, []),
@@ -646,7 +645,7 @@ describe("the fold is deterministic and total over its inputs", () => {
 	});
 });
 
-describe("nextLeaf — the arm an event would take, asked before it is recorded (#6664)", () => {
+describe("nextLeaf — the arm an event would take, asked before it is recorded", () => {
 	const atReview = () => {
 		const compiled = lane(coderWorkflow());
 		return {
@@ -680,9 +679,9 @@ describe("nextLeaf — the arm an event would take, asked before it is recorded 
 
 /**
  * `lane history` prints what `parseLog` returns, so a field the parser drops is a disclosure nobody
- * can read back — which is the whole job of `deferred` (#7041).
+ * can read back — which is the whole job of `deferred`.
  */
-describe("the deferral a proven PASS carries (#7041)", () => {
+describe("the deferral a proven PASS carries", () => {
 	const line = (fields: string) => `{"task":"issue","event":"ISSUE.PASS","at":"t"${fields}}\n`;
 
 	it("carries the deferred namespaces back off the line, and refuses a shape that is not a list", () => {
@@ -703,10 +702,10 @@ describe("the deferral a proven PASS carries (#7041)", () => {
 });
 
 /**
- * The routing payload a ship's `DONE` carries (ADR 0343). Absent reads as a closing merge, so the
+ * The routing payload a ship's `DONE` carries. Absent reads as a closing merge, so the
  * whole ledger written before the field existed folds byte-for-byte as it did.
  */
-describe("the partial merge a ship DONE carries (#7382)", () => {
+describe("the partial merge a ship DONE carries", () => {
 	const line = (fields: string) => `{"task":"issue","event":"ISSUE.DONE","at":"t"${fields}}\n`;
 
 	it("carries the flag back off the line, and refuses a shape that is not a boolean", () => {
@@ -724,7 +723,7 @@ describe("the partial merge a ship DONE carries (#7382)", () => {
 		});
 	});
 
-	it("carries the merged PRs that `partial` was read off (#7457)", () => {
+	it("carries the merged PRs that `partial` was read off", () => {
 		expect(parseLog(line(`,"partial":false,"landed":[7329]`))).toEqual({
 			_tag: "Parsed",
 			entries: [{task: "issue", event: "ISSUE.DONE", at: "t", partial: false, landed: [7329]}],
@@ -738,7 +737,7 @@ describe("the partial merge a ship DONE carries (#7382)", () => {
 	});
 });
 
-describe("the park cause a BLOCKED carries (#6480)", () => {
+describe("the park cause a BLOCKED carries", () => {
 	const caused = (task: string, event: string, cause: string): LogEntry => ({
 		...entry(task, event),
 		cause,
@@ -807,7 +806,7 @@ describe("the park cause a BLOCKED carries (#6480)", () => {
 	});
 });
 
-describe("the parse defects that keep a grant from folding as a silent no-op (ADR 0312)", () => {
+describe("the parse defects that keep a grant from folding as a silent no-op", () => {
 	const line = (fields: string) =>
 		`{"task":"issue","event":"ISSUE.${CLEARED_EVENT}","at":"t"${fields}}\n`;
 
@@ -833,7 +832,7 @@ describe("the parse defects that keep a grant from folding as a silent no-op (AD
 	});
 
 	/** The same failure mode on the wait axis: a grant of nothing raises the budget by nothing. */
-	it("refuses a waitGrant that names no whole grant, and parses one that does (ADR 0313)", () => {
+	it("refuses a waitGrant that names no whole grant, and parses one that does", () => {
 		const resume = (fields: string) =>
 			`{"task":"issue","event":"ISSUE.UNBLOCKED","at":"t"${fields}}\n`;
 		const defect = ["line 1 carries a `waitGrant` that names no whole grant of waits"];
@@ -855,7 +854,7 @@ describe("the parse defects that keep a grant from folding as a silent no-op (AD
 });
 
 /**
- * The wait axis's own unbudgeted resume (#6717). It cannot key on `errorFinals` the way the retry
+ * The wait axis's own unbudgeted resume. It cannot key on `errorFinals` the way the retry
  * axis does: `human:queue-stall` is a plain state carrying no `type: "final"`, so it structurally
  * cannot be in that set, and the refusal keys on the wait counter and `ship:queued`'s own park
  * pairing instead.

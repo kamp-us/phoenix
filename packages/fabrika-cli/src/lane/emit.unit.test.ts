@@ -388,7 +388,7 @@ describe("emitMachine", () => {
 		expect(spent.context.errors).toEqual(["epic_4300"]);
 	});
 
-	it("walks the epic-review park back into review on a granted round (ADR 0341)", () => {
+	it("walks the epic-review park back into review on a granted round", () => {
 		const compiled = laneOf(emitted(emitMachine(4300, body(), CHILDREN)));
 		const parked = driveLog(compiled, [
 			...LAND_ALL,
@@ -399,7 +399,7 @@ describe("emitMachine", () => {
 			status: "done",
 		});
 
-		// The door is walkable and the budget still gates it, exactly as `frozen`'s does (ADR 0312).
+		// The door is walkable and the budget still gates it, exactly as `frozen`'s does.
 		expect(
 			applyEvent(compiled, statesOf(compiled, parked), "epic_4300", "UNBLOCKED", AT),
 		).toMatchObject({_tag: "Refused", kind: "unbudgeted-resume"});
