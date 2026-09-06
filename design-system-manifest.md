@@ -229,7 +229,8 @@ migration of the live glyph surfaces to this idiom is a **separate downstream ch
   **only** in the reaction bar. **Key-legends** → `⌘` `⌥` `⇧` `↵` `⎋` are keycap typography, legal
   **only** inside a `<kbd>` chip — never free-floating, never an icon. **State markers** → a glyph
   doing **state** work (a `::before` caret on the active row, a check on a set item, a dot on an open
-  section) is **not** an icon and stays legal as CSS generated content — but **only** while both
+  section) is **not** an icon and stays legal as typography — delivered either as CSS generated
+  content or on a decorative element kept out of the accessible name — but **only** while both
   bounds hold: it pairs with a non-visual state signal (the ARIA state the component already exposes
   — `aria-selected`, `aria-checked`, `aria-expanded` — or a visually-hidden state word, so state
   never rides on the glyph alone, Pillar 4), **and** it never reaches the accessible name (the
@@ -266,8 +267,9 @@ card / meta-row / count-pill by hand.
 - **Never** introduce a fourth icon idiom or a second type/elevation system.
 - **Never** ship a Unicode functional glyph (`△` `↑` `→` `⌘` `↵`) or a hand-inlined SVG as an
   icon — functional icons are drawn Lucide (the [icon idiom](#the-canonical-icon-idiom)). A **state
-  marker** is not an icon and this does not reach it: a state glyph in CSS generated content is legal
-  under the boundary rule's fourth class, inside both of that class's bounds.
+  marker** is not an icon and this does not reach it: a state glyph — in CSS generated content or on
+  a decorative element — is legal under the boundary rule's fourth class, inside both of that
+  class's bounds.
 - **Never** ship a state marker outside those bounds — it pairs with the ARIA state or a
   visually-hidden word (never state on the glyph alone), and it stays out of the accessible name via
   `content: "\203A" / ""` or an `aria-hidden` element. Outside them it is a functional glyph and the

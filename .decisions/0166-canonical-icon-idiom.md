@@ -90,7 +90,8 @@ substitution.
 
 ### 7. The three-way partition — the boundary rule
 
-Glyphs partition into exactly three classes, and the class decides the delivery:
+Glyphs partition into exactly three classes, and the class decides the delivery. (The partition grew
+a fourth class in §8; these three are unchanged by it.)
 
 - **Function** → a **drawn Lucide icon**, legal anywhere.
 - **Affect** → the curated **six-emoji reaction set** (monochrome-controlled per ADR
@@ -99,8 +100,7 @@ Glyphs partition into exactly three classes, and the class decides the delivery:
   chip** — never free-floating, never an icon.
 
 A functional glyph is a Lucide icon; a reaction is a controlled emoji in the reaction bar only; a
-keycap is `<kbd>` typography. Nothing crosses those lines. The partition grew a fourth class in §8;
-these three are unchanged by it.
+keycap is `<kbd>` typography. Nothing crosses those lines.
 
 ### 8. A state marker is not an icon — the fourth class (ruled 2026-09-05)
 
@@ -112,9 +112,10 @@ it nor exempted it, and two live surfaces were left to per-agent reading (the pa
 [#8023](https://github.com/kamp-us/phoenix/issues/8023)). Founder ruling, transcribed here:
 <https://github.com/kamp-us/phoenix/issues/8073#issuecomment-5555958957>.
 
-**A CSS state marker is not an icon.** §1's ban is about a functional glyph standing in for
+**A state marker is not an icon.** §1's ban is about a functional glyph standing in for
 iconography; a marker decorating a state the component already carries is typography, and it stays
-legal as CSS generated content. This is **not** a general exemption for Unicode glyphs — two
+legal in either delivery the ruling names — **CSS generated content, or a decorative element kept
+out of the accessible name**. This is **not** a general exemption for Unicode glyphs — two
 conditions bound it, and a marker failing either is back under §1's ban:
 
 1. **It pairs with a non-visual state signal** — either the ARIA state the component already exposes
