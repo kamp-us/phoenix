@@ -564,72 +564,75 @@ function ChatWindow({
 		// composer's textarea keeps focus. A named `section` is what that owes a screen reader: the
 		// phase line, the transcript and the composer are one named region, and every control inside
 		// it is a real `button` or `textarea` with its own keyboard behaviour.
-		<section
-			className="tuval-chat"
-			aria-label="Agent chat"
-			data-scheme="dark"
-			data-window={host.windowId}
-			onKeyDown={onKeyDown}
-		>
-			<div className="tuval-chat-bar">
-				<p className="tuval-chat-phase" data-phase={phase} role="status">
-					<span className="tuval-chat-phase-dot" aria-hidden="true" />
-					{statusLine(phase, state?.failure ?? null)}
-				</p>
-				<div className="tuval-chat-bar-end">
-					{options.extras === null ? null : options.extras(process.state)}
-					<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
-				</div>
-			</div>
-			<div
-				ref={scrollRef}
-				className="tuval-chat-transcript"
-				onScroll={onScroll}
-				onKeyDown={swallowBareCharacter}
-				role="log"
-				aria-label="Transcript"
-				// The scroll container is the only way to older turns on a plain transcript, so a
-				// keyboard user must be able to focus it (axe scrollable-region-focusable).
-				// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
-				tabIndex={0}
+		// The provider sits above the whole window, not just the composer: a design primitive the
+		// transcript mounts (a table's scroller name) reads this catalog too, and the package's own
+		// default is Turkish.
+		<DesignTranslationProvider translate={tuvalDesignTranslate}>
+			<section
+				className="tuval-chat"
+				aria-label="Agent chat"
+				data-scheme="dark"
+				data-window={host.windowId}
+				onKeyDown={onKeyDown}
 			>
-				<div className="tuval-chat-spacer" style={{height: `${virtualizer.getTotalSize()}px`}}>
-					{virtualizer.getVirtualItems().map((virtual) => {
-						const row = rows[virtual.index];
-						if (row === undefined) return null;
-						return (
-							<div
-								key={virtual.key}
-								id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
-								className="tuval-chat-row"
-								data-index={virtual.index}
-								data-kind={row.kind === "item" ? row.item.kind : row.kind}
-								data-nested={row.kind === "item" && row.nested ? "true" : undefined}
-								ref={virtualizer.measureElement}
-								style={{
-									transform: `translateY(${virtual.start}px)`,
-									// One indent step per fold the row sits inside, so a subagent's own subagent
-									// reads as a further step in rather than as another row at the same level.
-									...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
-								}}
-							>
-								<RowView
-									row={row}
-									windowId={host.windowId}
-									interruptedId={interruptedId}
-									onResend={lastPrompt === null ? null : resend}
-									onOlder={requestOlder}
-									expanded={expanded}
-									unfolded={unfolded}
-									onToggleTool={toggleTool}
-									onToggleFold={toggleFold}
-								/>
-							</div>
-						);
-					})}
+				<div className="tuval-chat-bar">
+					<p className="tuval-chat-phase" data-phase={phase} role="status">
+						<span className="tuval-chat-phase-dot" aria-hidden="true" />
+						{statusLine(phase, state?.failure ?? null)}
+					</p>
+					<div className="tuval-chat-bar-end">
+						{options.extras === null ? null : options.extras(process.state)}
+						<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
+					</div>
 				</div>
-			</div>
-			<DesignTranslationProvider translate={tuvalDesignTranslate}>
+				<div
+					ref={scrollRef}
+					className="tuval-chat-transcript"
+					onScroll={onScroll}
+					onKeyDown={swallowBareCharacter}
+					role="log"
+					aria-label="Transcript"
+					// The scroll container is the only way to older turns on a plain transcript, so a
+					// keyboard user must be able to focus it (axe scrollable-region-focusable).
+					// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
+					tabIndex={0}
+				>
+					<div className="tuval-chat-spacer" style={{height: `${virtualizer.getTotalSize()}px`}}>
+						{virtualizer.getVirtualItems().map((virtual) => {
+							const row = rows[virtual.index];
+							if (row === undefined) return null;
+							return (
+								<div
+									key={virtual.key}
+									id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
+									className="tuval-chat-row"
+									data-index={virtual.index}
+									data-kind={row.kind === "item" ? row.item.kind : row.kind}
+									data-nested={row.kind === "item" && row.nested ? "true" : undefined}
+									ref={virtualizer.measureElement}
+									style={{
+										transform: `translateY(${virtual.start}px)`,
+										// One indent step per fold the row sits inside, so a subagent's own subagent
+										// reads as a further step in rather than as another row at the same level.
+										...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
+									}}
+								>
+									<RowView
+										row={row}
+										windowId={host.windowId}
+										interruptedId={interruptedId}
+										onResend={lastPrompt === null ? null : resend}
+										onOlder={requestOlder}
+										expanded={expanded}
+										unfolded={unfolded}
+										onToggleTool={toggleTool}
+										onToggleFold={toggleFold}
+									/>
+								</div>
+							);
+						})}
+					</div>
+				</div>
 				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />
 				<AgentChatInput
 					variant="focused"
@@ -639,8 +642,8 @@ function ChatWindow({
 						commit((current) => (current.draft === draft ? current : {...current, draft}))
 					}
 				/>
-			</DesignTranslationProvider>
-		</section>
+			</section>
+		</DesignTranslationProvider>
 	);
 }
 

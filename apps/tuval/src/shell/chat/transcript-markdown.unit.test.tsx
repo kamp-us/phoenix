@@ -21,6 +21,7 @@ import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
 import {assistantItem, systemItem, userItem, withTranscript} from "./chat.testing.ts";
+import {tuvalDesignMessages} from "./copy.ts";
 import type {ChatView} from "./view.ts";
 
 installDomShims();
@@ -36,6 +37,7 @@ const openWindow = async (state: AiAgentSessionState): Promise<void> => {
 			cursor: null,
 			atOldest: false,
 			expanded: [],
+			unfolded: [],
 		}),
 	);
 	render(chatWindow({scrollToFn: () => {}}).render(host) as ReactElement);
@@ -60,6 +62,17 @@ describe("an agent reply renders as markdown", () => {
 		expect(link.getAttribute("target")).toBe("_blank");
 		expect(link.getAttribute("rel")).toBe("noreferrer");
 		expect(screen.queryByText("|---|---|")).toBeNull();
+	});
+
+	it("names the table's scroller from Tuval's own catalog, not the package's Turkish default", async () => {
+		await openWindow(withTranscript([assistantItem("a1", TABLE_REPLY)]));
+
+		// Read off `copy.ts` rather than a literal: this asserts the provider is above the transcript,
+		// which is the wiring that breaks silently. The second line is the language the name must be
+		// in, which a catalog edit could break on its own.
+		const name = tuvalDesignMessages["ui.markdown.table"];
+		expect(screen.getByRole("region", {name}).contains(screen.getByRole("table"))).toBe(true);
+		expect(name).toBe("table");
 	});
 
 	it("renders emphasis, headings, lists and fenced code as elements", async () => {
