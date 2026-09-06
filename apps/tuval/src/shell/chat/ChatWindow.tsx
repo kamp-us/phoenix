@@ -21,11 +21,12 @@
  *
  * **Four writes move the transcript, and one pin decides between them.** A window resting on its
  * newest turn follows every turn that lands; one whose reader scrolled up is left alone, and so is
- * one anchored on a history page or on a row it just expanded. That is `view.pinned`: it is set
- * from the scroll offset on every scroll, cleared by expanding a row or asking for a page of
- * history, and set again by sending. The two anchoring effects reach the viewport only while it is
- * clear, and each clears it itself rather than trusting the geometry to have done so: a transcript
- * barely taller than its viewport is inside the top threshold and the bottom one at once.
+ * one anchored on a history page, on a row it just expanded or on a fold it just opened. That is
+ * `view.pinned`: it is set from the scroll offset on every scroll, cleared by opening a tool row,
+ * opening a group's fold or asking for a page of history, and set again by sending. The two
+ * anchoring effects reach the viewport only while it is clear, and every door into them clears it
+ * itself rather than trusting the geometry to have done so: a transcript barely taller than its
+ * viewport is inside the top threshold and the bottom one at once.
  *
  * **Nothing is ever auto-resent.** An `interrupted` marker renders the cut turn and offers a
  * resend; the resend is a deliberate new send and mints a fresh idempotency key (ruling 2, #7570),
