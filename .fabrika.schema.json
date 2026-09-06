@@ -198,12 +198,6 @@
 			],
 			"additionalProperties": false
 		},
-		"designHarness": {
-			"type": "string",
-			"description": "The design-harness file declaring the dev server `ui render` renders at, repo-relative.",
-			"minLength": 1,
-			"pattern": "^(?!/)(?!\\.\\.).+"
-		},
 		"docLeakExempt": {
 			"type": "array",
 			"description": "Docs whose subject IS path hygiene — `build check --surface prose` skips its leak scan on them. Repo-relative path suffixes. Empty (or absent) means nothing is exempt.",
@@ -260,7 +254,7 @@
 					"design-prohibitions",
 					"design-inventory",
 					"golden-pointer",
-					"design-harness",
+					"ui-surfaces",
 					"dev-server",
 					"preview-deployment",
 					"codeowners",
@@ -324,6 +318,100 @@
 				"required": [
 					"name",
 					"values"
+				],
+				"additionalProperties": false
+			}
+		},
+		"uiCapture": {
+			"type": "object",
+			"description": "How a capture of a `uiSurfaces` row is taken: the viewport, where evidence is hosted, and the storage state to browse as.",
+			"properties": {
+				"viewport": {
+					"type": "object",
+					"description": "The capture viewport in CSS px. Defaults to 1280x900.",
+					"properties": {
+						"width": {
+							"type": "integer",
+							"description": "Viewport width in CSS px."
+						},
+						"height": {
+							"type": "integer",
+							"description": "Viewport height in CSS px."
+						}
+					},
+					"required": [
+						"width",
+						"height"
+					],
+					"additionalProperties": false
+				},
+				"evidenceStore": {
+					"type": [
+						"string",
+						"null"
+					],
+					"description": "The evidence store captures are uploaded to. Null (or absent) hosts evidence on GitHub as an attachment."
+				},
+				"storageState": {
+					"type": [
+						"string",
+						"null"
+					],
+					"description": "A repo-relative Playwright storage-state file to browse as. It is a credential — gitignore it, never inline the cookies.",
+					"minLength": 1,
+					"pattern": "^(?!/).+"
+				}
+			},
+			"required": [],
+			"additionalProperties": false
+		},
+		"uiSurfaces": {
+			"type": "array",
+			"description": "The runnable apps this repo renders, one row per app. An empty list means no rendered gate: no path raises the ui class and `ui render` refuses.",
+			"items": {
+				"type": "object",
+				"description": "One runnable app: where its rendered source lives, how to start it, and what it serves.",
+				"properties": {
+					"name": {
+						"type": "string",
+						"description": "Kebab-case app name, unique across the list.",
+						"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+					},
+					"prefix": {
+						"type": "string",
+						"description": "The repo-relative source root whose changed files raise the ui class, ending in `/`.",
+						"minLength": 1,
+						"pattern": "^(?!/)(?!\\.\\.).*/$"
+					},
+					"mount": {
+						"type": "string",
+						"description": "The prefix of the surface namespace this app owns, unique across the list.",
+						"pattern": "^/"
+					},
+					"basePath": {
+						"type": [
+							"string",
+							"null"
+						],
+						"description": "Where this app serves its mounted pages, when that is not the mount itself. Defaults to the mount.",
+						"pattern": "^/"
+					},
+					"command": {
+						"type": "string",
+						"description": "The shell command that starts the app. Must carry a bare `{{port}}` placeholder; `{{port:<name>}}` allocates further ports.",
+						"minLength": 1
+					},
+					"readyPath": {
+						"type": "string",
+						"description": "The path polled for a 200 before any capture. Defaults to `/`.",
+						"pattern": "^/"
+					}
+				},
+				"required": [
+					"name",
+					"prefix",
+					"mount",
+					"command"
 				],
 				"additionalProperties": false
 			}

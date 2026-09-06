@@ -21,7 +21,7 @@
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
 import {listPullFiles} from "../io/pulls.ts";
 import {issueRefOf, partitionWithUi, renderIssueRef, shipNamespacesOf} from "../review/classes.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
@@ -68,6 +68,13 @@ export const runScope = (
 		);
 		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			"whether this diff derives the review-ui namespace is UNKNOWN, and a required set short one namespace is a merge gated on less than the diff earns.",
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+
 		const resolved = yield* resolveTargetRepo(VERB, options.repo, options.env);
 		if (resolved._tag === "Refused") return resolved.outcome;
 		const repo = resolved.repo;
@@ -89,6 +96,9 @@ export const runScope = (
 		const files = listed.value;
 		const diagnostics = [
 			scannedLine(VERB, files.length, "changed file", `${pull.changedFiles} declared`),
+			surfaces.prefixes.length === 0
+				? noUiSurfaces(VERB)
+				: `${VERB}: ui derived over ${surfaces.prefixes.length} prefix(es) — ${surfaces.note}.`,
 		];
 		if (files.length < pull.changedFiles) {
 			return refuse(
@@ -105,7 +115,7 @@ export const runScope = (
 			);
 		}
 
-		const partition = partitionWithUi(files, governed.roots);
+		const partition = partitionWithUi(files, governed.roots, surfaces.prefixes);
 		const namespaces = shipNamespacesOf(partition);
 		if (namespaces.length === 0) {
 			return refuse(

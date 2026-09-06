@@ -25,7 +25,7 @@ const OLD_HEAD = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f708192";
 const SET_DIR = "/tmp/fabrika-review-ui/4321-03135b91/judged";
 const CAPTURE_PATH = `${SET_DIR}/pano.png`;
 const MANIFEST_PATH = `${SET_DIR}/manifest.json`;
-const HARNESS = "/repo/design-harness.json";
+const CONFIG = "/repo/.fabrika.jsonc";
 const HOSTED = "https://github.com/user-attachments/assets/9c41";
 const URL = "https://example.test/pull/4321#issuecomment-5154902211";
 /** The instant every run below writes at, so the superseded heading's date is predictable. */
@@ -141,7 +141,7 @@ const options = {
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
 	stdin: Effect.succeed<StdinRead>({_tag: "Text", text: BODY}),
 	tmpRoot: "/tmp",
-	harnessPath: HARNESS,
+	cwd: "/repo",
 	upload: hostingLeg,
 	supersede: false,
 	now: Effect.succeed(NOW_MILLIS),
@@ -241,8 +241,12 @@ describe("runPost", () => {
 		expect(unparseable.outcome.code).toBe(MALFORMED_DOCUMENT);
 	});
 
-	it("refuses on 4 when design-harness.json exists but violates its schema", async () => {
-		const {outcome} = await run(happy(), {}, world({strings: {[HARNESS]: '{"evidenceStore":{}}'}}));
+	it("refuses on 4 when the declared uiCapture violates its schema", async () => {
+		const {outcome} = await run(
+			happy(),
+			{},
+			world({strings: {[CONFIG]: '{"uiCapture":{"evidenceStore":{}}}'}}),
+		);
 		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
 	});
 

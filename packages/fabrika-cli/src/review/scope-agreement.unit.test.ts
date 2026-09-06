@@ -9,7 +9,7 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, type Scripted, uiConfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	branchRules,
@@ -62,7 +62,7 @@ const reviewScope = (...changed: ReadonlyArray<string>) =>
 					...binding(),
 					[PATHS_AT(), paths(...changed)],
 				]).layer,
-				unconfigured,
+				uiConfigured,
 			),
 		),
 	);
@@ -79,7 +79,7 @@ const shipScope = (...changed: ReadonlyArray<string>) =>
 					[RULES, served(branchRules("pull_request"))],
 					[REPO, repositoryServed()],
 				] as ReadonlyArray<Scripted>).layer,
-				unconfigured,
+				uiConfigured,
 			),
 		),
 	);

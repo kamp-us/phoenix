@@ -114,7 +114,7 @@ You name the surfaces — bare routes; a `:state` suffix is reserved grammar and
 10) — because you know what you are changing; no tool guesses them from the diff. A surface that
 cannot render is a **proven outcome, never a silent skip**: exit 14 (crashed), 15 (unreachable —
 dark flag, gated tier, missing route), 16 (invalid capture) — and exit 19 (this repo declares no
-render harness at all) is the same honesty rule at repo scope: name it in Deviations, **never judge
+`uiSurfaces` row at all) is the same honesty rule at repo scope: name it in Deviations, **never judge
 from CSS alone as if you looked**. A render loop that degrades silently is how a design defect
 ships behind a dark flag; here you either fix reachability, or drop the surface **explicitly** and
 carry the reason into the PR's Deviations. A first-render surface has no before — say so with

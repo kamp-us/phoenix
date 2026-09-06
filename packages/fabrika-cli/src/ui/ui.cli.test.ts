@@ -44,11 +44,11 @@ describe("fabrika ui, end to end", {timeout: SUBPROCESS_TEST_TIMEOUT_MS}, () => 
 		expect(run.code).toBe(0);
 		expect(Object.keys(JSON.parse(run.stdout)).sort()).toEqual([
 			"goldenPointer",
-			"harness",
 			"inventory",
 			"lawSource",
 			"manifest",
 			"registry",
+			"uiSurfaces",
 		]);
 	});
 

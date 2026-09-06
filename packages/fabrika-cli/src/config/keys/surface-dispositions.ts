@@ -209,9 +209,9 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 		note: "the blessed-surface pointer `ui golden` answers from; an unblessed surface is a fact and the rubric carries the judgement alone",
 	},
 	{
-		id: "design-harness",
+		id: "ui-surfaces",
 		disposition: "degrade",
-		note: "the harness file `designHarness` names, declaring the dev server to render at; `ui render` answers that the tree cannot be rendered here",
+		note: "the `uiSurfaces` rows declaring the apps to render at; an empty list is `ui render`'s named answer that the tree cannot be rendered here",
 	},
 	{
 		id: "dev-server",

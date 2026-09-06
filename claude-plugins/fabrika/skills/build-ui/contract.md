@@ -101,8 +101,8 @@ Every `ui` verb obeys these; stated once.
 - **Answer channel: machine.** Stdout carries one JSON object and nothing else; scope lines,
   refusal reasons and progress go to stderr. A non-zero exit prints nothing on stdout
   (`refuse` in `packages/fabrika-cli/src/verb.ts`).
-- **Repo-root anchored.** Every path below — the convention paths and the declared `designHarness`
-  path alike — is resolved against the repo root the delivery layer already finds (the shim's
+- **Repo-root anchored.** Every path below — the convention paths and every path a `uiSurfaces` /
+  `uiCapture` row names alike — is resolved against the repo root the delivery layer already finds (the shim's
   repo-root inference, interface convention rule 5) — never against cwd, never against a web URL.
   v1 fetched the manifest from a hardcoded GitHub URL (`write-code/SKILL.md:972`), which reads the
   wrong repo's law in any fork and nothing on a network fault; here the law is the tree's own bytes.
@@ -152,7 +152,7 @@ the established doctrine (`triage`'s own `codes.ts` states it for `adr`).
 | `16` | proven: a capture was produced but is invalid — zero bytes, undecodable, or zero-area |
 | `17` | proven: at least one evidence upload failed — nothing was posted |
 | `18` | proven: the lane precondition failed — this session does not hold the claim the checked-out lane branch names (foreign, none, or an unparseable branch); detail on stderr |
-| `19` | proven: no file at the declared `designHarness` path — the repo cannot be rendered headlessly |
+| `19` | proven: `.fabrika.jsonc` declares no `uiSurfaces` row — the repo cannot be rendered headlessly |
 | `127` | the verb never ran at all (unresolved binary — the shell's code) |
 
 **`7` versus `11`** is the same split the whole CLI rests on: a proven absence is a verdict, a
@@ -194,34 +194,37 @@ and phoenix is one instance.
 | prohibition registry | `design-prohibitions.json` | the law is untyped — exit `13` from `ui law`; manifest prose is the fallback source |
 | component inventory | `design-system-inventory.md` | a fact: the repo ships no inventory; reported as `null`, never an error |
 | golden pointer | `packages/design-capture/golden-pointer.json` where present, else `design-goldens.json` at root | a fact: no goldens; every surface is unblessed |
-| render harness config | the **declared** `designHarness` path, whose shipped value here is `design-harness.json` | the repo cannot be rendered headlessly — exit `19` from `ui render`; reported as `null` by `ui manifest` |
 
-The harness row is the one path a repo **declares** rather than inherits: `ui render`, `ui manifest`
-and `ui evidence` resolve the `designHarness` key in `.fabrika.jsonc` and open whatever it names,
-reaching `design-harness.json` only because that is the shipped value. The other four rows are
-convention paths with no key behind them.
+The four rows are convention paths with no key behind them. **What the repo renders is not a path at
+all**: it is the `uiSurfaces` list in `.fabrika.jsonc`, read by `ui render`, `ui manifest` and `ui
+evidence` — and by `review scope` / `ship scope`, which raise the `ui` class off the same rows'
+`prefix` fields, so what renders and what owes a rendered verdict are one declaration (#7369).
 
-### The harness config schema — canonical here
+### The `uiSurfaces` and `uiCapture` schema — canonical here
 
-The harness config is one JSON object telling the `ui` group how this repo renders and where
-evidence lives — the portable replacement for v1's phoenix-hardcoded "alchemy dev" knowledge:
+Two keys in `.fabrika.jsonc` tell the `ui` group how this repo renders and where evidence lives —
+the portable replacement for v1's phoenix-hardcoded "alchemy dev" knowledge.
 
-| Key | Type | Required | Meaning |
-|---|---|---|---|
-| `apps` | array of app objects | yes | the runnable apps this repo renders from, at least one. A repo with two runnable apps declares two entries; `ui render` starts only the ones some requested surface resolves to |
-| `viewport` | object `{width, height}` | no (default `{1280, 900}`) | the capture viewport in CSS px |
-| `evidenceStore` | string | no | base URL of a content-addressed evidence store (the ADR 0144/0183 idiom); see `ui evidence` for the two-tier upload protocol |
-| `storageState` | string | no | repo-root-relative path to a Playwright storage-state JSON, seeded into every capture context so surfaces behind a login render as a signed-in user; declared-but-absent is `11` from `ui render`, never a screenshot of the login page. The file is a credential — the repo gitignores it, and the cookies are never inlined here |
-
-Each `apps[]` entry:
+`uiSurfaces` is an array, one row per runnable app. **The empty list is the shipped default and a
+legal declaration**: it means this repo renders nothing, so no path raises the `ui` class and `ui
+render` / `ui evidence` refuse on `19` saying exactly that — never a silent no-op.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `name` | string, kebab-case | yes | names this app in every refusal, and must be unique across the list |
+| `prefix` | string, repo-relative, ends in `/` | yes | the source root whose changed files raise the `ui` class. Two rows may share one prefix — two mounts over one app is the ordinary case |
 | `command` | string | yes | the shell command that starts this app, run from the repo root; `ui render` starts it, waits for readiness, and kills it on exit. It **must** carry the `{{port}}` placeholder and bind it strictly — see below |
 | `mount` | string, `/`-prefixed | yes | the prefix of the surface namespace this app owns, unique across the list. A surface goes to the app whose mount is its longest match, on segment boundaries (`/lab` claims `/lab/x`, never `/laboratory`); `/` is the catch-all |
 | `basePath` | string, `/`-prefixed | no (default: the mount) | what the mount maps to on this app's own server. The default is the identity, so only an app serving those pages at a different root (a proof server rooted at `/`) has to say so |
 | `readyPath` | string | no (default `/`) | path polled for HTTP 200 to detect **this app's** readiness; not ready within 60s is `11` naming the app |
+
+`uiCapture` is one object beside it, every field optional:
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `viewport` | object `{width, height}` | no (default `{1280, 900}`) | the capture viewport in CSS px |
+| `evidenceStore` | string | no | base URL of a content-addressed evidence store (the ADR 0144/0183 idiom); see `ui evidence` for the two-tier upload protocol |
+| `storageState` | string | no | repo-root-relative path to a Playwright storage-state JSON, seeded into every capture context so surfaces behind a login render as a signed-in user; declared-but-absent is `11` from `ui render`, never a screenshot of the login page. The file is a credential — the repo gitignores it, and the cookies are never inlined here |
 
 **No app declares a port, and that is the point.** `{{port}}` in a `command` is replaced with a free
 port the render leg just bound and released, so two worktrees can render at once and neither can
@@ -237,8 +240,10 @@ allocated one, and the readiness probe returns 200 from a sibling worktree's ser
 downstream being able to tell. A tool cannot check this, so it is a rule on the declaration: an app
 whose command cannot be made strict is left undeclared.
 
-A file that exists but violates this schema is `4` from `ui render` — same whole-file rule as the
-registry. A surface that falls outside every declared mount is `10`, and the refusal lists them.
+A declared value that violates this schema is refused whole, the same rule the registry gets: the
+key's decode reports the first violation and `ui render` exits `11`, because a config nobody can
+decode leaves the render UNKNOWN rather than absent. A surface that falls outside every declared
+mount is `10`, and the refusal lists them.
 
 ### The registry schema — canonical here
 
@@ -272,8 +277,8 @@ the law.
 fabrika ui manifest
 ```
 
-**Inputs** — none. The repo root is the delivery layer's; four of the five paths are this
-contract's convention table, and the harness path is whatever `designHarness` declares.
+**Inputs** — none. The repo root is the delivery layer's; the four paths are this contract's
+convention table, and `uiSurfaces` is read off `.fabrika.jsonc`.
 
 **Output** — machine. One JSON object:
 
@@ -282,16 +287,16 @@ contract's convention table, and the harness path is whatever `designHarness` de
  "registry": "design-prohibitions.json",
  "inventory": "design-system-inventory.md",
  "goldenPointer": "packages/design-capture/golden-pointer.json",
- "harness": "design-harness.json",
+ "uiSurfaces": ["web", "web-lab"],
  "lawSource": "registry"}
 ```
 
-Each key is the surface's repo-root-relative path, or `null` when that path holds no file —
-`harness` is the path `designHarness` declares, and the `design-harness.json` above is phoenix's
-shipped value, not a fixed name. `lawSource` is `"registry"` when the registry file exists,
+Each path key is the surface's repo-root-relative path, or `null` when that path holds no file.
+`uiSurfaces` is the declared rows' names, and `[]` is a repo that declares none — a fact, not an
+error. `lawSource` is `"registry"` when the registry file exists,
 `"manifest-prose"` when only the manifest does — the skill writes this token into its PR body
-verbatim. `registry`, `inventory`, `goldenPointer` and `harness` report **presence only**; parsing
-them is `ui law`'s, `ui golden`'s and `ui render`'s.
+verbatim. `registry`, `inventory` and `goldenPointer` report **presence only**; parsing
+them is `ui law`'s and `ui golden`'s.
 The manifest itself is the one surface whose absence refuses: without it there is no law at all.
 
 **Exit status** (beyond the universal four)
@@ -308,15 +313,15 @@ The manifest itself is the one surface whose absence refuses: without it there i
 | `ui manifest: no design manifest at design-system-manifest.md — this repo is not set up for UI construction. Run /fabrika: front-door's bootstrap drafts one from the repo's own CSS and pages (#4952). Never improvise a design language.` | 12 | refusal |
 | `ui manifest: cannot probe <path>: <reason> — presence is UNKNOWN, never "absent".` | 11 | refusal |
 
-**Scope** — the same five paths against the repo root: four convention, one declared
-(`designHarness`). Not a judging verb; presence is the supplied fact, and the one refusal (`12`)
+**Scope** — the four convention paths against the repo root, plus the declared `uiSurfaces` rows.
+Not a judging verb; presence is the supplied fact, and the one refusal (`12`)
 exists because "no manifest" must route, not report.
 
 **Examples**
 
 ```
 $ fabrika ui manifest
-{"manifest":"design-system-manifest.md","registry":null,"inventory":"design-system-inventory.md","goldenPointer":"packages/design-capture/golden-pointer.json","harness":"design-harness.json","lawSource":"manifest-prose"}
+{"manifest":"design-system-manifest.md","registry":null,"inventory":"design-system-inventory.md","goldenPointer":"packages/design-capture/golden-pointer.json","uiSurfaces":["web","web-lab"],"lawSource":"manifest-prose"}
 ```
 
 ```
@@ -422,8 +427,8 @@ implementations guessing differently.
 ```
 
 **The mechanism, in order.** Resolve the lane (shared conventions; the set dir is
-`build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read the declared `designHarness`
-path (absent `19`, malformed `4`). Resolve each `--surface` to the app whose `mount` is its longest
+`build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read the declared `uiSurfaces` rows
+(empty `19`, undecodable `11`). Resolve each `--surface` to the app whose `mount` is its longest
 match (`10` when no mount claims one). Start each of those apps, and only those, from the repo root
 on ports allocated here and filled into its `command`'s `{{port}}` placeholders; poll each app's own
 `<base><readyPath>` until HTTP 200, up to the schema row's readiness bound (`11` on timeout, naming
@@ -453,7 +458,7 @@ never the tool's silent tolerance.
 | `15` | proven: at least one surface is unreachable — status ≥ 400 or failed navigation (no route, dark flag, gated tier); each named on stderr |
 | `16` | proven: at least one capture was produced but is invalid (zero bytes, undecodable, zero area) |
 | `18` | proven: the lane precondition failed (shared conventions) |
-| `19` | proven: no file at the declared `designHarness` path |
+| `19` | proven: `.fabrika.jsonc` declares no `uiSurfaces` row |
 
 When outcomes mix, the reported code is the smallest applicable of `14`/`15`/`16` and stderr
 carries every surface's outcome — the code routes, the stderr enumerates.
@@ -468,15 +473,15 @@ carries every surface's outcome — the code routes, the stderr enumerates.
 | `ui render: app "<name>" could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
 | `ui render: app "<name>" did not answer 200 on <readyPath> within the readiness bound — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
 | `ui render: cannot determine the validity of <set>/<file>: <reason> — the capture is UNKNOWN, never valid.` | 11 | refusal |
-| `ui render: no <harness path> at the repo root — this repo declares no headless render path; add one (see the harness config schema).` | 19 | refusal |
-| `ui render: <harness path> exists but does not satisfy its schema: <first violation>.` | 4 | refusal |
+| `ui render: .fabrika.jsonc declares no \`uiSurfaces\` rows — this repo declares no rendered surface, so no path raises the ui class and nothing can be rendered headlessly.` | 19 | refusal |
+| `ui render: .fabrika.jsonc is refused — <first violation>, so where this repo declares its render path is unread — the render path is UNKNOWN, never absent.` | 11 | refusal |
 | `ui render: --surface "<id>" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.` | 10 | refusal |
 | `ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
-| `ui render: --surface "<id>" falls outside every mount <harness path> declares (<mounts>) — no app serves it; declare its app's mount.` | 10 | refusal |
+| `ui render: --surface "<id>" falls outside every mount \`uiSurfaces\` declares (<mounts>) — no app serves it; declare its app's mount.` | 10 | refusal |
 | `ui render: this session does not hold the claim the checked-out branch names (<detail>) — the lane is not yours.` | 18 | refusal |
 
-`<harness path>` is interpolated, not fixed: the verb prints the path `designHarness` declares, so a
-repo that declares its own harness path reads that path back in both refusals.
+The `19` sentence is one string, shared with `ui evidence` and with the `review scope` / `ship scope`
+stderr line, so "this repo has no rendered gate" reads the same wherever it is stated.
 
 **Scope** — exactly the `--surface` operands, no more: the verb never scans the diff. Zero
 operands is `1`, so "rendered nothing, found nothing wrong" is unrepresentable (ADR 0092).

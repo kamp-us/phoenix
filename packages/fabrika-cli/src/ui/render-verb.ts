@@ -21,30 +21,24 @@ import {requireSession} from "../build/claim.ts";
 import {isKebabSlug} from "../build/lane.ts";
 import {laneScratchDir} from "../build/scratch-verb.ts";
 import {resolveTargetRepo} from "../build/target.ts";
-import {designHarnessOr} from "../config/paths.ts";
+import {CONFIG_PATH} from "../config/document.ts";
+import {UI_SURFACES, type UiCapture, type UiSurface} from "../config/keys/ui-surfaces.ts";
+import {noUiSurfaces, uiCaptureOr, uiSurfacesOr} from "../config/paths.ts";
 import {answer, FAILED, refuse, type VerbOutcome} from "../verb.ts";
 import {readBytes, writeText} from "./bytes.ts";
 import {
-	BAD_SECTIONS,
 	CAPTURE_INVALID,
-	NO_HARNESS,
+	NO_UI_SURFACE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	RENDER_CRASHED,
 	SURFACE_UNREACHABLE,
 } from "./codes.ts";
 import {atRoot} from "./conventions.ts";
-import {
-	appForSurface,
-	type HarnessApp,
-	type HarnessConfig,
-	parseHarness,
-	surfaceSlug,
-	surfaceUrl,
-} from "./harness.ts";
 import {requireUiLane} from "./lane.ts";
 import {probe} from "./manifest-verb.ts";
 import {decodePng, sha256Of} from "./png.ts";
+import {appForSurface, surfaceSlug, surfaceUrl} from "./surfaces.ts";
 
 const VERB = "ui render";
 
@@ -83,7 +77,7 @@ export type HarnessStart =
 
 /** The injected dev-server leg: start each app's command, poll readiness, hand back a killer. */
 export type HarnessLeg = (
-	apps: ReadonlyArray<HarnessApp>,
+	apps: ReadonlyArray<UiSurface>,
 	root: string,
 ) => Effect.Effect<HarnessStart>;
 
@@ -120,19 +114,19 @@ interface Placement {
 /** One requested surface bound to the app whose mount claims it. */
 interface Served {
 	readonly surface: string;
-	readonly app: HarnessApp;
+	readonly app: UiSurface;
 }
 
 /** The apps the requested surfaces resolve to, or the first surface the declaration has no app for. */
 const resolveApps = (
-	config: HarnessConfig,
+	declared: ReadonlyArray<UiSurface>,
 	surfaces: ReadonlyArray<string>,
 ):
 	| {readonly _tag: "Resolved"; readonly served: ReadonlyArray<Served>}
 	| {readonly _tag: "Unmounted"; readonly surface: string} => {
 	const served: Array<Served> = [];
 	for (const surface of surfaces) {
-		const app = appForSurface(config, surface);
+		const app = appForSurface(declared, surface);
 		if (app === null) return {_tag: "Unmounted", surface};
 		served.push({surface, app});
 	}
@@ -177,7 +171,7 @@ export const checkOperands = (options: RenderOptions): VerbOutcome | null => {
 
 const shoot = (
 	options: RenderOptions,
-	config: HarnessConfig,
+	settings: UiCapture,
 	root: string,
 	setDir: string,
 	{surface, url}: Placement,
@@ -187,8 +181,8 @@ const shoot = (
 		const shot = yield* options.browse({
 			url,
 			outPath,
-			viewport: config.viewport,
-			storageState: config.storageState === null ? null : atRoot(root, config.storageState),
+			viewport: settings.viewport,
+			storageState: settings.storageState === null ? null : atRoot(root, settings.storageState),
 		});
 		if (shot._tag === "Unreachable") {
 			return {
@@ -264,7 +258,7 @@ export const runRender = (
 		);
 		if (lane._tag === "Refused") return lane.outcome;
 
-		const declared = yield* designHarnessOr(
+		const declared = yield* uiSurfacesOr(
 			VERB,
 			lane.root,
 			"where this repo declares its render path is unread — the render path is UNKNOWN, never absent.",
@@ -272,69 +266,48 @@ export const runRender = (
 		if (declared._tag === "Refused") {
 			return refuse(PRECONDITION_UNKNOWN, declared.message, lane.notes);
 		}
-		const harnessPath = declared.path;
+		if (declared.surfaces.length === 0) {
+			return refuse(NO_UI_SURFACE, noUiSurfaces(VERB), lane.notes);
+		}
+		const capture = yield* uiCaptureOr(
+			VERB,
+			lane.root,
+			"how this repo captures a surface is unread — the render path is UNKNOWN, never absent.",
+		);
+		if (capture._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, capture.message, lane.notes);
+		}
+		const settings = capture.capture;
 
-		const harnessProbe = yield* probe(lane.root, harnessPath);
-		if (harnessProbe._tag === "Unknown") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot probe ${harnessPath}: ${harnessProbe.reason} — the render path is UNKNOWN.`,
-				lane.notes,
-			);
-		}
-		if (harnessProbe._tag === "Absent") {
-			return refuse(
-				NO_HARNESS,
-				`${VERB}: no ${harnessPath} at the repo root — this repo declares no headless render path; add one (see the harness config schema).`,
-				lane.notes,
-			);
-		}
-		const raw = yield* readBytes(atRoot(lane.root, harnessPath));
-		if (raw._tag === "Failed") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot read ${harnessPath}: ${raw.reason} — the render path is UNKNOWN.`,
-				lane.notes,
-			);
-		}
-		const harness = parseHarness(new TextDecoder().decode(raw.bytes));
-		if (harness._tag === "Violation") {
-			return refuse(
-				BAD_SECTIONS,
-				`${VERB}: ${harnessPath} exists but does not satisfy its schema: ${harness.violation}.`,
-				lane.notes,
-			);
-		}
-
-		if (harness.config.storageState !== null) {
-			const sessionProbe = yield* probe(lane.root, harness.config.storageState);
+		if (settings.storageState !== null) {
+			const sessionProbe = yield* probe(lane.root, settings.storageState);
 			if (sessionProbe._tag === "Unknown") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot probe ${harness.config.storageState}: ${sessionProbe.reason} — the render path is UNKNOWN.`,
+					`${VERB}: cannot probe ${settings.storageState}: ${sessionProbe.reason} — the render path is UNKNOWN.`,
 					lane.notes,
 				);
 			}
 			if (sessionProbe._tag === "Absent") {
 				return refuse(
 					PRECONDITION_UNKNOWN,
-					`${VERB}: ${harnessPath} declares storageState ${harness.config.storageState}, and no file is there — every surface behind a login would capture the login page. Re-authenticate and write the file, or drop the key.`,
+					`${VERB}: ${CONFIG_PATH} declares storageState ${settings.storageState}, and no file is there — every surface behind a login would capture the login page. Re-authenticate and write the file, or drop the key.`,
 					lane.notes,
 				);
 			}
 		}
 
-		const placed = resolveApps(harness.config, options.surfaces);
+		const placed = resolveApps(declared.surfaces, options.surfaces);
 		if (placed._tag === "Unmounted") {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --surface "${placed.surface}" falls outside every mount ${harnessPath} declares (${harness.config.apps.map((app) => app.mount).join(", ")}) — no app serves it; declare its app's mount.`,
+				`${VERB}: --surface "${placed.surface}" falls outside every mount \`${UI_SURFACES}\` declares (${declared.surfaces.map((app) => app.mount).join(", ")}) — no app serves it; declare its app's mount.`,
 				lane.notes,
 			);
 		}
 
 		const setDir = `${laneScratchDir(options.tmpRoot, session.id, lane.number, lane.nonce)}/${options.out}`;
-		const needed = harness.config.apps.filter((app) =>
+		const needed = declared.surfaces.filter((app) =>
 			placed.served.some((one) => one.app.name === app.name),
 		);
 		const started = yield* options.startHarness(needed, lane.root);
@@ -371,7 +344,7 @@ export const runRender = (
 		}
 		const results = yield* Effect.forEach(
 			placements,
-			(placement) => shoot(options, harness.config, lane.root, setDir, placement),
+			(placement) => shoot(options, settings, lane.root, setDir, placement),
 			{concurrency: 1},
 		).pipe(Effect.ensuring(started.stop));
 
