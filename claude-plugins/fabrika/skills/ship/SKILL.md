@@ -12,7 +12,7 @@ this PR — **read-only, no local git, ever**. Where a merge queue governs the b
 **enqueued + green** — the queue owns the async merge, so "QUEUED" is where your run ends and
 "merged" is something you *confirm*, never assert. It is the end of *your* run and not of the lane:
 a PR still in the queue is a wait the driver re-reads on a later pass, never a park and never a
-landing (ADR [0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)). Where no queue governs it, you land the PR
+landing. Where no queue governs it, you land the PR
 yourself with `ship merge` and success is the **proven** landing. Which of the two you are on is a
 fact `ship scope` prints; it is never a guess.
 
@@ -61,12 +61,12 @@ required namespace, and how the control-plane state is derived, is the verb's se
 
 `scope` printing `control-plane` or `unknown` puts the PR on the approval-aware path — `unknown` is
 control-plane until proven otherwise: all machine gates still apply, plus a deterministic discharge.
-An ADR-only PR is `not-control-plane` and owes no approval; its required `governance` verdict is
-what still gates it (founder ruling, 2026-08-15 on #5531). A repo with **no** `.github/CODEOWNERS`
+A decision-record-only PR is `not-control-plane` and owes no approval; its required `governance`
+verdict is what still gates it. A repo with **no** `.github/CODEOWNERS`
 at the base ref is an empty row set, which classifies `unknown` — so it is held, not waved through:
-a boundary nobody declared is not a declaration that nothing is control-plane (ADR 0220 §4). Both
+a boundary nobody declared is not a declaration that nothing is control-plane. Both
 owner shapes bound the surface: an individual `@login` owner satisfies the gate on its own approval,
-with no team roster involved (#6299).
+with no team roster involved.
 
 ```bash
 fabrika ship cp-approval $pr_number --sha 03135b91
@@ -81,7 +81,7 @@ so the approval is never spent on a head that must move.
 The notice says what has to happen before the approval is solicited; it is not a second outcome, and
 the verb's own emitted outcome stays `stop` on the `behind > 0` branch. So a base-drift diagnostic on
 a `stop` is never reported as `ROUTED-REPAIR` — that token folds `ISSUE.FAIL` and charges a repair
-retry to a lane with no defect in it, which froze three lanes on 2026-08-20 (ADR 0327). Name the
+retry to a lane with no defect in it, which freezes the lane on a repair nobody can make. Name the
 cause when you record it, so the park is one a sweep can read:
 
 ```bash
@@ -117,8 +117,7 @@ passes.** A `pass` on a verdict posted at an *earlier* head is not a refusal it 
 says so on stderr, having proved this head's content digest is the one that verdict bound. What it
 never does is pass a content binding it could not check — that reads `stale`. An `ns review-ui
 routed` line is neither a pass nor a refusal you missed: it is `review-ui` recording that this diff
-moves no pixels, so it owes no verdict (ADR
-[0316](../../../../.decisions/0316-a-gate-records-that-it-owes-no-verdict.md)); it satisfies, and no
+moves no pixels, so it owes no verdict; it satisfies, and no
 other namespace can read that way. The polarity rules, the
 content-digest binding and the whole `blocked` taxonomy are the verb's section
 (`fabrika wire doc-section --heading "ship gate" < <skill-base>/contract.md`).
@@ -134,7 +133,7 @@ not concluded as a discharged floor. Why the floor is a caller verb rather than 
 it refuses on WRONG and not only on MISSING, and the conclusion map are its sections
 (`fabrika wire doc-section --heading "ship floor" < <skill-base>/contract.md`, then
 `--heading "It refuses on WRONG, not only on MISSING"`, then
-`--heading "The check-run mode: pending while nobody has judged this head (#6161)"`).
+`--heading "The check-run mode: pending while nobody has judged this head"`).
 
 ## 4 — CI at the head, and only at the head
 
@@ -154,7 +153,7 @@ stop. `head-moved` → start over at step 1; every answer so far was about a tre
 Exit `20` prints no rollup at all: every check at the head passed and no workflow this repo authors
 produced a run there, so nothing gated the bytes you would merge. Disarm, note that the head carries
 no gate coverage, stop — it is a dropped trigger a human owns, not a `green` with a caveat and not a
-`no-runs` a nudge reaches (#6915).
+`no-runs` a nudge reaches.
 **You never re-run, re-trigger, or locally reproduce a check** — CI's verdict is CI's. Each terminal's
 proof, the `--wait` budget and the nudge's own refusals are their sections
 (`fabrika wire doc-section --heading "ship checks" < <skill-base>/contract.md`, then
@@ -270,7 +269,7 @@ implementation, no review verdict, no flag flip. Every run ends as exactly one o
 **already-merged (idempotent success)** · **QUEUED — enqueued, awaiting the queue** and
 **UNRESOLVED at horizon — still queued, still clean** (the two queue waits: your run ends, the lane
 does not. Neither is a landing — no merge was observed — and neither is a park: both record `WIP`,
-which folds the lane to `ship:queued` for the driver to re-read, ADR 0313) ·
+which folds the lane to `ship:queued` for the driver to re-read) ·
 **landed** (the direct route's, and
 `reconcile`'s — either way it is a landing you *read back*, never one you infer) ·
 **refused — <reason>** (a successful decline: disarmed,
@@ -279,7 +278,7 @@ repair** · **routed to heal-ci** · **routed to review** ·
 **EJECTED — routed to repair** ·
 **UNKNOWN — a read failed** (never rendered as any of the above). The three routings are three
 terminals, not one: repair is work this lane retries, heal-ci and review are waits it cannot, and
-a flat "routed" parked the lane on an approval nobody was waiting on (#6002). A refusal is not a back-off:
+a flat "routed" parks the lane on an approval nobody is waiting on. A refusal is not a back-off:
 it names what was proven; UNKNOWN names what was not. Branch disposition is always "untouched" —
 this skill owns no branch. If any disarm failed, the report carries `merge intent: NOT cleared`.
 A note that routes another lane opens with the fixed first line
@@ -290,10 +289,10 @@ branded reference, no steering prose; the receiver re-fetches from the PR itself
 step is the verb — pass back the `lane`, `root` and `task` its `## Task` section carries, one token
 per terminal above (`ALREADY-MERGED`, `QUEUED`, `LANDED`, `REFUSED`, `AWAITING-CP-APPROVAL`,
 `ROUTED-REPAIR`, `ROUTED-HEAL-CI`, `ROUTED-REVIEW`, `UNRESOLVED`, `EJECTED`, `UNKNOWN`), mapped to a
-lane event in its code, with the PR as the event's evidence (#5736). The routing token names the arm
+lane event in its code, with the PR as the event's evidence. The routing token names the arm
 your note's first line already names — report the one you took, never a bare `ROUTED`, which is the
 reviewer's token and means something else. `<fabrika>` is that same section's `fabrika:` entrypoint,
-the one path this repo's verbs actually run from (#6012):
+the one path this repo's verbs actually run from:
 
 ```bash
 node <fabrika> lane report <lane> --root <root> --task <task> --token LANDED --pr <pr-url>
@@ -302,7 +301,7 @@ node <fabrika> lane report <lane> --root <root> --task <task> --token LANDED --p
 `--task` names which task of the lane your terminal addresses, and it is not optional wherever a
 lane has more than one — every epic run. The verb resolves a missing one only on a single-task lane
 and otherwise refuses at exit `13` before it appends anything, so a report that omits it records
-nothing (#6084).
+nothing.
 
 The reason behind a `refused` stays in your note and report — the verb takes the bare token. It
 refuses a token outside this vocabulary (exit `32`) rather than interpreting it. It proves an event
@@ -310,12 +309,11 @@ before recording it, and a shipper's terminal claims no artifact a board read co
 merge state you already resolved is the artifact — so the proof answers `not-required` and the
 append follows. It reads one thing on the way and refuses nothing on it: whether the merged PR
 closed its issue or carried `Part of #N`, which the machine routes on so a partial merge sends the
-lane round instead of folding it to a terminal (ADR
-[0343](../../../../.decisions/0343-a-partial-merge-sends-the-lane-round-again.md)). That is the
+lane round instead of folding it to a terminal. That is the
 ledger's business and not yours — your terminal is the same `LANDED` either way. **`--pr` is what
 it reads**, so pass it on every terminal that names a PR: the closure is judged off exactly that
 pull request, a `LANDED` recorded without the ref reads `unknown` and records no routing answer at
-all, and nominating for one instead cannot see a merged `Part of #N` (#7457). Any refusal: print
+all, and nominating for one instead cannot see a merged `Part of #N`. Any refusal: print
 the token, name the exit code, change nothing. Then print the
 terminal either way; a run whose caller named no lane prints it only and records nothing.
 
