@@ -20,8 +20,10 @@ import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages
 import type {SessionList} from "../protocol/session-list.ts";
 import type {AnyProgram} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
+import {programEntries} from "../shell/picker/entries.ts";
 import {type AiAgentSessions, listAiAgentSessions} from "./backends.ts";
 import {aiAgentProgram} from "./program.ts";
+import {SESSION_LIST_WINDOW_REF} from "./renderer-ref.ts";
 import {models, modes} from "./service/fixtures/scripts.ts";
 import {
 	type AgentScript,
@@ -195,5 +197,17 @@ describe("the session-list spell", () => {
 			assert.strictEqual(error?.tag, "tuval/SessionListTimedOut");
 			assert.include(error?.message ?? "", "1000ms");
 		}).pipe(Effect.scoped, Effect.provide(app([], {deadlineMillis: 1_000, listing: hangs}))),
+	);
+});
+
+describe("the session-list row", () => {
+	it.effect("shows in a window, so a picker offers it like every other windowed program", () =>
+		Effect.sync(() => {
+			const row = sessionListProgram();
+			assert.deepStrictEqual(programEntries([row]), [
+				{_tag: "Program", programId: sessionListId, label: "AI agent sessions"},
+			]);
+			assert.deepStrictEqual(row.renderer, SESSION_LIST_WINDOW_REF);
+		}),
 	);
 });

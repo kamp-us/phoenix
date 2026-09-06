@@ -1,0 +1,44 @@
+/**
+ * Session rows for this window's tests. A colocated fixture module, outside the `*.unit.test.*`
+ * glob, so the same three sessions back the pure row tests and the rendered ones and no assertion
+ * is written against a copy that could drift from the other.
+ */
+
+import type {SessionRow} from "../../protocol/session-list.ts";
+
+/** The clock every relative timestamp below is measured against: 2026-09-05T00:00:00Z. */
+export const NOW = Date.UTC(2026, 8, 5);
+
+const HOUR = 3_600_000;
+
+/** Newest of the three, and the only one with every field filled. */
+export const claudeSession: SessionRow = {
+	sessionId: "c-1",
+	lastModified: NOW - HOUR,
+	backend: "claude-session",
+	firstPrompt: "Wire the session list window",
+	folder: "/Users/founder/code/phoenix",
+	branch: "epic/8070",
+	messageCount: 42,
+};
+
+/** Middle by last modified, and the one that answers on a different folder and branch. */
+export const piSession: SessionRow = {
+	sessionId: "p-1",
+	lastModified: NOW - 2 * HOUR,
+	backend: "pi-session",
+	firstPrompt: "Draft the release note",
+	folder: "/Users/founder/code/demlik",
+	branch: "main",
+	messageCount: 1,
+};
+
+/** Oldest, and the one whose store reported nothing but an id, a time and its own name. */
+export const bareSession: SessionRow = {
+	sessionId: "b-1",
+	lastModified: NOW - 3 * HOUR,
+	backend: "pi-session",
+};
+
+/** The three, deliberately out of order: the window is what puts them newest-first. */
+export const scrambled: ReadonlyArray<SessionRow> = [piSession, bareSession, claudeSession];
