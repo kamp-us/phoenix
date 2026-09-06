@@ -47,9 +47,15 @@ export interface PickerViewProps {
 export const asPickerView = (slot: unknown): PickerViewState => {
 	if (typeof slot !== "object" || slot === null || Array.isArray(slot)) return mountPicker();
 	const record: Record<string, unknown> = {...slot};
-	if (typeof record.cursor !== "number") return mountPicker();
+	const cursor = record.cursor;
+	if (cursor !== null && typeof cursor !== "number") return mountPicker();
 	const refusal = record.refusal;
-	return {cursor: record.cursor, refusal: isPickerRefusal(refusal) ? refusal : null};
+	const previous = record.previous;
+	return {
+		cursor,
+		refusal: isPickerRefusal(refusal) ? refusal : null,
+		previous: typeof previous === "string" ? previous : null,
+	};
 };
 
 export function PickerView({

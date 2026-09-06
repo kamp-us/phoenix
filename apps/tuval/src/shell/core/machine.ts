@@ -43,6 +43,7 @@ import {
 	zoom,
 } from "../layout/index.ts";
 import type {OpenSession} from "../picker/intent.ts";
+import {mountPicker} from "../picker/view.ts";
 import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
@@ -226,6 +227,10 @@ const timerCmds = (before: PrefixSnapshot, after: PrefixSnapshot): readonly Shel
 /**
  * Attach or detach the process a window shows. Detaching is `null` and stops nothing: the process
  * runs on with no view, which is what makes a window a view rather than a container.
+ *
+ * The view slot goes with the binding either way. A slot belongs to whatever the window is showing,
+ * and the newly bound program did not write the one that is there — which is also what keeps a
+ * `previous` from outliving the picker that recorded it (#8265).
  */
 const bindWindow = (
 	state: ShellState,
@@ -238,18 +243,22 @@ const bindWindow = (
 	const target = windowId ?? workspace.focused;
 	if (!hasWindow(workspace, target)) return [state, NO_CMDS];
 	return [
-		withActive(state, {
-			...workspace,
-			layout: setProcess(workspace.layout, target, processId, takesKeys),
-		}),
+		{
+			...withActive(state, {
+				...workspace,
+				layout: setProcess(workspace.layout, target, processId, takesKeys),
+			}),
+			views: withoutViews(state.views, [target]),
+		},
 		NO_CMDS,
 	];
 };
 
 /**
- * Put a window back on the picker: detach its process, which stops nothing, and drop the view slot
- * so the picker mounts fresh rather than on the cursor and refusal the last mount left behind
- * (`../ui/PickerView.tsx` rebuilds the picker's view from that slot).
+ * Put a window back on the picker: detach its process, which stops nothing, and mount a fresh
+ * picker view naming the process it was showing, so Escape has somewhere to return to and the
+ * highlight starts on that row (`../picker/view.ts`). The mount is fresh rather than the cursor and
+ * refusal the last one left behind (`../ui/PickerView.tsx` rebuilds the picker's view from it).
  *
  * A window holding no process is left untouched rather than cleared. It is already showing the
  * picker, and dropping the slot there would move the user's highlight back to the first row under
@@ -259,11 +268,11 @@ const unbindWindow = (state: ShellState, windowId: WindowId | undefined): Step =
 	const workspace = activeWorkspace(state);
 	if (workspace === undefined) return [state, NO_CMDS];
 	const target = windowId ?? workspace.focused;
-	if (!hasWindow(workspace, target) || processOf(workspace, target) === null) {
-		return [state, NO_CMDS];
-	}
+	if (!hasWindow(workspace, target)) return [state, NO_CMDS];
+	const showing = processOf(workspace, target);
+	if (showing === null) return [state, NO_CMDS];
 	const [detached] = bindWindow(state, target, null);
-	return [{...detached, views: withoutViews(detached.views, [target])}, NO_CMDS];
+	return [{...detached, views: {...detached.views, [target]: mountPicker(showing)}}, NO_CMDS];
 };
 
 /**

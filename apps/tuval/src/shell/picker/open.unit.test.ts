@@ -22,7 +22,7 @@ import {
 import type {PickerIntent} from "./intent.ts";
 import {attachProcess, openProgram} from "./intent.ts";
 import {runPickerIntent} from "./open.ts";
-import {mountPicker, pickerKey} from "./view.ts";
+import {mountPicker, pickerKey, withRefusal} from "./view.ts";
 
 const window = windowId("window-1");
 const rows: ReadonlyArray<AnyProgram> = [
@@ -86,7 +86,7 @@ describe("choosing a program", () => {
 				{
 					type: "window.setView",
 					windowId: window,
-					view: {cursor: 0, refusal: {_tag: "UnknownProgram", programId: "ghost"}},
+					view: withRefusal(mountPicker(), {_tag: "UnknownProgram", programId: "ghost"}),
 				},
 			]);
 		}),
@@ -100,7 +100,7 @@ describe("choosing a program", () => {
 				{
 					type: "window.setView",
 					windowId: window,
-					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "indexer"}},
+					view: withRefusal(mountPicker(), {_tag: "ProgramHeadless", programId: "indexer"}),
 				},
 			]);
 		}),
@@ -114,7 +114,7 @@ describe("choosing a program", () => {
 				{
 					type: "window.setView",
 					windowId: window,
-					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "shell"}},
+					view: withRefusal(mountPicker(), {_tag: "ProgramHeadless", programId: "shell"}),
 				},
 			]);
 		}),
@@ -129,14 +129,11 @@ describe("choosing a program", () => {
 				{
 					type: "window.setView",
 					windowId: window,
-					view: {
-						cursor: 0,
-						refusal: {
-							_tag: "SpawnFailed",
-							programId: "counter",
-							reason: 'no live process has id "counter"',
-						},
-					},
+					view: withRefusal(mountPicker(), {
+						_tag: "SpawnFailed",
+						programId: "counter",
+						reason: 'no live process has id "counter"',
+					}),
 				},
 			]);
 		}),
@@ -163,7 +160,7 @@ describe("attaching to a running process", () => {
 				{
 					type: "window.setView",
 					windowId: window,
-					view: {cursor: 0, refusal: {_tag: "ProcessGone", processId: "p-gone"}},
+					view: withRefusal(mountPicker(), {_tag: "ProcessGone", processId: "p-gone"}),
 				},
 			]);
 		}),
@@ -179,7 +176,7 @@ describe("attaching to a running process", () => {
 				{
 					type: "window.setView",
 					windowId: window,
-					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "shell"}},
+					view: withRefusal(mountPicker(), {_tag: "ProgramHeadless", programId: "shell"}),
 				},
 			]);
 		}),
@@ -194,7 +191,7 @@ describe("attaching to a running process", () => {
 				{
 					type: "window.setView",
 					windowId: window,
-					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "indexer"}},
+					view: withRefusal(mountPicker(), {_tag: "ProgramHeadless", programId: "indexer"}),
 				},
 			]);
 		}),
@@ -250,7 +247,7 @@ describe("the picker row and the command line are one handler", () => {
 				{
 					type: "window.setView",
 					windowId: window,
-					view: {cursor: 0, refusal: {_tag: "ProgramHeadless", programId: "shell"}},
+					view: withRefusal(mountPicker(), {_tag: "ProgramHeadless", programId: "shell"}),
 				},
 			]);
 		}),

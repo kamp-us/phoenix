@@ -333,7 +333,7 @@ describe("the Tuval shell, end to end", () => {
 				for (let step = 0; step < logAt; step++) {
 					const msg = pickerPress(left, app.entries, view, "j");
 					assert.isNotNull(msg);
-					view = {cursor: view.cursor + 1, refusal: null};
+					view = {...view, cursor: step + 1, refusal: null};
 					yield* desk.send(msg as ShellMsg);
 				}
 				const chosen = pickerPress(left, app.entries, view, "<enter>");
