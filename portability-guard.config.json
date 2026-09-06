@@ -70,8 +70,8 @@
 			"paths": ["claude-plugins/fabrika/skills/build"]
 		},
 		"plugin-ship": {
-			"ceiling": 368,
-			"why": "The ship skill's text, cleared by #8292, the ship sweep child.",
+			"ceiling": 32,
+			"why": "Every remaining hit is a value rather than a sentence: 24 are the ship verbs' stderr lines quoted verbatim in the Errors tables and worked examples, each a literal of a string that lives in packages/fabrika-cli/src/ship and moves only when that string does, and 8 are the synthetic PR numbers and placeholder owner/repo the worked examples echo back. The prose around them carries no reference at all. The quoted half shrinks to zero when the CLI ship group's own strings are swept, and this floor shrinks with it — #8306, the CLI ship sweep, pays it down.",
 			"paths": ["claude-plugins/fabrika/skills/ship"]
 		},
 		"plugin-review": {
