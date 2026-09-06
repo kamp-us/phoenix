@@ -25,7 +25,8 @@
 		"@fontsource/ibm-plex-sans": "catalog:",
 		"@fontsource/jetbrains-mono": "catalog:",
 		"lucide-react": "catalog:",
-		"marked": "catalog:"
+		"marked": "catalog:",
+		"mermaid": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",

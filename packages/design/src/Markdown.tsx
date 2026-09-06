@@ -9,15 +9,19 @@
  * sanitize: an `<script>` in the source arrives as an `html` token and is rendered as the text it
  * is. Safety is a property of the shape rather than of a filter that has to be kept correct.
  *
- * **Everything paints on the first render.** Agent transcripts are virtualized and measured after
- * paint, so a block that swapped content in later — an async-highlighted code fence, a remote
- * image — would leave the measured row height stale. Lexing is synchronous and images render as
- * links, so the element tree is final the moment it mounts.
+ * **Everything paints on the first render, with one block that then grows.** Agent transcripts are
+ * virtualized and measured after paint, so a block that swapped content in later — an
+ * async-highlighted code fence, a remote image — would leave the measured row height stale. Lexing
+ * is synchronous and images render as links, so the element tree is final the moment it mounts.
+ * `MermaidBlock` is the exception, and it is measurable on both sides: it paints the fence, then
+ * swaps the diagram in for a re-measure it can only get from a `ResizeObserver` (see that module).
  */
 
 import {lexer, type MarkedToken, type Token, type Tokens} from "marked";
 import {Fragment, type ReactElement, type ReactNode, useMemo} from "react";
+import {CodeBlock} from "./CodeBlock";
 import {useDesignT} from "./i18n";
+import {MermaidBlock} from "./MermaidBlock";
 import "./Markdown.css";
 
 /**
@@ -98,26 +102,6 @@ function Inline({token}: {readonly token: MarkedToken}): ReactNode {
 }
 
 /**
- * `pre code` is `white-space: pre`, so a long line makes the fence a horizontal scroller (see
- * `Markdown.css`) — and a scroll container no keyboard can focus is content a keyboard-only
- * operator cannot read at all (WCAG 2.1.1), the same hazard the table wrapper below answers. The
- * tab stop sits on the `<pre>` itself rather than on a wrapper because the `<pre>` *is* the
- * scroller, and arrow keys scroll the focused element only. Unlike `<table>`, `<pre>` carries no
- * implicit role that `role="region"` costs.
- */
-function CodeBlock({token}: {readonly token: Tokens.Code}): ReactElement {
-	const t = useDesignT();
-	const lang = token.lang === undefined || token.lang === "" ? undefined : token.lang;
-	return (
-		// biome-ignore lint/a11y/noNoninteractiveTabindex: the tab stop is the point — see the docblock above.
-		// biome-ignore lint/a11y/useSemanticElements: a `<section>` wrapper would take the tab stop off the box that actually scrolls — see the docblock above.
-		<pre tabIndex={0} role="region" aria-label={t("ui.markdown.code")}>
-			<code className={lang === undefined ? undefined : `language-${lang}`}>{token.text}</code>
-		</pre>
-	);
-}
-
-/**
  * The scroller is the wrapper, never the `<table>`: `display: block` on a table drops its implicit
  * table role in Chrome and Safari, so the assistive-tech reading of an agent's table would be the
  * cost of making a wide one fit. The wrapper is focusable and named because a scroll container no
@@ -150,6 +134,14 @@ function TableBlock({token}: {readonly token: Tokens.Table}): ReactElement {
 	);
 }
 
+/**
+ * A fence's info string is everything after the backticks, and only its first word is the language
+ * — ```` ```mermaid title="x" ```` is a mermaid fence, and `CodeBlock` already tags the class off
+ * the whole string the way GFM does.
+ */
+const fenceLanguage = (token: Tokens.Code): string =>
+	(token.lang ?? "").trim().split(/\s+/)[0] ?? "";
+
 const blocks = (tokens: readonly Token[], headingBase: number): ReactNode =>
 	keyed(tokens, (token) => <Block token={closed(token)} headingBase={headingBase} />);
 
@@ -175,8 +167,14 @@ function Block({
 			return <p>{inlines(token.tokens)}</p>;
 		case "blockquote":
 			return <blockquote>{blocks(token.tokens, headingBase)}</blockquote>;
+		// A `mermaid` fence is the one language with a rendering of its own (#8128). Every other
+		// fence, and a mermaid one before or after a failed parse, stays on `CodeBlock`.
 		case "code":
-			return <CodeBlock token={token} />;
+			return fenceLanguage(token) === "mermaid" ? (
+				<MermaidBlock token={token} />
+			) : (
+				<CodeBlock token={token} />
+			);
 		// A task marker stays the text it was written as. A real `<input type="checkbox">` would be
 		// an unlabelled control in a read-only block, and its state would reach a screen reader only
 		// by duplicating the item's own text as a name.

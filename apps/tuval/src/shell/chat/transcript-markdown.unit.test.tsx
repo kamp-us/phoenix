@@ -175,3 +175,34 @@ describe("a typed message renders as markdown too (#8226)", () => {
 		}
 	});
 });
+
+/**
+ * The row's height is the whole question here, so this suite deliberately asserts *before* the
+ * diagram lands rather than waiting for it. Mermaid cannot lay out under jsdom in any case; what
+ * the drawn diagram looks like is `@kampus/design`'s test and `review-ui`'s judgement.
+ */
+describe("a mermaid fence in a reply (#8128)", () => {
+	const MERMAID_REPLY = [
+		"Here is the flow:",
+		"",
+		"```mermaid",
+		"graph TD;",
+		"  a-->b;",
+		"```",
+	].join("\n");
+
+	it("paints the fence source on the row's first paint, so the measured height is a real one", async () => {
+		await openWindow(withTranscript([assistantItem("a1", MERMAID_REPLY)]));
+
+		const row = screen.getByRole("log", {name: "Transcript"});
+		const code = within(row).getByText(/graph TD;/);
+		expect(code.tagName).toBe("CODE");
+		expect(code.className).toBe("language-mermaid");
+		expect(row.querySelector("svg")).toBeNull();
+	});
+
+	it("reads the diagram's copy out of Tuval's English catalog, not the package's Turkish", () => {
+		expect(tuvalDesignMessages["ui.markdown.diagram"]).toBe("diagram");
+		expect(tuvalDesignMessages["ui.markdown.diagram.source"]).toBe("diagram source");
+	});
+});
