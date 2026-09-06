@@ -39,9 +39,18 @@ const walk = (dir: string): ReadonlyArray<string> =>
 		entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
 	);
 
-/** Block and line comments are prose, not class references — a name inside one is not a use. */
+/**
+ * Block and line comments are prose, not class references — a name inside one is not a use.
+ *
+ * A block comment opens only after start-of-line, whitespace, or one of the few punctuation marks
+ * one can follow (`{` for a JSX comment, `(`, `=`, `,`). Without that guard the `/*` inside
+ * `accept="image/*"` opens a comment that runs to the next real `*` + `/`, swallowing hundreds of
+ * lines and the class names in them — the pairing then depends on how many docblocks happen to sit
+ * after it, so an unrelated edit anywhere in the file silently changes which classes this guard can
+ * see (#8190).
+ */
 const withoutComments = (source: string): string =>
-	source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+	source.replace(/(^|[\s{(=,])\/\*[\s\S]*?\*\//g, "$1 ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
 
 const files = walk(SRC);
 

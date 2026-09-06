@@ -25,7 +25,7 @@ import type {RendererTable} from "../shell/window/index.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {defaultRecovery, type Recovery, usePageConnection} from "./connection.ts";
 import {loadModuleRenderers} from "./module-renderers.ts";
-import {pageRenderers} from "./renderers.tsx";
+import {pageInspectors, pageRenderers} from "./renderers.tsx";
 
 /** Shown while the first socket is opening, and replaced by the desk or by the reason it never opened. */
 const Attaching = () => (
@@ -85,6 +85,7 @@ const PageDesk = ({recovery}: {readonly recovery: Recovery}) => {
 			shell={connection.link.shell}
 			refusal={connection.refusal}
 			renderers={renderers}
+			inspectors={pageInspectors}
 			reducedMotion={reducedMotion}
 		/>
 	);

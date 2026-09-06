@@ -257,22 +257,38 @@ describe("permission cards", () => {
 	});
 });
 
+/**
+ * The mode control lives in the composer's settings fieldset since #8190, beside the model and
+ * thinking pickers and built from the same `AgentSettingMenu` — so it answers to the same roles
+ * those two do, a `button` named `<label>: <value>` over `menuitemradio` rows, and not to the
+ * `combobox`/`option` pair the chat bar's `Select` used to render.
+ */
 describe("the mode switch", () => {
+	const picker = () => screen.findByRole("button", {name: /^Mode: /});
+
 	it("is absent while the program offers no modes", async () => {
 		await open(withTranscript([userItem("u1", "go")]));
-		expect(screen.queryByRole("combobox", {name: "Mode"})).toBeNull();
+		expect(screen.queryByRole("button", {name: /^Mode/})).toBeNull();
+		expect(document.querySelector(".tuval-chat-mode")).toBeNull();
+	});
+
+	it("sits in the composer's settings, not in the chat bar", async () => {
+		await open(withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], "plan")}));
+		const control = document.querySelector(".tuval-chat-mode");
+		expect(control).not.toBeNull();
+		expect(control?.closest(".kp-agent-chat__settings")).not.toBeNull();
+		expect(control?.closest(".tuval-chat-bar")).toBeNull();
 	});
 
 	it("shows the current mode and dispatches setMode for another", async () => {
 		const {process} = await open(
 			withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], "plan")}),
 		);
-		const trigger = await screen.findByRole("combobox", {name: "Mode"});
+		const trigger = await picker();
 		expect(trigger.textContent).toContain("plan");
 
 		await click(trigger);
-		const option = await screen.findByRole("option", {name: "build"});
-		await click(option);
+		await click(await screen.findByRole("menuitemradio", {name: "build"}));
 		await waitFor(() => expect(process.inbox().length).toBe(1));
 		expect(process.inbox()[0]).toEqual({type: "setMode", mode: "build"});
 	});
@@ -281,9 +297,9 @@ describe("the mode switch", () => {
 		const {process} = await open(
 			withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], "plan")}),
 		);
-		await click(await screen.findByRole("combobox", {name: "Mode"}));
-		await click(await screen.findByRole("option", {name: "plan"}));
-		await waitFor(() => expect(screen.queryByRole("option", {name: "plan"})).toBeNull());
+		await click(await picker());
+		await click(await screen.findByRole("menuitemradio", {name: "plan"}));
+		await waitFor(() => expect(screen.queryByRole("menuitemradio", {name: "plan"})).toBeNull());
 		expect(process.inbox()).toEqual([]);
 	});
 });
@@ -491,7 +507,7 @@ describe("two windows over one process", () => {
 		// One card and one mode control per window, over one shared session fact.
 		const cards = await screen.findAllByRole("region", {name: "Run a command"});
 		expect(cards.length).toBe(2);
-		expect((await screen.findAllByRole("combobox", {name: "Mode"})).length).toBe(2);
+		expect((await screen.findAllByRole("button", {name: /^Mode: /})).length).toBe(2);
 
 		const triggers = await screen.findAllByRole("button", {name: "read_file ok"});
 		expect(triggers.length).toBe(2);

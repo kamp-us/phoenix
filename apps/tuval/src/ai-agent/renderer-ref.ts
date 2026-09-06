@@ -20,6 +20,16 @@ export const SESSION_LIST_WINDOW_REF: RendererRef = {
 };
 
 /**
+ * The desk inspector every ai-agent backend declares (#8190). One reference, not one per backend:
+ * what it shows is read off `AiAgentSessionState`, which is the state both rows already run, so a
+ * second name would be two tables answering the same walk with the same panel.
+ */
+export const AI_AGENT_INSPECTOR_REF: RendererRef = {
+	kind: "host-native",
+	ref: "tuval/ai-agent-inspector",
+};
+
+/**
  * The row holds nothing worth the name — its surface renders a list it asks for by spell
  * (`./session-list.ts`) — but it still carries its own tag, because a page admits a renderer only
  * over a state some predicate recognised (`.patterns/window-renderer-admission.md`). A bare `{}`

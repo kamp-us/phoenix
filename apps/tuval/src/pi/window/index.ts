@@ -9,4 +9,4 @@
  */
 
 export {PI_CHAT_WINDOW_REF} from "../renderer-ref.ts";
-export {PiChatWindow, piChatWindow, UsageLine} from "./PiChatWindow.tsx";
+export {PiChatWindow, piChatWindow} from "./PiChatWindow.tsx";

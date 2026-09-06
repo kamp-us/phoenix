@@ -1,5 +1,9 @@
-export type {AgentChatInputProps} from "./AgentChatInput";
-export {AgentChatInput} from "./AgentChatInput";
+export type {
+	AgentChatInputProps,
+	PickerItem as AgentSettingItem,
+	SettingMenuProps as AgentSettingMenuProps,
+} from "./AgentChatInput";
+export {AgentChatInput, SettingMenu as AgentSettingMenu} from "./AgentChatInput";
 export {Alert} from "./Alert";
 export {Avatar} from "./Avatar";
 export type {

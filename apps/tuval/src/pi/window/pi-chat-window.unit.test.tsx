@@ -10,7 +10,7 @@
  * every claim is about what is in the tree and what a reader can name.
  */
 
-import {render, screen, waitFor, within} from "@testing-library/react";
+import {render, screen, within} from "@testing-library/react";
 import {Effect} from "effect";
 import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
@@ -51,54 +51,21 @@ const open = async (state: AiAgentSessionState, windows = 1): Promise<Opened> =>
 	return {process, hosts};
 };
 
-const usageLine = (): HTMLElement => screen.getByRole("group", {name: "Session usage"});
-
-describe("the Pi usage line", () => {
-	it("renders the model, the cumulative cost and the token counts off the state", async () => {
+describe("what the Pi window's chat bar carries", () => {
+	// #8190 sent the usage line to the desk inspector, so the bar is the phase line and nothing
+	// else — and it reads identically to the Claude window's, which is the point of the ruling.
+	it("is the phase line, and no usage line of its own", async () => {
 		await open(
 			piSession({usage: usageOf({model: "faux/faux-1", cost: 0.0142, input: 1204, output: 340})}),
 		);
-		const line = usageLine();
-		expect(within(line).getByText("faux/faux-1")).toBeDefined();
-		expect(within(line).getByText("$0.0142")).toBeDefined();
-		expect(within(line).getByText("1,204 in")).toBeDefined();
-		expect(within(line).getByText("340 out")).toBeDefined();
-	});
-
-	it("says so rather than blanking before the first usage event names a model", async () => {
-		await open(piSession());
-		const line = usageLine();
-		expect(within(line).getByText("no model yet")).toBeDefined();
-		expect(within(line).getByText("$0.00")).toBeDefined();
-	});
-
-	it("moves as usage accumulates on the process", async () => {
-		const state = piSession({
-			usage: usageOf({model: "faux/faux-1", cost: 0.01, input: 100, output: 10}),
-		});
-		const {process} = await open(state);
-		expect(within(usageLine()).getByText("100 in")).toBeDefined();
-
-		await Effect.runPromise(
-			process.commit({
-				...state,
-				usage: usageOf({model: "faux/faux-2", cost: 0.0325, input: 2500, output: 640}),
-			}),
-		);
-
-		await waitFor(() => {
-			const line = usageLine();
-			expect(within(line).getByText("faux/faux-2")).toBeDefined();
-			expect(within(line).getByText("$0.0325")).toBeDefined();
-			expect(within(line).getByText("2,500 in")).toBeDefined();
-			expect(within(line).getByText("640 out")).toBeDefined();
-		});
-	});
-
-	it("is not a live region, because cost moves on every event of a running turn", async () => {
-		await open(piSession({phase: "prompting"}));
-		expect(usageLine().getAttribute("role")).toBe("group");
-		expect(usageLine().getAttribute("aria-live")).toBeNull();
+		expect(screen.queryByRole("group", {name: "Session usage"})).toBeNull();
+		expect(document.querySelector(".tuval-pi-usage")).toBeNull();
+		expect(screen.queryByText("faux/faux-1")).toBeNull();
+		expect(screen.queryByText("1,204 in")).toBeNull();
+		const bar = document.querySelector<HTMLElement>(".tuval-chat-bar");
+		expect(bar).not.toBeNull();
+		expect(bar?.querySelectorAll(".tuval-chat-phase")).toHaveLength(1);
+		expect((bar as HTMLElement).textContent?.trim()).toBe("Ready.");
 	});
 });
 
@@ -109,7 +76,7 @@ describe("what a Pi session does not offer", () => {
 		// are absent rather than empty — an empty listbox is a control that lies about being
 		// operable, and the shared window drops each to `null` on an empty input
 		// (`../../shell/chat/ModeSwitch.tsx`, `PermissionCards.tsx`).
-		expect(screen.queryByRole("combobox", {name: "Mode"})).toBeNull();
+		expect(screen.queryByRole("button", {name: /^Mode/})).toBeNull();
 		expect(document.querySelector(".tuval-chat-mode")).toBeNull();
 		expect(document.querySelector(".tuval-chat-permissions")).toBeNull();
 	});
@@ -121,7 +88,6 @@ describe("two windows over one Pi process", () => {
 		const logs = screen.getAllByRole("log", {name: "Transcript"});
 		expect(logs).toHaveLength(2);
 		for (const log of logs) expect(within(log).getByText(FIRST_PROMPT)).toBeDefined();
-		expect(screen.getAllByRole("group", {name: "Session usage"})).toHaveLength(2);
 
 		const [left, right] = hosts as readonly [PiHost, PiHost];
 		await Effect.runPromise(left.setView({...initialChatView, draft: "only mine"}));

@@ -25,6 +25,7 @@ import {dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import type {Layer} from "effect";
 import {type AiAgentProgram, aiAgentProgram} from "../ai-agent/program.ts";
+import {AI_AGENT_INSPECTOR_REF} from "../ai-agent/renderer-ref.ts";
 import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
 import {PiAiAgent, type PiAiAgentOptions} from "./ai-agent/index.ts";
 import {PI_CHAT_WINDOW_REF, PI_SESSION_PROGRAM} from "./renderer-ref.ts";
@@ -63,4 +64,5 @@ export const piSessionProgram = (options: PiSessionProgramOptions): AiAgentProgr
 		layer: options.layer ?? PiAiAgent.layer({...options.pi, projectRoot: options.cwd}),
 		config: {cwd: options.cwd},
 		renderer: PI_CHAT_WINDOW_REF,
+		inspector: AI_AGENT_INSPECTOR_REF,
 	});
