@@ -689,9 +689,9 @@ function ChatWindow({
 				</div>
 			</div>
 			{isWorking(phase) ? (
-				// Visual only. The phase line above is already this window's one `role="status"`, and a
-				// second live region would narrate the same running turn twice; what this adds is the
-				// tell at the end of the transcript, where the eye already is while a turn runs.
+				// Visual only. The phase line above is the announced surface for the running turn, so a
+				// live region here would narrate that same turn twice; what this adds is the tell at
+				// the end of the transcript, where the eye already is while a turn runs.
 				<p className="tuval-chat-working" aria-hidden="true">
 					<span className="tuval-chat-working-dots">
 						<span />

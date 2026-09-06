@@ -400,12 +400,16 @@
 	background: var(--accent);
 }
 
-/* A phase whose sentence ends in a wait pulses, so a turn that is still running reads as running
-   without re-reading the line. The word is still the signal (Pillar 4): this only removes the
-   ambiguity between "Ready." and "Working" that two identical dots left behind. */
+/* The three in-flight phases — starting, reconnecting, prompting — carry a halo the settled ones do
+   not; the transcript strip below is prompting-only, because that is the phase whose wait the eye
+   sits through. The halo is the static half and it is what makes the distinction survive
+   `prefers-reduced-motion`, which cancels the pulse and nothing else: the dot stays a ring where
+   "Ready." is a bare disc, so the state is never on motion alone (Pillar 4). The word on the phase
+   line is still the signal either way. */
 .tuval-chat-phase[data-phase="starting"] .tuval-chat-phase-dot,
 .tuval-chat-phase[data-phase="reconnecting"] .tuval-chat-phase-dot,
 .tuval-chat-phase[data-phase="prompting"] .tuval-chat-phase-dot {
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent);
 	animation: tuval-chat-phase-pulse 1.4s ease-in-out infinite;
 }
 
