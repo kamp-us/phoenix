@@ -42,12 +42,8 @@
 			"why": "Two assertions on the `DOC_DIRS` arm; dropping the literal drops the only coverage that arm has, so they move with it under #7478."
 		},
 		"packages/fabrika-cli/src/config/keys/governed-roots.ts": {
-			"ceiling": 4,
-			"why": "The shipped default governed-root set is this repo's shape, kept as the value a repo overrides rather than as a sentence a reader follows."
-		},
-		"packages/fabrika-cli/src/config/keys/doc-leak-exempt.ts": {
-			"ceiling": 2,
-			"why": "The key's own docblock names the repo whose docs the shipped default was drawn from, as the value's provenance rather than a pointer."
+			"ceiling": 1,
+			"why": "The decision-corpus entry of the shipped governed-root set — the value a repo overrides rather than a sentence a reader follows. The key's docblocks were swept, so this ceiling is the shipped default alone."
 		},
 		"packages/fabrika-cli/src/build/scope-admission.unit.test.ts": {
 			"ceiling": 4,
@@ -142,8 +138,8 @@
 			"paths": ["packages/fabrika-cli/src/ship", "packages/fabrika-cli/src/heal-ci"]
 		},
 		"cli-wire": {
-			"ceiling": 771,
-			"why": "The wire, io, ci and config groups' source, cleared by #8307, the wire sweep child.",
+			"ceiling": 19,
+			"why": "Fixture URLs no prose rewrite reaches. Ten are `https://github.com/o/r/issues/<n>#issuecomment-<n>` values that `decision-ruling`'s own `RULING_URL_RE` pins to the github.com host, so a placeholder host would exercise nothing — the pin itself is the defect, parked behind #8359. Nine are the package's `o/r` placeholder issue and pull URLs, served by a fake HTTP layer and compared at runtime; `o/r` resolves in no repository, and the `url` matcher's missing test-data carve-out is #8350.",
 			"paths": [
 				"packages/fabrika-cli/src/wire",
 				"packages/fabrika-cli/src/io",

@@ -1,9 +1,9 @@
 /**
- * The lane-brief's repo-independence (#6012): the rules name no repo's path, and `read(emit(b))`
- * round-trips whatever entrypoint the driver resolved — phoenix's in-tree source or an installed
- * copy — because the rules stay a pure function of the ground.
+ * The lane-brief's repo-independence: the rules name no repo's path, and `read(emit(b))`
+ * round-trips whatever entrypoint the driver resolved — in-tree source or an installed copy —
+ * because the rules stay a pure function of the ground.
  *
- * Plus the closed field set (#5809): the section set alone left the driver's own instruction
+ * Plus the closed field set: the section set alone leaves the driver's own instruction
  * representable, as a field rather than as a heading.
  */
 import {describe, expect, it} from "vitest";
@@ -47,9 +47,9 @@ const ref = (raw: string) => {
 	return value;
 };
 
-const ISSUE = url("https://github.com/kamp-us/demlik/issues/4");
-const EPIC = url("https://github.com/kamp-us/demlik/issues/40");
-const PR = url("https://github.com/kamp-us/demlik/pull/11");
+const ISSUE = url("https://forge.example/o/r/issues/4");
+const EPIC = url("https://forge.example/o/r/issues/40");
+const PR = url("https://forge.example/o/r/pull/11");
 
 /** The two shapes a driver resolves: an installed copy, and a checkout of fabrika's own repo. */
 const INSTALLED = "/home/dev/demlik/node_modules/@kampus/fabrika-cli/dist/bin.js";

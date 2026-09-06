@@ -24,7 +24,7 @@ import {
 const load = (config: Record<string, unknown>) =>
 	loadConfig({_tag: "Text", text: JSON.stringify(config)});
 
-describe("a repo that declares nothing gets phoenix's own paths", () => {
+describe("a repo that declares nothing gets the shipped paths", () => {
 	it("resolves every path key to its shipped value with no config file at all", () => {
 		const absent = loadConfig({_tag: "Absent"});
 		expect(resolve(absent, decisionsDirKey)).toMatchObject({
@@ -121,7 +121,7 @@ describe("the governed-root set", () => {
 	});
 
 	it("refuses a whole load whose roots do not cover the config file", () => {
-		const refused = load({governedRoots: [".decisions/"]});
+		const refused = load({governedRoots: ["docs/"]});
 		expect(refused._tag).toBe("Refused");
 		if (refused._tag !== "Refused") return;
 		expect(refused.reason).toContain("cannot un-govern itself");

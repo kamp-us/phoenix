@@ -11,7 +11,7 @@
  * about its edges.** These endpoints answer `200 []` for a real issue with no edges and `404` for an
  * issue that does not exist, so the two are distinguishable — but only if existence is established
  * separately. A caller that read `[]` and reported "no blocking edges" without knowing the issue
- * exists would print a proven negative over zero scope (ADR 0092, #4752), which is why every read
+ * exists would print a proven negative over zero scope, which is why every read
  * here answers `Absent` on a 404 instead of an empty list.
  *
  * <!-- anchor: EDGE-BODY-TAKES-AN-INTERNAL-ID --> **Both POST bodies take the target's internal
@@ -83,8 +83,8 @@ export interface EdgeTarget {
 	 * <!-- anchor: A-PR-RESOLVES-PRESENT-HERE --> `repos/{o}/{r}/issues/<n>` serves **pull requests
 	 * too**, answering 200 with an `id` and a `pull_request` object. So a caller that reads only the
 	 * id cannot tell an issue from a PR, and the 404 arm it would refuse a bad target on never fires
-	 * for one (#6728). ADR 0301 rules the case — a blocking PR is named in the graph by the issue its
-	 * merge closes — and this field is what lets a caller apply it.
+	 * for one. The rule the graph is read under — a blocking PR is named by the issue its merge
+	 * closes — needs this field to apply.
 	 */
 	readonly pullRequest: boolean;
 }

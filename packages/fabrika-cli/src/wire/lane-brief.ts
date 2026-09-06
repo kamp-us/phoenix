@@ -8,11 +8,11 @@
  * **`## Task` carries the two local paths, because both address something the shell cannot derive
  * from its own worktree.** The lanes root is the driver's ledger: the default is relative and every
  * shell runs in its own worktree, so a shell told only the lane id records its terminal into its
- * worktree's `.fabrika/` and the driven lane never hears it (#5736). The `fabrika` entrypoint is the
+ * worktree's `.fabrika/` and the driven lane never hears it. The `fabrika` entrypoint is the
  * copy of this CLI the shell must execute, resolved by the driver against the repo it is actually
- * standing in — the rules used to name phoenix's own `packages/fabrika-cli/src/bin.ts` as a literal,
- * which in any repo that installs fabrika as a dependency is a `MODULE_NOT_FOUND` on the shell's
- * first verb and every verb after it (#6012). Both ride inside the format rather than as a line the
+ * standing in — rules that named one repo's own `packages/fabrika-cli/src/bin.ts` as a literal are,
+ * in any repo that installs fabrika as a dependency, a `MODULE_NOT_FOUND` on the shell's first verb
+ * and every verb after it. Both ride inside the format rather than as a line the
  * driver appends under the bytes: an appended line is text the reader below calls malformed, which
  * would turn the byte-fixed guarantee into a budget.
  *
@@ -27,7 +27,7 @@
  * **`## Ground` carries URLs, git refs and no content.** A brief that summarised an issue would hand
  * the shell a stale contract to work from, and the shell has verbs that read the live one.
  *
- * Ground comes in four shapes because an epic run has one branch and one PR (ADR 0285): a child's
+ * Ground comes in four shapes because an epic run has one branch and one PR: a child's
  * states have no PR at all — they build in a worktree, and their review judges a commit range the
  * driver's tree resolved — the epic's tail has that one PR plus the epic issue whose children's
  * disclosures its review reads, and every other state has one PR to read. {@link LaneGround} is
@@ -68,13 +68,13 @@ declare const FABRIKA_ENTRY: unique symbol;
 
 /**
  * The fabrika entrypoint a spawned shell runs its verbs through — the value that replaced the
- * phoenix-literal path the rules used to hardcode (#6012).
+ * one-repo literal path the rules used to hardcode.
  *
  * Two shapes are legal and each is right in its own repo: **relative** is repo-relative in-tree
  * source, which the shell's own worktree carries its own copy of, and **absolute** is an installed
  * copy no worktree has a `node_modules` of its own for. The brand refuses the third shape, which is
  * the whole point: a path with no `.ts`/`.js` extension is a binstub, and a binstub in a worktree
- * resolves through the delegate layer to the primary checkout's code (#5679).
+ * resolves through the delegate layer to the primary checkout's code.
  */
 export type FabrikaEntry = string & {readonly [FABRIKA_ENTRY]: true};
 
@@ -97,7 +97,7 @@ export const gitRef = (raw: string): GitRef | null => {
 	return /^[A-Za-z0-9][\w./-]*$/.test(value) && !value.includes("..") ? (value as GitRef) : null;
 };
 
-/** The assembly branch of one epic run — one branch and one PR per run (ADR 0285). */
+/** The assembly branch of one epic run — one branch and one PR per run. */
 export const epicBranch = (epic: number): GitRef => `epic/${epic}` as GitRef;
 
 /**
@@ -106,7 +106,7 @@ export const epicBranch = (epic: number): GitRef => `epic/${epic}` as GitRef;
  * Both endpoints are concrete because the far end used to be `HEAD` — and `HEAD` is resolved by the
  * spawned reviewer, in a worktree cut fresh from the driver's checkout, where it stands on the
  * assembly branch rather than on the child's build branch. The range read as empty there, so the
- * gate judged nothing and could still land a verdict (#6023). The grammar is the range-verdict
+ * gate judged nothing and could still land a verdict. The grammar is the range-verdict
  * marker's own, so the range a reviewer is briefed with is spelled exactly like the verdict it
  * records over it.
  */
@@ -115,7 +115,7 @@ export type ReviewRange = CommitRange<HeadSha>;
 /**
  * The five leaf states that route to a shell. Every other state is a refusal, never a guess.
  *
- * A UI-class lane runs its construction and its rendered review in shells of their own (ADR 0317),
+ * A UI-class lane runs its construction and its rendered review in shells of their own,
  * and the state name is what carries the class — the routing stays a 1:1 state → shell map rather
  * than a diff a brief would have to read, which a `build` state has no PR to read anyway.
  */
@@ -126,8 +126,8 @@ export type ShellState = (typeof SHELL_STATES)[number];
 export type LaneShell = "builder" | "ui-builder" | "reviewer" | "ui-reviewer" | "shipper";
 
 // The two UI shells are named for the actor, not the skill they preload: `build-ui` / `review-ui`
-// are the SKILL names, and an agent whose `name:` is the bare spelling of its skill is the ADR 0281
-// violation #6684's repair removed. `claude-plugins/fabrika/agents/` is authoritative here.
+// are the SKILL names, and an agent whose `name:` is the bare spelling of its skill collides with
+// that skill. `claude-plugins/fabrika/agents/` is authoritative here.
 const SHELLS: Readonly<Record<ShellState, LaneShell>> = {
 	build: "builder",
 	"build:ui": "ui-builder",
@@ -172,7 +172,7 @@ export const shellState = (raw: string): ShellState | null => {
  * the epic issue, the assembly branch its worktree is cut from, and no PR, because a child never
  * opens one. `EpicRange` is a child's `review`, which is that same ground plus the resolved range
  * to judge — two tags rather than one optional field, so a review brief with no range is a value
- * nobody can construct, and a `build` brief can never carry a half-filled one (#6023).
+ * nobody can construct, and a `build` brief can never carry a half-filled one.
  */
 export type LaneGround =
 	| {readonly _tag: "Pull"; readonly pr: ArtifactUrl | null}
@@ -206,17 +206,17 @@ export type LaneBriefRead = WireRead<LaneBrief>;
  * The `## Rules` text, byte-fixed and owned by the format.
  *
  * Each sentence is a rule a driver used to carry in their own prose: worktree isolation, URLs over
- * restatements, and the entrypoint with the reason it exists (#5679).
+ * restatements, and the entrypoint with the reason it exists.
  *
  * The entrypoint is named by reference — `the `fabrika:` path in `## Task`` — and never interpolated,
- * because the reader recomputes this text from the ground alone (#6012).
+ * because the reader recomputes this text from the ground alone.
  */
 export const RULES = `Run in your own git worktree; a shell that shares the primary checkout can mutate its git state.
 Work from the URLs above and never from a summary of them — read the issue, the PR and its verdicts
 through your own verbs, because a restated spec is a stale spec.
 Invoke every fabrika verb as \`node <fabrika> <group> <verb>\`, where \`<fabrika>\` is the \`fabrika:\`
 entrypoint in \`## Task\` above — never the bare \`fabrika\` binstub, which in a worktree resolves to
-another checkout's code (#5679), so its answer describes a tree you are not standing in. A relative
+another checkout's code, so its answer describes a tree you are not standing in. A relative
 entrypoint is this repo's own source and resolves inside your worktree; an absolute one is an
 installed copy your worktree carries no \`node_modules\` for.`;
 
@@ -226,21 +226,21 @@ installed copy your worktree carries no \`node_modules\` for.`;
  * Which text a brief carries is structural — an `Epic` ground carries both, a `Pull` ground carries
  * only the first — so this stays a fixed pair of texts rather than a per-dispatch choice.
  */
-export const EPIC_RULES = `This lane is one epic run: one shared branch and one pull request at its tail (ADR 0285). Build in
+export const EPIC_RULES = `This lane is one epic run: one shared branch and one pull request at its tail. Build in
 your own worktree on a local branch cut from \`branch\`, and never push or open a pull request for a
 child state — the merge happens once, after the epic review. A child's build that lands its commit
 ends on \`BUILT-NO-PR\`, whose branch disposition is exactly that: left local and unpushed for this
-lane to fold (#6019).
+lane to fold.
 A child re-entering \`build\` after a \`FAIL\` is a repair, not a second build: \`build claim\` refuses
 the fresh claim naming that FAIL, and the route it points at takes over the branch the prior lane
-built on rather than cutting another (#6386).
+built on rather than cutting another.
 A child's build discloses its deviations — the section a PR body would carry — as a
 \`build-deviations\` marker comment on the child issue, posted through
 \`node <fabrika> build deviations <child> --token <claim-token>\` with the
-\`## Deviations\` section on stdin; the epic-tail review reads them from there (#5903).
+\`## Deviations\` section on stdin; the epic-tail review reads them from there.
 That verb is the only sanctioned way this marker is posted: it edits the standing
 marker in place, so a repair round re-discloses without stacking a second comment the
-reader would refuse as undecidable (#6691).
+reader would refuse as undecidable.
 A child's review judges the \`range\` above and records its verdict on the child issue in the
 \`range-verdict-marker\` format, composed through
 \`node <fabrika> wire emit --format range-verdict-marker\`.`;
@@ -248,9 +248,9 @@ A child's review judges the \`range\` above and records its verdict on the child
 /**
  * The rules an epic run's tail adds — the counterpart of {@link EPIC_RULES}, appended when the
  * ground is `Tail`. This is where the tail review is told where each child's deviation disclosure
- * lives (#5903): the brief is the one artifact every tail shell provably reads.
+ * lives: the brief is the one artifact every tail shell provably reads.
  */
-export const EPIC_TAIL_RULES = `This PR is one epic run's tail: its branch assembles every child's range (ADR 0285), and its
+export const EPIC_TAIL_RULES = `This PR is one epic run's tail: its branch assembles every child's range, and its
 \`## Deviations\` section covers only that assembly. Each landed child disclosed its own build
 deviations as a \`build-deviations\` marker comment on its child issue — the issues the PR body's
 closing references name. The tail review reads every one of them through
@@ -271,7 +271,7 @@ export type SectionName = (typeof SECTIONS)[number];
  * same sentence as `note: …` inside `## Ground`, where it parsed, was stored, and was never looked
  * at again. Binding each key to one section closes the other half — both sections used to fold into
  * one map, so a `state:` under the wrong heading, or repeated under its own, quietly beat the one
- * the driver's fold derived and re-routed the brief to a shell `## Task` never named (#5809).
+ * the driver's fold derived and re-routed the brief to a shell `## Task` never named.
  */
 const TASK_FIELDS = ["lane", "root", "fabrika", "task", "state", "shell"] as const;
 
@@ -479,7 +479,7 @@ const groundOf = (fields: ReadonlyMap<string, string>, state: ShellState): Groun
 	const range = parseRange(rangeRaw);
 	if (range === null) {
 		return bad(
-			`"${rangeRaw}" is not a range of two resolved revisions — an endpoint the spawned shell re-resolves is the defect this field exists to delete (#6023)`,
+			`"${rangeRaw}" is not a range of two resolved revisions — an endpoint the spawned shell re-resolves is the defect this field exists to delete`,
 			"range",
 		);
 	}
@@ -561,7 +561,7 @@ export const read = (artifact: string): LaneBriefRead => {
 	const fabrika = fabrikaEntry(fields.get("fabrika") ?? "");
 	if (fabrika === null) {
 		return malformed(
-			`"${(fields.get("fabrika") ?? "").trim()}" is not a fabrika entrypoint — a shell needs a node-runnable path, and a binstub resolves to another checkout's code (#5679)`,
+			`"${(fields.get("fabrika") ?? "").trim()}" is not a fabrika entrypoint — a shell needs a node-runnable path, and a binstub resolves to another checkout's code`,
 			"fabrika",
 		);
 	}

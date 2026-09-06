@@ -4,7 +4,7 @@
  *
  * Two keys answer one question, so one module joins them: `boardVocabulary` says what each facet may
  * keep, `triageFacets` says what each facet may delete. Read apart they drift into the state a
- * declared lane no facet owns is written once and never superseded (#4285), so the join runs the
+ * declared lane no facet owns is written once and never superseded, so the join runs the
  * containment invariant over the *composed* table and refuses there.
  *
  * Kept out of `./board.ts` because that module is what `../triage/facets.ts` builds the shipped

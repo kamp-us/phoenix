@@ -1,11 +1,11 @@
 /**
  * The control-plane key group: what a repo does when `.github/CODEOWNERS` cannot be read.
  *
- * **Nothing reads this key.** `ship/boundary.ts` consulted it (#6299, ADR 0307) until the founder
- * reverted that on #5631: a failed CODEOWNERS read is the caller's `11` in every repo, and a
- * proven-absent one is the `unknown` hold — ADR 0220 §4 names collapsing `unknown` →
- * `not-control-plane` the recurring fail-open defect, and §CP has no residual gate behind it. The
- * key is left declared, and what becomes of it is the founder's to rule.
+ * **Nothing reads this key.** `ship/boundary.ts` consulted it until that was reverted: a failed
+ * CODEOWNERS read is the caller's `11` in every repo, and a proven-absent one is the `unknown` hold.
+ * Collapsing `unknown` → `not-control-plane` is the recurring fail-open defect, and the
+ * control-plane classification has no residual gate behind it. The key is left declared, and what
+ * becomes of it is the repo owner's to rule.
  */
 
 import type {Decoded, KeyGroup} from "../key-group.ts";

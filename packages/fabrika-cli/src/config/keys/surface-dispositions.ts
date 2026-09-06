@@ -2,7 +2,7 @@
  * `surfaceDispositions` — what fabrika does in **this** repo when a surface it reads is not there.
  *
  * This is the single home of the answer the per-skill `## Required repo files` tables used to give
- * thirty-two times over (#6301, R10.1 on #5603). Those tables were prose: nothing read them but a
+ * thirty-two times over. Those tables were prose: nothing read them but a
  * parser, three skills gave three different dispositions for the same label taxonomy, and a repo had
  * no way to say "I run no design system" other than editing somebody else's SKILL.md. One key, one
  * registry, one verb that prints it — `fabrika status settings`.
@@ -21,8 +21,7 @@
  * **What is not here.** A surface whose behaviour another key already decides is that key's, not this
  * one's — zero CI workflows is `ci.noProducer`.
  * A *path* key is not such a key: `roadmapFile` and `cycleDoc` say where a file lives, never what
- * happens when it is not there, so both surfaces are registered here (#6301's first review round
- * missed exactly this and the two entries were absent).
+ * happens when it is not there, so both surfaces are registered here.
  * And a per-issue or per-PR input — an acceptance-criteria block, a `## Deviations` section, an
  * epic's `## Dependencies` — is not a repo surface at all: it is one artifact's content, and the
  * verb's exit code is the whole contract.
@@ -96,7 +95,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "collaborator-permissions",
 		disposition: "fail-loud",
-		note: "`repos/<repo>/collaborators/<login>/permission` readable; every ACL-resolved claim and ruling is UNKNOWN without it, never permissive (ADR 0055)",
+		note: "`repos/<repo>/collaborators/<login>/permission` readable; every ACL-resolved claim and ruling is UNKNOWN without it, never permissive",
 	},
 	{
 		id: "issue-dependencies",
@@ -111,12 +110,12 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "dep-pin",
 		disposition: "degrade",
-		note: "the manifest's `@kampus/fabrika-cli` row pinned at a published release; no verb reads the row yet, so nothing refuses and no answer narrows over its absence — buildable through `status bootstrap dep-pin`, which resolves the release from npm at run time, edits only the manifest, and prints the install command (#6995 R1.3)",
+		note: "the manifest's `@kampus/fabrika-cli` row pinned at a published release; no verb reads the row yet, so nothing refuses and no answer narrows over its absence — buildable through `status bootstrap dep-pin`, which resolves the release from npm at run time, edits only the manifest, and prints the install command",
 	},
 	{
 		id: "label-taxonomy",
 		disposition: "fail-loud",
-		note: "the board vocabulary's statuses, types, priorities and audiences; `ledger child` exits 10 and `triage apply` refuses rather than minting a label nobody declared (#4285) — `status bootstrap label-taxonomy` is the remedy, which is the other axis",
+		note: "the board vocabulary's statuses, types, priorities and audiences; `ledger child` exits 10 and `triage apply` refuses rather than minting a label nobody declared — `status bootstrap label-taxonomy` is the remedy, which is the other axis",
 	},
 	{
 		id: "issue-shape-markers",
@@ -136,7 +135,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "roadmap-focus",
 		disposition: "degrade",
-		note: "the `## Campaigns` table at `roadmapFile`, which declares the campaign in exclusive focus; an absent file and an absent table are the same well-formed default — nothing is active, so `build pick`'s and `build claim`'s fence is inert and admits every issue, and `triage homes` answers over the milestones alone (#5773) — buildable through `status bootstrap roadmap-focus`, which is the other axis",
+		note: "the `## Campaigns` table at `roadmapFile`, which declares the campaign in exclusive focus; an absent file and an absent table are the same well-formed default — nothing is active, so `build pick`'s and `build claim`'s fence is inert and admits every issue, and `triage homes` answers over the milestones alone — buildable through `status bootstrap roadmap-focus`, which is the other axis",
 	},
 	{
 		id: "cycle-doc",
@@ -171,7 +170,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "glossary-registers",
 		disposition: "bootstrap",
-		note: "the domain-noun and architecture-vocabulary registers; `glossary drift` and `check` answer the literal outcome `bootstrap` at exit 0 over an *absent* register, because refusing would leave a fresh repo unable to reach the verb that writes one — a register that is there and holds zero rows is `glossary check`'s 7 instead, since a clean scan of an empty register is not a clean scan (ADR 0092)",
+		note: "the domain-noun and architecture-vocabulary registers; `glossary drift` and `check` answer the literal outcome `bootstrap` at exit 0 over an *absent* register, because refusing would leave a fresh repo unable to reach the verb that writes one — a register that is there and holds zero rows is `glossary check`'s 7 instead, since a clean scan of an empty register is not a clean scan",
 	},
 	{
 		id: "prose-homes",
@@ -226,7 +225,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "codeowners",
 		disposition: "degrade",
-		note: "`.github/CODEOWNERS` carrying a control-plane row; a proven-absent file is an empty row set and holds on `unknown`, and an *unreadable* one is the caller's `11` in every repo (ADR 0220 §4)",
+		note: "`.github/CODEOWNERS` carrying a control-plane row; a proven-absent file is an empty row set and holds on `unknown`, and an *unreadable* one is the caller's `11` in every repo",
 	},
 	{
 		id: "landing-path",
@@ -256,7 +255,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "gitignore-row",
 		disposition: "degrade",
-		note: "a `.gitignore` covering the lane ledger's root; every lane verb works without it and the only cost is a machine-local ledger committed by accident (#5777)",
+		note: "a `.gitignore` covering the lane ledger's root; every lane verb works without it and the only cost is a machine-local ledger committed by accident",
 	},
 	{
 		id: "claude-md-section",
@@ -292,7 +291,7 @@ const KNOWN_IDS = new Set(SURFACE_REGISTRY.map((surface) => surface.id));
  *
  * The registry ships the notes and the config carries the overrides, so neither half answers "what
  * happens here when this is missing" alone. `status settings --surfaces` is the one caller, and it
- * exists because the front door's step 3 relays a surface's note to a human (#6301).
+ * exists because the front door's step 3 relays a surface's note to a human.
  */
 export const surfaceNotes = (resolved: SurfaceDispositions): ReadonlyArray<SurfaceSpec> =>
 	SURFACE_REGISTRY.map((surface) => ({

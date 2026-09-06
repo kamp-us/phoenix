@@ -33,7 +33,7 @@ const edited = (name: string, over: Record<string, unknown>): ReadonlyArray<unkn
 	CONFORMING.map((facet) => (facet.name === name ? {...facet, ...over} : facet));
 
 describe("the shipped default", () => {
-	it("is phoenix's own vocabulary, and it conforms", () => {
+	it("is the vocabulary `triage/facets.ts` carries, and it conforms", () => {
 		expect(triageFacetsKey.shippedDefault).toBe(FACET_VOCABULARY);
 		expect(loadConfig({_tag: "Absent"})).toEqual({_tag: "Config", state: {_tag: "Absent"}});
 	});

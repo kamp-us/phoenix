@@ -1,6 +1,6 @@
 /**
- * `ci changelog`, ported from v1's `changelog-derive derive` (#6099) — the trust boundary
- * around the entries JSON and the stdout/`--out` split, over a scripted filesystem.
+ * `ci changelog` — the trust boundary around the entries JSON and the stdout/`--out`
+ * split, over a scripted filesystem.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";

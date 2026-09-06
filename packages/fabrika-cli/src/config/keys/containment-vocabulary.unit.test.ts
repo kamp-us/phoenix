@@ -112,7 +112,7 @@ describe("containmentGap", () => {
 		expect(containmentGap(vocabulary, FEATURE, null)).toBeNull();
 	});
 
-	it("reds a phoenix-legal value that a foreign vocabulary does not carry", () => {
+	it("reds a shipped-legal value that a foreign vocabulary does not carry", () => {
 		const foreign: ContainmentVocabulary = {types: ["type:feature"], values: ["unpublished"]};
 		expect(containmentGap(foreign, FEATURE, readContainment("flag", foreign))).toEqual({
 			type: "type:feature",
