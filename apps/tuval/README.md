@@ -589,12 +589,19 @@ scaling one weight down to a 16px tab closes the gaps between the branches into 
 carries the mark's own near-black plate rather than a transparent ground, so one file reads on a
 light tab strip and on the dark desk alike.
 
-None of those four is editable. `brand/tree-mark.svg` is the source they are cut from — the kamp.us
-tree mark, drawn for this repo in [#8144](https://github.com/kamp-us/phoenix/issues/8144) and the
-reference form from here on. Its geometry is fixed on a 32-unit grid and its three stroke weights
-are CSS variables, because a size is re-cut by re-rendering that file with the weights the file's
-own comment names for it, not by resampling a PNG. A further size is one more render; a shape change
-is an edit to the SVG and a re-cut of all four.
+None of those four is editable. `brand/tree-mark.png` is the source they are cut from — the kamp.us
+tree mark as the founder supplied it, adopted in
+[#8144](https://github.com/kamp-us/phoenix/issues/8144) and the reference form from here on. It is
+the supplied file cropped to the tree's bounding box and nothing else: the original carried roughly
+35px of margin per side, and dropping it buys about 20% linear scale at tab size. A further size is
+one more downscale of that file; a shape change means a new supplied file and a re-cut of all four.
+
+The source is a raster, so the cuts are resampled rather than re-rendered, and the smallest of them
+pays for it: at 16px the canopy's branch work closes up and the mark reads as a red mass rather than
+a tree. That is a known and accepted cost of using this drawing — it is the mark, and a redrawn
+substitute that survives 16px is not. A hidpi tab strip selects the 32px cut anyway, which is where
+the mark starts reading. Replacing the raster source with a faithful vector trace is the open path
+to fixing the 16px cut without changing the drawing.
 
 ## The AI agent slice
 
