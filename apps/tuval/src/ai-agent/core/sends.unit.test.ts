@@ -20,6 +20,7 @@ import {
 	markTurnRunning,
 	noteSend,
 	pendingSend,
+	runningSend,
 	type SendOutcome,
 	sendAfterFailure,
 	sendLimit,
@@ -109,6 +110,67 @@ describe("the ledger", () => {
 	/** #8107: no layer said the backend began a turn, so nothing here is that turn's end. */
 	it("leaves a send whose turn never started pending", () => {
 		expect(settleAccepted([pending("live")])).toEqual([pending("live")]);
+	});
+
+	/**
+	 * #8107, with two sends in flight — the shape a stale `ready` opens. Order is the correlation,
+	 * so every row here is about position: the turn begins for the oldest send waiting for one, the
+	 * rewrite leaves that send where it stood, and the accept reaches the running turn's send and
+	 * not whichever pending row happens to come first.
+	 */
+	it("gives each turn to the oldest send still waiting for one", () => {
+		const both = [pending("first"), pending("second")];
+
+		const running = markTurnRunning(both);
+		expect(running).toEqual([{key: "first", state: "pending", turn: "running"}, pending("second")]);
+		expect(runningSend(running)?.key).toBe("first");
+
+		const first = settleAccepted(running);
+		expect(first).toEqual([{key: "first", state: "accepted"}, pending("second")]);
+		// Nothing is running now, so a `ready` arriving before the next turn begins accepts nothing.
+		expect(settleAccepted(first)).toEqual(first);
+
+		const second = settleAccepted(markTurnRunning(first));
+		expect(second).toEqual([
+			{key: "first", state: "accepted"},
+			{key: "second", state: "accepted"},
+		]);
+	});
+
+	/**
+	 * The Claude row's queue order: `prompting` is published at the send, so a second send under a
+	 * live turn queues both beginnings ahead of either end (`claude/agent/ClaudeAiAgent.ts`). Two
+	 * turns are then running at once, and the ends still pair off oldest-first.
+	 */
+	it("pairs each turn's end with its own beginning when two begin before either ends", () => {
+		const bothRunning = markTurnRunning(markTurnRunning([pending("first"), pending("second")]));
+		expect(bothRunning).toEqual([
+			{key: "first", state: "pending", turn: "running"},
+			{key: "second", state: "pending", turn: "running"},
+		]);
+
+		const first = settleAccepted(bothRunning);
+		expect(first).toEqual([
+			{key: "first", state: "accepted"},
+			{key: "second", state: "pending", turn: "running"},
+		]);
+		expect(settleAccepted(first)).toEqual([
+			{key: "first", state: "accepted"},
+			{key: "second", state: "accepted"},
+		]);
+	});
+
+	it("settles every send in flight when the session ends under them", () => {
+		const refusal = failure(PROMPT_ERROR, "refused");
+		const running = markTurnRunning([pending("first"), pending("second")]);
+		expect(settlePending(running, refusal)).toEqual([
+			{key: "first", state: "refused", failure: refusal},
+			{key: "second", state: "uncertain", failure: refusal},
+		]);
+		expect(settlePending(running, null)).toEqual([
+			{key: "first", state: "uncertain", failure: null},
+			{key: "second", state: "uncertain", failure: null},
+		]);
 	});
 
 	it("marks nothing running when no send is in flight", () => {

@@ -221,10 +221,17 @@ export const foldEvent = (
 		// everything else to `prompting`), the Claude layer on the write that hands the CLI the
 		// text and on the SDK's `result` (`claude/agent/ClaudeAiAgent.ts`).
 		//
+		// The pair is also what says *which* send crossed, because a stale `ready` leaves the
+		// session `ready` under a send whose turn never began and the operator can send again into
+		// that gap — so two can be in flight at once. `markTurnRunning` gives the turn to the
+		// oldest send still waiting for one, which is the order the layer handed them over in, and
+		// `settleAccepted` reaches that running send and no other. Neither reads "whichever send is
+		// pending", which is how a later turn accepted an older, never-started one (#8107).
+		//
 		// `gone` is the other half: a session that ended under a send in flight can never answer
-		// for it, so that send becomes recoverable instead. Refusals reach the send by their own
-		// arms below, and they arrive before this line does — both rows push the turn's failure
-		// ahead of the phase that closes it.
+		// for it, so every send in flight becomes recoverable instead. Refusals reach the send by
+		// their own arms below, and they arrive before this line does — both rows push the turn's
+		// failure ahead of the phase that closes it.
 		case "phase":
 			if (coreOwned(event.phase)) return state;
 			if (event.phase === "gone") {

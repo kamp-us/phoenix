@@ -42,6 +42,7 @@ export {
 	noteSend,
 	type PendingSend,
 	pendingSend,
+	runningSend,
 	type SendOutcome,
 	sendAfterFailure,
 	sendLimit,

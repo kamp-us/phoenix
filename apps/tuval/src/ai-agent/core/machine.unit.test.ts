@@ -1032,6 +1032,72 @@ describe("a send's outcome, under its own key", () => {
 	});
 
 	/**
+	 * #8107's second half. A stale `ready` leaves the session `ready` under a send whose turn never
+	 * began, and the composer is gated on the phase — so the operator can send again into that gap
+	 * and two sends are in flight at once. From there each turn has to reach the send it belongs
+	 * to: the ledger keeps them in the order they were handed over, a turn begins for the oldest
+	 * send still waiting for one, and only that running turn's end accepts. Get either wrong and a
+	 * later turn accepts the older, never-started send — the window drops the copy of text the
+	 * backend never took, which is the harm this issue is about.
+	 */
+	it("accepts each of two sends in flight on its own turn, oldest first", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [stale] = apply(handed, turnEnded);
+		expect(stale.phase).toBe("ready");
+
+		const [second] = apply(stale, prompt("k2"));
+		const [handedSecond] = apply(second, {type: "sent", key: "k2", failure: null});
+		expect(handedSecond.sends).toEqual([
+			{key: "k1", state: "pending", turn: "unstarted"},
+			{key: "k2", state: "pending", turn: "unstarted"},
+		]);
+
+		const [firstRunning] = apply(handedSecond, turnBegan);
+		expect(firstRunning.sends).toEqual([
+			{key: "k1", state: "pending", turn: "running"},
+			{key: "k2", state: "pending", turn: "unstarted"},
+		]);
+
+		const [firstDone] = apply(firstRunning, turnEnded);
+		expect(firstDone.sends).toEqual([
+			{key: "k1", state: "accepted"},
+			{key: "k2", state: "pending", turn: "unstarted"},
+		]);
+
+		const [secondRunning] = apply(firstDone, turnBegan);
+		const [secondDone] = apply(secondRunning, turnEnded);
+		expect(secondDone.sends).toEqual([
+			{key: "k1", state: "accepted"},
+			{key: "k2", state: "accepted"},
+		]);
+	});
+
+	/**
+	 * The other end of the same state: the session goes away with two sends in flight. The turn
+	 * that was running takes the failure's own arm and the send behind it is `uncertain` — nobody
+	 * can say whether the backend held it — and neither is left `pending`, which would strand it
+	 * for ever on a session that narrates no more turns (#8107).
+	 */
+	it("settles both sends in flight when the session ends under them", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [stale] = apply(handed, turnEnded);
+		const [second] = apply(stale, prompt("k2"));
+		const [running] = apply(second, turnBegan);
+
+		const [gone] = apply(running, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "gone"},
+		});
+		expect(gone.sends).toEqual([
+			{key: "k1", state: "uncertain", failure: null},
+			{key: "k2", state: "uncertain", failure: null},
+		]);
+	});
+
+	/**
 	 * The two-window race, at the core. One window's prompt is admitted and the other's is refused
 	 * because the session is no longer `ready`; both outcomes stand, each under its own key, so
 	 * neither window can read the other's answer as its own.
@@ -1047,9 +1113,11 @@ describe("a send's outcome, under its own key", () => {
 		const [handed] = apply(both, {type: "sent", key: "k-left", failure: null});
 		const [running] = apply(handed, turnBegan);
 		const [answered] = apply(running, turnEnded);
+		// Send order, not settle order: the ledger rewrites a key where it stands, because that
+		// position is what tells a later turn which send it belongs to (#8107).
 		expect(answered.sends).toEqual([
-			{key: "k-right", state: "refused", failure: both.failure},
 			{key: "k-left", state: "accepted"},
+			{key: "k-right", state: "refused", failure: both.failure},
 		]);
 	});
 });

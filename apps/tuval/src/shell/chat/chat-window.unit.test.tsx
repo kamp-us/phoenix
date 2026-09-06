@@ -568,6 +568,40 @@ describe("a send whose outcome is not yet known", () => {
 		expect(view().outgoing).toEqual([{key, text: "ship it"}]);
 	});
 
+	/**
+	 * #8107's second half, at the window. A stale `ready` leaves the session `ready` under a send
+	 * whose turn never began, so the operator can send again and the window ends up holding two
+	 * copies. The next turn the backend runs is the first send's, and only that copy may go — the
+	 * failure this guards is the ledger accepting the wrong key and the window dropping the text
+	 * the backend has not seen.
+	 */
+	it("drops only the copy of the send whose turn the backend ran, with two in flight", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the first thing");
+		await sent("the second thing");
+		await waitFor(() => expect(view().outgoing.length).toBe(2));
+		const [first = "", second = ""] = keys;
+
+		const bothHeld = withSends(
+			[
+				{key: first, state: "pending", turn: "unstarted"},
+				{key: second, state: "pending", turn: "unstarted"},
+			],
+			{phase: "prompting"},
+		);
+		const ran = foldEvent(
+			foldEvent(bothHeld, {kind: "phase", phase: "prompting"}, {}),
+			{kind: "phase", phase: "ready"},
+			{},
+		);
+		await act(async () => {
+			await Effect.runPromise(process.commit(ran));
+		});
+
+		await waitFor(() => expect(view().outgoing).toEqual([{key: second, text: "the second thing"}]));
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
 	it("offers a refused send back, and puts it in the composer on the operator's word", async () => {
 		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
 		await sent("the long prompt");
