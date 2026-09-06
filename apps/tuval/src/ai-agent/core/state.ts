@@ -12,6 +12,7 @@
 
 import type {AgentFailure, Phase} from "../events.ts";
 import type {
+	CommandRef,
 	ItemId,
 	Mode,
 	ModelRef,
@@ -99,6 +100,12 @@ export interface AiAgentSessionState {
 	readonly permissionsRaised: number;
 	readonly modes: ModeState;
 	readonly models: ModelState;
+	/**
+	 * The slash commands this session offers the composer, whole (#8060). A flat list rather than a
+	 * `current`/`available` pair like the two above: nothing selects a command, the picker inserts
+	 * one as prompt text.
+	 */
+	readonly commands: ReadonlyArray<CommandRef>;
 	/** The text of the last prompt sent, for the resend affordance. */
 	readonly lastPrompt: string | null;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
@@ -136,6 +143,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	permissionsRaised: 0,
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
+	commands: [],
 	lastPrompt: null,
 	lastPage: null,
 	failure: null,

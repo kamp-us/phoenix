@@ -465,11 +465,13 @@ function ChatWindow({
 
 	const phase = state?.phase ?? "idle";
 	const models = state?.models ?? null;
+	const commands = state?.commands ?? null;
 	const composer = useMemo(
 		() =>
 			composerBridge({
 				initialPhase: phase,
 				initialModels: models ?? {current: null, available: []},
+				initialCommands: commands ?? [],
 				onPrompt: (text) => {
 					dispatch({type: "prompt", text, key: options.newKey(), timestamp: options.now()});
 					commit((current) => (current.draft === "" ? current : {...current, draft: ""}));
@@ -477,15 +479,19 @@ function ChatWindow({
 				onInterrupt: () => dispatch({type: "interrupt", at: options.now()}),
 				onSetModel: (model) => dispatch({type: "setModel", model}),
 			}),
-		// `phase` and `models` seed the bridge and are deliberately not dependencies: `AgentChatInput`
-		// re-runs its whole load on a new bridge identity, so a bridge rebuilt per change would drop
-		// the composer back into `loading` on every turn. Both reach it through the setters below.
+		// `phase`, `models` and `commands` seed the bridge and are deliberately not dependencies:
+		// `AgentChatInput` re-runs its whole load on a new bridge identity, so a bridge rebuilt per
+		// change would drop the composer back into `loading` on every turn. All three reach it
+		// through the setters below.
 		[dispatch, commit, options.newKey, options.now],
 	);
 	useEffect(() => composer.setPhase(phase), [composer, phase]);
 	useEffect(() => {
 		if (models !== null) composer.setModels(models);
 	}, [composer, models]);
+	useEffect(() => {
+		if (commands !== null) composer.setCommands(commands);
+	}, [composer, commands]);
 
 	const interruptedId = state?.interrupted ?? null;
 	const interruption = state?.interruption ?? null;

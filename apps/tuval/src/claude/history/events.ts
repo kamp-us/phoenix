@@ -6,7 +6,7 @@
  *
  * The SDK's union is open — `SDKMessage` names three dozen members at
  * `@anthropic-ai/claude-agent-sdk@0.3.259` and grows every release — so the dispatch is over the
- * five this transcript has a shape for, and everything else is counted rather than refused. A new
+ * six this transcript has a shape for, and everything else is counted rather than refused. A new
  * message kind must never take a session down.
  *
  * Partial assistant frames are among the counted: streaming granularity here is one whole
@@ -16,6 +16,7 @@
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {
 	assistantEvents,
+	commandsChangedEvents,
 	initEvents,
 	type Mapping,
 	type MappingOptions,
@@ -43,6 +44,7 @@ export const toAgentEvents = (
 			if (message.subtype === "permission_denied") {
 				return permissionDeniedEvents(message, mapping, options);
 			}
+			if (message.subtype === "commands_changed") return commandsChangedEvents(message, mapping);
 			return skipMessage(mapping);
 		default:
 			return skipMessage(mapping);

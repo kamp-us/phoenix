@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * The four agent controls the window adds on top of the transcript: the collapsible tool row, the
- * permission cards, the mode switch, and the composer's model picker. Same test double as the
- * transcript's own tests (`../window/fixtures.ts`) — no kernel, no socket, no agent layer.
+ * The five agent controls the window adds on top of the transcript: the collapsible tool row, the
+ * permission cards, the mode switch, and the composer's model and slash-command pickers. Same test
+ * double as the transcript's own tests (`../window/fixtures.ts`) — no kernel, no socket, no layer.
  *
  * Every control here is Manti-backed, so a click and a same-tick read prove nothing: Zag defers the
  * transition by at least one microtask (`.patterns/zag-machine-interaction-tests.md`). Each
@@ -22,6 +22,7 @@ import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
 import {
 	call,
+	commands,
 	models,
 	modes,
 	pendingPermission,
@@ -351,6 +352,62 @@ describe("the composer's model picker", () => {
 		await waitFor(() =>
 			expect(screen.getByRole("button", {name: "model: claude-sonnet-5"})).toBeTruthy(),
 		);
+	});
+});
+
+describe("the composer's slash-command picker", () => {
+	const composer = () => screen.findByLabelText("Write a message to the agent");
+
+	const type = async (value: string): Promise<HTMLElement> => {
+		const input = await composer();
+		await act(async () => {
+			fireEvent.change(input, {target: {value}});
+		});
+		return input;
+	};
+
+	it("offers the session's catalog and writes the pick into the draft", async () => {
+		await open(withTranscript([userItem("u1", "go")], {commands: commands(["compact", "clear"])}));
+		const input = await type("/comp");
+		await click(await screen.findByRole("option", {name: /\/compact/}));
+		expect((input as HTMLTextAreaElement).value).toBe("/compact ");
+	});
+
+	it("sends a picked command to the backend as ordinary prompt text", async () => {
+		const {process} = await open(
+			withTranscript([userItem("u1", "go")], {commands: commands(["compact"])}),
+		);
+		await type("/comp");
+		await click(await screen.findByRole("option", {name: /\/compact/}));
+		await act(async () => {
+			fireEvent.submit((await composer()).closest("form") as HTMLFormElement);
+		});
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		const sent = process.inbox()[0] as {type: string; text: string};
+		expect([sent.type, sent.text]).toEqual(["prompt", "/compact"]);
+	});
+
+	it("advertises no sigil and opens no menu on a backend offering no commands", async () => {
+		await open(withTranscript([userItem("u1", "go")], {commands: []}));
+		const hint = await screen.findByText(/file/);
+		expect(hint.textContent).not.toContain("command");
+		await type("/");
+		expect(screen.queryByRole("listbox", {name: "Completions"})).toBeNull();
+	});
+
+	it("takes a catalog that arrives after mount without re-entering loading", async () => {
+		const state = withTranscript([userItem("u1", "go")], {commands: []});
+		const {process} = await open(state);
+		// The send button is the composer's `loading` tell: it is disabled while the load runs and
+		// enabled once it resolves, so a bridge rebuilt by the catalog would disable it again.
+		const send = await screen.findByRole("button", {name: /send/i});
+		await waitFor(() => expect(send.getAttribute("disabled")).toBeNull());
+		await act(async () => {
+			await Effect.runPromise(process.commit({...state, commands: commands(["compact"])}));
+		});
+		expect(send.getAttribute("disabled")).toBeNull();
+		await type("/comp");
+		expect(await screen.findByRole("option", {name: /\/compact/})).toBeTruthy();
 	});
 });
 
