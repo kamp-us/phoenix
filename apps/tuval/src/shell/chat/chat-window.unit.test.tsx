@@ -31,6 +31,7 @@ import {
 	assistantItem,
 	call,
 	compactionItem,
+	systemItem,
 	thinkingItem,
 	toolItem,
 	transcriptOf,
@@ -1083,6 +1084,97 @@ describe("the two daily rows", () => {
 		expect(screen.getByText("context compacted").className).toBe("tuval-chat-compaction-label");
 		expect(screen.getByText("done").className).toBe("tuval-chat-text");
 		expect(marker?.querySelector(".tuval-chat-text")).toBeNull();
+	});
+});
+
+/**
+ * Everything else a backend says about the session, through the one row that renders all of it.
+ * The SDK's fifteen-odd `system` subtypes never reach this window as subtypes — a `SystemItem` is
+ * a summary and an optional detail, and these cases are the whole of what the row does with them.
+ */
+describe("the session row", () => {
+	const sessionRows = (): ReadonlyArray<HTMLElement> =>
+		Array.from(document.querySelectorAll<HTMLElement>('.tuval-chat-row[data-kind="session"]'));
+
+	const panelOf = (trigger: HTMLElement): HTMLElement | null =>
+		document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+
+	it("renders a summary-only notice as a line with no control to open", async () => {
+		await openWindow(withTranscript([userItem("a", "go"), systemItem("s", "session resumed")]));
+
+		const line = await screen.findByText("session resumed");
+		expect(line.className).toContain("tuval-chat-text");
+		// Nothing is folded away, so a disclosure here would name a region with nothing in it.
+		expect(screen.queryByRole("button", {name: "session resumed"})).toBeNull();
+	});
+
+	it("folds a notice's detail behind a disclosure the summary names", async () => {
+		const detail = "PreToolUse hook exited 1\n  at guard.sh:12";
+		await openWindow(withTranscript([systemItem("s", "hook refused the call", 1, detail)]));
+
+		const trigger = await screen.findByRole("button", {name: "hook refused the call"});
+		expect(trigger.tagName).toBe("BUTTON");
+		expect(trigger.getAttribute("aria-expanded")).toBe("false");
+		expect(panelOf(trigger)?.hidden).toBe(true);
+
+		await act(async () => {
+			fireEvent.click(trigger);
+		});
+
+		const opened = screen.getByRole("button", {name: "hook refused the call"});
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		const panel = panelOf(opened);
+		expect(panel?.hidden).toBe(false);
+		expect(panel?.textContent).toBe(detail);
+		// The panel lives inside the row the virtualizer measures, or the row clips at its estimate.
+		expect(panel?.closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe("session");
+	});
+
+	it("collapses a burst of consecutive notices into one row rather than stacking them", async () => {
+		await openWindow(
+			withTranscript([
+				userItem("a", "go"),
+				systemItem("s1", "hook started"),
+				systemItem("s2", "hook running"),
+				systemItem("s3", "hook finished"),
+				assistantItem("b", "done"),
+			]),
+		);
+		await screen.findByText("done");
+
+		expect(sessionRows().length).toBe(1);
+		// The newest notice is the session's current word, and the row says how much it holds back.
+		const trigger = screen.getByRole("button", {name: /^hook finished/});
+		expect(trigger.textContent).toContain("2 earlier notices");
+		// The earlier notices are behind the fold, not on the row: `Collapsible` keeps its content
+		// mounted and `hidden`, so what is asserted is the region, never the absence of the node.
+		expect(panelOf(trigger)?.hidden).toBe(true);
+		expect(screen.getByText("hook started").closest("[hidden]")).toBe(panelOf(trigger));
+
+		await act(async () => {
+			fireEvent.click(trigger);
+		});
+
+		const panel = panelOf(screen.getByRole("button", {name: /^hook finished/}));
+		expect(
+			Array.from(panel?.querySelectorAll(".tuval-chat-text") ?? []).map((line) => line.textContent),
+		).toEqual(["hook started", "hook running", "hook finished"]);
+	});
+
+	it("keeps a run out of the row its neighbours are in", async () => {
+		await openWindow(
+			withTranscript([
+				systemItem("s1", "session resumed"),
+				assistantItem("b", "done"),
+				systemItem("s2", "rate limit reached"),
+			]),
+		);
+		await screen.findByText("done");
+
+		expect(sessionRows().length).toBe(2);
+		expect(screen.getByText("done").closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe(
+			"assistant",
+		);
 	});
 });
 

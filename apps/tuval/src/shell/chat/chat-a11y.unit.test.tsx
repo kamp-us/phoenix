@@ -31,11 +31,13 @@ import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
 import {
+	assistantItem,
 	call,
 	compactionItem,
 	models,
 	modes,
 	pendingPermission,
+	systemItem,
 	thinkingItem,
 	userItem,
 	withTranscript,
@@ -254,6 +256,73 @@ describe("the window's own primitives hold the enforced pillar-4 invariants", ()
 		},
 		SLOW,
 	);
+
+	// All three shapes the session row takes, in one transcript: a lone notice with nothing to
+	// disclose, a lone notice with a detail, and a run of them collapsed into one row.
+	it(
+		"holds them over a transcript carrying every shape of the session row",
+		async () => {
+			const state = withTranscript([
+				systemItem("s0", "session resumed"),
+				userItem("u1", "go"),
+				systemItem("s1", "hook refused the call", 1, "PreToolUse hook exited 1"),
+				assistantItem("a1", "done"),
+				systemItem("s2", "hook started"),
+				systemItem("s3", "hook finished"),
+			]);
+			expect(await violationsFor(state)).toEqual([]);
+		},
+		SLOW,
+	);
+});
+
+/**
+ * The session row's disclosure, at the semantics the harness above cannot decide. It is the same
+ * assertion the thinking row gets, on the row that carries every `system` subtype the SDK raises —
+ * so a subtype landing here can never arrive as an unannounced burst of rows.
+ */
+describe("the session row's disclosure", () => {
+	const DETAIL = "PreToolUse hook exited 1\n  at guard.sh:12";
+
+	const mountSession = () =>
+		mountWindow(
+			withTranscript([userItem("u1", "go"), systemItem("s1", "hook refused the call", 1, DETAIL)]),
+		);
+
+	const trigger = (): HTMLElement => screen.getByRole("button", {name: "hook refused the call"});
+
+	it("is a real button naming the region it reveals", async () => {
+		const rendered = await mountSession();
+
+		const control = trigger();
+		expect(control.tagName).toBe("BUTTON");
+		expect(control.getAttribute("aria-expanded")).toBe("false");
+
+		const region = document.getElementById(control.getAttribute("aria-controls") ?? "");
+		expect(region).not.toBeNull();
+		expect(region?.textContent).toBe(DETAIL);
+		expect(region?.hidden).toBe(true);
+
+		rendered.unmount();
+	});
+
+	it("takes focus, and activating it opens the region", async () => {
+		const rendered = await mountSession();
+
+		const control = trigger();
+		control.focus();
+		expect(document.activeElement).toBe(control);
+
+		await act(async () => {
+			fireEvent.click(control);
+		});
+
+		const opened = trigger();
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		expect(document.getElementById(opened.getAttribute("aria-controls") ?? "")?.hidden).toBe(false);
+
+		rendered.unmount();
+	});
 });
 
 /**

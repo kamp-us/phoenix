@@ -56,9 +56,11 @@ import {
 	chatRows,
 	mergeOlder,
 	oldestLoadedId,
+	type RowItem,
 	rowIndexOfItem,
 	rowKey,
 } from "./rows.ts";
+import {SessionRow} from "./SessionRow.tsx";
 import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
@@ -171,11 +173,11 @@ const Placeholder = ({children}: {readonly children: ReactNode}): ReactElement =
 	</p>
 );
 
-const who: Readonly<Record<TranscriptItem["kind"], string>> = {
+// No `system` key, and none is missing: a session notice is a `session` row, never an item row.
+const who: Readonly<Record<RowItem["kind"], string>> = {
 	user: "you",
 	assistant: "agent",
 	tool: "tool",
-	system: "session",
 	thinking: "thinking",
 	compaction: "compaction",
 };
@@ -191,7 +193,7 @@ function RowBody({
 	fold,
 	onToggleRow,
 }: {
-	readonly item: TranscriptItem;
+	readonly item: RowItem;
 	readonly expanded: boolean;
 	readonly fold: ToolFold | null;
 	readonly onToggleRow: (id: string, open: boolean) => void;
@@ -228,7 +230,7 @@ function ItemRow({
 	nested,
 	onToggleRow,
 }: {
-	readonly item: TranscriptItem;
+	readonly item: RowItem;
 	readonly interrupted: boolean;
 	readonly onResend: (() => void) | null;
 	readonly expanded: boolean;
@@ -297,6 +299,21 @@ function RowView({
 				</Button>
 				{row.items > 0 ? <span>{row.items} omitted here</span> : null}
 			</span>
+		);
+	}
+	if (row.kind === "session") {
+		// The run's first notice is its identity, in the `expanded` set as in `rowKey`, so a notice
+		// joining the run behind it does not close a disclosure the reader opened.
+		const id = row.items[0].id;
+		return (
+			<>
+				<span className="tuval-chat-who">session</span>
+				<SessionRow
+					run={row.items}
+					expanded={expanded.has(id)}
+					onToggle={(next) => onToggleRow(id, next)}
+				/>
+			</>
 		);
 	}
 	const open = unfolded.has(row.item.id);
@@ -753,7 +770,13 @@ function ChatWindow({
 						return (
 							<div
 								key={virtual.key}
-								id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
+								id={
+									row.kind === "item"
+										? rowDomId(host.windowId, row.item.id)
+										: row.kind === "session"
+											? rowDomId(host.windowId, row.items[0].id)
+											: undefined
+								}
 								className="tuval-chat-row"
 								data-index={virtual.index}
 								data-kind={row.kind === "item" ? row.item.kind : row.kind}
