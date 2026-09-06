@@ -24,14 +24,26 @@
  */
 
 import {CommandPalette, type CommandPaletteItem} from "@kampus/design";
-import type {ReactElement, ReactNode} from "react";
+import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode} from "react";
 import {useCallback, useMemo, useState} from "react";
 import type {SessionListAnswer} from "../../page/session-list.ts";
 import {failureLine} from "../../palette/call.ts";
 import type {SessionRow, UnreadableBackend} from "../../protocol/session-list.ts";
 import type {AnyWindowRenderer} from "../../shell/window/index.ts";
 import {windowRenderer} from "../../shell/window/index.ts";
+import {
+	listView,
+	type OpenPhase,
+	type OpenTarget,
+	openRead,
+	type SendPlan,
+	type SessionListView,
+	send,
+	sessionView,
+	type TranscriptRead,
+} from "./opening.ts";
 import {matchesQuery, rowValue, sessionItems} from "./rows.ts";
+import {SessionTranscriptView, type TranscriptAnswer} from "./SessionTranscript.tsx";
 import "./session-list-window.css";
 
 const TITLE = "AI agent sessions";
@@ -71,8 +83,13 @@ const UnreadableBackends = ({
 export interface SessionListProps {
 	/** The answer to render. `null` is "nothing has been read yet", never "there are no sessions". */
 	readonly answer: SessionListAnswer | null;
-	/** What a picked row does. This slice only reports the choice; opening it is #8104's. */
-	readonly onActivate?: (session: SessionRow) => void;
+	/**
+	 * A row was picked, and where it should land: `inline` for plain activation, `new-window` for
+	 * Cmd+Enter. Reported for both targets, because the inline open is this component's own act and
+	 * the other window is the page's — but neither is a spawn, so this fires on a read either way
+	 * (epic #8070, ruling 5).
+	 */
+	readonly onActivate?: (session: SessionRow, target: OpenTarget) => void;
 	/** The clock the "3 hours ago" column is measured against. A parameter so a test can pin it. */
 	readonly now?: number;
 }
@@ -110,7 +127,23 @@ export function SessionList({answer, onActivate, now}: SessionListProps): ReactE
 			const session = byValue.get(item.value);
 			if (session === undefined) return;
 			setChosen(item.label);
-			onActivate?.(session);
+			onActivate?.(session, "inline");
+		},
+		[byValue, onActivate],
+	);
+
+	// Cmd+Enter is the other window (ruling 5), and it must never also be the plain activation: the
+	// palette's own Enter would select the row and replace this window, so the event is taken here
+	// and `preventDefault` is what stops it reaching that path (`@kampus/design`'s `CommandPalette`
+	// returns early on a defaulted-prevented event).
+	const keyDown = useCallback(
+		(event: ReactKeyboardEvent<HTMLInputElement>, active: CommandPaletteItem | undefined) => {
+			if (event.key !== "Enter" || !event.metaKey || active === undefined) return;
+			const session = byValue.get(active.value);
+			if (session === undefined) return;
+			event.preventDefault();
+			setChosen(active.label);
+			onActivate?.(session, "new-window");
 		},
 		[byValue, onActivate],
 	);
@@ -141,6 +174,7 @@ export function SessionList({answer, onActivate, now}: SessionListProps): ReactE
 				loadingLabel={COPY.reading}
 				filter={filter}
 				onSelect={select}
+				onKeyDown={keyDown}
 				shortcut={false}
 				announcement={chosen === null ? null : `Chose ${chosen}.`}
 				{...(error === undefined ? {} : {error})}
@@ -155,14 +189,87 @@ export type SessionListSource = () => SessionListAnswer | null;
 
 const nothingRead: SessionListSource = () => null;
 
+/** How the renderer gets one session's transcript. The default reads none, so a window says so. */
+export type TranscriptSource = (read: TranscriptRead) => TranscriptAnswer | null;
+
+const nothingPaged: TranscriptSource = () => null;
+
 export interface SessionListWindowOptions {
 	readonly useAnswer?: SessionListSource;
-	readonly onActivate?: (session: SessionRow) => void;
+	readonly useTranscript?: TranscriptSource;
+	/** Reported for both targets; the inline open is this window's own act either way. */
+	readonly onActivate?: (session: SessionRow, target: OpenTarget) => void;
+	/**
+	 * Open this session in a window other than this one, read-only exactly as the inline open is.
+	 * The page owns it, because splitting the desk is the shell's and not this renderer's; absent,
+	 * Cmd+Enter still refuses to replace this window rather than falling back to the inline open.
+	 */
+	readonly onOpenInNewWindow?: (session: SessionRow) => void;
+	/**
+	 * The operator sent. `plan.spawn` is the process this send has to create, and it is non-null on
+	 * exactly one send per opened session — the first (`./opening.ts`'s `send`). A caller spawns
+	 * when it is set and sends into the process it already has when it is not.
+	 */
+	readonly onSend?: (session: SessionRow, text: string, plan: SendPlan) => void;
 }
 
-function SessionListHost({useAnswer, onActivate}: SessionListWindowOptions): ReactElement {
+/**
+ * The window's own view: the list, or one session's transcript in place of it (ruling 5, "the
+ * default should be inline though").
+ *
+ * The switch is state here rather than a prop, because it is this window's act: nothing outside has
+ * to be told a row was picked for the list to be replaced, and a window that had to wait for the
+ * kernel to tell it what it is showing would show the list for a round trip after the pick.
+ * Cmd+Enter takes the other door — `onOpenInNewWindow` — and never touches this state, so the two
+ * targets cannot collapse into one.
+ */
+function SessionListHost({
+	useAnswer,
+	useTranscript,
+	onActivate,
+	onOpenInNewWindow,
+	onSend,
+}: SessionListWindowOptions): ReactElement {
 	const answer = (useAnswer ?? nothingRead)();
-	return <SessionList answer={answer} {...(onActivate === undefined ? {} : {onActivate})} />;
+	const [view, setView] = useState<SessionListView>(listView);
+	const [phase, setPhase] = useState<OpenPhase>("reading");
+
+	const activate = useCallback(
+		(session: SessionRow, target: OpenTarget) => {
+			onActivate?.(session, target);
+			if (target === "new-window") {
+				onOpenInNewWindow?.(session);
+				return;
+			}
+			setPhase("reading");
+			setView(sessionView(session));
+		},
+		[onActivate, onOpenInNewWindow],
+	);
+
+	const back = useCallback(() => setView(listView), []);
+
+	if (view.kind === "list") {
+		return <SessionList answer={answer} onActivate={activate} />;
+	}
+
+	const request = openRead(view.session);
+	const page = request._tag === "Read" ? (useTranscript ?? nothingPaged)(request.read) : null;
+	return (
+		<SessionTranscriptView
+			session={view.session}
+			answer={page}
+			unopenable={request._tag === "OpenRefused"}
+			onBack={back}
+			onSend={(text) => {
+				// The phase is what makes the transition happen once: the first send hands back a spawn
+				// and moves to `live`, and every send after it hands back none.
+				const plan = send(phase, view.session);
+				setPhase(plan.phase);
+				onSend?.(view.session, text, plan);
+			}}
+		/>
+	);
 }
 
 /** The renderer at whatever source a caller has. The window host is unread: this surface is a list. */

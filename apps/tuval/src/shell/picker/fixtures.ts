@@ -5,7 +5,8 @@
  */
 
 import {type Cmd, defineMachine} from "@demlik/tea";
-import {type Context, Effect, Layer, Option, PubSub, type Scope, Stream} from "effect";
+import {Context, Effect, Layer, Option, PubSub, type Scope, Stream} from "effect";
+import {SessionOpening} from "../../ai-agent/opening.ts";
 import {ProcessNotFound} from "../../process/errors.ts";
 import {Processes, type SpawnOptions} from "../../process/Processes.ts";
 import {ProcessTable} from "../../process/ProcessTable.ts";
@@ -57,6 +58,12 @@ export interface SpawnCall {
 	readonly programId: ProgramId;
 	readonly parent: ProcessId | undefined;
 	readonly spawned: ProcessId;
+	/**
+	 * The session this spawn was for, read back out of the context it was handed. Recorded because
+	 * a `{cwd, resume}` that never reaches the child is the failure that looks exactly like a
+	 * success from the outside (epic #8070, ruling 2).
+	 */
+	readonly session: {readonly cwd: string; readonly resume: string} | undefined;
 }
 
 export interface PickerHarness {
@@ -116,7 +123,16 @@ export const pickerHarness = (
 				minted += 1;
 				const id = ProcessId.make(`process-${minted}`);
 				const row = put(id, programId, spawnOptions?.parent);
-				calls.push({programId, parent: spawnOptions?.parent, spawned: id});
+				const opening =
+					spawnOptions === undefined
+						? Option.none()
+						: Context.getOption(spawnOptions.services, SessionOpening);
+				calls.push({
+					programId,
+					parent: spawnOptions?.parent,
+					spawned: id,
+					session: Option.getOrUndefined(opening),
+				});
 				const handle: ProcessHandle = {
 					id,
 					programId,

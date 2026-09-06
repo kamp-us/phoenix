@@ -42,6 +42,7 @@ import {
 	type WindowId,
 	zoom,
 } from "../layout/index.ts";
+import type {OpenSession} from "../picker/intent.ts";
 import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
@@ -75,7 +76,12 @@ export type KernelCmd =
 			readonly key: string;
 	  }
 	| {readonly type: "runCommand"; readonly name: CommandName}
-	| {readonly type: "openProgram"; readonly windowId: WindowId; readonly programId: string}
+	| {
+			readonly type: "openProgram";
+			readonly windowId: WindowId;
+			readonly programId: string;
+			readonly session?: OpenSession;
+	  }
 	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
 	| {readonly type: "reloadConfig"};
 
@@ -136,7 +142,13 @@ export type ShellMsg =
 	| {readonly type: "workspace.remove"; readonly workspaceId?: WorkspaceId}
 	| {readonly type: "workspace.activate"; readonly workspaceId: WorkspaceId}
 	| {readonly type: "workspace.step"; readonly direction: "previous" | "next"}
-	| {readonly type: "window.open"; readonly programId: string; readonly windowId?: WindowId}
+	| {
+			readonly type: "window.open";
+			readonly programId: string;
+			readonly windowId?: WindowId;
+			/** The session this open is for, when it is for one (`../picker/intent.ts`). */
+			readonly session?: OpenSession;
+	  }
 	| {readonly type: "window.attach"; readonly processId: string; readonly windowId?: WindowId}
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
@@ -476,7 +488,17 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 			const target = targetWindow(state, msg.windowId);
 			return target === null
 				? [state, NO_CMDS]
-				: [state, [{type: "openProgram", windowId: target, programId: msg.programId}]];
+				: [
+						state,
+						[
+							{
+								type: "openProgram",
+								windowId: target,
+								programId: msg.programId,
+								...(msg.session === undefined ? {} : {session: msg.session}),
+							},
+						],
+					];
 		},
 		"window.attach": (state, msg) => {
 			const target = targetWindow(state, msg.windowId);

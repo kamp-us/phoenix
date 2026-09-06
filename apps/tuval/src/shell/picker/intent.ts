@@ -15,14 +15,36 @@ import {CommandName} from "../keys/table.ts";
 import type {WindowId} from "../window/host.ts";
 import type {PickerEntry} from "./entries.ts";
 
+/**
+ * The session a spawn is for, when it is for one. Exactly `{cwd, resume}` and never a third field:
+ * the epic's rabbit-holes (#8070) rule out growing `Processes.spawn` into a program-arguments
+ * system, so this rides one narrow slot the spawner turns into a `SessionOpening` service
+ * (`../../ai-agent/opening.ts`) and nothing else reads.
+ */
+export interface OpenSession {
+	readonly cwd: string;
+	readonly resume: string;
+}
+
 export type PickerIntent =
-	| {readonly _tag: "OpenProgram"; readonly windowId: WindowId; readonly programId: ProgramId}
+	| {
+			readonly _tag: "OpenProgram";
+			readonly windowId: WindowId;
+			readonly programId: ProgramId;
+			/** Absent is the ordinary open: the spawned program starts whatever it starts fresh. */
+			readonly session?: OpenSession;
+	  }
 	| {readonly _tag: "AttachProcess"; readonly windowId: WindowId; readonly processId: ProcessId};
 
-export const openProgram = (windowId: WindowId, programId: ProgramId): PickerIntent => ({
+export const openProgram = (
+	windowId: WindowId,
+	programId: ProgramId,
+	session?: OpenSession,
+): PickerIntent => ({
 	_tag: "OpenProgram",
 	windowId,
 	programId,
+	...(session === undefined ? {} : {session}),
 });
 
 export const attachProcess = (windowId: WindowId, processId: ProcessId): PickerIntent => ({

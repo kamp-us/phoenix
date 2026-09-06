@@ -13,6 +13,7 @@ import type {SessionListAnswer} from "../../page/session-list.ts";
 import type {SessionRow, UnreadableBackend} from "../../protocol/session-list.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {bareSession, claudeSession, NOW, piSession, scrambled} from "./fixtures.ts";
+import type {OpenTarget} from "./opening.ts";
 import {NO_FIRST_PROMPT} from "./rows.ts";
 import {SessionList} from "./SessionListWindow.tsx";
 
@@ -25,7 +26,7 @@ const listed = (
 
 const open = (
 	answer: SessionListAnswer | null,
-	onActivate?: (session: SessionRow) => void,
+	onActivate?: (session: SessionRow, target: OpenTarget) => void,
 ): ReactElement => (
 	<SessionList answer={answer} now={NOW} {...(onActivate === undefined ? {} : {onActivate})} />
 );
@@ -115,11 +116,19 @@ describe("the keyboard", () => {
 		expect(document.getElementById(second ?? "")?.getAttribute("aria-selected")).toBe("true");
 	});
 
-	it("reports the row Enter activated", () => {
+	it("reports the row Enter activated, and says it lands in this window", () => {
 		const activated = vi.fn();
 		render(open(listed(scrambled), activated));
 		fireEvent.keyDown(field(), {key: "Enter"});
-		expect(activated).toHaveBeenCalledWith(claudeSession);
+		expect(activated).toHaveBeenCalledWith(claudeSession, "inline");
+	});
+
+	it("reports Cmd+Enter as the other window, and never also as the inline open", () => {
+		const activated = vi.fn();
+		render(open(listed(scrambled), activated));
+		fireEvent.keyDown(field(), {key: "Enter", metaKey: true});
+		expect(activated).toHaveBeenCalledTimes(1);
+		expect(activated).toHaveBeenCalledWith(claudeSession, "new-window");
 	});
 });
 
