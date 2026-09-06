@@ -15,7 +15,11 @@ import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/
 import {Effect, Stream} from "effect";
 import type {ReactElement} from "react";
 import {afterEach, describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {
+	type AiAgentSessionMsg,
+	type AiAgentSessionState,
+	foldEvent,
+} from "../../ai-agent/core/index.ts";
 import {phases} from "../../ai-agent/core/state.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
@@ -266,10 +270,11 @@ describe("the composer", () => {
  * Dispatch is not delivery, so the draft this window cleared is still this window's until the
  * session names an outcome for that send's key (#8005).
  *
- * Every case below drives the outcome in as committed state rather than as a phase or a timing:
- * a layer whose `prompt` resolves at the end of its turn and one whose returns as soon as the
- * session holds the input reach this window as the same `sends` row, so nothing here would change
- * if Pi and Claude answered at different points in their turns.
+ * Every case below drives the outcome in as committed state rather than as a phase or a timing, so
+ * nothing here depends on where in a turn a backend answers. The two cases that do care which
+ * channel carried the outcome fold the real event through `foldEvent` rather than writing the row
+ * by hand, because "the layer took the handoff" and "the backend ran the turn" are two different
+ * facts and only the second releases the copy (#8018, #8005).
  */
 describe("a send whose outcome is not yet known", () => {
 	const sent = async (text: string): Promise<void> => {
@@ -288,8 +293,10 @@ describe("a send whose outcome is not yet known", () => {
 		detail: "the backend said no",
 	};
 
-	const withSends = (sends: AiAgentSessionState["sends"]): AiAgentSessionState =>
-		withTranscript(transcriptOf(2), {sends});
+	const withSends = (
+		sends: AiAgentSessionState["sends"],
+		over: Partial<AiAgentSessionState> = {},
+	): AiAgentSessionState => withTranscript(transcriptOf(2), {sends, ...over});
 
 	it("holds the text it cleared out of the composer, under the send's own key", async () => {
 		const {keys, view} = await openWindow(withTranscript(transcriptOf(2)));
@@ -310,6 +317,50 @@ describe("a send whose outcome is not yet known", () => {
 			await Effect.runPromise(process.commit(withSends([{key: keys[0] ?? "", state: "accepted"}])));
 		});
 		await waitFor(() => expect(view().outgoing).toEqual([{key: keys[1], text: "second"}]));
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
+	/**
+	 * The path #8005's seventh criterion pins. The layer took the handoff without refusing — both
+	 * rows return there (#8018) — and the pin refused a round trip later, with no caller left to
+	 * raise to, so the refusal arrives as a `failure` event. The send is still the one in flight,
+	 * so the window that minted the key gets its words back.
+	 */
+	it("offers back a send the backend refused on the event stream after the handoff", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		const key = keys[0] ?? "";
+		await waitFor(() => expect(view().outgoing).toEqual([{key, text: "the long prompt"}]));
+
+		// A `sent` carrying no failure leaves the row `pending` (`core/machine.unit.test.ts`), so
+		// this is the state the refusal folds over.
+		const handed = withSends([{key, state: "pending"}]);
+		await act(async () => {
+			await Effect.runPromise(process.commit(handed));
+		});
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(foldEvent(handed, {kind: "failure", failure: refusal}, {})),
+			);
+		});
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+	});
+
+	/** The other side of that line: the turn ended, so the text crossed and the copy goes. */
+	it("lets go of the copy once the turn the backend ran comes to an end", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("ship it");
+		const key = keys[0] ?? "";
+		const handed = withSends([{key, state: "pending"}], {phase: "prompting"});
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(foldEvent(handed, {kind: "phase", phase: "ready"}, {})),
+			);
+		});
+		await waitFor(() => expect(view().outgoing).toEqual([]));
 		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
 	});
 

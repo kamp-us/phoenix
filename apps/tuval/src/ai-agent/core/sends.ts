@@ -1,11 +1,13 @@
 /**
  * What became of each deliberate send, under the idempotency key its window minted.
  *
- * Three points in one send's life are three different facts, and collapsing them is what loses an
- * operator's text: the window dispatched it, the core admitted it, and the layer took it. The
- * `prompt` cell can refuse a send outright; the layer can refuse one the core admitted; and a
- * transport that dies mid-call leaves a send nobody can say either way about. Only the last of
- * those is `uncertain`, and it is the arm that must never resend on its own.
+ * Four points in one send's life are four different facts, and collapsing them is what loses an
+ * operator's text: the window dispatched it, the core admitted it, the layer took the handoff, and
+ * the backend ran the turn. The `prompt` cell can refuse a send outright; the layer can refuse the
+ * handoff; the backend can refuse a send the layer took, which reaches the core on the event stream
+ * because both rows return from `prompt` at the send (#8018); and a transport that dies mid-call
+ * leaves a send nobody can say either way about. Only the last of those is `uncertain`, and it is
+ * the arm that must never resend on its own.
  *
  * The key is what makes an outcome a *particular* send's. Two windows over one process each mint
  * their own (#7570 ruling 2), so a refusal one of them earned cannot restore the other's text.
@@ -15,9 +17,13 @@ import type {AgentFailure} from "../events.ts";
 import {PROMPT_ERROR, START_ERROR, TRANSPORT_ERROR} from "./failures.ts";
 
 export type SendOutcome =
-	/** Admitted by the core and handed to the layer; nothing has come back yet. */
+	/**
+	 * Admitted by the core and handed to the layer; the backend has not answered yet. A `prompt`
+	 * that returned without refusing leaves a send right here, because on both rows it returns at
+	 * the send (#8018) — "the layer did not refuse the handoff" is not "the backend has the text".
+	 */
 	| {readonly key: string; readonly state: "pending"}
-	/** The layer took the text. The window may drop the copy it was holding. */
+	/** The backend ran the turn: the text crossed. The window may drop the copy it was holding. */
 	| {readonly key: string; readonly state: "accepted"}
 	/** Refused before the text crossed — it is recoverable, and it is not running anywhere. */
 	| {readonly key: string; readonly state: "refused"; readonly failure: AgentFailure}
@@ -61,6 +67,13 @@ export const pendingSend = (sends: ReadonlyArray<SendOutcome>): SendOutcome | nu
  *
  * A `ModeUnsupported`, a `ModelUnsupported`, an `UnknownRequest` or a `PageError` is about a
  * different call entirely and leaves a send in flight alone.
+ *
+ * `StartError`'s non-transport reasons read `refused` because a start that never opened is a start
+ * no text crossed on — which is true of a *fresh* open and not, on its face, of a failed reconnect
+ * under a live send. Ordering is what closes that: the disconnect a reconnect answers settles the
+ * send `uncertain` before the reconnect is attempted, and `state.ts`'s `restore` maps a
+ * checkpointed `pending` to `uncertain` for the same reason. A reconnect failure therefore never
+ * meets a `pending` send.
  */
 export const sendAfterFailure = (failure: AgentFailure): "refused" | "uncertain" | null => {
 	if (failure.tag === PROMPT_ERROR) {
@@ -82,7 +95,7 @@ export const settledBy = (key: string, failure: AgentFailure): SendOutcome =>
 		? {key, state: "refused", failure}
 		: {key, state: "uncertain", failure};
 
-/** The send in flight is running somewhere: whatever happens to the turn now, the text landed. */
+/** The send in flight ran somewhere: whatever became of the turn, the text crossed. */
 export const settleAccepted = (sends: ReadonlyArray<SendOutcome>): ReadonlyArray<SendOutcome> => {
 	const pending = pendingSend(sends);
 	return pending === null ? sends : noteSend(sends, {key: pending.key, state: "accepted"});

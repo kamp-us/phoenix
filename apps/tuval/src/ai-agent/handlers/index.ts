@@ -196,10 +196,9 @@ export const aiAgentHandlers = <RIn = never>(
 		// It is also the one handler whose answer names the send it is about. `sent` carries the
 		// Cmd's own key, so the window that minted it learns what became of *its* text rather than
 		// what became of the last thing the session did — which is the correlation two windows
-		// racing to send need (#8005). What "the layer took it" means differs per backend, and
-		// deliberately: Pi's `prompt` resolves when its turn is through while Claude's returns as
-		// soon as the session has the input, and both are "not refused", which is the whole question
-		// a held draft is waiting on.
+		// racing to send need (#8005). What it can say is bounded: both rows return from `prompt`
+		// at the send (#8018), so a `sent` with no failure reports a handoff nobody refused and
+		// says nothing about the backend, whose own refusal arrives later on the event stream.
 		"aiAgent.prompt": (cmd) =>
 			Effect.gen(function* () {
 				const state = yield* readSession;

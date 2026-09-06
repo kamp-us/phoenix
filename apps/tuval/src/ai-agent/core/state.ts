@@ -81,7 +81,7 @@ export interface AiAgentSessionState {
 	readonly lastPrompt: string | null;
 	/**
 	 * What became of each deliberate send, under its own idempotency key (`./sends.ts`). The window
-	 * that minted a key holds that send's text until this says the layer took it, which is what keeps
+	 * that minted a key holds that send's text until this says the backend took it, which is what keeps
 	 * a refused or unconfirmed prompt recoverable instead of cleared at dispatch.
 	 */
 	readonly sends: ReadonlyArray<SendOutcome>;

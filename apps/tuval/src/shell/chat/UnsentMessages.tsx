@@ -41,7 +41,15 @@ export function UnsentMessages({
 }): ReactElement | null {
 	if (unsent.length === 0) return null;
 	return (
-		<div className="tuval-chat-unsent" role="status">
+		<div className="tuval-chat-unsent">
+			{/* The live region is this line alone, not the list. A `role="status"` wrapping the rows
+			    would re-announce every message and its two buttons on each settle, and the buttons
+			    inside it are focusable — an announcement is not a place to put controls. */}
+			<p className="kp-visually-hidden" role="status">
+				{unsent.length === 1
+					? "1 message is waiting to be restored or discarded."
+					: `${unsent.length} messages are waiting to be restored or discarded.`}
+			</p>
 			<ul className="tuval-chat-unsent-list" aria-label="Unsent messages">
 				{unsent.map((message) => {
 					const id = rowId(windowId, message.key);

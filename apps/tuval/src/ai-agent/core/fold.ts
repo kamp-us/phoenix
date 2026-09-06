@@ -22,7 +22,7 @@ import {
 	type WindowOmission,
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
-import {settlePending} from "./sends.ts";
+import {settleAccepted, settlePending} from "./sends.ts";
 import type {AiAgentSessionState, UsageTotals} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
@@ -157,14 +157,29 @@ export const foldEvent = (
 	switch (event.kind) {
 		case "item":
 			return {...state, transcript: foldItem(state.transcript, event.item, limits)};
-		// A session that went `gone` under a send in flight can never answer for it, so that send
-		// stops being pending and becomes recoverable. Every other phase is left alone: a layer that
-		// is still narrating is a layer that can still say what it did with the text.
+		// The phase line is also where a send in flight learns it crossed.
+		//
+		// A layer's `prompt` returns at the send on both rows (#8018), so nothing on the Cmd's own
+		// answer can say the backend took the text — the turn's end is the first thing that can,
+		// and every layer narrates that here (`pi/ai-agent/items.ts` maps Pi's `idle` to `ready`,
+		// `claude/agent/ClaudeAiAgent.ts` emits it on the SDK's `result`). A turn the backend ran
+		// is a turn the text crossed for, whatever the turn itself came to, so the send is accepted
+		// and its window may drop the copy it was holding (#8005).
+		//
+		// `gone` is the other half: a session that ended under a send in flight can never answer
+		// for it, so that send becomes recoverable instead. Refusals reach the send by their own
+		// arms below, and they arrive before this line does — both rows push the turn's failure
+		// ahead of the phase that closes it.
 		case "phase":
 			if (coreOwned(event.phase)) return state;
-			return event.phase === "gone"
-				? {...state, phase: event.phase, sends: settlePending(state.sends, null)}
-				: {...state, phase: event.phase};
+			if (event.phase === "gone") {
+				return {...state, phase: event.phase, sends: settlePending(state.sends, null)};
+			}
+			return {
+				...state,
+				phase: event.phase,
+				sends: event.phase === "prompting" ? state.sends : settleAccepted(state.sends),
+			};
 		case "permission":
 			return {...state, permissions: {...state.permissions, [event.request]: event.detail}};
 		case "permission-resolved":

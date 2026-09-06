@@ -157,9 +157,16 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			// to the send it is about. A refusal lands the session exactly where the `failed` cell
 			// would — same phase walk, same rendered failure — and additionally settles the send, so
 			// the prompt path has one Msg rather than two that could disagree.
+			//
+			// A `sent` carrying no failure settles nothing, and that is the point. Both rows return
+			// from `prompt` at the send (#8018), so silence here proves only that the layer did not
+			// refuse the handoff — the backend has not answered yet, and a send marked `accepted`
+			// on this Msg would have its window drop the text a refusal two round trips later can
+			// no longer give back (#8005). The send stays `pending` until the turn's end says the
+			// backend had it (`./fold.ts`, the `phase` arm) or a failure settles it.
 			sent: (state, msg) =>
 				msg.failure === null
-					? [{...state, sends: noteSend(state.sends, {key: msg.key, state: "accepted"})}, noCmds]
+					? [state, noCmds]
 					: [
 							{
 								...state,

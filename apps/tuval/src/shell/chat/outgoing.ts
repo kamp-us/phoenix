@@ -5,8 +5,8 @@
  * The composer clears the moment the operator sends — a composer that stayed full until a backend
  * answered would make every turn feel stuck — so the text moves here instead of being dropped, under
  * the same idempotency key the send carries. `../../ai-agent/core/sends.ts` is the other half: it
- * names the outcome, and this decides what the window does with it. A send the layer took drops its
- * copy; a refused or unconfirmed one becomes a recovery the operator can take, or leave.
+ * names the outcome, and this decides what the window does with it. A send the backend took drops
+ * its copy; a refused or unconfirmed one becomes a recovery the operator can take, or leave.
  *
  * Everything is per window, because the view slot is (`./view.ts`). Two windows racing to send hold
  * their own keys and read only their own outcomes, so neither can restore the other's text or clear
@@ -54,13 +54,14 @@ export const dropSend = (
  * Which held sends the window is still holding for a reason, and which it may let go of.
  *
  * A key the session has said nothing about yet is neither: the send is in flight, or its Msg has
- * not come back round, and both are "wait". Only an `accepted` outcome releases a copy, so no path
- * through here drops text on silence.
+ * not come back round, and both are "wait". A `pending` key is the same answer, and it is the one a
+ * handoff nobody refused leaves behind — only an `accepted` outcome releases a copy, so no path
+ * through here drops text on a backend that has not answered.
  */
 export interface HeldSends {
 	/** Settled against the operator: a bar, a Restore and a Discard. */
 	readonly unsent: ReadonlyArray<UnsentMessage>;
-	/** The layer took these; their copies are the window's to drop. */
+	/** The backend took these; their copies are the window's to drop. */
 	readonly landed: ReadonlyArray<string>;
 }
 

@@ -65,17 +65,22 @@ const isFailure = (value: unknown): boolean =>
 const sendStates: ReadonlyArray<string> = ["pending", "accepted", "refused", "uncertain"];
 
 /**
- * A settled send's failure is the one field the state's arms disagree on, so the check is by arm:
- * a `refused` row carries a failure and the other three do not have to.
+ * A settled send's failure is the one field the state's arms disagree on, so each arm is checked
+ * for what its own type declares: `refused` carries a failure, `uncertain` carries one or `null`,
+ * and `pending` and `accepted` carry no such field at all.
  */
+const sendFailure = (state: string, value: unknown): boolean => {
+	if (state === "refused") return value !== null && isFailure(value);
+	if (state === "uncertain") return isFailure(value);
+	return true;
+};
+
 const isSend = (value: unknown): boolean =>
 	Predicate.isObject(value) &&
 	typeof value.key === "string" &&
 	typeof value.state === "string" &&
 	sendStates.includes(value.state) &&
-	(value.state === "refused"
-		? value.failure !== null && isFailure(value.failure)
-		: value.state !== "uncertain" || isFailure(value.failure));
+	sendFailure(value.state, value.failure);
 
 const isSends = (value: unknown): boolean => Array.isArray(value) && value.every(isSend);
 
