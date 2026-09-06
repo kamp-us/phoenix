@@ -1,7 +1,7 @@
 /**
  * What a user writes for a `claude-session` row, as one Schema with its defaults and its refusals.
  *
- * Three fields are the user's and one is not. `modes` is fixed to the four the row advertises:
+ * Four fields are the user's and one is not. `modes` is fixed to the four the row advertises:
  * `bypassPermissions` and `dontAsk` each hand the model a decision the operator is here to make,
  * and the whole permission surface of this program is the card, so a row that could name them
  * would be a row that could turn the cards off (founder ruling on #7579, `agent/options.ts`).
@@ -9,6 +9,9 @@
  * `allowedTools` refuses a bare built-in name rather than dropping it. An auto-allowed tool skips
  * `canUseTool` entirely, so a bare name here is a tool the model runs with no card and no rule —
  * the exact hole the default list of three `mcp__tuval__` wire names is scoped to avoid.
+ *
+ * `streamPartialReplies` is the containment for streamed replies (#8172): off, the session asks
+ * the SDK for no `stream_event` frames at all, and a reply reaches the transcript whole.
  *
  * The prefix is written out rather than imported from `./tools/server.ts`: that module builds the
  * in-process MCP server and reaches `@anthropic-ai/claude-agent-sdk`, and this one is read by the
@@ -47,17 +50,19 @@ export const ClaudeSessionConfig = Schema.Struct({
 		Schema.withDecodingDefaultKey(Effect.succeed(DEFAULT_ALLOWED_TOOLS)),
 	),
 	model: Schema.optionalKey(Schema.String),
+	streamPartialReplies: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
 });
 
 /** What a config module writes: every key optional but `model`, which is optional too. */
 export type ClaudeSessionConfigInput = typeof ClaudeSessionConfig.Encoded;
 
-/** The decoded config the row runs on: the user's three fields plus the fixed mode list. */
+/** The decoded config the row runs on: the user's four fields plus the fixed mode list. */
 export interface ClaudeSessionSettings {
 	readonly permissionMode: Mode;
 	readonly modes: ReadonlyArray<Mode>;
 	readonly allowedTools: ReadonlyArray<string>;
 	readonly model?: string;
+	readonly streamPartialReplies: boolean;
 }
 
 const decode = Schema.decodeUnknownSync(ClaudeSessionConfig);
@@ -76,6 +81,7 @@ export const claudeSessionSettings = (
 		permissionMode: ModeBrand.make(decoded.permissionMode),
 		modes: CLAUDE_MODES.map((mode) => ModeBrand.make(mode)),
 		allowedTools: decoded.allowedTools,
+		streamPartialReplies: decoded.streamPartialReplies,
 		...(decoded.model === undefined ? {} : {model: decoded.model}),
 	};
 };
