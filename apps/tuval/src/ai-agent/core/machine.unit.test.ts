@@ -11,10 +11,12 @@ import {pendingPermission} from "../../ai-agent-fixtures/permissions.ts";
 import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import type {AgentEvent} from "../events.ts";
 import {Mode, type ModelRef, type PermissionRequest, type TranscriptItem} from "../ports/index.ts";
+import {checkpointUnreadable} from "./failures.ts";
 import {promptItemId} from "./fold.ts";
 import {aiAgentSessionMachine} from "./machine.ts";
 import type {AiAgentSessionCmd, AiAgentSessionMsg} from "./messages.ts";
-import {type AiAgentSessionState, initialState} from "./state.ts";
+import {isAiAgentSessionState, loadCheckpoint} from "./snapshot.ts";
+import {type AiAgentSessionState, checkpointFields, initialState} from "./state.ts";
 
 const machine = aiAgentSessionMachine({cwd: "/repo"});
 
@@ -67,6 +69,91 @@ describe("init", () => {
 		expect(state.phase).toBe("idle");
 		expect(state.interrupted).toBe("a1");
 		expect(cmds).toEqual([]);
+	});
+
+	// The rehydrate branch is the defaulting parse and nothing else, so what the store read back is
+	// checked on the production load path rather than trusted for being typed as the state (#8095).
+	it("reads a loaded checkpoint through the parse, not around it", () => {
+		const loaded = started();
+		expect(machine.init(loaded, {})[0]).toEqual(loadCheckpoint(loaded, "/repo"));
+	});
+});
+
+/**
+ * The load path against checkpoints the running build did not write.
+ *
+ * These read `loadCheckpoint` rather than `init` because that is the only signature the raw object
+ * a store hands back fits: `init` is typed as taking the state, which is the very claim nothing had
+ * checked. The wiring — that `init`'s rehydrate branch is this function — is pinned above.
+ */
+describe("a checkpoint written by an older build", () => {
+	const older: Record<string, unknown> = {
+		...initialState("/desk"),
+		phase: "ready",
+		sessionId: "session-9",
+		transcript: {items: [userItem("u1")], omitted: initialState("/x").transcript.omitted},
+		modes: {current: Mode.make("plan"), available: [Mode.make("plan")]},
+		models: {current: opus, available: [opus, sonnet]},
+		lastPrompt: "make the README",
+	};
+
+	/** The desk's `5c26458b35` shape: the three fields that build's `checkpointFields` never had. */
+	const deskShaped = (): Record<string, unknown> => {
+		const {commands, permissionsRaised, interruption, ...rest} = older;
+		return rest;
+	};
+
+	const restoredFrom = (raw: Record<string, unknown>): AiAgentSessionState =>
+		loadCheckpoint(raw, "/desk");
+
+	// The session id is asserted beside the three defaults on purpose: `initialState` carries those
+	// same three values, so a refusal that wiped the checkpoint would satisfy them on its own.
+	it("comes back with each absent field at its empty default", () => {
+		const state = restoredFrom(deskShaped());
+		expect(state.commands).toEqual([]);
+		expect(state.permissionsRaised).toBe(0);
+		expect(state.interruption).toBeNull();
+		expect(state.sessionId).toBe("session-9");
+	});
+
+	it("carries every field it did save through untouched", () => {
+		const state = restoredFrom(deskShaped());
+		expect(state.transcript).toEqual(older.transcript);
+		expect(state.sessionId).toBe("session-9");
+		expect(state.cwd).toBe("/desk");
+		expect(state.modes).toEqual(older.modes);
+		expect(state.models).toEqual(older.models);
+		expect(state.lastPrompt).toBe("make the README");
+		// The saved `ready` becomes `idle` the way any restore does: the process holds no transport.
+		expect(state.phase).toBe("idle");
+	});
+
+	it("is a session state once defaulted, so nothing downstream reads an absent field", () => {
+		const state = restoredFrom(deskShaped());
+		expect(isAiAgentSessionState(state)).toBe(true);
+		// The refused state is a session state too, so the predicate alone would pass either way.
+		expect(state.sessionId).toBe("session-9");
+	});
+
+	// The fill supplies an absent field and never repairs a present one, so the predicate still has
+	// something to refuse — a checkpoint that is wrong rather than merely old.
+	it("is refused when a field it did save carries the wrong type", () => {
+		const state = restoredFrom({...deskShaped(), commands: 3});
+		expect(state.failure).toEqual(checkpointUnreadable);
+		// `gone`, so the spawner dispatches nothing: an `idle` refusal's fresh `start` would clear
+		// the failure before the operator ever read it.
+		expect(state.phase).toBe("gone");
+		expect(state.transcript.items).toEqual([]);
+	});
+
+	it("keeps a refusal the operator can read out of the restored session", () => {
+		expect(restoredFrom(deskShaped()).failure).toBeNull();
+	});
+
+	// Reds if a field is added to the state with no entry in `initialState` to default it from.
+	it("has a default for every field a checkpoint carries", () => {
+		const defaulted: ReadonlyArray<string> = Object.keys(initialState("/desk"));
+		expect(checkpointFields.filter((field) => !defaulted.includes(field))).toEqual([]);
 	});
 });
 
