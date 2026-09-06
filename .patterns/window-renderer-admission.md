@@ -59,6 +59,11 @@ The predicate belongs to the program whose state it is — `isCounterState` in `
 `isAiAgentSessionState` in `ai-agent/core/snapshot.ts` — never to the page. The page only pairs it
 with the renderer.
 
+A renderer the page loads from a module (`kind: "module"`, ADR 0359) is seated the same way: the
+module exports `admits` beside its `default` renderer, and `loadModuleRenderers`
+(`apps/tuval/src/page/module-renderers.ts`) passes the pair through `readsState`. A module with no
+`admits` is a load failure in the table, not an unguarded entry.
+
 ## The boundary's reset keys
 
 `resetKeys={[mount.host.processId]}`, and nothing that moves per render. The boundary compares keys

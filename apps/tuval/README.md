@@ -551,9 +551,14 @@ exactly one effect per new key; and a dropped socket whose re-attach shows the s
 a key that reaches its process. The shape and its two rules are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
 
-Two things the page cannot do yet, both because the wire carries rows and no registry listing: its
-picker offers running processes only (open by name through `prefix : window:open <program>`), and its
-renderer table is keyed by program id rather than by the `renderer` reference a row declares.
+The renderer table is keyed by the `renderer` reference a row declares, and a row may point that
+reference outside the tree: `renderer: {kind: "module", ref: "@csirin/tuval-calc/window"}` names a
+module the page loads at boot, whose `default` export is a `windowRenderer("module", …)` and whose
+`admits` export is the predicate over the state it reads. A program installed with `pnpm add` and
+registered as one row is then whole — its kernel half runs from the row and its window is found by
+the same string; a specifier that does not resolve refuses the page at boot, and a module that loads
+into something else is the placeholder's sentence. The why and the failure shapes are
+[ADR 0359](../../.decisions/0359-tuval-window-renderer-is-a-module-specifier.md).
 
 ## The two entry points
 

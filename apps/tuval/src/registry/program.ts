@@ -75,9 +75,19 @@ export type HostSubs<M, U extends Sub, E, R> = {
  */
 export type Receiver<M> = (payload: never) => M;
 
-export type RendererKind = "host-native" | "host-declarative" | "isolated-frame";
+export type RendererKind = "host-native" | "host-declarative" | "isolated-frame" | "module";
 
-/** A reference only. Rendering is not this epic's; the kernel stores the reference and reports it. */
+/**
+ * A reference only. Rendering is not this epic's; the kernel stores the reference and reports it.
+ *
+ * For every kind but one, `ref` is a name the page's own table answers to. For `kind: "module"`,
+ * `ref` is a module specifier the page loads (ADR 0359): a bare package entry such as
+ * `@csirin/tuval-calc/window`, resolved from the app root the way any import there is. The module's
+ * `default` export is the renderer, minted with `windowRenderer("module", …)`, and its `admits`
+ * export is the predicate over the state that renderer reads (ADR 0358). A row written by a package
+ * installed with `pnpm add` is then whole on its own: the kernel half runs from this row, and the
+ * page finds the window half by the same string, with no table edit in the app.
+ */
 export interface RendererRef {
 	readonly kind: RendererKind;
 	readonly ref: string;

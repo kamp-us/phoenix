@@ -20,10 +20,14 @@ export {
 } from "./host.ts";
 export {
 	type AnyWindowRenderer,
+	moduleRendererRefs,
+	type RendererLoadFailure,
 	type RendererRefusal,
 	type RendererResolution,
 	type RendererResolver,
+	type RendererTable,
 	rendererFor,
+	rendererLoadFailure,
 	resolverFromTable,
 	type WindowRenderer,
 	windowRenderer,

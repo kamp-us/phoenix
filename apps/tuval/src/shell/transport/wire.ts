@@ -196,6 +196,7 @@ const rendererKinds: ReadonlySet<string> = new Set<RendererKind>([
 	"host-native",
 	"host-declarative",
 	"isolated-frame",
+	"module",
 ]);
 
 const isRendererRef = (value: unknown): value is RendererRef =>

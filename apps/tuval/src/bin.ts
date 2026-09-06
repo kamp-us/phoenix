@@ -18,8 +18,10 @@ import {Command, Flag} from "effect/unstable/cli";
 import {boot, defaultGlobalConfig} from "./boot.ts";
 import {renderBindingErrors} from "./commands/bindings/index.ts";
 import {servePage} from "./page/dev-server.ts";
+import {Registry} from "./registry/Registry.ts";
 import {serveDesk} from "./shell/host/index.ts";
 import {defaultPrefixTable} from "./shell/keys/index.ts";
+import {moduleRendererRefs} from "./shell/window/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 import type {TableRow} from "./table/row.ts";
 
@@ -102,7 +104,13 @@ const tuval = Command.make(
 			// and checkpointing, and a second `pnpm dev` can attach to the same socket.
 			// `servePage` admits its own port with the transport's fence before returning, so the URL
 			// printed here is one a browser can actually attach from (#7560).
-			yield* servePage({root: appRoot, transport, port: pagePort}).pipe(
+			// The rows are the page's loader list too: every `kind: "module"` renderer they name is
+			// handed to the page server, which refuses a specifier that does not resolve (ADR 0359).
+			const programs = yield* Registry.use((registry) => registry.list).pipe(
+				Effect.provideContext(kernel),
+			);
+			const moduleRenderers = moduleRendererRefs(programs);
+			yield* servePage({root: appRoot, transport, port: pagePort, moduleRenderers}).pipe(
 				Effect.flatMap((page) => Console.log(`tuval: desk at ${page.url}`)),
 				Effect.catch((error) => Console.error(`tuval: ${error.message}`)),
 			);
