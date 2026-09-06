@@ -216,6 +216,21 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	failure: null,
 });
 
+/**
+ * Is any item in the tail still being written?
+ *
+ * The predicate a program hands the host as `checkpointWorthy`. A partial item is one frame of a
+ * reply, superseded by the next delta — saving one writes the transcript per delta and, worse,
+ * leaves a half-written reply as *the* reply when a stop lands mid-turn and the session is
+ * restored from it (#8160's own no-go).
+ *
+ * Read through `in` rather than off the assistant kind: the marker is on that kind alone today, and
+ * a second kind growing one (#8188, the thinking half) must not need this predicate edited to keep
+ * its partials out of the store.
+ */
+export const holdsPartialItem = (state: AiAgentSessionState): boolean =>
+	state.transcript.items.some((item) => "partial" in item && item.partial === true);
+
 /** The newest assistant turn in the tail, which is the one a restart can have cut. */
 export const lastAssistantId = (items: ReadonlyArray<TranscriptItem>): ItemId | null => {
 	for (let index = items.length - 1; index >= 0; index -= 1) {
