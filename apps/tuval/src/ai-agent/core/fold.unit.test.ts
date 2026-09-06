@@ -9,7 +9,7 @@
 import {describe, expect, it} from "vitest";
 import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import type {TranscriptItem, TranscriptPayload} from "../ports/index.ts";
-import {foldItem, type WindowLimits} from "./fold.ts";
+import {foldItem, upsertItem, type WindowLimits} from "./fold.ts";
 
 const empty: TranscriptPayload = {items: [], omitted: {items: 0, bytes: 0, reason: "none"}};
 
@@ -50,5 +50,23 @@ describe("folding a turn that outgrows the bounds", () => {
 		expect(steps.at(-1)?.items).toEqual(turn);
 		expect(steps.at(-1)?.omitted.items).toBe(older.length);
 		expect(steps.at(-1)?.omitted.reason).toBe("item-limit");
+	});
+});
+
+describe("folding a reply that is still being written", () => {
+	it("supersedes a partial item with the final one under the same id", () => {
+		const growing = {...assistantItem("a1", "he"), partial: true} as const;
+		const finished = assistantItem("a1", "hello");
+		expect(upsertItem([userItem("u1"), growing], finished)).toEqual([userItem("u1"), finished]);
+	});
+
+	it("leaves the fold one item however many partials preceded the final one", () => {
+		const deltas = ["h", "he", "hel", "hell", "hello"].map((text) => ({
+			...assistantItem("a1", text),
+			partial: true,
+		}));
+		const tail = foldAll(empty, [...deltas, assistantItem("a1", "hello")], {itemLimit: 5}).at(-1);
+		expect(tail?.items).toEqual([assistantItem("a1", "hello")]);
+		expect(tail?.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
 	});
 });
