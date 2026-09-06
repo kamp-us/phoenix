@@ -30,6 +30,7 @@ const emptyReason: Readonly<Record<DeskEmptyReason, string>> = {
 	"not-declared": "This program declares no inspector.",
 	"unknown-ref": "This page answers to no inspector by the name that program declares.",
 	"kind-mismatch": "That program's inspector is declared at a kind this page does not mount.",
+	"module-load-failed": "This page could not load the module that program's inspector names.",
 };
 
 /**

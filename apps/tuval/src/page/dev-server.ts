@@ -43,6 +43,12 @@ export interface PageServerOptions {
 	readonly transport: TransportServer;
 	/** `0` picks a free port, which is what a second `pnpm dev` on one machine needs. */
 	readonly port: number;
+	/**
+	 * The `kind: "module"` renderer specifiers the booted rows declared (`moduleRendererRefs`,
+	 * `../shell/window/renderer.ts`), each one the page has to load (ADR 0359). Absent means none:
+	 * a proof that serves the page over its own rows names none and the page loads nothing.
+	 */
+	readonly moduleRenderers?: ReadonlyArray<string>;
 }
 
 export interface PageServer {
@@ -53,6 +59,46 @@ export interface PageServer {
 }
 
 export const LAUNCH_ENDPOINT = "/__tuval/launch";
+
+/**
+ * The page's loader module, generated here from the rows and imported by `./boot.tsx` under this
+ * one id; `./assets.d.ts` declares its shape. A bare specifier cannot be `import()`ed from the
+ * browser by value — Vite rewrites only the imports it can read statically — so the specifiers are
+ * written into a module Vite reads like any other, and are resolved, prebundled and served the way
+ * the app's own imports are. The `\0` prefix on the resolved id is Rollup's convention for a module
+ * with no file behind it, and keeps every other plugin from trying to find one.
+ */
+export const MODULE_RENDERERS_ID = "virtual:tuval/module-renderers";
+const RESOLVED_MODULE_RENDERERS_ID = `\0${MODULE_RENDERERS_ID}`;
+
+/**
+ * The source of the loader module: one `import()` per reference, keyed by the reference string the
+ * row wrote. Both are written through `JSON.stringify`, so a specifier is a string literal in the
+ * output whatever characters it holds — this is generated code, and a row's string is data to it.
+ */
+export const moduleRenderersSource = (refs: ReadonlyArray<string>): string => {
+	const entries = refs.map(
+		(ref) => `\t${JSON.stringify(ref)}: () => import(${JSON.stringify(ref)}),`,
+	);
+	return `export default {\n${entries.join("\n")}\n};\n`;
+};
+
+/**
+ * A specifier naming a package, as opposed to a path: the only kind the dependency optimiser takes.
+ * A root-relative or relative path — the in-tree fixture's spelling — is source, and Vite serves it
+ * transformed like any other file of the app.
+ */
+const isBareSpecifier = (ref: string): boolean => !ref.startsWith("/") && !ref.startsWith(".");
+
+const moduleRenderersPlugin = (refs: ReadonlyArray<string>) => ({
+	name: "tuval-module-renderers",
+	resolveId(id: string) {
+		return id === MODULE_RENDERERS_ID ? RESOLVED_MODULE_RENDERERS_ID : null;
+	},
+	load(id: string) {
+		return id === RESOLVED_MODULE_RENDERERS_ID ? moduleRenderersSource(refs) : null;
+	},
+});
 
 interface LaunchResponse {
 	setHeader: (name: string, value: string) => void;
@@ -74,19 +120,40 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 			}) as never);
 		},
 	};
+	const moduleRenderers = options.moduleRenderers ?? [];
 	const server = yield* Effect.acquireRelease(
 		attempt(() =>
 			createServer({
 				root: options.root,
 				configFile: false,
 				appType: "spa",
-				plugins: [launchEndpoint, react.default()],
+				plugins: [launchEndpoint, moduleRenderersPlugin(moduleRenderers), react.default()],
 				server: {port: options.port, strictPort: false, host: "127.0.0.1"},
+				// Named up front so a renderer package is prebundled with the page's own React rather
+				// than discovered on first open, which would serve it a second React copy until the
+				// re-optimise reload — the one way a module renderer's hooks can break at first paint.
+				optimizeDeps: {include: moduleRenderers.filter(isBareSpecifier)},
 			}),
 		),
 		(dev) => Effect.ignore(attempt(() => dev.close())),
 	);
 	yield* attempt(() => server.listen());
+	// Every specifier the rows named is resolved now, from the same root the loader module's own
+	// `import()` resolves from. One that does not resolve refuses the page here, naming itself, rather
+	// than surfacing as a failed import in a browser tab (the graph compiler's stance: refuse at boot).
+	for (const ref of moduleRenderers) {
+		const resolved = yield* attempt(() =>
+			server.environments.client.pluginContainer.resolveId(ref, RESOLVED_MODULE_RENDERERS_ID),
+		);
+		if (resolved === null) {
+			yield* Effect.ignore(attempt(() => server.close()));
+			return yield* new PageServerFailed({
+				cause: new Error(
+					`renderer module ${JSON.stringify(ref)} does not resolve from ${options.root}; is the package installed here?`,
+				),
+			});
+		}
+	}
 	const url = server.resolvedUrls?.local[0];
 	if (url === undefined) {
 		return yield* new PageServerFailed({cause: new Error("it bound no local address")});

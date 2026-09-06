@@ -39,15 +39,18 @@ import type {
 	MountResolver,
 } from "../shell/ui/index.ts";
 import {boundMount, Desk, noRenderer, useDeskAttachment} from "../shell/ui/index.ts";
-import type {AnyWindowRenderer} from "../shell/window/index.ts";
+import type {RendererTable} from "../shell/window/index.ts";
 import {empty, processGone, resolverFromTable, type ViewState} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
 
 export interface AttachedDeskProps {
 	readonly page: PageAttachment;
 	readonly shell: AttachedProcess<unknown, ShellMsg>;
-	/** One renderer per `RendererRef.ref` — `./renderers.tsx` says why the key is the reference. */
-	readonly renderers: Readonly<Record<string, AnyWindowRenderer>>;
+	/**
+	 * One renderer per `RendererRef.ref` — `./renderers.tsx` says why the key is the reference — or,
+	 * for a module reference the page could not load, the failure in its seat (`./module-renderers.ts`).
+	 */
+	readonly renderers: RendererTable;
 	/**
 	 * The two desk-level renderer tables, keyed the same way. Both default to empty: a page that
 	 * mounts no program's inspector still gets the region, showing why it is empty.
@@ -254,6 +257,9 @@ export function AttachedDesk({
 				return noRenderer(id, `no catalog entry on this page for program ${row.programId}`);
 			}
 			const resolved = resolveRenderer(program.renderer);
+			if (resolved._tag === "RendererUnresolved" && resolved.reason === "module-load-failed") {
+				return noRenderer(id, `this page could not load a renderer module: ${resolved.detail}`);
+			}
 			if (resolved._tag !== "Resolved") {
 				return noRenderer(id, `this page answers to no renderer named ${program.renderer.ref}`);
 			}
