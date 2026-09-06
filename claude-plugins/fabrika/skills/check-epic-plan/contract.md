@@ -9,20 +9,19 @@ excess-operand guard). The [CLI interface convention](../../docs/cli-interface-c
 governs every verb; where this spec and that doc disagree, the doc wins and this spec is the bug.
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** — a verb whose whole body
-relays another tool's answer is not a verb. The v1 machinery
-named below — under `packages/pipeline-cli/src/tools/`, `epic-ledger/`, `epic-lock/`,
-`scratchpad/`, and the `claude-plugins/kampus-pipeline/skills/review-plan/` scripts — is prior art
+relays another tool's answer is not a verb. The v1 machinery named below — under
+`packages/pipeline-cli/src/tools/`, `epic-ledger/`, `epic-lock/`, `scratchpad/`, and the
+`claude-plugins/kampus-pipeline/skills/review-plan/` scripts — is prior art
 **read** for semantics and scars; none is invoked, wrapped, or deferred to. Every v1 module name
 cited anywhere in this spec is **non-normative**: the behavior it informs is restated here in full,
 and an implementer needs none of those files to build these verbs.
 
 **The group name.** `plan` is this gate's, following the one-group-per-skill precedent (`build-ui`
-took `ui`, each reusing `build`'s verbs rather than sharing its group).
-The planner `plan-epic` takes
-its own group and may reuse these verbs the same way. **Nothing here allocates against the `epic`
-group.** (When this was written `epic` was an unimplemented spec; it later landed and was retired
-again with the epic conductor, so the conclusion outlived both — `plan` is this gate's, and nothing
-else answers its question.)
+took `ui`, each reusing `build`'s verbs rather than sharing its group). The planner `plan-epic`
+takes its own group and may reuse these verbs the same way. **Nothing here allocates against the
+`epic` group.** (When this was written `epic` was an unimplemented spec; it later landed and was
+retired again with the epic conductor, so the conclusion outlived both — `plan` is this gate's, and
+nothing else answers its question.)
 
 **What fabrika already ships, reused — never respecified.** The claim is the **`build` group's,
 reused as landed verbs** ([`build`'s contract](../build/contract.md)) — the cross-contract shape
@@ -81,13 +80,12 @@ as the sibling contracts do):
   exported `runConvergenceLoop` and registered it as no command at all — imported by nothing but
   its own unit test — so its stall test and its park were prose, not mechanism.
 - **A pickability predicate.** Whether child `#C` is *ready* (its dependency edges satisfied) is
-  `build`'s picker question, and still open there. This
-  gate makes children *eligible*; it computes no second answer to *pickable*. This is also why
-  `build`'s `16 BLOCKED` seat is unreachable here — blocked-ness reaches this gate only as the
-  dependency-shaped defects `DEP_CYCLE` / `DANGLING_DEP` / `UNENFORCED_DEP` / `ORPHAN_CHILD`, never
-  as a per-child readiness verdict. `UNENFORCED_DEP` reads the `blocked_by` graph and still is not
-  that verdict: it asks whether the graph *carries* the edge the plan states, never whether the
-  blocker behind it is closed.
+  `build`'s picker question, and still open there. This gate makes children *eligible*; it computes
+  no second answer to *pickable*. This is also why `build`'s `16 BLOCKED` seat is unreachable here —
+  blocked-ness reaches this gate only as the dependency-shaped defects `DEP_CYCLE` /
+  `DANGLING_DEP` / `UNENFORCED_DEP` / `ORPHAN_CHILD`, never as a per-child readiness verdict.
+  `UNENFORCED_DEP` reads the `blocked_by` graph and still is not that verdict: it asks whether the
+  graph *carries* the edge the plan states, never whether the blocker behind it is closed.
 - **An epic-body writer.** This gate never edits an issue body. The planner owns splicing, with its
   round-trip scars.
 - **A gate-was-never-run detector.** That question is lane-scoped; a verb here would answer for one
@@ -109,10 +107,10 @@ line takes nothing but the ability to comment on the epic, and the digest it mus
 check`'s stdout — so a read honouring the format alone would let any agent token approve a plan.
 Only a founder may approve a plan, so authority is sourced from the repository's own owner roster
 and never from the marker's format: `build clear`'s sibling read refuses the same shape for the same
-reason. A conforming marker from an
-off-roster account therefore reads `absent` and is counted in `unauthorized`, which keeps the state
-union closed at three. A roster nobody could read is `11`, never `absent` — an unread authority
-list is UNKNOWN, and collapsing it to "not approved" is the same fail-open shape in reverse.
+reason. A conforming marker from an off-roster account therefore reads `absent` and is counted in
+`unauthorized`, which keeps the state union closed at three. A roster nobody could read is `11`,
+never `absent` — an unread authority list is UNKNOWN, and collapsing it to "not approved" is the
+same fail-open shape in reverse.
 
 **The refusal is seated in the three verbs that re-derive the floor**, on `25` `PLAN_UNAPPROVED`.
 Each reads the epic's comments and resolves the roster itself, against the digest it has just
@@ -163,8 +161,8 @@ a story id no epic declared.
 
 **`**Containment:**` (child)** — the first such line outside a fence, with the same duplicate rule
 and the same `4`. Leading keyword only, from the set the repo's `containmentVocabulary` declares
-plus the reserved `none`. Anything unrecognised reads as unset,
-which `MISSING_CONTAINMENT` treats identically to `none`; only a declared value satisfies it.
+plus the reserved `none`. Anything unrecognised reads as unset, which `MISSING_CONTAINMENT` treats
+identically to `none`; only a declared value satisfies it.
 
 ## The floor — fourteen defect types
 
@@ -190,14 +188,11 @@ prose — the templates are the third column.
 | 13 | `UNVERIFIABLE_ASSIGNEE` | the child payload's `assignees` key was **not observed** — an unread field is UNKNOWN, never "unassigned is fine" | `the assignees field was not observed` |
 | 14 | `HELD_CHILD_UNASSIGNED` | a child carries `ready-for:human` and its observed assignee list is empty | `ready-for:human with an empty assignee slot` |
 
-**Grounded, and corrected against source.** The authoring brief
-named ten types; the live enum carries **fifteen names**, because the brief's list was copied from
-v1's `review-plan/SKILL.md` prose, which is stale (that file's own validator calls it "the closed
-7-type enum"). The five the brief omitted are `ZERO_SCOPE`, `UNENFORCED_DEP`,
-`MISSING_CONTAINMENT`, `UNVERIFIABLE_ASSIGNEE` and `HELD_CHILD_UNASSIGNED`. One of those five —
-`ZERO_SCOPE` — is seated here as exit `7` rather than a defect, so **fifteen names, fourteen
-defects**. Derive the enum
-from this table, never from a skill's prose.
+**Derive the enum from this table, never from a prose summary of it.** A summary drifts and this one
+has: v1's `review-plan/SKILL.md` still called this "the closed 7-type enum" after its own validator
+had outgrown the count. The live enum carries **fifteen names** and the table above lists
+**fourteen** — `ZERO_SCOPE` is the fifteenth, seated as exit `7` rather than as a defect, for the
+reason below.
 
 **Why `ZERO_SCOPE` is exit `7` and not defect zero.** v1 made a childless epic defect #1 and
 early-returned, so the ledger was never validated and the verdict reported exactly one thing wrong
@@ -336,19 +331,19 @@ read one meaning for it; `ship` importing `review`'s private band is the shipped
 obligation (interface convention rule 3), and the alignment this group opts into is checked
 **base-only, never pairwise** (`exit-code-alignment.ts`: `occupied = allocatedCodes(base)`).
 
-**The `20`/`21` overlap with `build` is settled.**
-This was written when `20`+ was free; the scope-admission fence has since taken `20` `OUT_OF_SCOPE`
-and `21` `AUDIENCE_NOT_AGENT`, both reachable from `fabrika build claim` — step 1 of this gate's
-skill. `21` is no longer among them: step 1 claims with `--purpose gate`, and the audience axis binds
-build-purpose claims only, so the only admission refusal this gate can meet is `20`. The
-overlap is therefore narrower than when it was settled, and it **stands**, on the same rule: *import
-a code when two groups prove the same fact; allocate freely when they do not.* `15` is imported because `plan flip` and
-`build claim` assert the identical fact (this session holds this issue's claim). `20`/`21` do not
-overlap in fact at all — lane admission is never something a `plan` verb proves, and a defective
-floor or a moved digest is never something a `build` verb proves — and an exit code is read off the
-command that produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-zero ends STOPPED`)
-and branches on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy
-nothing, since `epic` already seats `20`–`24` over the same two `build` codes.
+**The `20`/`21` overlap with `build` is settled.** This was written when `20`+ was free; the
+scope-admission fence has since taken `20` `OUT_OF_SCOPE` and `21` `AUDIENCE_NOT_AGENT`, both
+reachable from `fabrika build claim` — step 1 of this gate's skill. `21` is no longer among them:
+step 1 claims with `--purpose gate`, and the audience axis binds build-purpose claims only, so the
+only admission refusal this gate can meet is `20`. The overlap is therefore narrower than when it
+was settled, and it **stands**, on the same rule: *import a code when two groups prove the same
+fact; allocate freely when they do not.* `15` is imported because `plan flip` and `build claim`
+assert the identical fact (this session holds this issue's claim). `20`/`21` do not overlap in fact
+at all — lane admission is never something a `plan` verb proves, and a defective floor or a moved
+digest is never something a `build` verb proves — and an exit code is read off the command that
+produced it: [SKILL.md](SKILL.md) step 1 is total (`any other non-zero ends STOPPED`) and branches
+on `20`/`21` only off `plan flip` / `plan verdict`. Re-seating at `24`+ would also buy nothing,
+since `epic` already seats `20`–`24` over the same two `build` codes.
 
 | Code | Meaning | `read` | `check` | `flip` | `verdict` | `approve` | `approval` |
 |---|---|---|---|---|---|---|---|
@@ -629,9 +624,8 @@ write, not an exemption.
 `children` covers **every** child of the epic, not only the planned ones, so the answer states the
 whole set the flip considered: `count` is that set's size, `results` tallies it by outcome. The rows
 themselves are gone — `children` is a bounded evidence array collapsed to a histogram, because this
-skill steers its
-reader to the counters and then bans any claim about what a child carries after the flip, so nothing
-ever read a row. `result` is closed and **total over that set**: `flipped` (the
+skill steers its reader to the counters and then bans any claim about what a child carries after the
+flip, so nothing ever read a row. `result` is closed and **total over that set**: `flipped` (the
 child carried `status:planned`, the labels moved, and the re-read proves it) · `already` (observed
 `status:triaged` with no `status:planned` — an idempotent no-op, outside the write scope) ·
 `unchanged` (the child carried `status:planned` and the write did not take) · `not-planned` (the
@@ -649,10 +643,10 @@ nothing on stdout, so the unchanged refs are named on **stderr** and the caller 
 There is deliberately no `unchanged` counter in the answer object: it could only ever be `0`.
 
 So `flipped-all` does **not** imply a child moved. Re-gating an epic planned before this verb owned
-the audience flip takes
-exactly that arm: every child already sits at `status:triaged`, only the epic's audience is owed, and
-the run prints `flipped-all` with `flipped: 0` and `audience.result: "flipped"`. A caller that wants
-to know whether any child became pickable reads `flipped`, never the token.
+the audience flip takes exactly that arm: every child already sits at `status:triaged`, only the
+epic's audience is owed, and the run prints `flipped-all` with `flipped: 0` and `audience.result:
+"flipped"`. A caller that wants to know whether any child became pickable reads `flipped`, never the
+token.
 
 **The flip is unconditional over every `status:planned` child** — ruled, with no per-child
 predicate and no opt-out hook. The barrier keeping a held child out of the build pool
@@ -661,13 +655,13 @@ is the assignee slot, which this verb never touches and `plan check` checks inst
 <a id="gate-owns-the-audience-flip"></a>
 **The epic's audience flip has exactly one owner, and it is this verb.** Under the single-PR
 model the operator picks the **epic** up, so the epic's own `ready-for:agent` decides whether the
-epic is pickable at all — and while nobody wrote it, planned-and-gated epics sat
-at `ready-for:human` and the operator could never pick one up. The other two candidates are both
-wrong for the same reason, that
-neither has proven a clean floor: the **planner** never flips, because an ungated plan would become
-pickable; the **operator** never flips, because it would be admitting itself. The gate re-derives the
-floor at the moment of writing, so the gate is the seat. It writes the epic **last**, after every
-child's re-read proves it moved, so an epic never becomes pickable over a half-flipped ledger.
+epic is pickable at all — and while nobody wrote it, planned-and-gated epics sat at
+`ready-for:human` and the operator could never pick one up. The other two candidates are both wrong
+for the same reason, that neither has proven a clean floor: the **planner** never flips, because an
+ungated plan would become pickable; the **operator** never flips, because it would be admitting
+itself. The gate re-derives the floor at the moment of writing, so the gate is the seat. It writes
+the epic **last**, after every child's re-read proves it moved, so an epic never becomes pickable
+over a half-flipped ledger.
 
 Order of operations, each guard designed against a named v1 failure:
 

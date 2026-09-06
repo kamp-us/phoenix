@@ -266,10 +266,9 @@ that number is what you report. Do not re-mint it.
 `**Containment:**` is emitted only when the run's `cycleDoc` read is `present` — `ledger child`
 takes that from the run directory, so you neither pass it nor remember it. Which keywords are legal
 is the repo's `containmentVocabulary` (`fabrika status settings` prints the types it asks and the
-values it accepts), plus the reserved `none`, which declines. A
-trailing parenthetical is yours to write and is preserved. **On a child of an asked type only a
-legal value will do** — the gate reds `none` and unset alike, so `ledger child` refuses both rather
-than letting you author a defect.
+values it accepts), plus the reserved `none`, which declines. A trailing parenthetical is yours to
+write and is preserved. **On a child of an asked type only a legal value will do** — the gate reds
+`none` and unset alike, so `ledger child` refuses both rather than letting you author a defect.
 
 `**Stories:**` carries bare integers or `none`, and `ledger child` refuses anything else — a
 parser that harvests every digit run reads `1, 3 (see #<other>)` as claiming a story nobody wrote.

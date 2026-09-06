@@ -10,13 +10,13 @@ excess-operand guard, and `excess-operand.unit.test.ts` reds on it). The
 spec and that doc disagree, the doc wins and this spec is the bug.
 
 **`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** — a verb whose whole body
-relays another tool's answer is not a verb. The v1 machinery
-named below — `claude-plugins/kampus-pipeline/skills/plan-epic/scripts/`, and under
-`packages/pipeline-cli/src/tools/`: `epic-lock/`, `epic-splice/`, `epic-ledger/`,
-`intake-compose/`, `intake-dedup/`, `scratchpad/`, `homing-guard/`, `reachability-guard/` — is
-prior art **read** for semantics and scars; none is invoked, wrapped, or deferred to. Every v1
-module name cited in this spec is **non-normative**: the behavior it informs is restated here in
-full, and an implementer needs none of those files to build these verbs.
+relays another tool's answer is not a verb. The v1 machinery named below —
+`claude-plugins/kampus-pipeline/skills/plan-epic/scripts/`, and under
+`packages/pipeline-cli/src/tools/`: `epic-lock/`, `epic-splice/`, `epic-ledger/`, `intake-compose/`,
+`intake-dedup/`, `scratchpad/`, `homing-guard/`, `reachability-guard/` — is prior art **read** for
+semantics and scars; none is invoked, wrapped, or deferred to. Every v1 module name cited in this
+spec is **non-normative**: the behavior it informs is restated here in full, and an implementer
+needs none of those files to build these verbs.
 
 **The group name.** `ledger` is this skill's, following the one-group-per-skill precedent
 (`build-ui` took `ui`, `check-epic-plan` took `plan`, each reusing
@@ -30,7 +30,7 @@ nothing shipped creates an issue with a full classification, links a sub-issue, 
 
 **One disambiguation, because the word is overloaded in this package.**
 `packages/fabrika-cli/src/lane/store.ts` calls its append-only `events.jsonl` a "ledger". That is
-the *run* ledger. This group's `ledger` is the **plan** — the noun the brief and
+the *run* ledger. This group's `ledger` is the **plan** — the noun this contract and
 [`check-epic-plan`](../check-epic-plan/SKILL.md) both use for an epic's decomposed task list. The
 two never meet: no verb here reads or writes a lane's run ledger.
 
@@ -41,8 +41,8 @@ its ground with `fabrika build tree`, releases with `fabrika build release`, and
 note with `fabrika build note`. The purpose is part of the reuse, not a detail of it: `build claim`'s
 audience axis asks whether an agent should pick the issue up to *build*, and an epic earns
 `ready-for:agent` only after this skill has planned it and the gate has passed it, so a `plan` claim
-is admitted without it. The scope axis is unchanged by the purpose,
-so `20` stays reachable and `21` does not, and `--override` stays the exception it was.
+is admitted without it. The scope axis is unchanged by the purpose, so `20` stays reachable and
+`21` does not, and `--override` stays the exception it was.
 
 **The grilling session is the `grill` group's, reused the same way**
 ([`grilling`'s contract](../grilling/contract.md)). Every epic is grilled, with no size threshold
@@ -231,32 +231,31 @@ bullet**; criteria are `- [ ] ` checkbox rows; a single trailing newline.
 **`**Stories:**` carries bare integers only**, and the composer refuses a value that is not `none`
 or a comma-separated integer list. The refusal is worth having because **v1** harvested every digit
 run in the value, so a value carrying a parenthetical ticket reference silently claimed a story id
-no epic declared. The
-downstream gate does not repeat that: it reads a non-conforming value as *absent* and reports it in
-`detail`. Refusing at authoring time is what keeps the two from disagreeing. `**Containment:**`'s **leading keyword** is one the repo's `containmentVocabulary` declares,
-or the reserved `none`; a trailing
-parenthetical is preserved verbatim (`flag (default-off)` is the ordinary form), and the field is
-emitted **only** when the cycle-doc probe reads `present` — v1's documented spec template omitted
-the field entirely while its skill body required it, so an author following the template dropped
-it on every child and the tolerant read made "forgot" indistinguishable from "no cycle doc".
+no epic declared. The downstream gate does not repeat that: it reads a non-conforming value as
+*absent* and reports it in `detail`. Refusing at authoring time is what keeps the two from
+disagreeing. `**Containment:**`'s **leading keyword** is one the repo's `containmentVocabulary`
+declares, or the reserved `none`; a trailing parenthetical is preserved verbatim (`flag
+(default-off)` is the ordinary form), and the field is emitted **only** when the cycle-doc probe
+reads `present` — v1's documented spec template omitted the field entirely while its skill body
+required it, so an author following the template dropped it on every child and the tolerant read
+made "forgot" indistinguishable from "no cycle doc".
 
 **`## Dependencies` — the rendered block.** It is a picture of the plan's shape for a human reader
 and **nothing gates on it**: blockedness sits behind GitHub's native `blocked_by` edges alone, and
-`build eligible` no longer parses this block at all. Exactly the two line
-forms `readTopology` parses, and
-nothing else: one `- phase <n>: #<ref>[, #<ref>…]` row per phase, phases ascending and members
-ascending within a row, then one `- #<ref> requires: #<ref>[, #<ref>…]` row per child that declares
-a prerequisite, ascending by subject. There is no `###` heading inside the section, no label column,
-no parenthesized clause and no `---` rule — `readTopology` breaks at the first heading of any level
-**or** the first thematic break (`packages/fabrika-cli/src/build/dependencies.ts`), so a `### Phase
-<n>` line would end the scan on the line after `## Dependencies` and the block would read back as
-zero edges: a well-formed, plausible, always-wrong answer the gate then reads as an epic every one
-of whose children is orphaned. The thematic break is the same boundary an appended amendment's
-separator draws, which is why one below the block leaves the block itself intact. The block ends with a trailing blank line so a later heading stays
-separated. The illustrated block above is the round trip this grammar buys — pasted into
-`readTopology` it parses to the three edges it depicts (`phase 1: #4, #5`, `phase 2: #6`,
-`#6 requires: #4`), never the empty set, which is what lets `ledger topology` stage instead of
-refusing on `24`.
+`build eligible` no longer parses this block at all. Exactly the two line forms `readTopology`
+parses, and nothing else: one `- phase <n>: #<ref>[, #<ref>…]` row per phase, phases ascending and
+members ascending within a row, then one `- #<ref> requires: #<ref>[, #<ref>…]` row per child that
+declares a prerequisite, ascending by subject. There is no `###` heading inside the section, no
+label column, no parenthesized clause and no `---` rule — `readTopology` breaks at the first heading
+of any level **or** the first thematic break (`packages/fabrika-cli/src/build/dependencies.ts`), so
+a `### Phase <n>` line would end the scan on the line after `## Dependencies` and the block would
+read back as zero edges: a well-formed, plausible, always-wrong answer the gate then reads as an
+epic every one of whose children is orphaned. The thematic break is the same boundary an appended
+amendment's separator draws, which is why one below the block leaves the block itself intact. The
+block ends with a trailing blank line so a later heading stays separated. The illustrated block
+above is the round trip this grammar buys — pasted into `readTopology` it parses to the three edges
+it depicts (`phase 1: #4, #5`, `phase 2: #6`, `#6 requires: #4`), never the empty set, which is what
+lets `ledger topology` stage instead of refusing on `24`.
 
 ## The body digest
 
@@ -320,10 +319,9 @@ Every `ledger` verb obeys these; stated once.
   writes, and swallowing that to `""` makes an unread pipe byte-identical to an empty one.
 - **The run directory is keyed on the claim nonce, never the session.** `runKey(epic, nonce)` →
   `<treeRoot>/.fabrika-plan/<epic>-<nonce>/`. Every sibling subagent of one session shares the
-  session id, so a session-keyed namespace collapses exactly the
-  isolation two parallel planning lanes need. Every file inside it is named for what
-  it holds — no fixed leaf shared across runs. The shipped precedents are
-  `build/scratch-verb.ts:33` and `ledger/run.ts:31-36`.
+  session id, so a session-keyed namespace collapses exactly the isolation two parallel planning
+  lanes need. Every file inside it is named for what it holds — no fixed leaf shared across runs.
+  The shipped precedents are `build/scratch-verb.ts:33` and `ledger/run.ts:31-36`.
   **It is kept out of git the way `ledger` already does it** — `ledger open` appends the literal line
   `.fabrika-plan/` to `.git/info/exclude` if absent (`ledger/run.ts:29`'s `EXCLUDE_ENTRY`, written by
   `ledger/open-verb.ts:251-258`).
@@ -894,13 +892,12 @@ EOF
 
 Lines are order-indifferent. **Every child in the run manifest appears exactly once — and the
 manifest is the epic's whole child set, retained children included**, which is what makes a
-`re-plan` placeable; a manifest
-child with no line is an unplaced child and a line naming a number that is not in the manifest is
-a dangling reference — both `24`. Edges are ordered `[dependent, prerequisite]`:
-`["#6","#4"]` reads *#6 requires #4*. `edges` is a bounded evidence array — a validated echo of the
-caller's own stdin, one pair per declared `requires` — so it collapses to a cap-and-count: the
-first 5 pairs in `rows`, with `more` counting what followed (`0` when the array was whole); the
-rendered block still carries every edge.
+`re-plan` placeable; a manifest child with no line is an unplaced child and a line naming a number
+that is not in the manifest is a dangling reference — both `24`. Edges are ordered `[dependent,
+prerequisite]`: `["#6","#4"]` reads *#6 requires #4*. `edges` is a bounded evidence array — a
+validated echo of the caller's own stdin, one pair per declared `requires` — so it collapses to a
+cap-and-count: the first 5 pairs in `rows`, with `more` counting what followed (`0` when the array
+was whole); the rendered block still carries every edge.
 
 The verb renders the `## Dependencies` block into `<dir>/topology.md` and then **parses its own
 output back through the imported `readTopology`**, refusing on `24` if the round trip does not
