@@ -28,6 +28,7 @@ import {
 	dropRequest,
 	foldEvent,
 	foldItem,
+	interruptionAfter,
 	phaseAfterFailure,
 	promptItem,
 	unresolvedAnswer,
@@ -111,6 +112,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								sessionId: null,
 								permissions: {},
 								lastPage: null,
+								interruption: null,
 								failure: null,
 							},
 							[{type: "aiAgent.start", cwd: msg.cwd, resume: msg.resume}],
@@ -127,6 +129,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								phase: "ready",
 								sessionId: msg.sessionId,
 								connection: state.connection + 1,
+								interruption: null,
 								failure: null,
 							},
 							noCmds,
@@ -157,6 +160,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								phase: "prompting",
 								lastPrompt: msg.text,
 								interrupted: null,
+								interruption: null,
 								transcript: foldItem(state.transcript, promptItem(msg), limits),
 								sends: noteSend(state.sends, {key: msg.key, state: "pending"}),
 								failure: null,
@@ -275,25 +279,37 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 
 			paged: (state, msg) => [{...state, lastPage: msg.page}, noCmds],
 
-			// Stopping a turn says nothing about whether its text crossed, so the send in flight is
-			// left exactly where it stood. `prompting` is reached at admission, not on the layer's
-			// confirmation, so an Escape pressed while `aiAgent.prompt` is still in flight is an
-			// interrupt of a turn the layer may yet refuse — settling the send `accepted` here made
-			// its window drop the copy that refusal would have needed (#8005).
-			//
-			// The two answers that do know reach it unchanged: the layer's own `sent` settles a
-			// refused handoff, and the turn's end — which an interrupt is one way of causing —
-			// arrives as the `phase` event `./fold.ts` accepts on. So a turn that really ran still
-			// releases its window's copy, and the cut turn's resend affordance is still the only
-			// recovery offered for it.
-			interrupt: (state) =>
+			/**
+			 * Asking the backend to stop is not the backend having stopped (#8007).
+			 *
+			 * The session stays `prompting` and records the request; the `ready` a layer emits when
+			 * the turn actually ends is what moves it, folded by `foldEvent` like any other phase.
+			 * Both layers already emit it — Pi's snapshot fan reports the session back at `idle`
+			 * (`pi/ai-agent/items.ts`, `phaseOf`) and Claude's pump emits it on every `result`
+			 * message, aborted turns included (`claude/agent/ClaudeAiAgent.ts`, `drive`) — so
+			 * waiting for confirmation needs nothing new on the interface.
+			 *
+			 * That is also why the send in flight is left exactly where it stood. `prompting` is
+			 * reached at admission rather than on the layer's confirmation, so an Escape pressed
+			 * while `aiAgent.prompt` is still in flight interrupts a turn the layer may yet refuse;
+			 * the layer's own `sent` settles a refused handoff, and the turn's end accepts a send
+			 * that really ran (`./fold.ts`, the `phase` arm). Neither answer is this cell's to give
+			 * (#8005).
+			 *
+			 * The cut-turn marker is set here rather than on confirmation because it is the
+			 * operator's act being recorded, and the resend it offers is theirs to spend. A second
+			 * press re-sends the abort and keeps the first `requestedAt`: the window measures how
+			 * long the interruption has been outstanding, and that clock starts when they first
+			 * asked.
+			 */
+			interrupt: (state, msg) =>
 				state.phase !== "prompting"
 					? [state, noCmds]
 					: [
 							{
 								...state,
-								phase: "ready",
-								interrupted: lastAssistantId(state.transcript.items),
+								interrupted: state.interrupted ?? lastAssistantId(state.transcript.items),
+								interruption: state.interruption ?? {requestedAt: msg.at},
 							},
 							[{type: "aiAgent.interrupt"}],
 						],
@@ -306,7 +322,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				// The republish goes first so a window attached to a restored session paints the saved
 				// tail and its pending cards before the transport is back, rather than after it.
 				return [
-					{...state, phase: "reconnecting"},
+					{...state, phase: "reconnecting", interruption: null},
 					[
 						{type: "aiAgent.republish"},
 						{type: "aiAgent.reconnect", cwd: state.cwd, sessionId: state.sessionId},
@@ -314,15 +330,19 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				];
 			},
 
-			failed: (state, msg) => [
-				{
-					...state,
-					phase: phaseAfterFailure(state, msg.failure),
-					failure: msg.failure,
-					sends: settlePending(state.sends, msg.failure),
-				},
-				noCmds,
-			],
+			failed: (state, msg) => {
+				const phase = phaseAfterFailure(state, msg.failure);
+				return [
+					{
+						...state,
+						phase,
+						interruption: interruptionAfter(state, phase),
+						failure: msg.failure,
+						sends: settlePending(state.sends, msg.failure),
+					},
+					noCmds,
+				];
+			},
 		},
 
 		subscriptions: (state) =>

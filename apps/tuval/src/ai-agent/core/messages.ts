@@ -58,7 +58,11 @@ export type AiAgentSessionMsg =
 	| {readonly type: "setModel"; readonly model: ModelRef}
 	| {readonly type: "page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "paged"; readonly page: HistoryPage}
-	| {readonly type: "interrupt"}
+	/**
+	 * Stop the running turn. `at` is the operator's clock, carried for the same reason `prompt`'s
+	 * is: no update cell may read one, and the window measures the wait against it (#8007).
+	 */
+	| {readonly type: "interrupt"; readonly at: number}
 	| {readonly type: "reconnect"}
 	| {readonly type: "failed"; readonly failure: AgentFailure};
 

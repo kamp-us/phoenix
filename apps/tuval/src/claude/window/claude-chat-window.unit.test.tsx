@@ -263,7 +263,7 @@ describe("what this binding adds to the shared window", () => {
 		// The drive is only a real test of "adds nothing" if it actually made the window send.
 		expect(shared.process.inbox()).toEqual([
 			{type: "prompt", text: "ship it", key: "k0", timestamp: SENT_AT},
-			{type: "interrupt"},
+			{type: "interrupt", at: SENT_AT},
 		]);
 	});
 

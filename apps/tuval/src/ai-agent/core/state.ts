@@ -51,6 +51,22 @@ export interface ModelState {
 // A layer pushes one of these on the event stream too, so it is declared beside `Phase`.
 export type {AgentFailure} from "../events.ts";
 
+/**
+ * An interruption the operator asked for and no backend event has answered yet (#8007).
+ *
+ * Asking is not stopping. The reducer used to walk the session to `ready` on the request itself,
+ * which told the window the turn had stopped while the abort was still in flight — and re-armed the
+ * composer for a prompt the backend was in no state to take. So the request records this instead
+ * and the phase stays `prompting` until an event settles it.
+ *
+ * `requestedAt` is the operator's clock, carried on the Msg the way `prompt`'s timestamp is
+ * (#7978): no update cell may read one, and the window needs it to say how long the request has
+ * been outstanding rather than leaving a busy session unexplained.
+ */
+export interface Interruption {
+	readonly requestedAt: number;
+}
+
 /** One page of older history exactly as the backend returned it. Replaced, never accumulated. */
 export interface HistoryPage {
 	readonly items: ReadonlyArray<TranscriptItem>;
@@ -72,6 +88,8 @@ export interface AiAgentSessionState {
 	readonly transcript: TranscriptPayload;
 	/** The assistant turn a restart cut short, so the window can offer the resend. */
 	readonly interrupted: ItemId | null;
+	/** An interruption asked for and not yet confirmed by an event; `null` when none is in flight. */
+	readonly interruption: Interruption | null;
 	readonly usage: UsageTotals;
 	/**
 	 * Pending permission cards by request id: one arrives with an event, and one leaves on the
@@ -119,6 +137,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	cwd,
 	transcript: {items: [], omitted: emptyOmission},
 	interrupted: null,
+	interruption: null,
 	usage: emptyUsage,
 	permissions: {},
 	permissionsRaised: 0,
@@ -163,8 +182,9 @@ const markInterrupted = (
  * ends on, which is why a "does the tail end on an assistant item" predicate is the wrong reader:
  * a half-written assistant item reads as a completed reply to it.
  *
- * `failure` and `lastPage` are dropped. Both describe the run that ended: a refusal nobody can act
- * on any more, and a page the window asked a transport that no longer exists for.
+ * `failure`, `lastPage` and `interruption` are dropped. All three describe the run that ended: a
+ * refusal nobody can act on any more, a page the window asked a transport that no longer exists
+ * for, and an abort in flight to a backend this process no longer holds a transport to.
  *
  * A send still in flight comes back `uncertain` rather than dropped. The process went away between
  * handing the text to the layer and hearing what became of it, so nobody can say whether it landed
@@ -186,6 +206,7 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 		phase: loaded.phase === "gone" ? "gone" : "idle",
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
+		interruption: null,
 		sends: loaded.sends.map((send) =>
 			send.state === "pending" ? {key: send.key, state: "uncertain", failure: null} : send,
 		),

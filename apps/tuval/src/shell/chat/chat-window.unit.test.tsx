@@ -250,7 +250,25 @@ describe("the composer", () => {
 		await act(async () => {
 			fireEvent.keyDown(composer(), {key: "Escape"});
 		});
-		await waitFor(() => expect(process.inbox()).toEqual([{type: "interrupt"}]));
+		await waitFor(() => expect(process.inbox()).toEqual([{type: "interrupt", at: SENT_AT}]));
+	});
+
+	// #8007: the session is still `prompting` while the abort is unanswered, and the bar has to say
+	// that rather than repeat the working line or, worse, read as a finished turn.
+	it("says an outstanding interruption is outstanding", async () => {
+		const {process} = await openWindow(withTranscript(transcriptOf(2), {phase: "prompting"}));
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(
+					withTranscript(transcriptOf(2), {
+						phase: "prompting",
+						interruption: {requestedAt: SENT_AT},
+					}),
+				),
+			);
+		});
+		await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Interrupting"));
+		expect(screen.getByRole("status").textContent).not.toContain("Ready");
 	});
 
 	it("restores the draft the window was left with", async () => {
@@ -362,9 +380,12 @@ describe("a send whose outcome is not yet known", () => {
 		const key = keys[0] ?? "";
 		await waitFor(() => expect(view().outgoing).toEqual([{key, text: "the long prompt"}]));
 
+		// What the core leaves behind: the abort is out but unconfirmed, so the turn is still
+		// `prompting` (#8007) and the send is still `pending`.
 		const cut = withSends([{key, state: "pending"}], {
-			phase: "ready",
+			phase: "prompting",
 			interrupted: ItemId.make("a1"),
+			interruption: {requestedAt: 1_700_000_000_000},
 		});
 		await act(async () => {
 			await Effect.runPromise(process.commit(cut));
@@ -504,7 +525,7 @@ describe("keys typed on the transcript", () => {
 		await act(async () => {
 			fireEvent.keyDown(screen.getByRole("log", {name: "Transcript"}), {key: "Escape"});
 		});
-		await waitFor(() => expect(process.inbox()).toEqual([{type: "interrupt"}]));
+		await waitFor(() => expect(process.inbox()).toEqual([{type: "interrupt", at: SENT_AT}]));
 	});
 });
 

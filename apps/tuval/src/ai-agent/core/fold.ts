@@ -168,6 +168,19 @@ const sessionGone = (failure: AgentFailure): boolean =>
 	failure.tag === START_ERROR && failure.reason === "session-not-found";
 
 /**
+ * What is left of an outstanding interruption once the session lands on `phase`.
+ *
+ * The request is a question — "has the turn stopped?" — and the session leaving `prompting` is the
+ * backend's answer, whichever way it left: a turn that ended, one that failed, a transport that
+ * went away. While the session is still on the turn the question stands, which is what keeps the
+ * window able to say the abort is outstanding rather than showing an unexplained busy line (#8007).
+ */
+export const interruptionAfter = (
+	state: AiAgentSessionState,
+	phase: AiAgentSessionState["phase"],
+): AiAgentSessionState["interruption"] => (phase === "prompting" ? state.interruption : null);
+
+/**
  * Where a failure leaves a session: back where it was before the act that failed.
  *
  * A resume is the exception, because there is nowhere before it to go back to. A refused resume
@@ -210,11 +223,17 @@ export const foldEvent = (
 		case "phase":
 			if (coreOwned(event.phase)) return state;
 			if (event.phase === "gone") {
-				return {...state, phase: event.phase, sends: settlePending(state.sends, null)};
+				return {
+					...state,
+					phase: event.phase,
+					interruption: interruptionAfter(state, event.phase),
+					sends: settlePending(state.sends, null),
+				};
 			}
 			return {
 				...state,
 				phase: event.phase,
+				interruption: interruptionAfter(state, event.phase),
 				sends: event.phase === "prompting" ? state.sends : settleAccepted(state.sends),
 			};
 		// A raising stamps the next `seq`, which is what makes a card's identity the raising rather
@@ -243,12 +262,15 @@ export const foldEvent = (
 		// same to the window whichever channel carried it. Routing it through `event` is what keeps
 		// the machine's identity filter over it: a late refusal from a session this process has
 		// already replaced is dropped rather than failing its successor (#8018).
-		case "failure":
+		case "failure": {
+			const phase = phaseAfterFailure(state, event.failure);
 			return {
 				...state,
-				phase: phaseAfterFailure(state, event.failure),
+				phase,
+				interruption: interruptionAfter(state, phase),
 				failure: event.failure,
 				sends: settlePending(state.sends, event.failure),
 			};
+		}
 	}
 };

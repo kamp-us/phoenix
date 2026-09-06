@@ -41,6 +41,7 @@ const cutMidReply: AiAgentSessionState = {
 		omitted: {items: 0, bytes: 0, reason: "none"},
 	},
 	interrupted: null,
+	interruption: null,
 	usage: {model: "faux/faux-1", inputTokens: 10, outputTokens: 4, cost: 0},
 	permissions: {},
 	permissionsRaised: 0,
