@@ -4,7 +4,7 @@
  *
  * **The class partition and the namespace derivation are one derivation, printed once.** v1 printed
  * the class set from one derivation in one script and hand-copied it in another, and the copy
- * dropped a class on a live PR (#4730) — so the map is shared code with `review scope`
+ * dropped a class on a live PR — so the map is shared code with `review scope`
  * (`../review/classes.ts`), extended here with the `ui` class and nothing else.
  *
  * A `merged`, `draft` or `closed` PR is an **answer**, not a refusal: this verb reports state and
@@ -13,7 +13,7 @@
  *
  * The `landing` line is the one place the two landing paths are named, so a shipper reads its route
  * here rather than composing it from a merge-queue read and a repository-settings read on two
- * different APIs (#6018). It is the one field that **degrades instead of refusing**: an unreadable
+ * different APIs. It is the one field that **degrades instead of refusing**: an unreadable
  * landing prints `unknown` and costs the run nothing else, because the guard that matters sits on
  * the write — `ship merge` re-derives the same fact itself and refuses `11` where this printed
  * `unknown`, so a degraded read here can never license a landing.
@@ -100,7 +100,7 @@ export const runScope = (
 		if (files.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: PR #${pr} has zero changed files — nothing to ship (ADR 0092).`,
+				`${VERB}: PR #${pr} has zero changed files — nothing to ship.`,
 				diagnostics,
 			);
 		}
@@ -110,7 +110,7 @@ export const runScope = (
 		if (namespaces.length === 0) {
 			return refuse(
 				ZERO_SCOPE,
-				`${VERB}: #${pr}'s diff derives zero review namespaces — a merge gated on nothing is vacuously green (#2765); the class map has a hole, file it.`,
+				`${VERB}: #${pr}'s diff derives zero review namespaces — a merge gated on nothing is vacuously green; the class map has a hole, file it.`,
 				diagnostics,
 			);
 		}

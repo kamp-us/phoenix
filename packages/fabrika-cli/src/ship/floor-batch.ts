@@ -5,7 +5,7 @@
  * ref, and a workflow only runs there if it carries a `merge_group:` trigger. `governance-floor.yml`
  * had `pull_request:` alone, so the moment the floor was added to the ruleset's required set the
  * batch could never carry the context and every queued merge hung toward the check timeout — the
- * repo-wide freeze of 2026-08-21 (#6968). ADR 0132 records the identical failure for `ci-required`.
+ * repo-wide freeze. The same omission had already frozen the queue once on the required CI context.
  *
  * **The batch ref has nothing to re-derive, so this verb resolves no floor.** A `merge_group` ref is
  * not a pull request: it has no number, no changed-file list against a base a verdict was written
@@ -45,7 +45,7 @@ export const BATCH_PLAN: CheckPlan = {
 	floor: "batch",
 	title: "The floor is not owed on a batch ref",
 	summary:
-		"A merge queue batch ref is not a pull request — no number, no comments, no reviews — so there is no governance verdict on it to read and nothing for `ship floor` to resolve. Every pull request in this batch was floor-gated at its own head by the same check-run, and `ship gate` refuses to enqueue a governance-root PR whose governance verdict is absent, stale or FAIL. This row puts the required context where the queue looks for it; it discharges nothing (ADR 0132, #6968).",
+		"A merge queue batch ref is not a pull request — no number, no comments, no reviews — so there is no governance verdict on it to read and nothing for `ship floor` to resolve. Every pull request in this batch was floor-gated at its own head by the same check-run, and `ship gate` refuses to enqueue a governance-root PR whose governance verdict is absent, stale or FAIL. This row puts the required context where the queue looks for it; it discharges nothing.",
 };
 
 export const runFloorBatch = (

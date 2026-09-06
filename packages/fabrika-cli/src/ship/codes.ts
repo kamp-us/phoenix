@@ -38,7 +38,7 @@ export const LEAKED_PATH = SHARED_LEAKED_PATH;
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven absent (404)**, the PR is closed/draft where the verb requires
- * an open one, or it has zero changed files (ADR 0092).
+ * an open one, or it has zero changed files — a gate with nothing to judge refuses, never passes.
  *
  * *Proven* is the operative word — a 404 is a fact about the repository, an unreachable GitHub is
  * not a fact about anything and lands on {@link PRECONDITION_UNKNOWN}.
@@ -62,7 +62,7 @@ export const INCOMPLETE_SCAN = REVIEW_INCOMPLETE_SCAN;
  * Refused: the target is **proven not in the state this write acts on** — nothing was mutated.
  *
  * Neither {@link ZERO_SCOPE} (the target exists) nor {@link PRECONDITION_UNKNOWN} (nothing failed).
- * It is #4816 made structural: the verb that mutates re-derives its own precondition and declines.
+ * It is structural: the verb that mutates re-derives its own precondition and declines.
  */
 export const PROVEN_NOT_IN_STATE = 16;
 /**
@@ -75,7 +75,7 @@ export const NUDGE_REOPEN_UNCONFIRMED = 17;
 
 /**
  * Refused: the diff touches a governance root and its `governance` verdict is **not** a head-bound
- * PASS — `absent`, `stale` or `fail` (`ship floor`, #5408).
+ * PASS — `absent`, `stale` or `fail` (`ship floor`).
  *
  * Its own seat rather than a fold into {@link PROVEN_NOT_IN_STATE}, because a CI job keys on it: this
  * is the one refusal a red check means "a human owes this PR a governance verdict", and every other
@@ -90,12 +90,12 @@ export const GOVERNANCE_FLOOR_UNMET = 18;
  * spends on the queue-governed base: those two refusals route opposite ways. A queue-governed base
  * sends the run onward to `ship enqueue`; a repository with squash, merge-commit and rebase all
  * disabled sends it to a human with repository-settings access and ends the lane there. One code
- * carrying both would make the caller parse a message to know which (#6018).
+ * carrying both would make the caller parse a message to know which.
  */
 export const NO_LANDING_METHOD = 19;
 
 /**
- * Refused: a label this run would POST is absent from the repository's taxonomy (#4285).
+ * Refused: a label this run would POST is absent from the repository's taxonomy.
  *
  * `plan`'s seat, imported, under `plan`'s own rule — *import a code when two groups prove the same
  * fact*. `plan flip` and `ship release` prove one fact here, on one board, over the same taxonomy:
@@ -110,7 +110,7 @@ export const LABEL_ABSENT = PLAN_LABEL_ABSENT;
 
 /**
  * Refused: every check run at the head passed and **not one workflow this repo authors produced a
- * run there**, so no gate of the repo's own inspected the bytes `ship` would merge (#6915).
+ * run there**, so no gate of the repo's own inspected the bytes `ship` would merge.
  *
  * `review`'s `16` proves the same fact, and this group does not import it: `16` here is
  * {@link PROVEN_NOT_IN_STATE}, a meaning `ship` allocated first, so the two groups seat one fact on

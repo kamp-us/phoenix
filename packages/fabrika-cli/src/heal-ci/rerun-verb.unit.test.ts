@@ -191,12 +191,12 @@ describe("the marker is written only once a new attempt is confirmed", () => {
 });
 
 /**
- * What the at-most-once guard does and does not cover when two callers reach it at once (#7209).
+ * What the at-most-once guard does and does not cover when two callers reach it at once.
  *
- * The two heal-ci sweeps that collided in the incident overlapped by minutes, so the question is not
- * academic. The answer these tests record: the guard is **read-before-write per caller**, so it holds
- * absolutely once either of its two signals has landed, and does NOT hold across the window between
- * one caller's read and its own write. Nothing in the verb closes that window — GitHub offers no
+ * Two heal-ci sweeps can overlap by minutes, so the question is not academic. The answer these
+ * tests record: the guard is **read-before-write per caller**, so it holds absolutely once either of
+ * its two signals has landed, and does NOT hold across the window between one caller's read and its
+ * own write. Nothing in the verb closes that window — GitHub offers no
  * conditional create — so it is recorded here rather than asserted away.
  */
 describe("the at-most-once guard under two concurrent callers at one head", () => {
