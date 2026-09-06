@@ -13,6 +13,34 @@
 			"ceiling": 16,
 			"why": "The fanned-mutation manifest path is this repo's own directory, read as behaviour rather than written as prose — same class as the workflow literals, moved by its own ticket."
 		},
+		"packages/fabrika-cli/src/guard/fanout-verb.ts": {
+			"ceiling": 1,
+			"why": "`FEATURES_DIR`, the directory this guard walks. Behaviour rather than prose — same class as `fanout.ts`, moved by its own ticket."
+		},
+		"packages/fabrika-cli/src/guard/fanout-verb.unit.test.ts": {
+			"ceiling": 3,
+			"why": "The fixture root mirroring `FEATURES_DIR` and two annotation assertions pinning the emitted path. Rewriting them would assert against a directory the verb never walks."
+		},
+		"packages/fabrika-cli/src/guard/design-token-verb.ts": {
+			"ceiling": 1,
+			"why": "`CSS_ROOTS`, the scan scope this guard walks. Behaviour rather than prose — same class as `i18n-literal-verb.ts`, moved by its own ticket."
+		},
+		"packages/fabrika-cli/src/guard/design-token-verb.unit.test.ts": {
+			"ceiling": 1,
+			"why": "The fixture root mirroring `CSS_ROOTS`; the dual-root regression test is only a test while it names a root the verb actually scans."
+		},
+		"packages/fabrika-cli/src/guard/i18n-literal.ts": {
+			"ceiling": 1,
+			"why": "`SCAN_ROOT`, the one value the exempt `i18n-literal-verb.ts` imports and walks. Behaviour rather than prose, and now stated once instead of repeated through the report strings."
+		},
+		"packages/fabrika-cli/src/guard/leak.ts": {
+			"ceiling": 1,
+			"why": "`DOC_DIRS`, the doc-surface scope this gate classifies against. Behaviour rather than prose — a repo that keeps no decision corpus simply matches nothing."
+		},
+		"packages/fabrika-cli/src/guard/leak.unit.test.ts": {
+			"ceiling": 2,
+			"why": "Two assertions on the `DOC_DIRS` arm; dropping the literal drops the only coverage that arm has."
+		},
 		"packages/fabrika-cli/src/config/keys/governed-roots.ts": {
 			"ceiling": 4,
 			"why": "The shipped default governed-root set is this repo's shape, kept as the value a repo overrides rather than as a sentence a reader follows."
@@ -99,11 +127,6 @@
 			"ceiling": 586,
 			"why": "The lane group's source, cleared by #8302, the lane sweep child.",
 			"paths": ["packages/fabrika-cli/src/lane"]
-		},
-		"cli-guard": {
-			"ceiling": 649,
-			"why": "The guard group's source, cleared by #8303, the guard sweep child.",
-			"paths": ["packages/fabrika-cli/src/guard"]
 		},
 		"cli-build": {
 			"ceiling": 622,

@@ -1,6 +1,6 @@
 /**
  * The pure rule behind `guard publish-isolation-guard check`, ported from the v1 CLI's
- * `publish-isolation-guard.unit.test.ts` (ADR 0201 §3, #3802): the verdict over already-gathered
+ * `publish-isolation-guard.unit.test.ts`: the verdict over already-gathered
  * facts, plus the two derivation helpers — parsing publish.yml's tag grammar, and mapping prefixes
  * onto members. No disk; the IO seam is covered in `publish-isolation-verb.unit.test.ts`.
  */
@@ -31,7 +31,7 @@ describe("judge", () => {
 		expect(v.pass).toBe(true);
 	});
 
-	it("reds a workspace:* link as the #3802 class", () => {
+	it("reds a workspace:* link — it never resolves from a registry", () => {
 		const v = judge([
 			manifest("packages/demo-cli/package.json", "@kampus/demo-cli", [
 				{field: "dependencies", name: "@kampus/epic-ledger", value: "workspace:*"},
@@ -73,7 +73,7 @@ describe("judge", () => {
 		]);
 	});
 
-	// A published sibling resolves from the registry, so it is not the #3802 class.
+	// A published sibling resolves from the registry, so it is not a violation.
 	it("passes a @kampus dep that is ITSELF in the published set", () => {
 		const v = judge([
 			manifest("packages/demo-cli/package.json", "@kampus/demo-cli", [
@@ -121,7 +121,7 @@ describe("resolvePublished", () => {
 	const members: ReadonlyArray<PublishedManifest> = [
 		manifest("packages/demo-cli/package.json", "@kampus/demo-cli", []),
 		manifest("packages/fabrika-cli/package.json", "@kampus/fabrika-cli", []),
-		manifest("apps/web/package.json", "@kampus/web", []),
+		manifest("apps/site/package.json", "@kampus/site", []),
 	];
 
 	it("resolves a prefix to the member whose unscoped name matches", () => {

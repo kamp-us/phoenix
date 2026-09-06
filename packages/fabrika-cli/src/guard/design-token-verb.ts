@@ -1,5 +1,5 @@
 /**
- * `guard design-token-guard check` — ported off v1's `design-token-guard check` (epic #5720).
+ * `guard design-token-guard check` — ported off v1's `design-token-guard check`.
  *
  * The verb is the IO boundary: walk the consuming app and `@kampus/design` for CSS, parse each
  * file's facts, read the package-owned allow-list config, hand both to the pure rule in
@@ -63,7 +63,7 @@ export interface DesignTokenGuardOptions {
  * so it reds at the read, because a CSS file replaced by a dangling link must not silently leave
  * scope. A directory that cannot be LISTED is a different thing and fails the walk: swallowing it
  * shrinks the corpus while `judge` still sees files elsewhere and passes, which is a clean verdict
- * over a scan that silently narrowed (ADR 0092).
+ * over a scan that silently narrowed.
  */
 const walkCss = (
 	fs: FileSystem.FileSystem,
@@ -148,7 +148,7 @@ const readConfig = (
 		) {
 			return {
 				_tag: "Malformed",
-				report: `${VERB}: ${CONFIG_PATH} does not parse, or is missing one of externalProperties / grandfatheredMissingTokens / rawPxCeilings — the allow-list the ratchet is judged against is broken, fail-closed (ADR 0092).`,
+				report: `${VERB}: ${CONFIG_PATH} does not parse, or is missing one of externalProperties / grandfatheredMissingTokens / rawPxCeilings — the allow-list the ratchet is judged against is broken, fail-closed.`,
 			};
 		}
 		return {
@@ -180,7 +180,7 @@ const judgeTree = (
 						"error",
 						r.path,
 						r.line,
-						`var(${r.name}) resolves to no declared, injected or grandfathered property — it renders unstyled with nothing failing (#2167). Fix: use an existing role token, or declare it.`,
+						`var(${r.name}) resolves to no declared, injected or grandfathered property — it renders unstyled with nothing failing. Fix: use an existing role token, or declare it.`,
 					),
 				),
 				...verdict.hex.map((h) =>
@@ -188,7 +188,7 @@ const judgeTree = (
 						"error",
 						h.path,
 						h.line,
-						`the raw hex ${h.value} lives outside the raw-scale layer — hex belongs only in ${RAW_LAYER} (ADR 0162, Pillar 2). Fix: reach for a role token.`,
+						`the raw hex ${h.value} lives outside the raw-scale layer — hex belongs only in ${RAW_LAYER} (Pillar 2). Fix: reach for a role token.`,
 					),
 				),
 				...verdict.rawPx.flatMap((p) =>
@@ -197,7 +197,7 @@ const judgeTree = (
 							"error",
 							p.path,
 							s.line,
-							`${s.value} bypasses the 4px spacing seam and this file is over its ceiling (${p.count} > ${p.ceiling ?? 0}, ADR 0162 value #1). Fix: use a --s-N spacing token.`,
+							`${s.value} bypasses the 4px spacing seam and this file is over its ceiling (${p.count} > ${p.ceiling ?? 0}). Fix: use a --s-N spacing token.`,
 						),
 					),
 				),

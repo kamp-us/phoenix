@@ -1,11 +1,11 @@
 /**
- * `guard path-filter-guard check` — ported off v1's `path-filter-guard check` (epic #5720).
+ * `guard path-filter-guard check` — the IO half of the two-workflow path-filter sync gate.
  *
  * The verb is the IO boundary and nothing else: read the two workflows, hand their texts to the
  * pure rule in `./path-filter.ts`, seat the answer on the group's exit taxonomy.
  *
- * v1 collapsed drift, an unlocatable filter list and an unreadable workflow onto exit `1`. Here a
- * real drift is `12`, an unlocatable list is `7` (ADR 0092) and an unreadable file is `11` — all
+ * Drift, an unlocatable filter list and an unreadable workflow are three different reds: a
+ * real drift is `12`, an unlocatable list is `7` and an unreadable file is `11` — all
  * still red, so the gate's strictness is unchanged, but a human reproducing the red can tell which
  * of the three happened.
  */
@@ -40,12 +40,12 @@ const driftAnnotations = (): ReadonlyArray<Annotation> => [
 	atFile(
 		"error",
 		CI_E2E_SOURCE.file,
-		`the changes.${CI_E2E_SOURCE.key} filter no longer matches deploy.yml's changes.${DEPLOY_SOURCE.key} — a PR that trips e2e while its deploy skips wedges ci-required on the 10-minute preview poll (#2372/#3722). Fix: restore the two filters to the same globs and the same token/base inputs.`,
+		`the changes.${CI_E2E_SOURCE.key} filter no longer matches deploy.yml's changes.${DEPLOY_SOURCE.key} — a PR that trips e2e while its deploy skips wedges ci-required on the 10-minute preview poll. Fix: restore the two filters to the same globs and the same token/base inputs.`,
 	),
 	atFile(
 		"error",
 		DEPLOY_SOURCE.file,
-		`the changes.${DEPLOY_SOURCE.key} filter no longer matches ci.yml's changes.${CI_E2E_SOURCE.key} — a PR that trips e2e while its deploy skips wedges ci-required on the 10-minute preview poll (#2372/#3722). Fix: restore the two filters to the same globs and the same token/base inputs.`,
+		`the changes.${DEPLOY_SOURCE.key} filter no longer matches ci.yml's changes.${CI_E2E_SOURCE.key} — a PR that trips e2e while its deploy skips wedges ci-required on the 10-minute preview poll. Fix: restore the two filters to the same globs and the same token/base inputs.`,
 	),
 ];
 
@@ -71,7 +71,7 @@ const judgeTree = (
 		].filter((f): f is string => f !== null);
 		if (ciText === null || deployText === null) {
 			return zeroScope(
-				`${VERB}: ${absent.join(" and ")} ${absent.length === 1 ? "does" : "do"} not exist under ${root} — the guard compared no filter lists at all, fail-closed (ADR 0092). Is the repo root correct?`,
+				`${VERB}: ${absent.join(" and ")} ${absent.length === 1 ? "does" : "do"} not exist under ${root} — the guard compared no filter lists at all, fail-closed. Is the repo root correct?`,
 			);
 		}
 		const verdict = judge({ciText, deployText});

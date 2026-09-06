@@ -174,7 +174,7 @@ describe("runFanoutGuard", () => {
 		expect(outcome.stderr.join("\n")).toContain("STALE");
 	});
 
-	// The #2554 edit: live.ts was re-aimed and no longer targets the declared topic.
+	// live.ts was re-aimed and no longer targets the declared topic.
 	it("reds a mis-aimed publish", async () => {
 		const outcome = await run(
 			tree(
@@ -207,7 +207,7 @@ describe("runFanoutGuard", () => {
 		expect(outcome.stderr.some((line) => line.startsWith("::"))).toBe(false);
 	});
 
-	// ADR 0092's floor: nothing discovered means the guard proved nothing.
+	// The fail-closed floor: nothing discovered means the guard proved nothing.
 	it("fails closed when zero mutations are discovered", async () => {
 		const outcome = await run(
 			tree([{key: "post.submit", fanned: true, topics: ["posts"]}], [{name: "empty"}]),

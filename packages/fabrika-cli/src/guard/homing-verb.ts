@@ -2,13 +2,13 @@
  * `guard homing-guard check [--issue N]` — the board read behind the home-xor-exempt decision.
  *
  * Two scopes, and the difference is what an empty one means. The bare sweep reads the whole open
- * `status:triaged` set and reds on an empty one (ADR 0092); `--issue N` is the per-issue seam check
- * a triage sweep runs right after it stamps the label, and an issue that is simply not triaged is a
- * pass over a scan of one.
+ * `status:triaged` set and reds on an empty one, like every guard here; `--issue N` is the per-issue
+ * seam check a triage sweep runs right after it stamps the label, and an issue that is simply not
+ * triaged is a pass over a scan of one.
  *
  * The `--issue` fork reads the repository's label set too, but only when the issue turns out not to
  * be triaged: without that read an empty result cannot be told from a repo that never defined
- * `status:triaged`, and the seam guard would report clean forever having checked nothing (#4272).
+ * `status:triaged`, and the seam guard would report clean forever having checked nothing.
  *
  * The whole decision lives in `./homing.ts`; this file resolves the repo, reads, and emits.
  */
@@ -82,7 +82,7 @@ const issueScan = (
 			);
 		}
 		// `repos/<repo>/issues/<n>` answers for pull requests too, and a PR carries no milestone — read
-		// as an issue it would red as un-homed every time (#5562).
+		// as an issue it would red as un-homed every time.
 		if (found.value.isPullRequest) {
 			return refused(
 				`${VERB}: #${number} in ${repo} is a pull request, not an issue — home-xor-exempt binds on triaged issues, so the verdict is UNKNOWN, never clean.`,
@@ -92,11 +92,11 @@ const issueScan = (
 		if (one.labels.includes(TRIAGED_LABEL)) {
 			return {_tag: "Scanned", issues: [one], scope: {_tag: "issue", number, universe: PRESENT}};
 		}
-		// Read only here: this is the one fork where an empty scope is ambiguous (#4272).
+		// Read only here: this is the one fork where an empty scope is ambiguous.
 		const universe = yield* universeOf(repo, [TRIAGED_LABEL]);
 		return universe === null
 			? refused(
-					`${VERB}: issue #${number} is not ${TRIAGED_LABEL}, and the label set of ${repo} could not be read to tell that from a repo that never defined it (#4272) — the verdict is UNKNOWN, never clean.`,
+					`${VERB}: issue #${number} is not ${TRIAGED_LABEL}, and the label set of ${repo} could not be read to tell that from a repo that never defined it — the verdict is UNKNOWN, never clean.`,
 				)
 			: {_tag: "Scanned", issues: [], scope: {_tag: "issue", number, universe}};
 	});

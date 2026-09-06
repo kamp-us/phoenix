@@ -5,7 +5,7 @@
  * shortlists, each shortlisted issue is then re-read singly because the list endpoint omits the
  * parent link, and only then are its comments and their authors' permissions resolved.
  *
- * The ACL resolution is fail-closed at the boundary (ADR 0055): a permission that cannot be read
+ * The ACL resolution is fail-closed at the boundary: a permission that cannot be read
  * resolves NOT authorized, so an unverifiable approval stops counting rather than passing.
  *
  * The whole decision lives in `./pitch.ts`; this file resolves the repo, reads, and emits.
@@ -51,7 +51,7 @@ const refused = (report: string): Scan => ({_tag: "Refused", verdict: unknown(re
 
 const WRITE_PLUS: ReadonlyArray<string> = ["admin", "maintain", "write"];
 
-/** The ADR 0055 trust root, fail-closed: anything but a proven `write+` reads as not authorized. */
+/** The trust root, fail-closed: anything but a proven `write+` reads as not authorized. */
 const isWritePlus = (
 	repo: string,
 	login: string,
@@ -166,14 +166,14 @@ const issueScan = (
 		// intake — a PR read as an issue would be judged against a contract it was never in scope for.
 		if (found.value.isPullRequest) {
 			return refused(
-				`${VERB}: #${number} in ${repo} is a pull request, not an issue — a pitch binds at intake and never at merge (#3909), so the verdict is UNKNOWN, never clean.`,
+				`${VERB}: #${number} in ${repo} is a pull request, not an issue — a pitch binds at intake and never at merge, so the verdict is UNKNOWN, never clean.`,
 			);
 		}
 		if (!looksLaneEntering(found.value)) {
 			const universe = yield* universeOf(repo, SCOPE_LABELS);
 			return universe === null
 				? refused(
-						`${VERB}: issue #${number} is not lane-entering work, and the label set of ${repo} could not be read to tell that from a repo that never defined the scoping labels (#4272) — the verdict is UNKNOWN, never clean.`,
+						`${VERB}: issue #${number} is not lane-entering work, and the label set of ${repo} could not be read to tell that from a repo that never defined the scoping labels — the verdict is UNKNOWN, never clean.`,
 					)
 				: {_tag: "Scanned", candidates: [], scope: {_tag: "issue", number, universe}};
 		}
