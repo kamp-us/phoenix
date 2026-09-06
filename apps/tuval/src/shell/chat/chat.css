@@ -157,7 +157,9 @@
 	max-inline-size: 100%;
 }
 
-.tuval-chat-row[data-kind="user"] .tuval-chat-text {
+/* The operator's own row renders markdown too (#8226); this keeps the tint that told the two sides
+   apart, over `.kp-markdown`'s own `--text-primary`. */
+.tuval-chat-row[data-kind="user"] .tuval-chat-markdown {
 	color: var(--text-secondary);
 }
 

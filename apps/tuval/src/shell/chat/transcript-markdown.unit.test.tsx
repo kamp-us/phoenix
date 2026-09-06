@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * What a transcript row does with the markdown an agent replies in (#8012), rendered through the
- * same window-contract double the rest of this slice uses (`../window/fixtures.ts`).
+ * What a transcript row does with markdown — an agent's reply and the operator's own message alike
+ * (#8012/#8226) — rendered through the same window-contract double the rest of this slice uses
+ * (`../window/fixtures.ts`).
  *
  * Every assertion here reads the DOM straight after `render`, with no `waitFor` and no `act` past
  * the mount. That is deliberate: the transcript is virtualized and each row is measured at the
@@ -127,18 +128,36 @@ describe("an agent reply renders as markdown", () => {
 		expect(row.textContent).toContain("click me");
 	});
 
-	it("leaves a typed message and a session line as plain text", async () => {
-		await openWindow(
-			withTranscript([
-				userItem("u1", "**not bold** | a | b |"),
-				systemItem("s1", "# not a heading"),
-			]),
-		);
+	it("leaves a session line as plain text", async () => {
+		await openWindow(withTranscript([systemItem("s1", "# not a heading")]));
 
 		const row = screen.getByRole("log", {name: "Transcript"});
-		expect(within(row).queryByRole("table")).toBeNull();
 		expect(within(row).queryByRole("heading")).toBeNull();
-		expect(within(row).getByText("**not bold** | a | b |").className).toBe("tuval-chat-text");
 		expect(within(row).getByText("# not a heading").className).toBe("tuval-chat-text");
+	});
+});
+
+describe("a typed message renders as markdown too (#8226)", () => {
+	it("renders a fenced block and a list the operator sent as markup, not as raw text", async () => {
+		const typed = ["- one", "- two", "", "```ts", "const x = 1;", "```"].join("\n");
+		await openWindow(withTranscript([userItem("u1", typed)]));
+
+		const row = screen.getByRole("log", {name: "Transcript"});
+		expect(within(row).getAllByRole("listitem")).toHaveLength(2);
+		const code = within(row).getByText("const x = 1;");
+		expect(code.tagName).toBe("CODE");
+		expect(code.parentElement?.tagName).toBe("PRE");
+		expect(within(row).queryByText(typed)).toBeNull();
+	});
+
+	it("renders through the same block, class and headingBase as an agent reply", async () => {
+		await openWindow(withTranscript([userItem("u1", "# ask"), assistantItem("a1", "# answer")]));
+
+		const row = screen.getByRole("log", {name: "Transcript"});
+		const headings = within(row).getAllByRole("heading");
+		expect(headings.map((heading) => heading.tagName)).toEqual(["H3", "H3"]);
+		for (const heading of headings) {
+			expect(heading.closest(".tuval-chat-markdown")).not.toBeNull();
+		}
 	});
 });
