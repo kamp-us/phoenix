@@ -115,7 +115,7 @@ const OPTIONS = {
 	closed,
 };
 
-/** A lane on disk whose `ISSUE.PASS` from `queued` no machine has a cell for — the #7803 shape. */
+/** A lane on disk whose `ISSUE.PASS` from `queued` no machine has a cell for — the log that will never replay. */
 const brokenLane = (
 	extra: Record<string, string | null> = {},
 	directories: ReadonlyArray<string> = [],
@@ -166,7 +166,7 @@ describe("lane archive", () => {
 
 	it("takes the lane out of both sweeps, neither of which is ever handed the archived root", async () => {
 		// A machine that differs from the template, so the migrate sweep reaches its judgement
-		// instead of reading the lane `current` — the state the eight lanes of #7803 are in.
+		// instead of reading the lane `current` — the state an unreplayable lane is in.
 		const fs = fakeFs({
 			files: {
 				[TEMPLATE]: coderTemplateText(),

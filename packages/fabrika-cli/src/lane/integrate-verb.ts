@@ -3,15 +3,15 @@
  * tree holds together before the branch keeps it.
  *
  * The order is the whole verb: merge, reconcile the merged tree's dependencies from the lockfile it
- * now carries, then run the repo's code validators. Reversing the middle two steps is what #7162 hit
- * — an assembly worktree placed before the child existed still had the pre-merge install, so
- * `pnpm typecheck --force` failed with `TS2688` on a tree whose code was fine, and a valid child
+ * now carries, then run the repo's code validators. Reversing the middle two steps is what broke
+ * a real run: an assembly worktree placed before the child existed still had the pre-merge install,
+ * so the typecheck failed on a tree whose code was fine, and a valid child
  * spent a lane retry on stale worktree state. Every refusal below the merge resets the branch
  * through `ORIG_HEAD`, so a recorded `FAIL` names a branch that never carried the bad merge.
  *
  * Above the merge sits the other half of that guarantee: a seat already holding modified tracked
  * files is refused on exit 45 before anything runs, because dirt the child did not write reads as
- * its conflict or its bad lockfile and spends its retry budget either way (#7244).
+ * its conflict or its bad lockfile and spends its retry budget either way.
  *
  * On exit 0 the last stdout line is always `INTEGRATE-VERDICT: MERGED`, the line above it the merged
  * head. Publishing that head is `lane push`'s and recording the `DONE` is the driver's: this verb
@@ -89,7 +89,7 @@ type TrackedChanges =
  * `--untracked-files=no` is the whole scope claim: this is the set `git merge` refuses to overwrite
  * and the set an install can repair, and a file no commit tracks is neither. Both readers of this —
  * the pre-merge cleanliness gate and {@link reconcile}'s post-install probe — need the same set, and
- * the second is only a claim about the install because the first proved the baseline empty (#7244).
+ * the second is only a claim about the install because the first proved the baseline empty.
  */
 const trackedChanges = (
 	path: string,
@@ -149,7 +149,7 @@ type ReconcileOutcome =
  *
  * The second half is the fail-closed half: a reconciliation that rewrites the lockfile has repaired
  * the child's declaration rather than honoured it, and an assembly branch must never carry that
- * repair (#7188). A repo declaring no reconciler has no install to run and is not refused — see
+ * repair. A repo declaring no reconciler has no install to run and is not refused — see
  * `config/keys/dependency-reconciler.ts`.
  */
 const reconcile = (

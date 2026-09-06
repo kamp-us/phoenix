@@ -6,10 +6,10 @@
  * boot `lane open` uses. Every topology defect seats on its own code, because each takes a
  * different remedy: plan the epic, fix the reference, break the cycle.
  *
- * An existing lane is refused, and nothing carves an exception into that refusal: ADR 0313's
- * 2026-08-20 amendment rejected an overwrite path for a lane already on disk by name, and left
+ * An existing lane is refused, and nothing carves an exception into that refusal: an overwrite path
+ * for a lane already on disk by name was rejected, and that left
  * `placeMachine`'s refusal standing as the answer. What this verb owes instead is a refusal that
- * names the remedy exactly — retire the directory, then re-run it — so a wrong-template lane (#7024)
+ * names the remedy exactly — retire the directory, then re-run it — so a wrong-template lane
  * is a two-step repair an operator can read off the line rather than a dead end.
  */
 import {Effect, type FileSystem, type Path} from "effect";
@@ -110,7 +110,7 @@ export const runEmit = (
 		if (placed._tag === "Exists") {
 			return refuse(
 				LANE_EXISTS,
-				`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, and a lane on disk is never re-emitted over (ADR 0313, amendment 2026-08-20). If it runs the wrong machine — \`fabrika lane migrate --check\` answers 46 and names it — the remedy is exactly two steps: retire ${placed.dir}, then re-run \`${VERB} ${options.epic}\`.`,
+				`${VERB}: a lane already exists at ${placed.dir} — resuming needs no boot, and a lane on disk is never re-emitted over. If it runs the wrong machine — \`fabrika lane migrate --check\` answers 46 and names it — the remedy is exactly two steps: retire ${placed.dir}, then re-run \`${VERB} ${options.epic}\`.`,
 			);
 		}
 		if (placed._tag !== "Placed") return placementRefusal(VERB, placed);
