@@ -7,7 +7,8 @@
  * handoff; the backend can refuse a send the layer took, which reaches the core on the event stream
  * because both rows return from `prompt` at the send (#8018); and a transport that dies mid-call
  * leaves a send nobody can say either way about. Only the last of those is `uncertain`, and it is
- * the arm that must never resend on its own.
+ * the arm that must never resend on its own. The last point is itself two — a turn begun and a turn
+ * ended — which is what `TurnProgress` below carries.
  *
  * The key is what makes an outcome a *particular* send's. Two windows over one process each mint
  * their own (#7570 ruling 2), so a refusal one of them earned cannot restore the other's text.
@@ -16,13 +17,29 @@
 import type {AgentFailure} from "../events.ts";
 import {PROMPT_ERROR, START_ERROR, TRANSPORT_ERROR} from "./failures.ts";
 
+/**
+ * Whether any layer has yet narrated the backend *starting* the turn this send asked for.
+ *
+ * A send is admitted while the session is still `ready`, and the `prompt` cell walks the session to
+ * `prompting` itself — so the core's own phase says nothing about the backend. Until a layer
+ * narrates `prompting` on the event stream, the turn is `unstarted`, and a `ready` arriving in that
+ * gap is about some earlier turn or about no turn at all (#8107).
+ */
+export type TurnProgress = "unstarted" | "running";
+
+/**
+ * Admitted by the core and handed to the layer; the backend has not answered yet. A `prompt` that
+ * returned without refusing leaves a send right here, because on both rows it returns at the send
+ * (#8018) — "the layer did not refuse the handoff" is not "the backend has the text".
+ */
+export type PendingSend = {
+	readonly key: string;
+	readonly state: "pending";
+	readonly turn: TurnProgress;
+};
+
 export type SendOutcome =
-	/**
-	 * Admitted by the core and handed to the layer; the backend has not answered yet. A `prompt`
-	 * that returned without refusing leaves a send right here, because on both rows it returns at
-	 * the send (#8018) — "the layer did not refuse the handoff" is not "the backend has the text".
-	 */
-	| {readonly key: string; readonly state: "pending"}
+	| PendingSend
 	/** The backend ran the turn: the text crossed. The window may drop the copy it was holding. */
 	| {readonly key: string; readonly state: "accepted"}
 	/** Refused before the text crossed — it is recoverable, and it is not running anywhere. */
@@ -53,8 +70,8 @@ export const noteSend = (
 export const sendOutcome = (sends: ReadonlyArray<SendOutcome>, key: string): SendOutcome | null =>
 	sends.find((held) => held.key === key) ?? null;
 
-export const pendingSend = (sends: ReadonlyArray<SendOutcome>): SendOutcome | null =>
-	sends.find((held) => held.state === "pending") ?? null;
+export const pendingSend = (sends: ReadonlyArray<SendOutcome>): PendingSend | null =>
+	sends.find((held): held is PendingSend => held.state === "pending") ?? null;
 
 /**
  * Which arm a failure lands a send in, or `null` when the failure names some other call.
@@ -95,10 +112,29 @@ export const settledBy = (key: string, failure: AgentFailure): SendOutcome =>
 		? {key, state: "refused", failure}
 		: {key, state: "uncertain", failure};
 
-/** The send in flight ran somewhere: whatever became of the turn, the text crossed. */
+/** A layer narrated the backend starting a turn, so the send in flight is the turn it started. */
+export const markTurnRunning = (sends: ReadonlyArray<SendOutcome>): ReadonlyArray<SendOutcome> => {
+	const pending = pendingSend(sends);
+	return pending === null || pending.turn === "running"
+		? sends
+		: noteSend(sends, {...pending, turn: "running"});
+};
+
+/**
+ * The turn the send in flight asked for has ended: whatever became of it, the text crossed.
+ *
+ * A send whose turn no layer ever narrated starting is left `pending` instead. A phase is not a
+ * confirmation, and both rows can push a `ready` that is about nothing this send asked for — Pi's
+ * snapshot fan diffs against an empty projection, so its first snapshot emits `ready` off an `idle`
+ * session whenever it lands, and the Claude layer's open emits one onto a queue whose subscriber
+ * only opens afterwards. Either can arrive under a live send, and accepting on it would release the
+ * window's held copy of text the backend has not seen (#8107).
+ */
 export const settleAccepted = (sends: ReadonlyArray<SendOutcome>): ReadonlyArray<SendOutcome> => {
 	const pending = pendingSend(sends);
-	return pending === null ? sends : noteSend(sends, {key: pending.key, state: "accepted"});
+	return pending === null || pending.turn === "unstarted"
+		? sends
+		: noteSend(sends, {key: pending.key, state: "accepted"});
 };
 
 /**

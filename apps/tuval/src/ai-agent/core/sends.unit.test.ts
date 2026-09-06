@@ -17,6 +17,7 @@ import {
 	TRANSPORT_ERROR,
 } from "./failures.ts";
 import {
+	markTurnRunning,
 	noteSend,
 	pendingSend,
 	type SendOutcome,
@@ -57,7 +58,7 @@ describe("which arm a failure lands a send in", () => {
 });
 
 describe("the ledger", () => {
-	const pending = (key: string): SendOutcome => ({key, state: "pending"});
+	const pending = (key: string): SendOutcome => ({key, state: "pending", turn: "unstarted"});
 
 	it("keeps one row per key, newest wins", () => {
 		const once = noteSend([], pending("k1"));
@@ -99,8 +100,21 @@ describe("the ledger", () => {
 	});
 
 	it("accepts the send in flight when the turn is provably running", () => {
-		expect(settleAccepted([pending("live")])).toEqual([{key: "live", state: "accepted"}]);
+		const running = markTurnRunning([pending("live")]);
+		expect(running).toEqual([{key: "live", state: "pending", turn: "running"}]);
+		expect(settleAccepted(running)).toEqual([{key: "live", state: "accepted"}]);
 		expect(settleAccepted([])).toEqual([]);
+	});
+
+	/** #8107: no layer said the backend began a turn, so nothing here is that turn's end. */
+	it("leaves a send whose turn never started pending", () => {
+		expect(settleAccepted([pending("live")])).toEqual([pending("live")]);
+	});
+
+	it("marks nothing running when no send is in flight", () => {
+		const settled = [{key: "old", state: "accepted"} as const];
+		expect(markTurnRunning(settled)).toEqual(settled);
+		expect(markTurnRunning([])).toEqual([]);
 	});
 
 	it("writes a failure onto the key it belongs to", () => {

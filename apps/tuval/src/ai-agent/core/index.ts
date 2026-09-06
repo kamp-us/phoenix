@@ -38,7 +38,9 @@ export {
 	eventsSubId,
 } from "./messages.ts";
 export {
+	markTurnRunning,
 	noteSend,
+	type PendingSend,
 	pendingSend,
 	type SendOutcome,
 	sendAfterFailure,
@@ -47,6 +49,7 @@ export {
 	settleAccepted,
 	settledBy,
 	settlePending,
+	type TurnProgress,
 } from "./sends.ts";
 export {
 	isAiAgentSessionState,

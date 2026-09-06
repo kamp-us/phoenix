@@ -49,7 +49,7 @@ describe("reading what the session said about held sends", () => {
 		{key: "doubtful", text: "might have crossed"},
 	];
 	const sends: ReadonlyArray<SendOutcome> = [
-		{key: "running", state: "pending"},
+		{key: "running", state: "pending", turn: "unstarted"},
 		{key: "landed", state: "accepted"},
 		{key: "refused", state: "refused", failure: refusal},
 		{key: "doubtful", state: "uncertain", failure: null},

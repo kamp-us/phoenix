@@ -478,7 +478,7 @@ describe("a send whose outcome is not yet known", () => {
 
 		// A `sent` carrying no failure leaves the row `pending` (`core/machine.unit.test.ts`), so
 		// this is the state the refusal folds over.
-		const handed = withSends([{key, state: "pending"}]);
+		const handed = withSends([{key, state: "pending", turn: "unstarted"}]);
 		await act(async () => {
 			await Effect.runPromise(process.commit(handed));
 		});
@@ -508,7 +508,7 @@ describe("a send whose outcome is not yet known", () => {
 
 		// What the core leaves behind: the abort is out but unconfirmed, so the turn is still
 		// `prompting` (#8007) and the send is still `pending`.
-		const cut = withSends([{key, state: "pending"}], {
+		const cut = withSends([{key, state: "pending", turn: "unstarted"}], {
 			phase: "prompting",
 			interrupted: ItemId.make("a1"),
 			interruption: {requestedAt: 1_700_000_000_000},
@@ -533,14 +533,39 @@ describe("a send whose outcome is not yet known", () => {
 		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
 		await sent("ship it");
 		const key = keys[0] ?? "";
-		const handed = withSends([{key, state: "pending"}], {phase: "prompting"});
+		const running = withSends([{key, state: "pending", turn: "running"}], {phase: "prompting"});
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(foldEvent(running, {kind: "phase", phase: "ready"}, {})),
+			);
+		});
+		await waitFor(() => expect(view().outgoing).toEqual([]));
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
+	/**
+	 * #8107. Same event, a turn no layer ever said had begun: the window keeps its copy, because a
+	 * refusal a round trip later is what it would have to offer back.
+	 */
+	it("keeps the copy through a ready the backend never ran a turn for", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("ship it");
+		const key = keys[0] ?? "";
+		const handed = withSends([{key, state: "pending", turn: "unstarted"}], {phase: "prompting"});
 		await act(async () => {
 			await Effect.runPromise(
 				process.commit(foldEvent(handed, {kind: "phase", phase: "ready"}, {})),
 			);
 		});
-		await waitFor(() => expect(view().outgoing).toEqual([]));
-		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+		expect(view().outgoing).toEqual([{key, text: "ship it"}]);
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key, state: "refused", failure: refusal}])),
+			);
+		});
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(view().outgoing).toEqual([{key, text: "ship it"}]);
 	});
 
 	it("offers a refused send back, and puts it in the composer on the operator's word", async () => {

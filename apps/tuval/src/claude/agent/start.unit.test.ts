@@ -197,7 +197,10 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 						yield* agent.start({cwd: CWD});
 						yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
 						yield* agent.prompt("hello");
-						assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, 1)), [
+						// The send's own `prompting` leads the turn (#8107); the init frame's model
+						// line is the next thing out.
+						assert.deepStrictEqual(yield* Stream.runCollect(Stream.take(agent.events, 2)), [
+							{kind: "phase", phase: "prompting"},
 							{
 								kind: "usage",
 								model: "claude-fable-5-1",
