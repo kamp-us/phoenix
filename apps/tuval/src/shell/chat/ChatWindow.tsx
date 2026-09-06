@@ -536,12 +536,14 @@ function ChatWindow({
 	const phase = state?.phase ?? "idle";
 	const models = state?.models ?? null;
 	const commands = state?.commands ?? null;
+	const thinking = state?.thinking ?? null;
 	const composer = useMemo(
 		() =>
 			composerBridge({
 				initialPhase: phase,
 				initialModels: models ?? {current: null, available: []},
 				initialCommands: commands ?? [],
+				initialThinking: thinking ?? {current: null, available: []},
 				onPrompt: (text) => {
 					dispatch({type: "prompt", text, key: options.newKey(), timestamp: options.now()});
 					// Sending is the operator asking for the answer, so the window re-pins: one who
@@ -550,10 +552,12 @@ function ChatWindow({
 				},
 				onInterrupt: () => dispatch({type: "interrupt", at: options.now()}),
 				onSetModel: (model) => dispatch({type: "setModel", model}),
+				onSetThinkingLevel: (level) => dispatch({type: "setThinkingLevel", level}),
 			}),
-		// `phase`, `models` and `commands` seed the bridge and are deliberately not dependencies:
+		// `phase`, `models`, `commands` and `thinking` seed the bridge and are deliberately not
+		// dependencies:
 		// `AgentChatInput` re-runs its whole load on a new bridge identity, so a bridge rebuilt per
-		// change would drop the composer back into `loading` on every turn. All three reach it
+		// change would drop the composer back into `loading` on every turn. All four reach it
 		// through the setters below.
 		[dispatch, commit, options.newKey, options.now],
 	);
@@ -564,6 +568,9 @@ function ChatWindow({
 	useEffect(() => {
 		if (commands !== null) composer.setCommands(commands);
 	}, [composer, commands]);
+	useEffect(() => {
+		if (thinking !== null) composer.setThinking(thinking);
+	}, [composer, thinking]);
 
 	const interruptedId = state?.interrupted ?? null;
 	const interruption = state?.interruption ?? null;

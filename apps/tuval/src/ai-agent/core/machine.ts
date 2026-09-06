@@ -20,6 +20,7 @@ import {
 	noSessionToResume,
 	promptRefused,
 	startRefused,
+	thinkingUnsupported,
 	UNKNOWN_REQUEST,
 	unknownRequest,
 } from "./failures.ts";
@@ -237,6 +238,14 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 							noCmds,
 						],
 
+			// The offered set is the guard, exactly as `setModel`'s is, and it is the set the layer
+			// advertised for the model this session is running on — Claude's five, Pi's seven or its
+			// `off` alone (#8062).
+			setThinkingLevel: (state, msg) =>
+				state.thinking.available.includes(msg.level)
+					? [{...state, failure: null}, [{type: "aiAgent.setThinkingLevel", level: msg.level}]]
+					: [{...state, failure: thinkingUnsupported(msg.level, state.thinking.available)}, noCmds],
+
 			page: (state, msg) => [state, [{type: "aiAgent.page", before: msg.before, limit: msg.limit}]],
 
 			paged: (state, msg) => [{...state, lastPage: msg.page}, noCmds],
@@ -313,6 +322,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			"aiAgent.answer": noWork,
 			"aiAgent.setMode": noWork,
 			"aiAgent.setModel": noWork,
+			"aiAgent.setThinkingLevel": noWork,
 			"aiAgent.page": noWork,
 			"aiAgent.interrupt": noWork,
 			"aiAgent.reconnect": noWork,

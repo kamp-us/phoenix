@@ -11,6 +11,7 @@ export {
 	PROMPT_ERROR,
 	portRefused,
 	START_ERROR,
+	THINKING_UNSUPPORTED,
 	UNKNOWN_REQUEST,
 } from "./failures.ts";
 export {
@@ -55,5 +56,6 @@ export {
 	type ModeState,
 	phases,
 	restore,
+	type ThinkingState,
 	type UsageTotals,
 } from "./state.ts";

@@ -238,6 +238,8 @@ export const foldEvent = (
 		// the backend has just withdrawn.
 		case "commands":
 			return {...state, commands: event.available};
+		case "thinking":
+			return {...state, thinking: {current: event.current, available: event.available}};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
 		// The same landing the `failed` Msg gives a failure the handlers saw, so a refusal reads the
