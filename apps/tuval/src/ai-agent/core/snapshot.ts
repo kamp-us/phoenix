@@ -156,6 +156,16 @@ export const withCheckpointDefaults = (raw: unknown, cwd: string): unknown => {
 };
 
 /**
+ * The checkpoint read, as the defaulting and the predicate composed once: the session, or `null`.
+ *
+ * One function rather than two call sites of the same pair, because `loadCheckpoint` wants the
+ * session and the row's `restorable` (`../program.ts`) wants only the bit. A store that sealed on a
+ * different verdict than the one the window renders would hold the wrong bytes (#8112).
+ */
+export const readCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionState | null =>
+	parseSessionState(withCheckpointDefaults(loaded, cwd));
+
+/**
  * What the store loaded, read as a session — or the refusal, when it is not one. The machine's
  * `init` rehydrate branch is this and nothing else.
  *
@@ -167,9 +177,12 @@ export const withCheckpointDefaults = (raw: unknown, cwd: string): unknown => {
  * one phase `resumeMessages` dispatches nothing into (`../restore/checkpoint.ts`), so the failure
  * survives to the window's status line — an `idle` refusal would trigger the fresh `start` that
  * clears `failure`, which is the silent fresh session over an unreadable checkpoint #7514 refuses.
+ *
+ * The refused bytes are not destroyed by the save that follows `init`: the row answers `restorable`
+ * off the same read, and durability seals the store on a `false` (#8112).
  */
 export const loadCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionState => {
-	const checkpoint = parseSessionState(withCheckpointDefaults(loaded, cwd));
+	const checkpoint = readCheckpoint(loaded, cwd);
 	return checkpoint === null
 		? {...initialState(cwd), phase: "gone", failure: checkpointUnreadable}
 		: restore(checkpoint);
