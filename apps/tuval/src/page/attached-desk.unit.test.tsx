@@ -24,6 +24,9 @@ import type {TableRow} from "../table/row.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {pageRenderers} from "./renderers.tsx";
 
+/** The table over a socket that answers no call: this file judges mounting, never a spell. */
+const renderers = pageRenderers(() => Effect.never);
+
 installDomShims();
 
 const counterProcess = ProcessId.make("counter");
@@ -134,6 +137,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	const page: PageAttachment = {
 		rows: Stream.succeed(options?.rows ?? [counterRow]),
 		programs: Stream.succeed(options?.programs ?? catalog),
+		call: () => Effect.never,
 		keys:
 			options?.keys === null ? Stream.never : Stream.succeed(options?.keys ?? defaultPrefixTable),
 		attachProcess: ((processId: ProcessId) =>
@@ -183,7 +187,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -213,7 +217,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -247,7 +251,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -272,7 +276,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -306,7 +310,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -332,7 +336,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -374,7 +378,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -402,7 +406,7 @@ describe("the attached desk", () => {
 					<AttachedDesk
 						page={app.page}
 						shell={app.shell}
-						renderers={pageRenderers}
+						renderers={renderers}
 						reducedMotion={true}
 						refusal={null}
 					/>,
@@ -433,7 +437,7 @@ describe("the desk across a dropped socket", () => {
 				<AttachedDesk
 					page={app.page}
 					shell={app.shell}
-					renderers={pageRenderers}
+					renderers={renderers}
 					reducedMotion={true}
 					refusal={null}
 				/>,
@@ -456,7 +460,7 @@ describe("the desk across a dropped socket", () => {
 				<AttachedDesk
 					page={app.page}
 					shell={app.shell}
-					renderers={pageRenderers}
+					renderers={renderers}
 					reducedMotion={true}
 					refusal="the kernel refused or did not answer 30 attempt(s)."
 				/>,
@@ -479,7 +483,7 @@ describe("the desk across a dropped socket", () => {
 				<AttachedDesk
 					page={first.page}
 					shell={first.shell}
-					renderers={pageRenderers}
+					renderers={renderers}
 					reducedMotion={true}
 					refusal={null}
 				/>,
@@ -492,7 +496,7 @@ describe("the desk across a dropped socket", () => {
 				<AttachedDesk
 					page={second.page}
 					shell={second.shell}
-					renderers={pageRenderers}
+					renderers={renderers}
 					reducedMotion={true}
 					refusal={null}
 				/>,

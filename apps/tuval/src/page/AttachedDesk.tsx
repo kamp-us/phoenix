@@ -322,6 +322,7 @@ export function AttachedDesk({
 				table={attachment.table}
 				deskTables={deskTables}
 				reducedMotion={reducedMotion}
+				call={page.call}
 			/>
 		</>
 	);

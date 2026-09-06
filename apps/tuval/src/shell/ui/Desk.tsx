@@ -32,6 +32,7 @@ import type {Key, PrefixTable} from "../keys/index.ts";
 import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
+import type {PageAttachment} from "../transport/browser.ts";
 import {WindowId} from "../window/index.ts";
 import {CommandLine} from "./CommandLine.tsx";
 import {DeskInspector} from "./DeskInspector.tsx";
@@ -66,6 +67,11 @@ export interface DeskProps {
 	/** The listener's home. `document` in a page; a container in a test that wants two desks. */
 	readonly keyTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener"> | null;
 	readonly reducedMotion?: boolean;
+	/**
+	 * How the palette runs a spell: this page's socket (`./PaletteHost.tsx`). Absent on a surface
+	 * with no kernel behind it, and then the palette refuses a call rather than answering one itself.
+	 */
+	readonly call?: PageAttachment["call"];
 }
 
 export function Desk({
@@ -77,6 +83,7 @@ export function Desk({
 	deskTables = noDeskTables,
 	keyTarget,
 	reducedMotion = false,
+	call,
 }: DeskProps): ReactElement {
 	const [commandLineOpen, setCommandLineOpen] = useState(false);
 	const [forwarded, setForwarded] = useState<ForwardedKey | null>(null);
@@ -252,7 +259,7 @@ export function Desk({
 			{palette.open ? (
 				<PaletteHost
 					state={state}
-					dispatch={dispatch}
+					{...(call === undefined ? {} : {call})}
 					window={palette.window}
 					onClose={closePalette}
 				/>
