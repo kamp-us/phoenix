@@ -197,3 +197,26 @@ backend is still waiting on wedges, because the event that would clear it only a
 answered. The fix is a Cmd whose handler reads the committed state and emits the projections again,
 scheduled by the same Msg that resumes. It is the one handler that reads `ProcessSelf.state()`
 rather than folding forward, and the reason is that there is no event to fold.
+
+## A row that is also a backend: the layer, declared for enumeration
+
+An ai-agent row hands `aiAgentProgram` the `TuvalAiAgent` layer it runs on, and that helper stamps
+the same layer back onto the row as `aiAgent`
+([`ai-agent/program.ts`](../apps/tuval/src/ai-agent/program.ts)). Nothing else about the row changes:
+the declaration rides the helper rather than a new field on `Program`, so `pi-session` and
+`claude-session` both carry it with no line of their own, and the registry keeps describing programs
+without naming one program family's service.
+
+That is what makes "ask every registered ai-agent implementation" a real call
+([`ai-agent/backends.ts`](../apps/tuval/src/ai-agent/backends.ts)): the set of backends is filtered
+out of `Registry.list` rather than maintained beside it, so registering a backend in the config is
+the whole act of adding one. `isAiAgentBackend` is a type predicate over the absent field, exactly
+like `showsInAWindow` ([`shell/picker/entries.ts`](../apps/tuval/src/shell/picker/entries.ts)), and
+the two are independent: a headless row has a session store like any other, and whether it can bind
+a window is the other predicate's question.
+
+**An enumerator builds a row's layer under the same context a spawn of that row would use.** `RIn`
+rides out unclosed (#7951), and `AnyProgram` erases it, so the layer is erased and the kernel
+`Context` provided around it — the move `Processes` already makes for a row's handlers. A backend
+that fails to answer is reported beside the ones that did, never in place of them: an empty list has
+to keep meaning "you have no sessions".
