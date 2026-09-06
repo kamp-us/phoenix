@@ -1,0 +1,161 @@
+{
+	"$comment": "The bounded allow-list `fabrika guard portability-guard check` judges claude-plugins/fabrika/ and packages/fabrika-cli/src/ against. `exempt` is a permanent per-file cap for text that is not a portability defect. `unmigrated` is the sweep floor: one row per sweep unit, ceiling equal to that unit's reference count when the guard landed, each `why` naming the child that clears it. The floor only shrinks — a ceiling above the count reds as loudly as a count above the ceiling.",
+	"exempt": {
+		"claude-plugins/fabrika/.claude-plugin/plugin.json": {
+			"ceiling": 6,
+			"why": "The plugin manifest's `homepage`/`repository` name where this plugin is published; a published package has to say where it lives."
+		},
+		"packages/fabrika-cli/src/guard/i18n-literal-verb.ts": {
+			"ceiling": 5,
+			"why": "This guard's scan root and config path are this repo's own directories, and they are behaviour rather than prose — moving them onto config is a separate ticket of its own class."
+		},
+		"packages/fabrika-cli/src/guard/fanout.ts": {
+			"ceiling": 16,
+			"why": "The fanned-mutation manifest path is this repo's own directory, read as behaviour rather than written as prose — same class as the workflow literals, moved by its own ticket."
+		},
+		"packages/fabrika-cli/src/config/keys/governed-roots.ts": {
+			"ceiling": 4,
+			"why": "The shipped default governed-root set is this repo's shape, kept as the value a repo overrides rather than as a sentence a reader follows."
+		},
+		"packages/fabrika-cli/src/config/keys/doc-leak-exempt.ts": {
+			"ceiling": 2,
+			"why": "The key's own docblock names the repo whose docs the shipped default was drawn from, as the value's provenance rather than a pointer."
+		}
+	},
+	"unmigrated": {
+		"plugin-build": {
+			"ceiling": 457,
+			"why": "The build skill's text, cleared by #8291, the build sweep child.",
+			"paths": ["claude-plugins/fabrika/skills/build"]
+		},
+		"plugin-ship": {
+			"ceiling": 368,
+			"why": "The ship skill's text, cleared by #8292, the ship sweep child.",
+			"paths": ["claude-plugins/fabrika/skills/ship"]
+		},
+		"plugin-docs": {
+			"ceiling": 801,
+			"why": "The plugin's docs directory, cleared by #8293, the docs sweep child.",
+			"paths": ["claude-plugins/fabrika/docs"]
+		},
+		"plugin-review": {
+			"ceiling": 330,
+			"why": "The two review skills' text, cleared by #8294, the review sweep child.",
+			"paths": ["claude-plugins/fabrika/skills/review", "claude-plugins/fabrika/skills/review-ui"]
+		},
+		"plugin-triage": {
+			"ceiling": 308,
+			"why": "The triage skill's text, cleared by #8295, the triage sweep child.",
+			"paths": ["claude-plugins/fabrika/skills/triage"]
+		},
+		"plugin-governance": {
+			"ceiling": 363,
+			"why": "The governance and front-door skills' text, cleared by #8296, the governance sweep child.",
+			"paths": [
+				"claude-plugins/fabrika/skills/governance",
+				"claude-plugins/fabrika/skills/front-door"
+			]
+		},
+		"plugin-planning": {
+			"ceiling": 269,
+			"why": "The epic planning and plan-gate skills' text, cleared by #8297, the planning sweep child.",
+			"paths": [
+				"claude-plugins/fabrika/skills/plan-epic",
+				"claude-plugins/fabrika/skills/check-epic-plan"
+			]
+		},
+		"plugin-discovery": {
+			"ceiling": 300,
+			"why": "The grilling, wayfinding, graduate and prototyping skills' text, cleared by #8298, the discovery sweep child.",
+			"paths": [
+				"claude-plugins/fabrika/skills/grilling",
+				"claude-plugins/fabrika/skills/wayfinding",
+				"claude-plugins/fabrika/skills/graduate",
+				"claude-plugins/fabrika/skills/prototyping"
+			]
+		},
+		"plugin-operate": {
+			"ceiling": 288,
+			"why": "The operate and heal-ci skills' text, cleared by #8299, the operate sweep child.",
+			"paths": ["claude-plugins/fabrika/skills/operate", "claude-plugins/fabrika/skills/heal-ci"]
+		},
+		"plugin-authoring": {
+			"ceiling": 302,
+			"why": "The build-ui, campaign, adr, glossary and taste-color skills' text, cleared by #8300, the authoring sweep child.",
+			"paths": [
+				"claude-plugins/fabrika/skills/build-ui",
+				"claude-plugins/fabrika/skills/campaign",
+				"claude-plugins/fabrika/skills/adr",
+				"claude-plugins/fabrika/skills/glossary",
+				"claude-plugins/fabrika/skills/taste-color"
+			]
+		},
+		"plugin-tail": {
+			"ceiling": 288,
+			"why": "Everything else the plugin ships — the guide, the README, the agents, the hook manifest and the remaining skills — cleared by #8301, the plugin tail sweep child.",
+			"paths": ["claude-plugins/fabrika"]
+		},
+		"cli-lane": {
+			"ceiling": 586,
+			"why": "The lane group's source, cleared by #8302, the lane sweep child.",
+			"paths": ["packages/fabrika-cli/src/lane"]
+		},
+		"cli-guard": {
+			"ceiling": 649,
+			"why": "The guard group's source, cleared by #8303, the guard sweep child.",
+			"paths": ["packages/fabrika-cli/src/guard"]
+		},
+		"cli-build": {
+			"ceiling": 622,
+			"why": "The build group's source, cleared by #8304, the CLI build sweep child.",
+			"paths": ["packages/fabrika-cli/src/build"]
+		},
+		"cli-review": {
+			"ceiling": 369,
+			"why": "The two review groups' source, cleared by #8305, the CLI review sweep child.",
+			"paths": ["packages/fabrika-cli/src/review", "packages/fabrika-cli/src/review-ui"]
+		},
+		"cli-ship": {
+			"ceiling": 310,
+			"why": "The ship and heal-ci groups' source, cleared by #8306, the CLI ship sweep child.",
+			"paths": ["packages/fabrika-cli/src/ship", "packages/fabrika-cli/src/heal-ci"]
+		},
+		"cli-wire": {
+			"ceiling": 771,
+			"why": "The wire, io, ci and config groups' source, cleared by #8307, the wire sweep child.",
+			"paths": [
+				"packages/fabrika-cli/src/wire",
+				"packages/fabrika-cli/src/io",
+				"packages/fabrika-cli/src/ci",
+				"packages/fabrika-cli/src/config"
+			]
+		},
+		"cli-triage": {
+			"ceiling": 367,
+			"why": "The triage, report, graduate, grill and campaign groups' source, cleared by #8308, the CLI triage sweep child.",
+			"paths": [
+				"packages/fabrika-cli/src/triage",
+				"packages/fabrika-cli/src/report",
+				"packages/fabrika-cli/src/graduate",
+				"packages/fabrika-cli/src/grill",
+				"packages/fabrika-cli/src/campaign"
+			]
+		},
+		"cli-capture": {
+			"ceiling": 647,
+			"why": "The capture, governance, recipe, status and hook groups' source, cleared by #8309, the capture sweep child.",
+			"paths": [
+				"packages/fabrika-cli/src/capture",
+				"packages/fabrika-cli/src/governance",
+				"packages/fabrika-cli/src/recipe",
+				"packages/fabrika-cli/src/status",
+				"packages/fabrika-cli/src/hook"
+			]
+		},
+		"cli-tail": {
+			"ceiling": 664,
+			"why": "The remaining small groups and the top-level modules under src/, cleared by #8310, the CLI tail sweep child.",
+			"paths": ["packages/fabrika-cli/src"]
+		}
+	}
+}

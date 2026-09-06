@@ -25,6 +25,13 @@ Read the CI-at-head result; do not re-derive them.
   still speaks in the present tense; an `accepted` ADR whose body says "proposal").
 - **Claims trace.** Falsifiable claims about platform/runtime/dependency behavior cite source or
   a real measurement (CLAUDE.md's grounding rule); an intuition stated as fact is a finding.
+- **No reference only this repo can resolve, in fabrika's own text.** On a diff under
+  `claude-plugins/fabrika/` or `packages/fabrika-cli/src/`, run
+  `fabrika guard portability-guard check` and take a red as a finding: a ticket number, a
+  decision-record number in either spelling, a decision-corpus path, a hosted issue URL and a name
+  the repo declared as its own all resolve nowhere else, and the docs fabrika ships are read
+  elsewhere. Raising an allow-list ceiling to fit a new one is itself the finding — that floor only
+  shrinks.
 - **Prose craft.** Plain words, short sentences, nothing a reader must re-read to parse; once
   fabrika's shared writing rubric skill lands, apply it verbatim instead of this line.
 

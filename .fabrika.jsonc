@@ -17,6 +17,14 @@
 
 	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"],
 
+	// The names that resolve only in this repository, which fabrika's own shipped text may not
+	// carry (`fabrika guard portability-guard check`). The shipped default is the empty list and
+	// turns nothing off — the guard's four other rules never read this key. phoenix names its org,
+	// its repo, its products and the one app directory its skills used to point at.
+	"portability": {
+		"repoNames": ["phoenix", "kamp-us", "Tuval", "sözlük", "apps/web"]
+	},
+
 	// Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `campaign
 	// state`). It narrows the repo's collaborator ACL and never replaces it: an entry here still
 	// needs `write` or above on the repo (ADR 0294). Founder-declared 2026-08-20 on #6811 — the

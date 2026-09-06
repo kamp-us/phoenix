@@ -116,6 +116,20 @@ to each class's slice: code → [rubrics/code.md](rubrics/code.md) · doc →
 any prose surface: apply **fabrika's** shared writing rubric skill verbatim, never v1's copy; the
 doc rubric's prose-craft line is the fallback until it lands.
 
+**A diff touching fabrika's own two trees owes the portability check, in the doc class and the skill
+class alike.** When any changed file sits under `claude-plugins/fabrika/` or
+`packages/fabrika-cli/src/`, run it and read the verdict into those classes:
+
+```bash
+fabrika guard portability-guard check
+```
+
+A red is a FAIL finding, never a note. The text fabrika ships installs into repositories that are
+not this one, so a ticket number, a decision-record number, a decision-corpus path, a hosted issue
+or pull-request URL, or a name this repo declared as its own is a pointer the reader there cannot
+follow. The guard's allow-list is a floor that only shrinks: a diff that raises a ceiling to make
+room for a new reference **is** the finding, whatever the sentence around it says.
+
 <!-- anchor: STAGE-ONLY-UNDER-THE-ALLOCATED-PATH --> **A diff too large for one read is staged under
 the path this verb allocates, and never under a name you chose.** The session scratchpad is shared
 by every lane in the session, so a generic `diff.txt` there is a name a concurrent lane writes too:
