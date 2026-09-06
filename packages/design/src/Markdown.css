@@ -171,6 +171,13 @@
 	margin-block: var(--s-2);
 }
 
+/* Two fences back to back read as one block that drew and then errored, because the first block's
+   source disclosure and the second's failure reason land on consecutive lines. Only the adjacent
+   pair is widened, so a diagram's rhythm against an ordinary fence above it does not move. */
+.kp-markdown__diagram + .kp-markdown__diagram {
+	margin-block-start: var(--s-5);
+}
+
 /* Mermaid sizes its SVG to the layout it computed, which can be wider than the row it sits in. The
    same containment the table and code scrollers carry, for the same reason (see above): a scroll
    container reports its content's width as its min-content size and drags the whole row past the

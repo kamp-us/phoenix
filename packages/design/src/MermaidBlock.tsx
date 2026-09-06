@@ -32,37 +32,48 @@ import {useDesignT} from "./i18n";
 /**
  * Design token per mermaid theme variable. Mermaid's `base` theme derives every variable it is not
  * given, so this list is exactly what a diagram paints with rather than a palette beside one.
+ *
+ * **No stroke here may come off the `--border-*` ladder.** Those roles are chrome — a divider
+ * against a surface the eye is not asked to read — and none of them clears the manifest's 3:1
+ * floor for meaning-carrying non-text against the container this diagram paints on
+ * (`--border-strong` is 1.35:1 light / 2.06:1 dark on `--surface-sunken`). In a diagram every
+ * stroke IS the content: an edge is which node points at which, and a node's outline is the only
+ * thing delineating the box, because `--surface-raised` on `--surface-sunken` is 1.09:1. So the
+ * strokes come off the text ladder, which is where the floors live — `--text-muted` for the
+ * strokes that carry meaning, `--text-faint` for the grouping outlines (cluster, note, the
+ * secondary/tertiary node classes), which still clears 3:1 while keeping a weight step below.
+ * Ratios per scheme are in #8319's body.
  */
 const THEME_TOKENS = {
 	background: "--surface",
 	mainBkg: "--surface-raised",
 	primaryColor: "--surface-raised",
 	primaryTextColor: "--text-primary",
-	primaryBorderColor: "--border-strong",
+	primaryBorderColor: "--text-muted",
 	secondaryColor: "--surface-sunken",
 	secondaryTextColor: "--text-secondary",
-	secondaryBorderColor: "--border",
+	secondaryBorderColor: "--text-faint",
 	tertiaryColor: "--surface",
 	tertiaryTextColor: "--text-secondary",
-	tertiaryBorderColor: "--border-faint",
-	nodeBorder: "--border-strong",
+	tertiaryBorderColor: "--text-faint",
+	nodeBorder: "--text-muted",
 	nodeTextColor: "--text-primary",
 	clusterBkg: "--surface-sunken",
-	clusterBorder: "--border-faint",
-	lineColor: "--border-strong",
+	clusterBorder: "--text-faint",
+	lineColor: "--text-muted",
 	textColor: "--text-primary",
 	titleColor: "--text-primary",
 	edgeLabelBackground: "--surface",
 	labelBoxBkgColor: "--surface-raised",
-	labelBoxBorderColor: "--border-strong",
+	labelBoxBorderColor: "--text-muted",
 	labelTextColor: "--text-primary",
 	noteBkgColor: "--surface-raised",
-	noteBorderColor: "--border-faint",
+	noteBorderColor: "--text-faint",
 	noteTextColor: "--text-secondary",
 	actorBkg: "--surface-raised",
-	actorBorder: "--border-strong",
+	actorBorder: "--text-muted",
 	actorTextColor: "--text-primary",
-	signalColor: "--border-strong",
+	signalColor: "--text-muted",
 	signalTextColor: "--text-primary",
 	errorBkgColor: "--surface-raised",
 	errorTextColor: "--danger",
