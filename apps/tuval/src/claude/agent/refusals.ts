@@ -5,7 +5,13 @@
  * six in `ai-agent/service/errors.ts` and no Claude-shaped failure crosses the seam.
  */
 
-import {PageError, PromptError, StartError, TransportError} from "../../ai-agent/service/index.ts";
+import {
+	ListError,
+	PageError,
+	PromptError,
+	StartError,
+	TransportError,
+} from "../../ai-agent/service/index.ts";
 
 /** What a thrown value says, without a stack and without assuming it is an `Error`. */
 export const detailOf = (cause: unknown): string =>
@@ -58,6 +64,13 @@ export const noSessionToPage = (): PageError =>
 
 export const unknownCursor = (reason: string): PageError =>
 	new PageError({reason: "unknown-cursor", detail: reason});
+
+/**
+ * The session store could not be enumerated. Never `unsupported`: this backend does list, so a
+ * throw here is a store that would not open, not a backend that cannot look.
+ */
+export const storeUnlistable = (cause: unknown): ListError =>
+	new ListError({reason: "store-unreadable", detail: detailOf(cause)});
 
 /** The subprocess went away. `no automatic respawn` is the whole retry policy (#7371). */
 export const subprocessGone = (detail: string): TransportError =>
