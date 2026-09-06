@@ -9,7 +9,12 @@ import {assert, describe, it} from "@effect/vitest";
 import {Duration, Effect, Fiber} from "effect";
 import {boundedTeardown} from "./teardown.ts";
 
-const CEILING = Duration.millis(60);
+/**
+ * Wide enough that a saturated machine cannot beat a settle to it: at 60ms a parallel run's
+ * scheduler delay alone expired the ceiling and reddened the settled case (#8119). The give-up case
+ * pays it in full, so it is the only cost of the width.
+ */
+const CEILING = Duration.millis(500);
 
 const closing = (release: Effect.Effect<void>) =>
 	Effect.acquireRelease(Effect.void, () => release).pipe(Effect.scoped);
