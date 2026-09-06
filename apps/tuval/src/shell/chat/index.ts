@@ -21,9 +21,12 @@ export {
 	chatRows,
 	mergeOlder,
 	oldestLoadedId,
+	type RowItem,
 	rowIndexOfItem,
 	rowKey,
+	type SessionRun,
 } from "./rows.ts";
+export {SessionRow} from "./SessionRow.tsx";
 export {ToolRow} from "./ToolRow.tsx";
 export {
 	type DiffLine,
