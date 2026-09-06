@@ -67,9 +67,14 @@
 			"paths": ["claude-plugins/fabrika/skills/ship"]
 		},
 		"plugin-review": {
-			"ceiling": 330,
-			"why": "The two review skills' text, cleared by #8294, the review sweep child.",
-			"paths": ["claude-plugins/fabrika/skills/review", "claude-plugins/fabrika/skills/review-ui"]
+			"ceiling": 18,
+			"why": "Verbatim pins of stderr lines the shipped `review` verbs print. The reference sits inside the quoted string, so it is a copy of behaviour that lives in packages/fabrika-cli/src/review/ — the source #8305 owns. It shrinks when that child rewrites the strings; changing the pin first would make the contract quote a line no verb prints.",
+			"paths": ["claude-plugins/fabrika/skills/review/contract.md"]
+		},
+		"plugin-review-ui": {
+			"ceiling": 8,
+			"why": "Same class as the `review` contract's row: verbatim pins of stderr lines the shipped `review-ui` verbs print, whose source strings live in packages/fabrika-cli/src/review-ui/ and move with #8305.",
+			"paths": ["claude-plugins/fabrika/skills/review-ui/contract.md"]
 		},
 		"plugin-triage": {
 			"ceiling": 308,
