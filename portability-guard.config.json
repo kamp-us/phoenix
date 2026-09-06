@@ -38,11 +38,6 @@
 			"why": "The ship skill's text, cleared by #8292, the ship sweep child.",
 			"paths": ["claude-plugins/fabrika/skills/ship"]
 		},
-		"plugin-docs": {
-			"ceiling": 801,
-			"why": "The plugin's docs directory, cleared by #8293, the docs sweep child.",
-			"paths": ["claude-plugins/fabrika/docs"]
-		},
 		"plugin-review": {
 			"ceiling": 330,
 			"why": "The two review skills' text, cleared by #8294, the review sweep child.",

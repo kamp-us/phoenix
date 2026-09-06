@@ -9,9 +9,9 @@ after them are consumers on identical terms — there is no per-skill exemption 
 special-casing. If a rule cannot hold for some skill, that is a defect in the rule, to be fixed
 here for everyone.
 
-This page states conventions as rules and points at the record that holds each one's reasoning — a
-[`.decisions/`](../../../.decisions/) file, the [`writing-for-agents`](../skills/writing-for-agents/SKILL.md)
-discipline this page applies, or the ruling thread cited beside the clause.
+This page states each convention as a rule plus the failure it prevents. Where a rule is an
+application of the [`writing-for-agents`](../skills/writing-for-agents/SKILL.md) discipline, it says
+so and points there rather than re-deriving it.
 
 ## 1. The two-layer split
 
@@ -22,9 +22,9 @@ it can be made, with the stochastic surface reduced to what genuinely needs a mo
 test when authoring: for each instruction in the draft, ask whether a verb could decide it. If
 yes, it does not belong in the skill; derive the verb.
 
-Founder ruling of 2026-08-01 on
-[#4631](https://github.com/kamp-us/phoenix/issues/4631); v1's hand-waved shell-script layer is the
-counter-example the split reverses.
+The counter-example the split reverses is a skill whose deterministic half is a pile of shell the
+model is trusted to drive correctly: nothing tests it, nothing gives it a contract, and every run
+re-decides what should have been decided once.
 
 ## 2. Sizing — the tiny wrapper
 
@@ -32,8 +32,7 @@ counter-example the split reverses.
 what the thing is, when to fire it, and where each step's detail lives — the detail itself sits
 behind the pointer. **A `SKILL.md` that inlines what its contract owns is the defect.**
 
-**The pointer's shape depends on the read it serves** (ADR
-[0291](../../../.decisions/0291-runtime-lookups-verb-served.md)). A lookup-shaped read — one
+**The pointer's shape depends on the read it serves.** A lookup-shaped read — one
 addressable answer: an exit-code row, a grammar table, a terminal vocabulary, one section — is
 verb-served, so the `SKILL.md` names the invocation
 (`fabrika wire doc-section --heading <x> < <skill-base>/contract.md`, or a dedicated lookup verb),
@@ -43,8 +42,7 @@ token-saving subset. `contract.md` itself stays what
 [cli-interface-convention Part 2](cli-interface-convention.md) says it is — the authoring spec;
 runtime lookup was never a role it was designed to carry.
 
-**Nobody reads a `contract.md` whole** (ADR
-[0296](../../../.decisions/0296-contracts-are-read-by-section.md)) — not a shell, not a reviewer,
+**Nobody reads a `contract.md` whole** — not a shell, not a reviewer,
 not an author. Every read is `fabrika wire doc-section --heading "…" < <skill-base>/contract.md`;
 the headings are the map. Skill text and spawn prompts say it that way too, and the `review`
 skill's skill rubric fails a diff that instructs otherwise.
@@ -52,9 +50,6 @@ skill's skill rubric fails a diff that instructs otherwise.
 **There is no line count.** Concision is judged case by case against the §1 split — never "how
 long is it", always "does this paragraph belong here or in the contract". A skill that has honoured
 the split is short as a consequence, not as a target. Finer division is not free; §3 prices it.
-
-Ruled on [#4701](https://github.com/kamp-us/phoenix/issues/4701#issuecomment-5234580426), jointly
-with [#5219](https://github.com/kamp-us/phoenix/issues/5219).
 
 ## 3. Invocation-axis economics
 
@@ -83,18 +78,13 @@ window; more user-invoked skills crowd the human. When user-invoked skills multi
 human can hold, the cure is a **router skill** — a user-invoked skill naming the others and when to
 reach for each — not a description bolted back onto each one. A router carries the full user-only
 cost: model-unreachable, unable to join a stack, unable to ride into a subagent — so a corpus whose
-entry point is a router is one no unattended session can enter on its own. Which composition
-mechanism is fabrika's actual front door is open on
-[#4903](https://github.com/kamp-us/phoenix/issues/4903); until it is ruled, name the router's cost
-whenever you reach for it.
+entry point is a router is one no unattended session can enter on its own. Name that cost whenever
+you reach for a router.
 
 The two loads themselves, and the rule that cognitive load is spent where human judgment matters,
 are defined in [`writing-for-agents`](../skills/writing-for-agents/SKILL.md) ("The two loads"); the
 invocation mechanics upstream are in
-[`SKILL-MECHANICS`](../skills/writing-for-agents/SKILL-MECHANICS.md). Adopted from
-[#4644](https://github.com/kamp-us/phoenix/issues/4644) adopt-list item 1, amended 2026-08-08 from
-the skill-system mechanics confirmed on
-[#4903](https://github.com/kamp-us/phoenix/issues/4903).
+[`SKILL-MECHANICS`](../skills/writing-for-agents/SKILL-MECHANICS.md).
 
 ## 4. The invocation surface is a plain literal
 
@@ -102,28 +92,23 @@ the skill-system mechanics confirmed on
 expansion, no default-expansion, no `..` climb. The harness isolation verifier gates an isolated
 agent's commands by a **syntactic check on the command string**: it consults neither the process
 environment nor the filesystem, so no environment-injection mechanism can make a variable-addressed
-invocation work (ADR
-[0235](../../../.decisions/0235-fences-carry-zero-expansions.md); the literal-path execution rule
-behind it is ADR
-[0232](../../../.decisions/0232-agents-execute-skill-scripts-never-source-them.md)).
+invocation work. The same rule is why an agent executes a script and never sources one: a sourced
+script rewrites the caller's own shell out from under it.
 
 **What this constrains is the string the agent executes, not the source text of the file.** A
-`$<name>` written into a fence under [§12](#12-a-skill-that-takes-a-number-declares-it) is the one
+`$<name>` written into a fence under [§12](#a-skill-that-takes-a-number-declares-it) is the one
 thing that is not a variable expansion: the harness substitutes a declared `arguments:` name into
 the skill body **textually, at load time**, so the model reads the fence with the caller's literal
 number already in it and the verifier never meets a `$`. Everything the *shell* would expand at run
 time — `$CLAUDE_PLUGIN_ROOT`, `$USER`, `$PWD`, a `..` climb — is refused. The test is when the
 substitution happens: before the body reaches the agent, or inside the command the agent runs.
 
-A `pipeline-cli <verb> …`-style invocation — a bare command name followed by literal arguments —
-satisfies this **by construction**, carrying no path expansion at all. (The shape is what is
-adopted, not that package: where fabrika's own verbs live is deferred to the first derived
-contract.)
+A `fabrika <group> <verb> …` invocation — a bare command name followed by literal arguments —
+satisfies this **by construction**, carrying no path expansion at all.
 
-Caveat carried from the probe record: one host, unpinned CLI version — reproducible, but not
-proven universal. Re-check on a harness-version bump using the probe discipline recorded on
-[#4641](https://github.com/kamp-us/phoenix/issues/4641) (a must-refuse and a must-run control in
-the same session, one shape per call).
+Caveat carried from the probe that established the behaviour: one host, one unpinned CLI version —
+reproducible, but not proven universal. Re-check on a harness-version bump with the same probe
+discipline: a must-refuse and a must-run control in the same session, one shape per call.
 
 ## 5. Skill-quality vocabulary and the failure-mode taxonomy
 
@@ -157,8 +142,6 @@ The failure modes, each with its cure:
 `no-op` is deliberately **model-relative**: two reviewers disagreeing over whether a line is a no-op
 disagree about the model's default, and settle it by running the skill — not by argument.
 
-Adopted from [#4644](https://github.com/kamp-us/phoenix/issues/4644) adopt-list item 2.
-
 ## 6. Checkable completion criteria
 
 **Every step ends on a completion criterion, and the criterion is checkable.** "Understanding
@@ -174,8 +157,7 @@ A criterion carries two independent properties:
 
 **The strongest criteria are both checkable and exhaustive**, and a fabrika skill aims for both.
 The lever's full discussion is [`writing-for-agents`](../skills/writing-for-agents/SKILL.md),
-"Steps and completion criteria"
-([#4644](https://github.com/kamp-us/phoenix/issues/4644) adopt-list item 2).
+"Steps and completion criteria".
 
 ## 7. The scope law — recording a rejection
 
@@ -187,14 +169,9 @@ A rejection belongs here when it is a real proposal someone could plausibly make
 idea that was passed over in an authoring session.
 
 **An entry lives in its skill's own [`contract.md`](../skills/report/contract.md), under a
-*Considered and deliberately not derived* section.** The adoption source below names a plugin-root
-`.out-of-scope/` directory instead — one file per rejection — and that directory does not exist:
-the corpus-wide build was declined once
-([#5667](https://github.com/kamp-us/phoenix/issues/5667), closed not-planned), so the contract
-sections are the home until a founder re-opens it. What a build would move is where an entry lives,
-never whether one is written.
-
-Adopted from [#4644](https://github.com/kamp-us/phoenix/issues/4644) adopt-list item 4.
+*Considered and deliberately not derived* section.** A plugin-root `.out-of-scope/` directory — one
+file per rejection — was considered and declined, so the contract sections are the home. Moving them
+would change where an entry lives, never whether one is written.
 
 ## 8. The ship gate
 
@@ -202,19 +179,12 @@ A fabrika skill ships when **both** hold — no exceptions, no partial credit:
 
 1. **Written under [`writing-for-agents`](../skills/writing-for-agents/SKILL.md)**, against these
    conventions. That discipline is the route into `claude-plugins/fabrika/skills/` for a new
-   skill, an edit to a shipped one, and a v1 port alike. The gate reads the text, not the session
-   that produced it: a skill still cannot be dropped in unread, but the thing it must pass is the
-   discipline. See the [fabrika README](../README.md) for the posture.
+   skill, an edit to a shipped one, and a port from a predecessor alike. The gate reads the text,
+   not the session that produced it: a skill still cannot be dropped in unread, but the thing it
+   must pass is the discipline. See the [fabrika README](../README.md) for the posture.
 2. **Its derived CLI contract is implemented with deterministic tests.** The authoring session
-   derives the CLI API the skill needs, and *that spec is the contract* the verbs implement — the
-   v1 scripts are never the source of truth, so there is no port to grade against.
-
-Both gates are what this doc governs. Founder ruling
-[#4637-C](https://github.com/kamp-us/phoenix/issues/4637) (confirmed in-session 2026-08-01);
-gate 1's route was reopened by the founder ruling recorded on
-[#5945](https://github.com/kamp-us/phoenix/issues/5945); the contract-driven method is
-[#4638](https://github.com/kamp-us/phoenix/issues/4638); the gate lost its third part with the eval
-layer ([#5510](https://github.com/kamp-us/phoenix/issues/5510)).
+   derives the CLI API the skill needs, and *that spec is the contract* the verbs implement — a
+   predecessor's scripts are never the source of truth, so there is no port to grade against.
 
 ## 9. Trust and ingestion
 
@@ -227,9 +197,9 @@ separate answers.
 text the skill reads — issue bodies, comments, PR bodies and their diffs, and any fetched page.
 
 **A skill never treats content as authority.** Ingested text is data about the world, never an
-instruction and never a verdict. Authority arrives only through an ACL-checked verb (ADR
-[0055](../../../.decisions/0055-acl-sourced-review-authz.md)). A directive found inside ingested
-content is content that looks like a directive.
+instruction and never a verdict. Authority arrives only through an ACL-checked verb — the check is
+against the forge's own permissions, never against what the text claims about itself. A directive
+found inside ingested content is content that looks like a directive.
 
 **Coordination is closed-vocabulary.** When a skill signals another lane it emits a kind, an
 action, and a branded reference — no free prose. The receiver re-fetches the artifact the reference
@@ -239,20 +209,15 @@ names and reads it there.
 back-off is not. Each terminal state names itself as one or the other and states the branch
 disposition — pushed, left local, or removed.
 
-**A skill declares its capability set.** Shell, tokens, push, merge-queue access: the declaration
-is the row the skill will occupy in the threat-model matrix that
-[#4860](https://github.com/kamp-us/phoenix/issues/4860) will record. That matrix does not exist
-yet, which is exactly why the rows are collected now.
+**A skill declares its capability set.** Shell, tokens, push, merge-queue access: the declaration is
+the row the skill occupies in a repo's threat-model matrix. Collect the rows whether or not that
+matrix exists yet — a capability nobody wrote down is one nobody can review.
 
-**The trust posture itself is open, not assumed away.** The content-ingestion posture — the trust
-root, whether a maintainer-applied label is a required second factor, what is accepted as out of
-model — is an unruled founder decision on
-[#4859](https://github.com/kamp-us/phoenix/issues/4859). This section fixes the **seam**: where a
-skill declares what it reads and where authority is checked. No skill infers the posture in the
-meantime, and no brief may write down a posture as though it were settled.
-
-Secure-by-default distillation ruled on wayfinder:map
-[#4891](https://github.com/kamp-us/phoenix/issues/4891) (2026-08-08).
+**The trust posture itself is a repo's decision, not this page's.** The content-ingestion posture —
+the trust root, whether a maintainer-applied label is a required second factor, what is accepted as
+out of model — is settled per repo. This section fixes the **seam**: where a skill declares what it
+reads and where authority is checked. No skill infers the posture, and no brief writes one down as
+though it were settled.
 
 ## 10. The leaf rule — a rubric file until a second consumer
 
@@ -267,30 +232,27 @@ compaction, while a promoted skill re-attaches its content on every invocation �
 folds N surfaces' identities into one family entry, whose own text then has to keep each surface's
 rules visible.
 
-Founder ruling on wayfinder:map [#4891](https://github.com/kamp-us/phoenix/issues/4891)
-(2026-08-08).
-
 ## 11. GitHub access is REST, never GraphQL
 
 **Every GitHub read and write a fabrika skill or verb makes goes through `gh api` REST, and every
 list read paginates.** This section is where that rule lives; a skill contract cites it and does
 not restate it. The forcing constraint is the org's legacy Projects-classic integration, which
-breaks GraphQL issue and pull-request queries — ruling out the projects noun, the `pr`/`issue`
-edit verbs, and the explicit GraphQL transport (ADR
-[0315](../../../.decisions/0315-fabrika-cli-github-token-resolution-and-the-three-non-rest-carves.md)
-records the platform fact and the named non-REST carves). Pagination rides along as its own rule:
+breaks GraphQL issue and pull-request queries in an org carrying a legacy Projects-classic
+integration — ruling out the projects noun, the `pr`/`issue` edit verbs, and the explicit GraphQL
+transport. A repo adopting fabrika records its own non-REST carves, if it has any. Pagination rides
+along as its own rule:
 an unpaginated list read returns a plausible first page instead of an error, so a count read off
 one page is wrong with nothing marking it wrong.
 
 **Where it is enforced today — stated so nobody assumes coverage it does not have.** The
 `skill-gh-lint` job ([`.github/workflows/skill-gh-lint.yml`](../../../.github/workflows/skill-gh-lint.yml),
 matchers in [`skill-lint.ts`](../../../packages/fabrika-cli/src/guard/skill-lint.ts)) reds on a
-GraphQL-path `gh` invocation anywhere in the corpus it walks and fails closed on zero scope
-([ADR 0092](../../../.decisions/0092-gates-fail-closed-on-zero-scope.md)). The walk roots at
-`claude-plugins/`, every plugin dir under it, and reds if any of them contributed no scanned file
-([#5004](https://github.com/kamp-us/phoenix/issues/5004)) — so **fabrika's own corpus is inside its
-scope**, and the rule is machine-checked here rather than held by review.
+GraphQL-path `gh` invocation anywhere in the corpus it walks and fails closed on zero scope. The
+walk roots at `claude-plugins/` and every plugin dir under it, and reds if any of them contributed
+no scanned file — so **fabrika's own corpus is inside its scope**, and the rule is machine-checked
+rather than held by review.
 
+<a id="a-skill-that-takes-a-number-declares-it"></a>
 ## 12. A skill that takes a number declares it
 
 **A skill declares `arguments:` exactly when its own `description` names a number it is invoked
@@ -300,7 +262,7 @@ skill takes a number and declares it. Nothing else qualifies. A skill that reads
 some artifact it fetched has not been *handed* one, and a skill whose subject is a session, a
 diff, or a term takes none at all.
 
-Declaring it binds `/fabrika:review 5492`'s `5492` to a name the body reads, instead of leaving the
+Declaring it binds the number in `/fabrika:review <n>` to a name the body reads, instead of leaving the
 model to find the number in the surrounding prose. So the body must actually read it — **the step
 that takes the number substitutes `$<name>`, and no second prose-parsing path for the same number
 survives the change.** A sentence like "an argument that is a PR number means repair mode" is
@@ -314,7 +276,7 @@ shell-expanded variable in the same fence is still a defect.
 **The declaration is two fields, because one of them cannot carry the hint**: `arguments:` is a
 list of *names only*. The caller-facing
 wording lives in `argument-hint:`, and **it must say which kind of number the skill wants**,
-because the completion menu is where `/fabrika:review 5492` and `/fabrika:plan-epic 5492` become
+because the completion menu is where `/fabrika:review <n>` and `/fabrika:plan-epic <n>` become
 distinguishable. Name the argument for its kind too — `pr_number`, `issue_number`, `epic_number` —
 since the completion falls back to `[name]` once the caller starts typing.
 
@@ -348,9 +310,8 @@ argument object leaves the name literal rather than blanking it. Both remaining 
 fail-closed — under isolation the invocation verifier meets the surviving `$` and refuses; outside
 it the shell expands it to empty and the verb refuses on a missing number.
 
-The mechanics and the four input cases are read out of the installed Claude Code build's
-frontmatter schema, recorded on [#5587](https://github.com/kamp-us/phoenix/issues/5587), the M45
-native-shell campaign.
+The mechanics and the four input cases are read out of the installed Claude Code build's frontmatter
+schema. A harness-version bump is the recheck.
 
 ## 13. Six skills fork; every other one runs inline
 
@@ -386,7 +347,7 @@ runtime — it is declared so the setting is legible in the file rather than in 
 conditions force it off regardless: `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`, and a
 **non-interactive session**, where the fork still happens but blocks and returns its result
 in-line. So the notification path fires exactly where it was meant to: a human typing
-`/fabrika:build 1234` in a live session.
+`/fabrika:build <n>` in a live session.
 
 Neither of the five declares `agent:`, so a fork spawns a `general-purpose` subagent carrying the
 skill body. Naming a shell there would make the shell's `tools:` set bind instead of the caller's,
@@ -403,8 +364,8 @@ The recursion guard for it keys on the agent having been *spawned by* that skill
 `skills:` preload does not set. Nothing in the corpus tells a shell to re-invoke its own skill, so
 this stays a note rather than a defence.
 
-Read out of the installed Claude Code build (2.1.233) frontmatter schema; observations recorded on
-[#5588](https://github.com/kamp-us/phoenix/issues/5588), the M45 native-shell campaign.
+Read out of the installed Claude Code build (2.1.233) frontmatter schema, and observed by spawning
+the shells rather than inferred from it.
 
 ## 14. A skill never sleeps and never polls on a timer
 
@@ -414,15 +375,15 @@ not restate it. A spawned shell returns its result to whoever spawned it, so tha
 wait — there is no interval to fill. Where a wait genuinely has to block, a CLI verb does the
 blocking in-process and the skill calls that verb once.
 
-The rule binds every skill, not just the ones that spawn. Two incidents, one on each side of a
-spawn, are why:
+The rule binds every skill, not just the ones that spawn. Two observed failures, one on each side of
+a spawn, are why:
 
-- **[#6696](https://github.com/kamp-us/phoenix/issues/6696), driver side.** An operator waiting on a
-  reviewer spawned `sleep 575` in the background about every nine seconds, waited on none of them,
-  and left ~55 live shells on the founder's machine while no lane state moved.
-- **[#7260](https://github.com/kamp-us/phoenix/issues/7260), spawned side.** A reviewer waiting on a
-  queued `ci-required` aggregator left background timers behind. Two fired after the run had already
-  reported its verdict and terminated, re-notifying the driver each time with nothing to route.
+- **Driver side.** An operator waiting on a reviewer spawned `sleep 575` in the background about
+  every nine seconds, waited on none of them, and left about 55 live shells on the operator's machine
+  while no lane state moved.
+- **Spawned side.** A reviewer waiting on a queued check aggregator left background timers behind.
+  Two fired after the run had already reported its verdict and terminated, re-notifying the driver
+  each time with nothing to route.
 
 Neither skill's text asked for a sleep. The harness refuses a foreground one, so a background
 `sleep` is what a model reaches for when a step leaves it a wait to fill and no rule against filling
@@ -437,10 +398,8 @@ to a caller that made one call. `review ci --wait`
 ([`packages/fabrika-cli/src/review/ci-verb.ts`](../../../packages/fabrika-cli/src/review/ci-verb.ts))
 is the same shape over a queued check set, bounded by a wall-clock budget instead of a count, and it
 is where this rule was actually converted: the reviewer's wait was the gap that produced the
-[#7260](https://github.com/kamp-us/phoenix/issues/7260) timers, and moving the loop into the verb is
-what closed it rather than parking the lane on a human
-([#7282](https://github.com/kamp-us/phoenix/issues/7282)). That is the shape a skill-side wait
-converts into — a verb whose waiting is bounded and whose caller blocks on nothing else.
+spawned-side timers above, and moving the loop into the verb is what closed it rather than parking
+the lane on a human. That is the shape a skill-side wait converts into — a verb whose waiting is bounded and whose caller blocks on nothing else.
 
 **A bound that runs out is its own answer, never the permissive one.** Both verbs say so in their
 output: `ship reconcile` returns `unresolved`, `review ci --wait` returns `settle
@@ -450,13 +409,12 @@ time" into "it passed" is worse than the `sleep` it replaced.
 ## What these conventions deliberately do not cover
 
 - **What a verb owes its caller** — `--help` discoverability, output contracts, usage examples —
-  and the shape of a derived contract spec: the CLI interface convention
-  ([#4654](https://github.com/kamp-us/phoenix/issues/4654)).
-- **The boot document a stateless authoring session works from**: the authoring-brief contract
-  ([#4655](https://github.com/kamp-us/phoenix/issues/4655)).
+  and the shape of a derived contract spec:
+  [the CLI interface convention](interface-convention.md).
+- **The boot document a stateless authoring session works from**:
+  [the authoring-brief contract](authoring-brief-contract.md).
 
-## What fabrika does not take from the reference
+## What fabrika does not take from its reference material
 
 The borrowing is one-directional and bounded: **take the vocabulary, the sizing, and the invocation
-economics; keep our execution substrate** ([#4644](https://github.com/kamp-us/phoenix/issues/4644)
-SKIP list). Neither source arrives on authority.
+economics; keep our execution substrate.** No outside source arrives on authority.
