@@ -1,11 +1,11 @@
 /**
  * What a `pi-session` checkpoint taken mid-reply comes back as.
  *
- * This is a unit test rather than a stage of the proof beside it because a Pi turn cannot be cut
- * from a test today: a stop taken while one is in flight never returns (#7896), and mid-turn state
- * is unobservable anyway, since a Cmd handler runs inside the actor's serial step so nothing folds
- * until `prompt` resolves (#7852). So the checkpoint is written here, exactly as the store would
- * have held it, and the rule under test is the one the spawner applies to it.
+ * This is a unit test rather than a stage of the proof beside it because mid-turn state is
+ * unobservable from there: a Cmd handler runs inside the actor's serial step, so nothing folds
+ * until `prompt` resolves (#7852). The stop itself returns mid-turn — `../ai-agent/teardown.unit.test.ts`
+ * pins that (#7896). So the checkpoint is written here, exactly as the store would have held it,
+ * and the rule under test is the one the spawner applies to it.
  */
 
 import {assert, describe, it} from "@effect/vitest";
