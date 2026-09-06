@@ -180,6 +180,14 @@ const runToTheCut = (project: string): Effect.Effect<FirstRun, unknown, FileSyst
 		yield* until("the cut turn's half-written reply, committed", () =>
 			sessionOf(agent).transcript.items.some((item) => item.id === "a3"),
 		);
+		// …and separately for the window's own copy, which is what `rendered` reads. The window is
+		// its own process: each arrival lands as a `took` Msg it folds on its own turn, so the
+		// agent having committed `a3` says nothing about the window having folded the publish that
+		// carries it. The card is no proxy either — this script raises it *before* `a3`, so a stop
+		// taken on the card alone samples a tail one commit short of the cut.
+		yield* until("the cut turn's half-written reply, as the window has it", () =>
+			rendered(window).includes("a3"),
+		);
 		yield* until("the permission card", () =>
 			(pendingIn(arrivalsOf(window)).at(-1) ?? []).includes(CARD),
 		);
