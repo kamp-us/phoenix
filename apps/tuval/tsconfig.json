@@ -31,11 +31,12 @@
 	// `src/page/` is split rather than excluded whole: the three React modules reach the chat window
 	// through the page's renderer table (#7573) and go to the other lens, while `dev-server.ts` is
 	// Node-side, is imported by `src/bin.ts`, and stays here.
-	// `src/pi/renderer-ref.ts` and `src/claude/renderer-ref.ts` still enter this project by import
-	// from their rows, which is the point of those leaves: a row names its renderer without reaching
-	// any of it.
+	// `src/pi/renderer-ref.ts`, `src/claude/renderer-ref.ts` and `src/ai-agent/renderer-ref.ts` still
+	// enter this project by import from their rows, which is the point of those leaves: a row names
+	// its renderer without reaching any of it.
 	"exclude": [
 		"node_modules",
+		"src/ai-agent/window",
 		"src/shell/chat",
 		"src/pi/window",
 		"src/claude/window",

@@ -1,0 +1,28 @@
+/**
+ * The session-list window as a page's renderer table imports it. Importing this pulls React and
+ * `@kampus/design`, and nothing of a backend's wire: no `node:*`, no session store, no `../backends.ts`.
+ *
+ * The name the row declares lives one directory up (`../renderer-ref.ts`) and is re-exported here,
+ * so a page reads the reference and the renderer from one import while the kernel-side row still
+ * reaches none of this.
+ */
+
+export {SESSION_LIST_WINDOW_REF} from "../renderer-ref.ts";
+export {
+	lastModifiedLabel,
+	matchesQuery,
+	NO_FIRST_PROMPT,
+	newestFirst,
+	rowValue,
+	sessionDescription,
+	sessionItem,
+	sessionItems,
+} from "./rows.ts";
+export {
+	SessionList,
+	type SessionListProps,
+	type SessionListSource,
+	SessionListWindow,
+	type SessionListWindowOptions,
+	sessionListWindow,
+} from "./SessionListWindow.tsx";

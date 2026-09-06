@@ -31,6 +31,7 @@ import type {AnyProgram, Program} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import type {Registry} from "../registry/Registry.ts";
 import {type AiAgentSessions, type BackendListFailure, listAiAgentSessions} from "./backends.ts";
+import {SESSION_LIST_WINDOW_REF} from "./renderer-ref.ts";
 
 /**
  * The union, as the spell reaches it. A service rather than a direct `listAiAgentSessions` call
@@ -131,11 +132,10 @@ type SessionListMsg = {readonly type: "opened"};
  * The row the spell is declared on: the `TuvalAiAgent` session list, its own program rather than a
  * picker section (epic #8070, ruling 4).
  *
- * It is headless and carries no state worth the name, because the surface is the next slice's
- * (#8102): a row with no `renderer` can bind no window (`../shell/picker/entries.ts`), so nothing
- * offers it until that slice gives it one and lists it in a config. What is real here is `spells` —
- * the list this program answers, reachable under `[sessionListId, "session", "list"]` the moment a
- * config registers the row.
+ * It carries no state worth the name: the surface is `./window/`'s and renders a list it is handed,
+ * so nothing about it belongs in this process. `renderer` is what makes the row offerable at all —
+ * a row without one is headless and left out of every picker list (`../shell/picker/entries.ts`)
+ * — and `spells` is the list it answers, reachable under `[sessionListId, "session", "list"]`.
  */
 export const sessionListProgram = (options: SessionListSpellOptions = {}): AnyProgram =>
 	({
@@ -146,6 +146,7 @@ export const sessionListProgram = (options: SessionListSpellOptions = {}): AnyPr
 			update: {opened: (state) => [state, []]},
 		}),
 		ports: {},
+		renderer: SESSION_LIST_WINDOW_REF,
 		spells: [sessionListSpell(options)],
 		handlers: {},
 		capabilities: [{family: "filesystem", detail: "every registered backend's session store"}],

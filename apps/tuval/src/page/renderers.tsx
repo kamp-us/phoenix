@@ -11,9 +11,10 @@
  * The two demo renderers below are the demo programs' (#7517). Each reads its process through the
  * window contract's `readProcess` and nothing else: no store, no fetch, no socket.
  *
- * The Pi entry is `PiChatWindow` (#7611) and the Claude entry is `ClaudeChatWindow` (#7624), and
- * they are why this module is out of the kernel's strict lens and inside `tsconfig.design.json`'s:
- * the chat window is built on `@kampus/design`, which is source-consumed and authored with
+ * The Pi entry is `PiChatWindow` (#7611), the Claude entry is `ClaudeChatWindow` (#7624) and the
+ * session-list entry is `SessionListWindow` (#8102). They are why this module is out of the
+ * kernel's strict lens and inside `tsconfig.design.json`'s: each is built on `@kampus/design`,
+ * which is source-consumed and authored with
  * `exactOptionalPropertyTypes: false`. Each key is the reference that program's own row declares,
  * imported rather than retyped, so a row and this table cannot name two different renderers.
  */
@@ -21,6 +22,7 @@
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, ReactNode} from "react";
 import {useEffect, useState} from "react";
+import {SESSION_LIST_WINDOW_REF, SessionListWindow} from "../ai-agent/window/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, ClaudeChatWindow} from "../claude/window/index.ts";
 import type {CounterState} from "../demo/counter.ts";
 import type {LogState} from "../demo/log.ts";
@@ -102,4 +104,5 @@ export const pageRenderers: Readonly<Record<string, AnyWindowRenderer>> = {
 	),
 	[PI_CHAT_WINDOW_REF.ref]: PiChatWindow,
 	[CLAUDE_CHAT_WINDOW_REF.ref]: ClaudeChatWindow,
+	[SESSION_LIST_WINDOW_REF.ref]: SessionListWindow,
 };

@@ -1,0 +1,31 @@
+.tuval-session-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+	min-height: 0;
+	block-size: 100%;
+	padding: var(--s-3);
+}
+
+.tuval-session-list .kp-command-palette--inline {
+	flex: 1;
+}
+
+.tuval-session-list-unreadable {
+	flex: none;
+	padding: var(--s-3);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-lg);
+	background: var(--surface-raised);
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+.tuval-session-list-unreadable p {
+	margin: 0 0 var(--s-2);
+}
+
+.tuval-session-list-unreadable ul {
+	margin: 0;
+	padding-inline-start: var(--s-4);
+}
