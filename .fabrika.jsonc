@@ -64,6 +64,52 @@
 	// a FAIL.
 	"dependencyReconciler": { "command": ["pnpm", "install", "--frozen-lockfile"] },
 
+	// The runnable apps this repo renders, one row per app (ADR 0345) — the list `review scope` /
+	// `ship scope` raise the `ui` class from and `ui render` boots. `prefix` is the source root whose
+	// changed files raise that class: `web` and `web-lab` share `apps/web/src/` because they are two
+	// mounts over one app. Ported from the retired `design-harness.json` (#7369); no row declares a
+	// port, because a fixed port is not a per-worktree resource (#7992).
+	"uiSurfaces": [
+		{
+			"name": "web",
+			"prefix": "apps/web/src/",
+			"mount": "/",
+			"command": "[ -f apps/web/.env ] || cp apps/web/.env.example apps/web/.env; export PHOENIX_SPA_PORT={{port}} PHOENIX_WORKER_PORT={{port:worker}}; pnpm --filter @kampus/web dev:worker 1>&2 & pnpm --filter @kampus/web dev 1>&2",
+			"readyPath": "/api/health"
+		},
+		{
+			"name": "web-lab",
+			"prefix": "apps/web/src/",
+			"mount": "/lab",
+			"command": "PHOENIX_SPA_PORT={{port}} pnpm --filter @kampus/web dev 1>&2",
+			"readyPath": "/"
+		},
+		{
+			"name": "tuval-chat",
+			"prefix": "apps/tuval/src/",
+			"mount": "/tuval/chat",
+			"basePath": "/",
+			"command": "pnpm --filter @kampus/tuval proof:chat --port {{port}} --strictPort 1>&2",
+			"readyPath": "/"
+		},
+		{
+			"name": "tuval-pi-window",
+			"prefix": "apps/tuval/src/",
+			"mount": "/tuval/pi-window",
+			"basePath": "/",
+			"command": "pnpm --filter @kampus/tuval proof:pi-window --port {{port}} --strictPort 1>&2",
+			"readyPath": "/"
+		},
+		{
+			"name": "tuval-pi-vertical",
+			"prefix": "apps/tuval/src/",
+			"mount": "/tuval/pi-vertical",
+			"basePath": "/",
+			"command": "pnpm --filter @kampus/tuval proof:pi-vertical --page-port {{port}} --strict-port 1>&2",
+			"readyPath": "/"
+		}
+	],
+
 	// The repo's own commands that machine-read `.github/workflows/**`. `fabrika build check
 	// --surface workflows` runs each one over a workflows-touching diff, on top of `actionlint` when
 	// the tree has one (#5991), and `reads` names the exact workflow files that command opens — the

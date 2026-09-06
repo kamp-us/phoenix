@@ -92,6 +92,11 @@ catalog:
   # so no third `marked` enters the tree beside it and @tiptap/markdown's 17.0.6. @kampus/design's
   # `Markdown` uses the lexer only — the token stream, never `marked()`'s HTML string (#8012).
   marked: 18.0.5
+  # Exact pin (#8128): `@kampus/design`'s `Markdown` renders a ```mermaid fence through this
+  # version's `parse`/`render` pair and leans on its `securityLevel: "strict"` DOMPurify pass, so
+  # the version is part of that block's safety argument. It links its own nested `marked@^16`,
+  # which never crosses a type boundary with the 18.0.5 above — mermaid parses its own labels.
+  mermaid: 11.17.2
   react: 19.2.6
   react-dom: 19.2.6
   react-fate: 1.3.1

@@ -8,13 +8,16 @@
 
 import {type Cmd, DispatchDiscardedError, defineMachine} from "@demlik/tea";
 import {assert, describe, it} from "@effect/vitest";
-import {Context, Effect, Layer, Option, Queue, Redacted, Scope, Stream} from "effect";
+import {Context, Effect, Exit, Fiber, Layer, Option, Queue, Redacted, Scope, Stream} from "effect";
 import {Socket} from "effect/unstable/socket";
+import type {SpellPath} from "../../commands/spell.ts";
 import {Checkpoints} from "../../durability/Checkpoints.ts";
 import {type CheckpointStores, memoryStores} from "../../durability/stores.ts";
 import {Processes} from "../../process/Processes.ts";
 import type {ProcessTable} from "../../process/ProcessTable.ts";
 import {type ProcessHandle, ProcessId} from "../../process/process.ts";
+import {CallId} from "../../protocol/ids.ts";
+import {PROTOCOL_VERSION, SpellCall} from "../../protocol/messages.ts";
 import {type DuplicateProgramId, ProgramNotFound} from "../../registry/errors.ts";
 import {
 	type AnyProgram,
@@ -24,6 +27,7 @@ import {
 } from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
+import {scriptedSpellChannel} from "../host/fixtures.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import type {ProcessView} from "../window/host.ts";
 import {attach} from "./client.ts";
@@ -66,6 +70,15 @@ const deskRow = (id: ProgramId, host: "local" | "browser", renderer?: RendererRe
 	}) satisfies Program<DeskState, DeskMsg, Cmd<never>, never, unknown, never, never>;
 
 const ref = (name: string): RendererRef => ({kind: "host-native", ref: name});
+
+const spellCall = (path: SpellPath, args: unknown): SpellCall =>
+	new SpellCall({
+		type: "spell.call",
+		version: PROTOCOL_VERSION,
+		id: CallId.make(crypto.randomUUID()),
+		path,
+		args,
+	});
 
 /** Three rows a window can show and one that cannot: what the catalog must and must not carry. */
 const programs: ReadonlyArray<AnyProgram> = [
@@ -137,6 +150,7 @@ const served = Effect.fn("test.served")(function* (
 		port: 0,
 		table: defaultPrefixTable,
 		handles: (id) => Effect.sync(() => Option.fromNullishOr(built.handles.get(id))),
+		spells: yield* scriptedSpellChannel(),
 	}).pipe(Effect.provideContext(built.context), Effect.orDie);
 	return {...built, token, server};
 });
@@ -222,6 +236,7 @@ describe("the page-to-kernel transport", () => {
 								? Option.some(discarding)
 								: Option.fromNullishOr(built.handles.get(id)),
 						),
+					spells: yield* scriptedSpellChannel(),
 				}).pipe(Effect.provideContext(built.context), Effect.orDie);
 
 				const attached = yield* page(server.launchUrl);
@@ -446,6 +461,58 @@ describe("the page-to-kernel transport", () => {
 				const good = yield* rawSocket(app.server.launchUrl);
 				assert.isTrue(good.opened);
 				assert.strictEqual(Redacted.value(app.token).length, 64);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"a spell call from the page is answered by the kernel's executor, and an unknown path comes back as its refusal",
+		() =>
+			Effect.gen(function* () {
+				const app = yield* served(memoryStores());
+				const attached = yield* page(app.server.launchUrl);
+
+				const answered = yield* attached.call(spellCall(["desk", "echo"], {word: "hello"}));
+				assert.isTrue(answered.ok);
+				assert.deepStrictEqual(answered.ok ? answered.result : null, {word: "hello"});
+
+				const call = spellCall(["desk", "nope"], {});
+				const refused = yield* attached.call(call);
+				assert.isFalse(refused.ok);
+				// The executor's own reply, unchanged: the page never builds a refusal of its own.
+				assert.deepStrictEqual(
+					refused.ok ? null : refused.error.tag,
+					"tuval/commands/UnknownSpell",
+				);
+				assert.strictEqual(refused.id, call.id);
+			}).pipe(Effect.scoped),
+		TIMEOUT,
+	);
+
+	it.live(
+		"two calls in flight each read their own reply, and a socket that goes away fails the ones still waiting",
+		() =>
+			Effect.gen(function* () {
+				const scope = yield* Scope.make();
+				const app = yield* Effect.provideService(served(memoryStores()), Scope.Scope, scope);
+				const attached = yield* page(app.server.launchUrl);
+
+				const both = yield* Effect.all(
+					[
+						attached.call(spellCall(["desk", "echo"], {word: "first"})),
+						attached.call(spellCall(["desk", "echo"], {word: "second"})),
+					],
+					{concurrency: "unbounded"},
+				);
+				assert.deepStrictEqual(
+					both.map((reply) => (reply.ok ? reply.result : null)),
+					[{word: "first"}, {word: "second"}],
+				);
+
+				const waiting = yield* Effect.forkChild(attached.call(spellCall(["desk", "forever"], {})));
+				yield* Effect.sleep("200 millis");
+				yield* Scope.close(scope, Exit.void);
+				assert.isTrue(Exit.isFailure(yield* Fiber.await(waiting)));
 			}).pipe(Effect.scoped),
 		TIMEOUT,
 	);

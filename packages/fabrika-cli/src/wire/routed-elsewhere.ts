@@ -11,8 +11,8 @@
  * prevent.
  *
  * **Why the format exists (ADR 0316).** `ship scope` raises the `ui` class off a path test that
- * cannot see whether pixels moved, so a PR whose only `apps/web/src/**` change is a docblock
- * requires a `review-ui` verdict — and `review-ui`'s emit path structurally cannot produce one:
+ * cannot see whether pixels moved, so a PR whose only change under a declared `uiSurfaces` prefix is
+ * a docblock requires a `review-ui` verdict — and `review-ui`'s emit path structurally cannot produce one:
  * `render` refuses zero surfaces, `post` requires a capture set. The namespace was unfillable and
  * `ship gate` blocks on absence (#3944), so such a PR was permanently unshippable (#6376). This
  * record is the sanctioned way to fill it: an attested, ACL-checked, head-bound "nothing renders

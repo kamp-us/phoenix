@@ -27,6 +27,7 @@ import {Context, Deferred, Effect, type Option, type Redacted, Semaphore, Stream
 import {Socket, type SocketServer} from "effect/unstable/socket";
 import {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessChange, ProcessHandle, ProcessId} from "../../process/process.ts";
+import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
 import {type AnyProgram, programLabel} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {ProcessTablePort} from "../../table/ProcessTablePort.ts";
@@ -45,6 +46,7 @@ import {
 	REGISTRY_KIND,
 	type RegistryFrame,
 	type ServerFrame,
+	spellReplyFrame,
 	TABLE_KIND,
 	tableFrame,
 	toWireRow,
@@ -58,6 +60,15 @@ import {
  */
 export type Handles = (id: ProcessId) => Effect.Effect<Option.Option<ProcessHandle>>;
 
+/**
+ * How a spell call is answered, opened once per socket. The outer Effect runs when a socket opens
+ * and the function it hands back answers every call on that socket, so the caller identity one page
+ * is given is that page's alone. Who that caller is stays out of this module — naming it is kernel
+ * vocabulary, and `../host/serve.ts`, which knows it is serving a desk, is where it is minted
+ * (#8161). Every way a call can fail is already a `SpellReply`, so there is no error channel.
+ */
+export type SpellChannel = Effect.Effect<(call: SpellCall) => Effect.Effect<SpellReply>>;
+
 export interface ServeOptions {
 	readonly token: Redacted.Redacted<string>;
 	/** `0` binds an ephemeral port, which is what a test wants and what a launch can take. */
@@ -70,14 +81,20 @@ export interface ServeOptions {
 	 * guessed one would be inventing the grammar the ruling took away from the page.
 	 */
 	readonly table: PrefixTable;
+	/**
+	 * Where a `spell-call` frame goes. There is exactly one such path and it is the kernel's own
+	 * executor (`../../commands/executor.ts`), reached through here rather than through a registry or
+	 * a dispatch of this transport's own.
+	 */
+	readonly spells: SpellChannel;
 }
 
 export interface TransportServer {
 	readonly port: number;
 	/**
 	 * Re-read the registry and send its windowed programs to every attached page. A reload changes
-	 * what a kernel offers, and a page cannot ask — a spell call is the only message it may send
-	 * (#7617) — so the kernel pushes. Nothing calls this in production yet, and nothing can usefully:
+	 * what a kernel offers, and no spell answers the catalog, so the kernel pushes it rather than
+	 * waiting to be asked (#7617). Nothing calls this in production yet, and nothing can usefully:
 	 * `Registry.layer` builds one frozen map, so every call today would re-send the catalog the
 	 * socket already got on open (#7841). `Booted.reload` writes only the spell registry (#7743).
 	 */
@@ -184,9 +201,9 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 	const catalogLock = yield* Semaphore.make(1);
 	yield* Effect.forkScoped(
 		server.run((socket) =>
-			Effect.scoped(session(socket, options.handles, options.table, pages, catalogLock)).pipe(
-				Effect.provideContext(services),
-			),
+			Effect.scoped(
+				session(socket, options.handles, options.spells, options.table, pages, catalogLock),
+			).pipe(Effect.provideContext(services)),
 		),
 	);
 
@@ -210,6 +227,7 @@ export const serve = Effect.fn("Tuval.transport.serve")(function* (options: Serv
 const session = Effect.fn("Tuval.transport.session")(function* (
 	socket: Socket.Socket,
 	handles: Handles,
+	spells: SpellChannel,
 	keyTable: PrefixTable,
 	pages: Attached,
 	catalogLock: Semaphore.Semaphore,
@@ -218,6 +236,7 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 	const tablePort = yield* ProcessTablePort;
 	const registry = yield* Registry;
 	const state: SocketSession = {attached: new Set<ProcessId>()};
+	const answer = yield* spells;
 
 	const write = yield* socket.writer;
 	// A write races the socket's own close; losing that race is the close, never this fiber's failure.
@@ -319,6 +338,8 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 		});
 	});
 
+	const scope = yield* Effect.scope;
+
 	const onFrame = (frame: ClientFrame): Effect.Effect<void> => {
 		switch (frame.kind) {
 			case "tuval/transport/attach/v1":
@@ -327,6 +348,16 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 				return Effect.sync(() => void state.attached.delete(frame.processId));
 			case "tuval/transport/dispatch/v1":
 				return dispatch(frame.seq, frame.processId, frame.msg);
+			case "tuval/transport/spell-call/v1":
+				// Forked, because a call is the one frame that can take real time — the session list
+				// walks two stores off disk under a 10s deadline — and awaiting it here would stall the
+				// read loop, leaving the page unable to attach or dispatch until it answered.
+				return Effect.asVoid(
+					Effect.forkIn(
+						Effect.flatMap(answer(frame.call), (reply) => send(spellReplyFrame(reply))),
+						scope,
+					),
+				);
 		}
 	};
 
@@ -336,7 +367,6 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 	 * sent ahead of the read loop deadlocks the socket it is trying to greet
 	 * (`effect/unstable/socket/Socket`'s `fromWebSocket`).
 	 */
-	const scope = yield* Effect.scope;
 	const ready = yield* Deferred.make<void>();
 	const greet = Effect.gen(function* () {
 		yield* Effect.forkIn(

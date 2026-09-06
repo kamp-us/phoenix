@@ -17,6 +17,8 @@
 import {Deferred, Effect, Option, Stream, SubscriptionRef} from "effect";
 import {Socket} from "effect/unstable/socket";
 import type {Message, ProcessId} from "../../process/process.ts";
+import type {CallId} from "../../protocol/ids.ts";
+import type {SpellCall, SpellReply} from "../../protocol/messages.ts";
 import type {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
 import type {PrefixTable} from "../keys/table.ts";
@@ -31,6 +33,7 @@ import {
 	fromWirePrefixTable,
 	fromWireRow,
 	type ServerFrame,
+	spellCallFrame,
 	type WireProgram,
 } from "./wire.ts";
 
@@ -67,6 +70,12 @@ export interface PageAttachment {
 	readonly attachProcess: <S = unknown, M extends Message = Message>(
 		processId: ProcessId,
 	) => Effect.Effect<AttachedProcess<S, M>, AttachRefused | Socket.SocketError>;
+	/**
+	 * Ask the kernel one thing. The reply this resolves with is the one whose `CallId` matches the
+	 * call's: a reply for another call is another caller's answer and is never handed here (#8161).
+	 * It fails when the socket ends, so a call outlives its socket by nothing.
+	 */
+	readonly call: (spell: SpellCall) => Effect.Effect<SpellReply, Socket.SocketError>;
 	/** Stop receiving one process's state. The process is untouched; only this socket's interest ends. */
 	readonly detach: (processId: ProcessId) => Effect.Effect<void>;
 	/**
@@ -103,6 +112,7 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 	const views = new Map<ProcessId, SubscriptionRef.SubscriptionRef<ProcessView<unknown>>>();
 	const pendingAttach = new Map<ProcessId, Deferred.Deferred<void, AttachRefused>>();
 	const pendingDispatch = new Map<number, Deferred.Deferred<DispatchResult>>();
+	const pendingCalls = new Map<CallId, Deferred.Deferred<SpellReply>>();
 	let nextSeq = 0;
 
 	const opened = yield* Deferred.make<void>();
@@ -166,6 +176,13 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 								})
 							: new NoSuchProcess({processId: frame.processId}),
 					);
+				});
+			case "tuval/transport/spell-reply/v1":
+				return Effect.suspend(() => {
+					const pending = pendingCalls.get(frame.reply.id);
+					if (pending === undefined) return Effect.void;
+					pendingCalls.delete(frame.reply.id);
+					return Effect.ignore(Deferred.succeed(pending, frame.reply));
 				});
 			case "tuval/transport/dispatched/v1":
 				return Effect.suspend(() => {
@@ -235,6 +252,19 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 			} satisfies AttachedProcess<S, M>;
 		});
 
+	/**
+	 * One call, and the reply that answers it. The pending entry is dropped however the wait ends —
+	 * answered, socket gone, or the caller interrupted — so a page holding several calls open never
+	 * accumulates the ones nothing will answer.
+	 */
+	const call = (spell: SpellCall) =>
+		Effect.gen(function* () {
+			const answer = yield* Deferred.make<SpellReply>();
+			pendingCalls.set(spell.id, answer);
+			yield* Effect.ignore(write(encodeFrame(spellCallFrame(spell))));
+			return yield* Effect.raceFirst(Deferred.await(answer), Deferred.await(closed));
+		}).pipe(Effect.ensuring(Effect.sync(() => void pendingCalls.delete(spell.id))));
+
 	const detach = (processId: ProcessId) =>
 		Effect.ignore(write(encodeFrame({kind: DETACH_KIND, processId})));
 
@@ -268,6 +298,7 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 			(table): table is PrefixTable => table !== null,
 		),
 		attachProcess,
+		call,
 		detach,
 		closed: ended,
 		readShell,

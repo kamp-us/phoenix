@@ -19,6 +19,20 @@ import {Schema} from "effect";
 export const SESSION_LIST_PATH = ["session", "list"] as const;
 
 /**
+ * The row that spell is registered on. Spelled here rather than imported, so a page addressing the
+ * call does not pull the kernel-side row in behind it — the transport's page-side client spells the
+ * shell's program id for the same reason. `../ai-agent/session-list.ts` declares this id itself and
+ * its unit test holds the two spellings together.
+ */
+export const SESSION_LIST_PROGRAM = "ai-agent-sessions";
+
+/**
+ * The whole address a caller sends. The registry keys a row's spell under `[programId, ...path]`
+ * (`../commands/registry.ts`), so a call carrying the bare `session.list` reaches no spell.
+ */
+export const SESSION_LIST_CALL_PATH = [SESSION_LIST_PROGRAM, ...SESSION_LIST_PATH] as const;
+
+/**
  * One session. The four optional fields are optional because a real store leaves them out, and an
  * absent key stays absent across the wire — a row renders an absence as an absence rather than as a
  * plausible-looking zero or empty string.

@@ -162,7 +162,7 @@ sibling's numerals is not a goal the doctrine sets.
 | `1` | usage error (bad flag, zero `--surface` operands, unresolvable repo), or the verb failed to run |
 | `126` | no implementation could be resolved |
 | `3` | stdin was read and held nothing (`post` and `note`; the aligned seat) |
-| `4` | a required file a verb derives from is absent, does not parse, or violates its schema — a capture set's `manifest.json`, or `design-harness.json` at the tier-choice read (the whole-file rule the `ui` group states; the seat the base uses for a malformed derived document) |
+| `4` | a required file a verb derives from is absent, does not parse, or violates its schema — a capture set's `manifest.json`, or the declared `uiCapture` at the tier-choice read (the whole-file rule the `ui` group states; the seat the base uses for a malformed derived document) |
 | `5` | the authored text carries a machine-local path (this group offers no `--redact`; the recovery is a rewrite) |
 | `6` | the authored text is a bare `@` path reference — not redactable |
 | `7` | zero scope: the target is **proven** absent (404), or the PR is closed — a deliberate, declared widening of the base seat (existence-only) to closed-target, because a closed PR is provably not reviewable scope, matching the sibling `review` group's use |
@@ -535,8 +535,8 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 3. **Re-validate every capture against its manifest sha** (`15` on mismatch or invalidity).
 4. **Upload every capture and verify each upload individually, before anything posts** — the
    two-tier store exactly as `ui evidence` specifies it (store tier when the repo declares one;
-   the GitHub user-attachment tier otherwise, each upload probed back). The tier choice reads
-   `design-harness.json` at the repo root the delivery layer resolves — the reviewer's own
+   the GitHub user-attachment tier otherwise, each upload probed back). The tier choice reads the
+   `uiCapture` key of `.fabrika.jsonc` at the repo root the delivery layer resolves — the reviewer's own
    checked-out tree, never the PR head, which this skill never checks out. Any failure is `17`,
    aggregated, **nothing posted**. This inverts v1's posture at the seam #3925 named: ADR 0165's
    judge-the-local-bytes stands — the pixels you judged were local — but the *marker* does not
@@ -568,7 +568,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | Code | Trigger |
 |---|---|
 | `3` | stdin was read and held nothing — an empty verdict body would read as ungated |
-| `4` | the `--evidence` set's `manifest.json` is absent or does not parse, or `design-harness.json` (the tier-choice read) exists but violates its schema — whole-file rule |
+| `4` | the `--evidence` set's `manifest.json` is absent or does not parse, or the declared `uiCapture` (the tier-choice read) violates its schema — whole-file rule |
 | `5` | the assembled comment carries a machine-local path |
 | `6` | the body is a bare `@` path reference — the body never arrived |
 | `7` | the PR is proven absent (404) or closed |
@@ -593,7 +593,7 @@ is the structural form of "a gate never emits a namespace it did not judge" — 
 | `review-ui post: --carrier advisory is a PASS path only — post the FAIL marker instead.` | 10 | refusal |
 | `review-ui post: cannot read <what> for #<n>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
 | `review-ui post: evidence set "<set>" has no readable manifest.json (<absent|parse reason>) — a set without its manifest is not a set; re-run review-ui render.` | 4 | refusal |
-| `review-ui post: design-harness.json exists but does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
+| `review-ui post: .fabrika.jsonc declares a `uiCapture` that does not satisfy its schema: <first violation> — the tier choice is unmakeable.` | 4 | refusal |
 | `review-ui post: the live head is <live>, not <sha> — the tree you judged is gone; re-review at <live> (ADR 0058).` | 12 | refusal |
 | `review-ui post: evidence set "<set>" was rendered at <set-head7>, you are posting at <sha7> — stale pixels; re-render at the live head.` | 12 | refusal |
 | `review-ui post: capture "<id>" in set "<set>" is invalid or fails its manifest sha (<detail>).` | 15 | refusal |
@@ -763,7 +763,7 @@ The reasoning arrives on **stdin only**, for the same reason as `post` and `note
 `{"answer":"routed","namespace":"review-ui","sha":"6c6fe226…","uiFiles":2,"upsert":"created","commentUrl":"…"}`.
 
 **Why it exists.** `ship scope` raises the `ui` class from a path test that cannot see whether
-pixels moved, so a PR whose only `apps/web/src/**` change is prose requires this namespace — and
+pixels moved, so a PR whose only change under a declared `uiSurfaces` prefix is prose requires this namespace — and
 `render` refuses zero surfaces while `post` refuses without captures, so nothing legal could fill
 it and `ship gate` blocked forever (#6376). This verb records the answer that was missing. It is
 **not** a second verdict path: the `routed-elsewhere` wire format carries no polarity, so
@@ -779,7 +779,8 @@ diff was read, and is re-read rather than re-bound. Read the changed-file list; 
 `11`, never a derivation, because truncation can only shrink the `ui` count and would refuse a PR
 the gate is meanwhile blocking. Refuse a diff that raises no `ui` class (`7`) — nothing required
 this namespace, so there is nothing to route; the predicate is `review/classes.ts`'s own
-`isUiSurface`, never a second copy. Compose the record's first line through the `routed-elsewhere`
+`isUiSurface`, over the same declared `uiSurfaces` prefixes the gate raised the class from, never a
+second copy. Compose the record's first line through the `routed-elsewhere`
 wire format, leak-scan the assembled comment (`5`/`6`), upsert one record for this namespace on the
 emitter's own comment, and read it back from live state (`9` on mismatch, `8` on an unproven
 write).

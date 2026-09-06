@@ -2,7 +2,6 @@ import {describe, expect, it} from "vitest";
 import {CYCLE_DOC_PATH} from "../../plan/github.ts";
 import {DECISIONS_ROOT, SHIPPED_GOVERNED_ROOTS} from "../../review/classes.ts";
 import {ROADMAP_FILE} from "../../triage/roadmap.ts";
-import {HARNESS_PATH} from "../../ui/conventions.ts";
 import {CONFIG_PATH} from "../document.ts";
 import {loadConfig, resolve} from "../load.ts";
 import {governedRootsKey} from "./governed-roots.ts";
@@ -10,14 +9,11 @@ import {
 	CYCLE_DOC_KEY,
 	cycleDocKey,
 	DECISIONS_DIR,
-	DESIGN_HARNESS_KEY,
 	decisionsDirKey,
-	designHarnessKey,
 	ROADMAP_FILE_KEY,
 	roadmapFileKey,
 	SHIPPED_CYCLE_DOC,
 	SHIPPED_DECISIONS_DIR,
-	SHIPPED_DESIGN_HARNESS,
 	SHIPPED_ROADMAP_FILE,
 } from "./paths.ts";
 
@@ -34,7 +30,6 @@ describe("a repo that declares nothing gets phoenix's own paths", () => {
 		for (const [key, shipped] of [
 			[roadmapFileKey, SHIPPED_ROADMAP_FILE],
 			[cycleDocKey, SHIPPED_CYCLE_DOC],
-			[designHarnessKey, SHIPPED_DESIGN_HARNESS],
 		] as const) {
 			expect(resolve(absent, key)).toMatchObject({_tag: "Default", value: shipped});
 		}
@@ -46,14 +41,12 @@ describe("a repo that declares nothing gets phoenix's own paths", () => {
 		expect(DECISIONS_ROOT).toBe(`${SHIPPED_DECISIONS_DIR}/`);
 		expect(ROADMAP_FILE).toBe(SHIPPED_ROADMAP_FILE);
 		expect(CYCLE_DOC_PATH).toBe(SHIPPED_CYCLE_DOC);
-		expect(HARNESS_PATH).toBe(SHIPPED_DESIGN_HARNESS);
 	});
 
 	it("keeps today's values, so an existing repo sees no change", () => {
 		expect(SHIPPED_DECISIONS_DIR).toBe(".decisions");
 		expect(SHIPPED_ROADMAP_FILE).toBe("ROADMAP.md");
 		expect(SHIPPED_CYCLE_DOC).toBe("product-development-cycle.md");
-		expect(SHIPPED_DESIGN_HARNESS).toBe("design-harness.json");
 	});
 });
 
@@ -66,9 +59,6 @@ describe("a declared path", () => {
 			_tag: "Declared",
 			value: "docs/cycle.md",
 		});
-		expect(
-			resolve(load({[DESIGN_HARNESS_KEY]: "tools/harness.json"}), designHarnessKey),
-		).toMatchObject({_tag: "Declared", value: "tools/harness.json"});
 	});
 
 	it("refuses a value that is not a repo-relative path, rather than resolving it", () => {

@@ -22,6 +22,10 @@ import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import {pageRenderers} from "../../page/renderers.tsx";
+
+/** The table over a socket that answers nothing: this file judges the Claude entry, never a call. */
+const renderers = pageRenderers(() => Effect.never);
+
 import {ProcessId} from "../../process/process.ts";
 import type {ChatWindowOptions, ChatWindowRenderer} from "../../shell/chat/index.ts";
 import {type ChatView, chatWindow, initialChatView} from "../../shell/chat/index.ts";
@@ -132,7 +136,7 @@ describe("the window's scheme", () => {
 
 describe("the row's renderer reference", () => {
 	it("resolves to this renderer in the page's table", () => {
-		const entry = pageRenderers[CLAUDE_CHAT_WINDOW_REF.ref];
+		const entry = renderers[CLAUDE_CHAT_WINDOW_REF.ref];
 		expect(entry?.renderer).toBe(ClaudeChatWindow);
 		// Guarded by the session state's own predicate, so a kernel sending an older shape refuses in
 		// this window instead of throwing through it (#8157).
