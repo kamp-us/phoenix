@@ -30,7 +30,7 @@ import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
-import {call, models, modes, permissionRequest, userItem, withTranscript} from "./chat.testing.ts";
+import {call, models, modes, pendingPermission, userItem, withTranscript} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
@@ -70,7 +70,9 @@ const stateArb: fc.Arbitrary<AiAgentSessionState> = fc
 			[userItem("u1", "go"), ...calls.map((options, index) => call(`t${index}`, options))],
 			{
 				phase,
-				permissions: Object.fromEntries(requests.map((request, index) => [`r${index}`, request])),
+				permissions: Object.fromEntries(
+					requests.map((request, index) => [`r${index}`, pendingPermission({request})]),
+				),
 				modes: modes(available),
 			},
 		),
@@ -207,7 +209,7 @@ describe("the window's own primitives hold the enforced pillar-4 invariants", ()
 			const state = withTranscript(
 				[userItem("u1", "go"), call("t0", {name: "bash", input: {command: "ls"}})],
 				{
-					permissions: {r0: permissionRequest()},
+					permissions: {r0: pendingPermission()},
 					modes: modes(["plan", "build"], "plan"),
 				},
 			);
