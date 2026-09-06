@@ -214,6 +214,7 @@ export function Markdown({
 	children,
 	className = "",
 	headingBase = 1,
+	breaks = false,
 }: {
 	readonly children: string;
 	readonly className?: string;
@@ -222,7 +223,16 @@ export function Markdown({
 	 * outline does not emit an `<h1>` under it. Deeper headings step down from here and clamp at 6.
 	 */
 	readonly headingBase?: number;
+	/**
+	 * Whether a lone newline inside a paragraph is a line break. Off by default, which is markdown's
+	 * own reading and the one a document-shaped surface wants; a chat transcript turns it on,
+	 * because a message is read as the lines it was typed on (#8244).
+	 */
+	readonly breaks?: boolean;
 }): ReactElement {
-	const tokens = useMemo(() => lexer(children), [children]);
+	// `gfm` is restated because an options object replaces marked's defaults wholesale rather than
+	// merging into them (`Lexer`'s `this.options = e || _defaults`), and `breaks` is read only under
+	// `gfm` — passing `{breaks}` alone would silently drop tables and strikethrough.
+	const tokens = useMemo(() => lexer(children, {gfm: true, breaks}), [children, breaks]);
 	return <div className={`kp-markdown ${className}`.trim()}>{blocks(tokens, headingBase)}</div>;
 }
