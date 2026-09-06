@@ -45,7 +45,7 @@ describe("picker frame", () => {
 	});
 
 	it("names the active option by id, and marks exactly one option selected", () => {
-		const frame = pickerFrame(window, entries, {cursor: 2, refusal: null});
+		const frame = pickerFrame(window, entries, {cursor: 2, refusal: null, previous: null});
 		const options = frame.groups.flatMap((group) => group.options);
 		expect(frame.activeDescendant).toBe("picker-window-1-option-2");
 		expect(options.filter((option) => option.selected).map((option) => option.id)).toEqual([
@@ -123,5 +123,28 @@ describe("picker frame", () => {
 			"Open or attach the highlighted row",
 			"Dismiss the message",
 		]);
+	});
+
+	it("mounted with a `previous`, highlights that row and offers Escape as the way back (#8265)", () => {
+		const frame = pickerFrame(window, entries, mountPicker("p-2"));
+		const options = frame.groups.flatMap((group) => group.options);
+
+		// `p-2` is the fourth row of the flattened list — two programs, then two processes.
+		expect(frame.activeDescendant).toBe("picker-window-1-option-3");
+		expect(options.filter((option) => option.selected).map((option) => option.id)).toEqual([
+			"picker-window-1-option-3",
+		]);
+		expect(frame.keyHelp.map((row) => row.action)).toContain(
+			"Return to the process this window was showing",
+		);
+	});
+
+	it("a `previous` whose process is gone falls back to the first row (#8265)", () => {
+		const frame = pickerFrame(window, entries, mountPicker("p-gone"));
+		expect(frame.activeDescendant).toBe("picker-window-1-option-0");
+		// The help still offers the return: the attach handler is where a dead id becomes a refusal.
+		expect(frame.keyHelp.map((row) => row.action)).toContain(
+			"Return to the process this window was showing",
+		);
 	});
 });

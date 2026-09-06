@@ -25,7 +25,7 @@ import {ItemId} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
-import {WindowId} from "../window/index.ts";
+import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "../window/index.ts";
 import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
 import {
 	assistantItem,
@@ -625,8 +625,16 @@ describe("keys typed on the transcript", () => {
 
 	afterEach(() => {
 		globalThis.document.removeEventListener("keydown", listener);
+		globalThis.document.body.removeAttribute(PREFIX_ARMED_ATTRIBUTE);
 		seen.length = 0;
 	});
+
+	/**
+	 * The desk's mark, put on an ancestor of the window exactly as the desk puts it on its own root
+	 * (`../ui/Desk.tsx`) — the window is mounted under `body` here, and there is no desk above it.
+	 */
+	const armTheDesk = (): void =>
+		globalThis.document.body.setAttribute(PREFIX_ARMED_ATTRIBUTE, "true");
 
 	/** Every keydown the desk's one document listener would have seen (`../ui/Desk.tsx`). */
 	const watchDesk = (): ReadonlyArray<string> => {
@@ -647,6 +655,25 @@ describe("keys typed on the transcript", () => {
 		});
 
 		expect(reached).toEqual(["b", "Escape", "r"]);
+	});
+
+	it("stands down for every key of an armed sequence, transcript and composer alike (#8270)", async () => {
+		const {process} = await openWindow(
+			withTranscript(transcriptOf(2), {phase: "prompting", interrupted: ItemId.make("b")}),
+		);
+		const reached = watchDesk();
+		armTheDesk();
+
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole("log", {name: "Transcript"}), {key: "w"});
+			fireEvent.keyDown(composer(), {key: "Escape"});
+			fireEvent.keyDown(composer(), {key: "r", altKey: true});
+		});
+
+		// The bare `w` is the second key of `<prefix> w`, and the window's own two keys are the
+		// shell's while it is armed: nothing here is the window's to act on.
+		expect(reached).toEqual(["w", "Escape", "r"]);
+		expect(process.inbox()).toEqual([]);
 	});
 
 	it("still interrupts on Escape typed on the transcript", async () => {
@@ -936,15 +963,13 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 
 	const foldButton = (): HTMLElement => screen.getByRole("button", {name: /nested calls?$/});
 
-	it("names the rows it reveals and announces the reveal, separately from the call's own panel", async () => {
+	it("counts the rows it reveals and announces the reveal, separately from the call's own panel", async () => {
 		await openWindow(withTranscript(group));
 
 		const fold = foldButton();
 		expect(fold.textContent).toBe("Show 2 nested calls");
 		expect(fold.getAttribute("aria-expanded")).toBe("false");
-		// Collapsed, the rows do not exist, so the control names nothing rather than naming ghosts.
-		expect(fold.getAttribute("aria-controls")).toBeNull();
-		expect(document.getElementById("tuval-row-w1-child-1")).toBeNull();
+		expect(screen.queryByText("bash")).toBeNull();
 
 		await act(async () => {
 			fireEvent.click(fold);
@@ -953,9 +978,22 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		const opened = foldButton();
 		expect(opened.textContent).toBe("Hide 2 nested calls");
 		expect(opened.getAttribute("aria-expanded")).toBe("true");
-		const controls = opened.getAttribute("aria-controls")?.split(" ") ?? [];
-		expect(controls).toEqual(["tuval-row-w1-child-1", "tuval-row-w1-child-2"]);
-		for (const id of controls) expect(document.getElementById(id)).not.toBeNull();
+		expect(screen.queryByText("bash")).not.toBeNull();
+		expect(screen.queryByText("grep")).not.toBeNull();
+	});
+
+	// The rows are virtualized, so any idref list the button named would go stale as the reader
+	// scrolls (#8057). `aria-expanded` alone carries the disclosure, which is all APG asks of one.
+	it("names no rows in aria-controls, open or shut", async () => {
+		await openWindow(withTranscript(group));
+
+		expect(foldButton().getAttribute("aria-controls")).toBeNull();
+
+		await act(async () => {
+			fireEvent.click(foldButton());
+		});
+
+		expect(foldButton().getAttribute("aria-controls")).toBeNull();
 	});
 
 	it("unpins a following window when a fold opens, the way an opened tool row does (#7994)", async () => {
@@ -979,7 +1017,7 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		});
 		expect(harness.view().expanded).toEqual(["agent"]);
 		expect(harness.view().unfolded).toEqual([]);
-		expect(document.getElementById("tuval-row-w1-child-1")).toBeNull();
+		expect(screen.queryByText("bash")).toBeNull();
 
 		await act(async () => {
 			fireEvent.click(foldButton());
@@ -1004,12 +1042,12 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 			"Hide 1 nested call",
 			"Show 1 nested call",
 		]);
-		expect(document.getElementById("tuval-row-w1-leaf")).toBeNull();
+		expect(screen.queryByText("bash")).toBeNull();
 
 		await act(async () => {
 			fireEvent.click(folds[1] as HTMLElement);
 		});
-		expect(document.getElementById("tuval-row-w1-leaf")).not.toBeNull();
+		expect(screen.queryByText("bash")).not.toBeNull();
 	});
 });
 

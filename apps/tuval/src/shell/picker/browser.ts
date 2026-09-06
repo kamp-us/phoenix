@@ -49,6 +49,7 @@ export {
 	unreadableCommand,
 } from "./refusal.ts";
 export {
+	asPickerView,
 	cursorOf,
 	highlighted,
 	mountPicker,

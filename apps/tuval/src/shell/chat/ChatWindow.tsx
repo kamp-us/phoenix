@@ -43,7 +43,7 @@ import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
-import {windowRenderer} from "../window/index.ts";
+import {prefixArmedAround, windowRenderer} from "../window/index.ts";
 import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
@@ -156,10 +156,14 @@ const useProcessView = (host: ChatWindowHost): ProcessView<AiAgentSessionState> 
  * text to take it, and letting it reach the desk's one keyboard listener either arms the prefix or
  * forwards it into the window's process (#7973). Modified keys are somebody else's — the desk
  * prefix is Ctrl-keyed and Alt+R is the window's — and so is every named key the region scrolls on.
+ *
+ * Unless the shell's prefix is armed, and then the bare key *is* the shell's: it is the second key
+ * of a sequence the operator already started, and swallowing it here is what left `<prefix> w`
+ * dead from the transcript all day (#8270).
  */
 const swallowBareCharacter = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
 	const bare = !event.ctrlKey && !event.metaKey && !event.altKey && [...event.key].length === 1;
-	if (bare) event.stopPropagation();
+	if (bare && !prefixArmedAround(event.target)) event.stopPropagation();
 };
 
 /**
@@ -270,15 +274,8 @@ function ItemRow({
 	);
 }
 
-/**
- * The DOM id of the row carrying one item, scoped to the window so two windows over one process
- * never mint the same id. A group head's fold points `aria-controls` at these.
- */
-const rowDomId = (windowId: string, itemId: string): string => `tuval-row-${windowId}-${itemId}`;
-
 function RowView({
 	row,
-	windowId,
 	interruptedId,
 	onResend,
 	onOlder,
@@ -288,7 +285,6 @@ function RowView({
 	onToggleFold,
 }: {
 	readonly row: ChatRow;
-	readonly windowId: string;
 	readonly interruptedId: string | null;
 	readonly onResend: (() => void) | null;
 	readonly onOlder: () => void;
@@ -340,7 +336,7 @@ function RowView({
 				row.nestedIds.length === 0
 					? null
 					: {
-							rowIds: row.nestedIds.map((id) => rowDomId(windowId, id)),
+							count: row.nestedIds.length,
 							open,
 							onToggle: (next) => onToggleFold(row.item.id, next),
 						}
@@ -705,6 +701,9 @@ function ChatWindow({
 	const onKeyDown = useCallback(
 		(event: ReactKeyboardEvent<HTMLDivElement>) => {
 			if (event.defaultPrevented) return;
+			// An armed prefix owns the next key from any focus, so the window's own two keys stand
+			// down for it: `<prefix> r` is a shell reload, not a resend (#8270).
+			if (prefixArmedAround(event.target)) return;
 			if (event.key === "Escape" && isWorking(phase)) {
 				event.preventDefault();
 				dispatch({type: "interrupt", at: options.now()});
@@ -786,13 +785,6 @@ function ChatWindow({
 							return (
 								<div
 									key={virtual.key}
-									id={
-										row.kind === "item"
-											? rowDomId(host.windowId, row.item.id)
-											: row.kind === "session"
-												? rowDomId(host.windowId, row.items[0].id)
-												: undefined
-									}
 									className="tuval-chat-row"
 									data-index={virtual.index}
 									data-kind={row.kind === "item" ? row.item.kind : row.kind}
@@ -807,7 +799,6 @@ function ChatWindow({
 								>
 									<RowView
 										row={row}
-										windowId={host.windowId}
 										interruptedId={interruptedId}
 										onResend={lastPrompt === null ? null : resend}
 										onOlder={requestOlder}

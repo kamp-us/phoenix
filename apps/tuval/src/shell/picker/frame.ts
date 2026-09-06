@@ -117,8 +117,16 @@ const KEY_HELP = [
 	{keys: "↑ ↓ / k j", action: "Move between rows"},
 	{keys: "Home / End", action: "Jump to the first or last row"},
 	{keys: "Enter", action: "Open or attach the highlighted row"},
-	{keys: "Escape", action: "Dismiss the message"},
 ] as const;
+
+/** Escape's help is the one row that reads off the view: it says what the key will actually do. */
+const escapeHelp = (view: PickerView) => ({
+	keys: "Escape",
+	action:
+		view.previous === null
+			? "Dismiss the message"
+			: "Return to the process this window was showing",
+});
 
 /**
  * The frame for one mount. Pure over `entries` and `view`: the same pair always renders the same
@@ -187,6 +195,6 @@ export const pickerFrame = (
 		groups,
 		announcement,
 		theme: themeFor(options),
-		keyHelp: [...KEY_HELP],
+		keyHelp: [...KEY_HELP, escapeHelp(view)],
 	};
 };
