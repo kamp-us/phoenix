@@ -10,8 +10,11 @@
 		"test": "vitest run",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration",
+		"test:browser": "playwright test",
+		"test:browser:install": "playwright install chromium",
 		"proof:chat": "vite --config src/shell/chat/proof/vite.config.ts",
 		"proof:pi-window": "vite --config src/pi/window/proof/vite.config.ts",
+		"proof:page-reconnect": "node src/page/proof/serve.ts",
 		"proof:pi-vertical": "node src/pi/proof/serve.ts",
 		"proof:claude-real": "node src/claude/proof/serve.ts"
 	},
@@ -38,6 +41,7 @@
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:tuval",
+		"@playwright/test": "catalog:",
 		"@testing-library/dom": "catalog:",
 		"@testing-library/react": "catalog:",
 		"@types/node": "catalog:",

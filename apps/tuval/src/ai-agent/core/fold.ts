@@ -16,6 +16,8 @@ import type {AgentEvent, AgentFailure, Phase} from "../events.ts";
 import {isRefusal, planTranscriptWindow} from "../history/index.ts";
 import {
 	ItemId,
+	type PendingPermission,
+	type PermissionProgress,
 	type TranscriptItem,
 	type TranscriptPayload,
 	type UserItem,
@@ -113,6 +115,41 @@ export const dropRequest = (state: AiAgentSessionState, request: string): AiAgen
 	permissions: without(state.permissions, request),
 });
 
+/** A card whose answer is out. The narrowing is what lets a caller read the decision unguarded. */
+export type AnsweringPermission = PendingPermission & {
+	readonly progress: Extract<PermissionProgress, {readonly status: "answering"}>;
+};
+
+/**
+ * The card one answer's confirmation belongs to, or `null` when it belongs to nothing any more.
+ *
+ * Both operands have to match: the id says which card, and the `seq` says which *raising* of that
+ * id. A reply that outlived its own card is stale, and clearing whatever sits under the id would
+ * settle a request nobody has answered.
+ */
+export const awaitingAnswer = (
+	state: AiAgentSessionState,
+	request: string,
+	seq: number,
+): AnsweringPermission | null => {
+	const held = state.permissions[request];
+	if (held === undefined || held.seq !== seq) return null;
+	return held.progress.status === "answering" ? {...held, progress: held.progress} : null;
+};
+
+/** The card as it stands once its answer's outcome turns out to be unknown. */
+export const unresolvedAnswer = (
+	state: AiAgentSessionState,
+	request: string,
+	held: AnsweringPermission,
+): AiAgentSessionState => ({
+	...state,
+	permissions: {
+		...state.permissions,
+		[request]: {...held, progress: {status: "unresolved", decision: held.progress.decision}},
+	},
+});
+
 /**
  * The two phases only the core's own cells may enter. `start` and `reconnect` are what put a
  * session into an open, and `started` or `failed` are the only ways out of one, so a layer cannot
@@ -180,8 +217,20 @@ export const foldEvent = (
 				phase: event.phase,
 				sends: event.phase === "prompting" ? state.sends : settleAccepted(state.sends),
 			};
-		case "permission":
-			return {...state, permissions: {...state.permissions, [event.request]: event.detail}};
+		// A raising stamps the next `seq`, which is what makes a card's identity the raising rather
+		// than the id: a backend that re-uses a request id gets a second card, and the first card's
+		// answer can no longer settle it (#8006).
+		case "permission": {
+			const seq = state.permissionsRaised + 1;
+			return {
+				...state,
+				permissionsRaised: seq,
+				permissions: {
+					...state.permissions,
+					[event.request]: {request: event.detail, seq, progress: {status: "open"}},
+				},
+			};
+		}
 		case "permission-resolved":
 			return dropRequest(state, event.request);
 		case "mode":

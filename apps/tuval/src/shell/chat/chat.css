@@ -386,6 +386,18 @@
 	padding-block-start: var(--s-1);
 }
 
+/* Where an answer that has left but not landed says so. Colour is the second signal: the line's
+ * own words carry the state, so a card reads the same without it. */
+.tuval-chat-permission-progress {
+	margin: var(--s-2) 0 0;
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-permission-progress[data-status="unresolved"] {
+	color: var(--danger);
+}
+
 .tuval-chat-head {
 	display: flex;
 	gap: var(--s-2);

@@ -69,6 +69,14 @@ export interface PageAttachment {
 	) => Effect.Effect<AttachedProcess<S, M>, AttachRefused | Socket.SocketError>;
 	/** Stop receiving one process's state. The process is untouched; only this socket's interest ends. */
 	readonly detach: (processId: ProcessId) => Effect.Effect<void>;
+	/**
+	 * Resolves when this socket ends, with the error that ended it. The reason is the whole point: an
+	 * open that never landed, a policy close and an abnormal close ask for three different answers,
+	 * and the page's connection lifecycle (`../../page/connection.ts`) is the one caller that reads
+	 * it. It resolves rather than fails, because a socket ending is this value's subject, not its
+	 * failure.
+	 */
+	readonly closed: Effect.Effect<Socket.SocketError>;
 	/** The shell process's state, over the same path as any other process's. */
 	readonly readShell: <S = unknown>() => Stream.Stream<
 		ProcessView<S>,
@@ -244,6 +252,13 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 			}),
 		);
 
+	// `closed` fails so the races above break out of a wait; a reader wants the value instead. A
+	// cause that is not that failure — a defect on the read loop — is still this socket ending.
+	const ended = Deferred.await(closed).pipe(
+		Effect.catch((error) => Effect.succeed(error)),
+		Effect.catchCause(() => Effect.succeed(socketEnded())),
+	);
+
 	return {
 		rows: Stream.map(SubscriptionRef.changes(rowsRef), (rows) => [...rows.values()]),
 		programs: SubscriptionRef.changes(programsRef),
@@ -253,6 +268,7 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 		),
 		attachProcess,
 		detach,
+		closed: ended,
 		readShell,
 	} satisfies PageAttachment;
 });

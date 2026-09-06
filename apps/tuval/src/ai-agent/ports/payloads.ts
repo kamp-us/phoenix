@@ -117,12 +117,37 @@ const decisions: ReadonlySet<string> = new Set<PermissionDecision>([
 ]);
 
 /**
+ * How far one card's answer has got. A card leaves the pending set on its confirmation and not on
+ * the click that answered it (#8006), so `answering` is the state a window renders while the
+ * decision is out and `unresolved` is the one it renders when that answer's outcome is unknown.
+ *
+ * `unresolved` offers no second answer: the authorization may have been applied, so re-sending one
+ * is a retry nobody asked for. Only the backend's own `permission-resolved` clears it.
+ */
+export type PermissionProgress =
+	| {readonly status: "open"}
+	| {readonly status: "answering"; readonly decision: PermissionDecision}
+	| {readonly status: "unresolved"; readonly decision: PermissionDecision};
+
+/** One card the window renders, how far its answer has got, and which raising of its id it is. */
+export interface PendingPermission {
+	readonly request: PermissionRequest;
+	/**
+	 * Which request this session has raised, counting from one. A confirmation names it, so an
+	 * answer whose reply arrives after its card was settled cannot clear a later card that happens
+	 * to carry the same request id.
+	 */
+	readonly seq: number;
+	readonly progress: PermissionProgress;
+}
+
+/**
  * `permission` — the pending set outbound, keyed by request id, and one answer inbound. A program
  * that never prompts emits an empty `pending` and is done; it declares the port all the same, so
  * the window's wiring does not change per program.
  */
 export type PermissionPayload =
-	| {readonly kind: "pending"; readonly requests: Readonly<Record<string, PermissionRequest>>}
+	| {readonly kind: "pending"; readonly requests: Readonly<Record<string, PendingPermission>>}
 	| {
 			readonly kind: "decision";
 			readonly request: string;
@@ -138,13 +163,26 @@ export const isPermissionRequest = (value: unknown): value is PermissionRequest 
 	isJsonValue(value.input) &&
 	typeof value.offersAlways === "boolean";
 
+const isProgress = (value: unknown): value is PermissionProgress =>
+	Predicate.isObject(value) &&
+	(value.status === "open" ||
+		((value.status === "answering" || value.status === "unresolved") &&
+			typeof value.decision === "string" &&
+			decisions.has(value.decision)));
+
+export const isPendingPermission = (value: unknown): value is PendingPermission =>
+	Predicate.isObject(value) &&
+	isPermissionRequest(value.request) &&
+	isNonNegativeInteger(value.seq) &&
+	isProgress(value.progress);
+
 export const isPermissionPayload = (value: unknown): value is PermissionPayload => {
 	if (!Predicate.isObject(value)) return false;
 	switch (value.kind) {
 		case "pending":
 			return (
 				Predicate.isObject(value.requests) &&
-				Object.values(value.requests).every(isPermissionRequest)
+				Object.values(value.requests).every(isPendingPermission)
 			);
 		case "decision":
 			return (
