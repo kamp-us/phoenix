@@ -16,7 +16,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {resolveCi} from "../config/ci-producer.ts";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {resolveTargetRepo, scannedLine} from "../ship/target.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {INCOMPLETE_SCAN, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -67,6 +67,13 @@ export const runSweep = (
 		);
 		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			'no PR on this board can be classified, and a sweep with a hole in it is never "attended".',
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+
 		const listed = yield* listOpenPulls(repo);
 		if (listed._tag === "Failure") {
 			return refuse(
@@ -101,7 +108,15 @@ export const runSweep = (
 					notices,
 				);
 			}
-			const result = yield* diagnoseOne(repo, row.number, "", options, governed.roots, ci);
+			const result = yield* diagnoseOne(
+				repo,
+				row.number,
+				"",
+				options,
+				governed.roots,
+				surfaces.prefixes,
+				ci,
+			);
 			scanned += 1;
 			if (result._tag === "Refused") {
 				return refuse(

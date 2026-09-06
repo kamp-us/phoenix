@@ -69,12 +69,26 @@ const logLine = (event: string, at: string, classes?: ReadonlyArray<string>): st
 	`${JSON.stringify({task: "issue", event: `ISSUE.${event}`, at, ...(classes === undefined ? {} : {classes})})}\n`;
 
 /**
+ * The declaration the `ui` class is derived over, in every lane fixture below. `uiSurfaces`'
+ * shipped default is the empty list, which raises no class at all — right for a repo that declared
+ * nothing, and no ground for a test about that class (#7369).
+ */
+const UI_CONFIG = {
+	"/repo/.fabrika.jsonc": JSON.stringify({
+		uiSurfaces: [
+			{name: "web", prefix: "apps/web/src/", mount: "/", command: "pnpm dev --port {{port}}"},
+		],
+	}),
+};
+
+/**
  * The lane in `build` (one WIP), in `review` (WIP then DONE), or in `review:ui` — which is the same
  * path with `ui` standing from the `WIP`, so the `PASS` out of `review` took the class-guarded arm.
  */
 const laneAt = (state: "build" | "review" | "review:ui") =>
 	fakeFs({
 		files: {
+			...UI_CONFIG,
 			[WORKFLOW]: coderTemplateText(),
 			[LOG]:
 				state === "build"
@@ -108,6 +122,7 @@ const laneWithNoUiArm = () => {
 	delete states["review:ui"];
 	return fakeFs({
 		files: {
+			...UI_CONFIG,
 			[WORKFLOW]: JSON.stringify(document),
 			[LOG]: logLine("WIP", "2026-08-16T01:00:00Z") + logLine("DONE", "2026-08-16T02:00:00Z"),
 		},
@@ -930,6 +945,7 @@ const landed = (child: number, hour: number): string =>
 const epicLaneAt = (state: "build" | "review" | "tail") =>
 	fakeFs({
 		files: {
+			...UI_CONFIG,
 			[EPIC_WORKFLOW]: epicWorkflowText(),
 			[EPIC_LOG]:
 				state === "tail"

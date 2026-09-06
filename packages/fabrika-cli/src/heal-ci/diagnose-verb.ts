@@ -14,7 +14,7 @@ import type {ChildProcessSpawner} from "effect/unstable/process";
 import {type Producer, producerFor, resolveCi} from "../config/ci-producer.ts";
 import type {Resolution} from "../config/key-group.ts";
 import type {CiSurface} from "../config/keys/ci.ts";
-import {governedRootsOr} from "../config/paths.ts";
+import {governedRootsOr, uiSurfacesOr} from "../config/paths.ts";
 import {type CommentRecord, listComments} from "../io/issues.ts";
 import {
 	commitExists,
@@ -185,6 +185,8 @@ export const diagnoseOne = (
 	params: DiagnoseParams,
 	/** This repo's `governedRoots`, resolved once by the caller — a sweep reads the config once. */
 	governedRoots: ReadonlyArray<string>,
+	/** This repo's `uiSurfaces` prefixes, resolved once by the caller for the same reason. */
+	uiPrefixes: ReadonlyArray<string>,
 	/** This repo's `ci`, resolved once by the caller for the same reason. */
 	ci: Resolution<CiSurface>,
 ): Effect.Effect<
@@ -344,7 +346,7 @@ export const diagnoseOne = (
 			return refused(PRECONDITION_UNKNOWN, unreadable("the base comparison", pr, drift.reason));
 		}
 
-		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots));
+		const required = shipNamespacesOf(partitionWithUi(filed.value, governedRoots, uiPrefixes));
 		const authorized = new Map<string, boolean>();
 		const candidates: Array<{
 			readonly namespace: string;
@@ -546,12 +548,20 @@ export const runDiagnose = (
 		);
 		if (governed._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, governed.message);
 
+		const surfaces = yield* uiSurfacesOr(
+			VERB,
+			options.cwd,
+			'the required namespace set is UNKNOWN, never "attended".',
+		);
+		if (surfaces._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, surfaces.message);
+
 		const result = yield* diagnoseOne(
 			resolved.repo,
 			options.pr,
 			options.sha,
 			options,
 			governed.roots,
+			surfaces.prefixes,
 			yield* resolveCi(options.cwd),
 		);
 		if (result._tag === "Refused") return result.outcome;

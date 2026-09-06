@@ -12,7 +12,7 @@
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
-import {designHarnessOr} from "../config/paths.ts";
+import {noUiSurfaces, uiSurfacesOr} from "../config/paths.ts";
 import {exists} from "../io/fs.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {NO_MANIFEST, PRECONDITION_UNKNOWN} from "./codes.ts";
@@ -74,10 +74,10 @@ export const runManifest = (): Effect.Effect<
 		const root = yield* resolveRoot(VERB);
 		if (root._tag === "Refused") return root.outcome;
 
-		const declared = yield* designHarnessOr(
+		const declared = yield* uiSurfacesOr(
 			VERB,
 			root.root,
-			'where this repo declares its render path is unread — presence is UNKNOWN, never "absent".',
+			'what this repo declares as a rendered surface is unread — presence is UNKNOWN, never "absent".',
 		);
 		if (declared._tag === "Refused") return refuse(PRECONDITION_UNKNOWN, declared.message);
 
@@ -91,8 +91,6 @@ export const runManifest = (): Effect.Effect<
 		if (inventory._tag === "Unknown") return unreadable(inventory, VERB);
 		const pointer = yield* probeOrder(root.root, GOLDEN_POINTER_PATHS);
 		if (pointer._tag === "Unknown") return unreadable(pointer, VERB);
-		const harness = yield* probe(root.root, declared.path);
-		if (harness._tag === "Unknown") return unreadable(harness, VERB);
 
 		const pathOf = (found: Probe): string | null =>
 			found._tag === "Present" ? found.relative : null;
@@ -102,9 +100,16 @@ export const runManifest = (): Effect.Effect<
 				registry: pathOf(registry),
 				inventory: pathOf(inventory),
 				goldenPointer: pathOf(pointer),
-				harness: pathOf(harness),
+				// The declared rendered surfaces, by name — `[]` is a repo that declares none, which is
+				// a fact a skill acts on rather than an error.
+				uiSurfaces: declared.surfaces.map((surface) => surface.name),
 				lawSource: registry._tag === "Present" ? "registry" : "manifest-prose",
 			}),
-			[`${VERB}: probed 5 convention paths against ${root.root}.`],
+			[
+				`${VERB}: probed 4 convention paths against ${root.root}.`,
+				declared.surfaces.length === 0
+					? noUiSurfaces(VERB)
+					: `${VERB}: ${declared.surfaces.length} declared UI surface(s) — ${declared.note}.`,
+			],
 		);
 	});
