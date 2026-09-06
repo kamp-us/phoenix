@@ -478,8 +478,12 @@
 	}
 }
 
+/* The override must tie or beat the rule it cancels: `@media` is a conditional group rule and
+   contributes nothing to specificity, so a bare `.tuval-chat-phase-dot` (0,1,0) would silently lose
+   to the pulse rule's (0,3,0) and keep animating for someone who asked for no motion. `[data-phase]`
+   is carried here to tie, and the tie goes to this rule because it comes later. */
 @media (prefers-reduced-motion: reduce) {
-	.tuval-chat-phase-dot,
+	.tuval-chat-phase[data-phase] .tuval-chat-phase-dot,
 	.tuval-chat-working-dots span {
 		animation: none;
 		opacity: 1;
