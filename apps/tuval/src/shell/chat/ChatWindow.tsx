@@ -35,7 +35,7 @@
  * as far as recovery goes.
  */
 
-import {AgentChatInput, Button, DesignTranslationProvider, Kbd} from "@kampus/design";
+import {AgentChatInput, Button, DesignTranslationProvider, Kbd, Markdown} from "@kampus/design";
 import {useVirtualizer, type VirtualizerOptions} from "@tanstack/react-virtual";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode, UIEvent} from "react";
@@ -177,6 +177,45 @@ const who: Readonly<Record<TranscriptItem["kind"], string>> = {
 	system: "session",
 };
 
+/**
+ * The three treatments an item's body gets. An agent reply is markdown by default and renders
+ * through the shared block, which paints synchronously so the row's measurement still holds
+ * (#8012); a `user` or `system` line is shown exactly as it arrived, so what the operator typed is
+ * never reinterpreted as syntax.
+ */
+function ItemBody({
+	item,
+	expanded,
+	fold,
+	onToggleTool,
+}: {
+	readonly item: TranscriptItem;
+	readonly expanded: boolean;
+	readonly fold: ToolFold | null;
+	readonly onToggleTool: (id: string, open: boolean) => void;
+}): ReactElement {
+	if (item.kind === "tool") {
+		return (
+			<ToolRow
+				item={item}
+				expanded={expanded}
+				fold={fold}
+				onToggle={(open) => onToggleTool(item.id, open)}
+			/>
+		);
+	}
+	if (item.kind === "assistant") {
+		// The transcript is a region inside the desk, so a `#` heading in a reply is a subsection of
+		// it rather than a page title.
+		return (
+			<Markdown className="tuval-chat-markdown" headingBase={3}>
+				{item.text}
+			</Markdown>
+		);
+	}
+	return <p className="tuval-chat-text">{item.text}</p>;
+}
+
 function ItemRow({
 	item,
 	interrupted,
@@ -198,16 +237,7 @@ function ItemRow({
 		<>
 			{/* A nested row says whose call it was in words; the indent beside it is the second signal. */}
 			<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
-			{item.kind === "tool" ? (
-				<ToolRow
-					item={item}
-					expanded={expanded}
-					fold={fold}
-					onToggle={(open) => onToggleTool(item.id, open)}
-				/>
-			) : (
-				<p className="tuval-chat-text">{item.text}</p>
-			)}
+			<ItemBody item={item} expanded={expanded} fold={fold} onToggleTool={onToggleTool} />
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">
 					<span className="tuval-chat-interrupted-mark">interrupted</span>
@@ -679,90 +709,93 @@ function ChatWindow({
 		// composer's textarea keeps focus. A named `section` is what that owes a screen reader: the
 		// phase line, the transcript and the composer are one named region, and every control inside
 		// it is a real `button` or `textarea` with its own keyboard behaviour.
-		<section
-			className="tuval-chat"
-			aria-label="Agent chat"
-			data-scheme="dark"
-			data-window={host.windowId}
-			onKeyDown={onKeyDown}
-		>
-			<div className="tuval-chat-bar">
-				<p className="tuval-chat-phase" data-phase={phase} role="status">
-					<span className="tuval-chat-phase-dot" aria-hidden="true" />
-					{statusLine({
-						phase,
-						failure: state?.failure ?? null,
-						interruption,
-						now: options.now(),
-					})}
-				</p>
-				<div className="tuval-chat-bar-end">
-					{options.extras === null ? null : options.extras(process.state)}
-					<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
-				</div>
-			</div>
-			<div
-				ref={scrollRef}
-				className="tuval-chat-transcript"
-				onScroll={onScroll}
-				onKeyDown={swallowBareCharacter}
-				role="log"
-				aria-label="Transcript"
-				// The scroll container is the only way to older turns on a plain transcript, so a
-				// keyboard user must be able to focus it (axe scrollable-region-focusable).
-				// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
-				tabIndex={0}
+		// The provider sits above the whole window, not just the composer: a design primitive the
+		// transcript mounts (a table's scroller name) reads this catalog too, and the package's own
+		// default is Turkish.
+		<DesignTranslationProvider translate={tuvalDesignTranslate}>
+			<section
+				className="tuval-chat"
+				aria-label="Agent chat"
+				data-scheme="dark"
+				data-window={host.windowId}
+				onKeyDown={onKeyDown}
 			>
-				<div className="tuval-chat-spacer" style={{height: `${totalSize}px`}}>
-					{virtualizer.getVirtualItems().map((virtual) => {
-						const row = rows[virtual.index];
-						if (row === undefined) return null;
-						return (
-							<div
-								key={virtual.key}
-								id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
-								className="tuval-chat-row"
-								data-index={virtual.index}
-								data-kind={row.kind === "item" ? row.item.kind : row.kind}
-								data-nested={row.kind === "item" && row.nested ? "true" : undefined}
-								ref={virtualizer.measureElement}
-								style={{
-									transform: `translateY(${virtual.start}px)`,
-									// One indent step per fold the row sits inside, so a subagent's own subagent
-									// reads as a further step in rather than as another row at the same level.
-									...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
-								}}
-							>
-								<RowView
-									row={row}
-									windowId={host.windowId}
-									interruptedId={interruptedId}
-									onResend={lastPrompt === null ? null : resend}
-									onOlder={requestOlder}
-									expanded={expanded}
-									unfolded={unfolded}
-									onToggleTool={toggleTool}
-									onToggleFold={toggleFold}
-								/>
-							</div>
-						);
-					})}
+				<div className="tuval-chat-bar">
+					<p className="tuval-chat-phase" data-phase={phase} role="status">
+						<span className="tuval-chat-phase-dot" aria-hidden="true" />
+						{statusLine({
+							phase,
+							failure: state?.failure ?? null,
+							interruption,
+							now: options.now(),
+						})}
+					</p>
+					<div className="tuval-chat-bar-end">
+						{options.extras === null ? null : options.extras(process.state)}
+						<ModeSwitch modes={process.state.modes} onSetMode={setMode} />
+					</div>
 				</div>
-			</div>
-			{isWorking(phase) ? (
-				// Visual only. The phase line above is the announced surface for the running turn, so a
-				// live region here would narrate that same turn twice; what this adds is the tell at
-				// the end of the transcript, where the eye already is while a turn runs.
-				<p className="tuval-chat-working" aria-hidden="true">
-					<span className="tuval-chat-working-dots">
-						<span />
-						<span />
-						<span />
-					</span>
-					{interruption === null ? "Working…" : "Interrupting…"}
-				</p>
-			) : null}
-			<DesignTranslationProvider translate={tuvalDesignTranslate}>
+				<div
+					ref={scrollRef}
+					className="tuval-chat-transcript"
+					onScroll={onScroll}
+					onKeyDown={swallowBareCharacter}
+					role="log"
+					aria-label="Transcript"
+					// The scroll container is the only way to older turns on a plain transcript, so a
+					// keyboard user must be able to focus it (axe scrollable-region-focusable).
+					// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
+					tabIndex={0}
+				>
+					<div className="tuval-chat-spacer" style={{height: `${totalSize}px`}}>
+						{virtualizer.getVirtualItems().map((virtual) => {
+							const row = rows[virtual.index];
+							if (row === undefined) return null;
+							return (
+								<div
+									key={virtual.key}
+									id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
+									className="tuval-chat-row"
+									data-index={virtual.index}
+									data-kind={row.kind === "item" ? row.item.kind : row.kind}
+									data-nested={row.kind === "item" && row.nested ? "true" : undefined}
+									ref={virtualizer.measureElement}
+									style={{
+										transform: `translateY(${virtual.start}px)`,
+										// One indent step per fold the row sits inside, so a subagent's own subagent
+										// reads as a further step in rather than as another row at the same level.
+										...(row.kind === "item" && row.depth > 0 ? {"--nest-depth": row.depth} : {}),
+									}}
+								>
+									<RowView
+										row={row}
+										windowId={host.windowId}
+										interruptedId={interruptedId}
+										onResend={lastPrompt === null ? null : resend}
+										onOlder={requestOlder}
+										expanded={expanded}
+										unfolded={unfolded}
+										onToggleTool={toggleTool}
+										onToggleFold={toggleFold}
+									/>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+				{isWorking(phase) ? (
+					// Visual only. The phase line above is the announced surface for the running turn, so a
+					// live region here would narrate that same turn twice; what this adds is the tell at
+					// the end of the transcript, where the eye already is while a turn runs.
+					<p className="tuval-chat-working" aria-hidden="true">
+						<span className="tuval-chat-working-dots">
+							<span />
+							<span />
+							<span />
+						</span>
+						{interruption === null ? "Working…" : "Interrupting…"}
+					</p>
+				) : null}
 				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />
 				<QueuedMessages queued={process.state.queued} />
 				<UnsentMessages
@@ -779,8 +812,8 @@ function ChatWindow({
 						commit((current) => (current.draft === draft ? current : {...current, draft}))
 					}
 				/>
-			</DesignTranslationProvider>
-		</section>
+			</section>
+		</DesignTranslationProvider>
 	);
 }
 

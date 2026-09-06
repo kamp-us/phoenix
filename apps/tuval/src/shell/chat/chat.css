@@ -10,7 +10,11 @@
  * composer, silently.
  *
  * So this scope re-declares the roles the package's sheets read, in the package's own shape, off
- * Tuval's own scale. It is the only place the two layers meet; nothing under `.tuval-chat` may use
+ * Tuval's own scale. A role this block *omits* fails the other way and quieter: it resolves from
+ * the package's `:root`, where the family is already substituted to IBM Plex, so the element renders
+ * in a second typeface beside Tuval's `system-ui` (#8012 shipped that with `--t-h-feed`). Every
+ * `--t-*` a package sheet reads under this scope belongs here.
+ * It is the only place the two layers meet; nothing under `.tuval-chat` may use
  * Tuval's two-part `font: var(--t-body) system-ui, sans-serif` form, because inside this scope
  * `--t-body` already carries a family.
  */
@@ -27,6 +31,7 @@
 	--t-meta: 12px / 1.4 var(--font-body);
 	--t-micro: 11px / 1.4 var(--font-body);
 	--t-mono: 13px / 1.5 var(--font-mono);
+	--t-h-feed: 16px / 1.35 var(--font-body);
 
 	--r-lg: 6px;
 	--s-8: 40px;
@@ -143,6 +148,13 @@
 	margin: 0;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+}
+
+/* The agent reply is a rendered markdown block (`@kampus/design`). It carries its own type and
+   spacing; what it needs from the row is a width to wrap and scroll inside. */
+.tuval-chat-markdown {
+	min-inline-size: 0;
+	max-inline-size: 100%;
 }
 
 .tuval-chat-row[data-kind="user"] .tuval-chat-text {
