@@ -174,7 +174,7 @@ const mismatchOf = (
  * The key is per-carrier because the two carriers anchor on different bytes, and neither read can
  * stand in for the other. An advisory withholds the SHA from its first line by design, so
  * `read` calls it `Malformed` and a marker-only match never finds a prior advisory: every §CP re-post
- * created a second comment, against the one-namespace-one-comment invariant this step exists for
+ * created a second comment, against the one-namespace-one-comment invariant this step exists for.
  * Matching per carrier also keeps the pair disjoint in the other direction — a marker post
  * never edits an advisory comment, and vice versa.
  *
@@ -365,7 +365,7 @@ export const runPost = (
 		if (listed._tag === "Failure") return unreadable("the changed-file list", pr, listed.reason);
 		const derived = namespacesOf(partition(listed.value));
 		// The content binding is taken at the SAME bound commit the class set is derived at, so the
-		// digest the verdict carries is provably over the range it judged and not over a later read
+		// digest the verdict carries is provably over the range it judged and not over a later read.
 		// A digest that cannot be computed refuses the post: a marker silently emitted
 		// without one is head-bound forever, and nothing downstream could tell that apart from a
 		// deliberate head-only verdict.

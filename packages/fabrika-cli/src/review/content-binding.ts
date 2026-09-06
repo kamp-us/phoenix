@@ -213,7 +213,8 @@ export const rangeDigestOnto = (
 	});
 
 /**
- * Whether a range verdict still binds the state that claims it — the range half of the content binding.
+ * Whether a range verdict still binds the state that claims it — the range half of the content
+ * binding.
  *
  * The PR-scoped rule can lean on head equality first, and a range verdict has no such shortcut: the
  * SHAs it names stop being the epic branch's history the moment the range is merged in, so content

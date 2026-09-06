@@ -46,7 +46,7 @@ describe("runVerdicts", () => {
 		);
 	});
 
-	// The erasure this records: a PASS that retired a FAIL at one head used to print one row, and
+	// The erasure: a PASS that retired a FAIL at one head used to print one row, and
 	// nothing anywhere said a gate had blocked. Both rows now, told apart by the sixth field.
 	it("prints a retired verdict as its own superseded row, not only the survivor", async () => {
 		const out = await run([

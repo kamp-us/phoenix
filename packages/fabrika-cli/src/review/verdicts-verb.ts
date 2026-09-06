@@ -7,8 +7,8 @@
  *
  * **It resolves the same binding `ship gate` does, and that is the point of the coupling.** This verb
  * is what routes an agent to re-review, so a row reading `stale` where the merge gate would read
- * `pass` re-imposes the very tax the content binding removed — through a second opinion nobody would think to
- * suspect. Both call `bindToContent`, so they cannot disagree.
+ * `pass` re-imposes the very tax the content binding removed — through a second opinion nobody
+ * would think to suspect. Both call `bindToContent`, so they cannot disagree.
  *
  * A head this verb cannot resolve prints `unbindable` on **every** row — never `current`, never
  * `stale`. A comparison that could not be made is not a negative result, so the live-head read's

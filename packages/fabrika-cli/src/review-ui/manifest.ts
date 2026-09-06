@@ -9,7 +9,7 @@
  * The set path is **deterministic from the PR and the head**, never a `mktemp -d` nobody recorded
  * (v1 S4: a PASS whose evidence upload failed was unauditable). The `--out` set name is the run's
  * own key inside that directory — two concurrent reviews of one head name different sets and never
- * write each other's bytes (the run-keyed rule states; a session is not a run).
+ * write each other's bytes — the key is the run, and a session is not a run.
  */
 import {createHash} from "node:crypto";
 import {Effect, FileSystem} from "effect";

@@ -2,7 +2,7 @@
  * The range-scoped write path `review post --base/--tip` and `governance post --base/--tip` share —
  * one composer for the marker `lane prove`'s epic-child arm reads.
  *
- * A child's verdict lands on the **child issue**, not a PR: the epic run opens one tail PR
+ * A child's verdict lands on the **child issue**, not a PR: the epic run opens one tail PR,
  * so mid-run there is no PR surface to bind a head-scoped marker to, and the two SHAs
  * the range names stop being history the moment the range merges into the epic branch. What binds
  * is the content digest, which is why this path composes through
@@ -19,7 +19,7 @@
  * **A re-post appends; it never replaces.** The prior verdict is retired verbatim below
  * `./supersede.ts`'s fence and the fresh one takes the first line, because GitHub keeps no
  * comment-body history and this path's verdict has no second copy anywhere — a child opens no PR, so
- * the comment *is* the record of that child's review, and `lane prove` derives a refusal from it
+ * the comment *is* the record of that child's review, and `lane prove` derives a refusal from it.
  * Retiring a standing verdict of the opposite polarity is {@link SUPERSEDES_VERDICT} until
  * `--supersede` says so out loud, and that refusal keys on the **range** rather than a head: the
  * range dimension plays the head dimension's role here, and it is already

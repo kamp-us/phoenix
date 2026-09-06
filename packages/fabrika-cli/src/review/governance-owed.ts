@@ -48,7 +48,7 @@ export const governanceOwed = (
  * {@link governanceStale} asserts it again.
  *
  * `stale` alone, off the floor's published title: `fail` is a real governance FAIL the caller cannot
- * clear by re-posting, and `unresolved` is UNKNOWN, which never passes and is nobody's to discount
+ * clear by re-posting, and `unresolved` is UNKNOWN, which never passes and is nobody's to discount.
  * A title this repo's floor did not write is `Unreadable` and falls through with them.
  */
 export const staleFloorIsTheOnlyRed = (checkRuns: ReadonlyArray<CheckRun>): boolean => {
@@ -64,9 +64,9 @@ export const staleFloorIsTheOnlyRed = (checkRuns: ReadonlyArray<CheckRun>): bool
  * Is this head's `red` a stale governance floor and nothing else — a red its own reader clears?
  *
  * The floor run at the head is required but its status is not: unlike the `absent` half, an
- * in-flight floor run here is the caller's own re-fire still republishing, which is the second read
- * recorded. What the run proves is provenance — with no floor run at this head the failing
- * check-run came from somewhere this read cannot vouch for, so it stays a plain red.
+ * in-flight floor run here is the caller's own re-fire still republishing. What the run proves is
+ * provenance — with no floor run at this head the failing check-run came from somewhere this read
+ * cannot vouch for, so it stays a plain red.
  */
 export const governanceStale = (
 	checkRuns: ReadonlyArray<CheckRun>,

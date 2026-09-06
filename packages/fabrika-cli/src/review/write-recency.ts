@@ -59,7 +59,7 @@ export const withWrittenAt = (body: string, iso: string): string => {
  * The write time a body stamps on itself, or `null` for an unstamped one.
  *
  * Read over the live region alone, then the LAST match within it. Both halves are load-bearing: the
- * live-region slice keeps an archived verdict's older stamp from re-crowning a superseded round
+ * live-region slice keeps an archived verdict's older stamp from re-crowning a superseded round,
  * and taking the last match keeps a verdict whose prose quotes an earlier stamp resolving
  * to its own.
  */

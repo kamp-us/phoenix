@@ -2,7 +2,7 @@
  * The range subject a verb takes instead of a pull request — the flag pair, and the commit it implies.
  *
  * An epic child runs on one shared branch with a single PR at the tail, so mid-run there
- * is no pull request for a verb to resolve. `--base`/`--tip` is the subject that stands in its place
+ * is no pull request for a verb to resolve. `--base`/`--tip` is the subject that stands in its place,
  * and this module is the one place its shape is read, so `governance post`'s range form and
  * the read verbs that run before it cannot drift apart on what a well-formed range is.
  *
@@ -37,7 +37,7 @@ export type RangeRead =
 /**
  * Which subject these flags name, or the refusal that says why they name none.
  *
- * Both ends or neither, and `--sha` never beside them: a range verdict binds content, not a head
+ * Both ends or neither, and `--sha` never beside them: a range verdict binds content, not a head,
  * so a `--sha` here is a head-scoped idea aimed at a subject that has no head. Refusing
  * it is what keeps that from being silently ignored.
  */

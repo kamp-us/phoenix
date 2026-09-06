@@ -85,8 +85,8 @@ export const UPLOAD_FAILED = 17;
  * Its own seat rather than {@link OFF_VOCABULARY}, because nothing about the arguments is off any
  * vocabulary — the write is legitimate and one flag away. What it costs is the record: a standing
  * FAIL silently became a PASS with nothing showing a gate had blocked, and the host keeps no
- * comment-body history to recover it from. Nothing is posted on this refusal — the evidence uploads of
- * step 4 have already run by then, which is a spent upload rather than a landed verdict.
+ * comment-body history to recover it from. Nothing is posted on this refusal — the evidence
+ * uploads of step 4 have already run by then, which is a spent upload rather than a landed verdict.
  */
 export const SUPERSEDES_VERDICT = 18;
 /**

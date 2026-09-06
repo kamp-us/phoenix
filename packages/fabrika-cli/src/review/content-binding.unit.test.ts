@@ -195,9 +195,9 @@ describe("bindRange", () => {
 	});
 
 	/**
-	 * The non-folding rule the binding turns on: a derivation that could not be made is UNKNOWN. Read as
-	 * `Current` it would ship an unverifiable verdict; read as `Stale` it would name the wrong cause
-	 * and send an operator to re-review instead of to a broken checkout.
+	 * The non-folding rule the binding turns on: a derivation that could not be made is UNKNOWN.
+	 * Read as `Current` it would ship an unverifiable verdict; read as `Stale` it would name the
+	 * wrong cause and send an operator to re-review instead of to a broken checkout.
 	 */
 	it("is Unbindable when the derivation could not be made", () => {
 		const out = bindRange({content: CLAIMED}, {_tag: "Unreadable", reason: "no merge base"});
