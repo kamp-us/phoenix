@@ -72,6 +72,12 @@ export interface Mapping {
 	readonly toolCalls: ReadonlyMap<string, ToolCall>;
 	/** The reply the deltas are growing, or `null` when no turn is streaming. */
 	readonly partial: PartialReply | null;
+	/**
+	 * The reply whose stream has closed, kept so a frame still naming that `msg_*` finds its row.
+	 * Dropping the id at the close is what let a late frame mint a second copy of one answer, keyed
+	 * on the frame's own uuid and appended below whatever arrived in between (#8366).
+	 */
+	readonly settled: PartialReply | null;
 	/** How many messages this mapping had nothing to say about. */
 	readonly skipped: number;
 }
@@ -80,6 +86,7 @@ export const emptyMapping: Mapping = {
 	model: "",
 	toolCalls: new Map(),
 	partial: null,
+	settled: null,
 	skipped: 0,
 };
 
@@ -147,11 +154,14 @@ export const assistantEvents = (
 	const interrupted = message.aborted === true;
 	// The deltas of this same reply, when the run streamed them: this frame's `message.id` is the
 	// `msg_*` the `message_start` announced, so the row lands on the partials rather than beside
-	// them, at the clock they were written under.
-	const open = openReplyOf(body, mapping);
-	const at = open === null ? timestampOf(message, options.at) : open.at;
-	const id = open?.id ?? (typeof message.uuid === "string" ? message.uuid : `assistant-${at}`);
-	const reply = open === null ? null : grown(open, addedTextOf(open.text, frameText));
+	// them, at the clock they were written under. The stream having already closed changes nothing
+	// about where the frame belongs, so a match against the settled reply routes it the same way.
+	const open = replyOf(body, mapping.partial);
+	const closed = open === null ? replyOf(body, mapping.settled) : null;
+	const row = open ?? closed;
+	const at = row === null ? timestampOf(message, options.at) : row.at;
+	const id = row?.id ?? (typeof message.uuid === "string" ? message.uuid : `assistant-${at}`);
+	const reply = row === null ? null : grown(row, addedTextOf(row.text, frameText));
 	const ends = interrupted || stopReasonOf(body) !== null;
 	const settles = open === null || ends;
 	const text = reply === null ? frameText : reply.text;
@@ -209,15 +219,18 @@ export const assistantEvents = (
 			...mapping,
 			toolCalls,
 			partial: open === null ? mapping.partial : ends ? null : reply,
+			// A row this frame leaves settled stays reachable, so a further frame of the same turn —
+			// a trailing content block — still lands on it rather than beside it.
+			settled: reply === null || (open !== null && !ends) ? mapping.settled : reply,
 		},
 		events,
 	};
 };
 
-/** The reply this frame belongs to, or `null` when it is not a frame of the streaming turn. */
-const openReplyOf = (body: unknown, mapping: Mapping): PartialReply | null => {
-	if (mapping.partial === null || !isRecord(body)) return null;
-	return body.id === mapping.partial.id ? mapping.partial : null;
+/** The reply this frame belongs to, or `null` when it is not a frame of that reply's turn. */
+const replyOf = (body: unknown, reply: PartialReply | null): PartialReply | null => {
+	if (reply === null || !isRecord(body)) return null;
+	return body.id === reply.id ? reply : null;
 };
 
 /**
@@ -290,7 +303,7 @@ export const partialReplyEvents = (
 	if (open === null) return skipMessage(mapping);
 	if (event.type === "message_stop" || stopsStream(event)) {
 		return {
-			mapping: {...mapping, partial: null},
+			mapping: {...mapping, partial: null, settled: open},
 			events:
 				open.text.length === 0
 					? []

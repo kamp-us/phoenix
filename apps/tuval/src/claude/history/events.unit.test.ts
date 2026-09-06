@@ -10,8 +10,14 @@
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {describe, expect, it} from "vitest";
+import {upsertItem} from "../../ai-agent/core/fold.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
-import {byteLength, type ItemId, TOOL_RESULT_BYTE_LIMIT} from "../../ai-agent/ports/index.ts";
+import {
+	byteLength,
+	type ItemId,
+	TOOL_RESULT_BYTE_LIMIT,
+	type TranscriptItem,
+} from "../../ai-agent/ports/index.ts";
 import {toAgentEvents} from "./events.ts";
 import {loadFixture} from "./fixtures/load.ts";
 import {emptyMapping, type Mapping, type MappingStep} from "./map.ts";
@@ -38,6 +44,13 @@ const run = (stream: ReadonlyArray<SDKMessage>, mapping: Mapping = emptyMapping)
 
 const items = (events: ReadonlyArray<AgentEvent>) =>
 	events.flatMap((event) => (event.kind === "item" ? [event.item] : []));
+
+/** The transcript these events fold to, in the arrival order `upsertItem` gives it. */
+const tail = (events: ReadonlyArray<AgentEvent>): ReadonlyArray<TranscriptItem> =>
+	items(events).reduce<ReadonlyArray<TranscriptItem>>(
+		(carried, one) => upsertItem(carried, one),
+		[],
+	);
 
 describe("toAgentEvents over a captured init", () => {
 	it("reports the model the session named, and no phase", () => {
@@ -567,6 +580,88 @@ describe("toAgentEvents over a streamed turn that reasons before it answers", ()
 				.map(() => true),
 			undefined,
 		]);
+	});
+});
+
+describe("toAgentEvents over a streamed turn whose assistant frame lands after the close", () => {
+	/**
+	 * Arrival order is the only variable here. Every envelope is the committed streaming turn's own,
+	 * and the turn's `assistant` frame is lifted out of its captured slot — mid-stream, where it
+	 * folds into the open reply — to after `message_stop`, where the reply has already settled. No
+	 * capture exhibits that ordering: the founder's sighting of the doubled row was not captured,
+	 * and nothing proves the SDK ever delivers the frame that late. The mapping holds on either
+	 * order because a frame naming a settled `msg_*` belongs on that row whatever the SDK does
+	 * (#8366).
+	 */
+	const MSG = "msg_00000000000000000006";
+	const stream = messages("streaming-turn");
+	const captured = <T extends SDKMessage>(rows: ReadonlyArray<T>, what: string): T => {
+		const first = rows[0];
+		if (first === undefined) throw new Error(`the capture holds no ${what} frame`);
+		return first;
+	};
+	const finished = captured(
+		stream.flatMap((one) => (one.type === "assistant" ? [one] : [])),
+		"assistant",
+	);
+	/** The capture with its `assistant` frame moved past `message_stop`, `between` in the gap. */
+	const late = (
+		frame: SDKMessage = finished,
+		between: ReadonlyArray<SDKMessage> = [],
+	): ReadonlyArray<SDKMessage> =>
+		stream.flatMap((one) =>
+			one.type === "assistant"
+				? []
+				: one.type === "stream_event" && one.event.type === "message_stop"
+					? [one, ...between, frame]
+					: [one],
+		);
+
+	it("lands the frame on the settled row instead of a second copy of the answer", () => {
+		const {events} = run(late());
+		const replies = tail(events).filter((one) => one.kind === "assistant");
+		expect(replies).toEqual([
+			{kind: "assistant", id: MSG, timestamp: AT, text: "hello from tuval streaming capture"},
+		]);
+	});
+
+	it("keeps the reply above a tool row that landed while the frame was in flight", () => {
+		// The tool row is the `tool-turn` capture's own `tool_use` frame, so the gap is filled by a
+		// real envelope rather than an invented one; only where it sits is this case's doing.
+		const tool = captured(
+			messages("tool-turn").flatMap((one) => (one.type === "assistant" ? [one] : [])),
+			"tool_use",
+		);
+		const {events} = run(late(finished, [tool]));
+		const rows = tail(events).filter((one) => one.kind === "assistant" || one.kind === "tool");
+		expect(rows.map((one) => one.kind)).toEqual(["assistant", "tool"]);
+		expect(rows[0]).toEqual({
+			kind: "assistant",
+			id: MSG,
+			timestamp: AT,
+			text: "hello from tuval streaming capture",
+		});
+	});
+
+	/**
+	 * The frame carries `thinking-turn`'s captured reasoning block in place of the streaming turn's
+	 * text block — two captures crossed, because whether a turn reasons is the provider's call and
+	 * no single capture holds both shapes (`fixtures/PROVENANCE.md`). Nothing here is invented: the
+	 * envelope and the block are both captured bytes, and the ordering stays this case's variable.
+	 */
+	it("hangs a late reasoning block off the settled row's id", () => {
+		const reasoned = captured(
+			messages("thinking-turn").flatMap((one) => (one.type === "assistant" ? [one] : [])),
+			"thinking",
+		);
+		const frame: unknown = {
+			...finished,
+			message: {...finished.message, content: reasoned.message.content},
+		};
+		const {events} = run(late(frame as SDKMessage));
+		const thinking = tail(events).filter((one) => one.kind === "thinking");
+		expect(thinking.map((one) => one.id)).toEqual([`${MSG}:thinking`]);
+		expect(thinking[0]?.timestamp).toBe(AT);
 	});
 });
 
