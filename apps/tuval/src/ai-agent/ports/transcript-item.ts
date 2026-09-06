@@ -50,11 +50,19 @@ export interface UserItem extends ItemBase {
 	readonly local?: boolean;
 }
 
-/** `interrupted` marks a turn the operator cut short; the resend is a fresh prompt, not a retry. */
+/**
+ * `interrupted` marks a turn the operator cut short; the resend is a fresh prompt, not a retry.
+ *
+ * `partial` marks text still being written. A backend re-upserts this same id as the reply grows
+ * and leaves the marker off the last upsert, so absent means final and a reader needs no second
+ * field to tell a finished reply from one mid-flight. Nothing about which backend is writing
+ * reaches the flag: the window learns "still growing" once, for every agent program (#8142).
+ */
 export interface AssistantItem extends ItemBase {
 	readonly kind: "assistant";
 	readonly text: string;
 	readonly interrupted?: boolean;
+	readonly partial?: boolean;
 }
 
 /**
@@ -116,6 +124,10 @@ export const isJsonValue = (value: unknown): value is JsonValue => {
 
 const isId = (value: unknown): value is ItemId => typeof value === "string" && value.length > 0;
 
+/** An absent flag and a `false` one say the same thing; anything else is not a flag at all. */
+const isOptionalFlag = (value: unknown): boolean =>
+	value === undefined || typeof value === "boolean";
+
 export const isNonNegativeInteger = (value: unknown): boolean =>
 	typeof value === "number" && Number.isInteger(value) && value >= 0;
 
@@ -134,16 +146,14 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 		return false;
 	switch (value.kind) {
 		case "user":
-			return (
-				typeof value.text === "string" &&
-				(value.local === undefined || typeof value.local === "boolean")
-			);
+			return typeof value.text === "string" && isOptionalFlag(value.local);
 		case "system":
 			return typeof value.text === "string";
 		case "assistant":
 			return (
 				typeof value.text === "string" &&
-				(value.interrupted === undefined || typeof value.interrupted === "boolean")
+				isOptionalFlag(value.interrupted) &&
+				isOptionalFlag(value.partial)
 			);
 		case "tool":
 			return (
