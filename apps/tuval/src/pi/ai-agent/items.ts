@@ -142,9 +142,13 @@ const usageEventOf = (item: PiTranscriptItem): Extract<AgentEvent, {kind: "usage
  * What the last snapshot said, so the next one emits only what changed.
  *
  * A snapshot is authoritative and whole — Pi re-sends the entire transcript every revision — so
- * without this the window would repaint every item on every keystroke of a stream. The
- * fingerprints are the projected item's own JSON, which is exactly the value the window renders:
- * two snapshots whose projections match are, to the window, the same transcript.
+ * without this the window would repaint every item on every revision. The push rate is what makes
+ * that expensive: the server ticks once per session event, so a turn writing text costs a
+ * revision per delta once the host is projecting the reply as it is written
+ * (`../server/AgentSessionHost.ts`'s `streamPartialText`, off by default), and one item changes
+ * while the rest do not. The fingerprints are the projected item's own JSON, which is exactly the
+ * value the window renders: two snapshots whose projections match are, to the window, the same
+ * transcript.
  */
 export interface SnapshotProjection {
 	readonly items: ReadonlyMap<string, string>;

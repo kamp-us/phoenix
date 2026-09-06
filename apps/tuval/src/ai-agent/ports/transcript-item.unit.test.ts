@@ -47,6 +47,18 @@ describe("transcript item union", () => {
 		expect(isTranscriptItem({...assistant, interrupted: true})).toBe(true);
 	});
 
+	it("admits an assistant turn still being written, and one that has finished", () => {
+		expect(isTranscriptItem({...assistant, partial: true})).toBe(true);
+		expect(isTranscriptItem({...assistant, partial: false})).toBe(true);
+		expect(isTranscriptItem({...assistant, partial: undefined})).toBe(true);
+	});
+
+	it("refuses a partial marker that is not a flag", () => {
+		expect(isTranscriptItem({...assistant, partial: "true"})).toBe(false);
+		expect(isTranscriptItem({...assistant, partial: 1})).toBe(false);
+		expect(isTranscriptItem({...assistant, partial: null})).toBe(false);
+	});
+
 	it("refuses an item of an unknown kind", () => {
 		expect(isTranscriptItem({...user, kind: "rate-limit"})).toBe(false);
 	});

@@ -41,6 +41,12 @@ export interface AgentSessionHostOptions {
 	 * `resume` refuses.
 	 */
 	readonly projectRoot?: string;
+	/**
+	 * Project the reply still being written into the session's transcript, so a client sees text
+	 * arrive as the model writes it rather than when the turn ends. Off unless a caller asks for
+	 * it: a snapshot carrying a partial reply is a shape no client above this host reads yet.
+	 */
+	readonly streamPartialText?: boolean;
 }
 
 const allThinkingLevels: ReadonlyArray<ThinkingLevel> = [
@@ -88,6 +94,25 @@ const phaseOf = (session: AgentSession): PiSessionView["phase"] => {
 	if (session.isStreaming) return "turn";
 	return "idle";
 };
+
+/**
+ * The reply Pi is still writing, when this host was asked to project one.
+ *
+ * `AgentState.streamingMessage` holds the in-flight assistant message from `message_start` until
+ * `message_end`, which is the same event that pushes it onto `messages` (`pi-agent-core`
+ * `dist/agent.js:382-388`). So the two never hold one message at once, and reading them together
+ * is the whole transcript with nothing counted twice.
+ *
+ * Takes the one field it reads rather than an `AgentSession`, so the flag's two answers are
+ * provable without standing up a model.
+ */
+export const streamingMessage = (
+	options: Pick<AgentSessionHostOptions, "streamPartialText">,
+	state: {readonly streamingMessage?: unknown},
+): SourceMessage | undefined =>
+	options.streamPartialText === true
+		? (state.streamingMessage as SourceMessage | undefined)
+		: undefined;
 
 const call = <A>(
 	session: AgentSession,
@@ -153,7 +178,10 @@ const handleOf = (
 						id: session.model?.id ?? "unknown",
 					},
 					thinkingLevel: session.thinkingLevel as ThinkingLevel,
-					transcript: projectTranscript(session.messages as ReadonlyArray<SourceMessage>),
+					transcript: projectTranscript(
+						session.messages as ReadonlyArray<SourceMessage>,
+						streamingMessage(options, session.state),
+					),
 					name: session.sessionName,
 					queuedSteer: session.getSteeringMessages(),
 				}),

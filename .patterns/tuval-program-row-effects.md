@@ -219,6 +219,22 @@ function `init` uses, never a second copy of the parse: a store sealing on a dif
 the one the window renders would hold the wrong bytes. A row with no parse of its own omits the
 field and restores whatever loads.
 
+**A state no restore may read back is never written, and the row says so under `checkpointWorthy`.**
+The host saves on every applied Msg, so a program re-upserting one growing item per delta rewrites
+its whole state through Demlik's `fileStore` — mkdir, `JSON.stringify`, write-temp, rename — awaited
+inside the single-permit transition tail, which puts each delta's fold behind the previous one's
+disk round trip. The row declares `checkpointWorthy: (state) => boolean`
+([`registry/program.ts`](../apps/tuval/src/registry/program.ts)) and the host asks it at every save
+site — the commit's, boot's and stop's ([`host/actor.ts`](../apps/tuval/src/host/actor.ts)) — so a
+`false` writes nothing anywhere. One predicate is both halves of the fix: the mid-turn burst costs
+no disk, and the state that ends the turn is worthy again, so the commit landing it is the flush and
+it is on disk before the dispatch returns. The skipped writes are never owed, because a state the
+row refuses is one no restore may show — a half-written reply must not come back as the reply. Keep
+it total and cheap; it runs on the tail on every commit. It composes with the seal above rather than
+replacing it: the row refuses this state, the sealed store refuses every state. A row whose states
+are all worth keeping omits the field
+([#8170](https://github.com/kamp-us/phoenix/issues/8170)).
+
 **A restored process publishes nothing until something republishes it.** Out-ports are event-driven:
 a projection leaves when the fold moves it. A process brought back from a checkpoint has a full
 state and no events coming, so a window attached to it renders nothing — and a pending request the

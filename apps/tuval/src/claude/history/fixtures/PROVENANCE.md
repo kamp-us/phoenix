@@ -16,10 +16,19 @@ The rows below describe the `query()` captures; the last three fixtures have the
 
 | | |
 |---|---|
-| Captured | 2026-09-04 |
+| Captured | 2026-09-04, and `streaming-turn.json` on 2026-09-06 |
 | SDK | `@anthropic-ai/claude-agent-sdk` **0.3.259** (the `pnpm-workspace.yaml` catalog pin) |
 | CLI | `claude_code_version` **2.1.259**, as reported by the `init` frame itself |
 | Models | `claude-fable-5-1` on every capture but `interrupted-assistant.json`, which is `claude-opus-5` |
+
+`streaming-turn.json` is the one capture taken with `includePartialMessages` on, and it is what
+proves that turning the flag on costs the finished transcript nothing. It has to be its own run:
+`sdk.d.ts` warns at `SDKAssistantMessage` that with partials on a turn's finished `assistant` frame
+"typically holds the single block this message delivers and `stop_reason` is still null", so the
+flag changes the frames a *non*-streaming reader sees, and only a capture can settle what it
+changes them to. This one carries exactly that shape — `stop_reason: null` on the finished frame,
+which arrives before `content_block_stop` — and `events.unit.test.ts` folds it twice, once whole and
+once with the `stream_event` frames dropped, to prove the two transcripts agree.
 
 Each run drove `query()` from a throwaway cwd and wrote every message the async iterator yielded,
 in order.
@@ -35,6 +44,7 @@ in order.
 | `interrupted-assistant.json` | a streaming-input session asked for a long essay, then `query.interrupt()` mid-stream, which stamps `aborted: true` |
 | `session-messages.json` | `getSessionMessages(<the tool-turn session id>, {includeSystemMessages: true})` |
 | `unknown-message.json` | a `rate_limit_event` frame from the plain run — a real member of `SDKMessage` |
+| `streaming-turn.json` | one prompt with `includePartialMessages: true`, captured 2026-09-06 — the whole `stream_event` run of one turn, `message_start` through `message_stop` (#8172) |
 | `thinking-turn.json` | excerpted from an operator's own CLI session transcript, not from a `query()` run — see below |
 | `compact-boundary.json` | the same, from a session that compacted |
 | `informational-notice.json` | the same, from a session that hit a usage limit |

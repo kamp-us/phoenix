@@ -60,6 +60,24 @@ describe("folding a turn that outgrows the bounds", () => {
 	});
 });
 
+describe("folding a reply that is still being written", () => {
+	it("supersedes a partial item with the final one under the same id", () => {
+		const growing = {...assistantItem("a1", "he"), partial: true} as const;
+		const finished = assistantItem("a1", "hello");
+		expect(upsertItem([userItem("u1"), growing], finished)).toEqual([userItem("u1"), finished]);
+	});
+
+	it("leaves the fold one item however many partials preceded the final one", () => {
+		const deltas = ["h", "he", "hel", "hell", "hello"].map((text) => ({
+			...assistantItem("a1", text),
+			partial: true,
+		}));
+		const tail = foldAll(empty, [...deltas, assistantItem("a1", "hello")], {itemLimit: 5}).at(-1);
+		expect(tail?.items).toEqual([assistantItem("a1", "hello")]);
+		expect(tail?.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
+	});
+});
+
 describe("folding the thinking and compaction kinds", () => {
 	it("supersedes a thinking row by id, so a growing one stays one row", () => {
 		const first = thinkingItem("k1", "weighing the two reads");

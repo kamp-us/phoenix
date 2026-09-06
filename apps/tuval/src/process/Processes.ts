@@ -168,6 +168,7 @@ const toDefinition = (
 		name: program.id,
 		machine: core,
 		store,
+		...(program.checkpointWorthy === undefined ? {} : {checkpointWorthy: program.checkpointWorthy}),
 		ctx: {},
 		interpret: handlers,
 		subscribe,
