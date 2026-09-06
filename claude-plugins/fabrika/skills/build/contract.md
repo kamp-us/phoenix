@@ -442,20 +442,20 @@ PR plus the explicitly requested issue in its served-issue set.
 
 ```
 $ fabrika build tree --require-clean
-/private/var/<redacted>/lanes/build-4312
+/private/var/<redacted>/lanes/build-4
 ```
 
 ```
-$ fabrika build tree --issue 4312
-{"answer":"proven","root":"/private/var/<redacted>/lanes/build-4312","branch":"build/4312-editor-focus-loss-c1a4d6f8","claim":{"number":4312,"nonce":"c1a4d6f8"},"servedIssue":{"number":4312,"kind":"issue"}}
+$ fabrika build tree --issue 4
+{"answer":"proven","root":"/private/var/<redacted>/lanes/build-4","branch":"build/4-editor-focus-loss-c1a4d6f8","claim":{"number":4,"nonce":"c1a4d6f8"},"servedIssue":{"number":4,"kind":"issue"}}
 ```
 
 For a PR body that closes two issues, either reference may appear first; the explicit
 issue operand selects the repair subject:
 
 ```
-$ fabrika build tree --issue 7181 --repair 7182
-{"answer":"proven","root":"/private/var/<redacted>/lanes/repair-7182","branch":"build/pr-7182-c1a4d6f8","claim":{"number":7182,"nonce":"c1a4d6f8"},"servedIssue":{"number":7181,"kind":"fixes"}}
+$ fabrika build tree --issue 4 --repair 8
+{"answer":"proven","root":"/private/var/<redacted>/lanes/repair-8","branch":"build/pr-8-c1a4d6f8","claim":{"number":8,"nonce":"c1a4d6f8"},"servedIssue":{"number":4,"kind":"fixes"}}
 ```
 
 ```
@@ -619,7 +619,7 @@ so an empty pool is auditable and a fence that is off is visible as off rather t
 
 ```
 $ fabrika build pick
-{"pool":[{"number":4312,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"44"},{"number":4488,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening"}],"excluded":{"audience-not-agent":1,"out-of-scope":1},"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"active","milestones":["44"]}}
+{"pool":[{"number":4,"title":"Editor loses focus after save","priority":"p1","type":"bug","home":"7"},{"number":48,"title":"Prune the dead lane stamps","priority":"p2","type":"chore","home":"axis:pipeline-hardening"}],"excluded":{"audience-not-agent":1,"out-of-scope":1},"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"active","milestones":["7"]}}
 ```
 
 The standing-lane row is the exemption at work: the second candidate carries no milestone and is
@@ -630,7 +630,7 @@ out-of-scope issue is then in the pool:
 ```
 $ fabrika build pick
 build pick: scanned p0=0 p1=3 p2=41 · campaigns: none active — scope fence inert
-{"pool":[{"number":4290,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":{},"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"none"}}
+{"pool":[{"number":29,"title":"Retire the legacy importer","priority":"p2","type":"chore","home":"39"}],"excluded":{},"scanned":{"p0":0,"p1":3,"p2":41},"campaigns":{"state":"none"}}
 ```
 
 An epic child whose blocker is still open on the board but whose work already landed on the run's
@@ -640,8 +640,8 @@ assembly branch is in the pool, and the branch read that put it there is on stde
 $ fabrika build pick
 build pick: scanned p0 0, p1 1, p2 0 in owner/repo; 1 candidate(s) survived the filter, 0 excluded — 0 by the admission test, 0 for no acceptance-criteria block, 0 on the blocked_by graph.
 build pick: campaigns: 1 active — Search rewrite (#7).
-build pick: origin/main..epic/6767 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
-{"pool":[{"number":7030,"title":"The second tracer","priority":"p1","type":"chore","home":"7"}],"excluded":{},"scanned":{"p0":0,"p1":1,"p2":0},"campaigns":{"state":"active","milestones":["7"]}}
+build pick: origin/main..epic/3 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
+{"pool":[{"number":30,"title":"The second tracer","priority":"p1","type":"chore","home":"7"}],"excluded":{},"scanned":{"p0":0,"p1":1,"p2":0},"campaigns":{"state":"active","milestones":["7"]}}
 ```
 
 ```
@@ -672,7 +672,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika build eligible 4312 [--repo <owner/name>]
+fabrika build eligible 4 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -683,7 +683,7 @@ fabrika build eligible 4312 [--repo <owner/name>]
 | `--repo` | string | no | the `origin` remote's `owner/name` | the repository read |
 
 **Output** — machine. On `eligible`: one JSON object
-`{"answer": "eligible", "number": 4312, "parent": 4300}` (`parent` is `null` for a standalone
+`{"answer": "eligible", "number": 12, "parent": 3}` (`parent` is `null` for a standalone
 issue). Blocked and unknown produce no stdout — they are exits `16` and `11`.
 
 **The source of blockedness is GitHub's native `blocked_by` graph, and there is no second one**
@@ -770,22 +770,22 @@ claim by its own stderr row, so "all closed" is never asserted over an edge nobo
 **Examples**
 
 ```
-$ fabrika build eligible 4312
+$ fabrika build eligible 4
 build eligible: scanned 0 blocked_by edges; standalone.
-{"answer":"eligible","number":4312,"parent":null}
+{"answer":"eligible","number":4,"parent":null}
 ```
 
 ```
-$ fabrika build eligible 4319
-build eligible: scanned 2 blocked_by edges; parent #4.
+$ fabrika build eligible 19
+build eligible: scanned 2 blocked_by edges; parent #3.
 build eligible: blocked by 2 open blocked_by edges: #5, #6.
 $ echo $?
 16
 ```
 
 ```
-$ fabrika build eligible 4321
-build eligible: scanned 2 blocked_by edges; parent #4.
+$ fabrika build eligible 21
+build eligible: scanned 2 blocked_by edges; parent #3.
 build eligible: cannot read blocker #5: Bad gateway (HTTP 502) — its state is UNKNOWN, never counted closed.
 build eligible: blocked by 1 open blocked_by edge: #6.
 $ echo $?
@@ -793,10 +793,10 @@ $ echo $?
 ```
 
 ```
-$ fabrika build eligible 6007
-build eligible: scanned 1 blocked_by edge; parent #8.
-build eligible: origin/main..epic/5817 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
-{"answer":"eligible","number":6007,"parent":5817}
+$ fabrika build eligible 12
+build eligible: scanned 1 blocked_by edge; parent #3.
+build eligible: origin/main..epic/3 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
+{"answer":"eligible","number":12,"parent":3}
 $ echo $?
 0
 ```
@@ -859,12 +859,12 @@ because retracting another lane's claim is the one write this protocol must neve
 **Invocation**
 
 ```
-fabrika build claim 4312 [--repo <owner/name>] [--purpose plan|gate|build] [--token <token>]
+fabrika build claim 4 [--repo <owner/name>] [--purpose plan|gate|build] [--token <token>]
                          [--issue <served-issue>]
                          [--override <reason> --override-lane <lane>]
-fabrika build confirm 4312 --token <token> [--repo <owner/name>]
-fabrika build release 4312 --token <token> [--repo <owner/name>]
-fabrika build adopt 4312 --session <dead-session> --reason <text> [--repo <owner/name>]
+fabrika build confirm 4 --token <token> [--repo <owner/name>]
+fabrika build release 4 --token <token> [--repo <owner/name>]
+fabrika build adopt 4 --session <dead-session> --reason <text> [--repo <owner/name>]
 ```
 
 **Inputs** — the first two rows are identical for all three verbs; `--issue` and the final three
@@ -959,7 +959,7 @@ starts and the one moment every path goes through. `--override "<reason>"
 posts, so the escape hatch costs one deliberate act and leaves a record on the issue naming who took
 it and why. **Both fields are required together**: an empty reason, a missing or blank lane, and a
 lane with no override are each a usage error (`1`), because an override that names neither is
-indistinguishable from routine use — which is how a fail-closed fence rots fail-open by convention
+indistinguishable from routine use — which is how a fail-closed fence rots fail-open by convention.
 The override is for a *proven* refusal an operator means to take; it is not the way a
 plan- or gate-purpose lane gets past the audience axis, which `--purpose` now answers directly.
 `confirm` and `release` do not
@@ -1022,15 +1022,15 @@ operand. Claim selects that explicit member with the plural linkage parser befor
 `build tree --issue <issue> --repair <pr>` re-reads the same live membership after branch resume.
 These are consecutive proofs, not substitutes.
 
-- `claim` on a win: `{"answer": "won", "number": 4312, "token": "build:<sid>:<uuid>", "purpose":
+- `claim` on a win: `{"answer": "won", "number": 4, "token": "build:<sid>:<uuid>", "purpose":
   "build"}` — plus `"override": {"lane": "<lane>", "reason": "<reason>"}` when the win came through
   `--override`, so the answer records the exception as well as the marker does.
-- `confirm` when held: `{"answer": "mine", "number": 4312, "token": "..."}` — the winning marker's
+- `confirm` when held: `{"answer": "mine", "number": 4, "token": "..."}` — the winning marker's
   token on the ordinary path, and on a succession the **adopt's** token, never the dead session's,
   which every verb of this session refuses on `1`.
-- `release` when released: `{"answer": "released", "number": 4312}` — plus `"adopted":
+- `release` when released: `{"answer": "released", "number": 4}` — plus `"adopted":
   "<dead-session>"` when the release came through a succession.
-- `adopt` when recorded: `{"answer": "adopted", "number": 4312, "session": "<dead-session>", "token":
+- `adopt` when recorded: `{"answer": "adopted", "number": 4, "session": "<dead-session>", "token":
   "build:<sid>:<uuid>"}`.
 
 A loss, a foreign confirm, and a not-mine release produce no stdout — they are exit `15`, the
@@ -1163,53 +1163,53 @@ run that claimed under an inert fence is readable as such afterwards.
 **Examples**
 
 ```
-$ fabrika build claim 4312
-{"answer":"won","number":4312,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build"}
+$ fabrika build claim 4
+{"answer":"won","number":4,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build"}
 ```
 
 ```
-$ fabrika build claim 4300 --purpose gate
-{"answer":"won","number":4300,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"gate"}
+$ fabrika build claim 3 --purpose gate
+{"answer":"won","number":3,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"gate"}
 ```
 
 ```
-$ fabrika build claim 4290
+$ fabrika build claim 29
 build claim: out of scope — the active campaigns pin milestone #7 and this issue's home is 39; flip that campaign's ## Campaigns state cell to active, or claim it with an explicit override.
 $ echo $?
 20
 ```
 
 ```
-$ fabrika build claim 4290 --override "hotfix for the release blocker" --override-lane build-ui
-{"answer":"won","number":4290,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build","override":{"lane":"build-ui","reason":"hotfix for the release blocker"}}
+$ fabrika build claim 29 --override "hotfix for the release blocker" --override-lane build-ui
+{"answer":"won","number":29,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build","override":{"lane":"build-ui","reason":"hotfix for the release blocker"}}
 ```
 
 The sequential-tracer shape: the edge is still on the graph, and the blocker's work is on the
 assembly branch, so the claim is admitted rather than parked.
 
 ```
-$ fabrika build claim 6007
+$ fabrika build claim 12
 build claim: campaigns: 1 active — Search rewrite (#7).
 build claim: purpose: build — the audience axis binds; this issue carries ready-for:agent.
-build claim: origin/main..epic/5817 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
+build claim: origin/main..epic/3 adds a commit naming #9 — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.
 build claim: scanned 1 blocked_by edge; none open.
-{"answer":"won","number":6007,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build"}
+{"answer":"won","number":12,"token":"build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d","purpose":"build"}
 ```
 
 ```
-$ fabrika build claim 6008
+$ fabrika build claim 13
 build claim: campaigns: 1 active — Search rewrite (#7).
 build claim: purpose: build — the audience axis binds; this issue carries ready-for:agent.
-build claim: origin/main..epic/5817 adds 3 commit(s), none naming an undischarged blocker.
+build claim: origin/main..epic/3 adds 3 commit(s), none naming an undischarged blocker.
 build claim: scanned 1 blocked_by edge.
-build claim: blocked by 1 open blocked_by edge: #9 — there is no unblock act, so the edge clears when the blocker closes or its work lands on the epic run's assembly branch; nothing was written.
+build claim: blocked by 1 open blocked_by edge: #6 — there is no unblock act, so the edge clears when the blocker closes or its work lands on the epic run's assembly branch; nothing was written.
 $ echo $?
 16
 ```
 
 ```
-$ fabrika build confirm 7 --token build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d
-build confirm: #7 is held by build:s-77aa:9d8c7b6a-5f4e-3d2c-1b0a-998877665544, not by build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d.
+$ fabrika build confirm 1 --token build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d
+build confirm: #1 is held by build:s-77aa:9d8c7b6a-5f4e-3d2c-1b0a-998877665544, not by build:s-9f2e:c1a4d6f8-3b7e-4a19-9c2d-5e8f0a1b2c3d.
 $ echo $?
 15
 ```
@@ -1217,8 +1217,8 @@ $ echo $?
 The two-lanes-one-session shape, where the tokens differ only after the session id:
 
 ```
-$ fabrika build confirm 8 --token build:s-9f2e:763ccb6d-1f0e-4c2b-9a3d-0e1f2a3b4c5d
-build confirm: #8 is held by build:s-9f2e:c997bbca-2d1e-4b3a-8c7f-6a5b4c3d2e1f, not by build:s-9f2e:763ccb6d-1f0e-4c2b-9a3d-0e1f2a3b4c5d — another lane of this same session.
+$ fabrika build confirm 2 --token build:s-9f2e:763ccb6d-1f0e-4c2b-9a3d-0e1f2a3b4c5d
+build confirm: #2 is held by build:s-9f2e:c997bbca-2d1e-4b3a-8c7f-6a5b4c3d2e1f, not by build:s-9f2e:763ccb6d-1f0e-4c2b-9a3d-0e1f2a3b4c5d — another lane of this same session.
 $ echo $?
 15
 ```
@@ -1372,7 +1372,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika build issue 4312 [--repo <owner/name>]
+fabrika build issue 4 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -1385,7 +1385,7 @@ fabrika build issue 4312 [--repo <owner/name>]
 **Output** — machine. One JSON object:
 
 ```
-{"number": 4312, "title": "...", "state": "open", "labels": ["type:bug", "p1", "status:triaged", "ready-for:agent"],
+{"number": 4, "title": "...", "state": "open", "labels": ["type:bug", "p1", "status:triaged", "ready-for:agent"],
  "body": "...", "criteria": {"state": "found", "items": [{"text": "...", "checked": false}]}}
 ```
 
@@ -1417,8 +1417,8 @@ versus exit `11`.
 **Example**
 
 ```
-$ fabrika build issue 4312
-{"number":4312,"title":"Editor loses focus after save","state":"open","labels":["type:bug","p1","status:triaged","ready-for:agent"],"body":"…","criteria":{"state":"found","items":[{"text":"focus stays in the editor after save","checked":false}]}}
+$ fabrika build issue 4
+{"number":4,"title":"Editor loses focus after save","state":"open","labels":["type:bug","p1","status:triaged","ready-for:agent"],"body":"…","criteria":{"state":"found","items":[{"text":"focus stays in the editor after save","checked":false}]}}
 ```
 
 **Grounding**
@@ -1435,9 +1435,9 @@ $ fabrika build issue 4312
 **Invocation**
 
 ```
-fabrika build branch 4312 --slug editor-focus-loss --token <token> [--base <ref>]
-fabrika build branch --resume 4310 --token <token>
-fabrika build branch 6296 --resume-lane --token <token>
+fabrika build branch 4 --slug editor-focus-loss --token <token> [--base <ref>]
+fabrika build branch --resume 8 --token <token>
+fabrika build branch 9 --resume-lane --token <token>
 ```
 
 **Inputs**
@@ -1531,12 +1531,12 @@ number, which is the number repair mode claims.
 **Examples**
 
 ```
-$ fabrika build branch 4312 --slug editor-focus-loss --token <token>
-build/4312-editor-focus-loss-c1a4d6f8
+$ fabrika build branch 4 --slug editor-focus-loss --token <token>
+build/4-editor-focus-loss-c1a4d6f8
 ```
 
 ```
-$ fabrika build branch 4312 --slug -rf --token <token>
+$ fabrika build branch 4 --slug -rf --token <token>
 build branch: --slug "-rf" is not kebab-case (lowercase letters, digits, single hyphens, ≤5 words).
 $ echo $?
 10
@@ -1673,7 +1673,7 @@ build claim: #9 is already held by this lane (comment 5460495961) — answered w
 **Invocation**
 
 ```
-fabrika build scratch 4312 --slug notes --token <token>
+fabrika build scratch 4 --slug notes --token <token>
 ```
 
 **Inputs**
@@ -1720,8 +1720,8 @@ Preconditions: a confirmed claim on `<number>` (`15` / `11`).
 **Example**
 
 ```
-$ fabrika build scratch 4312 --slug notes --token <token>
-/tmp/<redacted>/s-9f2e/4312-c1a4d6f8/notes
+$ fabrika build scratch 4 --slug notes --token <token>
+/tmp/<redacted>/s-9f2e/4-c1a4d6f8/notes
 ```
 
 **Grounding**
@@ -1740,7 +1740,7 @@ $ fabrika build scratch 4312 --slug notes --token <token>
 
 ```
 fabrika build commit < message.txt
-fabrika build commit --message-file "$(fabrika build scratch 4312 --slug commit-message --token <token>)"
+fabrika build commit --message-file "$(fabrika build scratch 4 --slug commit-message --token <token>)"
 ```
 
 **Inputs**
@@ -2085,7 +2085,7 @@ surface that ran, so a file another surface would have read counts as uncovered 
 
 ```
 $ fabrika build check --surface code
-{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck --force","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
+{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4","ran":["pnpm typecheck --force","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
 ```
 
 `ran` echoes whatever `codeValidators` resolved to, one `argv.join(" ")` per validator; the two
@@ -2212,7 +2212,7 @@ Preconditions: a readable tree root (`11`), the lane's branch (`14`).
 
 ```
 $ fabrika build push
-pushed build/4312-editor-focus-loss-c1a4d6f8 → origin
+pushed build/4-editor-focus-loss-c1a4d6f8 → origin
 remote ref read back: 03135b91
 PUSH-VERDICT: MOVED
 ```
@@ -2237,7 +2237,7 @@ PUSH-VERDICT: MOVED
 **Invocation**
 
 ```
-fabrika build pr 4312 [--partial] <<'EOF'
+fabrika build pr 4 [--partial] <<'EOF'
 …the authored body…
 EOF
 ```
@@ -2250,9 +2250,9 @@ EOF
 | `--partial` | boolean | no | `false` | the acceptance criteria are not all met: the body must say `Part of #<n>`, not `Fixes #<n>` |
 | stdin | text | yes | — | the PR body |
 
-**Output** — machine. One JSON object: `{"answer": "opened", "number": 4318, "url": "..."}` — or,
+**Output** — machine. One JSON object: `{"answer": "opened", "number": 8, "url": "..."}` — or,
 when an open PR for this head branch already exists (this lane's own, by claim),
-`{"answer": "existing", "number": 4310, "url": "..."}` on exit 0: an idempotent re-run is an
+`{"answer": "existing", "number": 8, "url": "..."}` on exit 0: an idempotent re-run is an
 answer, not an error.
 
 The guards, in order, all before any write:
@@ -2333,7 +2333,7 @@ must match the claim (`14` via the shared precondition).
 **Examples**
 
 ```
-$ fabrika build pr 4312 <<'EOF'
+$ fabrika build pr 4 <<'EOF'
 Fixes #4
 
 Editor focus now survives a save: the toolbar re-render no longer steals it.
@@ -2348,7 +2348,7 @@ Editor focus now survives a save: the toolbar re-render no longer steals it.
   steal in the comment box. **Why:** both call the one `refocus()` helper this changes, so
   leaving it would have shipped a knowingly half-fixed helper. **Disposition:** stated here.
 EOF
-{"answer":"opened","number":4318,"url":"https://<host>/<owner>/<repo>/pull/4318"}
+{"answer":"opened","number":8,"url":"https://<host>/<owner>/<repo>/pull/8"}
 ```
 
 The section is `None.` when there is nothing to disclose, and that is a *checked* claim rather than
@@ -2356,7 +2356,7 @@ a skip — `review deviations` reads it beside the diff's Tier-M scan, so a `Non
 lint rule is a falsified disclosure the gate can see in one read.
 
 ```
-$ printf 'Fixes #4\n\n## Deviations\n\n- narrowed the scope a bit.\n' | fabrika build pr 4312
+$ printf 'Fixes #4\n\n## Deviations\n\n- narrowed the scope a bit.\n' | fabrika build pr 4
 build pr: the body's "## Deviations" section is not readable — an entry carries no **Said:**, **Did:**, **Why:**, **Disposition:** — every entry states **Said:** / **Did:** / **Why:** / **Disposition:**. State each deviation as an entry, or state "None."
 $ echo $?
 4
@@ -2379,7 +2379,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika build pr-body 4318 [--partial] [--repo <owner/name>] <<'EOF'
+fabrika build pr-body 8 [--partial] [--repo <owner/name>] <<'EOF'
 …the authored body…
 EOF
 ```
@@ -2393,7 +2393,7 @@ EOF
 | stdin | text | yes | — | the replacement PR body |
 
 **Output** — machine. One JSON object:
-`{"answer": "updated", "number": 4318, "url": "..."}`.
+`{"answer": "updated", "number": 8, "url": "..."}`.
 
 The verb exists because a review FAIL whose whole fix is a body edit — the recurring one is a
 `## Deviations` section the gate reads as malformed — otherwise had no guarded route at all: `build
@@ -2462,7 +2462,7 @@ push, no branch, no title, no base.
 **Examples**
 
 ```
-$ fabrika build pr-body 4318 <<'EOF'
+$ fabrika build pr-body 8 <<'EOF'
 Fixes #4
 
 Editor focus now survives a save: the toolbar re-render no longer steals it.
@@ -2473,11 +2473,11 @@ Editor focus now survives a save: the toolbar re-render no longer steals it.
   steal in the comment box. **Why:** both call the one `refocus()` helper this changes.
   **Disposition:** stated here.
 EOF
-{"answer":"updated","number":4318,"url":"https://<host>/<owner>/<repo>/pull/4318"}
+{"answer":"updated","number":8,"url":"https://<host>/<owner>/<repo>/pull/8"}
 ```
 
 ```
-$ printf 'Fixes #4\n\n## Deviations\n\n- narrowed the scope a bit.\n' | fabrika build pr-body 4318
+$ printf 'Fixes #4\n\n## Deviations\n\n- narrowed the scope a bit.\n' | fabrika build pr-body 8
 build pr-body: the body's "## Deviations" section is not readable — an entry carries no **Said:**, **Did:**, **Why:**, **Disposition:** — every entry states **Said:** / **Did:** / **Why:** / **Disposition:**. State each deviation as an entry, or state "None."
 $ echo $?
 4
@@ -2496,7 +2496,7 @@ $ echo $?
 **Invocation**
 
 ```
-fabrika build note 4312 --token <token> [--repo <owner/name>] <<'EOF'
+fabrika build note 4 --token <token> [--repo <owner/name>] <<'EOF'
 …the progress / handoff note…
 EOF
 ```
@@ -2510,7 +2510,7 @@ EOF
 | `--token` | string | yes | — | the token `build claim` handed this lane — which lane is asking. Not a claim token, or one carrying another session id, is `1` |
 | stdin | text | yes | — | the note body |
 
-**Output** — machine. `{"answer": "posted", "number": 4312, "commentId": 512345, "head": "03135b91"}`.
+**Output** — machine. `{"answer": "posted", "number": 4, "commentId": 512345, "head": "03135b91"}`.
 When the target resolves to a PR, the note is **stamped with the PR's current head SHA at post
 time** (appended as a final line `— at 03135b91`); a reader can see at a glance that a note
 predates a later push. An unstamped repair note made a spot judgment carry no freshness signal at
@@ -2536,10 +2536,10 @@ lane with `--token` where `pr` reads it off the branch, so the two verbs refuse 
 **Example**
 
 ```
-$ fabrika build note 4310 --token <token> <<'EOF'
+$ fabrika build note 8 --token <token> <<'EOF'
 Round 2 findings addressed: focus restore moved out of the render path.
 EOF
-{"answer":"posted","number":4310,"commentId":512346,"head":"03135b91"}
+{"answer":"posted","number":8,"commentId":512346,"head":"03135b91"}
 ```
 
 **Grounding**
@@ -2669,7 +2669,7 @@ EOF
 **Invocation**
 
 ```
-fabrika build verdicts --pr 4310 [--repo <owner/name>]
+fabrika build verdicts --pr 8 [--repo <owner/name>]
 ```
 
 **Inputs**
@@ -2777,7 +2777,7 @@ and both counts, so an empty `rows` is auditable as "N comments read, none carri
 **Example**
 
 ```
-$ fabrika build verdicts --pr 4310
+$ fabrika build verdicts --pr 8
 {"head":"03135b91","rows":[{"gate":"review-code","polarity":"FAIL","sha":"03135b91","current":true,"commentId":512001,"kind":"marker","body":"review-code: FAIL @ 03135b91 — the debounce fix races the unmount; see inline notes."}],"rounds":1,"capReached":false,"frozenCriteria":[]}
 ```
 
