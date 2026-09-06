@@ -20,7 +20,6 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",
-		"@kampus/fabrika-cli": "workspace:*",
 		"@effect/language-service": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"lefthook": "catalog:",

@@ -234,6 +234,8 @@ overrides:
   '@earendil-works/pi-telemetry': 0.84.3
   '@earendil-works/pi-tui': 0.84.3
 
+pnpmfileChecksum: sha256-ENBbpnCM6iEJZwql5y+XIdMMnEPnYSp47O6FmPjp4UI=
+
 patchedDependencies:
   '@nkzw/fate@1.3.1':
     hash: e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c
