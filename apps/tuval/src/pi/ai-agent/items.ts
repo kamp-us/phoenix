@@ -232,15 +232,15 @@ export const projectionOf = (
 	for (const source of snapshot.transcript) {
 		if (reached) break;
 		const rows = itemsOf(source);
-		for (const item of rows) {
-			if (reached) break;
-			items.set(item.id, fingerprint(item));
-			reached = item.id === through;
-		}
-		// A turn's cost is seeded only when the whole turn is behind the boundary. A boundary
-		// falling between a turn's reasoning row and its reply — the window cut there — leaves the
-		// reply to emit, and its `usage` is that reply's annotation.
-		const event = reached && items.size < rows.length ? null : usageEventOf(source);
+		const cut = rows.findIndex((item) => item.id === through);
+		reached = cut !== -1;
+		const seeded = reached ? rows.slice(0, cut + 1) : rows;
+		for (const item of seeded) items.set(item.id, fingerprint(item));
+		// A turn's cost is seeded only when the whole turn is behind the boundary, which is a count
+		// within this turn's own rows — `items` spans every turn walked so far and would always be
+		// the larger number. A boundary falling between a turn's reasoning row and its reply — the
+		// window cut there — leaves the reply to emit, and its `usage` is that reply's annotation.
+		const event = seeded.length === rows.length ? usageEventOf(source) : null;
 		if (event !== null) usage.set(source.id, fingerprint(event));
 	}
 	return reached ? {items, usage, phase: null} : emptyProjection;

@@ -308,6 +308,28 @@ describe("one revision folded into events", () => {
 	});
 
 	/**
+	 * The socket can drop between a turn's reasoning row and its reply, so the boundary lands
+	 * inside the turn rather than after it. The reply is then unseen work that has to emit — and
+	 * its cost is that reply's annotation, so the turn's `usage` has to emit with it or the tokens
+	 * and the cost never join the session totals, silently, for the life of the session (#8374).
+	 */
+	it("emits the cost of a turn the boundary fell inside, not just its reply", () => {
+		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
+		const folded = eventsOf(projectionOf(restored, "item-1:thinking"), restored);
+		expect(folded.events).toEqual([
+			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
+			{
+				kind: "usage",
+				model: "faux/faux-1",
+				inputTokens: 11,
+				outputTokens: 22,
+				cost: 0.42,
+			},
+			{kind: "phase", phase: "ready"},
+		]);
+	});
+
+	/**
 	 * A boundary this snapshot does not carry — a compaction renumbered the transcript out from
 	 * under the caller — seeds nothing and replays. A visibly wrong transcript is recoverable; a
 	 * silently missing reply is not.
