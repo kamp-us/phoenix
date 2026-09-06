@@ -197,6 +197,7 @@ export const account = {
 	"ui.draftRestore.restore": "taslağı geri yükle",
 	"ui.draftRestore.dismiss": "yoksay",
 	"ui.markdown.table": "tablo",
+	"ui.markdown.code": "kod bloğu",
 };
 
 /** `tr` is the source of truth for the key set; `en/account.ts` is checked against this. */

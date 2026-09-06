@@ -98,6 +98,26 @@ function Inline({token}: {readonly token: MarkedToken}): ReactNode {
 }
 
 /**
+ * `pre code` is `white-space: pre`, so a long line makes the fence a horizontal scroller (see
+ * `Markdown.css`) — and a scroll container no keyboard can focus is content a keyboard-only
+ * operator cannot read at all (WCAG 2.1.1), the same hazard the table wrapper below answers. The
+ * tab stop sits on the `<pre>` itself rather than on a wrapper because the `<pre>` *is* the
+ * scroller, and arrow keys scroll the focused element only. Unlike `<table>`, `<pre>` carries no
+ * implicit role that `role="region"` costs.
+ */
+function CodeBlock({token}: {readonly token: Tokens.Code}): ReactElement {
+	const t = useDesignT();
+	const lang = token.lang === undefined || token.lang === "" ? undefined : token.lang;
+	return (
+		// biome-ignore lint/a11y/noNoninteractiveTabindex: the tab stop is the point — see the docblock above.
+		// biome-ignore lint/a11y/useSemanticElements: a `<section>` wrapper would take the tab stop off the box that actually scrolls — see the docblock above.
+		<pre tabIndex={0} role="region" aria-label={t("ui.markdown.code")}>
+			<code className={lang === undefined ? undefined : `language-${lang}`}>{token.text}</code>
+		</pre>
+	);
+}
+
+/**
  * The scroller is the wrapper, never the `<table>`: `display: block` on a table drops its implicit
  * table role in Chrome and Safari, so the assistive-tech reading of an agent's table would be the
  * cost of making a wide one fit. The wrapper is focusable and named because a scroll container no
@@ -156,17 +176,7 @@ function Block({
 		case "blockquote":
 			return <blockquote>{blocks(token.tokens, headingBase)}</blockquote>;
 		case "code":
-			return (
-				<pre>
-					<code
-						className={
-							token.lang === undefined || token.lang === "" ? undefined : `language-${token.lang}`
-						}
-					>
-						{token.text}
-					</code>
-				</pre>
-			);
+			return <CodeBlock token={token} />;
 		// A task marker stays the text it was written as. A real `<input type="checkbox">` would be
 		// an unlabelled control in a read-only block, and its state would reach a screen reader only
 		// by duplicating the item's own text as a name.

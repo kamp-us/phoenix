@@ -103,6 +103,16 @@ describe("an agent reply renders as markdown", () => {
 		expect(code.parentElement?.tagName).toBe("PRE");
 	});
 
+	it("names the fenced block's scroller from Tuval's own catalog", async () => {
+		await openWindow(withTranscript([assistantItem("a1", "```ts\nconst x = 1;\n```")]));
+
+		const name = tuvalDesignMessages["ui.markdown.code"];
+		const region = screen.getByRole("region", {name});
+		expect(region.tagName).toBe("PRE");
+		expect(region.tabIndex).toBe(0);
+		expect(name).toBe("code block");
+	});
+
 	it("prints raw HTML in a reply as text rather than markup", async () => {
 		await openWindow(
 			withTranscript([

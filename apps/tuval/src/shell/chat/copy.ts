@@ -33,6 +33,7 @@ const messages: Readonly<Record<DesignCatalogKey, string>> = {
 	"ui.draftRestore.restore": "restore the draft",
 	"ui.draftRestore.dismiss": "dismiss",
 	"ui.markdown.table": "table",
+	"ui.markdown.code": "code block",
 	"admin.agent.label": "Agent composer",
 	"admin.agent.scope": "this window only",
 	"admin.agent.compose.label": "Write a message to the agent",

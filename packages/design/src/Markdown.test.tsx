@@ -130,6 +130,19 @@ describe("Markdown", () => {
 		expect(code.parentElement?.tagName).toBe("PRE");
 	});
 
+	// A long code line makes the fence a horizontal scroller, and a scroller with no tab stop is
+	// content a keyboard-only operator cannot read (WCAG 2.1.1). jsdom applies no CSS, so the
+	// structure is what a test can hold — the same shape the table scroller carries.
+	it("makes a fenced block a named, focusable scroll region", () => {
+		render(<Markdown>{"```ts\nconst x = 1;\n```"}</Markdown>);
+
+		const pre = screen.getByText("const x = 1;").parentElement;
+		expect(pre?.tagName).toBe("PRE");
+		expect(pre?.getAttribute("role")).toBe("region");
+		expect(pre?.tabIndex).toBe(0);
+		expect(pre?.getAttribute("aria-label")).toBeTruthy();
+	});
+
 	it("steps headings down from headingBase and clamps them at h6", () => {
 		render(<Markdown headingBase={3}>{"# one\n\n## two\n\n##### five"}</Markdown>);
 

@@ -16,6 +16,7 @@ export const designTrMessages = {
 	"ui.draftRestore.restore": "taslağı geri yükle",
 	"ui.draftRestore.dismiss": "yoksay",
 	"ui.markdown.table": "tablo",
+	"ui.markdown.code": "kod bloğu",
 	"admin.agent.label": "Agent chat input",
 	"admin.agent.scope": "yalnızca yerel atölye",
 	"admin.agent.compose.label": "Pi'ye mesaj yaz",
