@@ -5,9 +5,10 @@
  * comes back; nothing downstream of it can tell a Claude session from any other agent program.
  *
  * The SDK's union is open — `SDKMessage` names three dozen members at
- * `@anthropic-ai/claude-agent-sdk@0.3.259` and grows every release — so the dispatch is over the
- * six this transcript has a shape for, and everything else is counted rather than refused. A new
- * message kind must never take a session down.
+ * `@anthropic-ai/claude-agent-sdk@0.3.259` and grows every release — so the dispatch names the
+ * frames this transcript has a row of its own for, sends every other `system` subtype to the
+ * collapsed notice, and counts the rest rather than refusing it. A new message kind must never take
+ * a session down.
  *
  * Partial assistant frames are among the counted: streaming granularity here is one whole
  * assistant message, so a run with `includePartialMessages` costs nothing and shows nothing extra.
@@ -17,6 +18,7 @@ import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {
 	assistantEvents,
 	commandsChangedEvents,
+	compactBoundaryEvents,
 	initEvents,
 	type Mapping,
 	type MappingOptions,
@@ -24,6 +26,7 @@ import {
 	permissionDeniedEvents,
 	resultEvents,
 	skipMessage,
+	systemNoticeEvents,
 	userEvents,
 } from "./map.ts";
 
@@ -39,13 +42,18 @@ export const toAgentEvents = (
 			return userEvents(message, mapping, options);
 		case "result":
 			return resultEvents(message, mapping, options);
+		case "rate_limit_event":
+			return systemNoticeEvents(message, mapping, options);
 		case "system":
 			if (message.subtype === "init") return initEvents(message, mapping);
 			if (message.subtype === "permission_denied") {
 				return permissionDeniedEvents(message, mapping, options);
 			}
 			if (message.subtype === "commands_changed") return commandsChangedEvents(message, mapping);
-			return skipMessage(mapping);
+			if (message.subtype === "compact_boundary") {
+				return compactBoundaryEvents(message, mapping, options);
+			}
+			return systemNoticeEvents(message, mapping, options);
 		default:
 			return skipMessage(mapping);
 	}

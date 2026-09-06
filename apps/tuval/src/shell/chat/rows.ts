@@ -18,16 +18,30 @@
  * is in flight, and both disappear at the beginning of history (founder ruling, 2026-09-02).
  */
 
-import type {ItemId, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {ItemId, SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
+
+/**
+ * What an `item` row may carry. A session notice is deliberately not one: every `SystemItem` lands
+ * in a `session` run instead, so a row that renders one as ordinary prose does not typecheck.
+ */
+export type RowItem = Exclude<TranscriptItem, SystemItem>;
+
+/** One run of consecutive session notices, oldest-first. Non-empty by construction. */
+export type SessionRun = readonly [SystemItem, ...ReadonlyArray<SystemItem>];
 
 export type ChatRow =
 	/** There is more history behind this point; `items` is what the live-tail bound already dropped. */
 	| {readonly kind: "older"; readonly items: number}
 	/** A `page` request is out. */
 	| {readonly kind: "loading"}
+	/**
+	 * A run of consecutive session notices as one row. A burst of hook frames landing mid-turn is a
+	 * row that grows rather than N rows that push everything the reader was looking at down the page.
+	 */
+	| {readonly kind: "session"; readonly items: SessionRun}
 	| {
 			readonly kind: "item";
-			readonly item: TranscriptItem;
+			readonly item: RowItem;
 			/**
 			 * The rows folded directly under this one, in list order. Empty for everything but a group
 			 * head. The ids rather than a count, so "the head says 14" and "14 rows appear" cannot
@@ -59,8 +73,12 @@ export interface ChatRowsInput {
  * with a new status (ruling 1, #7570) — and the two head rows key on their kind, of which at most
  * one is ever present.
  */
-export const rowKey = (row: ChatRow): string =>
-	row.kind === "item" ? `item:${row.item.id}` : row.kind;
+export const rowKey = (row: ChatRow): string => {
+	if (row.kind === "item") return `item:${row.item.id}`;
+	// The run's first notice, so the key holds still as later notices join the run behind it.
+	if (row.kind === "session") return `session:${row.items[0].id}`;
+	return row.kind;
+};
 
 /**
  * How many still-unconfirmed turns `held` carries per text — the budget a page's own copies of
@@ -127,6 +145,23 @@ const parentOf = (item: TranscriptItem): ItemId | undefined =>
 	item.kind === "tool" ? item.parentId : undefined;
 
 /**
+ * Append a session notice, joining the run already at the end of the list when there is one.
+ *
+ * Only `parentOf` decides nesting and only a tool row answers it, so a session notice is always a
+ * root at depth zero heading no fold — which is what makes a plain "is the last row a run" test the
+ * whole of adjacency, and what makes the dropped `depth`/`nestedIds` fields nothing lost.
+ */
+const pushSession = (rows: Array<ChatRow>, item: SystemItem): void => {
+	const last = rows[rows.length - 1];
+	if (last?.kind !== "session") {
+		rows.push({kind: "session", items: [item]});
+		return;
+	}
+	// Spelled from the run's own head so the non-empty shape survives the append.
+	rows[rows.length - 1] = {kind: "session", items: [last.items[0], ...last.items.slice(1), item]};
+};
+
+/**
  * The list the window renders. The tail wins on a collision: an item that reached the live stream is
  * the newer copy of itself, and a page that happens to overlap the tail must not double it. The
  * collision is `unheld`'s — id, then text against a turn the tail still holds as `local` — so the
@@ -178,6 +213,10 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	const emit = (item: TranscriptItem, depth: number): void => {
 		if (seen.has(item.id)) return;
 		seen.add(item.id);
+		if (item.kind === "system") {
+			pushSession(rows, item);
+			return;
+		}
 		const group = folded.get(item.id) ?? [];
 		rows.push({
 			kind: "item",
@@ -200,10 +239,18 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 export const oldestLoadedId = (rows: ReadonlyArray<ChatRow>): string | null => {
 	for (const row of rows) {
 		if (row.kind === "item") return row.item.id;
+		if (row.kind === "session") return row.items[0].id;
 	}
 	return null;
 };
 
+/** Membership rather than the row's key: an anchor may name a notice buried mid-run. */
+const holds = (row: ChatRow, id: string): boolean => {
+	if (row.kind === "item") return row.item.id === id;
+	if (row.kind === "session") return row.items.some((item) => item.id === id);
+	return false;
+};
+
 /** Where the row carrying `id` sits, or `-1`. The anchor a prepend restores the viewport onto. */
 export const rowIndexOfItem = (rows: ReadonlyArray<ChatRow>, id: string | null): number =>
-	id === null ? -1 : rows.findIndex((row) => row.kind === "item" && row.item.id === id);
+	id === null ? -1 : rows.findIndex((row) => holds(row, id));

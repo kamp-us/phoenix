@@ -18,16 +18,20 @@ import {boundToolResult, ItemId, Mode} from "../../ai-agent/ports/index.ts";
 import {pendingPermission, permissionCard} from "../../ai-agent-fixtures/permissions.ts";
 import {
 	assistantItem,
+	compactionItem,
 	systemItem,
+	thinkingItem,
 	toolItem,
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 
 export {
 	assistantItem,
+	compactionItem,
 	pendingPermission,
 	permissionCard as permissionRequest,
 	systemItem,
+	thinkingItem,
 	toolItem,
 	userItem,
 };

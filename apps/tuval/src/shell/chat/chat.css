@@ -163,7 +163,7 @@
 	color: var(--text-secondary);
 }
 
-.tuval-chat-row[data-kind="system"] .tuval-chat-text {
+.tuval-chat-row[data-kind="session"] .tuval-chat-text {
 	color: var(--text-muted);
 	font: var(--t-body-sm);
 }
@@ -176,12 +176,15 @@
 }
 
 /*
- * The disclosure's own anatomy. `@kampus/design`'s `Collapsible` is a bare re-export of the Manti
- * primitive and ships no sizing, so a consuming app supplies it — apps/web does in its own sheets,
- * and Tuval is not that app (#7853). Without these two rules a real browser load renders the
- * trigger's state chevron at its intrinsic 56px, stacked under the row rather than beside it.
+ * The disclosure's own anatomy, shared by the two rows that are one. `@kampus/design`'s
+ * `Collapsible` is a bare re-export of the Manti primitive and ships no sizing, so a consuming app
+ * supplies it — apps/web does in its own sheets, and Tuval is not that app (#7853). Without these
+ * two rules a real browser load renders the trigger's state chevron at its intrinsic 56px, stacked
+ * under the row rather than beside it.
  */
-.tuval-chat-tool [data-scope="collapsible"][data-part="trigger"] {
+.tuval-chat-tool [data-scope="collapsible"][data-part="trigger"],
+.tuval-chat-session [data-scope="collapsible"][data-part="trigger"],
+.tuval-chat-thinking [data-scope="collapsible"][data-part="trigger"] {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -191,10 +194,103 @@
 	text-align: start;
 }
 
-.tuval-chat-tool [data-scope="collapsible"][data-part="indicator"] svg {
+.tuval-chat-tool [data-scope="collapsible"][data-part="indicator"] svg,
+.tuval-chat-session [data-scope="collapsible"][data-part="indicator"] svg,
+.tuval-chat-thinking [data-scope="collapsible"][data-part="indicator"] svg {
 	inline-size: 14px;
 	block-size: 14px;
 	color: var(--text-muted);
+}
+
+/*
+ * The session row: one line for the newest notice, the rest of the run and every detail a fold
+ * away. The line clips rather than wraps, so a burst that keeps arriving never changes the row's
+ * height under the reader — the whole reason consecutive notices are one row.
+ */
+.tuval-chat-session {
+	min-inline-size: 0;
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+
+.tuval-chat-session-head {
+	display: flex;
+	min-inline-size: 0;
+	align-items: baseline;
+	gap: var(--s-2);
+}
+
+.tuval-chat-session-line {
+	min-inline-size: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.tuval-chat-session-count {
+	flex: none;
+	font: var(--t-micro);
+	color: var(--text-muted);
+}
+
+.tuval-chat-session-detail {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	margin: 0;
+	padding-block-start: var(--s-2);
+	padding-inline-start: 0;
+	list-style: none;
+}
+
+/*
+ * The reasoning row. Collapsed it is one line, and the line is a preview: the whole of a turn's
+ * reasoning laid out unfolded is the flood the subagent fold exists to prevent (#8027).
+ */
+.tuval-chat-thinking {
+	min-inline-size: 0;
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+
+.tuval-chat-thinking-line {
+	min-inline-size: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-style: italic;
+}
+
+.tuval-chat-thinking-text {
+	padding-block-start: var(--s-2);
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+/*
+ * The compaction marker: its line, then a rule running out to the edge, because the operator's
+ * question here is *where* the earlier turns went rather than what the session said about it.
+ */
+.tuval-chat-compaction {
+	display: flex;
+	align-items: center;
+	gap: var(--s-2);
+}
+
+.tuval-chat-compaction-label {
+	font: var(--t-micro);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	white-space: nowrap;
+}
+
+.tuval-chat-compaction-rule {
+	flex: 1;
+	margin: 0;
+	border: 0;
+	block-size: 1px;
+	background: var(--border-faint);
 }
 
 .tuval-chat-tool-head {

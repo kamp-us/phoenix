@@ -2,7 +2,7 @@
  * The guard `session-transcript.ts` is written against: the wire union and the ports union are two
  * statements of one thing, so each has to admit exactly what the other does.
  *
- * Drift here is silent. The two agreeing today is not the point — the point is that a fifth `kind`
+ * Drift here is silent. The two agreeing today is not the point — the point is that a new `kind`
  * on one side, or a number arm the other refuses, turns a real transcript into "cannot read as a
  * transcript" on the page, with nothing failing until an operator sees it.
  */
@@ -33,6 +33,15 @@ const admitted: ReadonlyArray<readonly [string, TranscriptItem]> = [
 		{kind: "assistant", id: ItemId.make("a2"), timestamp: AT, text: "hi", interrupted: true},
 	],
 	["a system line", {kind: "system", id: ItemId.make("s1"), timestamp: AT, text: "resumed"}],
+	[
+		"a system line with a folded detail",
+		{kind: "system", id: ItemId.make("s2"), timestamp: AT, text: "hook ran", detail: "exit 0"},
+	],
+	["a thinking row", {kind: "thinking", id: ItemId.make("th1"), timestamp: AT, text: "weighing"}],
+	[
+		"a compaction marker",
+		{kind: "compaction", id: ItemId.make("c1"), timestamp: AT, text: "context compacted"},
+	],
 	[
 		"a tool call over nested JSON input",
 		{
@@ -113,7 +122,7 @@ const refused: ReadonlyArray<readonly [string, unknown]> = [
 			status: "cancelled",
 		},
 	],
-	["a fifth kind", {kind: "thinking", id: "x1", timestamp: AT, text: "hmm"}],
+	["a seventh kind", {kind: "verdict", id: "x1", timestamp: AT, text: "hmm"}],
 ];
 
 const decodeItem = Schema.decodeUnknownResult(TranscriptItemSchema);

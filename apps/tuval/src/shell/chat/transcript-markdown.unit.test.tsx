@@ -133,7 +133,8 @@ describe("an agent reply renders as markdown", () => {
 
 		const row = screen.getByRole("log", {name: "Transcript"});
 		expect(within(row).queryByRole("heading")).toBeNull();
-		expect(within(row).getByText("# not a heading").className).toBe("tuval-chat-text");
+		const line = within(row).getByText("# not a heading");
+		expect(line.classList.contains("tuval-chat-text")).toBe(true);
 	});
 });
 

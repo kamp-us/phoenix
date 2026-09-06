@@ -26,9 +26,13 @@ export const groupBytes = (items: ReadonlyArray<TranscriptItem>): number =>
 /**
  * Fold an oldest-first slice into atomic groups.
  *
- * A `user` item opens a group and absorbs the `assistant` and `tool` items that follow it; a
- * `system` item is session-level and stands alone; an `assistant` or `tool` item with no prompt
- * before it opens an orphan group of its own, so a slice starting mid-exchange still groups.
+ * A `user` item opens a group and absorbs the `assistant`, `thinking` and `tool` items that follow
+ * it; a `system` or `compaction` item is session-level and stands alone; any turn item with no
+ * prompt before it opens an orphan group of its own, so a slice starting mid-exchange still groups.
+ *
+ * A compaction marker stands alone for the same reason a system notice does, and for one more: it
+ * is exactly the place a reader wants a bound to cut, so folding it into the turn beside it would
+ * make the one boundary that explains missing history uncuttable.
  */
 export const groupTranscript = (
 	items: ReadonlyArray<TranscriptItem>,
@@ -44,7 +48,7 @@ export const groupTranscript = (
 		open = null;
 	};
 	items.forEach((item, index) => {
-		if (item.kind === "system") {
+		if (item.kind === "system" || item.kind === "compaction") {
 			close();
 			groups.push({items: [item], bytes: itemBytes(item), start: index});
 			return;

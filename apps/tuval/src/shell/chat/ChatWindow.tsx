@@ -22,8 +22,8 @@
  * **Four writes move the transcript, and one pin decides between them.** A window resting on its
  * newest turn follows every turn that lands; one whose reader scrolled up is left alone, and so is
  * one anchored on a history page, on a row it just expanded or on a fold it just opened. That is
- * `view.pinned`: it is set from the scroll offset on every scroll, cleared by opening a tool row,
- * opening a group's fold or asking for a page of history, and set again by sending. The two
+ * `view.pinned`: it is set from the scroll offset on every scroll, cleared by opening a row's own
+ * disclosure, opening a group's fold or asking for a page of history, and set again by sending. Two
  * anchoring effects reach the viewport only while it is clear, and every door into them clears it
  * itself rather than trusting the geometry to have done so: a transcript barely taller than its
  * viewport is inside the top threshold and the bottom one at once.
@@ -44,6 +44,7 @@ import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/i
 import type {Mode, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import type {ProcessView, WindowHost, WindowRenderer} from "../window/index.ts";
 import {windowRenderer} from "../window/index.ts";
+import {CompactionMarker} from "./CompactionMarker.tsx";
 import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
@@ -56,9 +57,12 @@ import {
 	chatRows,
 	mergeOlder,
 	oldestLoadedId,
+	type RowItem,
 	rowIndexOfItem,
 	rowKey,
 } from "./rows.ts";
+import {SessionRow} from "./SessionRow.tsx";
+import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
 import {asChatView, type ChatView} from "./view.ts";
@@ -172,31 +176,33 @@ const Placeholder = ({children}: {readonly children: ReactNode}): ReactElement =
 	</p>
 );
 
-const who: Readonly<Record<TranscriptItem["kind"], string>> = {
+// No `system` key, and none is missing: a session notice is a `session` row, never an item row.
+const who: Readonly<Record<RowItem["kind"], string>> = {
 	user: "you",
 	assistant: "agent",
 	tool: "tool",
-	system: "session",
+	thinking: "thinking",
+	compaction: "compaction",
 };
 
 /**
- * The three treatments an item's body gets. A `tool` call is its own row. Both sides of the
- * exchange — an agent reply and what the operator typed — render through the shared markdown
- * block, which paints synchronously so the row's measurement still holds (#8012/#8226): the
- * transcript reads the same on either side, and a fence the operator sends is the fence the agent
- * received. A `system` line is the session speaking rather than a person, so it stays exactly as it
- * arrived.
+ * What a row shows under its label. Three kinds carry a shape of their own: a tool call and a
+ * thinking row are disclosures over this window's one `expanded` set, and a compaction row is a
+ * divider rather than a line of prose. A session line never reaches here: `RowView` folds those
+ * into the session row. Everything else, an agent reply and what the operator typed alike,
+ * renders through the shared markdown block, which paints synchronously so the row's measurement
+ * still holds (#8012/#8226): a fence the operator sends is the fence the agent received.
  */
-function ItemBody({
+function RowBody({
 	item,
 	expanded,
 	fold,
-	onToggleTool,
+	onToggleRow,
 }: {
-	readonly item: TranscriptItem;
+	readonly item: RowItem;
 	readonly expanded: boolean;
 	readonly fold: ToolFold | null;
-	readonly onToggleTool: (id: string, open: boolean) => void;
+	readonly onToggleRow: (id: string, open: boolean) => void;
 }): ReactElement {
 	if (item.kind === "tool") {
 		return (
@@ -204,13 +210,20 @@ function ItemBody({
 				item={item}
 				expanded={expanded}
 				fold={fold}
-				onToggle={(open) => onToggleTool(item.id, open)}
+				onToggle={(open) => onToggleRow(item.id, open)}
 			/>
 		);
 	}
-	if (item.kind === "system") {
-		return <p className="tuval-chat-text">{item.text}</p>;
+	if (item.kind === "thinking") {
+		return (
+			<ThinkingRow
+				item={item}
+				expanded={expanded}
+				onToggle={(open) => onToggleRow(item.id, open)}
+			/>
+		);
 	}
+	if (item.kind === "compaction") return <CompactionMarker text={item.text} />;
 	// The transcript is a region inside the desk, so a `#` heading in a message is a subsection of
 	// it rather than a page title; and a transcript row is read as the lines it was typed on, so a
 	// lone newline is a break here where a document-shaped surface would fold it (#8244).
@@ -228,21 +241,21 @@ function ItemRow({
 	expanded,
 	fold,
 	nested,
-	onToggleTool,
+	onToggleRow,
 }: {
-	readonly item: TranscriptItem;
+	readonly item: RowItem;
 	readonly interrupted: boolean;
 	readonly onResend: (() => void) | null;
 	readonly expanded: boolean;
 	readonly fold: ToolFold | null;
 	readonly nested: boolean;
-	readonly onToggleTool: (id: string, open: boolean) => void;
+	readonly onToggleRow: (id: string, open: boolean) => void;
 }): ReactElement {
 	return (
 		<>
 			{/* A nested row says whose call it was in words; the indent beside it is the second signal. */}
 			<span className="tuval-chat-who">{nested ? "subagent" : who[item.kind]}</span>
-			<ItemBody item={item} expanded={expanded} fold={fold} onToggleTool={onToggleTool} />
+			<RowBody item={item} expanded={expanded} fold={fold} onToggleRow={onToggleRow} />
 			{interrupted ? (
 				<span className="tuval-chat-interrupted">
 					<span className="tuval-chat-interrupted-mark">interrupted</span>
@@ -271,7 +284,7 @@ function RowView({
 	onOlder,
 	expanded,
 	unfolded,
-	onToggleTool,
+	onToggleRow,
 	onToggleFold,
 }: {
 	readonly row: ChatRow;
@@ -281,7 +294,7 @@ function RowView({
 	readonly onOlder: () => void;
 	readonly expanded: ReadonlySet<string>;
 	readonly unfolded: ReadonlySet<string>;
-	readonly onToggleTool: (id: string, open: boolean) => void;
+	readonly onToggleRow: (id: string, open: boolean) => void;
 	readonly onToggleFold: (id: string, open: boolean) => void;
 }): ReactElement {
 	if (row.kind === "loading") {
@@ -301,6 +314,21 @@ function RowView({
 			</span>
 		);
 	}
+	if (row.kind === "session") {
+		// The run's first notice is its identity, in the `expanded` set as in `rowKey`, so a notice
+		// joining the run behind it does not close a disclosure the reader opened.
+		const id = row.items[0].id;
+		return (
+			<>
+				<span className="tuval-chat-who">session</span>
+				<SessionRow
+					run={row.items}
+					expanded={expanded.has(id)}
+					onToggle={(next) => onToggleRow(id, next)}
+				/>
+			</>
+		);
+	}
 	const open = unfolded.has(row.item.id);
 	return (
 		<ItemRow
@@ -318,7 +346,7 @@ function RowView({
 						}
 			}
 			nested={row.nested}
-			onToggleTool={onToggleTool}
+			onToggleRow={onToggleRow}
 		/>
 	);
 }
@@ -347,7 +375,7 @@ function ChatWindow({
 	// `StrictMode` does so on every commit, and Tuval only ever runs in development (ADR 0345) — so
 	// a `runFork` in there is two `setView` calls per keystroke. The ref is written in the same tick
 	// as the state, which is what keeps two commits batched into one render composing: the debounced
-	// scroll offset and `toggleTool`'s expanded set both read what the previous commit wrote.
+	// scroll offset and `toggleRow`'s expanded set both read what the previous commit wrote.
 	const viewRef = useRef(view);
 
 	const commit = useCallback((next: (current: ChatView) => ChatView) => {
@@ -373,7 +401,7 @@ function ChatWindow({
 	/** The row just opened, until the layout effect below has scrolled its trigger back into view. */
 	const openedRef = useRef<string | null>(null);
 
-	const toggleTool = useCallback(
+	const toggleRow = useCallback(
 		(id: string, open: boolean) => {
 			if (open) openedRef.current = id;
 			commit((current) => {
@@ -758,7 +786,13 @@ function ChatWindow({
 							return (
 								<div
 									key={virtual.key}
-									id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
+									id={
+										row.kind === "item"
+											? rowDomId(host.windowId, row.item.id)
+											: row.kind === "session"
+												? rowDomId(host.windowId, row.items[0].id)
+												: undefined
+									}
 									className="tuval-chat-row"
 									data-index={virtual.index}
 									data-kind={row.kind === "item" ? row.item.kind : row.kind}
@@ -779,7 +813,7 @@ function ChatWindow({
 										onOlder={requestOlder}
 										expanded={expanded}
 										unfolded={unfolded}
-										onToggleTool={toggleTool}
+										onToggleRow={toggleRow}
 										onToggleFold={toggleFold}
 									/>
 								</div>

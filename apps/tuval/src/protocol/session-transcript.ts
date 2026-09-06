@@ -85,14 +85,36 @@ export const ToolItem = Schema.Struct({
 	parentId: Schema.optionalKey(ItemId),
 });
 
-export const SystemItem = Schema.Struct({
-	kind: Schema.Literal("system"),
+export const ThinkingItem = Schema.Struct({
+	kind: Schema.Literal("thinking"),
 	id: ItemId,
 	timestamp: Timestamp,
 	text: Schema.String,
 });
 
-export const TranscriptItem = Schema.Union([UserItem, AssistantItem, ToolItem, SystemItem]);
+export const CompactionItem = Schema.Struct({
+	kind: Schema.Literal("compaction"),
+	id: ItemId,
+	timestamp: Timestamp,
+	text: Schema.String,
+});
+
+export const SystemItem = Schema.Struct({
+	kind: Schema.Literal("system"),
+	id: ItemId,
+	timestamp: Timestamp,
+	text: Schema.String,
+	detail: Schema.optionalKey(Schema.String),
+});
+
+export const TranscriptItem = Schema.Union([
+	UserItem,
+	AssistantItem,
+	ToolItem,
+	ThinkingItem,
+	CompactionItem,
+	SystemItem,
+]);
 export type TranscriptItemWire = typeof TranscriptItem.Type;
 
 /**
