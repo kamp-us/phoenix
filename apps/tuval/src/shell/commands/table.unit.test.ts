@@ -6,7 +6,7 @@
 import {describe, expect, it} from "vitest";
 import type {ShellMsg} from "../core/machine.ts";
 import {pickerCommands} from "../picker/intent.ts";
-import {commandName, parameterNames} from "./row.ts";
+import {commandName, isOptionalParameter, parameterNames} from "./row.ts";
 import {commandFor, commandNames, msgForCommandName, resolveVerb, shellCommands} from "./table.ts";
 
 /** Drive a row by name. Every row this file names exists, so an absent one is a failure, not a skip. */
@@ -58,10 +58,20 @@ describe("the command table", () => {
 		for (const picker of pickerCommands) {
 			const row = commandFor(picker.name);
 			expect(row?.describe).toBe(picker.summary);
-			expect(row === undefined ? [] : parameterNames(row)).toEqual([
-				picker.argument === "program-id" ? "program" : "process",
-			]);
+			const required =
+				row === undefined
+					? []
+					: parameterNames(row).filter((name) => !isOptionalParameter(row, name));
+			expect(required).toEqual([picker.argument === "program-id" ? "program" : "process"]);
 		}
+	});
+
+	it("lets `window:open` name a session, and never requires one (epic #8070)", () => {
+		const row = commandFor("window:open");
+		expect(row === undefined ? [] : parameterNames(row)).toEqual(["program", "session", "cwd"]);
+		expect(
+			row === undefined ? [] : ["session", "cwd"].map((name) => isOptionalParameter(row, name)),
+		).toEqual([true, true]);
 	});
 });
 

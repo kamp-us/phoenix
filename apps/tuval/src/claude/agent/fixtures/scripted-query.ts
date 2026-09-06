@@ -15,10 +15,12 @@
 
 import type {
 	EffortLevel,
+	ListSessionsOptions,
 	ModelInfo,
 	Options,
 	PermissionMode,
 	SDKMessage,
+	SDKSessionInfo,
 	SDKUserMessage,
 	SessionMessage,
 	SlashCommand,
@@ -210,6 +212,11 @@ export interface ScriptedSdk {
 	readonly opened: Array<ScriptedQuery>;
 	/** The `getSessionMessages` calls, in order. */
 	readonly reads: Array<{sessionId: string; dir: string | undefined}>;
+	/**
+	 * The `listSessions` calls, in order, each holding the options it was given. An `undefined`
+	 * entry is the layer passing none, which is what leaves `includeProgrammatic` at its default.
+	 */
+	readonly lists: Array<ListSessionsOptions | undefined>;
 }
 
 export interface ScriptedSdkOptions extends ScriptedBehaviour {
@@ -219,15 +226,21 @@ export interface ScriptedSdkOptions extends ScriptedBehaviour {
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	/** A read that throws instead of answering. */
 	readonly readFails?: Error;
+	/** What `listSessions` answers. Absent is a store holding none, which is a truthful empty list. */
+	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
+	/** A listing that throws — a store that would not open, not a store with nothing in it. */
+	readonly listFails?: Error;
 	readonly version?: string;
 }
 
 export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 	const opened: Array<ScriptedQuery> = [];
 	const reads: Array<{sessionId: string; dir: string | undefined}> = [];
+	const lists: Array<ListSessionsOptions | undefined> = [];
 	return {
 		opened,
 		reads,
+		lists,
 		sdk: {
 			version: options.version ?? "0.0.0-scripted",
 			query: (params) => {
@@ -239,6 +252,11 @@ export const scriptedSdk = (options: ScriptedSdkOptions): ScriptedSdk => {
 				reads.push({sessionId, dir: read.dir});
 				if (options.readFails !== undefined) throw options.readFails;
 				return options.rows ?? [];
+			},
+			listSessions: async (list) => {
+				lists.push(list);
+				if (options.listFails !== undefined) throw options.listFails;
+				return options.sessions ?? [];
 			},
 		},
 	};

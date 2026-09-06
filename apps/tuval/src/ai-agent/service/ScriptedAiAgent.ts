@@ -36,6 +36,7 @@ import {
 	type TranscriptItem,
 } from "../ports/index.ts";
 import {
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -46,6 +47,7 @@ import {
 	UnknownRequest,
 } from "./errors.ts";
 import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "./script.ts";
+import {newestFirst} from "./sessions.ts";
 import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 interface ScriptState {
@@ -324,6 +326,13 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			return {items: script.history.slice(from, end), hasMore: from > 0};
 		});
 
+		// The store is the script's, not the session's: it answers before `start` and after a
+		// scripted disconnect, because listing never went down the transport that died.
+		const listSessions = Effect.suspend(() => {
+			const held = script.sessions ?? [];
+			return held instanceof ListError ? Effect.fail(held) : Effect.succeed(newestFirst(held));
+		}).pipe(Effect.withSpan("TuvalAiAgent.listSessions"));
+
 		return {
 			start,
 			prompt,
@@ -334,6 +343,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			commands: Effect.map(Ref.get(state), (current) => current.commands),
 			setThinkingLevel,
 			page,
+			listSessions,
 			events: Stream.fromQueue(queue),
 		};
 	});

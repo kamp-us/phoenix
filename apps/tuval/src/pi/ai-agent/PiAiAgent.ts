@@ -47,6 +47,7 @@ import type {
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -77,6 +78,7 @@ import {
 	storeUnreadable,
 	transportErrorOf,
 } from "./refusals.ts";
+import {readPiSessions} from "./sessions.ts";
 
 /** A model this process may run, named the way Pi's catalog names one. */
 export interface ModelSelection {
@@ -186,6 +188,7 @@ const make = (
 		const pi = yield* PiClientService;
 		const scope = yield* Effect.scope;
 		const sessionDir = options.sessionDir ?? defaultSessionDir;
+		const agentDir = options.agentDir ?? getAgentDir();
 
 		const session = yield* Ref.make<PiSessionRef | null>(null);
 		// The pick an operator made before a session existed. It survives to the next `start`,
@@ -540,6 +543,42 @@ const make = (
 			return {items: planned.items, hasMore: planned.next !== null};
 		});
 
+		/**
+		 * Both of Pi's stores, unioned (#8099). A read of disk rather than of the transport, so it
+		 * answers before `start` and after a drop.
+		 *
+		 * Tuval's own store is located under the project root the layer was built on, or under the
+		 * running session's cwd when the layer was given none — the same one root `start({resume})`
+		 * looks in. With neither, only the `pi` CLI's store is reachable and the answer says so by
+		 * holding its rows alone.
+		 *
+		 * A failed store is a log line and not the answer: it fails only when no store answered at
+		 * all, because returning `[]` there would claim this machine holds no Pi sessions.
+		 */
+		const listSessions = Effect.gen(function* () {
+			const current = yield* Ref.get(session);
+			const root = options.projectRoot ?? current?.cwd;
+			const read = yield* readPiSessions({
+				agentDir,
+				...(root === undefined ? {} : {tuvalDir: sessionDir(root)}),
+			});
+			yield* Effect.forEach(
+				read.failures,
+				(failure) =>
+					Effect.logWarning(
+						`the ${failure.store} Pi session store could not be read: ${failure.detail}`,
+					),
+				{concurrency: 1, discard: true},
+			);
+			if (read.answered.length === 0) {
+				return yield* new ListError({
+					reason: "store-unreadable",
+					detail: read.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
+				});
+			}
+			return read.sessions;
+		}).pipe(Effect.withSpan("TuvalAiAgent.listSessions"));
+
 		return {
 			start,
 			prompt,
@@ -565,6 +604,7 @@ const make = (
 			commands: Effect.succeed([]),
 			setThinkingLevel,
 			page,
+			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};
 	});

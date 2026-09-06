@@ -85,12 +85,14 @@ import {
 	sessionNotFound,
 	startTransport,
 	startWithoutHandshake,
+	storeUnlistable,
 	storeUnreadable,
 	streamFailed,
 	subprocessGone,
 	unknownCursor,
 } from "./refusals.ts";
 import {type AgentSession, realAgentSdk} from "./sdk.ts";
+import {claudeSessions} from "./sessions.ts";
 import {exitDetail, type SubprocessWatch, watchSubprocess} from "./subprocess.ts";
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -767,6 +769,19 @@ const make = (
 			return {items: planned.items, hasMore: planned.next !== null};
 		});
 
+		/**
+		 * Every Claude session on this machine, not this layer's own: the CLI's store is read off
+		 * disk, so this answers before `start` and on a layer that never opens a session.
+		 *
+		 * Called with no options at all, which is both "sessions across all projects" (`dir` omitted)
+		 * and `includeProgrammatic` left at its `true` default — epic #8070's ruling 3 wants one
+		 * unified list, which is the opposite of the `/resume` parity the pin documents `false` for.
+		 */
+		const listSessions = Effect.tryPromise({
+			try: () => sdk.listSessions(),
+			catch: storeUnlistable,
+		}).pipe(Effect.map(claudeSessions), Effect.withSpan("TuvalAiAgent.listSessions"));
+
 		return {
 			start,
 			prompt,
@@ -777,6 +792,7 @@ const make = (
 			commands: Ref.get(commands),
 			setThinkingLevel,
 			page,
+			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};
 	});

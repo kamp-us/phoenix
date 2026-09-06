@@ -1,6 +1,6 @@
 # Command palette
 
-`CommandPalette` is the shared modal search surface in
+`CommandPalette` is the shared search surface in
 [`packages/design/src/CommandPalette.tsx`](../packages/design/src/CommandPalette.tsx). Its first
 product use is the search-only `⌘K` contract fixed by
 [ADR 0186](../.decisions/0186-command-palette-single-search-contract.md); callers supply result
@@ -24,6 +24,18 @@ data and selection behavior, so the design package never imports an app router o
   spine and one density ramp.
 - `showSearchIcon` (default on) is a separate axis from `variant` — the leading icon is present or
   absent the same way in both frames, so a caller never has to pick a frame to get an icon.
+- `presentation` picks where the palette lives. `dialog` (default) is the modal `⌘K` surface.
+  `inline` renders the same header, live region, listbox and footer inside a `<section>` labelled
+  with `title`, for a caller whose whole surface *is* the search — Tuval's session-list window
+  ([`apps/tuval/src/ai-agent/window/SessionListWindow.tsx`](../apps/tuval/src/ai-agent/window/SessionListWindow.tsx))
+  is the worked example. An inline palette is always open, so `open` / `defaultOpen` /
+  `onOpenChange`, `trigger`, `disabled`, `closeOnSelect`, `closeOnEscape` and the `⌘K` shortcut are
+  dialog-only: every one of them is about opening, closing or offering the modal, and an inline
+  palette does none of the three. Everything else — the ARIA spine, the movement, the
+  scroll-into-view, the filter, the scopes — is one implementation shared by both frames, which is
+  what stops a caller who cannot use a modal from writing the second palette #7882 deleted. The
+  axis is a frame, not a licence: ADR 0186's ban is on a second kamp.us *search surface*, and an
+  inline palette is still the one palette.
 - Density is inherited from the document-level `data-density` choice. The palette has no local
   size prop: its search field, result rows, groups, empty state and footer consume the shared
   `--s-*` / `--pop-row-y` ramps while `--tap-min` keeps every density keyboard- and pointer-safe.
@@ -86,10 +98,13 @@ stack of hint bars.
 
 ## Behavioral spine
 
-The palette composes the shared Manti-backed `Dialog`, which owns the modal, focus trap, Escape,
-outside-click dismissal and trigger-focus restoration. Its search field follows the WAI-ARIA
-editable combobox with list autocomplete pattern: DOM focus stays on the input; the active option
-is exposed through `aria-activedescendant`; Arrow Up/Down, Home, End and Enter operate the list.
+At `presentation="dialog"` the palette composes the shared Manti-backed `Dialog`, which owns the
+modal, focus trap, Escape, outside-click dismissal and trigger-focus restoration. Those five things
+are the whole of what `presentation="inline"` does without: an inline palette is one element among
+others on its surface, so it traps nothing, dismisses on nothing, and hands Escape to the caller.
+Its search field follows the WAI-ARIA editable combobox with list autocomplete pattern: DOM focus
+stays on the input; the active option is exposed through `aria-activedescendant`; Arrow Up/Down,
+Home, End and Enter operate the list.
 Disabled results remain perceivable but are skipped by keyboard selection.
 
 The active option is scrolled into view whenever it changes. This is part of the accessibility
