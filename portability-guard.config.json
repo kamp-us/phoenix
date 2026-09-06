@@ -23,11 +23,6 @@
 		}
 	},
 	"unmigrated": {
-		"plugin-build": {
-			"ceiling": 457,
-			"why": "The build skill's text, cleared by #8291, the build sweep child.",
-			"paths": ["claude-plugins/fabrika/skills/build"]
-		},
 		"plugin-ship": {
 			"ceiling": 368,
 			"why": "The ship skill's text, cleared by #8292, the ship sweep child.",
