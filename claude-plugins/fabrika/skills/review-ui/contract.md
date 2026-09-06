@@ -29,7 +29,7 @@ out binds regardless of whether the implementation imports or reimplements.
   `review deviations`. The skill invokes them as-is; restating one here would be the second home
   a shared fact drifts from.
 - **The named-gate read** is `heal-ci`'s ([`../heal-ci/contract.md`](../heal-ci/contract.md)):
-  `heal-ci surface`. §5 names three design gates and needs each one's live state *by name* — the
+  `heal-ci surface`. §5 needs each armed design gate's live state *by name* — the
   check-run name, the job's `name:` inside each workflow file, never its filename;
   `review ci` collapsed its check rows to a bounded status tally, and even uncollapsed it could
   never tell a required gate that never ran from a gate the repo does not declare at all — both are
@@ -721,7 +721,7 @@ review-ui cannot see this PR: no preview-deploy comment exists, so there is noth
 without running the PR's code. The review-ui namespace is deliberately left empty (fail-closed
 at ship). Unblock by restoring the preview deployment for this PR.
 EOF
-{"answer":"noted","pr":4321,"commentId":512399,"commentUrl":"https://github.com/<owner>/<repo>/pull/4321#issuecomment-5123990412"}
+{"answer":"noted","pr":4321,"commentId":512399,"commentUrl":"https://github.com/<owner>/<repo>/pull/4321#issuecomment-512399"}
 ```
 
 **Grounding**

@@ -112,8 +112,8 @@ Repo-wide the same number does not — `wire`'s `3`–`8` are its own — but wh
 **`report`'s and `triage`'s writing verbs** (`3`, `5`, `6`,
 `7`, `8`, `9`, `11`) they match them deliberately, code for code, read from the **shipped
 package** (`packages/fabrika-cli/src/report/codes.ts`, `src/triage/codes.ts`), never from a
-sibling contract.md — the checked-in `/report` contract is behind its own binary on `7` and `11`
-, which is exactly why prose copies are not the authority.
+sibling contract.md — a checked-in contract can lag the binary it describes, which is exactly why
+prose copies are not the authority.
 
 | Code | Meaning | scope | diff | criteria | ci | verdicts | deviations | post | append-criterion |
 |---|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
@@ -185,7 +185,7 @@ already requires, and all four run one shared binding step
    to *itself* — a local ref or tag spelled as hex resolves elsewhere, which is how a name that
    verifies still names the wrong tree. The base ref must resolve too, since a diff is a range,
    **and so must the merge base of that branch tip and this head** — the binding carries the tip
-   and the branch point as two separate values, and every verb's `base` is the branch point
+   and the branch point as two separate values, and every verb's `base` is the branch point.
    Any of these unmet is `11`, naming what is UNKNOWN. There is no permissive fallback to
    the PR-number endpoints: unbindable is a refusal, never a plausible value.
 3. The artifact is then read with `git diff <base>...<head>`, where `<base>` is that branch point
