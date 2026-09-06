@@ -10,7 +10,7 @@ import {coderTemplateText} from "./fixtures.test-support.ts";
 const ROOT = ".fabrika/lanes";
 const EPIC = 5680;
 const BRANCH = `epic/${EPIC}`;
-const MAIN = "/checkout/phoenix";
+const MAIN = "/checkout/repo";
 const EXPECTED = `${MAIN}/.claude/worktrees/epic-${EPIC}`;
 const LANE_FILES = {[`${ROOT}/${EPIC}/workflow.json`]: coderTemplateText()};
 
@@ -70,7 +70,7 @@ describe("runAssembly", () => {
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout.trim()).toBe(EXPECTED);
 		// `--no-track`: cut off `origin/HEAD` without it, the branch records `refs/heads/main` as its
-		// upstream and the run's pushes aim at the default branch (#6435).
+		// upstream and the run's pushes aim at the default branch.
 		expect(calls).toContain(`git worktree add --no-track -b ${BRANCH} ${EXPECTED} origin/HEAD`);
 		expect(calls.some((line) => line.startsWith("git switch"))).toBe(false);
 	});
@@ -84,7 +84,7 @@ describe("runAssembly", () => {
 		expect(calls.some((line) => line.startsWith("git fetch"))).toBe(false);
 	});
 
-	it("refuses the main working tree standing on the assembly branch, placing nothing (#6163)", async () => {
+	it("refuses the main working tree standing on the assembly branch, placing nothing", async () => {
 		const {outcome, calls} = await run([[LIST, CONSCRIPTED]]);
 
 		expect(outcome.code).toBe(PRIMARY_CHECKOUT);
@@ -160,7 +160,7 @@ describe("runAssembly", () => {
 		expect(outcome.stderr.join("\n")).toContain("NOT removed");
 	});
 
-	it("resumes a branch that outlived its worktree, checking it out rather than re-cutting it (#6163)", async () => {
+	it("resumes a branch that outlived its worktree, checking it out rather than re-cutting it", async () => {
 		const {outcome, calls} = await run([
 			[once(LIST), CLEAN],
 			[LIST, SEATED],
@@ -172,11 +172,11 @@ describe("runAssembly", () => {
 		expect(calls).toContain(`git worktree add ${EXPECTED} ${BRANCH}`);
 		expect(calls.some((line) => line.includes("worktree add -b"))).toBe(false);
 		expect(calls.some((line) => line.startsWith("git fetch"))).toBe(false);
-		// A branch cut by an older fabrika carries the #6435 upstream into every resume.
+		// A branch cut by an older fabrika carries a stale upstream into every resume.
 		expect(calls).toContain(`git branch --unset-upstream ${BRANCH}`);
 	});
 
-	it("clears a worktree record whose directory is gone, then places the branch again (#6163)", async () => {
+	it("clears a worktree record whose directory is gone, then places the branch again", async () => {
 		const {outcome, calls} = await run([
 			[once(LIST), STALE],
 			[once(LIST), CLEAN],

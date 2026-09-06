@@ -43,13 +43,13 @@ const laneMarker = (session: string, uuid: string): string =>
 
 const MINE = laneMarker("s-9f2e", LANE_UUID);
 const THEIRS = laneMarker("s-77aa", OTHER_UUID);
-/** A second driver of the SAME session — the two-lanes-one-session shape (#6060). */
+/** A second driver of the SAME session — the two-lanes-one-session shape. */
 const SIBLING = laneMarker("s-9f2e", SIBLING_UUID);
 
 const MY_TOKEN = `lane:s-9f2e:${LANE_UUID}`;
 const SIBLING_TOKEN = `lane:s-9f2e:${SIBLING_UUID}`;
 
-const POSTED = served({id: 9001, html_url: "https://github.com/o/r/issues/5492#c"}, 201);
+const POSTED = served({id: 9001, html_url: "https://forge.example/o/r/issues/5492#c"}, 201);
 const ECHO = served({body: MINE});
 
 const key = (raw: string) => {
@@ -144,7 +144,7 @@ describe("runLaneClaim", () => {
 	/**
 	 * A sibling driver of THIS session is a co-racer, not this run: ownership turns on the whole
 	 * token, so the older marker wins and this run retracts its own rather than reading the
-	 * neighbour's claim as its own (#6060).
+	 * neighbour's claim as its own.
 	 */
 	it("loses to a sibling driver of its own session, and says which one", async () => {
 		const seams = fakeSeams([
@@ -169,7 +169,7 @@ describe("runLaneClaim", () => {
 	/**
 	 * The UNKNOWN path retracts too. Its comment id is in hand and is provably this run's own write —
 	 * the one write a loser may always make — and leaving it stranded is a marker no later run can
-	 * resolve, on a namespace with no TTL to expire it (#6000).
+	 * resolve, on a namespace with no TTL to expire it.
 	 */
 	it("exits 11 on an unreadable marker set — UNKNOWN, never unclaimed — retracting its own", async () => {
 		const seams = fakeSeams([
@@ -253,8 +253,8 @@ describe("runLaneRelease", () => {
 
 	/**
 	 * The sharpest edge of the session-only rule: this release used to resolve `Mine` on a sibling
-	 * driver's marker and delete it, which is unrecoverable and leaves the issue reading unclaimed
-	 * (#6060). The refusal names the holding token so a reader can find the comment.
+	 * driver's marker and delete it, which is unrecoverable and leaves the issue reading unclaimed.
+	 * The refusal names the holding token so a reader can find the comment.
 	 */
 	it("refuses a sibling driver of its OWN session, naming the holding token", async () => {
 		const seams = fakeSeams([
@@ -311,7 +311,7 @@ describe("runLaneRelease", () => {
 });
 
 /**
- * The protocol's fixed point: one DRIVER, one marker, one token (#6087, scoped per driver by #6060).
+ * The protocol's fixed point: one DRIVER, one marker, one token, scoped per driver.
  *
  * Before the guard, N claims left N markers and each release peeled one off — and since nothing in
  * this namespace expires a marker, the leftovers made the lane refuse on `31` for good.
@@ -396,8 +396,8 @@ describe("one driver, one marker", () => {
 describe("a driver's claim and the builder it spawns", () => {
 	/**
 	 * The collision this pair exists to prevent, and the one it must NOT create: the driver holds
-	 * #5492 and the builder it spawns claims the same number and wins, because the two markers are
-	 * two namespaces on one thread rather than one race with two entrants (#5761).
+	 * one number and the builder it spawns claims it too and wins, because the two markers are
+	 * two namespaces on one thread rather than one race with two entrants.
 	 */
 	it("lets the spawned builder claim the same issue and win", async () => {
 		const BUILD_ISSUE = /^GET .*\/repos\/o\/r\/issues\/5492$/;
@@ -431,7 +431,7 @@ describe("a driver's claim and the builder it spawns", () => {
 				}),
 				fakeSeams([
 					[BUILD_ISSUE, claimable],
-					[POST, served({id: 9002, html_url: "https://github.com/o/r#c"}, 201)],
+					[POST, served({id: 9002, html_url: "https://forge.example/o/r#c"}, 201)],
 					[/^GET .*\/repos\/o\/r\/issues\/comments\/9002$/, served({body: buildMarker})],
 					[
 						BUILD_COMMENTS,
@@ -452,7 +452,7 @@ describe("a driver's claim and the builder it spawns", () => {
 });
 
 /**
- * The killed-seat succession (ADR 0325, #6374). The stranded marker here is SAME-SESSION under
+ * The killed-seat succession. The stranded marker here is SAME-SESSION under
  * another nonce, which is what a killed operator seat actually leaves: the successor boots under the
  * one `CLAUDE_CODE_SESSION_ID` and only its nonce differs. That is the shape `build adopt` refuses
  * as already covered by plain release; here plain release reads it as foreign, so it is the case
