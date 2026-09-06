@@ -27,6 +27,12 @@ describe("the module renderers loader module", () => {
 	it("writes a specifier as a string literal, whatever it holds", () => {
 		expect(moduleRenderersSource(['a"b'])).toContain('import("a\\"b")');
 	});
+
+	it("escapes the two line terminators JSON leaves raw, so a specifier cannot end a line of code", () => {
+		const source = moduleRenderersSource(["a\u2028b\u2029c"]);
+		expect(source).not.toMatch(/[\u2028\u2029]/);
+		expect(source).toContain('import("a\\u2028b\\u2029c")');
+	});
 });
 
 describe("moduleRendererRefs", () => {

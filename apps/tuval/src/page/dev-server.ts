@@ -72,14 +72,25 @@ export const MODULE_RENDERERS_ID = "virtual:tuval/module-renderers";
 const RESOLVED_MODULE_RENDERERS_ID = `\0${MODULE_RENDERERS_ID}`;
 
 /**
+ * A string as a JavaScript string literal. `JSON.stringify` is the escape, plus the two characters
+ * it leaves raw that JavaScript source treats as line terminators (U+2028, U+2029): inside a JSON
+ * string they are legal, inside a JS literal they end the line, and this string becomes code.
+ */
+const sourceLiteral = (value: string): string =>
+	JSON.stringify(value)
+		.replace(/\u2028/g, "\\u2028")
+		.replace(/\u2029/g, "\\u2029");
+
+/**
  * The source of the loader module: one `import()` per reference, keyed by the reference string the
- * row wrote. Both are written through `JSON.stringify`, so a specifier is a string literal in the
+ * row wrote. Both are written through `sourceLiteral`, so a specifier is a string literal in the
  * output whatever characters it holds — this is generated code, and a row's string is data to it.
  */
 export const moduleRenderersSource = (refs: ReadonlyArray<string>): string => {
-	const entries = refs.map(
-		(ref) => `\t${JSON.stringify(ref)}: () => import(${JSON.stringify(ref)}),`,
-	);
+	const entries = refs.map((ref) => {
+		const literal = sourceLiteral(ref);
+		return `\t${literal}: () => import(${literal}),`;
+	});
 	return `export default {\n${entries.join("\n")}\n};\n`;
 };
 
