@@ -54,8 +54,9 @@ describe("a mount reads the world fresh", () => {
 		}),
 	);
 
-	it("a fresh mount starts at the top with no refusal, whatever the last one ended on", () => {
-		expect(mountPicker()).toEqual({cursor: 0, refusal: null});
+	it("a fresh mount starts unplaced with no refusal, whatever the last one ended on", () => {
+		expect(mountPicker()).toEqual({cursor: null, refusal: null, previous: null});
+		expect(mountPicker("p-1")).toEqual({cursor: null, refusal: null, previous: "p-1"});
 		expect(mountPicker()).not.toBe(mountPicker());
 	});
 });

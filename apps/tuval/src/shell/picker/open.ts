@@ -18,7 +18,7 @@ import type {ProcessId} from "../../process/process.ts";
 import {type AnyProgram, type ProgramId, takesForwardedKeys} from "../../registry/program.ts";
 import {Registry} from "../../registry/Registry.ts";
 import type {ShellMsg} from "../core/machine.ts";
-import type {WindowId} from "../window/host.ts";
+import type {ViewState, WindowId} from "../window/host.ts";
 import {showsInAWindow} from "./entries.ts";
 import type {OpenSession, PickerIntent} from "./intent.ts";
 import {
@@ -28,16 +28,18 @@ import {
 	spawnFailed,
 	unknownProgram,
 } from "./refusal.ts";
-import {mountPicker, type PickerView, withRefusal} from "./view.ts";
+import {asPickerView, withRefusal} from "./view.ts";
 
 export interface PickerOptions {
 	/** The process every program the picker opens is spawned under — the shell's own. */
 	readonly shellProcessId: ProcessId;
 	/**
-	 * The view a refusal is written back over. The picker route passes its live view so a refused
-	 * choice leaves the highlight where the user put it; the command line has none and omits it.
+	 * The window's own view slot, unnarrowed, as the state the Cmd left carries it (`../core/machine.ts`).
+	 * A refusal is written back over it, so a refused choice keeps the highlight where the user put it
+	 * and keeps the process `<c-b> w` left behind — otherwise the first refusal on a picker is what
+	 * throws away the way back (#8265). The command line has no slot and omits it.
 	 */
-	readonly view?: PickerView;
+	readonly view?: ViewState;
 }
 
 /** A refusal reaches the user as the window's view: the picker is still mounted and re-renders. */
@@ -46,7 +48,7 @@ const refuse = (
 	options: PickerOptions,
 	refusal: PickerRefusal,
 ): ReadonlyArray<ShellMsg> => [
-	{type: "window.setView", windowId, view: withRefusal(options.view ?? mountPicker(), refusal)},
+	{type: "window.setView", windowId, view: withRefusal(asPickerView(options.view), refusal)},
 ];
 
 /**

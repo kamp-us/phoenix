@@ -436,6 +436,35 @@ export const errOut = (reason: string): ExecResult => ({ok: false, stdout: "", r
  */
 export const unconfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fakeFs({}).layer;
 
+/**
+ * A `/repo` tree declaring two `uiSurfaces` rows, one per runnable app.
+ *
+ * The layer a test needs when its subject *is* the `ui` class: {@link unconfigured} resolves the
+ * key to its shipped empty list, which raises no `ui` class at all — correct for a repo that
+ * declared nothing, and the wrong ground to derive that class on (#7369).
+ */
+export const uiConfigured: Layer.Layer<FileSystem.FileSystem | Path.Path> = fakeFs({
+	files: {
+		"/repo/.fabrika.jsonc": JSON.stringify({
+			uiSurfaces: [
+				{
+					name: "web",
+					prefix: "apps/web/src/",
+					mount: "/",
+					command: "pnpm dev --port {{port}}",
+				},
+				{
+					name: "tuval-chat",
+					prefix: "apps/tuval/src/",
+					mount: "/tuval/chat",
+					basePath: "/",
+					command: "pnpm proof:chat --port {{port}}",
+				},
+			],
+		}),
+	},
+}).layer;
+
 /** `git ls-tree --name-only` output: one name per line. */
 export const tree = (...names: ReadonlyArray<string>): string => names.join("\n");
 

@@ -46,6 +46,14 @@ export interface PageServerOptions {
 	/** `0` picks a free port, which is what a second `pnpm dev` on one machine needs. */
 	readonly port: number;
 	/**
+	 * Bind `port` or fail. A caller that was *handed* a port — the render harness allocates one and
+	 * builds the origin it will screenshot from it — needs the loud failure: falling back to the next
+	 * free port leaves that origin pointing at whatever else answers there, which on a machine running
+	 * several worktrees is a green capture of another tree (#7992). A caller that asked for `0` is
+	 * unaffected either way, so the default stays the forgiving one for `pnpm dev`.
+	 */
+	readonly strictPort?: boolean;
+	/**
 	 * The `kind: "module"` renderer specifiers the booted rows declared (`moduleRendererRefs`,
 	 * `../shell/window/renderer.ts`), each beside the config module that declared it (ADR 0359, as
 	 * amended by #8262). Absent means none: a proof that serves the page over its own rows names none
@@ -272,7 +280,7 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 				plugins: [launchEndpoint, moduleRenderersPlugin(moduleRenderers), react.default()],
 				server: {
 					port: options.port,
-					strictPort: false,
+					strictPort: options.strictPort ?? false,
 					host: "127.0.0.1",
 					// A program installed beside the user's config is outside the app's workspace, and
 					// Vite's default allowance is that workspace alone — so the page would resolve the

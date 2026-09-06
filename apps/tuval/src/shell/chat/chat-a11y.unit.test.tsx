@@ -140,17 +140,7 @@ const mountWindow = async (state: AiAgentSessionState, view: ChatView = initialC
 	return rendered;
 };
 
-const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<string>> => {
-	// The rows are opened through the slot rather than by clicking, so the property spends no Zag
-	// microtask flush per row per run — and an open panel is what puts the diff table in the tree.
-	const rendered = await mountWindow(state, {
-		...initialChatView,
-		expanded: state.transcript.items
-			.filter((item) => item.kind === "tool")
-			.map((item) => String(item.id)),
-	});
-	const root = rendered.container.firstElementChild as HTMLElement;
-
+const scanRegions = async (root: HTMLElement): Promise<ReadonlyArray<string>> => {
 	const found: Array<{readonly id: string; readonly detail: string}> = [];
 	for (const selector of REGIONS) {
 		const region = root.querySelector<HTMLElement>(selector);
@@ -166,8 +156,21 @@ const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<
 	// harness's focus probe is what proves it; dropping the scroller's tabIndex reds this.
 	const transcript = root.querySelector<HTMLElement>(".tuval-chat-transcript");
 	if (transcript !== null) found.push(...(await probeFocus(root, transcript)));
-	rendered.unmount();
 	return found.map((violation) => `${violation.id}: ${violation.detail}`);
+};
+
+const violationsFor = async (state: AiAgentSessionState): Promise<ReadonlyArray<string>> => {
+	// The rows are opened through the slot rather than by clicking, so the property spends no Zag
+	// microtask flush per row per run — and an open panel is what puts the diff table in the tree.
+	const rendered = await mountWindow(state, {
+		...initialChatView,
+		expanded: state.transcript.items
+			.filter((item) => item.kind === "tool")
+			.map((item) => String(item.id)),
+	});
+	const found = await scanRegions(rendered.container.firstElementChild as HTMLElement);
+	rendered.unmount();
+	return found;
 };
 
 // axe is the cost in both tests below — one pass per region per state, plus one per control for the
@@ -228,6 +231,34 @@ describe("the window's own primitives hold the enforced pillar-4 invariants", ()
 				},
 			);
 			expect(await violationsFor(state)).toEqual([]);
+		},
+		SLOW,
+	);
+
+	it(
+		"holds them over a group head with its fold open, where an idref list would dangle (#8057)",
+		async () => {
+			const state = withTranscript([
+				userItem("u1", "go"),
+				call("agent", {name: "Agent"}),
+				call("child-1", {name: "bash", parentId: "agent"}),
+				call("child-2", {name: "grep", parentId: "agent"}),
+			]);
+			const rendered = await mountWindow(state, {...initialChatView, unfolded: ["agent"]});
+			const root = rendered.container.firstElementChild as HTMLElement;
+
+			const fold = await screen.findByRole("button", {name: /nested calls?$/});
+			expect(fold.getAttribute("aria-expanded")).toBe("true");
+			expect(await scanRegions(root)).toEqual([]);
+
+			// The clean pass above is only worth something if the rule can fire on this markup at all,
+			// and whether it can turns on jsdom mounting the rows — which is why the control is here
+			// rather than assumed: the dropped attribute, pointed at an id the document does not hold.
+			fold.setAttribute("aria-controls", "tuval-row-w1-not-mounted");
+			const dangling = await scanRegions(root);
+			expect(dangling.some((v) => v.startsWith("valid-aria: aria-valid-attr-value"))).toBe(true);
+
+			rendered.unmount();
 		},
 		SLOW,
 	);

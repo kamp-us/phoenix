@@ -17,6 +17,8 @@ import {describe, expect, it, vi} from "vitest";
 import type {SessionListAnswer} from "../../page/session-list.ts";
 import type {SessionRow} from "../../protocol/session-list.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
+import type {WindowHost} from "../../shell/window/index.ts";
+import {WindowId} from "../../shell/window/index.ts";
 import {ItemId} from "../ports/index.ts";
 import {bareSession, claudeSession, NOW, scrambled} from "./fixtures.ts";
 import type {SendPlan, TranscriptRead} from "./opening.ts";
@@ -45,14 +47,19 @@ const page = (texts: ReadonlyArray<string>): TranscriptAnswer => ({
 	},
 });
 
+/**
+ * The one thing this surface reads off its host: the window its call would name
+ * (`SessionListWindow.tsx`). Everything else on a host is unread here, so nothing else is filled.
+ */
+const host = {windowId: WindowId.make("w-1")} as WindowHost;
+
 /** The window as a page mounts it, at whatever seams a test needs. */
 const mount = (options: SessionListWindowOptions = {}): ReactElement => {
 	const renderer = sessionListWindow({
 		useAnswer: () => listed(scrambled),
 		...options,
 	});
-	// The window host is unread by this surface (`SessionListWindow.tsx`), so none is handed over.
-	return renderer.render(undefined as never) as ReactElement;
+	return renderer.render(host) as ReactElement;
 };
 
 const field = (): HTMLElement => screen.getByRole("combobox", {name: "AI agent sessions"});
@@ -97,7 +104,7 @@ describe("activating a row inline", () => {
 		// The oldest row is the one whose store reported no folder, so it is the one Enter lands on
 		// when it is the only row on offer.
 		const renderer = sessionListWindow({useAnswer: () => listed([bareSession])});
-		render(renderer.render(undefined as never) as ReactElement);
+		render(renderer.render(host) as ReactElement);
 		fireEvent.keyDown(field(), {key: "Enter"});
 
 		expect(screen.getByRole("alert").textContent).toContain("no folder");

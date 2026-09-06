@@ -55,6 +55,7 @@ const options = {
 	pr: 6326,
 	sha: HEAD,
 	clause: CLAUSE,
+	uiPrefixes: ["apps/web/src/", "apps/tuval/src/"],
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
 		string,

@@ -19,10 +19,18 @@
  * The `keys` frame is the one thing here that is neither state nor catalog: it is the grammar the
  * page routes over, and the page may route over no other
  * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
+ *
+ * The two `spell` frames are the only round trip a page starts. Everything else the kernel holds is
+ * pushed; a spell call is the one thing a page may ask for, and it is asked for as the protocol's
+ * own `SpellCall`/`SpellReply` pair admitted through that module's schemas rather than a second
+ * request shape written here (`../../protocol/messages.ts`, ADR 0348 R1.3, #8161). The pair
+ * correlates on the `CallId` the caller minted, so neither frame carries a `seq` of this
+ * transport's own.
  */
 
-import {Duration, Option, Predicate} from "effect";
+import {Duration, Option, Predicate, Result, Schema} from "effect";
 import type {Lifecycle, ProcessId} from "../../process/process.ts";
+import {SpellCall, SpellReply} from "../../protocol/messages.ts";
 import type {ProgramId, RendererKind, RendererRef} from "../../registry/program.ts";
 import type {PortDeclaration, TableEvent, TableEventKind, TableRow} from "../../table/row.ts";
 import {type Binding, CommandName, type PrefixTable} from "../keys/table.ts";
@@ -31,6 +39,7 @@ import type {UndecodableReason} from "./errors.ts";
 export const ATTACH_KIND = "tuval/transport/attach/v1";
 export const DETACH_KIND = "tuval/transport/detach/v1";
 export const DISPATCH_KIND = "tuval/transport/dispatch/v1";
+export const SPELL_CALL_KIND = "tuval/transport/spell-call/v1";
 
 export const TABLE_KIND = "tuval/transport/table/v1";
 export const PROCESS_STATE_KIND = "tuval/transport/process-state/v1";
@@ -38,6 +47,7 @@ export const ATTACH_REFUSED_KIND = "tuval/transport/attach-refused/v1";
 export const DISPATCHED_KIND = "tuval/transport/dispatched/v1";
 export const REGISTRY_KIND = "tuval/transport/registry/v1";
 export const KEYS_KIND = "tuval/transport/keys/v1";
+export const SPELL_REPLY_KIND = "tuval/transport/spell-reply/v1";
 
 /** Attach to one process: from here its state arrives as `process-state` frames for as long as it lives. */
 export interface AttachFrame {
@@ -62,7 +72,17 @@ export interface DispatchFrame {
 	readonly msg: {readonly type: string; readonly [field: string]: unknown};
 }
 
-export type ClientFrame = AttachFrame | DetachFrame | DispatchFrame;
+/**
+ * One spell call, on its way to the kernel's executor. The payload is the protocol's own `SpellCall`
+ * and not a second request shape: the correlation is the `CallId` the caller already minted, so this
+ * frame needs no `seq` of its own (ADR 0348 R1.3, `../../protocol/messages.ts`).
+ */
+export interface SpellCallFrame {
+	readonly kind: typeof SPELL_CALL_KIND;
+	readonly call: SpellCall;
+}
+
+export type ClientFrame = AttachFrame | DetachFrame | DispatchFrame | SpellCallFrame;
 
 /** A table row as JSON: `parentId`'s `Option` is a nullable field, and nothing else changes. */
 export interface WireRow {
@@ -167,13 +187,20 @@ export interface KeysFrame {
 	readonly table: WirePrefixTable;
 }
 
+/** The answer to one `SpellCallFrame`, matched to it by the `CallId` both carry. */
+export interface SpellReplyFrame {
+	readonly kind: typeof SPELL_REPLY_KIND;
+	readonly reply: SpellReply;
+}
+
 export type ServerFrame =
 	| TableFrame
 	| ProcessStateFrame
 	| AttachRefusedFrame
 	| DispatchedFrame
 	| RegistryFrame
-	| KeysFrame;
+	| KeysFrame
+	| SpellReplyFrame;
 
 const isProcessIdString = (value: unknown): value is ProcessId => typeof value === "string";
 
@@ -302,6 +329,35 @@ export const isWirePrefixTable = (value: unknown): value is WirePrefixTable =>
 export const isKeysFrame = (value: unknown): value is KeysFrame =>
 	Predicate.isObject(value) && value.kind === KEYS_KIND && isWirePrefixTable(value.table);
 
+/**
+ * One kind's admission: the value as that frame, or `undefined` when the body is not one. A
+ * function rather than a type guard, because the two spell frames decode their payload as they
+ * admit it — what comes back is the protocol's own value and not the JSON it arrived as.
+ */
+type Admit<F> = (value: unknown) => F | undefined;
+
+const admitting =
+	<F>(admits: (value: unknown) => value is F): Admit<F> =>
+	(value) =>
+		admits(value) ? value : undefined;
+
+/**
+ * The two spell frames admit their payload through the protocol's own schema rather than a
+ * predicate written here: the message pair is declared once (`../../protocol/messages.ts`), and a
+ * second reading of it on this wire would be a second declaration that can drift from it.
+ */
+export const admitSpellCallFrame: Admit<SpellCallFrame> = (value) => {
+	if (!Predicate.isObject(value) || value.kind !== SPELL_CALL_KIND) return undefined;
+	const decoded = Schema.decodeUnknownResult(SpellCall)(value.call);
+	return Result.isFailure(decoded) ? undefined : {kind: SPELL_CALL_KIND, call: decoded.success};
+};
+
+export const admitSpellReplyFrame: Admit<SpellReplyFrame> = (value) => {
+	if (!Predicate.isObject(value) || value.kind !== SPELL_REPLY_KIND) return undefined;
+	const decoded = Schema.decodeUnknownResult(SpellReply)(value.reply);
+	return Result.isFailure(decoded) ? undefined : {kind: SPELL_REPLY_KIND, reply: decoded.success};
+};
+
 /** Decoded, or the one reason it was not. A refusal is a value: the caller decides what to close. */
 export type Decoded<F> =
 	| {readonly _tag: "Frame"; readonly frame: F}
@@ -326,7 +382,7 @@ const parse = (
 const decodeWith =
 	<F extends {readonly kind: string}>(
 		known: ReadonlySet<string>,
-		predicates: ReadonlyArray<(value: unknown) => value is F>,
+		admits: ReadonlyArray<Admit<F>>,
 	) =>
 	(text: string): Decoded<F> => {
 		const parsed = parse(text);
@@ -335,16 +391,22 @@ const decodeWith =
 		if (!Predicate.isObject(value) || typeof value.kind !== "string" || !known.has(value.kind)) {
 			return undecodable("unknown-kind");
 		}
-		for (const admits of predicates) {
-			if (admits(value)) return {_tag: "Frame", frame: value};
+		for (const admit of admits) {
+			const frame = admit(value);
+			if (frame !== undefined) return {_tag: "Frame", frame};
 		}
 		// The kind is one this end serves, so the body is what failed: a payload the predicate refused.
 		return undecodable("malformed-payload");
 	};
 
 export const decodeClientFrame: (text: string) => Decoded<ClientFrame> = decodeWith<ClientFrame>(
-	new Set([ATTACH_KIND, DETACH_KIND, DISPATCH_KIND]),
-	[isAttachFrame, isDetachFrame, isDispatchFrame],
+	new Set([ATTACH_KIND, DETACH_KIND, DISPATCH_KIND, SPELL_CALL_KIND]),
+	[
+		admitting(isAttachFrame),
+		admitting(isDetachFrame),
+		admitting(isDispatchFrame),
+		admitSpellCallFrame,
+	],
 );
 
 export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeWith<ServerFrame>(
@@ -355,16 +417,26 @@ export const decodeServerFrame: (text: string) => Decoded<ServerFrame> = decodeW
 		DISPATCHED_KIND,
 		REGISTRY_KIND,
 		KEYS_KIND,
+		SPELL_REPLY_KIND,
 	]),
 	[
-		isTableFrame,
-		isProcessStateFrame,
-		isAttachRefusedFrame,
-		isDispatchedFrame,
-		isRegistryFrame,
-		isKeysFrame,
+		admitting(isTableFrame),
+		admitting(isProcessStateFrame),
+		admitting(isAttachRefusedFrame),
+		admitting(isDispatchedFrame),
+		admitting(isRegistryFrame),
+		admitting(isKeysFrame),
+		admitSpellReplyFrame,
 	],
 );
+
+/** One call as the frame that carries it, so a caller never spells the kind at its send site. */
+export const spellCallFrame = (call: SpellCall): SpellCallFrame => ({kind: SPELL_CALL_KIND, call});
+
+export const spellReplyFrame = (reply: SpellReply): SpellReplyFrame => ({
+	kind: SPELL_REPLY_KIND,
+	reply,
+});
 
 export const encodeFrame = (frame: ClientFrame | ServerFrame): string => JSON.stringify(frame);
 

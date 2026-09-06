@@ -70,16 +70,55 @@ describe("picker keyboard", () => {
 		const refused = withRefusal(mountPicker(), unknownProgram("nope"));
 		expect(pickerKey(window, entries, refused, "<escape>")).toEqual({
 			_tag: "Cleared",
-			view: {cursor: 0, refusal: null},
+			view: {cursor: 0, refusal: null, previous: null},
 		});
 		expect(pickerKey(window, entries, mountPicker(), "<escape>")).toEqual({_tag: "Ignored"});
+	});
+
+	it("Escape on a picker with a `previous` attaches that process back (#8265)", () => {
+		expect(pickerKey(window, entries, mountPicker("p-1"), "<escape>")).toEqual({
+			_tag: "Chose",
+			intent: {_tag: "AttachProcess", windowId: window, processId: "p-1"},
+		});
+	});
+
+	it("a refusal is dismissed first, and the Escape after it returns (#8265)", () => {
+		const refused = withRefusal(mountPicker("p-1"), unknownProgram("nope"));
+		const cleared = pickerKey(window, entries, refused, "<escape>");
+		expect(cleared).toEqual({
+			_tag: "Cleared",
+			view: {cursor: 2, refusal: null, previous: "p-1"},
+		});
+		if (cleared._tag !== "Cleared") throw new Error("test setup: Escape cleared nothing");
+		expect(pickerKey(window, entries, cleared.view, "<escape>")).toEqual({
+			_tag: "Chose",
+			intent: {_tag: "AttachProcess", windowId: window, processId: "p-1"},
+		});
+	});
+
+	it("a `previous` no row offers still chooses — liveness is the attach handler's (#8265)", () => {
+		expect(highlighted(entries, mountPicker("p-gone"))).toEqual(entries.programs[0]);
+		expect(pickerKey(window, entries, mountPicker("p-gone"), "<escape>")).toEqual({
+			_tag: "Chose",
+			intent: {_tag: "AttachProcess", windowId: window, processId: "p-gone"},
+		});
+	});
+
+	it("an unplaced cursor starts on the `previous` row rather than the first (#8265)", () => {
+		expect(highlighted(entries, mountPicker("p-1"))).toEqual(entries.processes[0]);
+		// Once the operator moves, the cursor is theirs and `previous` only names Escape's target.
+		expect(press(mountPicker("p-1"), "<home>")).toEqual({
+			cursor: 0,
+			refusal: null,
+			previous: "p-1",
+		});
 	});
 
 	it("a move clears the refusal, because the user has moved on from it", () => {
 		const refused = withRefusal(mountPicker(), unknownProgram("nope"));
 		expect(pickerKey(window, entries, refused, "j")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 1, refusal: null},
+			view: {cursor: 1, refusal: null, previous: null},
 		});
 	});
 
@@ -94,16 +133,16 @@ describe("picker keyboard", () => {
 		expect(pickerKey(window, noEntries, mountPicker(), "<enter>")).toEqual({_tag: "Ignored"});
 		expect(pickerKey(window, noEntries, mountPicker(), "j")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 0, refusal: null},
+			view: {cursor: 0, refusal: null, previous: null},
 		});
 	});
 
 	it("a cursor left past the end of a shrunken list reads as the last row", () => {
-		const stale = {cursor: 9, refusal: null};
+		const stale = {cursor: 9, refusal: null, previous: null};
 		expect(highlighted(entries, stale)).toEqual(entries.processes[0]);
 		expect(pickerKey(window, entries, stale, "<arrowup>")).toEqual({
 			_tag: "Moved",
-			view: {cursor: 1, refusal: null},
+			view: {cursor: 1, refusal: null, previous: null},
 		});
 	});
 });

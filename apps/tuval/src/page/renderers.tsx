@@ -17,6 +17,10 @@
  * which is source-consumed and authored with
  * `exactOptionalPropertyTypes: false`. Each key is the reference that program's own row declares,
  * imported rather than retyped, so a row and this table cannot name two different renderers.
+ *
+ * The table is built per socket rather than held as a constant, because the session-list entry is
+ * the one renderer that asks the kernel something: it is bound to this page's `call`, so the answer
+ * it renders came over the socket the desk is attached to and dies with it (#8161).
  */
 
 import {Effect, Fiber, Stream} from "effect";
@@ -28,16 +32,19 @@ import {
 	AI_AGENT_INSPECTOR_REF,
 	AiAgentInspector,
 	SESSION_LIST_WINDOW_REF,
-	SessionListWindow,
+	type SessionListSource,
+	sessionListWindow,
 } from "../ai-agent/window/index.ts";
 import {CLAUDE_CHAT_WINDOW_REF, ClaudeChatWindow} from "../claude/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
 import {PI_CHAT_WINDOW_REF, PiChatWindow} from "../pi/window/index.ts";
 import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
+import type {PageAttachment} from "../shell/transport/browser.ts";
 import type {WindowHost} from "../shell/window/index.ts";
 import {windowRenderer} from "../shell/window/index.ts";
 import {Pending, type ReadableRenderer, readsState} from "./readable-state.tsx";
+import {readSessionList, type SessionListAnswer, sessionListCall} from "./session-list.ts";
 
 /**
  * One process's public state, live. The stream never fails and ends on `ProcessGone`, so the hook
@@ -99,12 +106,44 @@ function LogRenderer({host}: {readonly host: WindowHost<LogState>}): ReactElemen
 	);
 }
 
+/** How this page asks the kernel one thing: its socket's own `call` (`../shell/transport/client.ts`). */
+export type SpellCaller = PageAttachment["call"];
+
+/**
+ * The session list, read from the kernel. One call per window, sent when the window mounts and
+ * matched to its reply by the `CallId` it minted, so two open pickers never read each other's answer
+ * (`./session-list.ts`). A socket that goes away is no answer at all: the window stays on its
+ * reading state, and the desk's own connection banner is what says the link is gone.
+ */
+const sessionListSource = (call: SpellCaller): SessionListSource => {
+	const useSessionListAnswer: SessionListSource = (window) => {
+		const [answer, setAnswer] = useState<SessionListAnswer | null>(null);
+		useEffect(() => {
+			const spell = sessionListCall(window);
+			const fiber = Effect.runFork(
+				call(spell).pipe(
+					Effect.flatMap((reply) =>
+						Effect.sync(() => {
+							const read = readSessionList(spell, reply);
+							if (read !== null) setAnswer(read);
+						}),
+					),
+					Effect.catchCause(() => Effect.void),
+				),
+			);
+			return () => void Effect.runFork(Fiber.interrupt(fiber));
+		}, [window]);
+		return answer;
+	};
+	return useSessionListAnswer;
+};
+
 /**
  * Every renderer the page knows, by the reference a program row names it with — each bound to the
  * predicate over the state it reads, which is what the `ReadableRenderer` type asks for. A renderer
  * put here unguarded does not typecheck, so the rule holds at the table and not by review (#8157).
  */
-export const pageRenderers: Readonly<Record<string, ReadableRenderer>> = {
+export const pageRenderers = (call: SpellCaller): Readonly<Record<string, ReadableRenderer>> => ({
 	"tuval/demo/counter": readsState(
 		isCounterState,
 		windowRenderer("host-native", (host: WindowHost<CounterState>) => (
@@ -117,8 +156,11 @@ export const pageRenderers: Readonly<Record<string, ReadableRenderer>> = {
 	),
 	[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, PiChatWindow),
 	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, ClaudeChatWindow),
-	[SESSION_LIST_WINDOW_REF.ref]: readsState(isSessionListState, SessionListWindow),
-};
+	[SESSION_LIST_WINDOW_REF.ref]: readsState(
+		isSessionListState,
+		sessionListWindow({useAnswer: sessionListSource(call)}),
+	),
+});
 
 /**
  * Every desk-inspector renderer the page knows, by the reference a program row names it with. It is
