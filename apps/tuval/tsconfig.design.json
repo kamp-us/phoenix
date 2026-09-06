@@ -19,6 +19,7 @@
 		"src/shell/chat",
 		"src/pi/window",
 		"src/claude/window",
+		"src/agy/window",
 		"src/page/main.tsx",
 		"src/page/boot.tsx",
 		"src/page/AttachedDesk.tsx",
