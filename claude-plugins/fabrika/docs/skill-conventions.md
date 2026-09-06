@@ -347,7 +347,7 @@ runtime — it is declared so the setting is legible in the file rather than in 
 conditions force it off regardless: `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`, and a
 **non-interactive session**, where the fork still happens but blocks and returns its result
 in-line. So the notification path fires exactly where it was meant to: a human typing
-`/fabrika:build 1234` in a live session.
+`/fabrika:build <n>` in a live session.
 
 Neither of the five declares `agent:`, so a fork spawns a `general-purpose` subagent carrying the
 skill body. Naming a shell there would make the shell's `tools:` set bind instead of the caller's,
