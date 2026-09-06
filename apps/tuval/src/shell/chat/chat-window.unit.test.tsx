@@ -23,7 +23,14 @@ import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
-import {assistantItem, call, toolItem, transcriptOf, userItem, withTranscript} from "./chat.testing.ts";
+import {
+	assistantItem,
+	call,
+	toolItem,
+	transcriptOf,
+	userItem,
+	withTranscript,
+} from "./chat.testing.ts";
 import {phaseLines} from "./phase.ts";
 import {type ChatView, initialChatView} from "./view.ts";
 
