@@ -303,11 +303,15 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 
 					yield* Effect.gen(function* () {
 						const intruder = yield* TuvalAiAgent;
-						const locked = yield* Effect.flip(intruder.start({cwd, resume: started.sessionId}));
+						const locked = yield* Effect.flip(
+							intruder.start({cwd, resume: {sessionId: started.sessionId, holdsTranscript: false}}),
+						);
 						assert.instanceOf(locked, StartError);
 						assert.strictEqual(locked.reason, "session-locked");
 
-						const missing = yield* Effect.flip(intruder.start({cwd, resume: "no-such-session"}));
+						const missing = yield* Effect.flip(
+							intruder.start({cwd, resume: {sessionId: "no-such-session", holdsTranscript: false}}),
+						);
 						assert.strictEqual(missing.reason, "session-not-found");
 					}).pipe(
 						Effect.provide(
@@ -342,7 +346,10 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					);
 
 					// The way back in re-dials and reacquires the same session by id.
-					const resumed = yield* owner.start({cwd, resume: started.sessionId});
+					const resumed = yield* owner.start({
+						cwd,
+						resume: {sessionId: started.sessionId, holdsTranscript: false},
+					});
 					assert.strictEqual(resumed.sessionId, started.sessionId);
 					yield* owner.prompt("second question");
 					yield* turnsRan(faux, 2);

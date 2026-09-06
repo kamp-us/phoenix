@@ -210,10 +210,62 @@ export const eventsOf = (
  * own newly typed turn and pushing it out of the window's 40-item cut (#8369). The attach lease
  * already carries the session's snapshot, and this is that snapshot read as "already rendered".
  *
+ * `through` is where "already read" stops: the newest item the caller's window holds. Everything
+ * at or older than it is seeded, and anything after it is left unseeded so it emits — a turn the
+ * session finished while the socket was down is work the operator has never seen, and seeding the
+ * whole snapshot would bury it for the life of the session with no gap marker and no way to page
+ * to it (#8374). `null` seeds nothing. An id this snapshot does not carry — a compaction
+ * renumbered the transcript out from under the caller — also seeds nothing, which replays: a
+ * visibly wrong transcript is recoverable and a silently missing reply is not.
+ *
  * The phase is deliberately left unseeded: a session still working when it was reattached has to
  * restate `prompting` on its first push, or the window sits on the `ready` that `start` emitted.
  */
-export const projectionOf = (snapshot: SessionSnapshot): SnapshotProjection => ({
-	...eventsOf(emptyProjection, snapshot).next,
-	phase: null,
-});
+export const projectionOf = (
+	snapshot: SessionSnapshot,
+	through: string | null,
+): SnapshotProjection => {
+	if (through === null) return emptyProjection;
+	const items = new Map<string, string>();
+	const usage = new Map<string, string>();
+	let reached = false;
+	for (const source of snapshot.transcript) {
+		if (reached) break;
+		const rows = itemsOf(source);
+		for (const item of rows) {
+			if (reached) break;
+			items.set(item.id, fingerprint(item));
+			reached = item.id === through;
+		}
+		// A turn's cost is seeded only when the whole turn is behind the boundary. A boundary
+		// falling between a turn's reasoning row and its reply — the window cut there — leaves the
+		// reply to emit, and its `usage` is that reply's annotation.
+		const event = reached && items.size < rows.length ? null : usageEventOf(source);
+		if (event !== null) usage.set(source.id, fingerprint(event));
+	}
+	return reached ? {items, usage, phase: null} : emptyProjection;
+};
+
+/**
+ * The history a window holding nothing has to be shown, and the projection that leaves behind.
+ *
+ * The picker opens a past session on a fresh window, so its history has to paint — but Pi only
+ * pushes on a session event, and nothing changes the session until the operator types. That defers
+ * the whole transcript to the same push that carries their turn, and `../../ai-agent/core/fold.ts`
+ * appends every unknown item after the turn the core recorded on send, so their message ends up
+ * above the session it belongs under (#8369). Painting at the attach instead puts the history on
+ * screen while the tail is still empty, where appending is the right order and there is nothing to
+ * land on top of.
+ *
+ * The phase is left to the first push for the same reason `projectionOf` leaves it: `start` emits
+ * its own `ready` after this, which would overwrite a `prompting` stated here.
+ */
+export const paintOf = (
+	snapshot: SessionSnapshot,
+): {readonly events: ReadonlyArray<AgentEvent>; readonly projection: SnapshotProjection} => {
+	const folded = eventsOf(emptyProjection, snapshot);
+	return {
+		events: folded.events.filter((event) => event.kind !== "phase"),
+		projection: {...folded.next, phase: null},
+	};
+};

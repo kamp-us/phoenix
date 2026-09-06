@@ -38,27 +38,44 @@ import type {
 } from "./errors.ts";
 import type {SessionSummary} from "./sessions.ts";
 
+/**
+ * A session to pick back up, and what the caller already has on screen for it.
+ *
+ * The two facts are one value because neither is legal without the other: `holdsTranscript` is a
+ * property of the resume, not a sibling of it, and a caller that holds the transcript owes the
+ * boundary it holds it through (#8369, #8374).
+ *
+ * Any id `listSessions` offered is legal, not only one this desk started: continuing a session the
+ * operator began in his terminal is what the session list is for (epic #8070, ruling 3). A miss is
+ * `StartError({reason: "session-not-found"})`, never a start that succeeds and replays nothing. A
+ * row that opens onto silence has to be saying the session is empty; if it could also mean the
+ * session is gone, neither reading is worth anything.
+ */
+export type ResumeTarget =
+	/**
+	 * The picker opening a session on a fresh window. It holds nothing, so the layer's replay of
+	 * the whole transcript is the only way that history paints.
+	 */
+	| {readonly sessionId: string; readonly holdsTranscript: false}
+	/**
+	 * A restored process standing a new transport under the tail it came back with
+	 * (`../restore/checkpoint.ts`). Replaying what it can already see floods the window on top of
+	 * the operator's own turn and pushes it out of the 40-item cut (#8369).
+	 *
+	 * `newestItemId` is where "already on screen" stops. Everything at or older than it is
+	 * suppressed; anything after it is work this process has never seen — a turn the session
+	 * finished while the socket was down — and is emitted (#8374). `null` says the restored tail is
+	 * empty, so nothing is suppressed.
+	 */
+	| {
+			readonly sessionId: string;
+			readonly holdsTranscript: true;
+			readonly newestItemId: string | null;
+	  };
+
 export interface StartOptions {
 	readonly cwd: string;
-	/**
-	 * A session id to pick back up, or absent to start a new one. Any id `listSessions` offered is
-	 * legal, not only one this desk started: continuing a session the operator began in his terminal
-	 * is what the session list is for (epic #8070, ruling 3).
-	 *
-	 * A miss is `StartError({reason: "session-not-found"})`, never a start that succeeds and replays
-	 * nothing. A row that opens onto silence has to be saying the session is empty; if it could also
-	 * mean the session is gone, neither reading is worth anything.
-	 */
-	readonly resume?: string;
-	/**
-	 * Whether the caller already holds the resumed session's transcript, and so must not be sent it
-	 * again. A restored process comes back with its committed tail already on screen
-	 * (`../restore/checkpoint.ts`), so a layer that replays the history it can see floods the window
-	 * on top of the operator's own turn and pushes it out of the 40-item cut (#8369). A window
-	 * opened on a session out of the picker holds nothing, and the replay is the only way its
-	 * history paints. Read only alongside `resume`; absent means the caller holds nothing.
-	 */
-	readonly holdsTranscript?: boolean;
+	readonly resume?: ResumeTarget;
 	/**
 	 * The mode to open on, which is how a restored session keeps the operator's switch (#7953). A
 	 * layer holds its mode in its own build, so a rebuilt one holds none and would otherwise open on

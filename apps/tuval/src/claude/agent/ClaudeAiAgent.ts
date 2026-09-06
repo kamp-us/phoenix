@@ -52,6 +52,7 @@ import {
 	ModelUnsupported,
 	ModeUnsupported,
 	type StartError,
+	type StartOptions,
 	ThinkingUnsupported,
 	type TransportError,
 	TuvalAiAgent,
@@ -525,11 +526,7 @@ const make = (
 			};
 		});
 
-		const start = Effect.fn("TuvalAiAgent.start")(function* (startOptions: {
-			readonly cwd: string;
-			readonly resume?: string;
-			readonly mode?: Mode;
-		}) {
+		const start = Effect.fn("TuvalAiAgent.start")(function* (startOptions: StartOptions) {
 			const previous = yield* Ref.get(session);
 			// A second `start` is a reconnect, and it replaces the session whole: the previous
 			// subprocess is closed, its pump ended with it, and the old queue is shut so a
@@ -547,7 +544,8 @@ const make = (
 			const held = (yield* Ref.get(mode)) ?? startOptions.mode ?? null;
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
-			const opened = yield* open(startOptions.cwd, startOptions.resume, held).pipe(
+			const resuming = startOptions.resume?.sessionId;
+			const opened = yield* open(startOptions.cwd, resuming, held).pipe(
 				Effect.tapError((_error: StartError) => emit(out, [{kind: "phase", phase: "gone"}])),
 			);
 
@@ -555,7 +553,7 @@ const make = (
 			// The keys belong to a session, not to the layer: a key is dropped when this *session* has
 			// seen it, so a new session admits one the previous session spent. Resuming the session the
 			// keys were recorded under is the one case that keeps them.
-			const continuing = previous !== null && startOptions.resume === previous.id;
+			const continuing = previous !== null && resuming === previous.id;
 			if (!continuing) yield* Ref.set(keys, new Set<string>());
 
 			// The layer's own narration of the open, which the handshake is: the core is already

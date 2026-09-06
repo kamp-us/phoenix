@@ -8,6 +8,11 @@
  * own newly typed turn, pushing it out of the 40-item window (#8369). A window opened on a session
  * out of the picker holds nothing, and the same replay is the only way its history paints — so both
  * halves are pinned here.
+ *
+ * What the restored process holds stops at the tail it was checkpointed with, so a turn the session
+ * finished while the socket was down sits in the lease snapshot and on nobody's screen. Suppressing
+ * the whole snapshot would bury it for the life of the session, which is why the seed cuts at that
+ * boundary rather than at the snapshot (#8374).
  */
 
 import type {
@@ -135,7 +140,10 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 
 				yield* Effect.gen(function* () {
 					const agent = yield* TuvalAiAgent;
-					yield* agent.start({cwd: CWD, resume: SESSION.id, holdsTranscript: true});
+					yield* agent.start({
+						cwd: CWD,
+						resume: {sessionId: SESSION.id, holdsTranscript: true, newestItemId: reply.id},
+					});
 					const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 					yield* drain(events);
 
@@ -156,7 +164,10 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 
 			yield* Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
-				yield* agent.start({cwd: CWD, resume: SESSION.id, holdsTranscript: true});
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: SESSION.id, holdsTranscript: true, newestItemId: reply.id},
+				});
 				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 				yield* drain(events);
 
@@ -171,30 +182,82 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 		}),
 	);
 
-	it.live(
-		"still replays the history for a caller that holds none, which is how the picker paints",
-		() =>
-			Effect.gen(function* () {
-				const client = yield* stub;
+	it.live("paints the history at the attach for a caller that holds none", () =>
+		Effect.gen(function* () {
+			const client = yield* stub;
 
-				yield* Effect.gen(function* () {
-					const agent = yield* TuvalAiAgent;
-					yield* agent.start({cwd: CWD, resume: SESSION.id});
-					const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
-					yield* drain(events);
-
-					yield* client.push(HELD);
-					const folded = yield* drain(events);
-					assert.deepStrictEqual(
-						itemIds(folded),
-						[user.id, reply.id],
-						"a window opened on a past session came up empty",
-					);
-				}).pipe(
-					Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))),
-					Effect.scoped,
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: SESSION.id, holdsTranscript: false},
+				});
+				const opened = yield* drain(events);
+				assert.deepStrictEqual(
+					itemIds(opened),
+					[user.id, reply.id],
+					"a window opened on a past session came up empty",
 				);
-			}),
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	/**
+	 * Criterion 7's own case. The picker's window is empty, so the history paints — but at the
+	 * attach, before the operator can have typed anything. By the time their turn provokes Pi's
+	 * first push, the fold already holds that history and emits their turn alone, so it stays the
+	 * newest item in the tail instead of sitting above the session it belongs under (#8369).
+	 */
+	it.live("emits only the operator's turn on the first push after a picker open", () =>
+		Effect.gen(function* () {
+			const client = yield* stub;
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: SESSION.id, holdsTranscript: false},
+				});
+				yield* drain(events);
+
+				yield* client.push(snapshot([user, reply, sent], "turn", 8));
+				const folded = yield* drain(events);
+				assert.deepStrictEqual(
+					itemIds(folded),
+					[sent.id],
+					"the picker's first send arrived under a replay of the history above it",
+				);
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
+	);
+
+	it.live("emits the turn the session finished while the socket was down", () =>
+		Effect.gen(function* () {
+			const client = yield* stub;
+
+			yield* Effect.gen(function* () {
+				const agent = yield* TuvalAiAgent;
+				// The checkpointed tail stops at the operator's turn: the reply landed after the
+				// socket dropped, so this process has never seen it and nothing else will show it.
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: SESSION.id, holdsTranscript: true, newestItemId: user.id},
+				});
+				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+				yield* drain(events);
+
+				yield* client.push(HELD);
+				const folded = yield* drain(events);
+				assert.deepStrictEqual(
+					itemIds(folded),
+					[reply.id],
+					"the reply that landed during the drop was suppressed and never paints",
+				);
+				assert.strictEqual(usages(folded), 1, "the reply arrived without its own cost");
+			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
+		}),
 	);
 
 	it.live("opens a fresh session on an empty projection, so its first snapshot paints", () =>

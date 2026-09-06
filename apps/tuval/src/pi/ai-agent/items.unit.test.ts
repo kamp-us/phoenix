@@ -260,7 +260,7 @@ describe("one revision folded into events", () => {
 	 */
 	it("emits no item and no usage when a resume's seed already holds the whole transcript", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
-		const folded = eventsOf(projectionOf(restored), restored);
+		const folded = eventsOf(projectionOf(restored, "item-1"), restored);
 		expect(folded.events).toEqual([{kind: "phase", phase: "ready"}]);
 	});
 
@@ -273,7 +273,7 @@ describe("one revision folded into events", () => {
 			timestamp: 13,
 		};
 		const folded = eventsOf(
-			projectionOf(restored),
+			projectionOf(restored, "item-1"),
 			snapshot([user, assistant("hi back", 0.42), sent], "turn", 8),
 		);
 		expect(folded.events).toEqual([
@@ -283,12 +283,48 @@ describe("one revision folded into events", () => {
 	});
 
 	/**
+	 * Everything after the boundary is work the caller has never seen — a turn the session finished
+	 * while the socket was down — and burying it would leave no gap marker and no way to page to it
+	 * (#8374).
+	 */
+	it("emits what the session finished past the boundary the caller holds", () => {
+		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
+		const folded = eventsOf(projectionOf(restored, user.id), restored);
+		expect(folded.events).toEqual([
+			{
+				kind: "item",
+				item: {kind: "thinking", id: "item-1:thinking", timestamp: 11, text: "not for the window"},
+			},
+			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
+			{
+				kind: "usage",
+				model: "faux/faux-1",
+				inputTokens: 11,
+				outputTokens: 22,
+				cost: 0.42,
+			},
+			{kind: "phase", phase: "ready"},
+		]);
+	});
+
+	/**
+	 * A boundary this snapshot does not carry — a compaction renumbered the transcript out from
+	 * under the caller — seeds nothing and replays. A visibly wrong transcript is recoverable; a
+	 * silently missing reply is not.
+	 */
+	it("replays rather than guesses when the boundary is not in the snapshot", () => {
+		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
+		const folded = eventsOf(projectionOf(restored, "item-gone"), restored);
+		expect(folded.events.filter((event) => event.kind === "item")).toHaveLength(3);
+	});
+
+	/**
 	 * The phase is the one thing the seed leaves out: `start` emits its own `ready` after the
 	 * attach, so a session still working when it was reattached has to restate `prompting`.
 	 */
 	it("restates the phase of a session that was still working when it was reattached", () => {
 		const working = snapshot([user], "turn", 7);
-		expect(eventsOf(projectionOf(working), working).events).toEqual([
+		expect(eventsOf(projectionOf(working, "item-0"), working).events).toEqual([
 			{kind: "phase", phase: "prompting"},
 		]);
 	});

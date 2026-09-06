@@ -29,6 +29,7 @@ import {
 	type AiAgentEventsSub,
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
+	type AiAgentSessionState,
 	type AiAgentSessionSub,
 	foldEvent,
 	initialState,
@@ -39,6 +40,7 @@ import {isRefusal, planTranscriptPage, withoutLocalEchoes} from "../history/inde
 import {SessionOpening} from "../opening.ts";
 import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
 import {
+	type ResumeTarget,
 	type StartOptions,
 	type TranscriptPage,
 	TransportError,
@@ -105,6 +107,22 @@ const noSession: AgentFailure = {
 	detail: "no agent has been started in this process",
 };
 
+/**
+ * The newest item in a restored tail that a backend minted, or `null`.
+ *
+ * The operator's own turn is recorded locally on send under an id no layer has ever seen
+ * (`../core/fold.ts`'s `promptItem`), so it cannot be the boundary a layer suppresses at — it walks
+ * back past every still-unechoed local turn to the last item the session itself produced.
+ */
+const newestBackendItemId = (state: AiAgentSessionState | null): string | null => {
+	const items = state?.transcript.items ?? [];
+	for (let index = items.length - 1; index >= 0; index -= 1) {
+		const item = items[index];
+		if (item !== undefined && !(item.kind === "user" && item.local === true)) return item.id;
+	}
+	return null;
+};
+
 export const aiAgentHandlers = <RIn = never>(
 	options: AiAgentHandlerOptions<RIn>,
 ): AiAgentHandlerSet<RIn> => {
@@ -143,15 +161,14 @@ export const aiAgentHandlers = <RIn = never>(
 	 */
 	const open = (
 		cwd: string,
-		resume: string | null,
+		resume: ResumeTarget | null,
 		mode: Mode | null,
-		holdsTranscript = false,
 	): Effect.Effect<Follow, never, ProcessSelf | RIn> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.rebuild;
 			const options: StartOptions = {
 				cwd,
-				...(resume === null ? {} : {resume, holdsTranscript}),
+				...(resume === null ? {} : {resume}),
 				...(mode === null ? {} : {mode}),
 			};
 			const started = yield* Effect.result(underPolicy(agent.start(options), policy));
@@ -197,13 +214,34 @@ export const aiAgentHandlers = <RIn = never>(
 					: [{type: "start", cwd: opening.value.cwd, resume: opening.value.resume} as const],
 			),
 
-		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume, cmd.mode),
+		"aiAgent.start": (cmd) =>
+			open(
+				cmd.cwd,
+				cmd.resume === null ? null : {sessionId: cmd.resume, holdsTranscript: false},
+				cmd.mode,
+			),
 
 		// The one resume whose window already holds the transcript: a reconnect stands a new
 		// transport under the state this process came back with, so the layer owes it no replay
 		// (#8369). A `start` carrying a resume is the picker opening a session on a fresh process,
 		// which holds nothing and needs one.
-		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId, cmd.mode, true),
+		//
+		// What it does owe is everything the session finished while the socket was down, so the
+		// boundary rides with the flag: the newest item the *backend* minted in the restored tail.
+		// A locally-recorded turn is skipped because no layer knows its id — a boundary the layer
+		// cannot find in its snapshot suppresses nothing, which would replay the session (#8374).
+		"aiAgent.reconnect": (cmd) =>
+			Effect.flatMap(readSession, (state) =>
+				open(
+					cmd.cwd,
+					{
+						sessionId: cmd.sessionId,
+						holdsTranscript: true,
+						newestItemId: newestBackendItemId(state),
+					},
+					cmd.mode,
+				),
+			),
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending

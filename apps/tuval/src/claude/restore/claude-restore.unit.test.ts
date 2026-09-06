@@ -203,7 +203,10 @@ describe("the reconnect handler", () => {
 				yield* eventually(() => probe.starts.length === 2);
 				// `holdsTranscript` rides every reconnect since #8369: the process came back with its
 				// committed tail, so a layer that can replay history is told not to.
-				assert.deepStrictEqual(probe.starts[1], {cwd: CWD, resume: SESSION, holdsTranscript: true});
+				assert.deepStrictEqual(probe.starts[1], {
+					cwd: CWD,
+					resume: {sessionId: SESSION, holdsTranscript: true, newestItemId: null},
+				});
 				assert.strictEqual(probe.builds, 2, "the reconnect reused the handle the stop killed");
 			}),
 		);

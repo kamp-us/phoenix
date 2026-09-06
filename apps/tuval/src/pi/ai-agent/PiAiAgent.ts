@@ -52,6 +52,7 @@ import {
 	ModeUnsupported,
 	PageError,
 	PromptError,
+	type StartOptions,
 	ThinkingUnsupported,
 	type TransportError,
 	TuvalAiAgent,
@@ -69,7 +70,13 @@ import {
 	type ServerBindFailed,
 } from "../server/index.ts";
 import {pageItems} from "./entries.ts";
-import {emptyProjection, eventsOf, projectionOf, type SnapshotProjection} from "./items.ts";
+import {
+	emptyProjection,
+	eventsOf,
+	paintOf,
+	projectionOf,
+	type SnapshotProjection,
+} from "./items.ts";
 import {
 	promptDropOf,
 	promptErrorOf,
@@ -327,11 +334,7 @@ const make = (
 			yield* Ref.set(dialled, true);
 		});
 
-		const start = Effect.fn("TuvalAiAgent.start")(function* (options_: {
-			readonly cwd: string;
-			readonly resume?: string;
-			readonly holdsTranscript?: boolean;
-		}) {
+		const start = Effect.fn("TuvalAiAgent.start")(function* (options_: StartOptions) {
 			const previous = yield* Ref.get(pump);
 			if (previous !== null) yield* Fiber.interrupt(previous);
 			yield* Effect.flatMap(Ref.get(queue), Queue.shutdown);
@@ -347,29 +350,38 @@ const make = (
 				// A held pick outranks the layer's static option: it is the later choice, and this
 				// open is the one it was made for.
 				const opening = (yield* Ref.get(pendingModel)) ?? options.model;
-				if (options_.resume === undefined) {
+				const resume = options_.resume;
+				if (resume === undefined) {
 					const opened = yield* pi.createSession(
 						options_.cwd,
 						opening === undefined ? {} : {model: opening},
 					);
-					return {ref: opened, seed: emptyProjection};
+					return {ref: opened, seed: emptyProjection, paint: []};
 				}
-				const resumed = yield* pi.attachSession(options_.resume);
-				// A caller that already holds the transcript is looking at it: seeding the fold with
-				// the lease's own snapshot is what keeps Pi's next whole-transcript push from
-				// replaying the session as live items on top of the operator's turn (#8369). A
-				// caller that holds none — the picker opening a session on a fresh window — still
-				// gets the replay, because it is the only way that history paints.
-				if (options_.holdsTranscript !== true) return {ref: resumed, seed: emptyProjection};
+				// Either way the lease's own snapshot is the seed, and neither reading of it costs a
+				// round trip: Pi re-sends the whole transcript on every revision, so a fold that
+				// opened on `emptyProjection` replays the session as live items on the first push
+				// after the attach (#8369). What differs is what the caller can already see.
+				const resumed = yield* pi.attachSession(resume.sessionId);
 				const held = yield* pi.heldSnapshot(resumed.id);
-				return {ref: resumed, seed: projectionOf(held)};
+				// A restored process is looking at its own committed tail, so the seed suppresses
+				// everything through the boundary it holds and emits whatever the session finished
+				// past it (#8374).
+				if (resume.holdsTranscript) {
+					return {ref: resumed, seed: projectionOf(held, resume.newestItemId), paint: []};
+				}
+				// A window opened out of the picker holds nothing, so the history is painted here,
+				// at the attach, while its tail is still empty.
+				const painted = paintOf(held);
+				return {ref: resumed, seed: painted.projection, paint: painted.events};
 			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
 
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
-			const {ref, seed} = yield* acquire.pipe(
+			const {ref, seed, paint} = yield* acquire.pipe(
 				Effect.tapError(() => emit(open, [{kind: "phase", phase: "gone"}])),
 			);
+			yield* emit(open, paint);
 
 			// A `start({resume})` reattaches to a session already on its own stored model, and a
 			// create can answer on another, so a held pick is applied here rather than assumed to

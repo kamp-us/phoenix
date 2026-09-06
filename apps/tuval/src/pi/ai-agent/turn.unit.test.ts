@@ -394,7 +394,9 @@ describe("a failed start", () => {
 
 			yield* Effect.gen(function* () {
 				const agent = yield* TuvalAiAgent;
-				const refused = yield* Effect.flip(agent.start({cwd: CWD, resume: SESSION.id}));
+				const refused = yield* Effect.flip(
+					agent.start({cwd: CWD, resume: {sessionId: SESSION.id, holdsTranscript: false}}),
+				);
 				assert.strictEqual(refused.reason, "session-locked");
 
 				assert.deepStrictEqual(
