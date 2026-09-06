@@ -15,15 +15,19 @@ export {tuvalDesignMessages, tuvalDesignTranslate} from "./copy.ts";
 export {ModeSwitch} from "./ModeSwitch.tsx";
 export {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
 export {isWorking, phaseLine, phaseLines, statusLine} from "./phase.ts";
+export {type QueuedMessage, QueuedMessages} from "./QueuedMessages.tsx";
 export {
 	type ChatRow,
 	type ChatRowsInput,
 	chatRows,
 	mergeOlder,
 	oldestLoadedId,
+	type RowItem,
 	rowIndexOfItem,
 	rowKey,
+	type SessionRun,
 } from "./rows.ts";
+export {SessionRow} from "./SessionRow.tsx";
 export {ToolRow} from "./ToolRow.tsx";
 export {
 	type DiffLine,

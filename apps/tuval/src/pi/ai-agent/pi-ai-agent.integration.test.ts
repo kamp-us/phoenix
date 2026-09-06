@@ -149,12 +149,12 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				const events = yield* drain(agent);
 
 				assert.deepEqual(
-					events.slice(0, 4).map((event) => event.kind),
-					["phase", "mode", "model", "phase"],
-					"start advertises the mode and model lists before settling on ready",
+					events.slice(0, 5).map((event) => event.kind),
+					["phase", "mode", "model", "thinking", "phase"],
+					"start advertises the mode, model and thinking lists before settling on ready",
 				);
 				assert.deepEqual(
-					[events[0], events[1], events[3]],
+					[events[0], events[1], events[4]],
 					[
 						{kind: "phase", phase: "starting"},
 						{kind: "mode", current: null, available: []},
@@ -173,6 +173,15 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 						announced.current === null ? [] : [announced.current],
 						"the session's model is one the catalog offers",
 					);
+				}
+
+				// The thinking set is the *model's* row in that same catalog, so it is read off the
+				// wire rather than named here — a non-reasoning model offers `off` alone (#8062).
+				const levels = events[3];
+				assert.strictEqual(levels?.kind, "thinking");
+				if (levels?.kind === "thinking") {
+					assert.isNotEmpty(levels.available);
+					assert.include([...levels.available], levels.current);
 				}
 
 				const kinds = new Set(items(events).map((item) => item.kind));
@@ -248,7 +257,21 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				);
 
 				const oldest = yield* agent.page(older.items[0]?.id ?? null, 2);
-				assert.isFalse(oldest.hasMore, "the walk reaches the beginning of the session");
+				assert.deepStrictEqual(
+					oldest.items.map((item) => (item.kind === "user" ? item.text : item.kind)),
+					["first question", "assistant"],
+					"the oldest exchange is still a whole one",
+				);
+
+				// Pi records the model and the thinking level before the first turn, so the head of a
+				// real session's history is those two notices rather than the first question (#8152).
+				const opening = yield* agent.page(oldest.items[0]?.id ?? null, 2);
+				assert.deepStrictEqual(
+					opening.items.map((item) => (item.kind === "system" ? item.text : item.kind)),
+					[`Model set to ${MODEL.provider}/${MODEL.id}`, "Thinking set to off"],
+					"the session's own opening entries reach the window as notices",
+				);
+				assert.isFalse(opening.hasMore, "the walk reaches the beginning of the session");
 			}).pipe(
 				Effect.scoped,
 				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),

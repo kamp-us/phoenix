@@ -15,10 +15,13 @@ import {
 	cutShort,
 	disconnects,
 	disconnectTurn,
+	emptySession,
 	history,
 	interruptEvents,
 	interruptedPromptTurn,
 	interruptedTurn,
+	listRefused,
+	listsSessions,
 	mode,
 	models,
 	modes,
@@ -29,7 +32,9 @@ import {
 	plainReplyTurn,
 	runningTool,
 	SESSION_ID,
+	sessions,
 	settledTool,
+	thinking,
 	toolCall,
 	toolCallTurn,
 	usageEvent,
@@ -42,8 +47,11 @@ import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 const CWD = "/workspace/phoenix";
 
-/** What `start` emits before any turn: starting, the mode, model and command lists, ready. */
-const START_EVENTS = 5;
+/**
+ * What `start` emits before any turn: starting, the mode, model and command lists, the thinking
+ * level set (#8062), ready.
+ */
+const START_EVENTS = 6;
 
 const on = <A, E>(
 	script: AgentScript,
@@ -54,7 +62,7 @@ const on = <A, E>(
 		return yield* body(agent);
 	}).pipe(Effect.provide(ScriptedAiAgent.layer(script)), Effect.scoped);
 
-/** The events a turn queued, with `start`'s five dropped. */
+/** The events a turn queued, with `start`'s own dropped. */
 const afterStart = (agent: TuvalAiAgentApi, count: number) =>
 	Effect.map(Stream.runCollect(Stream.take(agent.events, START_EVENTS + count)), (events) =>
 		events.slice(START_EVENTS),
@@ -73,7 +81,7 @@ const causeError = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?:
 		: {};
 
 describe("start", () => {
-	it.effect("returns the script's session id and announces the mode, model and command lists", () =>
+	it.effect("returns the script's session id and announces every list it offers", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
 				const session = yield* agent.start({cwd: CWD});
@@ -83,6 +91,7 @@ describe("start", () => {
 					{kind: "mode", current: modes.current, available: modes.available},
 					{kind: "model", current: models.current, available: models.available},
 					{kind: "commands", available: []},
+					{kind: "thinking", current: thinking.current, available: thinking.available},
 					{kind: "phase", phase: "ready"},
 				]);
 			}),
@@ -108,6 +117,69 @@ describe("start", () => {
 				assert.strictEqual(error._tag, "tuval/ai-agent/StartError");
 				assert.strictEqual(error.reason, "session-not-found");
 			}),
+		),
+	);
+
+	// The other half of that failure: a session the desk never started and that holds nothing
+	// resumes, replaying no items. So silence on a resume says "this session is empty" and only a
+	// miss says "this session is gone" — the two readings a session list cannot afford to share.
+	it.effect("resumes a session that is genuinely empty, replaying nothing", () =>
+		on(emptySession, (agent) =>
+			Effect.gen(function* () {
+				const session = yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				assert.strictEqual(session.sessionId, SESSION_ID);
+				const events = yield* take(agent, START_EVENTS);
+				assert.deepStrictEqual(
+					events.filter((event) => event.kind === "item"),
+					[],
+				);
+			}),
+		),
+	);
+});
+
+describe("listSessions", () => {
+	it.effect("answers the script's store newest first", () =>
+		on(listsSessions, (agent) =>
+			Effect.gen(function* () {
+				const listed = yield* agent.listSessions;
+				assert.deepStrictEqual(
+					listed.map((session) => session.sessionId),
+					["session-claude", "session-pi"],
+				);
+			}),
+		),
+	);
+
+	it.effect("leaves what a backend could not supply absent rather than zero-filled", () =>
+		on(listsSessions, (agent) =>
+			Effect.gen(function* () {
+				const listed = yield* agent.listSessions;
+				assert.deepStrictEqual([...listed], [sessions[1], sessions[0]]);
+				const [claude, pi] = listed;
+				// Claude's listing counts no messages and Pi's knows no branch; Pi's `cwd` for an old
+				// session is the empty string, which is not a folder named "".
+				assert.strictEqual(claude?.messageCount, undefined);
+				assert.strictEqual(pi?.branch, undefined);
+				assert.strictEqual(pi?.folder, undefined);
+				assert.strictEqual(pi?.messageCount, 12);
+			}),
+		),
+	);
+
+	it.effect("fails rather than answering an empty list when the store cannot be read", () =>
+		on(listRefused, (agent) =>
+			Effect.gen(function* () {
+				const error = causeError(yield* Effect.exit(agent.listSessions));
+				assert.strictEqual(error._tag, "tuval/ai-agent/ListError");
+				assert.strictEqual(error.reason, "store-unreadable");
+			}),
+		),
+	);
+
+	it.effect("answers with no session started, because the store is not the session", () =>
+		on(plainReply, (agent) =>
+			Effect.map(agent.listSessions, (listed) => assert.deepStrictEqual([...listed], [])),
 		),
 	);
 });
@@ -241,7 +313,7 @@ describe("models", () => {
 				// not the script's opening one — the switch outlives the turn it was made between.
 				yield* agent.start({cwd: CWD, resume: SESSION_ID});
 				const resumed = yield* take(agent, START_EVENTS + history.length);
-				assert.deepStrictEqual(resumed.at(-3), {
+				assert.deepStrictEqual(resumed.at(-4), {
 					kind: "model",
 					current: sonnet,
 					available: models.available,
@@ -262,7 +334,7 @@ describe("commands", () => {
 				assert.deepStrictEqual(yield* agent.commands, []);
 				yield* agent.start({cwd: CWD});
 				const events = yield* take(agent, START_EVENTS);
-				assert.deepStrictEqual(events.at(-2), {kind: "commands", available: [compact, review]});
+				assert.deepStrictEqual(events.at(-3), {kind: "commands", available: [compact, review]});
 				assert.deepStrictEqual(yield* agent.commands, [compact, review]);
 			}),
 		),
@@ -281,6 +353,41 @@ describe("commands", () => {
 					yield* afterStart(agent, 1);
 					assert.deepStrictEqual(yield* agent.commands, [review]);
 				}),
+		),
+	);
+});
+
+describe("thinking levels", () => {
+	it.effect("echoes a level it offers and refuses one outside the set", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("xhigh");
+				assert.deepStrictEqual(yield* afterStart(agent, 1), [
+					{kind: "thinking", current: "xhigh", available: thinking.available},
+				]);
+				// `minimal` is in the vocabulary and outside this script's offered set, which is the
+				// founder's per-backend ruling: what a backend does not support is not a row (#8062).
+				const error = causeError(yield* Effect.exit(agent.setThinkingLevel("minimal")));
+				assert.strictEqual(error._tag, "tuval/ai-agent/ThinkingUnsupported");
+			}),
+		),
+	);
+
+	it.effect("runs the rest of the session on the level it switched to", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("max");
+				yield* take(agent, START_EVENTS + 1);
+				yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				const resumed = yield* take(agent, START_EVENTS + history.length);
+				assert.deepStrictEqual(resumed.at(-2), {
+					kind: "thinking",
+					current: "max",
+					available: thinking.available,
+				});
+			}),
 		),
 	);
 });

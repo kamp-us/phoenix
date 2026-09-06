@@ -3,7 +3,7 @@
  * the whole thing inside one Scope so a run's end is the teardown the layer owes.
  */
 
-import type {SDKMessage, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
+import type {SDKMessage, SDKSessionInfo, SessionMessage} from "@anthropic-ai/claude-agent-sdk";
 import {Effect, Layer, Schema} from "effect";
 import {Mode} from "../../../ai-agent/ports/index.ts";
 import {TuvalAiAgent, type TuvalAiAgentApi} from "../../../ai-agent/service/index.ts";
@@ -27,12 +27,12 @@ export const MODES: ReadonlyArray<Mode> = [
 
 /**
  * What `start` itself emits: starting, ready, the mode list, the model list (#7981), then the
- * slash-command catalog (#8060).
+ * slash-command catalog (#8060) and the thinking-level set that model offers (#8062).
  */
-export const START_EVENTS = 5;
+export const START_EVENTS = 6;
 
 /**
- * Those five plus the one event the `system`/`init` frame carries: the model it names.
+ * Those plus the one event the `system`/`init` frame carries: the model it names.
  *
  * That one is not part of `start` — the frame belongs to the first turn (`sdk.d.ts`), so on a
  * scripted run whose `opening` begins with `init` the pump emits it just after, and a test that
@@ -58,6 +58,8 @@ export interface HarnessOptions extends ScriptedBehaviour {
 	readonly opening?: ReadonlyArray<SDKMessage>;
 	readonly rows?: ReadonlyArray<SessionMessage>;
 	readonly readFails?: Error;
+	readonly sessions?: ReadonlyArray<SDKSessionInfo>;
+	readonly listFails?: Error;
 	readonly spawn?: SpawnClaudeCodeProcess;
 	readonly allowedTools?: ReadonlyArray<string>;
 	readonly model?: string;
@@ -106,6 +108,8 @@ export const on = <A, E>(
 			opening: harness.opening ?? [],
 			...(harness.rows === undefined ? {} : {rows: harness.rows}),
 			...(harness.readFails === undefined ? {} : {readFails: harness.readFails}),
+			...(harness.sessions === undefined ? {} : {sessions: harness.sessions}),
+			...(harness.listFails === undefined ? {} : {listFails: harness.listFails}),
 			...(harness.version === undefined ? {} : {version: harness.version}),
 			...(harness.deferOpening === undefined ? {} : {deferOpening: harness.deferOpening}),
 			...(harness.endsAtOnce === undefined ? {} : {endsAtOnce: harness.endsAtOnce}),
@@ -116,6 +120,9 @@ export const on = <A, E>(
 			...(harness.catalogFails === undefined ? {} : {catalogFails: harness.catalogFails}),
 			...(harness.commands === undefined ? {} : {commands: harness.commands}),
 			...(harness.commandsFail === undefined ? {} : {commandsFail: harness.commandsFail}),
+			...(harness.effortSwitchFails === undefined
+				? {}
+				: {effortSwitchFails: harness.effortSwitchFails}),
 		});
 		return Effect.gen(function* () {
 			const agent = yield* TuvalAiAgent;

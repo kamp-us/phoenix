@@ -141,9 +141,11 @@
 }
 
 /* Pillar 4 forbids signalling state by colour alone, so this glyph is the second channel beside
-   the fill above — not decoration, and not a swap for it. */
+   the fill above — not decoration, and not a swap for it. The `/ ""` is load-bearing, not noise:
+   without it accname folds the caret into this row's own accessible name, so the active option is
+   named "› …" and gets renamed on every arrow keypress (ADR 0166 §8). */
 .kp-command-palette__option[data-active]::before {
-	content: "\203A";
+	content: "\203A" / "";
 	color: var(--accent);
 }
 
@@ -297,4 +299,42 @@
 	background: var(--accent-faint);
 	border-color: var(--border-strong);
 	color: var(--text-primary);
+}
+
+/* The inline presentation: the same field, listbox and rows, framed in place instead of in the
+   modal. Only the frame differs — the dialog owns the overlay, the trap and the max-width, and
+   nothing below restates a row, a group or a status. */
+.kp-command-palette--inline {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	block-size: 100%;
+	background: var(--surface-raised);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--r-lg);
+	overflow: hidden;
+}
+
+/* The dialog caps its list so the modal cannot outgrow the viewport. Inline, the caller's own box
+   is the cap, so the list takes what is left and scrolls inside it. */
+.kp-command-palette--inline .kp-command-palette__results {
+	flex: 1;
+	min-height: 0;
+	max-height: none;
+}
+
+.kp-command-palette--inline
+	.kp-command-palette__search[data-scope="field"][data-part="root"]:focus-within
+	[data-scope="field"][data-part="control"] {
+	border-bottom-color: var(--border);
+}
+
+/* Same reason as the dialog's rule above: focus on mount is useful for a search field and must not
+   read as a Tab move. */
+.kp-command-palette--inline .kp-command-palette__search:not(
+		.kp-command-palette__search--keyboard-focus
+	)
+	[data-scope="field"][data-part="control"] {
+	outline: none;
+	outline-offset: 0;
 }

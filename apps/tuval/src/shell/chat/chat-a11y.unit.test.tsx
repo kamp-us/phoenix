@@ -18,7 +18,7 @@
 
 import type {PrimitiveSpec} from "@kampus/design/a11y";
 import {runEnforcedInvariants} from "@kampus/design/a11y";
-import {render, screen, waitFor} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {Effect} from "effect";
 import fc from "fast-check";
 import type {ReactElement} from "react";
@@ -30,7 +30,18 @@ import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {chatWindow} from "./ChatWindow.tsx";
-import {call, models, modes, pendingPermission, userItem, withTranscript} from "./chat.testing.ts";
+import {
+	assistantItem,
+	call,
+	compactionItem,
+	models,
+	modes,
+	pendingPermission,
+	systemItem,
+	thinkingItem,
+	userItem,
+	withTranscript,
+} from "./chat.testing.ts";
 import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
@@ -88,6 +99,9 @@ const unusedArb = fc.constant(<span />);
 const presentational: PrimitiveSpec = {kind: "presentational", arb: unusedArb};
 
 const CONTROLS = "button, [role='combobox'], input, textarea";
+
+/** Two lines, so the disclosure's name is provably the first of them and not the whole of it. */
+const THINKING = "Weighing the two lanes.\nThe second one is stalled on a review.";
 
 /**
  * The regions this child builds. The composer is deliberately outside the scan: `AgentChatInput` is
@@ -260,4 +274,132 @@ describe("the window's own primitives hold the enforced pillar-4 invariants", ()
 		},
 		SLOW,
 	);
+
+	it(
+		"holds them over a transcript carrying the thinking row and the compaction marker",
+		async () => {
+			const state = withTranscript([
+				userItem("u1", "go"),
+				thinkingItem("t1", THINKING),
+				compactionItem("c1", "context compacted"),
+			]);
+			expect(await violationsFor(state)).toEqual([]);
+		},
+		SLOW,
+	);
+
+	// All three shapes the session row takes, in one transcript: a lone notice with nothing to
+	// disclose, a lone notice with a detail, and a run of them collapsed into one row.
+	it(
+		"holds them over a transcript carrying every shape of the session row",
+		async () => {
+			const state = withTranscript([
+				systemItem("s0", "session resumed"),
+				userItem("u1", "go"),
+				systemItem("s1", "hook refused the call", 1, "PreToolUse hook exited 1"),
+				assistantItem("a1", "done"),
+				systemItem("s2", "hook started"),
+				systemItem("s3", "hook finished"),
+			]);
+			expect(await violationsFor(state)).toEqual([]);
+		},
+		SLOW,
+	);
+});
+
+/**
+ * The session row's disclosure, at the semantics the harness above cannot decide. It is the same
+ * assertion the thinking row gets, on the row that carries every `system` subtype the SDK raises —
+ * so a subtype landing here can never arrive as an unannounced burst of rows.
+ */
+describe("the session row's disclosure", () => {
+	const DETAIL = "PreToolUse hook exited 1\n  at guard.sh:12";
+
+	const mountSession = () =>
+		mountWindow(
+			withTranscript([userItem("u1", "go"), systemItem("s1", "hook refused the call", 1, DETAIL)]),
+		);
+
+	const trigger = (): HTMLElement => screen.getByRole("button", {name: "hook refused the call"});
+
+	it("is a real button naming the region it reveals", async () => {
+		const rendered = await mountSession();
+
+		const control = trigger();
+		expect(control.tagName).toBe("BUTTON");
+		expect(control.getAttribute("aria-expanded")).toBe("false");
+
+		const region = document.getElementById(control.getAttribute("aria-controls") ?? "");
+		expect(region).not.toBeNull();
+		expect(region?.textContent).toBe(DETAIL);
+		expect(region?.hidden).toBe(true);
+
+		rendered.unmount();
+	});
+
+	it("takes focus, and activating it opens the region", async () => {
+		const rendered = await mountSession();
+
+		const control = trigger();
+		control.focus();
+		expect(document.activeElement).toBe(control);
+
+		await act(async () => {
+			fireEvent.click(control);
+		});
+
+		const opened = trigger();
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		expect(document.getElementById(opened.getAttribute("aria-controls") ?? "")?.hidden).toBe(false);
+
+		rendered.unmount();
+	});
+});
+
+/**
+ * The thinking row's disclosure, at the semantics the harness above cannot decide: `Collapsible`
+ * wires `aria-expanded` and `aria-controls`, and what is asserted here is that they point at the
+ * region the reasoning actually lands in, on both the pointer and the keyboard path.
+ */
+describe("the thinking row's disclosure", () => {
+	const mountThinking = () =>
+		mountWindow(withTranscript([userItem("u1", "go"), thinkingItem("t1", THINKING)]));
+
+	const trigger = (): HTMLElement => screen.getByRole("button", {name: "Weighing the two lanes."});
+
+	it("is a real button naming the region it reveals", async () => {
+		const rendered = await mountThinking();
+
+		const control = trigger();
+		expect(control.tagName).toBe("BUTTON");
+		expect(control.getAttribute("aria-expanded")).toBe("false");
+
+		const region = document.getElementById(control.getAttribute("aria-controls") ?? "");
+		expect(region).not.toBeNull();
+		expect(region?.textContent).toBe(THINKING);
+		expect(region?.hidden).toBe(true);
+
+		rendered.unmount();
+	});
+
+	// Reachability itself is the property above, which probes every control in the transcript; what
+	// is left here is that the control the keyboard reaches is the one that opens the region — a
+	// native `button`, so Enter and Space activate it with no key handler of this window's own.
+	it("takes focus, and activating it opens the region", async () => {
+		const rendered = await mountThinking();
+
+		const control = trigger();
+		control.focus();
+		expect(document.activeElement).toBe(control);
+
+		await act(async () => {
+			fireEvent.click(control);
+		});
+
+		const opened = trigger();
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		expect(document.getElementById(opened.getAttribute("aria-controls") ?? "")?.hidden).toBe(false);
+
+		rendered.unmount();
+	});
 });

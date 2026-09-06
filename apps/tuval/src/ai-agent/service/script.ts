@@ -11,8 +11,9 @@
 import type {SpellBridgeApi} from "../../commands/bridge/index.ts";
 import type {SpellPath, Scope as SpellScope} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
-import type {CommandRef, Mode, ModelRef, TranscriptItem} from "../ports/index.ts";
-import type {TransportError} from "./errors.ts";
+import type {CommandRef, Mode, ModelRef, ThinkingLevel, TranscriptItem} from "../ports/index.ts";
+import type {ListError, TransportError} from "./errors.ts";
+import type {SessionSummary} from "./sessions.ts";
 
 /** One spell a turn calls: the path and the args, exactly as they cross the wire. */
 export interface ScriptedRequest {
@@ -69,6 +70,16 @@ export interface ScriptedModels {
 	readonly available: ReadonlyArray<ModelRef>;
 }
 
+/**
+ * What this scripted backend offers the thinking picker. A script standing for the Claude window
+ * names the five effort levels; one standing for a Pi session on a model that does not reason names
+ * `off` alone (#8062).
+ */
+export interface ScriptedThinking {
+	readonly current: ThinkingLevel | null;
+	readonly available: ReadonlyArray<ThinkingLevel>;
+}
+
 export interface AgentScript {
 	readonly sessionId: string;
 	/**
@@ -89,6 +100,13 @@ export interface AgentScript {
 	 * backend with no commands — the shape every fixture written before #8060 stands for.
 	 */
 	readonly commands?: ReadonlyArray<CommandRef>;
+	/**
+	 * What this script's session store holds, in any order — `listSessions` sorts. Absent is a store
+	 * with nothing in it, which is a truthful empty list rather than a backend that could not look;
+	 * a `ListError` here is that second case, and is how a test reaches the failure branch.
+	 */
+	readonly sessions?: ReadonlyArray<SessionSummary> | ListError;
+	readonly thinking: ScriptedThinking;
 	/** One entry per prompt, consumed in order. */
 	readonly turns: ReadonlyArray<ScriptedTurn>;
 	/**

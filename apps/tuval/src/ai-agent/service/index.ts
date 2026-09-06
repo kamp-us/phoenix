@@ -12,9 +12,12 @@ export type {
 	PermissionResolvedEvent,
 	Phase,
 	PhaseEvent,
+	ThinkingEvent,
 	UsageEvent,
 } from "../events.ts";
 export {
+	ListError,
+	type ListReason,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -23,6 +26,7 @@ export {
 	type PromptReason,
 	StartError,
 	type StartReason,
+	ThinkingUnsupported,
 	TransportError,
 	type TransportReason,
 	UnknownRequest,
@@ -36,8 +40,15 @@ export type {
 	ScriptedPlan,
 	ScriptedRequest,
 	ScriptedSpells,
+	ScriptedThinking,
 	ScriptedTurn,
 } from "./script.ts";
+export {
+	newestFirst,
+	type SessionDraft,
+	type SessionSummary,
+	sessionSummary,
+} from "./sessions.ts";
 export {
 	type StartedSession,
 	type StartOptions,

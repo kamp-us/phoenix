@@ -13,9 +13,13 @@
 
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Effect, Stream} from "effect";
-import type {ReactElement} from "react";
+import {type ReactElement, StrictMode} from "react";
 import {afterEach, describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {
+	type AiAgentSessionMsg,
+	type AiAgentSessionState,
+	foldEvent,
+} from "../../ai-agent/core/index.ts";
 import {phases} from "../../ai-agent/core/state.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
@@ -26,6 +30,9 @@ import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWin
 import {
 	assistantItem,
 	call,
+	compactionItem,
+	systemItem,
+	thinkingItem,
 	toolItem,
 	transcriptOf,
 	userItem,
@@ -55,6 +62,7 @@ const openWindow = async (
 	state: AiAgentSessionState,
 	options: ChatWindowOptions = {},
 	initialView?: ChatView,
+	mount: {readonly strict?: boolean} = {},
 ): Promise<Harness & {readonly view: () => ChatView}> => {
 	const process = await Effect.runPromise(
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(processId, state),
@@ -85,7 +93,7 @@ const openWindow = async (
 		...options,
 	};
 	const element = chatWindow(resolved).render(host) as ReactElement;
-	render(element);
+	render(element, mount.strict === true ? {wrapper: StrictMode} : undefined);
 	giveScrollBox(await screen.findByRole("log", {name: "Transcript"}));
 	return {process, host, scrolls, writes, keys, view: () => host.view()};
 };
@@ -405,6 +413,212 @@ describe("the composer", () => {
 	});
 });
 
+/**
+ * Dispatch is not delivery, so the draft this window cleared is still this window's until the
+ * session names an outcome for that send's key (#8005).
+ *
+ * Every case below drives the outcome in as committed state rather than as a phase or a timing, so
+ * nothing here depends on where in a turn a backend answers. The two cases that do care which
+ * channel carried the outcome fold the real event through `foldEvent` rather than writing the row
+ * by hand, because "the layer took the handoff" and "the backend ran the turn" are two different
+ * facts and only the second releases the copy (#8018, #8005).
+ */
+describe("a send whose outcome is not yet known", () => {
+	const sent = async (text: string): Promise<void> => {
+		const input = composer();
+		await act(async () => {
+			fireEvent.change(input, {target: {value: text}});
+		});
+		await act(async () => {
+			fireEvent.keyDown(input, {key: "Enter"});
+		});
+	};
+
+	const refusal = {
+		tag: "tuval/ai-agent/PromptError",
+		reason: "refused",
+		detail: "the backend said no",
+	};
+
+	const withSends = (
+		sends: AiAgentSessionState["sends"],
+		over: Partial<AiAgentSessionState> = {},
+	): AiAgentSessionState => withTranscript(transcriptOf(2), {sends, ...over});
+
+	it("holds the text it cleared out of the composer, under the send's own key", async () => {
+		const {keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("ship it");
+		await waitFor(() => expect(view().draft).toBe(""));
+		expect(view().outgoing).toEqual([{key: keys[0], text: "ship it"}]);
+		// Nothing settled, so nothing is offered back — the send may still be running.
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
+	it("lets go of the copy the session says the layer took, and only that one", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("first");
+		await sent("second");
+		await waitFor(() => expect(view().outgoing.length).toBe(2));
+
+		await act(async () => {
+			await Effect.runPromise(process.commit(withSends([{key: keys[0] ?? "", state: "accepted"}])));
+		});
+		await waitFor(() => expect(view().outgoing).toEqual([{key: keys[1], text: "second"}]));
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
+	/**
+	 * The path #8005's seventh criterion pins. The layer took the handoff without refusing — both
+	 * rows return there (#8018) — and the pin refused a round trip later, with no caller left to
+	 * raise to, so the refusal arrives as a `failure` event. The send is still the one in flight,
+	 * so the window that minted the key gets its words back.
+	 */
+	it("offers back a send the backend refused on the event stream after the handoff", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		const key = keys[0] ?? "";
+		await waitFor(() => expect(view().outgoing).toEqual([{key, text: "the long prompt"}]));
+
+		// A `sent` carrying no failure leaves the row `pending` (`core/machine.unit.test.ts`), so
+		// this is the state the refusal folds over.
+		const handed = withSends([{key, state: "pending"}]);
+		await act(async () => {
+			await Effect.runPromise(process.commit(handed));
+		});
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(foldEvent(handed, {kind: "failure", failure: refusal}, {})),
+			);
+		});
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+	});
+
+	/**
+	 * #8005's eighth criterion, at the window. The core reaches `prompting` on admission, so an
+	 * Escape can land while `aiAgent.prompt` is still in flight. The interrupt leaves the send
+	 * `pending` (`../../ai-agent/core/machine.unit.test.ts` proves the core does that), the window
+	 * therefore keeps holding the copy, and the refusal that arrives afterwards still has words to
+	 * offer back.
+	 */
+	it("keeps the copy when a send is interrupted before the layer answers, and offers it on the refusal", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		const key = keys[0] ?? "";
+		await waitFor(() => expect(view().outgoing).toEqual([{key, text: "the long prompt"}]));
+
+		// What the core leaves behind: the abort is out but unconfirmed, so the turn is still
+		// `prompting` (#8007) and the send is still `pending`.
+		const cut = withSends([{key, state: "pending"}], {
+			phase: "prompting",
+			interrupted: ItemId.make("a1"),
+			interruption: {requestedAt: 1_700_000_000_000},
+		});
+		await act(async () => {
+			await Effect.runPromise(process.commit(cut));
+		});
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit({...cut, sends: [{key, state: "refused", failure: refusal}]}),
+			);
+		});
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+	});
+
+	/** The other side of that line: the turn ended, so the text crossed and the copy goes. */
+	it("lets go of the copy once the turn the backend ran comes to an end", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("ship it");
+		const key = keys[0] ?? "";
+		const handed = withSends([{key, state: "pending"}], {phase: "prompting"});
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(foldEvent(handed, {kind: "phase", phase: "ready"}, {})),
+			);
+		});
+		await waitFor(() => expect(view().outgoing).toEqual([]));
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
+	it("offers a refused send back, and puts it in the composer on the operator's word", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key: keys[0] ?? "", state: "refused", failure: refusal}])),
+			);
+		});
+
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(screen.getByText("the long prompt")).toBeDefined();
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", {name: "Restore"}));
+		});
+		await waitFor(() => expect(view().draft).toBe("the long prompt"));
+		expect(composer().value).toBe("the long prompt");
+		expect(view().outgoing).toEqual([]);
+		// Recovery is the composer and nothing else: the prompt Msg count has not moved.
+		expect(process.inbox().length).toBe(1);
+	});
+
+	it("says an uncertain send is uncertain, and resends nothing on its own", async () => {
+		const {process, keys} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("maybe it went");
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key: keys[0] ?? "", state: "uncertain", failure: null}])),
+			);
+		});
+
+		expect(await screen.findByText("This message may not have been sent.")).toBeDefined();
+		expect(process.inbox()).toEqual([
+			{type: "prompt", text: "maybe it went", key: keys[0], timestamp: SENT_AT},
+		]);
+	});
+
+	it("recovers above text typed after the send rather than over it", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		await act(async () => {
+			fireEvent.change(composer(), {target: {value: "something newer"}});
+		});
+		await waitFor(() => expect(view().draft).toBe("something newer"));
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key: keys[0] ?? "", state: "refused", failure: refusal}])),
+			);
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole("button", {name: "Restore"}));
+		});
+		await waitFor(() => expect(view().draft).toBe("the long prompt\n\nsomething newer"));
+	});
+
+	it("drops a held send the operator discards, without touching the draft", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("never mind");
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key: keys[0] ?? "", state: "refused", failure: refusal}])),
+			);
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole("button", {name: "Discard"}));
+		});
+		await waitFor(() => expect(view().outgoing).toEqual([]));
+		expect(view().draft).toBe("");
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+});
+
 describe("keys typed on the transcript", () => {
 	const seen: string[] = [];
 	const listener = (event: Event): void => void seen.push((event as KeyboardEvent).key);
@@ -496,6 +710,27 @@ describe("the phase line and the contract's two placeholders", () => {
 			});
 			expect(await screen.findByText(phaseLines[phase])).toBeDefined();
 		}
+	});
+
+	it("shows the working tell only while a turn runs, and never as a second live region", async () => {
+		const {process} = await openWindow(withTranscript(transcriptOf(2), {phase: "ready"}));
+		const working = () => document.querySelector(".tuval-chat-working");
+		expect(working()).toBeNull();
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withTranscript(transcriptOf(2), {phase: "prompting"})),
+			);
+		});
+		await waitFor(() => expect(working()).not.toBeNull());
+		// The phase line is the announced one; a second `status` would narrate the same turn twice.
+		expect(working()?.getAttribute("aria-hidden")).toBe("true");
+		expect(screen.getAllByRole("status").length).toBe(1);
+
+		await act(async () => {
+			await Effect.runPromise(process.commit(withTranscript(transcriptOf(2), {phase: "ready"})));
+		});
+		await waitFor(() => expect(working()).toBeNull());
 	});
 
 	it("renders the empty placeholder before the process has said anything", () => {
@@ -629,6 +864,67 @@ describe("two windows over one process", () => {
 		expect(within(windowBox("right")).queryByText("older prompt")).toBeNull();
 		expect(right.view().cursor).toBeNull();
 	});
+
+	/**
+	 * The race #8005 is about: both windows send, the session admits one and refuses the other, and
+	 * the refusal must land on the window that earned it. The correlation is the idempotency key —
+	 * neither window reads a phase, so the arrival order of the two outcomes changes nothing.
+	 */
+	it("offers a refused send back in the window that sent it, and clears the other's", async () => {
+		const keys: Array<string> = [];
+		const {process, left, right} = await openPair(withTranscript(transcriptOf(2)), {
+			newKey: () => {
+				const key = `k${keys.length}`;
+				keys.push(key);
+				return key;
+			},
+		});
+
+		const [leftInput, rightInput] = screen.getAllByRole("combobox", {
+			name: "Write a message to the agent",
+		}) as [HTMLTextAreaElement, HTMLTextAreaElement];
+		for (const [input, text] of [
+			[leftInput, "left prompt"],
+			[rightInput, "right prompt"],
+		] as const) {
+			await act(async () => {
+				fireEvent.change(input, {target: {value: text}});
+			});
+			await act(async () => {
+				fireEvent.keyDown(input, {key: "Enter"});
+			});
+		}
+		await waitFor(() => expect(right.view().outgoing.length).toBe(1));
+
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "no-session",
+			detail: "the session is prompting, not ready",
+		};
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(
+					withTranscript(transcriptOf(2), {
+						sends: [
+							{key: "k0", state: "accepted"},
+							{key: "k1", state: "refused", failure},
+						],
+					}),
+				),
+			);
+		});
+
+		await waitFor(() => expect(left.view().outgoing).toEqual([]));
+		expect(within(windowBox("left")).queryByText("right prompt")).toBeNull();
+		expect(within(windowBox("right")).getByText("right prompt")).toBeDefined();
+		expect(right.view().outgoing).toEqual([{key: "k1", text: "right prompt"}]);
+
+		await act(async () => {
+			fireEvent.click(within(windowBox("right")).getByRole("button", {name: "Restore"}));
+		});
+		await waitFor(() => expect(right.view().draft).toBe("right prompt"));
+		expect(left.view().draft).toBe("");
+	});
 });
 
 describe("a group head's fold, as a control assistive tech can read", () => {
@@ -725,5 +1021,296 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 			fireEvent.click(folds[1] as HTMLElement);
 		});
 		expect(screen.queryByText("bash")).not.toBeNull();
+	});
+});
+
+describe("the two daily rows", () => {
+	const REASONING = ["First, read the ledger.", "", "Then decide which lane is stalled."].join(
+		"\n",
+	);
+
+	const reasoning = (): HTMLElement =>
+		screen.getByRole("button", {name: "First, read the ledger."});
+
+	/** The region a disclosure's trigger names, which is where the disclosed text lands. */
+	const panelOf = (trigger: HTMLElement): HTMLElement | null =>
+		document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+
+	it("shows a thinking row collapsed, named by the first line of the reasoning", async () => {
+		await openWindow(withTranscript([userItem("a", "go"), thinkingItem("t", REASONING)]));
+
+		const trigger = reasoning();
+		expect(trigger.getAttribute("aria-expanded")).toBe("false");
+		expect(panelOf(trigger)?.hidden).toBe(true);
+	});
+
+	it("keeps a long line off the collapsed row, so unfolded reasoning cannot flood it (#8027)", async () => {
+		const long = `${"reconciling the ledger against the board ".repeat(6)}done`;
+		await openWindow(withTranscript([thinkingItem("t", long)]));
+
+		const trigger = screen.getByRole("button", {name: /^reconciling the ledger/});
+		expect(trigger.textContent?.length).toBeLessThan(long.length);
+		expect(trigger.textContent?.endsWith("…")).toBe(true);
+	});
+
+	it("names the disclosure even when the reasoning is whitespace", async () => {
+		await openWindow(withTranscript([thinkingItem("t", "  \n\t\n ")]));
+		expect(screen.getByRole("button", {name: "Reasoning"})).toBeDefined();
+	});
+
+	it("discloses the whole reasoning inside the row the virtualizer measures", async () => {
+		const {scrolls, view} = await openWindow(
+			withTranscript([userItem("a", "go"), thinkingItem("t", REASONING)]),
+		);
+		await settle();
+		const before = scrolls.length;
+
+		await act(async () => {
+			fireEvent.click(reasoning());
+		});
+		await settle();
+
+		const trigger = reasoning();
+		expect(trigger.getAttribute("aria-expanded")).toBe("true");
+		const panel = panelOf(trigger);
+		expect(panel?.textContent).toBe(REASONING);
+		// The virtualizer measures `.tuval-chat-row`, so a panel rendered outside one would grow the
+		// transcript without the list ever hearing about it — the row would clip at its estimate.
+		expect(panel?.closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe("thinking");
+		// And opening anchors that row through the virtualizer, the same path an opened tool row takes.
+		expect(scrolls.length).toBeGreaterThan(before);
+		expect(view().expanded).toEqual(["t"]);
+	});
+
+	it("renders a compaction item as a marker, not as one more line the session said", async () => {
+		await openWindow(
+			withTranscript([assistantItem("b", "done"), compactionItem("c", "context compacted")]),
+		);
+
+		const rule = screen.getByRole("separator");
+		const marker = rule.closest(".tuval-chat-row");
+		expect(marker?.getAttribute("data-kind")).toBe("compaction");
+		// The line is beside the rule and is not a text row: the assistant's turn above is what a
+		// text row looks like, and this is the one other shape the transcript draws.
+		expect(screen.getByText("context compacted").className).toBe("tuval-chat-compaction-label");
+		expect(screen.getByText("done").closest(".tuval-chat-markdown")).not.toBeNull();
+		expect(marker?.querySelector(".tuval-chat-markdown")).toBeNull();
+	});
+});
+
+/**
+ * Everything else a backend says about the session, through the one row that renders all of it.
+ * The SDK's fifteen-odd `system` subtypes never reach this window as subtypes — a `SystemItem` is
+ * a summary and an optional detail, and these cases are the whole of what the row does with them.
+ */
+describe("the session row", () => {
+	const sessionRows = (): ReadonlyArray<HTMLElement> =>
+		Array.from(document.querySelectorAll<HTMLElement>('.tuval-chat-row[data-kind="session"]'));
+
+	const panelOf = (trigger: HTMLElement): HTMLElement | null =>
+		document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+
+	it("renders a summary-only notice as a line with no control to open", async () => {
+		await openWindow(withTranscript([userItem("a", "go"), systemItem("s", "session resumed")]));
+
+		const line = await screen.findByText("session resumed");
+		expect(line.className).toContain("tuval-chat-text");
+		// Nothing is folded away, so a disclosure here would name a region with nothing in it.
+		expect(screen.queryByRole("button", {name: "session resumed"})).toBeNull();
+	});
+
+	it("folds a notice's detail behind a disclosure the summary names", async () => {
+		const detail = "PreToolUse hook exited 1\n  at guard.sh:12";
+		await openWindow(withTranscript([systemItem("s", "hook refused the call", 1, detail)]));
+
+		const trigger = await screen.findByRole("button", {name: "hook refused the call"});
+		expect(trigger.tagName).toBe("BUTTON");
+		expect(trigger.getAttribute("aria-expanded")).toBe("false");
+		expect(panelOf(trigger)?.hidden).toBe(true);
+
+		await act(async () => {
+			fireEvent.click(trigger);
+		});
+
+		const opened = screen.getByRole("button", {name: "hook refused the call"});
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		const panel = panelOf(opened);
+		expect(panel?.hidden).toBe(false);
+		expect(panel?.textContent).toBe(detail);
+		// The panel lives inside the row the virtualizer measures, or the row clips at its estimate.
+		expect(panel?.closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe("session");
+	});
+
+	it("collapses a burst of consecutive notices into one row rather than stacking them", async () => {
+		await openWindow(
+			withTranscript([
+				userItem("a", "go"),
+				systemItem("s1", "hook started"),
+				systemItem("s2", "hook running"),
+				systemItem("s3", "hook finished"),
+				assistantItem("b", "done"),
+			]),
+		);
+		await screen.findByText("done");
+
+		expect(sessionRows().length).toBe(1);
+		// The newest notice is the session's current word, and the row says how much it holds back.
+		const trigger = screen.getByRole("button", {name: /^hook finished/});
+		expect(trigger.textContent).toContain("2 earlier notices");
+		// The earlier notices are behind the fold, not on the row: `Collapsible` keeps its content
+		// mounted and `hidden`, so what is asserted is the region, never the absence of the node.
+		expect(panelOf(trigger)?.hidden).toBe(true);
+		expect(screen.getByText("hook started").closest("[hidden]")).toBe(panelOf(trigger));
+
+		await act(async () => {
+			fireEvent.click(trigger);
+		});
+
+		const panel = panelOf(screen.getByRole("button", {name: /^hook finished/}));
+		expect(
+			Array.from(panel?.querySelectorAll(".tuval-chat-text") ?? []).map((line) => line.textContent),
+		).toEqual(["hook started", "hook running", "hook finished"]);
+	});
+
+	it("keeps a run out of the row its neighbours are in", async () => {
+		await openWindow(
+			withTranscript([
+				systemItem("s1", "session resumed"),
+				assistantItem("b", "done"),
+				systemItem("s2", "rate limit reached"),
+			]),
+		);
+		await screen.findByText("done");
+
+		expect(sessionRows().length).toBe(2);
+		expect(screen.getByText("done").closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe(
+			"assistant",
+		);
+	});
+});
+
+/**
+ * React documents a state updater as pure and `StrictMode` re-invokes it, so a host write forked
+ * from inside one lands twice per commit (#8033). Tuval mounts under `StrictMode` and never deploys
+ * (ADR 0345), so that is every commit the desk makes, not a hypothetical.
+ */
+describe("the view slot's writer, under StrictMode", () => {
+	it("forks one host setView per commit on the tool-toggle path", async () => {
+		const {writes} = await openWindow(
+			withTranscript([userItem("a", "do it"), call("c")]),
+			{},
+			undefined,
+			{strict: true},
+		);
+		await settle();
+		const before = writes.length;
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", {name: "read_file ok"}));
+		});
+		await settle();
+
+		expect(writes.length).toBe(before + 1);
+		expect(writes[writes.length - 1]?.expanded).toEqual(["c"]);
+	});
+
+	it("forks one host setView per keystroke on the draft path", async () => {
+		const {writes, view} = await openWindow(withTranscript(transcriptOf(2)), {}, undefined, {
+			strict: true,
+		});
+		await settle();
+		const before = writes.length;
+
+		const input = composer();
+		for (const draft of ["s", "sh", "shi"]) {
+			await act(async () => {
+				fireEvent.change(input, {target: {value: draft}});
+			});
+		}
+		await settle();
+
+		expect(writes.length).toBe(before + 3);
+		expect(view().draft).toBe("shi");
+	});
+
+	// The other half of "exactly once": a `next` handing back what it was given writes nothing at
+	// all, so the doubled write is not traded for an unconditional one.
+	it("forks nothing when a commit changes no field", async () => {
+		const {writes, view} = await openWindow(withTranscript(transcriptOf(20)), {}, undefined, {
+			strict: true,
+		});
+		await scrollTo(400);
+		await waitFor(() => expect(view().pinned).toBe(false));
+		await settle();
+
+		const settled = writes.length;
+		await scrollTo(400);
+		await scrollTo(400);
+		await settle();
+
+		expect(writes.length).toBe(settled);
+	});
+
+	// Two commits inside one batch: the second composes off what the first wrote, not off the view
+	// this render was given. It reds against a ref written from an effect rather than in `commit`.
+	it("composes batched commits off the last committed value", async () => {
+		const {writes, view} = await openWindow(
+			withTranscript([userItem("a", "do it"), call("c"), call("d", {name: "grep"})]),
+			{},
+			undefined,
+			{strict: true},
+		);
+		await settle();
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", {name: "read_file ok"}));
+			fireEvent.click(screen.getByRole("button", {name: "grep ok"}));
+		});
+		await settle();
+
+		expect(view().expanded).toEqual(["c", "d"]);
+		expect(writes[writes.length - 1]?.expanded).toEqual(["c", "d"]);
+	});
+});
+
+/**
+ * #8159. The composer offers a "queue" button while a turn runs, so the words an operator writes
+ * then have to be somewhere they can see. They are in the session's queue, and the window renders
+ * that queue rather than anything it remembers itself — which is what makes the same waiting text
+ * visible in the other window over the same process.
+ */
+describe("the messages waiting for the running turn to end", () => {
+	const waiting = (
+		queued: AiAgentSessionState["queued"],
+		over: Partial<AiAgentSessionState> = {},
+	): AiAgentSessionState => withTranscript(transcriptOf(2), {phase: "prompting", queued, ...over});
+
+	it("renders each one, off the session's own queue", async () => {
+		await openWindow(
+			waiting([
+				{key: "q1", text: "then the CHANGELOG", timestamp: SENT_AT},
+				{key: "q2", text: "and tag it", timestamp: SENT_AT + 1},
+			]),
+		);
+		const list = screen.getByRole("list", {name: "Queued messages"});
+		expect(
+			within(list)
+				.getAllByRole("listitem")
+				.map((row) => row.textContent),
+		).toEqual(["then the CHANGELOG", "and tag it"]);
+		expect(screen.getByText("2 messages are waiting for the turn to end.")).toBeDefined();
+	});
+
+	// The ordinary case — everything sent — earns no permanent strip of chrome (ADR 0162, Pillar 3).
+	it("renders nothing at all on an empty queue", async () => {
+		await openWindow(waiting([]));
+		expect(screen.queryByRole("list", {name: "Queued messages"})).toBeNull();
+	});
+
+	// A queued message has reached no backend, so it is not a turn: the tail must not claim one.
+	it("keeps them off the transcript until they are sent", async () => {
+		await openWindow(waiting([{key: "q1", text: "then the CHANGELOG", timestamp: SENT_AT}]));
+		const transcript = screen.getByRole("log", {name: "Transcript"});
+		expect(within(transcript).queryByText("then the CHANGELOG")).toBeNull();
 	});
 });

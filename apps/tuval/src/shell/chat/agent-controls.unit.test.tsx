@@ -27,6 +27,7 @@ import {
 	modes,
 	pendingPermission,
 	permissionRequest,
+	thinking,
 	userItem,
 	withTranscript,
 } from "./chat.testing.ts";
@@ -256,33 +257,57 @@ describe("permission cards", () => {
 	});
 });
 
+/**
+ * The mode control lives in the composer's settings fieldset since #8190, beside the model and
+ * thinking pickers and built from the same `AgentSettingMenu` — so it answers to the same roles
+ * those two do, a `button` named `<label>: <value>` over `menuitemradio` rows, and not to the
+ * `combobox`/`option` pair the chat bar's `Select` used to render.
+ */
 describe("the mode switch", () => {
+	const picker = () => screen.findByRole("button", {name: /^Mode: /});
+
 	it("is absent while the program offers no modes", async () => {
 		await open(withTranscript([userItem("u1", "go")]));
-		expect(screen.queryByRole("combobox", {name: "Mode"})).toBeNull();
+		expect(screen.queryByRole("button", {name: /^Mode/})).toBeNull();
+		expect(document.querySelector(".tuval-chat-mode")).toBeNull();
+	});
+
+	it("sits in the composer's settings, not in the chat bar", async () => {
+		await open(withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], "plan")}));
+		const control = document.querySelector(".tuval-chat-mode");
+		expect(control).not.toBeNull();
+		expect(control?.closest(".kp-agent-chat__settings")).not.toBeNull();
+		expect(control?.closest(".tuval-chat-bar")).toBeNull();
 	});
 
 	it("shows the current mode and dispatches setMode for another", async () => {
 		const {process} = await open(
 			withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], "plan")}),
 		);
-		const trigger = await screen.findByRole("combobox", {name: "Mode"});
+		const trigger = await picker();
 		expect(trigger.textContent).toContain("plan");
 
 		await click(trigger);
-		const option = await screen.findByRole("option", {name: "build"});
-		await click(option);
+		await click(await screen.findByRole("menuitemradio", {name: "build"}));
 		await waitFor(() => expect(process.inbox().length).toBe(1));
 		expect(process.inbox()[0]).toEqual({type: "setMode", mode: "build"});
+	});
+
+	it("names itself unselected, not loading, when modes are offered but none is current", async () => {
+		await open(withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], null)}));
+		const trigger = await screen.findByRole("button", {name: /^Mode: /});
+		expect(trigger.getAttribute("aria-label")).toBe("Mode: none selected");
+		expect(trigger.textContent).toContain("none selected");
+		expect(trigger.textContent).not.toContain("loading");
 	});
 
 	it("dispatches nothing when the mode picked is the one already current", async () => {
 		const {process} = await open(
 			withTranscript([userItem("u1", "go")], {modes: modes(["plan", "build"], "plan")}),
 		);
-		await click(await screen.findByRole("combobox", {name: "Mode"}));
-		await click(await screen.findByRole("option", {name: "plan"}));
-		await waitFor(() => expect(screen.queryByRole("option", {name: "plan"})).toBeNull());
+		await click(await picker());
+		await click(await screen.findByRole("menuitemradio", {name: "plan"}));
+		await waitFor(() => expect(screen.queryByRole("menuitemradio", {name: "plan"})).toBeNull());
 		expect(process.inbox()).toEqual([]);
 	});
 });
@@ -411,6 +436,63 @@ describe("the composer's slash-command picker", () => {
 	});
 });
 
+/**
+ * The picker beside the model one, which was live over no rows until #8062: the bridge answered an
+ * empty list and a no-op setter, and the composer's fallback still rendered a selected value.
+ */
+describe("the composer's thinking picker", () => {
+	const picker = () => screen.findByRole("button", {name: /^thinking effort: /});
+
+	it("shows the session's current level and lists only what the backend offers", async () => {
+		await open(withTranscript([userItem("u1", "go")], {thinking: thinking()}));
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		expect(trigger.textContent).toContain("low");
+		await click(trigger);
+		expect(await screen.findByRole("menuitemradio", {name: "maximum"})).toBeTruthy();
+		// Claude has no effort below `low`, and the founder ruled the picker shows only what the
+		// backend supports rather than mapping the missing two onto something.
+		expect(screen.queryByRole("menuitemradio", {name: "minimal"})).toBeNull();
+		expect(screen.queryByRole("menuitemradio", {name: "off"})).toBeNull();
+	});
+
+	it("dispatches one setThinkingLevel carrying the level the session offered", async () => {
+		const {process} = await open(withTranscript([userItem("u1", "go")], {thinking: thinking()}));
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		await click(trigger);
+		await click(await screen.findByRole("menuitemradio", {name: "maximum"}));
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		expect(process.inbox()[0]).toEqual({type: "setThinkingLevel", level: "max"});
+	});
+
+	it("takes a level set that lands after mount without re-entering loading", async () => {
+		// The agent has not started when the composer runs its loads, so the set is empty then. It
+		// arrives on a commit, and it has to reach the picker through the pushed `harness_status`
+		// event rather than a rebuilt bridge — a rebuild puts the composer back in `loading`, which
+		// disables the send button and every setting on it (#8062).
+		const state = withTranscript([userItem("u1", "go")], {
+			thinking: {current: null, available: []},
+		});
+		const {process} = await open(state);
+		const trigger = await picker();
+		expect(trigger.getAttribute("disabled")).not.toBeNull();
+		await act(async () => {
+			await Effect.runPromise(process.commit({...state, thinking: thinking()}));
+		});
+		// Enabled, not merely re-rendered: a composer that had dropped back to `loading` would leave
+		// this disabled however many rows the list holds.
+		await waitFor(() =>
+			expect(
+				screen.getByRole("button", {name: /^thinking effort: /}).getAttribute("disabled"),
+			).toBeNull(),
+		);
+		// The model picker beside it stays untouched by the push, which is the other half of "no
+		// rebuild": a new bridge identity would have re-run its load and emptied this too.
+		expect(screen.queryByRole("button", {name: /^model: /})).toBeTruthy();
+	});
+});
+
 describe("two windows over one process", () => {
 	it("keep their own expanded rows and share the cards and the mode", async () => {
 		const state = withTranscript([call("t1"), call("t2", {name: "grep"})], {
@@ -433,7 +515,7 @@ describe("two windows over one process", () => {
 		// One card and one mode control per window, over one shared session fact.
 		const cards = await screen.findAllByRole("region", {name: "Run a command"});
 		expect(cards.length).toBe(2);
-		expect((await screen.findAllByRole("combobox", {name: "Mode"})).length).toBe(2);
+		expect((await screen.findAllByRole("button", {name: /^Mode: /})).length).toBe(2);
 
 		const triggers = await screen.findAllByRole("button", {name: "read_file ok"});
 		expect(triggers.length).toBe(2);

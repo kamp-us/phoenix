@@ -12,16 +12,25 @@ import {join} from "node:path";
 import type {Effect, Stream} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {AgentEvent} from "../events.ts";
-import type {CommandRef, Mode, ModelRef, PermissionDecision} from "../ports/index.ts";
 import type {
+	CommandRef,
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	ThinkingLevel,
+} from "../ports/index.ts";
+import type {
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
 	StartError,
+	ThinkingUnsupported,
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
+import type {SessionSummary} from "./sessions.ts";
 import type {
 	StartedSession,
 	StartOptions,
@@ -30,14 +39,16 @@ import type {
 } from "./TuvalAiAgent.ts";
 
 /**
- * The founder's seven grew to eight on #7981 and to nine on #8060: he wants the agent's model
- * picked from the chat composer and its slash commands offered there, and a picker over a generic
- * window has to reach both through the generic interface. `setModel` is the eighth member and
- * `commands` the ninth, and both pins below count nine so each growth reads as the deliberate act
- * it was rather than as drift.
+ * The founder's seven grew to eight on #7981, to nine on #8060, to ten on #8062 and to eleven on
+ * #8097. The first three are one act: he wants the agent's model, its slash commands and its
+ * thinking level reachable from the chat composer, and a picker over a generic window has to reach
+ * them through the generic interface — so `setModel`, `commands` and `setThinkingLevel` are those
+ * three members. #8097's eleventh is the other: every session on his machine listed from one
+ * program whatever backend started it, which is `listSessions`. Both pins below count eleven, so
+ * each growth reads as the deliberate act it was rather than as drift.
  */
 describe("the TuvalAiAgent surface", () => {
-	it("carries the seven, #7981's eighth and #8060's ninth, each at its declared type", () => {
+	it("carries the seven, #7981's, #8060's, #8062's and #8097's, at their declared types", () => {
 		expectTypeOf<TuvalAiAgentApi["start"]>().toEqualTypeOf<
 			(options: StartOptions) => Effect.Effect<StartedSession, StartError>
 		>();
@@ -57,15 +68,21 @@ describe("the TuvalAiAgent surface", () => {
 		expectTypeOf<TuvalAiAgentApi["commands"]>().toEqualTypeOf<
 			Effect.Effect<ReadonlyArray<CommandRef>>
 		>();
+		expectTypeOf<TuvalAiAgentApi["setThinkingLevel"]>().toEqualTypeOf<
+			(level: ThinkingLevel) => Effect.Effect<void, ThinkingUnsupported>
+		>();
 		expectTypeOf<TuvalAiAgentApi["page"]>().toEqualTypeOf<
 			(before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>
+		>();
+		expectTypeOf<TuvalAiAgentApi["listSessions"]>().toEqualTypeOf<
+			Effect.Effect<ReadonlyArray<SessionSummary>, ListError>
 		>();
 		expectTypeOf<TuvalAiAgentApi["events"]>().toEqualTypeOf<
 			Stream.Stream<AgentEvent, TransportError>
 		>();
 	});
 
-	it("has exactly those nine members and no tenth", () => {
+	it("has exactly those eleven members and no twelfth", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
 			| "start"
 			| "prompt"
@@ -74,9 +91,29 @@ describe("the TuvalAiAgent surface", () => {
 			| "setMode"
 			| "setModel"
 			| "commands"
+			| "setThinkingLevel"
 			| "page"
+			| "listSessions"
 			| "events"
 		>();
+	});
+
+	/**
+	 * The listing's own boundary. `SDKSessionInfo` and pi's `SessionInfo` disagree on field names,
+	 * on optionality and on whether a time is a `Date`, so an exact pin here is what refuses either
+	 * of them reaching the port. The same pin holds the four absent-able fields absent-able, which
+	 * is the no-plausible-zero rule the row depends on.
+	 */
+	it("returns a summary that names no backend and can leave four fields absent", () => {
+		expectTypeOf<SessionSummary>().toEqualTypeOf<{
+			readonly sessionId: string;
+			readonly lastModified: number;
+			readonly backend: string;
+			readonly firstPrompt?: string | undefined;
+			readonly folder?: string | undefined;
+			readonly branch?: string | undefined;
+			readonly messageCount?: number | undefined;
+		}>();
 	});
 });
 

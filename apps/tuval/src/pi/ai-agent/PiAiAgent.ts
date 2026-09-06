@@ -24,21 +24,35 @@
  * it does offer: the `hello` frame's catalog is the list, `set_model` is the switch, and it applies
  * to the running session rather than to the next one. A pick made before any session exists is held
  * and opens the next one, so "not offered" and "no session yet" stay two different answers (#7981).
+ *
+ * Thinking levels ride the same shape (#8062), with one difference the model axis does not have:
+ * the offered set is *per model*, since each catalog row carries its own
+ * `supportedThinkingLevels` — the whole vocabulary for a reasoning model, `off` alone otherwise
+ * (`../server/AgentSessionHost.ts`). So a model switch re-announces the thinking set too, and a
+ * level the new model does not offer stops being pickable with it.
  */
 
 import {readdirSync} from "node:fs";
 import {join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
+import type {SessionSnapshot} from "@earendil-works/pi-protocol";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
-import type {Mode, ModelRef, PermissionDecision} from "../../ai-agent/ports/index.ts";
+import type {
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	ThinkingLevel,
+} from "../../ai-agent/ports/index.ts";
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
 	PromptError,
+	ThinkingUnsupported,
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
@@ -64,6 +78,7 @@ import {
 	storeUnreadable,
 	transportErrorOf,
 } from "./refusals.ts";
+import {readPiSessions} from "./sessions.ts";
 
 /** A model this process may run, named the way Pi's catalog names one. */
 export interface ModelSelection {
@@ -94,6 +109,17 @@ export interface PiAiAgentOptions {
 }
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
+
+/**
+ * What one session's fold reads. `sent` is the turn's start as a fact rather than as a difference
+ * between snapshots, and it is what makes the turn's *end* a difference at all: the server's push
+ * for a whole turn can coalesce into a single read taken after it finished, so the projection would
+ * otherwise sit at `ready` from before the send to after it and emit nothing, while the core moved
+ * itself to `prompting` at the send and stayed there — refusing every later message (#7897).
+ */
+type FoldInput =
+	| {readonly _tag: "snapshot"; readonly snapshot: SessionSnapshot}
+	| {readonly _tag: "sent"};
 
 /**
  * Read one session's branch out of Pi's JSONL, oldest-first.
@@ -130,6 +156,23 @@ const refOf = (model: {
 	readonly name: string;
 }): ModelRef => ({provider: model.provider, id: model.id, name: model.name});
 
+/**
+ * What one model may be asked to think at, off the same catalog row. A model the catalog does not
+ * describe offers nothing rather than the whole vocabulary — a picker over levels the session would
+ * refuse is the inert control this replaces.
+ */
+const levelsOf = (
+	catalog: ReadonlyArray<{
+		readonly provider: string;
+		readonly id: string;
+		readonly name: string;
+		readonly supportedThinkingLevels: ReadonlyArray<ThinkingLevel>;
+	}>,
+	model: {readonly provider: string; readonly id: string},
+): ReadonlyArray<ThinkingLevel> =>
+	catalog.find((row) => row.provider === model.provider && row.id === model.id)
+		?.supportedThinkingLevels ?? [];
+
 const without =
 	(key: string) =>
 	(seen: ReadonlySet<string>): ReadonlySet<string> => {
@@ -145,14 +188,17 @@ const make = (
 		const pi = yield* PiClientService;
 		const scope = yield* Effect.scope;
 		const sessionDir = options.sessionDir ?? defaultSessionDir;
+		const agentDir = options.agentDir ?? getAgentDir();
 
 		const session = yield* Ref.make<PiSessionRef | null>(null);
 		// The pick an operator made before a session existed. It survives to the next `start`,
 		// which opens on it — the shape `ClaudeAiAgent` holds one across a respawn.
 		const pendingModel = yield* Ref.make<ModelSelection | null>(null);
+		const pendingThinking = yield* Ref.make<ThinkingLevel | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const dialled = yield* Ref.make(false);
 		const pump = yield* Ref.make<Fiber.Fiber<void, never> | null>(null);
+		const inbox = yield* Ref.make<Queue.Queue<FoldInput> | null>(null);
 
 		const queue = yield* Effect.acquireRelease(
 			Ref.make<EventQueue>(yield* Queue.unbounded<AgentEvent, TransportError | Cause.Done>()),
@@ -167,15 +213,31 @@ const make = (
 		 * The snapshot fan for one session, racing the first disconnection. A drop wins the race,
 		 * fails the queue exactly once and interrupts the fan, which is the whole of "one
 		 * `Disconnected` and no reconnect until `start` is called again".
+		 *
+		 * Everything the projection folds arrives through `feed`, including the server's own
+		 * pushes: one queue is what keeps a `sent` mark and a snapshot in the order they happened,
+		 * and one consumer is what keeps two arrivals from interleaving a revision.
 		 */
-		const follow = (sessionId: string, open: EventQueue): Effect.Effect<void> =>
+		const follow = (
+			sessionId: string,
+			open: EventQueue,
+			feed: Queue.Queue<FoldInput>,
+		): Effect.Effect<void> =>
 			Effect.gen(function* () {
 				const projection = yield* Ref.make(emptyProjection);
-				const snapshots = pi.snapshots(sessionId).pipe(
-					Stream.runForEach((snapshot) =>
+				const pushes = pi
+					.snapshots(sessionId)
+					.pipe(Stream.runForEach((snapshot) => Queue.offer(feed, {_tag: "snapshot", snapshot})));
+				const folding = Stream.fromQueue(feed).pipe(
+					Stream.runForEach((input) =>
 						Effect.gen(function* () {
 							const previous = yield* Ref.get(projection);
-							const folded = eventsOf(previous, snapshot);
+							if (input._tag === "sent") {
+								if (previous.phase === "prompting") return;
+								yield* Ref.set(projection, {...previous, phase: "prompting"});
+								return yield* emit(open, [{kind: "phase", phase: "prompting"}]);
+							}
+							const folded = eventsOf(previous, input.snapshot);
 							yield* Ref.set(projection, folded.next);
 							yield* emit(open, folded.events);
 						}),
@@ -185,12 +247,8 @@ const make = (
 					Stream.take(1),
 					Stream.runForEach((drop) => Queue.fail(open, transportErrorOf(drop))),
 				);
-				yield* Effect.race(snapshots, dropped);
+				yield* Effect.race(Effect.race(pushes, folding), dropped);
 			});
-
-		const offeredModels: Effect.Effect<ReadonlyArray<ModelRef>> = Effect.map(pi.models, (models) =>
-			models.map(refOf),
-		);
 
 		/**
 		 * The session's model as the offered list names it. The wire ref carries no display name, so
@@ -209,6 +267,30 @@ const make = (
 		const announce = (current: ModelRef, offered: ReadonlyArray<ModelRef>): Effect.Effect<void> =>
 			Effect.flatMap(Ref.get(queue), (open) =>
 				emit(open, [{kind: "model", current, available: offered}]),
+			);
+
+		const announceThinking = (
+			current: ThinkingLevel | null,
+			offered: ReadonlyArray<ThinkingLevel>,
+		): Effect.Effect<void> =>
+			Effect.flatMap(Ref.get(queue), (open) =>
+				emit(open, [{kind: "thinking", current, available: offered}]),
+			);
+
+		/** The refused-switch shape `applySwitch` has, over the thinking axis. */
+		const applyThinking = (
+			sessionId: string,
+			level: ThinkingLevel,
+			fallback: ThinkingLevel,
+		): Effect.Effect<ThinkingLevel> =>
+			pi.setThinkingLevel(sessionId, level).pipe(
+				Effect.map((answered) => answered.thinkingLevel),
+				Effect.catch((refusal) =>
+					Effect.as(
+						Effect.logWarning(`the thinking switch was refused: ${refusal.message}`),
+						fallback,
+					),
+				),
 			);
 
 		/**
@@ -246,6 +328,8 @@ const make = (
 			const previous = yield* Ref.get(pump);
 			if (previous !== null) yield* Fiber.interrupt(previous);
 			yield* Effect.flatMap(Ref.get(queue), Queue.shutdown);
+			const stale = yield* Ref.get(inbox);
+			if (stale !== null) yield* Queue.shutdown(stale);
 
 			const open = yield* Queue.unbounded<AgentEvent, TransportError | Cause.Done>();
 			yield* Ref.set(queue, open);
@@ -277,14 +361,32 @@ const make = (
 					: yield* applySwitch(ref.id, pick, ref.model);
 			yield* Ref.set(pendingModel, null);
 
-			yield* Ref.set(session, {...ref, model: running});
+			// The same shape one line up, over the thinking axis: a level held from before this
+			// session existed is applied here rather than assumed to have landed, and spent either
+			// way. A level the model this open landed on does not offer is dropped, not sent.
+			const wanted = yield* Ref.get(pendingThinking);
+			const catalog = yield* pi.models;
+			const levels = levelsOf(catalog, running);
+			const thinking =
+				wanted === null || wanted === ref.thinkingLevel || !levels.includes(wanted)
+					? ref.thinkingLevel
+					: yield* applyThinking(ref.id, wanted, ref.thinkingLevel);
+			yield* Ref.set(pendingThinking, null);
+
+			yield* Ref.set(session, {...ref, model: running, thinkingLevel: thinking});
+			const feed = yield* Queue.unbounded<FoldInput>();
+			yield* Ref.set(inbox, feed);
 			// Forked into the layer's own scope, not the caller's, so the fan lives exactly as long
 			// as the transport it reads and dies with it.
-			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open), scope));
-			const offered = yield* offeredModels;
+			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open, feed), scope));
+			const offered = catalog.map(refOf);
 			yield* emit(open, [
+				// `StartOptions.mode` is ignored here, and this is the one layer where that is right:
+				// Pi offers no modes at this pin, so there is no operator switch for a rebuilt layer to
+				// lose and the checkpoint carries the same `null` back (#7953).
 				{kind: "mode", current: null, available: []},
 				{kind: "model", current: currentOf(offered, running), available: offered},
+				{kind: "thinking", current: thinking, available: levels},
 				{kind: "phase", phase: "ready"},
 			]);
 			return {sessionId: ref.id};
@@ -306,18 +408,30 @@ const make = (
 				yield* Ref.update(keys, (seen) => new Set(seen).add(key));
 			}
 			const open = yield* Ref.get(queue);
+			// Read here rather than inside the fork, so a `start` that lands while this send is in
+			// flight cannot route the old session's turn into the new session's fold.
+			const feed = yield* Ref.get(inbox);
+			// The turn has begun, and this is the only unlosable statement of that: see `FoldInput`.
+			if (feed !== null) yield* Queue.offer(feed, {_tag: "sent"});
 			// The pin answers a `prompt` request with the snapshot the turn ended on, so awaiting it
 			// here would return at the end of the turn rather than at the send — and the generic
 			// host awaits a Cmd handler before it publishes the commit that handler came from, so
 			// the operator's own message would not paint until the reply landed (#8018). Forked into
-			// the layer's scope, this returns at the send, as the Claude layer's does. The turn's
-			// own events are pushed by `follow` and nothing reads the snapshot this discards.
+			// the layer's scope, this returns at the send, as the Claude layer's does.
+			//
+			// That answer is the turn's end, and it goes into the same fold rather than being
+			// dropped: the push carrying it can be coalesced away, and then nothing else ever says
+			// the turn finished. Re-folding a snapshot the pushes already delivered emits nothing,
+			// because the projection emits only a difference.
 			yield* Effect.forkIn(
 				pi.prompt(current.id, text).pipe(
 					Effect.mapError(promptErrorOf),
 					// A send that never landed is not a turn this session has seen, so the key goes
 					// back and a retry of it is admitted.
 					Effect.tapError(() => (key === undefined ? Effect.void : Ref.update(keys, without(key)))),
+					Effect.tap((snapshot) =>
+						feed === null ? Effect.void : Queue.offer(feed, {_tag: "snapshot", snapshot}),
+					),
 					// The refusal has no caller left to raise to, so it rides the stream the send's own
 					// turn would have used. It rides it as an event, not as the queue's failure: a
 					// failed queue is terminal and its Sub is never re-armed under the same id, so
@@ -363,11 +477,47 @@ const make = (
 				// with the refused model listed among the available ones, which contradicts itself
 				// (#7981); the pick is held instead and the next `start` opens on it.
 				yield* Ref.set(pendingModel, selection);
-				return yield* announce(refOf(picked), offered);
+				yield* announce(refOf(picked), offered);
+				// The offered thinking set is the *model's*, so a pick made before any session exists
+				// still moves the picker's rows to the ones that model will accept (#8062).
+				return yield* announceThinking(null, levelsOf(catalog, selection));
 			}
 			const snapshot = yield* applySwitch(current.id, selection, current.model);
 			yield* Ref.set(session, {...current, model: snapshot});
 			yield* announce(currentOf(offered, snapshot), offered);
+			// The level survives the model switch only if the new model offers it; otherwise the
+			// picker is told the session is on nothing rather than on a level it would now refuse.
+			const levels = levelsOf(catalog, snapshot);
+			yield* announceThinking(
+				levels.includes(current.thinkingLevel) ? current.thinkingLevel : null,
+				levels,
+			);
+		});
+
+		const setThinkingLevel = Effect.fn("TuvalAiAgent.setThinkingLevel")(function* (
+			level: ThinkingLevel,
+		) {
+			const catalog = yield* pi.models;
+			const current = yield* Ref.get(session);
+			// Before a session exists there is no model to read an offered set off, so the pick is
+			// held against the next open exactly as `setModel`'s is — "no session yet" is not
+			// "not offered" here either (#7981).
+			if (current === null) {
+				const opening = (yield* Ref.get(pendingModel)) ?? options.model;
+				const levels = opening === undefined ? [] : levelsOf(catalog, opening);
+				if (opening !== undefined && !levels.includes(level)) {
+					return yield* new ThinkingUnsupported({level, available: levels});
+				}
+				yield* Ref.set(pendingThinking, level);
+				return yield* announceThinking(level, levels);
+			}
+			const levels = levelsOf(catalog, current.model);
+			if (!levels.includes(level)) {
+				return yield* new ThinkingUnsupported({level, available: levels});
+			}
+			const applied = yield* applyThinking(current.id, level, current.thinkingLevel);
+			yield* Ref.set(session, {...current, thinkingLevel: applied});
+			yield* announceThinking(applied, levels);
 		});
 
 		const page = Effect.fn("TuvalAiAgent.page")(function* (before: string | null, limit: number) {
@@ -393,6 +543,42 @@ const make = (
 			return {items: planned.items, hasMore: planned.next !== null};
 		});
 
+		/**
+		 * Both of Pi's stores, unioned (#8099). A read of disk rather than of the transport, so it
+		 * answers before `start` and after a drop.
+		 *
+		 * Tuval's own store is located under the project root the layer was built on, or under the
+		 * running session's cwd when the layer was given none — the same one root `start({resume})`
+		 * looks in. With neither, only the `pi` CLI's store is reachable and the answer says so by
+		 * holding its rows alone.
+		 *
+		 * A failed store is a log line and not the answer: it fails only when no store answered at
+		 * all, because returning `[]` there would claim this machine holds no Pi sessions.
+		 */
+		const listSessions = Effect.gen(function* () {
+			const current = yield* Ref.get(session);
+			const root = options.projectRoot ?? current?.cwd;
+			const read = yield* readPiSessions({
+				agentDir,
+				...(root === undefined ? {} : {tuvalDir: sessionDir(root)}),
+			});
+			yield* Effect.forEach(
+				read.failures,
+				(failure) =>
+					Effect.logWarning(
+						`the ${failure.store} Pi session store could not be read: ${failure.detail}`,
+					),
+				{concurrency: 1, discard: true},
+			);
+			if (read.answered.length === 0) {
+				return yield* new ListError({
+					reason: "store-unreadable",
+					detail: read.failures.map((failure) => `${failure.store}: ${failure.detail}`).join("; "),
+				});
+			}
+			return read.sessions;
+		}).pipe(Effect.withSpan("TuvalAiAgent.listSessions"));
+
 		return {
 			start,
 			prompt,
@@ -416,7 +602,9 @@ const make = (
 			 * commands on the prompt text itself, so a `/skill:foo` the operator types lands.
 			 */
 			commands: Effect.succeed([]),
+			setThinkingLevel,
 			page,
+			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};
 	});

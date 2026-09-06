@@ -39,9 +39,15 @@ export {
 	transcriptPage,
 } from "./ports.ts";
 export {
+	isThinkingLevel,
+	type ThinkingLevel,
+	thinkingLevels,
+} from "./thinking.ts";
+export {
 	type AssistantItem,
 	boundToolResult,
 	byteLength,
+	type CompactionItem,
 	ItemId,
 	isJsonValue,
 	isTranscriptItem,
@@ -49,6 +55,7 @@ export {
 	type JsonValue,
 	type ResultOmission,
 	type SystemItem,
+	type ThinkingItem,
 	TOOL_RESULT_BYTE_LIMIT,
 	type ToolItem,
 	type ToolResult,

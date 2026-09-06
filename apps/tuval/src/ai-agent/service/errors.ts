@@ -80,6 +80,20 @@ export class ModelUnsupported extends Schema.TaggedError<ModelUnsupported>()(
 	}
 }
 
+/**
+ * `setThinkingLevel` named a level this agent does not offer for the model it is running on.
+ * `available` is that offered set — Claude's effort axis has neither `off` nor `minimal`, and Pi
+ * advertises `off` alone for a model that does not reason (#8062).
+ */
+export class ThinkingUnsupported extends Schema.TaggedError<ThinkingUnsupported>()(
+	"tuval/ai-agent/ThinkingUnsupported",
+	{level: Schema.String, available: Schema.Array(Schema.String)},
+) {
+	override get message(): string {
+		return `thinking level "${this.level}" is not offered; available: ${this.available.join(", ") || "none"}`;
+	}
+}
+
 /** Why a page of history did not come back. History is the backend's store, so it can be missing. */
 export const PageReason = Schema.Literals(["unknown-cursor", "store-unreadable", "disconnected"]);
 export type PageReason = typeof PageReason.Type;
@@ -90,6 +104,26 @@ export class PageError extends Schema.TaggedError<PageError>()("tuval/ai-agent/P
 }) {
 	override get message(): string {
 		return `a page of history could not be read (${this.reason}): ${this.detail}`;
+	}
+}
+
+/**
+ * Why a session listing did not come back. Listing reads the backend's store off disk without the
+ * session transport in it at all, so its cases are the store's, not the connection's.
+ *
+ * `unsupported` is a real answer rather than an empty list: a backend that cannot enumerate has not
+ * told the operator he has no sessions, and the session list must be able to say which of the two
+ * it heard.
+ */
+export const ListReason = Schema.Literals(["store-unreadable", "unsupported"]);
+export type ListReason = typeof ListReason.Type;
+
+export class ListError extends Schema.TaggedError<ListError>()("tuval/ai-agent/ListError", {
+	reason: ListReason,
+	detail: Schema.String,
+}) {
+	override get message(): string {
+		return `the session list could not be read (${this.reason}): ${this.detail}`;
 	}
 }
 

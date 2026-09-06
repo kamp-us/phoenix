@@ -7,3 +7,13 @@ declare module "*.css" {
 	const url: string;
 	export default url;
 }
+
+/**
+ * The page server's generated loader module (`./dev-server.ts`, ADR 0359): one `import()` thunk per
+ * `kind: "module"` renderer reference the booted rows declared, keyed by the reference. Declared
+ * here for the same reason `*.css` is — Vite knows the module, TypeScript does not.
+ */
+declare module "virtual:tuval/module-renderers" {
+	const loaders: Readonly<Record<string, () => Promise<unknown>>>;
+	export default loaders;
+}

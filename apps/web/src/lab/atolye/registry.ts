@@ -16,6 +16,7 @@ import {draftRestoreBannerExhibit} from "./exhibits/DraftRestoreBanner.exhibit";
 import {editedIndicatorExhibit} from "./exhibits/EditedIndicator.exhibit";
 import {emptyStateExhibit} from "./exhibits/EmptyState.exhibit";
 import {formExhibit} from "./exhibits/Form.exhibit";
+import {markdownExhibit} from "./exhibits/Markdown.exhibit";
 import {menuExhibit} from "./exhibits/Menu.exhibit";
 import {metaRowExhibit} from "./exhibits/MetaRow.exhibit";
 import {reportButtonExhibit} from "./exhibits/ReportButton.exhibit";
@@ -44,6 +45,7 @@ const exhibits: readonly AnyExhibit[] = [
 	editedIndicatorExhibit,
 	emptyStateExhibit,
 	formExhibit,
+	markdownExhibit,
 	menuExhibit,
 	metaRowExhibit,
 	reportButtonExhibit,
