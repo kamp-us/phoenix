@@ -35,8 +35,8 @@ import {type AgentScript, ScriptedAiAgent, TuvalAiAgent} from "./service/index.t
 const CWD = "/work";
 const SENT_AT = 1_700_000_000_000;
 
-/** `start` queues four events before any turn: starting, the mode list, the model list, ready. */
-const START_EVENTS = 4;
+/** `start` queues five before any turn: starting, the mode, model and command lists, ready. */
+const START_EVENTS = 5;
 
 const machine = aiAgentSessionMachine({cwd: CWD});
 

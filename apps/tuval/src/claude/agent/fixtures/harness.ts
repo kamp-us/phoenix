@@ -25,11 +25,14 @@ export const MODES: ReadonlyArray<Mode> = [
 	Mode.make("plan"),
 ];
 
-/** What `start` itself emits: starting, ready, the mode list, then the model list (#7981). */
-export const START_EVENTS = 4;
+/**
+ * What `start` itself emits: starting, ready, the mode list, the model list (#7981), then the
+ * slash-command catalog (#8060).
+ */
+export const START_EVENTS = 5;
 
 /**
- * Those four plus the one event the `system`/`init` frame carries: the model it names.
+ * Those five plus the one event the `system`/`init` frame carries: the model it names.
  *
  * That one is not part of `start` — the frame belongs to the first turn (`sdk.d.ts`), so on a
  * scripted run whose `opening` begins with `init` the pump emits it just after, and a test that
@@ -111,6 +114,8 @@ export const on = <A, E>(
 				? {}
 				: {modelSwitchFails: harness.modelSwitchFails}),
 			...(harness.catalogFails === undefined ? {} : {catalogFails: harness.catalogFails}),
+			...(harness.commands === undefined ? {} : {commands: harness.commands}),
+			...(harness.commandsFail === undefined ? {} : {commandsFail: harness.commandsFail}),
 		});
 		return Effect.gen(function* () {
 			const agent = yield* TuvalAiAgent;

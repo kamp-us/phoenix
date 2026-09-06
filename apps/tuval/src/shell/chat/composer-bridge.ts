@@ -9,24 +9,26 @@
  * the two events the composer keys its working/ready state on.
  *
  * Everything the composer asks for and this window does not have (thinking levels, project trust,
- * file completions) is answered empty rather than refused: an empty answer hides the control, a
- * rejection would put the composer in its `unavailable` state and disable the send button.
+ * file completions) — and a backend that offers no commands — is answered empty rather than
+ * refused: an empty answer hides the control, a rejection would put the composer in its
+ * `unavailable` state and disable the send button.
  *
- * Models are the one capability this window does have (#7981). The offered list and the current
- * model are the session's own — `AiAgentSessionState.models`, fed by each layer's `model` event —
- * and a pick becomes a `setModel` Msg. The list arrives after mount, because the agent has not
- * started when the composer runs its loads, so it is *pushed* through the same subscription the
- * phase is: `AgentChatInput` re-runs its whole load on a new bridge identity, and rebuilding the
- * bridge per state change would drop the composer back to `loading` on every turn.
+ * Models (#7981) and slash commands (#8060) are the two capabilities this window does have. Both
+ * lists are the session's own — `AiAgentSessionState.models` and `.commands`, fed by each layer's
+ * `model` and `commands` events — and a model pick becomes a `setModel` Msg while a command pick
+ * is just text the composer writes into the draft. Both arrive after mount, because the agent has
+ * not started when the composer runs its loads, so they are *pushed* through the same subscription
+ * the phase is: `AgentChatInput` re-runs its whole load on a new bridge identity, and rebuilding
+ * the bridge per state change would drop the composer back to `loading` on every turn.
  *
  * Nothing here is React. It is a plain object with a setter, so its behaviour is unit-testable
  * without a DOM — which is what `composer-bridge.unit.test.ts` does.
  */
 
-import type {AgentChatInputBridge, PiEvent, PiModel} from "@kampus/design";
+import type {AgentChatInputBridge, PiCommand, PiEvent, PiModel} from "@kampus/design";
 import type {ModelState} from "../../ai-agent/core/index.ts";
 import type {Phase} from "../../ai-agent/events.ts";
-import type {ModelRef} from "../../ai-agent/ports/index.ts";
+import type {CommandRef, ModelRef} from "../../ai-agent/ports/index.ts";
 import {isWorking} from "./phase.ts";
 
 export interface ComposerHandlers {
@@ -38,6 +40,7 @@ export interface ComposerHandlers {
 	readonly onSetModel: (model: ModelRef) => void;
 	readonly initialPhase: Phase;
 	readonly initialModels: ModelState;
+	readonly initialCommands: ReadonlyArray<CommandRef>;
 }
 
 /**
@@ -57,11 +60,22 @@ const refOf = (model: PiModel, offered: ReadonlyArray<ModelRef>): ModelRef | nul
 			composerModel(candidate).provider === model.provider && candidate.id === model.id,
 	) ?? null;
 
+/**
+ * The composer's command rows. `argumentHint` is dropped rather than folded into the description:
+ * the picker inserts the command and the operator types the arguments, so a hint rendered as prose
+ * would read as part of what the command does.
+ */
+const composerCommand = (command: CommandRef): PiCommand => ({
+	name: command.name,
+	...(command.description === undefined ? {} : {description: command.description}),
+});
+
 /** The one event the composer takes a catalog on: its `harness_status` arm. */
-const modelStatus = (models: ModelState): PiEvent => ({
+const catalogStatus = (models: ModelState, commands: ReadonlyArray<CommandRef>): PiEvent => ({
 	type: "harness_status",
 	status: {
 		models: models.available.map(composerModel),
+		commands: commands.map(composerCommand),
 		...(models.current === null ? {} : {model: composerModel(models.current)}),
 	},
 });
@@ -79,6 +93,8 @@ export interface ComposerBridge {
 	 * mount — the agent has not started — so this is the only way it reaches the picker.
 	 */
 	readonly setModels: (models: ModelState) => void;
+	/** Same push, same reason: the slash catalog is not known until the session opens. */
+	readonly setCommands: (commands: ReadonlyArray<CommandRef>) => void;
 }
 
 const none =
@@ -89,6 +105,7 @@ const none =
 export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 	let phase = handlers.initialPhase;
 	let models = handlers.initialModels;
+	let commands = handlers.initialCommands;
 	let listener: ((event: PiEvent) => void) | null = null;
 
 	const bridge: AgentChatInputBridge = {
@@ -97,7 +114,7 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 				isStreaming: isWorking(phase),
 				...(models.current === null ? {} : {model: composerModel(models.current)}),
 			}),
-		loadPiCommands: none([]),
+		loadPiCommands: () => Promise.resolve(commands.map(composerCommand)),
 		loadPiModels: () => Promise.resolve(models.available.map(composerModel)),
 		loadPiThinkingLevels: none([]),
 		loadPiFiles: none([]),
@@ -123,8 +140,10 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 			listener = onEvent;
 			// The composer subscribes *after* its four loads resolve, so a catalog that landed in
 			// between was pushed at a listener that did not exist yet and would be lost until the
-			// next model event — which, on a session nobody switches, never comes.
-			if (models.available.length > 0) onEvent(modelStatus(models));
+			// next catalog event — which, on a session nobody switches, never comes.
+			if (models.available.length > 0 || commands.length > 0) {
+				onEvent(catalogStatus(models, commands));
+			}
 			return () => {
 				if (listener === onEvent) listener = null;
 			};
@@ -142,7 +161,11 @@ export const composerBridge = (handlers: ComposerHandlers): ComposerBridge => {
 		},
 		setModels: (next) => {
 			models = next;
-			listener?.(modelStatus(next));
+			listener?.(catalogStatus(next, commands));
+		},
+		setCommands: (next) => {
+			commands = next;
+			listener?.(catalogStatus(models, next));
 		},
 	};
 };

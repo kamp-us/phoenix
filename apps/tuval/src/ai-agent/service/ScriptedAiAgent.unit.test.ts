@@ -42,8 +42,8 @@ import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 const CWD = "/workspace/phoenix";
 
-/** What `start` emits before any turn: starting, the mode list, the model list, ready. */
-const START_EVENTS = 4;
+/** What `start` emits before any turn: starting, the mode, model and command lists, ready. */
+const START_EVENTS = 5;
 
 const on = <A, E>(
 	script: AgentScript,
@@ -54,7 +54,7 @@ const on = <A, E>(
 		return yield* body(agent);
 	}).pipe(Effect.provide(ScriptedAiAgent.layer(script)), Effect.scoped);
 
-/** The events a turn queued, with `start`'s four dropped. */
+/** The events a turn queued, with `start`'s five dropped. */
 const afterStart = (agent: TuvalAiAgentApi, count: number) =>
 	Effect.map(Stream.runCollect(Stream.take(agent.events, START_EVENTS + count)), (events) =>
 		events.slice(START_EVENTS),
@@ -73,7 +73,7 @@ const causeError = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?:
 		: {};
 
 describe("start", () => {
-	it.effect("returns the script's session id and announces the mode and model lists", () =>
+	it.effect("returns the script's session id and announces the mode, model and command lists", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
 				const session = yield* agent.start({cwd: CWD});
@@ -82,6 +82,7 @@ describe("start", () => {
 					{kind: "phase", phase: "starting"},
 					{kind: "mode", current: modes.current, available: modes.available},
 					{kind: "model", current: models.current, available: models.available},
+					{kind: "commands", available: []},
 					{kind: "phase", phase: "ready"},
 				]);
 			}),
@@ -240,12 +241,46 @@ describe("models", () => {
 				// not the script's opening one — the switch outlives the turn it was made between.
 				yield* agent.start({cwd: CWD, resume: SESSION_ID});
 				const resumed = yield* take(agent, START_EVENTS + history.length);
-				assert.deepStrictEqual(resumed.at(-2), {
+				assert.deepStrictEqual(resumed.at(-3), {
 					kind: "model",
 					current: sonnet,
 					available: models.available,
 				});
 			}),
+		),
+	);
+});
+
+describe("commands", () => {
+	const compact = {name: "compact", description: "Summarise the conversation."};
+	const review = {name: "skill:review", description: "Review it."};
+	const offering: AgentScript = {...plainReply, commands: [compact, review]};
+
+	it.effect("announces the script's catalog at start and answers the read with it", () =>
+		on(offering, (agent) =>
+			Effect.gen(function* () {
+				assert.deepStrictEqual(yield* agent.commands, []);
+				yield* agent.start({cwd: CWD});
+				const events = yield* take(agent, START_EVENTS);
+				assert.deepStrictEqual(events.at(-2), {kind: "commands", available: [compact, review]});
+				assert.deepStrictEqual(yield* agent.commands, [compact, review]);
+			}),
+		),
+	);
+
+	it.effect("replaces the catalog a later event carries rather than merging into it", () =>
+		on(
+			{
+				...offering,
+				turns: [{events: [{kind: "commands", available: [review]}]}],
+			},
+			(agent) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					yield* agent.prompt("re-read the skills");
+					yield* afterStart(agent, 1);
+					assert.deepStrictEqual(yield* agent.commands, [review]);
+				}),
 		),
 	);
 });

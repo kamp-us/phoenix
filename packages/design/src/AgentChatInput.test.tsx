@@ -334,6 +334,34 @@ describe("AgentChatInput", () => {
 		expect(await screen.findByRole("menuitemradio", {name: "Opus 5"})).toBeTruthy();
 	});
 
+	it("takes a command catalog pushed after mount and offers it to the picker", async () => {
+		const {bridge, push} = lateCatalogBridge();
+		render(<AgentChatInput bridge={bridge} />);
+		const input = await screen.findByLabelText("Pi'ye mesaj yaz");
+
+		fireEvent.change(input, {target: {value: "/comp"}});
+		expect(screen.queryByRole("option", {name: /\/compact/})).toBeNull();
+
+		push({
+			type: "harness_status",
+			status: {commands: [{name: "compact", description: "Konuşmayı özetle."}]},
+		});
+
+		fireEvent.click(await screen.findByRole("option", {name: /\/compact/}));
+		expect((input as HTMLTextAreaElement).value).toBe("/compact ");
+	});
+
+	it("drops the slash hint on a harness that offers no commands", async () => {
+		const {bridge} = lateCatalogBridge();
+		render(<AgentChatInput bridge={bridge} variant="harness" />);
+		await screen.findByLabelText("Pi'ye mesaj yaz");
+
+		// The hint is the only thing advertising the sigil; typing `/` against an empty catalog opens
+		// nothing, so a hint promising a picker reads as a fault rather than as a feature.
+		const hint = screen.getByText(/dosya/);
+		expect(hint.textContent).not.toContain("komut");
+	});
+
 	it("omits off effort returned by the bridge on load and model refresh", async () => {
 		const {fetch, bridge} = installHarnessFetch();
 		render(<AgentChatInput bridge={bridge} variant="focused" />);

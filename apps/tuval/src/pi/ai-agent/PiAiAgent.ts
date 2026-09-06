@@ -403,6 +403,19 @@ const make = (
 				Effect.fail(new UnknownRequest({request})),
 			setMode: (mode: Mode) => Effect.fail(new ModeUnsupported({mode, available: []})),
 			setModel,
+			/**
+			 * Empty by ruling, not by omission (founder, 2026-09-05, #8060). Pi's slash commands live
+			 * inside its `AgentSession` — extension commands, skills, prompt templates — and the wire
+			 * Tuval reaches it over carries no list of them: at `@earendil-works/pi-protocol@0.84.3`
+			 * `ServerSnapshotSchema` is `{serverId, protocolVersion, revision, sessions, models}` and
+			 * `CommandSchema` is a closed nine-verb union. Filling this needs an upstream protocol
+			 * change, which is its own ticket; vendoring or forking that dep is a no-go.
+			 *
+			 * Only the *catalog* is missing. Running one already works: `expandPromptTemplates`
+			 * (default true, `agent-session.d.ts`) dispatches extension commands and expands skill
+			 * commands on the prompt text itself, so a `/skill:foo` the operator types lands.
+			 */
+			commands: Effect.succeed([]),
 			page,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};

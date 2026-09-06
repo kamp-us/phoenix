@@ -62,9 +62,8 @@ const openComposer = async (): Promise<void> => {
 			withTranscript([userItem("a", "do it")]),
 		),
 	);
-	const view: ChatView = initialChatView;
 	const host: ChatWindowHost = await Effect.runPromise(
-		process.window<ChatView>(WindowId.make("w1"), view),
+		process.window<ChatView>(WindowId.make("w1"), initialChatView),
 	);
 	render(chatWindow({scrollCommitMs: 0, scrollToFn: () => {}}).render(host) as ReactElement);
 	await screen.findByRole("log", {name: "Transcript"});
