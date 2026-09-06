@@ -291,9 +291,30 @@
 	white-space: nowrap;
 }
 
+.kp-agent-chat__picker-option {
+	display: flex;
+	align-items: baseline;
+	gap: var(--s-1);
+	min-width: 0;
+}
+
+.kp-agent-chat__picker-note {
+	overflow: hidden;
+	color: var(--text-secondary);
+	font: var(--t-meta);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .kp-agent-chat__picker-menu:where([data-scope="menu"][data-part="content"]) {
 	width: calc(var(--s-8) * 6);
 	max-width: calc(100vw - var(--s-4));
+	/* The cap belongs on `content`: that is the `rootEl` Zag's menu machine scrolls a highlighted
+	   item within, so an inner scroll box would leave arrow-key navigation scrolling the wrong
+	   element. */
+	max-height: min(26.25rem, 55dvh);
+	overflow-y: auto;
+	overscroll-behavior: contain;
 }
 
 .kp-agent-chat__picker-menu:focus-visible {

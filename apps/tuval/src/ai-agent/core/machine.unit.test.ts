@@ -7,6 +7,7 @@
 
 import {applyCellChecked} from "@demlik/tea";
 import {describe, expect, it} from "vitest";
+import {pendingPermission} from "../../ai-agent-fixtures/permissions.ts";
 import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import type {AgentEvent} from "../events.ts";
 import {Mode, type ModelRef, type PermissionRequest, type TranscriptItem} from "../ports/index.ts";
@@ -281,7 +282,9 @@ describe("event", () => {
 			sessionId: "session-1",
 			event: {kind: "permission", request: "req-1", detail: card},
 		});
-		expect(asked.permissions).toEqual({"req-1": card});
+		expect(asked.permissions).toEqual({
+			"req-1": {request: card, seq: 1, progress: {status: "open"}},
+		});
 		const [settled] = apply(asked, {
 			type: "event",
 			sessionId: "session-1",
@@ -342,15 +345,29 @@ describe("event", () => {
 });
 
 describe("answer", () => {
-	it("removes the card it answers and asks the layer to decide it", () => {
-		const pending = started({permissions: {"req-1": card}});
-		const [state, cmds] = apply(pending, {
-			type: "answer",
-			request: "req-1",
-			decision: "allow-once",
+	const raised = (over: Partial<AiAgentSessionState> = {}): AiAgentSessionState =>
+		started({
+			permissions: {"req-1": pendingPermission({request: card, seq: 4})},
+			permissionsRaised: 4,
+			...over,
 		});
-		expect(state.permissions).toEqual({});
-		expect(cmds).toEqual([{type: "aiAgent.answer", request: "req-1", decision: "allow-once"}]);
+
+	const answerOnce = (
+		state: AiAgentSessionState,
+	): readonly [AiAgentSessionState, ReadonlyArray<AiAgentSessionCmd>] =>
+		apply(state, {type: "answer", request: "req-1", decision: "allow-once"});
+
+	it("keeps the card, marks it answering and asks the layer to decide it", () => {
+		const [state, cmds] = answerOnce(raised());
+		expect(state.permissions["req-1"]).toEqual({
+			request: card,
+			seq: 4,
+			progress: {status: "answering", decision: "allow-once"},
+		});
+		expect(cmds).toEqual([
+			{type: "aiAgent.republish"},
+			{type: "aiAgent.answer", request: "req-1", seq: 4, decision: "allow-once"},
+		]);
 	});
 
 	it("refuses an id no card is pending under", () => {
@@ -361,6 +378,105 @@ describe("answer", () => {
 		});
 		expect(state.failure?.tag).toBe("tuval/ai-agent/UnknownRequest");
 		expect(cmds).toEqual([]);
+	});
+
+	// The second click, and the other window over this process: one shared card, one answer.
+	it("refuses a second answer while the first is awaiting confirmation", () => {
+		const [answering] = answerOnce(raised());
+		const [twice, cmds] = apply(answering, {
+			type: "answer",
+			request: "req-1",
+			decision: "deny",
+		});
+		expect(twice.failure?.reason).toBe("awaiting-confirmation");
+		expect(twice.permissions["req-1"]?.progress).toEqual({
+			status: "answering",
+			decision: "allow-once",
+		});
+		expect(cmds).toEqual([]);
+	});
+
+	it("refuses another answer to a card whose outcome is unknown", () => {
+		const [state, cmds] = answerOnce(
+			raised({
+				permissions: {
+					"req-1": pendingPermission({
+						request: card,
+						seq: 4,
+						progress: {status: "unresolved", decision: "deny"},
+					}),
+				},
+			}),
+		);
+		expect(state.failure?.reason).toBe("unresolved");
+		expect(cmds).toEqual([]);
+	});
+
+	it("drops the card on the confirmation that names its own raising", () => {
+		const [answering] = answerOnce(raised());
+		const [confirmed, cmds] = apply(answering, {type: "answered", request: "req-1", seq: 4});
+		expect(confirmed.permissions).toEqual({});
+		expect(confirmed.failure).toBeNull();
+		expect(cmds).toEqual([{type: "aiAgent.republish"}]);
+	});
+
+	// The card is still there while the confirmation is out — the delayed-confirmation case.
+	it("leaves the card standing until its confirmation arrives", () => {
+		const [answering] = answerOnce(raised());
+		expect(Object.keys(answering.permissions)).toEqual(["req-1"]);
+	});
+
+	it("lets the backend's own resolution settle a card whose answer is still out", () => {
+		const [answering] = answerOnce(raised());
+		const [settled] = apply(answering, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "permission-resolved", request: "req-1", decision: "allow-once"},
+		});
+		expect(settled.permissions).toEqual({});
+	});
+
+	it("refuses a confirmation for a later raising of the same id", () => {
+		const [answering] = answerOnce(raised());
+		const [reraised] = apply(answering, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "permission", request: "req-1", detail: card},
+		});
+		const [stale, cmds] = apply(reraised, {type: "answered", request: "req-1", seq: 4});
+		expect(stale.permissions["req-1"]).toEqual({
+			request: card,
+			seq: 5,
+			progress: {status: "open"},
+		});
+		expect(cmds).toEqual([]);
+	});
+
+	it("drops a card the layer says it no longer holds", () => {
+		const [answering] = answerOnce(raised());
+		const [state] = apply(answering, {
+			type: "answerFailed",
+			request: "req-1",
+			seq: 4,
+			failure: {tag: "tuval/ai-agent/UnknownRequest", reason: null, detail: "nothing pending"},
+		});
+		expect(state.permissions).toEqual({});
+		expect(state.failure?.tag).toBe("tuval/ai-agent/UnknownRequest");
+	});
+
+	it("leaves a card whose answer failed for any other reason unresolved", () => {
+		const [answering] = answerOnce(raised());
+		const [state] = apply(answering, {
+			type: "answerFailed",
+			request: "req-1",
+			seq: 4,
+			failure: {tag: "tuval/ai-agent/TransportError", reason: "disconnected", detail: "gone"},
+		});
+		expect(state.permissions["req-1"]?.progress).toEqual({
+			status: "unresolved",
+			decision: "allow-once",
+		});
+		expect(state.failure?.reason).toBe("disconnected");
 	});
 });
 
@@ -511,9 +627,38 @@ describe("the Cmd each Msg answers for", () => {
 			[],
 		],
 		[
-			started({permissions: {"req-1": card}}),
+			started({permissions: {"req-1": pendingPermission({request: card})}}),
 			{type: "answer", request: "req-1", decision: "deny"},
-			["aiAgent.answer"],
+			["aiAgent.republish", "aiAgent.answer"],
+		],
+		[
+			started({
+				permissions: {
+					"req-1": pendingPermission({
+						request: card,
+						progress: {status: "answering", decision: "deny"},
+					}),
+				},
+			}),
+			{type: "answered", request: "req-1", seq: 1},
+			["aiAgent.republish"],
+		],
+		[
+			started({
+				permissions: {
+					"req-1": pendingPermission({
+						request: card,
+						progress: {status: "answering", decision: "deny"},
+					}),
+				},
+			}),
+			{
+				type: "answerFailed",
+				request: "req-1",
+				seq: 1,
+				failure: {tag: "tuval/ai-agent/TransportError", reason: "disconnected", detail: "gone"},
+			},
+			["aiAgent.republish"],
 		],
 		[
 			started({modes: {current: null, available: [Mode.make("plan")]}}),

@@ -16,7 +16,7 @@ import type {
 	ItemId,
 	Mode,
 	ModelRef,
-	PermissionRequest,
+	PendingPermission,
 	TranscriptItem,
 	TranscriptPayload,
 	WindowOmission,
@@ -73,8 +73,13 @@ export interface AiAgentSessionState {
 	/** The assistant turn a restart cut short, so the window can offer the resend. */
 	readonly interrupted: ItemId | null;
 	readonly usage: UsageTotals;
-	/** Pending permission cards by request id: one arrives with an event, one leaves with an answer. */
-	readonly permissions: Readonly<Record<string, PermissionRequest>>;
+	/**
+	 * Pending permission cards by request id: one arrives with an event, and one leaves on the
+	 * confirmation of its answer rather than on the click that answered it (#8006).
+	 */
+	readonly permissions: Readonly<Record<string, PendingPermission>>;
+	/** How many cards this session has raised. Each entry's `seq` is stamped off it. */
+	readonly permissionsRaised: number;
 	readonly modes: ModeState;
 	readonly models: ModelState;
 	/**
@@ -116,6 +121,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	interrupted: null,
 	usage: emptyUsage,
 	permissions: {},
+	permissionsRaised: 0,
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
 	commands: [],
@@ -160,6 +166,10 @@ const markInterrupted = (
  * `failure` and `lastPage` are dropped. Both describe the run that ended: a refusal nobody can act
  * on any more, and a page the window asked a transport that no longer exists for.
  *
+ * A card that was `answering` comes back `unresolved`. The call carrying that answer went with the
+ * process, so whether the backend applied it is exactly what nobody knows — and an entry restored
+ * to `open` would offer a second answer to an authorization that may already stand (#8006).
+ *
  * Demlik's `init` may transform what the store loaded — that branch is the migration/parse hook —
  * but must emit no Cmds (`@demlik/tea` 0.12 `replay`, the "TEA contract violation" guard), so the
  * reconnect is a Msg the spawner dispatches (`../restore/checkpoint.ts`), never one scheduled here.
@@ -171,6 +181,14 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 		phase: loaded.phase === "gone" ? "gone" : "idle",
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
+		permissions: Object.fromEntries(
+			Object.entries(loaded.permissions).map(([id, held]) => [
+				id,
+				held.progress.status === "answering"
+					? {...held, progress: {status: "unresolved", decision: held.progress.decision} as const}
+					: held,
+			]),
+		),
 		lastPage: null,
 		failure: null,
 	};

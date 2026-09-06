@@ -147,6 +147,8 @@ interface Activity {
 interface PickerItem {
 	readonly value: string;
 	readonly label: string;
+	/** Secondary text beside the label, for a row the label alone does not tell apart. */
+	readonly note?: string;
 	readonly icon?: LucideIcon;
 }
 
@@ -222,6 +224,14 @@ function modelValue(model: Pick<PiModel, "provider" | "id">): string {
 	return `${model.provider}/${model.id}`;
 }
 
+/**
+ * Two providers can offer the same display name, and then the name alone names two rows. The
+ * provider is the fact that tells them apart, so it rides every row once a second one is offered.
+ */
+function providersCollide(models: readonly PiModel[]): boolean {
+	return new Set(models.map((model) => model.provider)).size > 1;
+}
+
 /** A pushed catalog, admitted row by row. A malformed push leaves the held list alone. */
 function commandList(value: unknown): readonly PiCommand[] | undefined {
 	if (!Array.isArray(value)) return undefined;
@@ -275,6 +285,18 @@ function modelName(state: Record<string, unknown> | undefined): string | undefin
 	return (
 		stringValue(model, "displayName") ?? stringValue(model, "name") ?? stringValue(model, "id")
 	);
+}
+
+/** The running model as the status line names it: bare name, or name + provider once two collide. */
+function runningModelLabel(
+	state: Record<string, unknown> | undefined,
+	models: readonly PiModel[],
+): string | undefined {
+	const name = modelName(state);
+	if (!name || !providersCollide(models)) return name;
+	const model = state && isRecord(state.model) ? state.model : undefined;
+	const provider = model && stringValue(model, "provider");
+	return provider ? `${name} (${provider})` : name;
 }
 
 function assistantMessageText(value: unknown): string | undefined {
@@ -841,9 +863,18 @@ export function AgentChatInput({
 		}
 	}
 
-	const model = modelName(state);
+	const model = runningModelLabel(state, models);
+	// Manti's `SelectItem.label` is `string`, and the select collection stringifies it for typeahead
+	// (`itemToString: (item) => item.label`), so this list carries the provider in the label itself
+	// while the Menu-backed picker below renders it as its own dimmed span. See #8065.
 	const modelItems = useMemo<SelectItem[]>(
-		() => models.map((candidate) => ({value: modelValue(candidate), label: candidate.name})),
+		() =>
+			models.map((candidate) => ({
+				value: modelValue(candidate),
+				label: providersCollide(models)
+					? `${candidate.name} (${candidate.provider})`
+					: candidate.name,
+			})),
 		[models],
 	);
 	const thinkingItems = useMemo<SelectItem[]>(
@@ -851,7 +882,12 @@ export function AgentChatInput({
 		[thinkingLevels, t],
 	);
 	const focusedModelItems = useMemo<PickerItem[]>(
-		() => models.map((candidate) => ({value: modelValue(candidate), label: candidate.name})),
+		() =>
+			models.map((candidate) => ({
+				value: modelValue(candidate),
+				label: candidate.name,
+				...(providersCollide(models) ? {note: candidate.provider} : {}),
+			})),
 		[models],
 	);
 	const focusedThinkingItems = useMemo<PickerItem[]>(
@@ -1254,6 +1290,11 @@ function SettingMenu({
 	const t = useDesignT();
 	const [open, setOpen] = useState(false);
 	const selected = items.find((item) => item.value === value);
+	const selectedName = selected
+		? selected.note
+			? `${selected.label} (${selected.note})`
+			: selected.label
+		: t("admin.agent.picker.loading");
 	return (
 		<Menu
 			open={open}
@@ -1267,11 +1308,14 @@ function SettingMenu({
 					variant="tertiary"
 					size="sm"
 					className="kp-agent-chat__picker-trigger"
-					aria-label={`${label}: ${selected?.label ?? t("admin.agent.picker.loading")}`}
+					aria-label={`${label}: ${selectedName}`}
 					disabled={disabled}
 				>
 					{selected?.icon ? <Icon icon={selected.icon} size={14} /> : null}
 					<span>{selected?.label ?? "…"}</span>
+					{selected?.note ? (
+						<span className="kp-agent-chat__picker-note">{selected.note}</span>
+					) : null}
 					<Icon icon={open ? ChevronUp : ChevronDown} size={14} />
 				</Button>
 			}
@@ -1282,7 +1326,14 @@ function SettingMenu({
 					items: items.map((item) => ({
 						type: "radio",
 						value: item.value,
-						label: item.label,
+						label: item.note ? (
+							<span className="kp-agent-chat__picker-option">
+								<span>{item.label}</span>
+								<span className="kp-agent-chat__picker-note">{item.note}</span>
+							</span>
+						) : (
+							item.label
+						),
 						checked: item.value === value,
 						...(item.icon ? {icon: <Icon icon={item.icon} size={16} />} : {}),
 					})),

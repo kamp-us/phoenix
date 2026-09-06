@@ -161,6 +161,38 @@ function lateCatalogBridge(): {
 	return {bridge, push: (event) => listener?.(event)};
 }
 
+/**
+ * Two providers offering one display name — the founder's desk, where `openai` and `openai-codex`
+ * both carry `GPT-5.6 Luna` (#8065). A row's name alone cannot name one of them.
+ */
+function collidingCatalogBridge(): {
+	bridge: AgentChatInputBridge;
+	picks: Array<{readonly provider: string; readonly id: string}>;
+} {
+	const luna = {provider: "openai", id: "gpt-5.6-luna", name: "GPT-5.6 Luna"};
+	const codexLuna = {provider: "openai-codex", id: "gpt-5.6-luna", name: "GPT-5.6 Luna"};
+	const picks: Array<{readonly provider: string; readonly id: string}> = [];
+	let model = luna;
+	const bridge: AgentChatInputBridge = {
+		loadPiState: async () => ({isStreaming: false, model, thinkingLevel: "medium"}),
+		loadPiCommands: async () => [],
+		loadPiModels: async () => [luna, codexLuna],
+		loadPiThinkingLevels: async () => ["medium", "high"],
+		loadPiFiles: async () => [],
+		setPiModel: async (next) => {
+			picks.push({provider: next.provider, id: next.id});
+			model = {provider: next.provider, id: next.id, name: next.name};
+		},
+		setPiThinkingLevel: async () => undefined,
+		setPiProjectTrust: async () => undefined,
+		sendPiPrompt: async () => undefined,
+		abortPi: async () => undefined,
+		answerPiExtension: async () => undefined,
+		subscribeToPiEvents: () => () => undefined,
+	};
+	return {bridge, picks};
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AgentChatInput", () => {
@@ -443,5 +475,56 @@ describe("AgentChatInput", () => {
 			),
 		);
 		expect(drafts).toEqual([]);
+	});
+
+	it("tells two providers' same-named models apart in the select list", async () => {
+		const {bridge, picks} = collidingCatalogBridge();
+		render(<AgentChatInput bridge={bridge} />);
+
+		fireEvent.click(await screen.findByRole("combobox", {name: "Pi modeli"}));
+		const rows = await screen.findAllByRole("option");
+		expect(rows.map((row) => row.textContent)).toEqual([
+			"GPT-5.6 Luna (openai)",
+			"GPT-5.6 Luna (openai-codex)",
+		]);
+
+		fireEvent.click(screen.getByRole("option", {name: "GPT-5.6 Luna (openai-codex)"}));
+		await waitFor(() => expect(picks).toEqual([{provider: "openai-codex", id: "gpt-5.6-luna"}]));
+	});
+
+	it("renders the provider as a row's secondary text in the focused picker", async () => {
+		const {bridge, picks} = collidingCatalogBridge();
+		render(<AgentChatInput bridge={bridge} variant="focused" />);
+
+		fireEvent.click(await screen.findByRole("button", {name: "model: GPT-5.6 Luna (openai)"}));
+		const rows = await screen.findAllByRole("menuitemradio");
+		expect(
+			rows.map((row) => row.querySelector(".kp-agent-chat__picker-note")?.textContent),
+		).toEqual(["openai", "openai-codex"]);
+		// The name stays the row's own text; the provider is a sibling span, not part of it.
+		expect(
+			rows.map((row) => row.querySelector(".kp-agent-chat__picker-option > span")?.textContent),
+		).toEqual(["GPT-5.6 Luna", "GPT-5.6 Luna"]);
+
+		fireEvent.click(rows[1] as HTMLElement);
+		await waitFor(() => expect(picks).toEqual([{provider: "openai-codex", id: "gpt-5.6-luna"}]));
+	});
+
+	it("names the running model with its provider once two providers are offered", async () => {
+		const {bridge} = collidingCatalogBridge();
+		render(<AgentChatInput bridge={bridge} />);
+
+		expect(await screen.findByText(/Pi hazır · GPT-5\.6 Luna \(openai\)/)).toBeTruthy();
+	});
+
+	it("leaves a single-provider catalog's rows bare", async () => {
+		const {bridge} = installHarnessFetch();
+		render(<AgentChatInput bridge={bridge} />);
+
+		fireEvent.click(await screen.findByRole("combobox", {name: "Pi modeli"}));
+		expect((await screen.findAllByRole("option")).map((row) => row.textContent)).toEqual([
+			"GPT-5",
+			"GPT-5.6",
+		]);
 	});
 });

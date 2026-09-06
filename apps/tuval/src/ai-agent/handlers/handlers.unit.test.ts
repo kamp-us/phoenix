@@ -277,8 +277,9 @@ describe("the AI agent handlers under a process", () => {
 					request: PERMISSION_REQUEST,
 					decision: "allow-once",
 				});
-				// The core drops the card on the `answer` Msg, but the port only clears once the
-				// layer's `permission-resolved` event has come back round the stream.
+				// The card is not dropped on the `answer` Msg any more (#8006): it is marked, published
+				// under that mark, and cleared only by the confirmation — the layer's
+				// `permission-resolved` event, or the answer call's own reply.
 				const clearedRequests = () => {
 					const latest = lastOn(log, aiAgentPortNames.permissionPending) as
 						| PermissionPayload
@@ -288,6 +289,19 @@ describe("the AI agent handlers under a process", () => {
 				yield* eventually(() => clearedRequests().length === 0);
 				assert.deepStrictEqual(clearedRequests(), []);
 				assert.deepStrictEqual(Object.keys(sessionOf(handle).permissions), []);
+
+				const announced = log
+					.filter((entry) => entry.port === aiAgentPortNames.permissionPending)
+					.map((entry) => entry.payload as PermissionPayload)
+					.flatMap((payload) =>
+						payload.kind === "pending"
+							? [payload.requests[PERMISSION_REQUEST]?.progress ?? null]
+							: [],
+					);
+				assert.deepStrictEqual(
+					announced.filter((progress) => progress?.status === "answering"),
+					[{status: "answering", decision: "allow-once"}],
+				);
 			}),
 		);
 	});

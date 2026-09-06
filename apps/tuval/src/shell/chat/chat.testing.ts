@@ -7,14 +7,9 @@
 
 import type {AiAgentSessionState} from "../../ai-agent/core/state.ts";
 import {initialState} from "../../ai-agent/core/state.ts";
-import type {
-	JsonValue,
-	PermissionRequest,
-	ToolItem,
-	ToolStatus,
-	TranscriptItem,
-} from "../../ai-agent/ports/index.ts";
+import type {JsonValue, ToolItem, ToolStatus, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {boundToolResult, ItemId, Mode} from "../../ai-agent/ports/index.ts";
+import {pendingPermission, permissionCard} from "../../ai-agent-fixtures/permissions.ts";
 import {
 	assistantItem,
 	systemItem,
@@ -22,7 +17,14 @@ import {
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 
-export {assistantItem, systemItem, toolItem, userItem};
+export {
+	assistantItem,
+	pendingPermission,
+	permissionCard as permissionRequest,
+	systemItem,
+	toolItem,
+	userItem,
+};
 
 /** An exchange per index, so a transcript of `n` items is `n` distinct ids in a known order. */
 export const transcriptOf = (count: number, prefix = "i"): ReadonlyArray<TranscriptItem> =>
@@ -66,17 +68,6 @@ export const call = (
 	result: boundToolResult(options.output ?? "ok", options.resultLimit),
 	status: options.status ?? "ok",
 	...(options.parentId === undefined ? {} : {parentId: ItemId.make(options.parentId)}),
-});
-
-export const permissionRequest = (
-	overrides: Partial<PermissionRequest> = {},
-): PermissionRequest => ({
-	title: "Run a command",
-	displayName: "bash",
-	description: "The agent wants to run a shell command in the project.",
-	input: {command: "rm -rf build"},
-	offersAlways: true,
-	...overrides,
 });
 
 export const modes = (
