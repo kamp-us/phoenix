@@ -17,11 +17,11 @@
 
 import type {ReactElement} from "react";
 import type {ShellMsg} from "../core/index.ts";
-import type {PickerEntries} from "../picker/browser.ts";
+import {asPickerView, type PickerEntries} from "../picker/browser.ts";
 import type {ViewState, WindowId} from "../window/index.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import type {WindowMount} from "./mount.ts";
-import {asPickerView, PickerView} from "./PickerView.tsx";
+import {PickerView} from "./PickerView.tsx";
 
 export interface WindowViewProps {
 	readonly windowId: WindowId;
