@@ -1,5 +1,44 @@
 {
-	"command": "[ -f apps/web/.env ] || cp apps/web/.env.example apps/web/.env; pnpm dev 1>&2",
-	"url": "http://localhost:3000",
-	"readyPath": "/api/health"
+	"apps": [
+		{
+			"name": "web",
+			"mount": "/",
+			"command": "[ -f apps/web/.env ] || cp apps/web/.env.example apps/web/.env; export PHOENIX_SPA_PORT={{port}} PHOENIX_WORKER_PORT={{port:worker}}; pnpm --filter @kampus/web dev:worker 1>&2 & pnpm --filter @kampus/web dev 1>&2",
+			"readyPath": "/api/health"
+		},
+		{
+			"name": "web-lab",
+			"mount": "/lab",
+			"command": "PHOENIX_SPA_PORT={{port}} pnpm --filter @kampus/web dev 1>&2",
+			"readyPath": "/"
+		},
+		{
+			"name": "tuval-chat",
+			"mount": "/tuval/chat",
+			"basePath": "/",
+			"command": "pnpm --filter @kampus/tuval proof:chat --port {{port}} --strictPort 1>&2",
+			"readyPath": "/"
+		},
+		{
+			"name": "tuval-pi-window",
+			"mount": "/tuval/pi-window",
+			"basePath": "/",
+			"command": "pnpm --filter @kampus/tuval proof:pi-window --port {{port}} --strictPort 1>&2",
+			"readyPath": "/"
+		},
+		{
+			"name": "tuval-pi-vertical",
+			"mount": "/tuval/pi-vertical",
+			"basePath": "/",
+			"command": "pnpm --filter @kampus/tuval proof:pi-vertical --page-port {{port}} 1>&2",
+			"readyPath": "/"
+		},
+		{
+			"name": "tuval-claude-real",
+			"mount": "/tuval/claude-real",
+			"basePath": "/",
+			"command": "pnpm --filter @kampus/tuval proof:claude-real --page-port {{port}} 1>&2",
+			"readyPath": "/"
+		}
+	]
 }

@@ -10,6 +10,10 @@
  *
  * The set manifest is the seam to `ui evidence`: `<set>/manifest.json` holds the exact stdout bytes,
  * so no value crosses that seam by memory.
+ *
+ * A surface resolves to the app whose declared mount is its longest match, and only the apps some
+ * requested surface resolves to are started — so a worker-free surface never waits on a worker's
+ * readiness probe, and a repo with two runnable apps can render both (#7992).
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -30,7 +34,14 @@ import {
 	SURFACE_UNREACHABLE,
 } from "./codes.ts";
 import {atRoot} from "./conventions.ts";
-import {type HarnessConfig, parseHarness, surfaceSlug} from "./harness.ts";
+import {
+	appForSurface,
+	type HarnessApp,
+	type HarnessConfig,
+	parseHarness,
+	surfaceSlug,
+	surfaceUrl,
+} from "./harness.ts";
 import {requireUiLane} from "./lane.ts";
 import {probe} from "./manifest-verb.ts";
 import {decodePng, sha256Of} from "./png.ts";
@@ -56,12 +67,25 @@ export interface ShotRequest {
 export type BrowseLeg = (request: ShotRequest) => Effect.Effect<ShotOutcome>;
 
 export type HarnessStart =
-	| {readonly _tag: "Ready"; readonly stop: Effect.Effect<void>}
-	| {readonly _tag: "Failed"; readonly reason: string}
-	| {readonly _tag: "NotReady"; readonly tail: string};
+	/** `origins` is keyed by app name — the base URL each started app actually bound. */
+	| {
+			readonly _tag: "Ready";
+			readonly origins: ReadonlyMap<string, string>;
+			readonly stop: Effect.Effect<void>;
+	  }
+	| {readonly _tag: "Failed"; readonly app: string; readonly reason: string}
+	| {
+			readonly _tag: "NotReady";
+			readonly app: string;
+			readonly readyPath: string;
+			readonly tail: string;
+	  };
 
-/** The injected dev-server leg: start the repo's own command, poll readiness, hand back a killer. */
-export type HarnessLeg = (config: HarnessConfig, root: string) => Effect.Effect<HarnessStart>;
+/** The injected dev-server leg: start each app's command, poll readiness, hand back a killer. */
+export type HarnessLeg = (
+	apps: ReadonlyArray<HarnessApp>,
+	root: string,
+) => Effect.Effect<HarnessStart>;
 
 export interface RenderOptions {
 	readonly out: string;
@@ -86,6 +110,34 @@ interface Capture {
 type SurfaceResult =
 	| {readonly _tag: "Ok"; readonly capture: Capture}
 	| {readonly _tag: "Bad"; readonly code: number; readonly line: string};
+
+/** One requested surface bound to the app that serves it, once that app's origin is known. */
+interface Placement {
+	readonly surface: string;
+	readonly url: string;
+}
+
+/** The apps the requested surfaces resolve to, or the first surface the declaration has no app for. */
+const resolveApps = (
+	config: HarnessConfig,
+	surfaces: ReadonlyArray<string>,
+):
+	| {readonly _tag: "Resolved"; readonly served: ReadonlyArray<Served>}
+	| {readonly _tag: "Unmounted"; readonly surface: string} => {
+	const served: Array<Served> = [];
+	for (const surface of surfaces) {
+		const app = appForSurface(config, surface);
+		if (app === null) return {_tag: "Unmounted", surface};
+		served.push({surface, app});
+	}
+	return {_tag: "Resolved", served};
+};
+
+/** One requested surface bound to the app whose mount claims it. */
+interface Served {
+	readonly surface: string;
+	readonly app: HarnessApp;
+}
 
 /** A usage/vocabulary refusal on the operands, or `null` when they are well formed. */
 export const checkOperands = (options: RenderOptions): VerbOutcome | null => {
@@ -128,12 +180,12 @@ const shoot = (
 	config: HarnessConfig,
 	root: string,
 	setDir: string,
-	surface: string,
+	{surface, url}: Placement,
 ): Effect.Effect<SurfaceResult, never, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
 		const outPath = `${setDir}/${surfaceSlug(surface)}.png`;
 		const shot = yield* options.browse({
-			url: `${config.url}${surface}`,
+			url,
 			outPath,
 			viewport: config.viewport,
 			storageState: config.storageState === null ? null : atRoot(root, config.storageState),
@@ -272,26 +324,44 @@ export const runRender = (
 			}
 		}
 
+		const placed = resolveApps(harness.config, options.surfaces);
+		if (placed._tag === "Unmounted") {
+			return refuse(
+				OFF_VOCABULARY,
+				`${VERB}: --surface "${placed.surface}" falls outside every mount ${harnessPath} declares (${harness.config.apps.map((app) => app.mount).join(", ")}) — no app serves it; declare its app's mount.`,
+				lane.notes,
+			);
+		}
+
 		const setDir = `${laneScratchDir(options.tmpRoot, session.id, lane.number, lane.nonce)}/${options.out}`;
-		const started = yield* options.startHarness(harness.config, lane.root);
+		const needed = harness.config.apps.filter((app) =>
+			placed.served.some((one) => one.app.name === app.name),
+		);
+		const started = yield* options.startHarness(needed, lane.root);
 		if (started._tag === "Failed") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: the render harness could not start: ${started.reason} — every surface is UNKNOWN.`,
+				`${VERB}: app "${started.app}" could not start: ${started.reason} — every surface is UNKNOWN.`,
 				lane.notes,
 			);
 		}
 		if (started._tag === "NotReady") {
 			return refuse(
 				PRECONDITION_UNKNOWN,
-				`${VERB}: the harness did not answer 200 on ${harness.config.readyPath} within the readiness bound — every surface is UNKNOWN; server stderr tail: ${started.tail}.`,
+				`${VERB}: app "${started.app}" did not answer 200 on ${started.readyPath} within the readiness bound — every surface is UNKNOWN; server stderr tail: ${started.tail}.`,
 				lane.notes,
 			);
 		}
 
+		const placements = placed.served.map(
+			({surface, app}): Placement => ({
+				surface,
+				url: surfaceUrl(started.origins.get(app.name) ?? "", app, surface),
+			}),
+		);
 		const results = yield* Effect.forEach(
-			options.surfaces,
-			(surface) => shoot(options, harness.config, lane.root, setDir, surface),
+			placements,
+			(placement) => shoot(options, harness.config, lane.root, setDir, placement),
 			{concurrency: 1},
 		).pipe(Effect.ensuring(started.stop));
 

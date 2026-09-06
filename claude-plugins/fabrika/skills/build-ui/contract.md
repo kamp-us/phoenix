@@ -208,15 +208,30 @@ evidence lives — the portable replacement for v1's phoenix-hardcoded "alchemy 
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `command` | string | yes | the shell command that starts the repo's dev server, run from the repo root; `ui render` starts it, waits for readiness, and kills it on exit |
-| `url` | string | yes | the base URL the server listens on (e.g. `http://127.0.0.1:5173`); surfaces resolve as `<url><route>` |
-| `readyPath` | string | no (default `/`) | path polled for HTTP 200 to detect readiness; not ready within 60s is `11` |
+| `apps` | array of app objects | yes | the runnable apps this repo renders from, at least one. A repo with two runnable apps declares two entries; `ui render` starts only the ones some requested surface resolves to |
 | `viewport` | object `{width, height}` | no (default `{1280, 900}`) | the capture viewport in CSS px |
 | `evidenceStore` | string | no | base URL of a content-addressed evidence store (the ADR 0144/0183 idiom); see `ui evidence` for the two-tier upload protocol |
 | `storageState` | string | no | repo-root-relative path to a Playwright storage-state JSON, seeded into every capture context so surfaces behind a login render as a signed-in user; declared-but-absent is `11` from `ui render`, never a screenshot of the login page. The file is a credential — the repo gitignores it, and the cookies are never inlined here |
 
+Each `apps[]` entry:
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string, kebab-case | yes | names this app in every refusal, and must be unique across the list |
+| `command` | string | yes | the shell command that starts this app, run from the repo root; `ui render` starts it, waits for readiness, and kills it on exit. It **must** carry the `{{port}}` placeholder — see below |
+| `mount` | string, `/`-prefixed | yes | the prefix of the surface namespace this app owns, unique across the list. A surface goes to the app whose mount is its longest match, on segment boundaries (`/lab` claims `/lab/x`, never `/laboratory`); `/` is the catch-all |
+| `basePath` | string, `/`-prefixed | no (default: the mount) | what the mount maps to on this app's own server. The default is the identity, so only an app serving those pages at a different root (a proof server rooted at `/`) has to say so |
+| `readyPath` | string | no (default `/`) | path polled for HTTP 200 to detect **this app's** readiness; not ready within 60s is `11` naming the app |
+
+**No app declares a port, and that is the point.** `{{port}}` in a `command` is replaced with a free
+port the render leg just bound and released, so two worktrees can render at once and neither can
+reach the other's tree. `{{port:<name>}}` allocates a further port for the same command, and every
+occurrence of one name gets the same number — that is how an app passes one port to two processes. A
+command with no unnamed `{{port}}` is refused. The app's base URL is `http://localhost:<the unnamed
+port>`, and a surface resolves to `<base><basePath + the remainder past the mount>`.
+
 A file that exists but violates this schema is `4` from `ui render` — same whole-file rule as the
-registry.
+registry. A surface that falls outside every declared mount is `10`, and the refusal lists them.
 
 ### The registry schema — canonical here
 
@@ -401,10 +416,13 @@ implementations guessing differently.
 
 **The mechanism, in order.** Resolve the lane (shared conventions; the set dir is
 `build scratch`'s allocation for this lane, `<scratch>/<set>/`). Read the declared `designHarness`
-path (absent `19`, malformed `4`). Start `command` from the repo root; poll `<url><readyPath>` until
-HTTP 200, up to the schema row's readiness bound (`11` on timeout, with the server's stderr tail
-in the message); on any exit, kill the started process tree. For each `--surface`, in a headless browser at the
-config's viewport: navigate to `<url><route>`; an HTTP status ≥ 400 or a failed navigation is
+path (absent `19`, malformed `4`). Resolve each `--surface` to the app whose `mount` is its longest
+match (`10` when no mount claims one). Start each of those apps, and only those, from the repo root
+on ports allocated here and filled into its `command`'s `{{port}}` placeholders; poll each app's own
+`<base><readyPath>` until HTTP 200, up to the schema row's readiness bound (`11` on timeout, naming
+the app, with its stderr tail in the message); on any exit, kill every started process tree. For each
+`--surface`, in a headless browser at the config's viewport: navigate to its app's
+`<base><basePath + the remainder past the mount>`; an HTTP status ≥ 400 or a failed navigation is
 **unreachable** (`15`); an uncaught page exception during render is **crashed** (`14`);
 otherwise screenshot the full page to `<set>/<route-slug>.png` (slug: `/` → `-`, leading
 stripped, `/` root → `root`). Validate every capture: file exists, non-zero bytes, decodable
@@ -422,8 +440,8 @@ never the tool's silent tolerance.
 | Code | Trigger |
 |---|---|
 | `4` | the harness config exists but violates its schema |
-| `10` | `--out` is not kebab-case, or a `--surface` carries the reserved `:state` suffix |
-| `11` | the harness did not become ready, a capture's validity could not be determined, or the claim state could not be read — the render is UNKNOWN |
+| `10` | `--out` is not kebab-case, a `--surface` carries the reserved `:state` suffix, or a `--surface` falls outside every declared `mount` |
+| `11` | an app did not become ready, a capture's validity could not be determined, or the claim state could not be read — the render is UNKNOWN |
 | `14` | proven: at least one surface threw an uncaught page error during render |
 | `15` | proven: at least one surface is unreachable — status ≥ 400 or failed navigation (no route, dark flag, gated tier); each named on stderr |
 | `16` | proven: at least one capture was produced but is invalid (zero bytes, undecodable, zero area) |
@@ -440,13 +458,14 @@ carries every surface's outcome — the code routes, the stderr enumerates.
 | `ui render: surface "<id>" threw during render: <first page error> — the render is red; fix it before looking.` | 14 | refusal |
 | `ui render: surface "<id>" is unreachable in this tree (<reason: no route | flag dark | gated tier>) — fix reachability, or drop it explicitly and carry the reason into the PR's Deviations (#4305).` | 15 | refusal |
 | `ui render: surface "<id>" captured invalid bytes (<detail>) — a capture nobody can open is not evidence (#3925's class).` | 16 | refusal |
-| `ui render: the render harness could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
-| `ui render: the harness did not answer 200 on <readyPath> within the readiness bound — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
+| `ui render: app "<name>" could not start: <reason> — every surface is UNKNOWN.` | 11 | refusal |
+| `ui render: app "<name>" did not answer 200 on <readyPath> within the readiness bound — every surface is UNKNOWN; server stderr tail: <tail>.` | 11 | refusal |
 | `ui render: cannot determine the validity of <set>/<file>: <reason> — the capture is UNKNOWN, never valid.` | 11 | refusal |
 | `ui render: no <harness path> at the repo root — this repo declares no headless render path; add one (see the harness config schema).` | 19 | refusal |
 | `ui render: <harness path> exists but does not satisfy its schema: <first violation>.` | 4 | refusal |
 | `ui render: --surface "<id>" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.` | 10 | refusal |
 | `ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
+| `ui render: --surface "<id>" falls outside every mount <harness path> declares (<mounts>) — no app serves it; declare its app's mount.` | 10 | refusal |
 | `ui render: this session does not hold the claim the checked-out branch names (<detail>) — the lane is not yours.` | 18 | refusal |
 
 `<harness path>` is interpolated, not fixed: the verb prints the path `designHarness` declares, so a

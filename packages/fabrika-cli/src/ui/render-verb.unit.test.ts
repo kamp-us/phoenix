@@ -44,7 +44,13 @@ const LANE_OK: ReadonlyArray<Scripted> = [
 
 const PNG = encodePng(4, 4, solid(4, 4, [0, 0, 0, 255]));
 
-const ready: HarnessLeg = () => Effect.succeed({_tag: "Ready", stop: Effect.void});
+/** Every app the verb asks for comes up on one origin per name — the shape `spawnHarness` returns. */
+const ready: HarnessLeg = (apps) =>
+	Effect.succeed({
+		_tag: "Ready",
+		origins: new Map(apps.map((app, index) => [app.name, `http://127.0.0.1:${5173 + index}`])),
+		stop: Effect.void,
+	});
 
 const options = {
 	out: "after",
@@ -81,11 +87,18 @@ const run = (
 		),
 	);
 
-const harnessFile = JSON.stringify({command: "pnpm dev", url: "http://127.0.0.1:5173"});
+const WEB = {name: "web", mount: "/", command: "pnpm dev --port {{port}}"};
+const TUVAL = {
+	name: "tuval-chat",
+	mount: "/tuval/chat",
+	basePath: "/",
+	command: "pnpm proof:chat --port {{port}}",
+};
+const harnessFile = JSON.stringify({apps: [WEB]});
+const twoApps = JSON.stringify({apps: [WEB, TUVAL]});
 const SESSION = `${ROOT}/.fabrika/design-session.json`;
 const withSession = JSON.stringify({
-	command: "pnpm dev",
-	url: "http://127.0.0.1:5173",
+	apps: [WEB],
 	storageState: ".fabrika/design-session.json",
 });
 const captured = {files: {[HARNESS]: harnessFile, [`${SET_DIR}/pano.png`]: PNG}};
@@ -193,10 +206,28 @@ describe("runRender", () => {
 
 	it("refuses on 11 when the harness never answers", async () => {
 		const outcome = await run(LANE_OK, captured, {
-			startHarness: () => Effect.succeed({_tag: "NotReady", tail: "EADDRINUSE"}),
+			startHarness: () =>
+				Effect.succeed({
+					_tag: "NotReady",
+					app: "web",
+					readyPath: "/api/health",
+					tail: "EADDRINUSE",
+				}),
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain(
+			'app "web" did not answer 200 on /api/health within the readiness bound',
+		);
 		expect(outcome.stderr.at(-1)).toContain("server stderr tail: EADDRINUSE");
+	});
+
+	it("refuses on 11 when an app's command dies, naming the app", async () => {
+		const outcome = await run(LANE_OK, captured, {
+			startHarness: () =>
+				Effect.succeed({_tag: "Failed", app: "web", reason: "the command exited with 1"}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain('app "web" could not start: the command exited with 1');
 	});
 
 	it("refuses a missing harness declaration on 19", async () => {
@@ -262,5 +293,55 @@ describe("runRender", () => {
 		);
 		const outcome = await run(unreadable, captured);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+});
+
+describe("runRender across apps", () => {
+	const bothCaptured = {
+		files: {
+			[HARNESS]: twoApps,
+			[`${SET_DIR}/pano.png`]: PNG,
+			[`${SET_DIR}/tuval-chat.png`]: PNG,
+		},
+	};
+
+	it("sends each surface to its own app's origin, at that app's own path", async () => {
+		const seen: Array<string> = [];
+		const outcome = await run(LANE_OK, bothCaptured, {
+			surfaces: ["/pano", "/tuval/chat"],
+			browse: (request) => {
+				seen.push(request.url);
+				return Effect.succeed({_tag: "Captured"});
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(["http://127.0.0.1:5173/pano", "http://127.0.0.1:5174/"]);
+	});
+
+	it("starts only the apps some requested surface resolves to", async () => {
+		const started: Array<ReadonlyArray<string>> = [];
+		const outcome = await run(LANE_OK, bothCaptured, {
+			surfaces: ["/tuval/chat"],
+			startHarness: (apps, root) => {
+				started.push(apps.map((app) => app.name));
+				return ready(apps, root);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(started).toEqual([["tuval-chat"]]);
+	});
+
+	it("refuses on 10 a surface no declared mount claims, naming the mounts", async () => {
+		const outcome = await run(
+			LANE_OK,
+			{files: {[HARNESS]: JSON.stringify({apps: [TUVAL]})}},
+			{
+				surfaces: ["/pano"],
+			},
+		);
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain(
+			'--surface "/pano" falls outside every mount design-harness.json declares (/tuval/chat)',
+		);
 	});
 });
