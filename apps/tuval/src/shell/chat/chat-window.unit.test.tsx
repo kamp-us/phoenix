@@ -498,6 +498,27 @@ describe("the phase line and the contract's two placeholders", () => {
 		}
 	});
 
+	it("shows the working tell only while a turn runs, and never as a second live region", async () => {
+		const {process} = await openWindow(withTranscript(transcriptOf(2), {phase: "ready"}));
+		const working = () => document.querySelector(".tuval-chat-working");
+		expect(working()).toBeNull();
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withTranscript(transcriptOf(2), {phase: "prompting"})),
+			);
+		});
+		await waitFor(() => expect(working()).not.toBeNull());
+		// The phase line is the announced one; a second `status` would narrate the same turn twice.
+		expect(working()?.getAttribute("aria-hidden")).toBe("true");
+		expect(screen.getAllByRole("status").length).toBe(1);
+
+		await act(async () => {
+			await Effect.runPromise(process.commit(withTranscript(transcriptOf(2), {phase: "ready"})));
+		});
+		await waitFor(() => expect(working()).toBeNull());
+	});
+
 	it("renders the empty placeholder before the process has said anything", () => {
 		const silent: ChatWindowHost = {
 			windowId: WindowId.make("w-empty"),

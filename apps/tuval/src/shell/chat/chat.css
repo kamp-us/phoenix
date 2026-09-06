@@ -394,8 +394,31 @@
 }
 
 .tuval-chat-phase[data-phase="ready"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="starting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="reconnecting"] .tuval-chat-phase-dot,
 .tuval-chat-phase[data-phase="prompting"] .tuval-chat-phase-dot {
 	background: var(--accent);
+}
+
+/* A phase whose sentence ends in a wait pulses, so a turn that is still running reads as running
+   without re-reading the line. The word is still the signal (Pillar 4): this only removes the
+   ambiguity between "Ready." and "Working" that two identical dots left behind. */
+.tuval-chat-phase[data-phase="starting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="reconnecting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="prompting"] .tuval-chat-phase-dot {
+	animation: tuval-chat-phase-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes tuval-chat-phase-pulse {
+	0%,
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.3;
+		transform: scale(0.6);
+	}
 }
 
 .tuval-chat-phase[data-phase="gone"] .tuval-chat-phase-dot {
@@ -407,4 +430,58 @@
 	padding: var(--s-4);
 	color: var(--text-muted);
 	font: var(--t-body-sm);
+}
+
+/* The running-turn tell at the foot of the transcript. Decoration by construction — `aria-hidden`,
+   because the phase line is the announced one — so the animation carries nothing the word does not
+   already say, and collapsing it under reduced motion loses nothing. */
+.tuval-chat-working {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	margin: 0;
+	padding: var(--s-1) var(--s-4);
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-working-dots {
+	display: inline-flex;
+	gap: 3px;
+	align-items: center;
+}
+
+.tuval-chat-working-dots span {
+	inline-size: 4px;
+	block-size: 4px;
+	border-radius: 50%;
+	background: var(--accent);
+	animation: tuval-chat-working-bounce 1.2s ease-in-out infinite;
+}
+
+.tuval-chat-working-dots span:nth-child(2) {
+	animation-delay: 0.16s;
+}
+
+.tuval-chat-working-dots span:nth-child(3) {
+	animation-delay: 0.32s;
+}
+
+@keyframes tuval-chat-working-bounce {
+	0%,
+	60%,
+	100% {
+		opacity: 0.25;
+	}
+	30% {
+		opacity: 1;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tuval-chat-phase-dot,
+	.tuval-chat-working-dots span {
+		animation: none;
+		opacity: 1;
+	}
 }
