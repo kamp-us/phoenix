@@ -133,6 +133,11 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 				// than discovered on first open, which would serve it a second React copy until the
 				// re-optimise reload — the one way a module renderer's hooks can break at first paint.
 				optimizeDeps: {include: moduleRenderers.filter(isBareSpecifier)},
+				// A renderer package names React and Effect as peers, and a peer means "the page's copy".
+				// A package linked from another checkout (`link:`, `pnpm link`) carries its own
+				// `node_modules`, and without this the browser gets a second React whose hooks throw
+				// `Cannot read properties of null (reading 'useState')` on the module window's first paint.
+				resolve: {dedupe: ["react", "react-dom", "effect"]},
 			}),
 		),
 		(dev) => Effect.ignore(attempt(() => dev.close())),
