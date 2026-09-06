@@ -12,15 +12,18 @@
  * (#7978). That is the item `upsertItem`'s echo join exists for.
  */
 
-import type {AgentEvent, Phase} from "../events.ts";
+import type {AgentEvent, AgentFailure, Phase} from "../events.ts";
 import {isRefusal, planTranscriptWindow} from "../history/index.ts";
 import {
 	ItemId,
+	type PendingPermission,
+	type PermissionProgress,
 	type TranscriptItem,
 	type TranscriptPayload,
 	type UserItem,
 	type WindowOmission,
 } from "../ports/index.ts";
+import {START_ERROR} from "./failures.ts";
 import type {AiAgentSessionState, UsageTotals} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
@@ -111,6 +114,41 @@ export const dropRequest = (state: AiAgentSessionState, request: string): AiAgen
 	permissions: without(state.permissions, request),
 });
 
+/** A card whose answer is out. The narrowing is what lets a caller read the decision unguarded. */
+export type AnsweringPermission = PendingPermission & {
+	readonly progress: Extract<PermissionProgress, {readonly status: "answering"}>;
+};
+
+/**
+ * The card one answer's confirmation belongs to, or `null` when it belongs to nothing any more.
+ *
+ * Both operands have to match: the id says which card, and the `seq` says which *raising* of that
+ * id. A reply that outlived its own card is stale, and clearing whatever sits under the id would
+ * settle a request nobody has answered.
+ */
+export const awaitingAnswer = (
+	state: AiAgentSessionState,
+	request: string,
+	seq: number,
+): AnsweringPermission | null => {
+	const held = state.permissions[request];
+	if (held === undefined || held.seq !== seq) return null;
+	return held.progress.status === "answering" ? {...held, progress: held.progress} : null;
+};
+
+/** The card as it stands once its answer's outcome turns out to be unknown. */
+export const unresolvedAnswer = (
+	state: AiAgentSessionState,
+	request: string,
+	held: AnsweringPermission,
+): AiAgentSessionState => ({
+	...state,
+	permissions: {
+		...state.permissions,
+		[request]: {...held, progress: {status: "unresolved", decision: held.progress.decision}},
+	},
+});
+
 /**
  * The two phases only the core's own cells may enter. `start` and `reconnect` are what put a
  * session into an open, and `started` or `failed` are the only ways out of one, so a layer cannot
@@ -124,6 +162,29 @@ export const dropRequest = (state: AiAgentSessionState, request: string): AiAgen
  */
 const coreOwned = (phase: Phase): boolean => phase === "starting" || phase === "reconnecting";
 
+/** The backend does not hold the session this resume named. */
+const sessionGone = (failure: AgentFailure): boolean =>
+	failure.tag === START_ERROR && failure.reason === "session-not-found";
+
+/**
+ * Where a failure leaves a session: back where it was before the act that failed.
+ *
+ * A resume is the exception, because there is nowhere before it to go back to. A refused resume
+ * ends the session at `gone` — the id the checkpoint carried names nothing the backend still
+ * holds, and the one thing that must never happen is a fresh session opening quietly in its place
+ * (#7514). Any other reconnect failure is a transport that can be tried again, so it lands on
+ * `idle` rather than staying at `reconnecting`, which the reconnect guard itself would refuse.
+ */
+export const phaseAfterFailure = (
+	state: AiAgentSessionState,
+	failure: AgentFailure,
+): AiAgentSessionState["phase"] => {
+	if (state.phase === "reconnecting") return sessionGone(failure) ? "gone" : "idle";
+	if (state.phase === "starting") return "idle";
+	if (state.phase === "prompting") return "ready";
+	return state.phase;
+};
+
 export const foldEvent = (
 	state: AiAgentSessionState,
 	event: AgentEvent,
@@ -134,13 +195,37 @@ export const foldEvent = (
 			return {...state, transcript: foldItem(state.transcript, event.item, limits)};
 		case "phase":
 			return coreOwned(event.phase) ? state : {...state, phase: event.phase};
-		case "permission":
-			return {...state, permissions: {...state.permissions, [event.request]: event.detail}};
+		// A raising stamps the next `seq`, which is what makes a card's identity the raising rather
+		// than the id: a backend that re-uses a request id gets a second card, and the first card's
+		// answer can no longer settle it (#8006).
+		case "permission": {
+			const seq = state.permissionsRaised + 1;
+			return {
+				...state,
+				permissionsRaised: seq,
+				permissions: {
+					...state.permissions,
+					[event.request]: {request: event.detail, seq, progress: {status: "open"}},
+				},
+			};
+		}
 		case "permission-resolved":
 			return dropRequest(state, event.request);
 		case "mode":
 			return {...state, modes: {current: event.current, available: event.available}};
+		case "model":
+			return {...state, models: {current: event.current, available: event.available}};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
+		// The same landing the `failed` Msg gives a failure the handlers saw, so a refusal reads the
+		// same to the window whichever channel carried it. Routing it through `event` is what keeps
+		// the machine's identity filter over it: a late refusal from a session this process has
+		// already replaced is dropped rather than failing its successor (#8018).
+		case "failure":
+			return {
+				...state,
+				phase: phaseAfterFailure(state, event.failure),
+				failure: event.failure,
+			};
 	}
 };

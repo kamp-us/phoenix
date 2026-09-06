@@ -14,9 +14,13 @@
  * seeded from the core's own state when the Sub opened. Same function, same seed, same order, so
  * the tail published on `transcript` is the tail the core commits — a read-back after `dispatch`
  * could not promise that, because the host applies a dispatched Msg on its own serial tail.
+ *
+ * The projection is the process's rather than the Sub's (`./projection.ts`), because the core's
+ * transcript has a second entrance no event carries: the operator's own turn, recorded by the
+ * `prompt` cell when they send it (#7978).
  */
 
-import {Effect, type Layer, Ref, Result, Stream} from "effect";
+import {Effect, type Layer, Result, Stream} from "effect";
 import type {PayloadRejected, ProcessPorts} from "../../ports/index.ts";
 import type {ProcessSelf} from "../../process/self.ts";
 import type {HostHandlers, HostSubs} from "../../registry/program.ts";
@@ -25,14 +29,13 @@ import {
 	type AiAgentEventsSub,
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
-	type AiAgentSessionState,
 	type AiAgentSessionSub,
 	foldEvent,
 	initialState,
 	START_ERROR,
 	type WindowLimits,
 } from "../core/index.ts";
-import {isRefusal, planTranscriptPage} from "../history/index.ts";
+import {isRefusal, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
 import type {TranscriptPagePayload} from "../ports/index.ts";
 import {
 	type TranscriptPage,
@@ -42,6 +45,7 @@ import {
 } from "../service/index.ts";
 import {type AgentServiceError, deadlineFailure, failureOf, isTimeout} from "./failures.ts";
 import {type AiAgentRetryPolicy, defaultRetryPolicy, underPolicy} from "./policy.ts";
+import {transcriptProjection} from "./projection.ts";
 import {
 	aiAgentPortNames,
 	emit,
@@ -108,17 +112,25 @@ export const aiAgentHandlers = <RIn = never>(
 		...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
 	};
 	const slot = agentSlot(options.layer);
+	const projection = transcriptProjection();
 
+	/**
+	 * `onFail` is how a call whose refusal belongs to something the core is holding open answers for
+	 * it. The default drops the failure into the session's own slot, which is right for a call that
+	 * left nothing behind; `aiAgent.answer` overrides it, because a card marked `answering` is
+	 * cleared by nothing else (#8006).
+	 */
 	const withAgent = <A>(
 		use: (agent: TuvalAiAgentApi) => Effect.Effect<A, AgentServiceError>,
 		onDone: (value: A) => Follow,
+		onFail: (failure: AgentFailure) => Follow = refusal,
 	): Effect.Effect<Follow, never, ProcessSelf> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.current;
-			if (agent === null) return refusal(noSession);
+			if (agent === null) return onFail(noSession);
 			const answered = yield* Effect.result(use(agent));
 			return Result.isFailure(answered)
-				? refusal(failureOf(answered.failure))
+				? onFail(failureOf(answered.failure))
 				: onDone(answered.success);
 		});
 
@@ -172,22 +184,36 @@ export const aiAgentHandlers = <RIn = never>(
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending
-		// cards are already in state and nothing else will ever push them out (#7608).
+		// cards are already in state and nothing else will ever push them out (#7608). The answer
+		// cells emit it for the same reason one step on: an answer's own progress rides no event
+		// (#8006), and re-seeding is what keeps the Sub's projection from folding on past it.
 		"aiAgent.republish": () =>
 			Effect.gen(function* () {
 				const state = yield* readSession;
 				if (state === null) return nothing;
+				yield* projection.seed(state);
 				yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
 				yield* emit(aiAgentPortNames.permissionPending, pendingOf(state));
 				yield* emit(aiAgentPortNames.modeState, modeStateOf(state));
 				return nothing;
 			}),
 
+		// The turn the core recorded in the very commit that produced this Cmd (#7978) rides no
+		// layer event, so the Sub's projection would publish a tail with the operator's half
+		// missing (#7979). Re-seeding is sound here rather than a race: this Cmd is applied after
+		// every event Msg the projection has folded, so the committed state is never behind it.
 		"aiAgent.prompt": (cmd) =>
-			withAgent(
-				(agent) => agent.prompt(cmd.text, cmd.key),
-				() => nothing,
-			),
+			Effect.gen(function* () {
+				const state = yield* readSession;
+				if (state !== null) {
+					yield* projection.seed(state);
+					yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
+				}
+				return yield* withAgent(
+					(agent) => agent.prompt(cmd.text, cmd.key),
+					() => nothing,
+				);
+			}),
 
 		"aiAgent.interrupt": () =>
 			withAgent(
@@ -202,12 +228,19 @@ export const aiAgentHandlers = <RIn = never>(
 				// The note rides the Cmd so nothing between the window and here loses it; #7875 tracks
 				// the last hop, which needs a ruling before that signature can widen.
 				(agent) => agent.answer(cmd.request, cmd.decision),
-				() => nothing,
+				() => [{type: "answered", request: cmd.request, seq: cmd.seq}],
+				(failure) => [{type: "answerFailed", request: cmd.request, seq: cmd.seq, failure}],
 			),
 
 		"aiAgent.setMode": (cmd) =>
 			withAgent(
 				(agent) => agent.setMode(cmd.mode),
+				() => nothing,
+			),
+
+		"aiAgent.setModel": (cmd) =>
+			withAgent(
+				(agent) => agent.setModel(cmd.model),
 				() => nothing,
 			),
 
@@ -219,10 +252,18 @@ export const aiAgentHandlers = <RIn = never>(
 				if (agent === null) return refusal(noSession);
 				const answered = yield* Effect.result(agent.page(cmd.before, cmd.limit));
 				if (Result.isFailure(answered)) return refusal(failureOf(answered.failure));
-				const page = answered.success;
+				// A backend that stores the conversation keeps its own copy of the turn the core
+				// recorded at the send, under its own id, and no id joins the two (#7979). Dropped
+				// here rather than at the window, so both routes one page takes — the `pageReply`
+				// port and the `paged` Msg — carry a single copy of it.
+				const held = yield* readSession;
+				const page = {
+					items: withoutLocalEchoes(answered.success.items, held?.transcript.items ?? []),
+					hasMore: answered.success.hasMore,
+				};
 				const payload = pagePayload(page, cmd.limit);
 				if (payload !== null) yield* emit(aiAgentPortNames.pageReply, payload);
-				return [{type: "paged", page: {items: page.items, hasMore: page.hasMore}}] satisfies Follow;
+				return [{type: "paged", page}] satisfies Follow;
 			}),
 	};
 
@@ -231,14 +272,13 @@ export const aiAgentHandlers = <RIn = never>(
 			const agent = yield* slot.current;
 			if (agent === null) return;
 			const seed = yield* readSession;
-			const projection = yield* Ref.make<AiAgentSessionState>(seed ?? initialState(options.cwd));
+			yield* projection.seed(seed ?? initialState(options.cwd));
 
 			yield* Stream.runForEach(agent.events, (event) =>
 				Effect.gen(function* () {
 					dispatch({type: "event", sessionId: sub.sessionId, event});
-					const next = yield* Ref.updateAndGet(projection, (state) =>
-						foldEvent(state, event, limits),
-					);
+					const next = yield* projection.fold((state) => foldEvent(state, event, limits));
+					if (next === null) return;
 					if (event.kind === "item") yield* emit(aiAgentPortNames.transcript, transcriptOf(next));
 					if (event.kind === "permission" || event.kind === "permission-resolved") {
 						yield* emit(aiAgentPortNames.permissionPending, pendingOf(next));

@@ -38,11 +38,14 @@ import type {AgentEvent} from "../../ai-agent/events.ts";
 import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
 import type {
 	Mode,
+	ModelRef,
 	PermissionDecision,
 	PermissionRequest,
 	TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
+import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
+	ModelUnsupported,
 	ModeUnsupported,
 	type StartError,
 	type TransportError,
@@ -182,6 +185,10 @@ const make = (
 		const session = yield* Ref.make<Session | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const mode = yield* Ref.make<Mode | null>(null);
+		// Two Refs for the same reason `mode` is one: a switch made before a session exists, or
+		// between sessions, has to survive to the next `start` and be re-announced there.
+		const model = yield* Ref.make<ModelRef | null>(null);
+		const models = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
 		const parked = new Map<string, Parked>();
 
 		const emit = (open: EventQueue, events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
@@ -190,6 +197,37 @@ const make = (
 
 		const publish = (events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
 			Effect.flatMap(Ref.get(queue), (open) => emit(open, events));
+
+		/**
+		 * The session's own catalog, read once per open. A CLI that cannot answer it leaves the list
+		 * empty rather than failing the open: an absent picker is a session you can still prompt,
+		 * and the composer disables the control on a list shorter than two anyway.
+		 */
+		const readCatalog = (current: Session): Effect.Effect<ReadonlyArray<ModelRef>> =>
+			Effect.tryPromise({
+				try: () => current.handle.supportedModels(),
+				catch: controlRefused,
+			}).pipe(
+				Effect.map((rows) => rows.map((row): ModelRef => ({id: row.value, name: row.displayName}))),
+				Effect.catch((refusal) =>
+					Effect.as(
+						Effect.logWarning(`the model catalog could not be read: ${refusal.detail}`),
+						[] as ReadonlyArray<ModelRef>,
+					),
+				),
+			);
+
+		/** The live switch. `false` is a refusal the caller keeps the old value over. */
+		const applyModel = (current: Session, next: ModelRef): Effect.Effect<boolean> =>
+			Effect.tryPromise({
+				try: () => current.handle.setModel(next.id),
+				catch: controlRefused,
+			}).pipe(
+				Effect.as(true),
+				Effect.catch((refusal) =>
+					Effect.as(Effect.logWarning(`the model switch was refused: ${refusal.detail}`), false),
+				),
+			);
 
 		/** Answering one parked prompt. `false` means nothing was parked under that id. */
 		const settle = (request: string, decision: PermissionDecision): Effect.Effect<boolean> =>
@@ -450,6 +488,25 @@ const make = (
 			// none — a `current: null` beside a non-empty `available` is not a state `ModePayload`
 			// defines (#7828).
 			yield* emit(out, [{kind: "mode", current: openingMode(options, held) as Mode, available}]);
+			// The catalog is the session's, so it is read after the open. The announced model is the
+			// one the session is actually running: the query opened on the row's static `model`, so a
+			// model an operator picked before this open has to be re-applied here rather than merely
+			// re-announced — the mode switch learned that in #7828.
+			const offered = yield* readCatalog(opened.session);
+			yield* Ref.set(models, offered);
+			const spawned =
+				options.model === undefined
+					? null
+					: (offered.find((candidate) => candidate.id === options.model) ?? null);
+			const picked = yield* Ref.get(model);
+			const opening =
+				picked === null || !offered.some((candidate) => sameModel(candidate, picked))
+					? spawned
+					: (yield* applyModel(opened.session, picked))
+						? picked
+						: spawned;
+			yield* Ref.set(model, opening);
+			yield* emit(out, [{kind: "model", current: opening, available: offered}]);
 			// A card the layer does not hold cannot be answered, so a window restored with one would
 			// wedge on it. Resolving it is what lets the generic restore drop it (#7608).
 			yield* emit(
@@ -542,6 +599,24 @@ const make = (
 			yield* publish([{kind: "mode", current: held, available}]);
 		});
 
+		const setModel = Effect.fn("TuvalAiAgent.setModel")(function* (next: ModelRef) {
+			const offered = yield* Ref.get(models);
+			const picked = offered.find((candidate) => sameModel(candidate, next));
+			if (picked === undefined) {
+				return yield* new ModelUnsupported({
+					model: next.id,
+					available: offered.map((candidate) => candidate.id),
+				});
+			}
+			const current = yield* Ref.get(session);
+			// No session yet is not a refusal: the pick is held and applied by the next open, exactly
+			// as a mode set before the first session is.
+			const changed = current === null ? true : yield* applyModel(current, picked);
+			if (changed) yield* Ref.set(model, picked);
+			const held = yield* Ref.get(model);
+			yield* publish([{kind: "model", current: held, available: offered}]);
+		});
+
 		const page = Effect.fn("TuvalAiAgent.page")(function* (before: string | null, limit: number) {
 			const current = yield* Ref.get(session);
 			if (current === null) return yield* noSessionToPage();
@@ -570,6 +645,7 @@ const make = (
 			interrupt,
 			answer,
 			setMode,
+			setModel,
 			page,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};

@@ -9,9 +9,16 @@
  * Open/closed is **controlled** rather than the primitive's own uncontrolled state, because the
  * fact lives in the window's `view` slot: two windows over one process open the same call
  * independently, and a window switched away from and back to comes back opened the way it was left.
+ *
+ * A group head carries a **second, separate** disclosure for the subagent rows folded under it. The
+ * two cannot share one control: `Collapsible` wires `aria-expanded`/`aria-controls` over the content
+ * it owns, and the folded rows are siblings in the virtualized list outside that content, so a
+ * shared trigger announces the input panel while N unrelated rows appear unannounced (#8027, ADR
+ * 0162 Pillar 4). The fold button names the rows in `aria-controls` and states the act it performs
+ * in its own text, so reading the call's input no longer bursts the group open as a side effect.
  */
 
-import {Collapsible} from "@kampus/design";
+import {Button, Collapsible} from "@kampus/design";
 import type {ReactElement} from "react";
 import type {ToolItem} from "../../ai-agent/ports/index.ts";
 import {omissionLine, type ToolDetail, toolDetail} from "./tool-detail.ts";
@@ -73,37 +80,74 @@ function DetailView({detail}: {readonly detail: ToolDetail}): ReactElement {
 	);
 }
 
+/**
+ * The fold button's own text, which is also its accessible name. It names the act rather than the
+ * state, because the button is the only thing that says these rows exist at all.
+ */
+const foldLine = (count: number, open: boolean): string =>
+	`${open ? "Hide" : "Show"} ${count} nested ${count === 1 ? "call" : "calls"}`;
+
+/** A group head's fold, absent on a row that heads no group — so a count without rows cannot exist. */
+export interface ToolFold {
+	/** The DOM ids of the rows this fold reveals, in list order. */
+	readonly rowIds: ReadonlyArray<string>;
+	readonly open: boolean;
+	readonly onToggle: (open: boolean) => void;
+}
+
 export function ToolRow({
 	item,
 	expanded,
+	fold,
 	onToggle,
 }: {
 	readonly item: ToolItem;
 	readonly expanded: boolean;
+	/** The subagent rows folded under this one, or `null` on a row that heads no group. */
+	readonly fold: ToolFold | null;
 	readonly onToggle: (open: boolean) => void;
 }): ReactElement {
 	const detail = toolDetail(item);
 	const omitted = omissionLine(item.result.omitted.bytes);
 	return (
-		<Collapsible
-			className="tuval-chat-tool"
-			open={expanded}
-			onOpenChange={onToggle}
-			trigger={
-				<span className="tuval-chat-tool-head">
-					<span className="tuval-chat-tool-name">{item.name}</span>
-					<span className="tuval-chat-tool-status" data-status={item.status}>
-						{item.status}
+		<>
+			<Collapsible
+				className="tuval-chat-tool"
+				open={expanded}
+				onOpenChange={onToggle}
+				trigger={
+					<span className="tuval-chat-tool-head">
+						<span className="tuval-chat-tool-name">{item.name}</span>
+						<span className="tuval-chat-tool-status" data-status={item.status}>
+							{item.status}
+						</span>
 					</span>
-				</span>
-			}
-		>
-			<DetailView detail={detail} />
-			<div className="tuval-chat-tool-detail">
-				<p className="tuval-chat-tool-label">{detail.kind === "shell" ? "output" : "result"}</p>
-				<pre className="tuval-chat-pre">{item.result.text}</pre>
-				{omitted === null ? null : <p className="tuval-chat-omission">{omitted}</p>}
-			</div>
-		</Collapsible>
+				}
+			>
+				<DetailView detail={detail} />
+				<div className="tuval-chat-tool-detail">
+					<p className="tuval-chat-tool-label">{detail.kind === "shell" ? "output" : "result"}</p>
+					<pre className="tuval-chat-pre">{item.result.text}</pre>
+					{omitted === null ? null : <p className="tuval-chat-omission">{omitted}</p>}
+				</div>
+			</Collapsible>
+			{fold === null ? null : (
+				<Button
+					type="button"
+					variant="tertiary"
+					size="sm"
+					className="tuval-chat-tool-fold"
+					aria-expanded={fold.open}
+					// Only while open, because the rows are the referents and they do not exist collapsed.
+					// The virtualizer renders a window of them, so an open fold taller than the viewport
+					// resolves the ids it has mounted and leaves the rest dangling, which assistive tech
+					// ignores rather than mis-reads. #8057 tracks carrying the whole set.
+					aria-controls={fold.open ? fold.rowIds.join(" ") : undefined}
+					onClick={() => fold.onToggle(!fold.open)}
+				>
+					{foldLine(fold.rowIds.length, fold.open)}
+				</Button>
+			)}
+		</>
 	);
 }

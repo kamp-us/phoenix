@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * The three agent controls the window adds on top of the transcript: the collapsible tool row, the
- * permission cards, and the mode switch. Same test double as the transcript's own tests
- * (`../window/fixtures.ts`) — no kernel, no socket, no agent layer.
+ * The four agent controls the window adds on top of the transcript: the collapsible tool row, the
+ * permission cards, the mode switch, and the composer's model picker. Same test double as the
+ * transcript's own tests (`../window/fixtures.ts`) — no kernel, no socket, no agent layer.
  *
  * Every control here is Manti-backed, so a click and a same-tick read prove nothing: Zag defers the
  * transition by at least one microtask (`.patterns/zag-machine-interaction-tests.md`). Each
@@ -20,7 +20,15 @@ import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
-import {call, modes, permissionRequest, userItem, withTranscript} from "./chat.testing.ts";
+import {
+	call,
+	models,
+	modes,
+	pendingPermission,
+	permissionRequest,
+	userItem,
+	withTranscript,
+} from "./chat.testing.ts";
 import {initialChatView} from "./view.ts";
 
 installDomShims();
@@ -150,7 +158,7 @@ describe("permission cards", () => {
 		withTranscript([userItem("u1", "go")], {permissions: requests});
 
 	it("renders the request's fields as a named region", async () => {
-		await open(pending({r1: permissionRequest()}));
+		await open(pending({r1: pendingPermission()}));
 		const card = await screen.findByRole("region", {name: "Run a command"});
 		expect(within(card).getByText("bash")).toBeDefined();
 		expect(
@@ -160,7 +168,7 @@ describe("permission cards", () => {
 	});
 
 	it("dispatches exactly one answer per action, carrying the decision", async () => {
-		const {process} = await open(pending({r1: permissionRequest()}));
+		const {process} = await open(pending({r1: pendingPermission()}));
 		const card = await screen.findByRole("region", {name: "Run a command"});
 		await click(within(card).getByRole("button", {name: "Allow once"}));
 		await waitFor(() => expect(process.inbox().length).toBe(1));
@@ -168,7 +176,7 @@ describe("permission cards", () => {
 	});
 
 	it("carries the operator's optional message when one was typed", async () => {
-		const {process} = await open(pending({r1: permissionRequest()}));
+		const {process} = await open(pending({r1: pendingPermission()}));
 		const card = await screen.findByRole("region", {name: "Run a command"});
 		await act(async () => {
 			fireEvent.change(within(card).getByRole("textbox", {name: /Message/}), {
@@ -186,20 +194,56 @@ describe("permission cards", () => {
 	});
 
 	it("offers allow-always only when the request says it is on offer", async () => {
-		await open(pending({r1: permissionRequest({offersAlways: false})}));
+		await open(
+			pending({r1: pendingPermission({request: permissionRequest({offersAlways: false})})}),
+		);
 		const card = await screen.findByRole("region", {name: "Run a command"});
 		expect(within(card).queryByRole("button", {name: "Allow always"})).toBeNull();
 		expect(within(card).getByRole("button", {name: "Allow once"})).toBeDefined();
 		expect(within(card).getByRole("button", {name: "Deny"})).toBeDefined();
 	});
 
+	it("stops offering an answer while one is awaiting confirmation, and says so", async () => {
+		await open(
+			pending({
+				r1: pendingPermission({progress: {status: "answering", decision: "allow-once"}}),
+			}),
+		);
+		const card = await screen.findByRole("region", {name: "Run a command"});
+		for (const name of ["Allow once", "Allow always", "Deny"]) {
+			expect(within(card).getByRole("button", {name}).getAttribute("disabled")).not.toBeNull();
+		}
+		expect(
+			within(card)
+				.getByRole("textbox", {name: /Message/})
+				.getAttribute("disabled"),
+		).not.toBeNull();
+		expect(within(card).getByText(/waiting for the agent to confirm/i)).toBeDefined();
+	});
+
+	// No retry: the answer may already have been applied, so the card states the doubt instead of
+	// offering a second authorization (#8006).
+	it("offers no second answer to a card whose outcome is unknown", async () => {
+		await open(
+			pending({r1: pendingPermission({progress: {status: "unresolved", decision: "deny"}})}),
+		);
+		const card = await screen.findByRole("region", {name: "Run a command"});
+		expect(
+			within(card).getByRole("button", {name: "Deny"}).getAttribute("disabled"),
+		).not.toBeNull();
+		expect(within(card).getByText(/was not confirmed/i)).toBeDefined();
+	});
+
 	it("drops a card when the state drops it, and renders none when a process raises none", async () => {
 		const {process} = await open(
-			pending({r1: permissionRequest(), r2: permissionRequest({title: "Read a file"})}),
+			pending({
+				r1: pendingPermission(),
+				r2: pendingPermission({request: permissionRequest({title: "Read a file"})}),
+			}),
 		);
 		expect(await screen.findByRole("region", {name: "Read a file"})).toBeDefined();
 		await act(async () => {
-			await Effect.runPromise(process.commit(pending({r1: permissionRequest()})));
+			await Effect.runPromise(process.commit(pending({r1: pendingPermission()})));
 		});
 		await waitFor(() => expect(screen.queryByRole("region", {name: "Read a file"})).toBeNull());
 		expect(screen.getByRole("region", {name: "Run a command"})).toBeDefined();
@@ -242,10 +286,78 @@ describe("the mode switch", () => {
 	});
 });
 
+/**
+ * The composer's own picker, driven through the bridge rather than through a port (#7981). The
+ * catalog is not known when the composer mounts — the agent has not started — so every case here
+ * also proves the push: the control is enabled by a list that arrived after the loads ran.
+ */
+describe("the composer's model picker", () => {
+	const picker = () => screen.findByRole("button", {name: /^model: /});
+
+	it("stays disabled on a list shorter than two", async () => {
+		await open(
+			withTranscript([userItem("u1", "go")], {models: models(["claude-opus-5"], "claude-opus-5")}),
+		);
+		expect((await picker()).getAttribute("disabled")).not.toBeNull();
+	});
+
+	it("shows the session's current model and lists the offered catalog", async () => {
+		await open(
+			withTranscript([userItem("u1", "go")], {
+				models: models(["claude-opus-5", "claude-sonnet-5"], "claude-opus-5"),
+			}),
+		);
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		expect(trigger.textContent).toContain("claude-opus-5");
+		await click(trigger);
+		expect(await screen.findByRole("menuitemradio", {name: "claude-sonnet-5"})).toBeTruthy();
+	});
+
+	it("dispatches one setModel carrying the session's own ref", async () => {
+		const {process} = await open(
+			withTranscript([userItem("u1", "go")], {
+				models: models(["claude-opus-5", "claude-sonnet-5"], "claude-opus-5"),
+			}),
+		);
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		await click(trigger);
+		await click(await screen.findByRole("menuitemradio", {name: "claude-sonnet-5"}));
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		expect(process.inbox()[0]).toEqual({
+			type: "setModel",
+			model: {provider: "anthropic", id: "claude-sonnet-5", name: "claude-sonnet-5"},
+		});
+	});
+
+	it("shows the switched model once the session commits it", async () => {
+		const state = withTranscript([userItem("u1", "go")], {
+			models: models(["claude-opus-5", "claude-sonnet-5"], "claude-opus-5"),
+		});
+		const {process} = await open(state);
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		// What the layer's `model` event folds into state, which is the only thing that moves the
+		// selected row: the pick itself never writes it, so a refused switch shows the old one.
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit({
+					...state,
+					models: models(["claude-opus-5", "claude-sonnet-5"], "claude-sonnet-5"),
+				}),
+			);
+		});
+		await waitFor(() =>
+			expect(screen.getByRole("button", {name: "model: claude-sonnet-5"})).toBeTruthy(),
+		);
+	});
+});
+
 describe("two windows over one process", () => {
 	it("keep their own expanded rows and share the cards and the mode", async () => {
 		const state = withTranscript([call("t1"), call("t2", {name: "grep"})], {
-			permissions: {r1: permissionRequest()},
+			permissions: {r1: pendingPermission()},
 			modes: modes(["plan", "build"], "plan"),
 		});
 		const shared = await Effect.runPromise(
@@ -283,6 +395,25 @@ describe("two windows over one process", () => {
 		await click(within(cards[0] as HTMLElement).getByRole("button", {name: "Deny"}));
 		await waitFor(() => expect(shared.inbox().length).toBe(1));
 		expect(shared.inbox()[0]).toEqual({type: "answer", request: "r1", decision: "deny"});
+
+		// And the mark that answer leaves reaches both windows, so neither offers a second one.
+		await act(async () => {
+			await Effect.runPromise(
+				shared.commit({
+					...state,
+					permissions: {
+						r1: pendingPermission({progress: {status: "answering", decision: "deny"}}),
+					},
+				}),
+			);
+		});
+		await waitFor(() => {
+			for (const card of screen.getAllByRole("region", {name: "Run a command"})) {
+				expect(
+					within(card).getByRole("button", {name: "Deny"}).getAttribute("disabled"),
+				).not.toBeNull();
+			}
+		});
 		expect(TEST_VIEWPORT.height).toBe(1_000);
 	});
 });

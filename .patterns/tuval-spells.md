@@ -607,7 +607,7 @@ already opens — never a second mechanism.
 
 | File | What is in it |
 |---|---|
-| [`Palette.tsx`](../apps/tuval/src/palette/Palette.tsx) | The overlay: one combobox, the ranked list, the focused row's sentence, the last refusal |
+| [`Palette.tsx`](../apps/tuval/src/palette/Palette.tsx) | The overlay: `@kampus/design`'s `CommandPalette` fed the ranked candidates, plus the focused row's sentence and the last refusal |
 | [`candidates.ts`](../apps/tuval/src/palette/candidates.ts) | `paletteCandidates`, `acceptCandidate` — what the list holds and what accepting a row types |
 | [`call.ts`](../apps/tuval/src/palette/call.ts) | `spellCallFor`, `failureLine` — a read line into a `SpellCall`, a `SpellFailure` into one sentence |
 | [`use-palette.ts`](../apps/tuval/src/palette/use-palette.ts) | `usePalette`: open/closed, the opener's window, the element the caret goes back to |
@@ -618,23 +618,45 @@ already opens — never a second mechanism.
 the runnable thing, so `paletteCandidates` walks the trie past the matching segment and lists every
 spell beneath it with its `describe`: typing `win` offers `window close`, `window move` and
 `window focus`, not the bare word `window`. On a value slot it hands straight back to
-`candidatesFor`, so the fuzzy-on-recency rule is unchanged. Prefix on the paths the system defines,
-fuzzy on the values a user named — one rule per slot, the same split `complete` makes.
+`candidatesFor`, so the fuzzy-on-recency rule is unchanged.
+
+**The palette's path slot lists more than the prefix reaches; completion's does not.** Completion's
+rule 1 above is exact prefix and stays that way — Tab, the `:` line and `candidatesFor` are one
+behaviour. The palette's listbox adds two looser tiers underneath it, because a prefix-only listbox
+is unreachable for a reader who remembers the verb and not the group: `zoom` found nothing while
+`window zoom` sat in the unfiltered list
+([#8002](https://github.com/kamp-us/phoenix/issues/8002), the founder's
+[2026-09-05 ruling](https://github.com/kamp-us/phoenix/issues/8002#issuecomment-5554612396), which
+scopes ADR 0348's R1.5 to completion). The three tiers, in order:
+
+1. **Exact prefix on the next segment** — the completion rule, and it always ranks first.
+2. **Substring of the rest of the path** — `space` lists `workspace new` and `workspace activate`.
+3. **Substring of the `describe` sentence** — `focus` lists `window focus` on its path, then
+   `window close` and `window move` on "the focused window".
+
+All three fold case, and registry order survives inside a tier (`Array.prototype.sort` is stable,
+ECMA-262 §23.1.3.30). A row's `value` is the whole remaining path however it was matched, so
+accepting a sentence-matched row still leaves a line the parser reads as that spell's path.
+
+So: exact prefix wherever the system's names are being *completed*, a looser listing wherever they
+are being *found*, and fuzzy on the values a user named.
+
+**The combobox is the shared one.** `Palette.tsx` renders `@kampus/design`'s `CommandPalette`
+([`.patterns/command-palette.md`](command-palette.md), ADR 0186) and owns none of the ARIA spine
+itself: the dialog, the field, the listbox, the option rows, `aria-activedescendant`, arrow / Home /
+End movement, the scroll-into-view and the polite live region are all the shared component's. What
+is Tuval's is the half no other caller has — the candidates, the completion, the call — carried over
+through the component's caller hooks: `onKeyDown` claims Tab (accept the completion) and Escape
+(`usePalette` owns where the caret goes back to), `onEnter` returns whether the typed line already
+parses into a runnable spell, `onActiveChange` feeds the sentence under the list, and `announcement`
+/ `error` carry the result count and the kernel's refusal. #7882 folded this back: the palette used
+to hand-roll every one of those, one day after the shared component landed.
 
 **One field, and the rows are never focusable.** The ARIA combobox pattern: the caret stays in the
 input for the palette's whole life and the active row is named by `aria-activedescendant`. That is
 what frees Tab to mean "accept this completion" the way a shell does, and it is also what closes the
 focus trap — the input is the only tabbable element in the dialog, so Tab from it comes back to it.
 Enter runs a line the parser can already read and spends itself on the completion otherwise.
-
-**Nothing focuses a row, so the component owes two things the browser would otherwise do.** It
-scrolls the active row into view itself on every `aria-activedescendant` change
-(`scrollIntoView({block: "nearest"})`, with the list's `scroll-behavior` pinned to `auto` so it is a
-jump under either motion preference) — without it, End on a list taller than its own box moves a
-selection out of sight. And it speaks: one visually-hidden `aria-live="polite"` region carries the
-refusal while there is one and the result count otherwise, since a reader with no sight of the list
-learns a keystroke's effect from nothing else. `aria-expanded` follows the list rather than sitting
-at a literal `true`, so it and `aria-activedescendant` never disagree about whether a popup exists.
 
 **A reply is a prop, not `onCall`'s return.** Replies arrive on the page's one socket rather than per
 call, so the caller forwards every reply and the palette consumes the one whose `id` matches the call

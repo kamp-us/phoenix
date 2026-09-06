@@ -10,6 +10,7 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Option, Stream} from "effect";
+import type {ModelRef} from "../ports/index.ts";
 import {
 	cutShort,
 	disconnects,
@@ -19,6 +20,7 @@ import {
 	interruptedPromptTurn,
 	interruptedTurn,
 	mode,
+	models,
 	modes,
 	PERMISSION_REQUEST,
 	permissionRequest,
@@ -40,8 +42,8 @@ import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 const CWD = "/workspace/phoenix";
 
-/** The three events `start` emits before any turn: starting, the mode list, ready. */
-const START_EVENTS = 3;
+/** What `start` emits before any turn: starting, the mode list, the model list, ready. */
+const START_EVENTS = 4;
 
 const on = <A, E>(
 	script: AgentScript,
@@ -52,7 +54,7 @@ const on = <A, E>(
 		return yield* body(agent);
 	}).pipe(Effect.provide(ScriptedAiAgent.layer(script)), Effect.scoped);
 
-/** The events a turn queued, with `start`'s three dropped. */
+/** The events a turn queued, with `start`'s four dropped. */
 const afterStart = (agent: TuvalAiAgentApi, count: number) =>
 	Effect.map(Stream.runCollect(Stream.take(agent.events, START_EVENTS + count)), (events) =>
 		events.slice(START_EVENTS),
@@ -71,7 +73,7 @@ const causeError = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?:
 		: {};
 
 describe("start", () => {
-	it.effect("returns the script's session id and announces the mode list", () =>
+	it.effect("returns the script's session id and announces the mode and model lists", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
 				const session = yield* agent.start({cwd: CWD});
@@ -79,6 +81,7 @@ describe("start", () => {
 				assert.deepStrictEqual(yield* take(agent, START_EVENTS), [
 					{kind: "phase", phase: "starting"},
 					{kind: "mode", current: modes.current, available: modes.available},
+					{kind: "model", current: models.current, available: models.available},
 					{kind: "phase", phase: "ready"},
 				]);
 			}),
@@ -203,6 +206,45 @@ describe("modes", () => {
 				]);
 				const error = causeError(yield* Effect.exit(agent.setMode(mode("yolo"))));
 				assert.strictEqual(error._tag, "tuval/ai-agent/ModeUnsupported");
+			}),
+		),
+	);
+});
+
+describe("models", () => {
+	const sonnet = models.available[1];
+
+	it.effect("echoes a supported model and refuses one it does not offer", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setModel(sonnet as ModelRef);
+				assert.deepStrictEqual(yield* afterStart(agent, 1), [
+					{kind: "model", current: sonnet, available: models.available},
+				]);
+				const error = causeError(
+					yield* Effect.exit(agent.setModel({provider: "openai", id: "gpt", name: "GPT"})),
+				);
+				assert.strictEqual(error._tag, "tuval/ai-agent/ModelUnsupported");
+			}),
+		),
+	);
+
+	it.effect("runs the rest of the session on the model it switched to", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setModel(sonnet as ModelRef);
+				yield* take(agent, START_EVENTS + 1);
+				// A resumed start re-announces what the session is on, which is the picked model and
+				// not the script's opening one — the switch outlives the turn it was made between.
+				yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				const resumed = yield* take(agent, START_EVENTS + history.length);
+				assert.deepStrictEqual(resumed.at(-2), {
+					kind: "model",
+					current: sonnet,
+					available: models.available,
+				});
 			}),
 		),
 	);

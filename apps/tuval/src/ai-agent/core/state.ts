@@ -10,11 +10,12 @@
  * plus the running total of what the bounds dropped.
  */
 
-import type {Phase} from "../events.ts";
+import type {AgentFailure, Phase} from "../events.ts";
 import type {
 	ItemId,
 	Mode,
-	PermissionRequest,
+	ModelRef,
+	PendingPermission,
 	TranscriptItem,
 	TranscriptPayload,
 	WindowOmission,
@@ -35,16 +36,19 @@ export interface ModeState {
 }
 
 /**
- * The last thing that went wrong, as data. The layer's typed errors are classes; the core keeps
- * only the tag, the case and the detail, because the window renders by tag (ruling 3, #7570) and
- * a class instance is not something a checkpoint can carry.
+ * What the session runs on, and what it may be switched to.
+ *
+ * `available` is the layer's *offered* set and never a backend's raw catalog: this state is
+ * checkpointed whole, and Pi's runtime catalog is four figures at its pin — a checkpoint that grew
+ * by it would be paying storage per session for a menu nobody can scroll (#7981).
  */
-export interface AgentFailure {
-	readonly tag: string;
-	/** The error's own `reason` case, or `null` for an error class that enumerates none. */
-	readonly reason: string | null;
-	readonly detail: string;
+export interface ModelState {
+	readonly current: ModelRef | null;
+	readonly available: ReadonlyArray<ModelRef>;
 }
+
+// A layer pushes one of these on the event stream too, so it is declared beside `Phase`.
+export type {AgentFailure} from "../events.ts";
 
 /** One page of older history exactly as the backend returned it. Replaced, never accumulated. */
 export interface HistoryPage {
@@ -68,9 +72,15 @@ export interface AiAgentSessionState {
 	/** The assistant turn a restart cut short, so the window can offer the resend. */
 	readonly interrupted: ItemId | null;
 	readonly usage: UsageTotals;
-	/** Pending permission cards by request id: one arrives with an event, one leaves with an answer. */
-	readonly permissions: Readonly<Record<string, PermissionRequest>>;
+	/**
+	 * Pending permission cards by request id: one arrives with an event, and one leaves on the
+	 * confirmation of its answer rather than on the click that answered it (#8006).
+	 */
+	readonly permissions: Readonly<Record<string, PendingPermission>>;
+	/** How many cards this session has raised. Each entry's `seq` is stamped off it. */
+	readonly permissionsRaised: number;
 	readonly modes: ModeState;
+	readonly models: ModelState;
 	/** The text of the last prompt sent, for the resend affordance. */
 	readonly lastPrompt: string | null;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
@@ -104,7 +114,9 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	interrupted: null,
 	usage: emptyUsage,
 	permissions: {},
+	permissionsRaised: 0,
 	modes: {current: null, available: []},
+	models: {current: null, available: []},
 	lastPrompt: null,
 	lastPage: null,
 	failure: null,
@@ -146,6 +158,10 @@ const markInterrupted = (
  * `failure` and `lastPage` are dropped. Both describe the run that ended: a refusal nobody can act
  * on any more, and a page the window asked a transport that no longer exists for.
  *
+ * A card that was `answering` comes back `unresolved`. The call carrying that answer went with the
+ * process, so whether the backend applied it is exactly what nobody knows — and an entry restored
+ * to `open` would offer a second answer to an authorization that may already stand (#8006).
+ *
  * Demlik's `init` may transform what the store loaded — that branch is the migration/parse hook —
  * but must emit no Cmds (`@demlik/tea` 0.12 `replay`, the "TEA contract violation" guard), so the
  * reconnect is a Msg the spawner dispatches (`../restore/checkpoint.ts`), never one scheduled here.
@@ -157,6 +173,14 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 		phase: loaded.phase === "gone" ? "gone" : "idle",
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
+		permissions: Object.fromEntries(
+			Object.entries(loaded.permissions).map(([id, held]) => [
+				id,
+				held.progress.status === "answering"
+					? {...held, progress: {status: "unresolved", decision: held.progress.decision} as const}
+					: held,
+			]),
+		),
 		lastPage: null,
 		failure: null,
 	};

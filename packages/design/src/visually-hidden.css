@@ -1,0 +1,25 @@
+/* Visually-hidden but AT-readable text (#2169), owned by the package that uses the class (#7984).
+   Standard clip-rect: stays in the accessibility tree + reading order while taking no visual space.
+
+   Every declaration is `!important` because this class must win wherever it lands, and one of its
+   sites is not an element the package controls: `AgentChatInput.tsx` puts it on a Manti `Input`,
+   which forwards it to the field ROOT, and a consuming app's own `[data-scope="field"]
+   [data-part="root"]` rule is (0,3,0) against this selector's (0,1,0). Tuval's composer painted at
+   the container's full width for exactly that reason and pushed the page into horizontal scroll.
+   Importance sits above specificity in the cascade, so no consumer selector can outrank this —
+   including one written in the logical spelling, since `inline-size` and `width` are the same
+   property in horizontal-tb. */
+/* biome-ignore-start lint/complexity/noImportantStyles: see above — a consuming app's field-root selector outranks this one on specificity, and the hidden box must not be outrankable. */
+.kp-visually-hidden {
+	position: absolute !important;
+	width: 1px !important;
+	height: 1px !important;
+	margin: -1px !important;
+	padding: 0 !important;
+	border: 0 !important;
+	overflow: hidden !important;
+	clip: rect(0, 0, 0, 0) !important;
+	clip-path: inset(50%) !important;
+	white-space: nowrap !important;
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: end of the block above. */

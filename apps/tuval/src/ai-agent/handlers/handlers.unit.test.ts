@@ -18,12 +18,18 @@ import type {ProcessTable} from "../../process/ProcessTable.ts";
 import type {ProcessHandle} from "../../process/process.ts";
 import {Registry} from "../../registry/Registry.ts";
 import {type AiAgentSessionState, isAiAgentSessionState} from "../core/index.ts";
-import type {ModePayload, PermissionPayload, TranscriptPagePayload} from "../ports/index.ts";
+import type {
+	ModelRef,
+	ModePayload,
+	PermissionPayload,
+	TranscriptPagePayload,
+} from "../ports/index.ts";
 import {aiAgentProgram} from "../program.ts";
 import {
 	disconnects,
 	history,
 	mode as modeBrand,
+	models,
 	modes,
 	PERMISSION_REQUEST,
 	permissionTurn,
@@ -268,8 +274,9 @@ describe("the AI agent handlers under a process", () => {
 					request: PERMISSION_REQUEST,
 					decision: "allow-once",
 				});
-				// The core drops the card on the `answer` Msg, but the port only clears once the
-				// layer's `permission-resolved` event has come back round the stream.
+				// The card is not dropped on the `answer` Msg any more (#8006): it is marked, published
+				// under that mark, and cleared only by the confirmation — the layer's
+				// `permission-resolved` event, or the answer call's own reply.
 				const clearedRequests = () => {
 					const latest = lastOn(log, aiAgentPortNames.permissionPending) as
 						| PermissionPayload
@@ -279,6 +286,19 @@ describe("the AI agent handlers under a process", () => {
 				yield* eventually(() => clearedRequests().length === 0);
 				assert.deepStrictEqual(clearedRequests(), []);
 				assert.deepStrictEqual(Object.keys(sessionOf(handle).permissions), []);
+
+				const announced = log
+					.filter((entry) => entry.port === aiAgentPortNames.permissionPending)
+					.map((entry) => entry.payload as PermissionPayload)
+					.flatMap((payload) =>
+						payload.kind === "pending"
+							? [payload.requests[PERMISSION_REQUEST]?.progress ?? null]
+							: [],
+					);
+				assert.deepStrictEqual(
+					announced.filter((progress) => progress?.status === "answering"),
+					[{status: "answering", decision: "allow-once"}],
+				);
 			}),
 		);
 	});
@@ -300,6 +320,25 @@ describe("the AI agent handlers under a process", () => {
 				yield* eventually(() => sessionOf(handle).modes.current === modeBrand("plan"));
 				const set = lastOn(log, aiAgentPortNames.modeState) as ModePayload;
 				assert.strictEqual(set.kind === "state" ? set.current : null, modeBrand("plan"));
+			}),
+		);
+	});
+
+	// No port carries the model (#7981): the window reads it off the session state it already holds,
+	// so this asserts the committed state rather than a payload on the log.
+	it.live("folds the offered catalog into state and takes a setModel back to the layer", () => {
+		const probe = probeOf();
+		return withKernel(plainReply, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).models.available.length === 2);
+				assert.deepStrictEqual(sessionOf(handle).models.current, models.current);
+
+				const sonnet = models.available[1] as ModelRef;
+				yield* handle.dispatch({type: "setModel", model: sonnet});
+				yield* eventually(() => sessionOf(handle).models.current?.id === sonnet.id);
+				assert.deepStrictEqual(sessionOf(handle).models.current, sonnet);
+				assert.isNull(sessionOf(handle).failure);
 			}),
 		);
 	});

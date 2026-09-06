@@ -5,10 +5,19 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {assistantItem, transcriptOf, userItem} from "./chat.testing.ts";
+import {promptItem} from "../../ai-agent/core/fold.ts";
+import {planTranscriptPage, planTranscriptWindow} from "../../ai-agent/history/index.ts";
+import {assistantItem, call, toolItem, transcriptOf, userItem} from "./chat.testing.ts";
+import type {ChatRow} from "./rows.ts";
 import {chatRows, mergeOlder, oldestLoadedId, rowIndexOfItem, rowKey} from "./rows.ts";
 
 const base = {older: [], tail: [], omitted: 0, loading: false, atOldest: false};
+
+/** The operator's turn exactly as the core records it on send: `local: true` under a `local:` id. */
+const sent = (key: string, text: string) => promptItem({text, key, timestamp: 1_756_000_000_000});
+
+const itemIds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
+	rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
 
 describe("chatRows", () => {
 	it("puts one head row above the transcript while there is history behind it", () => {
@@ -46,6 +55,154 @@ describe("chatRows", () => {
 	});
 });
 
+describe("chatRows folds a subagent's calls under the call that spawned it", () => {
+	const group = [
+		call("agent", {name: "Agent"}),
+		call("child-1", {parentId: "agent"}),
+		call("child-2", {parentId: "agent"}),
+		call("own", {name: "Bash"}),
+	];
+
+	it("shows the group head with its count and hides the calls under it while collapsed", () => {
+		const rows = chatRows({...base, tail: group, atOldest: true});
+		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
+			"agent",
+			"own",
+		]);
+		const head = rows[0];
+		expect(head?.kind === "item" && head.nestedIds).toEqual(["child-1", "child-2"]);
+		expect(head?.kind === "item" && head.nested).toBe(false);
+		expect(head?.kind === "item" && head.depth).toBe(0);
+	});
+
+	it("lays the folded calls out under the head once it is expanded, marked nested", () => {
+		const rows = chatRows({
+			...base,
+			tail: group,
+			atOldest: true,
+			unfolded: new Set(["agent"]),
+		});
+		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
+			"agent",
+			"child-1",
+			"child-2",
+			"own",
+		]);
+		expect(rows.flatMap((row) => (row.kind === "item" && row.nested ? [row.item.id] : []))).toEqual(
+			["child-1", "child-2"],
+		);
+	});
+
+	it("leaves a row whose parent is not loaded in place, marked nested and heading nothing", () => {
+		const orphan = call("child-1", {parentId: "agent"});
+		const rows = chatRows({...base, tail: [orphan], atOldest: true});
+		expect(rows).toEqual([{kind: "item", item: orphan, nestedIds: [], nested: true, depth: 1}]);
+	});
+
+	it("gives a folded row that is itself a group head its own count and its own children", () => {
+		// The one-level fold used to drop this shape whole: the grandchild was skipped by the head
+		// loop because its parent was present, and pushed by no other loop, so it appeared nowhere and
+		// its parent's head line read no count (#8027).
+		const deep = [
+			call("agent", {name: "Agent"}),
+			call("inner", {name: "Agent", parentId: "agent"}),
+			call("leaf", {parentId: "inner"}),
+		];
+		const both = chatRows({
+			...base,
+			tail: deep,
+			atOldest: true,
+			unfolded: new Set(["agent", "inner"]),
+		});
+		expect(both).toEqual([
+			{kind: "item", item: deep[0], nestedIds: ["inner"], nested: false, depth: 0},
+			{kind: "item", item: deep[1], nestedIds: ["leaf"], nested: true, depth: 1},
+			{kind: "item", item: deep[2], nestedIds: [], nested: true, depth: 2},
+		]);
+
+		const outerOnly = chatRows({...base, tail: deep, atOldest: true, unfolded: new Set(["agent"])});
+		expect(outerOnly.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
+			"agent",
+			"inner",
+		]);
+		expect(outerOnly[1]?.kind === "item" && outerOnly[1].nestedIds).toEqual(["leaf"]);
+	});
+
+	it("emits every marked row exactly once even when the parent chain loops back on itself", () => {
+		const cycle = [call("a", {parentId: "b"}), call("b", {parentId: "a"}), call("free")];
+		const rows = chatRows({...base, tail: cycle, atOldest: true, unfolded: new Set(["a", "b"])});
+		expect(rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []))).toEqual([
+			"free",
+			"a",
+			"b",
+		]);
+	});
+
+	it("leaves a transcript with no parent marked on it exactly as it was", () => {
+		const flat = [call("a"), call("b")];
+		const rows = chatRows({...base, tail: flat, atOldest: true});
+		expect(rows).toEqual([
+			{kind: "item", item: flat[0], nestedIds: [], nested: false, depth: 0},
+			{kind: "item", item: flat[1], nestedIds: [], nested: false, depth: 0},
+		]);
+	});
+});
+
+describe("a page carrying a turn the layer never echoed back", () => {
+	// The layer emits no `user` item, so the send keeps its `local:` id forever; the layer's own
+	// history store still returns that turn under the layer's id, and an id-only stitch renders
+	// both (#7998).
+	const local = sent("k1", "merhaba");
+	const fromLayer = userItem("uuid-1", "merhaba");
+
+	it("renders the turn once, keeping the copy the tail already holds", () => {
+		const rows = chatRows({...base, older: [fromLayer], tail: [local], atOldest: true});
+		expect(itemIds(rows)).toEqual(["local:k1"]);
+	});
+
+	it("keeps that row's key stable across the prepend, so the measurement cache survives", () => {
+		const beforePage = chatRows({...base, tail: [local], atOldest: true});
+		const afterPage = chatRows({
+			...base,
+			older: [userItem("uuid-0", "önce"), fromLayer],
+			tail: [local],
+			atOldest: true,
+		});
+		expect(beforePage.map(rowKey)).toEqual(["item:local:k1"]);
+		expect(afterPage.map(rowKey)).toEqual(["item:uuid-0", "item:local:k1"]);
+	});
+
+	it("leaves two deliberate sends of the same text as two rows", () => {
+		const rows = chatRows({
+			...base,
+			older: [userItem("uuid-1", "merhaba"), userItem("uuid-2", "merhaba")],
+			tail: [sent("k1", "merhaba"), sent("k2", "merhaba")],
+			atOldest: true,
+		});
+		expect(itemIds(rows)).toEqual(["local:k1", "local:k2"]);
+	});
+
+	it("spends one unconfirmed turn on one page copy, and drops the newest of them", () => {
+		const rows = chatRows({
+			...base,
+			older: [userItem("uuid-1", "merhaba"), userItem("uuid-2", "merhaba")],
+			tail: [sent("k2", "merhaba")],
+			atOldest: true,
+		});
+		expect(itemIds(rows)).toEqual(["uuid-1", "local:k2"]);
+	});
+
+	it("still joins a confirmed tail item by id alone, matching text or not", () => {
+		const rows = chatRows({
+			...base,
+			older: [userItem("uuid-1", "merhaba"), userItem("uuid-2", "merhaba")],
+			tail: [userItem("uuid-2", "merhaba")],
+			atOldest: true,
+		});
+		expect(itemIds(rows)).toEqual(["uuid-1", "uuid-2"]);
+	});
+});
+
 describe("mergeOlder", () => {
 	it("prepends a page oldest-first and never doubles an item it already holds", () => {
 		const held = [userItem("c"), assistantItem("d")];
@@ -56,6 +213,24 @@ describe("mergeOlder", () => {
 	it("returns the same array when the page adds nothing, so no re-render is provoked", () => {
 		const held = [userItem("a")];
 		expect(mergeOlder(held, [userItem("a")])).toBe(held);
+	});
+
+	it("drops a page copy of a turn it already holds as unconfirmed, and keeps dropping it", () => {
+		const held = [sent("k1", "merhaba"), assistantItem("d")];
+		const first = mergeOlder(held, [userItem("uuid-0", "önce"), userItem("uuid-1", "merhaba")]);
+		expect(first.map((item) => item.id)).toEqual(["uuid-0", "local:k1", "d"]);
+		expect(mergeOlder(first, [userItem("uuid-1", "merhaba")])).toBe(first);
+	});
+
+	it("leaves a page copy alone when the held turn is confirmed, whatever its text", () => {
+		const held = [userItem("b", "merhaba")];
+		expect(mergeOlder(held, [userItem("a", "merhaba")]).map((item) => item.id)).toEqual(["a", "b"]);
+	});
+
+	it("never lets one unconfirmed turn cancel two page copies of the same text", () => {
+		const held = [sent("k1", "merhaba")];
+		const merged = mergeOlder(held, [userItem("a", "merhaba"), userItem("b", "merhaba")]);
+		expect(merged.map((item) => item.id)).toEqual(["a", "local:k1"]);
 	});
 });
 
@@ -88,8 +263,40 @@ describe("the page cursor and the prepend anchor", () => {
 
 describe("rowKey", () => {
 	it("keys an item on its own id, so a status update does not remount its row", () => {
-		expect(rowKey({kind: "item", item: assistantItem("x")})).toBe("item:x");
+		expect(
+			rowKey({kind: "item", item: assistantItem("x"), nestedIds: [], nested: false, depth: 0}),
+		).toBe("item:x");
 		expect(rowKey({kind: "loading"})).toBe("loading");
 		expect(rowKey({kind: "older", items: 3})).toBe("older");
+	});
+});
+
+describe("a live tail carrying an exchange the bounds cannot hold", () => {
+	const older = [userItem("u0"), assistantItem("a0")];
+	const turn = [userItem("u1"), ...Array.from({length: 44}, (_, index) => toolItem(`t${index}`))];
+	const history = [...older, ...turn];
+
+	it("pages the exchange older than it and renders every item once", () => {
+		const live = planTranscriptWindow(history, {itemLimit: 5});
+		expect(live.kind).toBe("window");
+		if (live.kind !== "window") return;
+		expect(live.items).toEqual(turn);
+
+		const page = planTranscriptPage(history, {before: "u1", limit: 5});
+		expect(page.kind).toBe("page");
+		if (page.kind !== "page") return;
+		expect(page.items).toEqual(older);
+		expect(page.next).toBeNull();
+
+		const rows = chatRows({
+			older: mergeOlder([], page.items),
+			tail: live.items,
+			omitted: live.omitted.items,
+			loading: false,
+			atOldest: true,
+		});
+		const ids = rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
+		expect(ids).toEqual(history.map((item) => item.id));
+		expect(new Set(ids).size).toBe(ids.length);
 	});
 });

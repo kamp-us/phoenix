@@ -25,7 +25,12 @@
 
 import type {ByteTransportFactory} from "@earendil-works/pi-client";
 import {PiClient, type PiSessionHandle} from "@earendil-works/pi-client";
-import type {ModelRef, SessionSnapshot, ThinkingLevel} from "@earendil-works/pi-protocol";
+import type {
+	ModelMetadata,
+	ModelRef,
+	SessionSnapshot,
+	ThinkingLevel,
+} from "@earendil-works/pi-protocol";
 import {Context, Effect, Layer, Queue, Schedule, type Scope, Stream} from "effect";
 import {
 	type ConnectionRefusal,
@@ -42,6 +47,12 @@ import {webSocketTransportFactory} from "./transport.ts";
 export interface PiSessionRef {
 	readonly id: string;
 	readonly cwd: string;
+	/**
+	 * What the session is running on now, off its own snapshot. This is the session's current
+	 * model and not the last turn's billed one — the two are different facts and the picker reads
+	 * this one (#7981).
+	 */
+	readonly model: ModelRef;
 }
 
 export interface OpenSessionOptions {
@@ -67,6 +78,17 @@ export interface PiClientApi {
 	) => Effect.Effect<SessionSnapshot, SessionRefusal>;
 	/** Cuts the running turn short. Needs the same lease `prompt` does. */
 	readonly abort: (sessionId: string) => Effect.Effect<SessionSnapshot, SessionRefusal>;
+	/** Switches the session's model. Needs the same lease `prompt` does. */
+	readonly setModel: (
+		sessionId: string,
+		model: ModelRef,
+	) => Effect.Effect<SessionSnapshot, SessionRefusal>;
+	/**
+	 * The catalog the server put in its `hello` frame, already cut to the authenticated,
+	 * describable set by the host's `offered()`. Empty before the first dial, and a fact about the
+	 * server rather than about any session — which is why it is not on `PiSessionRef`.
+	 */
+	readonly models: Effect.Effect<ReadonlyArray<ModelMetadata>>;
 	/** Every snapshot the server pushes for this session, for as long as the stream is pulled. */
 	readonly snapshots: (sessionId: string) => Stream.Stream<SessionSnapshot>;
 	/** One element per connection loss, so a caller can decide whether and when to reconnect. */
@@ -174,7 +196,11 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 							detail: `no snapshot arrived for session ${lease.id}`,
 						}),
 					)
-				: Effect.succeed({id: lease.id, cwd: lease.snapshot.cwd});
+				: Effect.succeed({
+						id: lease.id,
+						cwd: lease.snapshot.cwd,
+						model: lease.snapshot.model,
+					});
 
 		const dial = (open: () => Promise<unknown>): Effect.Effect<void, ConnectionRefusal> =>
 			Effect.tryPromise({try: open, catch: connectionRefusalOf}).pipe(Effect.asVoid);
@@ -238,6 +264,17 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			});
 		});
 
+		const setModel = Effect.fn("PiClientService.setModel")(function* (
+			sessionId: string,
+			model: ModelRef,
+		) {
+			const lease = yield* leased(sessionId);
+			return yield* Effect.tryPromise({
+				try: () => lease.setModel(model),
+				catch: (cause) => sessionRefusalOf(sessionId, cause),
+			});
+		});
+
 		const snapshots = (sessionId: string): Stream.Stream<SessionSnapshot> =>
 			Stream.callback<SessionSnapshot>((queue) =>
 				Effect.acquireRelease(
@@ -275,6 +312,8 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			attachSession,
 			prompt,
 			abort,
+			setModel,
+			models: Effect.sync(() => client.snapshot?.models ?? []),
 			snapshots,
 			disconnections,
 		};

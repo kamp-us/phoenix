@@ -30,6 +30,7 @@ const chatViewFitsTheSlot: ViewState = {
 	cursor: null,
 	atOldest: false,
 	expanded: [],
+	unfolded: [],
 } satisfies ChatView;
 
 /**
@@ -50,6 +51,7 @@ const asInterface = {
 	cursor: null,
 	atOldest: false,
 	expanded: [],
+	unfolded: [],
 } as ChatViewAsInterface;
 // @ts-expect-error — an interface-shaped view record is not a `Schema.Json` member, so no window
 // could hold it and `ChatView` must not become one.
@@ -103,6 +105,7 @@ describe("chat window boundary", () => {
 			cursor: null,
 			atOldest: false,
 			expanded: [],
+			unfolded: [],
 		});
 		expect(interfaceMisfitsTheSlot).toBe(asInterface);
 		expect(isWindowRenderer).toBe(true);

@@ -17,6 +17,7 @@ describe("asChatView", () => {
 				cursor: "i7",
 				atOldest: true,
 				expanded: ["t1", "t2"],
+				unfolded: ["t3"],
 			}),
 		).toEqual({
 			scroll: 420,
@@ -24,6 +25,7 @@ describe("asChatView", () => {
 			cursor: "i7",
 			atOldest: true,
 			expanded: ["t1", "t2"],
+			unfolded: ["t3"],
 		});
 	});
 
@@ -40,7 +42,14 @@ describe("asChatView", () => {
 
 	it("keeps the fields it recognises and defaults the rest, field by field", () => {
 		expect(
-			asChatView({scroll: "far", draft: 3, cursor: 9, atOldest: "yes", expanded: "t1"}),
+			asChatView({
+				scroll: "far",
+				draft: 3,
+				cursor: 9,
+				atOldest: "yes",
+				expanded: "t1",
+				unfolded: "t3",
+			}),
 		).toEqual(initialChatView);
 		expect(asChatView({scroll: 12, cursor: "i1"})).toEqual({
 			scroll: 12,
@@ -48,11 +57,13 @@ describe("asChatView", () => {
 			cursor: "i1",
 			atOldest: false,
 			expanded: [],
+			unfolded: [],
 		});
 	});
 
-	it("keeps only the string ids out of an expanded list another writer left something else in", () => {
+	it("keeps only the string ids out of an id list another writer left something else in", () => {
 		expect(asChatView({expanded: ["t1", 7, null, "t2", {}]}).expanded).toEqual(["t1", "t2"]);
+		expect(asChatView({unfolded: ["t1", 7, null, "t2", {}]}).unfolded).toEqual(["t1", "t2"]);
 	});
 
 	it("refuses a non-finite scroll offset, which would take the virtualizer with it", () => {

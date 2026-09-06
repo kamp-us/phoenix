@@ -7,18 +7,38 @@
  * and "a page prepends without duplicating what the tail already holds" are decisions a test can
  * make without a DOM.
  *
+ * That second decision joins on **id, and then on text for a turn the layer never echoed** (#7998).
+ * Id alone cannot deliver it: the core records the operator's own turn at send time under a
+ * synthetic `local:<key>` id (`ai-agent/core/fold.ts`, `promptItem`), and a layer that emits no
+ * `user` item of its own never clears that marker — so the same turn comes back from the layer's
+ * history store under the layer's id and matches nothing in the tail. `unheld` below is the fold's
+ * `echoOf` join applied to the page/tail stitch, under the same two guards.
+ *
  * The head row is one row, never two: the loading row *replaces* the omitted-count line while a page
  * is in flight, and both disappear at the beginning of history (founder ruling, 2026-09-02).
  */
 
-import type {TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {ItemId, TranscriptItem} from "../../ai-agent/ports/index.ts";
 
 export type ChatRow =
 	/** There is more history behind this point; `items` is what the live-tail bound already dropped. */
 	| {readonly kind: "older"; readonly items: number}
 	/** A `page` request is out. */
 	| {readonly kind: "loading"}
-	| {readonly kind: "item"; readonly item: TranscriptItem};
+	| {
+			readonly kind: "item";
+			readonly item: TranscriptItem;
+			/**
+			 * The rows folded directly under this one, in list order. Empty for everything but a group
+			 * head. The ids rather than a count, so "the head says 14" and "14 rows appear" cannot
+			 * disagree, and so the head's disclosure can name the rows it controls (#8027).
+			 */
+			readonly nestedIds: ReadonlyArray<ItemId>;
+			/** This row ran inside another tool call — a subagent's, not the agent's own. */
+			readonly nested: boolean;
+			/** How many folds deep this row sits. Zero for a row the agent itself opened. */
+			readonly depth: number;
+	  };
 
 export interface ChatRowsInput {
 	/** Pages this window has walked back through, oldest-first. */
@@ -29,6 +49,8 @@ export interface ChatRowsInput {
 	readonly omitted: number;
 	readonly loading: boolean;
 	readonly atOldest: boolean;
+	/** The ids of the group heads whose folded rows are showing, off this window's own view slot. */
+	readonly unfolded?: ReadonlySet<string>;
 }
 
 /**
@@ -40,28 +62,137 @@ export interface ChatRowsInput {
 export const rowKey = (row: ChatRow): string =>
 	row.kind === "item" ? `item:${row.item.id}` : row.kind;
 
+/**
+ * How many still-unconfirmed turns `held` carries per text — the budget a page's own copies of
+ * those turns may claim. A count rather than a flag, so a turn sent twice can only ever cancel two
+ * page copies.
+ */
+const localTextBudget = (held: ReadonlyArray<TranscriptItem>): Map<string, number> => {
+	const budget = new Map<string, number>();
+	for (const item of held) {
+		if (item.kind !== "user" || item.local !== true) continue;
+		budget.set(item.text, (budget.get(item.text) ?? 0) + 1);
+	}
+	return budget;
+};
+
+/** Spend one unit of `budget` on `item`, or answer that it had none to spend. */
+const claimsLocal = (item: TranscriptItem, budget: Map<string, number>): boolean => {
+	if (item.kind !== "user" || item.local === true) return false;
+	const left = budget.get(item.text) ?? 0;
+	if (left === 0) return false;
+	budget.set(item.text, left - 1);
+	return true;
+};
+
+/**
+ * The `page` items `held` does not already carry, in page order.
+ *
+ * Two joins, and the second is the fold's `echoOf` with both of its guards intact: only a *layer's*
+ * item may claim a still-`local` held one, and a `local` item never claims another, so two
+ * deliberate sends of the same text stay two turns. The budget is what makes the claim one-to-one —
+ * one unconfirmed turn cancels one page copy, never every copy that shares its text.
+ *
+ * The walk is newest-first because the held `local` item is the operator's *most recent* send of
+ * that text: when a page carries several copies, the newest of them is the one that turn's echo
+ * would have been, and dropping an older copy instead would leave the same turn on screen twice.
+ */
+const unheld = (
+	held: ReadonlyArray<TranscriptItem>,
+	page: ReadonlyArray<TranscriptItem>,
+): ReadonlyArray<TranscriptItem> => {
+	const known = new Set<string>(held.map((item) => item.id));
+	const budget = localTextBudget(held);
+	const fresh: Array<TranscriptItem> = [];
+	for (let index = page.length - 1; index >= 0; index -= 1) {
+		const item = page[index];
+		if (item === undefined) continue;
+		if (known.has(item.id) || claimsLocal(item, budget)) continue;
+		fresh.push(item);
+	}
+	return fresh.reverse();
+};
+
 /** Prepend a page, dropping anything the window already holds. Oldest-first, in and out. */
 export const mergeOlder = (
 	held: ReadonlyArray<TranscriptItem>,
 	page: ReadonlyArray<TranscriptItem>,
 ): ReadonlyArray<TranscriptItem> => {
-	const known = new Set(held.map((item) => item.id));
-	const fresh = page.filter((item) => !known.has(item.id));
+	const fresh = unheld(held, page);
 	return fresh.length === 0 ? held : [...fresh, ...held];
 };
 
+/** The call a tool row ran inside, when the backend marked one. Nothing else nests. */
+const parentOf = (item: TranscriptItem): ItemId | undefined =>
+	item.kind === "tool" ? item.parentId : undefined;
+
 /**
  * The list the window renders. The tail wins on a collision: an item that reached the live stream is
- * the newer copy of itself, and a page that happens to overlap the tail must not double it.
+ * the newer copy of itself, and a page that happens to overlap the tail must not double it. The
+ * collision is `unheld`'s — id, then text against a turn the tail still holds as `local` — so the
+ * surviving row keeps the `local:` id it has had since the send and its `rowKey` does not move.
+ *
+ * A tool row naming a parent that is also in this list is **folded under it** (founder ruling,
+ * 2026-09-05): the group head carries the count and the folded rows appear only while it is
+ * unfolded, which is what keeps a fifty-call subagent from flooding the window. A row whose parent
+ * is not in the list — its group head is older than the pages walked back to — stays where it is,
+ * marked nested, because dropping it would hide work that happened.
+ *
+ * The walk is depth-first, which is what makes that last sentence true of *every* shape the backend
+ * can mark rather than only of a one-level fold: a subagent that spawns a subagent gives a folded
+ * row children of its own, counted and rendered like any other head.
+ *
+ * `reachable` is walked separately from the render because the two ask different questions. A row
+ * behind a folded head is hidden on purpose and must stay hidden; a row whose parent chain loops
+ * back on itself belongs to no head at all and would otherwise vanish. Only the second is swept in
+ * at the end, so no marked row is dropped and none is un-hidden.
  */
 export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
-	const inTail = new Set(input.tail.map((item) => item.id));
-	const items = [...input.older.filter((item) => !inTail.has(item.id)), ...input.tail];
+	const items = [...unheld(input.tail, input.older), ...input.tail];
+	const unfolded = input.unfolded ?? new Set<string>();
+	const present = new Set(items.map((item) => item.id));
+	const folded = new Map<string, Array<TranscriptItem>>();
+	for (const item of items) {
+		const parent = parentOf(item);
+		if (parent === undefined || !present.has(parent)) continue;
+		const group = folded.get(parent);
+		if (group === undefined) folded.set(parent, [item]);
+		else group.push(item);
+	}
 	const rows: Array<ChatRow> = [];
 	if (!input.atOldest && items.length > 0) {
 		rows.push(input.loading ? {kind: "loading"} : {kind: "older", items: input.omitted});
 	}
-	for (const item of items) rows.push({kind: "item", item});
+	const roots = items.filter((item) => {
+		const parent = parentOf(item);
+		return parent === undefined || !present.has(parent);
+	});
+	const reachable = new Set<string>();
+	const mark = (item: TranscriptItem): void => {
+		if (reachable.has(item.id)) return;
+		reachable.add(item.id);
+		for (const child of folded.get(item.id) ?? []) mark(child);
+	};
+	for (const item of roots) mark(item);
+	const seen = new Set<string>();
+	const emit = (item: TranscriptItem, depth: number): void => {
+		if (seen.has(item.id)) return;
+		seen.add(item.id);
+		const group = folded.get(item.id) ?? [];
+		rows.push({
+			kind: "item",
+			item,
+			nestedIds: group.map((child) => child.id),
+			nested: depth > 0,
+			depth,
+		});
+		if (!unfolded.has(item.id)) return;
+		for (const child of group) emit(child, depth + 1);
+	};
+	for (const item of roots) emit(item, parentOf(item) === undefined ? 0 : 1);
+	for (const item of items) {
+		if (!reachable.has(item.id)) emit(item, 1);
+	}
 	return rows;
 };
 

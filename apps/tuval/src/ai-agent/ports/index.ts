@@ -5,8 +5,10 @@
  * implementation. `boundary.unit.test.ts` holds that closure.
  */
 
+export {isModelRef, type ModelRef, sameModel} from "./model.ts";
 export {
 	isModePayload,
+	isPendingPermission,
 	isPermissionPayload,
 	isPermissionRequest,
 	isPromptPayload,
@@ -15,8 +17,10 @@ export {
 	isWindowOmission,
 	Mode,
 	type ModePayload,
+	type PendingPermission,
 	type PermissionDecision,
 	type PermissionPayload,
+	type PermissionProgress,
 	type PermissionRequest,
 	type PromptPayload,
 	type TranscriptPagePayload,

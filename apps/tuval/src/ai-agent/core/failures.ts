@@ -14,6 +14,7 @@ export const START_ERROR = "tuval/ai-agent/StartError";
 export const PROMPT_ERROR = "tuval/ai-agent/PromptError";
 export const UNKNOWN_REQUEST = "tuval/ai-agent/UnknownRequest";
 export const MODE_UNSUPPORTED = "tuval/ai-agent/ModeUnsupported";
+export const MODEL_UNSUPPORTED = "tuval/ai-agent/ModelUnsupported";
 export const PAGE_ERROR = "tuval/ai-agent/PageError";
 
 /**
@@ -54,8 +55,35 @@ export const unknownRequest = (request: string): AgentFailure => ({
 	detail: `no permission request "${request}" is pending`,
 });
 
+/**
+ * A second answer to a card whose first one is not settled — a repeated click, or the other window
+ * over this process (#8006). It wears the answer call's own tag so the window renders it beside the
+ * card, and a `reason` no error class enumerates, exactly as `portRefused` does: the refusal is the
+ * core's, and no backend can raise it.
+ */
+export const answerNotOffered = (
+	request: string,
+	status: "answering" | "unresolved",
+): AgentFailure => ({
+	tag: UNKNOWN_REQUEST,
+	reason: status === "answering" ? "awaiting-confirmation" : "unresolved",
+	detail:
+		status === "answering"
+			? `permission request "${request}" is already answered and awaiting confirmation`
+			: `permission request "${request}" has an answer whose outcome is unknown; only the agent can settle it`,
+});
+
 export const modeUnsupported = (mode: string, available: ReadonlyArray<string>): AgentFailure => ({
 	tag: MODE_UNSUPPORTED,
 	reason: null,
 	detail: `mode "${mode}" is not offered; available: ${available.join(", ") || "none"}`,
+});
+
+export const modelUnsupported = (
+	model: string,
+	available: ReadonlyArray<string>,
+): AgentFailure => ({
+	tag: MODEL_UNSUPPORTED,
+	reason: null,
+	detail: `model "${model}" is not offered; available: ${available.join(", ") || "none"}`,
 });

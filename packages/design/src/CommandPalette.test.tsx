@@ -279,4 +279,165 @@ describe("CommandPalette", () => {
 		expect(footers[0]?.querySelector(".kp-command-palette__scopes")).not.toBeNull();
 		expect(footers[0]?.querySelector(".kp-command-palette__legend")?.textContent).toBe("gezin");
 	});
+
+	it("hands a caller the key and the active option before moving the selection itself", () => {
+		const onKeyDown = vi.fn();
+		renderPalette({onKeyDown});
+		const input = screen.getByRole("combobox");
+		fireEvent.keyDown(input, {key: "ArrowDown"});
+
+		expect(onKeyDown).toHaveBeenCalledTimes(1);
+		expect(onKeyDown.mock.calls[0]?.[1]).toEqual(items[0]);
+		// The caller looked and let it through, so the palette's own movement still ran.
+		expect(input.getAttribute("aria-activedescendant")).toBe(screen.getAllByRole("option")[1]?.id);
+	});
+
+	it("lets a caller claim a key with preventDefault, arrows and all", () => {
+		const onKeyDown = vi.fn((event: React.KeyboardEvent) => event.preventDefault());
+		const onSelect = vi.fn();
+		renderPalette({onKeyDown, onSelect});
+		const input = screen.getByRole("combobox");
+		const first = screen.getAllByRole("option")[0]?.id;
+
+		fireEvent.keyDown(input, {key: "Tab"});
+		fireEvent.keyDown(input, {key: "ArrowDown"});
+		fireEvent.keyDown(input, {key: "Enter"});
+
+		expect(input.getAttribute("aria-activedescendant")).toBe(first);
+		expect(onSelect).not.toHaveBeenCalled();
+	});
+
+	it("spends Enter on the caller's action when its precedence claims the key", () => {
+		const onSelect = vi.fn();
+		const onEnter = vi.fn(() => true);
+		const {rerender} = renderPalette({onEnter, onSelect});
+		fireEvent.keyDown(screen.getByRole("combobox"), {key: "Enter"});
+		expect(onEnter).toHaveBeenCalledTimes(1);
+		expect(onSelect).not.toHaveBeenCalled();
+
+		// A `false` answer is the caller declining this press, not opting out of the prop.
+		rerender(
+			<CommandPalette
+				items={items}
+				title="kamp.us'ta ara"
+				placeholder="ara"
+				emptyLabel="sonuç yok"
+				open
+				shortcut={false}
+				onEnter={() => false}
+				onSelect={onSelect}
+			/>,
+		);
+		fireEvent.keyDown(screen.getByRole("combobox"), {key: "Enter"});
+		expect(onSelect).toHaveBeenCalledWith(items[0]);
+	});
+
+	it("holds a caller's announcement in a polite region the caller alone replaces", () => {
+		const {rerender} = renderPalette();
+		// The region is there from open, empty, so the caller's first sentence is a mutation
+		// inside a region a screen reader was already watching.
+		const empty = document.querySelector(".kp-command-palette__announce");
+		expect(empty).not.toBeNull();
+		expect(empty?.textContent).toBe("");
+
+		const withAnnouncement = (announcement: string) => (
+			<CommandPalette
+				items={items}
+				title="kamp.us'ta ara"
+				placeholder="ara"
+				emptyLabel="sonuç yok"
+				open
+				shortcut={false}
+				announcement={announcement}
+			/>
+		);
+		rerender(withAnnouncement("3 sonuç"));
+		const region = document.querySelector('[aria-live="polite"]');
+		expect(region?.textContent).toBe("3 sonuç");
+
+		// Typing does not clear it: the sentence stands until the caller writes another.
+		fireEvent.change(screen.getByRole("combobox"), {target: {value: "functional"}});
+		expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe("3 sonuç");
+		rerender(withAnnouncement("1 sonuç"));
+		expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe("1 sonuç");
+	});
+
+	it("marks the field invalid with a caller's refusal without touching the announcement", () => {
+		renderPalette({error: "böyle bir şey yok"});
+		const input = screen.getByRole("combobox");
+		expect(input.getAttribute("aria-invalid")).toBe("true");
+		expect(screen.getByText("böyle bir şey yok")).not.toBeNull();
+		expect(document.querySelector(".kp-command-palette__announce")?.textContent).toBe("");
+	});
+
+	it("reports the active option to a caller without moving the selection itself", () => {
+		const onActiveChange = vi.fn();
+		renderPalette({onActiveChange});
+		expect(onActiveChange).toHaveBeenLastCalledWith(items[0]);
+
+		const input = screen.getByRole("combobox");
+		fireEvent.keyDown(input, {key: "ArrowDown"});
+		expect(onActiveChange).toHaveBeenLastCalledWith(items[1]);
+		expect(input.getAttribute("aria-activedescendant")).toBe(screen.getAllByRole("option")[1]?.id);
+
+		fireEvent.change(input, {target: {value: "bulunamaz"}});
+		expect(onActiveChange).toHaveBeenLastCalledWith(undefined);
+	});
+
+	it("hands Escape to the caller and leaves the palette open when closeOnEscape is off", () => {
+		const onKeyDown = vi.fn((event: React.KeyboardEvent) => event.preventDefault());
+		renderPalette({closeOnEscape: false, onKeyDown});
+		fireEvent.keyDown(screen.getByRole("combobox"), {key: "Escape"});
+
+		expect(onKeyDown).toHaveBeenCalledTimes(1);
+		expect(onKeyDown.mock.calls[0]?.[0]?.key).toBe("Escape");
+		expect(screen.queryByRole("combobox")).not.toBeNull();
+	});
+
+	it("stops claiming an expanded popup once the list holds no option", () => {
+		renderPalette();
+		const input = screen.getByRole("combobox");
+		expect(input.getAttribute("aria-expanded")).toBe("true");
+		fireEvent.change(input, {target: {value: "bulunamaz"}});
+		expect(input.getAttribute("aria-expanded")).toBe("false");
+	});
+});
+
+// Escape-to-dismiss belongs to the dialog's dismissable layer, which never registers under jsdom
+// ("[@zag-js/dismissable] node is `null` or `undefined`"), so the closing itself is unobservable in
+// this tier. What the palette owes is that the caller's answer reaches the dialog that owns it.
+describe("CommandPalette closeOnEscape", () => {
+	const forwarded = async (props: {closeOnEscape?: boolean}) => {
+		const seen: Array<boolean | undefined> = [];
+		vi.resetModules();
+		vi.doMock("./Dialog", () => ({
+			Dialog: ({children, closeOnEscape}: {children: React.ReactNode; closeOnEscape?: boolean}) => {
+				seen.push(closeOnEscape);
+				return <div>{children}</div>;
+			},
+		}));
+		const {CommandPalette: Mocked} = await import("./CommandPalette");
+		render(
+			<Mocked
+				items={items}
+				title="kamp.us'ta ara"
+				placeholder="ara"
+				emptyLabel="sonuç yok"
+				defaultOpen
+				shortcut={false}
+				{...props}
+			/>,
+		);
+		vi.doUnmock("./Dialog");
+		vi.resetModules();
+		return seen.at(-1);
+	};
+
+	it("keeps the dialog's own Escape by default", async () => {
+		expect(await forwarded({})).toBe(true);
+	});
+
+	it("takes Escape away from the dialog when a caller claims it", async () => {
+		expect(await forwarded({closeOnEscape: false})).toBe(false);
+	});
 });

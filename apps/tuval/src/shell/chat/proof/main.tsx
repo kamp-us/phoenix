@@ -25,7 +25,7 @@ import {
 	assistantItem,
 	call,
 	modes,
-	permissionRequest,
+	pendingPermission,
 	userItem,
 	withTranscript,
 } from "../chat.testing.ts";
@@ -56,12 +56,19 @@ const state: AiAgentSessionState = withTranscript(
 		assistantItem("a2", "Done — the guard is per-window now."),
 	],
 	{
-		permissions: {"req-1": permissionRequest()},
+		permissions: {"req-1": pendingPermission()},
 		modes: modes(["default", "plan", "accept edits"], "default"),
 	},
 );
 
-const view: ChatView = {scroll: 0, draft: "", cursor: null, atOldest: false, expanded: []};
+const view: ChatView = {
+	scroll: 0,
+	draft: "",
+	cursor: null,
+	atOldest: false,
+	expanded: [],
+	unfolded: [],
+};
 
 const mount = Effect.gen(function* () {
 	const host = document.getElementById("proof");

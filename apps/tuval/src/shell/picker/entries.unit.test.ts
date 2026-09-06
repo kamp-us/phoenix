@@ -3,6 +3,7 @@ import {Effect, Option} from "effect";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
+import {shellId, shellProgram, unwiredShellEffects} from "../program.ts";
 import {flatten, processEntries, programEntries, readEntries} from "./entries.ts";
 import {pickerHarness, programRow} from "./fixtures.ts";
 
@@ -76,6 +77,28 @@ describe("picker entries", () => {
 				["p-1"],
 			);
 			assert.lengthOf(flatten(answer), 2);
+		}),
+	);
+
+	it.effect("offers neither the shell's own row nor its running process (#7946)", () =>
+		Effect.gen(function* () {
+			const shell = shellProgram({effects: unwiredShellEffects});
+			const answer = yield* Effect.scoped(
+				Effect.gen(function* () {
+					const harness = yield* pickerHarness([shell, programRow("counter")]);
+					yield* harness.seed("shell-process", shellId);
+					yield* harness.seed("p-1", "counter");
+					return yield* readEntries.pipe(Effect.provide(harness.layer));
+				}),
+			);
+			assert.deepStrictEqual(
+				answer.programs.map((entry) => entry.programId),
+				[ProgramId.make("counter")],
+			);
+			assert.deepStrictEqual(
+				answer.processes.map((entry) => entry.processId),
+				["p-1"],
+			);
 		}),
 	);
 });

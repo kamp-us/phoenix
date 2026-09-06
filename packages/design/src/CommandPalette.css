@@ -78,6 +78,20 @@
 	outline-offset: 0;
 }
 
+/* Heard, never seen. The caret never leaves the field, so nothing else tells a screen-reader user
+   what a keystroke did to the list; the visible copy is the caller's own. */
+.kp-command-palette__announce {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}
+
 .kp-command-palette__results {
 	list-style: none;
 	margin: 0;
@@ -115,6 +129,22 @@
 
 .kp-command-palette__option[data-active] {
 	background: var(--accent-faint);
+}
+
+/* Every row reserves the caret's column, so moving the active row cannot shift the list sideways.
+   The mono font is what makes `1ch` and the glyph's advance the same width. */
+.kp-command-palette__option::before {
+	content: "";
+	flex: none;
+	inline-size: 1ch;
+	font: var(--t-mono);
+}
+
+/* Pillar 4 forbids signalling state by colour alone, so this glyph is the second channel beside
+   the fill above — not decoration, and not a swap for it. */
+.kp-command-palette__option[data-active]::before {
+	content: "\203A";
+	color: var(--accent);
 }
 
 .kp-command-palette__option[aria-disabled="true"] {

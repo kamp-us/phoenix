@@ -1,10 +1,15 @@
 /**
- * The one crossing point between the layer's typed errors and the core's `AgentFailure` data.
+ * Where the layer's typed errors cross into the core's `AgentFailure` data — for every error the
+ * handlers themselves see: a Cmd's refusal, a deadline, and the stream's own terminal failure.
  *
  * Ruling 3 (#7570) makes the error tag the thing the window renders by, so a failure crosses as
  * `{tag, reason, detail}` and the class instance stops here: an error class is not something a
  * checkpoint can carry, and letting one into a Msg would put a non-plain value on the core's data
  * surfaces, which `core/boundary.unit.test.ts` reds on.
+ *
+ * A layer that reports a failed turn on the event stream (`failure`, #8018) has no handler between
+ * it and the core, so it maps its own error to the same triple in its own refusals module — the
+ * shape is the contract, and this is not the only place that writes one.
  *
  * A deadline is not one of the layer's errors — it is the row's declared policy firing — so it is
  * written against the tag of the call that timed out, with that call's own transport-ish reason.
@@ -13,6 +18,7 @@
 import {Cause} from "effect";
 import type {AgentFailure} from "../core/index.ts";
 import {
+	ModelUnsupported,
 	ModeUnsupported,
 	type PageError,
 	type PromptError,
@@ -27,11 +33,17 @@ export type AgentServiceError =
 	| PromptError
 	| UnknownRequest
 	| ModeUnsupported
+	| ModelUnsupported
 	| PageError
 	| TransportError;
 
+/** The three classes that enumerate no `reason` case; every other one carries its own. */
 const reasonOf = (error: AgentServiceError): string | null =>
-	error instanceof UnknownRequest || error instanceof ModeUnsupported ? null : error.reason;
+	error instanceof UnknownRequest ||
+	error instanceof ModeUnsupported ||
+	error instanceof ModelUnsupported
+		? null
+		: error.reason;
 
 export const failureOf = (error: AgentServiceError): AgentFailure => ({
 	tag: error._tag,

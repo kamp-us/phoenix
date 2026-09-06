@@ -97,6 +97,19 @@ export const outputOf = (structured: unknown): string => {
 	return stdout.length > 0 ? stdout : stderr;
 };
 
+/**
+ * The `tool_use` a frame was produced inside, or `null` at the top level.
+ *
+ * `SDKAssistantMessage` and `SDKUserMessage` both carry `parent_tool_use_id`, "non-null when the
+ * message was produced inside a subagent started by that tool_use" (`sdk.d.ts`,
+ * `@anthropic-ai/claude-agent-sdk@0.3.259`). This is the only place the SDK's own name for it is
+ * read; everything downstream of `map.ts` calls it `parentId`, because the item union is model-blind.
+ */
+export const parentToolUseIdOf = (message: unknown): string | null => {
+	if (!isRecord(message)) return null;
+	return isNonEmptyString(message.parent_tool_use_id) ? message.parent_tool_use_id : null;
+};
+
 /** Epoch milliseconds off a message's own ISO `timestamp`, or the caller's clock when it has none. */
 export const timestampOf = (message: unknown, fallback: number): number => {
 	if (!isRecord(message) || typeof message.timestamp !== "string") return fallback;
