@@ -1,7 +1,7 @@
 ---
 id: 0166
-title: "The canonical icon idiom — Lucide line-icons at native per-size stroke, monochrome role-token color, a drawn triangle vote glyph, and the function/affect/key-legend partition"
-status: proposed; amended-in-part by [0240](0240-icon-dense-tier.md)
+title: "The canonical icon idiom — Lucide line-icons at native per-size stroke, monochrome role-token color, a drawn triangle vote glyph, and the function/affect/key-legend/state-marker partition"
+status: proposed; amended-in-part by [0240](0240-icon-dense-tier.md); extended in place by §8 (state markers, ruled 2026-09-05)
 date: 2026-07-06
 tags: [design, frontend, cohesiveness, icons, tokens, control-plane]
 ---
@@ -99,7 +99,41 @@ Glyphs partition into exactly three classes, and the class decides the delivery:
   chip** — never free-floating, never an icon.
 
 A functional glyph is a Lucide icon; a reaction is a controlled emoji in the reaction bar only; a
-keycap is `<kbd>` typography. Nothing crosses those lines.
+keycap is `<kbd>` typography. Nothing crosses those lines. The partition grew a fourth class in §8;
+these three are unchanged by it.
+
+### 8. A state marker is not an icon — the fourth class (ruled 2026-09-05)
+
+§7 sorted every glyph three ways and left one shape homeless: a Unicode glyph doing **state** work
+— a `::before` caret marking the active row, a check standing for a set item, a dot marking an open
+section. It names no function, is not a reaction, and is not a keycap, so §1's ban neither covered
+it nor exempted it, and two live surfaces were left to per-agent reading (the palette caret of
+[#7983](https://github.com/kamp-us/phoenix/issues/7983), the markdown checkbox of
+[#8023](https://github.com/kamp-us/phoenix/issues/8023)). Founder ruling, transcribed here:
+<https://github.com/kamp-us/phoenix/issues/8073#issuecomment-5555958957>.
+
+**A CSS state marker is not an icon.** §1's ban is about a functional glyph standing in for
+iconography; a marker decorating a state the component already carries is typography, and it stays
+legal as CSS generated content. This is **not** a general exemption for Unicode glyphs — two
+conditions bound it, and a marker failing either is back under §1's ban:
+
+1. **It pairs with a non-visual state signal** — either the ARIA state the component already exposes
+   (`aria-selected`, `aria-checked`, `aria-expanded`) or a visually-hidden state word. The state
+   never rides on the glyph alone; this is 0162's Pillar 4 applied, not a new rule.
+2. **It never leaks into the accessible name** — either the alternative-text form
+   (`content: "\203A" / ""`) or a glyph rendered on an `aria-hidden` element. Generated content
+   carrying no alt text is folded into a name-from-content computation by design, so an unbounded
+   marker corrupts the name of the very row it decorates
+   ([#8079](https://github.com/kamp-us/phoenix/issues/8079)).
+
+A glyph that names a **function** is still a Lucide icon wherever it is drawn; a marker that fails
+either condition is not a state marker but a functional glyph in the wrong delivery.
+
+The two live cases follow from this. **#7983's active-row caret stays a CSS `content:` glyph** — not
+a Lucide chevron rendered from `packages/design/src/CommandPalette.tsx` — and owes the alt-text form
+plus the `aria-selected` the palette already sets. **#8023's ruled treatment** (a decorative glyph
+plus a visually-hidden state word) satisfies the same two conditions by the other arm of each, and
+stands.
 
 ## Alternatives considered (rejected)
 
