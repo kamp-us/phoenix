@@ -51,6 +51,7 @@ const cutMidReply: AiAgentSessionState = {
 	thinking: {current: null, available: []},
 	lastPrompt: "read the readme",
 	sends: [{key: "send-0", state: "pending"}],
+	queued: [],
 	lastPage: null,
 	failure: null,
 };
