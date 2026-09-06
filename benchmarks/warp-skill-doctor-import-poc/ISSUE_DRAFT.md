@@ -52,7 +52,7 @@ the evidence and the exact change.
 ### Blocker 1 — no opencode collector; startup gate excludes opencode
 
 Upstream supports Warp / Claude Code / Codex only. Its own dry run found **0 phoenix
-sessions** across those sources (`~/.claude/projects` empty; `~/.codex` holds 293
+sessions** across those sources (Claude Code's sessions directory empty; `~/.codex` holds 293
 rollouts, 0 for this checkout; no Warp data). Upstream #93 (2026-09-03) added Pi,
 Grok Build and ZCode collectors — narrowing this blocker — but opencode, the harness
 this repo actually runs under, is still absent, and the only phoenix-local history

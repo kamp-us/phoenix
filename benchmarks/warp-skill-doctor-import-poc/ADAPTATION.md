@@ -113,7 +113,7 @@ environment. Each is evidence for the production-import decision.
 
 - **Upstream contract:** collectors exist for Claude Code project JSONL, Codex rollout
   JSONL, and Warp SQLite.
-- **Local reality (census, metadata only):** `~/.claude/projects` is empty; `~/.codex`
+- **Local reality (census, metadata only):** the Claude Code sessions directory is empty; `~/.codex`
   holds 293 rollouts, none for this checkout (newest is 2026-06-05, another repo), none
   within the 45-day default window; no Warp data. The only real phoenix-local agent
   history on this machine is opencode's own store (`~/.local/share/opencode`), which

@@ -66,7 +66,7 @@ behavior-change columns: [`ADAPTATION.md`](ADAPTATION.md). Summary:
 
 ```powershell
 # Step 1 census (metadata only, read-only):
-#   claude: ~/.claude/projects empty · codex: 293 rollouts, 0 phoenix, 0 within 45d · warp: absent
+#   claude: sessions dir empty · codex: 293 rollouts, 0 phoenix, 0 within 45d · warp: absent
 #   opencode db: 2 real phoenix sessions (the only phoenix-local conversations on this machine)
 
 # discovery adapter (PoC shim, lives in results/, NOT part of the imported skill):
