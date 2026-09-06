@@ -715,7 +715,9 @@ describe("`<c-b> w` on a filled window stays on the picker (#8279)", () => {
 		const sent = journey(false);
 		act(() => void fireEvent.keyDown(document, {key: "j", code: "KeyJ"}));
 
-		expect(sent.filter((msg) => msg.type === "window.setView")).toEqual([
+		// `toMatchObject`, not `toEqual`: the picker's view slot is `picker/view.ts`'s to shape, and
+		// this test owns only that the key reached the picker and moved its cursor.
+		expect(sent.filter((msg) => msg.type === "window.setView")).toMatchObject([
 			{type: "window.setView", windowId: "window-2", view: {cursor: 1, refusal: null}},
 		]);
 		expect(bindMsgs(sent)).toEqual([]);
