@@ -97,11 +97,11 @@ const counterRow: TableRow = {
 	stateSummary: {lifecycle: "running", revision: 1},
 };
 
-const live = <S,>(state: S): ProcessView<S> => ({
+const live = <S,>(state: S, revision = 1): ProcessView<S> => ({
 	_tag: "Live",
 	processId: counterProcess,
 	lifecycle: "running",
-	revision: 1,
+	revision,
 	state,
 });
 
@@ -120,9 +120,14 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	readonly keys?: PrefixTable | null;
 	/** When this socket ends. The default never does, which is what every claim but the drop wants. */
 	readonly closed?: Effect.Effect<Socket.SocketError>;
+	/**
+	 * The revision the shell's first snapshot carries. `0` is a kernel whose shell has not committed
+	 * anything yet, which is every freshly spawned one (`../process/Processes.ts`).
+	 */
+	readonly revision?: number;
 }) {
 	const desk = yield* SubscriptionRef.make<ProcessView<unknown>>(
-		live(options?.state ?? twoWindowDesk()),
+		live(options?.state ?? twoWindowDesk(), options?.revision),
 	);
 	const counter = yield* SubscriptionRef.make<ProcessView<unknown>>(live({count: 7}));
 	const attaches: Array<ProcessId> = [];
@@ -211,6 +216,35 @@ describe("the attached desk", () => {
 				assert.deepStrictEqual(
 					screen.getAllByLabelText("Counter value").map((node) => node.textContent),
 					["7", "7"],
+				);
+			}),
+	);
+
+	it.effect(
+		"renders a kernel whose shell has committed nothing yet, whose first snapshot is revision 0",
+		() =>
+			Effect.gen(function* () {
+				// The high-water mark is "nothing seen yet", not `0`: a freshly spawned shell sits at
+				// revision 0 until a row exists to commit against, so a zero sentinel drops the only
+				// snapshot the page is ever sent and leaves the desk on its placeholder (#8274).
+				const app = yield* scripted({revision: 0});
+				render(
+					<AttachedDesk
+						page={app.page}
+						shell={app.shell}
+						renderers={renderers}
+						reducedMotion={true}
+						refusal={null}
+					/>,
+				);
+				yield* settle;
+
+				assert.isNull(screen.queryByText("Attaching to the Tuval kernel…"));
+				assert.deepStrictEqual(
+					screen
+						.getAllByRole("region", {name: /^Window /})
+						.map((node) => node.getAttribute("data-window-id")),
+					["window-1", "window-2"],
 				);
 			}),
 	);

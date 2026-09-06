@@ -158,8 +158,16 @@ repaired:
   reading its answer as this page's would forward a key nobody here pressed.
 - **The ack is also a snapshot.** The page delivers the state it carried to the desk, taking the
   newer of the two carriers by the kernel's own `revision` (`AttachedDesk.tsx`) — the state pump and
-  the ack run on different fibers and nothing orders them. That comparison is monotone and
-  self-correcting; it holds nothing that can go stale.
+  the ack run on different fibers and nothing orders them. The high-water mark it compares against
+  starts at "nothing seen yet" and not at `0`: a fresh kernel's shell *is* at revision 0 until a row
+  exists to commit against, so a zero start would drop the only snapshot the page is sent and leave
+  the desk on its placeholder. Past that first frame the comparison is monotone and holds nothing
+  that can go stale.
+- **The ack's state is the fold's, not a later read.** The kernel answers a dispatch with the summary
+  taken inside the same critical section the Msg folded in (`ProcessHandle.dispatchFolded`,
+  `src/process/Processes.ts`). A second read taken after the fold is the process's *latest* state,
+  which with two presses in flight is the other press's — and `replyIn`, finding a stamp that is not
+  its own, answers `Refused` and forwards nothing, so the key is gone with no trace.
 - **One thing is still decided at the press, and it is ownership, not routing.** A default action
   cannot wait for a round trip, so `shellOwnsKey` (`src/shell/ui/frame.ts`) answers whose key it is —
   over the kernel's own table, through the same `route`. While any answer is outstanding the shell
@@ -167,9 +175,15 @@ repaired:
   about, and guessing there would be routing. That is what stops `<prefix> |` typing a pipe, and its
   cost is that a key pressed inside one round trip of another has its default prevented even if the
   answer turns out to be the window's.
+- **Ownership is bounded.** A press that is never answered — a server fiber that dies between the
+  fold and the send, with the socket still open — would otherwise hold the desk's keys for good, and
+  every later key including the composer's is swallowed until reload. `DeskProps.pressTimeoutMs`
+  releases ownership after 5 s; an answer arriving past its own bound is ignored rather than
+  forwarded into whatever holds focus by then.
 
 The round trip is local — a WebSocket on loopback to a kernel in the same machine. Measured over
-the real socket in `transport.integration.test.ts`, 150 warm dispatches: **p50 0.26 ms, p95 0.37 ms,
+the real socket in `transport.integration.test.ts` with a temporary timing block since removed, 150
+warm dispatches: **p50 0.26 ms, p95 0.37 ms,
 max 1.76 ms** — under a frame at 60 Hz, which is why waiting is affordable and the round-trip-per-key
 ADR 0353 rejected is not what this is: nothing about the *display* waits, only the forwarding of one
 key into a renderer.

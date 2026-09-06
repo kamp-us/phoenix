@@ -63,6 +63,12 @@ import {StatusLine} from "./StatusLine.tsx";
 import {isTextEntry} from "./text-entry.ts";
 import {WindowView} from "./WindowView.tsx";
 
+/**
+ * The bound on one press's ownership of the desk's keys. Far above the measured round trip (p95
+ * 0.37 ms) on purpose: it is a release path for an answer that never comes, not a latency budget.
+ */
+const PRESS_TIMEOUT_MS = 5_000;
+
 export interface DeskProps {
 	readonly state: ShellState;
 	readonly dispatch: (msg: ShellMsg) => void;
@@ -87,6 +93,12 @@ export interface DeskProps {
 	readonly deskTables?: DeskTables;
 	/** The listener's home. `document` in a page; a container in a test that wants two desks. */
 	readonly keyTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener"> | null;
+	/**
+	 * How long a press may hold the desk's keys before ownership is released without an answer. The
+	 * default is orders of magnitude above the measured round trip
+	 * (`.patterns/tuval-shell-assembly.md`); a test that wants to watch the release passes its own.
+	 */
+	readonly pressTimeoutMs?: number;
 	readonly reducedMotion?: boolean;
 	/**
 	 * How the palette runs a spell: this page's socket (`./PaletteHost.tsx`). Absent on a surface
@@ -104,6 +116,7 @@ export function Desk({
 	table,
 	deskTables = noDeskTables,
 	keyTarget,
+	pressTimeoutMs = PRESS_TIMEOUT_MS,
 	reducedMotion = false,
 	call,
 }: DeskProps): ReactElement {
@@ -126,59 +139,84 @@ export function Desk({
 	// press, and because a count of outstanding round trips is not something the desk renders.
 	const outstanding = useRef(0);
 
-	const onKeyDown = useCallback((event: KeyboardEvent): void => {
-		const {state: current, table: grammar, focused: window, commandLineOpen: open} = latest.current;
-		const overlay = latest.current.palette;
-		if (open || overlay.open) return;
+	const onKeyDown = useCallback(
+		(event: KeyboardEvent): void => {
+			const {
+				state: current,
+				table: grammar,
+				focused: window,
+				commandLineOpen: open,
+			} = latest.current;
+			const overlay = latest.current.palette;
+			if (open || overlay.open) return;
 
-		// The palette's own door, beside the `<prefix> :` line rather than instead of it: one is the
-		// address you already know, the other is the one you go looking through (#7643). It opens
-		// from a text entry too — the door you go looking through must not be shut by where the
-		// caret happens to be, which is most of the day the composer (#8270).
-		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-			event.preventDefault();
-			overlay.openPalette(focusedWindowOf(current));
-			return;
-		}
+			// The palette's own door, beside the `<prefix> :` line rather than instead of it: one is the
+			// address you already know, the other is the one you go looking through (#7643). It opens
+			// from a text entry too — the door you go looking through must not be shut by where the
+			// caret happens to be, which is most of the day the composer (#8270).
+			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+				event.preventDefault();
+				overlay.openPalette(focusedWindowOf(current));
+				return;
+			}
 
-		const key: Key = {
-			key: event.key,
-			code: event.code,
-			shiftKey: event.shiftKey,
-			ctrlKey: event.ctrlKey,
-			altKey: event.altKey,
-			metaKey: event.metaKey,
-		};
-		// Whose key is this? Not what to do with it — that is the kernel's answer, below. A key
-		// pressed while an answer is outstanding is the shell's whatever the snapshot says: the
-		// kernel may have armed the prefix on the key before it, and this page has not heard yet.
-		// That is what stops `<prefix> |` typing a pipe into whatever had focus (#8274).
-		const shellOwns = outstanding.current > 0 || shellOwnsKey(grammar, routerPrefix(current), key);
-		if (!shellOwns && isTextEntry(event.target)) return;
-		// Swallowed once, where ownership is decided rather than per arm: a key the shell owns must
-		// not also insert a character into the text entry underneath.
-		if (shellOwns) event.preventDefault();
+			const key: Key = {
+				key: event.key,
+				code: event.code,
+				shiftKey: event.shiftKey,
+				ctrlKey: event.ctrlKey,
+				altKey: event.altKey,
+				metaKey: event.metaKey,
+			};
+			// Whose key is this? Not what to do with it — that is the kernel's answer, below. A key
+			// pressed while an answer is outstanding is the shell's whatever the snapshot says: the
+			// kernel may have armed the prefix on the key before it, and this page has not heard yet.
+			// That is what stops `<prefix> |` typing a pipe into whatever had focus (#8274).
+			const shellOwns =
+				outstanding.current > 0 || shellOwnsKey(grammar, routerPrefix(current), key);
+			if (!shellOwns && isTextEntry(event.target)) return;
+			// Swallowed once, where ownership is decided rather than per arm: a key the shell owns must
+			// not also insert a character into the text entry underneath.
+			if (shellOwns) event.preventDefault();
 
-		outstanding.current += 1;
-		void latest.current.press(key).then(
-			(reply) => {
+			// The press owns the desk's keys until it is answered *or* until the bound below runs out. A
+			// promise the kernel never settles is not hypothetical — a server fiber can die between the
+			// fold and the send with the socket still open — and without a release the tab swallows every
+			// later key for good, the composer included (#8274).
+			outstanding.current += 1;
+			let released = false;
+			const release = (): boolean => {
+				if (released) return false;
+				released = true;
 				outstanding.current -= 1;
-				if (reply._tag === "Command") {
-					if (reply.name === COMMAND_LINE_COMMAND) setCommandLineOpen(true);
-					return;
-				}
-				if (reply._tag !== "ToWindow") return;
-				// The window focused when the key was pressed, not the one focused when the answer
-				// came back: the kernel routed this key against the desk as it stood at the press.
-				if (window === null) return;
-				seq.current += 1;
-				setForwarded({windowId: WindowId.make(window), key: reply.key, seq: seq.current});
-			},
-			() => {
-				outstanding.current -= 1;
-			},
-		);
-	}, []);
+				return true;
+			};
+			const bound = globalThis.setTimeout(release, pressTimeoutMs);
+			void latest.current.press(key).then(
+				(reply) => {
+					globalThis.clearTimeout(bound);
+					// An answer past its own bound is acted on by nobody: the desk has already given the
+					// key back, so forwarding it now would land it in whatever holds focus seconds later.
+					if (!release()) return;
+					if (reply._tag === "Command") {
+						if (reply.name === COMMAND_LINE_COMMAND) setCommandLineOpen(true);
+						return;
+					}
+					if (reply._tag !== "ToWindow") return;
+					// The window focused when the key was pressed, not the one focused when the answer
+					// came back: the kernel routed this key against the desk as it stood at the press.
+					if (window === null) return;
+					seq.current += 1;
+					setForwarded({windowId: WindowId.make(window), key: reply.key, seq: seq.current});
+				},
+				() => {
+					globalThis.clearTimeout(bound);
+					release();
+				},
+			);
+		},
+		[pressTimeoutMs],
+	);
 
 	useEffect(() => {
 		const target = keyTarget === undefined ? globalThis.document : keyTarget;

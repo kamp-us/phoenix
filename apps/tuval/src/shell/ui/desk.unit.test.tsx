@@ -989,24 +989,38 @@ function PickJourney({
 	readonly rows: PickerEntries;
 	readonly strict?: boolean;
 }): ReactElement {
-	const [state, setState] = useState(initial);
-	const dispatch = (msg: ShellMsg): void => {
+	const [shown, setShown] = useState(initial);
+	const kernel = useRef(initial);
+	const presses = useRef(0);
+
+	const fold = (msg: ShellMsg): ShellState => {
 		sent.push(msg);
-		setState((current) => {
-			const [next] = applyMsg(defaultPrefixTable, current, msg);
-			if (msg.type !== "window.open") return next;
-			return applyMsg(defaultPrefixTable, next, {
+		let next = applyMsg(defaultPrefixTable, kernel.current, msg)[0];
+		if (msg.type === "window.open") {
+			next = applyMsg(defaultPrefixTable, next, {
 				type: "window.bind",
 				windowId: msg.windowId,
 				processId: `process-${msg.programId}`,
 				takesKeys: true,
 			})[0];
-		});
+		}
+		kernel.current = next;
+		setShown(next);
+		return next;
 	};
+
+	const press: KeyPress = (key) => {
+		presses.current += 1;
+		const pressId = `pick-${presses.current}`;
+		const applied = fold({type: "keys.press", key, pressId});
+		return Promise.resolve(replyIn(pressId, applied));
+	};
+
 	const desk = (
 		<Desk
-			state={state}
-			dispatch={dispatch}
+			state={shown}
+			dispatch={(msg) => void fold(msg)}
+			press={press}
 			resolveMount={boundEverywhere}
 			entries={rows}
 			table={defaultPrefixTable}
@@ -1029,7 +1043,7 @@ const bindMsgs = (sent: Array<ShellMsg>): Array<ShellMsg> =>
 
 describe("`<c-b> w` on a filled window stays on the picker (#8279)", () => {
 	/** Choose `counter` with `<enter>`, then press `<c-b> w`. Returns what the pick alone sent. */
-	const journey = (strict: boolean): Array<ShellMsg> => {
+	const journey = async (strict: boolean): Promise<Array<ShellMsg>> => {
 		const sent: Array<ShellMsg> = [];
 		render(
 			<PickJourney
@@ -1039,33 +1053,32 @@ describe("`<c-b> w` on a filled window stays on the picker (#8279)", () => {
 				strict={strict}
 			/>,
 		);
-		act(() => void fireEvent.keyDown(document, {key: "Enter", code: "Enter"}));
+		await act(async () => void fireEvent.keyDown(document, {key: "Enter", code: "Enter"}));
 		expect(screen.getByText("renderer for process-counter")).toBeTruthy();
 
 		sent.length = 0;
-		// Two acts, never one: the page routes each press against the snapshot it has, so a `w`
-		// batched with the prefix that armed it is routed as a plain key and forwarded — #8274, a
-		// different bug and a different lane.
-		act(arm);
-		act(() => void fireEvent.keyDown(document, {key: "w", code: "KeyW"}));
+		// Two acts, never one: each press is answered before the next is sent, so a `w` batched with
+		// the prefix that armed it cannot be routed against the state the prefix has not reached yet.
+		await act(async () => void arm());
+		await act(async () => void fireEvent.keyDown(document, {key: "w", code: "KeyW"}));
 		return sent;
 	};
 
-	it("mounts the picker and re-binds nothing", () => {
-		const sent = journey(false);
+	it("mounts the picker and re-binds nothing", async () => {
+		const sent = await journey(false);
 		expect(screen.getByRole("listbox", {name: /Open a program/})).toBeTruthy();
 		expect(bindMsgs(sent)).toEqual([]);
 	});
 
-	it("re-binds nothing under StrictMode either, where a mount effect runs twice", () => {
-		const sent = journey(true);
+	it("re-binds nothing under StrictMode either, where a mount effect runs twice", async () => {
+		const sent = await journey(true);
 		expect(screen.getByRole("listbox", {name: /Open a program/})).toBeTruthy();
 		expect(bindMsgs(sent)).toEqual([]);
 	});
 
-	it("still forwards a key to the picker it just mounted", () => {
-		const sent = journey(false);
-		act(() => void fireEvent.keyDown(document, {key: "j", code: "KeyJ"}));
+	it("still forwards a key to the picker it just mounted", async () => {
+		const sent = await journey(false);
+		await act(async () => void fireEvent.keyDown(document, {key: "j", code: "KeyJ"}));
 
 		// `toMatchObject`, not `toEqual`: the picker's view slot is `picker/view.ts`'s to shape, and
 		// this test owns only that the key reached the picker and moved its cursor.

@@ -151,8 +151,13 @@ export function AttachedDesk({
 	const [revision, setRevision] = useState(0);
 	/** Ids an attach has already been started for; a second window must not open a second socket read. */
 	const asked = useRef(new Set<string>());
-	/** The newest shell revision this page has shown, whichever carrier brought it. */
-	const seen = useRef(0);
+	/**
+	 * The newest shell revision this page has shown, whichever carrier brought it. `null` is "nothing
+	 * seen yet" and is not a revision: a fresh kernel's shell sits at revision 0 until something
+	 * commits a row (`../process/Processes.ts`), so a zero sentinel would drop that first snapshot
+	 * and leave the desk on its placeholder.
+	 */
+	const seen = useRef<number | null>(null);
 	/** How a snapshot reaches the desk. Set while the attachment's source is subscribed. */
 	const deliver = useRef<((revision: number, state: unknown) => void) | null>(null);
 	/**
@@ -171,7 +176,7 @@ export function AttachedDesk({
 				// pump and the acknowledgement for this page's own dispatch — run on different fibers
 				// and nothing orders them, so the desk takes whichever is newer and ignores the other
 				// (#8274). Monotone and self-correcting: nothing here is a copy that can drift.
-				if (revision <= seen.current) return;
+				if (seen.current !== null && revision <= seen.current) return;
 				seen.current = revision;
 				setRevision(revision);
 				emit({_tag: "Snapshot", state} satisfies AttachEvent);
@@ -218,7 +223,7 @@ export function AttachedDesk({
 		setAttached(new Map());
 		// A fresh socket may be a fresh kernel, whose revisions start again from the bottom. Holding
 		// the old high-water mark would make the desk ignore every snapshot the new one sends.
-		seen.current = 0;
+		seen.current = null;
 	}, [page]);
 
 	useEffect(() => {
