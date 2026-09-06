@@ -106,10 +106,12 @@ kernel sent it, and no other (ADR 0353). Three consequences a caller must hold:
   deliberately leaves the prefix armed; with no countdown it stays armed, swallowing the next key.
 - That Msg disarms **only** a repeat window. A stale one cannot drop a prefix armed by hand, which
   is what keeps the indefinite wait indefinite.
-- The countdown's effect must depend on the prefix's **value**, never on the snapshot object. Every
+- The countdown's effect must depend on the prefix's **value**, never on a prefix object. Every
   snapshot arrives freshly decoded, so an effect keyed on `state.prefix` re-arms on unrelated kernel
   traffic and never fires — a demo counter ticking once a second starved it indefinitely (#7782).
   The dispatcher is read through the `latest` ref for the same reason.
+- It runs off the **page-advanced** prefix below, not off the snapshot, so the window opens at the
+  press rather than one round trip later (#8274).
 
 ## `forwardKey` delivers a program's own `key` Msg
 
@@ -136,6 +138,25 @@ into the process, the page hands the same key to that window's React renderer �
 a `KernelCmd` despite the page also acting on the key, and why the walk in
 `src/shell/ui/key-agreement.unit.test.ts` compares the two sides' *routing decision* rather than
 their Cmd lists.
+
+**The page routes over a prefix it advances itself, never over the last snapshot.** The two sides
+only agree if they fold from the same start, and the snapshot moves a whole round trip after the
+press that moved it — so a sequence typed faster than that trip was read two ways at once: the page
+read `<c-b> h` as "arm, then `h` to the window" while the kernel read it as "arm, then focus-left",
+and `<c-b> |` typed a pipe into the composer and split (#8274). `route` already hands back `next`,
+so `Desk.tsx` holds one `PrefixState`, starts it from the snapshot, and replaces it with the answer's
+`next` on every press. It is tab-ephemeral, the same class as the countdown, and it changes nothing
+ADR 0353 binds: the table is still the kernel's, the wire still carries raw `keys.press` and never an
+answer, and the kernel still routes every key.
+
+Reconciling the two is the other half. Everything that moves the kernel's prefix is a Msg the page
+dispatched itself — a `keys.press` (Escape is one: `route` answers `Unbound` and folds to idle) or
+`prefix.repeatLapsed` — so "nothing outstanding" is the one moment the snapshot is at least as new
+as the page's own, and only then does the snapshot win. The page marks itself unconfirmed on any
+advance the snapshot does not already carry, and clears that mark when a snapshot arrives holding
+the page's own value (`samePrefix` in `src/shell/ui/frame.ts`, value equality because every snapshot
+is new JSON). A second page attached to one shell is the exception, and its keys moving this page's
+prefix is the two-pages problem ADR 0353 named, not this rule.
 
 ## What the page can and cannot see
 

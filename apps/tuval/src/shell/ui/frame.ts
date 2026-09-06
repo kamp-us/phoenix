@@ -4,7 +4,8 @@
  * a test drives with no DOM, and the components below bind the answer to elements verbatim.
  *
  * One thing here looks like duplication and is not. `surfaceKey` runs the shell's own `route`
- * (`../keys/router.ts`) a second time, on the page, over the prefix snapshot the kernel sent. The
+ * (`../keys/router.ts`) a second time, on the page, over the prefix the page holds — the snapshot
+ * the kernel sent, advanced by the page's own presses since (`./Desk.tsx`, #8274). The
  * core runs it too and answers with Cmds — but Cmds are the kernel's, and the transport carries no
  * Cmd frame (`../transport/wire.ts`): a page learns state, never instructions. So the two effects
  * a *surface* owns — opening the command line and forwarding a key into the focused window's
@@ -38,16 +39,41 @@ export const routerPrefix = (state: ShellState): PrefixState =>
 			}
 		: idle;
 
+/** The repeat window a prefix state is inside, in milliseconds, or `null` when it is in none. */
+export const repeatWindowOf = (prefix: PrefixState): number | null =>
+	prefix._tag === "Armed" && prefix.repeatWindow !== null
+		? Duration.toMillis(prefix.repeatWindow)
+		: null;
+
+/**
+ * Do two prefix states say the same thing? Value equality and never identity: a snapshot arrives
+ * JSON-decoded, so the kernel's prefix is a new object on every frame, and only its value can
+ * answer whether the kernel has caught up with the prefix the page advanced itself (#8274).
+ */
+export const samePrefix = (a: PrefixState, b: PrefixState): boolean => {
+	if (a._tag === "Idle" || b._tag === "Idle") return a._tag === b._tag;
+	return (
+		a.pending.length === b.pending.length &&
+		a.pending.every((key, index) => b.pending[index] === key) &&
+		repeatWindowOf(a) === repeatWindowOf(b)
+	);
+};
+
 /**
  * What the *surface* must do about one key, beside always dispatching `keys.press`. Three arms and
  * no fourth: a key either opens the command line, belongs to the focused window's renderer, or is
  * the shell's own business and nothing the page does about it.
+ *
+ * Every arm carries `next`, the prefix state that follows this key, straight off `route`. The page
+ * routes the next key of a sequence over it rather than over the snapshot, so two keys typed inside
+ * one kernel round trip fold through the same pure function from the same start on both sides
+ * (#8274).
  */
 export type SurfaceKeyAnswer =
-	| {readonly _tag: "OpenCommandLine"}
-	| {readonly _tag: "ToWindow"; readonly key: string}
+	| {readonly _tag: "OpenCommandLine"; readonly next: PrefixState}
+	| {readonly _tag: "ToWindow"; readonly key: string; readonly next: PrefixState}
 	/** A named command the page does not implement, or an armed/pending/unbound prefix. */
-	| {readonly _tag: "Shell"; readonly command: CommandName | null};
+	| {readonly _tag: "Shell"; readonly command: CommandName | null; readonly next: PrefixState};
 
 /**
  * Is this key the shell's, whatever holds DOM focus? tmux's rule, and the whole of #8270: the
@@ -66,13 +92,13 @@ export const surfaceKey = (
 	event: Key,
 ): SurfaceKeyAnswer => {
 	const answer = route(table, prefix, event);
-	if (answer._tag === "ToWindow") return {_tag: "ToWindow", key: answer.key};
+	if (answer._tag === "ToWindow") return {_tag: "ToWindow", key: answer.key, next: answer.next};
 	if (answer._tag === "Command") {
 		return String(answer.name) === COMMAND_LINE_COMMAND
-			? {_tag: "OpenCommandLine"}
-			: {_tag: "Shell", command: answer.name};
+			? {_tag: "OpenCommandLine", next: answer.next}
+			: {_tag: "Shell", command: answer.name, next: answer.next};
 	}
-	return {_tag: "Shell", command: null};
+	return {_tag: "Shell", command: null, next: answer.next};
 };
 
 /** The status line, as text. Every field is read off the snapshot; the page stores none of it. */

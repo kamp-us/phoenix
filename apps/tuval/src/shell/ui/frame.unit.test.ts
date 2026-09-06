@@ -1,14 +1,17 @@
+import {Duration} from "effect";
 import {describe, expect, it} from "vitest";
 import {applyMsg} from "../core/index.ts";
-import {defaultPrefixTable} from "../keys/index.ts";
+import {defaultPrefixTable, idle as idlePrefix} from "../keys/index.ts";
 import {createStack, createTree, createWindow, SIZE_TOLERANCE} from "../layout/index.ts";
 import {deskWith, threeWindowDesk, threeWindowTree} from "./fixtures.ts";
 import {
 	defaultLayoutOf,
 	holdsPanels,
 	panelWindows,
+	repeatWindowOf,
 	routerPrefix,
 	sameLayout,
+	samePrefix,
 	statusFrame,
 	surfaceKey,
 	zoomedWindow,
@@ -16,30 +19,68 @@ import {
 
 const table = defaultPrefixTable;
 const prefixPress = {key: "b", ctrlKey: true};
+const armedWith = (pending: ReadonlyArray<string>, repeatWindow: Duration.Duration | null) =>
+	({_tag: "Armed", pending, repeatWindow}) as const;
 
 describe("surfaceKey", () => {
 	it("hands an unprefixed key to the focused window and nothing else", () => {
 		const answer = surfaceKey(table, routerPrefix(threeWindowDesk()), {key: "j"});
-		expect(answer).toEqual({_tag: "ToWindow", key: "j"});
+		expect(answer).toEqual({_tag: "ToWindow", key: "j", next: idlePrefix});
 	});
 
 	it("opens the command line on `prefix :`, and only after the prefix", () => {
 		const idle = threeWindowDesk();
-		expect(surfaceKey(table, routerPrefix(idle), {key: ":"})).toEqual({_tag: "ToWindow", key: ":"});
+		expect(surfaceKey(table, routerPrefix(idle), {key: ":"})).toEqual({
+			_tag: "ToWindow",
+			key: ":",
+			next: idlePrefix,
+		});
 
 		const [armed] = applyMsg(table, idle, {type: "keys.press", key: prefixPress});
-		expect(surfaceKey(table, routerPrefix(armed), {key: ":"})).toEqual({_tag: "OpenCommandLine"});
+		expect(surfaceKey(table, routerPrefix(armed), {key: ":"})).toEqual({
+			_tag: "OpenCommandLine",
+			next: idlePrefix,
+		});
 	});
 
 	it("keeps every other bound sequence the shell's, naming the command it resolved", () => {
 		const [armed] = applyMsg(table, threeWindowDesk(), {type: "keys.press", key: prefixPress});
 		const answer = surfaceKey(table, routerPrefix(armed), {key: "|"});
-		expect(answer).toEqual({_tag: "Shell", command: "window:split-vertical"});
+		expect(answer).toEqual({_tag: "Shell", command: "window:split-vertical", next: idlePrefix});
 	});
 
 	it("answers the same way the core routes: arming names no command", () => {
 		const answer = surfaceKey(table, routerPrefix(threeWindowDesk()), prefixPress);
-		expect(answer).toEqual({_tag: "Shell", command: null});
+		expect(answer).toEqual({_tag: "Shell", command: null, next: armedWith([], null)});
+	});
+
+	// The page routes the next key of a sequence over `next` rather than over the snapshot, so the
+	// field is what makes two keys typed inside one round trip fold from one start (#8274).
+	it("carries the state that follows a repeatable command, repeat window and all", () => {
+		const [armed] = applyMsg(table, threeWindowDesk(), {type: "keys.press", key: prefixPress});
+		const answer = surfaceKey(table, routerPrefix(armed), {key: "l", ctrlKey: true});
+		expect(answer.next).toEqual(armedWith([], table.repeatTimeout));
+	});
+});
+
+describe("samePrefix", () => {
+	it("reads two decoded copies of one armed prefix as the same state", () => {
+		expect(
+			samePrefix(armedWith(["h"], Duration.millis(500)), armedWith(["h"], Duration.millis(500))),
+		).toBe(true);
+		expect(samePrefix(idlePrefix, idlePrefix)).toBe(true);
+	});
+
+	it("parts an armed prefix from an idle one, and two armed ones on either field", () => {
+		expect(samePrefix(idlePrefix, armedWith([], null))).toBe(false);
+		expect(samePrefix(armedWith([], null), armedWith(["h"], null))).toBe(false);
+		expect(samePrefix(armedWith([], null), armedWith([], Duration.millis(500)))).toBe(false);
+	});
+
+	it("names the repeat window in milliseconds, and none for an unbounded arm", () => {
+		expect(repeatWindowOf(armedWith([], Duration.millis(500)))).toBe(500);
+		expect(repeatWindowOf(armedWith([], null))).toBeNull();
+		expect(repeatWindowOf(idlePrefix)).toBeNull();
 	});
 });
 
