@@ -1899,9 +1899,9 @@ Per surface:
   another tree's answer three times in one session (#4106) and recurred on the review side (#4887)
   — but what a validator does about a build cache is the repo's own declaration, since turbo's flags
   are a hard error to a bare `tsc` (#6015). Nothing is compiled in for a repo to inherit: phoenix
-  declares `pnpm exec turbo run typecheck --filter=...[origin/main]` and `pnpm lint:worktree` in its
-  own `.fabrika.jsonc` like anyone else, and reads the content-addressed cache rather than
-  re-deriving what its key already holds (#8275). A
+  declares `pnpm typecheck:affected` and `pnpm lint:worktree` in its own `.fabrika.jsonc` like
+  anyone else, and reads the content-addressed cache rather than re-deriving what its key already
+  holds (#8275). A
   repo with no list — declared empty, or never declared at all — has nothing to run, which refuses
   `11`, UNKNOWN naming which of the two it was — never green, and never the `VALIDATION_RED` that
   says the code failed.
@@ -2089,7 +2089,7 @@ surface that ran, so a file another surface would have read counts as uncovered 
 
 ```
 $ fabrika build check --surface code
-{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm exec turbo run typecheck --filter=...[origin/main]","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
+{"verdict":"green","surface":"code","tree":"/private/var/<redacted>/build-4312","ran":["pnpm typecheck:affected","pnpm lint:worktree"],"unvalidated":["README.md","scripts/deploy.sh"]}
 ```
 
 `ran` echoes whatever `codeValidators` resolved to, one `argv.join(" ")` per validator; the two

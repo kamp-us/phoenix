@@ -2,10 +2,10 @@
  * `codeValidators` — the repo's own commands that compile and lint its code.
  *
  * Declared rather than compiled in, because the script names and the flags they take are the repo's
- * own: `lint:worktree` is a phoenix script name, and turbo's flags — the cache-bypass one, the
- * `--filter` phoenix now scopes its typecheck with — are ones a bare `tsc` rejects outright (#6015).
- * An argv array rather than a command line, and the `command` key `workflowValidators` already uses,
- * so the file has one grammar for "a command fabrika spawns".
+ * own: `typecheck:affected` and `lint:worktree` are phoenix script names, and the turbo flags they
+ * wrap — a cache-bypass, a changed-package selection — are ones a bare `tsc` rejects outright
+ * (#6015). An argv array rather than a command line, and the `command` key `workflowValidators`
+ * already uses, so the file has one grammar for "a command fabrika spawns".
  *
  * No `reads`. On the workflow surface that field is what makes a green checkable per file, because
  * a declared guard opens a fixed set it names; a code validator is handed no paths and compiles the

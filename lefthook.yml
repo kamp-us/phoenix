@@ -106,19 +106,32 @@ pre-commit:
 # the pre-push hook's stdin; without `use_stdin` lefthook hands the leg a fresh already-closed
 # pipe and leaves git's own pipe open-but-unread for the hook's whole run, so nothing under this
 # hook ever consumes what git wrote. The drain leads the body — ahead of the toolchain-absent
-# and docs-only skips — so no exit path can leave those bytes unread. It is `[ -t 0 ]`-guarded
+# skip — so no exit path can leave those bytes unread. It is `[ -t 0 ]`-guarded
 # because `lefthook run pre-push` by hand hands the leg a terminal, and an unguarded `cat` would
 # sit there waiting for a human to type EOF.
 pre-push:
   parallel: false
   commands:
     typecheck:
-      # tsc across the workspace (the same `pnpm typecheck` CI runs); a type error fails
-      # closed and blocks the push. Docs-only fast-path (#3130): a push whose diff vs
-      # origin/main touches ONLY non-code paths (markdown/docs) has nothing tsc checks, so
-      # it skips the whole-repo run. Fail-SAFE: any changed path not recognized as docs — or
-      # a diff that can't be computed (origin/main unfetched) — runs the full typecheck, so a
-      # code change is NEVER skipped. Toolchain-absence still fails open.
+      # tsc over the packages this push changed plus their dependents, via the root
+      # `typecheck:affected` script — turbo's `--affected`, anchored to the MERGE-BASE of
+      # `origin/main` and HEAD. A push touching no package selects nothing and exits 0, which
+      # subsumes the hand-rolled docs-only fast path this leg used to carry (#3130), so it is
+      # gone. Cache hits replay out of the shared `.turbo/cache` (turbo redirects a linked
+      # worktree to the main worktree's cache), so a package another lane already typechecked
+      # costs nothing here.
+      #
+      # The merge-base is the whole point, and a plain `--filter=...[origin/main]` does NOT get
+      # it: that microsyntax diffs against the ref itself, so once main moves ahead — the
+      # ordinary shape here — everything main landed reads as this branch's change. Measured on
+      # a markdown-only branch 40 commits behind: 24 packages / 33 typecheck tasks, against 1
+      # package / 0 tasks from the merge-base (#8273 review round 1).
+      #
+      # Fail-SAFE on an unusable base: `--affected` sets turbo's `allow_unknown_objects`
+      # (turborepo v2.10.3 `crates/turborepo-scope/src/filter.rs`), so a checkout too shallow to
+      # hold a merge base degrades to the whole-repo run, never to a skip — measured at 24
+      # packages / 33 tasks against a base with no merge base. An `origin/main` that does not
+      # resolve at all is a turbo error, which blocks the push rather than passing it.
       use_stdin: true
       run: |
         [ -t 0 ] || cat >/dev/null   # git's pushed-ref list — see the pre-push note (#6172)
@@ -126,18 +139,7 @@ pre-push:
           echo "typecheck: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push typecheck — CI is the authority" >&2
           exit 0
         }
-        CHANGED=$(git diff --name-only origin/main...HEAD 2>/dev/null) || CHANGED=""
-        # NON-DOC = changed paths that are NOT markdown/docs. Empty NON-DOC (with a non-empty
-        # diff) ⇒ docs-only ⇒ skip. Tested via empty-output, not `grep -qv`: the `-q`+`-v`
-        # combo misbehaves under some grep variants (ugrep returns non-zero even with
-        # non-matching lines), which the empty-output form sidesteps portably.
-        NONDOC=""
-        [ -n "$CHANGED" ] && NONDOC=$(printf '%s\n' "$CHANGED" | grep -vE '\.(md|mdx|txt)$')
-        if [ -n "$CHANGED" ] && [ -z "$NONDOC" ]; then
-          echo "typecheck: docs-only push (every path changed vs origin/main is markdown/docs); skipping whole-repo typecheck — CI is the authority" >&2
-          exit 0
-        fi
-        pnpm typecheck
+        pnpm typecheck:affected
 
 # `git worktree add` fires post-checkout, so this provisions a fresh worktree's deps —
 # node_modules is gitignored and per-checkout, so a worktree is otherwise dead-on-arrival
