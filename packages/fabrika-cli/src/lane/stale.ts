@@ -2,7 +2,7 @@
  * The stall derivation — a lane's folded state plus the age of its last event, judged.
  *
  * The ledger records state, not liveness: when the shell driving a lane dies, the last recorded
- * state stays on disk and every reader still sees an active lane (#5897). Nothing new is stored to
+ * state stays on disk and every reader still sees an active lane. Nothing new is stored to
  * fix that. Every event line already carries an ISO `at`, so "how long since this lane moved" is
  * already on disk, and this module is the reading of it.
  *

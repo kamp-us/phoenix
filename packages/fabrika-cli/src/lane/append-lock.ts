@@ -1,7 +1,7 @@
 /**
- * The lane ledger's write lock — the serialization #5994 owes concurrent shells.
+ * The lane ledger's write lock — the serialization concurrent shells are owed.
  *
- * Until shells recorded their own terminals (#5736/#5980), a lane had exactly one writer and the
+ * Until shells recorded their own terminals, a lane had exactly one writer and the
  * check-then-act window between `loadLane` and `appendText` never opened. An epic run's parallel
  * phase has several shells alive at once, so the window is live now: two writers can both validate
  * against the same fold and both append, and the loser records an event the machine would have

@@ -1,5 +1,5 @@
 /**
- * `patch-guard`'s pure half — does every maintained `pnpm patch` (ADR 0038) carry a registered
+ * `patch-guard`'s pure half — does every maintained `pnpm patch` carry a registered
  * behavior-pinning test, and is no pin stale?
  *
  * The two-layer discipline this enforces is defined once in
@@ -119,7 +119,7 @@ export const auditPins = (
 /** What an unpinned patch's fix is — also the annotation body on `pnpm-workspace.yaml`. */
 export const missingPinFix = (key: string): string =>
 	`${key}: patched but has NO \`// @patch-pin: ${key}\` marker — ` +
-	"a pnpm patch (ADR 0038) with no behavior-pinning test is an unverified fork. " +
+	"a pnpm patch with no behavior-pinning test is an unverified fork. " +
 	`Fix: add a test that fails if the patched behavior regresses and tag it \`// @patch-pin: ${key}\` (see .patterns/dependency-patch-behavior-pins.md).`;
 
 /** What a stale pin's fix is — also the annotation body on the test file carrying it. */
@@ -130,7 +130,7 @@ export const stalePinFix = (marker: PinMarker): string =>
 
 const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many);
 
-/** The one-line summary of a fully pinned tree (ADR 0092 §1 "emit what you scanned"). */
+/** The one-line summary of a fully pinned tree — a green states what it scanned. */
 export const cleanSummary = (
 	verb: string,
 	patched: ReadonlyArray<string>,

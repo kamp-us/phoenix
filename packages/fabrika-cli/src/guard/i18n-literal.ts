@@ -1,10 +1,10 @@
 /**
  * `i18n-guard`'s pure half — does a Turkish string literal or a Turkish run of JSX text still sit
- * in `apps/web/src` outside the catalog (#7536, epic #7519)?
+ * in the scanned source root outside the catalog?
  *
- * The rule is ADR [0347](../../../../.decisions/0347-web-copy-behind-i18n-catalog.md): every user
- * surface reads its copy through `apps/web/src/i18n`, so Turkish text living in a component is copy
- * the reader can never see in English. `.patterns/i18n-catalog.md` is the shape a migration takes.
+ * The rule: every user surface reads its copy through the `i18n` catalog under that root, so
+ * Turkish text living in a component is copy the reader can never see in English.
+ * `.patterns/i18n-catalog.md` is the shape a migration takes.
  *
  * Three things are deliberately NOT copy and are not judged: a comment (`.glossary/LANGUAGE.md`
  * keeps prose bilingual by design), a regex literal (a character class over `çğıöşü` is a fold
@@ -142,7 +142,7 @@ const isObjectKey = (src: string, start: number, end: number): boolean => {
  * Every Turkish run in one TS/TSX source, with comments, regex literals and object keys skipped.
  *
  * The scanner classifies comments, strings and regex literals and treats everything left as bare
- * source. In a `.tsx` file under `apps/web/src` that remainder is JSX text or an identifier, which
+ * source. In a `.tsx` file under the scan root that remainder is JSX text or an identifier, which
  * is why `jsx-text` is the honest name for the second arm — an identifier cannot carry a Turkish
  * letter under this repo's English-for-technical rule.
  */
@@ -348,7 +348,7 @@ const VERB = "guard i18n-guard check";
 
 export const renderReport = (verdict: I18nVerdict): string => {
 	if (verdict._tag === "ZeroScope")
-		return `${VERB}: scanned zero files under apps/web/src — the scope resolved empty, so a pass would be vacuous. Fail-closed (ADR 0092).\n`;
+		return `${VERB}: scanned zero files under ${SCAN_ROOT} — the scope resolved empty, so a pass would be vacuous. Fail-closed, like every guard here.\n`;
 	if (verdict._tag === "Clean")
 		return `${VERB}: clean — ${verdict.filesScanned} file(s) scanned, ${verdict.allowed} carrying an allowed Turkish literal, none over its ceiling.\n`;
 	const lines: Array<string> = [
@@ -363,8 +363,8 @@ export const renderReport = (verdict: I18nVerdict): string => {
 		lines.push(
 			"",
 			'Read the copy through the catalog instead: `const t = useT()` and `t("<surface>.<thing>")`,',
-			"with the string added to apps/web/src/i18n/tr/<surface>.ts and its English twin in en/.",
-			"See .patterns/i18n-catalog.md and ADR 0347.",
+			`with the string added to ${SCAN_ROOT}/i18n/tr/<surface>.ts and its English twin in en/.`,
+			"See .patterns/i18n-catalog.md.",
 		);
 	}
 	for (const entry of verdict.dead) {
@@ -384,14 +384,14 @@ export const annotationsFor = (verdict: I18nVerdict): ReadonlyArray<Annotation> 
 					"error",
 					entry.path,
 					hit.line,
-					`Turkish copy outside apps/web/src/i18n: ${hit.excerpt}. Fix: move it into i18n/tr/<surface>.ts (plus its en/ twin) and read it with t("<surface>.<thing>") — ADR 0347, .patterns/i18n-catalog.md.`,
+					`Turkish copy outside ${SCAN_ROOT}/i18n: ${hit.excerpt}. Fix: move it into i18n/tr/<surface>.ts (plus its en/ twin) and read it with t("<surface>.<thing>") — see .patterns/i18n-catalog.md.`,
 				),
 			),
 		),
 		...verdict.dead.map((entry) =>
 			atLine(
 				"error",
-				"apps/web/src/i18n/i18n-guard.config.json",
+				`${SCAN_ROOT}/i18n/i18n-guard.config.json`,
 				1,
 				`The \`${entry.bucket}\` allowance for ${entry.path} names a file the scan never saw — drop the entry rather than leave a ratchet nothing holds.`,
 			),

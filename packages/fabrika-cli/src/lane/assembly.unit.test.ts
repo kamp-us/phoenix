@@ -14,7 +14,7 @@ import {
 	worktrees,
 } from "./assembly.ts";
 
-const MAIN = "/checkout/phoenix";
+const MAIN = "/checkout/repo";
 const LIST = `worktree ${MAIN}
 HEAD aaaa111
 branch refs/heads/main
@@ -95,7 +95,7 @@ describe("assemblySeat", () => {
 		});
 	});
 
-	it("names the main working tree standing on the assembly branch conscripted (#6163)", () => {
+	it("names the main working tree standing on the assembly branch conscripted", () => {
 		const conscripted = trees(`worktree ${MAIN}
 HEAD aaaa111
 branch refs/heads/epic/5680
@@ -124,7 +124,7 @@ branch refs/heads/epic/5680
 		});
 	});
 
-	it("names a record whose directory is gone stale, never isolated at a dead path (#6163)", () => {
+	it("names a record whose directory is gone stale, never isolated at a dead path", () => {
 		expect(assemblySeat(trees(STALE), 5680, "epic/5680")).toEqual({
 			_tag: "Stale",
 			path: `${MAIN}/.claude/worktrees/epic-5680`,

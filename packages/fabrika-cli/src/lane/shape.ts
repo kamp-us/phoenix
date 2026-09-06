@@ -3,7 +3,7 @@
  *
  * A lane's machine and the issue it drives are decided in two different places — the machine by
  * whichever boot verb ran (`lane open`'s committed template, `lane emit`'s generated document), the
- * issue's shape by the board — and until #7024 nothing compared them. An epic whose lane was booted
+ * issue's shape by the board — and nothing used to compare them. An epic whose lane was booted
  * before it had a plan came up on the single-task coder template, and every later diagnostic read it
  * as healthy: the fold replays fine, `lane migrate --check` grafts it cleanly and answers `current`,
  * and the only symptom is a builder backing off because the machine has no child regions to drive.
@@ -17,14 +17,14 @@
  * What the board says the lane's issue needs.
  *
  * An epic is an issue the board types `type:epic` **or** one carrying sub-issue links: the label is
- * what a pre-plan epic has, the children are what a planned one has, and #7024's lane was booted in
- * the window where only the first was true. `children` is the link count, so `0` is exactly that
+ * what a pre-plan epic has, the children are what a planned one has, and the mis-booted lane came
+ * up in the window where only the first was true. `children` is the link count, so `0` is that
  * pre-plan case.
  *
- * `Child` is the mirror #7024's guard could not reach, because both facts it reads are facts about
+ * `Child` is the mirror that guard could not reach, because both facts it reads are facts about
  * the issue itself: an epic's child carries no `type:epic` label and no children of its own, so it
- * resolved `Single` and a second lane ledger booted over work the parent's lane already owned
- * (#7381). `parent` is `null` when the board carried the edge and no number that parses.
+ * resolved `Single` and a second lane ledger booted over work the parent's lane already owned.
+ * `parent` is `null` when the board carried the edge and no number that parses.
  */
 export type Expectation =
 	| {readonly _tag: "Epic"; readonly children: number}
@@ -61,7 +61,7 @@ export type ShapeVerdict =
  *
  * `Child` judges as `Single` does, and deliberately: a child's lane is refused at boot, so one
  * already on disk is a ledger to reconcile rather than a machine to swap, and calling it mismatched
- * here would send `lane migrate` at a fix it does not have (#7381).
+ * here would send `lane migrate` at a fix it does not have.
  */
 export const judgeShape = (
 	issue: number,

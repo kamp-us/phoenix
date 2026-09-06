@@ -1,9 +1,9 @@
 /**
  * `publish-isolation-guard`'s pure half — is every PUBLISHED package's runtime dependency graph
- * installable from a clean registry (ADR 0201 §3)?
+ * installable from a clean registry?
  *
- * The forcing incident: a `@kampus/*` CLI published green at 0.2.0 yet was uninstallable, because it
- * declared three phoenix-private `workspace:*` packages as registry deps (#3802).
+ * The forcing incident: a scoped CLI published green at 0.2.0 yet was uninstallable, because it
+ * declared three repo-private `workspace:*` packages as registry deps.
  *
  * The published set is DERIVED from `.github/workflows/publish.yml`'s release-tag grammar rather
  * than hand-kept here: a parallel list drifts from what actually publishes, and the drift is only
@@ -41,7 +41,7 @@ export interface PublishedManifest {
 }
 
 /**
- * A dep that breaks publish isolation. Two kinds, both the #3802 class:
+ * A dep that breaks publish isolation. Two kinds, both unresolvable from a clean registry:
  * - `workspace-link`: a `workspace:` specifier — never resolvable from a registry.
  * - `private-kampus-dep`: a `@kampus/*` dep that is not itself published, so a clean registry has
  *   nothing to resolve it to.
@@ -60,7 +60,7 @@ export interface IsolationViolation {
  */
 export type PublishIsolationVerdict =
 	| {readonly pass: true; readonly scanned: ReadonlyArray<string>}
-	/** No published package in scope — fail closed, never a vacuous pass (ADR 0092). */
+	/** No published package in scope — fail closed, never a vacuous pass. */
 	| {readonly pass: false; readonly reason: "zero-scope"}
 	| {
 			readonly pass: false;
@@ -88,8 +88,8 @@ export const judge = (manifests: ReadonlyArray<PublishedManifest>): PublishIsola
 	const violations: Array<IsolationViolation> = [];
 	for (const m of manifests) {
 		for (const dep of m.deps) {
-			// `workspace:` is checked first: it is the most actionable diagnosis (the exact #3802
-			// form) even when the dep is also `@kampus/*`-scoped.
+			// `workspace:` is checked first: it is the most actionable diagnosis even when the dep
+			// is also `@kampus/*`-scoped.
 			if (dep.value.startsWith("workspace:")) {
 				violations.push({
 					path: m.path,
@@ -118,12 +118,12 @@ export const judge = (manifests: ReadonlyArray<PublishedManifest>): PublishIsola
 /** One violation as its own report line, carrying the why and the fix. */
 export const violationLine = (v: IsolationViolation): string =>
 	v.kind === "workspace-link"
-		? `  ${v.path}: ${v.field} \`${v.name}\` links \`${v.value}\` — a workspace: specifier never resolves from a clean registry (the #3802 class). ` +
+		? `  ${v.path}: ${v.field} \`${v.name}\` links \`${v.value}\` — a workspace: specifier never resolves from a clean registry. ` +
 			"Fix: inline it as a tool, or depend on a PUBLISHED version instead."
-		: `  ${v.path}: ${v.field} \`${v.name}\` (\`${v.value}\`) is a private/unpublished @kampus package — an external install cannot resolve it (the #3802 class, ADR 0201 §3). ` +
+		: `  ${v.path}: ${v.field} \`${v.name}\` (\`${v.value}\`) is a private/unpublished @kampus package — an external install cannot resolve it. ` +
 			"Fix: inline it, or publish that package and depend on its registry version.";
 
-/** The human report for a verdict — it names what was scanned, not only what failed (ADR 0092). */
+/** The human report for a verdict — it names what was scanned, not only what failed. */
 export const renderReport = (verb: string, verdict: PublishIsolationVerdict): string => {
 	if (verdict.pass) {
 		const n = verdict.scanned.length;
@@ -131,7 +131,7 @@ export const renderReport = (verb: string, verdict: PublishIsolationVerdict): st
 	}
 	if (verdict.reason === "zero-scope") {
 		return (
-			`${verb}: derived ZERO published packages — fail-closed (ADR 0092). ` +
+			`${verb}: derived ZERO published packages — fail-closed. ` +
 			"Does publish.yml still declare a `<name>-v<version>` release-tag grammar, and does its prefix map to a workspace member?"
 		);
 	}

@@ -2,7 +2,7 @@
  * The fold — `events.jsonl` in, lane state out, every invocation from scratch.
  *
  * Fold = state: there is no resident process and no snapshot, a verb re-folds the whole log each
- * run (proven trivially fast at operator scale — #5671, runs 3–12). Tasks are independent regions,
+ * run — measured trivially fast at operator scale. Tasks are independent regions,
  * so the global log partitions cleanly and each task's messages fold through its own machine.
  *
  * `deriveStatus` is the whole "compound machine": the active phase is the first whose tasks are not
@@ -24,31 +24,31 @@ import {
 
 /**
  * One appended line of `events.jsonl`: which task, which (namespaced) event, when — plus, on an
- * event a shell reported through `lane report`, the artifact refs its terminal named (#5712), on a
- * `BLOCKED`, the closed-set cause of the park (#6480), and the lane classes the recorder observed
- * at that moment (ADR 0317). Those three refs are evidence carried verbatim.
+ * event a shell reported through `lane report`, the artifact refs its terminal named, on a
+ * `BLOCKED`, the closed-set cause of the park, and the lane classes the recorder observed
+ * at that moment. Those three refs are evidence carried verbatim.
  *
  * `round`, `classes`, `waitGrant` and `partial` are not evidence — they are the payloads the fold
- * reads. A `CLEARED` line without a `round` names no round to clear (ADR 0312), `classes` is what a
- * `class:<name>` guard routes on (ADR 0317), `waitGrant` is the waits a resume buys, which rides
+ * reads. A `CLEARED` line without a `round` names no round to clear, `classes` is what a
+ * `class:<name>` guard routes on, `waitGrant` is the waits a resume buys, which rides
  * the `UNBLOCKED` line so one recorded event both clears a queue stall and pays for the read the
- * lane resumes to take (ADR 0313), and `partial` says the merge behind a ship's `DONE` left its
- * issue open, which is what the `merge:partial` guard routes on (ADR 0343). It is recorded at both
+ * lane resumes to take, and `partial` says the merge behind a ship's `DONE` left its
+ * issue open, which is what the `merge:partial` guard routes on. It is recorded at both
  * polarities, so absent means "nobody read the closure", never "the merge closed it": the fold still
  * routes an absent one down the closing arm, and every line written before the field existed folds
- * exactly as it did, but a reader asking which lines were never confirmed can now tell (ADR 0351).
+ * exactly as it did, but a reader asking which lines were never confirmed can now tell.
  * `landed` is that `partial`'s evidence — the merged pull requests the closure read stood on — and
  * it is what makes a recorded `false` legible after the fact: one naming its evidence was read off a
  * PR, one naming none fell through a nominator that could not see the subject, and no timestamp on
- * the line distinguishes them (#7457).
+ * the line distinguishes them.
  *
  * `deferred` is the fourth kind: not evidence and not a payload the fold reads, but the disclosure
  * that this `PASS` was proven over a set short the namespaces named — the routed `review-ui` an
- * epic child hands to its epic's tail (#7041). Without it a deferred `PASS` and a whole-set one are
+ * epic child hands to its epic's tail. Without it a deferred `PASS` and a whole-set one are
  * the same line, and nothing in the ledger says a rendered verdict is still owed anywhere.
  *
  * `corrects` is the fifth and rides one line only, a {@link CORRECTED_EVENT}: the `at` of the
- * earlier entry of this same task whose `partial` payload this line supersedes (ADR 0350). It is the
+ * earlier entry of this same task whose `partial` payload this line supersedes. It is the
  * one field naming another line, and it is how a routing fact recorded before the field existed is
  * repaired without any recorded line changing — see {@link applyCorrections}.
  */
@@ -124,13 +124,13 @@ export const parseLog = (text: string): ParseLogResult => {
 			continue;
 		}
 		// A grant that names no round raises the budget by nothing and would fold as a silent no-op —
-		// the failure mode ADR 0312 exists to delete, so it is a defect at the parse.
+		// the failure mode the recorded-clearance rule exists to delete, so it is a defect at the parse.
 		if (bareEvent(record.event) === CLEARED_EVENT && record.round === undefined) {
 			defects.push(`line ${index + 1} is a ${CLEARED_EVENT} event carrying no \`round\``);
 			continue;
 		}
 		// Same failure mode on the wait axis: a grant of nothing raises `maxWaits` by nothing and folds
-		// as a silent no-op, so the entry that names one is a defect rather than an event (ADR 0313).
+		// as a silent no-op, so the entry that names one is a defect rather than an event.
 		if (
 			record.waitGrant !== undefined &&
 			!(Number.isInteger(record.waitGrant) && (record.waitGrant as number) > 0)
@@ -165,7 +165,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			continue;
 		}
 		// An empty `landed` names no merged PR, so it attests nothing while reading as evidence — the
-		// same silent no-op a roundless `CLEARED` is, and a defect here for the same reason (#7457).
+		// same silent no-op a roundless `CLEARED` is, and a defect here for the same reason.
 		if (
 			record.landed !== undefined &&
 			!(
@@ -181,7 +181,7 @@ export const parseLog = (text: string): ParseLogResult => {
 		}
 		// A correction that names no target line, or names one with nothing to put on it, supersedes
 		// nothing and would fold as a silent no-op — the same failure mode a roundless `CLEARED` has,
-		// and the reason both are defects here rather than events (ADR 0350).
+		// and the reason both are defects here rather than events.
 		const corrected = bareEvent(record.event) === CORRECTED_EVENT;
 		if (record.corrects !== undefined && typeof record.corrects !== "string") {
 			defects.push(`line ${index + 1} carries a non-string \`corrects\` field`);
@@ -227,7 +227,7 @@ export type CorrectionResult =
 /**
  * Resolve every {@link CORRECTED_EVENT} line against the entry it names, producing the log the fold
  * replays: corrections removed, and each corrected entry carrying the `partial` its correction
- * states (ADR 0350).
+ * states.
  *
  * The log is append-only, so a routing fact recorded wrong can only be superseded, never edited —
  * and the supersession has to be resolvable offline, from the log alone, since the fold is total
@@ -341,9 +341,9 @@ export const foldLog = (lane: CompiledLane, entries: ReadonlyArray<LogEntry>): F
  *
  * A `CLEARED` is not the last thing said about a task, because it says nothing about one: it moves
  * no task and clears no park, so a grant landing on a parked lane must leave that park's cause
- * standing (ADR 0312). A `CORRECTED` is skipped for the same reason — it amends an older line's
+ * standing. A `CORRECTED` is skipped for the same reason — it amends an older line's
  * routing payload and parks nothing, so letting it stand as the latest entry would silently clear
- * the cause a repaired lane is still waiting under (ADR 0350).
+ * the cause a repaired lane is still waiting under.
  */
 export const standingCauses = (
 	entries: ReadonlyArray<LogEntry>,
@@ -386,7 +386,7 @@ export const deriveStatus = (
 			waits: state.waits,
 			maxWaits: state.maxWaits,
 			// Absent rather than empty when unclassed, so an unclassed lane's status is what it always
-			// was; a driver relaying `--class` reads the standing set here (ADR 0317).
+			// was; a driver relaying `--class` reads the standing set here.
 			...(state.classes.length === 0 ? {} : {classes: state.classes}),
 			...taskIn(lane, taskId).extras,
 			...(cause === undefined ? {} : {cause}),
@@ -428,7 +428,7 @@ export const deriveStatus = (
  * than off a state-name list is what keeps the routing and the proof one fact: a `PASS` out of
  * `review` that lands in `review:ui` is a `PASS` whose rendered namespace the cell it routes into
  * owes, while the same `PASS` on a machine with no such arm — a chore workflow, or a rendered head
- * whose reviewer relayed no class — lands in `ship` and owes the whole set here (#6664).
+ * whose reviewer relayed no class — lands in `ship` and owes the whole set here.
  *
  * It answers the machine's question only. Whether the event is *appendable* stays
  * {@link applyEvent}'s, which asks several more.
@@ -506,15 +506,15 @@ const refuseEvent = (reason: string): ApplyResult => ({_tag: "Refused", reason, 
  *
  * Two refusals are this function's own rather than the machine table's, one per budget, and both are
  * the same defect: a resume that restores the state and not the budget it needs, so the lane
- * advertises `active`, is not walkable, and nobody is told (#6570).
+ * advertises `active`, is not walkable, and nobody is told.
  *
  * On the **retry** axis it is an `UNBLOCKED` out of an error final into a state whose only non-`PASS`
- * route is `retries`-guarded and spent; under ADR 0312 the budget comes from a recorded `CLEARED` and
+ * route is `retries`-guarded and spent; the budget comes from a recorded `CLEARED` and
  * from nothing else. On the **wait** axis it is a resume out of a wait park back into the very state
  * whose spent `waits` guard produced that park. The wait one cannot key on `errorFinals` the way the
  * retry one does — `human:queue-stall` carries no `type: "final"` and structurally cannot be in that
  * set — so it keys on the wait counter and on the guarded state's own park pairing, and its grant
- * rides the resume rather than arriving as a separate line (ADR 0313).
+ * rides the resume rather than arriving as a separate line.
  */
 export const applyEvent = (
 	lane: CompiledLane,
@@ -529,18 +529,18 @@ export const applyEvent = (
 	if (!isOperatorEvent(event)) {
 		if (event === CLEARED_EVENT) {
 			return refuseEvent(
-				`"${event}" is not an operator event — a cleared repair round is appended by \`build clear\`, never recorded here (ADR 0312)`,
+				`"${event}" is not an operator event — a cleared repair round is appended by \`build clear\`, never recorded here`,
 			);
 		}
 		return refuseEvent(
 			event === CORRECTED_EVENT
-				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned (ADR 0350)`
+				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned`
 				: `"${event}" is outside the operator's six events (${OPERATOR_EVENTS.join("/")})`,
 		);
 	}
 	const previous = deriveStatus(lane, states);
-	// A task sitting in an open final is parked, not finished: the door out is still walkable (ADR
-	// 0297). This is a fact about the task alone — a phase holding a parked child beside an
+	// A task sitting in an open final is parked, not finished: the door out is still walkable.
+	// This is a fact about the task alone — a phase holding a parked child beside an
 	// unfinished sibling never folds, so the lane's own status says nothing about it.
 	const compiled = lane.tasks[taskId];
 	const state = states[taskId];
@@ -603,7 +603,7 @@ export const applyEvent = (
 		return {
 			_tag: "Refused",
 			kind: "unbudgeted-resume",
-			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.waits}/${next.maxWaits} waits — the state comes back and the wait budget does not, so the next guarded route out of "${next.type}" falls straight back to "${from.type}". Grant the waits on this same resume: \`recipe unpark\` grants them once it has proven the queue moved, and \`lane transition … UNBLOCKED --grant-wait <n>\` is the fallback when that read cannot run. \`build clear\` buys a repair round and never a longer wait (ADR 0313).`,
+			reason: `task "${taskId}" would resume from "${from.type}" into "${next.type}" at ${next.waits}/${next.maxWaits} waits — the state comes back and the wait budget does not, so the next guarded route out of "${next.type}" falls straight back to "${from.type}". Grant the waits on this same resume: \`recipe unpark\` grants them once it has proven the queue moved, and \`lane transition … UNBLOCKED --grant-wait <n>\` is the fallback when that read cannot run. \`build clear\` buys a repair round and never a longer wait.`,
 		};
 	}
 	const entry: LogEntry = {
@@ -625,7 +625,7 @@ export type ClearanceResult =
 	| {readonly _tag: "Refused"; readonly reason: string};
 
 /**
- * The entry a recorded clearance appends — `build clear`'s half of ADR 0312, kept beside
+ * The entry a recorded clearance appends — `build clear`'s half of the grant protocol, kept beside
  * {@link applyEvent} because both decide appendability from the same fold.
  *
  * It validates far less than an operator event does, and deliberately: a grant moves no task, so

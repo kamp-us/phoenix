@@ -65,7 +65,7 @@ describe("fallbackAnnotations", () => {
 		expect(fallbackAnnotations("report", own)).toBe(own);
 	});
 
-	// A red that renders a blank check surface is the #3868 complaint verbatim.
+	// A red that renders a blank check surface is the complaint this fallback answers.
 	it("manufactures one bare ::error from the report head when it supplied none", () => {
 		const annotations = fallbackAnnotations("line one\nline two");
 		expect(annotations).toHaveLength(1);

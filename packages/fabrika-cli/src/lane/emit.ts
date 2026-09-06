@@ -1,6 +1,6 @@
 /**
  * The pure epic-machine emitter — one epic body plus its child links in, one `workflow.json` text
- * out, byte-deterministic (#5688; phase 3 of #5680).
+ * out, byte-deterministic.
  *
  * **No second grammar and no second cycle walk.** The topology is read through the shipped
  * `build/dependencies.ts` parser — the same reader `build check --surface plan` validates with,
@@ -10,7 +10,7 @@
  * one region per child, phases sequenced by `onDone`, parallel within a phase, and one epic tail
  * phase after the last of them.
  *
- * **One epic run is one branch and one PR** (ADR 0285). A child's region is the local loop only —
+ * **One epic run is one branch and one PR**. A child's region is the local loop only —
  * `queued → build → review → integrate`, the integrate step merging the child's range into the epic
  * branch — and the merge to `main` lives once, in the tail phase's single epic-level region
  * (`review → ship → shipped`). The tail is a *phase* rather than a bare state because `machine.ts`
@@ -22,7 +22,7 @@
  * same body bytes and the same child links (each child's number, state and close reason) can only
  * produce the same machine bytes. A child's state is part of the input: a closed child boots its
  * region in a final state, so re-emitting a partly-built epic yields a machine that can still
- * terminate (#5746).
+ * terminate.
  */
 import {type Ref, readTopology} from "../build/dependencies.ts";
 import {type DeclaredLine, findCycle} from "../ledger/topology-doc.ts";
@@ -51,7 +51,7 @@ export type EmitResult =
  * trips the phase, which is the loud answer for a topology that still requires a child the board
  * abandoned. Marking it `landed` would fabricate a landing. A child booted there left no state
  * behind it, so `frozen`'s `UNBLOCKED` door has nowhere to resume to and the fold refuses it —
- * that child is re-emitted, not unfrozen (ADR 0297).
+ * that child is re-emitted, not unfrozen.
  */
 const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
 	if (link.state === "open") return "queued";
@@ -63,13 +63,13 @@ const initialFor = (link: SubIssueLink): "queued" | "landed" | "frozen" => {
  *
  * It ends at `landed`: the child's commits are on the epic's shared branch and nothing was pushed,
  * reviewed on GitHub or merged. There is no per-child `ship` and no per-child `human:cp-approval`
- * because there is no per-child PR to ship or to gate (ADR 0285).
+ * because there is no per-child PR to ship or to gate.
  *
  * `integrate` is the merge of the reviewed range into the epic branch, and it is a *state* so that a
  * collision between two children resolves inside the run: its `FAIL` — a textual conflict, or a
  * failed post-merge check, which is the semantic collision — re-enters `build` under the same
  * guarded-FAIL retry array `review` uses, and exhausts into `frozen` — a park with an `UNBLOCKED`
- * door back to the state it left, spent retries held (ADR 0297). No route from it reaches a
+ * door back to the state it left, spent retries held. No route from it reaches a
  * merge queue, and none reaches `landed` without passing back through `review`: post-resolution
  * content is not what the range verdict judged, so the verdict is re-proven before the landing
  * rather than after it.
@@ -110,11 +110,11 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
  * The epic's own region — the tail phase's single task: review the one PR, then merge it once.
  *
  * `ship` carries the same guarded FAIL, because a PR can be re-reviewed at a rewritten head while
- * the lane sits there and a park clear is exactly that path (#5807). Its retry arm is `review` for
+ * the lane sits there and a park clear is exactly that path. Its retry arm is `review` for
  * the same reason the review edge's is: the repair round happens outside the machine, so the next
  * thing the lane can record is another verdict.
  *
- * `ship:queued` is the tail's wait cell (ADR 0313): the tail is the one place an epic run meets a
+ * `ship:queued` is the tail's wait cell: the tail is the one place an epic run meets a
  * merge queue, so it is the one region that needs it — a child region has no `ship` and reaches no
  * queue at all. The `WIP` out of it is a guarded array like the FAIL above, but it spends `waits`
  * rather than `retries`, so a queue dwell cannot eat the epic review's repair rounds. Its spent-
@@ -128,7 +128,7 @@ const region = (ns: string, initial: "queued" | "landed" | "frozen"): Record<str
  * `complete`. The retry arm is `review` itself: a repair round happens outside the machine and the
  * next verdict is another review. The fallthrough is `human:epic-review`, and it carries the same
  * `final` + `UNBLOCKED` door `frozen` does: a twice-failed epic review is a park a human resumes,
- * not the end of the run (ADR 0341, settling the question #5793 deferred).
+ * not the end of the run.
  */
 const epicRegion = (ns: string): Record<string, unknown> => ({
 	initial: "review",
@@ -194,7 +194,7 @@ export const emitMachine = (
 ): EmitResult => {
 	// Childlessness is read before the body, because an issue with no sub-issue links is not an epic
 	// whatever its prose says — parsing first let a plain issue's `## Dependencies` heading refuse as
-	// a malformed epic record and dead-end the boot (#5973).
+	// a malformed epic record and dead-end the boot.
 	if (children.length === 0) return {_tag: "NoTopology"};
 
 	const topo = readTopology(body);
@@ -204,7 +204,7 @@ export const emitMachine = (
 	const initials = new Map(children.map((link) => [link.number, initialFor(link)]));
 	const known = new Set(initials.keys());
 	// Every phase member is checked against `known` below, so the lookup holds by construction; the
-	// throw is the invariant's enforcement site — a defaulted initial would re-open #5746.
+	// throw is the invariant's enforcement site — a defaulted initial would mis-seat a child.
 	const initialOf = (child: number): "queued" | "landed" | "frozen" => {
 		const initial = initials.get(child);
 		if (initial === undefined) throw new Error(`no child link for #${child}`);

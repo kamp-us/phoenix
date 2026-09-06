@@ -7,8 +7,7 @@
  * The judgement is [`migrate.ts`](migrate.ts)'s, deliberately and by call rather than by
  * re-derivation: the lanes an archive is for are exactly the ones `lane migrate` already refuses as
  * `Unreplayable`, so if the two ever answered differently, the sweep would keep reporting a lane the
- * archive had already taken out of scope, or take one out that the sweep still judges fine (ADR
- * 0352).
+ * archive had already taken out of scope, or take one out that the sweep still judges fine.
  *
  * The lane's own machine is folded first, and that ordering is the one thing this adds. A generated
  * epic machine has no committed template to be a candidate ({@link graftContext} answers `Foreign`),
