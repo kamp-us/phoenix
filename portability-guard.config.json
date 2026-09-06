@@ -85,8 +85,8 @@
 			"paths": ["claude-plugins/fabrika/skills/triage"]
 		},
 		"plugin-governance": {
-			"ceiling": 363,
-			"why": "The governance and front-door skills' text, cleared by #8296, the governance sweep child.",
+			"ceiling": 26,
+			"why": "#8296 swept the prose; every one of the 26 left is a value rather than a sentence. 21 are stderr lines the shipped verbs print, pinned verbatim in the Errors tables and in one rendered example — rewriting a pin first would make the contract quote a line no verb prints, so 17 shrink when packages/fabrika-cli/src/governance and packages/fabrika-cli/src/status are swept by #8309, and 4 when packages/fabrika-cli/src/review is swept by #8305. 3 are the `governance-digest` round-trip fixture rows copied from the wire registry, which move with packages/fabrika-cli/src/wire under #8307. 2 are the `settings-patch` marketplace source the bootstrap registry writes, a constant in packages/fabrika-cli/src/status that #8309 owns.",
 			"paths": [
 				"claude-plugins/fabrika/skills/governance",
 				"claude-plugins/fabrika/skills/front-door"

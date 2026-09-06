@@ -33,12 +33,12 @@ fabrika governance scope $pr_number
 ```
 
 **On an epic child there is no PR, and the subject is the range instead.** An epic run opens one
-tail PR (ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)), so mid-run the
-child branch is all there is. A documentation epic's children sit under a governance root by
-construction wherever this repo homes its skills, and this namespace is owed at every round on such
-a diff (ADR [0293](../../../../.decisions/0293-governance-fires-every-round.md)), so the range is the normal
-subject on a documentation epic, not an edge. Drop the positional and name the two ends your caller
-gave you; the answer is the same four fields, with `<base>..<tip>` where a head SHA would be:
+tail PR at the end rather than one per child, so mid-run the child branch is all there is. A
+documentation epic's children sit under a governance root by construction wherever this repo homes
+its skills, and this namespace is owed at **every** review round on such a diff, never only the
+first, so the range is the normal subject on a documentation epic, not an edge. Drop the positional
+and name the two ends your caller gave you; the answer is the same four fields, with
+`<base>..<tip>` where a head SHA would be:
 
 ```bash
 fabrika governance scope --base 4f2a91c1 --tip 9b516363
@@ -56,7 +56,7 @@ alone**, over the roots this repo declares in `.fabrika.jsonc`'s `governedRoots`
   *which roots* it governs, never *whether* a diff under them is judged, and a list that is empty or
   that drops `.fabrika.jsonc` is refused at load rather than honoured. `review` reads the same fact
   off the `governance` line its own `scope` prints — the same derivation over the same list, not its
-  three compiled-in `harness` roots (#5607) — and routes here; it never decides whether you were
+  three compiled-in `harness` roots — and routes here; it never decides whether you were
   needed.
 - **Fail-closed on absence.** The refusal belongs at the enqueue seam, not to a reviewer's good
   intentions: `governance` is a required namespace in `fabrika ship gate`'s conjunction, so a
@@ -75,7 +75,7 @@ alone**, over the roots this repo declares in `.fabrika.jsonc`'s `governedRoots`
 <!-- anchor: HARNESS-IS-NOT-CP --> **Harness-touching is not control-plane.** Control-plane asks
 *who must approve*, from `.github/CODEOWNERS`, enforced by GitHub
 ([control-plane classification](../../docs/control-plane-classification.md)); yours asks *is a
-verdict required*. The sets differ deliberately — where a repo leaves `.decisions/` out of
+verdict required*. The sets differ deliberately — where a repo leaves its decision corpus out of
 CODEOWNERS, records get no code-owner review and this sweep is the guard that stays.
 
 **Say nothing about who must approve** — not a verdict, not a hedged one, not a "for orientation"
@@ -211,8 +211,8 @@ one. Re-review, never re-bind.
 
 **A re-post appends; it never replaces.** The prior verdict is retired verbatim below the comment's
 `<!-- fabrika:superseded -->` fence while yours takes the first line, so the sixth field of the
-answer reads `superseded` rather than `edited` and the record of what the gate said before survives
-(#7411). Flipping the polarity at one head is the one case you must say out loud: without
+answer reads `superseded` rather than `edited` and the record of what the gate said before
+survives. Flipping the polarity at one head is the one case you must say out loud: without
 `--supersede` it is exit `17` with **nothing written**, so pass the flag when your verdict really
 does retire the opposite one — never re-post under a different clause to get around it.
 
@@ -220,7 +220,7 @@ does retire the opposite one — never re-post under a different clause to get a
 `pull_request`, so it judged the PR before your verdict existed and nothing else re-fires it. The verb
 re-runs that job, which re-derives `ship floor` against your verdict — it never writes a check-run
 itself, so the green is the job's own. What it re-fires on is the `governance floor at head`
-check-run's state rather than the job's conclusion: since #6161 the job succeeds whenever it
+check-run's state rather than the job's conclusion: the job succeeds whenever it
 *published* an answer, and a pending check-run beside a green job is exactly the "no verdict yet"
 state your post just cleared. Its last stderr line says which of `refired` / `restarting` / `green` /
 `in-flight` / `no-run` / `unknown` happened.
@@ -229,12 +229,12 @@ state your post just cleared. Its last stderr line says which of `refired` / `re
 `in-flight` or `unknown` floor means the check may still red at this head, and clearing it is
 `heal-ci`'s, not a human's. `restarting` is **not** one of those: the re-fire took and the run is
 going again under its own id, GitHub simply had not published the new attempt number yet — wait and
-re-read that run, and escalating it is how three agents burned an evening on a green (#5982).
+re-read that run, and escalating it is how three agents once burned an evening on a green.
 
 ### The range form — an epic child's verdict
 
-An epic run opens one tail PR (ADR [0285](../../../../.decisions/0285-epic-machine-ends-in-review.md)),
-so mid-run a child has no PR and no head to bind to. Same verb, two ends instead of a head, and the
+An epic run opens one tail PR at the end rather than one per child, so mid-run a child has no PR and
+no head to bind to. Same verb, two ends instead of a head, and the
 positional is the **child issue**. The range is the same one §1 and §4 took, and the derivation is
 re-run by `post` itself over it — the `14` refusal below is the same fail-closed floor, asked of the
 range's paths:
@@ -249,9 +249,8 @@ What the verb refuses here is what tells you the shape is not the PR one:
 
 - **`--base` and `--tip` come together, and both are revisions** — 7–40 lowercase hex. A branch name
   is refused, so resolve the range's ends before you call.
-- **`--sha` does not combine with them.** A range verdict binds **content, not a head** (ADR
-  [0276](../../../../.decisions/0276-verdict-binds-content-not-only-head.md)): the two revisions
-  stop being history the moment the range merges into the epic branch, so what a later read compares
+- **`--sha` does not combine with them.** A range verdict binds **content, not a head**: the two
+  revisions stop being history the moment the range merges into the epic branch, so what a later read compares
   is the digest of `<base>...<tip>`, and `lane prove`'s child arm calls a verdict whose digest no
   longer matches `Stale`.
 - **The positional is an open issue, not a PR.** Hand it a PR number and the verb says so and sends
@@ -265,7 +264,7 @@ What the verb refuses here is what tells you the shape is not the PR one:
   record of that child's review — there is no PR surface holding a second copy, and `lane prove`
   derives a refusal from it — so a re-post over the same `<base>..<tip>` retires the prior verdict
   below the fence, and a polarity flip over that range needs `--supersede` exactly as the PR path's
-  flip does (#7411).
+  flip does.
 
 **Done when** `post` prints `posted` over the range you judged and its read-back conformed. Which
 namespaces a child owes at all — governance among them — is `review`'s §6, and it defers nothing to

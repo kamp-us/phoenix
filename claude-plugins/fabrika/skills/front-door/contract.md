@@ -1,6 +1,6 @@
 # `/fabrika` (front-door) — derived CLI contract
 
-**Skill:** [`front-door`](SKILL.md) · **Authoring brief:** [#4952](https://github.com/kamp-us/phoenix/issues/4952) · **Date:** 2026-08-09
+**Skill:** [`front-door`](SKILL.md) · **Date:** 2026-08-09
 
 These verbs live in `packages/fabrika-cli/`, binary `fabrika`, grouped under a `status` subcommand
 beside the groups registered in `packages/fabrika-cli/src/registry.ts` — at the time of writing
@@ -10,15 +10,16 @@ sentence**. `status` was confirmed free there against a freshly fetched `origin/
 before this spec landed. The [CLI interface convention](../../docs/cli-interface-convention.md)
 governs these verbs; where this spec and that doc disagree, the doc wins and this spec is the bug.
 
-**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill**
-([ADR 0238](../../../../.decisions/0238-fabrika-reimplements-v1-never-calls-it.md)). v1's `doctor`
+**`fabrika` calls `pipeline-cli` nowhere, and neither does the skill** — fabrika reimplements
+what it needs rather than shelling out to its predecessor, so no clause here can break when a tool
+this package does not own changes. v1's `doctor`
 skill and `doctor.sh`, and the `run-evidence`, `epic-ledger` and `decisions-index` tools, were read
 for their semantics and their scars — each Grounding section names what the v1 counterpart gets
 wrong and what this spec does instead — but no clause defers to one and none is invoked.
 
 **Substrate.** Effect CLI verbs on the `@effect/platform-node` seam the sibling groups use; GitHub
 access per
-[skill conventions §11 — REST, never GraphQL](../../docs/skill-conventions.md#11-github-access-is-rest-never-graphql).
+[skill conventions §11, "GitHub access is REST, never GraphQL"](../../docs/skill-conventions.md).
 
 ## Verb inventory
 
@@ -39,7 +40,7 @@ Each is a real proposal someone could make again. (Conventions §7 homes these i
 same tracked debt the sibling contracts carry.)
 
 - **A ranking of the decision digest.** Tension-with-standing-law and blast-radius are the two ruled
-  ranking dimensions and both are judgment, owned by `governance` (#4949, #4927). A second ranking
+  ranking dimensions and both are judgment, owned by `governance`. A second ranking
   here would be a rival answer and would grow a rubric past what the founder authorized. This group
   **displays** rows and computes no order of its own.
 - **A decision-index or ADR-corpus validator.** `.github/workflows/decisions-index.yml` job
@@ -51,8 +52,8 @@ same tracked debt the sibling contracts carry.)
   issue is next, fail-closed on every axis. `status board` prints bucket **counts** and routes to
   those verbs; a second ranking would contradict the one that actually claims work.
 - **A per-PR gate-state field.** `fabrika build verdicts`, `ship gate` and `ship checks` each answer
-  it, and what marks a PR "banked" and what clears it on a head-move is an **open decision**
-  ([#4103](https://github.com/kamp-us/phoenix/issues/4103)). Rendering a settled bank state would
+  it, and what marks a PR "banked" and what clears it on a head-move is an **open decision**,
+  still unruled. Rendering a settled bank state would
   publish a decision nobody made.
 - **A cross-group exit-code decoder.** The interface convention permits cross-group code reuse
   precisely because no reader resolves a numeral without knowing its group
@@ -85,14 +86,11 @@ brief's name is settled here**; the readability trade is recorded in the authori
 the founder to re-price before the verbs are built, because a group name is the one thing that is
 expensive to change after shipping.
 
-### Routing — nothing on `main` reaches a fabrika skill
+### Routing — a repo whose skill routing is pinned elsewhere reaches nothing
 
-`CLAUDE.md` pins skill routing to the `.claude/skills` filesystem path, a symlink to the v1 tree, so
-no path reaches any fabrika skill. The gap is already filed —
-[#4761](https://github.com/kamp-us/phoenix/issues/4761),
-[#4762](https://github.com/kamp-us/phoenix/issues/4762) and
-[#4829](https://github.com/kamp-us/phoenix/issues/4829) — and is recorded in the authoring pull
-request rather than patched from here, the same disposition `review`, `ship` and `governance` took.
+Where a repo's own instructions pin skill routing to a filesystem path that points at some other
+tree, no path reaches any fabrika skill. That is the repo's own wiring to fix, and no clause here
+patches it — the same disposition `review`, `ship` and `governance` took.
 **This skill is a special case worth stating:** it is `disable-model-invocation: true`, so no routing
 *instruction* could reach it anyway — a human types it.
 
@@ -139,7 +137,7 @@ vocabulary in this group. Four consequences bind every verb below:
 1. **A proven-empty answer is a positive token at exit `0`**, never empty stdout and never `0` where
    a count is unknown. An unmeasured count renders `unknown` with a parenthesised reason, following
    the shipped precedent that an unmeasured run reads `n/a (reason)` rather than `0`
-   (measured, #4106).
+   (measured).
 2. **A state word names the reading it is not.** The `<detail>` beside `absent` carries "proven
    absent, not unread"; beside `unknown` it carries the raw failed read, reproduced verbatim before
    clamping, so the failure stays attributable — the shape
@@ -164,7 +162,8 @@ than implied:
   read's UTC instant.
 - **`artifact`** — a durable artifact's own last-write timestamp, taken from the comment's
   `updated_at`, **not** the moment it was fetched. Printing the fetch time for an artifact written
-  three weeks ago claims a freshness nobody has: the staleness class of #3148, #3330 and #4338.
+  three weeks ago claims a freshness nobody has — the staleness class this whole section exists to
+  prevent.
 
 A read that produced no timestamp prints `unknown` in the token **and** makes that field's state
 `unknown` — the two always move together. In `--json` an unknown timestamp is `"asOf": null,
@@ -173,8 +172,8 @@ A read that produced no timestamp prints `unknown` in the token **and** makes th
 <a id="roster-location"></a>
 ### Where the roster lives — the install case is the normal case
 
-**The skill roster is the plugin's, not the target repo's.** fabrika installs into repos that are not
-phoenix (#4776), so in the general case `claude-plugins/fabrika/skills/` does not exist in the
+**The skill roster is the plugin's, not the target repo's.** fabrika installs into repos that are
+not its own home, so in the general case `claude-plugins/fabrika/skills/` does not exist in the
 working repo and the roster ships inside the installed plugin. Defaulting to a repo-relative path
 would make `menu` empty on precisely the fresh repo this skill onboards.
 
@@ -186,26 +185,26 @@ this list: it builds from a fixed [registry](#buildable-surfaces) and reads no r
 2. `$CLAUDE_PLUGIN_ROOT`, when it is set and holds a plugin manifest — the harness's own answer for
    which plugin is running, and the only rung that stays correct if the cache layout changes. It is
    read by the verb, never written into a fence: interface rule 5 constrains the **command string**
-   the model runs, and ADR [0235](../../../../.decisions/0235-fences-carry-zero-expansions.md) puts
-   everything dynamic inside what the fence invokes. It cannot be the only rung, because the harness
+   the model runs, and a fence carries zero expansions, so everything dynamic lives inside what the
+   fence invokes. It cannot be the only rung, because the harness
    sets it for plugin hooks and plugin-provided commands and **not** for an ordinary Bash call.
 3. A plugin tree the running module itself sits inside, found by walking up for the manifest. This
    fires only where a consumer vendors the CLI into its own plugin; neither shape fabrika ships in
    packages it that way.
 4. `claude-plugins/fabrika/skills/` beneath the repo root, which is the in-repo development case.
 5. That same `claude-plugins/fabrika/skills/` beneath the checkout the CLI itself runs from, found by
-   walking up from the running module — the rung that answers when fabrika runs out of a phoenix
-   checkout against a target repo carrying no roster of its own, where rung 3 cannot fire (the CLI at
-   `packages/fabrika-cli/` has no plugin manifest above it) and rung 4 is rooted at that target repo
-   (#5775).
+   walking up from the running module — the rung that answers when fabrika runs out of its own
+   development checkout against a target repo carrying no roster of its own, where rung 3 cannot fire
+   (the CLI at `packages/fabrika-cli/` has no plugin manifest above it) and rung 4 is rooted at that
+   target repo.
 6. The installed fabrika plugin in Claude Code's plugin cache
    (`<config>/plugins/cache/<marketplace>/<plugin>/<version>/`), matched by the **manifest's declared
    `name`** rather than the directory, since the path carries a marketplace name and a content hash
    that both change without the plugin changing. Versions the harness has stamped `.orphaned_at` are
    skipped and `.in_use` breaks a tie. This is the rung that answers the marketplace shape, where the
    plugin sits in the cache and the CLI is a separate global npm package, so no walk from either the
-   module or the cwd can reach the roster (#6448). It sits **below** rungs 4 and 5 on purpose: a
-   phoenix developer has both an installed plugin and a checkout, and reading the published roster
+   module or the cwd can reach the roster. It sits **below** rungs 4 and 5 on purpose: a fabrika
+   developer has both an installed plugin and a checkout, and reading the published roster
    there would render skills the working tree does not have.
 
 The tier word printed on the scope line is `explicit` · `env` · `plugin` · `repo` · `checkout` ·
@@ -234,7 +233,7 @@ purpose — keeping proven-empty apart from unread — to chance.
 | `menu` | roster unreadable | `unknown` | the raw read failure |
 | `settings` | every key resolved, declared or defaulted | `resolved` | `<n> keys, <d> declared` |
 | `settings` | ≥1 key `unknown` | `unknown` | which keys are unread — a repo whose config will not parse has no known value for anything, and printing the shipped default there is the collapse the surface exists to prevent |
-| `settings` | the surface registers zero keys | `unknown` | `the config surface registers zero keys` — vacuously-resolved is not resolved (ADR 0092) |
+| `settings` | the surface registers zero keys | `unknown` | `the config surface registers zero keys` — vacuously-resolved is not resolved |
 | `wiring` | `enabledPlugins` carries a `fabrika@<marketplace>` key set to `true` | `wired` | which key is enabled |
 | `wiring` | no settings file, no `enabledPlugins` block, no fabrika key, a key switched off, or a key naming no marketplace | `unwired` | which of those it was. **Never `unknown`**: the repo proved each of them, and folding them into `unknown` hides the one gap this field exists to name |
 | `wiring` | the settings file, or the repo root above the cwd, could not be read; the bytes are not a JSON object; `enabledPlugins` is not an object; the fabrika key is neither `true` nor `false` | `unknown` | the raw failure. **Never `unwired`**: a probe nobody could perform proves nothing about what loads |
@@ -284,7 +283,7 @@ one, which the first edit already satisfies.
 | `4` | *(deliberate gap — `report file`'s body-section seat; no verb here composes body sections)* | — | — | — | — | — | — |
 | `5` | the **authored** content carries a machine-local path | — | — | — | — | — | ✓ |
 | `6` | the **authored** content is a bare `@` path reference — not redactable | — | — | — | — | — | ✓ |
-| `7` | zero scope: an **explicitly passed** `--skills-dir` is proven absent, or the config surface registers zero keys (ADR 0092) | — | ✓ | ✓ | — | — | — |
+| `7` | zero scope: an **explicitly passed** `--skills-dir` is proven absent, or the config surface registers zero keys — a fail-closed refusal | — | ✓ | ✓ | — | — | — |
 | `8` | the write itself failed — the outcome is **UNKNOWN** | — | — | — | — | — | ✓ |
 | `9` | the write landed but the read-back does not match | — | — | — | — | — | ✓ |
 | `10` | a supplied value is off the closed vocabulary — an unknown `--field`, a non-integer issue, a `--path` outside the repository root | ✓ | — | — | ✓ | — | ✓ |
@@ -323,7 +322,7 @@ that is defined to be empty.
 | the leak predicate for anything written to a repo file or a public surface | `scanBody`, `isBareAtReference`, `renderLeaks` — `packages/fabrika-cli/src/report/leaks.ts` |
 | read-back comparison (its third step, stripping trailing newlines, is the one a re-derivation drops, and dropping it fires `9` on clean runs) | `normalizeForReadback` — `packages/fabrika-cli/src/report/compose.ts` |
 | the closed priority vocabulary the board buckets on | `PRIORITIES` — `packages/fabrika-cli/src/triage/facets.ts` |
-| the scanned-count stderr line (ADR 0092 auditability) | `scannedLine` — `packages/fabrika-cli/src/build/target.ts`. Four near-identical copies already exist (`build`, `ship`, `review`, `triage`); import one rather than shipping a fifth. |
+| the scanned-count stderr line, which is what makes a run's scope auditable | `scannedLine` — `packages/fabrika-cli/src/build/target.ts`. Four near-identical copies already exist (`build`, `ship`, `review`, `triage`); import one rather than shipping a fifth. |
 | decoding the published digest block | the `governance-digest` registered format via `findFormat` — `packages/fabrika-cli/src/wire/registry.ts`. **Not registered yet**; see [sequencing](#sequencing). |
 | the verb outcome shape and the mandatory leaf constructor | `answer`, `refuse` — `packages/fabrika-cli/src/verb.ts`; `leafCommand` — `packages/fabrika-cli/src/excess-operand.ts` |
 
@@ -334,9 +333,8 @@ that is defined to be empty.
 ### Sequencing — one hard dependency, stated rather than assumed
 
 `status readout` decodes the `governance-digest` wire format, which is **specified but not built**:
-one of three shipped-surface changes the `governance` contract requires, tracked at
-[#5199](https://github.com/kamp-us/phoenix/issues/5199), whose authoring pull request
-([#5200](https://github.com/kamp-us/phoenix/pull/5200)) is open and unmerged. This spec **does not
+one of three shipped-surface changes the `governance` contract requires, whose own authoring pull
+request is open and unmerged. This spec **does not
 cross-reference that unmerged contract** — an unlanded sibling is a race — and depends only on the
 format's registry name plus the artifact bytes reproduced here, both of which the producer fixes.
 Every id, title and byte `status bootstrap` needs is declared in
@@ -435,13 +433,13 @@ open	6
 field	menu	ready	12 skills	claude-plugins/fabrika/skills	2026-08-09T14:22:03Z
 field	settings	resolved	15 keys, 4 declared	.fabrika.jsonc	2026-08-09T14:22:03Z
 field	wiring	wired	fabrika@kampus is enabled — sessions in this repo load fabrika's skills	.claude/settings.json	2026-08-09T14:22:03Z
-field	board	counted	7 needs-triage, 23 triaged	kamp-us/phoenix	2026-08-09T14:22:05Z
-field	readout	found	6 rows	kamp-us/phoenix#9412	2026-08-08T09:00:00Z
+field	board	counted	7 needs-triage, 23 triaged	acme/storefront	2026-08-09T14:22:05Z
+field	readout	found	6 rows	acme/storefront#7	2026-08-08T09:00:00Z
 field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-09T14:22:05Z
 ```
 
 The adopter case, where the CLI answers and no skill can load — the shape that went unseen for two
-days in kamp-us/demlik#26:
+days in one adopting repo:
 
 ```
 $ fabrika status open
@@ -449,8 +447,8 @@ open	6
 field	menu	ready	12 skills	claude-plugins/fabrika/skills	2026-08-09T14:22:03Z
 field	settings	resolved	15 keys, 0 declared	.fabrika.jsonc	2026-08-09T14:22:03Z
 field	wiring	unwired	no .claude/settings.json — no fabrika skill can load in a session here	.claude/settings.json	2026-08-09T14:22:03Z
-field	board	unknown	cannot reach api.github.com: EAI_AGAIN — a failed read, not zero issues	kamp-us/phoenix	unknown
-field	readout	unknown	the governance-digest format is not registered — a failed read, not an absent digest	kamp-us/phoenix	unknown
+field	board	unknown	cannot reach api.github.com: EAI_AGAIN — a failed read, not zero issues	acme/storefront	unknown
+field	readout	unknown	the governance-digest format is not registered — a failed read, not an absent digest	acme/storefront	unknown
 field	lanes	empty	no lanes on disk	.fabrika/lanes,.fabrika/chores	2026-08-09T14:22:05Z
 $ echo $?
 0
@@ -463,18 +461,18 @@ $ fabrika status open --field readout --json
 
 **Grounding**
 
-- the silent-green measurement (#4106) — the silent-green finding: an unresolvable skill exits
+- The silent-green measurement: an unresolvable skill exits
   `0` with `num_turns: 0` and reconstructs to well-formed zeros, so `classifyRun` must synthesize the
   missing signal. A front door is where a wrong-but-plausible value does the most damage, because
   every later decision in the session rests on it.
-- #3925 / #4105 / #4060 / #4103 — a healthy verdict over a dead source; "none" read while rows sat
+- Four measured failures — a healthy verdict over a dead source; "none" read while rows sat
   unread; zero scope rendered as an answer; two states rendering identically. The per-field
   three-state token answers all four.
-- #4557 — a *healthy* path that exits `1`, misread by a caller reading only the status. Here the exit
+- A *healthy* path that exits `1` is misread by a caller reading only the status. Here the exit
   status answers one narrow question and every field's state lives in the payload.
 - `packages/fabrika-cli/src/verb.ts` — `refuse()` hardcodes empty stdout, which is why this verb has
   no refusal seat beyond a usage error.
-- #4133 / #4227 — orientation errors propagate, so every field names its source.
+- Orientation errors propagate, so every field names its source.
 
 ---
 
@@ -488,7 +486,7 @@ fabrika status settings [--root <dir>] [--surfaces] [--json]
 
 The resolved config surface: every key `.fabrika.jsonc` may carry, what it resolves to here, and
 where that value came from. It is the one place a skill asks what a key resolves to, so no skill
-document has to restate a value (R9.1, #6293). It reads; it writes nothing.
+document has to restate a value (R9.1). It reads; it writes nothing.
 
 **Inputs**
 
@@ -550,8 +548,8 @@ surface	<id>	<fail-loud|degrade|bootstrap>	<what the surface is, and the verb ar
 The disposition cell is the one this repo **resolves to** — a declared override prints over the
 shipped word. Resolving is all it does: nothing in the CLI branches on a disposition, and
 `status/settings-verb.ts` is its only reader. The cell says what this repo declared it wants, which
-is what an operator relays; whether a verb should read it is
-[#6412](https://github.com/kamp-us/phoenix/issues/6412). The note cell is flattened to one line and **not** clamped: every other prose cell points at
+is what an operator relays; whether a verb should read it is a separate, unruled question. The note
+cell is flattened to one line and **not** clamped: every other prose cell points at
 something the reader can go and look at, while this one is the whole answer. There is no separate
 resolver — the rows come off the same `settingRows` read, which is what keeps "what does this repo
 have" on one path. Under `--json` the same rows are a `surfaces` array, present only when the flag
@@ -569,7 +567,7 @@ With `--json`, stdout is one object carrying `outcome` (the header's state), `pa
 
 | Code | Trigger |
 |---|---|
-| `7` | the config surface registers zero keys, or `--surfaces` was passed and no `surfaceDispositions` key is registered — nothing to resolve, and a readout over an empty surface is not an answer (ADR 0092) |
+| `7` | the config surface registers zero keys, or `--surfaces` was passed and no `surfaceDispositions` key is registered — nothing to resolve, and a readout over an empty surface is not an answer |
 | `11` | `.fabrika.jsonc` exists and could not be read, is not a JSON object, holds a value the surface refuses, or refused the whole load — UNKNOWN, never green |
 
 **Errors**
@@ -588,7 +586,7 @@ one parse of the file. No pagination: the scope is a registry, not a list read.
 
 **Examples**
 
-Every transcript below is from phoenix, where the registry holds **15** keys and the file declares
+Every transcript below is from one repo, where the registry holds **15** keys and the file declares
 **5** of them. Row sets are abridged to the ones the example is about; the counts on the header line
 are not.
 
@@ -598,12 +596,12 @@ settings	resolved	15	5	0	2026-08-19T20:43:22Z
 setting	capClearAuthors	declared	["@usirin","@notusirin","@cansirin"]	-	2026-08-19T20:43:22Z
 setting	codeValidators	declared	[{"command":["pnpm","typecheck","--force"]},{"command":["pnpm","lint:worktree"]}]	-	2026-08-19T20:43:22Z
 setting	docLeakExempt	declared	["/CLAUDE.md",…]	-	2026-08-19T20:43:22Z
-setting	governedRoots	default	[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"]	.fabrika.jsonc declares no `governedRoots`	2026-08-19T20:43:22Z
+setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T20:43:22Z
 setting	unreadableCodeowners	declared	"refuse"	-	2026-08-19T20:43:22Z
 setting	workflowValidators	declared	[]	-	2026-08-19T20:43:22Z
 ```
 
-With `--surfaces`, the same rows plus one per repo surface (abridged — phoenix registers 38):
+With `--surfaces`, the same rows plus one per repo surface (abridged — the group registers 38):
 
 ```
 $ fabrika status settings --surfaces
@@ -617,7 +615,7 @@ The same run under `--json` — the notice line stays on stderr, so stdout is th
 
 ```
 $ fabrika status settings --json
-{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":5,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@usirin","@notusirin","@cansirin"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"governedRoots","provenance":"default","value":[".decisions/",".claude/",".github/","claude-plugins/",".fabrika.jsonc"],"detail":".fabrika.jsonc declares no `governedRoots`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
+{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":5,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@usirin","@notusirin","@cansirin"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"surfaceDispositions","provenance":"default","value":{"gh-rest":"fail-loud","git-worktree":"fail-loud"},"detail":".fabrika.jsonc declares no `surfaceDispositions`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
 ```
 
 ```
@@ -634,13 +632,13 @@ $ echo $?
 
 **Grounding**
 
-- R9.1 (#5603 comment 31, founder, verbatim) — *"this file will be used by cli only, the skills
+- R9.1 (founder, verbatim) — *"this file will be used by cli only, the skills
   ideally should be just using the cli but whatever cli will do will depend on the config. this is a
   hard requirement."* One reader means skills must be able to *get an answer*; a rule with no verb
   behind it pushes the value back into prose.
-- #6290 — the loader this verb reads through. The `Default` / `Unknown` split is that module's, and
-  is why a readout can say which without re-deriving it.
-- ADR 0092 — zero scope reds; an unread value is UNKNOWN, never a negative answer.
+- The loader this verb reads through owns the `Default` / `Unknown` split, which is why a readout
+  can say which without re-deriving it.
+- Zero scope reds; an unread value is UNKNOWN, never a negative answer.
 
 ## `status wiring`
 
@@ -669,16 +667,14 @@ each is `-` when the file names none.
 <a id="wiring-is-the-other-half"></a>**Every other verb in this group answers about something the
 CLI reads. This one answers about the plugin that carries the skills.** A repo can have the CLI
 installed and answering while no fabrika skill can load in a session there, and nothing said so
-until this verb existed — kamp-us/demlik#26 ran that way for two days with every other status
-surface green ([#6443](https://github.com/kamp-us/phoenix/issues/6443)).
+until this verb existed — one adopting repo ran that way for two days with every other status
+surface green.
 
 **The gating fact is `enabledPlugins`, and the marketplace source is the key's own suffix.** A
 Claude Code `enabledPlugins` key is `plugin@marketplace`, so one entry carries both halves the
 wiring needs; a bare `fabrika` key names no source and resolves to no plugin, so it is `unwired`.
-`extraKnownMarketplaces` is **deliberately not read**: ADR
-[0273](../../../../.decisions/0273-fabrika-ships-as-an-installed-plugin.md)'s 2026-08-16 amendment
-records that Claude Code never registers a project-scope `extraKnownMarketplaces` block (verified
-live on [#5705](https://github.com/kamp-us/phoenix/issues/5705)), so a repo carrying one is no more
+`extraKnownMarketplaces` is **deliberately not read**: Claude Code never registers a project-scope
+`extraKnownMarketplaces` block, verified live, so a repo carrying one is no more
 wired than a repo without, and reading it as evidence would green a session that loads nothing.
 
 **`unwired` is an answer at exit `0`, and `unknown` is a refusal.** A proven-off plugin is a fact
@@ -686,7 +682,7 @@ the caller acts on — the seat `status board`'s proven `0` and `status readout`
 while a probe that could not be performed has no answer to seat.
 
 **It detects; it never writes.** Creating `.claude/settings.json` is `status bootstrap`'s registry
-work under epic [#5979](https://github.com/kamp-us/phoenix/issues/5979). A probe that repaired what
+work. A probe that repaired what
 it measured could never report the state it found, and a repo that never ran bootstrap would still
 need this answer.
 
@@ -729,11 +725,12 @@ $ fabrika status wiring --json
 
 **Grounding**
 
-- #6443 / kamp-us/demlik#26 — the CLI half answered and the skill half silently did not exist; no
-  status surface said so for two days.
-- ADR 0273 (2026-08-16 amendment) / #5705 — project-scope `extraKnownMarketplaces` is inert, which
-  is why the marketplace source is read off the `enabledPlugins` key instead.
-- #5979 — the emit side. This verb is its detection companion and stays out of its registry.
+- In one adopting repo the CLI half answered and the skill half silently did not exist; no status
+  surface said so for two days.
+- A project-scope `extraKnownMarketplaces` block is inert, which is why the marketplace source is
+  read off the `enabledPlugins` key instead.
+- `status bootstrap` owns the emit side. This verb is its detection companion and stays out of its
+  registry.
 
 ---
 
@@ -776,11 +773,11 @@ it grants authority, and a reader acts on the skill it names, never on the sente
 
 A skill whose frontmatter cannot be parsed emits its row with the description
 `unknown (frontmatter unreadable)` rather than being dropped. **A dropped row is a skill the reader
-will never know exists** — the false absence of #4105 and #4163.
+will never know exists** — a false absence.
 
 **The roster is derived, never stored.** No committed menu file, no generate step: the same on-demand
-idiom the repo applies to its decision records, generated from source and never auto-injected
-([ADR 0129](../../../../.decisions/0129-adr-discovery-is-the-claude-md-contract.md)), and the shape
+idiom a repo applies to its decision records, generated from source and never auto-injected, and
+the shape
 `DEVELOPMENT.md` already instructs readers to use — *the directory is the list*. A committed roster
 is a copy, and a copy rots.
 
@@ -788,7 +785,7 @@ is a copy, and a copy rots.
 
 | Code | Trigger |
 |---|---|
-| `7` | an **explicitly passed** `--skills-dir` is proven absent (ADR 0092) |
+| `7` | an **explicitly passed** `--skills-dir` is proven absent — a fail-closed refusal |
 | `11` | the resolved roster could not be read — the roster is UNKNOWN |
 
 An implicitly-resolved roster holding zero skills is `menu<TAB>empty<TAB>0<TAB><as-of>` at exit `0`.
@@ -820,17 +817,17 @@ $ fabrika status menu --json
 
 **Grounding**
 
-- ADR 0129 and `DEVELOPMENT.md` — the directory is the list. v1's `decisions-index compact` and
-  `commands compact` were the repo's two generated-on-demand, never-auto-injected indexes; both died
-  with that package (#6100, and #6332 tracks the ADR map's absence), so this roster is the shape's
-  only live instance, implemented in fabrika's package (ADR 0238).
+- The directory is the list. v1's `decisions-index compact` and
+  `commands compact` were the two generated-on-demand, never-auto-injected indexes; both died
+  with that package and nothing replaced them, so this roster is the shape's
+  only live instance, implemented in fabrika's own package.
 - v1's `decisions-index`, designed out: its committed `index.md` was deleted because a stored index
   drifts, yet `checkIndex` and `generateIndex` shipped on, still comparing against the deleted file
   and still printing a fix command naming a package that no longer existed. A derived roster leaves
   no such surface behind.
 - skill-conventions §3 — the router names the others and when to reach for each; the invocation axis
   is printed because it decides who can reach each one.
-- #4105 / #4163 — false absence. Unparseable frontmatter yields a row saying so, never a missing row.
+- False absence: unparseable frontmatter yields a row saying so, never a missing row.
 
 ---
 
@@ -842,7 +839,7 @@ $ fabrika status menu --json
 fabrika status readout [<issue>] [--repo <owner/name>] [--json]
 ```
 
-The display half of the landed-decision digest. The producer is `governance` (#4949); this verb ranks
+The display half of the landed-decision digest. The producer is `governance`; this verb ranks
 nothing and re-derives nothing.
 
 **Inputs**
@@ -924,7 +921,7 @@ repository and the caller acts on it by bootstrapping one.
 
 ```
 $ fabrika status readout
-readout	found	3	kamp-us/phoenix#9412	2026-08-08T09:00:00Z
+readout	found	3	acme/storefront#7	2026-08-08T09:00:00Z
 row	0398	tension	sits against ADR 0173 on whether a pending required check blocks admission
 row	0401	blast	every cache key in the system gains a tenant component
 row	0396	routine	no tension found
@@ -939,23 +936,23 @@ $ echo $?
 ```
 
 ```
-$ fabrika status readout 9412 --json
-{"outcome":"malformed","rows":[],"issue":9412,"repo":"kamp-us/phoenix","asOf":"2026-08-09T07:30:00Z","asOfKind":"artifact","detail":"row 2 carries a fourth field"}
+$ fabrika status readout 7 --json
+{"outcome":"malformed","rows":[],"issue":7,"repo":"acme/storefront","asOf":"2026-08-09T07:30:00Z","asOfKind":"artifact","detail":"row 2 carries a fourth field"}
 ```
 
 **Grounding**
 
-- #4927 comment 5227714776, carried onto #4971 and this brief — the human gate on decision records
-  was retired **on one condition**: a periodic, non-blocking digest *"surfaced through the front-door
-  status. Without the readout, overrule-later is fiction — this half is not droppable."*
-- #4949 — the ranking is `governance`'s, bounded to tension and blast radius. This verb orders
+- The founder retired the human gate on decision records **on one condition**: a periodic,
+  non-blocking digest surfaced through the front-door status. Without the readout, overrule-later is
+  fiction, and that half is not droppable.
+- The ranking is `governance`'s, bounded to tension and blast radius. This verb orders
   nothing.
 - `packages/fabrika-cli/src/wire/codes.ts` — `ARTIFACT_UNKNOWN` is deliberately not `ABSENT`, because
   *"I could not see it"* and *"it is not there"* are the two facts the wire group exists to keep
   apart, in the one place where the negative is the expected result and so the least likely to be
   questioned.
-- #3925 — a PASS over a totally failed read, for months.
-- #3148 / #3330 / #4338 — staleness. The most-recent-heading rule and the artifact `updated_at` are
+- A PASS over a totally failed read, for months.
+- Staleness: the most-recent-heading rule and the artifact `updated_at` are
   both here so a stale digest cannot render as current.
 
 ---
@@ -1003,7 +1000,7 @@ renders no per-PR verdict.** `fabrika build pick` and `build eligible` answer wh
 fail-closed on every axis; `build verdicts`, `ship gate` and `ship checks` answer a PR's state. A
 second answer here could contradict the verb that actually claims the work. **And there is no
 "banked" bucket**: what marks a pull request banked and what clears it on a head-move is an open
-decision ([#4103](https://github.com/kamp-us/phoenix/issues/4103)).
+decision, still unruled.
 
 **A bucket whose label does not exist renders `unknown` with `<detail>` `label absent`, never `0`.**
 A zero count means the label exists and nothing carries it; an absent label means the question was
@@ -1055,7 +1052,7 @@ bucket	p2	unknown	labels=p2	label absent	unknown
 
 The second example is the fresh-repo case: the taxonomy is absent, so five buckets are `unknown`
 while `in-flight` is a proven `0`. Rendering the five as `0` would tell a new user their queue is
-clear when the question was never askable — the #4060 shape.
+clear when the question was never askable.
 
 ```
 $ fabrika status board --json
@@ -1064,10 +1061,10 @@ $ fabrika status board --json
 
 **Grounding**
 
-- #4103 — a FAIL'd pull request presented identically to a banked-ready one, and what "banked" means
+- A FAIL'd pull request was presented identically to a banked-ready one, and what "banked" means
   is still open. No bucket claims it.
-- #4060 — a probe that read 0 files and classified at exit `0`. An absent label is `unknown`.
-- the silent-green measurement (#4106) — an unmeasured value renders `n/a (reason)` rather than
+- A probe once read 0 files and classified at exit `0`. An absent label is `unknown`.
+- The silent-green measurement: an unmeasured value renders `n/a (reason)` rather than
   `0`, *"because … a rendered `0` would erase the difference at the last step."*
 - skill-conventions §11 — REST, never GraphQL, and every list read paginates; an unpaginated read
   returns a plausible first page instead of an error.
@@ -1083,8 +1080,7 @@ fabrika status bootstrap <surface-id> [--path <repo-relative>] [--repo <owner/na
 ```
 
 Creates **one** missing surface from this group's own registry and reads it back; an adoption
-surface merges into a file that is already there instead (ADR
-[0334](../../../../.decisions/0334-bootstrap-merge-into-present-files.md)). The content is the
+surface merges into a file that is already there instead. The content is the
 skill's judgement; the write, the collision guard and the read-back are this verb's.
 
 <a id="buildable-surfaces"></a>**The buildable-surface registry.** What this verb builds is fixed
@@ -1096,7 +1092,7 @@ a tenth is a change to this table, not a new rule.
 | `design-manifest` | `--path`, default `design-system-manifest.md` at the repo root | **stdin**, required — the skill's inferred draft | the file's bytes match stdin through `normalizeForReadback` |
 | `roadmap-focus` | `--path`, default the `roadmapFile` this repo declares, itself defaulting to `ROADMAP.md` | **stdin**, required — to the [grammar below](#roadmap-grammar), which is not the drafting skill's judgement | same, plus the parsed row count in the notice ([why](#roadmap-grammar)) |
 | `gitignore-row` | `--path`, default `.gitignore` at the repo root | **none** — the two comment lines and the row `/.fabrika/`, fixed below, appended to whatever the file already holds | the re-read contains both the row and the whole of the pre-existing text, each through `normalizeForReadback` |
-| `claude-md-section` | `--path`, default `CLAUDE.md` at the repo root | **none** — the canonical operator-first "work flows through fabrika" section, fixed below, appended when its marker heading `## Work flows through fabrika` is absent (ADR [0334](../../../../.decisions/0334-bootstrap-merge-into-present-files.md)'s append-if-absent arm) | the re-read contains both the heading and the whole of the pre-existing text, each through `normalizeForReadback` |
+| `claude-md-section` | `--path`, default `CLAUDE.md` at the repo root | **none** — the canonical operator-first "work flows through fabrika" section, fixed below, appended when its marker heading `## Work flows through fabrika` is absent — the append-if-absent arm of the merge rule | the re-read contains both the heading and the whole of the pre-existing text, each through `normalizeForReadback` |
 | `label-taxonomy` | the repo's labels | **none** — the set is every imported `STATUSES` member (`status:needs-triage`, `status:triaged`, `status:needs-info`, `status:planned`, `status:awaiting-release`), every imported `PRIORITIES` member (`p0`, `p1`, `p2`), `type:` + every imported `TYPES` member, and `ready-for:` + every imported `AUDIENCES` member — sixteen today, each created with GitHub's default colour and a description naming this group as its creator | every label in the set resolves on a re-read |
 | `issue-shape-markers` | the repo's labels | **none** — three labels, each at colour `1D76DB`, with the descriptions fixed below | every label in the set resolves on a re-read |
 | `readout-artifact` | one open issue in the repo | **none** — title exactly `Governance readout`; body exactly the two lines below | the issue resolves open, its title matches exactly, and its body matches through `normalizeForReadback` |
@@ -1108,8 +1104,8 @@ Every name comes from the constant the writing verb already reads — `STATUSES`
 `PRIORITIES`, `TYPES` and `AUDIENCES` for the rest — so a seventh `TYPES` member widens what this
 verb creates with no second edit anywhere. v1 restated two statuses and `PRIORITIES` and stopped, and
 the eleven it omitted are each a label some verb writes; since a verb finds its label absent and
-refuses rather than letting the API mint it (#4285), a repo that ran the whole documented bootstrap
-could not `triage apply`, `triage park`, `plan flip` or `ship release` (#5772). In a repo bootstrapped
+refuses rather than letting the API mint it, a repo that ran the whole documented bootstrap
+could not `triage apply`, `triage park`, `plan flip` or `ship release`. In a repo bootstrapped
 before the widening the verb reports `created` naming only the names it added, which is the honest
 answer for a set that grew — not a contradiction of the earlier `exists`.
 
@@ -1143,11 +1139,11 @@ session must not need a second file open:
 - Each row is `| <name> | #<number> | <state> |`, and it counts **only** when the *second* cell is
   `#<number>` and the first is non-empty. That is what drops the header row and the `|---|`
   separator without matching on their text.
-- **The join key is that number, never the title.** An arc named `Geçit` pins a milestone titled
-  `Sözlük — search and discovery`; the two share no substring, so a title cell joins nothing.
+- **The join key is that number, never the title.** An arc named `Storefront` can pin a milestone
+  titled `Checkout — search and discovery`; the two share no substring, so a title cell joins
+  nothing.
 - The `State` column **is read on a campaign row**: `active` there is the dispatch permission,
-  so `build`'s scope fence admits a lane only under an `active` campaign (ADR
-  [0304](../../../../.decisions/0304-campaign-active-is-the-dispatch-permission.md)). A drafted
+  so `build`'s scope fence admits a lane only under an `active` campaign. A drafted
   campaign row is therefore written `paused` — flipping it to `active` is the human's separate,
   explicit start act, so a bootstrap never grants dispatch permission. On an arc row the column
   is still for humans; nothing filters on it.
@@ -1157,7 +1153,7 @@ session must not need a second file open:
 
 | Arc | Milestone | State |
 |---|---|---|
-| Geçit | #46 | active |
+| Storefront | #3 | active |
 ```
 
 **So the write reports what parsed** — `status bootstrap roadmap-focus` runs the same parser over the
@@ -1183,8 +1179,7 @@ itself, and it is also the marker the collision guard and the read-back match on
 The `claude-md-section` block, fixed here so no clause defers to source. The first line is the
 marker heading the collision guard and the read-back match on — which is what recognises a
 hand-adapted section (repo tone, carve-outs) as the section it is, and leaves it alone. The
-canonical text carries no repo-specific branches; adaptation stays with the adopting agent
-(ADR [0334](../../../../.decisions/0334-bootstrap-merge-into-present-files.md)):
+canonical text carries no repo-specific branches; adaptation stays with the adopting agent:
 
 ```markdown
 ## Work flows through fabrika
@@ -1227,8 +1222,7 @@ blind would be the duplicate this guard exists to prevent.
 
 <a id="json-key-merge"></a>**A json surface merges its declared keys into a present file; it never
 touches keys it did not declare.** `.claude/settings.json` exists before fabrika is ever adopted, so
-the file surfaces' absence guard cannot serve it (ADR
-[0334](../../../../.decisions/0334-bootstrap-merge-into-present-files.md)). The `settings-patch`
+the file surfaces' absence guard cannot serve it. The `settings-patch`
 keys, fixed here so no clause defers to source:
 
 ```json
@@ -1251,7 +1245,7 @@ Bytes that refuse to parse, or a top level that is not an object, are exit `11` 
 the parse failure, and nothing is written. Absent, the two keys are written whole through the file
 arm's write-and-read-back protocol. Already merged — the parsed object equals what merging would
 produce, however its keys are ordered — is `exists` at exit `0`: a second run over an adopted repo
-is byte-for-byte a no-op, because idempotency is absolute (ADR 0334).
+is byte-for-byte a no-op, because idempotency is absolute.
 
 **`dep-pin` resolves the version at run time; the registry's answer is the only pin it knows.** The
 row it merges is `dependencies.@kampus/fabrika-cli`, at exactly what
@@ -1260,7 +1254,7 @@ constant in this table, which is what makes a re-run move a stale row forward in
 it already adopted. A registry that cannot be reached or answers without a version is exit `11` —
 nothing pinned, nothing written; a guessed version is the one outcome this surface refuses. The
 edit itself rides the same key-merge arm as `settings-patch`: unknown keys preserved verbatim,
-unparseable bytes refused unwritten, absolute idempotency. And per the founder's ruling on #6995
+unparseable bytes refused unwritten, absolute idempotency. And per the founder's ruling
 (R1.3), no package manager ever spawns and no lockfile is read or written — the exact install
 command (`pnpm add --save-exact @kampus/fabrika-cli@<version>`) is printed on the notice channel,
 because the lockfile stays the caller's.
@@ -1315,7 +1309,7 @@ own block so no stdin is read and no leak scan is owed, and the read-back assert
 the prior text. A write whose outcome cannot be
 confirmed is `8`, never a reported success. **One surface per invocation**, deliberately: a verb
 creating several would have to report a partial outcome, and a partial write reported as success is
-#4557's shape. The skill loops.
+the shape this seat exists to prevent. The skill loops.
 
 **Exit status**
 
@@ -1372,7 +1366,7 @@ bootstrap	created	design-manifest	design-system-manifest.md	ok
 
 ```
 $ fabrika status bootstrap readout-artifact
-bootstrap	created	readout-artifact	acme/storefront#9420	ok
+bootstrap	created	readout-artifact	acme/storefront#7	ok
 ```
 
 ```
@@ -1387,7 +1381,7 @@ $ fabrika status bootstrap roadmap-focus <<'EOF'
 ## Arcs
 | Arc | Milestone | State |
 |---|---|---|
-| Storefront | #12 | active |
+| Storefront | #3 | active |
 EOF
 bootstrap	created	roadmap-focus	ROADMAP.md	ok
 status bootstrap: created ROADMAP.md for roadmap-focus, read-back conformed — 1 arc, 0 campaigns.
@@ -1442,7 +1436,7 @@ $ fabrika status bootstrap label-taxonomy --json
 
 **Grounding**
 
-- #4952 (founder, 2026-08-09) — *"/fabrika shows what's missing, then runs the primitives to build the
+- Founder, 2026-08-09 — *"/fabrika shows what's missing, then runs the primitives to build the
   missing thing — we don't build a new onboarding thing."* The verb is the primitive; the inference
   and grilling that compose the content are the skill's, which is why content arrives on stdin.
 - `build-ui/SKILL.md` declares `design-system-manifest.md` **fail-loud** and its row points at
@@ -1452,10 +1446,10 @@ $ fabrika status bootstrap label-taxonomy --json
   newlines; a re-derivation that drops it fires `9` on every clean run.
 - `packages/fabrika-cli/src/io/stdin.ts` — three variants. `Failed` on `1` and empty on `3` keeps "I
   could not read the content" apart from "there was none".
-- #3086 / #3173 / #4199 are the leak-guard lane's incidents, not claimed here — but the path
+- The leak-guard lane's own incidents are not claimed here — but the path
   discipline binds this verb, which is why `5` and `6` are seated on content it writes to a public
   surface.
-- ADR 0092 — the existence probe fails closed: `exists` in `packages/fabrika-cli/src/io/fs.ts`
+- The existence probe fails closed: `exists` in `packages/fabrika-cli/src/io/fs.ts`
   **fails** on an unperformable probe rather than returning `false`, so an unreadable target is `11`
   and never a silent overwrite.
 
