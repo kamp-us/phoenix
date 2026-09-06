@@ -17,7 +17,13 @@ const CORE_SPELLS = coreSpells.length;
  * The box config declares the shell, whose command rows ride on its row (#7555), and the
  * session-list row, which declares `session.list` (#8101).
  */
-const BOX_SPELLS = CORE_SPELLS + shellSpells.length + sessionListProgram().spells.length;
+const sessionListSpells = sessionListProgram().spells;
+if (sessionListSpells === undefined) {
+	throw new Error(
+		"the session-list row declares spells; the box's spell count is derived from them",
+	);
+}
+const BOX_SPELLS = CORE_SPELLS + shellSpells.length + sessionListSpells.length;
 
 const fixture = (name: string) =>
 	fileURLToPath(new URL(`./config-fixtures/${name}.ts`, import.meta.url));

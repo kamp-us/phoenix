@@ -33,7 +33,9 @@ data and selection behavior, so the design package never imports an app router o
   dialog-only: every one of them is about opening, closing or offering the modal, and an inline
   palette does none of the three. Everything else — the ARIA spine, the movement, the
   scroll-into-view, the filter, the scopes — is one implementation shared by both frames, which is
-  what stops a caller who cannot use a modal from writing the second palette #7882 deleted.
+  what stops a caller who cannot use a modal from writing the second palette #7882 deleted. The
+  axis is a frame, not a licence: ADR 0186's ban is on a second kamp.us *search surface*, and an
+  inline palette is still the one palette.
 - Density is inherited from the document-level `data-density` choice. The palette has no local
   size prop: its search field, result rows, groups, empty state and footer consume the shared
   `--s-*` / `--pop-row-y` ramps while `--tap-min` keeps every density keyboard- and pointer-safe.

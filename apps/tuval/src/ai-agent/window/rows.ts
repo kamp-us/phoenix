@@ -99,7 +99,7 @@ export const sessionItems = (
 export const matchesQuery = (session: SessionRow, query: string): boolean => {
 	const needle = query.trim().toLocaleLowerCase();
 	if (needle === "") return true;
-	return [session.firstPrompt, session.folder, session.branch].some(
-		(field) => field !== undefined && field.toLocaleLowerCase().includes(needle),
+	return [session.firstPrompt, session.folder, session.branch].some((field) =>
+		field?.toLocaleLowerCase().includes(needle),
 	);
 };
