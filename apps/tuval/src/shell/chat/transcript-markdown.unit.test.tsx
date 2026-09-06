@@ -22,7 +22,7 @@ import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
 import {assistantItem, systemItem, userItem, withTranscript} from "./chat.testing.ts";
 import {tuvalDesignMessages} from "./copy.ts";
-import type {ChatView} from "./view.ts";
+import {type ChatView, initialChatView} from "./view.ts";
 
 installDomShims();
 
@@ -31,15 +31,7 @@ const openWindow = async (state: AiAgentSessionState): Promise<void> => {
 		testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), state),
 	);
 	const host: ChatWindowHost = await Effect.runPromise(
-		process.window<ChatView>(WindowId.make("w1"), {
-			pinned: true,
-			scroll: 0,
-			draft: "",
-			cursor: null,
-			atOldest: false,
-			expanded: [],
-			unfolded: [],
-		}),
+		process.window<ChatView>(WindowId.make("w1"), {...initialChatView, pinned: true}),
 	);
 	render(chatWindow({scrollToFn: () => {}}).render(host) as ReactElement);
 };
