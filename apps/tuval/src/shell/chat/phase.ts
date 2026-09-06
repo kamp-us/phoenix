@@ -7,7 +7,7 @@
  * and never names a backend, which is what lets one window render any of them.
  */
 
-import type {AgentFailure} from "../../ai-agent/core/index.ts";
+import type {AgentFailure, Interruption} from "../../ai-agent/core/index.ts";
 import type {Phase} from "../../ai-agent/events.ts";
 
 /**
@@ -41,17 +41,53 @@ const startFailedLeads: Readonly<Partial<Record<Phase, string>>> = {
 };
 
 /**
+ * How long an unanswered interruption reads as merely in flight before the window says the outcome
+ * is unknown. Five seconds is a working guess, not a measurement — no real CLI abort has been
+ * timed (#8007). What it must not be is absent: an abort nothing confirms would otherwise leave the
+ * window on "Working" forever with no account of the request the operator made.
+ */
+export const interruptionGraceMillis = 5_000;
+
+/**
+ * What an outstanding interruption reads as, before and after the grace runs out.
+ *
+ * The second line is deliberately not a claim that the turn is still running: the generic contract
+ * cannot tell a refused abort from one still in flight — `TuvalAiAgent.interrupt` declares no error
+ * channel, and both layers log the refusal rather than putting it on the stream — so "not
+ * confirmed" is the whole of what is known, and saying more would be inventing it.
+ */
+const interruptionLine = (interruption: Interruption, now: number): string =>
+	now - interruption.requestedAt < interruptionGraceMillis
+		? "Interrupting — waiting for the agent to confirm…"
+		: "Interrupting — the agent has not confirmed. The turn may still be running.";
+
+export interface Status {
+	readonly phase: Phase;
+	readonly failure: AgentFailure | null;
+	readonly interruption: Interruption | null;
+	/** The window's own clock, read at render, so this function stays pure and testable. */
+	readonly now: number;
+}
+
+/**
  * The phase line, or what went wrong when the phase alone would misreport it.
+ *
+ * An outstanding interruption outranks the plain phase line: the session really is still on the
+ * turn, but "Working — Escape interrupts." is the wrong sentence to show someone who already
+ * pressed Escape (#8007).
  *
  * Only a `StartError` earns the failure line, and only where the session came to rest: any other
  * refusal is about one act (a prompt, a mode, an answer) rather than about the session, and the
  * phase is still the true thing to say.
  */
-export const statusLine = (phase: Phase, failure: AgentFailure | null): string => {
-	const lead = startFailedLeads[phase];
-	return failure === null || failure.tag !== START_ERROR || lead === undefined
-		? phaseLine(phase)
-		: `${lead} — ${failure.detail}`;
+export const statusLine = (status: Status): string => {
+	if (status.interruption !== null && status.phase === "prompting") {
+		return interruptionLine(status.interruption, status.now);
+	}
+	const lead = startFailedLeads[status.phase];
+	return status.failure === null || status.failure.tag !== START_ERROR || lead === undefined
+		? phaseLine(status.phase)
+		: `${lead} — ${status.failure.detail}`;
 };
 
 /**

@@ -18,6 +18,7 @@
 import {Context, type Effect, type Stream} from "effect";
 import type {AgentEvent} from "../events.ts";
 import type {
+	CommandRef,
 	Mode,
 	ModelRef,
 	PermissionDecision,
@@ -79,7 +80,18 @@ export interface TuvalAiAgentApi {
 	 */
 	readonly setModel: (model: ModelRef) => Effect.Effect<void, ModelUnsupported>;
 	/**
-	 * How hard the session thinks — the ninth member (#8062), and `setModel`'s shape exactly. The
+	 * The slash commands this session offers, as the composer's picker lists them — the ninth member
+	 * (#8060). A read rather than a setter, because nothing selects a command: the picker inserts one
+	 * and it reaches the backend as ordinary prompt text.
+	 *
+	 * The catalog is the session's, so this answers empty before `start` and on a backend that offers
+	 * none. Changes arrive on `events` as a `commands` event rather than down a second stream — one
+	 * subscription, one ordering (ruling 1, #7570) — and this read always answers what the last such
+	 * event carried.
+	 */
+	readonly commands: Effect.Effect<ReadonlyArray<CommandRef>>;
+	/**
+	 * How hard the session thinks — the tenth member (#8062), and `setModel`'s shape exactly. The
 	 * founder ruled that each backend offers only the levels it really supports rather than mapping
 	 * the ones it lacks onto something, so the offered set is per backend *and* per model and rides
 	 * `events` as a `thinking` event; a level outside it fails.

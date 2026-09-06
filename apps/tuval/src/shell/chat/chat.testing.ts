@@ -92,6 +92,9 @@ export const models = (
 	available: available.map((id) => ({provider: "anthropic", id, name: id})),
 });
 
+export const commands = (names: ReadonlyArray<string>): AiAgentSessionState["commands"] =>
+	names.map((name) => ({name, description: `what /${name} does`}));
+
 /**
  * The offered thinking set, per backend (#8062). The default is Claude's five — no `off` and no
  * `minimal` — since that is the founder's ruling in its narrowest form.

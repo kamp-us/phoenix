@@ -19,6 +19,7 @@ import type {
 	SDKMessage,
 	SDKUserMessage,
 	SessionMessage,
+	SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
 import {getSessionMessages, query} from "@anthropic-ai/claude-agent-sdk";
 
@@ -64,6 +65,12 @@ export interface AgentSession extends AsyncGenerator<SDKMessage, void> {
 	 */
 	applyFlagSettings(settings: {effortLevel: EffortLevel | null}): Promise<void>;
 	supportedModels(): Promise<ReadonlyArray<ModelInfo>>;
+	/**
+	 * The session's slash commands, declared beside `supportedModels` and read the same way — once
+	 * per open. The pin's `sdk.d.ts` documents it as tracking the latest `commands_changed` push, so
+	 * a re-fetch and that push answer the same list and either one is a whole catalog (#8060).
+	 */
+	supportedCommands(): Promise<ReadonlyArray<SlashCommand>>;
 	close(): void;
 }
 

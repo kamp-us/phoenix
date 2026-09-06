@@ -129,6 +129,7 @@ describe("start opens one streaming query", () => {
 					// what the query opened on is the row's own `permissionMode` (#7828).
 					{kind: "mode", current: Mode.make("default"), available: MODES},
 					{kind: "model", current: null, available: []},
+					{kind: "commands", available: []},
 					// A CLI offering no catalog offers no effort levels either: the set is a model's
 					// (#8062), and there is no model here to read one off.
 					{kind: "thinking", current: null, available: []},
@@ -170,6 +171,7 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 					{kind: "phase", phase: "ready"},
 					{kind: "mode", current: Mode.make("default"), available: MODES},
 					{kind: "model", current: null, available: []},
+					{kind: "commands", available: []},
 					{kind: "thinking", current: null, available: []},
 				]);
 			}),
@@ -401,6 +403,81 @@ describe("setModel", () => {
 				// The query still opens on the row's static model — the SDK's `sessionId`/`resume`
 				// options carry no model — so the switch is re-applied against the new session.
 				assert.deepStrictEqual(scripted.opened[1]?.record.models, ["sonnet"]);
+			}),
+		),
+	);
+});
+
+describe("commands", () => {
+	const COMMANDS = [
+		{name: "compact", description: "Summarise the conversation.", argumentHint: ""},
+		{name: "skill:review", description: "Review it.", argumentHint: "<pr>"},
+	];
+
+	/** The SDK's mid-session push, exactly as `sdk.d.ts` declares `SDKCommandsChangedMessage`. */
+	const changed = (commands: ReadonlyArray<Record<string, unknown>>) => ({
+		type: "system" as const,
+		subtype: "commands_changed" as const,
+		commands,
+		uuid: "00000000-0000-4000-8000-0000000000c1" as const,
+		session_id: SESSION_ID,
+	});
+
+	it.effect("fills the catalog from supportedCommands at the open", () =>
+		on({commands: COMMANDS}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				// The empty `argumentHint` the CLI sends for a command taking none is dropped rather
+				// than carried as an empty string the picker would have to special-case.
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "commands"),
+					{
+						kind: "commands",
+						available: [
+							{name: "compact", description: "Summarise the conversation."},
+							{name: "skill:review", description: "Review it.", argumentHint: "<pr>"},
+						],
+					},
+				);
+				assert.deepStrictEqual(yield* agent.commands, [
+					{name: "compact", description: "Summarise the conversation."},
+					{name: "skill:review", description: "Review it.", argumentHint: "<pr>"},
+				]);
+			}),
+		),
+	);
+
+	it.effect("opens on an empty catalog when the CLI cannot list its commands", () =>
+		on({commandsFail: new Error("supportedCommands blew up")}, (agent) =>
+			Effect.gen(function* () {
+				// An absent picker is a session you can still prompt, so the open resolves.
+				const session = yield* agent.start({cwd: CWD});
+				assert.strictEqual(session.sessionId, SESSION_ID);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "commands"),
+					{kind: "commands", available: []},
+				);
+			}),
+		),
+	);
+
+	it.effect("replaces the cached list on a commands_changed push rather than merging", () =>
+		on({commands: COMMANDS}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				scripted.opened[0]?.say(
+					changed([{name: "clear", description: "Clear it.", argumentHint: ""}]) as never,
+				);
+				const pushed = yield* Stream.runCollect(Stream.take(agent.events, 1));
+				assert.deepStrictEqual(pushed[0], {
+					kind: "commands",
+					available: [{name: "clear", description: "Clear it."}],
+				});
+				// Replaced: neither command the open announced survives the push.
+				assert.deepStrictEqual(yield* agent.commands, [{name: "clear", description: "Clear it."}]);
 			}),
 		),
 	);

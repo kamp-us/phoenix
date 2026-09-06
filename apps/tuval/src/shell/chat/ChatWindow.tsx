@@ -37,7 +37,7 @@ import {composerBridge} from "./composer-bridge.ts";
 import {tuvalDesignTranslate} from "./copy.ts";
 import {ModeSwitch} from "./ModeSwitch.tsx";
 import {type PermissionAnswer, PermissionCards} from "./PermissionCards.tsx";
-import {isWorking, statusLine} from "./phase.ts";
+import {interruptionGraceMillis, isWorking, statusLine} from "./phase.ts";
 import {
 	type ChatRow,
 	chatRows,
@@ -465,33 +465,55 @@ function ChatWindow({
 
 	const phase = state?.phase ?? "idle";
 	const models = state?.models ?? null;
+	const commands = state?.commands ?? null;
 	const thinking = state?.thinking ?? null;
 	const composer = useMemo(
 		() =>
 			composerBridge({
 				initialPhase: phase,
 				initialModels: models ?? {current: null, available: []},
+				initialCommands: commands ?? [],
 				initialThinking: thinking ?? {current: null, available: []},
 				onPrompt: (text) => {
 					dispatch({type: "prompt", text, key: options.newKey(), timestamp: options.now()});
 					commit((current) => (current.draft === "" ? current : {...current, draft: ""}));
 				},
-				onInterrupt: () => dispatch({type: "interrupt"}),
+				onInterrupt: () => dispatch({type: "interrupt", at: options.now()}),
 				onSetModel: (model) => dispatch({type: "setModel", model}),
 				onSetThinkingLevel: (level) => dispatch({type: "setThinkingLevel", level}),
 			}),
-		// `phase`, `models` and `thinking` seed the bridge and are deliberately not dependencies:
+		// `phase`, `models`, `commands` and `thinking` seed the bridge and are deliberately not
+		// dependencies:
 		// `AgentChatInput` re-runs its whole load on a new bridge identity, so a bridge rebuilt per
-		// change would drop the composer back into `loading` on every turn. All three reach it
+		// change would drop the composer back into `loading` on every turn. All four reach it
 		// through the setters below.
 		[dispatch, commit, options.newKey, options.now],
 	);
 	useEffect(() => composer.setPhase(phase), [composer, phase]);
 	useEffect(() => {
-		if (models !== null && thinking !== null) composer.setCatalogs(models, thinking);
-	}, [composer, models, thinking]);
+		if (models !== null) composer.setModels(models);
+	}, [composer, models]);
+	useEffect(() => {
+		if (commands !== null) composer.setCommands(commands);
+	}, [composer, commands]);
+	useEffect(() => {
+		if (thinking !== null) composer.setThinking(thinking);
+	}, [composer, thinking]);
 
 	const interruptedId = state?.interrupted ?? null;
+	const interruption = state?.interruption ?? null;
+	// The status line is time-dependent only while an abort is unanswered, and it changes exactly
+	// once — when the grace runs out. So one timeout at that boundary re-renders it, rather than a
+	// poll ticking for the whole turn.
+	const [, passGrace] = useState(0);
+	useEffect(() => {
+		if (interruption === null) return;
+		const remaining = interruption.requestedAt + interruptionGraceMillis - options.now();
+		if (remaining <= 0) return;
+		const timer = setTimeout(() => passGrace((count) => count + 1), remaining);
+		return () => clearTimeout(timer);
+	}, [interruption, options.now]);
+
 	const lastPrompt = state?.lastPrompt ?? null;
 	const resend = useCallback(() => {
 		if (lastPrompt === null) return;
@@ -503,7 +525,7 @@ function ChatWindow({
 			if (event.defaultPrevented) return;
 			if (event.key === "Escape" && isWorking(phase)) {
 				event.preventDefault();
-				dispatch({type: "interrupt"});
+				dispatch({type: "interrupt", at: options.now()});
 				return;
 			}
 			if (event.altKey && (event.key === "r" || event.key === "R") && interruptedId !== null) {
@@ -511,7 +533,7 @@ function ChatWindow({
 				resend();
 			}
 		},
-		[dispatch, interruptedId, phase, resend],
+		[dispatch, interruptedId, options.now, phase, resend],
 	);
 
 	if (process === null) {
@@ -548,7 +570,12 @@ function ChatWindow({
 			<div className="tuval-chat-bar">
 				<p className="tuval-chat-phase" data-phase={phase} role="status">
 					<span className="tuval-chat-phase-dot" aria-hidden="true" />
-					{statusLine(phase, state?.failure ?? null)}
+					{statusLine({
+						phase,
+						failure: state?.failure ?? null,
+						interruption,
+						now: options.now(),
+					})}
 				</p>
 				<div className="tuval-chat-bar-end">
 					{options.extras === null ? null : options.extras(process.state)}

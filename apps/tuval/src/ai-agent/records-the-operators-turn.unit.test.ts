@@ -36,10 +36,10 @@ const CWD = "/work";
 const SENT_AT = 1_700_000_000_000;
 
 /**
- * What `start` queues before any turn: starting, the mode list, the model list, the thinking-level
- * set (#8062), ready.
+ * What `start` queues before any turn: starting, the mode, model and command lists, the
+ * thinking-level set (#8062), ready.
  */
-const START_EVENTS = 5;
+const START_EVENTS = 6;
 
 const machine = aiAgentSessionMachine({cwd: CWD});
 

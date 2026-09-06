@@ -21,6 +21,7 @@ import type {
 	SDKMessage,
 	SDKUserMessage,
 	SessionMessage,
+	SlashCommand,
 	SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk";
 import type {AgentSdk, AgentSession} from "../sdk.ts";
@@ -68,6 +69,10 @@ export interface ScriptedBehaviour {
 	readonly effortSwitchFails?: Error;
 	/** A `supportedModels()` that throws, which is a session with no picker rather than no session. */
 	readonly catalogFails?: Error;
+	/** What `supportedCommands()` answers. Absent is a CLI that offers none. */
+	readonly commands?: ReadonlyArray<SlashCommand>;
+	/** A `supportedCommands()` that throws — a session with no slash picker, not a failed open. */
+	readonly commandsFail?: Error;
 }
 
 export const scriptedQuery = (
@@ -174,6 +179,10 @@ export const scriptedQuery = (
 		supportedModels: async () => {
 			if (behaviour.catalogFails !== undefined) throw behaviour.catalogFails;
 			return behaviour.models ?? [];
+		},
+		supportedCommands: async () => {
+			if (behaviour.commandsFail !== undefined) throw behaviour.commandsFail;
+			return behaviour.commands ?? [];
 		},
 		close: () => {
 			record.closes += 1;

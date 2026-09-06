@@ -27,9 +27,9 @@ export const MODES: ReadonlyArray<Mode> = [
 
 /**
  * What `start` itself emits: starting, ready, the mode list, the model list (#7981), then the
- * thinking-level set that model offers (#8062).
+ * slash-command catalog (#8060) and the thinking-level set that model offers (#8062).
  */
-export const START_EVENTS = 5;
+export const START_EVENTS = 6;
 
 /**
  * Those plus the one event the `system`/`init` frame carries: the model it names.
@@ -114,6 +114,8 @@ export const on = <A, E>(
 				? {}
 				: {modelSwitchFails: harness.modelSwitchFails}),
 			...(harness.catalogFails === undefined ? {} : {catalogFails: harness.catalogFails}),
+			...(harness.commands === undefined ? {} : {commands: harness.commands}),
+			...(harness.commandsFail === undefined ? {} : {commandsFail: harness.commandsFail}),
 			...(harness.effortSwitchFails === undefined
 				? {}
 				: {effortSwitchFails: harness.effortSwitchFails}),

@@ -39,6 +39,7 @@ import {type Cause, Effect, Exit, Layer, Queue, Ref, Scope, Stream} from "effect
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
 import type {
+	CommandRef,
 	Mode,
 	ModelRef,
 	PermissionDecision,
@@ -57,7 +58,13 @@ import {
 	type TuvalAiAgentApi,
 	UnknownRequest,
 } from "../../ai-agent/service/index.ts";
-import {emptyMapping, type Mapping, toAgentEvents, toHistoryItems} from "../history/index.ts";
+import {
+	commandsOf,
+	emptyMapping,
+	type Mapping,
+	toAgentEvents,
+	toHistoryItems,
+} from "../history/index.ts";
 import {KernelBridge, type ToolRuntime, tuvalToolServer} from "../tools/index.ts";
 import {cardOf, resultOf} from "./cards.ts";
 import {type InputChannel, inputChannel, userMessage} from "./input.ts";
@@ -193,6 +200,7 @@ const make = (
 		// between sessions, has to survive to the next `start` and be re-announced there.
 		const model = yield* Ref.make<ModelRef | null>(null);
 		const models = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
+		const commands = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
 		// The effort axis is per model — `ModelInfo` carries `supportedEffortLevels` per row — so the
 		// offered set is looked up by the model the session is running on rather than held flat.
 		const efforts = yield* Ref.make<ReadonlyMap<string, ReadonlyArray<EffortLevel>>>(new Map());
@@ -221,6 +229,24 @@ const make = (
 					Effect.as(
 						Effect.logWarning(`the model catalog could not be read: ${refusal.detail}`),
 						[] as ReadonlyArray<ModelInfo>,
+					),
+				),
+			);
+
+		/**
+		 * The session's slash commands, read once per open. A CLI that cannot answer leaves the picker
+		 * empty rather than failing the open, exactly as the model catalog does.
+		 */
+		const readCommands = (current: Session): Effect.Effect<ReadonlyArray<CommandRef>> =>
+			Effect.tryPromise({
+				try: () => current.handle.supportedCommands(),
+				catch: controlRefused,
+			}).pipe(
+				Effect.map(commandsOf),
+				Effect.catch((refusal) =>
+					Effect.as(
+						Effect.logWarning(`the command catalog could not be read: ${refusal.detail}`),
+						[] as ReadonlyArray<CommandRef>,
 					),
 				),
 			);
@@ -401,6 +427,11 @@ const make = (
 					if (isInit(pulled.message)) yield* readIntro(current, pulled.message);
 					const step = toAgentEvents(pulled.message, mapping, {at: Date.now()});
 					mapping = step.mapping;
+					// The SDK's `commands_changed` push carries the whole list, so the cached one is
+					// replaced by it rather than merged into — reading it off the mapped event keeps one
+					// path for the catalog whatever produced it.
+					const pushed = step.events.findLast((event) => event.kind === "commands");
+					if (pushed !== undefined) yield* Ref.set(commands, pushed.available);
 					yield* emit(open, step.events);
 					if (pulled.message.type === "result") {
 						current.state.settled = true;
@@ -553,6 +584,9 @@ const make = (
 						: spawned;
 			yield* Ref.set(model, opening);
 			yield* emit(out, [{kind: "model", current: opening, available: offered}]);
+			const catalog = yield* readCommands(opened.session);
+			yield* Ref.set(commands, catalog);
+			yield* emit(out, [{kind: "commands", available: catalog}]);
 			// The same re-apply the model gets one line up: a level an operator picked before this
 			// open is applied to the new session rather than merely re-announced, and one the model
 			// this session landed on does not offer is dropped instead of sent.
@@ -733,6 +767,7 @@ const make = (
 			answer,
 			setMode,
 			setModel,
+			commands: Ref.get(commands),
 			setThinkingLevel,
 			page,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),

@@ -134,7 +134,7 @@ const randomMsg = (
 				newItem: false,
 			};
 		case 8:
-			return {msg: {type: "interrupt"}, newItem: false};
+			return {msg: {type: "interrupt", at: SENT_AT + step}, newItem: false};
 		default:
 			return {
 				msg: {type: "event", sessionId: "session-1", event: randomItem(random, id)},

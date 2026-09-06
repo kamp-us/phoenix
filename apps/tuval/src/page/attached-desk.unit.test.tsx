@@ -9,6 +9,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {act, render, screen} from "@testing-library/react";
 import {Effect, Option, Schema, Stream, SubscriptionRef} from "effect";
+import {Socket} from "effect/unstable/socket";
 import {counterId} from "../demo/counter.ts";
 import {ProcessId} from "../process/process.ts";
 import {ProgramId} from "../registry/program.ts";
@@ -114,6 +115,8 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 	readonly programs?: ReadonlyArray<WireProgram>;
 	/** `null` scripts a kernel that has not sent its grammar yet — the desk must not render. */
 	readonly keys?: PrefixTable | null;
+	/** When this socket ends. The default never does, which is what every claim but the drop wants. */
+	readonly closed?: Effect.Effect<Socket.SocketError>;
 }) {
 	const desk = yield* SubscriptionRef.make<ProcessView<unknown>>(
 		live(options?.state ?? twoWindowDesk()),
@@ -139,6 +142,7 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 				return process(SubscriptionRef.changes(counter));
 			})) as PageAttachment["attachProcess"],
 		detach: () => Effect.void,
+		closed: options?.closed ?? Effect.never,
 		readShell: (() => SubscriptionRef.changes(desk)) as PageAttachment["readShell"],
 	};
 	const shell: AttachedProcess<unknown, ShellMsg> = {
@@ -181,6 +185,7 @@ describe("the attached desk", () => {
 						shell={app.shell}
 						renderers={pageRenderers}
 						reducedMotion={true}
+						refusal={null}
 					/>,
 				);
 				yield* settle;
@@ -210,6 +215,7 @@ describe("the attached desk", () => {
 						shell={app.shell}
 						renderers={pageRenderers}
 						reducedMotion={true}
+						refusal={null}
 					/>,
 				);
 				yield* settle;
@@ -243,6 +249,7 @@ describe("the attached desk", () => {
 						shell={app.shell}
 						renderers={pageRenderers}
 						reducedMotion={true}
+						refusal={null}
 					/>,
 				);
 				yield* settle;
@@ -267,6 +274,7 @@ describe("the attached desk", () => {
 						shell={app.shell}
 						renderers={pageRenderers}
 						reducedMotion={true}
+						refusal={null}
 					/>,
 				);
 				yield* settle;
@@ -300,6 +308,7 @@ describe("the attached desk", () => {
 						shell={app.shell}
 						renderers={pageRenderers}
 						reducedMotion={true}
+						refusal={null}
 					/>,
 				);
 				yield* settle;
@@ -325,6 +334,7 @@ describe("the attached desk", () => {
 						shell={app.shell}
 						renderers={pageRenderers}
 						reducedMotion={true}
+						refusal={null}
 					/>,
 				);
 				yield* settle;
@@ -366,6 +376,7 @@ describe("the attached desk", () => {
 						shell={app.shell}
 						renderers={pageRenderers}
 						reducedMotion={true}
+						refusal={null}
 					/>,
 				);
 				yield* settle;
@@ -393,6 +404,7 @@ describe("the attached desk", () => {
 						shell={app.shell}
 						renderers={pageRenderers}
 						reducedMotion={true}
+						refusal={null}
 					/>,
 				);
 				yield* settle;
@@ -408,5 +420,91 @@ describe("the attached desk", () => {
 				});
 				assert.deepStrictEqual(app.sent, []);
 			}),
+	);
+});
+
+describe("the desk across a dropped socket", () => {
+	const dropped = new Socket.SocketError({reason: new Socket.SocketCloseError({code: 1006})});
+
+	it.effect("keeps the last desk on screen and says it is no longer current", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({closed: Effect.succeed(dropped)});
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={pageRenderers}
+					reducedMotion={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			// The whole point of the banner: the windows are still there to read, and the reader is
+			// told what they are worth.
+			assert.lengthOf(screen.getAllByRole("region", {name: /^Window /}), 2);
+			const banner = screen.getByRole("status", {name: "Connection"});
+			assert.include(banner.textContent ?? "", "Reconnecting…");
+			assert.include(banner.textContent ?? "", "1006");
+		}),
+	);
+
+	it.effect("turns the banner into an alert once the page has stopped trying", () =>
+		Effect.gen(function* () {
+			const app = yield* scripted({closed: Effect.succeed(dropped)});
+			render(
+				<AttachedDesk
+					page={app.page}
+					shell={app.shell}
+					renderers={pageRenderers}
+					reducedMotion={true}
+					refusal="the kernel refused or did not answer 30 attempt(s)."
+				/>,
+			);
+			yield* settle;
+
+			assert.lengthOf(screen.getAllByRole("region", {name: /^Window /}), 2);
+			assert.isNull(screen.queryByRole("status", {name: "Connection"}));
+			assert.include(
+				screen.getByRole("alert", {name: "Connection"}).textContent ?? "",
+				"30 attempt(s)",
+			);
+		}),
+	);
+
+	it.effect("re-opens one subscription per shown process on a replacement link, not a second", () =>
+		Effect.gen(function* () {
+			const first = yield* scripted({closed: Effect.succeed(dropped)});
+			const view = render(
+				<AttachedDesk
+					page={first.page}
+					shell={first.shell}
+					renderers={pageRenderers}
+					reducedMotion={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+			assert.deepStrictEqual(first.attaches, [counterProcess]);
+
+			const second = yield* scripted();
+			view.rerender(
+				<AttachedDesk
+					page={second.page}
+					shell={second.shell}
+					renderers={pageRenderers}
+					reducedMotion={true}
+					refusal={null}
+				/>,
+			);
+			yield* settle;
+
+			// The ids the old socket was asked for are dropped with it, so the new one is asked once
+			// for the same process rather than never (a stale `asked` set) or twice.
+			assert.deepStrictEqual(second.attaches, [counterProcess]);
+			assert.deepStrictEqual(first.attaches, [counterProcess]);
+			assert.lengthOf(screen.getAllByRole("region", {name: /^Window /}), 2);
+			assert.isNull(screen.queryByRole("status", {name: "Connection"}));
+		}),
 	);
 });

@@ -10,6 +10,7 @@
 
 import {Predicate} from "effect";
 import {
+	isCommandRef,
 	isModelRef,
 	isPendingPermission,
 	isThinkingLevel,
@@ -17,7 +18,13 @@ import {
 	isWindowOmission,
 	type PendingPermission,
 } from "../ports/index.ts";
-import {type AiAgentSessionState, type HistoryPage, phases, type UsageTotals} from "./state.ts";
+import {
+	type AiAgentSessionState,
+	type HistoryPage,
+	type Interruption,
+	phases,
+	type UsageTotals,
+} from "./state.ts";
 
 const isNullOrString = (value: unknown): value is string | null =>
 	value === null || typeof value === "string";
@@ -47,6 +54,7 @@ const isModels = (value: unknown): boolean =>
 	Array.isArray(value.available) &&
 	value.available.every(isModelRef);
 
+const isCommands = (value: unknown): boolean => Array.isArray(value) && value.every(isCommandRef);
 const isThinking = (value: unknown): boolean =>
 	Predicate.isObject(value) &&
 	(value.current === null || isThinkingLevel(value.current)) &&
@@ -61,6 +69,9 @@ const isPage = (value: unknown): value is HistoryPage | null =>
 	(Predicate.isObject(value) &&
 		isTranscriptItems(value.items) &&
 		typeof value.hasMore === "boolean");
+
+const isInterruption = (value: unknown): value is Interruption | null =>
+	value === null || (Predicate.isObject(value) && isFiniteNumber(value.requestedAt));
 
 const isFailure = (value: unknown): boolean =>
 	value === null ||
@@ -78,11 +89,13 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	typeof value.cwd === "string" &&
 	isTranscript(value.transcript) &&
 	isNullOrString(value.interrupted) &&
+	isInterruption(value.interruption) &&
 	isUsage(value.usage) &&
 	isPermissions(value.permissions) &&
 	isFiniteNumber(value.permissionsRaised) &&
 	isModes(value.modes) &&
 	isModels(value.models) &&
+	isCommands(value.commands) &&
 	isThinking(value.thinking) &&
 	isNullOrString(value.lastPrompt) &&
 	isPage(value.lastPage) &&

@@ -65,6 +65,7 @@ describe("the layer's type", () => {
 			| "answer"
 			| "setMode"
 			| "setModel"
+			| "commands"
 			| "setThinkingLevel"
 			| "page"
 			| "events"

@@ -12,7 +12,13 @@ import {join} from "node:path";
 import type {Effect, Stream} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, ModelRef, PermissionDecision, ThinkingLevel} from "../ports/index.ts";
+import type {
+	CommandRef,
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	ThinkingLevel,
+} from "../ports/index.ts";
 import type {
 	ModelUnsupported,
 	ModeUnsupported,
@@ -31,14 +37,14 @@ import type {
 } from "./TuvalAiAgent.ts";
 
 /**
- * The founder's seven grew to eight on #7981 and to nine on #8062, and both are the same act: he
- * wants the agent's model and its thinking level picked from the chat composer, and a picker over a
- * generic window has to read and write both through the generic interface. `setModel` and
- * `setThinkingLevel` are those two members, and both pins below count nine so the growth reads as
- * the deliberate act it was rather than as drift.
+ * The founder's seven grew to eight on #7981, to nine on #8060 and to ten on #8062, and all three
+ * are the same act: he wants the agent's model, its slash commands and its thinking level reachable
+ * from the chat composer, and a picker over a generic window has to reach them through the generic
+ * interface. `setModel`, `commands` and `setThinkingLevel` are those three members, and both pins
+ * below count ten so each growth reads as the deliberate act it was rather than as drift.
  */
 describe("the TuvalAiAgent surface", () => {
-	it("carries the founder's seven members plus #7981's and #8062's, each at its declared type", () => {
+	it("carries the seven, #7981's eighth, #8060's ninth and #8062's tenth, at their declared types", () => {
 		expectTypeOf<TuvalAiAgentApi["start"]>().toEqualTypeOf<
 			(options: StartOptions) => Effect.Effect<StartedSession, StartError>
 		>();
@@ -55,6 +61,9 @@ describe("the TuvalAiAgent surface", () => {
 		expectTypeOf<TuvalAiAgentApi["setModel"]>().toEqualTypeOf<
 			(model: ModelRef) => Effect.Effect<void, ModelUnsupported>
 		>();
+		expectTypeOf<TuvalAiAgentApi["commands"]>().toEqualTypeOf<
+			Effect.Effect<ReadonlyArray<CommandRef>>
+		>();
 		expectTypeOf<TuvalAiAgentApi["setThinkingLevel"]>().toEqualTypeOf<
 			(level: ThinkingLevel) => Effect.Effect<void, ThinkingUnsupported>
 		>();
@@ -66,7 +75,7 @@ describe("the TuvalAiAgent surface", () => {
 		>();
 	});
 
-	it("has exactly those nine members and no tenth", () => {
+	it("has exactly those ten members and no eleventh", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
 			| "start"
 			| "prompt"
@@ -74,6 +83,7 @@ describe("the TuvalAiAgent surface", () => {
 			| "answer"
 			| "setMode"
 			| "setModel"
+			| "commands"
 			| "setThinkingLevel"
 			| "page"
 			| "events"

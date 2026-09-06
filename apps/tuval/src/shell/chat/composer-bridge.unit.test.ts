@@ -7,7 +7,7 @@
 
 import {describe, expect, it, vi} from "vitest";
 import type {ModelState, ThinkingState} from "../../ai-agent/core/index.ts";
-import type {ModelRef, ThinkingLevel} from "../../ai-agent/ports/index.ts";
+import type {CommandRef, ModelRef, ThinkingLevel} from "../../ai-agent/ports/index.ts";
 import {composerBridge} from "./composer-bridge.ts";
 
 const opus: ModelRef = {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"};
@@ -24,6 +24,9 @@ const effort: ThinkingState = {
 	available: ["low", "medium", "high", "xhigh", "max"],
 };
 
+const compact: CommandRef = {name: "compact", description: "Summarise the conversation."};
+const review: CommandRef = {name: "skill:review", description: "Review it.", argumentHint: "<pr>"};
+
 const seam = () => {
 	const onPrompt = vi.fn<(text: string) => void>();
 	const onInterrupt = vi.fn<() => void>();
@@ -35,6 +38,7 @@ const seam = () => {
 		onSetModel,
 		onSetThinkingLevel,
 		initialModels: noModels,
+		initialCommands: [],
 		initialThinking: noThinking,
 	};
 };
@@ -82,19 +86,47 @@ describe("composerBridge", () => {
 		expect(seen).toEqual([]);
 	});
 
-	it("answers every capability it does not have as empty, never as a rejection", async () => {
+	it("answers an unheld capability, and a held empty one, empty not rejected", async () => {
 		const {bridge} = composerBridge({...seam(), initialPhase: "ready"});
-		expect(await bridge.loadPiCommands()).toEqual([]);
 		expect(await bridge.loadPiFiles("src")).toEqual([]);
 		expect(await bridge.setPiProjectTrust("approve")).toBeUndefined();
 		expect(await bridge.answerPiExtension({id: "r1"})).toBeUndefined();
-		// Models (#7981) and thinking levels (#8062) it does have, and an agent offering neither
-		// still answers empty rather than rejecting: a rejection puts the composer in `unavailable`
-		// and disables the send button.
+		// Models (#7981), commands (#8060) and thinking levels (#8062) it does have, and an agent
+		// offering none still answers empty rather than rejecting: a rejection puts the composer in
+		// `unavailable` and disables the send button.
 		expect(await bridge.loadPiModels()).toEqual([]);
 		expect(await bridge.setPiModel({provider: "x", id: "y", name: "Y"})).toBeUndefined();
 		expect(await bridge.loadPiThinkingLevels()).toEqual([]);
 		expect(await bridge.setPiThinkingLevel("high")).toBeUndefined();
+		// Commands too (#8060), and a backend offering none answers the same empty list — which is
+		// exactly Pi's answer while `pi-protocol` carries no command catalog.
+		expect(await bridge.loadPiCommands()).toEqual([]);
+	});
+
+	it("answers the picker with the session's own command catalog", async () => {
+		const composer = composerBridge({
+			...seam(),
+			initialPhase: "ready",
+			initialCommands: [compact, review],
+		});
+		// `argumentHint` is the session's, not the picker's: the composer inserts the command and the
+		// operator types the arguments, so a hint rendered as description would misread as one.
+		expect(await composer.bridge.loadPiCommands()).toEqual([
+			{name: "compact", description: "Summarise the conversation."},
+			{name: "skill:review", description: "Review it."},
+		]);
+	});
+
+	it("replaces the catalog a later push carries instead of merging into it", async () => {
+		const composer = composerBridge({
+			...seam(),
+			initialPhase: "ready",
+			initialCommands: [compact, review],
+		});
+		composer.setCommands([review]);
+		expect(await composer.bridge.loadPiCommands()).toEqual([
+			{name: "skill:review", description: "Review it."},
+		]);
 	});
 
 	it("answers the thinking picker with the session's offered levels and its current one", async () => {
@@ -176,30 +208,32 @@ describe("composerBridge", () => {
 		);
 		expect(await composer.bridge.loadPiModels()).toEqual([]);
 		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([]);
-		composer.setCatalogs({current: opus, available: [opus, sonnet]}, effort);
-		// One event, not a second bridge: the composer re-runs its whole load on a new bridge
-		// identity, so a rebuild here would drop it back into `loading` (#8062).
-		expect(seen).toEqual([
-			{
-				type: "harness_status",
-				status: {
-					models: [
-						{provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
-						{provider: "anthropic", id: "claude-sonnet-5", name: "Sonnet 5"},
-					],
-					model: {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
-					thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
-					thinkingLevel: "medium",
-				},
+		composer.setModels({current: opus, available: [opus, sonnet]});
+		composer.setThinking(effort);
+		// Pushed events, not a second bridge: the composer re-runs its whole load on a new bridge
+		// identity, so a rebuild here would drop it back into `loading` (#8062). Each push carries
+		// every catalog, so the last one is the whole picture.
+		expect(seen.length).toBe(2);
+		expect(seen[1]).toEqual({
+			type: "harness_status",
+			status: {
+				models: [
+					{provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
+					{provider: "anthropic", id: "claude-sonnet-5", name: "Sonnet 5"},
+				],
+				commands: [],
+				model: {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
+				thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
+				thinkingLevel: "medium",
 			},
-		]);
+		});
 		expect((await composer.bridge.loadPiModels()).length).toBe(2);
 		expect((await composer.bridge.loadPiThinkingLevels()).length).toBe(5);
 	});
 
 	it("replays a level set that landed before the composer subscribed", async () => {
 		const composer = composerBridge({...seam(), initialPhase: "ready"});
-		composer.setCatalogs(noModels, effort);
+		composer.setThinking(effort);
 		const seen: Array<unknown> = [];
 		composer.bridge.subscribeToPiEvents(
 			(event) => seen.push(event),
@@ -213,8 +247,52 @@ describe("composerBridge", () => {
 				type: "harness_status",
 				status: {
 					models: [],
+					commands: [],
 					thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
 					thinkingLevel: "medium",
+				},
+			},
+		]);
+	});
+
+	it("pushes a command catalog that arrives after mount on the same subscription", async () => {
+		const composer = composerBridge({...seam(), initialPhase: "ready"});
+		const seen: Array<unknown> = [];
+		composer.bridge.subscribeToPiEvents(
+			(event) => seen.push(event),
+			() => undefined,
+		);
+		composer.setCommands([compact]);
+		expect(seen).toEqual([
+			{
+				type: "harness_status",
+				status: {
+					models: [],
+					commands: [{name: "compact", description: "Summarise the conversation."}],
+					thinkingLevels: [],
+				},
+			},
+		]);
+	});
+
+	it("re-pushes a catalog that landed before the composer subscribed", () => {
+		const composer = composerBridge({
+			...seam(),
+			initialPhase: "ready",
+			initialCommands: [compact],
+		});
+		const seen: Array<unknown> = [];
+		composer.bridge.subscribeToPiEvents(
+			(event) => seen.push(event),
+			() => undefined,
+		);
+		expect(seen).toEqual([
+			{
+				type: "harness_status",
+				status: {
+					models: [],
+					commands: [{name: "compact", description: "Summarise the conversation."}],
+					thinkingLevels: [],
 				},
 			},
 		]);

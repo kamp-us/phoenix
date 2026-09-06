@@ -21,6 +21,7 @@
  */
 
 import type {
+	CommandRef,
 	Mode,
 	ModelRef,
 	PermissionDecision,
@@ -78,6 +79,21 @@ export interface ModelEvent {
 }
 
 /**
+ * What the session offers the composer's slash-command picker, whole.
+ *
+ * Replaced on arrival, never merged: the Agent SDK's `commands_changed` push is documented as the
+ * full list and tells clients to replace their cached one (`sdk.d.ts` at the `0.3.259` pin), and a
+ * merge would keep a command the backend has just withdrawn.
+ *
+ * It rides this stream rather than a member of its own for the reason every other catalog does —
+ * one subscription, one ordering (ruling 1, #7570).
+ */
+export interface CommandsEvent {
+	readonly kind: "commands";
+	readonly available: ReadonlyArray<CommandRef>;
+}
+
+/**
  * How hard the session is thinking now, and which levels it may be switched to.
  *
  * `available` is the layer's *offered* set, and it is per backend and per model: Pi advertises the
@@ -132,6 +148,7 @@ export type AgentEvent =
 	| PermissionResolvedEvent
 	| ModeEvent
 	| ModelEvent
+	| CommandsEvent
 	| ThinkingEvent
 	| UsageEvent
 	| FailureEvent;
