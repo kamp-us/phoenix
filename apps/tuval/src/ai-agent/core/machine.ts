@@ -39,7 +39,7 @@ import {
 	type AiAgentSessionSub,
 	eventsSub,
 } from "./messages.ts";
-import {noteSend, settleAccepted, settledBy, settlePending} from "./sends.ts";
+import {noteSend, settledBy, settlePending} from "./sends.ts";
 import {type AiAgentSessionState, initialState, lastAssistantId, restore} from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
@@ -275,9 +275,17 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 
 			paged: (state, msg) => [{...state, lastPage: msg.page}, noCmds],
 
-			// Stopping a turn settles the send that started it: a turn nobody could interrupt is a turn
-			// the layer never took. The cut turn's own resend affordance is the recovery from here,
-			// so holding the text a second time in the window would offer it twice.
+			// Stopping a turn says nothing about whether its text crossed, so the send in flight is
+			// left exactly where it stood. `prompting` is reached at admission, not on the layer's
+			// confirmation, so an Escape pressed while `aiAgent.prompt` is still in flight is an
+			// interrupt of a turn the layer may yet refuse — settling the send `accepted` here made
+			// its window drop the copy that refusal would have needed (#8005).
+			//
+			// The two answers that do know reach it unchanged: the layer's own `sent` settles a
+			// refused handoff, and the turn's end — which an interrupt is one way of causing —
+			// arrives as the `phase` event `./fold.ts` accepts on. So a turn that really ran still
+			// releases its window's copy, and the cut turn's resend affordance is still the only
+			// recovery offered for it.
 			interrupt: (state) =>
 				state.phase !== "prompting"
 					? [state, noCmds]
@@ -286,7 +294,6 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								...state,
 								phase: "ready",
 								interrupted: lastAssistantId(state.transcript.items),
-								sends: settleAccepted(state.sends),
 							},
 							[{type: "aiAgent.interrupt"}],
 						],

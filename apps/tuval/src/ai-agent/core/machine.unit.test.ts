@@ -750,10 +750,32 @@ describe("a send's outcome, under its own key", () => {
 		expect(gone.sends).toEqual([{key: "k1", state: "uncertain", failure: null}]);
 	});
 
-	it("accepts the send a turn is running under when the operator interrupts it", () => {
+	/**
+	 * Criterion 8. `prompting` is reached at admission, so an Escape can land while the layer is
+	 * still deciding. The interrupt leaves the send where it stood, and the refusal that arrives a
+	 * moment later still finds it there — which is what leaves the window a copy to offer.
+	 */
+	it("leaves a send in flight alone when the operator interrupts, so a later refusal still settles it", () => {
 		const [admitted] = apply(started(), prompt("k1"));
 		const [cut] = apply(admitted, {type: "interrupt"});
-		expect(cut.sends).toEqual([{key: "k1", state: "accepted"}]);
+		expect(cut.sends).toEqual([{key: "k1", state: "pending"}]);
+
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "refused",
+			detail: "the pin refused the prompt",
+		};
+		const [answered] = apply(cut, {type: "sent", key: "k1", failure});
+		expect(answered.sends).toEqual([{key: "k1", state: "refused", failure}]);
+	});
+
+	/** The other half: a turn the layer really took still releases its window's copy when it ends. */
+	it("accepts an interrupted send once the layer narrates the turn's end", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [cut] = apply(handed, {type: "interrupt"});
+		const [done] = apply(cut, turnEnded);
+		expect(done.sends).toEqual([{key: "k1", state: "accepted"}]);
 	});
 
 	/**

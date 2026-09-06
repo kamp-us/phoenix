@@ -349,6 +349,38 @@ describe("a send whose outcome is not yet known", () => {
 		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
 	});
 
+	/**
+	 * #8005's eighth criterion, at the window. The core reaches `prompting` on admission, so an
+	 * Escape can land while `aiAgent.prompt` is still in flight. The interrupt leaves the send
+	 * `pending` (`../../ai-agent/core/machine.unit.test.ts` proves the core does that), the window
+	 * therefore keeps holding the copy, and the refusal that arrives afterwards still has words to
+	 * offer back.
+	 */
+	it("keeps the copy when a send is interrupted before the layer answers, and offers it on the refusal", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		const key = keys[0] ?? "";
+		await waitFor(() => expect(view().outgoing).toEqual([{key, text: "the long prompt"}]));
+
+		const cut = withSends([{key, state: "pending"}], {
+			phase: "ready",
+			interrupted: ItemId.make("a1"),
+		});
+		await act(async () => {
+			await Effect.runPromise(process.commit(cut));
+		});
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit({...cut, sends: [{key, state: "refused", failure: refusal}]}),
+			);
+		});
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+	});
+
 	/** The other side of that line: the turn ended, so the text crossed and the copy goes. */
 	it("lets go of the copy once the turn the backend ran comes to an end", async () => {
 		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
