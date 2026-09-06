@@ -114,11 +114,10 @@ This is the first line of a gate's verdict comment on a PR, and the artifact the
 rests on. A gate writes it once, when it finishes reviewing; a repairing coder reads it to learn
 whether it owes a fix, and a shipper reads it to learn whether it may merge. The marker attests the
 tree the verdict was formed over: the head the reviewer inspected is bound into it, and a marker
-bound to a head that
-has since moved is stale rather than passing. A marker the readers cannot recognise makes a reviewed
-PR look unreviewed and stalls it; one whose binding is lost would let a stale approval carry an
-unreviewed tree through a merge. The module owns the composing and the reading, including the
-staleness question; the skills keep the judgement of when to flip a verdict.
+bound to a head that has since moved is stale rather than passing. A marker the readers cannot
+recognise makes a reviewed PR look unreviewed and stalls it; one whose binding is lost would let a
+stale approval carry an unreviewed tree through a merge. The module owns the composing and the
+reading, including the staleness question; the skills keep the judgement of when to flip a verdict.
 
 ### `range-verdict-marker`
 
@@ -127,11 +126,12 @@ review judges on its own branch, posted on the child issue. The head binding abo
 the range being merged into the epic branch: at that moment the SHAs the verdict names stop being
 that branch's history, and a reader holding only those SHAs would have to re-review work nobody
 changed. So this form drops the head and makes the **content digest mandatory** — the twelve hex of
-the same content serialization a head-bound verdict carries, over the same `<base>...<tip>` records. A clean merge that preserves every judged blob leaves that digest
-derivable from the epic branch and the verdict in force; a conflict resolution, or any later commit
-touching a judged path, moves it and kills the verdict — the re-review that is owed. A marker of
-this form written with no digest binds nothing at all, so it is malformed rather than a weaker
-verdict — the one place this format is stricter than the head-bound one.
+the same content serialization a head-bound verdict carries, over the same `<base>...<tip>`
+records. A clean merge that preserves every judged blob leaves that digest derivable from the epic
+branch and the verdict in force; a conflict resolution, or any later commit touching a judged path,
+moves it and kills the verdict — the re-review that is owed. A marker of this form written with no
+digest binds nothing at all, so it is malformed rather than a weaker verdict — the one place this
+format is stricter than the head-bound one.
 
 ### `lane-brief`
 
@@ -175,19 +175,20 @@ read the other's marker as its own.
 
 ### `grill-ruling`
 
-This is the first line of the comment that records a founder ruling on one grilling question, and it
-is the only marker a reader may resolve to `ruled`. The agreement it closes is an authority one: a
-comment claiming a decision is byte-indistinguishable from one carrying it, because every agent
-writes to GitHub as the same account, so nothing in the prose can settle who decided. The marker
-therefore carries no claim about itself at all — it names a question and the digest of the round text
-it answered, and the reader settles authority against repository permissions and against a dated
-authorization comment beside it. The digest is what keeps the ruling honest over time: re-word the
-question and the recomputed digest differs, so the ruling stops counting and the question is open
-again. A ruling that drifted out from under the founder must never keep reading as his.
+This is the first line of the comment that records an approver's ruling on one grilling
+question, and it is the only marker a reader may resolve to `ruled`. The agreement it closes is
+an authority one: a comment claiming a decision is byte-indistinguishable from one carrying it,
+because every agent writes to GitHub as the same account, so nothing in the prose can settle who
+decided. The marker therefore carries no claim about itself at all — it names a question and the
+digest of the round text it answered, and the reader settles authority against repository
+permissions and against a dated authorization comment beside it. The digest is what keeps the
+ruling honest over time: re-word the question and the recomputed digest differs, so the ruling
+stops counting and the question is open again. A ruling that drifted out from under its approver
+must never keep reading as theirs.
 
 ### `cap-clearance`
 
-This is the founder's grant of one extra repair round, carried on the pull request the round belongs
+This is an approver's grant of one extra repair round, carried on the pull request the round belongs
 to. The marker names the round it clears and nothing else — deliberately no head SHA, because a
 clearance exists so a *new* head can be pushed, and a head-bound grant would be void the moment it
 was used. Naming the round is also what spends it exactly once: the grant covers the round it names,
@@ -198,7 +199,7 @@ comment beside it.
 ### `grill-answer`
 
 These bytes are the agent's own record of a fact it established, never a ruling: a reader that
-resolves a founder decision looks for the other key and finds nothing here. Keeping them apart as
+resolves an approver decision looks for the other key and finds nothing here. Keeping them apart as
 two formats rather than one polarity field means a reader never has to parse a field to learn which
 kind of authority it is holding. Its digest is informational: it records which text was answered so
 a later reader can see the question moved, and it never changes the state.
@@ -295,7 +296,7 @@ carried as a marker comment on the issue, with the number and a digest in the by
 reasons. What differs is the subject and one extra field. The digest binds the **issue body** that
 was ruled on, so a re-scoped question no longer inherits its ruling; and the marker names the comment
 the ruling is actually written in, which is what makes it worth more than a label — a builder picking
-the issue up reads the founder's own words at that URL instead of inferring the choice from a thread,
+the issue up reads that human's own words at that URL instead of inferring the choice from a thread,
 and it is the value `build claim --cites` takes. The URL is checked against the issue the
 marker binds, in the read, because a ruling recorded on another issue rules nothing here and
 admitting one would let a single comment unlock every decision on the board. The marker is what
@@ -326,11 +327,11 @@ rather than inheriting a judgement formed over a diff nobody has read since.
 ## Adding a format
 
 A new format is one sibling schema module plus one registry row — never a branch inside a verb, and
-never a paragraph in a skill body. The row carries the owner
-module path, the producers and the consumers, so **the table above is generated from the registry,
-never typed here**: `fabrika wire index --write` renders it. Each format also carries one paragraph
-of protocol narrative under a level-3 heading whose text is the format's key in backticks — that is
-the half the row cannot hold, and the only half of this page written by hand.
+never a paragraph in a skill body. The row carries the owner module path, the producers and the
+consumers, so **the table above is generated from the registry, never typed here**:
+`fabrika wire index --write` renders it. Each format also carries one paragraph of protocol
+narrative under a level-3 heading whose text is the format's key in backticks — that is the half the
+row cannot hold, and the only half of this page written by hand.
 
 `fabrika wire index` (no flag) is the check, and it runs in CI on a change to either side. It reds
 on three things: a registered format with no narrative section here, a section here naming no

@@ -236,13 +236,12 @@ rules visible.
 
 **Every GitHub read and write a fabrika skill or verb makes goes through `gh api` REST, and every
 list read paginates.** This section is where that rule lives; a skill contract cites it and does
-not restate it. The forcing constraint is the org's legacy Projects-classic integration, which
-breaks GraphQL issue and pull-request queries in an org carrying a legacy Projects-classic
-integration — ruling out the projects noun, the `pr`/`issue` edit verbs, and the explicit GraphQL
-transport. A repo adopting fabrika records its own non-REST carves, if it has any. Pagination rides
-along as its own rule:
-an unpaginated list read returns a plausible first page instead of an error, so a count read off
-one page is wrong with nothing marking it wrong.
+not restate it. The forcing constraint is a legacy Projects-classic integration, which breaks
+GraphQL issue and pull-request queries in any org carrying one — ruling out the projects noun, the
+`pr`/`issue` edit verbs, and the explicit GraphQL transport. A repo adopting fabrika records its own
+non-REST carves, if it has any. Pagination rides along as its own rule: an unpaginated list read
+returns a plausible first page instead of an error, so a count read off one page is wrong with
+nothing marking it wrong.
 
 **Where it is enforced today — stated so nobody assumes coverage it does not have.** The
 `skill-gh-lint` job ([`.github/workflows/skill-gh-lint.yml`](../../../.github/workflows/skill-gh-lint.yml),
@@ -399,7 +398,8 @@ to a caller that made one call. `review ci --wait`
 is the same shape over a queued check set, bounded by a wall-clock budget instead of a count, and it
 is where this rule was actually converted: the reviewer's wait was the gap that produced the
 spawned-side timers above, and moving the loop into the verb is what closed it rather than parking
-the lane on a human. That is the shape a skill-side wait converts into — a verb whose waiting is bounded and whose caller blocks on nothing else.
+the lane on a human. That is the shape a skill-side wait converts into — a verb whose waiting is
+bounded and whose caller blocks on nothing else.
 
 **A bound that runs out is its own answer, never the permissive one.** Both verbs say so in their
 output: `ship reconcile` returns `unresolved`, `review ci --wait` returns `settle
