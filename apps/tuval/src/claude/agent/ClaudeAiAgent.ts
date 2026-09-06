@@ -637,6 +637,16 @@ const make = (
 				// exists for fires while the first send is still in flight (ruling 2, #7570).
 				yield* Ref.update(keys, (seen) => new Set(seen).add(key));
 			}
+			// The turn's start, narrated on the same queue its end will be — the pair is what makes
+			// a boundary, and the core accepts a send only on the end of a turn it saw begin
+			// (#8107). Without it the opening `ready` this session emitted into the queue before
+			// anything subscribed to it reads exactly like a turn's end.
+			//
+			// Before the write, not after, because the queue's order is the whole point: `drive`
+			// pushes the `result` turn's `ready` from its own fiber, and a narration published
+			// after the push could be offered behind it. A write that then fails is a turn nobody
+			// ran, and the `PromptError` below settles that send on its own arm regardless.
+			yield* publish([{kind: "phase", phase: "prompting"}]);
 			yield* Effect.try({
 				try: () => {
 					current.state.settled = false;

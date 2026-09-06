@@ -24,7 +24,7 @@ import {
 	type WindowOmission,
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
-import {settleAccepted, settlePending} from "./sends.ts";
+import {markTurnRunning, settleAccepted, settlePending} from "./sends.ts";
 import {type AiAgentSessionState, settlePartialItems, type UsageTotals} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
@@ -207,19 +207,31 @@ export const foldEvent = (
 	switch (event.kind) {
 		case "item":
 			return {...state, transcript: foldItem(state.transcript, event.item, limits)};
-		// The phase line is also where a send in flight learns it crossed.
+		// The phase line is also where a send in flight learns it crossed, and it takes two events
+		// to say so: the layer narrating the backend *starting* a turn, and then that turn ending.
 		//
 		// A layer's `prompt` returns at the send on both rows (#8018), so nothing on the Cmd's own
-		// answer can say the backend took the text — the turn's end is the first thing that can,
-		// and every layer narrates that here (`pi/ai-agent/items.ts` maps Pi's `idle` to `ready`,
-		// `claude/agent/ClaudeAiAgent.ts` emits it on the SDK's `result`). A turn the backend ran
-		// is a turn the text crossed for, whatever the turn itself came to, so the send is accepted
-		// and its window may drop the copy it was holding (#8005).
+		// answer can say the backend took the text. Nor can a bare `ready`: the `prompt` cell walks
+		// the session to `prompting` itself, before `aiAgent.prompt` is even called, so a `ready`
+		// pushed for some earlier turn or for no turn at all lands in that gap looking exactly like
+		// a turn's end (#8107). What is not ambiguous is the pair — `prompting` marks the send's
+		// turn running (`./sends.ts`), and only a running turn's end accepts it, whatever the turn
+		// itself came to, so its window may drop the copy it was holding (#8005). Both rows narrate
+		// both halves: Pi off its session phase (`pi/ai-agent/items.ts` maps `idle` to `ready` and
+		// everything else to `prompting`), the Claude layer on the write that hands the CLI the
+		// text and on the SDK's `result` (`claude/agent/ClaudeAiAgent.ts`).
+		//
+		// The pair is also what says *which* send crossed, because a stale `ready` leaves the
+		// session `ready` under a send whose turn never began and the operator can send again into
+		// that gap — so two can be in flight at once. `markTurnRunning` gives the turn to the
+		// oldest send still waiting for one, which is the order the layer handed them over in, and
+		// `settleAccepted` reaches that running send and no other. Neither reads "whichever send is
+		// pending", which is how a later turn accepted an older, never-started one (#8107).
 		//
 		// `gone` is the other half: a session that ended under a send in flight can never answer
-		// for it, so that send becomes recoverable instead. Refusals reach the send by their own
-		// arms below, and they arrive before this line does — both rows push the turn's failure
-		// ahead of the phase that closes it.
+		// for it, so every send in flight becomes recoverable instead. Refusals reach the send by
+		// their own arms below, and they arrive before this line does — both rows push the turn's
+		// failure ahead of the phase that closes it.
 		case "phase": {
 			if (coreOwned(event.phase)) return state;
 			// Any phase but `prompting` is the turn over, and nothing will supersede a partial the
@@ -237,7 +249,8 @@ export const foldEvent = (
 				...turn,
 				phase: event.phase,
 				interruption: interruptionAfter(turn, event.phase),
-				sends: event.phase === "prompting" ? turn.sends : settleAccepted(turn.sends),
+				sends:
+					event.phase === "prompting" ? markTurnRunning(turn.sends) : settleAccepted(turn.sends),
 			};
 		}
 		// A raising stamps the next `seq`, which is what makes a card's identity the raising rather

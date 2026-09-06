@@ -61,7 +61,7 @@ const saved: AiAgentSessionState = {
 	lastPrompt: "make the README",
 	sends: [
 		{key: "send-0", state: "accepted"},
-		{key: "send-1", state: "pending"},
+		{key: "send-1", state: "pending", turn: "unstarted"},
 	],
 	lastPage: {items: [userItem("older-0")], hasMore: true},
 	failure: {tag: "tuval/ai-agent/PromptError", reason: "disconnected", detail: "socket closed"},

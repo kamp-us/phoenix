@@ -47,8 +47,11 @@ export {
 	releaseQueued,
 } from "./queue.ts";
 export {
+	markTurnRunning,
 	noteSend,
+	type PendingSend,
 	pendingSend,
+	runningSend,
 	type SendOutcome,
 	sendAfterFailure,
 	sendLimit,
@@ -56,6 +59,7 @@ export {
 	settleAccepted,
 	settledBy,
 	settlePending,
+	type TurnProgress,
 } from "./sends.ts";
 export {
 	isAiAgentSessionState,

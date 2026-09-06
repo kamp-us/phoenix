@@ -98,7 +98,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			interrupted: null,
 			interruption: null,
 			transcript: foldItem(state.transcript, promptItem(prompt), limits),
-			sends: noteSend(state.sends, {key: prompt.key, state: "pending"}),
+			sends: noteSend(state.sends, {key: prompt.key, state: "pending", turn: "unstarted"}),
 			failure: null,
 		},
 		[{type: "aiAgent.prompt", text: prompt.text, key: prompt.key}],
