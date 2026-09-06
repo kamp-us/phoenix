@@ -48,7 +48,8 @@ pre-commit:
     # burning a full CI round-trip (#2147; PR #2144 failed `pnpm lint` twice before a
     # clean 3rd push). biome is a single native binary (no `node_modules` runtime), so
     # this leg CAN fail-closed even in a lean agent worktree — unlike a deps-dependent
-    # check, which is why lint/format lives here on pre-commit and typecheck on pre-push. Bypassable with `git commit --no-verify` (humans only); CI stays the
+    # check, which is why lint/format lives here on pre-commit and typecheck on
+    # pre-push. Bypassable with `git commit --no-verify` (humans only); CI stays the
     # unbypassable authority (ADR 0068).
     #
     # Fail-CLOSED on a REAL finding, fail-OPEN on an ABSENT toolchain — the load-bearing
