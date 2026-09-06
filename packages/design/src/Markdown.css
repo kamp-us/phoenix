@@ -129,12 +129,6 @@
 	contain: inline-size;
 }
 
-.kp-markdown pre:focus-visible,
-.kp-markdown__scroller:focus-visible {
-	outline: var(--manti-focus-ring-width) solid var(--manti-focus-ring);
-	outline-offset: var(--manti-focus-ring-offset);
-}
-
 .kp-markdown table {
 	border-collapse: collapse;
 	font: var(--t-body-sm);
