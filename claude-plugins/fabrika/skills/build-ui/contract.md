@@ -303,7 +303,7 @@ The manifest itself is the one surface whose absence refuses: without it there i
 
 | Code | Trigger |
 |---|---|
-| `11` | the repo root could not be resolved, or one of the five paths' existence could not be determined (permission fault, unreadable dir) |
+| `11` | the repo root could not be resolved, one of the four convention paths' existence could not be determined (permission fault, unreadable dir), or the declared `uiSurfaces` did not decode |
 | `12` | proven: no file at the manifest convention path |
 
 **Errors**
@@ -451,7 +451,6 @@ never the tool's silent tolerance.
 
 | Code | Trigger |
 |---|---|
-| `4` | the harness config exists but violates its schema |
 | `10` | `--out` is not kebab-case, a `--surface` carries the reserved `:state` suffix, or a `--surface` falls outside every declared `mount` |
 | `11` | an app did not become ready, a capture's validity could not be determined, or the claim state could not be read — the render is UNKNOWN |
 | `14` | proven: at least one surface threw an uncaught page error during render |
@@ -475,6 +474,7 @@ carries every surface's outcome — the code routes, the stderr enumerates.
 | `ui render: cannot determine the validity of <set>/<file>: <reason> — the capture is UNKNOWN, never valid.` | 11 | refusal |
 | `ui render: .fabrika.jsonc declares no \`uiSurfaces\` rows — this repo declares no rendered surface, so no path raises the ui class and nothing can be rendered headlessly.` | 19 | refusal |
 | `ui render: .fabrika.jsonc is refused — <first violation>, so where this repo declares its render path is unread — the render path is UNKNOWN, never absent.` | 11 | refusal |
+| `ui render: .fabrika.jsonc is refused — <first violation>, so how this repo captures a surface is unread — the render path is UNKNOWN, never absent.` | 11 | refusal |
 | `ui render: --surface "<id>" carries a :state suffix — states are a reserved grammar, not yet realized; render the bare route.` | 10 | refusal |
 | `ui render: --out "<value>" is not a kebab-case set name.` | 10 | refusal |
 | `ui render: --surface "<id>" falls outside every mount \`uiSurfaces\` declares (<mounts>) — no app serves it; declare its app's mount.` | 10 | refusal |
@@ -626,12 +626,12 @@ unexplained missing baseline is a hole in the evidence, not a layout choice). Re
 paired PNG against its manifest sha (`16` on mismatch or invalidity). **Upload every PNG and
 verify each upload individually, before anything posts** — the two-tier store:
 
-1. **Store tier** — when the harness config declares `evidenceStore`: `PUT` each PNG
+1. **Store tier** — when `.fabrika.jsonc`'s `uiCapture` declares `evidenceStore`: `PUT` each PNG
    content-addressed (`<store>/<sha256>.png`, the golden-store idiom of ADR 0183), then `GET`
    the same URL back and hash-compare. Any failed PUT, GET, or hash mismatch is `17`. (The
-   tier choice reads the harness config here too: an absent file selects the attachment
-   tier — no harness config is a fact, not an error, at evidence time; a file that exists but
-   violates its schema is `4`, same whole-file rule as in `ui render`.)
+   tier choice reads `uiCapture` here too: an undeclared `evidenceStore` is `null` and selects
+   the attachment tier — declaring no store is a fact, not an error, at evidence time; a
+   `uiCapture` that does not decode is `11`, same key-read rule as in `ui render`.)
 2. **Attachment tier** — no `evidenceStore` declared: upload each PNG through GitHub's
    user-attachment endpoint, then probe every returned URL (`HEAD`, expect 200). Any failed
    upload or probe is `17`. Two facts about this tier stated rather than hidden: the endpoint
@@ -661,7 +661,7 @@ rather than refusing every time (#7402). PR open (`7`).
 
 | Code | Trigger |
 |---|---|
-| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, a set's `manifest.json` is absent or unparseable, or the harness config exists but violates its schema |
+| `4` | an after-surface has no before and no `firstRender` mark, a named capture set is missing/empty, or a set's `manifest.json` is absent or unparseable |
 | `5` | the composed comment carries a machine-local path |
 | `6` | the composed comment is a bare `@` path reference — not redactable |
 | `7` | the PR is proven absent, closed, or merged |
@@ -671,6 +671,7 @@ rather than refusing every time (#7402). PR open (`7`).
 | `16` | proven: a capture in a named set is invalid or does not match its manifest sha — evidence nobody can open is not evidence |
 | `17` | proven: at least one upload or upload-verification failed — **nothing was posted**; every failed surface named on stderr |
 | `18` | proven: the lane precondition failed (shared conventions) |
+| `19` | proven: `.fabrika.jsonc` declares no `uiSurfaces` row |
 
 **Errors**
 
@@ -686,6 +687,9 @@ rather than refusing every time (#7402). PR open (`7`).
 | `ui evidence: the post failed: <reason> — it may or may not have landed; re-read the PR before re-running.` | 8 | refusal |
 | `ui evidence: the comment landed but does not read back as sent — it needs a human eye.` | 9 | refusal |
 | `ui evidence: cannot read <what>: <reason> — nothing was uploaded or posted.` | 11 | refusal |
+| `ui evidence: .fabrika.jsonc is refused — <first violation>, so where this repo declares its render path is unread — nothing was uploaded or posted.` | 11 | refusal |
+| `ui evidence: .fabrika.jsonc is refused — <first violation>, so which evidence tier this repo declares is unread — nothing was uploaded or posted.` | 11 | refusal |
+| `ui evidence: .fabrika.jsonc declares no \`uiSurfaces\` rows — this repo declares no rendered surface, so no path raises the ui class and nothing can be rendered headlessly.` | 19 | refusal |
 | `ui evidence: capture "<id>" in set "<set>" is invalid (<detail>).` | 16 | refusal |
 
 **Scope** — the named capture sets, one PR, one comment. All-or-nothing by construction.

@@ -84,34 +84,30 @@ describe("a declared uiSurfaces row", () => {
 		expect(prefixesOf(answer)).toEqual(["apps/web/src/"]);
 	});
 
-	it.each([
-		["no name", [{prefix: "a/", mount: "/", command: "x {{port}}"}]],
-		["a non-kebab name", [{...WEB, name: "Web App"}]],
-		["no command", [{name: "web", prefix: "a/", mount: "/"}]],
-		["a non-string command", [{...WEB, command: 3}]],
-		["no prefix", [{name: "web", mount: "/", command: "x {{port}}"}]],
-		["a prefix with no trailing slash", [{...WEB, prefix: "apps/web/src"}]],
-		["an absolute prefix", [{...WEB, prefix: "/apps/web/src/"}]],
-		["a parent-relative prefix", [{...WEB, prefix: "../web/src/"}]],
-		["no mount", [{name: "web", prefix: "a/", command: "x {{port}}"}]],
-		["a relative mount", [{...WEB, mount: "lab"}]],
-		["a relative basePath", [{...WEB, basePath: "lab"}]],
-		["a relative readyPath", [{...WEB, readyPath: "health"}]],
-		["a null readyPath", [{...WEB, readyPath: null}]],
-		["an unknown key inside a row", [{...WEB, url: "http://x"}]],
-	])("refuses %s whole-value", (_label, rows) => {
-		expect(declared(rows)._tag).toBe("Malformed");
-	});
+	const NAME = `"${UI_SURFACES}[].name" is missing or is not a kebab-case app name`;
+	const COMMAND = `"${UI_SURFACES}[].command" is missing or not a non-empty string`;
+	const PREFIX = `"${UI_SURFACES}[].prefix" is missing or is not a repo-relative directory prefix ending in "/"`;
+	const MOUNT = `"${UI_SURFACES}[].mount" is missing or is not a path beginning with "/"`;
+	const BASE_PATH = `"${UI_SURFACES}[].basePath" is not a path beginning with "/"`;
+	const READY_PATH = `"${UI_SURFACES}[].readyPath" is not a path beginning with "/"`;
 
-	it("names the field it rejected", () => {
-		expect(declared([{...WEB, prefix: "apps/web/src"}])).toMatchObject({
-			_tag: "Malformed",
-			reason: `"${UI_SURFACES}[].prefix" is missing or is not a repo-relative directory prefix ending in "/"`,
-		});
-		expect(declared([{...WEB, url: "http://x"}])).toMatchObject({
-			_tag: "Malformed",
-			reason: 'unknown key "url"',
-		});
+	it.each([
+		["no name", [{prefix: "a/", mount: "/", command: "x {{port}}"}], NAME],
+		["a non-kebab name", [{...WEB, name: "Web App"}], NAME],
+		["no command", [{name: "web", prefix: "a/", mount: "/"}], COMMAND],
+		["a non-string command", [{...WEB, command: 3}], COMMAND],
+		["no prefix", [{name: "web", mount: "/", command: "x {{port}}"}], PREFIX],
+		["a prefix with no trailing slash", [{...WEB, prefix: "apps/web/src"}], PREFIX],
+		["an absolute prefix", [{...WEB, prefix: "/apps/web/src/"}], PREFIX],
+		["a parent-relative prefix", [{...WEB, prefix: "../web/src/"}], PREFIX],
+		["no mount", [{name: "web", prefix: "a/", command: "x {{port}}"}], MOUNT],
+		["a relative mount", [{...WEB, mount: "lab"}], MOUNT],
+		["a relative basePath", [{...WEB, basePath: "lab"}], BASE_PATH],
+		["a relative readyPath", [{...WEB, readyPath: "health"}], READY_PATH],
+		["a null readyPath", [{...WEB, readyPath: null}], READY_PATH],
+		["an unknown key inside a row", [{...WEB, url: "http://x"}], 'unknown key "url"'],
+	])("refuses %s whole-value, naming the field it rejected", (_label, rows, reason) => {
+		expect(declared(rows)).toMatchObject({_tag: "Malformed", reason});
 	});
 
 	it("refuses a value that is not an array at all", () => {
@@ -171,18 +167,37 @@ describe("a declared uiCapture", () => {
 	});
 
 	it.each([
-		["a fractional viewport", {viewport: {width: 12.5, height: 900}}],
-		["a non-object viewport", {viewport: 3}],
-		["an unknown key inside viewport", {viewport: {width: 390, height: 844, depth: 2}}],
-		["an unknown key", {browser: "chromium"}],
-		["an absolute storageState", {storageState: "/Users/someone/session.json"}],
-		["an empty storageState", {storageState: "   "}],
-	])("refuses %s whole-value", (_label, value) => {
-		expect(capture(value)._tag).toBe("Malformed");
+		[
+			"a fractional viewport",
+			{viewport: {width: 12.5, height: 900}},
+			`"${UI_CAPTURE}.viewport.width" is not a positive integer`,
+		],
+		["a non-object viewport", {viewport: 3}, `"${UI_CAPTURE}.viewport" is not an object`],
+		[
+			"an unknown key inside viewport",
+			{viewport: {width: 390, height: 844, depth: 2}},
+			'unknown key "depth"',
+		],
+		["an unknown key", {browser: "chromium"}, 'unknown key "browser"'],
+		[
+			"an absolute storageState",
+			{storageState: "/Users/someone/session.json"},
+			`"${UI_CAPTURE}.storageState" is not a repo-root-relative path`,
+		],
+		[
+			"an empty storageState",
+			{storageState: "   "},
+			`"${UI_CAPTURE}.storageState" is not a repo-root-relative path`,
+		],
+	])("refuses %s whole-value, naming the field it rejected", (_label, value, reason) => {
+		expect(capture(value)).toMatchObject({_tag: "Malformed", reason});
 	});
 
 	it("refuses a non-object value", () => {
-		expect(resolve(load({[UI_CAPTURE]: []}), uiCaptureKey)._tag).toBe("Malformed");
+		expect(resolve(load({[UI_CAPTURE]: []}), uiCaptureKey)).toMatchObject({
+			_tag: "Malformed",
+			reason: `\`${UI_CAPTURE}\` is not an object`,
+		});
 	});
 });
 
