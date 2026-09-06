@@ -28,7 +28,6 @@ import {
 	aiAgentSessionMachine,
 	MODE_UNSUPPORTED,
 	PAGE_ERROR,
-	PROMPT_ERROR,
 	portRefused,
 	readCheckpoint,
 	UNKNOWN_REQUEST,
@@ -137,25 +136,15 @@ export const aiAgentProgram = <RIn = never>(
 		}),
 		ports: portsOf(),
 		receive: {
-			[aiAgentPortNames.prompt]: (payload: PromptPayload) => {
-				if (payload.key === undefined) {
-					return refuse(
-						PROMPT_ERROR,
-						`a prompt arrived with no idempotency key: "${payload.text}"`,
-					);
-				}
-				// Refused rather than stamped here: a receiver is a pure translation, and the turn the
-				// core records off this Msg needs a clock only its sender holds (#7978).
-				if (payload.timestamp === undefined) {
-					return refuse(PROMPT_ERROR, `a prompt arrived with no timestamp: "${payload.text}"`);
-				}
-				return {
-					type: "prompt",
-					text: payload.text,
-					key: payload.key,
-					timestamp: payload.timestamp,
-				};
-			},
+			// A pure translation with nothing to refuse: the port's predicate requires the key and the
+			// timestamp, so the kernel's `accepts` check turns an unstamped prompt away at the send
+			// and the caller reads that refusal (#7991).
+			[aiAgentPortNames.prompt]: (payload: PromptPayload) => ({
+				type: "prompt",
+				text: payload.text,
+				key: payload.key,
+				timestamp: payload.timestamp,
+			}),
 			[aiAgentPortNames.pageRequest]: (payload: TranscriptPagePayload) =>
 				payload.kind === "request"
 					? {type: "page", before: payload.before, limit: payload.limit}
