@@ -10,12 +10,11 @@
  * whole desk behind a list.
  *
  * **The list is handed in.** `useAnswer` is the seam: the renderer asks for the current answer and
- * renders it, so this module knows nothing about how a page gets one. At its default it hands
- * `null` — "nothing has been read yet" — because the page→kernel spell channel the `session.list`
- * spell (`../session-list.ts`, #8101) answers on does not exist yet: `PageAttachment`
- * (`../../shell/transport/client.ts`) carries no way to send a `SpellCall`, and the one caller that
- * builds them today is answered by the page itself (`../../shell/ui/PaletteHost.tsx`). That gap is
- * #8161.
+ * renders it, so this module knows nothing about how a page gets one — the page binds a source that
+ * calls `session.list` over its socket (`../../page/renderers.tsx`, #8161). It is handed this
+ * window's id, because the call carries the window it came from and the kernel resolves the rest.
+ * At its default it hands `null`, "nothing has been read yet", which is what a fixture or a surface
+ * with no socket behind it renders.
  *
  * **Four states, none of them a blank window.** No answer yet, a refused call, an empty store, and a
  * store whose backends could not be read are four different sentences — the last two are the pair
@@ -28,8 +27,9 @@ import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode} from 
 import {useCallback, useMemo, useState} from "react";
 import type {SessionListAnswer} from "../../page/session-list.ts";
 import {failureLine} from "../../palette/call.ts";
+import type {WindowId} from "../../protocol/ids.ts";
 import type {SessionRow, UnreadableBackend} from "../../protocol/session-list.ts";
-import type {AnyWindowRenderer} from "../../shell/window/index.ts";
+import type {AnyWindowRenderer, WindowHost} from "../../shell/window/index.ts";
 import {windowRenderer} from "../../shell/window/index.ts";
 import {
 	listView,
@@ -184,8 +184,12 @@ export function SessionList({answer, onActivate, now}: SessionListProps): ReactE
 	);
 }
 
-/** How the renderer gets the answer to render. The page owns it; the default hands nothing. */
-export type SessionListSource = () => SessionListAnswer | null;
+/**
+ * How the renderer gets the answer to render. The page owns it; the default hands nothing. It is a
+ * hook the window calls on every render, so a source that reads state re-renders the window when the
+ * answer lands. The window id rides along because a call names the window it came from.
+ */
+export type SessionListSource = (window: WindowId) => SessionListAnswer | null;
 
 const nothingRead: SessionListSource = () => null;
 
@@ -224,13 +228,14 @@ export interface SessionListWindowOptions {
  * targets cannot collapse into one.
  */
 function SessionListHost({
+	window,
 	useAnswer,
 	useTranscript,
 	onActivate,
 	onOpenInNewWindow,
 	onSend,
-}: SessionListWindowOptions): ReactElement {
-	const answer = (useAnswer ?? nothingRead)();
+}: SessionListWindowOptions & {readonly window: WindowId}): ReactElement {
+	const answer = (useAnswer ?? nothingRead)(window);
 	const [view, setView] = useState<SessionListView>(listView);
 	const [phase, setPhase] = useState<OpenPhase>("reading");
 
@@ -272,9 +277,12 @@ function SessionListHost({
 	);
 }
 
-/** The renderer at whatever source a caller has. The window host is unread: this surface is a list. */
+/** The renderer at whatever source a caller has. The host is read for its window id and nothing else. */
 export const sessionListWindow = (options: SessionListWindowOptions = {}): AnyWindowRenderer =>
-	windowRenderer("host-native", (): ReactNode => <SessionListHost {...options} />);
+	windowRenderer(
+		"host-native",
+		(host: WindowHost): ReactNode => <SessionListHost {...options} window={host.windowId} />,
+	);
 
 /** The renderer `SESSION_LIST_WINDOW_REF` names, at its defaults: what a page's table binds. */
 export const SessionListWindow: AnyWindowRenderer = sessionListWindow();

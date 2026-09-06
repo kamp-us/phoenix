@@ -18,6 +18,7 @@ import {SpellSet} from "../commands/spell-set.ts";
 import {CallId} from "../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellCall, type SpellReply} from "../protocol/messages.ts";
 import type {SessionList} from "../protocol/session-list.ts";
+import {SESSION_LIST_CALL_PATH, SESSION_LIST_PROGRAM} from "../protocol/session-list.ts";
 import type {AnyProgram} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {programEntries} from "../shell/picker/entries.ts";
@@ -32,7 +33,12 @@ import {
 	type SessionSummary,
 	sessionSummary,
 } from "./service/index.ts";
-import {AiAgentSessionList, sessionListId, sessionListProgram} from "./session-list.ts";
+import {
+	AiAgentSessionList,
+	sessionListId,
+	sessionListProgram,
+	sessionListSpell,
+} from "./session-list.ts";
 
 const at = (offset: number): number => 1_760_000_000_000 + offset;
 
@@ -209,6 +215,19 @@ describe("the session-list row", () => {
 				{_tag: "Program", programId: sessionListId, label: "AI agent sessions"},
 			]);
 			assert.deepStrictEqual(row.renderer, SESSION_LIST_WINDOW_REF);
+		}),
+	);
+
+	it.effect("is registered where the page addresses its call", () =>
+		Effect.sync(() => {
+			// The page spells this row's id rather than importing it (`../protocol/session-list.ts`),
+			// and a call at the wrong address reaches no spell at all — which is what the picker read
+			// back as a refusal before #8161 landed. This is what holds the two spellings together.
+			assert.strictEqual(sessionListId, SESSION_LIST_PROGRAM);
+			assert.deepStrictEqual(
+				[...SESSION_LIST_CALL_PATH],
+				[sessionListId, ...sessionListSpell().path],
+			);
 		}),
 	);
 });

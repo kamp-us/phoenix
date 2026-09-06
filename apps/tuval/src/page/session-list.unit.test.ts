@@ -7,7 +7,7 @@
 import {assert, describe, it} from "vitest";
 import {CallId} from "../protocol/ids.ts";
 import {PROTOCOL_VERSION, SpellReplyError, SpellReplyOk} from "../protocol/messages.ts";
-import {SESSION_LIST_PATH} from "../protocol/session-list.ts";
+import {SESSION_LIST_CALL_PATH, SESSION_LIST_PATH} from "../protocol/session-list.ts";
 import {readSessionList, sessionListCall} from "./session-list.ts";
 
 const okReply = (id: CallId, result: unknown) =>
@@ -28,10 +28,13 @@ const rows = {
 };
 
 describe("the page's session list", () => {
-	it("addresses the call at the session-list path with an id of its own", () => {
+	it("addresses the call where the registry holds the spell, with an id of its own", () => {
 		const call = sessionListCall();
 
-		assert.deepStrictEqual([...call.path], [...SESSION_LIST_PATH]);
+		// The row's own path is `session.list`; the registry keys it under the program id, and a call
+		// carrying the bare path reaches no spell at all (#8161).
+		assert.deepStrictEqual([...call.path], [...SESSION_LIST_CALL_PATH]);
+		assert.deepStrictEqual([...call.path].slice(1), [...SESSION_LIST_PATH]);
 		assert.isAbove(call.id.length, 0);
 		assert.notStrictEqual(sessionListCall().id, call.id);
 	});

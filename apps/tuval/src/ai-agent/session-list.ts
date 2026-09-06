@@ -2,9 +2,9 @@
  * The session-list program row and the one spell on it: every registered ai-agent backend's
  * sessions, unioned, newest first, answered on demand.
  *
- * **Why a spell and not a frame.** A page cannot ask over the transport — `../shell/transport/wire.ts`
- * has no request frame, and `../shell/transport/server.ts` states the rule: a spell call is the only
- * message a page may send, so the kernel pushes everything else (ADR 0348 R1.3). The two pushed
+ * **Why a spell and not a frame of its own.** A spell call is the only thing a page may ask for, and
+ * it crosses as the one pair of spell frames the transport carries (`../shell/transport/wire.ts`);
+ * everything else the kernel holds is pushed (ADR 0348 R1.3). The two pushed
  * frames beside it, `RegistryFrame` and `TableFrame`, are state the kernel already holds and
  * republishes on change. A session list is neither held nor changing: it is two session-store walks
  * off disk that an operator may never ask for, so pre-warming it would charge every page attach for
