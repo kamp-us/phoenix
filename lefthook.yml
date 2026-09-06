@@ -113,16 +113,25 @@ pre-push:
   parallel: false
   commands:
     typecheck:
-      # tsc over the packages this push changed vs origin/main plus their dependents, via
-      # turbo's `...[<commit>]` filter microsyntax. A push touching no package selects
-      # nothing and exits 0 — that subsumes the hand-rolled docs-only fast path this leg
-      # used to carry (#3130), so it is gone. Cache hits replay out of the shared
-      # `.turbo/cache` (turbo redirects a linked worktree to the main worktree's cache), so
-      # a package another lane already typechecked costs nothing here.
+      # tsc over the packages this push changed plus their dependents, via the root
+      # `typecheck:affected` script — turbo's `--affected`, anchored to the MERGE-BASE of
+      # `origin/main` and HEAD. A push touching no package selects nothing and exits 0, which
+      # subsumes the hand-rolled docs-only fast path this leg used to carry (#3130), so it is
+      # gone. Cache hits replay out of the shared `.turbo/cache` (turbo redirects a linked
+      # worktree to the main worktree's cache), so a package another lane already typechecked
+      # costs nothing here.
       #
-      # Fail-SAFE on an unusable base: turbo needs everything between base and head present
-      # in the checkout, and on a too-shallow one considers ALL packages changed — so a
-      # missing `origin/main` degrades to the whole-repo run, never to a skip.
+      # The merge-base is the whole point, and a plain `--filter=...[origin/main]` does NOT get
+      # it: that microsyntax diffs against the ref itself, so once main moves ahead — the
+      # ordinary shape here — everything main landed reads as this branch's change. Measured on
+      # a markdown-only branch 40 commits behind: 24 packages / 33 typecheck tasks, against 1
+      # package / 0 tasks from the merge-base (#8273 review round 1).
+      #
+      # Fail-SAFE on an unusable base: `--affected` sets turbo's `allow_unknown_objects`
+      # (turborepo v2.10.3 `crates/turborepo-scope/src/filter.rs`), so a checkout too shallow to
+      # hold a merge base degrades to the whole-repo run, never to a skip — measured at 24
+      # packages / 33 tasks against a base with no merge base. An `origin/main` that does not
+      # resolve at all is a turbo error, which blocks the push rather than passing it.
       use_stdin: true
       run: |
         [ -t 0 ] || cat >/dev/null   # git's pushed-ref list — see the pre-push note (#6172)
@@ -130,7 +139,7 @@ pre-push:
           echo "typecheck: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push typecheck — CI is the authority" >&2
           exit 0
         }
-        pnpm exec turbo run typecheck --filter='...[origin/main]'
+        pnpm typecheck:affected
 
 # `git worktree add` fires post-checkout, so this provisions a fresh worktree's deps —
 # node_modules is gitignored and per-checkout, so a worktree is otherwise dead-on-arrival

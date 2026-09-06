@@ -2,8 +2,8 @@
 
 Compiled, tested text. `fabrika build check` runs the commands this repo declares under
 `.fabrika.jsonc`'s `codeValidators` in this tree — in phoenix, the pair it declares there,
-`pnpm exec turbo run typecheck --filter=...[origin/main]` and `pnpm lint:worktree`. A repo that
-declares none refuses UNKNOWN rather than running someone else's script names.
+`pnpm typecheck:affected` and `pnpm lint:worktree`. A repo that declares none refuses UNKNOWN
+rather than running someone else's script names.
 
 - **Match the surrounding code's idiom** — comment density, naming, bracket style. A diff that
   reads as a different author is a defect before it is a style choice.

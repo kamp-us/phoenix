@@ -12,9 +12,10 @@
 	// web#dev:worker). A fourth persistent task in the repo has to raise this number with it.
 	"concurrency": "4",
 	// 25 package tsconfigs `extends` the root one, but turbo hashes it into no package and
-	// `--filter=...[origin/main]` — what `.fabrika.jsonc` declares for `build check --surface code`
-	// — then selects `//` alone and plans 0 typecheck tasks on a root-tsconfig-only change (#8275).
-	// Listing it here makes every package changed for that filter and part of every task's hash.
+	// the changed-package selection behind `pnpm typecheck:affected` — what `.fabrika.jsonc` declares
+	// for `build check --surface code`, and what the pre-push hook runs — then selects `//` alone and
+	// plans 0 typecheck tasks on a root-tsconfig-only change (#8275). Listing it here makes every
+	// package changed for that selection and part of every task's hash.
 	"globalDependencies": ["tsconfig.json"],
 	"tasks": {
 		"dev": {
