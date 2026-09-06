@@ -159,11 +159,12 @@ interface ThirdRun {
  * Boot, run two turns — a plain one and one through the tool loop — and stop. Closing the scope is
  * the stop: the host drains, closes its Subs and flushes the last save (`../../host/actor.ts`).
  *
- * Between turns, not during one. A stop taken while a Pi turn is in flight never returns (#7896),
- * and mid-turn state is unobservable from here anyway, because a Cmd handler runs inside the
- * actor's serial step (`host/actor.ts`'s `runInterpret`) so nothing folds until `prompt` resolves
- * (#7852). The interrupted marker is therefore proven on a checkpoint, in `interrupted.unit.test.ts`
- * beside this file, rather than by cutting a live Pi turn.
+ * Between turns, not during one. Mid-turn state is unobservable from here: a Cmd handler runs
+ * inside the actor's serial step (`host/actor.ts`'s `runInterpret`), so nothing folds until
+ * `prompt` resolves (#7852). The interrupted marker is therefore proven on a checkpoint, in
+ * `interrupted.unit.test.ts` beside this file, rather than by cutting a live Pi turn. The stop
+ * itself is no longer the obstacle it was — a mid-turn close returns, and
+ * `../ai-agent/teardown.unit.test.ts` pins that (#7896).
  */
 const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSystem.FileSystem> =>
 	Effect.gen(function* () {
@@ -177,25 +178,31 @@ const runFirstBoot = (project: string): Effect.Effect<FirstRun, unknown, FileSys
 		yield* until("the Pi session to open", () => sessionOf(agent).sessionId !== null, seen);
 		yield* until("the session to be ready", () => sessionOf(agent).phase === "ready", seen);
 
-		// Each turn is waited out on what it wrote, not on the phase settling back to `ready`: a Pi
-		// turn can end with the core still at `prompting`, because `ready` is only emitted when a
-		// pushed snapshot's phase differs from the last one and the snapshot that would carry it can
-		// be coalesced away (#7897). The tail is the deterministic signal.
-		const assistants = () =>
-			sessionOf(agent).transcript.items.filter((item) => item.kind === "assistant").length;
+		// Each turn is waited out on the phase, in two steps: the send moves the core to `prompting`
+		// on its own, so `ready` alone could be the one this turn has not left yet. The end of a
+		// turn is a fact the send's own answer carries even when the push that would have said so is
+		// coalesced away (#7897), so this is the signal and the tail is what the assertions read.
+		const turn = (what: string) =>
+			Effect.gen(function* () {
+				yield* until(`${what} to start`, () => sessionOf(agent).phase === "prompting", seen);
+				yield* until(`${what} to finish`, () => sessionOf(agent).phase === "ready", seen);
+			});
 
 		yield* say(window, "read the readme", "k1");
-		yield* until("the first turn's reply", () => assistants() >= 1, seen);
+		yield* turn("the first turn");
 		yield* quiet(window);
+		assert.isTrue(
+			sessionOf(agent).transcript.items.some((item) => item.kind === "assistant"),
+			"the first turn settled with no reply in the tail",
+		);
 
 		yield* say(window, "now run the tool", "k2");
-		yield* until(
-			"the tool turn's row and its follow-up reply",
-			() =>
-				assistants() >= 3 && sessionOf(agent).transcript.items.some((item) => item.kind === "tool"),
-			seen,
-		);
+		yield* turn("the tool turn");
 		yield* quiet(window);
+		assert.isTrue(
+			sessionOf(agent).transcript.items.some((item) => item.kind === "tool"),
+			"the tool turn settled with no tool row in the tail",
+		);
 
 		const state = sessionOf(agent);
 		assert.isNotNull(state.sessionId, "the first run never opened a session");
@@ -247,12 +254,13 @@ const runFromTheCheckpoint = (
 
 		const before = new Set(rendered(window));
 		yield* say(window, "and once more", "k3");
-		yield* until(
-			"the new turn's reply",
-			() => textsIn(window).includes("and once more") && rendered(window).length > before.size + 1,
-			seen,
-		);
+		yield* until("the new turn to start", () => sessionOf(agent).phase === "prompting", seen);
+		yield* until("the new turn to finish", () => sessionOf(agent).phase === "ready", seen);
 		yield* quiet(window);
+		assert.isTrue(
+			textsIn(window).includes("and once more"),
+			"the new turn settled without the prompt reaching the window",
+		);
 
 		return {
 			restored,

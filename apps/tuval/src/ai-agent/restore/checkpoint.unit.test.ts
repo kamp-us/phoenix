@@ -126,6 +126,27 @@ describe("restoring a saved session", () => {
 		]);
 	});
 
+	// The turn the queue was waiting for ended with the process, so nothing is left to flush it: the
+	// text goes back to the window that wrote it rather than running unasked on the next open.
+	it("releases a queued prompt to its window rather than bringing the queue back", () => {
+		const waiting: AiAgentSessionState = {
+			...saved,
+			queued: [{key: "send-2", text: "then the CHANGELOG", timestamp: 1_700_000_000_000}],
+		};
+		const restored = restore(waiting);
+		expect(restored.queued).toEqual([]);
+		expect(restored.sends).toContainEqual({
+			key: "send-2",
+			state: "refused",
+			failure: {
+				tag: "tuval/ai-agent/PromptError",
+				reason: "refused",
+				detail:
+					"the queued message was not sent: the process went away before the turn it was waiting for ended",
+			},
+		});
+	});
+
 	// The call carrying that answer went with the process, so whether it landed is unknown: the
 	// card comes back stating that rather than offering the buttons again (#8006).
 	it("brings a card whose answer was in flight back as unresolved", () => {

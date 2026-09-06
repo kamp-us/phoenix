@@ -22,6 +22,8 @@ import type {
 	TranscriptPayload,
 	WindowOmission,
 } from "../ports/index.ts";
+import {promptUnqueued} from "./failures.ts";
+import {type QueuedPrompt, releaseQueued} from "./queue.ts";
 import type {SendOutcome} from "./sends.ts";
 
 /** Cumulative for the session: the core owns the running totals, the layer reports the deltas. */
@@ -126,6 +128,12 @@ export interface AiAgentSessionState {
 	 * a refused or unconfirmed prompt recoverable instead of cleared at dispatch.
 	 */
 	readonly sends: ReadonlyArray<SendOutcome>;
+	/**
+	 * The prompts written while the turn was running, in the order they were written (`./queue.ts`).
+	 * The head is admitted when the turn ends; nothing here has been sent, so nothing here is in the
+	 * transcript yet.
+	 */
+	readonly queued: ReadonlyArray<QueuedPrompt>;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
 	readonly lastPage: HistoryPage | null;
 	readonly failure: AgentFailure | null;
@@ -175,6 +183,7 @@ export const checkpointFields = [
 	"thinking",
 	"lastPrompt",
 	"sends",
+	"queued",
 	"lastPage",
 	"failure",
 ] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
@@ -202,6 +211,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	thinking: {current: null, available: []},
 	lastPrompt: null,
 	sends: [],
+	queued: [],
 	lastPage: null,
 	failure: null,
 });
@@ -243,6 +253,10 @@ const markInterrupted = (
  * refusal nobody can act on any more, a page the window asked a transport that no longer exists
  * for, and an abort in flight to a backend this process no longer holds a transport to.
  *
+ * A queued prompt does not come back queued. The turn it was waiting for ended with the process, so
+ * there is nothing left to flush it, and it is released to its window as an unsent send the same way
+ * an interrupted queue is — recoverable, never resent on the operator's behalf.
+ *
  * A send still in flight comes back `uncertain` rather than dropped. The process went away between
  * handing the text to the layer and hearing what became of it, so nobody can say whether it landed
  * — and a window that reopens on this session offers its operator that text rather than resending
@@ -264,8 +278,13 @@ export const restore = (loaded: AiAgentSessionState): AiAgentSessionState => {
 		transcript: {...loaded.transcript, items: markInterrupted(loaded.transcript.items, cut)},
 		interrupted: cut ?? loaded.interrupted,
 		interruption: null,
-		sends: loaded.sends.map((send) =>
-			send.state === "pending" ? {key: send.key, state: "uncertain", failure: null} : send,
+		queued: [],
+		sends: releaseQueued(
+			loaded.queued,
+			loaded.sends.map((send) =>
+				send.state === "pending" ? {key: send.key, state: "uncertain", failure: null} : send,
+			),
+			promptUnqueued("the process went away before the turn it was waiting for ended"),
 		),
 		permissions: Object.fromEntries(
 			Object.entries(loaded.permissions).map(([id, held]) => [

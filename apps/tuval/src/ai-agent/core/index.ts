@@ -10,6 +10,8 @@ export {
 	PAGE_ERROR,
 	PROMPT_ERROR,
 	portRefused,
+	promptQueueFull,
+	promptUnqueued,
 	START_ERROR,
 	THINKING_UNSUPPORTED,
 	TRANSPORT_ERROR,
@@ -37,6 +39,13 @@ export {
 	eventsSub,
 	eventsSubId,
 } from "./messages.ts";
+export {
+	enqueue,
+	isQueueFull,
+	type QueuedPrompt,
+	queueLimit,
+	releaseQueued,
+} from "./queue.ts";
 export {
 	markTurnRunning,
 	noteSend,
