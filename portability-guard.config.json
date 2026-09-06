@@ -163,7 +163,7 @@
 			]
 		},
 		"cli-capture": {
-			"ceiling": 647,
+			"ceiling": 646,
 			"why": "The capture, governance, recipe, status and hook groups' source, cleared by #8309, the capture sweep child.",
 			"paths": [
 				"packages/fabrika-cli/src/capture",
