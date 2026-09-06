@@ -6,6 +6,7 @@
 import {describe, expect, it} from "vitest";
 import {CommandName, defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
+import {mountPicker} from "../picker/view.ts";
 import {applyMsg, cellsFor, initialState, type ShellCmd, type ShellMsg} from "./machine.ts";
 import {activeWorkspace, type ShellState, windowIds} from "./state.ts";
 
@@ -201,6 +202,34 @@ describe("shell core: windows", () => {
 		const [unbound, cmds] = apply(bound[0], {type: "window.unbind"});
 		expect(focusedProcess(unbound)).toBeNull();
 		expect(cmds).toEqual([]);
+	});
+
+	it("window.bind drops the view slot the last thing in the window left (#8083, #8265)", () => {
+		const state = initialState();
+		const window = active(state).focused;
+		const filled = fold(
+			state,
+			{type: "window.setView", view: {cursor: 3, refusal: null, previous: null}},
+			{type: "window.bind", processId: "process-pi"},
+		);
+		expect(filled.views[window]).toBeUndefined();
+	});
+
+	it("window.unbind mounts a fresh picker naming the process it detached (#8083, #8265)", () => {
+		const state = initialState();
+		const window = active(state).focused;
+		const filled = fold(state, {type: "window.bind", processId: "process-pi"});
+
+		const [unbound] = apply(filled, {type: "window.unbind"});
+		expect(focusedProcess(unbound)).toBeNull();
+		expect(unbound.views[window]).toEqual(mountPicker("process-pi"));
+		expect(windowIds(active(unbound))).toEqual(windowIds(active(filled)));
+	});
+
+	it("window.unbind on a window holding no process changes nothing at all (#8083)", () => {
+		const empty = fold(initialState(), {type: "window.setView", view: {cursor: 2, refusal: null}});
+		expect(apply(empty, {type: "window.unbind"})[0]).toBe(empty);
+		expect(apply(empty, {type: "window.unbind", windowId: "window-nope"})[0]).toBe(empty);
 	});
 
 	it("window.setView writes the focused window's slot and refuses an unknown window", () => {

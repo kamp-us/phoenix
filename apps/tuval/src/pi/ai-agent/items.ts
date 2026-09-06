@@ -13,10 +13,9 @@
  * `running`/false, `complete`/false, `error`/true), `UsageSchema` (`totalTokens`, `cost.total`)
  * and `SessionSnapshotSchema` (`revision`, `phase`, `transcript`).
  *
- * Two things Pi carries that no port field can hold, and both are dropped on purpose rather than
- * smuggled into `text`: an assistant turn's `thinking` content, and an item's `image` parts. The
- * port union is text-only by design (`ports/transcript-item.ts`), so folding reasoning into the
- * reply would render as something the assistant never said.
+ * An assistant turn's `thinking` content becomes a `thinking` item of its own and never joins the
+ * reply's `text` — folding reasoning into the reply would render as something the assistant never
+ * said. An item's `image` parts have no port field to land in and are dropped.
  */
 
 import type {
@@ -28,6 +27,7 @@ import {
 	boundToolResult,
 	type ItemId,
 	type JsonValue,
+	type ThinkingItem,
 	type ToolStatus,
 	type TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
@@ -38,9 +38,15 @@ export const itemId = (value: string): ItemId => value as ItemId;
 
 type PiContent = PiTranscriptItem["content"][number];
 
-/** Only `text` parts reach a port item; see the module note on `thinking` and `image`. */
+/** Only `text` parts reach a turn's own text; see the module note on `thinking` and `image`. */
 const textOf = (parts: ReadonlyArray<PiContent>): string =>
 	parts.reduce((text, part) => (part.type === "text" ? text + part.text : text), "");
+
+/**
+ * The reasoning row's id, derived from the turn it belongs to so the two never collide in the
+ * revision projection and `entries.ts` can re-key both off one entry.
+ */
+export const thinkingId = (base: string): ItemId => itemId(`${base}:thinking`);
 
 /**
  * `isError` decides `error` on its own: the wire pairs it with `status: "error"`, and reading the
@@ -92,6 +98,28 @@ export const itemOf = (item: PiTranscriptItem): TranscriptItem => {
 };
 
 /**
+ * One turn's reasoning, joined across its `thinking` parts. A turn with none — every user and tool
+ * item, and an assistant turn the provider gave no reasoning for — is no row at all rather than an
+ * empty one, which is also what keeps a redacted part (`ThinkingContentSchema.redacted`, empty
+ * `thinking`) from drawing a blank row.
+ */
+const thinkingOf = (item: PiTranscriptItem): ThinkingItem | null => {
+	if (item.role !== "assistant") return null;
+	const text = item.content.reduce(
+		(carried, part) => (part.type === "thinking" ? carried + part.thinking : carried),
+		"",
+	);
+	if (text === "") return null;
+	return {kind: "thinking", id: thinkingId(item.id), timestamp: item.timestamp, text};
+};
+
+/** One wire item as every row it is worth: the reasoning first, then the turn that produced it. */
+export const itemsOf = (item: PiTranscriptItem): ReadonlyArray<TranscriptItem> => {
+	const thinking = thinkingOf(item);
+	return thinking === null ? [itemOf(item)] : [thinking, itemOf(item)];
+};
+
+/**
  * Pi's five session phases against the core's six. `idle` is the only one that is not the agent
  * working, so everything else reads as `prompting`: a compaction and a retry are both a turn the
  * operator is waiting on, and the window's phase line says so.
@@ -114,9 +142,13 @@ const usageEventOf = (item: PiTranscriptItem): Extract<AgentEvent, {kind: "usage
  * What the last snapshot said, so the next one emits only what changed.
  *
  * A snapshot is authoritative and whole — Pi re-sends the entire transcript every revision — so
- * without this the window would repaint every item on every keystroke of a stream. The
- * fingerprints are the projected item's own JSON, which is exactly the value the window renders:
- * two snapshots whose projections match are, to the window, the same transcript.
+ * without this the window would repaint every item on every revision. The push rate is what makes
+ * that expensive: the server ticks once per session event, so a turn writing text costs a
+ * revision per delta once the host is projecting the reply as it is written
+ * (`../server/AgentSessionHost.ts`'s `streamPartialText`, off by default), and one item changes
+ * while the rest do not. The fingerprints are the projected item's own JSON, which is exactly the
+ * value the window renders: two snapshots whose projections match are, to the window, the same
+ * transcript.
  */
 export interface SnapshotProjection {
 	readonly items: ReadonlyMap<string, string>;
@@ -148,10 +180,11 @@ export const eventsOf = (
 	const usage = new Map<string, string>();
 
 	for (const source of snapshot.transcript) {
-		const item = itemOf(source);
-		const mark = fingerprint(item);
-		items.set(item.id, mark);
-		if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
+		for (const item of itemsOf(source)) {
+			const mark = fingerprint(item);
+			items.set(item.id, mark);
+			if (previous.items.get(item.id) !== mark) events.push({kind: "item", item});
+		}
 	}
 
 	for (const source of snapshot.transcript) {

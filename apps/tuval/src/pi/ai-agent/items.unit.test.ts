@@ -19,7 +19,7 @@ import {
 } from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {TOOL_RESULT_BYTE_LIMIT} from "../../ai-agent/ports/index.ts";
-import {emptyProjection, eventsOf, itemOf, phaseOf} from "./items.ts";
+import {emptyProjection, eventsOf, itemOf, itemsOf, phaseOf} from "./items.ts";
 
 const usage = (total: number) => ({
 	input: 11,
@@ -104,6 +104,23 @@ describe("one wire item as a port item", () => {
 		});
 	});
 
+	it("gives that thinking a row of its own, ahead of the reply it produced", () => {
+		expect(itemsOf(assistant("hi back"))).toEqual([
+			{kind: "thinking", id: "item-1:thinking", timestamp: 11, text: "not for the window"},
+			{kind: "assistant", id: "item-1", timestamp: 11, text: "hi back"},
+		]);
+	});
+
+	it("draws no reasoning row for a turn that carries none", () => {
+		const plain: PiTranscriptItem = {
+			...assistant("hi back"),
+			content: [{type: "text", text: "hi back"}],
+		};
+		expect(itemsOf(plain)).toEqual([itemOf(plain)]);
+		expect(itemsOf(user)).toEqual([itemOf(user)]);
+		expect(itemsOf(runningTool)).toEqual([itemOf(runningTool)]);
+	});
+
 	it("marks an aborted turn interrupted", () => {
 		const aborted: PiTranscriptItem = {
 			id: "item-1",
@@ -165,7 +182,13 @@ describe("Pi's phases against the core's", () => {
 describe("one revision folded into events", () => {
 	it("emits every item, then usage, then the phase", () => {
 		const folded = eventsOf(emptyProjection, snapshot([user, assistant("hi back", 0.42)], "idle"));
-		expect(folded.events.map((event) => event.kind)).toEqual(["item", "item", "usage", "phase"]);
+		expect(folded.events.map((event) => event.kind)).toEqual([
+			"item",
+			"item",
+			"item",
+			"usage",
+			"phase",
+		]);
 		expect(folded.events.at(-2)).toEqual({
 			kind: "usage",
 			model: "faux/faux-1",
@@ -180,6 +203,35 @@ describe("one revision folded into events", () => {
 		const first = eventsOf(emptyProjection, snapshot([user, assistant("hi back")]));
 		const second = eventsOf(first.next, snapshot([user, assistant("hi back")], "idle", 2));
 		expect(second.events).toEqual([]);
+	});
+
+	/**
+	 * A turn mid-stream is still one whole message: the wire's own `assistant_delta` never reaches
+	 * this fold — `PiClientService.snapshots` keeps only `session_snapshot` — so a growing reply
+	 * arrives as successive whole revisions. Its reasoning must therefore supersede itself under one
+	 * id, not stack a second row per revision.
+	 */
+	it("supersedes a streaming turn's reasoning row instead of stacking one per revision", () => {
+		const streaming: PiTranscriptItem = {
+			id: "item-1",
+			role: "assistant",
+			content: [
+				{type: "thinking", thinking: "half a th"},
+				{type: "text", text: "hi"},
+			],
+			model: {provider: "faux", id: "faux-1"},
+			timestamp: 11,
+			status: "streaming",
+		};
+		const first = eventsOf(emptyProjection, snapshot([user, streaming], "turn"));
+		const second = eventsOf(first.next, snapshot([user, assistant("hi back")], "idle", 2));
+		expect(first.events.flatMap((event) => (event.kind === "item" ? [event.item.id] : []))).toEqual(
+			["item-0", "item-1:thinking", "item-1"],
+		);
+		expect(
+			second.events.flatMap((event) => (event.kind === "item" ? [event.item.id] : [])),
+		).toEqual(["item-1:thinking", "item-1"]);
+		expect(second.next.items.size).toBe(3);
 	});
 
 	it("re-sends a tool row under the same id when its result lands", () => {

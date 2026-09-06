@@ -167,7 +167,7 @@ describe("start", () => {
 		});
 		expect(state.phase).toBe("starting");
 		expect(state.cwd).toBe("/other");
-		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/other", resume: null}]);
+		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/other", resume: null, mode: null}]);
 	});
 
 	it("carries the resume id for a session the backend already holds", () => {
@@ -176,7 +176,7 @@ describe("start", () => {
 			cwd: "/repo",
 			resume: "session-1",
 		});
-		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/repo", resume: "session-1"}]);
+		expect(cmds).toEqual([{type: "aiAgent.start", cwd: "/repo", resume: "session-1", mode: null}]);
 	});
 
 	it("refuses as data while a session is already live", () => {
@@ -922,12 +922,17 @@ describe("interrupt", () => {
 });
 
 describe("reconnect", () => {
-	it("republishes what it holds, then asks the layer to re-attach the session", () => {
-		const [state, cmds] = apply(started({phase: "gone"}), {type: "reconnect"});
+	it("republishes what it holds, then asks the layer to re-attach the session on its mode", () => {
+		const [state, cmds] = apply(
+			started({phase: "gone", modes: {current: Mode.make("plan"), available: [Mode.make("plan")]}}),
+			{type: "reconnect"},
+		);
 		expect(state.phase).toBe("reconnecting");
 		expect(cmds).toEqual([
 			{type: "aiAgent.republish"},
-			{type: "aiAgent.reconnect", cwd: "/repo", sessionId: "session-1"},
+			// The rebuilt layer holds no mode, so the one the session is on has to go out with the
+			// re-attach rather than as a `setMode` after it (#7953).
+			{type: "aiAgent.reconnect", cwd: "/repo", sessionId: "session-1", mode: Mode.make("plan")},
 		]);
 	});
 
@@ -1239,6 +1244,64 @@ describe("a send's outcome, under its own key", () => {
 			{key: "k1", state: "uncertain", failure: null},
 			{key: "k2", state: "uncertain", failure: null},
 		]);
+	});
+
+	/**
+	 * Where #8107's ledger and #8160's streaming cross. A running turn is streaming its reply, so
+	 * the tail holds a frame still marked `partial`, and then the session dies under it. One phase
+	 * event has to do both jobs: settle the send in flight and settle the stranded frame. Missing
+	 * either half has its own harm — a `pending` send strands the window's copy for ever, and a
+	 * live `partial` marker freezes the checkpoint at the last save before the stream (#8170).
+	 */
+	it("settles both the send in flight and the partial the stream stranded when the session goes", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [running] = apply(handed, turnBegan);
+		const [streaming] = apply(running, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "item", item: {...assistantItem("a1", "half a "), partial: true}},
+		});
+		expect(streaming.sends).toEqual([{key: "k1", state: "pending", turn: "running"}]);
+		expect(streaming.transcript.items.some((item) => "partial" in item && item.partial)).toBe(true);
+
+		const [gone] = apply(streaming, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "phase", phase: "gone"},
+		});
+		expect(gone.sends).toEqual([{key: "k1", state: "uncertain", failure: null}]);
+		expect(gone.transcript.items.some((item) => "partial" in item && item.partial)).toBe(false);
+	});
+
+	/**
+	 * The same crossing on the failure arm, where the session survives: the refusal reaches the
+	 * send that was running by its own arm, and the half-written frame it left behind still stops
+	 * being partial.
+	 */
+	it("settles both the send in flight and the stranded partial when the turn is refused", () => {
+		const [admitted] = apply(started(), prompt("k1"));
+		const [handed] = apply(admitted, {type: "sent", key: "k1", failure: null});
+		const [running] = apply(handed, turnBegan);
+		const [streaming] = apply(running, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "item", item: {...assistantItem("a1", "half a "), partial: true}},
+		});
+
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "refused",
+			detail: "the pin refused the turn",
+		};
+		const [refused] = apply(streaming, {
+			type: "event",
+			sessionId: "session-1",
+			event: {kind: "failure", failure},
+		});
+		expect(refused.sends).toEqual([{key: "k1", state: "refused", failure}]);
+		expect(refused.transcript.items.some((item) => "partial" in item && item.partial)).toBe(false);
+		expect(refused.phase).toBe("ready");
 	});
 
 	/**

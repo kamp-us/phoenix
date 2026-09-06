@@ -7,6 +7,7 @@ import {
 	type HttpReply,
 	okOut,
 	type Scripted,
+	uiConfigured,
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
@@ -72,6 +73,14 @@ const happy = (shape: Parameters<typeof pull>[0] = {}): ReadonlyArray<Scripted> 
 	[FILES, served(files("docs/moved.md", "docs/also.md"))],
 ];
 
+/** The same script over an explicit changed-path list — the ui-class tests' whole ground. */
+const over = (...changed: ReadonlyArray<string>): ReadonlyArray<Scripted> => [
+	[PULL, served(pull({changedFiles: changed.length}))],
+	...binding(),
+	[PATHS_AT(), paths(...changed)],
+	[FILES, served(files(...changed))],
+];
+
 describe("runScope", () => {
 	it("prints the head, the linked issue, the present classes, the namespaces, the flags and the governance token", async () => {
 		const out = await run(happy());
@@ -106,6 +115,28 @@ describe("runScope", () => {
 		expect(out.stderr).toContain(
 			"review scope: governance derived over 2 root(s) — `governedRoots` as declared in .fabrika.jsonc.",
 		);
+	});
+
+	// The prefix list is the repo's own, so a second runnable app's diff derives `review-ui` — which
+	// a compiled-in `apps/web/src/` could not (#7369).
+	it("derives review-ui from a Tuval-only diff, over the declared uiSurfaces prefixes", async () => {
+		const out = await Effect.runPromise(
+			Effect.provide(
+				runScope({...options}),
+				Layer.merge(
+					fakeSeams(over("apps/tuval/src/ui/Chat.tsx", "apps/tuval/src/ui/Chat.test.tsx")).layer,
+					uiConfigured,
+				),
+			),
+		);
+		expect(out.stdout).toContain("class\tui\t1");
+		expect(out.stdout).toContain("routed\treview-ui");
+	});
+
+	it("derives no ui class and says why when the repo declares no uiSurfaces row", async () => {
+		const out = await run(over("apps/web/src/App.tsx", "README.md"));
+		expect(out.stdout).not.toContain("class\tui");
+		expect(out.stderr.join("\n")).toContain("declares no `uiSurfaces` rows");
 	});
 
 	it("refuses rather than deriving when the config cannot be decoded", async () => {

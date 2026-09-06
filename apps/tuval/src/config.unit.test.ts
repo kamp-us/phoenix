@@ -102,6 +102,7 @@ describe("loadLayeredConfig", () => {
 				const config = yield* layered(fixture("global-layer"), fixture("project-layer"));
 				assert.deepStrictEqual(config, {
 					programs: [{id: "a"}, {id: "b", core: "project"}],
+					moduleRenderers: [],
 					graph: {
 						nodes: [
 							{id: NodeId.make("n"), program: ProgramId.make("b"), on: []},
@@ -122,18 +123,21 @@ describe("loadLayeredConfig", () => {
 			const missing = fixture("does-not-exist");
 			assert.deepStrictEqual(yield* layered(missing, fixture("with-graph")), {
 				programs: [{id: "a"}],
+				moduleRenderers: [],
 				graph: {nodes: [{id: NodeId.make("n"), program: ProgramId.make("a"), on: []}]},
 				keys: [{file: `project ${layerName("with-graph")}`, bindings: {}}],
 				sources: [fixture("with-graph")],
 			});
 			assert.deepStrictEqual(yield* layered(fixture("two-rows"), missing), {
 				programs: [{id: "a"}, {id: "b"}],
+				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [{file: `global ${layerName("two-rows")}`, bindings: {}}],
 				sources: [fixture("two-rows")],
 			});
 			assert.deepStrictEqual(yield* layered(missing, missing), {
 				programs: [],
+				moduleRenderers: [],
 				graph: {nodes: []},
 				keys: [],
 				sources: [],
@@ -151,6 +155,23 @@ describe("loadLayeredConfig", () => {
 				},
 			]);
 		}),
+	);
+
+	it.effect(
+		"names each module renderer beside the layer module that declared it, project origin winning",
+		() =>
+			Effect.gen(function* () {
+				const global = fixture("module-renderer-global");
+				const project = fixture("module-renderer-project");
+				const config = yield* layered(global, project);
+				assert.deepStrictEqual(config.moduleRenderers, [
+					{ref: "@global/win/window", origin: global},
+					// Row `b` is declared in both layers; the project row replaced the global one in
+					// place, so the specifier resolves from the project config, not the global one.
+					{ref: "@shared/win/window", origin: project},
+					{ref: "@project/win/window", origin: project},
+				]);
+			}),
 	);
 
 	it.effect("still refuses a layer that exists and is broken", () =>

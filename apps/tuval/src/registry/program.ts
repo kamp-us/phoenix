@@ -75,9 +75,19 @@ export type HostSubs<M, U extends Sub, E, R> = {
  */
 export type Receiver<M> = (payload: never) => M;
 
-export type RendererKind = "host-native" | "host-declarative" | "isolated-frame";
+export type RendererKind = "host-native" | "host-declarative" | "isolated-frame" | "module";
 
-/** A reference only. Rendering is not this epic's; the kernel stores the reference and reports it. */
+/**
+ * A reference only. Rendering is not this epic's; the kernel stores the reference and reports it.
+ *
+ * For every kind but one, `ref` is a name the page's own table answers to. For `kind: "module"`,
+ * `ref` is a module specifier the page loads (ADR 0359): a bare package entry such as
+ * `@csirin/tuval-calc/window`, resolved from the app root the way any import there is. The module's
+ * `default` export is the renderer, minted with `windowRenderer("module", …)`, and its `admits`
+ * export is the predicate over the state that renderer reads (ADR 0358). A row written by a package
+ * installed with `pnpm add` is then whole on its own: the kernel half runs from this row, and the
+ * page finds the window half by the same string, with no table edit in the app.
+ */
 export interface RendererRef {
 	readonly kind: RendererKind;
 	readonly ref: string;
@@ -179,6 +189,18 @@ export interface Program<
 	 */
 	readonly resume?: (state: S) => ReadonlyArray<M>;
 	/**
+	 * What the kernel dispatches into every live process of this program when the config is re-read
+	 * and this row's replacement carries different settings (#7509 ruling 3).
+	 *
+	 * Read off the row a process is *running under*, and handed the reloaded row of the same id —
+	 * so a row that wants to diff its own settings has to publish them on itself, as
+	 * `claudeSession` publishes `settings` (`../claude/program.ts`). Pure and total: a row that
+	 * applies nothing live answers with an empty list, and the kernel never reads what the Msgs
+	 * mean. A row the reloaded config dropped is never asked, so its processes keep running under
+	 * the row they were spawned from.
+	 */
+	readonly configChanged?: (next: AnyProgram) => ReadonlyArray<M>;
+	/**
 	 * Whether this program could restore the raw checkpoint durability loaded for it — the same
 	 * verdict its `init` reaches, asked before `init` runs.
 	 *
@@ -190,6 +212,16 @@ export interface Program<
 	 * whatever loads, which is every program with no parse of its own.
 	 */
 	readonly restorable?: (raw: unknown) => boolean;
+	/**
+	 * Whether a state of this program is worth a checkpoint. The host asks it at every save site,
+	 * and `false` writes nothing — so a program streaming a reply answers `false` for every
+	 * mid-turn state, pays no disk for the burst, and the state that ends the turn is the flush
+	 * (`src/host/actor.ts`, #8170). A state this refuses is one no restore ever reads back, which
+	 * is why the skipped write is not owed: a half-written reply must never come back as the reply.
+	 *
+	 * A row that omits it checkpoints every state, which is every program with nothing in flight.
+	 */
+	readonly checkpointWorthy?: (state: S) => boolean;
 	readonly capabilities: ReadonlyArray<CapabilityRequest>;
 	/**
 	 * The program takes keys the shell forwards from its focused window, as its own `key` Msg. Only

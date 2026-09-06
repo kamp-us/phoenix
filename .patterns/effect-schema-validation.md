@@ -91,9 +91,10 @@ Reach for `Schema.decodeUnknown` *inside* a service method only when the validat
 
 ## A repo-authored config file: whole-file refusal with pinned wording
 
-`packages/fabrika-cli/src/ui/harness.ts` is the worked example — `design-harness.json` is untrusted
-text a consuming repo wrote, and every failure has to come back as one human-readable line a verb
-interpolates into its refusal. Three rules make that work with `Schema` rather than hand predicates:
+`packages/fabrika-cli/src/config/keys/ui-surfaces.ts` is the worked example — the `uiSurfaces` value
+in `.fabrika.jsonc` is untrusted text a consuming repo wrote, and every failure has to come back as
+one human-readable line a verb interpolates into its refusal. Three rules make that work with
+`Schema` rather than hand predicates:
 
 **The native `JSON.parse` stays outside the schema.** Parsing an untrusted string needs a native
 `try/catch`, which the repo bans in any file importing `effect` (#2736, enforced by a biome plugin).
@@ -115,10 +116,19 @@ Read the first violation back with `SchemaIssue.makeFormatterStandardSchemaV1`, 
 message that has to name a key the schema cannot know statically (the unexpected one) carries a
 placeholder the formatter fills from `path`.
 
-Defaults and normalisation ride the declaration too: `Schema.withDecodingDefaultTypeKey` for an
-absent key's value, `Schema.decode({decode: SchemaGetter.transform(...)})` for a normalisation like
-stripping a trailing slash. `HarnessConfig` is then `typeof Harness.Type` — one declaration, not an
-interface kept in sync beside it.
+Defaults ride the declaration too: `Schema.withDecodingDefaultTypeKey` for an absent key's value, and
+`Schema.decode({decode: SchemaGetter.transform(...)})` when a value also needs normalising.
+`UiSurface` is then `typeof Surface.Type` — one declaration, not an interface kept in sync
+beside it.
+
+**A rule about the whole list runs after the decode, not inside it.** `uiSurfaces` declares
+an array of apps, and three of its rules are facts about the array rather than about any one value:
+two apps under one name, two under one mount, and a command with no `{{port}}` placeholder. Those are
+a plain loop over the decoded value, returning the same `Violation` string arm the schema path
+returns, with the wording exported (`LIST_VIOLATION`) so the test pins it exactly as it pins the
+schema's own. Writing them as a struct-level `check` would work and would report them from a path
+nobody can act on; keeping them out of the schema keeps every message field-addressed or
+list-addressed, never both.
 
 ## A boundary whose type is already an interface: a total predicate, not a second declaration
 

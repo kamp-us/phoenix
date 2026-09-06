@@ -26,9 +26,9 @@ import {
 	type AiAgentSessionState,
 	type AiAgentSessionSub,
 	aiAgentSessionMachine,
+	holdsPartialItem,
 	MODE_UNSUPPORTED,
 	PAGE_ERROR,
-	PROMPT_ERROR,
 	portRefused,
 	readCheckpoint,
 	UNKNOWN_REQUEST,
@@ -72,9 +72,29 @@ export interface AiAgentProgramOptions<RIn = never> {
 	readonly layer: Layer.Layer<TuvalAiAgent, never, RIn>;
 	readonly config: AiAgentProgramConfig;
 	readonly renderer?: RendererRef;
+	/** What this row fills the desk inspector with while one of its windows has focus (#8190). */
+	readonly inspector?: RendererRef;
 	/** Merged over the row's own identity, for a caller that ships this program in its package. */
 	readonly identity?: Partial<DefinitionIdentity>;
 	readonly capabilities?: ReadonlyArray<CapabilityRequest>;
+}
+
+/**
+ * What a row declares by being an ai-agent backend: how to reach its `TuvalAiAgent`.
+ *
+ * #8100 asked which surface carries this declaration, and it is this helper rather than a new
+ * optional field on `Program` (`../registry/program.ts`). The helper already exists because every
+ * backend shares one shape, so a row built through it is a backend by construction: `pi-session`
+ * and `claude-session` both gain the declaration without a line of their own, a fourth backend
+ * gains it by being built the same way, and the registry stays generic — it describes a program and
+ * has no reason to name one program family's service. Walking it is `./backends.ts`.
+ */
+export interface AiAgentBackend<RIn = never> {
+	/**
+	 * The layer this row runs on — the same one `aiAgentHandlers` drives. `RIn` rides out unclosed
+	 * (#7951), so an enumerator builds it under the kernel context a spawn of this row would use.
+	 */
+	readonly layer: Layer.Layer<TuvalAiAgent, never, RIn>;
 }
 
 export type AiAgentProgram<RIn = never> = Program<
@@ -85,7 +105,7 @@ export type AiAgentProgram<RIn = never> = Program<
 	unknown,
 	AiAgentHandlerError,
 	AiAgentHandlerServices<RIn>
->;
+> & {readonly aiAgent: AiAgentBackend<RIn>};
 
 /**
  * An inbound payload this end of a two-way port cannot act on, as data, under that port's own tag.
@@ -130,6 +150,7 @@ export const aiAgentProgram = <RIn = never>(
 
 	return {
 		id: ProgramId.make(options.id),
+		aiAgent: {layer: options.layer},
 		core: aiAgentSessionMachine({
 			cwd: options.config.cwd,
 			...(options.config.itemLimit === undefined ? {} : {itemLimit: options.config.itemLimit}),
@@ -137,25 +158,15 @@ export const aiAgentProgram = <RIn = never>(
 		}),
 		ports: portsOf(),
 		receive: {
-			[aiAgentPortNames.prompt]: (payload: PromptPayload) => {
-				if (payload.key === undefined) {
-					return refuse(
-						PROMPT_ERROR,
-						`a prompt arrived with no idempotency key: "${payload.text}"`,
-					);
-				}
-				// Refused rather than stamped here: a receiver is a pure translation, and the turn the
-				// core records off this Msg needs a clock only its sender holds (#7978).
-				if (payload.timestamp === undefined) {
-					return refuse(PROMPT_ERROR, `a prompt arrived with no timestamp: "${payload.text}"`);
-				}
-				return {
-					type: "prompt",
-					text: payload.text,
-					key: payload.key,
-					timestamp: payload.timestamp,
-				};
-			},
+			// A pure translation with nothing to refuse: the port's predicate requires the key and the
+			// timestamp, so the kernel's `accepts` check turns an unstamped prompt away at the send
+			// and the caller reads that refusal (#7991).
+			[aiAgentPortNames.prompt]: (payload: PromptPayload) => ({
+				type: "prompt",
+				text: payload.text,
+				key: payload.key,
+				timestamp: payload.timestamp,
+			}),
 			[aiAgentPortNames.pageRequest]: (payload: TranscriptPagePayload) =>
 				payload.kind === "request"
 					? {type: "page", before: payload.before, limit: payload.limit}
@@ -178,8 +189,13 @@ export const aiAgentProgram = <RIn = never>(
 		subs,
 		resume: resumeMessages,
 		restorable: (raw) => readCheckpoint(raw, options.config.cwd) !== null,
+		// A partial item is one frame of a reply the next delta replaces, so a state holding one is
+		// worth no write: without this every delta rewrites the transcript, and a stop mid-turn saves
+		// the half-written reply as the reply (#8160).
+		checkpointWorthy: (state) => !holdsPartialItem(state),
 		capabilities: options.capabilities ?? [],
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
+		...(options.inspector === undefined ? {} : {inspector: options.inspector}),
 		identity: {
 			package: "@kampus/tuval",
 			program: options.id,

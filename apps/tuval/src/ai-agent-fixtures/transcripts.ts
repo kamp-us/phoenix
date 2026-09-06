@@ -11,8 +11,10 @@
 import {
 	type AssistantItem,
 	boundToolResult,
+	type CompactionItem,
 	ItemId,
 	type SystemItem,
+	type ThinkingItem,
 	type ToolItem,
 	type TranscriptItem,
 	type UserItem,
@@ -50,8 +52,32 @@ export const toolItem = (id: string, output = "ok", timestamp = AT): ToolItem =>
 	status: "ok",
 });
 
-export const systemItem = (id: string, text = "resumed", timestamp = AT): SystemItem => ({
+export const systemItem = (
+	id: string,
+	text = "resumed",
+	timestamp = AT,
+	detail?: string,
+): SystemItem => ({
 	kind: "system",
+	id: ItemId.make(id),
+	timestamp,
+	text,
+	...(detail === undefined ? {} : {detail}),
+});
+
+export const thinkingItem = (id: string, text = "weighing it", timestamp = AT): ThinkingItem => ({
+	kind: "thinking",
+	id: ItemId.make(id),
+	timestamp,
+	text,
+});
+
+export const compactionItem = (
+	id: string,
+	text = "context compacted",
+	timestamp = AT,
+): CompactionItem => ({
+	kind: "compaction",
 	id: ItemId.make(id),
 	timestamp,
 	text,

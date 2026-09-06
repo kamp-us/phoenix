@@ -257,7 +257,21 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				);
 
 				const oldest = yield* agent.page(older.items[0]?.id ?? null, 2);
-				assert.isFalse(oldest.hasMore, "the walk reaches the beginning of the session");
+				assert.deepStrictEqual(
+					oldest.items.map((item) => (item.kind === "user" ? item.text : item.kind)),
+					["first question", "assistant"],
+					"the oldest exchange is still a whole one",
+				);
+
+				// Pi records the model and the thinking level before the first turn, so the head of a
+				// real session's history is those two notices rather than the first question (#8152).
+				const opening = yield* agent.page(oldest.items[0]?.id ?? null, 2);
+				assert.deepStrictEqual(
+					opening.items.map((item) => (item.kind === "system" ? item.text : item.kind)),
+					[`Model set to ${MODEL.provider}/${MODEL.id}`, "Thinking set to off"],
+					"the session's own opening entries reach the window as notices",
+				);
+				assert.isFalse(opening.hasMore, "the walk reaches the beginning of the session");
 			}).pipe(
 				Effect.scoped,
 				Effect.provide(aiAgentOverHost({model: MODEL}).pipe(Layer.provide(hostLayer(cwd, faux)))),

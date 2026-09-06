@@ -22,14 +22,7 @@ import type {
 	WindowOmission,
 } from "./payloads.ts";
 import type {AgentPortPayload} from "./ports.ts";
-import type {
-	AssistantItem,
-	ResultOmission,
-	SystemItem,
-	ToolItem,
-	ToolResult,
-	UserItem,
-} from "./transcript-item.ts";
+import type {ResultOmission, ToolResult, TranscriptItem} from "./transcript-item.ts";
 
 /** Everything a backend knows about a turn that the interface deliberately refuses to carry. */
 type ModelSpecific =
@@ -51,10 +44,7 @@ type ModelSpecificKeysOf<T> = T extends unknown ? Extract<keyof T, ModelSpecific
 
 describe("the AI agent interface is model-blind", () => {
 	it("names nothing model-specific on any payload type or item kind", () => {
-		expectTypeOf<ModelSpecificKeysOf<UserItem>>().toEqualTypeOf<never>();
-		expectTypeOf<ModelSpecificKeysOf<AssistantItem>>().toEqualTypeOf<never>();
-		expectTypeOf<ModelSpecificKeysOf<ToolItem>>().toEqualTypeOf<never>();
-		expectTypeOf<ModelSpecificKeysOf<SystemItem>>().toEqualTypeOf<never>();
+		expectTypeOf<ModelSpecificKeysOf<TranscriptItem>>().toEqualTypeOf<never>();
 		expectTypeOf<ModelSpecificKeysOf<ToolResult>>().toEqualTypeOf<never>();
 		expectTypeOf<ModelSpecificKeysOf<ResultOmission>>().toEqualTypeOf<never>();
 		expectTypeOf<ModelSpecificKeysOf<WindowOmission>>().toEqualTypeOf<never>();

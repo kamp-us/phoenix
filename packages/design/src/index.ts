@@ -1,5 +1,9 @@
-export type {AgentChatInputProps} from "./AgentChatInput";
-export {AgentChatInput} from "./AgentChatInput";
+export type {
+	AgentChatInputProps,
+	PickerItem as AgentSettingItem,
+	SettingMenuProps as AgentSettingMenuProps,
+} from "./AgentChatInput";
+export {AgentChatInput, SettingMenu as AgentSettingMenu} from "./AgentChatInput";
 export {Alert} from "./Alert";
 export {Avatar} from "./Avatar";
 export type {
@@ -51,6 +55,7 @@ export type {
 	DesignTranslate,
 } from "./i18n";
 export {DesignTranslationProvider} from "./i18n";
+export {Markdown} from "./Markdown";
 export type {MenuItem, MenuProps} from "./Menu";
 export {Menu} from "./Menu";
 export type {MetaRowProps} from "./MetaRow";

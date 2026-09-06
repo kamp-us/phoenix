@@ -195,4 +195,9 @@ export const account = {
 	"ui.draftRestore.text": "you have a saved draft. want to restore it?",
 	"ui.draftRestore.restore": "restore the draft",
 	"ui.draftRestore.dismiss": "ignore",
+	"ui.markdown.table": "table",
+	"ui.markdown.code": "code block",
+	"ui.markdown.diagram": "diagram",
+	"ui.markdown.diagram.source": "diagram source",
+	"ui.markdown.diagram.error": "the diagram could not be drawn: {reason}",
 } satisfies Record<AccountKey, string>;

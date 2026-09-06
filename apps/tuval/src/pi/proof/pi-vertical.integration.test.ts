@@ -227,7 +227,7 @@ const openPiFromThePicker = Effect.fn("piVertical.openPiFromThePicker")(function
 	for (let step = 0; step < at; step += 1) {
 		const moved = pickerPress(windowId, entries, view, "j");
 		assert.isNotNull(moved, "the picker moved its highlight");
-		view = {cursor: view.cursor + 1, refusal: null};
+		view = {...view, cursor: step + 1, refusal: null};
 		yield* desk.send(moved as ShellMsg);
 	}
 	const chosen = pickerPress(windowId, entries, view, "<enter>");

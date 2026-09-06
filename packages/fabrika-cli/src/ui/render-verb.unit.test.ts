@@ -11,10 +11,9 @@ import {
 import {fakeSeams, okOut, type Scripted} from "../fakes.test-support.ts";
 import {FAILED} from "../verb.ts";
 import {
-	BAD_SECTIONS,
 	CAPTURE_INVALID,
 	LANE_NOT_MINE,
-	NO_HARNESS,
+	NO_UI_SURFACE,
 	OFF_VOCABULARY,
 	PRECONDITION_UNKNOWN,
 	RENDER_CRASHED,
@@ -24,7 +23,7 @@ import {encodePng, type FakeBytesFsOptions, fakeBytesFs, solid} from "./fakes.te
 import {type BrowseLeg, type HarnessLeg, runRender, type ShotOutcome} from "./render-verb.ts";
 
 const ROOT = "/repo/trees/lane-a";
-const HARNESS = `${ROOT}/design-harness.json`;
+const CONFIG = `${ROOT}/.fabrika.jsonc`;
 const LANE = `build/4312-editor-focus-loss-${NONCE}`;
 const SET_DIR = `/tmp/fabrika-build/s-9f2e/4312-${NONCE}/after`;
 
@@ -44,7 +43,13 @@ const LANE_OK: ReadonlyArray<Scripted> = [
 
 const PNG = encodePng(4, 4, solid(4, 4, [0, 0, 0, 255]));
 
-const ready: HarnessLeg = () => Effect.succeed({_tag: "Ready", stop: Effect.void});
+/** Every app the verb asks for comes up on one origin per name — the shape `spawnHarness` returns. */
+const ready: HarnessLeg = (apps) =>
+	Effect.succeed({
+		_tag: "Ready",
+		origins: new Map(apps.map((app, index) => [app.name, `http://127.0.0.1:${5173 + index}`])),
+		stop: Effect.void,
+	});
 
 const options = {
 	out: "after",
@@ -81,14 +86,28 @@ const run = (
 		),
 	);
 
-const harnessFile = JSON.stringify({command: "pnpm dev", url: "http://127.0.0.1:5173"});
+const WEB = {
+	name: "web",
+	prefix: "apps/web/src/",
+	mount: "/",
+	command: "pnpm dev --port {{port}}",
+};
+const TUVAL = {
+	name: "tuval-chat",
+	prefix: "apps/tuval/src/",
+	mount: "/tuval/chat",
+	basePath: "/",
+	command: "pnpm proof:chat --port {{port}}",
+};
+const config = (surfaces: ReadonlyArray<unknown>, capture?: Record<string, unknown>) =>
+	JSON.stringify(
+		capture === undefined ? {uiSurfaces: surfaces} : {uiSurfaces: surfaces, uiCapture: capture},
+	);
+const harnessFile = config([WEB]);
+const twoApps = config([WEB, TUVAL]);
 const SESSION = `${ROOT}/.fabrika/design-session.json`;
-const withSession = JSON.stringify({
-	command: "pnpm dev",
-	url: "http://127.0.0.1:5173",
-	storageState: ".fabrika/design-session.json",
-});
-const captured = {files: {[HARNESS]: harnessFile, [`${SET_DIR}/pano.png`]: PNG}};
+const withSession = config([WEB], {storageState: ".fabrika/design-session.json"});
+const captured = {files: {[CONFIG]: harnessFile, [`${SET_DIR}/pano.png`]: PNG}};
 
 describe("runRender operands", () => {
 	it("refuses zero surfaces on 1 — no tool guesses surfaces from a diff", async () => {
@@ -165,7 +184,7 @@ describe("runRender", () => {
 
 	it("refuses an invalid capture on 16 — evidence nobody can open is not evidence", async () => {
 		const outcome = await run(LANE_OK, {
-			files: {[HARNESS]: harnessFile, [`${SET_DIR}/pano.png`]: new Uint8Array(0)},
+			files: {[CONFIG]: harnessFile, [`${SET_DIR}/pano.png`]: new Uint8Array(0)},
 		});
 		expect(outcome.code).toBe(CAPTURE_INVALID);
 		expect(outcome.stderr.join("\n")).toContain("captured invalid bytes (zero bytes)");
@@ -174,7 +193,7 @@ describe("runRender", () => {
 	it("reports the SMALLEST applicable code when outcomes mix, and enumerates every surface", async () => {
 		const outcome = await run(
 			LANE_OK,
-			{files: {[HARNESS]: harnessFile, [`${SET_DIR}/pano.png`]: PNG}},
+			{files: {[CONFIG]: harnessFile, [`${SET_DIR}/pano.png`]: PNG}},
 			{
 				surfaces: ["/pano", "/sozluk", "/yeni"],
 				browse: browsing((url) =>
@@ -193,25 +212,60 @@ describe("runRender", () => {
 
 	it("refuses on 11 when the harness never answers", async () => {
 		const outcome = await run(LANE_OK, captured, {
-			startHarness: () => Effect.succeed({_tag: "NotReady", tail: "EADDRINUSE"}),
+			startHarness: () =>
+				Effect.succeed({
+					_tag: "NotReady",
+					app: "web",
+					readyPath: "/api/health",
+					tail: "EADDRINUSE",
+				}),
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain(
+			'app "web" did not answer 200 on /api/health within the readiness bound',
+		);
 		expect(outcome.stderr.at(-1)).toContain("server stderr tail: EADDRINUSE");
 	});
 
-	it("refuses a missing harness declaration on 19", async () => {
+	it("refuses on 11 when an app's command dies, naming the app", async () => {
+		const outcome = await run(LANE_OK, captured, {
+			startHarness: () =>
+				Effect.succeed({_tag: "Failed", app: "web", reason: "the command exited with 1"}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain('app "web" could not start: the command exited with 1');
+	});
+
+	it("refuses on 11 when a ready leg names no origin for an app it was asked to start", async () => {
+		const outcome = await run(LANE_OK, captured, {
+			startHarness: () => Effect.succeed({_tag: "Ready", origins: new Map(), stop: Effect.void}),
+		});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+		expect(outcome.stderr.at(-1)).toContain(
+			'the render leg reported ready without an origin for app "web"',
+		);
+		expect(outcome.stderr.at(-1)).toContain('surface "/pano" is UNKNOWN');
+	});
+
+	it("refuses a repo declaring no uiSurfaces row on 19, saying so", async () => {
 		const outcome = await run(LANE_OK, {files: {}});
-		expect(outcome.code).toBe(NO_HARNESS);
+		expect(outcome.code).toBe(NO_UI_SURFACE);
+		expect(outcome.stderr.at(-1)).toContain("declares no `uiSurfaces` rows");
 	});
 
-	it("refuses a harness that violates its schema on 4", async () => {
-		const outcome = await run(LANE_OK, {files: {[HARNESS]: "{}"}});
-		expect(outcome.code).toBe(BAD_SECTIONS);
+	it("refuses a declared empty list on 19 too — an empty list is never read as silence", async () => {
+		const outcome = await run(LANE_OK, {files: {[CONFIG]: config([])}});
+		expect(outcome.code).toBe(NO_UI_SURFACE);
 	});
 
-	it("refuses on 11 when the harness declares a storageState no file backs", async () => {
+	it("refuses a uiSurfaces value that violates its schema on 11", async () => {
+		const outcome = await run(LANE_OK, {files: {[CONFIG]: JSON.stringify({uiSurfaces: [{}]})}});
+		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+
+	it("refuses on 11 when uiCapture declares a storageState no file backs", async () => {
 		const outcome = await run(LANE_OK, {
-			files: {...captured.files, [HARNESS]: withSession},
+			files: {...captured.files, [CONFIG]: withSession},
 		});
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
 		expect(outcome.stderr.at(-1)).toContain("would capture the login page");
@@ -221,7 +275,7 @@ describe("runRender", () => {
 		const seen: Array<string | null> = [];
 		const outcome = await run(
 			LANE_OK,
-			{files: {...captured.files, [HARNESS]: withSession, [SESSION]: PNG}},
+			{files: {...captured.files, [CONFIG]: withSession, [SESSION]: PNG}},
 			{
 				browse: (request) => {
 					seen.push(request.storageState);
@@ -262,5 +316,55 @@ describe("runRender", () => {
 		);
 		const outcome = await run(unreadable, captured);
 		expect(outcome.code).toBe(PRECONDITION_UNKNOWN);
+	});
+});
+
+describe("runRender across apps", () => {
+	const bothCaptured = {
+		files: {
+			[CONFIG]: twoApps,
+			[`${SET_DIR}/pano.png`]: PNG,
+			[`${SET_DIR}/tuval-chat.png`]: PNG,
+		},
+	};
+
+	it("sends each surface to its own app's origin, at that app's own path", async () => {
+		const seen: Array<string> = [];
+		const outcome = await run(LANE_OK, bothCaptured, {
+			surfaces: ["/pano", "/tuval/chat"],
+			browse: (request) => {
+				seen.push(request.url);
+				return Effect.succeed({_tag: "Captured"});
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(seen).toEqual(["http://127.0.0.1:5173/pano", "http://127.0.0.1:5174/"]);
+	});
+
+	it("starts only the apps some requested surface resolves to", async () => {
+		const started: Array<ReadonlyArray<string>> = [];
+		const outcome = await run(LANE_OK, bothCaptured, {
+			surfaces: ["/tuval/chat"],
+			startHarness: (apps, root) => {
+				started.push(apps.map((app) => app.name));
+				return ready(apps, root);
+			},
+		});
+		expect(outcome.code).toBe(0);
+		expect(started).toEqual([["tuval-chat"]]);
+	});
+
+	it("refuses on 10 a surface no declared mount claims, naming the mounts", async () => {
+		const outcome = await run(
+			LANE_OK,
+			{files: {[CONFIG]: config([TUVAL])}},
+			{
+				surfaces: ["/pano"],
+			},
+		);
+		expect(outcome.code).toBe(OFF_VOCABULARY);
+		expect(outcome.stderr.at(-1)).toContain(
+			'--surface "/pano" falls outside every mount `uiSurfaces` declares (/tuval/chat)',
+		);
 	});
 });

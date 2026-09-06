@@ -42,6 +42,8 @@ import {
 	type WindowId,
 	zoom,
 } from "../layout/index.ts";
+import type {OpenSession} from "../picker/intent.ts";
+import {mountPicker} from "../picker/view.ts";
 import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
@@ -50,6 +52,7 @@ import {
 	keyTargetOf,
 	mint,
 	type PrefixSnapshot,
+	processOf,
 	type ShellState,
 	type Workspace,
 	type WorkspaceId,
@@ -62,7 +65,10 @@ import {
  * The arms the kernel's own `HostHandlers` answer (`../host/effects.ts`). `openProgram` and
  * `attachProcess` are the picker's (`../picker/open.ts` runs both): spawning needs the registry and
  * the process table, which a pure reducer cannot reach, so the core names the window and the thing
- * to show in it and stops there. `forwardKey` is here too — a key belongs to the focused window's
+ * to show in it and stops there. Each carries the window's view slot as well, because a refusal
+ * leaves that handler as a `window.setView` written back over it, and the slot is state only the
+ * core can read — a refusal handed no slot is the one that throws away the picker's `previous`
+ * (#8265). `forwardKey` is here too — a key belongs to the focused window's
  * *process*, and delivering it is a dispatch into that process. `runCommand` and `reloadConfig`
  * have no runner yet and are still the kernel's: resolving a name the command table does not hold
  * needs the spell registry, and `Booted.reload` sits above the kernel (#7743).
@@ -75,8 +81,19 @@ export type KernelCmd =
 			readonly key: string;
 	  }
 	| {readonly type: "runCommand"; readonly name: CommandName}
-	| {readonly type: "openProgram"; readonly windowId: WindowId; readonly programId: string}
-	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
+	| {
+			readonly type: "openProgram";
+			readonly windowId: WindowId;
+			readonly programId: string;
+			readonly session?: OpenSession;
+			readonly view?: ViewState;
+	  }
+	| {
+			readonly type: "attachProcess";
+			readonly windowId: WindowId;
+			readonly processId: string;
+			readonly view?: ViewState;
+	  }
 	| {readonly type: "reloadConfig"};
 
 /**
@@ -136,7 +153,13 @@ export type ShellMsg =
 	| {readonly type: "workspace.remove"; readonly workspaceId?: WorkspaceId}
 	| {readonly type: "workspace.activate"; readonly workspaceId: WorkspaceId}
 	| {readonly type: "workspace.step"; readonly direction: "previous" | "next"}
-	| {readonly type: "window.open"; readonly programId: string; readonly windowId?: WindowId}
+	| {
+			readonly type: "window.open";
+			readonly programId: string;
+			readonly windowId?: WindowId;
+			/** The session this open is for, when it is for one (`../picker/intent.ts`). */
+			readonly session?: OpenSession;
+	  }
 	| {readonly type: "window.attach"; readonly processId: string; readonly windowId?: WindowId}
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
@@ -213,6 +236,10 @@ const timerCmds = (before: PrefixSnapshot, after: PrefixSnapshot): readonly Shel
 /**
  * Attach or detach the process a window shows. Detaching is `null` and stops nothing: the process
  * runs on with no view, which is what makes a window a view rather than a container.
+ *
+ * The view slot goes with the binding either way. A slot belongs to whatever the window is showing,
+ * and the newly bound program did not write the one that is there — which is also what keeps a
+ * `previous` from outliving the picker that recorded it (#8265).
  */
 const bindWindow = (
 	state: ShellState,
@@ -225,12 +252,36 @@ const bindWindow = (
 	const target = windowId ?? workspace.focused;
 	if (!hasWindow(workspace, target)) return [state, NO_CMDS];
 	return [
-		withActive(state, {
-			...workspace,
-			layout: setProcess(workspace.layout, target, processId, takesKeys),
-		}),
+		{
+			...withActive(state, {
+				...workspace,
+				layout: setProcess(workspace.layout, target, processId, takesKeys),
+			}),
+			views: withoutViews(state.views, [target]),
+		},
 		NO_CMDS,
 	];
+};
+
+/**
+ * Put a window back on the picker: detach its process, which stops nothing, and mount a fresh
+ * picker view naming the process it was showing, so Escape has somewhere to return to and the
+ * highlight starts on that row (`../picker/view.ts`). The mount is fresh rather than the cursor and
+ * refusal the last one left behind (`../ui/PickerView.tsx` rebuilds the picker's view from it).
+ *
+ * A window holding no process is left untouched rather than cleared. It is already showing the
+ * picker, and dropping the slot there would move the user's highlight back to the first row under
+ * their hands — a key that should have done nothing at all.
+ */
+const unbindWindow = (state: ShellState, windowId: WindowId | undefined): Step => {
+	const workspace = activeWorkspace(state);
+	if (workspace === undefined) return [state, NO_CMDS];
+	const target = windowId ?? workspace.focused;
+	if (!hasWindow(workspace, target)) return [state, NO_CMDS];
+	const showing = processOf(workspace, target);
+	if (showing === null) return [state, NO_CMDS];
+	const [detached] = bindWindow(state, target, null);
+	return [{...detached, views: {...detached.views, [target]: mountPicker(showing)}}, NO_CMDS];
 };
 
 /**
@@ -411,6 +462,16 @@ const targetWindow = (state: ShellState, windowId: WindowId | undefined): Window
 };
 
 /**
+ * One window's view slot as a Cmd field, spread rather than assigned so a window holding no slot
+ * sends no `view` key at all — the field is optional and `exactOptionalPropertyTypes` reads an
+ * explicit `undefined` as a different thing from an absent one.
+ */
+const viewOf = (state: ShellState, windowId: WindowId): {readonly view?: ViewState} => {
+	const view = state.views[windowId];
+	return view === undefined ? {} : {view};
+};
+
+/**
  * The cells, closed over the table the key router reads. A table is configuration, not state: it
  * holds `Duration.Duration` values, and the shell's state is checkpointed JSON.
  */
@@ -461,7 +522,7 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"window.focus": (state, msg) => focusWindow(state, msg.windowId),
 		"window.focusDirection": (state, msg) => focusDirection(state, msg.direction),
 		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId, msg.takesKeys),
-		"window.unbind": (state, msg) => bindWindow(state, msg.windowId, null),
+		"window.unbind": (state, msg) => unbindWindow(state, msg.windowId),
 		"window.setView": setView,
 		"layout.resize": resizeStack,
 		"layout.zoom": zoomWindow,
@@ -476,13 +537,34 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 			const target = targetWindow(state, msg.windowId);
 			return target === null
 				? [state, NO_CMDS]
-				: [state, [{type: "openProgram", windowId: target, programId: msg.programId}]];
+				: [
+						state,
+						[
+							{
+								type: "openProgram",
+								windowId: target,
+								programId: msg.programId,
+								...(msg.session === undefined ? {} : {session: msg.session}),
+								...viewOf(state, target),
+							},
+						],
+					];
 		},
 		"window.attach": (state, msg) => {
 			const target = targetWindow(state, msg.windowId);
 			return target === null
 				? [state, NO_CMDS]
-				: [state, [{type: "attachProcess", windowId: target, processId: msg.processId}]];
+				: [
+						state,
+						[
+							{
+								type: "attachProcess",
+								windowId: target,
+								processId: msg.processId,
+								...viewOf(state, target),
+							},
+						],
+					];
 		},
 		// Neither touches the desk, and neither leaves as `runCommand`: a host answering that Cmd
 		// resolves the name through the command table, so routing a row's own Msg back through it

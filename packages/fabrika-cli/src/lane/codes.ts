@@ -405,3 +405,14 @@ export const ISSUE_LIVE = 49;
  * remedy is to leave it where it is (ADR 0352).
  */
 export const LOG_REPLAYS = 50;
+
+/**
+ * The lanes root already holds as many lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows, so
+ * the boot is refused with nothing written.
+ *
+ * Its own seat rather than {@link LANE_EXISTS}'s: that one says this lane is already there and the
+ * remedy is to drive it, while this one says every seat is taken by *other* lanes and the remedy is
+ * to free one — `lane archive` on a lane that is done, or a raised number in the config. No flag
+ * opens it, because a cap with an override is the spoken instruction it replaced.
+ */
+export const CONCURRENCY_CAPPED = 51;

@@ -85,12 +85,14 @@ import {
 	sessionNotFound,
 	startTransport,
 	startWithoutHandshake,
+	storeUnlistable,
 	storeUnreadable,
 	streamFailed,
 	subprocessGone,
 	unknownCursor,
 } from "./refusals.ts";
 import {type AgentSession, realAgentSdk} from "./sdk.ts";
+import {claudeSessions} from "./sessions.ts";
 import {exitDetail, type SubprocessWatch, watchSubprocess} from "./subprocess.ts";
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -526,6 +528,7 @@ const make = (
 		const start = Effect.fn("TuvalAiAgent.start")(function* (startOptions: {
 			readonly cwd: string;
 			readonly resume?: string;
+			readonly mode?: Mode;
 		}) {
 			const previous = yield* Ref.get(session);
 			// A second `start` is a reconnect, and it replaces the session whole: the previous
@@ -538,7 +541,10 @@ const make = (
 			yield* Ref.set(queue, out);
 			yield* emit(out, [{kind: "phase", phase: "starting"}]);
 
-			const held = yield* Ref.get(mode);
+			// The layer's own switch first, then the mode the caller says to open on. The Ref is per
+			// build, so on the rebuilt layer a reconnect stands up it is null and the caller's mode is
+			// the operator's — which is what carries a mode switch across a restart (#7953).
+			const held = (yield* Ref.get(mode)) ?? startOptions.mode ?? null;
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
 			const opened = yield* open(startOptions.cwd, startOptions.resume, held).pipe(
@@ -560,8 +566,11 @@ const make = (
 			// raw `held`: `held` is null until an operator calls `setMode`, so a row carrying any
 			// non-default `permissionMode` would run on that mode and tell every subscriber it has
 			// none — a `current: null` beside a non-empty `available` is not a state `ModePayload`
-			// defines (#7828).
-			yield* emit(out, [{kind: "mode", current: openingMode(options, held) as Mode, available}]);
+			// defines (#7828). The Ref takes it too, so a later refused `setMode` re-announces the
+			// mode the session is really on rather than the null a rebuilt layer started from.
+			const openedOn = openingMode(options, held) as Mode;
+			yield* Ref.set(mode, openedOn);
+			yield* emit(out, [{kind: "mode", current: openedOn, available}]);
 			// The catalog is the session's, so it is read after the open. The announced model is the
 			// one the session is actually running: the query opened on the row's static `model`, so a
 			// model an operator picked before this open has to be re-applied here rather than merely
@@ -770,6 +779,19 @@ const make = (
 			return {items: planned.items, hasMore: planned.next !== null};
 		});
 
+		/**
+		 * Every Claude session on this machine, not this layer's own: the CLI's store is read off
+		 * disk, so this answers before `start` and on a layer that never opens a session.
+		 *
+		 * Called with no options at all, which is both "sessions across all projects" (`dir` omitted)
+		 * and `includeProgrammatic` left at its `true` default — epic #8070's ruling 3 wants one
+		 * unified list, which is the opposite of the `/resume` parity the pin documents `false` for.
+		 */
+		const listSessions = Effect.tryPromise({
+			try: () => sdk.listSessions(),
+			catch: storeUnlistable,
+		}).pipe(Effect.map(claudeSessions), Effect.withSpan("TuvalAiAgent.listSessions"));
+
 		return {
 			start,
 			prompt,
@@ -780,6 +802,7 @@ const make = (
 			commands: Ref.get(commands),
 			setThinkingLevel,
 			page,
+			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};
 	});

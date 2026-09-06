@@ -11,7 +11,7 @@
 
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import type {ReactElement} from "react";
-import {useEffect, useState} from "react";
+import {StrictMode, useEffect, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
@@ -19,11 +19,11 @@ import type {ShellMsg, ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import type {PickerEntries} from "../picker/index.ts";
-import {empty, processGone} from "../window/index.ts";
+import {empty, prefixArmedAround, processGone} from "../window/index.ts";
 import {Desk} from "./Desk.tsx";
 import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";
-import {type MountResolver, noRenderer} from "./mount.ts";
+import {boundMount, type MountResolver, noRenderer, type ReactWindowRenderer} from "./mount.ts";
 
 installDomShims();
 
@@ -32,22 +32,51 @@ const entries: PickerEntries = {
 	processes: [],
 };
 
+/** Every window bound, rendering whatever the caller wants inside it. */
+const boundTo =
+	(render: ReactWindowRenderer): MountResolver =>
+	(windowId, processId) =>
+		processId === null
+			? empty
+			: boundMount(
+					{
+						windowId,
+						processId: ProcessId.make(processId),
+						readProcess: undefined as never,
+						dispatch: undefined as never,
+						view: () => null,
+						setView: undefined as never,
+					},
+					render,
+				);
+
 /** Every window bound, every renderer a paragraph naming its process. */
-const boundEverywhere: MountResolver = (windowId, processId) =>
-	processId === null
-		? empty
-		: {
-				_tag: "Bound",
-				host: {
-					windowId,
-					processId: ProcessId.make(processId),
-					readProcess: undefined as never,
-					dispatch: undefined as never,
-					view: () => null,
-					setView: undefined as never,
-				},
-				render: (host) => <p>renderer for {String(host.processId)}</p>,
-			};
+const boundEverywhere: MountResolver = boundTo((host) => (
+	<p>renderer for {String(host.processId)}</p>
+));
+
+/**
+ * A window shaped like the chat one: the two places an operator's focus actually sits — a composer
+ * that reads its own keys, and a scroll region that swallows a bare character exactly as
+ * `../chat/ChatWindow.tsx` does. The rule is the shipped helper, not a paraphrase of it, so a desk
+ * that stopped honouring the armed mark fails here.
+ */
+const chatShapedWindow: MountResolver = boundTo((host) => (
+	<>
+		<div
+			role="log"
+			aria-label={`Transcript ${host.windowId}`}
+			// biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region must take keyboard focus
+			tabIndex={0}
+			onKeyDown={(event) => {
+				const bare =
+					!event.ctrlKey && !event.metaKey && !event.altKey && [...event.key].length === 1;
+				if (bare && !prefixArmedAround(event.target)) event.stopPropagation();
+			}}
+		/>
+		<textarea aria-label={`Compose ${host.windowId}`} defaultValue="" />
+	</>
+));
 
 interface HarnessProps {
 	readonly initial: ShellState;
@@ -363,6 +392,110 @@ describe("the command line", () => {
 	});
 });
 
+/**
+ * tmux's rule, from the two places the operator actually sits (#8270). The composer holds the caret
+ * most of the day and the transcript the rest of it, and before this the whole key grammar was
+ * unreachable from both.
+ *
+ * `fireEvent` returns the `dispatchEvent` answer, so `false` is "the default was prevented" — which
+ * is the browser-side proof that no character was inserted. jsdom performs no default text entry of
+ * its own, so that return, and not the textarea's value, is what carries the claim.
+ */
+describe("the shell's own keys from a focused text entry or transcript", () => {
+	const openDesk = (sent: Array<ShellMsg>): void => {
+		render(
+			<Harness initial={threeWindowDesk("window-1")} sent={sent} resolveMount={chatShapedWindow} />,
+		);
+	};
+	const composer = (): HTMLTextAreaElement =>
+		screen.getByLabelText("Compose window-1") as HTMLTextAreaElement;
+	const transcript = (): HTMLElement => screen.getByRole("log", {name: "Transcript window-1"});
+	const armed = (): boolean =>
+		document.querySelector(".tuval-surface")?.hasAttribute("data-prefix-armed") === true;
+
+	/** The `dispatchEvent` answer for one press, with the render it caused already flushed. */
+	const press = (element: Element, init: Record<string, unknown>): boolean => {
+		let answer = true;
+		act(() => {
+			answer = fireEvent.keyDown(element, init);
+		});
+		return answer;
+	};
+
+	it("arms the prefix on `<c-b>` typed into a focused textarea", () => {
+		const sent: Array<ShellMsg> = [];
+		openDesk(sent);
+		composer().focus();
+
+		const notPrevented = press(composer(), {key: "b", ctrlKey: true, code: "KeyB"});
+
+		expect(sent).toEqual([
+			{type: "keys.press", key: expect.objectContaining({key: "b", ctrlKey: true})},
+		]);
+		expect(armed()).toBe(true);
+		expect(notPrevented).toBe(false);
+	});
+
+	it("completes `<c-b> w` from the focused transcript, putting the window back on the picker", () => {
+		openDesk([]);
+		transcript().focus();
+
+		const scroller = transcript();
+		press(scroller, {key: "b", ctrlKey: true, code: "KeyB"});
+		expect(armed()).toBe(true);
+		press(scroller, {key: "w", code: "KeyW"});
+
+		expect(armed()).toBe(false);
+		// `window:pick` unbound the focused window, so its mount is the picker (#8083) — window-2 is
+		// empty from the start, so the claim is scoped to the one the sequence acted on.
+		const window1 = within(screen.getByLabelText("Window window-1"));
+		expect(window1.getByRole("listbox", {name: /Open a program/})).toBeTruthy();
+		expect(window1.queryByRole("log")).toBeNull();
+	});
+
+	it("leaves a plain `w` to the composer while the prefix is idle", () => {
+		const sent: Array<ShellMsg> = [];
+		openDesk(sent);
+		composer().focus();
+
+		const notPrevented = press(composer(), {key: "w", code: "KeyW"});
+
+		expect(notPrevented).toBe(true);
+		expect(sent).toEqual([]);
+		expect(armed()).toBe(false);
+	});
+
+	it("opens the palette on Cmd+K and on Ctrl+K from inside a textarea", () => {
+		openDesk([]);
+		const palette = (): HTMLElement | null => screen.queryByRole("combobox", {name: "Run a spell"});
+
+		composer().focus();
+		press(composer(), {key: "k", metaKey: true, code: "KeyK"});
+		expect(palette()).toBeTruthy();
+
+		press(palette() as HTMLElement, {key: "Escape"});
+		expect(palette()).toBeNull();
+
+		composer().focus();
+		press(composer(), {key: "k", ctrlKey: true, code: "KeyK"});
+		expect(palette()).toBeTruthy();
+	});
+
+	it("keeps every key of an armed sequence out of the composer", () => {
+		openDesk([]);
+		// Held across the sequence: `<c-b> w` unbinds this window, so the element is the composer's
+		// only surviving witness once the picker has taken its place.
+		const box = composer();
+		box.focus();
+
+		const prefixPrevented = press(box, {key: "b", ctrlKey: true, code: "KeyB"});
+		const sequencePrevented = press(box, {key: "w", code: "KeyW"});
+
+		expect([prefixPrevented, sequencePrevented]).toEqual([false, false]);
+		expect(box.value).toBe("");
+	});
+});
+
 describe("the status line", () => {
 	it("shows the workspace, the armed prefix and the pending sequence", () => {
 		render(<Harness initial={threeWindowDesk()} sent={[]} />);
@@ -485,5 +618,108 @@ describe("the palette's door", () => {
 		await waitFor(() =>
 			expect(document.activeElement).toBe(container.querySelector(".tuval-surface")),
 		);
+	});
+});
+
+/**
+ * The desk with a stand-in for the kernel's spawn: `window.open` answers with a Cmd whose reply is
+ * `window.bind` (`../core/machine.ts`), and the harnesses above drop Cmds — so without this the
+ * window never fills, which is the half of the journey below that matters.
+ */
+function PickJourney({
+	initial,
+	sent,
+	rows,
+	strict = false,
+}: {
+	readonly initial: ShellState;
+	readonly sent: Array<ShellMsg>;
+	readonly rows: PickerEntries;
+	readonly strict?: boolean;
+}): ReactElement {
+	const [state, setState] = useState(initial);
+	const dispatch = (msg: ShellMsg): void => {
+		sent.push(msg);
+		setState((current) => {
+			const [next] = applyMsg(defaultPrefixTable, current, msg);
+			if (msg.type !== "window.open") return next;
+			return applyMsg(defaultPrefixTable, next, {
+				type: "window.bind",
+				windowId: msg.windowId,
+				processId: `process-${msg.programId}`,
+				takesKeys: true,
+			})[0];
+		});
+	};
+	const desk = (
+		<Desk
+			state={state}
+			dispatch={dispatch}
+			resolveMount={boundEverywhere}
+			entries={rows}
+			table={defaultPrefixTable}
+		/>
+	);
+	return strict ? <StrictMode>{desk}</StrictMode> : desk;
+}
+
+/** Two rows, so a move has somewhere to go: a one-row picker clamps `j` back onto the cursor. */
+const twoPrograms: PickerEntries = {
+	programs: [
+		{_tag: "Program", programId: ProgramId.make("counter"), label: "Counter"},
+		{_tag: "Program", programId: ProgramId.make("clock"), label: "Clock"},
+	],
+	processes: [],
+};
+
+const bindMsgs = (sent: Array<ShellMsg>): Array<ShellMsg> =>
+	sent.filter((msg) => msg.type === "window.open" || msg.type === "window.attach");
+
+describe("`<c-b> w` on a filled window stays on the picker (#8279)", () => {
+	/** Choose `counter` with `<enter>`, then press `<c-b> w`. Returns what the pick alone sent. */
+	const journey = (strict: boolean): Array<ShellMsg> => {
+		const sent: Array<ShellMsg> = [];
+		render(
+			<PickJourney
+				initial={threeWindowDesk("window-2")}
+				sent={sent}
+				rows={twoPrograms}
+				strict={strict}
+			/>,
+		);
+		act(() => void fireEvent.keyDown(document, {key: "Enter", code: "Enter"}));
+		expect(screen.getByText("renderer for process-counter")).toBeTruthy();
+
+		sent.length = 0;
+		// Two acts, never one: the page routes each press against the snapshot it has, so a `w`
+		// batched with the prefix that armed it is routed as a plain key and forwarded — #8274, a
+		// different bug and a different lane.
+		act(arm);
+		act(() => void fireEvent.keyDown(document, {key: "w", code: "KeyW"}));
+		return sent;
+	};
+
+	it("mounts the picker and re-binds nothing", () => {
+		const sent = journey(false);
+		expect(screen.getByRole("listbox", {name: /Open a program/})).toBeTruthy();
+		expect(bindMsgs(sent)).toEqual([]);
+	});
+
+	it("re-binds nothing under StrictMode either, where a mount effect runs twice", () => {
+		const sent = journey(true);
+		expect(screen.getByRole("listbox", {name: /Open a program/})).toBeTruthy();
+		expect(bindMsgs(sent)).toEqual([]);
+	});
+
+	it("still forwards a key to the picker it just mounted", () => {
+		const sent = journey(false);
+		act(() => void fireEvent.keyDown(document, {key: "j", code: "KeyJ"}));
+
+		// `toMatchObject`, not `toEqual`: the picker's view slot is `picker/view.ts`'s to shape, and
+		// this test owns only that the key reached the picker and moved its cursor.
+		expect(sent.filter((msg) => msg.type === "window.setView")).toMatchObject([
+			{type: "window.setView", windowId: "window-2", view: {cursor: 1, refusal: null}},
+		]);
+		expect(bindMsgs(sent)).toEqual([]);
 	});
 });

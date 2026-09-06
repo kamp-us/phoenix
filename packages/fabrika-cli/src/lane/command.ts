@@ -11,6 +11,8 @@ import {fileURLToPath} from "node:url";
 import {Effect, type FileSystem, Option, Path} from "effect";
 import {Argument, Command, Flag} from "effect/unstable/cli";
 import {claimReader} from "../build/claimants-verb.ts";
+import {laneConcurrencyCapKey} from "../config/keys/lane-concurrency-cap.ts";
+import {readKey} from "../config/read-key.ts";
 import {resolveEntrypoint} from "../delegate/entrypoint.ts";
 import {emit} from "../emit.ts";
 import {leafCommand} from "../excess-operand.ts";
@@ -347,6 +349,7 @@ const open = leafCommand(
 		),
 	},
 	Effect.fn(function* ({lane, root, repo}) {
+		const cap = yield* readKey(process.cwd(), laneConcurrencyCapKey);
 		yield* emit(
 			yield* onKey("open", lane, root, (key, ref) =>
 				runOpen({
@@ -354,6 +357,7 @@ const open = leafCommand(
 					templatePath: templatePath(key._tag),
 					issue: key._tag === "Issue" ? Number(key.lane) : null,
 					expectation: expectationReader(Option.getOrNull(repo), process.env),
+					cap,
 				}),
 			),
 		);
@@ -361,7 +365,7 @@ const open = leafCommand(
 ).pipe(
 	Command.withShortDescription("Boot a lane from the committed template its key selects."),
 	Command.withDescription(
-		"Boot one lane: create `<root>/<key>/` and place a byte-identical copy of the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. An ISSUE key first reads that issue's type, its native sub-issue links and its parent edge: the coder template has one task, so an epic has no machine here and is refused at 46 before anything is written (#7024). Both halves of \"epic\" are asked for, because they answer for different moments — a planned epic carries children, and an epic nobody has planned yet carries none and is known only by its `type:epic` label, which is the window the wrong-template lane was booted in. The refusal names which case it is: an unplanned epic goes to `plan-epic` first, and a planned one is booted with `fabrika lane emit <n>`. An epic's CHILD carries neither fact, and is refused at 48 instead, naming the parent whose lane already carries it as a task — a child gets no lane of its own (#7381). Epic wins the precedence, so a sub-epic still routes to `lane emit`. The parent edge rides the issue read already made, so those two reads stay the only network calls; a `chore:<name>` key drives no issue and is never asked. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template, the lane dir's existence, or the issue's child list could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 46 (the issue is an epic — typed `type:epic`, or carrying sub-issue links — so this template is the wrong machine for it), 48 (the issue hangs under a parent, whose lane is the one to drive). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep",
+		"Boot one lane: create `<root>/<key>/` and place a byte-identical copy of the committed template the key selects as its workflow.json — the coder template for an issue number, the chore template for a `chore:<name>` key. An existing lane dir is refused loudly with nothing written — resuming needs no boot, and overwriting a machine mid-drive would corrupt a live fold. An ISSUE key first reads that issue's type, its native sub-issue links and its parent edge: the coder template has one task, so an epic has no machine here and is refused at 46 before anything is written (#7024). Both halves of \"epic\" are asked for, because they answer for different moments — a planned epic carries children, and an epic nobody has planned yet carries none and is known only by its `type:epic` label, which is the window the wrong-template lane was booted in. The refusal names which case it is: an unplanned epic goes to `plan-epic` first, and a planned one is booted with `fabrika lane emit <n>`. An epic's CHILD carries neither fact, and is refused at 48 instead, naming the parent whose lane already carries it as a task — a child gets no lane of its own (#7381). Epic wins the precedence, so a sub-epic still routes to `lane emit`. The parent edge rides the issue read already made, so those two reads stay the only network calls; a `chore:<name>` key drives no issue and is never asked. Last before the write, an issue key is counted against `.fabrika.jsonc`'s `laneConcurrencyCap`: the issue lanes under this root that have not folded to done hold its seats, an archived one is already out of the count, and there is no override flag — raising the number in the config is how it changes. Exits 8 (the write did not land — the lane is NOT booted), 11 (the template, the lane dir's existence, or the issue's child list could not be read — UNKNOWN, never a boot), 14 (the lane already exists), 21 (the key is not a lane key), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 46 (the issue is an epic — typed `type:epic`, or carrying sub-issue links — so this template is the wrong machine for it), 48 (the issue hangs under a parent, whose lane is the one to drive), 51 (the lanes root already holds as many lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — the cap, the count and every lane holding a seat are named, and nothing was written). Examples: fabrika lane open 5673 · fabrika lane open chore:park-sweep",
 	),
 );
 
@@ -380,6 +384,7 @@ const emitLane = leafCommand(
 		),
 	},
 	Effect.fn(function* ({epic, root, repo}) {
+		const cap = yield* readKey(process.cwd(), laneConcurrencyCapKey);
 		const resolvedRoot = yield* resolveRootOrRefuse(
 			"fabrika lane emit",
 			root,
@@ -397,6 +402,7 @@ const emitLane = leafCommand(
 					root: resolvedRoot,
 					repo: Option.getOrNull(repo),
 					env: process.env,
+					cap,
 				}),
 			),
 		);
@@ -404,7 +410,7 @@ const emitLane = leafCommand(
 ).pipe(
 	Command.withShortDescription("Generate an epic's lane machine from its board topology."),
 	Command.withDescription(
-		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over (ADR 0313, amendment 2026-08-20) — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine (#7024). Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot). Example: fabrika lane emit 5680",
+		"Generate a lane machine from the epic's board state: read the epic body's `## Dependencies` topology (the shape `ledger topology` stages) and emit `<root>/<epic>/workflow.json` — one region per child in the coder template's exact shape, phase-sequenced, parallel within a phase. A closed child boots its region in a final state (`completed` → `shipped`, any other close → `frozen`), so a partly-built epic's machine can still terminate. Deterministic: the same epic body bytes and the same child links (number, state and close reason per child) emit the same machine bytes. stdout is {answer:\"emitted\", epic, workflow, phases, children, bytes}. An existing lane is refused at 14 with no exception — a lane on disk is never re-emitted over (ADR 0313, amendment 2026-08-20) — and the refusal names the whole remedy: retire the lane directory, then re-run this verb. `fabrika lane migrate --check` is what says a lane on disk runs the wrong machine (#7024). Exits 4 (the topology was read in full and does not parse — the defective line, duplicate placement or unplaced requires subject is named), 7 (the epic is proven absent or closed), 8 (the write did not land), 11 (the epic, its child list or the lane dir could not be read — UNKNOWN), 14 (the lane already exists — retire its directory and re-run to rebuild it), 15 (no `## Dependencies` topology — plan the epic first), 16 (the topology references a non-child, named), 17 (the topology holds a cycle, path named), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root; an unreadable repository identity is UNKNOWN at 11; NOT \"no lane here\", so never a boot), 51 (the lanes root already holds as many lanes as `.fabrika.jsonc`'s `laneConcurrencyCap` allows — an epic's lane holds a seat like any other). Example: fabrika lane emit 5680",
 	),
 );
 

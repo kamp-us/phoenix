@@ -1,7 +1,11 @@
 /**
  * The desk: the whole browser surface for one shell process. It renders the active workspace's
- * layout, the status line and — when a key asked for it — the command line, and it owns the page's
- * one application-level keyboard listener.
+ * layout, the inspector region beside it, the status line and — when a key asked for it — the
+ * command line, and it owns the page's one application-level keyboard listener.
+ *
+ * The two desk-level regions are *composed*, never pushed into: `./desk-snapshot.ts` assembles one
+ * `DeskSnapshot` and `../desk/compose.ts` answers what each region shows. Both read that one
+ * snapshot, so they cannot disagree about which window is focused.
  *
  * "One listener" is the invariant, and it has exactly two sanctioned exceptions, both of them
  * elements that would be broken without their own keys: the command line's `input`, and each
@@ -19,19 +23,24 @@
  */
 
 import type {ReactElement, ReactNode} from "react";
-import {useCallback, useEffect, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {usePalette} from "../../palette/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
+import {inspectorFor, statusFor} from "../desk/index.ts";
 import type {Key, PrefixTable} from "../keys/index.ts";
 import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
-import {WindowId} from "../window/index.ts";
+import type {PageAttachment} from "../transport/browser.ts";
+import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "../window/index.ts";
 import {CommandLine} from "./CommandLine.tsx";
+import {DeskInspector} from "./DeskInspector.tsx";
+import type {DeskTables} from "./desk-snapshot.ts";
+import {deskSnapshotOf, noDeskTables} from "./desk-snapshot.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
-import {routerPrefix, statusFrame, surfaceKey, zoomedWindow} from "./frame.ts";
+import {routerPrefix, shellOwnsKey, statusFrame, surfaceKey, zoomedWindow} from "./frame.ts";
 import {LayoutView} from "./LayoutView.tsx";
 import type {MountResolver} from "./mount.ts";
 import {focusedWindowOf, PaletteHost} from "./PaletteHost.tsx";
@@ -49,9 +58,20 @@ export interface DeskProps {
 	 * other. Required: a default here is a page inventing a grammar nobody gave it (ADR 0353).
 	 */
 	readonly table: PrefixTable;
+	/**
+	 * The half of a `DeskSnapshot` only the page knows (`./desk-snapshot.ts`): the kernel facts, the
+	 * process and program rows, and the two desk renderer tables. Defaulted rather than required, so
+	 * a caller that composes no desk regions still renders a desk.
+	 */
+	readonly deskTables?: DeskTables;
 	/** The listener's home. `document` in a page; a container in a test that wants two desks. */
 	readonly keyTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener"> | null;
 	readonly reducedMotion?: boolean;
+	/**
+	 * How the palette runs a spell: this page's socket (`./PaletteHost.tsx`). Absent on a surface
+	 * with no kernel behind it, and then the palette refuses a call rather than answering one itself.
+	 */
+	readonly call?: PageAttachment["call"];
 }
 
 export function Desk({
@@ -60,8 +80,10 @@ export function Desk({
 	resolveMount,
 	entries = noEntries,
 	table,
+	deskTables = noDeskTables,
 	keyTarget,
 	reducedMotion = false,
+	call,
 }: DeskProps): ReactElement {
 	const [commandLineOpen, setCommandLineOpen] = useState(false);
 	const [forwarded, setForwarded] = useState<ForwardedKey | null>(null);
@@ -81,13 +103,15 @@ export function Desk({
 	const onKeyDown = useCallback((event: KeyboardEvent): void => {
 		const {state: current, table: grammar, focused: window, commandLineOpen: open} = latest.current;
 		const overlay = latest.current.palette;
-		if (open || overlay.open || isTextEntry(event.target)) return;
+		if (open || overlay.open) return;
 
 		// The palette's own door, beside the `<prefix> :` line rather than instead of it: one is the
-		// address you already know, the other is the one you go looking through (#7643).
+		// address you already know, the other is the one you go looking through (#7643). It opens
+		// from a text entry too — the door you go looking through must not be shut by where the
+		// caret happens to be, which is most of the day the composer (#8270).
 		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
 			event.preventDefault();
-			overlay.openPalette(focusedWindowOf(latest.current.state));
+			overlay.openPalette(focusedWindowOf(current));
 			return;
 		}
 
@@ -99,13 +123,20 @@ export function Desk({
 			altKey: event.altKey,
 			metaKey: event.metaKey,
 		};
-		const answer = surfaceKey(grammar, routerPrefix(current), key);
+		const prefix = routerPrefix(current);
+		const shellOwns = shellOwnsKey(grammar, prefix, key);
+		if (!shellOwns && isTextEntry(event.target)) return;
+
+		const answer = surfaceKey(grammar, prefix, key);
 		// The kernel owns the desk, so every press goes to it whatever the surface also does with it.
 		latest.current.dispatch({type: "keys.press", key});
+		// Swallowed once, where ownership is decided rather than per arm: the prefix and every key
+		// after it are the shell's, so none of them may also insert a character into the text entry
+		// underneath — that is what stops `prefix |` typing a pipe into whatever had focus.
+		if (shellOwns) event.preventDefault();
 
 		switch (answer._tag) {
 			case "OpenCommandLine":
-				event.preventDefault();
 				setCommandLineOpen(true);
 				return;
 			case "ToWindow":
@@ -114,9 +145,6 @@ export function Desk({
 				setForwarded({windowId: WindowId.make(window), key: answer.key, seq: seq.current});
 				return;
 			case "Shell":
-				// A bound sequence is the shell's; swallowing it is what stops `prefix |` from typing
-				// a pipe into whatever had focus.
-				if (answer.command !== null) event.preventDefault();
 				return;
 		}
 	}, []);
@@ -169,6 +197,23 @@ export function Desk({
 		});
 	}, [palette]);
 
+	// Both desk regions are composed from one snapshot, so the inspector and the bar's middle can
+	// never disagree about which window is focused or which program it is showing.
+	const snapshot = useMemo(
+		() => deskSnapshotOf(state, deskTables, resolveMount),
+		[state, deskTables, resolveMount],
+	);
+	const bar = statusFor(snapshot);
+	// Composed only while the region is open: `inspectorFor` runs no program code, but the renderer
+	// it hands back does, and a closed region must not be paying for one.
+	const inspector = state.desk.inspectorOpen ? inspectorFor(snapshot) : null;
+	// The boundary's reset key, as values: which window and which process the panel is showing. A
+	// snapshot that moves focus clears a caught throw; unrelated kernel traffic leaves it alone.
+	const inspecting =
+		snapshot.focused === null
+			? null
+			: `${snapshot.focused.windowId}:${snapshot.focused.processId ?? ""}`;
+
 	const renderWindow = (windowId: WindowId): ReactNode => (
 		<WindowView
 			key={windowId}
@@ -186,43 +231,55 @@ export function Desk({
 	);
 
 	return (
-		<div className="tuval-surface" ref={desk} tabIndex={-1} data-scheme="dark">
-			<ForwardedKeyProvider value={forwarded}>
-				{/* The tiling area alone, so a throw costs the founder the windows and not the status
+		<div
+			className="tuval-surface"
+			ref={desk}
+			tabIndex={-1}
+			data-scheme="dark"
+			// The one desk-level key fact a window renderer cannot be handed
+			// (`../window/prefix-signal.ts`): while this mark is here the next key is the shell's, and
+			// a region inside stands down rather than taking it (#8270).
+			{...(state.prefix.armed ? {[PREFIX_ARMED_ATTRIBUTE]: "true"} : {})}
+		>
+			<div className="tuval-desk-body">
+				<ForwardedKeyProvider value={forwarded}>
+					{/* The tiling area alone, so a throw costs the founder the windows and not the status
 				    line, the command line or the keyboard. The reset key is the layout's *signature*
 				    and never the layout object, for the same reason the countdown above is keyed on
 				    values: the boundary compares its keys with `Object.is`, and a decoded object is
 				    new on every snapshot, so the panel would be torn down and rebuilt on unrelated
 				    kernel traffic — losing focus on its button and the stack a founder came to read
 				    (#7839). */}
-				<ErrorBoundary
-					label="The desk layout"
-					resetKeys={[workspace === undefined ? null : layoutSignature(workspace.layout)]}
-				>
-					{workspace === undefined ? (
-						<div className="tuval-tiling tuval-placeholder" role="status">
-							<p>This desk has no active workspace. Open one with the command line.</p>
-						</div>
-					) : (
-						<LayoutView
-							root={workspace.layout.root}
-							zoomed={zoomedWindow(workspace)}
-							renderWindow={renderWindow}
-							dispatch={dispatch}
-						/>
-					)}
-				</ErrorBoundary>
-			</ForwardedKeyProvider>
+					<ErrorBoundary
+						label="The desk layout"
+						resetKeys={[workspace === undefined ? null : layoutSignature(workspace.layout)]}
+					>
+						{workspace === undefined ? (
+							<div className="tuval-tiling tuval-placeholder" role="status">
+								<p>This desk has no active workspace. Open one with the command line.</p>
+							</div>
+						) : (
+							<LayoutView
+								root={workspace.layout.root}
+								zoomed={zoomedWindow(workspace)}
+								renderWindow={renderWindow}
+								dispatch={dispatch}
+							/>
+						)}
+					</ErrorBoundary>
+				</ForwardedKeyProvider>
+				{inspector === null ? null : <DeskInspector region={inspector} resetKeys={[inspecting]} />}
+			</div>
 			{commandLineOpen ? <CommandLine dispatch={dispatch} onClose={closeCommandLine} /> : null}
 			{palette.open ? (
 				<PaletteHost
 					state={state}
-					dispatch={dispatch}
+					{...(call === undefined ? {} : {call})}
 					window={palette.window}
 					onClose={closePalette}
 				/>
 			) : null}
-			<StatusLine frame={statusFrame(state)} prefixKey={table.prefix} />
+			<StatusLine frame={statusFrame(state)} bar={bar} prefixKey={table.prefix} />
 		</div>
 	);
 }

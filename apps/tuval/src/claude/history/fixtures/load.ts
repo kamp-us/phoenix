@@ -11,13 +11,17 @@ import {join} from "node:path";
 
 export type FixtureName =
 	| "assistant-turn"
+	| "compact-boundary"
 	| "error-result"
+	| "informational-notice"
 	| "init"
 	| "interrupted-assistant"
 	| "oversized-tool-turn"
 	| "permission-denied"
 	| "resumed-init"
 	| "session-messages"
+	| "streaming-turn"
+	| "thinking-turn"
 	| "tool-turn"
 	| "unknown-message";
 

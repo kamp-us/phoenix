@@ -25,7 +25,7 @@ import {
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
 import {markTurnRunning, settleAccepted, settlePending} from "./sends.ts";
-import type {AiAgentSessionState, UsageTotals} from "./state.ts";
+import {type AiAgentSessionState, settlePartialItems, type UsageTotals} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
 export interface WindowLimits {
@@ -232,23 +232,27 @@ export const foldEvent = (
 		// for it, so every send in flight becomes recoverable instead. Refusals reach the send by
 		// their own arms below, and they arrive before this line does — both rows push the turn's
 		// failure ahead of the phase that closes it.
-		case "phase":
+		case "phase": {
 			if (coreOwned(event.phase)) return state;
+			// Any phase but `prompting` is the turn over, and nothing will supersede a partial the
+			// stream left behind — least of all `gone`, which is the stream having died mid-reply.
+			const turn = event.phase === "prompting" ? state : settlePartialItems(state);
 			if (event.phase === "gone") {
 				return {
-					...state,
+					...turn,
 					phase: event.phase,
-					interruption: interruptionAfter(state, event.phase),
-					sends: settlePending(state.sends, null),
+					interruption: interruptionAfter(turn, event.phase),
+					sends: settlePending(turn.sends, null),
 				};
 			}
 			return {
-				...state,
+				...turn,
 				phase: event.phase,
-				interruption: interruptionAfter(state, event.phase),
+				interruption: interruptionAfter(turn, event.phase),
 				sends:
-					event.phase === "prompting" ? markTurnRunning(state.sends) : settleAccepted(state.sends),
+					event.phase === "prompting" ? markTurnRunning(turn.sends) : settleAccepted(turn.sends),
 			};
+		}
 		// A raising stamps the next `seq`, which is what makes a card's identity the raising rather
 		// than the id: a backend that re-uses a request id gets a second card, and the first card's
 		// answer can no longer settle it (#8006).
@@ -283,12 +287,13 @@ export const foldEvent = (
 		// already replaced is dropped rather than failing its successor (#8018).
 		case "failure": {
 			const phase = phaseAfterFailure(state, event.failure);
+			const turn = settlePartialItems(state);
 			return {
-				...state,
+				...turn,
 				phase,
-				interruption: interruptionAfter(state, phase),
+				interruption: interruptionAfter(turn, phase),
 				failure: event.failure,
-				sends: settlePending(state.sends, event.failure),
+				sends: settlePending(turn.sends, event.failure),
 			};
 		}
 	}

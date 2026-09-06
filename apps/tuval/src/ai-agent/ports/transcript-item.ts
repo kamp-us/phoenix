@@ -50,11 +50,19 @@ export interface UserItem extends ItemBase {
 	readonly local?: boolean;
 }
 
-/** `interrupted` marks a turn the operator cut short; the resend is a fresh prompt, not a retry. */
+/**
+ * `interrupted` marks a turn the operator cut short; the resend is a fresh prompt, not a retry.
+ *
+ * `partial` marks text still being written. A backend re-upserts this same id as the reply grows
+ * and leaves the marker off the last upsert, so absent means final and a reader needs no second
+ * field to tell a finished reply from one mid-flight. Nothing about which backend is writing
+ * reaches the flag: the window learns "still growing" once, for every agent program (#8142).
+ */
 export interface AssistantItem extends ItemBase {
 	readonly kind: "assistant";
 	readonly text: string;
 	readonly interrupted?: boolean;
+	readonly partial?: boolean;
 }
 
 /**
@@ -71,12 +79,50 @@ export interface ToolItem extends ItemBase {
 	readonly parentId?: ItemId;
 }
 
-export interface SystemItem extends ItemBase {
-	readonly kind: "system";
+/**
+ * The agent's reasoning for one turn, as content and nothing else.
+ *
+ * Model-blind like every other item: no provider signature, no redaction flag, no effort level.
+ * `ports/thinking.ts` is the effort-level *control* and has nothing to do with this row.
+ */
+export interface ThinkingItem extends ItemBase {
+	readonly kind: "thinking";
 	readonly text: string;
 }
 
-export type TranscriptItem = UserItem | AssistantItem | ToolItem | SystemItem;
+/**
+ * The session compacted its context here, and `text` is the line the marker is labelled with.
+ *
+ * Its own kind rather than a `SystemItem` so a window can draw a boundary where the earlier turns
+ * went, instead of one more line of session prose the reader scrolls past.
+ */
+export interface CompactionItem extends ItemBase {
+	readonly kind: "compaction";
+	readonly text: string;
+}
+
+/**
+ * One backend notice, collapsed: `text` is the line always shown, `detail` the body a window may
+ * fold away.
+ *
+ * Every notice a backend raises — status, a hook firing or failing, a local command's output, a
+ * refusal, a rate limit — lands in this one shape. There is deliberately no field naming which of
+ * those it was: a per-subtype field would put the backend's own vocabulary on the port, and the
+ * SDK alone has some fifteen subtypes that would each want one.
+ */
+export interface SystemItem extends ItemBase {
+	readonly kind: "system";
+	readonly text: string;
+	readonly detail?: string;
+}
+
+export type TranscriptItem =
+	| UserItem
+	| AssistantItem
+	| ToolItem
+	| SystemItem
+	| ThinkingItem
+	| CompactionItem;
 
 /** One tool result may spend this many bytes of the window; the rest is omission metadata. */
 export const TOOL_RESULT_BYTE_LIMIT = 8_000;
@@ -116,6 +162,10 @@ export const isJsonValue = (value: unknown): value is JsonValue => {
 
 const isId = (value: unknown): value is ItemId => typeof value === "string" && value.length > 0;
 
+/** An absent flag and a `false` one say the same thing; anything else is not a flag at all. */
+const isOptionalFlag = (value: unknown): boolean =>
+	value === undefined || typeof value === "boolean";
+
 export const isNonNegativeInteger = (value: unknown): boolean =>
 	typeof value === "number" && Number.isInteger(value) && value >= 0;
 
@@ -134,16 +184,20 @@ export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 		return false;
 	switch (value.kind) {
 		case "user":
+			return typeof value.text === "string" && isOptionalFlag(value.local);
+		case "system":
 			return (
 				typeof value.text === "string" &&
-				(value.local === undefined || typeof value.local === "boolean")
+				(value.detail === undefined || typeof value.detail === "string")
 			);
-		case "system":
+		case "thinking":
+		case "compaction":
 			return typeof value.text === "string";
 		case "assistant":
 			return (
 				typeof value.text === "string" &&
-				(value.interrupted === undefined || typeof value.interrupted === "boolean")
+				isOptionalFlag(value.interrupted) &&
+				isOptionalFlag(value.partial)
 			);
 		case "tool":
 			return (

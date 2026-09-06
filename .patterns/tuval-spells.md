@@ -193,6 +193,28 @@ resolve to a declared class.
 `AnySpell` erases each spell's requirements, so nothing checks that the runtime carries what a
 registered spell needs. The composition root that builds the registry owes those services.
 
+## A spell that reads the disk
+
+The session list ([`ai-agent/session-list.ts`](../apps/tuval/src/ai-agent/session-list.ts)) is the
+first spell in the tree whose answer comes off the filesystem, and it is shaped by two rules the
+rest of the spell path does not enforce.
+
+**A slow spell carries its own bound.** Nothing on the spell path has a timeout, deadline or
+duration budget, and the executor will wait on `execute` for as long as it runs. So a spell that
+walks a store wraps its own work in `Effect.timeout` and turns the overrun into a tagged error of
+its own — the executor then reads that `_tag` and the caller gets a `SpellReplyError` instead of a
+call that never answers.
+
+**A requirement the row cannot name is filled from the built kernel.** A program row is constructed
+by a config module, before any kernel exists, so a spell cannot close over kernel services; and
+`AnySpell` erases its requirements, so nothing checks them either. `src/boot.ts` is the composition
+root that owes them. Most are ordinary layers inside the kernel merge (`shellDispatchKernel`), but a
+spell whose work *builds another program row's layer* needs the whole kernel context as a value —
+the same one `Processes.spawn` takes as `services`. That one is added to the context after it is
+built (`Context.add(built, Tag, fromKernel(built))`), because a layer inside the merge would be
+asking for the merge it is part of. The service's tag still rides `Kernel`, so dropping the
+provider is a compile error at `start` rather than a defect at the first call.
+
 ## Key bindings
 
 A binding is written the way a person types it (`"window close"`), and a key router needs
@@ -666,6 +688,9 @@ mint. An `ok: false` keeps the palette open with the kernel's own words under th
 
 **Who supplies the registry and runs the call** is
 [`shell/ui/PaletteHost.tsx`](../apps/tuval/src/shell/ui/PaletteHost.tsx): it describes the shell's
-own rows as `SpellDescription`s, builds the `Snapshot` the completion engine reads, and — until the
-page-to-kernel spell transport lands — decodes a call against the row's real `params` and dispatches
-its Msg, exactly as `readCommandLine` does with a typed line.
+own rows as `SpellDescription`s, builds the `Snapshot` the completion engine reads, and sends the
+call down the page's socket. The reply is the kernel executor's, so the refusal a founder reads is
+the row's own schema refusing the argument and a run is the kernel's dispatch. The one translation
+the host makes is the address: a shell row's spells are registered under `[shell, ...path]`, and a
+path the shell table does not hold is refused on the page because the kernel does not hold it
+either.

@@ -3,7 +3,7 @@
  *
  * Six facts live here and nothing else: whether the transcript is following its newest turn, where
  * it was scrolled to otherwise, what was typed and not yet sent, how far back into history this
- * window has walked, which tool rows it has opened, and which group heads have their folded rows
+ * window has walked, which rows it has disclosed, and which group heads have their folded rows
  * showing. Two windows over one process share the transcript and own one of these each (#7484
  * R1.1), so everything here is per-window — including `expanded`, which is why the same tool call
  * can be open in one window and closed in the other.
@@ -42,7 +42,7 @@ export type ChatView = {
 	readonly cursor: string | null;
 	/** The backend answered that there is nothing older; the transcript is at the beginning of history. */
 	readonly atOldest: boolean;
-	/** The ids of the tool rows this window has expanded. A row absent from it is collapsed. */
+	/** The ids of the rows this window has disclosed — a tool call's detail, a thinking row's text. */
 	readonly expanded: ReadonlyArray<string>;
 	/** The ids of the group heads whose folded rows this window is showing. Absent means folded. */
 	readonly unfolded: ReadonlyArray<string>;

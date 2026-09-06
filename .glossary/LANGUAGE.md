@@ -509,6 +509,33 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   (`SpellCall`, `SpellReply`, `Snapshot`, `Patch`), one union per direction, JSON text only. Source:
   [`apps/tuval/src/protocol/messages.ts`](../apps/tuval/src/protocol/messages.ts).
 
+### Tuval: partial (a transcript item)
+
+- **partial** — a transcript item still being written, marked `partial` on the item itself. The
+  backend re-upserts the same `ItemId` as the text grows and leaves the marker off the last upsert,
+  so **absent means final** and one field carries the whole distinction. It is not an item kind and
+  not an event kind, and it names no backend: the window learns "still growing" once and every
+  agent program streams the same way ([#8142's
+  ruling](https://github.com/kamp-us/phoenix/issues/8142), epic
+  [#8160](https://github.com/kamp-us/phoenix/issues/8160)). Source:
+  [`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+
+### Tuval: thinking row, compaction marker, session row
+
+Three of the six rows a Tuval chat window renders, minted by epic
+[#8142](https://github.com/kamp-us/phoenix/issues/8142) phase 1. English technical terms, per §3,
+and model-blind: none of them names a backend, a model or a session id. Source:
+[`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+
+- **thinking row** — the agent's reasoning for one turn, as content. Not `ports/thinking.ts`, which
+  is the effort-level *control*; a bare "thinking" in Tuval transcript prose is this row, and the
+  control is always "thinking level".
+- **compaction marker** — where a session compacted its context. Its own kind rather than a session
+  row, because it is a boundary the window draws rather than a notice it prints, and it is the one
+  place a reader needs to see why earlier turns are gone.
+- **session row** — one backend notice, collapsed: a summary line always shown plus optional detail
+  the window folds away. Every notice lands here — status, hooks, local command output, refusals,
+  rate limits — and the row deliberately does not name which it was.
 
 ---
 

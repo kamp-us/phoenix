@@ -75,6 +75,7 @@ export {
 	checkpointFields,
 	emptyUsage,
 	type HistoryPage,
+	holdsPartialItem,
 	type Interruption,
 	initialState,
 	lastAssistantId,

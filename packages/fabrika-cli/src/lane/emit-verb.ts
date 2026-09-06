@@ -16,6 +16,7 @@ import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
 import type {ChildProcessSpawner} from "effect/unstable/process";
 import {badNumber, openIssue, resolveTargetRepo} from "../build/target.ts";
+import type {Read} from "../config/read-key.ts";
 import {listSubIssues} from "../plan/github.ts";
 import {answer, refuse, type VerbOutcome} from "../verb.ts";
 import {
@@ -26,6 +27,7 @@ import {
 	TOPOLOGY_CYCLE,
 	TOPOLOGY_FOREIGN,
 } from "./codes.ts";
+import {capRefusal} from "./concurrency.ts";
 import {type EmitResult, emitMachine} from "./emit.ts";
 import {placementRefusal} from "./refusals.ts";
 import {type LaneRef, placeMachine} from "./store.ts";
@@ -37,6 +39,8 @@ export interface EmitOptions {
 	readonly root: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
+	/** The repo's declared `laneConcurrencyCap` — an epic's lane holds a seat like any other. */
+	readonly cap: Read<number | null>;
 }
 
 const emitRefusal = (epic: number, result: Exclude<EmitResult, {_tag: "Emitted"}>): VerbOutcome => {
@@ -106,6 +110,8 @@ export const runEmit = (
 		const emitted = emitMachine(options.epic, target.issue.body, listed.value);
 		if (emitted._tag !== "Emitted") return emitRefusal(options.epic, emitted);
 		const ref: LaneRef = {root: options.root, lane: String(options.epic)};
+		const capped = yield* capRefusal(VERB, options.cap, options.root);
+		if (capped !== null) return capped;
 		const placed = yield* placeMachine(ref, emitted.text);
 		if (placed._tag === "Exists") {
 			return refuse(

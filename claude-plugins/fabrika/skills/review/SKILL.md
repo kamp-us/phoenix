@@ -40,7 +40,7 @@ your checklist is one you did not judge and must not emit.
 
 <!-- anchor: A-ROUTED-ROW-IS-THE-HANDOFF-TRIGGER --> **A `routed` row is a namespace this PR requires
 that this gate cannot reach, and it is the handoff's trigger.** Today the one row is
-`routed\treview-ui`, raised whenever the diff changes a rendered `apps/web/src/**` surface: pixels
+`routed\treview-ui`, raised whenever the diff changes a file under a `uiSurfaces` prefix: pixels
 are `review-ui`'s modality, its verbs are the only ones that may post that namespace, and it keeps
 its own refusals (a zero-`--surface` `render`, an evidence-required `post`). So do not judge it and
 do not emit it — and equally, do not read its absence from your verdicts as a gap in yours.

@@ -1,5 +1,6 @@
 import {encodeServerMessage, PROTOCOL_VERSION} from "@earendil-works/pi-protocol";
 import {assert, describe, it} from "@effect/vitest";
+import {streamingMessage} from "./AgentSessionHost.ts";
 import {projectModelCost} from "./cost.ts";
 import {scriptedModel} from "./fixtures.ts";
 import {projectTranscript, projectUsage, type SourceMessage} from "./transcript.ts";
@@ -140,5 +141,114 @@ describe("projectTranscript", () => {
 				},
 			},
 		});
+	});
+});
+
+describe("projectTranscript over a reply still being written", () => {
+	const asked: SourceMessage = {role: "user", content: "say hello", timestamp: 1};
+
+	const growing = (text: string): SourceMessage => ({
+		role: "assistant",
+		content: [{type: "text", text}],
+		provider: "faux",
+		model: "faux-1",
+		stopReason: "pending",
+		timestamp: 2,
+	});
+
+	const landed: SourceMessage = {
+		role: "assistant",
+		content: [{type: "text", text: "hello there"}],
+		provider: "faux",
+		model: "faux-1",
+		stopReason: "stop",
+		timestamp: 2,
+	};
+
+	it("projects it as the last item, marked streaming", () => {
+		const items = projectTranscript([asked], growing("hel"));
+		assert.deepStrictEqual(
+			items.map((item) => [item.id, item.role]),
+			[
+				["item-0", "user"],
+				["item-1", "assistant"],
+			],
+		);
+		assert.deepStrictEqual(items[1], {
+			id: "item-1",
+			role: "assistant",
+			content: [{type: "text", text: "hel"}],
+			model: {provider: "faux", id: "faux-1"},
+			timestamp: 2,
+			status: "streaming",
+		});
+	});
+
+	it("gives it the id the finished message lands under, so a snapshot supersedes one item", () => {
+		const ids = (items: ReadonlyArray<{readonly id: string}>) => items.map((item) => item.id);
+		const first = projectTranscript([asked], growing("hel"));
+		const second = projectTranscript([asked], growing("hello th"));
+		const final = projectTranscript([asked, landed]);
+
+		assert.deepStrictEqual(ids(first), ids(second));
+		assert.deepStrictEqual(ids(second), ids(final));
+		assert.strictEqual(final[1]?.id, "item-1");
+	});
+
+	it("leaves the transcript untouched when nothing is in flight", () => {
+		assert.deepStrictEqual(projectTranscript([asked, landed], undefined), [
+			...projectTranscript([asked, landed]),
+		]);
+	});
+
+	it("produces a streaming item the wire accepts", () => {
+		encodeServerMessage({
+			type: "event",
+			event: {
+				type: "session_snapshot",
+				snapshot: {
+					id: "s",
+					cwd: "/tmp",
+					createdAt: 0,
+					updatedAt: 0,
+					phase: "turn",
+					model: {provider: "faux", id: "faux-1"},
+					thinkingLevel: "off",
+					attached: true,
+					locked: true,
+					revision: 1,
+					transcript: [...projectTranscript([asked], growing("hel"))],
+					queuedSteer: [],
+					queuedSteerCount: 0,
+				},
+			},
+		});
+	});
+});
+
+describe("streamingMessage", () => {
+	const inFlight: SourceMessage = {
+		role: "assistant",
+		content: [{type: "text", text: "hel"}],
+		provider: "faux",
+		model: "faux-1",
+		stopReason: "pending",
+		timestamp: 0,
+	};
+
+	it("is nothing unless a caller asked for it", () => {
+		assert.strictEqual(streamingMessage({}, {streamingMessage: inFlight}), undefined);
+		assert.strictEqual(
+			streamingMessage({streamPartialText: false}, {streamingMessage: inFlight}),
+			undefined,
+		);
+	});
+
+	it("is the in-flight message when the flag is on", () => {
+		assert.strictEqual(
+			streamingMessage({streamPartialText: true}, {streamingMessage: inFlight}),
+			inFlight,
+		);
+		assert.strictEqual(streamingMessage({streamPartialText: true}, {}), undefined);
 	});
 });

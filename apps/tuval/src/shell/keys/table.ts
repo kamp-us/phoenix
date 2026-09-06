@@ -60,6 +60,8 @@ export const defaultPrefixTable: PrefixTable = {
 		{sequence: "<arrowright>", command: command("window:focus-right"), repeatable: false},
 		{sequence: "z", command: command("window:zoom"), repeatable: false},
 		{sequence: "x", command: command("window:close"), repeatable: false},
+		// tmux binds `w` to `choose-window`, and the founder's config leaves it free (#8083).
+		{sequence: "w", command: command("window:pick"), repeatable: false},
 		{sequence: "N", command: command("workspace:create"), repeatable: false},
 		{sequence: "<c-h>", command: command("workspace:previous"), repeatable: true},
 		{sequence: "<c-l>", command: command("workspace:next"), repeatable: true},

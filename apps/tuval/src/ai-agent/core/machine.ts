@@ -49,7 +49,12 @@ import {
 import {enqueue, isQueueFull, type QueuedPrompt, queueLimit, releaseQueued} from "./queue.ts";
 import {noteSend, settledBy, settlePending} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
-import {type AiAgentSessionState, initialState, lastAssistantId} from "./state.ts";
+import {
+	type AiAgentSessionState,
+	initialState,
+	lastAssistantId,
+	settlePartialItems,
+} from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
 	/** The working directory a fresh session starts in. */
@@ -174,7 +179,14 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 								interruption: null,
 								failure: null,
 							},
-							[{type: "aiAgent.start", cwd: msg.cwd, resume: msg.resume}],
+							[
+								{
+									type: "aiAgent.start",
+									cwd: msg.cwd,
+									resume: msg.resume,
+									mode: state.modes.current,
+								},
+							],
 						],
 
 			// The connection bump is what re-opens the events Sub: a reconnect stands a new transport
@@ -410,24 +422,36 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				if (opening(state)) return [{...state, failure: startRefused(state.phase)}, noCmds];
 				// The republish goes first so a window attached to a restored session paints the saved
 				// tail and its pending cards before the transport is back, rather than after it.
+				//
+				// The checkpointed mode rides the reconnect for the same reason it cannot ride a
+				// `setMode` after `started`: a rebuilt layer holds no mode, so one told after the open
+				// would run a stretch of session on the row's configured mode and say so (#7953).
 				return [
 					{...state, phase: "reconnecting", interruption: null},
 					[
 						{type: "aiAgent.republish"},
-						{type: "aiAgent.reconnect", cwd: state.cwd, sessionId: state.sessionId},
+						{
+							type: "aiAgent.reconnect",
+							cwd: state.cwd,
+							sessionId: state.sessionId,
+							mode: state.modes.current,
+						},
 					],
 				];
 			},
 
 			failed: (state, msg) => {
 				const phase = phaseAfterFailure(state, msg.failure);
+				// The turn is over however the failure reached the machine, so a partial the stream
+				// left in the tail settles here too (`./state.ts`, `settlePartialItems`).
+				const turn = settlePartialItems(state);
 				return settleQueue([
 					{
-						...state,
+						...turn,
 						phase,
-						interruption: interruptionAfter(state, phase),
+						interruption: interruptionAfter(turn, phase),
 						failure: msg.failure,
-						sends: settlePending(state.sends, msg.failure),
+						sends: settlePending(turn.sends, msg.failure),
 					},
 					noCmds,
 				]);
