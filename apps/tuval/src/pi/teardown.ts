@@ -17,7 +17,13 @@ export const TEARDOWN_CEILING = Duration.seconds(5);
  * Wait for `register` to report settled, or give the wait up at `ceiling`.
  *
  * Expiry logs and returns rather than failing: a socket the runtime never reported closed is a
- * worse outcome than nothing, and a far better one than a stop that never returns.
+ * worse outcome than nothing, and a far better one than a stop that never returns. A `register`
+ * that throws synchronously ends the wait the same way, because `Effect.callback` calls it with no
+ * try/catch of its own (`internal/effect.js`'s `callbackOptions`, `const onCancel = register(…)`,
+ * at the rc.112 pin): an escaping throw would leave this uninterruptible finalizer with the ceiling
+ * timer still armed and no `resume` ever taken. `PiClient.dispose()` is the live case — it is not
+ * `async`, and its body rejects pending requests, disconnects the transport and disposes the state
+ * synchronously before the promise is returned (`pi-client@0.84.3`, `dist/client.js` line 292).
  */
 export const boundedTeardown = (
 	what: string,
@@ -26,18 +32,25 @@ export const boundedTeardown = (
 ): Effect.Effect<void> =>
 	Effect.callback<void>((resume) => {
 		let done = false;
-		const finish = (expired: boolean): void => {
+		const finish = (outcome: Effect.Effect<void>): void => {
 			if (done) return;
 			done = true;
 			clearTimeout(timer);
-			resume(
-				expired
-					? Effect.logWarning(
-							`teardown gave up waiting on ${what} after ${Duration.toMillis(ceiling)}ms`,
-						)
-					: Effect.void,
-			);
+			resume(outcome);
 		};
-		const timer = setTimeout(() => finish(true), Duration.toMillis(ceiling));
-		register(() => finish(false));
+		const timer = setTimeout(
+			() =>
+				finish(
+					Effect.logWarning(
+						`teardown gave up waiting on ${what} after ${Duration.toMillis(ceiling)}ms`,
+					),
+				),
+			Duration.toMillis(ceiling),
+		);
+		// biome-ignore lint/plugin: `register` is a foreign callback rather than an effect, so `Effect.try` cannot wrap it without giving up the `resume` this whole callback is built around; the throw is folded into the ceiling's own outcome instead of modelled as a failure.
+		try {
+			register(() => finish(Effect.void));
+		} catch (cause) {
+			finish(Effect.logWarning(`teardown's wait on ${what} threw`, cause));
+		}
 	});
