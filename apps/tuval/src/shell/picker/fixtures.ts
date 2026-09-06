@@ -5,7 +5,7 @@
  */
 
 import {type Cmd, defineMachine} from "@demlik/tea";
-import {Context, Effect, Layer, Option, PubSub, type Scope, Stream} from "effect";
+import {Context, Effect, Exit, Layer, Option, PubSub, type Scope, Stream} from "effect";
 import {SessionOpening} from "../../ai-agent/opening.ts";
 import {ProcessNotFound} from "../../process/errors.ts";
 import {Processes, type SpawnOptions} from "../../process/Processes.ts";
@@ -144,6 +144,11 @@ export const pickerHarness = (
 					parentId: row.parentId,
 					scope,
 					dispatch: () => Effect.void,
+					dispatchFolded: () =>
+						Effect.succeed({
+							settled: Exit.void,
+							summary: {lifecycle: "running" as const, revision: 0, state: {count: 0}},
+						}),
 					getState: () => ({count: 0}),
 					stop: Effect.void,
 				};

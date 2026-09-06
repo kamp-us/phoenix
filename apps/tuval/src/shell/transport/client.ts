@@ -189,11 +189,12 @@ export const attach = Effect.fn("Tuval.transport.attach")(function* (
 					const pending = pendingDispatch.get(frame.seq);
 					if (pending === undefined) return Effect.void;
 					pendingDispatch.delete(frame.seq);
+					if (frame.result._tag !== "Delivered") {
+						return Effect.ignore(Deferred.succeed(pending, processGone(frame.result.processId)));
+					}
+					const view = frame.result.view;
 					return Effect.ignore(
-						Deferred.succeed(
-							pending,
-							frame.result._tag === "Delivered" ? delivered : processGone(frame.result.processId),
-						),
+						Deferred.succeed(pending, view === undefined ? delivered : {_tag: "Delivered", view}),
 					);
 				});
 		}

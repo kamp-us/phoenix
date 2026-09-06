@@ -291,10 +291,14 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 				result: {_tag: "ProcessGone", processId},
 			});
 		}
+		// The summary arrives with the fold rather than being read after it. A second read would be the
+		// process's *latest* state, and with two presses in flight that is the other press's answer —
+		// which `replyIn` then reads as `Refused` and drops the key with no trace (#8274).
+		const folded = yield* handle.value.dispatchFolded(msg);
 		// `dispatch` fails four ways and they do not mean the same thing, so each arm is named. A
 		// blanket catch answered Delivered for all of them, which acknowledged a Msg the actor threw
 		// away and hid a broken checkpoint write entirely (#7499).
-		const gone = yield* handle.value.dispatch(msg).pipe(
+		const gone = yield* folded.settled.pipe(
 			Effect.as(false),
 			Effect.catchTags({
 				// Stopped, or draining and refusing new Msgs: the Msg was not applied and never will
@@ -321,10 +325,17 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 				}).pipe(Effect.as(false)),
 			),
 		);
+		if (gone)
+			return yield* send({kind: DISPATCHED_KIND, seq, result: {_tag: "ProcessGone", processId}});
+		// The state pump carries the same fact to every page, but on its own fiber and in its own
+		// order, so a caller that must learn what its own Msg did reads it off the ack (#8274).
 		yield* send({
 			kind: DISPATCHED_KIND,
 			seq,
-			result: gone ? {_tag: "ProcessGone", processId} : {_tag: "Delivered"},
+			result: {
+				_tag: "Delivered",
+				view: {revision: folded.summary.revision, state: folded.summary.state},
+			},
 		});
 	});
 
