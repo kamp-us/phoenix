@@ -188,7 +188,12 @@ describe("the page-to-kernel transport", () => {
 
 				assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root"]});
 				const result = yield* shell.dispatch({type: "split", window: "w2"});
-				assert.deepStrictEqual(result, {_tag: "Delivered"});
+				// The acknowledgement carries the state the Msg left behind, so a caller learns what its
+				// own dispatch did without racing the state pump (#8274).
+				assert.deepStrictEqual(result, {
+					_tag: "Delivered",
+					view: {revision: 1, state: {windows: ["root", "w2"]}},
+				});
 				assert.deepStrictEqual(stateOf(yield* Queue.take(seen)), {windows: ["root", "w2"]});
 			}).pipe(Effect.scoped),
 		TIMEOUT,

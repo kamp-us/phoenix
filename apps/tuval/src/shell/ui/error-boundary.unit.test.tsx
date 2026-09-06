@@ -8,11 +8,10 @@
 
 import {act, fireEvent, render, screen} from "@testing-library/react";
 import type {ReactElement} from "react";
-import {useState} from "react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {ProcessId} from "../../process/process.ts";
-import type {ShellMsg, ShellState} from "../core/index.ts";
-import {applyMsg, isShellState} from "../core/index.ts";
+import type {ShellState} from "../core/index.ts";
+import {isShellState} from "../core/index.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow} from "../layout/index.ts";
 import {Desk} from "./Desk.tsx";
@@ -20,6 +19,8 @@ import {installDomShims} from "./dom.testing.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {deskWith} from "./fixtures.ts";
 import type {MountResolver} from "./mount.ts";
+import {useTestKernel} from "./press.testing.ts";
+import {refused} from "./press.ts";
 
 installDomShims();
 
@@ -57,13 +58,12 @@ function DeskHarness({
 	readonly initial: ShellState;
 	readonly throwing: boolean;
 }): ReactElement {
-	const [state, setState] = useState(initial);
+	const kernel = useTestKernel(defaultPrefixTable, initial);
 	return (
 		<Desk
-			state={state}
-			dispatch={(msg: ShellMsg) =>
-				setState((current) => applyMsg(defaultPrefixTable, current, msg)[0])
-			}
+			state={kernel.state}
+			dispatch={kernel.dispatch}
+			press={kernel.press}
 			resolveMount={throwingMount(throwing)}
 			table={defaultPrefixTable}
 		/>
@@ -140,6 +140,7 @@ describe("one window's renderer throwing", () => {
 			<Desk
 				state={twoWindowDesk()}
 				dispatch={() => {}}
+				press={() => Promise.resolve(refused)}
 				resolveMount={oneThrowingMount}
 				table={defaultPrefixTable}
 			/>,
@@ -157,6 +158,7 @@ describe("one window's renderer throwing", () => {
 			<Desk
 				state={twoWindowDesk()}
 				dispatch={() => {}}
+				press={() => Promise.resolve(refused)}
 				resolveMount={oneThrowingMount}
 				table={defaultPrefixTable}
 			/>,
@@ -236,6 +238,7 @@ describe("recovery under live kernel traffic", () => {
 			<Desk
 				state={state}
 				dispatch={() => {}}
+				press={() => Promise.resolve(refused)}
 				resolveMount={throwingMount(throwing)}
 				table={defaultPrefixTable}
 			/>

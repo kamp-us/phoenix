@@ -302,10 +302,20 @@ const session = Effect.fn("Tuval.transport.session")(function* (
 				}).pipe(Effect.as(false)),
 			),
 		);
+		if (gone)
+			return yield* send({kind: DISPATCHED_KIND, seq, result: {_tag: "ProcessGone", processId}});
+		// Read after the transition, so the ack answers what *this* Msg left behind. The state pump
+		// carries the same fact to every page, but on its own fiber and in its own order, so a caller
+		// that must learn what its own Msg did reads it here (#8274).
+		const row = yield* Effect.option(table.get(processId));
+		const summary = row._tag === "None" ? null : row.value.stateSummary();
 		yield* send({
 			kind: DISPATCHED_KIND,
 			seq,
-			result: gone ? {_tag: "ProcessGone", processId} : {_tag: "Delivered"},
+			result: {
+				_tag: "Delivered",
+				...(summary === null ? {} : {view: {revision: summary.revision, state: summary.state}}),
+			},
 		});
 	});
 

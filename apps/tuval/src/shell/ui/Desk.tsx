@@ -15,10 +15,15 @@
  *
  * The desk holds no desk state. Workspaces, layout, focus and view slots come from the snapshot the
  * kernel sent and go back as Msgs; what lives here is tab-ephemeral and nothing else — whether the
- * command line is open, whether the palette is, the repeat window's countdown (#7556), and the
- * prefix the page advanced past the snapshot (#8274). That last one is the same class as the
- * countdown: it starts from the snapshot, it is derived by the same pure `route` the kernel folds,
- * and it dies with the tab.
+ * command line is open, whether the palette is, and the repeat window's countdown (#7556).
+ *
+ * **The kernel is the only router.** A key is sent as `keys.press` and *nothing is done about it*
+ * until the kernel answers; the answer says whether it belongs to the focused window's renderer,
+ * names a command the page runs, or is the shell's own (#8274, `./press.ts`). The one thing decided
+ * here at the press is whose key it is — the default action and the text-entry gate cannot wait for
+ * a round trip — and that is ownership, not routing: while an answer is outstanding every key is
+ * the shell's, because the kernel may have armed the prefix on a key this page has not heard back
+ * about and a page that guessed would be routing.
  *
  * The command line and the palette are two doors onto one command table, never two mechanisms: the
  * `<prefix> :` line is the address you already know, `⌘K` the one you go looking through, and both
@@ -31,8 +36,7 @@ import {usePalette} from "../../palette/index.ts";
 import type {ShellMsg, ShellState} from "../core/index.ts";
 import {activeWorkspace, processOf} from "../core/index.ts";
 import {inspectorFor, statusFor} from "../desk/index.ts";
-import type {Key, PrefixState, PrefixTable} from "../keys/index.ts";
-import {idle} from "../keys/index.ts";
+import type {Key, PrefixTable} from "../keys/index.ts";
 import {layoutSignature} from "../layout/index.ts";
 import type {PickerEntries} from "../picker/browser.ts";
 import {noEntries} from "../picker/browser.ts";
@@ -44,18 +48,16 @@ import {deskSnapshotOf, noDeskTables} from "./desk-snapshot.ts";
 import {ErrorBoundary} from "./ErrorBoundary.tsx";
 import {type ForwardedKey, ForwardedKeyProvider} from "./forwarded-key.tsx";
 import {
-	repeatWindowOf,
-	retireAnswered,
+	COMMAND_LINE_COMMAND,
 	routerPrefix,
-	samePrefix,
 	shellOwnsKey,
 	statusFrame,
-	surfaceKey,
 	zoomedWindow,
 } from "./frame.ts";
 import {LayoutView} from "./LayoutView.tsx";
 import type {MountResolver} from "./mount.ts";
 import {focusedWindowOf, PaletteHost} from "./PaletteHost.tsx";
+import type {KeyPress} from "./press.ts";
 import {StatusLine} from "./StatusLine.tsx";
 import {isTextEntry} from "./text-entry.ts";
 import {WindowView} from "./WindowView.tsx";
@@ -63,6 +65,12 @@ import {WindowView} from "./WindowView.tsx";
 export interface DeskProps {
 	readonly state: ShellState;
 	readonly dispatch: (msg: ShellMsg) => void;
+	/**
+	 * How a key reaches the kernel and how its answer comes back (`./press.ts`). Required rather
+	 * than defaulted: the desk forwards a key only when this answers `ToWindow`, so a desk handed no
+	 * press seam would swallow every key silently instead of failing where it was wired.
+	 */
+	readonly press: KeyPress;
 	readonly resolveMount: MountResolver;
 	readonly entries?: PickerEntries;
 	/**
@@ -84,6 +92,7 @@ export interface DeskProps {
 export function Desk({
 	state,
 	dispatch,
+	press,
 	resolveMount,
 	entries = noEntries,
 	table,
@@ -103,84 +112,66 @@ export function Desk({
 
 	// Read through a ref so the listener is attached once per target and never re-attached on a
 	// snapshot: a re-attach between two presses of one sequence would drop the second.
-	const latest = useRef({state, table, focused, commandLineOpen, dispatch, palette});
-	latest.current = {state, table, focused, commandLineOpen, dispatch, palette};
+	const latest = useRef({state, table, focused, commandLineOpen, dispatch, press, palette});
+	latest.current = {state, table, focused, commandLineOpen, dispatch, press, palette};
 
-	// The prefix the page routes over: the snapshot's, advanced by the page's own presses since
-	// (#8274, `.patterns/tuval-shell-assembly.md`). Held as state as well as in the ref because the
-	// countdown below is an effect, and in the ref because the listener reads it without re-attaching.
-	const [prefix, setPrefix] = useState<PrefixState>(() => routerPrefix(state));
-	const advanced = useRef(prefix);
-	// The advances the kernel has not answered yet, oldest first, retired by the effect below.
-	const unanswered = useRef<ReadonlyArray<PrefixState>>([]);
+	// How many keys are waiting on the kernel's answer. A ref because the listener reads it at the
+	// press, and because a count of outstanding round trips is not something the desk renders.
+	const outstanding = useRef(0);
 
-	// Closes over refs alone, so the listener holding it is still attached exactly once per target.
-	const advancePrefix = useCallback((next: PrefixState): void => {
-		// Only a move the kernel will answer with a frame of its own goes on the ledger: a bare
-		// modifier press folds to the state it started from and changes nothing on either side.
-		if (!samePrefix(next, advanced.current)) unanswered.current = [...unanswered.current, next];
-		advanced.current = next;
-		setPrefix(next);
+	const onKeyDown = useCallback((event: KeyboardEvent): void => {
+		const {state: current, table: grammar, focused: window, commandLineOpen: open} = latest.current;
+		const overlay = latest.current.palette;
+		if (open || overlay.open) return;
+
+		// The palette's own door, beside the `<prefix> :` line rather than instead of it: one is the
+		// address you already know, the other is the one you go looking through (#7643). It opens
+		// from a text entry too — the door you go looking through must not be shut by where the
+		// caret happens to be, which is most of the day the composer (#8270).
+		if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+			event.preventDefault();
+			overlay.openPalette(focusedWindowOf(current));
+			return;
+		}
+
+		const key: Key = {
+			key: event.key,
+			code: event.code,
+			shiftKey: event.shiftKey,
+			ctrlKey: event.ctrlKey,
+			altKey: event.altKey,
+			metaKey: event.metaKey,
+		};
+		// Whose key is this? Not what to do with it — that is the kernel's answer, below. A key
+		// pressed while an answer is outstanding is the shell's whatever the snapshot says: the
+		// kernel may have armed the prefix on the key before it, and this page has not heard yet.
+		// That is what stops `<prefix> |` typing a pipe into whatever had focus (#8274).
+		const shellOwns = outstanding.current > 0 || shellOwnsKey(grammar, routerPrefix(current), key);
+		if (!shellOwns && isTextEntry(event.target)) return;
+		// Swallowed once, where ownership is decided rather than per arm: a key the shell owns must
+		// not also insert a character into the text entry underneath.
+		if (shellOwns) event.preventDefault();
+
+		outstanding.current += 1;
+		void latest.current.press(key).then(
+			(reply) => {
+				outstanding.current -= 1;
+				if (reply._tag === "Command") {
+					if (reply.name === COMMAND_LINE_COMMAND) setCommandLineOpen(true);
+					return;
+				}
+				if (reply._tag !== "ToWindow") return;
+				// The window focused when the key was pressed, not the one focused when the answer
+				// came back: the kernel routed this key against the desk as it stood at the press.
+				if (window === null) return;
+				seq.current += 1;
+				setForwarded({windowId: WindowId.make(window), key: reply.key, seq: seq.current});
+			},
+			() => {
+				outstanding.current -= 1;
+			},
+		);
 	}, []);
-
-	const onKeyDown = useCallback(
-		(event: KeyboardEvent): void => {
-			const {
-				state: current,
-				table: grammar,
-				focused: window,
-				commandLineOpen: open,
-			} = latest.current;
-			const overlay = latest.current.palette;
-			if (open || overlay.open) return;
-
-			// The palette's own door, beside the `<prefix> :` line rather than instead of it: one is the
-			// address you already know, the other is the one you go looking through (#7643). It opens
-			// from a text entry too — the door you go looking through must not be shut by where the
-			// caret happens to be, which is most of the day the composer (#8270).
-			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-				event.preventDefault();
-				overlay.openPalette(focusedWindowOf(current));
-				return;
-			}
-
-			const key: Key = {
-				key: event.key,
-				code: event.code,
-				shiftKey: event.shiftKey,
-				ctrlKey: event.ctrlKey,
-				altKey: event.altKey,
-				metaKey: event.metaKey,
-			};
-			const held = advanced.current;
-			const shellOwns = shellOwnsKey(grammar, held, key);
-			if (!shellOwns && isTextEntry(event.target)) return;
-
-			const answer = surfaceKey(grammar, held, key);
-			// The kernel owns the desk, so every press goes to it whatever the surface also does with it.
-			// The raw key and nothing else: the page learns state, it does not send instructions (ADR 0353).
-			latest.current.dispatch({type: "keys.press", key});
-			advancePrefix(answer.next);
-			// Swallowed once, where ownership is decided rather than per arm: the prefix and every key
-			// after it are the shell's, so none of them may also insert a character into the text entry
-			// underneath — that is what stops `prefix |` typing a pipe into whatever had focus.
-			if (shellOwns) event.preventDefault();
-
-			switch (answer._tag) {
-				case "OpenCommandLine":
-					setCommandLineOpen(true);
-					return;
-				case "ToWindow":
-					if (window === null) return;
-					seq.current += 1;
-					setForwarded({windowId: WindowId.make(window), key: answer.key, seq: seq.current});
-					return;
-				case "Shell":
-					return;
-			}
-		},
-		[advancePrefix],
-	);
 
 	useEffect(() => {
 		const target = keyTarget === undefined ? globalThis.document : keyTarget;
@@ -194,49 +185,28 @@ export function Desk({
 	// An armed prefix carrying no window is not timed at all: it waits indefinitely, as tmux does
 	// (#7842), and this effect is the only clock the desk ever ran.
 	//
-	// It runs off the page-advanced prefix, so the window opens when the repeatable command was
-	// pressed rather than one round trip later, which is the half of #8274 the founder felt as a
+	// It runs off the snapshot, which the acknowledgement for the press moves (`../transport/wire.ts`)
+	// rather than the state pump, so the window opens as the repeatable command completes rather
+	// than whenever the next broadcast happens to arrive — the half of #8274 the founder felt as a
 	// timer.
 	//
 	// The dependency is the prefix's *value*, spelled out, and never a prefix object: every snapshot
 	// arrives JSON-decoded, so that object is new on each one and an effect keyed on it re-armed the
 	// countdown on unrelated kernel traffic — a demo counter ticking once a second starved an armed
 	// prefix indefinitely (#7782).
-	const repeatWindowMs = repeatWindowOf(prefix);
-	const pending = prefix._tag === "Armed" ? prefix.pending.join("") : "";
+	const repeatWindowMs = state.prefix.armed ? state.prefix.repeatWindowMs : null;
+	const pending = state.prefix.armed ? state.prefix.pending.join("") : "";
 	useEffect(() => {
 		if (repeatWindowMs === null) return;
 		// Through the ref, so the caller's `dispatch` identity is not a dependency either — the same
 		// starvation, from the other direction.
 		const timer = setTimeout(() => {
 			latest.current.dispatch({type: "prefix.repeatLapsed"});
-			// The lapse is the page's own Msg, so the page folds it the way the kernel will.
-			advancePrefix(idle);
 		}, repeatWindowMs);
 		return () => clearTimeout(timer);
 		// `pending` is a dependency because each key typed into the window restarts it, exactly as
 		// `startRepeatTimer` restarts the host's one timer.
-	}, [repeatWindowMs, pending, advancePrefix]);
-
-	// Reconciliation, the other half of holding a prefix on the page. Everything that moves the
-	// kernel's prefix is a Msg this page dispatched, so an empty ledger is the one moment the
-	// snapshot is at least as new as the page's own — and then the snapshot wins, which is how a
-	// kernel-side lapse or a fresh socket puts the page back on the kernel's prefix.
-	//
-	// Keyed on the snapshot prefix's values for the reason the countdown is: a decoded object is new
-	// on every frame, and this must not run on kernel traffic that left the prefix alone. So one run
-	// of this effect is one prefix-changing frame, which is what retires one advance.
-	const snapshotArmed = state.prefix.armed;
-	const snapshotWindowMs = state.prefix.armed ? state.prefix.repeatWindowMs : null;
-	const snapshotPending = state.prefix.armed ? state.prefix.pending.join("") : "";
-	useEffect(() => {
-		const kernel = routerPrefix(latest.current.state);
-		unanswered.current = retireAnswered(unanswered.current, kernel);
-		if (unanswered.current.length > 0) return;
-		if (samePrefix(kernel, advanced.current)) return;
-		advanced.current = kernel;
-		setPrefix(kernel);
-	}, [snapshotArmed, snapshotWindowMs, snapshotPending]);
+	}, [repeatWindowMs, pending]);
 
 	const closeCommandLine = useCallback(() => {
 		setCommandLineOpen(false);
@@ -296,9 +266,10 @@ export function Desk({
 			data-scheme="dark"
 			// The one desk-level key fact a window renderer cannot be handed
 			// (`../window/prefix-signal.ts`): while this mark is here the next key is the shell's, and
-			// a region inside stands down rather than taking it (#8270). Read off the page-advanced
-			// prefix, so the key right after `<c-b>` finds the mark already there (#8274).
-			{...(prefix._tag === "Armed" ? {[PREFIX_ARMED_ATTRIBUTE]: "true"} : {})}
+			// a region inside stands down rather than taking it (#8270). Read off the kernel's own
+			// prefix — the acknowledgement for `<c-b>` carries it, so the mark lands with the answer
+			// rather than with the next broadcast (#8274).
+			{...(state.prefix.armed ? {[PREFIX_ARMED_ATTRIBUTE]: "true"} : {})}
 		>
 			<div className="tuval-desk-body">
 				<ForwardedKeyProvider value={forwarded}>

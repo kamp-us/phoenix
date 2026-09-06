@@ -36,9 +36,10 @@ import type {
 	AttachStatus,
 	DeskSource,
 	DeskTables,
+	KeyPress,
 	MountResolver,
 } from "../shell/ui/index.ts";
-import {boundMount, Desk, noRenderer, useDeskAttachment} from "../shell/ui/index.ts";
+import {boundMount, Desk, noRenderer, replyOf, useDeskAttachment} from "../shell/ui/index.ts";
 import type {RendererTable} from "../shell/window/index.ts";
 import {empty, processGone, resolverFromTable, type ViewState} from "../shell/window/index.ts";
 import type {TableRow} from "../table/row.ts";
@@ -150,19 +151,36 @@ export function AttachedDesk({
 	const [revision, setRevision] = useState(0);
 	/** Ids an attach has already been started for; a second window must not open a second socket read. */
 	const asked = useRef(new Set<string>());
+	/** The newest shell revision this page has shown, whichever carrier brought it. */
+	const seen = useRef(0);
+	/** How a snapshot reaches the desk. Set while the attachment's source is subscribed. */
+	const deliver = useRef<((revision: number, state: unknown) => void) | null>(null);
+	/**
+	 * This page's stamp on a key press. One prefix per mounted desk plus a counter, because the id
+	 * has to distinguish *this* page's press from a second page's on the same shell (#8274) — the
+	 * kernel echoes it back on `lastPress` and the page reads an answer only under its own.
+	 */
+	const pressMark = useRef(`${Math.random().toString(36).slice(2)}`);
+	const pressCount = useRef(0);
 
 	const source = useCallback<DeskSource>(
 		(emit) => {
 			emit({_tag: "Attached"} satisfies AttachEvent);
+			deliver.current = (revision, state) => {
+				// Newest wins, by the kernel's own revision. The two carriers of a snapshot — the state
+				// pump and the acknowledgement for this page's own dispatch — run on different fibers
+				// and nothing orders them, so the desk takes whichever is newer and ignores the other
+				// (#8274). Monotone and self-correcting: nothing here is a copy that can drift.
+				if (revision <= seen.current) return;
+				seen.current = revision;
+				setRevision(revision);
+				emit({_tag: "Snapshot", state} satisfies AttachEvent);
+			};
 			const snapshots = Effect.runFork(
 				Stream.runForEach(shell.readProcess, (view) =>
 					Effect.sync(() => {
-						if (view._tag === "Live") setRevision(view.revision);
-						emit(
-							view._tag === "Live"
-								? {_tag: "Snapshot", state: view.state}
-								: {_tag: "Dropped", reason: "the shell process is gone"},
-						);
+						if (view._tag === "Live") deliver.current?.(view.revision, view.state);
+						else emit({_tag: "Dropped", reason: "the shell process is gone"} satisfies AttachEvent);
 					}),
 				),
 			);
@@ -181,6 +199,7 @@ export function AttachedDesk({
 				),
 			);
 			return () => {
+				deliver.current = null;
 				Effect.runFork(Fiber.interrupt(snapshots));
 				Effect.runFork(Fiber.interrupt(keys));
 				Effect.runFork(Fiber.interrupt(lost));
@@ -197,6 +216,9 @@ export function AttachedDesk({
 	useEffect(() => {
 		asked.current = new Set();
 		setAttached(new Map());
+		// A fresh socket may be a fresh kernel, whose revisions start again from the bottom. Holding
+		// the old high-water mark would make the desk ignore every snapshot the new one sends.
+		seen.current = 0;
 	}, [page]);
 
 	useEffect(() => {
@@ -237,6 +259,28 @@ export function AttachedDesk({
 
 	const dispatch = useCallback(
 		(msg: ShellMsg) => void Effect.runFork(shell.dispatch(msg)),
+		[shell],
+	);
+
+	// The one key path: send the key, take the kernel's answer off the acknowledgement, and hand the
+	// desk both — the answer to act on and the state it left behind (#8274). A dispatch the socket
+	// dropped answers `ProcessGone`, which reads as `Refused`: nothing is forwarded, and there is no
+	// second copy of the prefix on this page to be left out of step.
+	const press = useCallback<KeyPress>(
+		(key) => {
+			pressCount.current += 1;
+			const pressId = `${pressMark.current}-${pressCount.current}`;
+			return Effect.runPromise(
+				shell.dispatch({type: "keys.press", key, pressId}).pipe(
+					Effect.map((result) => {
+						if (result._tag === "Delivered" && result.view !== undefined) {
+							deliver.current?.(result.view.revision, result.view.state);
+						}
+						return replyOf(pressId, result);
+					}),
+				),
+			);
+		},
 		[shell],
 	);
 
@@ -317,6 +361,7 @@ export function AttachedDesk({
 			<Desk
 				state={desk}
 				dispatch={dispatch}
+				press={press}
 				resolveMount={resolveMount}
 				entries={entries}
 				table={attachment.table}

@@ -110,8 +110,9 @@ kernel sent it, and no other (ADR 0353). Three consequences a caller must hold:
   snapshot arrives freshly decoded, so an effect keyed on `state.prefix` re-arms on unrelated kernel
   traffic and never fires — a demo counter ticking once a second starved it indefinitely (#7782).
   The dispatcher is read through the `latest` ref for the same reason.
-- It runs off the **page-advanced** prefix below, not off the snapshot, so the window opens at the
-  press rather than one round trip later (#8274).
+- It runs off the snapshot, and the snapshot now moves on the **acknowledgement** for the press
+  rather than on the state pump, so the window opens when the repeatable command completed rather
+  than whenever the next broadcast happens to arrive (#8274, below).
 
 ## `forwardKey` delivers a program's own `key` Msg
 
@@ -133,37 +134,45 @@ the program does not take the Msg, never that the program is faulty. Without tha
 key closed the process gate under the `stop` default and every later prompt was refused.
 
 **One keystroke has two deliveries, and only one of them is the Cmd.** Beside the kernel's dispatch
-into the process, the page hands the same key to that window's React renderer — off its own
-`surfaceKey` answer, not off a Cmd, because Cmds do not cross the wire. That is why `forwardKey` is
-a `KernelCmd` despite the page also acting on the key, and why the walk in
-`src/shell/ui/key-agreement.unit.test.ts` compares the two sides' *routing decision* rather than
-their Cmd lists.
+into the process, the page hands the same key to that window's React renderer. Both come from one
+routing decision — the kernel's — stated twice inside one fold: as the `forwardKey` Cmd, and as the
+answer the fold records on `state.lastPress`. That is why `forwardKey` is a `KernelCmd` although the
+page also acts on the key, and what the walk in `src/shell/ui/key-agreement.unit.test.ts` holds
+against each other.
 
-**The page routes over a prefix it advances itself, never over the last snapshot.** The two sides
-only agree if they fold from the same start, and the snapshot moves a whole round trip after the
-press that moved it — so a sequence typed faster than that trip was read two ways at once: the page
+**The kernel is the only router; the page acts on the answer.** The page used to route every key a
+second time, over the last snapshot it had — and the snapshot moves a whole round trip after the
+press that moved it, so a sequence typed faster than that trip was read two ways at once: the page
 read `<c-b> h` as "arm, then `h` to the window" while the kernel read it as "arm, then focus-left",
-and `<c-b> |` typed a pipe into the composer and split (#8274). `route` already hands back `next`,
-so `Desk.tsx` holds one `PrefixState`, starts it from the snapshot, and replaces it with the answer's
-`next` on every press. It is tab-ephemeral, the same class as the countdown, and it changes nothing
-ADR 0353 binds: the table is still the kernel's, the wire still carries raw `keys.press` and never an
-answer, and the kernel still routes every key.
+and `<c-b> |` typed a pipe into the composer and split (#8274). Two page-side schemes for keeping a
+prefix of its own in step with the kernel's both drifted, so the second copy is gone rather than
+repaired:
 
-Reconciling the two is the other half, and it is **a ledger, never a flag**. Everything that moves
-the kernel's prefix is a Msg the page dispatched itself — a `keys.press` (Escape is one: `route`
-answers `Unbound` and folds to idle) or `prefix.repeatLapsed` — so nothing outstanding is the one
-moment the snapshot is at least as new as the page's own, and only then does the snapshot win. The
-page keeps every advance the kernel has not answered yet, oldest first, and one arriving frame
-retires one of them (`retireAnswered` in `src/shell/ui/frame.ts`; the effect that runs it is keyed
-on the snapshot prefix's *values*, so one run is one prefix-changing frame). A single "the page is
-ahead" boolean cannot hold this: the kernel replays the page's presses one frame each and a prefix
-sequence cycles idle → armed → idle, so from three presses on the page's *current* value is also an
-*older* frame's, that frame clears the flag, and the next one is adopted with presses still in
-flight — `<c-b> h <c-b>` then `j` double-routed exactly there. Matching is by value and takes the
-earliest match (`samePrefix`, because every snapshot is new JSON), and a frame matching nothing
-retires the oldest anyway so the ledger cannot stick. A second page attached to one shell is the
-exception, and its keys moving this page's prefix is the two-pages problem ADR 0353 named, not this
-rule.
+- The page sends `keys.press` stamped with a `pressId` it minted, and **waits**. The
+  acknowledgement carries the process's public state as it stands after the Msg (`DispatchedFrame`'s
+  `Delivered` arm, `src/shell/transport/wire.ts`), the page reads `lastPress` out of it under its own
+  stamp (`replyIn` in `src/shell/ui/press.ts`), and forwards a key to the window's renderer only when
+  that answer says `ToWindow`. A dispatch the socket dropped answers `ProcessGone`, which reads as
+  `Refused`: nothing is forwarded, and nothing drifts, because there is no second copy.
+- The stamp is not decoration. A second page attached to the same shell writes `lastPress` too, and
+  reading its answer as this page's would forward a key nobody here pressed.
+- **The ack is also a snapshot.** The page delivers the state it carried to the desk, taking the
+  newer of the two carriers by the kernel's own `revision` (`AttachedDesk.tsx`) — the state pump and
+  the ack run on different fibers and nothing orders them. That comparison is monotone and
+  self-correcting; it holds nothing that can go stale.
+- **One thing is still decided at the press, and it is ownership, not routing.** A default action
+  cannot wait for a round trip, so `shellOwnsKey` (`src/shell/ui/frame.ts`) answers whose key it is —
+  over the kernel's own table, through the same `route`. While any answer is outstanding the shell
+  owns whatever follows: the kernel may have armed the prefix on a key this page has not heard back
+  about, and guessing there would be routing. That is what stops `<prefix> |` typing a pipe, and its
+  cost is that a key pressed inside one round trip of another has its default prevented even if the
+  answer turns out to be the window's.
+
+The round trip is local — a WebSocket on loopback to a kernel in the same machine. Measured over
+the real socket in `transport.integration.test.ts`, 150 warm dispatches: **p50 0.26 ms, p95 0.37 ms,
+max 1.76 ms** — under a frame at 60 Hz, which is why waiting is affordable and the round-trip-per-key
+ADR 0353 rejected is not what this is: nothing about the *display* waits, only the forwarding of one
+key into a renderer.
 
 ## What the page can and cannot see
 
@@ -173,7 +182,8 @@ ADR 0353). The catalog is what a page could spawn, never what a process holds, s
 program-blind: a process's state still crosses as `unknown`.
 
 - The prefix table is the one frame that is neither state nor catalog — it is the grammar the page
-  routes keys over, and it may route over no other. `DeskProps.table` is required and
+  reads a key against, and it may read against no other. It routes nothing now (above), but it still
+  asks that grammar whose key a press is. `DeskProps.table` is required and
   `AttachedDesk` renders the placeholder until the frame lands, so a page that has been told no
   grammar shows no desk rather than inventing one. `Duration` does not survive JSON, so the frame
   carries `repeatTimeoutMs` and `toWirePrefixTable`/`fromWirePrefixTable` convert.

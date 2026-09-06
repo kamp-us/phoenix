@@ -105,12 +105,24 @@ export interface AttachRefusedFrame {
 		| {readonly reason: "no-such-process"};
 }
 
-/** The acknowledgement for one `seq`. Its two arms are `DispatchResult`'s (`../window/host.ts`). */
+/**
+ * The acknowledgement for one `seq`. Its two arms are `DispatchResult`'s (`../window/host.ts`).
+ *
+ * `Delivered` carries the process's public state as it stands once the Msg has been applied — the
+ * same program-blind `unknown` a `process-state` frame carries, read off the same summary. It is
+ * the *reply* to a dispatch rather than a broadcast, which is what lets a caller learn what its own
+ * Msg did without racing the state pump: the two leave on different fibers and nothing orders them
+ * (#8274). Optional, because a kernel that has already dropped the row between the dispatch and the
+ * read has no state to send and still owes the ack.
+ */
 export interface DispatchedFrame {
 	readonly kind: typeof DISPATCHED_KIND;
 	readonly seq: number;
 	readonly result:
-		| {readonly _tag: "Delivered"}
+		| {
+				readonly _tag: "Delivered";
+				readonly view?: {readonly revision: number; readonly state: unknown};
+		  }
 		| {readonly _tag: "ProcessGone"; readonly processId: ProcessId};
 }
 
@@ -261,12 +273,16 @@ export const isAttachRefusedFrame = (value: unknown): value is AttachRefusedFram
 		typeof value.refusal.placement === "string") ||
 		value.refusal.reason === "no-such-process");
 
+const isDispatchedView = (value: unknown): boolean =>
+	Predicate.isObject(value) && typeof value.revision === "number" && "state" in value;
+
 export const isDispatchedFrame = (value: unknown): value is DispatchedFrame =>
 	Predicate.isObject(value) &&
 	value.kind === DISPATCHED_KIND &&
 	Number.isInteger(value.seq) &&
 	Predicate.isObject(value.result) &&
-	(value.result._tag === "Delivered" ||
+	((value.result._tag === "Delivered" &&
+		(value.result.view === undefined || isDispatchedView(value.result.view))) ||
 		(value.result._tag === "ProcessGone" && isProcessIdString(value.result.processId)));
 
 export const isWireProgram = (value: unknown): value is WireProgram =>

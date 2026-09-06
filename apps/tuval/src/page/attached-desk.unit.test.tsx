@@ -145,13 +145,20 @@ const scripted = Effect.fn("test.scripted")(function* (options?: {
 		closed: options?.closed ?? Effect.never,
 		readShell: (() => SubscriptionRef.changes(desk)) as PageAttachment["readShell"],
 	};
+	// The kernel behind the socket, as far as a key press is concerned: it folds the Msg and its
+	// acknowledgement carries the state that followed, which is where the page reads the answer to
+	// its own key (#8274, `../shell/transport/wire.ts`).
+	let held = options?.state ?? twoWindowDesk();
+	let revision = 0;
 	const shell: AttachedProcess<unknown, ShellMsg> = {
 		processId: ProcessId.make("shell"),
 		readProcess: SubscriptionRef.changes(desk),
 		dispatch: (msg) =>
 			Effect.sync(() => {
 				sent.push(msg);
-				return {_tag: "Delivered" as const};
+				held = applyMsg(defaultPrefixTable, held, msg)[0];
+				revision += 1;
+				return {_tag: "Delivered" as const, view: {revision, state: held}};
 			}),
 	};
 	return {page, shell, attaches, sent} satisfies Scripted;
@@ -342,6 +349,9 @@ describe("the attached desk", () => {
 				act(() => {
 					document.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
 				});
+				// The key reaches the picker on the kernel's answer, so the press is one hop from the
+				// choice it makes (#8274).
+				yield* settle;
 				const chosen = app.sent.find((msg) => msg.type === "window.open");
 				assert.deepStrictEqual(chosen, {
 					type: "window.open",

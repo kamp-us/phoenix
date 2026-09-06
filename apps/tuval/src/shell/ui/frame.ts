@@ -3,22 +3,18 @@
  * picker, and for the same reason: everything the page decides is decided here, in a pure function
  * a test drives with no DOM, and the components below bind the answer to elements verbatim.
  *
- * One thing here looks like duplication and is not. `surfaceKey` runs the shell's own `route`
- * (`../keys/router.ts`) a second time, on the page, over the prefix the page holds — the snapshot
- * the kernel sent, advanced by the page's own presses since (`./Desk.tsx`, #8274). The
- * core runs it too and answers with Cmds — but Cmds are the kernel's, and the transport carries no
- * Cmd frame (`../transport/wire.ts`): a page learns state, never instructions. So the two effects
- * a *surface* owns — opening the command line and forwarding a key into the focused window's
- * renderer — are derived here, deliberately
- * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)). Both sides call
- * the one pure `route`, and the `PrefixTable` they call it over is one table because the kernel
- * sends it; that they answer alike is held by `./key-agreement.unit.test.ts`, not by argument.
+ * Nothing here routes a key. The kernel is the only router and the page does what its answer says
+ * (`./press.ts`, `./Desk.tsx`, #8274); the one thing this module asks `route` is `shellOwnsKey` —
+ * whose key it is, which decides the default action and the text-entry gate at the press and cannot
+ * wait for a round trip. That question is answered through the same `route` over the same table the
+ * kernel sent ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)), so it
+ * cannot part company with the kernel about which key arms the prefix.
  */
 
 import {Duration} from "effect";
 import type {ShellState, Workspace} from "../core/index.ts";
 import {activeWorkspace} from "../core/index.ts";
-import type {CommandName, Key, PrefixState, PrefixTable} from "../keys/index.ts";
+import type {Key, PrefixState, PrefixTable} from "../keys/index.ts";
 import {idle, route} from "../keys/index.ts";
 import type {LayoutNode, WindowId as LayoutWindowId, NodeId, StackNode} from "../layout/index.ts";
 import {WindowId} from "../window/index.ts";
@@ -39,63 +35,6 @@ export const routerPrefix = (state: ShellState): PrefixState =>
 			}
 		: idle;
 
-/** The repeat window a prefix state is inside, in milliseconds, or `null` when it is in none. */
-export const repeatWindowOf = (prefix: PrefixState): number | null =>
-	prefix._tag === "Armed" && prefix.repeatWindow !== null
-		? Duration.toMillis(prefix.repeatWindow)
-		: null;
-
-/**
- * Do two prefix states say the same thing? Value equality and never identity: a snapshot arrives
- * JSON-decoded, so the kernel's prefix is a new object on every frame, and only its value can
- * answer whether the kernel has caught up with the prefix the page advanced itself (#8274).
- */
-export const samePrefix = (a: PrefixState, b: PrefixState): boolean => {
-	if (a._tag === "Idle" || b._tag === "Idle") return a._tag === b._tag;
-	return (
-		a.pending.length === b.pending.length &&
-		a.pending.every((key, index) => b.pending[index] === key) &&
-		repeatWindowOf(a) === repeatWindowOf(b)
-	);
-};
-
-/**
- * Reconciliation's ledger: the prefix values the page routed over that the kernel has not answered
- * yet, oldest first, with one arriving snapshot retiring one of them. A single "the page is ahead"
- * flag cannot hold this — the kernel replays the page's own presses one frame each, and a prefix
- * sequence cycles idle → armed → idle, so from three presses on the page's *current* value is also
- * an *older* frame's, that frame clears the flag, and the next one is adopted mid-sequence (#8274).
- *
- * Retired by value, earliest match first, so a frame that batched two advances retires both. A
- * frame matching none of them is one the page never predicted, and it retires the oldest anyway: a
- * ledger that shrinks only on a match can stick, and a stuck one strands the page on a prefix no
- * key can clear.
- */
-export const retireAnswered = (
-	unanswered: ReadonlyArray<PrefixState>,
-	kernel: PrefixState,
-): ReadonlyArray<PrefixState> => {
-	if (unanswered.length === 0) return unanswered;
-	const at = unanswered.findIndex((prefix) => samePrefix(prefix, kernel));
-	return unanswered.slice(at === -1 ? 1 : at + 1);
-};
-
-/**
- * What the *surface* must do about one key, beside always dispatching `keys.press`. Three arms and
- * no fourth: a key either opens the command line, belongs to the focused window's renderer, or is
- * the shell's own business and nothing the page does about it.
- *
- * Every arm carries `next`, the prefix state that follows this key, straight off `route`. The page
- * routes the next key of a sequence over it rather than over the snapshot, so two keys typed inside
- * one kernel round trip fold through the same pure function from the same start on both sides
- * (#8274).
- */
-export type SurfaceKeyAnswer =
-	| {readonly _tag: "OpenCommandLine"; readonly next: PrefixState}
-	| {readonly _tag: "ToWindow"; readonly key: string; readonly next: PrefixState}
-	/** A named command the page does not implement, or an armed/pending/unbound prefix. */
-	| {readonly _tag: "Shell"; readonly command: CommandName | null; readonly next: PrefixState};
-
 /**
  * Is this key the shell's, whatever holds DOM focus? tmux's rule, and the whole of #8270: the
  * prefix is the one key a pane never gets, and once it is armed every key of the sequence is the
@@ -106,21 +45,6 @@ export type SurfaceKeyAnswer =
  */
 export const shellOwnsKey = (table: PrefixTable, prefix: PrefixState, event: Key): boolean =>
 	prefix._tag === "Armed" || route(table, prefix, event)._tag === "Arm";
-
-export const surfaceKey = (
-	table: PrefixTable,
-	prefix: PrefixState,
-	event: Key,
-): SurfaceKeyAnswer => {
-	const answer = route(table, prefix, event);
-	if (answer._tag === "ToWindow") return {_tag: "ToWindow", key: answer.key, next: answer.next};
-	if (answer._tag === "Command") {
-		return String(answer.name) === COMMAND_LINE_COMMAND
-			? {_tag: "OpenCommandLine", next: answer.next}
-			: {_tag: "Shell", command: answer.name, next: answer.next};
-	}
-	return {_tag: "Shell", command: null, next: answer.next};
-};
 
 /** The status line, as text. Every field is read off the snapshot; the page stores none of it. */
 export interface StatusFrame {

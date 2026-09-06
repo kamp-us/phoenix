@@ -21,6 +21,7 @@ import {Desk} from "../shell/ui/Desk.tsx";
 import {installDomShims} from "../shell/ui/dom.testing.ts";
 import {deskWith} from "../shell/ui/fixtures.ts";
 import {boundMount, type MountResolver} from "../shell/ui/mount.ts";
+import {refused} from "../shell/ui/press.ts";
 import {testProcess} from "../shell/window/fixtures.ts";
 import {empty, processGone, WindowId} from "../shell/window/index.ts";
 import type {ReadableRenderer} from "./readable-state.tsx";
@@ -102,6 +103,7 @@ const mountDesk = async (sessionState: unknown): Promise<void> => {
 			<Desk
 				state={twoWindowDesk()}
 				dispatch={() => {}}
+				press={() => Promise.resolve(refused)}
 				resolveMount={resolveMount}
 				table={defaultPrefixTable}
 			/>,

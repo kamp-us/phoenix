@@ -24,16 +24,11 @@ export {
 	defaultLayoutOf,
 	holdsPanels,
 	panelWindows,
-	repeatWindowOf,
-	retireAnswered,
 	routerPrefix,
 	type StatusFrame,
-	type SurfaceKeyAnswer,
 	sameLayout,
-	samePrefix,
 	shellOwnsKey,
 	statusFrame,
-	surfaceKey,
 	zoomedWindow,
 } from "./frame.ts";
 export {LayoutView, type LayoutViewProps} from "./LayoutView.tsx";
@@ -45,5 +40,6 @@ export {
 	type WindowMount,
 } from "./mount.ts";
 export {PickerView, type PickerViewProps} from "./PickerView.tsx";
+export {type KeyPress, type KeyReply, refused, replyIn, replyOf} from "./press.ts";
 export {StatusLine, type StatusLineProps} from "./StatusLine.tsx";
 export {WindowView, type WindowViewProps} from "./WindowView.tsx";

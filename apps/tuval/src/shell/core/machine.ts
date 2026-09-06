@@ -23,7 +23,7 @@ import {defineMachine} from "@demlik/tea";
 import {Duration} from "effect";
 import {msgForCommandName} from "../commands/table.ts";
 import {type DeskMsg, initialDesk, toggleInspector} from "../desk/state.ts";
-import type {CommandName, Key, PrefixState, PrefixTable} from "../keys/index.ts";
+import type {CommandName, Key, PrefixState, PrefixTable, RouteAnswer} from "../keys/index.ts";
 import {idle, route} from "../keys/index.ts";
 import {
 	createStack,
@@ -49,7 +49,9 @@ import {
 	activeWorkspace,
 	disarmed,
 	hasWindow,
+	type KeyOutcome,
 	keyTargetOf,
+	type LastPress,
 	mint,
 	type PrefixSnapshot,
 	processOf,
@@ -99,10 +101,10 @@ export type KernelCmd =
 /**
  * The arms no kernel handler can answer, which the browser surface answers instead: the command
  * line is a page element, and a handler returns its follow-up Msgs rather than holding a dispatcher
- * it could fire a timer through. Cmds do not cross the transport, so the page derives these for
- * itself by running the key router a second time over the table the kernel sent it — deliberate
- * duplication, held by a test rather than by an argument
- * ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
+ * it could fire a timer through. Cmds do not cross the transport, so the page learns about these
+ * from state instead: the countdown off the prefix the snapshot carries, and the command line off
+ * the answer this fold records on `lastPress` (#8274, `../ui/press.ts`). It does not route a key of
+ * its own to derive them ([ADR 0353](../../../../../.decisions/0353-kernel-sends-the-prefix-table.md)).
  */
 export type PageCmd =
 	| {readonly type: "startRepeatTimer"; readonly timeoutMs: number}
@@ -163,7 +165,16 @@ export type ShellMsg =
 	| {readonly type: "window.attach"; readonly processId: string; readonly windowId?: WindowId}
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
-	| {readonly type: "keys.press"; readonly key: Key}
+	| {
+			readonly type: "keys.press";
+			readonly key: Key;
+			/**
+			 * The presser's own stamp, echoed back on `lastPress` so the answer to this key is
+			 * readable as this presser's and nobody else's (#8274). Optional: a key pressed by
+			 * something that will not read the answer — a test, a kernel-side caller — sends none.
+			 */
+			readonly pressId?: string;
+	  }
 	| {readonly type: "prefix.repeatLapsed"}
 	| DeskMsg;
 
@@ -218,6 +229,21 @@ const fromRouter = (state: PrefixState): PrefixSnapshot =>
 				repeatWindowMs: state.repeatWindow === null ? null : Duration.toMillis(state.repeatWindow),
 			}
 		: disarmed;
+
+const outcomeOf = (answer: RouteAnswer): KeyOutcome => {
+	if (answer._tag === "ToWindow") return {_tag: "ToWindow", key: answer.key};
+	if (answer._tag === "Command") return {_tag: "Command", name: String(answer.name)};
+	return {_tag: "Consumed"};
+};
+
+/**
+ * The answer, stamped with the presser's id. An unstamped press records the empty string, which no
+ * presser mints, so nothing can read the answer to somebody else's key as its own.
+ */
+const recorded = (
+	msg: Extract<ShellMsg, {type: "keys.press"}>,
+	answer: RouteAnswer,
+): LastPress => ({pressId: msg.pressId ?? "", outcome: outcomeOf(answer)});
 
 /** How long the prefix's repeat window has left to run, or `null` when it is not in one. */
 const repeatWindowOf = (snapshot: PrefixSnapshot): number | null =>
@@ -482,7 +508,10 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		const answer = route(table, toRouter(state.prefix), msg.key);
 		const prefix = fromRouter(answer.next);
 		const timer = timerCmds(state.prefix, prefix);
-		const routed: ShellState = {...state, prefix};
+		// The answer is written into state rather than only spent as Cmds, because Cmds are the
+		// kernel's and no Cmd crosses the transport: this field is how the page learns what the one
+		// router decided about the key it sent (#8274, `../ui/Desk.tsx`).
+		const routed: ShellState = {...state, prefix, lastPress: recorded(msg, answer)};
 
 		if (answer._tag === "ToWindow") {
 			const workspace = activeWorkspace(routed);

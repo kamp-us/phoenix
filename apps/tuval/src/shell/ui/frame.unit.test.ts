@@ -1,121 +1,72 @@
-import {Duration} from "effect";
 import {describe, expect, it} from "vitest";
+import {ProcessId} from "../../process/process.ts";
+import type {ShellState} from "../core/index.ts";
 import {applyMsg} from "../core/index.ts";
-import type {PrefixState} from "../keys/index.ts";
-import {defaultPrefixTable, idle as idlePrefix} from "../keys/index.ts";
+import type {Key} from "../keys/index.ts";
+import {defaultPrefixTable} from "../keys/index.ts";
 import {createStack, createTree, createWindow, SIZE_TOLERANCE} from "../layout/index.ts";
+import {delivered, processGone} from "../window/host.ts";
 import {deskWith, threeWindowDesk, threeWindowTree} from "./fixtures.ts";
 import {
 	defaultLayoutOf,
 	holdsPanels,
 	panelWindows,
-	repeatWindowOf,
-	retireAnswered,
 	routerPrefix,
 	sameLayout,
-	samePrefix,
+	shellOwnsKey,
 	statusFrame,
-	surfaceKey,
 	zoomedWindow,
 } from "./frame.ts";
+import {refused, replyIn, replyOf} from "./press.ts";
 
 const table = defaultPrefixTable;
-const prefixPress = {key: "b", ctrlKey: true};
-const armedWith = (pending: ReadonlyArray<string>, repeatWindow: Duration.Duration | null) =>
-	({_tag: "Armed", pending, repeatWindow}) as const;
+const prefixPress: Key = {key: "b", ctrlKey: true};
 
-describe("surfaceKey", () => {
-	it("hands an unprefixed key to the focused window and nothing else", () => {
-		const answer = surfaceKey(table, routerPrefix(threeWindowDesk()), {key: "j"});
-		expect(answer).toEqual({_tag: "ToWindow", key: "j", next: idlePrefix});
+describe("shellOwnsKey", () => {
+	it("takes the prefix key from an idle prefix, and leaves every other key alone", () => {
+		const idleDesk = routerPrefix(threeWindowDesk());
+		expect(shellOwnsKey(table, idleDesk, prefixPress)).toBe(true);
+		expect(shellOwnsKey(table, idleDesk, {key: "j"})).toBe(false);
 	});
 
-	it("opens the command line on `prefix :`, and only after the prefix", () => {
-		const idle = threeWindowDesk();
-		expect(surfaceKey(table, routerPrefix(idle), {key: ":"})).toEqual({
+	it("takes every key while the prefix is armed, bound or not", () => {
+		const [armed] = applyMsg(table, threeWindowDesk(), {type: "keys.press", key: prefixPress});
+		expect(shellOwnsKey(table, routerPrefix(armed), {key: "|"})).toBe(true);
+		expect(shellOwnsKey(table, routerPrefix(armed), {key: "q"})).toBe(true);
+	});
+});
+
+describe("the kernel's answer to one press", () => {
+	const pressed = (state: ShellState, key: Key, pressId: string): ShellState =>
+		applyMsg(table, state, {type: "keys.press", key, pressId})[0];
+
+	it("reads the answer to this page's own press off the state the acknowledgement carried", () => {
+		const armed = pressed(threeWindowDesk(), prefixPress, "page-1");
+		expect(replyIn("page-1", armed)).toEqual({_tag: "Consumed"});
+
+		const commanded = pressed(armed, {key: "h"}, "page-2");
+		expect(replyIn("page-2", commanded)).toEqual({_tag: "Command", name: "window:focus-left"});
+
+		const forwarded = pressed(commanded, {key: "j"}, "page-3");
+		expect(replyIn("page-3", forwarded)).toEqual({_tag: "ToWindow", key: "j"});
+	});
+
+	// A second page on the same shell writes `lastPress` too. Reading its answer as this page's
+	// would forward a key nobody here pressed, so an id that is not ours is no answer at all.
+	it("refuses an answer stamped by anyone else, and a state it cannot read", () => {
+		const other = pressed(threeWindowDesk(), {key: "j"}, "other-page-1");
+		expect(replyIn("page-1", other)).toEqual(refused);
+		expect(replyIn("page-1", {not: "a shell state"})).toEqual(refused);
+	});
+
+	it("refuses a dispatch the kernel never applied, and one that carried no state", () => {
+		const forwarded = pressed(threeWindowDesk(), {key: "j"}, "page-1");
+		expect(replyOf("page-1", processGone(ProcessId.make("process-1")))).toEqual(refused);
+		expect(replyOf("page-1", delivered)).toEqual(refused);
+		expect(replyOf("page-1", {_tag: "Delivered", view: {revision: 3, state: forwarded}})).toEqual({
 			_tag: "ToWindow",
-			key: ":",
-			next: idlePrefix,
+			key: "j",
 		});
-
-		const [armed] = applyMsg(table, idle, {type: "keys.press", key: prefixPress});
-		expect(surfaceKey(table, routerPrefix(armed), {key: ":"})).toEqual({
-			_tag: "OpenCommandLine",
-			next: idlePrefix,
-		});
-	});
-
-	it("keeps every other bound sequence the shell's, naming the command it resolved", () => {
-		const [armed] = applyMsg(table, threeWindowDesk(), {type: "keys.press", key: prefixPress});
-		const answer = surfaceKey(table, routerPrefix(armed), {key: "|"});
-		expect(answer).toEqual({_tag: "Shell", command: "window:split-vertical", next: idlePrefix});
-	});
-
-	it("answers the same way the core routes: arming names no command", () => {
-		const answer = surfaceKey(table, routerPrefix(threeWindowDesk()), prefixPress);
-		expect(answer).toEqual({_tag: "Shell", command: null, next: armedWith([], null)});
-	});
-
-	// The page routes the next key of a sequence over `next` rather than over the snapshot, so the
-	// field is what makes two keys typed inside one round trip fold from one start (#8274).
-	it("carries the state that follows a repeatable command, repeat window and all", () => {
-		const [armed] = applyMsg(table, threeWindowDesk(), {type: "keys.press", key: prefixPress});
-		const answer = surfaceKey(table, routerPrefix(armed), {key: "l", ctrlKey: true});
-		expect(answer.next).toEqual(armedWith([], table.repeatTimeout));
-	});
-});
-
-describe("samePrefix", () => {
-	it("reads two decoded copies of one armed prefix as the same state", () => {
-		expect(
-			samePrefix(armedWith(["h"], Duration.millis(500)), armedWith(["h"], Duration.millis(500))),
-		).toBe(true);
-		expect(samePrefix(idlePrefix, idlePrefix)).toBe(true);
-	});
-
-	it("parts an armed prefix from an idle one, and two armed ones on either field", () => {
-		expect(samePrefix(idlePrefix, armedWith([], null))).toBe(false);
-		expect(samePrefix(armedWith([], null), armedWith(["h"], null))).toBe(false);
-		expect(samePrefix(armedWith([], null), armedWith([], Duration.millis(500)))).toBe(false);
-	});
-
-	it("names the repeat window in milliseconds, and none for an unbounded arm", () => {
-		expect(repeatWindowOf(armedWith([], Duration.millis(500)))).toBe(500);
-		expect(repeatWindowOf(armedWith([], null))).toBeNull();
-		expect(repeatWindowOf(idlePrefix)).toBeNull();
-	});
-});
-
-describe("retireAnswered", () => {
-	const armed = armedWith([], null);
-
-	it("retires one advance per frame, so three presses outlast their first two answers", () => {
-		// `<c-b> h <c-b>`: the page is armed, and the kernel's own frames replay armed, idle, armed.
-		let ledger: ReadonlyArray<PrefixState> = [armed, idlePrefix, armed];
-
-		ledger = retireAnswered(ledger, armed);
-		expect(ledger).toEqual([idlePrefix, armed]);
-		ledger = retireAnswered(ledger, idlePrefix);
-		expect(ledger).toEqual([armed]);
-		ledger = retireAnswered(ledger, armed);
-		expect(ledger).toEqual([]);
-	});
-
-	it("still holds one advance back after three of a four-press sequence are answered", () => {
-		// `<c-b> h <c-b> h`: the page is idle, and the third frame carries armed — the value a page
-		// holding one boolean adopts while the fourth press is still out.
-		let ledger: ReadonlyArray<PrefixState> = [armed, idlePrefix, armed, idlePrefix];
-		for (const frame of [armed, idlePrefix, armed]) ledger = retireAnswered(ledger, frame);
-		expect(ledger).toEqual([idlePrefix]);
-	});
-
-	it("retires both when one frame batched two advances, and the oldest when none matches", () => {
-		expect(retireAnswered([armed, idlePrefix, armed], idlePrefix)).toEqual([armed]);
-		expect(retireAnswered([armed], armedWith(["h"], null))).toEqual([]);
-	});
-
-	it("leaves an empty ledger empty, which is what lets the snapshot win", () => {
-		expect(retireAnswered([], armed)).toEqual([]);
 	});
 });
 

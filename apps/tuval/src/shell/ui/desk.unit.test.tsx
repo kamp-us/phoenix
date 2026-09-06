@@ -12,7 +12,7 @@
 import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {Duration} from "effect";
 import type {ReactElement} from "react";
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {ProcessId} from "../../process/process.ts";
 import {ProgramId} from "../../registry/program.ts";
@@ -26,6 +26,7 @@ import {installDomShims} from "./dom.testing.ts";
 import {threeWindowDesk} from "./fixtures.ts";
 import {useForwardedKey} from "./forwarded-key.tsx";
 import {boundMount, type MountResolver, noRenderer, type ReactWindowRenderer} from "./mount.ts";
+import {type KeyPress, refused, replyIn} from "./press.ts";
 
 installDomShims();
 
@@ -84,17 +85,79 @@ interface HarnessProps {
 	readonly initial: ShellState;
 	readonly sent: Array<ShellMsg>;
 	readonly resolveMount?: MountResolver;
+	/**
+	 * Where a held answer waits, one entry per unanswered press, oldest first. Absent means the
+	 * kernel answers as the key is pressed, which is the fast local round trip; a test that types
+	 * faster than the kernel supplies this array and releases the answers itself.
+	 */
+	readonly replies?: Array<() => void>;
+	/** Presses the kernel never applies — a dispatch the socket dropped, answered `Refused`. */
+	readonly dropFirst?: number;
+	/** A snapshot the kernel pushed out of band: a lapse it folded itself, or a fresh attach. */
+	readonly frame?: ShellState;
+	/**
+	 * Kernel traffic that leaves the prefix alone — a demo counter ticking. Every change re-decodes
+	 * the snapshot, so it is equal in value and new in identity, exactly as a socket delivers it.
+	 */
+	readonly traffic?: number;
 }
 
-function Harness({initial, sent, resolveMount = boundEverywhere}: HarnessProps): ReactElement {
-	const [state, setState] = useState(initial);
+/**
+ * A desk over the real reducer, plus the acknowledgement the transport carries back (#8274). The
+ * kernel folds a key when it receives it and the desk learns *both* the answer and the state it
+ * left behind from the reply, which is what the `dispatched` frame carries.
+ */
+function Harness({
+	initial,
+	sent,
+	resolveMount = boundEverywhere,
+	replies,
+	dropFirst = 0,
+	frame,
+	traffic = 0,
+}: HarnessProps): ReactElement {
+	const [shown, setShown] = useState(initial);
+	const kernel = useRef(initial);
+	const presses = useRef(0);
+
+	useEffect(() => {
+		if (frame === undefined) return;
+		kernel.current = frame;
+		setShown(frame);
+	}, [frame]);
+
+	useEffect(() => {
+		if (traffic === 0) return;
+		setShown((current) => JSON.parse(JSON.stringify(current)) as ShellState);
+	}, [traffic]);
+
+	const fold = (msg: ShellMsg): ShellState => {
+		sent.push(msg);
+		const [next] = applyMsg(defaultPrefixTable, kernel.current, msg);
+		kernel.current = next;
+		return next;
+	};
+
+	const press: KeyPress = (key) => {
+		presses.current += 1;
+		if (presses.current <= dropFirst) return Promise.resolve(refused);
+		const pressId = `page-${presses.current}`;
+		const applied = fold({type: "keys.press", key, pressId});
+		return new Promise((resolve) => {
+			const answer = (): void => {
+				setShown(applied);
+				resolve(replyIn(pressId, applied));
+			};
+			if (replies === undefined) answer();
+			else replies.push(answer);
+		});
+	};
+
 	return (
 		<Desk
-			state={state}
-			dispatch={(msg) => {
-				sent.push(msg);
-				setState((current) => applyMsg(defaultPrefixTable, current, msg)[0]);
-			}}
+			state={shown}
+			dispatch={(msg) => setShown(fold(msg))}
+			press={press}
 			resolveMount={resolveMount}
 			entries={entries}
 			table={defaultPrefixTable}
@@ -102,8 +165,30 @@ function Harness({initial, sent, resolveMount = boundEverywhere}: HarnessProps):
 	);
 }
 
+/** Release the oldest held answer and let React settle everything it caused. */
+const answer = async (replies: Array<() => void>, count = 1): Promise<void> => {
+	for (let i = 0; i < count; i++) {
+		const next = replies.shift();
+		if (next === undefined) throw new Error("no answer is being held");
+		await act(async () => {
+			next();
+		});
+	}
+};
+
 const arm = (): void => {
 	fireEvent.keyDown(document, {key: "b", ctrlKey: true, code: "KeyB"});
+};
+
+/**
+ * `<prefix> :`, with the kernel's answers landed. Opening the line is the page's part of a command
+ * the kernel named, so it happens when the answer arrives rather than at the press (#8274).
+ */
+const openCommandLine = async (): Promise<void> => {
+	await act(async () => {
+		fireEvent.keyDown(document, {key: "b", ctrlKey: true, code: "KeyB"});
+		fireEvent.keyDown(document, {key: ":", code: "Semicolon", shiftKey: true});
+	});
 };
 
 /** `<c-l>` — `workspace:next`, the repeatable binding that opens tmux's `repeat-time` window. */
@@ -326,7 +411,9 @@ describe("the single application-level keyboard listener", () => {
 		expect(added.filter((type) => type === "keydown")).toHaveLength(1);
 
 		fireEvent.keyDown(document, {key: "j"});
-		expect(sent).toEqual([{type: "keys.press", key: expect.objectContaining({key: "j"})}]);
+		expect(sent).toEqual([
+			expect.objectContaining({type: "keys.press", key: expect.objectContaining({key: "j"})}),
+		]);
 	});
 
 	it("adds none for the pointer path: a pointer handler is not a keyboard listener", () => {
@@ -336,10 +423,9 @@ describe("the single application-level keyboard listener", () => {
 		expect(added.filter((type) => type === "keydown")).toHaveLength(1);
 	});
 
-	it("adds no second listener when the command line opens", () => {
+	it("adds no second listener when the command line opens", async () => {
 		render(<Harness initial={threeWindowDesk()} sent={[]} />);
-		arm();
-		fireEvent.keyDown(document, {key: ":", code: "Semicolon", shiftKey: true});
+		await openCommandLine();
 
 		expect(screen.getByLabelText("Type a command")).toBeTruthy();
 		expect(added.filter((type) => type === "keydown")).toHaveLength(1);
@@ -347,13 +433,12 @@ describe("the single application-level keyboard listener", () => {
 });
 
 describe("the command line", () => {
-	it("opens on `prefix :` and dispatches the Msg a typed row names", () => {
+	it("opens on `prefix :` and dispatches the Msg a typed row names", async () => {
 		const sent: Array<ShellMsg> = [];
 		render(<Harness initial={threeWindowDesk()} sent={sent} />);
 
 		expect(screen.queryByLabelText("Type a command")).toBeNull();
-		arm();
-		fireEvent.keyDown(document, {key: ":", code: "Semicolon", shiftKey: true});
+		await openCommandLine();
 
 		const input = screen.getByLabelText("Type a command");
 		fireEvent.change(input, {target: {value: "workspace:create"}});
@@ -365,11 +450,10 @@ describe("the command line", () => {
 		expect(screen.queryByLabelText("Type a command")).toBeNull();
 	});
 
-	it("shows the row's own refusal and stays open on a line it cannot read", () => {
+	it("shows the row's own refusal and stays open on a line it cannot read", async () => {
 		const sent: Array<ShellMsg> = [];
 		render(<Harness initial={threeWindowDesk()} sent={sent} />);
-		arm();
-		fireEvent.keyDown(document, {key: ":", code: "Semicolon", shiftKey: true});
+		await openCommandLine();
 
 		const input = screen.getByLabelText("Type a command");
 		fireEvent.change(input, {target: {value: "workspace:nope"}});
@@ -382,11 +466,10 @@ describe("the command line", () => {
 		expect(sent.filter((msg) => msg.type !== "keys.press")).toEqual([]);
 	});
 
-	it("does not read the desk's keys while it is open", () => {
+	it("does not read the desk's keys while it is open", async () => {
 		const sent: Array<ShellMsg> = [];
 		render(<Harness initial={threeWindowDesk()} sent={sent} />);
-		arm();
-		fireEvent.keyDown(document, {key: ":", code: "Semicolon", shiftKey: true});
+		await openCommandLine();
 		const before = sent.length;
 
 		fireEvent.keyDown(screen.getByLabelText("Type a command"), {key: "x"});
@@ -432,7 +515,10 @@ describe("the shell's own keys from a focused text entry or transcript", () => {
 		const notPrevented = press(composer(), {key: "b", ctrlKey: true, code: "KeyB"});
 
 		expect(sent).toEqual([
-			{type: "keys.press", key: expect.objectContaining({key: "b", ctrlKey: true})},
+			expect.objectContaining({
+				type: "keys.press",
+				key: expect.objectContaining({key: "b", ctrlKey: true}),
+			}),
 		]);
 		expect(armed()).toBe(true);
 		expect(notPrevented).toBe(false);
@@ -515,44 +601,12 @@ describe("the status line", () => {
 	});
 });
 
-/**
- * The harness above keeps one desk object across renders; this one re-decodes it, which is what a
- * live socket does — every snapshot is fresh JSON, equal in value and new in identity.
- */
-function DecodedHarness({
-	sent,
-	snapshots,
-}: {
-	readonly sent: Array<ShellMsg>;
-	readonly snapshots: number;
-}): ReactElement {
-	const [state, setState] = useState<ShellState>(threeWindowDesk());
-	useEffect(() => {
-		if (snapshots > 0) setState((current) => JSON.parse(JSON.stringify(current)) as ShellState);
-	}, [snapshots]);
-	return (
-		<Desk
-			state={state}
-			dispatch={(msg) => {
-				sent.push(msg);
-				setState(
-					(current) =>
-						JSON.parse(JSON.stringify(applyMsg(defaultPrefixTable, current, msg)[0])) as ShellState,
-				);
-			}}
-			resolveMount={boundEverywhere}
-			entries={entries}
-			table={defaultPrefixTable}
-		/>
-	);
-}
-
 describe("the repeat window's countdown", () => {
-	it("lapses on its own clock, however much unrelated kernel traffic arrives (#7782)", () => {
+	it("lapses on its own clock, however much unrelated kernel traffic arrives (#7782)", async () => {
 		vi.useFakeTimers();
 		try {
 			const sent: Array<ShellMsg> = [];
-			const view = render(<DecodedHarness sent={sent} snapshots={0} />);
+			const view = render(<Harness initial={threeWindowDesk()} sent={sent} traffic={0} />);
 			// `<c-l>` is `workspace:next`, a `repeatable: true` binding: it leaves the prefix armed
 			// for the table's 500ms repeat window, the one bounded window left.
 			act(arm);
@@ -563,7 +617,7 @@ describe("the repeat window's countdown", () => {
 			// these and never fired.
 			for (let tick = 1; tick <= 4; tick++) {
 				act(() => {
-					view.rerender(<DecodedHarness sent={sent} snapshots={tick} />);
+					view.rerender(<Harness initial={threeWindowDesk()} sent={sent} traffic={tick} />);
 					vi.advanceTimersByTime(100);
 				});
 			}
@@ -579,7 +633,7 @@ describe("the repeat window's countdown", () => {
 		vi.useFakeTimers();
 		try {
 			const sent: Array<ShellMsg> = [];
-			render(<DecodedHarness sent={sent} snapshots={0} />);
+			render(<Harness initial={threeWindowDesk()} sent={sent} />);
 			act(arm);
 
 			act(() => void vi.advanceTimersByTime(30_000));
@@ -594,7 +648,7 @@ describe("the repeat window's countdown", () => {
 
 	it("Escape drops the armed prefix back to idle", () => {
 		const sent: Array<ShellMsg> = [];
-		render(<DecodedHarness sent={sent} snapshots={0} />);
+		render(<Harness initial={threeWindowDesk()} sent={sent} />);
 		act(arm);
 		expect(screen.getByText("armed")).toBeTruthy();
 
@@ -602,32 +656,6 @@ describe("the repeat window's countdown", () => {
 		expect(screen.getByText("idle")).toBeTruthy();
 	});
 });
-
-/**
- * The desk with a snapshot the caller owns and `dispatch` applying nothing. That is what a key in
- * flight to the kernel actually looks like: the page has sent the Msg and the `state` prop has not
- * moved yet. The harnesses above both re-render before the next press, which is exactly why neither
- * of them ever saw #8274.
- */
-function FrozenHarness({
-	state,
-	sent,
-	resolveMount = boundEverywhere,
-}: {
-	readonly state: ShellState;
-	readonly sent: Array<ShellMsg>;
-	readonly resolveMount?: MountResolver;
-}): ReactElement {
-	return (
-		<Desk
-			state={state}
-			dispatch={(msg) => void sent.push(msg)}
-			resolveMount={resolveMount}
-			entries={entries}
-			table={defaultPrefixTable}
-		/>
-	);
-}
 
 const KeySpy = ({
 	windowId,
@@ -644,68 +672,96 @@ const KeySpy = ({
 const spyingOn = (received: Array<string>): MountResolver =>
 	boundTo((host) => <KeySpy windowId={host.windowId} received={received} />);
 
+/**
+ * The kernel is the only router, so a key typed faster than one round trip is not routed twice —
+ * it is not routed on the page at all (#8274). Every test here holds the kernel's answers back and
+ * releases them by hand, which is the snapshot that does not move between two presses.
+ */
 describe("a sequence typed faster than one kernel round trip (#8274)", () => {
 	const press = (init: Record<string, unknown>): boolean => {
-		let answer = true;
+		let answered = true;
 		act(() => {
-			answer = fireEvent.keyDown(document, init);
+			answered = fireEvent.keyDown(document, init);
 		});
-		return answer;
+		return answered;
 	};
 
 	const repeatTimeoutMs = Duration.toMillis(defaultPrefixTable.repeatTimeout);
 	const idleDesk = threeWindowDesk("window-1");
-	/** The snapshot the arming press produces — one round trip behind the press that caused it. */
-	const armedDesk = applyMsg(defaultPrefixTable, idleDesk, {
-		type: "keys.press",
-		key: {key: "b", ctrlKey: true},
-	})[0];
+	const armedMark = (): boolean =>
+		document.querySelector(".tuval-surface")?.hasAttribute("data-prefix-armed") === true;
 
-	it("routes `<c-b> h` as the bound command, not as `h` to the window", () => {
+	it("routes `<c-b> h` as the bound command, not as `h` to the window", async () => {
 		const sent: Array<ShellMsg> = [];
 		const received: Array<string> = [];
-		render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={spyingOn(received)} />);
+		const replies: Array<() => void> = [];
+		render(
+			<Harness
+				initial={idleDesk}
+				sent={sent}
+				replies={replies}
+				resolveMount={spyingOn(received)}
+			/>,
+		);
 
 		const prefixPrevented = press({key: "b", ctrlKey: true, code: "KeyB"});
 		const commandPrevented = press({key: "h", code: "KeyH"});
 
 		expect(sent).toEqual([
-			{type: "keys.press", key: expect.objectContaining({key: "b", ctrlKey: true})},
-			{type: "keys.press", key: expect.objectContaining({key: "h"})},
+			expect.objectContaining({
+				type: "keys.press",
+				key: expect.objectContaining({key: "b", ctrlKey: true}),
+			}),
+			expect.objectContaining({type: "keys.press", key: expect.objectContaining({key: "h"})}),
 		]);
-		expect(received).toEqual([]);
 		expect([prefixPrevented, commandPrevented]).toEqual([false, false]);
+		// Both answers now land. `h` completed `window:focus-left`, so nothing was ever the window's.
+		await answer(replies, 2);
+		expect(received).toEqual([]);
 	});
 
-	it("routes `<c-b> |` as the split, so no pipe reaches the window either", () => {
+	it("routes `<c-b> |` as the split, so no pipe reaches the window either", async () => {
 		const sent: Array<ShellMsg> = [];
 		const received: Array<string> = [];
-		render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={spyingOn(received)} />);
+		const replies: Array<() => void> = [];
+		render(
+			<Harness
+				initial={idleDesk}
+				sent={sent}
+				replies={replies}
+				resolveMount={spyingOn(received)}
+			/>,
+		);
 
 		press({key: "b", ctrlKey: true, code: "KeyB"});
 		const splitPrevented = press({key: "|", code: "Backslash", shiftKey: true});
 
 		expect(sent).toHaveLength(2);
-		expect(received).toEqual([]);
 		expect(splitPrevented).toBe(false);
+		await answer(replies, 2);
+		expect(received).toEqual([]);
+		expect(screen.getAllByRole("region", {name: /^Window /})).toHaveLength(4);
 	});
 
-	it("still hands a plain key to the focused window while the prefix is idle", () => {
+	it("still hands a plain key to the focused window while the prefix is idle", async () => {
 		const sent: Array<ShellMsg> = [];
 		const received: Array<string> = [];
-		render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={spyingOn(received)} />);
+		render(<Harness initial={idleDesk} sent={sent} resolveMount={spyingOn(received)} />);
 
-		const notPrevented = press({key: "h", code: "KeyH"});
+		let notPrevented = false;
+		await act(async () => {
+			notPrevented = fireEvent.keyDown(document, {key: "h", code: "KeyH"});
+		});
 
 		expect(received).toEqual(["h"]);
 		expect(notPrevented).toBe(true);
 	});
 
-	it("starts the repeat countdown at the press, with no snapshot arriving first", () => {
+	it("starts the repeat countdown at the answer, with no state frame arriving first", () => {
 		vi.useFakeTimers();
 		try {
 			const sent: Array<ShellMsg> = [];
-			render(<FrozenHarness state={idleDesk} sent={sent} />);
+			render(<Harness initial={idleDesk} sent={sent} />);
 
 			press({key: "b", ctrlKey: true, code: "KeyB"});
 			// `<c-l>` is `workspace:next`, the `repeatable: true` binding that opens the 500ms window.
@@ -720,96 +776,179 @@ describe("a sequence typed faster than one kernel round trip (#8274)", () => {
 		}
 	});
 
-	it("keeps its own prefix while a press is still unanswered", () => {
+	it("forwards nothing while an answer is outstanding, whatever the snapshot says", async () => {
 		const sent: Array<ShellMsg> = [];
 		const received: Array<string> = [];
-		const mount = spyingOn(received);
-		const view = render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
+		const replies: Array<() => void> = [];
+		render(
+			<Harness
+				initial={idleDesk}
+				sent={sent}
+				replies={replies}
+				resolveMount={spyingOn(received)}
+			/>,
+		);
 
-		// Two presses in flight. The snapshot the first one produces lands after the page is already
-		// past it, so it is behind on arrival — a page that adopted it would re-arm, and this `w`
-		// would be `window:pick` rather than a `w` the window receives.
+		// Two presses in flight. The snapshot has not moved, so a page routing over it would read
+		// `w` as a plain key and hand it to the window; the kernel reads it as `window:pick`.
 		press({key: "b", ctrlKey: true, code: "KeyB"});
-		press({key: "h", code: "KeyH"});
-		act(() => {
-			view.rerender(<FrozenHarness state={armedDesk} sent={sent} resolveMount={mount} />);
-		});
 		press({key: "w", code: "KeyW"});
+		expect(received).toEqual([]);
 
-		expect(received).toEqual(["w"]);
+		await answer(replies, 2);
+		expect(received).toEqual([]);
+		// `window:pick` unbound the focused window, so its mount is the picker (#8083).
+		expect(
+			within(screen.getByLabelText("Window window-1")).getByRole("listbox", {
+				name: /Open a program/,
+			}),
+		).toBeTruthy();
 	});
 
-	// Three presses is where a single "am I ahead?" flag breaks: the sequence has cycled back
-	// through the page's current value, so frame 1 matches it and clears the flag while presses 2
-	// and 3 are still out (#8274, criterion 8).
-	it("stays on its own prefix across three presses, frame by frame", () => {
+	// Three presses is where the page-held prefix of rounds 1 and 2 broke: the sequence has cycled
+	// back through the page's own value, so an early frame matches it while later presses are still
+	// out. Nothing here is held on the page, so there is nothing to match against (#8274).
+	it("keeps a three-press sequence the kernel's, frame by frame", async () => {
 		const sent: Array<ShellMsg> = [];
 		const received: Array<string> = [];
-		const mount = spyingOn(received);
-		const view = render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
+		const replies: Array<() => void> = [];
+		render(
+			<Harness
+				initial={idleDesk}
+				sent={sent}
+				replies={replies}
+				resolveMount={spyingOn(received)}
+			/>,
+		);
 
 		press({key: "b", ctrlKey: true, code: "KeyB"});
 		press({key: "h", code: "KeyH"});
 		press({key: "b", ctrlKey: true, code: "KeyB"});
 		// The kernel's answers to presses 1 and 2, one at a time: armed, then idle again.
-		act(() => {
-			view.rerender(<FrozenHarness state={armedDesk} sent={sent} resolveMount={mount} />);
-		});
-		act(() => {
-			view.rerender(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
-		});
-		// The page armed itself on press 3, so `j` is `window:focus-down` and never a key.
+		await answer(replies, 2);
+		expect(armedMark()).toBe(false);
+		// Press 3 armed the kernel and its answer is still out, so `j` is the shell's: the desk
+		// forwards nothing and prevents the default rather than guessing off a snapshot it knows is
+		// one press behind.
 		const prevented = press({key: "j", code: "KeyJ"});
 
 		expect(received).toEqual([]);
 		expect(prevented).toBe(false);
+		await answer(replies, 2);
+		expect(received).toEqual([]);
 	});
 
-	// The mirror of it: four presses leave the page idle while the kernel is armed, so a page that
-	// adopted the stale armed frame would swallow the next character instead of forwarding it.
-	it("stays idle across four presses, frame by frame", () => {
+	// The mirror: four presses leave the kernel idle, so the fifth key is the window's — and it
+	// reaches the window on the kernel's own answer, however far behind the snapshot is.
+	it("hands the window a key the kernel routed to it, four presses in", async () => {
 		const sent: Array<ShellMsg> = [];
 		const received: Array<string> = [];
-		const mount = spyingOn(received);
-		const view = render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
+		const replies: Array<() => void> = [];
+		render(
+			<Harness
+				initial={idleDesk}
+				sent={sent}
+				replies={replies}
+				resolveMount={spyingOn(received)}
+			/>,
+		);
 
 		press({key: "b", ctrlKey: true, code: "KeyB"});
 		press({key: "h", code: "KeyH"});
 		press({key: "b", ctrlKey: true, code: "KeyB"});
 		press({key: "h", code: "KeyH"});
-		for (const frame of [armedDesk, idleDesk, armedDesk]) {
-			act(() => {
-				view.rerender(<FrozenHarness state={frame} sent={sent} resolveMount={mount} />);
-			});
-		}
-		const notPrevented = press({key: "j", code: "KeyJ"});
-
-		expect(received).toEqual(["j"]);
-		expect(notPrevented).toBe(true);
-	});
-
-	it("takes the kernel's prefix once nothing is in flight", () => {
-		const sent: Array<ShellMsg> = [];
-		const received: Array<string> = [];
-		const mount = spyingOn(received);
-		const view = render(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
-		const armedMark = (): boolean =>
-			document.querySelector(".tuval-surface")?.hasAttribute("data-prefix-armed") === true;
-
-		press({key: "b", ctrlKey: true, code: "KeyB"});
-		act(() => {
-			view.rerender(<FrozenHarness state={armedDesk} sent={sent} resolveMount={mount} />);
-		});
-		expect(armedMark()).toBe(true);
-
-		// The kernel now reports idle with nothing outstanding — an Escape or a lapse it folded
-		// itself. The snapshot is the newer of the two, so the page adopts it.
-		act(() => {
-			view.rerender(<FrozenHarness state={idleDesk} sent={sent} resolveMount={mount} />);
-		});
-		expect(armedMark()).toBe(false);
 		press({key: "j", code: "KeyJ"});
 
+		expect(received).toEqual([]);
+		await answer(replies, 5);
+		expect(received).toEqual(["j"]);
+	});
+
+	// Criterion 10's ledger is gone with the ledger. Every answer landing in one React commit is
+	// just five answers: there is no per-frame bookkeeping left to under-count.
+	it("loses nothing when every answer lands in one commit", async () => {
+		const sent: Array<ShellMsg> = [];
+		const received: Array<string> = [];
+		const replies: Array<() => void> = [];
+		render(
+			<Harness
+				initial={idleDesk}
+				sent={sent}
+				replies={replies}
+				resolveMount={spyingOn(received)}
+			/>,
+		);
+
+		press({key: "b", ctrlKey: true, code: "KeyB"});
+		press({key: "h", code: "KeyH"});
+		press({key: "b", ctrlKey: true, code: "KeyB"});
+		await act(async () => {
+			for (const settle of replies.splice(0)) settle();
+		});
+
+		expect(armedMark()).toBe(true);
+		expect(received).toEqual([]);
+		// Nothing is outstanding and the kernel is armed, so `j` is `window:focus-down`.
+		press({key: "j", code: "KeyJ"});
+		await answer(replies);
+		expect(received).toEqual([]);
+		expect(armedMark()).toBe(false);
+	});
+
+	// Criterion 9: a press the kernel never applies. The transport drops an in-flight dispatch on a
+	// socket drop and answers `ProcessGone`, which reads as `Refused` — nothing is forwarded, and
+	// the desk is still on the kernel's own prefix for every key after it.
+	it("returns to the kernel's prefix after a press the kernel never answers", async () => {
+		const sent: Array<ShellMsg> = [];
+		const received: Array<string> = [];
+		render(
+			<Harness initial={idleDesk} sent={sent} dropFirst={1} resolveMount={spyingOn(received)} />,
+		);
+
+		// The arming press is lost on the wire, so the kernel never armed.
+		await act(async () => {
+			fireEvent.keyDown(document, {key: "b", ctrlKey: true, code: "KeyB"});
+		});
+		expect(sent).toEqual([]);
+		expect(armedMark()).toBe(false);
+
+		// Every later key is answered by the kernel as it actually stands, not by a page one press
+		// out of phase: `h` is the window's, and so is the next one.
+		await act(async () => {
+			fireEvent.keyDown(document, {key: "h", code: "KeyH"});
+		});
+		await act(async () => {
+			fireEvent.keyDown(document, {key: "j", code: "KeyJ"});
+		});
+
+		expect(received).toEqual(["h", "j"]);
+		expect(armedMark()).toBe(false);
+	});
+
+	it("takes a prefix the kernel moved out of band, with nothing in flight", async () => {
+		const sent: Array<ShellMsg> = [];
+		const received: Array<string> = [];
+		const mount = spyingOn(received);
+		const armedDesk = applyMsg(defaultPrefixTable, idleDesk, {
+			type: "keys.press",
+			key: {key: "b", ctrlKey: true},
+		})[0];
+		const view = render(
+			<Harness initial={idleDesk} sent={sent} frame={armedDesk} resolveMount={mount} />,
+		);
+		expect(armedMark()).toBe(true);
+
+		// The kernel reports idle with nothing outstanding — an Escape or a lapse it folded itself.
+		act(() => {
+			view.rerender(
+				<Harness initial={idleDesk} sent={sent} frame={idleDesk} resolveMount={mount} />,
+			);
+		});
+		expect(armedMark()).toBe(false);
+
+		await act(async () => {
+			fireEvent.keyDown(document, {key: "j", code: "KeyJ"});
+		});
 		expect(received).toEqual(["j"]);
 	});
 });
