@@ -30,6 +30,7 @@ import {dispatchConfigChanged} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
 import {shellId} from "./shell/program.ts";
+import type {ModuleRendererRef} from "./shell/window/index.ts";
 import {ProcessTablePort} from "./table/ProcessTablePort.ts";
 
 /** The global config module, `~/.tuval/tuval.config.ts`; the home dir is a parameter so a test can point it elsewhere. */
@@ -185,6 +186,12 @@ export interface Booted {
 	readonly report: BootReport;
 	readonly kernel: Context.Context<Kernel>;
 	/**
+	 * The `kind: "module"` window specifiers the booted rows declared, each beside the config module
+	 * that declared it. The page server resolves every one from its own origin, so it is carried out
+	 * of the config load rather than recomputed from the registry, whose rows have lost their layer.
+	 */
+	readonly moduleRenderers: ReadonlyArray<ModuleRendererRef>;
+	/**
 	 * The config read again, its spells registered and its bindings compiled against them in one
 	 * write, and then every live process handed what its own row says the new config means for it
 	 * (`reload.ts`). Nothing restarts and nothing respawns: a process keeps running under the row
@@ -245,6 +252,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 	return {
 		report,
 		kernel: started.kernel,
+		moduleRenderers: config.moduleRenderers,
 		reload: reload().pipe(Effect.provideContext(started.kernel)),
 	} satisfies Booted;
 });

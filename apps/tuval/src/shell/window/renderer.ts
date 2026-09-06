@@ -102,17 +102,46 @@ export const resolverFromTable =
 	};
 
 /**
- * The module specifiers a set of rows asks the page to load: one per `kind: "module"` window
- * reference, in row order, each once. The page server generates its loader module from exactly this
- * list, which is why it is computed here from the rows and not typed twice.
+ * A program row beside the config module that declared it. Node resolved the row's own imports from
+ * that module, and a `kind: "module"` renderer on the row is the other half of the same program, so
+ * that module is the base its specifier resolves from too — a program installed beside the user's
+ * config is whole there, and never has to be a dependency of the app (#8262).
  */
-export const moduleRendererRefs = (rows: ReadonlyArray<AnyProgram>): ReadonlyArray<string> => [
-	...new Set(
-		rows.flatMap((row) =>
-			row.renderer?.kind === "module" ? [row.renderer.ref] : ([] as ReadonlyArray<string>),
-		),
-	),
-];
+export interface DeclaredProgram {
+	readonly row: AnyProgram;
+	/** Absolute path of the config module whose `programs` array holds this row. */
+	readonly origin: string;
+}
+
+/** One `kind: "module"` window specifier, carrying the config module that declared its row. */
+export interface ModuleRendererRef {
+	/** The specifier as the row wrote it: the key the page seats the loaded renderer under. */
+	readonly ref: string;
+	/** Absolute path of the config module that declared the row — what `ref` resolves from. */
+	readonly origin: string;
+}
+
+/**
+ * The module specifiers a set of declared rows asks the page to load: one per `kind: "module"`
+ * window reference, in row order, each once. The page server generates its loader module from
+ * exactly this list, which is why it is computed here from the rows and not typed twice.
+ *
+ * The dedupe key is `ref` alone, because that string is the renderer table's key and two seats
+ * cannot share one. Where two rows wrote the same specifier, the first keeps its origin: a merged
+ * row sits in the layer position it overrode, so a project row replacing a global one by id already
+ * arrives here carrying the project config as its origin.
+ */
+export const moduleRendererRefs = (
+	declared: ReadonlyArray<DeclaredProgram>,
+): ReadonlyArray<ModuleRendererRef> => {
+	const seen = new Map<string, ModuleRendererRef>();
+	for (const {row, origin} of declared) {
+		if (row.renderer?.kind !== "module") continue;
+		if (seen.has(row.renderer.ref)) continue;
+		seen.set(row.renderer.ref, {ref: row.renderer.ref, origin});
+	}
+	return [...seen.values()];
+};
 
 /** The row's renderer, or the reason there is none. This is the only route from a program to its window renderer. */
 export const rendererFor = (row: AnyProgram, resolve: RendererResolver): RendererResolution =>
