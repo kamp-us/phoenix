@@ -25,6 +25,7 @@ import type {
 	TranscriptItem,
 } from "../ports/index.ts";
 import type {
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -33,10 +34,19 @@ import type {
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
+import type {SessionSummary} from "./sessions.ts";
 
 export interface StartOptions {
 	readonly cwd: string;
-	/** A session id an earlier run returned. Absent starts a new session. */
+	/**
+	 * A session id to pick back up, or absent to start a new one. Any id `listSessions` offered is
+	 * legal, not only one this desk started: continuing a session the operator began in his terminal
+	 * is what the session list is for (epic #8070, ruling 3).
+	 *
+	 * A miss is `StartError({reason: "session-not-found"})`, never a start that succeeds and replays
+	 * nothing. A row that opens onto silence has to be saying the session is empty; if it could also
+	 * mean the session is gone, neither reading is worth anything.
+	 */
 	readonly resume?: string;
 }
 
@@ -93,6 +103,18 @@ export interface TuvalAiAgentApi {
 	 * transport. Tuval keeps no second copy beyond the live tail the core holds.
 	 */
 	readonly page: (before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>;
+	/**
+	 * Every session this backend's store holds, newest first — the tenth member (#8097).
+	 *
+	 * A read of the store rather than of a session, so it answers before `start` and on a layer that
+	 * never starts one. It is a member of the generic interface and not of a backend because the
+	 * founder ruled the session list generic (#8070, ruling 1): the list program asks every
+	 * registered implementation this one question and unions the answers.
+	 *
+	 * A backend that could not look fails rather than answering `[]`. An empty array is the claim
+	 * "this store holds no sessions", and that is a different thing to say.
+	 */
+	readonly listSessions: Effect.Effect<ReadonlyArray<SessionSummary>, ListError>;
 	readonly events: Stream.Stream<AgentEvent, TransportError>;
 }
 

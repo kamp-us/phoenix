@@ -35,6 +35,7 @@ import type {Mode, ModelRef, PermissionDecision} from "../../ai-agent/ports/inde
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -417,6 +418,15 @@ const make = (
 			 */
 			commands: Effect.succeed([]),
 			page,
+			// Refused rather than answered `[]` until #8099 reads `SessionManager.listAll`: an empty
+			// list would tell the session list this machine holds no Pi sessions, which is a claim
+			// nothing here has checked.
+			listSessions: Effect.fail(
+				new ListError({
+					reason: "unsupported",
+					detail: "the Pi backend does not enumerate its session store yet (#8099)",
+				}),
+			),
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};
 	});
