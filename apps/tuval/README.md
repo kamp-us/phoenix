@@ -589,19 +589,24 @@ scaling one weight down to a 16px tab closes the gaps between the branches into 
 carries the mark's own near-black plate rather than a transparent ground, so one file reads on a
 light tab strip and on the dark desk alike.
 
-None of those four is editable. `brand/tree-mark.png` is the source they are cut from — the kamp.us
+None of those four is editable. `brand/tree-mark.svg` is the source they are cut from — the kamp.us
 tree mark as the founder supplied it, adopted in
-[#8144](https://github.com/kamp-us/phoenix/issues/8144) and the reference form from here on. It is
-the supplied file cropped to the tree's bounding box and nothing else: the original carried roughly
-35px of margin per side, and dropping it buys about 20% linear scale at tab size. A further size is
-one more downscale of that file; a shape change means a new supplied file and a re-cut of all four.
+[#8144](https://github.com/kamp-us/phoenix/issues/8144) and the reference form from here on. The
+supplied file was a raster; it is traced to vector here so a size is *re-rendered* rather than
+resampled, which is what stops a further size being a downscale of a downscale. A new size is one
+`rsvg-convert` at that size; a shape change is an edit to the SVG and a re-cut of all four.
 
-The source is a raster, so the cuts are resampled rather than re-rendered, and the smallest of them
-pays for it: at 16px the canopy's branch work closes up and the mark reads as a red mass rather than
-a tree. That is a known and accepted cost of using this drawing — it is the mark, and a redrawn
-substitute that survives 16px is not. A hidpi tab strip selects the 32px cut anyway, which is where
-the mark starts reading. Replacing the raster source with a faithful vector trace is the open path
-to fixing the 16px cut without changing the drawing.
+The drawing is unchanged — the trace is of the supplied artwork, branch work and root flare intact,
+not a redrawn substitute. An earlier pass on this branch did substitute a simplified mark, and that
+was reverted: establishing a source of truth is not licence to redesign the thing it is a source of.
+
+One cut carries a render-time override, and only one. The mark is dense line art, and at 16px every
+stroke lands under a device pixel — rendered flat, the whole canopy comes out anti-aliased mid-tone
+with no pixel reaching full colour, which reads as a faint smudge rather than a tree. The 16px cut
+is therefore rendered with a `stroke-width` on the path group, which widens each stroke enough to
+carry solid colour: 0 pixels at full red become 62, while the interior plate gaps that make it read
+as a canopy survive. Nothing about the geometry changes. The larger cuts need no override, because
+at 32px and up the strokes already cover whole pixels.
 
 ## The AI agent slice
 
