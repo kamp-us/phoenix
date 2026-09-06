@@ -25,7 +25,7 @@ import {ItemId} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
-import {WindowId} from "../window/index.ts";
+import {PREFIX_ARMED_ATTRIBUTE, WindowId} from "../window/index.ts";
 import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWindow.tsx";
 import {
 	assistantItem,
@@ -625,8 +625,16 @@ describe("keys typed on the transcript", () => {
 
 	afterEach(() => {
 		globalThis.document.removeEventListener("keydown", listener);
+		globalThis.document.body.removeAttribute(PREFIX_ARMED_ATTRIBUTE);
 		seen.length = 0;
 	});
+
+	/**
+	 * The desk's mark, put on an ancestor of the window exactly as the desk puts it on its own root
+	 * (`../ui/Desk.tsx`) — the window is mounted under `body` here, and there is no desk above it.
+	 */
+	const armTheDesk = (): void =>
+		globalThis.document.body.setAttribute(PREFIX_ARMED_ATTRIBUTE, "true");
 
 	/** Every keydown the desk's one document listener would have seen (`../ui/Desk.tsx`). */
 	const watchDesk = (): ReadonlyArray<string> => {
@@ -647,6 +655,25 @@ describe("keys typed on the transcript", () => {
 		});
 
 		expect(reached).toEqual(["b", "Escape", "r"]);
+	});
+
+	it("stands down for every key of an armed sequence, transcript and composer alike (#8270)", async () => {
+		const {process} = await openWindow(
+			withTranscript(transcriptOf(2), {phase: "prompting", interrupted: ItemId.make("b")}),
+		);
+		const reached = watchDesk();
+		armTheDesk();
+
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole("log", {name: "Transcript"}), {key: "w"});
+			fireEvent.keyDown(composer(), {key: "Escape"});
+			fireEvent.keyDown(composer(), {key: "r", altKey: true});
+		});
+
+		// The bare `w` is the second key of `<prefix> w`, and the window's own two keys are the
+		// shell's while it is armed: nothing here is the window's to act on.
+		expect(reached).toEqual(["w", "Escape", "r"]);
+		expect(process.inbox()).toEqual([]);
 	});
 
 	it("still interrupts on Escape typed on the transcript", async () => {

@@ -28,6 +28,7 @@ export {
 	type StatusFrame,
 	type SurfaceKeyAnswer,
 	sameLayout,
+	shellOwnsKey,
 	statusFrame,
 	surfaceKey,
 	zoomedWindow,
