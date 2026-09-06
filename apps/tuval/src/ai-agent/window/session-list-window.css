@@ -29,3 +29,65 @@
 	margin: 0;
 	padding-inline-start: var(--s-4);
 }
+
+.tuval-session-transcript {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+	min-height: 0;
+	block-size: 100%;
+	padding: var(--s-3);
+}
+
+.tuval-session-transcript-header {
+	display: flex;
+	align-items: center;
+	gap: var(--s-3);
+}
+
+.tuval-session-transcript-header h2 {
+	margin: 0;
+	font: var(--t-heading-sm);
+	color: var(--text-primary);
+}
+
+.tuval-session-transcript-items {
+	flex: 1;
+	overflow-y: auto;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.tuval-session-transcript-row {
+	display: flex;
+	gap: var(--s-2);
+	font: var(--t-body);
+	color: var(--text-primary);
+}
+
+.tuval-session-transcript-kind {
+	flex: none;
+	inline-size: 5rem;
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+.tuval-session-transcript-text {
+	white-space: pre-wrap;
+}
+
+.tuval-session-transcript-note,
+.tuval-session-transcript-refused {
+	flex: 1;
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+.tuval-session-transcript-refused {
+	color: var(--text-danger);
+}

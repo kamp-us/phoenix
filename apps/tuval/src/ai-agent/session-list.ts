@@ -32,6 +32,7 @@ import {ProgramId} from "../registry/program.ts";
 import type {Registry} from "../registry/Registry.ts";
 import {type AiAgentSessions, type BackendListFailure, listAiAgentSessions} from "./backends.ts";
 import {SESSION_LIST_WINDOW_REF} from "./renderer-ref.ts";
+import {type SessionTranscriptSpellOptions, sessionTranscriptSpell} from "./session-transcript.ts";
 
 /**
  * The union, as the spell reaches it. A service rather than a direct `listAiAgentSessions` call
@@ -123,6 +124,11 @@ export const sessionListSpell = ({
 
 export const sessionListId = ProgramId.make("ai-agent-sessions");
 
+/** What the row's two spells take. One options bag, because both bounds are the same kind of bound. */
+export interface SessionListProgramOptions
+	extends SessionListSpellOptions,
+		SessionTranscriptSpellOptions {}
+
 const SESSION_LIST_VERSION = "1.0.0";
 
 type SessionListState = Record<never, never>;
@@ -135,9 +141,14 @@ type SessionListMsg = {readonly type: "opened"};
  * It carries no state worth the name: the surface is `./window/`'s and renders a list it is handed,
  * so nothing about it belongs in this process. `renderer` is what makes the row offerable at all —
  * a row without one is headless and left out of every picker list (`../shell/picker/entries.ts`)
- * — and `spells` is the list it answers, reachable under `[sessionListId, "session", "list"]`.
+ * — and `spells` is the list it answers, reachable under `[sessionListId, "session", …]`.
+ *
+ * Two spells, not one: `session.list` answers the rows, and `session.transcript`
+ * (`./session-transcript.ts`) answers the history behind a row an operator picked. The second is
+ * declared here because opening a row is what the list is for, and because both are on-demand reads
+ * of a backend's store rather than state the kernel holds.
  */
-export const sessionListProgram = (options: SessionListSpellOptions = {}): AnyProgram =>
+export const sessionListProgram = (options: SessionListProgramOptions = {}): AnyProgram =>
 	({
 		id: sessionListId,
 		label: "AI agent sessions",
@@ -147,7 +158,7 @@ export const sessionListProgram = (options: SessionListSpellOptions = {}): AnyPr
 		}),
 		ports: {},
 		renderer: SESSION_LIST_WINDOW_REF,
-		spells: [sessionListSpell(options)],
+		spells: [sessionListSpell(options), sessionTranscriptSpell(options)],
 		handlers: {},
 		capabilities: [{family: "filesystem", detail: "every registered backend's session store"}],
 		identity: {

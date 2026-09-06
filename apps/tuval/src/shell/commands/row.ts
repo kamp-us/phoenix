@@ -62,3 +62,14 @@ export const commandPath = (name: CommandName | string): CommandPath => {
  */
 export const parameterNames = (command: AnyShellCommand): ReadonlyArray<string> =>
 	Object.keys(command.params.fields ?? {});
+
+/**
+ * Which of those a typed line must supply. A `Schema.optionalKey` field carries `isOptional` on its
+ * AST context (`effect/SchemaAST`'s `optionalKey`), and that is the one place the fact lives — a
+ * second list of names beside the schema would be a list to forget to update.
+ *
+ * Positional binding means an optional parameter is only reachable when every parameter before it
+ * is supplied, so a row declares its optional ones last.
+ */
+export const isOptionalParameter = (command: AnyShellCommand, name: string): boolean =>
+	command.params.fields?.[name]?.ast?.context?.isOptional === true;

@@ -9,6 +9,20 @@
 
 export {SESSION_LIST_WINDOW_REF} from "../renderer-ref.ts";
 export {
+	listView,
+	type OpenPhase,
+	type OpenRequest,
+	type OpenTarget,
+	openRead,
+	type SendPlan,
+	type SessionListView,
+	type SessionSpawn,
+	send,
+	sessionView,
+	TRANSCRIPT_PAGE_SIZE,
+	type TranscriptRead,
+} from "./opening.ts";
+export {
 	lastModifiedLabel,
 	matchesQuery,
 	NO_FIRST_PROMPT,
@@ -25,4 +39,10 @@ export {
 	SessionListWindow,
 	type SessionListWindowOptions,
 	sessionListWindow,
+	type TranscriptSource,
 } from "./SessionListWindow.tsx";
+export {
+	type SessionTranscriptProps,
+	SessionTranscriptView,
+	type TranscriptAnswer,
+} from "./SessionTranscript.tsx";

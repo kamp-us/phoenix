@@ -129,6 +129,19 @@ and a test kernel at once, and there is no second place to keep in step. A windo
 either — two windows over one process would race into a refusal, and a window is a view rather than
 the owner of a session's lifetime.
 
+**A spawner that has something to say about the boot says it as a per-spawn service, not as an
+argument.** `SpawnOptions` carries no program arguments and is not going to grow any — the one thing
+a spawner already hands a child is the context its handlers run under. So a spawner opening a
+process *for* something names that thing as a service on the child's context and the boot Cmd's
+handler reads it with `Effect.serviceOption`: absence is the ordinary case and stays a value rather
+than a missing dependency, and the decision still lives in the one place that knows the process is
+new. [`SessionOpening`](../apps/tuval/src/ai-agent/opening.ts) is the worked example — `{cwd,
+resume}` and no third field, set by
+[`shell/picker/open.ts`](../apps/tuval/src/shell/picker/open.ts) when the operator picked a session
+out of the list, read only by `aiAgent.boot`. Keep such a service narrow on purpose: one that grows
+fields is a program-arguments system by another name, and then every spawner has to know what every
+row wants.
+
 **The Cmd's handler answers with a Msg and does no work.** `runInterpret` awaits an init Cmd's
 handler before `make` returns (`host/actor.ts`), and a spawn runs inside the *spawning* process's
 serial step — so a boot handler that opened the connection itself would freeze the shell for as long
