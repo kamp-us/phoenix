@@ -702,6 +702,19 @@ function ChatWindow({
 					})}
 				</div>
 			</div>
+			{isWorking(phase) ? (
+				// Visual only. The phase line above is the announced surface for the running turn, so a
+				// live region here would narrate that same turn twice; what this adds is the tell at
+				// the end of the transcript, where the eye already is while a turn runs.
+				<p className="tuval-chat-working" aria-hidden="true">
+					<span className="tuval-chat-working-dots">
+						<span />
+						<span />
+						<span />
+					</span>
+					{interruption === null ? "Working…" : "Interrupting…"}
+				</p>
+			) : null}
 			<DesignTranslationProvider translate={tuvalDesignTranslate}>
 				<PermissionCards permissions={process.state.permissions} onAnswer={answerPermission} />
 				<AgentChatInput
