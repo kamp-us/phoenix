@@ -57,7 +57,7 @@ describe("the rows", () => {
 			"/Users/founder/code/phoenix",
 			"epic/8070",
 			"42 messages",
-			"claude-session",
+			"claude",
 		]) {
 			expect(row).toContain(part);
 		}
@@ -67,7 +67,7 @@ describe("the rows", () => {
 		render(open(listed([bareSession])));
 		const row = screen.getByRole("option").textContent ?? "";
 		expect(row).toContain(NO_FIRST_PROMPT);
-		expect(row).toContain("3 hours ago · pi-session");
+		expect(row).toContain("3 hours ago · pi");
 		expect(row).not.toContain("0 messages");
 	});
 });

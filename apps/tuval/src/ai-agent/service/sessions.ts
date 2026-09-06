@@ -17,7 +17,13 @@ export interface SessionSummary {
 	readonly sessionId: string;
 	/** Milliseconds since the epoch, so a union across backends sorts without parsing anything. */
 	readonly lastModified: number;
-	/** Which registered implementation this session came from — the row's backend tag. */
+	/**
+	 * The backend tag ruling 6 puts on the row: what a surface *calls* the implementation this
+	 * session came from, and nothing a caller may route on. A backend fills it with its own label
+	 * and cannot fill it with anything better — a layer does not know which registry id it was
+	 * registered under, and the same layer could be registered twice. The routing key is
+	 * `AiAgentSession.programId`, stamped by the one caller that holds the row (`../backends.ts`).
+	 */
 	readonly backend: string;
 	readonly firstPrompt?: string | undefined;
 	/** The directory the session was started in. */
@@ -69,7 +75,6 @@ export const sessionSummary = (draft: SessionDraft): SessionSummary => {
 };
 
 /** Newest first, as the port declares. `sort` is stable, so a tie keeps the store's own order. */
-export const newestFirst = (
-	sessions: ReadonlyArray<SessionSummary>,
-): ReadonlyArray<SessionSummary> =>
-	[...sessions].sort((left, right) => right.lastModified - left.lastModified);
+export const newestFirst = <T extends {readonly lastModified: number}>(
+	sessions: ReadonlyArray<T>,
+): ReadonlyArray<T> => [...sessions].sort((left, right) => right.lastModified - left.lastModified);

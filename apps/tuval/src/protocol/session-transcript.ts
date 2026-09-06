@@ -96,12 +96,13 @@ export const TranscriptItem = Schema.Union([UserItem, AssistantItem, ToolItem, S
 export type TranscriptItemWire = typeof TranscriptItem.Type;
 
 /**
- * Which session to read and how far back. `backend` is the registered program row's id rather than
- * the row's label, and `cwd` is the folder the store filed the session under: the pair is what a
- * backend needs to find a session it did not open in this desk (epic #8070, ruling 3).
+ * Which session to read and how far back. `programId` is the registered program row's id — named
+ * for what it is, because the row's backend tag is a different string that will not resolve — and
+ * `cwd` is the folder the store filed the session under: the pair is what a backend needs to find a
+ * session it did not open in this desk (epic #8070, ruling 3).
  */
 export const SessionTranscriptRequest = Schema.Struct({
-	backend: Schema.String,
+	programId: Schema.String,
 	sessionId: Schema.String,
 	cwd: Schema.String,
 	/** The oldest item the caller already holds, or `null` for the newest end of the transcript. */

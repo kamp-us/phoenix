@@ -53,14 +53,28 @@ export interface BackendListFailure {
 	readonly cause: Cause.Cause<ListError>;
 }
 
+/**
+ * One backend's session, attributed to the registry row it was read through.
+ *
+ * `programId` is the routing key and `backend` is the display tag (ruling 6), and they are two
+ * fields because they are two different strings: `pi-session` is the row a spawn or a transcript
+ * read has to name, `pi` is what the row's meta line says. Only this module can stamp the first —
+ * a backend's layer does not know which id it was registered under — so a session gains it here,
+ * on the way out of the one call that holds the row.
+ */
+export interface AiAgentSession extends SessionSummary {
+	/** The registered program row's id: what a transcript read and a first-send spawn name. */
+	readonly programId: ProgramId;
+}
+
 export interface AiAgentSessions {
 	/** Every answering backend's sessions as one list, newest first, as the port declares. */
-	readonly sessions: ReadonlyArray<SessionSummary>;
+	readonly sessions: ReadonlyArray<AiAgentSession>;
 	readonly failures: ReadonlyArray<BackendListFailure>;
 }
 
 type Outcome =
-	| {readonly _tag: "listed"; readonly sessions: ReadonlyArray<SessionSummary>}
+	| {readonly _tag: "listed"; readonly sessions: ReadonlyArray<AiAgentSession>}
 	| {readonly _tag: "refused"; readonly failure: BackendListFailure};
 
 const askOne = (row: AiAgentBackendRow, services: Context.Context<never>): Effect.Effect<Outcome> =>
@@ -75,7 +89,12 @@ const askOne = (row: AiAgentBackendRow, services: Context.Context<never>): Effec
 		}),
 	).pipe(
 		Effect.provideContext(services),
-		Effect.map((sessions): Outcome => ({_tag: "listed", sessions})),
+		Effect.map(
+			(sessions): Outcome => ({
+				_tag: "listed",
+				sessions: sessions.map((session) => ({...session, programId: row.id})),
+			}),
+		),
 		Effect.catchCause((cause) =>
 			Effect.succeed<Outcome>({
 				_tag: "refused",

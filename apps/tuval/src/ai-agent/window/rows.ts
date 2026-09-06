@@ -18,9 +18,11 @@ export const NO_FIRST_PROMPT = "(no first prompt)";
 /**
  * Two sessions from two backends can carry one `sessionId` — the id is each store's own — so the
  * row's key is the pair. `CommandPalette` keys its options on `value`, and two rows sharing one key
- * is a React list that drops a row silently.
+ * is a React list that drops a row silently. The pair is keyed on `programId` rather than the
+ * backend tag, because the tag is a label two rows could share and the id is the one that cannot.
  */
-export const rowValue = (session: SessionRow): string => `${session.backend}:${session.sessionId}`;
+export const rowValue = (session: SessionRow): string =>
+	`${session.programId}:${session.sessionId}`;
 
 /**
  * Newest first by last modified (ruling 6). The kernel already sorts the union

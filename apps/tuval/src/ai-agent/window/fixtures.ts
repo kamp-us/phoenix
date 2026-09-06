@@ -2,6 +2,10 @@
  * Session rows for this window's tests. A colocated fixture module, outside the `*.unit.test.*`
  * glob, so the same three sessions back the pure row tests and the rendered ones and no assertion
  * is written against a copy that could drift from the other.
+ *
+ * Every row's `programId` and `backend` are deliberately different strings — `pi-session` against
+ * `pi` — because they are the routing key and the display tag, and a fixture that spelled them the
+ * same made a window routing on the tag look correct (epic #8070's tail review).
  */
 
 import type {SessionRow} from "../../protocol/session-list.ts";
@@ -15,7 +19,8 @@ const HOUR = 3_600_000;
 export const claudeSession: SessionRow = {
 	sessionId: "c-1",
 	lastModified: NOW - HOUR,
-	backend: "claude-session",
+	programId: "claude-session",
+	backend: "claude",
 	firstPrompt: "Wire the session list window",
 	folder: "/Users/founder/code/phoenix",
 	branch: "epic/8070",
@@ -26,7 +31,8 @@ export const claudeSession: SessionRow = {
 export const piSession: SessionRow = {
 	sessionId: "p-1",
 	lastModified: NOW - 2 * HOUR,
-	backend: "pi-session",
+	programId: "pi-session",
+	backend: "pi",
 	firstPrompt: "Draft the release note",
 	folder: "/Users/founder/code/demlik",
 	branch: "main",
@@ -37,7 +43,8 @@ export const piSession: SessionRow = {
 export const bareSession: SessionRow = {
 	sessionId: "b-1",
 	lastModified: NOW - 3 * HOUR,
-	backend: "pi-session",
+	programId: "pi-session",
+	backend: "pi",
 };
 
 /** The three, deliberately out of order: the window is what puts them newest-first. */
