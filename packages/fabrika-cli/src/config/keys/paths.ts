@@ -13,10 +13,10 @@
  *
  * Only {@link decisionsDirKey} is declinable, and the asymmetry is deliberate. A repo with no
  * decision corpus changes what `governance` may conclude and what `adr` may write, so the absence
- * has to be *declared* before those verbs will act on it. The other three name
- * files whose readers already answer "no such file" from the filesystem — `ui render` on a missing
- * harness, `build pick` on a missing roadmap — so a decline key there would be a second way to say
- * what the tree already says.
+ * has to be *declared* before those verbs will act on it. The other three name files whose readers
+ * already answer "no such file" from the filesystem — `ui render` on a missing harness, `build
+ * pick` on a missing roadmap — so a decline key there would be a second way to say what the tree
+ * already says.
  */
 
 import type {JsonSchema} from "../json-schema.ts";

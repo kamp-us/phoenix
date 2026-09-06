@@ -52,12 +52,12 @@ const EPIC = url("https://forge.example/o/r/issues/40");
 const PR = url("https://forge.example/o/r/pull/11");
 
 /** The two shapes a driver resolves: an installed copy, and a checkout of fabrika's own repo. */
-const INSTALLED = "/home/dev/demlik/node_modules/@kampus/fabrika-cli/dist/bin.js";
+const INSTALLED = "/home/dev/repo/node_modules/@kampus/fabrika-cli/dist/bin.js";
 const IN_TREE = "packages/fabrika-cli/src/bin.ts";
 
 const brief = (ground: LaneGround, fabrika: string, state: LaneBrief["state"]): LaneBrief => ({
 	lane: "4",
-	root: root("/home/dev/demlik/.fabrika/lanes"),
+	root: root("/home/dev/repo/.fabrika/lanes"),
 	fabrika: entry(fabrika),
 	task: "issue",
 	state,
@@ -88,7 +88,7 @@ describe("the five shell states route through one table", () => {
 	});
 
 	it("refuses a `shell:` field that disagrees with the state it was routed from", () => {
-		const artifact = `## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build:ui\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+		const artifact = `## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build:ui\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
 
 		expect(read(artifact)).toMatchObject({
 			_tag: "Malformed",
@@ -142,7 +142,7 @@ describe("the `fabrika:` field admits only a node-runnable path", () => {
 	});
 
 	it("refuses the bare binstub — in a worktree it runs another checkout's code (#5679)", () => {
-		expect(fabrikaEntry("/home/dev/demlik/node_modules/.bin/fabrika")).toBeNull();
+		expect(fabrikaEntry("/home/dev/repo/node_modules/.bin/fabrika")).toBeNull();
 		expect(fabrikaEntry("fabrika")).toBeNull();
 	});
 
@@ -155,14 +155,14 @@ describe("the `fabrika:` field admits only a node-runnable path", () => {
 
 describe("a brief with no usable entrypoint is malformed", () => {
 	const withField = (line: string) =>
-		`## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\n${line}task: issue\nstate: build\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+		`## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\n${line}task: issue\nstate: build\nshell: builder\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
 
 	it("refuses a brief that names none", () => {
 		expect(read(withField(""))).toMatchObject({_tag: "Malformed", evidence: "fabrika"});
 	});
 
 	it("refuses a brief that names the binstub", () => {
-		expect(read(withField("fabrika: /home/dev/demlik/node_modules/.bin/fabrika\n"))).toMatchObject({
+		expect(read(withField("fabrika: /home/dev/repo/node_modules/.bin/fabrika\n"))).toMatchObject({
 			_tag: "Malformed",
 			evidence: "fabrika",
 		});
@@ -171,7 +171,7 @@ describe("a brief with no usable entrypoint is malformed", () => {
 
 describe("the field set is closed per section, the way the section set is closed (#5809)", () => {
 	const withGround = (extra: string) =>
-		`## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: ${ISSUE}\n${extra}## Rules\n${RULES}\n`;
+		`## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\n## Ground\nissue: ${ISSUE}\n${extra}## Rules\n${RULES}\n`;
 
 	it("refuses the driver's instruction rewritten as a field", () => {
 		expect(
@@ -187,12 +187,12 @@ describe("the field set is closed per section, the way the section set is closed
 	});
 
 	it('refuses a "## Ground" field carried under "## Task"', () => {
-		const artifact = `## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\npr: ${PR}\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+		const artifact = `## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\npr: ${PR}\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
 		expect(read(artifact)).toMatchObject({_tag: "Malformed", evidence: "pr"});
 	});
 
 	it("refuses a key repeated inside the section that owns it", () => {
-		const artifact = `## Task\nlane: 4\nroot: /home/dev/demlik/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\nstate: review\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
+		const artifact = `## Task\nlane: 4\nroot: /home/dev/repo/.fabrika/lanes\nfabrika: ${IN_TREE}\ntask: issue\nstate: build\nshell: builder\nstate: review\n## Ground\nissue: ${ISSUE}\n## Rules\n${RULES}\n`;
 		expect(read(artifact)).toMatchObject({_tag: "Malformed", evidence: "state"});
 	});
 });

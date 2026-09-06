@@ -101,9 +101,9 @@ describe("declared values", () => {
 /** A malformed value refuses that key's whole value, naming what it rejected. */
 describe("malformed values", () => {
 	it.each([
-		{shape: "a key that is not an array", text: '{"capClearAuthors": "@usirin"}'},
+		{shape: "a key that is not an array", text: '{"capClearAuthors": "@ada"}'},
 		{shape: "a non-string entry", text: '{"capClearAuthors": [1]}'},
-		{shape: "an entry with no `@`", text: '{"capClearAuthors": ["usirin"]}'},
+		{shape: "an entry with no `@`", text: '{"capClearAuthors": ["ada"]}'},
 		{shape: "an entry naming a nested path", text: '{"capClearAuthors": ["@a/b/c"]}'},
 	])("capClearAuthors refuses the whole set on $shape", ({text}) => {
 		const resolved = resolve(fromText(text), capClearAuthorsKey);

@@ -3,8 +3,7 @@
  * release-please can still parse.
  *
  * The failure it repairs: release-please copies each commit subject verbatim into the Release PR
- * body's changelog,
- * then on the NEXT run reads that body back through an HTML parser
+ * body's changelog, then on the NEXT run reads that body back through an HTML parser
  * (`PullRequestBody.parse` → `extractMultipleReleases`). One observed commit's subject carried a
  * literal `<details>`, so the parser saw a second `<details>` element with no `<summary>` inside it
  * and `summary.match(...)` threw on `undefined` — every run since has died there, and the frozen

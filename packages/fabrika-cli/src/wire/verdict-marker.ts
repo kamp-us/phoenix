@@ -10,13 +10,13 @@
  * no empty inhabitant), and the staleness question is its own answer rather than a fold into the
  * read.
  *
- * **What makes a verdict survive a head move is the content field, and its absence never does**
- * — the ruled rule. The SHA alone was doing two jobs — invalidating on any branch push,
- * and invalidating on base drift — and it was over-broad on the first: an update-from-main that
- * leaves both the diff and every touched file byte-identical re-reviewed content nobody changed.
- * {@link bindToContent} is where the ruled rule lives. A marker with **no** content field falls back
- * to head equality, which is the pre-ruling answer and strictly the stricter one, so a legacy or
- * hand-written marker can never gain survival it did not earn.
+ * **What makes a verdict survive a head move is the content field, and its absence never does.**
+ * The SHA alone was doing two jobs — invalidating on any branch push, and invalidating on base
+ * drift — and it was over-broad on the first: an update-from-main that leaves both the diff and
+ * every touched file byte-identical re-reviewed content nobody changed. So a marker that carries a
+ * content digest binds to that digest instead, and {@link bindToContent} is where that comparison
+ * lives. A marker with **no** content field falls back to head equality, which is strictly the
+ * stricter of the two, so a legacy or hand-written marker can never gain survival it did not earn.
  *
  * `read` is total and its three answers are the design (see `./format.ts`). The discrimination that
  * carries the weight is **Absent vs Malformed**: bytes carrying no marker of this format at all are
@@ -198,7 +198,8 @@ export const bindToHead = (marker: VerdictMarker, head: string): Binding => {
 };
 
 /**
- * Whether a verdict claim still binds once the head has moved — the ruled question.
+ * Whether a verdict claim still binds once the head has moved — decided on the content digest when
+ * the marker carries one, and on head equality when it does not.
  *
  * It takes the two bound fields rather than a whole marker so the advisory carrier and the native
  * review fold, which are verdict claims carrying no marker, resolve through this one derivation

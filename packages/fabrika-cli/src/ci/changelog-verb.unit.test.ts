@@ -27,13 +27,13 @@ describe("runChangelog", () => {
 	it("renders the section, bucketed by the entries' type:* labels", async () => {
 		const outcome = await run(
 			entries([
-				{issue: 12, pr: 13, title: "Add pano", type: "feature"},
+				{issue: 12, pr: 13, title: "Add search", type: "feature"},
 				{issue: 20, title: "Fix the focus steal", type: "bug"},
 			]),
 		);
 		expect(outcome.code).toBe(0);
 		expect(outcome.stdout).toContain("## [0.3.1] — 2026-08-18");
-		expect(outcome.stdout).toContain("### Added\n\n- Add pano (#13)");
+		expect(outcome.stdout).toContain("### Added\n\n- Add search (#13)");
 		expect(outcome.stdout).toContain("### Fixed\n\n- Fix the focus steal (#20)");
 	});
 
@@ -75,7 +75,7 @@ describe("runChangelog", () => {
 	});
 
 	it("refuses a JSON file that is not a ChangelogEntry[]", async () => {
-		const outcome = await run(entries([{issue: "twelve", title: "Add pano"}]));
+		const outcome = await run(entries([{issue: "twelve", title: "Add search"}]));
 		expect(outcome.code).toBe(MALFORMED_DOCUMENT);
 		expect(outcome.stdout).toBe("");
 	});

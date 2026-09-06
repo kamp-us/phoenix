@@ -418,7 +418,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 				/&page=1$/,
 				{
 					status: 200,
-					body: [comment(1, "usirin", "first")],
+					body: [comment(1, "ada", "first")],
 					headers: linkNext("https://api.github.com/next"),
 				},
 			],
@@ -430,7 +430,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 			value: [
 				{
 					id: 1,
-					author: "usirin",
+					author: "ada",
 					createdAt: "2026-08-03T09:28:41Z",
 					updatedAt: "2026-08-03T10:00:00Z",
 					body: "first",
@@ -448,7 +448,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 
 	it("carries a body holding a control character, which `--jq -r` could not", async () => {
 		const http = scripted([
-			[/comments/, {status: 200, body: [{id: 1, user: {login: "usirin"}, body: "a\nb"}]}],
+			[/comments/, {status: 200, body: [{id: 1, user: {login: "ada"}, body: "a\nb"}]}],
 		]);
 		const result = await against(listComments("o/r", 1), http);
 		expect(result).toMatchObject({_tag: "Ok", value: [{body: "a\nb"}]});
@@ -616,7 +616,7 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 					status: 200,
 					body: {
 						id: 7,
-						user: {login: "usirin"},
+						user: {login: "ada"},
 						body: "ruling text",
 						created_at: "2026-08-23T00:00:00Z",
 						updated_at: "2026-08-23T01:00:00Z",
@@ -629,7 +629,7 @@ describe("the writes send the fields the API needs, in the form it accepts", () 
 			_tag: "Ok",
 			value: {
 				id: 7,
-				author: "usirin",
+				author: "ada",
 				createdAt: "2026-08-23T00:00:00Z",
 				updatedAt: "2026-08-23T01:00:00Z",
 				body: "ruling text",

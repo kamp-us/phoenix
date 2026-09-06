@@ -10,9 +10,9 @@
  * shell runs in its own worktree, so a shell told only the lane id records its terminal into its
  * worktree's `.fabrika/` and the driven lane never hears it. The `fabrika` entrypoint is the
  * copy of this CLI the shell must execute, resolved by the driver against the repo it is actually
- * standing in — rules that named one repo's own `packages/fabrika-cli/src/bin.ts` as a literal are,
- * in any repo that installs fabrika as a dependency, a `MODULE_NOT_FOUND` on the shell's first verb
- * and every verb after it. Both ride inside the format rather than as a line the
+ * standing in — rules that named one repo's own `packages/fabrika-cli/src/bin.ts` as a literal
+ * produce a `MODULE_NOT_FOUND` on the shell's first verb, and on every verb after it, in any repo
+ * that installs fabrika as a dependency. Both ride inside the format rather than as a line the
  * driver appends under the bytes: an appended line is text the reader below calls malformed, which
  * would turn the byte-fixed guarantee into a budget.
  *
