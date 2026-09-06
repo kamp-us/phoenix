@@ -106,7 +106,8 @@ const membersUnder = (
  * Scan `root` for its real workspace members, optionally restricted to `under`.
  *
  * A read that fails leaves on the `E` channel rather than resolving to an empty scan: an unreadable
- * `packages/` answered as "no members" is exactly the vacuous pass ADR 0092 forbids, and the caller
+ * `packages/` answered as "no members" is exactly the vacuous pass a fail-closed guard forbids,
+ * and the caller
  * that folds the two together can never tell them apart again.
  */
 export const scanWorkspaceMembers = (

@@ -1,6 +1,6 @@
 /**
  * `settings-env-guard`'s pure half — does any `.claude/settings.json` `env` VALUE carry an
- * unexpanded `${...}` token (#2495)?
+ * unexpanded `${...}` token?
  *
  * The invariant, grounded once: Claude Code applies settings.json `env` values VERBATIM — it does
  * NOT expand `${VAR}` in them (the settings docs describe `env` as "environment variables applied
@@ -49,8 +49,8 @@ export const expansionReport = (verb: string, offenders: ReadonlyArray<EnvEntry>
 		`${verb}: ${offenders.length} .claude/settings.json env value${offenders.length === 1 ? "" : "s"} carry an unexpanded \${...} token:`,
 		...offenders.map((entry) => `  ${entry.key} = ${entry.value}`),
 		"",
-		"Claude Code applies `env` values VERBATIM — it does NOT expand a brace token in them",
-		"(#2495). Such a token never resolves: it is consumed literally, creating a literal-token",
+		"Claude Code applies `env` values VERBATIM — it does NOT expand a brace token in them.",
+		"Such a token never resolves: it is consumed literally, creating a literal-token",
 		"directory or clobbering PATH. Resolve a checkout- or session-relative path in the",
 		"consuming hook, from the hook-exported $CLAUDE_PROJECT_DIR, never as an env-value",
 		"expansion.",

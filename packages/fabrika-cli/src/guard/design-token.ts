@@ -1,15 +1,15 @@
 /**
  * `guard design-token-guard check` core — the first deterministic rung of the four-pillars design
- * law (ADR 0162, `design-system-manifest.md`). Over already-gathered CSS facts, three rules:
+ * law (`design-system-manifest.md`). Over already-gathered CSS facts, three rules:
  *
  * 1. **undefined-ref** — every `var(--…)` resolves to a property declared somewhere in the CSS
  *    corpus, a runtime-injected one (`externalProperties`), or a grandfathered dead ref. This is
- *    the Toast `var(--surface-1)`/`var(--text)` class (#2167): a dead ref is silent in the browser,
+ *    the dead-ref class: a ref like `var(--surface-1)` is silent in the browser,
  *    it just renders unstyled.
  * 2. **raw-hex** — hex lives ONLY in the raw-scale layer `tokens.css` (Pillar 2); a component
  *    reaches for a role token.
  * 3. **raw-px ratchet** — a component's count of raw `px` values > 2px does not exceed its
- *    per-file ceiling (the 4px grid sanctions 1px and 2px, ADR 0162 value #1). No ceiling entry
+ *    per-file ceiling (the 4px grid sanctions 1px and 2px). No ceiling entry
  *    means the file must be raw-px clean.
  *
  * The ceilings and allow-lists are bounded and live in
@@ -23,7 +23,7 @@
 export interface DesignTokenConfig {
 	/** Runtime-injected custom properties a `var(--…)` may resolve to (no CSS declaration). */
 	readonly externalProperties: ReadonlyArray<string>;
-	/** Pre-existing dead refs, grandfathered by name pending remediation (#2163/#2166). */
+	/** Pre-existing dead refs, grandfathered by name pending remediation. */
 	readonly grandfatheredMissingTokens: ReadonlyArray<string>;
 	/** Per-file ceiling on raw `px` > 2px values (repo-relative path → max count). */
 	readonly rawPxCeilings: Readonly<Record<string, number>>;
@@ -84,7 +84,7 @@ export interface RawPxFailure {
 
 export type DesignTokenVerdict =
 	| {readonly pass: true; readonly filesChecked: number; readonly varRefsChecked: number}
-	/** No CSS files discovered — fail closed, never a vacuous pass (ADR 0092). */
+	/** No CSS files discovered — fail closed, never a vacuous pass. */
 	| {readonly pass: false; readonly reason: "zero-scope"}
 	| {
 			readonly pass: false;
@@ -152,8 +152,8 @@ export const renderReport = (verdict: DesignTokenVerdict): string => {
 	}
 	if (verdict.reason === "zero-scope") {
 		return (
-			`${VERB}: discovered ZERO CSS files under apps/web/src or packages/design/src — fail-closed ` +
-			"(ADR 0092). Is the repo root correct, or did the styles layout change?"
+			`${VERB}: discovered ZERO CSS files under the scanned CSS roots — fail-closed. ` +
+			"Is the repo root correct, or did the styles layout change?"
 		);
 	}
 
@@ -162,8 +162,8 @@ export const renderReport = (verdict: DesignTokenVerdict): string => {
 		const lines = verdict.undefinedRefs.map((r) => `    ${r.path}:${r.line}  var(${r.name})`);
 		sections.push(
 			`  UNDEFINED TOKEN REF (${verdict.undefinedRefs.length}) — a var(--…) that resolves to ` +
-				"no declared, runtime-injected, or grandfathered property (the Toast dead-ref class, " +
-				"#2167). Reach for an existing role token (design-system-manifest.md), or — if it is " +
+				"no declared, runtime-injected, or grandfathered property (the dead-ref class). " +
+				"Reach for an existing role token (design-system-manifest.md), or — if it is " +
 				"genuinely runtime-injected — add it to externalProperties in " +
 				"packages/design/design-token-lint.config.json:\n" +
 				lines.join("\n"),
@@ -187,8 +187,8 @@ export const renderReport = (verdict: DesignTokenVerdict): string => {
 		});
 		sections.push(
 			`  RAW-PX REGRESSION (${verdict.rawPx.length} file${verdict.rawPx.length === 1 ? "" : "s"}) — ` +
-				"a raw px > 2px bypasses the 4px spacing seam (the grid sanctions only 1px & 2px, ADR " +
-				"0162 value #1). Reach for a --s-N spacing token, or land the change under the file's " +
+				"a raw px > 2px bypasses the 4px spacing seam (the grid sanctions only 1px & 2px). " +
+				"Reach for a --s-N spacing token, or land the change under the file's " +
 				"existing ceiling. After a genuine cleanup leg, regenerate the ceilings with " +
 				"`fabrika guard design-token-guard check --write-baseline`:\n" +
 				lines.join("\n"),
@@ -196,7 +196,7 @@ export const renderReport = (verdict: DesignTokenVerdict): string => {
 	}
 
 	return (
-		`${VERB}: the design-token seam is broken (issue #2170, ADR 0162):\n` +
+		`${VERB}: the design-token seam is broken:\n` +
 		`${sections.join("\n\n")}\n\n` +
 		"The four-pillars design law (design-system-manifest.md) requires role tokens only — no " +
 		"raw hex, no raw-px bypass of the spacing ramp, and no ref to a token that does not exist."

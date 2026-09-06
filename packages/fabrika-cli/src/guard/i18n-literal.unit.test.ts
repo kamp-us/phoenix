@@ -1,5 +1,5 @@
 /**
- * The pure rule behind `guard i18n-guard check` (#7536) — what the scanner counts as copy, what it
+ * The pure rule behind `guard i18n-guard check` — what the scanner counts as copy, what it
  * refuses to count, and how the two allowance buckets ratchet. Scope resolution and the fail-closed
  * floor are covered in `i18n-literal-verb.unit.test.ts`.
  */
@@ -10,6 +10,7 @@ import {
 	isInScope,
 	judge,
 	renderReport,
+	SCAN_ROOT,
 	scanSource,
 } from "./i18n-literal.ts";
 
@@ -61,18 +62,18 @@ describe("scanSource", () => {
 });
 
 describe("isInScope", () => {
-	it("takes a non-test source under apps/web/src", () => {
-		expect(isInScope("apps/web/src/App.tsx")).toBe(true);
-		expect(isInScope("apps/web/src/lib/panoNav.ts")).toBe(true);
+	it("takes a non-test source under the scan root", () => {
+		expect(isInScope(`${SCAN_ROOT}/App.tsx`)).toBe(true);
+		expect(isInScope(`${SCAN_ROOT}/lib/panoNav.ts`)).toBe(true);
 	});
 
-	it("drops the catalog, the lab, the tests and everything outside apps/web/src", () => {
-		expect(isInScope("apps/web/src/i18n/tr/layout.ts")).toBe(false);
-		expect(isInScope("apps/web/src/lab/atolye/exhibits/Button.exhibit.tsx")).toBe(false);
-		expect(isInScope("apps/web/src/App.test.tsx")).toBe(false);
-		expect(isInScope("apps/web/src/lib/panoNav.unit.test.ts")).toBe(false);
-		expect(isInScope("apps/web/worker/index.ts")).toBe(false);
-		expect(isInScope("apps/web/src/styles/tokens.css")).toBe(false);
+	it("drops the catalog, the lab, the tests and everything outside the scan root", () => {
+		expect(isInScope(`${SCAN_ROOT}/i18n/tr/layout.ts`)).toBe(false);
+		expect(isInScope(`${SCAN_ROOT}/lab/atolye/exhibits/Button.exhibit.tsx`)).toBe(false);
+		expect(isInScope(`${SCAN_ROOT}/App.test.tsx`)).toBe(false);
+		expect(isInScope(`${SCAN_ROOT}/lib/panoNav.unit.test.ts`)).toBe(false);
+		expect(isInScope("apps/site/worker/index.ts")).toBe(false);
+		expect(isInScope(`${SCAN_ROOT}/styles/tokens.css`)).toBe(false);
 	});
 });
 
@@ -93,7 +94,7 @@ const config = (over: Partial<I18nGuardConfig> = {}): I18nGuardConfig => ({
 
 describe("judge", () => {
 	it("passes a corpus with no Turkish anywhere", () => {
-		expect(judge({files: [scan("apps/web/src/App.tsx", 0)], config: config()})).toMatchObject({
+		expect(judge({files: [scan(`${SCAN_ROOT}/App.tsx`, 0)], config: config()})).toMatchObject({
 			_tag: "Clean",
 			filesScanned: 1,
 			allowed: 0,
@@ -101,21 +102,21 @@ describe("judge", () => {
 	});
 
 	it("reds a Turkish literal in a file carrying no allowance", () => {
-		const verdict = judge({files: [scan("apps/web/src/App.tsx", 1)], config: config()});
+		const verdict = judge({files: [scan(`${SCAN_ROOT}/App.tsx`, 1)], config: config()});
 		expect(verdict._tag).toBe("Violation");
-		expect(renderReport(verdict)).toContain("apps/web/src/App.tsx — 1 hit(s), ceiling 0");
+		expect(renderReport(verdict)).toContain(`${SCAN_ROOT}/App.tsx — 1 hit(s), ceiling 0`);
 	});
 
 	it("passes a file at its ceiling and reds it one literal later", () => {
 		const allowance = {ceiling: 2, why: "the wire tier value"};
-		const files = [scan("apps/web/src/App.tsx", 2)];
+		const files = [scan(`${SCAN_ROOT}/App.tsx`, 2)];
 		expect(
-			judge({files, config: config({exempt: {"apps/web/src/App.tsx": allowance}})}),
+			judge({files, config: config({exempt: {[`${SCAN_ROOT}/App.tsx`]: allowance}})}),
 		).toMatchObject({_tag: "Clean", allowed: 1});
 		expect(
 			judge({
-				files: [scan("apps/web/src/App.tsx", 3)],
-				config: config({exempt: {"apps/web/src/App.tsx": allowance}}),
+				files: [scan(`${SCAN_ROOT}/App.tsx`, 3)],
+				config: config({exempt: {[`${SCAN_ROOT}/App.tsx`]: allowance}}),
 			})._tag,
 		).toBe("Violation");
 	});
@@ -123,16 +124,16 @@ describe("judge", () => {
 	it("honours an unmigrated allowance the same way an exempt one works", () => {
 		expect(
 			judge({
-				files: [scan("apps/web/src/App.tsx", 1)],
-				config: config({unmigrated: {"apps/web/src/App.tsx": {ceiling: 1, why: "debt, #7723"}}}),
+				files: [scan(`${SCAN_ROOT}/App.tsx`, 1)],
+				config: config({unmigrated: {[`${SCAN_ROOT}/App.tsx`]: {ceiling: 1, why: "debt, #7723"}}}),
 			})._tag,
 		).toBe("Clean");
 	});
 
 	it("reds an allowance naming a file the scan never saw", () => {
 		const verdict = judge({
-			files: [scan("apps/web/src/App.tsx", 0)],
-			config: config({unmigrated: {"apps/web/src/Gone.tsx": {ceiling: 1, why: "stale"}}}),
+			files: [scan(`${SCAN_ROOT}/App.tsx`, 0)],
+			config: config({unmigrated: {[`${SCAN_ROOT}/Gone.tsx`]: {ceiling: 1, why: "stale"}}}),
 		});
 		expect(verdict._tag).toBe("Violation");
 		expect(renderReport(verdict)).toContain("a `unmigrated` allowance names a file");

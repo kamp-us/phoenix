@@ -3,7 +3,7 @@
  * has to land as UNKNOWN rather than as a clean or a red.
  *
  * The scoping reads are asserted by the requests the verb issues: the sweep must narrow at the
- * endpoint, and the label-set read must happen only on the fork that needs it (#4272).
+ * endpoint, and the label-set read must happen only on the fork that needs it.
  */
 import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
@@ -109,7 +109,7 @@ describe("runHomingGuard — the backlog sweep", () => {
 		expect(report).toContain("drop the STANDING-LANE LABEL");
 	});
 
-	it("reds 7 on an empty sweep — a vacuous pass would hide every floater (ADR 0092)", async () => {
+	it("reds 7 on an empty sweep — a vacuous pass would hide every floater", async () => {
 		const {outcome} = await run([[BACKLOG, {status: 200, body: "[]"}]]);
 		expect(outcome.code).toBe(ZERO_SCOPE);
 		expect(outcome.stderr.join("\n")).toContain("ZERO status:triaged issues");

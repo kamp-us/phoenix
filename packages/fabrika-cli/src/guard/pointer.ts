@@ -1,12 +1,12 @@
 /**
  * `pointer-guard`'s pure half — which backticked repo paths a `CLAUDE.md` points at, so the gate can
- * ask whether each still resolves (#988).
+ * ask whether each still resolves.
  *
  * This closes the gap the `doc-links` gate cannot see by construction. `doc-links` validates
  * markdown `[text](path)` links and deliberately MASKS code spans, because a `[x](y)` inside
  * backticks is an example rather than a link. But CLAUDE.md leans on a different reference class:
- * backticked prose pointers — "operate from the repo root, never `apps/web`", a pointer at
- * `apps/web/worker/dom/settings.ts`. When the target moves, that pointer rots unseen. The two gates
+ * backticked prose pointers — "operate from the repo root, never `apps/site`", a pointer at
+ * `apps/site/worker/dom/settings.ts`. When the target moves, that pointer rots unseen. The two gates
  * are complementary: one reads link targets and masks code, this one reads code spans and ignores
  * link syntax.
  *
@@ -96,7 +96,7 @@ export interface StalePointer {
  *
  * The predicate is injected because resolution is the IO half — and it answers "exists OR is
  * gitignored", not "exists": CLAUDE.md legitimately points at a deliberately-absent generated path
- * the doc tells you to create (`apps/web/.env`, gitignored and so absent in a fresh checkout). That
+ * the doc tells you to create (`apps/site/.env`, gitignored and so absent in a fresh checkout). That
  * is a valid pointer, not rot.
  */
 export const stalePointersIn = (

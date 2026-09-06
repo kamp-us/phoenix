@@ -8,7 +8,8 @@ import {PRECONDITION_UNKNOWN, VIOLATION, ZERO_SCOPE} from "./codes.ts";
 import {runDecisionsIndexGuard} from "./decisions-number-verb.ts";
 
 const ROOT = "/repo";
-const DIR = `${ROOT}/.decisions`;
+const CORPUS = ".decisions";
+const DIR = `${ROOT}/${CORPUS}`;
 
 const run = (options: FakeFsOptions, env: Record<string, string | undefined> = {}) =>
 	Effect.runPromise(
@@ -44,8 +45,8 @@ describe("runDecisionsIndexGuard", () => {
 			GITHUB_ACTIONS: "true",
 		});
 		const errors = outcome.stderr.filter((l) => l.startsWith("::error"));
-		expect(errors.some((l) => l.includes("file=.decisions/0284-a.md"))).toBe(true);
-		expect(errors.some((l) => l.includes("file=.decisions/0284-b.md"))).toBe(true);
+		expect(errors.some((l) => l.includes(`file=${CORPUS}/0284-a.md`))).toBe(true);
+		expect(errors.some((l) => l.includes(`file=${CORPUS}/0284-b.md`))).toBe(true);
 	});
 
 	it("reds a filename/frontmatter number mismatch", async () => {

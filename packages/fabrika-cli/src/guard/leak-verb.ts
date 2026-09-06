@@ -1,15 +1,15 @@
 /**
  * `guard leak-guard scan <file>...` — the authoritative no-machine-local-paths gate over a change's
- * files, ported off v1's `leak-guard scan` (epic #5720).
+ * files, ported off v1's `leak-guard scan`.
  *
  * The argument shape is part of the port: CI resolves the diff and hands the file list in, because
  * the scan's scope IS the change. The verb self-scopes from there — `findLeaks` reads only doc and
  * shell surfaces — so a workflow may hand it every changed file without filtering.
  *
  * **An empty list reds.** v1 answered a zero-file invocation with a clean pass, which is the one
- * shape a broken caller produces and the one a gate must never reward (ADR 0092). A file that could
+ * shape a broken caller produces and the one a gate must never reward. A file that could
  * not be READ reds too, on the UNKNOWN seat rather than the violation one — v1 skipped it silently,
- * and a skipped file is indistinguishable from a clean one, which is the #4496 class exactly.
+ * and a skipped file is indistinguishable from a clean one: a gate that skips quietly passes.
  */
 
 import {Effect, type FileSystem, Path} from "effect";
@@ -62,12 +62,12 @@ const leakReport = (
 	scanned: ReadonlyArray<ScannedFile>,
 ): string =>
 	[
-		`${VERB}: machine-local path(s) in shared artifact surface(s) — ${scopeLine(scanned)} (#173, #4496):`,
+		`${VERB}: machine-local path(s) in shared artifact surface(s) — ${scopeLine(scanned)}:`,
 		...flagged.flatMap(({file, leaks}) =>
 			leaks.map((leak) => `  ${file}: ${leak.matched} — ${leak.reason}`),
 		),
 		"",
-		"Use a repo-relative path (apps/web/..., claude-plugins/fabrika/skills/...). If this is a",
+		"Use a repo-relative path (apps/site/..., claude-plugins/fabrika/skills/...). If this is a",
 		"documented pattern rather than a real path, add the surface to DOC_SELF_EXEMPT in",
 		"packages/fabrika-cli/src/guard/leak.ts.",
 	].join("\n");
@@ -78,7 +78,7 @@ const annotate = (flagged: ReadonlyArray<ScannedFile>): ReadonlyArray<Annotation
 			atFile(
 				"error",
 				file,
-				`${leak.matched} — ${leak.reason}. A shared artifact carries no machine-local path (#173). Fix: write it repo-relative.`,
+				`${leak.matched} — ${leak.reason}. A shared artifact carries no machine-local path. Fix: write it repo-relative.`,
 			),
 		),
 	);
@@ -89,7 +89,7 @@ const judge = (
 	Effect.gen(function* () {
 		if (options.files.length === 0) {
 			return zeroScope(
-				`${VERB}: handed ZERO files — the scan covered nothing, so it proves nothing, fail-closed (ADR 0092). The caller resolves the changed-file list; an empty one is a broken caller, never a clean diff.`,
+				`${VERB}: handed ZERO files — the scan covered nothing, so it proves nothing, fail-closed like every guard here. The caller resolves the changed-file list; an empty one is a broken caller, never a clean diff.`,
 			);
 		}
 		const scanned: Array<ScannedFile> = [];
