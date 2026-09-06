@@ -77,6 +77,10 @@ class MeasuringResizeObserver implements ResizeObserver {
 	}
 
 	observe(target: Element): void {
+		// Re-add: a real `ResizeObserver` may be disconnected and observed again, and only the
+		// constructor put this one in the registry — without this, an observer that went through that
+		// cycle is unreachable from `growObservedElement`, which would then silently notify nobody.
+		observers.add(this);
 		this.observed.add(target);
 		this.callback([entryAt(target, TEST_VIEWPORT.height)], this);
 	}
@@ -97,16 +101,22 @@ class MeasuringResizeObserver implements ResizeObserver {
  * reads `getBoundingClientRect` rather than the entry (`@tanstack/virtual-core@3.17.8`,
  * `measureElement`), which would undo the growth on the next render. The rect is overridden on the
  * element itself so the box every other element reports stays the one flat answer above.
+ *
+ * Growing an element nobody observes throws rather than returning quietly: a test that asserts "the
+ * window did not scroll" would otherwise stay green after a refactor stopped the row from being
+ * measured at all, which is the assertion passing for the wrong reason.
  */
 export const growObservedElement = (element: Element, height: number): void => {
+	const watching = [...observers].filter((observer) => observer.observed.has(element));
+	if (watching.length === 0) {
+		throw new Error("growObservedElement: no ResizeObserver is watching this element");
+	}
 	const grown = {...rectAt(0, TEST_VIEWPORT.width), bottom: height, height, toJSON: () => ({})};
 	Object.defineProperty(element, "getBoundingClientRect", {
 		configurable: true,
 		value: (): DOMRect => grown as DOMRect,
 	});
-	for (const observer of observers) {
-		if (observer.observed.has(element)) observer.callback([entryAt(element, height)], observer);
-	}
+	for (const observer of watching) observer.callback([entryAt(element, height)], observer);
 };
 
 /**

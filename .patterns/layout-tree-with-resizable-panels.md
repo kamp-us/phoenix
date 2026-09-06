@@ -202,4 +202,5 @@ The shim also grows an element that is already observed. `growObservedElement(el
 overrides that one element's rect and re-fires the observers watching it, which is the only way a
 test stages a row getting taller while keeping its key — a streaming chat message, as against a new
 row landing. It is scoped to the element it names, so the flat box every other element reports is
-untouched.
+untouched, and it throws when no observer is watching that element — a growth nobody hears would
+leave a "nothing moved" assertion green for the wrong reason.

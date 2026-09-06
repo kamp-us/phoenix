@@ -151,6 +151,34 @@ const settle = async (): Promise<void> => {
 	});
 };
 
+/** Long enough for `reconcileScroll`'s own `requestAnimationFrame` to run at least twice. */
+const RECONCILE_MS = 50;
+
+/**
+ * Settle the virtualizer's pending index-scroll, and prove it settled.
+ *
+ * `scrollToIndex` leaves a live `scrollState` that re-derives its target from every later
+ * measurement, once per animation frame, until the scroller's own offset reaches that target
+ * (`@tanstack/virtual-core@3.17.8`, `reconcileScroll`). This harness's `scrollToFn` only records, so
+ * in a test nothing ever reaches it — and a still-reconciling scroll answers a row growing all by
+ * itself, which would make a follow assertion pass with the follow effect gone. Writing the offset
+ * the virtualizer asked for onto the scroller is what a browser does, and it is what lets the
+ * reconcile stop; after this returns, the follow effect is the only thing left that can scroll.
+ */
+const landPendingScroll = async (scrolls: ReadonlyArray<number>): Promise<void> => {
+	for (let attempt = 0; attempt < 5; attempt++) {
+		const target = scrolls[scrolls.length - 1];
+		if (target === undefined) throw new Error("nothing to land: no scroll was ever asked for");
+		const asked = scrolls.length;
+		await scrollTo(target);
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, RECONCILE_MS));
+		});
+		if (scrolls.length === asked) return;
+	}
+	throw new Error("the virtualizer's pending scroll never settled");
+};
+
 const composer = (): HTMLTextAreaElement =>
 	screen.getByRole("combobox", {name: "Write a message to the agent"}) as HTMLTextAreaElement;
 
@@ -227,6 +255,11 @@ describe("following the newest turn", () => {
 	// landing behind them. It reds against a follow that ignores the pin.
 	it("leaves the offset alone when a turn lands after the reader scrolled up", async () => {
 		const {process, scrolls, view} = await openWindow(withTranscript(transcriptOf(20)));
+		// The window opens resting on the newest turn, so land that opening scroll before scrolling
+		// up. Left pending it keeps re-deriving its target from every later measurement, and the turn
+		// landing below is a measurement — which is the spurious scroll that made this case red about
+		// one run in five (#8106, #8225).
+		await landPendingScroll(scrolls);
 		await scrollTo(400);
 		await waitFor(() => expect(view().pinned).toBe(false));
 		await settle();
@@ -288,6 +321,12 @@ describe("following the newest turn", () => {
 		await scrollTo(4_000);
 		await waitFor(() => expect(view().pinned).toBe(true));
 		await settle();
+		// Both scrolls this window has asked for so far — the first paint's and the follow's — are
+		// index scrolls, and an index scroll keeps reconciling against every later measurement until
+		// the scroller reaches it. Landing it is what leaves the follow effect as the only thing that
+		// can answer the growth below; without this the case passes with `totalSize` dropped from the
+		// effect's dependencies.
+		await landPendingScroll(scrolls);
 		const before = scrolls.length;
 		const landedBefore = scrolls[scrolls.length - 1] ?? -1;
 		const newest = newestRenderedRow();
@@ -298,9 +337,11 @@ describe("following the newest turn", () => {
 		await act(async () => {
 			growObservedElement(newest, TEST_VIEWPORT.height * 2);
 		});
-		await settle();
 
-		expect(scrolls.length).toBeGreaterThan(before);
+		// Waited for rather than settled once, and on a budget well past the default: `useFlushSync:
+		// false` puts the measurement a render behind the growth, and on a loaded runner that render
+		// is not always inside a second. A follow that never fires still reds — it just reds slowly.
+		await waitFor(() => expect(scrolls.length).toBeGreaterThan(before), {timeout: 5_000});
 		// Strictly below where the follow last rested: the last row's `end` alignment resolves to the
 		// scroller's own max scroll, and `trackContentHeight` makes that follow the content — so the
 		// growth is the only thing that moved it.
