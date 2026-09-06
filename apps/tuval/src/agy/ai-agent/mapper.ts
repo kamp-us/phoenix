@@ -12,14 +12,18 @@
  *   `" delegated the research task…"` where the response reads `"I have delegated…"`.
  * - **`init.model` names the model** and only `init` carries it, while every usage payload that
  *   needs the name arrives later.
+ * - **`result.usage` is the turn's total, not another increment** — field by field it is the sum of
+ *   the step usages already reported, while the core's `addUsage` folds every usage event by plain
+ *   addition. So the turn carries what it has reported and the `result` reports only the residual.
  * - A row with no natural wire key (an unreadable line, a denied-action report) needs an id that
  *   does not collide with the next one.
  *
  * A tool call and its outcome both ride inside `step_update` — `DONE` carries `tool_info.output`,
  * `ERROR` carries `tool_info.error` — so both project onto one `ToolItem` keyed by
  * `<conversation_id>:<step_index>`, and the running row is superseded rather than duplicated.
- * A subagent invocation projects onto the same shape, and its `DONE` payload is byte-identical to
- * its `ACTIVE` one, so `state` alone drives the transition.
+ * A subagent invocation projects onto the same shape, and its `DONE` payload adds only
+ * `duration_seconds` to its `ACTIVE` one — the `subagent_info` payload is byte-identical and
+ * carries no result — so `state` alone drives the transition.
  *
  * **An unrecognised `step_type` renders a `SystemItem` and is never dropped and never thrown on.**
  * That is the whole reason this file has a default arm: the enum is provably open and the stream
@@ -41,11 +45,21 @@ import {
 	decodeLine,
 } from "./wire.ts";
 
+type UsageEvent = Extract<AgentEvent, {readonly kind: "usage"}>;
+
 /** `ItemId` is an opaque brand, minted here so no call site writes its own cast. */
 export const itemId = (value: string): ItemId => value as ItemId;
 
 /** How much of an unreadable line reaches the transcript before it is cut. */
 export const UNREADABLE_LINE_LIMIT = 500;
+
+/** What this turn has already handed the core, so `result.usage` can be reported as a residual. */
+interface ReportedUsage {
+	readonly inputTokens: number;
+	readonly outputTokens: number;
+}
+
+const nothingReported: ReportedUsage = {inputTokens: 0, outputTokens: 0};
 
 export interface AgyTurn {
 	/** `agy/<model>` once `init` names one, else the bare binary — agy omits `init.model` on a default run. */
@@ -55,9 +69,16 @@ export interface AgyTurn {
 	readonly responseText: string;
 	/** Monotonic, so two keyless rows never share an id. */
 	readonly minted: number;
+	readonly reported: ReportedUsage;
 }
 
-export const idleTurn: AgyTurn = {model: "agy", responseId: null, responseText: "", minted: 0};
+export const idleTurn: AgyTurn = {
+	model: "agy",
+	responseId: null,
+	responseText: "",
+	minted: 0,
+	reported: nothingReported,
+};
 
 interface Folded {
 	readonly events: ReadonlyArray<AgentEvent>;
@@ -73,7 +94,7 @@ const systemEvent = (id: string, timestamp: number, text: string): AgentEvent =>
  * agy reports no cost anywhere on the stream, so `cost` is `0` rather than a guess, and
  * `thinking_tokens` / `cache_read_tokens` have no port field and are left on the wire.
  */
-const usageEvent = (model: string, usage: AgyUsage | undefined): AgentEvent | null =>
+const usageEvent = (model: string, usage: AgyUsage | undefined): UsageEvent | null =>
 	usage === undefined
 		? null
 		: {
@@ -83,6 +104,24 @@ const usageEvent = (model: string, usage: AgyUsage | undefined): AgentEvent | nu
 				outputTokens: usage.output_tokens,
 				cost: 0,
 			};
+
+/**
+ * What is left of `result.usage` once the steps have reported theirs. A stream whose steps carried
+ * no usage still reports the whole total, because then the residual *is* the total. The clamp
+ * refuses to hand the core a negative increment if a step ever over-reports against the total.
+ */
+const residualUsageEvent = (
+	model: string,
+	reported: ReportedUsage,
+	usage: AgyUsage | undefined,
+): UsageEvent | null => {
+	if (usage === undefined) return null;
+	const inputTokens = Math.max(0, usage.input_tokens - reported.inputTokens);
+	const outputTokens = Math.max(0, usage.output_tokens - reported.outputTokens);
+	return inputTokens === 0 && outputTokens === 0
+		? null
+		: {kind: "usage", model, inputTokens, outputTokens, cost: 0};
+};
 
 const subagentInput = (info: AgySubagentInfo): JsonValue => ({
 	subagents: info.subagents.map((subagent) => ({
@@ -180,7 +219,16 @@ const stepEvents = (previous: AgyTurn, step: AgyStepUpdate, timestamp: number): 
 	}
 
 	const usage = usageEvent(next.model, step.usage);
-	if (usage !== null) events.push(usage);
+	if (usage !== null) {
+		events.push(usage);
+		next = {
+			...next,
+			reported: {
+				inputTokens: next.reported.inputTokens + usage.inputTokens,
+				outputTokens: next.reported.outputTokens + usage.outputTokens,
+			},
+		};
+	}
 	return {events, next};
 };
 
@@ -205,7 +253,7 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 		minted += 1;
 	}
 
-	const usage = usageEvent(previous.model, result.usage);
+	const usage = residualUsageEvent(previous.model, previous.reported, result.usage);
 	if (usage !== null) events.push(usage);
 
 	// Fail closed: only `SUCCESS` is a success, so a status this pin has not seen surfaces as a
@@ -220,7 +268,10 @@ const resultEvents = (previous: AgyTurn, result: AgyResult, timestamp: number): 
 			},
 		});
 
-	return {events, next: {...previous, responseId: null, responseText: "", minted}};
+	return {
+		events,
+		next: {...previous, responseId: null, responseText: "", minted, reported: nothingReported},
+	};
 };
 
 /**

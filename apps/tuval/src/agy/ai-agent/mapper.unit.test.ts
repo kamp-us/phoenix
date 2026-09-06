@@ -38,6 +38,20 @@ const fold = (
 	return {events, turn};
 };
 
+/** What the core's `addUsage` would hold after folding these events — a plain sum, no dedupe. */
+const summed = (
+	events: ReadonlyArray<AgentEvent>,
+): {readonly inputTokens: number; readonly outputTokens: number} =>
+	events
+		.filter((event) => event.kind === "usage")
+		.reduce(
+			(total, event) => ({
+				inputTokens: total.inputTokens + event.inputTokens,
+				outputTokens: total.outputTokens + event.outputTokens,
+			}),
+			{inputTokens: 0, outputTokens: 0},
+		);
+
 const items = (events: ReadonlyArray<AgentEvent>): ReadonlyArray<TranscriptItem> =>
 	events.flatMap((event) => (event.kind === "item" ? [event.item] : []));
 
@@ -270,17 +284,59 @@ describe("usage", () => {
 		]);
 	});
 
-	it("reaches a UsageEvent from result.usage too", () => {
-		const {events} = fold([fixtures.init, fixtures.resultSuccess]);
+	// `result.usage` is the turn's total, not another increment, and the core sums every usage
+	// event it is handed (`ai-agent/core/fold.ts`'s `addUsage`). The cases below pin the residual
+	// against agy's own captured numbers rather than against the arithmetic that produced it.
+	it("reports result.usage as a residual, so the captured turn totals agy's own numbers", () => {
+		const {events} = fold([fixtures.init, fixtures.responseDone, fixtures.resultSuccess]);
 		expect(events.filter((event) => event.kind === "usage")).toEqual([
 			{
 				kind: "usage",
 				model: "agy/gemini-3.8-flash-low",
-				inputTokens: 20963,
-				outputTokens: 151,
+				inputTokens: 4481,
+				outputTokens: 110,
+				cost: 0,
+			},
+			{
+				kind: "usage",
+				model: "agy/gemini-3.8-flash-low",
+				inputTokens: 20963 - 4481,
+				outputTokens: 151 - 110,
 				cost: 0,
 			},
 		]);
+		expect(summed(events)).toEqual({inputTokens: 20963, outputTokens: 151});
+	});
+
+	it("reports the whole of result.usage when no step carried any", () => {
+		const {events} = fold([fixtures.init, fixtures.resultSuccess]);
+		expect(summed(events)).toEqual({inputTokens: 20963, outputTokens: 151});
+	});
+
+	it("emits no result usage at all when the steps already reported the whole total", () => {
+		const total = {input_tokens: 4481, output_tokens: 110, total_tokens: 4591};
+		const {events} = fold([
+			fixtures.init,
+			fixtures.responseDone,
+			patchResult(fixtures.resultSuccess, {usage: total}),
+		]);
+		expect(events.filter((event) => event.kind === "usage")).toHaveLength(1);
+	});
+
+	it("never hands the core a negative increment when a step over-reports", () => {
+		const under = {input_tokens: 10, output_tokens: 1, total_tokens: 11};
+		const {events} = fold([
+			fixtures.init,
+			fixtures.responseDone,
+			patchResult(fixtures.resultSuccess, {usage: under}),
+		]);
+		expect(summed(events)).toEqual({inputTokens: 4481, outputTokens: 110});
+	});
+
+	it("carries no usage across the turn boundary, so a second turn's residual is its own", () => {
+		const {turn} = fold([fixtures.init, fixtures.responseDone, fixtures.resultSuccess]);
+		const {events} = fold([fixtures.resultSuccess], turn);
+		expect(summed(events)).toEqual({inputTokens: 20963, outputTokens: 151});
 	});
 
 	it("falls back to the bare binary name when init announced no model", () => {
