@@ -129,6 +129,19 @@ and a test kernel at once, and there is no second place to keep in step. A windo
 either — two windows over one process would race into a refusal, and a window is a view rather than
 the owner of a session's lifetime.
 
+**A spawner that has something to say about the boot says it as a per-spawn service, not as an
+argument.** `SpawnOptions` carries no program arguments and is not going to grow any — the one thing
+a spawner already hands a child is the context its handlers run under. So a spawner opening a
+process *for* something names that thing as a service on the child's context and the boot Cmd's
+handler reads it with `Effect.serviceOption`: absence is the ordinary case and stays a value rather
+than a missing dependency, and the decision still lives in the one place that knows the process is
+new. [`SessionOpening`](../apps/tuval/src/ai-agent/opening.ts) is the worked example — `{cwd,
+resume}` and no third field, set by
+[`shell/picker/open.ts`](../apps/tuval/src/shell/picker/open.ts) when the operator picked a session
+out of the list, read only by `aiAgent.boot`. Keep such a service narrow on purpose: one that grows
+fields is a program-arguments system by another name, and then every spawner has to know what every
+row wants.
+
 **The Cmd's handler answers with a Msg and does no work.** `runInterpret` awaits an init Cmd's
 handler before `make` returns (`host/actor.ts`), and a spawn runs inside the *spawning* process's
 serial step — so a boot handler that opened the connection itself would freeze the shell for as long
@@ -229,3 +242,62 @@ backend is still waiting on wedges, because the event that would clear it only a
 answered. The fix is a Cmd whose handler reads the committed state and emits the projections again,
 scheduled by the same Msg that resumes. It is the one handler that reads `ProcessSelf.state()`
 rather than folding forward, and the reason is that there is no event to fold.
+
+## A row that is also a backend: the layer, declared for enumeration
+
+An ai-agent row hands `aiAgentProgram` the `TuvalAiAgent` layer it runs on, and that helper stamps
+the same layer back onto the row as `aiAgent`
+([`ai-agent/program.ts`](../apps/tuval/src/ai-agent/program.ts)). Nothing else about the row changes:
+the declaration rides the helper rather than a new field on `Program`, so `pi-session` and
+`claude-session` both carry it with no line of their own, and the registry keeps describing programs
+without naming one program family's service.
+
+That is what makes "ask every registered ai-agent implementation" a real call
+([`ai-agent/backends.ts`](../apps/tuval/src/ai-agent/backends.ts)): the set of backends is filtered
+out of `Registry.list` rather than maintained beside it, so registering a backend in the config is
+the whole act of adding one. `isAiAgentBackend` is a type predicate over the absent field, exactly
+like `showsInAWindow` ([`shell/picker/entries.ts`](../apps/tuval/src/shell/picker/entries.ts)), and
+the two are independent: a headless row has a session store like any other, and whether it can bind
+a window is the other predicate's question.
+
+**An enumerator builds a row's layer under the same context a spawn of that row would use.** `RIn`
+rides out unclosed (#7951), and `AnyProgram` erases it, so the layer is erased and the kernel
+`Context` provided around it — the move `Processes` already makes for a row's handlers. A backend
+that fails to answer is reported beside the ones that did, never in place of them: an empty list has
+to keep meaning "you have no sessions".
+
+## A re-read config: what applies to a process that is already running
+
+A reload is not a restart. `Booted.reload` re-reads the layered config, swaps the spell registry and
+the key table, and then hands every live process what its own row says the new config means for it
+(#7509 ruling 3). Nothing respawns, and a process keeps running under the row it was spawned from.
+
+**The row declares what applies live, under `configChanged`, or the reload reaches it with nothing.**
+The field is `(next: AnyProgram) => ReadonlyArray<Msg>`
+([`registry/program.ts`](../apps/tuval/src/registry/program.ts)), read off the row a process is
+*running under* and handed the reloaded row of the same id. `claude-session` is the worked example:
+`configChanged(previous, next)` in [`claude/program.ts`](../apps/tuval/src/claude/program.ts) maps a
+changed `permissionMode` to one `setMode` and every other field to nothing, because
+`Query.setPermissionMode` is the one thing the SDK lets a running session change — the model and the
+tool list are `Options` of a query that is already open, and `cwd` never changes live at all.
+
+**A row that wants to diff its own settings has to publish them on itself.** The two generations meet
+in one call and a closure only holds one of them, so the other side has to be data: `claudeSession`
+returns a `ClaudeSessionProgram`, which is the generic row plus the decoded `settings` it runs on,
+and its `configChanged` narrows the row it is handed before reading them. Keep that field the user's
+own decoded config and nothing more — the kernel never reads it, and a row of another program that
+happens to share an id is refused by the narrowing rather than mis-diffed.
+
+**The kernel's half is one shared step, and it walks the process table.**
+[`reload.ts`](../apps/tuval/src/reload.ts)'s `dispatchConfigChanged` takes the generation the live
+processes were spawned from and the generation just read, and for each live process asks its row.
+Three cases dispatch nothing: a row with no `configChanged`, a row whose settings did not move, and a
+row the reloaded config no longer carries — that last process keeps running and is never told. The
+answer is a count, which rides out on `ReloadReport.notified`, and a dispatch that fails is logged
+rather than failing the reload: a reload is a read of the config, and one process refusing a Msg must
+not turn the whole re-read into a refusal.
+
+**The running generation is `boot`'s own, never the `Registry`.** The registry is built once at boot
+and a reload never rewrites it, so after the first reload it names rows no running process has seen a
+change against — the second reload would then re-send the first one's change. `boot` carries the
+generation in a `Ref` and swaps it as it dispatches, so each reload diffs against the one before it.

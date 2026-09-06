@@ -301,6 +301,13 @@
 	overflow: auto;
 }
 
+/* The same panel inside one window's body: it replaces that window's content, so it takes the body's
+   own room rather than the tiling area's. */
+.tuval-window-boundary {
+	block-size: 100%;
+	padding: var(--s-2);
+}
+
 .tuval-boundary p {
 	margin: 0;
 }

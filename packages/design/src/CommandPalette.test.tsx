@@ -450,3 +450,39 @@ describe("CommandPalette closeOnEscape", () => {
 		expect(await forwarded({closeOnEscape: false})).toBe(false);
 	});
 });
+
+describe("CommandPalette inline", () => {
+	const renderInline = (props: Partial<React.ComponentProps<typeof CommandPalette>> = {}) =>
+		renderPalette({presentation: "inline", ...props});
+
+	it("renders in place rather than in a dialog, under the title as its label", () => {
+		renderInline();
+		expect(screen.queryByRole("dialog")).toBeNull();
+		expect(screen.getByRole("region", {name: "kamp.us'ta ara"})).toBeTruthy();
+	});
+
+	it("is open with no opener: it is the surface, not something over one", () => {
+		renderInline({defaultOpen: false});
+		expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+	});
+
+	it("keeps the combobox spine \u2014 the field, the movement and aria-activedescendant", () => {
+		renderInline();
+		const input = screen.getByRole("combobox", {name: "kamp.us'ta ara"});
+		const first = input.getAttribute("aria-activedescendant");
+		fireEvent.keyDown(input, {key: "ArrowDown"});
+		expect(input.getAttribute("aria-activedescendant")).not.toBe(first);
+		expect(document.activeElement).toBe(input);
+	});
+
+	it("ignores the dialog-only props rather than half-honouring one", () => {
+		renderInline({disabled: true, open: false, closeOnSelect: true});
+		expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+	});
+
+	it("leaves the \u2318K shortcut alone: an always-open surface has nothing to toggle", () => {
+		renderInline({shortcut: true});
+		fireEvent.keyDown(window, {key: "k", metaKey: true});
+		expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+	});
+});

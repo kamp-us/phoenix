@@ -107,6 +107,26 @@ export class PageError extends Schema.TaggedError<PageError>()("tuval/ai-agent/P
 	}
 }
 
+/**
+ * Why a session listing did not come back. Listing reads the backend's store off disk without the
+ * session transport in it at all, so its cases are the store's, not the connection's.
+ *
+ * `unsupported` is a real answer rather than an empty list: a backend that cannot enumerate has not
+ * told the operator he has no sessions, and the session list must be able to say which of the two
+ * it heard.
+ */
+export const ListReason = Schema.Literals(["store-unreadable", "unsupported"]);
+export type ListReason = typeof ListReason.Type;
+
+export class ListError extends Schema.TaggedError<ListError>()("tuval/ai-agent/ListError", {
+	reason: ListReason,
+	detail: Schema.String,
+}) {
+	override get message(): string {
+		return `the session list could not be read (${this.reason}): ${this.detail}`;
+	}
+}
+
 /** The event stream's only failure. `disconnected` is the old `Disconnected` name, as a case. */
 export const TransportReason = Schema.Literals(["disconnected", "refused", "protocol"]);
 export type TransportReason = typeof TransportReason.Type;

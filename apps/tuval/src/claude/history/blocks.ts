@@ -59,6 +59,26 @@ export const textOf = (body: unknown): string => {
 		.join("\n");
 };
 
+/**
+ * One reasoning block a body carried: its content, or the mark that the provider withheld it.
+ *
+ * A `redacted_thinking` block carries `data` — an encrypted payload no client can read — so what
+ * survives the read is only that a block was there. The line a reader sees is `map.ts`'s to write:
+ * the item union carries no redaction flag, deliberately, so nothing but text can cross.
+ */
+export type ThinkingPart =
+	| {readonly kind: "text"; readonly text: string}
+	| {readonly kind: "withheld"};
+
+export const thinkingOf = (body: unknown): ReadonlyArray<ThinkingPart> =>
+	blocksOf(body)
+		.filter(isRecord)
+		.flatMap((block): ReadonlyArray<ThinkingPart> => {
+			if (block.type === "redacted_thinking") return [{kind: "withheld"}];
+			if (block.type !== "thinking" || !isNonEmptyString(block.thinking)) return [];
+			return [{kind: "text", text: block.thinking}];
+		});
+
 export const toolUsesOf = (body: unknown): ReadonlyArray<ToolUseBlock> =>
 	blocksOf(body)
 		.filter(isRecord)

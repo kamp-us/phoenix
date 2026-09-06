@@ -11,8 +11,9 @@
 
 import type {AgentEvent} from "../../events.ts";
 import type {ItemId, Mode, PermissionRequest, ToolItem, TranscriptItem} from "../../ports/index.ts";
-import {TransportError} from "../errors.ts";
+import {ListError, TransportError} from "../errors.ts";
 import type {AgentScript, ScriptedModels, ScriptedThinking} from "../script.ts";
+import {type SessionSummary, sessionSummary} from "../sessions.ts";
 
 export const SESSION_ID = "session-7599";
 
@@ -76,6 +77,45 @@ export const plainReplyTurn: ReadonlyArray<AgentEvent> = [
 ];
 
 export const plainReply: AgentScript = {...empty, turns: [{events: plainReplyTurn}]};
+
+/**
+ * A store holding one session per backend, oldest first so `listSessions` has something to sort.
+ * They carry the disagreement the neutral summary exists for: the Claude-tagged row counts no
+ * messages, the Pi-tagged row names no branch and answers its time as a `Date`, and its folder is
+ * the empty string Pi records for a session older than the field.
+ */
+export const sessions: ReadonlyArray<SessionSummary> = [
+	sessionSummary({
+		sessionId: "session-pi",
+		lastModified: new Date(at(1_000)),
+		backend: "pi",
+		firstPrompt: "port the loader",
+		folder: "",
+		messageCount: 12,
+	}),
+	sessionSummary({
+		sessionId: "session-claude",
+		lastModified: at(2_000),
+		backend: "claude",
+		firstPrompt: "read my old chats",
+		folder: "/workspace/phoenix",
+		branch: "main",
+	}),
+];
+
+export const listsSessions: AgentScript = {...empty, sessions};
+
+/** A store nothing could read — the answer an empty list would have misreported as "you have none". */
+export const listRefused: AgentScript = {
+	...empty,
+	sessions: new ListError({
+		reason: "store-unreadable",
+		detail: "the scripted store is not on disk",
+	}),
+};
+
+/** A session that really is empty, so a resume onto it replays nothing and still succeeds. */
+export const emptySession: AgentScript = {...empty, history: []};
 
 /** A backend that never echoes the operator's turn: the reply is the only item this one emits. */
 export const noEchoReplyTurn: ReadonlyArray<AgentEvent> = [

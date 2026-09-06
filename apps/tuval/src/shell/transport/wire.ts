@@ -124,6 +124,14 @@ export interface WireProgram {
 	readonly programId: ProgramId;
 	readonly label: string;
 	readonly renderer: RendererRef;
+	/**
+	 * The two desk-level references the row declares beside its window renderer
+	 * (`../../registry/program.ts`). Optional on the row and therefore optional here: a program that
+	 * declares neither sends neither, and the page's inspector region answers `not-declared` rather
+	 * than going looking for a reference nobody made.
+	 */
+	readonly inspector?: RendererRef;
+	readonly status?: RendererRef;
 }
 
 /**
@@ -188,6 +196,7 @@ const rendererKinds: ReadonlySet<string> = new Set<RendererKind>([
 	"host-native",
 	"host-declarative",
 	"isolated-frame",
+	"module",
 ]);
 
 const isRendererRef = (value: unknown): value is RendererRef =>
@@ -264,7 +273,11 @@ export const isWireProgram = (value: unknown): value is WireProgram =>
 	Predicate.isObject(value) &&
 	typeof value.programId === "string" &&
 	typeof value.label === "string" &&
-	isRendererRef(value.renderer);
+	isRendererRef(value.renderer) &&
+	// Absent is legal, present must be a reference: an `inspector` key carrying junk is a malformed
+	// frame, not a program that declares no inspector.
+	(value.inspector === undefined || isRendererRef(value.inspector)) &&
+	(value.status === undefined || isRendererRef(value.status));
 
 export const isRegistryFrame = (value: unknown): value is RegistryFrame =>
 	Predicate.isObject(value) &&

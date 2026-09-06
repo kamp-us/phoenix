@@ -52,8 +52,20 @@ const pickerRow = (command: PickerCommand): AnyShellCommand => {
 		return defineCommand({
 			path,
 			describe: command.summary,
-			params: Schema.Struct({program: Schema.NonEmptyString}),
-			toMsg: ({program}) => ({type: "window.open", programId: program}),
+			// `session` and `cwd` are one argument in two halves, and both or neither: an open naming
+			// a session is the first send on a row picked out of the session list, and a session id
+			// with no folder is not something a backend can find (epic #8070, ruling 2). A typed
+			// command line never fills them — the caller is the session window.
+			params: Schema.Struct({
+				program: Schema.NonEmptyString,
+				session: Schema.optionalKey(Schema.NonEmptyString),
+				cwd: Schema.optionalKey(Schema.NonEmptyString),
+			}),
+			toMsg: ({program, session, cwd}) => ({
+				type: "window.open",
+				programId: program,
+				...(session === undefined || cwd === undefined ? {} : {session: {cwd, resume: session}}),
+			}),
 		});
 	}
 	if (command.argument === "process-id") {
@@ -108,6 +120,13 @@ export const shellCommands: ReadonlyArray<AnyShellCommand> = [
 		describe: "Move focus to the window with this id.",
 		params: Schema.Struct({window: Schema.NonEmptyString}),
 		toMsg: ({window}) => ({type: "window.focus", windowId: WindowId.make(window)}),
+	}),
+	defineCommand({
+		path: ["window", "pick"],
+		describe:
+			"Return the focused window to the picker. The process it was showing keeps running, and the picker offers it back.",
+		params: noParams,
+		toMsg: () => ({type: "window.unbind"}),
 	}),
 	...pickerCommands.map(pickerRow),
 	defineCommand({

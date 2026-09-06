@@ -7,7 +7,14 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {assistantItem, toolItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
+import {
+	assistantItem,
+	compactionItem,
+	systemItem,
+	thinkingItem,
+	toolItem,
+	userItem,
+} from "../../ai-agent-fixtures/transcripts.ts";
 import type {TranscriptItem, TranscriptPayload} from "../ports/index.ts";
 import {foldItem, upsertItem, type WindowLimits} from "./fold.ts";
 
@@ -68,5 +75,51 @@ describe("folding a reply that is still being written", () => {
 		const tail = foldAll(empty, [...deltas, assistantItem("a1", "hello")], {itemLimit: 5}).at(-1);
 		expect(tail?.items).toEqual([assistantItem("a1", "hello")]);
 		expect(tail?.omitted).toEqual({items: 0, bytes: 0, reason: "none"});
+	});
+});
+
+describe("folding the thinking and compaction kinds", () => {
+	it("supersedes a thinking row by id, so a growing one stays one row", () => {
+		const first = thinkingItem("k1", "weighing the two reads");
+		const grown = thinkingItem("k1", "weighing the two reads, then the write");
+		expect(upsertItem(upsertItem([userItem("u1")], first), grown)).toEqual([userItem("u1"), grown]);
+	});
+
+	it("appends a compaction marker under a fresh id rather than replacing a neighbour", () => {
+		const marker = compactionItem("c1");
+		expect(upsertItem([userItem("u1"), assistantItem("a1")], marker)).toEqual([
+			userItem("u1"),
+			assistantItem("a1"),
+			marker,
+		]);
+	});
+
+	// `echoOf` is confined to `user` items, so a reasoning row repeating the prompt's own words
+	// cannot be taken for the layer's echo of that prompt and overwrite it.
+	it("never joins a thinking row onto a locally-recorded turn of the same text", () => {
+		const local: TranscriptItem = {...userItem("u1", "run the tests"), local: true};
+		const echoing = thinkingItem("k1", "run the tests");
+		expect(upsertItem([local], echoing)).toEqual([local, echoing]);
+	});
+
+	it("bounds the tail over the new kinds, cutting at the compaction marker's own edge", () => {
+		const stream = [
+			systemItem("s0"),
+			compactionItem("c0"),
+			userItem("u1"),
+			thinkingItem("k1"),
+			assistantItem("a1"),
+		];
+		const bounded = foldAll(empty, stream, {itemLimit: 4}).at(-1);
+		expect(bounded?.items).toEqual(stream.slice(1));
+		expect(bounded?.omitted.items).toBe(1);
+		expect(bounded?.omitted.reason).toBe("item-limit");
+	});
+
+	it("keeps a thinking row inside its turn, so the bound drops the marker before it", () => {
+		const stream = [compactionItem("c0"), userItem("u1"), thinkingItem("k1"), assistantItem("a1")];
+		const bounded = foldAll(empty, stream, {itemLimit: 3}).at(-1);
+		expect(bounded?.items).toEqual(stream.slice(1));
+		expect(bounded?.omitted.items).toBe(1);
 	});
 });

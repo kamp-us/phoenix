@@ -36,6 +36,7 @@ import {
 	type TranscriptItem,
 } from "../ports/index.ts";
 import {
+	ListError,
 	ModelUnsupported,
 	ModeUnsupported,
 	PageError,
@@ -46,6 +47,7 @@ import {
 	UnknownRequest,
 } from "./errors.ts";
 import type {AgentScript, ScriptedAnswer, ScriptedPlan} from "./script.ts";
+import {newestFirst} from "./sessions.ts";
 import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 interface ScriptState {
@@ -160,6 +162,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 		const start = Effect.fn("TuvalAiAgent.start")(function* (options: {
 			readonly cwd: string;
 			readonly resume?: string;
+			readonly mode?: Mode;
 		}) {
 			const current = yield* Ref.get(state);
 			if (!current.live) {
@@ -186,8 +189,16 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 					pending: foldPending(previous.pending, resumed),
 				}));
 			}
+			// `state` is per build and seeded from the script, so a rebuilt layer holds the script's
+			// mode rather than the operator's. The caller's mode is the session's, and announcing it
+			// here rather than re-applying it later is what keeps the announced mode and the mode the
+			// session runs on one fact (#7953).
+			const openedOn =
+				options.mode !== undefined && script.modes.available.includes(options.mode)
+					? options.mode
+					: current.mode;
 			yield* emit([
-				{kind: "mode", current: current.mode, available: script.modes.available},
+				{kind: "mode", current: openedOn, available: script.modes.available},
 				{kind: "model", current: current.model, available: script.models.available},
 				{kind: "commands", available: script.commands ?? []},
 				{kind: "thinking", current: current.thinking, available: script.thinking.available},
@@ -196,6 +207,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			yield* Ref.update(state, (previous) => ({
 				...previous,
 				started: true,
+				mode: openedOn,
 				...(options.resume === undefined ? {} : {turn: script.resumeAtTurn ?? previous.turn}),
 			}));
 			return {sessionId: script.sessionId};
@@ -314,6 +326,13 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			return {items: script.history.slice(from, end), hasMore: from > 0};
 		});
 
+		// The store is the script's, not the session's: it answers before `start` and after a
+		// scripted disconnect, because listing never went down the transport that died.
+		const listSessions = Effect.suspend(() => {
+			const held = script.sessions ?? [];
+			return held instanceof ListError ? Effect.fail(held) : Effect.succeed(newestFirst(held));
+		}).pipe(Effect.withSpan("TuvalAiAgent.listSessions"));
+
 		return {
 			start,
 			prompt,
@@ -324,6 +343,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			commands: Effect.map(Ref.get(state), (current) => current.commands),
 			setThinkingLevel,
 			page,
+			listSessions,
 			events: Stream.fromQueue(queue),
 		};
 	});

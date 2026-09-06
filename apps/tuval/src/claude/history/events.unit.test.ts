@@ -1,8 +1,11 @@
 /**
- * Every case here is driven by a golden fixture captured from a real Claude Agent SDK run
- * (`fixtures/PROVENANCE.md`), never a hand-written envelope: the SDK's message shapes are only
- * observable at execution, so an invented one would prove the mapping against a contract nobody
- * emits (`.patterns/golden-real-payload-fixtures.md`).
+ * Every case here is driven by a fixture captured from a real run (`fixtures/PROVENANCE.md`), never
+ * a hand-written envelope: the SDK's message shapes are only observable at execution, so an invented
+ * one would prove the mapping against a contract nobody emits
+ * (`.patterns/golden-real-payload-fixtures.md`).
+ *
+ * The two cases that stamp a field over a captured stream — a subagent's `parent_tool_use_id`, a
+ * withheld reasoning block — say so at the case and name what could not be forced.
  */
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
@@ -260,14 +263,105 @@ describe("toAgentEvents over a subagent's frames", () => {
 	});
 });
 
-describe("toAgentEvents over a message it has no shape for", () => {
-	it("emits nothing, counts it, and does not throw", () => {
-		const step = toAgentEvents(message("unknown-message"), emptyMapping, {at: AT});
-		expect(step.events).toEqual([]);
-		expect(step.mapping.skipped).toBe(1);
+describe("toAgentEvents over a captured thinking turn", () => {
+	const {events} = run(messages("thinking-turn"));
+
+	it("maps the reasoning block to a thinking item instead of losing the frame", () => {
+		const thinking = items(events).filter((one) => one.kind === "thinking");
+		expect(thinking).toHaveLength(1);
+		expect(thinking[0]).toEqual({
+			kind: "thinking",
+			id: "00000000-0000-4000-8000-000000000042:thinking",
+			timestamp: Date.parse("2026-07-18T01:49:01.895Z"),
+			text: "I need to dispatch a triager for each of the two issues, running them in parallel.",
+		});
 	});
 
-	it("counts a partial assistant frame the same way, so streaming stays whole-message", () => {
+	it("keeps the turn's own text as its own assistant item, ahead of nothing it invented", () => {
+		expect(items(events).map((one) => one.kind)).toEqual(["thinking", "assistant"]);
+		expect(items(events)[1]).toMatchObject({
+			kind: "assistant",
+			id: "00000000-0000-4000-8000-000000000044",
+			text: "Two issues — one triager each, in parallel.",
+		});
+	});
+
+	/**
+	 * No committed capture holds a `redacted_thinking` block: it appears only when the provider
+	 * withholds a turn's reasoning, which no run can force (`fixtures/PROVENANCE.md`). So this case
+	 * is the golden thinking frame with that one block's `type` and payload field swapped for the
+	 * redacted shape the Messages API documents — `{type, data}`, the content encrypted — and every
+	 * other key left as captured.
+	 */
+	it("reads a withheld block as a thinking item saying so, rather than dropping it", () => {
+		const captured = (loadFixture("thinking-turn") as ReadonlyArray<Record<string, unknown>>)[0];
+		expect(captured).toBeDefined();
+		const withheld = {
+			...captured,
+			message: {
+				...(captured?.message as Record<string, unknown>),
+				content: [{type: "redacted_thinking", data: "EroBCkYIBRgCKkBt7Xo="}],
+			},
+		} as SDKMessage;
+		const thinking = items(run([withheld]).events).filter((one) => one.kind === "thinking");
+		expect(thinking).toHaveLength(1);
+		expect(thinking[0]).toMatchObject({text: "(the provider withheld this reasoning)"});
+	});
+});
+
+describe("toAgentEvents over a captured compaction boundary", () => {
+	it("marks where the session compacted, with the trigger and what it cost", () => {
+		const {events} = run([message("compact-boundary")]);
+		expect(events).toEqual([
+			{
+				kind: "item",
+				item: {
+					kind: "compaction",
+					id: "00000000-0000-4000-8000-000000000045",
+					timestamp: AT,
+					text: "context compacted (manual): 337818 tokens before, 13932 after",
+				},
+			},
+		]);
+	});
+});
+
+describe("toAgentEvents over the session notices", () => {
+	it("collapses a captured informational frame into one system row with its detail folded", () => {
+		const {events} = run([message("informational-notice")]);
+		const notices = items(events);
+		expect(notices).toHaveLength(1);
+		expect(notices[0]).toMatchObject({
+			kind: "system",
+			id: "00000000-0000-4000-8000-000000000050",
+			text: "informational: Usage limit reached · continuing automatically at 3:30am · esc or type to cancel",
+		});
+		expect(notices[0]?.kind === "system" && notices[0].detail).toBe(
+			JSON.stringify(
+				{
+					content:
+						"Usage limit reached · continuing automatically at 3:30am · esc or type to cancel",
+					level: "notice",
+				},
+				null,
+				2,
+			),
+		);
+	});
+
+	it("collapses the captured rate-limit frame the same way, which used to be a silent skip", () => {
+		const step = toAgentEvents(message("unknown-message"), emptyMapping, {at: AT});
+		expect(step.mapping.skipped).toBe(0);
+		expect(items(step.events)).toMatchObject([{kind: "system", text: "rate limit event"}]);
+		const notice = items(step.events)[0];
+		expect(
+			notice?.kind === "system" && notice.detail?.includes('"rateLimitType": "five_hour"'),
+		).toBe(true);
+	});
+});
+
+describe("toAgentEvents over a message it has no shape for", () => {
+	it("counts a partial assistant frame, so streaming stays whole-message", () => {
 		const partial: unknown = {
 			type: "stream_event",
 			event: {type: "content_block_delta", delta: {type: "text_delta", text: "hel"}},

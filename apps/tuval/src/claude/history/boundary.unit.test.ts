@@ -62,13 +62,16 @@ describe("the Claude history mapping is pure", () => {
 			.sort();
 		expect(fixtures).toEqual([
 			"assistant-turn",
+			"compact-boundary",
 			"error-result",
+			"informational-notice",
 			"init",
 			"interrupted-assistant",
 			"oversized-tool-turn",
 			"permission-denied",
 			"resumed-init",
 			"session-messages",
+			"thinking-turn",
 			"tool-turn",
 			"unknown-message",
 		]);

@@ -20,7 +20,9 @@ import {
 	isRecord,
 	outputOf,
 	parentToolUseIdOf,
+	type ThinkingPart,
 	textOf,
+	thinkingOf,
 	timestampOf,
 	toolResultsOf,
 	toolUsesOf,
@@ -87,8 +89,15 @@ const withoutCall = (
 	return next;
 };
 
+/** What a withheld reasoning block reads as. The row exists so the turn does not look empty. */
+const WITHHELD_THINKING = "(the provider withheld this reasoning)";
+
+const thinkingTextOf = (parts: ReadonlyArray<ThinkingPart>): string =>
+	parts.map((part) => (part.kind === "text" ? part.text : WITHHELD_THINKING)).join("\n");
+
 /**
- * A turn's assistant frame: its text as one item, then one `running` row per tool call it opened.
+ * A turn's assistant frame: its reasoning, then its text as one item, then one `running` row per
+ * tool call it opened.
  * `aborted` is the SDK's mark for a message the stream cut mid-word, so it is the transcript's
  * `interrupted` — and an aborted frame with no text still earns its item, because the operator
  * needs to see that the turn was cut rather than nothing at all.
@@ -105,6 +114,19 @@ export const assistantEvents = (
 	const interrupted = message.aborted === true;
 	const id = typeof message.uuid === "string" ? message.uuid : `assistant-${at}`;
 	const events: AgentEvent[] = [];
+	const thinking = thinkingOf(body);
+	if (thinking.length > 0) {
+		// Suffixed rather than the frame's own uuid, because one frame carrying both a thinking block
+		// and text is two rows, and two rows sharing an id would fold into one.
+		events.push(
+			item({
+				kind: "thinking",
+				id: itemId(`${id}:thinking`),
+				timestamp: at,
+				text: thinkingTextOf(thinking),
+			}),
+		);
+	}
 	if (text.length > 0 || interrupted) {
 		events.push(
 			item({
@@ -322,6 +344,123 @@ export const permissionDeniedEvents = (
 		mapping,
 		events: [
 			item({kind: "system", id: itemId(id), timestamp: at, text: `${tool} denied: ${reason}`}),
+		],
+	};
+};
+
+const compactionTextOf = (metadata: unknown): string => {
+	if (!isRecord(metadata)) return "context compacted";
+	const trigger =
+		metadata.trigger === "auto" || metadata.trigger === "manual" ? metadata.trigger : null;
+	const lead = trigger === null ? "context compacted" : `context compacted (${trigger})`;
+	const before = typeof metadata.pre_tokens === "number" ? metadata.pre_tokens : null;
+	if (before === null) return lead;
+	const after = typeof metadata.post_tokens === "number" ? metadata.post_tokens : null;
+	return after === null
+		? `${lead}: ${before} tokens before`
+		: `${lead}: ${before} tokens before, ${after} after`;
+};
+
+/**
+ * The session compacted its context here.
+ *
+ * The frame carries no summary text and no clock of its own — `SDKCompactBoundaryMessage` is
+ * `compact_metadata`, `uuid` and `session_id` and nothing else (`sdk.d.ts`, 0.3.259) — so the
+ * marker's line is built from the trigger and the token counts, and its timestamp is the caller's.
+ */
+export const compactBoundaryEvents = (
+	message: unknown,
+	mapping: Mapping,
+	options: MappingOptions,
+): MappingStep => {
+	if (!isRecord(message)) return skipMessage(mapping);
+	const at = timestampOf(message, options.at);
+	const id = typeof message.uuid === "string" ? message.uuid : `compaction-${at}`;
+	return {
+		mapping,
+		events: [
+			item({
+				kind: "compaction",
+				id: itemId(id),
+				timestamp: at,
+				text: compactionTextOf(message.compact_metadata),
+			}),
+		],
+	};
+};
+
+/** How much of a notice's own prose rides the summary line before the rest folds into `detail`. */
+const NOTICE_SUMMARY_LIMIT = 200;
+
+/** The keys every frame carries; what is left is the notice's own payload, whatever its subtype. */
+const noticeEnvelope: ReadonlySet<string> = new Set([
+	"type",
+	"subtype",
+	"uuid",
+	"session_id",
+	"parent_tool_use_id",
+	"timestamp",
+]);
+
+const noticeNameOf = (message: Record<string, unknown>): string => {
+	const raw =
+		typeof message.subtype === "string" && message.subtype.length > 0
+			? message.subtype
+			: typeof message.type === "string" && message.type.length > 0
+				? message.type
+				: "notice";
+	return raw.replaceAll("_", " ");
+};
+
+const noticeProseOf = (message: Record<string, unknown>): string => {
+	for (const field of ["content", "text"]) {
+		const value = message[field];
+		if (typeof value === "string" && value.length > 0) return value;
+	}
+	return "";
+};
+
+const noticeDetailOf = (message: Record<string, unknown>): string => {
+	const payload = Object.fromEntries(
+		Object.entries(message).filter(([key]) => !noticeEnvelope.has(key)),
+	);
+	return Object.keys(payload).length === 0 ? "" : JSON.stringify(payload, null, 2);
+};
+
+/**
+ * One backend notice — every `system` subtype this mapping has no row of its own for, plus
+ * `rate_limit_event` — as the port's collapsed session item.
+ *
+ * Read shape-blind on purpose: the SDK names some fifteen such subtypes at 0.3.259 and adds more
+ * each release, so this takes the frame's own name for the line, its prose when it carries any,
+ * and folds everything the envelope did not claim into `detail`. A per-subtype arm here would be
+ * fifteen arms none of which a golden capture backs.
+ */
+export const systemNoticeEvents = (
+	message: unknown,
+	mapping: Mapping,
+	options: MappingOptions,
+): MappingStep => {
+	if (!isRecord(message)) return skipMessage(mapping);
+	const at = timestampOf(message, options.at);
+	const id = typeof message.uuid === "string" ? message.uuid : `notice-${at}`;
+	const name = noticeNameOf(message);
+	const prose = noticeProseOf(message);
+	const summary =
+		prose.length === 0
+			? name
+			: `${name}: ${prose.length > NOTICE_SUMMARY_LIMIT ? `${prose.slice(0, NOTICE_SUMMARY_LIMIT)}…` : prose}`;
+	const detail = noticeDetailOf(message);
+	return {
+		mapping,
+		events: [
+			item({
+				kind: "system",
+				id: itemId(id),
+				timestamp: at,
+				text: summary,
+				...(detail.length === 0 ? {} : {detail}),
+			}),
 		],
 	};
 };

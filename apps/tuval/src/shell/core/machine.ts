@@ -42,6 +42,7 @@ import {
 	type WindowId,
 	zoom,
 } from "../layout/index.ts";
+import type {OpenSession} from "../picker/intent.ts";
 import type {ViewState} from "../window/host.ts";
 import {
 	activeWorkspace,
@@ -50,6 +51,7 @@ import {
 	keyTargetOf,
 	mint,
 	type PrefixSnapshot,
+	processOf,
 	type ShellState,
 	type Workspace,
 	type WorkspaceId,
@@ -75,7 +77,12 @@ export type KernelCmd =
 			readonly key: string;
 	  }
 	| {readonly type: "runCommand"; readonly name: CommandName}
-	| {readonly type: "openProgram"; readonly windowId: WindowId; readonly programId: string}
+	| {
+			readonly type: "openProgram";
+			readonly windowId: WindowId;
+			readonly programId: string;
+			readonly session?: OpenSession;
+	  }
 	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
 	| {readonly type: "reloadConfig"};
 
@@ -136,7 +143,13 @@ export type ShellMsg =
 	| {readonly type: "workspace.remove"; readonly workspaceId?: WorkspaceId}
 	| {readonly type: "workspace.activate"; readonly workspaceId: WorkspaceId}
 	| {readonly type: "workspace.step"; readonly direction: "previous" | "next"}
-	| {readonly type: "window.open"; readonly programId: string; readonly windowId?: WindowId}
+	| {
+			readonly type: "window.open";
+			readonly programId: string;
+			readonly windowId?: WindowId;
+			/** The session this open is for, when it is for one (`../picker/intent.ts`). */
+			readonly session?: OpenSession;
+	  }
 	| {readonly type: "window.attach"; readonly processId: string; readonly windowId?: WindowId}
 	| {readonly type: "command.open"}
 	| {readonly type: "config.reload"}
@@ -231,6 +244,26 @@ const bindWindow = (
 		}),
 		NO_CMDS,
 	];
+};
+
+/**
+ * Put a window back on the picker: detach its process, which stops nothing, and drop the view slot
+ * so the picker mounts fresh rather than on the cursor and refusal the last mount left behind
+ * (`../ui/PickerView.tsx` rebuilds the picker's view from that slot).
+ *
+ * A window holding no process is left untouched rather than cleared. It is already showing the
+ * picker, and dropping the slot there would move the user's highlight back to the first row under
+ * their hands — a key that should have done nothing at all.
+ */
+const unbindWindow = (state: ShellState, windowId: WindowId | undefined): Step => {
+	const workspace = activeWorkspace(state);
+	if (workspace === undefined) return [state, NO_CMDS];
+	const target = windowId ?? workspace.focused;
+	if (!hasWindow(workspace, target) || processOf(workspace, target) === null) {
+		return [state, NO_CMDS];
+	}
+	const [detached] = bindWindow(state, target, null);
+	return [{...detached, views: withoutViews(detached.views, [target])}, NO_CMDS];
 };
 
 /**
@@ -461,7 +494,7 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"window.focus": (state, msg) => focusWindow(state, msg.windowId),
 		"window.focusDirection": (state, msg) => focusDirection(state, msg.direction),
 		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId, msg.takesKeys),
-		"window.unbind": (state, msg) => bindWindow(state, msg.windowId, null),
+		"window.unbind": (state, msg) => unbindWindow(state, msg.windowId),
 		"window.setView": setView,
 		"layout.resize": resizeStack,
 		"layout.zoom": zoomWindow,
@@ -476,7 +509,17 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 			const target = targetWindow(state, msg.windowId);
 			return target === null
 				? [state, NO_CMDS]
-				: [state, [{type: "openProgram", windowId: target, programId: msg.programId}]];
+				: [
+						state,
+						[
+							{
+								type: "openProgram",
+								windowId: target,
+								programId: msg.programId,
+								...(msg.session === undefined ? {} : {session: msg.session}),
+							},
+						],
+					];
 		},
 		"window.attach": (state, msg) => {
 			const target = targetWindow(state, msg.windowId);

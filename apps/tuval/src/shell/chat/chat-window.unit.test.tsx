@@ -30,6 +30,9 @@ import {type ChatWindowHost, type ChatWindowOptions, chatWindow} from "./ChatWin
 import {
 	assistantItem,
 	call,
+	compactionItem,
+	systemItem,
+	thinkingItem,
 	toolItem,
 	transcriptOf,
 	userItem,
@@ -1144,6 +1147,171 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 	});
 });
 
+describe("the two daily rows", () => {
+	const REASONING = ["First, read the ledger.", "", "Then decide which lane is stalled."].join(
+		"\n",
+	);
+
+	const reasoning = (): HTMLElement =>
+		screen.getByRole("button", {name: "First, read the ledger."});
+
+	/** The region a disclosure's trigger names, which is where the disclosed text lands. */
+	const panelOf = (trigger: HTMLElement): HTMLElement | null =>
+		document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+
+	it("shows a thinking row collapsed, named by the first line of the reasoning", async () => {
+		await openWindow(withTranscript([userItem("a", "go"), thinkingItem("t", REASONING)]));
+
+		const trigger = reasoning();
+		expect(trigger.getAttribute("aria-expanded")).toBe("false");
+		expect(panelOf(trigger)?.hidden).toBe(true);
+	});
+
+	it("keeps a long line off the collapsed row, so unfolded reasoning cannot flood it (#8027)", async () => {
+		const long = `${"reconciling the ledger against the board ".repeat(6)}done`;
+		await openWindow(withTranscript([thinkingItem("t", long)]));
+
+		const trigger = screen.getByRole("button", {name: /^reconciling the ledger/});
+		expect(trigger.textContent?.length).toBeLessThan(long.length);
+		expect(trigger.textContent?.endsWith("…")).toBe(true);
+	});
+
+	it("names the disclosure even when the reasoning is whitespace", async () => {
+		await openWindow(withTranscript([thinkingItem("t", "  \n\t\n ")]));
+		expect(screen.getByRole("button", {name: "Reasoning"})).toBeDefined();
+	});
+
+	it("discloses the whole reasoning inside the row the virtualizer measures", async () => {
+		const {scrolls, view} = await openWindow(
+			withTranscript([userItem("a", "go"), thinkingItem("t", REASONING)]),
+		);
+		await settle();
+		const before = scrolls.length;
+
+		await act(async () => {
+			fireEvent.click(reasoning());
+		});
+		await settle();
+
+		const trigger = reasoning();
+		expect(trigger.getAttribute("aria-expanded")).toBe("true");
+		const panel = panelOf(trigger);
+		expect(panel?.textContent).toBe(REASONING);
+		// The virtualizer measures `.tuval-chat-row`, so a panel rendered outside one would grow the
+		// transcript without the list ever hearing about it — the row would clip at its estimate.
+		expect(panel?.closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe("thinking");
+		// And opening anchors that row through the virtualizer, the same path an opened tool row takes.
+		expect(scrolls.length).toBeGreaterThan(before);
+		expect(view().expanded).toEqual(["t"]);
+	});
+
+	it("renders a compaction item as a marker, not as one more line the session said", async () => {
+		await openWindow(
+			withTranscript([assistantItem("b", "done"), compactionItem("c", "context compacted")]),
+		);
+
+		const rule = screen.getByRole("separator");
+		const marker = rule.closest(".tuval-chat-row");
+		expect(marker?.getAttribute("data-kind")).toBe("compaction");
+		// The line is beside the rule and is not a text row: the assistant's turn above is what a
+		// text row looks like, and this is the one other shape the transcript draws.
+		expect(screen.getByText("context compacted").className).toBe("tuval-chat-compaction-label");
+		expect(screen.getByText("done").closest(".tuval-chat-markdown")).not.toBeNull();
+		expect(marker?.querySelector(".tuval-chat-markdown")).toBeNull();
+	});
+});
+
+/**
+ * Everything else a backend says about the session, through the one row that renders all of it.
+ * The SDK's fifteen-odd `system` subtypes never reach this window as subtypes — a `SystemItem` is
+ * a summary and an optional detail, and these cases are the whole of what the row does with them.
+ */
+describe("the session row", () => {
+	const sessionRows = (): ReadonlyArray<HTMLElement> =>
+		Array.from(document.querySelectorAll<HTMLElement>('.tuval-chat-row[data-kind="session"]'));
+
+	const panelOf = (trigger: HTMLElement): HTMLElement | null =>
+		document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+
+	it("renders a summary-only notice as a line with no control to open", async () => {
+		await openWindow(withTranscript([userItem("a", "go"), systemItem("s", "session resumed")]));
+
+		const line = await screen.findByText("session resumed");
+		expect(line.className).toContain("tuval-chat-text");
+		// Nothing is folded away, so a disclosure here would name a region with nothing in it.
+		expect(screen.queryByRole("button", {name: "session resumed"})).toBeNull();
+	});
+
+	it("folds a notice's detail behind a disclosure the summary names", async () => {
+		const detail = "PreToolUse hook exited 1\n  at guard.sh:12";
+		await openWindow(withTranscript([systemItem("s", "hook refused the call", 1, detail)]));
+
+		const trigger = await screen.findByRole("button", {name: "hook refused the call"});
+		expect(trigger.tagName).toBe("BUTTON");
+		expect(trigger.getAttribute("aria-expanded")).toBe("false");
+		expect(panelOf(trigger)?.hidden).toBe(true);
+
+		await act(async () => {
+			fireEvent.click(trigger);
+		});
+
+		const opened = screen.getByRole("button", {name: "hook refused the call"});
+		expect(opened.getAttribute("aria-expanded")).toBe("true");
+		const panel = panelOf(opened);
+		expect(panel?.hidden).toBe(false);
+		expect(panel?.textContent).toBe(detail);
+		// The panel lives inside the row the virtualizer measures, or the row clips at its estimate.
+		expect(panel?.closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe("session");
+	});
+
+	it("collapses a burst of consecutive notices into one row rather than stacking them", async () => {
+		await openWindow(
+			withTranscript([
+				userItem("a", "go"),
+				systemItem("s1", "hook started"),
+				systemItem("s2", "hook running"),
+				systemItem("s3", "hook finished"),
+				assistantItem("b", "done"),
+			]),
+		);
+		await screen.findByText("done");
+
+		expect(sessionRows().length).toBe(1);
+		// The newest notice is the session's current word, and the row says how much it holds back.
+		const trigger = screen.getByRole("button", {name: /^hook finished/});
+		expect(trigger.textContent).toContain("2 earlier notices");
+		// The earlier notices are behind the fold, not on the row: `Collapsible` keeps its content
+		// mounted and `hidden`, so what is asserted is the region, never the absence of the node.
+		expect(panelOf(trigger)?.hidden).toBe(true);
+		expect(screen.getByText("hook started").closest("[hidden]")).toBe(panelOf(trigger));
+
+		await act(async () => {
+			fireEvent.click(trigger);
+		});
+
+		const panel = panelOf(screen.getByRole("button", {name: /^hook finished/}));
+		expect(
+			Array.from(panel?.querySelectorAll(".tuval-chat-text") ?? []).map((line) => line.textContent),
+		).toEqual(["hook started", "hook running", "hook finished"]);
+	});
+
+	it("keeps a run out of the row its neighbours are in", async () => {
+		await openWindow(
+			withTranscript([
+				systemItem("s1", "session resumed"),
+				assistantItem("b", "done"),
+				systemItem("s2", "rate limit reached"),
+			]),
+		);
+		await screen.findByText("done");
+
+		expect(sessionRows().length).toBe(2);
+		expect(screen.getByText("done").closest(".tuval-chat-row")?.getAttribute("data-kind")).toBe(
+			"assistant",
+		);
+	});
+});
+
 /**
  * React documents a state updater as pure and `StrictMode` re-invokes it, so a host write forked
  * from inside one lands twice per commit (#8033). Tuval mounts under `StrictMode` and never deploys
@@ -1225,5 +1393,47 @@ describe("the view slot's writer, under StrictMode", () => {
 
 		expect(view().expanded).toEqual(["c", "d"]);
 		expect(writes[writes.length - 1]?.expanded).toEqual(["c", "d"]);
+	});
+});
+
+/**
+ * #8159. The composer offers a "queue" button while a turn runs, so the words an operator writes
+ * then have to be somewhere they can see. They are in the session's queue, and the window renders
+ * that queue rather than anything it remembers itself — which is what makes the same waiting text
+ * visible in the other window over the same process.
+ */
+describe("the messages waiting for the running turn to end", () => {
+	const waiting = (
+		queued: AiAgentSessionState["queued"],
+		over: Partial<AiAgentSessionState> = {},
+	): AiAgentSessionState => withTranscript(transcriptOf(2), {phase: "prompting", queued, ...over});
+
+	it("renders each one, off the session's own queue", async () => {
+		await openWindow(
+			waiting([
+				{key: "q1", text: "then the CHANGELOG", timestamp: SENT_AT},
+				{key: "q2", text: "and tag it", timestamp: SENT_AT + 1},
+			]),
+		);
+		const list = screen.getByRole("list", {name: "Queued messages"});
+		expect(
+			within(list)
+				.getAllByRole("listitem")
+				.map((row) => row.textContent),
+		).toEqual(["then the CHANGELOG", "and tag it"]);
+		expect(screen.getByText("2 messages are waiting for the turn to end.")).toBeDefined();
+	});
+
+	// The ordinary case — everything sent — earns no permanent strip of chrome (ADR 0162, Pillar 3).
+	it("renders nothing at all on an empty queue", async () => {
+		await openWindow(waiting([]));
+		expect(screen.queryByRole("list", {name: "Queued messages"})).toBeNull();
+	});
+
+	// A queued message has reached no backend, so it is not a turn: the tail must not claim one.
+	it("keeps them off the transcript until they are sent", async () => {
+		await openWindow(waiting([{key: "q1", text: "then the CHANGELOG", timestamp: SENT_AT}]));
+		const transcript = screen.getByRole("log", {name: "Transcript"});
+		expect(within(transcript).queryByText("then the CHANGELOG")).toBeNull();
 	});
 });

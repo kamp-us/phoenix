@@ -6,6 +6,7 @@
 
 import fc from "fast-check";
 import type {ReactElement} from "react";
+import {SettingMenu} from "../AgentChatInput";
 import {Alert} from "../Alert";
 import {Avatar} from "../Avatar";
 import {Code, Kbd, Mark, Skeleton, Tag} from "../atoms";
@@ -13,6 +14,7 @@ import {Badge} from "../Badge";
 import {Button} from "../Button";
 import {Card, Surface} from "../Card";
 import {CountToggle} from "../CountToggle";
+import {Markdown} from "../Markdown";
 import {MetaRow} from "../MetaRow";
 import {NumberInput} from "../NumberInput";
 import {ScrollArea} from "../ScrollArea";
@@ -169,6 +171,35 @@ const selectArb: fc.Arbitrary<ReactElement> = fc
 		/>
 	));
 
+// The unselected arm (`value: undefined`) is generated on purpose: a settings picker with items
+// and no pick is a real session state, and it is the one the trigger has to keep naming (#8190).
+const settingMenuArb: fc.Arbitrary<ReactElement> = fc
+	.record({
+		label: fc.constantFrom("Mode", "Model", "Thinking effort"),
+		items: fc.constantFrom(
+			[{value: "plan", label: "Plan"}],
+			[
+				{value: "plan", label: "Plan"},
+				{value: "build", label: "Build"},
+			],
+			[
+				{value: "plan", label: "Plan"},
+				{value: "build", label: "Build", note: "writes"},
+			],
+		),
+		pick: fc.constantFrom(0, 1, -1),
+		disabled: fc.boolean(),
+	})
+	.map(({label: menuLabel, items, pick, disabled}) => (
+		<SettingMenu
+			label={menuLabel}
+			items={items}
+			value={items[pick]?.value}
+			disabled={disabled}
+			onValueChange={() => {}}
+		/>
+	));
+
 const alertArb: fc.Arbitrary<ReactElement> = fc
 	.record({
 		variant: fc.constantFrom(...(["secondary", "success", "info", "danger"] as const)),
@@ -187,6 +218,29 @@ const scrollAreaArb: fc.Arbitrary<ReactElement> = text.map((children) => (
 	<ScrollArea orientation="vertical">{children}</ScrollArea>
 ));
 
+/**
+ * Markdown source covering every block the renderer emits, so the invariants run over really
+ * rendered markdown rather than a stand-in. Headings stay at one level on purpose: axe's
+ * `heading-order` judges a document outline, so a generator that shuffled levels would red on the
+ * fixture rather than on the block.
+ */
+const markdownArb: fc.Arbitrary<ReactElement> = fc
+	.array(
+		fc.constantFrom(
+			"## a heading",
+			"some **bold** body text",
+			"- one\n- two",
+			"1. first\n2. second",
+			"| a | b |\n|---|---|\n| 1 | 2 |",
+			"```ts\nconst x = 1;\n```",
+			"> quoted",
+			"[kamp.us](https://kamp.us)",
+			"---",
+		),
+		{minLength: 1, maxLength: 4},
+	)
+	.map((parts) => <Markdown>{parts.join("\n\n")}</Markdown>);
+
 const COMPOUND_REASON =
 	"Manti machine primitive — needs required items/trigger/content props or a portal interaction to render a representative surface; covered by composed-usage tests.";
 
@@ -201,9 +255,11 @@ export const REGISTRY: Readonly<Record<string, PrimitiveSpec>> = {
 	CountToggle: {kind: "interactive", selector: "button", arb: countToggleArb},
 	NumberInput: {kind: "interactive", selector: "input", arb: numberInputArb},
 	Select: {kind: "interactive", selector: "button", arb: selectArb},
+	AgentSettingMenu: {kind: "interactive", selector: "button", arb: settingMenuArb},
 
 	Surface: {kind: "presentational", arb: surfaceArb},
 	Card: {kind: "presentational", arb: cardArb},
+	Markdown: {kind: "presentational", arb: markdownArb},
 	MetaRow: {kind: "presentational", arb: metaRowArb},
 	SandboxMarker: {
 		kind: "deferred",

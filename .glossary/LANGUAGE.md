@@ -520,6 +520,22 @@ shapes are [`.patterns/tuval-spells.md`](../.patterns/tuval-spells.md).
   [#8160](https://github.com/kamp-us/phoenix/issues/8160)). Source:
   [`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
 
+### Tuval: thinking row, compaction marker, session row
+
+Three of the six rows a Tuval chat window renders, minted by epic
+[#8142](https://github.com/kamp-us/phoenix/issues/8142) phase 1. English technical terms, per §3,
+and model-blind: none of them names a backend, a model or a session id. Source:
+[`apps/tuval/src/ai-agent/ports/transcript-item.ts`](../apps/tuval/src/ai-agent/ports/transcript-item.ts).
+
+- **thinking row** — the agent's reasoning for one turn, as content. Not `ports/thinking.ts`, which
+  is the effort-level *control*; a bare "thinking" in Tuval transcript prose is this row, and the
+  control is always "thinking level".
+- **compaction marker** — where a session compacted its context. Its own kind rather than a session
+  row, because it is a boundary the window draws rather than a notice it prints, and it is the one
+  place a reader needs to see why earlier turns are gone.
+- **session row** — one backend notice, collapsed: a summary line always shown plus optional detail
+  the window folds away. Every notice lands here — status, hooks, local command output, refusals,
+  rate limits — and the row deliberately does not name which it was.
 
 ---
 

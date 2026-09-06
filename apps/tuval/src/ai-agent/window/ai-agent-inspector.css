@@ -1,0 +1,43 @@
+/*
+ * The inspector panel's own layout, and nothing else. Every value is a role token the shell already
+ * declares (`../../shell/ui/tokens.css`); no token is added here (#7884, #8190).
+ */
+
+/* A `fieldset` ships a browser border and padding; the panel's own frame is the inspector Card's. */
+.tuval-agent-inspector {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	min-inline-size: 0;
+}
+
+.tuval-agent-inspector-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+	margin: 0;
+}
+
+.tuval-agent-inspector-row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	min-inline-size: 0;
+}
+
+.tuval-agent-inspector-label {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-agent-inspector-list dd {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+}
+
+/* A session id and a project path are both long, and neither is truncated: an ellipsis would hide
+   the tail of the path with nothing to reveal it, so a narrow panel gets another line instead. */
+.tuval-agent-inspector-wrap {
+	overflow-wrap: anywhere;
+}

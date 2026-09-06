@@ -7,7 +7,7 @@
 import {describe, expect, it} from "vitest";
 import {promptItem} from "../../ai-agent/core/fold.ts";
 import {planTranscriptPage, planTranscriptWindow} from "../../ai-agent/history/index.ts";
-import {assistantItem, call, toolItem, transcriptOf, userItem} from "./chat.testing.ts";
+import {assistantItem, call, systemItem, toolItem, transcriptOf, userItem} from "./chat.testing.ts";
 import type {ChatRow} from "./rows.ts";
 import {chatRows, mergeOlder, oldestLoadedId, rowIndexOfItem, rowKey} from "./rows.ts";
 
@@ -268,6 +268,64 @@ describe("rowKey", () => {
 		).toBe("item:x");
 		expect(rowKey({kind: "loading"})).toBe("loading");
 		expect(rowKey({kind: "older", items: 3})).toBe("older");
+	});
+
+	it("keys a session run on its first notice, so the key holds as the run grows", () => {
+		expect(rowKey({kind: "session", items: [systemItem("s1"), systemItem("s2")]})).toBe(
+			"session:s1",
+		);
+	});
+});
+
+/**
+ * The rabbit-hole this window is built to avoid: the SDK's fifteen-odd `system` subtypes arriving
+ * as fifteen-odd row shapes, and a burst of hook frames pushing the transcript around per frame.
+ * Both are answered here, before any component sees a row.
+ */
+describe("consecutive session notices", () => {
+	const kinds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
+		rows.map((row) => row.kind);
+
+	it("become one row rather than one row each", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [
+				userItem("u", "go"),
+				systemItem("s1", "hook started"),
+				systemItem("s2", "hook running"),
+				systemItem("s3", "hook finished"),
+				assistantItem("a", "done"),
+			],
+		});
+		expect(kinds(rows)).toEqual(["item", "session", "item"]);
+		const run = rows[1];
+		expect(run?.kind === "session" ? run.items.map((item) => item.id) : []).toEqual([
+			"s1",
+			"s2",
+			"s3",
+		]);
+	});
+
+	it("stay two runs when a turn lands between them", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [systemItem("s1"), assistantItem("a", "done"), systemItem("s2")],
+		});
+		expect(kinds(rows)).toEqual(["session", "item", "session"]);
+	});
+
+	it("carry the page cursor and the prepend anchor like any other row", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [systemItem("s1"), systemItem("s2"), assistantItem("a", "done")],
+		});
+		expect(oldestLoadedId(rows)).toBe("s1");
+		// Membership, not the run's key: an anchor may name a notice buried mid-run.
+		expect(rowIndexOfItem(rows, "s2")).toBe(0);
+		expect(rowIndexOfItem(rows, "a")).toBe(1);
 	});
 });
 

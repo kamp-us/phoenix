@@ -106,6 +106,14 @@ const isSend = (value: unknown): boolean =>
 
 const isSends = (value: unknown): boolean => Array.isArray(value) && value.every(isSend);
 
+const isQueuedPrompt = (value: unknown): boolean =>
+	Predicate.isObject(value) &&
+	typeof value.key === "string" &&
+	typeof value.text === "string" &&
+	isFiniteNumber(value.timestamp);
+
+const isQueued = (value: unknown): boolean => Array.isArray(value) && value.every(isQueuedPrompt);
+
 export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionState =>
 	Predicate.isObject(value) &&
 	typeof value.phase === "string" &&
@@ -125,6 +133,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isThinking(value.thinking) &&
 	isNullOrString(value.lastPrompt) &&
 	isSends(value.sends) &&
+	isQueued(value.queued) &&
 	isPage(value.lastPage) &&
 	isFailure(value.failure);
 
