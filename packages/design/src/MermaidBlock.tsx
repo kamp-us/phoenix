@@ -162,6 +162,11 @@ export function MermaidBlock({token}: {readonly token: Tokens.Code}): ReactEleme
 				mermaid.initialize({
 					startOnLoad: false,
 					securityLevel: "strict",
+					// Without this, a source that passes `parse` but throws in the draw step leaves
+					// mermaid's own error diagram in the temp div it appended to `document.body` and
+					// never removes (`mermaid@11.17.2`, `dist/mermaid.core.mjs`, the `catch` after
+					// `diag.renderer.draw`) — a stray SVG outside the row, beside this block's fallback.
+					suppressErrorRendering: true,
 					theme: "base",
 					// The token set defaults to dark and light is the opt-in (`tokens.css`), so the
 					// nearest opted-in ancestor is the whole question. Mermaid derives contrast for
