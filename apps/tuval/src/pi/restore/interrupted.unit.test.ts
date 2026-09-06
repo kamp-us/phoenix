@@ -45,6 +45,7 @@ const cutMidReply: AiAgentSessionState = {
 	permissions: {},
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
+	thinking: {current: null, available: []},
 	lastPrompt: "read the readme",
 	lastPage: null,
 	failure: null,

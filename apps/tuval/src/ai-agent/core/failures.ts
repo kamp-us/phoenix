@@ -15,6 +15,7 @@ export const PROMPT_ERROR = "tuval/ai-agent/PromptError";
 export const UNKNOWN_REQUEST = "tuval/ai-agent/UnknownRequest";
 export const MODE_UNSUPPORTED = "tuval/ai-agent/ModeUnsupported";
 export const MODEL_UNSUPPORTED = "tuval/ai-agent/ModelUnsupported";
+export const THINKING_UNSUPPORTED = "tuval/ai-agent/ThinkingUnsupported";
 export const PAGE_ERROR = "tuval/ai-agent/PageError";
 
 /**
@@ -68,4 +69,13 @@ export const modelUnsupported = (
 	tag: MODEL_UNSUPPORTED,
 	reason: null,
 	detail: `model "${model}" is not offered; available: ${available.join(", ") || "none"}`,
+});
+
+export const thinkingUnsupported = (
+	level: string,
+	available: ReadonlyArray<string>,
+): AgentFailure => ({
+	tag: THINKING_UNSUPPORTED,
+	reason: null,
+	detail: `thinking level "${level}" is not offered; available: ${available.join(", ") || "none"}`,
 });

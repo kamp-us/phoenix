@@ -9,7 +9,7 @@
 
 import {type Sub, type SubId, subId} from "@demlik/tea";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, ModelRef, PermissionDecision} from "../ports/index.ts";
+import type {Mode, ModelRef, PermissionDecision, ThinkingLevel} from "../ports/index.ts";
 import type {AgentFailure, HistoryPage} from "./state.ts";
 
 export type AiAgentSessionMsg =
@@ -36,6 +36,7 @@ export type AiAgentSessionMsg =
 	  }
 	| {readonly type: "setMode"; readonly mode: Mode}
 	| {readonly type: "setModel"; readonly model: ModelRef}
+	| {readonly type: "setThinkingLevel"; readonly level: ThinkingLevel}
 	| {readonly type: "page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "paged"; readonly page: HistoryPage}
 	| {readonly type: "interrupt"}
@@ -64,6 +65,7 @@ export type AiAgentSessionCmd =
 	  }
 	| {readonly type: "aiAgent.setMode"; readonly mode: Mode}
 	| {readonly type: "aiAgent.setModel"; readonly model: ModelRef}
+	| {readonly type: "aiAgent.setThinkingLevel"; readonly level: ThinkingLevel}
 	| {readonly type: "aiAgent.page"; readonly before: string | null; readonly limit: number}
 	| {readonly type: "aiAgent.interrupt"}
 	| {readonly type: "aiAgent.reconnect"; readonly cwd: string; readonly sessionId: string}

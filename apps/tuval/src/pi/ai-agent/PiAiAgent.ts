@@ -24,6 +24,12 @@
  * it does offer: the `hello` frame's catalog is the list, `set_model` is the switch, and it applies
  * to the running session rather than to the next one. A pick made before any session exists is held
  * and opens the next one, so "not offered" and "no session yet" stay two different answers (#7981).
+ *
+ * Thinking levels ride the same shape (#8062), with one difference the model axis does not have:
+ * the offered set is *per model*, since each catalog row carries its own
+ * `supportedThinkingLevels` — the whole vocabulary for a reasoning model, `off` alone otherwise
+ * (`../server/AgentSessionHost.ts`). So a model switch re-announces the thinking set too, and a
+ * level the new model does not offer stops being pickable with it.
  */
 
 import {readdirSync} from "node:fs";
@@ -31,7 +37,12 @@ import {join} from "node:path";
 import {getAgentDir, ModelRuntime, SessionManager} from "@earendil-works/pi-coding-agent";
 import {type Cause, Effect, Fiber, Layer, Queue, Redacted, Ref, type Scope, Stream} from "effect";
 import {isRefusal, planTranscriptPage} from "../../ai-agent/history/index.ts";
-import type {Mode, ModelRef, PermissionDecision} from "../../ai-agent/ports/index.ts";
+import type {
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	ThinkingLevel,
+} from "../../ai-agent/ports/index.ts";
 import {sameModel} from "../../ai-agent/ports/index.ts";
 import {
 	type AgentEvent,
@@ -39,6 +50,7 @@ import {
 	ModeUnsupported,
 	PageError,
 	PromptError,
+	ThinkingUnsupported,
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
@@ -130,6 +142,23 @@ const refOf = (model: {
 	readonly name: string;
 }): ModelRef => ({provider: model.provider, id: model.id, name: model.name});
 
+/**
+ * What one model may be asked to think at, off the same catalog row. A model the catalog does not
+ * describe offers nothing rather than the whole vocabulary — a picker over levels the session would
+ * refuse is the inert control this replaces.
+ */
+const levelsOf = (
+	catalog: ReadonlyArray<{
+		readonly provider: string;
+		readonly id: string;
+		readonly name: string;
+		readonly supportedThinkingLevels: ReadonlyArray<ThinkingLevel>;
+	}>,
+	model: {readonly provider: string; readonly id: string},
+): ReadonlyArray<ThinkingLevel> =>
+	catalog.find((row) => row.provider === model.provider && row.id === model.id)
+		?.supportedThinkingLevels ?? [];
+
 const without =
 	(key: string) =>
 	(seen: ReadonlySet<string>): ReadonlySet<string> => {
@@ -150,6 +179,7 @@ const make = (
 		// The pick an operator made before a session existed. It survives to the next `start`,
 		// which opens on it — the shape `ClaudeAiAgent` holds one across a respawn.
 		const pendingModel = yield* Ref.make<ModelSelection | null>(null);
+		const pendingThinking = yield* Ref.make<ThinkingLevel | null>(null);
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const dialled = yield* Ref.make(false);
 		const pump = yield* Ref.make<Fiber.Fiber<void, never> | null>(null);
@@ -188,10 +218,6 @@ const make = (
 				yield* Effect.race(snapshots, dropped);
 			});
 
-		const offeredModels: Effect.Effect<ReadonlyArray<ModelRef>> = Effect.map(pi.models, (models) =>
-			models.map(refOf),
-		);
-
 		/**
 		 * The session's model as the offered list names it. The wire ref carries no display name, so
 		 * the catalog row is what a menu renders; a session on a model the catalog does not offer is
@@ -209,6 +235,30 @@ const make = (
 		const announce = (current: ModelRef, offered: ReadonlyArray<ModelRef>): Effect.Effect<void> =>
 			Effect.flatMap(Ref.get(queue), (open) =>
 				emit(open, [{kind: "model", current, available: offered}]),
+			);
+
+		const announceThinking = (
+			current: ThinkingLevel | null,
+			offered: ReadonlyArray<ThinkingLevel>,
+		): Effect.Effect<void> =>
+			Effect.flatMap(Ref.get(queue), (open) =>
+				emit(open, [{kind: "thinking", current, available: offered}]),
+			);
+
+		/** The refused-switch shape `applySwitch` has, over the thinking axis. */
+		const applyThinking = (
+			sessionId: string,
+			level: ThinkingLevel,
+			fallback: ThinkingLevel,
+		): Effect.Effect<ThinkingLevel> =>
+			pi.setThinkingLevel(sessionId, level).pipe(
+				Effect.map((answered) => answered.thinkingLevel),
+				Effect.catch((refusal) =>
+					Effect.as(
+						Effect.logWarning(`the thinking switch was refused: ${refusal.message}`),
+						fallback,
+					),
+				),
 			);
 
 		/**
@@ -277,14 +327,27 @@ const make = (
 					: yield* applySwitch(ref.id, pick, ref.model);
 			yield* Ref.set(pendingModel, null);
 
-			yield* Ref.set(session, {...ref, model: running});
+			// The same shape one line up, over the thinking axis: a level held from before this
+			// session existed is applied here rather than assumed to have landed, and spent either
+			// way. A level the model this open landed on does not offer is dropped, not sent.
+			const wanted = yield* Ref.get(pendingThinking);
+			const catalog = yield* pi.models;
+			const levels = levelsOf(catalog, running);
+			const thinking =
+				wanted === null || wanted === ref.thinkingLevel || !levels.includes(wanted)
+					? ref.thinkingLevel
+					: yield* applyThinking(ref.id, wanted, ref.thinkingLevel);
+			yield* Ref.set(pendingThinking, null);
+
+			yield* Ref.set(session, {...ref, model: running, thinkingLevel: thinking});
 			// Forked into the layer's own scope, not the caller's, so the fan lives exactly as long
 			// as the transport it reads and dies with it.
 			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open), scope));
-			const offered = yield* offeredModels;
+			const offered = catalog.map(refOf);
 			yield* emit(open, [
 				{kind: "mode", current: null, available: []},
 				{kind: "model", current: currentOf(offered, running), available: offered},
+				{kind: "thinking", current: thinking, available: levels},
 				{kind: "phase", phase: "ready"},
 			]);
 			return {sessionId: ref.id};
@@ -363,11 +426,47 @@ const make = (
 				// with the refused model listed among the available ones, which contradicts itself
 				// (#7981); the pick is held instead and the next `start` opens on it.
 				yield* Ref.set(pendingModel, selection);
-				return yield* announce(refOf(picked), offered);
+				yield* announce(refOf(picked), offered);
+				// The offered thinking set is the *model's*, so a pick made before any session exists
+				// still moves the picker's rows to the ones that model will accept (#8062).
+				return yield* announceThinking(null, levelsOf(catalog, selection));
 			}
 			const snapshot = yield* applySwitch(current.id, selection, current.model);
 			yield* Ref.set(session, {...current, model: snapshot});
 			yield* announce(currentOf(offered, snapshot), offered);
+			// The level survives the model switch only if the new model offers it; otherwise the
+			// picker is told the session is on nothing rather than on a level it would now refuse.
+			const levels = levelsOf(catalog, snapshot);
+			yield* announceThinking(
+				levels.includes(current.thinkingLevel) ? current.thinkingLevel : null,
+				levels,
+			);
+		});
+
+		const setThinkingLevel = Effect.fn("TuvalAiAgent.setThinkingLevel")(function* (
+			level: ThinkingLevel,
+		) {
+			const catalog = yield* pi.models;
+			const current = yield* Ref.get(session);
+			// Before a session exists there is no model to read an offered set off, so the pick is
+			// held against the next open exactly as `setModel`'s is — "no session yet" is not
+			// "not offered" here either (#7981).
+			if (current === null) {
+				const opening = (yield* Ref.get(pendingModel)) ?? options.model;
+				const levels = opening === undefined ? [] : levelsOf(catalog, opening);
+				if (opening !== undefined && !levels.includes(level)) {
+					return yield* new ThinkingUnsupported({level, available: levels});
+				}
+				yield* Ref.set(pendingThinking, level);
+				return yield* announceThinking(level, levels);
+			}
+			const levels = levelsOf(catalog, current.model);
+			if (!levels.includes(level)) {
+				return yield* new ThinkingUnsupported({level, available: levels});
+			}
+			const applied = yield* applyThinking(current.id, level, current.thinkingLevel);
+			yield* Ref.set(session, {...current, thinkingLevel: applied});
+			yield* announceThinking(applied, levels);
 		});
 
 		const page = Effect.fn("TuvalAiAgent.page")(function* (before: string | null, limit: number) {
@@ -403,6 +502,7 @@ const make = (
 				Effect.fail(new UnknownRequest({request})),
 			setMode: (mode: Mode) => Effect.fail(new ModeUnsupported({mode, available: []})),
 			setModel,
+			setThinkingLevel,
 			page,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (open) => Stream.fromQueue(open))),
 		};

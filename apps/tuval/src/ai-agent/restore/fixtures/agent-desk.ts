@@ -98,6 +98,7 @@ const script: AgentScript = {
 	],
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
+	thinking: {current: null, available: []},
 	interrupt: [],
 	turns: [{events: firstTurn}, {events: secondTurn}, {events: cutTurn}, {events: resendTurn}],
 	resumeAtTurn: 3,

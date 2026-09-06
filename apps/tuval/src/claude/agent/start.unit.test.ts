@@ -6,6 +6,7 @@
  * layer folds are not something a test may invent.
  */
 
+import type {ModelInfo} from "@anthropic-ai/claude-agent-sdk";
 import {assert, describe, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Logger, Option, Stream} from "effect";
 import {Mode} from "../../ai-agent/ports/index.ts";
@@ -117,7 +118,7 @@ describe("start opens one streaming query", () => {
 		}),
 	);
 
-	it.effect("emits starting, the handshake's ready phase, then the mode and model lists", () =>
+	it.effect("emits starting, the handshake's ready phase, then every list it offers", () =>
 		on({modes: MODES}, (agent) =>
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
@@ -128,6 +129,9 @@ describe("start opens one streaming query", () => {
 					// what the query opened on is the row's own `permissionMode` (#7828).
 					{kind: "mode", current: Mode.make("default"), available: MODES},
 					{kind: "model", current: null, available: []},
+					// A CLI offering no catalog offers no effort levels either: the set is a model's
+					// (#8062), and there is no model here to read one off.
+					{kind: "thinking", current: null, available: []},
 				]);
 			}),
 		),
@@ -138,7 +142,7 @@ describe("start opens one streaming query", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
-				const announced = events[START_EVENTS - 2];
+				const announced = events.find((event) => event.kind === "mode");
 				assert.deepStrictEqual(announced, {
 					kind: "mode",
 					current: Mode.make(scripted.opened[0]?.record.options.permissionMode ?? ""),
@@ -166,6 +170,7 @@ describe("start against a CLI that says nothing until the first prompt", () => {
 					{kind: "phase", phase: "ready"},
 					{kind: "mode", current: Mode.make("default"), available: MODES},
 					{kind: "model", current: null, available: []},
+					{kind: "thinking", current: null, available: []},
 				]);
 			}),
 		),
@@ -292,14 +297,17 @@ describe("setModel", () => {
 			Effect.gen(function* () {
 				yield* agent.start({cwd: CWD});
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
-				assert.deepStrictEqual(events[START_EVENTS - 1], {
-					kind: "model",
-					current: null,
-					available: [
-						{id: "opus", name: "Opus 5"},
-						{id: "sonnet", name: "Sonnet 5"},
-					],
-				});
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "model"),
+					{
+						kind: "model",
+						current: null,
+						available: [
+							{id: "opus", name: "Opus 5"},
+							{id: "sonnet", name: "Sonnet 5"},
+						],
+					},
+				);
 			}),
 		),
 	);
@@ -358,11 +366,14 @@ describe("setModel", () => {
 				const session = yield* agent.start({cwd: CWD});
 				assert.strictEqual(session.sessionId, SESSION_ID);
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
-				assert.deepStrictEqual(events[START_EVENTS - 1], {
-					kind: "model",
-					current: null,
-					available: [],
-				});
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "model"),
+					{
+						kind: "model",
+						current: null,
+						available: [],
+					},
+				);
 			}),
 		),
 	);
@@ -390,6 +401,147 @@ describe("setModel", () => {
 				// The query still opens on the row's static model — the SDK's `sessionId`/`resume`
 				// options carry no model — so the switch is re-applied against the new session.
 				assert.deepStrictEqual(scripted.opened[1]?.record.models, ["sonnet"]);
+			}),
+		),
+	);
+});
+
+/**
+ * The effort axis (#8062). Claude has five levels and neither `off` nor `minimal`, and the founder
+ * ruled the picker shows exactly what the backend supports rather than mapping the missing two —
+ * so the offered set is the model row's own `supportedEffortLevels` and a level outside it fails.
+ */
+describe("setThinkingLevel", () => {
+	const EFFORT: ReadonlyArray<ModelInfo> = [
+		{
+			value: "opus",
+			displayName: "Opus 5",
+			description: "the deep one",
+			supportsEffort: true,
+			supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+		},
+		{value: "haiku", displayName: "Haiku", description: "no effort axis"},
+	];
+
+	it.effect("announces the model row's own offered set on the open", () =>
+		on({models: EFFORT, model: "opus"}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "thinking"),
+					{
+						kind: "thinking",
+						// Nothing has picked one, and the SDK publishes no current effort, so the layer
+						// reports none rather than inventing the row's first level.
+						current: null,
+						available: ["low", "medium", "high", "xhigh", "max"],
+					},
+				);
+			}),
+		),
+	);
+
+	it.effect("reaches Query.applyFlagSettings on the live session and announces the level", () =>
+		on({models: EFFORT, model: "opus"}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("xhigh");
+				// The live switch, not a respawn: one query was opened and it took the call.
+				assert.lengthOf(scripted.opened, 1);
+				assert.deepStrictEqual(scripted.opened[0]?.record.efforts, ["xhigh"]);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
+				assert.deepStrictEqual(events[START_EVENTS], {
+					kind: "thinking",
+					current: "xhigh",
+					available: ["low", "medium", "high", "xhigh", "max"],
+				});
+			}),
+		),
+	);
+
+	it.effect("keeps the announced level when the CLI refuses the switch", () =>
+		on(
+			{
+				models: EFFORT,
+				model: "opus",
+				effortSwitchFails: new Error("the CLI would not apply it"),
+			},
+			(agent, scripted) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					yield* agent.setThinkingLevel("max");
+					assert.deepStrictEqual(
+						scripted.opened[0]?.record.efforts,
+						["max"],
+						"the switch was attempted; it is the announcement that must not move",
+					);
+					const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 1));
+					assert.deepStrictEqual(events[START_EVENTS], {
+						kind: "thinking",
+						current: null,
+						available: ["low", "medium", "high", "xhigh", "max"],
+					});
+				}),
+		),
+	);
+
+	it.effect("fails a level outside the offered set rather than dropping it", () =>
+		Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				on({models: EFFORT, model: "opus"}, (agent) =>
+					Effect.gen(function* () {
+						yield* agent.start({cwd: CWD});
+						// In the design vocabulary and outside Claude's effort axis, which is the whole
+						// shape of the ruling.
+						yield* agent.setThinkingLevel("minimal");
+					}),
+				),
+			);
+			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/ThinkingUnsupported");
+		}),
+	);
+
+	it.effect("offers nothing on a model whose row declares no effort levels", () =>
+		on({models: EFFORT, model: "haiku"}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "thinking"),
+					{kind: "thinking", current: null, available: []},
+				);
+			}),
+		),
+	);
+
+	it.effect("re-applies the level against a later session", () =>
+		on({models: EFFORT, model: "opus"}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("high");
+				yield* agent.start({cwd: CWD});
+				// `applyFlagSettings` writes a session-scoped flag layer, so a new query opens without
+				// it and the held pick has to be re-applied rather than merely re-announced.
+				assert.deepStrictEqual(scripted.opened[1]?.record.efforts, ["high"]);
+			}),
+		),
+	);
+
+	it.effect("drops the level when a model switch takes it out of the offered set", () =>
+		on({models: EFFORT, model: "opus"}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("max");
+				yield* agent.setModel({id: "haiku", name: "Haiku"});
+				// The offered set is the model's, so the switch moves the picker's rows — and a level
+				// the new model would refuse stops being the current one.
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS + 3));
+				assert.deepStrictEqual(events.at(-1), {
+					kind: "thinking",
+					current: null,
+					available: [],
+				});
 			}),
 		),
 	);
@@ -430,11 +582,14 @@ describe("setMode", () => {
 				yield* agent.start({cwd: CWD});
 				assert.strictEqual(scripted.opened[0]?.record.options.permissionMode, "plan");
 				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
-				assert.deepStrictEqual(events[START_EVENTS - 2], {
-					kind: "mode",
-					current: Mode.make("plan"),
-					available: MODES,
-				});
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "mode"),
+					{
+						kind: "mode",
+						current: Mode.make("plan"),
+						available: MODES,
+					},
+				);
 			}),
 		),
 	);
@@ -461,11 +616,14 @@ describe("setMode", () => {
 					Effect.gen(function* () {
 						yield* agent.start({cwd: CWD});
 						const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
-						assert.deepStrictEqual(events[START_EVENTS - 2], {
-							kind: "mode",
-							current: Mode.make("default"),
-							available: [Mode.make("default")],
-						});
+						assert.deepStrictEqual(
+							events.find((event) => event.kind === "mode"),
+							{
+								kind: "mode",
+								current: Mode.make("default"),
+								available: [Mode.make("default")],
+							},
+						);
 						yield* agent.setMode(Mode.make("bypassPermissions"));
 					}),
 				),

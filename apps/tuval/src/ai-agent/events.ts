@@ -25,6 +25,7 @@ import type {
 	ModelRef,
 	PermissionDecision,
 	PermissionRequest,
+	ThinkingLevel,
 	TranscriptItem,
 } from "./ports/index.ts";
 
@@ -77,6 +78,20 @@ export interface ModelEvent {
 }
 
 /**
+ * How hard the session is thinking now, and which levels it may be switched to.
+ *
+ * `available` is the layer's *offered* set, and it is per backend and per model: Pi advertises the
+ * whole vocabulary for a reasoning model and `off` alone otherwise, Claude advertises its effort
+ * axis, which has neither `off` nor `minimal` (#8062). A level outside it is refused rather than
+ * silently dropped, so the two windows' pickers differ in row count and neither lies.
+ */
+export interface ThinkingEvent {
+	readonly kind: "thinking";
+	readonly current: ThinkingLevel | null;
+	readonly available: ReadonlyArray<ThinkingLevel>;
+}
+
+/**
  * The last thing that went wrong, as data. The layer's typed errors are classes; this keeps only
  * the tag, the case and the detail, because the window renders by tag (ruling 3, #7570) and a
  * class instance is not something a checkpoint can carry.
@@ -117,5 +132,6 @@ export type AgentEvent =
 	| PermissionResolvedEvent
 	| ModeEvent
 	| ModelEvent
+	| ThinkingEvent
 	| UsageEvent
 	| FailureEvent;

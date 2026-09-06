@@ -28,6 +28,8 @@
 
 import {randomUUID} from "node:crypto";
 import type {
+	EffortLevel,
+	ModelInfo,
 	PermissionMode,
 	PermissionResult,
 	PermissionUpdate,
@@ -41,6 +43,7 @@ import type {
 	ModelRef,
 	PermissionDecision,
 	PermissionRequest,
+	ThinkingLevel,
 	TranscriptItem,
 } from "../../ai-agent/ports/index.ts";
 import {sameModel} from "../../ai-agent/ports/index.ts";
@@ -48,6 +51,7 @@ import {
 	ModelUnsupported,
 	ModeUnsupported,
 	type StartError,
+	ThinkingUnsupported,
 	type TransportError,
 	TuvalAiAgent,
 	type TuvalAiAgentApi,
@@ -189,6 +193,10 @@ const make = (
 		// between sessions, has to survive to the next `start` and be re-announced there.
 		const model = yield* Ref.make<ModelRef | null>(null);
 		const models = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
+		// The effort axis is per model — `ModelInfo` carries `supportedEffortLevels` per row — so the
+		// offered set is looked up by the model the session is running on rather than held flat.
+		const efforts = yield* Ref.make<ReadonlyMap<string, ReadonlyArray<EffortLevel>>>(new Map());
+		const effort = yield* Ref.make<EffortLevel | null>(null);
 		const parked = new Map<string, Parked>();
 
 		const emit = (open: EventQueue, events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
@@ -203,17 +211,52 @@ const make = (
 		 * empty rather than failing the open: an absent picker is a session you can still prompt,
 		 * and the composer disables the control on a list shorter than two anyway.
 		 */
-		const readCatalog = (current: Session): Effect.Effect<ReadonlyArray<ModelRef>> =>
+		const readCatalog = (current: Session): Effect.Effect<ReadonlyArray<ModelInfo>> =>
 			Effect.tryPromise({
 				try: () => current.handle.supportedModels(),
 				catch: controlRefused,
 			}).pipe(
-				Effect.map((rows) => rows.map((row): ModelRef => ({id: row.value, name: row.displayName}))),
+				Effect.map((rows) => [...rows]),
 				Effect.catch((refusal) =>
 					Effect.as(
 						Effect.logWarning(`the model catalog could not be read: ${refusal.detail}`),
-						[] as ReadonlyArray<ModelRef>,
+						[] as ReadonlyArray<ModelInfo>,
 					),
+				),
+			);
+
+		const refOf = (row: ModelInfo): ModelRef => ({id: row.value, name: row.displayName});
+
+		/**
+		 * The levels one row offers, and the founder's ruling in one line (#8062): Claude's effort
+		 * axis has five levels and neither `off` nor `minimal`, and the picker shows exactly those
+		 * five rather than mapping the missing two onto something. A row that does not support
+		 * effort offers none.
+		 */
+		const effortsOf = (
+			rows: ReadonlyArray<ModelInfo>,
+		): ReadonlyMap<string, ReadonlyArray<EffortLevel>> =>
+			new Map(rows.map((row) => [row.value, row.supportedEffortLevels ?? []]));
+
+		const offeredEfforts = (
+			table: ReadonlyMap<string, ReadonlyArray<EffortLevel>>,
+			current: ModelRef | null,
+		): ReadonlyArray<EffortLevel> => (current === null ? [] : (table.get(current.id) ?? []));
+
+		const publishThinking = (
+			current: EffortLevel | null,
+			offered: ReadonlyArray<EffortLevel>,
+		): Effect.Effect<void> => publish([{kind: "thinking", current, available: offered}]);
+
+		/** The live switch. `false` is a refusal the caller keeps the old value over. */
+		const applyEffort = (current: Session, next: EffortLevel): Effect.Effect<boolean> =>
+			Effect.tryPromise({
+				try: () => current.handle.applyFlagSettings({effortLevel: next}),
+				catch: controlRefused,
+			}).pipe(
+				Effect.as(true),
+				Effect.catch((refusal) =>
+					Effect.as(Effect.logWarning(`the effort switch was refused: ${refusal.detail}`), false),
 				),
 			);
 
@@ -492,8 +535,11 @@ const make = (
 			// one the session is actually running: the query opened on the row's static `model`, so a
 			// model an operator picked before this open has to be re-applied here rather than merely
 			// re-announced — the mode switch learned that in #7828.
-			const offered = yield* readCatalog(opened.session);
+			const rows = yield* readCatalog(opened.session);
+			const offered = rows.map(refOf);
 			yield* Ref.set(models, offered);
+			const table = effortsOf(rows);
+			yield* Ref.set(efforts, table);
 			const spawned =
 				options.model === undefined
 					? null
@@ -507,6 +553,19 @@ const make = (
 						: spawned;
 			yield* Ref.set(model, opening);
 			yield* emit(out, [{kind: "model", current: opening, available: offered}]);
+			// The same re-apply the model gets one line up: a level an operator picked before this
+			// open is applied to the new session rather than merely re-announced, and one the model
+			// this session landed on does not offer is dropped instead of sent.
+			const levels = offeredEfforts(table, opening);
+			const wanted = yield* Ref.get(effort);
+			const running =
+				wanted === null || !levels.includes(wanted)
+					? null
+					: (yield* applyEffort(opened.session, wanted))
+						? wanted
+						: null;
+			yield* Ref.set(effort, running);
+			yield* emit(out, [{kind: "thinking", current: running, available: levels}]);
 			// A card the layer does not hold cannot be answered, so a window restored with one would
 			// wedge on it. Resolving it is what lets the generic restore drop it (#7608).
 			yield* emit(
@@ -615,6 +674,34 @@ const make = (
 			if (changed) yield* Ref.set(model, picked);
 			const held = yield* Ref.get(model);
 			yield* publish([{kind: "model", current: held, available: offered}]);
+			// The offered levels are the model's, so a switch moves the picker's rows. A level the
+			// new model does not offer stops being the current one rather than staying on a state it
+			// would now refuse.
+			const table = yield* Ref.get(efforts);
+			const levels = offeredEfforts(table, held);
+			const running = yield* Ref.get(effort);
+			const kept = running !== null && levels.includes(running) ? running : null;
+			yield* Ref.set(effort, kept);
+			yield* publishThinking(kept, levels);
+		});
+
+		const setThinkingLevel = Effect.fn("TuvalAiAgent.setThinkingLevel")(function* (
+			next: ThinkingLevel,
+		) {
+			const table = yield* Ref.get(efforts);
+			const levels = offeredEfforts(table, yield* Ref.get(model));
+			// `find` rather than `includes`: what comes back is typed as an `EffortLevel`, so the SDK
+			// call below cannot be reached with one of the two levels Claude has no effort for.
+			const picked = levels.find((candidate) => candidate === next);
+			if (picked === undefined) {
+				return yield* new ThinkingUnsupported({level: next, available: levels});
+			}
+			const current = yield* Ref.get(session);
+			// No session yet is not a refusal: the pick is held and applied by the next open, exactly
+			// as a mode or a model set before the first session is.
+			const changed = current === null ? true : yield* applyEffort(current, picked);
+			if (changed) yield* Ref.set(effort, picked);
+			yield* publishThinking(yield* Ref.get(effort), levels);
 		});
 
 		const page = Effect.fn("TuvalAiAgent.page")(function* (before: string | null, limit: number) {
@@ -646,6 +733,7 @@ const make = (
 			answer,
 			setMode,
 			setModel,
+			setThinkingLevel,
 			page,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};

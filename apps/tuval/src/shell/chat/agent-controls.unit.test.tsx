@@ -20,7 +20,15 @@ import {installDomShims, TEST_VIEWPORT} from "../ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../window/fixtures.ts";
 import {WindowId} from "../window/index.ts";
 import {type ChatWindowHost, chatWindow} from "./ChatWindow.tsx";
-import {call, models, modes, permissionRequest, userItem, withTranscript} from "./chat.testing.ts";
+import {
+	call,
+	models,
+	modes,
+	permissionRequest,
+	thinking,
+	userItem,
+	withTranscript,
+} from "./chat.testing.ts";
 import {initialChatView} from "./view.ts";
 
 installDomShims();
@@ -307,6 +315,63 @@ describe("the composer's model picker", () => {
 		await waitFor(() =>
 			expect(screen.getByRole("button", {name: "model: claude-sonnet-5"})).toBeTruthy(),
 		);
+	});
+});
+
+/**
+ * The picker beside the model one, which was live over no rows until #8062: the bridge answered an
+ * empty list and a no-op setter, and the composer's fallback still rendered a selected value.
+ */
+describe("the composer's thinking picker", () => {
+	const picker = () => screen.findByRole("button", {name: /^thinking effort: /});
+
+	it("shows the session's current level and lists only what the backend offers", async () => {
+		await open(withTranscript([userItem("u1", "go")], {thinking: thinking()}));
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		expect(trigger.textContent).toContain("low");
+		await click(trigger);
+		expect(await screen.findByRole("menuitemradio", {name: "maximum"})).toBeTruthy();
+		// Claude has no effort below `low`, and the founder ruled the picker shows only what the
+		// backend supports rather than mapping the missing two onto something.
+		expect(screen.queryByRole("menuitemradio", {name: "minimal"})).toBeNull();
+		expect(screen.queryByRole("menuitemradio", {name: "off"})).toBeNull();
+	});
+
+	it("dispatches one setThinkingLevel carrying the level the session offered", async () => {
+		const {process} = await open(withTranscript([userItem("u1", "go")], {thinking: thinking()}));
+		const trigger = await picker();
+		await waitFor(() => expect(trigger.getAttribute("disabled")).toBeNull());
+		await click(trigger);
+		await click(await screen.findByRole("menuitemradio", {name: "maximum"}));
+		await waitFor(() => expect(process.inbox().length).toBe(1));
+		expect(process.inbox()[0]).toEqual({type: "setThinkingLevel", level: "max"});
+	});
+
+	it("takes a level set that lands after mount without re-entering loading", async () => {
+		// The agent has not started when the composer runs its loads, so the set is empty then. It
+		// arrives on a commit, and it has to reach the picker through the pushed `harness_status`
+		// event rather than a rebuilt bridge — a rebuild puts the composer back in `loading`, which
+		// disables the send button and every setting on it (#8062).
+		const state = withTranscript([userItem("u1", "go")], {
+			thinking: {current: null, available: []},
+		});
+		const {process} = await open(state);
+		const trigger = await picker();
+		expect(trigger.getAttribute("disabled")).not.toBeNull();
+		await act(async () => {
+			await Effect.runPromise(process.commit({...state, thinking: thinking()}));
+		});
+		// Enabled, not merely re-rendered: a composer that had dropped back to `loading` would leave
+		// this disabled however many rows the list holds.
+		await waitFor(() =>
+			expect(
+				screen.getByRole("button", {name: /^thinking effort: /}).getAttribute("disabled"),
+			).toBeNull(),
+		);
+		// The model picker beside it stays untouched by the push, which is the other half of "no
+		// rebuild": a new bridge identity would have re-run its load and emptied this too.
+		expect(screen.queryByRole("button", {name: /^model: /})).toBeTruthy();
 	});
 });
 

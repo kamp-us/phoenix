@@ -55,6 +55,7 @@ const saved: AiAgentSessionState = {
 			{id: "haiku", name: "Haiku"},
 		],
 	},
+	thinking: {current: "xhigh", available: ["low", "medium", "high", "xhigh", "max"]},
 	lastPrompt: "make the README",
 	lastPage: {items: [userItem("older-0")], hasMore: true},
 	failure: {tag: "tuval/ai-agent/PromptError", reason: "disconnected", detail: "socket closed"},
@@ -73,11 +74,22 @@ describe("what a checkpoint carries", () => {
 		expect(parsed?.usage).toEqual(saved.usage);
 		expect(parsed?.transcript.items).toEqual(saved.transcript.items);
 		expect(parsed?.models).toEqual(saved.models);
+		// The level a restored session shows is the one it was running on (#8062).
+		expect(parsed?.thinking).toEqual(saved.thinking);
 	});
 
 	it("refuses a saved model list whose rows are not model refs", () => {
 		expect(parseSessionState({...saved, models: {current: null, available: [{id: 1}]}})).toBeNull();
 		expect(parseSessionState({...saved, models: {current: "opus", available: []}})).toBeNull();
+	});
+
+	it("refuses a saved thinking set naming a level outside the vocabulary", () => {
+		expect(
+			parseSessionState({...saved, thinking: {current: null, available: ["ludicrous"]}}),
+		).toBeNull();
+		expect(
+			parseSessionState({...saved, thinking: {current: "ludicrous", available: []}}),
+		).toBeNull();
 	});
 
 	it("carries nothing a JSON round trip would lose", () => {

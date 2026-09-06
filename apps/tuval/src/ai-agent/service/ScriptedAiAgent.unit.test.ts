@@ -30,6 +30,7 @@ import {
 	runningTool,
 	SESSION_ID,
 	settledTool,
+	thinking,
 	toolCall,
 	toolCallTurn,
 	usageEvent,
@@ -42,8 +43,11 @@ import {TuvalAiAgent, type TuvalAiAgentApi} from "./TuvalAiAgent.ts";
 
 const CWD = "/workspace/phoenix";
 
-/** What `start` emits before any turn: starting, the mode list, the model list, ready. */
-const START_EVENTS = 4;
+/**
+ * What `start` emits before any turn: starting, the mode list, the model list, the thinking level
+ * set (#8062), ready.
+ */
+const START_EVENTS = 5;
 
 const on = <A, E>(
 	script: AgentScript,
@@ -54,7 +58,7 @@ const on = <A, E>(
 		return yield* body(agent);
 	}).pipe(Effect.provide(ScriptedAiAgent.layer(script)), Effect.scoped);
 
-/** The events a turn queued, with `start`'s four dropped. */
+/** The events a turn queued, with `start`'s own dropped. */
 const afterStart = (agent: TuvalAiAgentApi, count: number) =>
 	Effect.map(Stream.runCollect(Stream.take(agent.events, START_EVENTS + count)), (events) =>
 		events.slice(START_EVENTS),
@@ -73,7 +77,7 @@ const causeError = (exit: Exit.Exit<unknown, unknown>): {_tag?: string; reason?:
 		: {};
 
 describe("start", () => {
-	it.effect("returns the script's session id and announces the mode and model lists", () =>
+	it.effect("returns the script's session id and announces every list it offers", () =>
 		on(plainReply, (agent) =>
 			Effect.gen(function* () {
 				const session = yield* agent.start({cwd: CWD});
@@ -82,6 +86,7 @@ describe("start", () => {
 					{kind: "phase", phase: "starting"},
 					{kind: "mode", current: modes.current, available: modes.available},
 					{kind: "model", current: models.current, available: models.available},
+					{kind: "thinking", current: thinking.current, available: thinking.available},
 					{kind: "phase", phase: "ready"},
 				]);
 			}),
@@ -240,10 +245,45 @@ describe("models", () => {
 				// not the script's opening one — the switch outlives the turn it was made between.
 				yield* agent.start({cwd: CWD, resume: SESSION_ID});
 				const resumed = yield* take(agent, START_EVENTS + history.length);
-				assert.deepStrictEqual(resumed.at(-2), {
+				assert.deepStrictEqual(resumed.at(-3), {
 					kind: "model",
 					current: sonnet,
 					available: models.available,
+				});
+			}),
+		),
+	);
+});
+
+describe("thinking levels", () => {
+	it.effect("echoes a level it offers and refuses one outside the set", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("xhigh");
+				assert.deepStrictEqual(yield* afterStart(agent, 1), [
+					{kind: "thinking", current: "xhigh", available: thinking.available},
+				]);
+				// `minimal` is in the vocabulary and outside this script's offered set, which is the
+				// founder's per-backend ruling: what a backend does not support is not a row (#8062).
+				const error = causeError(yield* Effect.exit(agent.setThinkingLevel("minimal")));
+				assert.strictEqual(error._tag, "tuval/ai-agent/ThinkingUnsupported");
+			}),
+		),
+	);
+
+	it.effect("runs the rest of the session on the level it switched to", () =>
+		on(plainReply, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({cwd: CWD});
+				yield* agent.setThinkingLevel("max");
+				yield* take(agent, START_EVENTS + 1);
+				yield* agent.start({cwd: CWD, resume: SESSION_ID});
+				const resumed = yield* take(agent, START_EVENTS + history.length);
+				assert.deepStrictEqual(resumed.at(-2), {
+					kind: "thinking",
+					current: "max",
+					available: thinking.available,
 				});
 			}),
 		),

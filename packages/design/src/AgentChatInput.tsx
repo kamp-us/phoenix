@@ -237,6 +237,21 @@ function modelList(value: unknown): readonly PiModel[] | undefined {
 	return rows;
 }
 
+/**
+ * A pushed level set, admitted row by row like the model catalog. `off` is dropped for the reason
+ * the mount-time load drops it: it is not a row this picker selects.
+ */
+function thinkingLevelList(value: unknown): readonly PiThinkingLevel[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const levels: PiThinkingLevel[] = [];
+	for (const row of value) {
+		const level = thinkingLevelValue(row);
+		if (!level) return undefined;
+		if (level !== "off") levels.push(level);
+	}
+	return levels;
+}
+
 function selectedModelValue(state: Record<string, unknown> | undefined): string | undefined {
 	const model = state && isRecord(state.model) ? state.model : undefined;
 	if (!model) return undefined;
@@ -538,6 +553,13 @@ export function AgentChatInput({
 			if (nextModels) setModels(nextModels);
 			const nextModel = status && isRecord(status.model) ? status.model : undefined;
 			if (nextModel) setState((current) => ({...(current ?? {}), model: nextModel}));
+			// The thinking picker takes the same route for the same reason: a harness that only
+			// learns its per-model level set after connecting would otherwise leave a live picker
+			// over no rows (#8062).
+			const nextLevels = status && thinkingLevelList(status.thinkingLevels);
+			if (nextLevels) setThinkingLevels(nextLevels);
+			const nextLevel = status && thinkingLevelValue(status.thinkingLevel);
+			if (nextLevel) setState((current) => ({...(current ?? {}), thinkingLevel: nextLevel}));
 			if (status && booleanValue(status, "available") === false) setConnection("unavailable");
 			return;
 		}

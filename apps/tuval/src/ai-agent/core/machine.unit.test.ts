@@ -408,6 +408,27 @@ describe("setModel", () => {
 	});
 });
 
+describe("setThinkingLevel", () => {
+	const offering = started({
+		thinking: {current: "low", available: ["low", "medium", "high", "xhigh", "max"]},
+	});
+
+	it("asks the layer for a level it offers", () => {
+		const [, cmds] = apply(offering, {type: "setThinkingLevel", level: "xhigh"});
+		expect(cmds).toEqual([{type: "aiAgent.setThinkingLevel", level: "xhigh"}]);
+	});
+
+	it("refuses a level it does not offer, including when it offers none", () => {
+		// `minimal` is in the vocabulary and outside this session's offered set, which is what the
+		// founder's per-backend ruling looks like from the core (#8062).
+		const [refused, noCmd] = apply(offering, {type: "setThinkingLevel", level: "minimal"});
+		expect(refused.failure?.tag).toBe("tuval/ai-agent/ThinkingUnsupported");
+		expect(noCmd).toEqual([]);
+		const [none] = apply(started(), {type: "setThinkingLevel", level: "high"});
+		expect(none.failure?.tag).toBe("tuval/ai-agent/ThinkingUnsupported");
+	});
+});
+
 describe("paging older history", () => {
 	it("asks the layer for the page", () => {
 		const [state, cmds] = apply(started(), {type: "page", before: "i7", limit: 20});
@@ -524,6 +545,11 @@ describe("the Cmd each Msg answers for", () => {
 			started({models: {current: null, available: [opus]}}),
 			{type: "setModel", model: opus},
 			["aiAgent.setModel"],
+		],
+		[
+			started({thinking: {current: null, available: ["high"]}}),
+			{type: "setThinkingLevel", level: "high"},
+			["aiAgent.setThinkingLevel"],
 		],
 		[started(), {type: "page", before: null, limit: 10}, ["aiAgent.page"]],
 		[started(), {type: "paged", page: {items: [], hasMore: false}}, []],

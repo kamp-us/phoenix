@@ -6,8 +6,8 @@
  */
 
 import {describe, expect, it, vi} from "vitest";
-import type {ModelState} from "../../ai-agent/core/index.ts";
-import type {ModelRef} from "../../ai-agent/ports/index.ts";
+import type {ModelState, ThinkingState} from "../../ai-agent/core/index.ts";
+import type {ModelRef, ThinkingLevel} from "../../ai-agent/ports/index.ts";
 import {composerBridge} from "./composer-bridge.ts";
 
 const opus: ModelRef = {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"};
@@ -16,12 +16,27 @@ const sonnet: ModelRef = {provider: "anthropic", id: "claude-sonnet-5", name: "S
 const bare: ModelRef = {id: "haiku", name: "Haiku"};
 
 const noModels: ModelState = {current: null, available: []};
+const noThinking: ThinkingState = {current: null, available: []};
+
+/** The Claude window's offered set: five levels, no `off` and no `minimal` (#8062). */
+const effort: ThinkingState = {
+	current: "medium",
+	available: ["low", "medium", "high", "xhigh", "max"],
+};
 
 const seam = () => {
 	const onPrompt = vi.fn<(text: string) => void>();
 	const onInterrupt = vi.fn<() => void>();
 	const onSetModel = vi.fn<(model: ModelRef) => void>();
-	return {onPrompt, onInterrupt, onSetModel, initialModels: noModels};
+	const onSetThinkingLevel = vi.fn<(level: ThinkingLevel) => void>();
+	return {
+		onPrompt,
+		onInterrupt,
+		onSetModel,
+		onSetThinkingLevel,
+		initialModels: noModels,
+		initialThinking: noThinking,
+	};
 };
 
 describe("composerBridge", () => {
@@ -70,15 +85,59 @@ describe("composerBridge", () => {
 	it("answers every capability it does not have as empty, never as a rejection", async () => {
 		const {bridge} = composerBridge({...seam(), initialPhase: "ready"});
 		expect(await bridge.loadPiCommands()).toEqual([]);
-		expect(await bridge.loadPiThinkingLevels()).toEqual([]);
 		expect(await bridge.loadPiFiles("src")).toEqual([]);
-		expect(await bridge.setPiThinkingLevel("high")).toBeUndefined();
 		expect(await bridge.setPiProjectTrust("approve")).toBeUndefined();
 		expect(await bridge.answerPiExtension({id: "r1"})).toBeUndefined();
-		// Models it does have (#7981), and an agent offering none still answers empty rather than
-		// rejecting: a rejection puts the composer in `unavailable` and disables the send button.
+		// Models (#7981) and thinking levels (#8062) it does have, and an agent offering neither
+		// still answers empty rather than rejecting: a rejection puts the composer in `unavailable`
+		// and disables the send button.
 		expect(await bridge.loadPiModels()).toEqual([]);
 		expect(await bridge.setPiModel({provider: "x", id: "y", name: "Y"})).toBeUndefined();
+		expect(await bridge.loadPiThinkingLevels()).toEqual([]);
+		expect(await bridge.setPiThinkingLevel("high")).toBeUndefined();
+	});
+
+	it("answers the thinking picker with the session's offered levels and its current one", async () => {
+		const composer = composerBridge({
+			...seam(),
+			initialPhase: "ready",
+			initialThinking: effort,
+		});
+		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([
+			"low",
+			"medium",
+			"high",
+			"xhigh",
+			"max",
+		]);
+		expect(await composer.bridge.loadPiState()).toEqual({
+			isStreaming: false,
+			thinkingLevel: "medium",
+		});
+	});
+
+	it("turns a level the session offers into one setThinkingLevel", async () => {
+		const handlers = seam();
+		const composer = composerBridge({
+			...handlers,
+			initialPhase: "ready",
+			initialThinking: effort,
+		});
+		await composer.bridge.setPiThinkingLevel("xhigh");
+		expect(handlers.onSetThinkingLevel.mock.calls).toEqual([["xhigh"]]);
+	});
+
+	it("drops a level the session does not offer rather than rejecting it", async () => {
+		const handlers = seam();
+		const composer = composerBridge({
+			...handlers,
+			initialPhase: "ready",
+			initialThinking: effort,
+		});
+		// `minimal` is in the design vocabulary and not in Claude's offered set, which is the whole
+		// shape of the founder's per-backend ruling.
+		expect(await composer.bridge.setPiThinkingLevel("minimal")).toBeUndefined();
+		expect(handlers.onSetThinkingLevel.mock.calls).toEqual([]);
 	});
 
 	it("answers the picker with the session's offered list and its current model", async () => {
@@ -108,7 +167,7 @@ describe("composerBridge", () => {
 		]);
 	});
 
-	it("pushes a catalog that arrives after mount instead of rebuilding the bridge", async () => {
+	it("pushes both catalogs that arrive after mount instead of rebuilding the bridge", async () => {
 		const composer = composerBridge({...seam(), initialPhase: "ready"});
 		const seen: Array<unknown> = [];
 		composer.bridge.subscribeToPiEvents(
@@ -116,7 +175,10 @@ describe("composerBridge", () => {
 			() => undefined,
 		);
 		expect(await composer.bridge.loadPiModels()).toEqual([]);
-		composer.setModels({current: opus, available: [opus, sonnet]});
+		expect(await composer.bridge.loadPiThinkingLevels()).toEqual([]);
+		composer.setCatalogs({current: opus, available: [opus, sonnet]}, effort);
+		// One event, not a second bridge: the composer re-runs its whole load on a new bridge
+		// identity, so a rebuild here would drop it back into `loading` (#8062).
 		expect(seen).toEqual([
 			{
 				type: "harness_status",
@@ -126,10 +188,36 @@ describe("composerBridge", () => {
 						{provider: "anthropic", id: "claude-sonnet-5", name: "Sonnet 5"},
 					],
 					model: {provider: "anthropic", id: "claude-opus-5", name: "Opus 5"},
+					thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
+					thinkingLevel: "medium",
 				},
 			},
 		]);
 		expect((await composer.bridge.loadPiModels()).length).toBe(2);
+		expect((await composer.bridge.loadPiThinkingLevels()).length).toBe(5);
+	});
+
+	it("replays a level set that landed before the composer subscribed", async () => {
+		const composer = composerBridge({...seam(), initialPhase: "ready"});
+		composer.setCatalogs(noModels, effort);
+		const seen: Array<unknown> = [];
+		composer.bridge.subscribeToPiEvents(
+			(event) => seen.push(event),
+			() => undefined,
+		);
+		// The composer subscribes after its loads resolve, so a set that landed in between was
+		// pushed at a listener that did not exist yet; on a session nobody switches, no second
+		// event ever comes.
+		expect(seen).toEqual([
+			{
+				type: "harness_status",
+				status: {
+					models: [],
+					thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
+					thinkingLevel: "medium",
+				},
+			},
+		]);
 	});
 
 	it("turns a pick into one setModel carrying the session's own ref", async () => {

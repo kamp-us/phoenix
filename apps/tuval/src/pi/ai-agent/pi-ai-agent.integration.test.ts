@@ -149,12 +149,12 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 				const events = yield* drain(agent);
 
 				assert.deepEqual(
-					events.slice(0, 4).map((event) => event.kind),
-					["phase", "mode", "model", "phase"],
-					"start advertises the mode and model lists before settling on ready",
+					events.slice(0, 5).map((event) => event.kind),
+					["phase", "mode", "model", "thinking", "phase"],
+					"start advertises the mode, model and thinking lists before settling on ready",
 				);
 				assert.deepEqual(
-					[events[0], events[1], events[3]],
+					[events[0], events[1], events[4]],
 					[
 						{kind: "phase", phase: "starting"},
 						{kind: "mode", current: null, available: []},
@@ -173,6 +173,15 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 						announced.current === null ? [] : [announced.current],
 						"the session's model is one the catalog offers",
 					);
+				}
+
+				// The thinking set is the *model's* row in that same catalog, so it is read off the
+				// wire rather than named here — a non-reasoning model offers `off` alone (#8062).
+				const levels = events[3];
+				assert.strictEqual(levels?.kind, "thinking");
+				if (levels?.kind === "thinking") {
+					assert.isNotEmpty(levels.available);
+					assert.include([...levels.available], levels.current);
 				}
 
 				const kinds = new Set(items(events).map((item) => item.kind));

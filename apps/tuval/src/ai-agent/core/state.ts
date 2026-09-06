@@ -16,6 +16,7 @@ import type {
 	Mode,
 	ModelRef,
 	PermissionRequest,
+	ThinkingLevel,
 	TranscriptItem,
 	TranscriptPayload,
 	WindowOmission,
@@ -47,6 +48,15 @@ export interface ModelState {
 	readonly available: ReadonlyArray<ModelRef>;
 }
 
+/**
+ * How hard this session thinks, and what it may be switched to. `available` is the layer's offered
+ * set for the model it is running on, so a model switch can change it (#8062).
+ */
+export interface ThinkingState {
+	readonly current: ThinkingLevel | null;
+	readonly available: ReadonlyArray<ThinkingLevel>;
+}
+
 // A layer pushes one of these on the event stream too, so it is declared beside `Phase`.
 export type {AgentFailure} from "../events.ts";
 
@@ -76,6 +86,7 @@ export interface AiAgentSessionState {
 	readonly permissions: Readonly<Record<string, PermissionRequest>>;
 	readonly modes: ModeState;
 	readonly models: ModelState;
+	readonly thinking: ThinkingState;
 	/** The text of the last prompt sent, for the resend affordance. */
 	readonly lastPrompt: string | null;
 	/** The last page `page` asked for and `paged` delivered. Not part of the live tail. */
@@ -111,6 +122,7 @@ export const initialState = (cwd: string): AiAgentSessionState => ({
 	permissions: {},
 	modes: {current: null, available: []},
 	models: {current: null, available: []},
+	thinking: {current: null, available: []},
 	lastPrompt: null,
 	lastPage: null,
 	failure: null,
