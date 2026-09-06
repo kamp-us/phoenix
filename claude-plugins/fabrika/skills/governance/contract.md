@@ -43,8 +43,8 @@ same tracked debt the sibling contracts carry.)
 - **A §CP classifier, of any kind — path, content or hybrid.** fabrika's §CP model is
   CODEOWNERS-only, three-valued, `UNKNOWN` treated as §CP, with **no semantic detection**
   ([§CP classification](../../docs/control-plane-classification.md), by founder ruling). The
-  boundary is enforced twice in CI — `.github/workflows/codeowners-cp.yml` job `check`, and
-  `ci.yml`'s `skills` job via `validate-gate-path-drift.sh` — and by GitHub's own code-owner review
+  boundary is enforced twice in CI — by the repo's own §CP path-boundary job, and by the job that
+  re-checks that boundary against the prose describing it — and by GitHub's own code-owner review
   requirement. A second answer here could contradict a merge-gating verdict, and a gate that
   contradicts itself costs more than the extra detection is worth.
   This group computes no §CP answer; the skill states the expectation and nothing more.
@@ -64,11 +64,11 @@ same tracked debt the sibling contracts carry.)
 - **An ADR-number-collision verb.** `fabrika adr next` already unions the merged set with the ids
   open ADR PRs claim — the cross-PR read a tree-local guard structurally cannot make.
   The skill invokes it; this group adds nothing.
-- **A dead-link or ADR-index checker.** `doc-links.yml` and `decisions-index.yml` gate each. Note
-  what they do **not** cover, because it is this skill's job and not a gap in theirs: `lychee
-  --offline` skips `http(s)` by design and `decisions-index validate` checks files, never citations,
-  so a PR citing an unlanded ADR passes both green. That check reaches the corpus half
-  through `adr resolve`, not through a second link checker.
+- **A dead-link or ADR-index checker.** A repo that arms a link checker and a corpus-index
+  validator gates each already. Note what they do **not** cover, because it is this skill's job and
+  not a gap in theirs: `lychee --offline` skips `http(s)` by design and `decisions-index validate`
+  checks files, never citations, so a PR citing an unlanded ADR passes both green. That check
+  reaches the corpus half through `adr resolve`, not through a second link checker.
 - **A verdict-conjunction or enqueue verb.** `fabrika ship gate` folds the required namespaces into
   one fail-closed enqueue decision and is the single merge authority. This group emits one
   namespace's verdict and reads none of the others.
@@ -77,8 +77,8 @@ same tracked debt the sibling contracts carry.)
 
 ### Nothing here recomputes an enforced answer
 
-The enforced questions are: the §CP path boundary and its CODEOWNERS/prose drift
-(`codeowners-cp.yml` job `check`; `ci.yml` job `skills`), the enqueue conjunction over required
+The enforced questions are: the §CP path boundary and its CODEOWNERS/prose drift (the repo's own
+§CP job and the drift check beside it), the enqueue conjunction over required
 namespaces (`fabrika ship gate`, the single merge authority), typecheck/lint/tests, leaks, secrets,
 dead links, and ADR-index integrity — each with the workflow or verb that owns it. This spec
 computes no second verdict on any of them. The namespace derivation and the contradiction ranking
@@ -274,9 +274,9 @@ readers. So the requirement is a property of the diff, not of what a session rem
 `ship gate` seats `blocked` at exit 0 and no workflow invoked it, so the floor bound on nothing but
 prose in the `ship` skill and two fabrika-tree PRs merged with no governance verdict after it
 shipped. `fabrika ship floor` reads the same conjunction for this one namespace and refuses on `18`
-when the verdict is absent, stale or fail; `.github/workflows/governance-floor.yml` runs it with
-`--publish-check`, which publishes that answer as the `governance floor at head` check-run — pending
-while no verdict exists, red once one exists and is wrong. The mechanism choice and
+when the verdict is absent, stale or fail; the repo arms a `governance-floor` workflow that runs it
+with `--publish-check`, which publishes that answer as the `governance floor at head` check-run —
+pending while no verdict exists, red once one exists and is wrong. The mechanism choice and
 why the alternatives were rejected are recorded once, in
 [the `ship` contract](../ship/contract.md#the-mechanism-choice); the conclusion map is
 [its check-run section](../ship/contract.md#publish-check).
@@ -560,7 +560,7 @@ implementer reproduces scores from the imported module, never from this document
 | `governance sweep: #<n> at <sha> carries no decision record <id> — nothing to sweep.` | 11 | refusal |
 | `governance sweep: cannot read <dir>/<file>: <reason> — an incomplete corpus is UNKNOWN, never "no-overlap".` | 11 | refusal |
 | `governance sweep: <what> — the subject cannot be bound to a commit, so what it says is UNKNOWN.` | 11 | refusal |
-| `governance sweep: PR #<n>'s head is <live>, not <asked> — re-sweep at <live> (ADR 0058).` | 12 | refusal |
+| `governance sweep: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
 | `governance sweep: <sha> carries <k> of the <m> files #<n> declares — refusing to prove <id> is in this PR from a short read (#3999).` | 13 | refusal |
 | `governance sweep: ranked <k> uncited live-accepted records of <m> in scope.` | 0 | notice |
 | `governance sweep: only <k> live-accepted records in <dir> (rarity needs at least 10) — the run carries no information.` | 0 | notice |
@@ -719,7 +719,7 @@ anchors rather than invariants.
 | `governance guards: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `governance guards: <what> — the diff cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `governance guards: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
-| `governance guards: PR #<n>'s head is <live>, not <asked> — re-scan at <live> (ADR 0058).` | 12 | refusal |
+| `governance guards: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
 | `governance guards: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing a partial anchor scan (#3925's class).` | 13 | refusal |
 | `governance guards: cannot read <path> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
 | `governance guards: scanned <k> files, <m> anchored invariants in reach, <j> compared block-by-block against <base>.` | 0 | notice |
@@ -974,25 +974,24 @@ namespace is a constant, so it cannot be aimed anywhere else even by a confused 
    not the fresh verdict alone: on a re-post the bytes sent carry the retired verdict below the
    fence, so comparing the fresh half would red every append. A read-back that trusts a carried
    variable instead of live state re-ships the false PASS a hand-rolled emit once self-reported.
-7. **Assert the floor at this head.** `governance-floor.yml` triggers on `pull_request` alone, so it
-   ran before this verdict could exist, judged a head with no verdict on it, and no comment write can
-   re-fire a `pull_request`-triggered job — every governance-root PR carries an unsatisfied floor at
-   least once and carries it until something re-runs the job. The verb reads the runs at the
-   bound head, and when the newest `governance-floor` run there is completed it asks the
-   `governance floor at head` check-run whether the floor still needs clearing — pending or red, both
-   do; the job's own conclusion decides only where no such check-run exists, because the job succeeds
-   whenever it *published* an answer. Where it does, it requests a re-run of
-   the whole run — `rerun-failed-jobs` is refused on a run with no failed job, which is now the
-   ordinary shape — then re-reads the run and requires the re-fire to be **proven from run state** —
-   either
-   `run_attempt` increased, or that same run id is no longer `completed`, which only this dispatch
-   could have caused. The counter lags the dispatch by a beat, and calling that beat unproven is what
-   sent three agents chasing a `heal-ci` pass over re-fires that had taken. **The re-run is a
-   re-derivation, never a claim**: nothing here writes a check-run or a status, so the green a PR ends
-   with is one `ship floor` reached itself against live comment state. **This step is the one place
-   the verb needs `actions: write`** on its token; no earlier step asks for it. Without it the
-   re-run request 403s, the floor reads `unknown`, and the fix degrades to
-   that same symptom — a red check a human clears — never to a false green.
+7. **Assert the floor at this head.** The repo's `governance-floor` workflow triggers on
+   `pull_request` alone, so it ran before this verdict could exist, judged a head with no verdict on
+   it, and no comment write can re-fire a `pull_request`-triggered job — every governance-root PR
+   carries an unsatisfied floor at least once and carries it until something re-runs the job. The
+   verb reads the runs at the bound head, and when the newest `governance-floor` run there is
+   completed it asks the `governance floor at head` check-run whether the floor still needs
+   clearing — pending or red, both do; the job's own conclusion decides only where no such check-run
+   exists, because the job succeeds whenever it *published* an answer. Where it does, it requests a
+   re-run of the whole run — `rerun-failed-jobs` is refused on a run with no failed job, which is now
+   the ordinary shape — then re-reads the run and requires the re-fire to be **proven from run
+   state** — either `run_attempt` increased, or that same run id is no longer `completed`, which only
+   this dispatch could have caused. The counter lags the dispatch by a beat, and calling that beat
+   unproven is what sent three agents chasing a `heal-ci` pass over re-fires that had taken.
+   **The re-run is a re-derivation, never a claim**: nothing here writes a check-run or a status, so
+   the green a PR ends with is one `ship floor` reached itself against live comment state. **This
+   step is the one place the verb needs `actions: write`** on its token; no earlier step asks for it.
+   Without it the re-run request 403s, the floor reads `unknown`, and the fix degrades to that same
+   symptom — a red check a human clears — never to a false green.
 
 **The floor assertion never changes the exit code.** By step 7 the verdict is landed and read back, so
 a floor that could not be asserted is a red check, not an unwritten verdict — every outcome is one

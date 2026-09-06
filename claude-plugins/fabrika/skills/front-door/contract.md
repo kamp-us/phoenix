@@ -43,11 +43,11 @@ same tracked debt the sibling contracts carry.)
   ranking dimensions and both are judgment, owned by `governance`. A second ranking
   here would be a rival answer and would grow a rubric past what the founder authorized. This group
   **displays** rows and computes no order of its own.
-- **A decision-index or ADR-corpus validator.** `.github/workflows/decisions-index.yml` job
-  `validate` runs on every pull request. A status field restating it would compute a second answer to
+- **A decision-index or ADR-corpus validator.** A repo that keeps a decision corpus arms its own
+  index validator on every pull request. A status field restating it would compute a second answer to
   an enforced question.
-- **A §CP or control-plane classifier.** CODEOWNERS decides, enforced by GitHub and by
-  `.github/workflows/codeowners-cp.yml`. This group reads no CODEOWNERS and states no ownership.
+- **A §CP or control-plane classifier.** CODEOWNERS decides, enforced by GitHub and by the repo's
+  own §CP path-boundary job. This group reads no CODEOWNERS and states no ownership.
 - **A pickability or ranking verb.** `fabrika build pick` and `build eligible` already answer which
   issue is next, fail-closed on every axis. `status board` prints bucket **counts** and routes to
   those verbs; a second ranking would contradict the one that actually claims work.
@@ -67,8 +67,8 @@ same tracked debt the sibling contracts carry.)
 
 ### Nothing here recomputes an enforced answer
 
-The enforced questions are: ADR-index integrity (`decisions-index.yml` job `validate`), the §CP path
-boundary (`codeowners-cp.yml` job `check`, plus `ci.yml` job `skills`), the enqueue conjunction
+The enforced questions are: decision-corpus index integrity (the repo's own index validator), the
+§CP path boundary (its §CP job, plus the drift check beside it), the enqueue conjunction
 (`fabrika ship gate`), typecheck/lint/tests, leaks, secrets and dead links — each with the workflow
 or verb that owns it. This spec computes no second verdict on any of them. Repo-surface presence and
 the skill roster are enforced at no CI seam — verified by grepping `.github/workflows/` — which is
@@ -506,8 +506,8 @@ setting	<key>	<declared|default|unknown>	<value-as-json>	<detail>	<as-of>
 
 `<value-as-json>` is the value as JSON, which is what keeps the cell tab-free — a declared string
 holding a tab escapes rather than splitting the row. It is printed **in the spelling the file
-carries**, not in the shape the package decodes to: `capClearAuthors` prints `["@usirin"]`, never
-`[{"_tag":"User","login":"usirin"}]`. `<as-of>` is this invocation's own read of the file,
+carries**, not in the shape the package decodes to: `capClearAuthors` prints `["@octocat"]`, never
+`[{"_tag":"User","login":"octocat"}]`. `<as-of>` is this invocation's own read of the file,
 `asOfKind: "read-now"`, the same instant on every row because every row comes off it.
 
 <a id="provenance-is-the-column"></a>**Provenance is the load-bearing column.** "the governance
@@ -593,7 +593,7 @@ are not.
 ```
 $ fabrika status settings
 settings	resolved	15	5	0	2026-08-19T20:43:22Z
-setting	capClearAuthors	declared	["@usirin","@notusirin","@cansirin"]	-	2026-08-19T20:43:22Z
+setting	capClearAuthors	declared	["@octocat","@hubot","@monalisa"]	-	2026-08-19T20:43:22Z
 setting	codeValidators	declared	[{"command":["pnpm","typecheck","--force"]},{"command":["pnpm","lint:worktree"]}]	-	2026-08-19T20:43:22Z
 setting	docLeakExempt	declared	["/CLAUDE.md",…]	-	2026-08-19T20:43:22Z
 setting	surfaceDispositions	default	{"gh-rest":"fail-loud","git-worktree":"fail-loud",…}	.fabrika.jsonc declares no `surfaceDispositions`	2026-08-19T20:43:22Z
@@ -615,7 +615,7 @@ The same run under `--json` — the notice line stays on stderr, so stdout is th
 
 ```
 $ fabrika status settings --json
-{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":5,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@usirin","@notusirin","@cansirin"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"surfaceDispositions","provenance":"default","value":{"gh-rest":"fail-loud","git-worktree":"fail-loud"},"detail":".fabrika.jsonc declares no `surfaceDispositions`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
+{"outcome":"resolved","path":".fabrika.jsonc","keys":15,"declared":5,"unknown":0,"settings":[{"key":"capClearAuthors","provenance":"declared","value":["@octocat","@hubot","@monalisa"],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"surfaceDispositions","provenance":"default","value":{"gh-rest":"fail-loud","git-worktree":"fail-loud"},"detail":".fabrika.jsonc declares no `surfaceDispositions`","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"},…,{"key":"workflowValidators","provenance":"declared","value":[],"detail":"-","asOf":"2026-08-19T20:43:22Z","asOfKind":"read-now"}]}
 ```
 
 ```
