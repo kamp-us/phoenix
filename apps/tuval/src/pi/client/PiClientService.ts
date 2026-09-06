@@ -176,7 +176,9 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			// A release has no error channel to model into, so the settle is one arm either way: a
 			// rejection is nothing this scope can act on. The wait is the one thing that matters
 			// here and it runs under `../teardown.ts`'s ceiling, because a `dispose` that never
-			// resolves would hang the close for good.
+			// resolves would hang the close for good. `dispose()` is not `async` at the 0.84.3 pin,
+			// so it can throw before returning its promise; the ceiling folds that throw rather
+			// than letting it escape this uninterruptible finalizer.
 			(open) =>
 				boundedTeardown("the Pi client's dispose", (settled) => {
 					open.dispose().then(settled, settled);

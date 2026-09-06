@@ -41,6 +41,31 @@ describe("a bounded teardown wait", () => {
 		}),
 	);
 
+	// `Effect.callback` calls `register` with no try/catch of its own, so an escaping throw would
+	// leave the finalizer with the timer armed and no resume ever taken. Returning below the
+	// ceiling is what proves the throw was folded rather than swallowed: a swallow with no resume
+	// reads as a wait that never settles, and pays the ceiling.
+	it.live("returns below the ceiling when the wait throws synchronously", () =>
+		Effect.gen(function* () {
+			const started = Date.now();
+			yield* closing(
+				boundedTeardown(
+					"a wait that throws",
+					() => {
+						// biome-ignore lint/plugin: the throw is the subject under test — a foreign callback failing the way `PiClient.dispose()` can, not a failure this code models.
+						throw new Error("the wait refused to register");
+					},
+					CEILING,
+				),
+			);
+			assert.isBelow(
+				Date.now() - started,
+				Duration.toMillis(CEILING),
+				"a throwing wait paid the ceiling instead of returning on the throw",
+			);
+		}),
+	);
+
 	it.live("still runs the wait when the stop arrived as an interrupt", () =>
 		Effect.gen(function* () {
 			let waited = false;
