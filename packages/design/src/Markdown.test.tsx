@@ -159,6 +159,30 @@ describe("Markdown", () => {
 		expect(screen.getByRole("heading", {level: 6, name: "five"})).toBeDefined();
 	});
 
+	it("folds a lone newline into a space by default, the way markdown reads it", () => {
+		const {container} = render(<Markdown>{"one\ntwo"}</Markdown>);
+
+		expect(container.querySelector("br")).toBeNull();
+		expect(container.querySelector("p")?.textContent).toBe("one\ntwo");
+	});
+
+	it("renders a lone newline as a break under breaks", () => {
+		const {container} = render(<Markdown breaks>{"one\ntwo"}</Markdown>);
+
+		const paragraph = container.querySelector("p");
+		expect(paragraph?.querySelectorAll("br")).toHaveLength(1);
+		expect(paragraph?.textContent).toBe("onetwo");
+	});
+
+	// `breaks` is read only under marked's `gfm`, and an options object replaces the defaults rather
+	// than merging into them — so passing it alone would take GFM's own syntax down with it.
+	it("keeps GFM syntax under breaks", () => {
+		render(<Markdown breaks>{"| a | b |\n|---|---|\n| 1 | 2 |\n\n~~gone~~"}</Markdown>);
+
+		expect(screen.getByRole("table")).toBeDefined();
+		expect(screen.getByText("gone").tagName).toBe("DEL");
+	});
+
 	it("renders nothing but an empty block for empty source", () => {
 		const {container} = render(<Markdown>{""}</Markdown>);
 

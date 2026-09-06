@@ -210,9 +210,10 @@ function ItemBody({
 		return <p className="tuval-chat-text">{item.text}</p>;
 	}
 	// The transcript is a region inside the desk, so a `#` heading in a message is a subsection of
-	// it rather than a page title.
+	// it rather than a page title; and a transcript row is read as the lines it was typed on, so a
+	// lone newline is a break here where a document-shaped surface would fold it (#8244).
 	return (
-		<Markdown className="tuval-chat-markdown" headingBase={3}>
+		<Markdown className="tuval-chat-markdown" headingBase={3} breaks>
 			{item.text}
 		</Markdown>
 	);

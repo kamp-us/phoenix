@@ -150,6 +150,19 @@ describe("a typed message renders as markdown too (#8226)", () => {
 		expect(within(row).queryByText(typed)).toBeNull();
 	});
 
+	it("keeps a line the operator typed on its own line, for a reply as much as a message", async () => {
+		await openWindow(
+			withTranscript([userItem("u1", "one\ntwo"), assistantItem("a1", "three\nfour")]),
+		);
+
+		const row = screen.getByRole("log", {name: "Transcript"});
+		const paragraphs = row.querySelectorAll(".tuval-chat-markdown p");
+		expect(paragraphs).toHaveLength(2);
+		for (const paragraph of paragraphs) {
+			expect(paragraph.querySelectorAll("br")).toHaveLength(1);
+		}
+	});
+
 	it("renders through the same block, class and headingBase as an agent reply", async () => {
 		await openWindow(withTranscript([userItem("u1", "# ask"), assistantItem("a1", "# answer")]));
 

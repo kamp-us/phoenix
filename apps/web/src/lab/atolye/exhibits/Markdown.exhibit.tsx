@@ -37,6 +37,7 @@ export const markdownExhibit = defineExhibit<React.ComponentProps<typeof Markdow
 	component: Markdown,
 	knobs: {
 		headingBase: {kind: "number", label: "Heading base", default: 2, min: 1, max: 6, step: 1},
+		breaks: {kind: "boolean", label: "Breaks", default: false},
 	},
 	fixedProps: {children: SAMPLE},
 });
