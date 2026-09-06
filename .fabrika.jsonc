@@ -47,12 +47,22 @@
 	"unreadableCodeowners": "refuse",
 
 	// The repo's own commands that compile and lint its code. `fabrika build check --surface code`
-	// runs each one in the lane's tree, and both flags here are phoenix's: `--force` is turbo's
-	// cache-bypass (a bare `tsc` rejects it), and `lint:worktree` is a phoenix script name. Nothing
-	// is compiled into the CLI, so a repo declaring nothing gets a named refusal rather than these
-	// two commands (#6015).
+	// runs each one in the lane's tree, and what stands here is phoenix's own: `turbo run typecheck`
+	// is what the `pnpm typecheck` script wraps (a bare `tsc` takes none of this), and
+	// `lint:worktree` is a phoenix script name. Nothing is compiled into the CLI, so a repo
+	// declaring nothing gets a named refusal rather than these two commands (#6015).
+	//
+	// `--filter=...[origin/main]` scopes the typecheck to the packages this branch changed plus
+	// their dependents; the cache carries the rest, and turbo shares one `.turbo/cache` across every
+	// linked worktree of this clone, so a lane that touched one package pays for one package. There
+	// is deliberately no cache-bypass flag here: turbo 2.10.3's `run` reference defines that flag as
+	// ignoring existing cached artifacts and re-executing all tasks, so it recompiled all 23
+	// packages on every check, every `lane integrate` and every repair round — for a cache-poisoning
+	// risk nothing here ever recorded, and which `ci.yml`'s own bare `pnpm typecheck` never took
+	// (#8275). A checkout too shallow to resolve the ref degrades to every package, the fail-safe
+	// direction.
 	"codeValidators": [
-		{ "command": ["pnpm", "typecheck", "--force"] },
+		{ "command": ["pnpm", "exec", "turbo", "run", "typecheck", "--filter=...[origin/main]"] },
 		{ "command": ["pnpm", "lint:worktree"] }
 	],
 
