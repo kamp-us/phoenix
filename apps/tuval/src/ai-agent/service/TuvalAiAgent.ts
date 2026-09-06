@@ -51,6 +51,15 @@ export interface StartOptions {
 	 */
 	readonly resume?: string;
 	/**
+	 * Whether the caller already holds the resumed session's transcript, and so must not be sent it
+	 * again. A restored process comes back with its committed tail already on screen
+	 * (`../restore/checkpoint.ts`), so a layer that replays the history it can see floods the window
+	 * on top of the operator's own turn and pushes it out of the 40-item cut (#8369). A window
+	 * opened on a session out of the picker holds nothing, and the replay is the only way its
+	 * history paints. Read only alongside `resume`; absent means the caller holds nothing.
+	 */
+	readonly holdsTranscript?: boolean;
+	/**
 	 * The mode to open on, which is how a restored session keeps the operator's switch (#7953). A
 	 * layer holds its mode in its own build, so a rebuilt one holds none and would otherwise open on
 	 * the row's configured mode and announce that. Re-applying the mode after `started` landed would

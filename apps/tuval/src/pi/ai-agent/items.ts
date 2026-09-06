@@ -201,3 +201,19 @@ export const eventsOf = (
 
 	return {events, next: {items, usage, phase}};
 };
+
+/**
+ * What a snapshot the operator has already read leaves behind, so a resume folds it to nothing.
+ *
+ * Pi re-sends the whole transcript every revision, so a `follow` that opened on `emptyProjection`
+ * after a reattach re-emits the entire history as live items — landing on top of the operator's
+ * own newly typed turn and pushing it out of the window's 40-item cut (#8369). The attach lease
+ * already carries the session's snapshot, and this is that snapshot read as "already rendered".
+ *
+ * The phase is deliberately left unseeded: a session still working when it was reattached has to
+ * restate `prompting` on its first push, or the window sits on the `ready` that `start` emitted.
+ */
+export const projectionOf = (snapshot: SessionSnapshot): SnapshotProjection => ({
+	...eventsOf(emptyProjection, snapshot).next,
+	phase: null,
+});

@@ -247,7 +247,9 @@ describe("a restored agent session", () => {
 					const after = yield* settled;
 					assert.deepStrictEqual(
 						starts[1],
-						{cwd: CWD, resume: SESSION_ID, mode: modes.current},
+						// `holdsTranscript` is the reconnect's own half of #8369: this process came back
+						// with its committed tail, so the layer owes it no replay of the history.
+						{cwd: CWD, resume: SESSION_ID, holdsTranscript: true, mode: modes.current},
 						"the reconnect did not resume the checkpointed session id on its saved mode",
 					);
 					assert.strictEqual(starts.length, 2, "the resume opened more than one session");

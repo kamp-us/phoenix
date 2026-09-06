@@ -108,6 +108,7 @@ const stub = (options: StubOptions) =>
 				options.lockAttach === true
 					? Effect.fail(new SessionLocked({sessionId, detail: "another connection holds it"}))
 					: Effect.succeed(SESSION),
+			heldSnapshot: () => Effect.succeed(SNAPSHOT),
 			prompt: (_sessionId, text) =>
 				Effect.gen(function* () {
 					yield* Ref.update(sends, (seen) => [...seen, text]);

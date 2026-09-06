@@ -145,12 +145,13 @@ export const aiAgentHandlers = <RIn = never>(
 		cwd: string,
 		resume: string | null,
 		mode: Mode | null,
+		holdsTranscript = false,
 	): Effect.Effect<Follow, never, ProcessSelf | RIn> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.rebuild;
 			const options: StartOptions = {
 				cwd,
-				...(resume === null ? {} : {resume}),
+				...(resume === null ? {} : {resume, holdsTranscript}),
 				...(mode === null ? {} : {mode}),
 			};
 			const started = yield* Effect.result(underPolicy(agent.start(options), policy));
@@ -198,7 +199,11 @@ export const aiAgentHandlers = <RIn = never>(
 
 		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume, cmd.mode),
 
-		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId, cmd.mode),
+		// The one resume whose window already holds the transcript: a reconnect stands a new
+		// transport under the state this process came back with, so the layer owes it no replay
+		// (#8369). A `start` carrying a resume is the picker opening a session on a fresh process,
+		// which holds nothing and needs one.
+		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId, cmd.mode, true),
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending

@@ -20,7 +20,7 @@ import {
 } from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {TOOL_RESULT_BYTE_LIMIT} from "../../ai-agent/ports/index.ts";
-import {emptyProjection, eventsOf, itemOf, itemsOf, phaseOf} from "./items.ts";
+import {emptyProjection, eventsOf, itemOf, itemsOf, phaseOf, projectionOf} from "./items.ts";
 
 const usage = (total: number) => ({
 	input: 11,
@@ -250,6 +250,47 @@ describe("one revision folded into events", () => {
 		const first = eventsOf(emptyProjection, snapshot([user, assistant("hi back")]));
 		const second = eventsOf(first.next, snapshot([user, assistant("hi back")], "idle", 2));
 		expect(second.events).toEqual([]);
+	});
+
+	/**
+	 * A resume opens a fresh fold over a transcript the operator is already reading, so the seed
+	 * off the attach lease's snapshot has to make Pi's next whole-transcript push a no-op: no
+	 * `item`, so nothing is appended after the operator's own turn and pushed out of the window's
+	 * 40-item cut, and no `usage`, so the session's totals are not re-added (#8369).
+	 */
+	it("emits no item and no usage when a resume's seed already holds the whole transcript", () => {
+		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
+		const folded = eventsOf(projectionOf(restored), restored);
+		expect(folded.events).toEqual([{kind: "phase", phase: "ready"}]);
+	});
+
+	it("emits only the operator's own turn on the first push after a resume", () => {
+		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
+		const sent: PiTranscriptItem = {
+			id: "item-3",
+			role: "user",
+			content: [{type: "text", text: "and again"}],
+			timestamp: 13,
+		};
+		const folded = eventsOf(
+			projectionOf(restored),
+			snapshot([user, assistant("hi back", 0.42), sent], "turn", 8),
+		);
+		expect(folded.events).toEqual([
+			{kind: "item", item: itemOf(sent)},
+			{kind: "phase", phase: "prompting"},
+		]);
+	});
+
+	/**
+	 * The phase is the one thing the seed leaves out: `start` emits its own `ready` after the
+	 * attach, so a session still working when it was reattached has to restate `prompting`.
+	 */
+	it("restates the phase of a session that was still working when it was reattached", () => {
+		const working = snapshot([user], "turn", 7);
+		expect(eventsOf(projectionOf(working), working).events).toEqual([
+			{kind: "phase", phase: "prompting"},
+		]);
 	});
 
 	/**
