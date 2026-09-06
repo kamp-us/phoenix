@@ -72,7 +72,11 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           if [ -n "$BASE_REF" ]; then
-            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            # Full-depth, like the else arm: a --depth=1 fetch of a tip that advanced
+            # since checkout grafts it at its depth boundary (.git/shallow), leaving no
+            # merge base for the three-dot diff below (#4508; run 34000979042). Full
+            # history is already checked out, so nothing is lost by fetching it all.
+            git fetch --no-tags origin "$BASE_REF"
             base="origin/$BASE_REF"
           elif [ -n "$MERGE_GROUP_BASE_SHA" ]; then
             git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
@@ -93,7 +97,20 @@ jobs:
               exit 1
             fi
           fi
-          mapfile -t changed < <(git diff --name-only --diff-filter=ACMR "$base...HEAD")
+          # `if !` capture, not process substitution: under the runner's `bash -e`, a
+          # failing git diff inside `< <(…)` is invisible to errexit — mapfile exits 0
+          # and an unreadable diff reads as "No changed files" (#4508; observed live
+          # 2026-09-06, run 34000979042: the shallow main tip had no merge base with
+          # the merge ref, `git diff` died 128 inside the substitution, and the job
+          # went green over a diff that was never computed).
+          if ! diff_raw=$(git diff --name-only --diff-filter=ACMR "$base...HEAD"); then
+            echo "::error::git diff $base...HEAD failed — refusing to report a clean scan over a diff that did not run."
+            exit 1
+          fi
+          changed=()
+          if [ -n "$diff_raw" ]; then
+            mapfile -t changed <<< "$diff_raw"
+          fi
           if [ "${#changed[@]}" -eq 0 ]; then
             echo "No changed files — nothing to scan."
             exit 0
@@ -101,3 +118,14 @@ jobs:
           printf 'Scanning %d changed file(s):\n' "${#changed[@]}"
           printf '  %s\n' "${changed[@]}"
           node packages/fabrika-cli/src/bin.ts guard leak-guard scan "${changed[@]}"
+
+  regression-tests:
+    name: regression tests for this workflow's step
+    runs-on: ubuntu-latest
+    steps:
+      # Runs the step harness against this very file: replays the advancing-main
+      # incident (#4508, run 34000979042), covers all three event paths, legitimate
+      # empty diffs, scanner-failure propagation, and pins the two defect shapes.
+      - uses: actions/checkout@v4.2.2
+
+      - run: bash .github/workflows/leak-guard-step.test.sh
