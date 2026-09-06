@@ -27,7 +27,7 @@ python claude-plugins/fabrika/skills/skill-doctor/scripts/collect_sessions.py --
 | Flag | Meaning |
 |---|---|
 | `--harness` | `auto` (default), `all`, `claude`, `codex`, or `warp`. Pi, Grok Build and ZCode were added upstream at `369eb54`; opencode is **absent** — [#8049](https://github.com/kamp-us/phoenix/issues/8049) adds it. |
-| `--claude-home` | Root of a Claude-Code-shaped `projects/` tree to read instead of `~/.claude`. The skill points it at the results directory so nothing outside the gitignored tree is written or assumed. |
+| `--claude-home` | Root of a Claude-Code-shaped `projects/` tree to read instead of the harness's own Claude home. The skill points it at the results directory so nothing outside the gitignored tree is written or assumed. |
 | `--repo` | The checkout whose sessions are in scope, matched against each session's recorded working directory. |
 | `--skills-dir` | Extra project-skills root for detection. Required here — fabrika's corpus at `claude-plugins/fabrika/skills` is outside the three roots upstream auto-discovers; [#8051](https://github.com/kamp-us/phoenix/issues/8051) removes the need. |
 | `--days` / `--max-sessions` | The sampling window and cap. The skill body fixes `45` and `20` as its standing window. |
