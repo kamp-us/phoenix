@@ -1,6 +1,6 @@
 /**
- * The content digest's own tier: the `--raw` walk, the serialization, and the two legs ADR 0276
- * rules the digest must cover.
+ * The content digest's own tier: the `--raw` walk, the serialization, and the two legs the
+ * digest is ruled to cover.
  *
  * The assertions that carry the design are the two `changes the digest` cases. A digest that moved
  * only when the destination blob moved would miss a head that drops its own edit onto a base that
@@ -82,7 +82,7 @@ describe("parseRaw", () => {
 	});
 });
 
-describe("the digest covers both legs ADR 0276 names", () => {
+describe("the digest covers both legs the binding names", () => {
 	it("moves when the RESULTING content of a changed file moves, the diff aside", () => {
 		const before = record("M", oid("a"), oid("b"), "src/cart.ts");
 		const after = record("M", oid("a"), oid("e"), "src/cart.ts");
@@ -195,7 +195,7 @@ describe("bindRange", () => {
 	});
 
 	/**
-	 * The non-folding ADR 0276 turns on: a derivation that could not be made is UNKNOWN. Read as
+	 * The non-folding rule the binding turns on: a derivation that could not be made is UNKNOWN. Read as
 	 * `Current` it would ship an unverifiable verdict; read as `Stale` it would name the wrong cause
 	 * and send an operator to re-review instead of to a broken checkout.
 	 */

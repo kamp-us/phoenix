@@ -1,5 +1,5 @@
 /**
- * The range-scoped write path (#5935), exercised through both verbs that own it — end to end on a
+ * The range-scoped write path, exercised through both verbs that own it — end to end on a
  * range, from the flag seam to the read-back, against the same reader `lane prove`'s epic-child arm
  * folds. The fail-closed direction gets its own cases: a namespace the range did not derive and a
  * range touching no governance root both refuse, so growing the range mode narrowed neither guard.

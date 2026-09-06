@@ -75,7 +75,7 @@ Some trailing prose.`);
 
 	it("locates a WRAPPED last criterion and lands the row after its last physical line", () => {
 		// The anchor this case used to miss: the criterion's text is the joined sentence, which is on
-		// no single line, so a text-to-line match found nothing and refused the append (#5716).
+		// no single line, so a text-to-line match found nothing and refused the append.
 		const composed = compose(WRAPPED, "- [ ] a third thing");
 		expect(composed).toContain(
 			"as a new sibling row rather than a continuation of the previous one.\n- [ ] a third thing\n",

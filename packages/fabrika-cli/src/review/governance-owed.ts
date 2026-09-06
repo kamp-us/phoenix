@@ -2,10 +2,10 @@
  * The two rollups a `review ci` caller must not read as someone else's problem: the governance floor
  * waiting on the very shell that is reading it.
  *
- * ADR 0318 splits one floor across two rollups. `absent` leaves the check-run `in_progress`, so the
- * head is `pending` and a `--wait` would sit out its whole budget ({@link governanceOwed}, #7392).
+ * One floor splits across two rollups. `absent` leaves the check-run `in_progress`, so the
+ * head is `pending` and a `--wait` would sit out its whole budget ({@link governanceOwed}).
  * `stale` concludes `failure`, so the head is `red` and the verb returns at once
- * ({@link governanceStale}, #7441). Both are the same shape underneath — the reviewer shell that
+ * ({@link governanceStale}). Both are the same shape underneath — the reviewer shell that
  * runs `review ci` is the shell that owes the verdict, so nothing external will ever move the floor
  * — and both need the workflow run beside the check-run to be sure the row came from this repo's own
  * floor job rather than somewhere this read cannot vouch for.
@@ -49,7 +49,7 @@ export const governanceOwed = (
  *
  * `stale` alone, off the floor's published title: `fail` is a real governance FAIL the caller cannot
  * clear by re-posting, and `unresolved` is UNKNOWN, which never passes and is nobody's to discount
- * (ADR 0092). A title this repo's floor did not write is `Unreadable` and falls through with them.
+ * A title this repo's floor did not write is `Unreadable` and falls through with them.
  */
 export const staleFloorIsTheOnlyRed = (checkRuns: ReadonlyArray<CheckRun>): boolean => {
 	const failing = checkRuns.filter(isFailing);
@@ -65,7 +65,7 @@ export const staleFloorIsTheOnlyRed = (checkRuns: ReadonlyArray<CheckRun>): bool
  *
  * The floor run at the head is required but its status is not: unlike the `absent` half, an
  * in-flight floor run here is the caller's own re-fire still republishing, which is the second read
- * #7441 recorded. What the run proves is provenance — with no floor run at this head the failing
+ * recorded. What the run proves is provenance — with no floor run at this head the failing
  * check-run came from somewhere this read cannot vouch for, so it stays a plain red.
  */
 export const governanceStale = (

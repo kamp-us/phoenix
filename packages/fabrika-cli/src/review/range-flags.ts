@@ -1,10 +1,10 @@
 /**
  * The range subject a verb takes instead of a pull request — the flag pair, and the commit it implies.
  *
- * An epic child runs on one shared branch with a single PR at the tail (ADR 0285), so mid-run there
+ * An epic child runs on one shared branch with a single PR at the tail, so mid-run there
  * is no pull request for a verb to resolve. `--base`/`--tip` is the subject that stands in its place
- * (#5935), and this module is the one place its shape is read, so `governance post`'s range form and
- * the read verbs that run before it cannot drift apart on what a well-formed range is (#6064).
+ * and this module is the one place its shape is read, so `governance post`'s range form and
+ * the read verbs that run before it cannot drift apart on what a well-formed range is.
  *
  * **The range's merge base is `git merge-base <base> <tip>`, and that is not a second meaning for the
  * word.** Every range reader already in the tree takes its diff under git's three-dot form —
@@ -38,7 +38,7 @@ export type RangeRead =
  * Which subject these flags name, or the refusal that says why they name none.
  *
  * Both ends or neither, and `--sha` never beside them: a range verdict binds content, not a head
- * (ADR 0276), so a `--sha` here is a head-scoped idea aimed at a subject that has no head. Refusing
+ * so a `--sha` here is a head-scoped idea aimed at a subject that has no head. Refusing
  * it is what keeps that from being silently ignored.
  */
 export const readRangeFlags = (verb: string, flags: RangeFlags): RangeRead => {
@@ -57,7 +57,7 @@ export const readRangeFlags = (verb: string, flags: RangeFlags): RangeRead => {
 			_tag: "Refused",
 			outcome: refuse(
 				OFF_VOCABULARY,
-				`${verb}: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).`,
+				`${verb}: --sha does not combine with --base/--tip — a range verdict binds content, not a head.`,
 			),
 		};
 	}

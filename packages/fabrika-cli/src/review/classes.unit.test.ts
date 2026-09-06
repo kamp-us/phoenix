@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {
 	classOf,
+	DECISIONS_ROOT,
 	SHIPPED_GOVERNED_ROOTS as GOVERNANCE_ROOTS,
 	issueRefOf,
 	issueRefsOf,
@@ -29,7 +30,7 @@ describe("classOf", () => {
 	});
 
 	it("puts markdown outside claude-plugins in doc", () => {
-		expect(classOf(".decisions/0238-fabrika.md")).toBe("doc");
+		expect(classOf(`${DECISIONS_ROOT}fabrika.md`)).toBe("doc");
 		expect(classOf("README.md")).toBe("doc");
 		expect(classOf(".patterns/index.md")).toBe("doc");
 	});
@@ -108,14 +109,14 @@ describe("touchesGovernanceRoot", () => {
 	});
 
 	it("covers the decision corpus, which the harness flag deliberately does not", () => {
-		expect(touchesGovernanceRoot([".decisions/0238-fabrika.md"], GOVERNANCE_ROOTS)).toBe(true);
-		expect(partition([".decisions/0238-fabrika.md"]).harness).toBe(false);
+		expect(touchesGovernanceRoot([`${DECISIONS_ROOT}fabrika.md`], GOVERNANCE_ROOTS)).toBe(true);
+		expect(partition([`${DECISIONS_ROOT}fabrika.md`]).harness).toBe(false);
 	});
 });
 
 describe("shipNamespacesOf", () => {
 	// The one property that keeps this function from moving any existing PR's merge bar: for a diff
-	// under no governance root the answer is byte-identical to the class-only derivation (#5199).
+	// under no governance root the answer is byte-identical to the class-only derivation.
 	it("leaves a diff outside every governance root requiring exactly its classes", () => {
 		for (const files of [
 			["src/a.ts"],
@@ -147,7 +148,7 @@ describe("shipNamespacesOf", () => {
 	});
 
 	it("derives governance off a decision-corpus edit no class map marks", () => {
-		const result = partitionWithUi([".decisions/0244-corpus-review.md"], GOVERNANCE_ROOTS);
+		const result = partitionWithUi([`${DECISIONS_ROOT}corpus-review.md`], GOVERNANCE_ROOTS);
 		expect(shipNamespacesOf(result)).toEqual(["review-doc", "governance"]);
 	});
 
@@ -177,7 +178,7 @@ describe("linkedIssueOf", () => {
 });
 
 describe("linkedIssuesOf", () => {
-	/** The #6797 shape: the epic's own reference is last among N+1, and a scalar reader lost it. */
+	/** The shape: the epic's own reference is last among N+1, and a scalar reader lost it. */
 	it("reports every closing reference an epic tail body carries, epic included", () => {
 		const tail = "Closes #6642. Closes #6643. Closes #6648. Closes #6629.";
 		expect(linkedIssuesOf(tail)).toEqual([6642, 6643, 6648, 6629]);

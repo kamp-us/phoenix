@@ -3,11 +3,11 @@
  * renders nothing.
  *
  * `ship scope` raises the `ui` class off a path test, and a path test cannot see whether pixels
- * moved. So a PR whose only `apps/web/src/**` change is a docblock requires a `review-ui` verdict
- * that this group structurally cannot produce — `render` refuses zero surfaces, `post` requires a
- * capture set — and `ship gate` blocks on the absence forever (#6376). This verb records the
+ * moved. So a PR whose only change under the UI source root is a docblock requires a `review-ui`
+ * verdict that this group structurally cannot produce — `render` refuses zero surfaces, `post`
+ * requires a capture set — and `ship gate` blocks on the absence forever. This verb records the
  * missing half instead of manufacturing the verdict: an attested, head-bound "nothing here
- * renders", which `ship gate` resolves as `routed` (ADR 0316).
+ * renders", which `ship gate` resolves as `routed`.
  *
  * **It is not a second verdict path, and three things keep it from becoming one.** The bytes are
  * their own wire format with no polarity, so a route can never be read as a PASS. The record is
@@ -22,7 +22,7 @@
  * a PR the gate is meanwhile blocking.
  *
  * Whether the diff renders anything is the *skill's* judgment over `review diff`'s refusal-guarded
- * bytes, and it stays there. No verb decides it: that was candidate 2 on #6376, rejected because a
+ * bytes, and it stays there. No verb decides it: that was a rejected candidate, because a
  * second path heuristic is the first one's defect relocated.
  */
 import {Effect} from "effect";
@@ -115,7 +115,7 @@ export const runRoute = (
 			requireOpen: true,
 			closedReason: "a route on a closed PR resolves nothing.",
 			requireFiles: true,
-			emptyReason: "a route over an empty diff resolves nothing (ADR 0092).",
+			emptyReason: "a route over an empty diff resolves nothing.",
 			unknownMessage: (reason) =>
 				`${VERB}: cannot read the PR for #${pr}: ${reason} — nothing was posted.`,
 		});
@@ -126,7 +126,7 @@ export const runRoute = (
 		if (!prefixMatch(live, inspected)) {
 			return refuse(
 				STALE_TREE,
-				`${VERB}: the live head is ${live}, not ${inspected} — the diff you read is gone; re-read at ${live} (ADR 0058).`,
+				`${VERB}: the live head is ${live}, not ${inspected} — the diff you read is gone; re-read at ${live}.`,
 			);
 		}
 
@@ -204,7 +204,7 @@ export const runRoute = (
 			);
 		}
 
-		// The write call's own echo is not evidence (#3173).
+		// The write call's own echo is not evidence.
 		const back = yield* getComment(repo, landed.id);
 		if (back._tag === "Failure") {
 			return refuse(

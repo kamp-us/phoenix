@@ -5,12 +5,12 @@
  * The upload itself is the capture module's `uploadAsset`, imported — what this file adds is the
  * half that module deliberately does not have. Its error channel is `never` by contract, because
  * for the v1 gate hosting was display-only; here the hosted URL is a precondition of the verdict,
- * so an unverified URL is a failure rather than a decoration (#3925).
+ * so an unverified URL is a failure rather than a decoration.
  *
  * The probe is a real fetch of the returned URL, carrying the same token the upload used.
  *
  * LOAD-BEARING NOTE — `github.com/user-attachments/assets/<uuid>` is AUTH-GATED ON READ. Probed
- * against the live endpoint (#6520): anonymous is `404`, `authorization: token <t>` is `302` to the
+ * against the live endpoint: anonymous is `404`, `authorization: token <t>` is `302` to the
  * signed CDN URL, and following that redirect is `200`. So the probe must send the token or it
  * reads every healthy upload back as missing. A human opening the PR reads the attachment through
  * their own GitHub session, the same tier every drag-and-dropped screenshot on this repo uses.
@@ -30,7 +30,7 @@ import type {UploadLeg, UploadResult} from "./post-verb.ts";
 /**
  * The repo's numeric id, which the undocumented attachment endpoint requires (404 without it).
  *
- * The token is an argument because the package resolves one and only one (ADR 0315) — this file
+ * The token is an argument because the package resolves one and only one — this file
  * keeps no copy of that resolution, and the read that used to run anonymously through `gh api` now
  * runs authenticated through the same client the probe and the upload use.
  */
@@ -46,8 +46,8 @@ const repositoryId = (token: string, repo: string) =>
 
 /**
  * PURE: the probe request. The token is a required argument rather than something resolved in
- * here, so an unauthenticated probe — the shape that read every healthy upload back as `404`
- * (#6520) — has no way to be constructed.
+ * here, so an unauthenticated probe — the shape that read every healthy upload back as `404` — has
+ * no way to be constructed.
  */
 export const probeRequest = (url: string, token: string): HttpClientRequest.HttpClientRequest =>
 	HttpClientRequest.get(url).pipe(HttpClientRequest.setHeaders({authorization: `token ${token}`}));
@@ -55,7 +55,7 @@ export const probeRequest = (url: string, token: string): HttpClientRequest.Http
 /**
  * PURE: classify a probe status. The `302` the authenticated probe answers with is the asset being
  * served, so the served band runs to 400; a `404` is the asset genuinely not resolving and stays a
- * failure, which is the #3925 refusal this verify exists to feed.
+ * failure, which is the refusal this verify exists to feed.
  */
 export const classifyProbe = (status: number): string | null =>
 	status >= 200 && status < 400 ? null : `the hosted asset probed back HTTP ${status}`;

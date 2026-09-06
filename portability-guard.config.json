@@ -111,8 +111,8 @@
 			"paths": ["packages/fabrika-cli/src/build"]
 		},
 		"cli-review": {
-			"ceiling": 369,
-			"why": "The two review groups' source, cleared by #8305, the CLI review sweep child.",
+			"ceiling": 12,
+			"why": "The two review groups' source. The sweep left 12 references, all behaviour rather than prose: the compiled-in `apps/web/src/` prefix inside `isUiSurface` plus the eleven fixtures that must match it to keep testing anything, and the shipped governance-root list a test asserts literally so the assertion is not vacuous.",
 			"paths": ["packages/fabrika-cli/src/review", "packages/fabrika-cli/src/review-ui"]
 		},
 		"cli-ship": {
