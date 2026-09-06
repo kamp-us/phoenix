@@ -26,9 +26,13 @@ export const listView: SessionListView = {kind: "list"};
 
 export const sessionView = (session: SessionRow): SessionListView => ({kind: "session", session});
 
-/** One page read: which session, from which backend, and how far back. */
+/**
+ * One page read: which session, from which backend, and how far back. The backend is the row's
+ * `programId` and never its `backend` tag — the tag is a display label the read cannot resolve
+ * (`../../protocol/session-list.ts`).
+ */
 export interface TranscriptRead {
-	readonly backend: string;
+	readonly programId: string;
 	readonly sessionId: string;
 	readonly cwd: string;
 	readonly before: string | null;
@@ -62,7 +66,7 @@ export const openRead = (
 		: {
 				_tag: "Read",
 				read: {
-					backend: session.backend,
+					programId: session.programId,
 					sessionId: session.sessionId,
 					cwd: session.folder,
 					before,
@@ -107,7 +111,7 @@ export const send = (phase: OpenPhase, session: SessionRow): SendPlan => {
 	}
 	return {
 		phase: "live",
-		spawn: {programId: session.backend, cwd: session.folder, resume: session.sessionId},
+		spawn: {programId: session.programId, cwd: session.folder, resume: session.sessionId},
 		refused: null,
 	};
 };

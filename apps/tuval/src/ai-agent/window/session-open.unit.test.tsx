@@ -85,7 +85,7 @@ describe("activating a row inline", () => {
 		});
 
 		expect(reads[0]).toEqual({
-			backend: claudeSession.backend,
+			programId: claudeSession.programId,
 			sessionId: claudeSession.sessionId,
 			cwd: claudeSession.folder,
 			before: null,
@@ -145,7 +145,7 @@ describe("the first send on an opened session", () => {
 
 		expect(plans.map((plan) => plan.spawn)).toEqual([
 			{
-				programId: claudeSession.backend,
+				programId: claudeSession.programId,
 				cwd: claudeSession.folder,
 				resume: claudeSession.sessionId,
 			},

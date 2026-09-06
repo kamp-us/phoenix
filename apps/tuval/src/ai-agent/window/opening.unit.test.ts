@@ -10,6 +10,7 @@ import {openRead, send, TRANSCRIPT_PAGE_SIZE} from "./opening.ts";
 const row = (overrides: Partial<SessionRow> = {}): SessionRow => ({
 	sessionId: "s-1",
 	lastModified: 1_760_000_000_000,
+	programId: "pi-session",
 	backend: "pi",
 	folder: "/picked/repo",
 	...overrides,
@@ -20,7 +21,7 @@ describe("opening a row", () => {
 		expect(openRead(row())).toEqual({
 			_tag: "Read",
 			read: {
-				backend: "pi",
+				programId: "pi-session",
 				sessionId: "s-1",
 				cwd: "/picked/repo",
 				before: null,
@@ -48,7 +49,7 @@ describe("opening a row", () => {
 describe("sending on an opened row", () => {
 	it("creates exactly one process on the first send and none on the second", () => {
 		const first = send("reading", row());
-		expect(first.spawn).toEqual({programId: "pi", cwd: "/picked/repo", resume: "s-1"});
+		expect(first.spawn).toEqual({programId: "pi-session", cwd: "/picked/repo", resume: "s-1"});
 		expect(first.phase).toBe("live");
 
 		const second = send(first.phase, row());

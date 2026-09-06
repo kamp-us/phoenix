@@ -26,18 +26,22 @@ import {type PageError, type StartError, TuvalAiAgent} from "./service/index.ts"
 /** The request named a program row that is not a registered AI agent backend on this desk. */
 export class BackendUnknown extends Schema.TaggedError<BackendUnknown>()(
 	"tuval/ai-agent/BackendUnknown",
-	{backend: Schema.String, registered: Schema.Array(Schema.String)},
+	{programId: Schema.String, registered: Schema.Array(Schema.String)},
 ) {
 	override get message(): string {
-		return `no registered AI agent backend is called "${this.backend}"; registered: ${
+		return `no registered AI agent backend has the program id "${this.programId}"; registered: ${
 			this.registered.join(", ") || "none"
 		}`;
 	}
 }
 
-/** Which session to read from which registered backend, and how far back to read. */
+/**
+ * Which session to read from which registered backend, and how far back to read. The backend is
+ * named by its registered program row id and never by the row's backend tag: the tag is a display
+ * label (`claude`, `pi`) that no lookup here would find (epic #8070).
+ */
 export interface TranscriptRequest {
-	readonly backend: ProgramId;
+	readonly programId: ProgramId;
 	readonly sessionId: string;
 	readonly cwd: string;
 	/** The oldest item the caller already holds, or `null` for the newest end of the transcript. */
@@ -74,10 +78,10 @@ export const readAiAgentTranscript = (
 ): Effect.Effect<BackendTranscript, BackendUnknown | StartError | PageError, Registry> =>
 	Effect.gen(function* () {
 		const rows = yield* readAiAgentBackends;
-		const row = rows.find((candidate) => candidate.id === request.backend);
+		const row = rows.find((candidate) => candidate.id === request.programId);
 		return row === undefined
 			? yield* new BackendUnknown({
-					backend: request.backend,
+					programId: request.programId,
 					registered: rows.map((candidate) => candidate.id as string),
 				})
 			: yield* readFrom(row, request).pipe(Effect.provideContext(services));

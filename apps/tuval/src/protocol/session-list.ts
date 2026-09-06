@@ -27,7 +27,17 @@ export const SessionRow = Schema.Struct({
 	sessionId: Schema.String,
 	/** Milliseconds since the epoch, so the union sorts without parsing anything. */
 	lastModified: Schema.Number,
-	/** Which registered implementation this session came from — the row's backend tag. */
+	/**
+	 * The registered program row's id — the routing key. A transcript read resolves the backend by
+	 * it (`../ai-agent/transcripts.ts`) and a first send spawns it (`../ai-agent/window/opening.ts`),
+	 * so it is the row's identity and never its copy.
+	 */
+	programId: Schema.String,
+	/**
+	 * The backend tag ruling 6 puts on the row's meta line — `claude`, `pi` — and nothing to route
+	 * on. It is the implementation's own label, not the id it is registered under, and the two are
+	 * different strings.
+	 */
 	backend: Schema.String,
 	firstPrompt: Schema.optionalKey(Schema.String),
 	folder: Schema.optionalKey(Schema.String),

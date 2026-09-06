@@ -90,7 +90,7 @@ _Source: packages/design/src/Collapsible.tsx_
 
 _Source: packages/design/src/CommandPalette.tsx_
 
-**When to use:** A modal, keyboard-first search surface over a caller-owned result set. The caller owns copy, filtering overrides and what selecting a result does.
+**When to use:** A keyboard-first search surface over a caller-owned result set — modal by default, or inline in place at `presentation="inline"`. The caller owns copy, filtering overrides and what selecting a result does.
 
 **Slots:**
 - `trigger` — Optional element that opens the palette. Rendered disabled, not removed, when the palette is disabled.

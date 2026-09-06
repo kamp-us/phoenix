@@ -15,8 +15,14 @@ const okReply = (id: CallId, result: unknown) =>
 
 const rows = {
 	sessions: [
-		{sessionId: "s-2", lastModified: 2_000, backend: "pi", firstPrompt: "port the loader"},
-		{sessionId: "s-1", lastModified: 1_000, backend: "claude"},
+		{
+			sessionId: "s-2",
+			lastModified: 2_000,
+			programId: "pi-session",
+			backend: "pi",
+			firstPrompt: "port the loader",
+		},
+		{sessionId: "s-1", lastModified: 1_000, programId: "claude-session", backend: "claude"},
 	],
 	unreadable: [{programId: "pi", provenance: "@kampus/tuval/pi@1.0.0 (sha256:pi)", detail: "gone"}],
 };

@@ -88,7 +88,7 @@ export const sessionTranscriptSpell = ({
 			const transcripts = yield* AiAgentTranscripts;
 			const page = yield* transcripts
 				.read({
-					backend: ProgramId.make(args.backend),
+					programId: ProgramId.make(args.programId),
 					sessionId: args.sessionId,
 					cwd: args.cwd,
 					before: args.before,

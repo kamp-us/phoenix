@@ -33,7 +33,7 @@ describe("newestFirst", () => {
 
 	it("makes no origin split — one backend's session sorts against another's", () => {
 		const [first, second] = newestFirst([bareSession, claudeSession]);
-		expect([first?.backend, second?.backend]).toEqual(["claude-session", "pi-session"]);
+		expect([first?.programId, second?.programId]).toEqual(["claude-session", "pi-session"]);
 	});
 });
 
@@ -47,13 +47,13 @@ describe("rowValue", () => {
 describe("sessionDescription", () => {
 	it("carries last modified, folder, branch, message count and the backend tag", () => {
 		expect(sessionDescription(claudeSession, NOW)).toBe(
-			"1 hour ago · /Users/founder/code/phoenix · epic/8070 · 42 messages · claude-session",
+			"1 hour ago · /Users/founder/code/phoenix · epic/8070 · 42 messages · claude",
 		);
 	});
 
 	it("drops a field the backend did not supply rather than inventing one", () => {
 		const line = sessionDescription(bareSession, NOW);
-		expect(line).toBe("3 hours ago · pi-session");
+		expect(line).toBe("3 hours ago · pi");
 		expect(line).not.toContain("0 messages");
 	});
 
@@ -108,7 +108,8 @@ describe("matchesQuery", () => {
 	});
 
 	it("does not match the backend tag — typing a backend name is not a way to group by it", () => {
-		expect(matchesQuery(piSession, "pi-session")).toBe(false);
+		expect(matchesQuery(piSession, piSession.backend)).toBe(false);
+		expect(matchesQuery(piSession, piSession.programId)).toBe(false);
 	});
 
 	it("matches nothing on a session whose store supplied none of the three fields", () => {
