@@ -17,6 +17,14 @@
 			"ceiling": 4,
 			"why": "The shipped default governed-root set is this repo's shape, kept as the value a repo overrides rather than as a sentence a reader follows."
 		},
+		"claude-plugins/fabrika/skills/review/contract.md": {
+			"ceiling": 18,
+			"why": "Verbatim pins of stderr lines the shipped `review` verbs print. The reference sits inside the quoted string, so it is a copy of behaviour that lives in packages/fabrika-cli/src/review/ — the source #8305 owns. It shrinks when that child rewrites the strings; changing the pin first would make the contract quote a line no verb prints."
+		},
+		"claude-plugins/fabrika/skills/review-ui/contract.md": {
+			"ceiling": 8,
+			"why": "Same class as the `review` contract's row: verbatim pins of stderr lines the shipped `review-ui` verbs print, whose source strings live in packages/fabrika-cli/src/review-ui/ and move with #8305."
+		},
 		"packages/fabrika-cli/src/config/keys/doc-leak-exempt.ts": {
 			"ceiling": 2,
 			"why": "The key's own docblock names the repo whose docs the shipped default was drawn from, as the value's provenance rather than a pointer."
@@ -37,11 +45,6 @@
 			"ceiling": 801,
 			"why": "The plugin's docs directory, cleared by #8293, the docs sweep child.",
 			"paths": ["claude-plugins/fabrika/docs"]
-		},
-		"plugin-review": {
-			"ceiling": 330,
-			"why": "The two review skills' text, cleared by #8294, the review sweep child.",
-			"paths": ["claude-plugins/fabrika/skills/review", "claude-plugins/fabrika/skills/review-ui"]
 		},
 		"plugin-triage": {
 			"ceiling": 308,

@@ -11,9 +11,10 @@ Read the CI-at-head result; do not re-derive them.
 
 ## Hygiene checklist (conjunctive)
 
-- **Right surface.** The content sits where its kind lives: why/history → `.decisions/`,
-  code-shape → `.patterns/`, dated findings → `reports/`, vocabulary → `.glossary/`, build state →
-  `DEVELOPMENT.md`. A why-narrative landing in a pattern doc is a finding.
+- **Right surface.** This repo keeps a separate home for each kind of documentation — the why and
+  its history, how the code is shaped, dated findings, the vocabulary, the build state — and the
+  content sits in the one its kind belongs to. Read the repo's own contributor doc for which
+  directory is which; a why-narrative landing in a code-shape doc is a finding either way.
 - **One Diátaxis mode per doc.** A tutorial that drifts into reference, or a how-to that
   re-derives explanation, is a finding — name the mode the doc claims and the paragraphs that
   leave it. The classification procedure and the five recurring mixes live in the
