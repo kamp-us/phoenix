@@ -15,31 +15,31 @@
 		},
 		"packages/fabrika-cli/src/guard/fanout-verb.ts": {
 			"ceiling": 1,
-			"why": "`FEATURES_DIR`, the directory this guard walks. Behaviour rather than prose — same class as `fanout.ts`, moved by its own ticket."
+			"why": "`FEATURES_DIR`, the directory this guard walks. Behaviour rather than prose — same class as `fanout.ts`, moved by #7478, the scan-scope-literals ticket."
 		},
 		"packages/fabrika-cli/src/guard/fanout-verb.unit.test.ts": {
 			"ceiling": 3,
-			"why": "The fixture root mirroring `FEATURES_DIR` and two annotation assertions pinning the emitted path. Rewriting them would assert against a directory the verb never walks."
+			"why": "The fixture root mirroring `FEATURES_DIR` and two annotation assertions pinning the emitted path. Rewriting them would assert against a directory the verb never walks; they move with the literal under #7478."
 		},
 		"packages/fabrika-cli/src/guard/design-token-verb.ts": {
 			"ceiling": 1,
-			"why": "`CSS_ROOTS`, the scan scope this guard walks. Behaviour rather than prose — same class as `i18n-literal-verb.ts`, moved by its own ticket."
+			"why": "`CSS_ROOTS`, the scan scope this guard walks. Behaviour rather than prose — same class as `i18n-literal-verb.ts`, moved by #7478, the scan-scope-literals ticket."
 		},
 		"packages/fabrika-cli/src/guard/design-token-verb.unit.test.ts": {
 			"ceiling": 1,
-			"why": "The fixture root mirroring `CSS_ROOTS`; the dual-root regression test is only a test while it names a root the verb actually scans."
+			"why": "The fixture root mirroring `CSS_ROOTS`; the dual-root regression test is only a test while it names a root the verb actually scans, so it moves with the literal under #7478."
 		},
 		"packages/fabrika-cli/src/guard/i18n-literal.ts": {
 			"ceiling": 1,
-			"why": "`SCAN_ROOT`, the one value the exempt `i18n-literal-verb.ts` imports and walks. Behaviour rather than prose, and now stated once instead of repeated through the report strings."
+			"why": "`SCAN_ROOT`, the one value the exempt `i18n-literal-verb.ts` imports and walks. Behaviour rather than prose, now stated once instead of repeated through the report strings, and moved by #7478, the scan-scope-literals ticket."
 		},
 		"packages/fabrika-cli/src/guard/leak.ts": {
 			"ceiling": 1,
-			"why": "`DOC_DIRS`, the doc-surface scope this gate classifies against. Behaviour rather than prose — a repo that keeps no decision corpus simply matches nothing."
+			"why": "`DOC_DIRS`, the doc-surface scope this gate classifies against. Behaviour rather than prose — a repo that keeps no decision corpus simply matches nothing; moved by #7478, the scan-scope-literals ticket."
 		},
 		"packages/fabrika-cli/src/guard/leak.unit.test.ts": {
 			"ceiling": 2,
-			"why": "Two assertions on the `DOC_DIRS` arm; dropping the literal drops the only coverage that arm has."
+			"why": "Two assertions on the `DOC_DIRS` arm; dropping the literal drops the only coverage that arm has, so they move with it under #7478."
 		},
 		"packages/fabrika-cli/src/config/keys/governed-roots.ts": {
 			"ceiling": 4,
