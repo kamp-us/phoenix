@@ -217,15 +217,8 @@ function ItemRow({
 	);
 }
 
-/**
- * The DOM id of the row carrying one item, scoped to the window so two windows over one process
- * never mint the same id. A group head's fold points `aria-controls` at these.
- */
-const rowDomId = (windowId: string, itemId: string): string => `tuval-row-${windowId}-${itemId}`;
-
 function RowView({
 	row,
-	windowId,
 	interruptedId,
 	onResend,
 	onOlder,
@@ -235,7 +228,6 @@ function RowView({
 	onToggleFold,
 }: {
 	readonly row: ChatRow;
-	readonly windowId: string;
 	readonly interruptedId: string | null;
 	readonly onResend: (() => void) | null;
 	readonly onOlder: () => void;
@@ -272,7 +264,7 @@ function RowView({
 				row.nestedIds.length === 0
 					? null
 					: {
-							rowIds: row.nestedIds.map((id) => rowDomId(windowId, id)),
+							count: row.nestedIds.length,
 							open,
 							onToggle: (next) => onToggleFold(row.item.id, next),
 						}
@@ -659,7 +651,6 @@ function ChatWindow({
 						return (
 							<div
 								key={virtual.key}
-								id={row.kind === "item" ? rowDomId(host.windowId, row.item.id) : undefined}
 								className="tuval-chat-row"
 								data-index={virtual.index}
 								data-kind={row.kind === "item" ? row.item.kind : row.kind}
@@ -674,7 +665,6 @@ function ChatWindow({
 							>
 								<RowView
 									row={row}
-									windowId={host.windowId}
 									interruptedId={interruptedId}
 									onResend={lastPrompt === null ? null : resend}
 									onOlder={requestOlder}

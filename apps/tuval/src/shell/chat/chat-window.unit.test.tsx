@@ -640,15 +640,13 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 
 	const foldButton = (): HTMLElement => screen.getByRole("button", {name: /nested calls?$/});
 
-	it("names the rows it reveals and announces the reveal, separately from the call's own panel", async () => {
+	it("counts the rows it reveals and announces the reveal, separately from the call's own panel", async () => {
 		await openWindow(withTranscript(group));
 
 		const fold = foldButton();
 		expect(fold.textContent).toBe("Show 2 nested calls");
 		expect(fold.getAttribute("aria-expanded")).toBe("false");
-		// Collapsed, the rows do not exist, so the control names nothing rather than naming ghosts.
-		expect(fold.getAttribute("aria-controls")).toBeNull();
-		expect(document.getElementById("tuval-row-w1-child-1")).toBeNull();
+		expect(screen.queryByText("bash")).toBeNull();
 
 		await act(async () => {
 			fireEvent.click(fold);
@@ -657,9 +655,22 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		const opened = foldButton();
 		expect(opened.textContent).toBe("Hide 2 nested calls");
 		expect(opened.getAttribute("aria-expanded")).toBe("true");
-		const controls = opened.getAttribute("aria-controls")?.split(" ") ?? [];
-		expect(controls).toEqual(["tuval-row-w1-child-1", "tuval-row-w1-child-2"]);
-		for (const id of controls) expect(document.getElementById(id)).not.toBeNull();
+		expect(screen.queryByText("bash")).not.toBeNull();
+		expect(screen.queryByText("grep")).not.toBeNull();
+	});
+
+	// The rows are virtualized, so any idref list the button named would go stale as the reader
+	// scrolls (#8057). `aria-expanded` alone carries the disclosure, which is all APG asks of one.
+	it("names no rows in aria-controls, open or shut", async () => {
+		await openWindow(withTranscript(group));
+
+		expect(foldButton().getAttribute("aria-controls")).toBeNull();
+
+		await act(async () => {
+			fireEvent.click(foldButton());
+		});
+
+		expect(foldButton().getAttribute("aria-controls")).toBeNull();
 	});
 
 	it("unpins a following window when a fold opens, the way an opened tool row does (#7994)", async () => {
@@ -683,7 +694,7 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 		});
 		expect(harness.view().expanded).toEqual(["agent"]);
 		expect(harness.view().unfolded).toEqual([]);
-		expect(document.getElementById("tuval-row-w1-child-1")).toBeNull();
+		expect(screen.queryByText("bash")).toBeNull();
 
 		await act(async () => {
 			fireEvent.click(foldButton());
@@ -708,11 +719,11 @@ describe("a group head's fold, as a control assistive tech can read", () => {
 			"Hide 1 nested call",
 			"Show 1 nested call",
 		]);
-		expect(document.getElementById("tuval-row-w1-leaf")).toBeNull();
+		expect(screen.queryByText("bash")).toBeNull();
 
 		await act(async () => {
 			fireEvent.click(folds[1] as HTMLElement);
 		});
-		expect(document.getElementById("tuval-row-w1-leaf")).not.toBeNull();
+		expect(screen.queryByText("bash")).not.toBeNull();
 	});
 });
