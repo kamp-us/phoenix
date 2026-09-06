@@ -58,7 +58,7 @@ describe("the five AI agent ports", () => {
 		expect(
 			transcript.outbound().accepts({items: [], omitted: {items: 0, bytes: 0, reason: "none"}}),
 		).toBe(true);
-		expect(prompt.inbound().accepts({text: "go"})).toBe(true);
+		expect(prompt.inbound().accepts({text: "go", key: "k1", timestamp: 1})).toBe(true);
 		expect(prompt.inbound().accepts({items: []})).toBe(false);
 	});
 });

@@ -12,7 +12,13 @@ import {join} from "node:path";
 import type {Effect, Stream} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {AgentEvent} from "../events.ts";
-import type {CommandRef, Mode, ModelRef, PermissionDecision} from "../ports/index.ts";
+import type {
+	CommandRef,
+	Mode,
+	ModelRef,
+	PermissionDecision,
+	ThinkingLevel,
+} from "../ports/index.ts";
 import type {
 	ListError,
 	ModelUnsupported,
@@ -20,6 +26,7 @@ import type {
 	PageError,
 	PromptError,
 	StartError,
+	ThinkingUnsupported,
 	TransportError,
 	UnknownRequest,
 } from "./errors.ts";
@@ -32,15 +39,16 @@ import type {
 } from "./TuvalAiAgent.ts";
 
 /**
- * The founder's seven grew to eight on #7981, to nine on #8060 and to ten on #8097: he wants the
- * agent's model picked from the chat composer, its slash commands offered there, and every session
- * on his machine listed from one program whatever backend started it. A window over a generic
- * interface has to reach all three through it, so `setModel` is the eighth member, `commands` the
- * ninth and `listSessions` the tenth — and both pins below count ten, so each growth reads as the
- * deliberate act it was rather than as drift.
+ * The founder's seven grew to eight on #7981, to nine on #8060, to ten on #8062 and to eleven on
+ * #8097. The first three are one act: he wants the agent's model, its slash commands and its
+ * thinking level reachable from the chat composer, and a picker over a generic window has to reach
+ * them through the generic interface — so `setModel`, `commands` and `setThinkingLevel` are those
+ * three members. #8097's eleventh is the other: every session on his machine listed from one
+ * program whatever backend started it, which is `listSessions`. Both pins below count eleven, so
+ * each growth reads as the deliberate act it was rather than as drift.
  */
 describe("the TuvalAiAgent surface", () => {
-	it("carries the seven, #7981's eighth, #8060's ninth and #8097's tenth, at their types", () => {
+	it("carries the seven, #7981's, #8060's, #8062's and #8097's, at their declared types", () => {
 		expectTypeOf<TuvalAiAgentApi["start"]>().toEqualTypeOf<
 			(options: StartOptions) => Effect.Effect<StartedSession, StartError>
 		>();
@@ -60,6 +68,9 @@ describe("the TuvalAiAgent surface", () => {
 		expectTypeOf<TuvalAiAgentApi["commands"]>().toEqualTypeOf<
 			Effect.Effect<ReadonlyArray<CommandRef>>
 		>();
+		expectTypeOf<TuvalAiAgentApi["setThinkingLevel"]>().toEqualTypeOf<
+			(level: ThinkingLevel) => Effect.Effect<void, ThinkingUnsupported>
+		>();
 		expectTypeOf<TuvalAiAgentApi["page"]>().toEqualTypeOf<
 			(before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>
 		>();
@@ -71,7 +82,7 @@ describe("the TuvalAiAgent surface", () => {
 		>();
 	});
 
-	it("has exactly those ten members and no eleventh", () => {
+	it("has exactly those eleven members and no twelfth", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
 			| "start"
 			| "prompt"
@@ -80,6 +91,7 @@ describe("the TuvalAiAgent surface", () => {
 			| "setMode"
 			| "setModel"
 			| "commands"
+			| "setThinkingLevel"
 			| "page"
 			| "listSessions"
 			| "events"

@@ -93,10 +93,12 @@ export function SessionTranscriptView({
 			composerBridge({
 				initialPhase: "idle",
 				initialModels: {current: null, available: []},
+				initialThinking: {current: null, available: []},
 				initialCommands: [],
 				onPrompt: submit,
 				onInterrupt: () => {},
 				onSetModel: () => {},
+				onSetThinkingLevel: () => {},
 			}),
 		[submit],
 	);

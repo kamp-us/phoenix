@@ -1,6 +1,6 @@
 import {homedir} from "node:os";
 import {join} from "node:path";
-import {Context, Effect, type FileSystem, Layer} from "effect";
+import {Context, Effect, type FileSystem, Layer, Ref} from "effect";
 import {AiAgentSessionList, aiAgentSessionListKernel} from "./ai-agent/session-list.ts";
 import {AiAgentTranscripts, aiAgentTranscriptsKernel} from "./ai-agent/session-transcript.ts";
 import type {BindingError, BindingSource} from "./commands/bindings/index.ts";
@@ -26,6 +26,7 @@ import {ProcessTable} from "./process/ProcessTable.ts";
 import type {ProcessHandle} from "./process/process.ts";
 import type {AnyProgram} from "./registry/program.ts";
 import {Registry} from "./registry/Registry.ts";
+import {dispatchConfigChanged} from "./reload.ts";
 import type {ShellDispatch} from "./shell/commands/dispatch.ts";
 import {shellDispatchKernel, shellWindowIndexKernel} from "./shell/commands/kernel.ts";
 import {shellId} from "./shell/program.ts";
@@ -166,12 +167,18 @@ export interface BootReport {
 	readonly restoredCount: number;
 }
 
-/** What a reload replaced. The running processes are not among them; see `Booted.reload`. */
+/** What a reload replaced, and how many running processes it told. See `Booted.reload`. */
 export interface ReloadReport {
 	readonly sources: ReadonlyArray<string>;
 	readonly spellCount: number;
 	readonly bindingCount: number;
 	readonly bindingErrors: ReadonlyArray<BindingError>;
+	/**
+	 * Live processes handed a config change by their own row's `configChanged`. A row whose
+	 * settings did not move, one that applies nothing live, and one the reloaded config dropped
+	 * all leave their processes uncounted and untouched.
+	 */
+	readonly notified: number;
 }
 
 export interface Booted {
@@ -179,8 +186,9 @@ export interface Booted {
 	readonly kernel: Context.Context<Kernel>;
 	/**
 	 * The config read again, its spells registered and its bindings compiled against them in one
-	 * write. It replaces the spell registry and the binding table and nothing else: the processes
-	 * the first boot launched keep running under the program rows they were spawned from.
+	 * write, and then every live process handed what its own row says the new config means for it
+	 * (`reload.ts`). Nothing restarts and nothing respawns: a process keeps running under the row
+	 * it was spawned from, and what applies live is the row's own call (#7509 ruling 3).
 	 */
 	readonly reload: Effect.Effect<
 		ReloadReport,
@@ -213,20 +221,24 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 			started.launched.filter((process) => process.restored).length + started.restored.length,
 	};
 
+	// The generation the live processes are running under. `Registry` cannot answer this: it is
+	// built once at boot and a reload never rewrites it, so after the first reload it names rows
+	// no running process has seen a change against.
+	const generation = yield* Ref.make(programs);
+
 	const reload = Effect.fn("Tuval.reload")(function* () {
 		const next = yield* loadLayeredConfig(layers);
+		const rows = next.programs as ReadonlyArray<AnyProgram>;
 		const set = yield* SpellSet;
-		yield* set.reload({
-			core: coreSpells,
-			programs: next.programs as ReadonlyArray<AnyProgram>,
-			keys: next.keys,
-		});
+		yield* set.reload({core: coreSpells, programs: rows, keys: next.keys});
+		const notified = yield* dispatchConfigChanged(yield* Ref.getAndSet(generation, rows), rows);
 		const current = yield* set.read;
 		return {
 			sources: next.sources,
 			spellCount: current.table.rows.length,
 			bindingCount: current.bindings.bindings.length,
 			bindingErrors: current.bindings.errors,
+			notified,
 		} satisfies ReloadReport;
 	});
 

@@ -141,9 +141,11 @@
 }
 
 /* Pillar 4 forbids signalling state by colour alone, so this glyph is the second channel beside
-   the fill above — not decoration, and not a swap for it. */
+   the fill above — not decoration, and not a swap for it. The `/ ""` is load-bearing, not noise:
+   without it accname folds the caret into this row's own accessible name, so the active option is
+   named "› …" and gets renamed on every arrow keypress (ADR 0166 §8). */
 .kp-command-palette__option[data-active]::before {
-	content: "\203A";
+	content: "\203A" / "";
 	color: var(--accent);
 }
 

@@ -28,6 +28,7 @@ describe("the command table", () => {
 			"window:focus-up",
 			"window:focus-down",
 			"window:focus",
+			"window:pick",
 			"window:open",
 			"window:attach",
 			"workspace:create",

@@ -256,25 +256,43 @@ The row carries three optional references (`src/registry/program.ts`): `renderer
   command row like any other.
 - `src/shell/desk/` imports no socket, no React and nothing from `src/shell/ui/` — its own boundary
   test is the gate, as `src/shell/window/`'s is.
+- **The snapshot is assembled on the surface**, in `src/shell/ui/desk-snapshot.ts`, because half of
+  it only exists there: the live `WindowHost` a renderer mounts into, and the two renderer tables a
+  page assembles from its own imports. `Desk.tsx` takes the rest as one `DeskTables` prop — kernel
+  facts, process rows, program rows, both renderer tables — and the page fills it from the frames it
+  already reads for the windows' sake (`src/page/AttachedDesk.tsx`). The host comes back through the
+  one `MountResolver` the tiling area already asks per window, so the inspector cannot mount a host
+  the windows do not also hold.
+- **The region is mounted or not mounted**, never a collapsed shell with its own disclosure: the
+  open/closed bit is desk state the kernel holds, so a `Collapsible` beside it would be a second
+  authority over one bit. Both regions read one snapshot, so they cannot disagree about which window
+  is focused.
 
-## Two error boundaries, and what each one is allowed to cost
+## Three error boundaries, and what each one is allowed to cost
 
 A render throw with nothing above it unmounts React's whole tree, and on this surface that is a
 black tab with the reason only in a console nobody is reading. It has cost the project twice —
 #7560, then a `<c-b> |` that took the desk down on its own headline key
 ([#7839](https://github.com/kamp-us/phoenix/issues/7839)). `ErrorBoundary` in
-`src/shell/ui/ErrorBoundary.tsx` is the answer, and it is mounted in exactly two places, each sized
+`src/shell/ui/ErrorBoundary.tsx` is the answer, and it is mounted in exactly three places, each sized
 to what a throw there may cost:
 
 | Where | Wraps | What survives |
 |---|---|---|
-| `Desk.tsx` | the tiling area alone | the status line, the command line, the desk's keyboard |
+| `Desk.tsx` | the tiling area alone | the inspector, the status line, the command line, the desk's keyboard |
+| `DeskInspector.tsx` | the program's inspector alone | the windows, and the rest of the desk |
 | `main.tsx` | everything the page renders | the tab, with the reason on it |
+
+The inspector's boundary is why `DeskInspector.tsx` runs the program's renderer inside its own
+component rather than in the panel's body: called in the parent it throws during the *parent's*
+render, above the boundary and past it.
 
 **Recovery is not a button that re-throws.** The boundary takes `resetKeys`, and the desk hands it
 `layoutSignature(workspace.layout)` — the layout tree serialized to one string
 (`src/shell/layout/tree.ts`) — so the next kernel snapshot that changes the layout clears the panel
-with no gesture at all. The button is the fallback for the case where nothing new arrives.
+with no gesture at all. The button is the fallback for the case where nothing new arrives. The
+inspector's key is the same shape at its own scale: the focused window and its process, spelled as
+one string, so moving focus clears a caught throw and unrelated kernel traffic does not.
 
 **The key is a signature and never the layout object**, and that is the whole rule for anything else
 mounting this boundary: `resetKeys` are compared with `Object.is`, and every snapshot the page

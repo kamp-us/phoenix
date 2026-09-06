@@ -1,5 +1,6 @@
 /**
- * The session-list row's renderer reference, as a leaf both ends can import.
+ * The session-list row's renderer reference and the predicate over its state, as a leaf both ends
+ * can import.
  *
  * Same split as `../pi/renderer-ref.ts` and `../claude/renderer-ref.ts`, for the same reason: the
  * row is kernel-side and reaches every backend's session store, the renderer is browser-side and
@@ -17,3 +18,20 @@ export const SESSION_LIST_WINDOW_REF: RendererRef = {
 	kind: "host-native",
 	ref: "tuval/session-list-window",
 };
+
+/**
+ * The row holds nothing worth the name — its surface renders a list it asks for by spell
+ * (`./session-list.ts`) — but it still carries its own tag, because a page admits a renderer only
+ * over a state some predicate recognised (`.patterns/window-renderer-admission.md`). A bare `{}`
+ * is recognisable as nothing, so a stateless row would be admitted over any other program's state.
+ */
+export interface SessionListState {
+	readonly kind: "ai-agent-sessions";
+}
+
+export const SESSION_LIST_STATE: SessionListState = {kind: "ai-agent-sessions"};
+
+export const isSessionListState = (value: unknown): value is SessionListState =>
+	typeof value === "object" &&
+	value !== null &&
+	(value as {readonly kind?: unknown}).kind === "ai-agent-sessions";

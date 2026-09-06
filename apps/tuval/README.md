@@ -77,7 +77,8 @@ the page's origin as it starts, so the browser's attach goes through (#7560).
 
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
-zooms, and `<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
+zooms, `<c-b> w` puts the focused window back on the picker with its process still running, and
+`<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
 program. With the prefix unarmed every key belongs to the focused window's process.
 
 Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
@@ -575,6 +576,38 @@ page may reach, and `index.ts` re-exports it — `src/shell/transport/browser.ts
 handshake and the server, `src/shell/picker/browser.ts` leaves out `open.ts` and the kernel behind
 it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and the reasons are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
+
+## The static root
+
+`public/` is Vite's default `publicDir`, resolved against the `root` that `servePage` in
+`src/page/dev-server.ts` already hands `createServer`. It is served at `/` with no config change:
+the dev server runs `configFile: false` and `publicDir` needs none, so nothing on
+`PageServerOptions` mentions it and nothing should. It holds the tab icon and only the tab icon —
+`favicon-16.png`, `favicon-32.png`, `favicon-192.png` and `apple-touch-icon.png`, each rendered at
+its own size and linked from `index.html` with a `sizes` attribute so the browser selects a cut
+rather than squashing one. That is why no SVG icon is declared: the mark is line art, and a browser
+scaling one weight down to a 16px tab closes the gaps between the branches into a blob. Each cut
+carries the mark's own near-black plate rather than a transparent ground, so one file reads on a
+light tab strip and on the dark desk alike.
+
+None of those four is editable. `brand/tree-mark.svg` is the source they are cut from — the kamp.us
+tree mark as the founder supplied it, adopted in
+[#8144](https://github.com/kamp-us/phoenix/issues/8144) and the reference form from here on. The
+supplied file was a raster; it is traced to vector here so a size is *re-rendered* rather than
+resampled, which is what stops a further size being a downscale of a downscale. A new size is one
+`rsvg-convert` at that size; a shape change is an edit to the SVG and a re-cut of all four.
+
+The drawing is unchanged — the trace is of the supplied artwork, branch work and root flare intact,
+not a redrawn substitute. An earlier pass on this branch did substitute a simplified mark, and that
+was reverted: establishing a source of truth is not licence to redesign the thing it is a source of.
+
+One cut carries a render-time override, and only one. The mark is dense line art, and at 16px every
+stroke lands under a device pixel — rendered flat, the whole canopy comes out anti-aliased mid-tone
+with no pixel reaching full colour, which reads as a faint smudge rather than a tree. The 16px cut
+is therefore rendered with a `stroke-width` on the path group, which widens each stroke enough to
+carry solid colour: 0 pixels at full red become 62, while the interior plate gaps that make it read
+as a canopy survive. Nothing about the geometry changes. The larger cuts need no override, because
+at 32px and up the strokes already cover whole pixels.
 
 ## The AI agent slice
 

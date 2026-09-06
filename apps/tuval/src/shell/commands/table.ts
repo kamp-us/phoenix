@@ -121,6 +121,13 @@ export const shellCommands: ReadonlyArray<AnyShellCommand> = [
 		params: Schema.Struct({window: Schema.NonEmptyString}),
 		toMsg: ({window}) => ({type: "window.focus", windowId: WindowId.make(window)}),
 	}),
+	defineCommand({
+		path: ["window", "pick"],
+		describe:
+			"Return the focused window to the picker. The process it was showing keeps running, and the picker offers it back.",
+		params: noParams,
+		toMsg: () => ({type: "window.unbind"}),
+	}),
 	...pickerCommands.map(pickerRow),
 	defineCommand({
 		path: ["workspace", "create"],

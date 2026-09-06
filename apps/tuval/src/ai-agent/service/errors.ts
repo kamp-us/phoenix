@@ -80,6 +80,20 @@ export class ModelUnsupported extends Schema.TaggedError<ModelUnsupported>()(
 	}
 }
 
+/**
+ * `setThinkingLevel` named a level this agent does not offer for the model it is running on.
+ * `available` is that offered set — Claude's effort axis has neither `off` nor `minimal`, and Pi
+ * advertises `off` alone for a model that does not reason (#8062).
+ */
+export class ThinkingUnsupported extends Schema.TaggedError<ThinkingUnsupported>()(
+	"tuval/ai-agent/ThinkingUnsupported",
+	{level: Schema.String, available: Schema.Array(Schema.String)},
+) {
+	override get message(): string {
+		return `thinking level "${this.level}" is not offered; available: ${this.available.join(", ") || "none"}`;
+	}
+}
+
 /** Why a page of history did not come back. History is the backend's store, so it can be missing. */
 export const PageReason = Schema.Literals(["unknown-cursor", "store-unreadable", "disconnected"]);
 export type PageReason = typeof PageReason.Type;

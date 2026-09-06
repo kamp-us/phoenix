@@ -11,6 +11,7 @@
  */
 
 import type {
+	EffortLevel,
 	GetSessionMessagesOptions,
 	ListSessionsOptions,
 	ModelInfo,
@@ -54,6 +55,17 @@ export interface AgentSession extends AsyncGenerator<SDKMessage, void> {
 	 * responses on the live session — no respawn (#7981).
 	 */
 	setModel(model?: string): Promise<void>;
+	/**
+	 * The effort switch, and the only one the pin has: `sdk.d.ts` declares `applyFlagSettings` as
+	 * merging into "the flag settings layer, dynamically updating the active configuration …
+	 * applies mid-session", streaming-input mode only, and notes that `'max'` is session-scoped
+	 * there and never persisted (#8062). `setMaxThinkingTokens` beside it is a different axis —
+	 * thinking tokens, not effort — and is not what the composer's picker sets.
+	 *
+	 * Narrowed to the one key this layer writes: the SDK's own signature is a mapped type over the
+	 * whole `Settings` surface, and a stand-in has no business implementing the rest of it.
+	 */
+	applyFlagSettings(settings: {effortLevel: EffortLevel | null}): Promise<void>;
 	supportedModels(): Promise<ReadonlyArray<ModelInfo>>;
 	/**
 	 * The session's slash commands, declared beside `supportedModels` and read the same way — once

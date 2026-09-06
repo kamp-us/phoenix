@@ -39,6 +39,11 @@ export {
 	transcriptPage,
 } from "./ports.ts";
 export {
+	isThinkingLevel,
+	type ThinkingLevel,
+	thinkingLevels,
+} from "./thinking.ts";
+export {
 	type AssistantItem,
 	boundToolResult,
 	byteLength,

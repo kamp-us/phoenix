@@ -168,14 +168,15 @@ const drive = (seed: number, steps: number): Run => {
 	let items = 0;
 	for (let step = 0; step < steps; step += 1) {
 		const {msg, newItem} = randomMsg(random, step);
-		const [next] = applyCellChecked<AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd>(
-			machine,
-			state,
-			msg,
-		);
-		// A prompt on a `ready` session records the operator's own turn (#7978), which is an item the
-		// tail has to account for exactly like one a layer reported.
-		const recorded = msg.type === "prompt" && state.phase === "ready";
+		const [next, cmds] = applyCellChecked<
+			AiAgentSessionState,
+			AiAgentSessionMsg,
+			AiAgentSessionCmd
+		>(machine, state, msg);
+		// An admitted prompt records the operator's own turn (#7978), which is an item the tail has to
+		// account for exactly like one a layer reported. The Cmd is the predicate rather than the Msg,
+		// because a prompt written during a turn is admitted later, out of the queue (#8159).
+		const recorded = cmds.some((cmd) => cmd.type === "aiAgent.prompt");
 		if ((newItem || recorded) && next.phase !== "gone") items += 1;
 		state = next;
 	}

@@ -2,7 +2,7 @@
  * The one generic handler set that drives any `TuvalAiAgent` layer.
  *
  * Nothing here names a backend (founder ruling, 2026-09-02): every handler yields the service and
- * calls one of its seven members, so the Pi row and the Claude row differ only in the layer they
+ * calls one of its members, so the Pi row and the Claude row differ only in the layer they
  * hand `aiAgentHandlers`. A layer's typed error never leaves as an error — each becomes a `failed`
  * Msg carrying the tag as data (ruling 3, #7570), because the window renders the refusal and a
  * crash would take the process with it. The one thing that does fail a handler is a
@@ -37,8 +37,9 @@ import {
 } from "../core/index.ts";
 import {isRefusal, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
 import {SessionOpening} from "../opening.ts";
-import type {TranscriptPagePayload} from "../ports/index.ts";
+import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
 import {
+	type StartOptions,
 	type TranscriptPage,
 	TransportError,
 	type TuvalAiAgent,
@@ -143,12 +144,16 @@ export const aiAgentHandlers = <RIn = never>(
 	const open = (
 		cwd: string,
 		resume: string | null,
+		mode: Mode | null,
 	): Effect.Effect<Follow, never, ProcessSelf | RIn> =>
 		Effect.gen(function* () {
 			const agent = yield* slot.rebuild;
-			const started = yield* Effect.result(
-				underPolicy(agent.start(resume === null ? {cwd} : {cwd, resume}), policy),
-			);
+			const options: StartOptions = {
+				cwd,
+				...(resume === null ? {} : {resume}),
+				...(mode === null ? {} : {mode}),
+			};
+			const started = yield* Effect.result(underPolicy(agent.start(options), policy));
 			if (Result.isSuccess(started)) {
 				return [{type: "started", sessionId: started.success.sessionId}];
 			}
@@ -191,9 +196,9 @@ export const aiAgentHandlers = <RIn = never>(
 					: [{type: "start", cwd: opening.value.cwd, resume: opening.value.resume} as const],
 			),
 
-		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume),
+		"aiAgent.start": (cmd) => open(cmd.cwd, cmd.resume, cmd.mode),
 
-		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId),
+		"aiAgent.reconnect": (cmd) => open(cmd.cwd, cmd.sessionId, cmd.mode),
 
 		// The one handler that reads the committed state rather than folding forward from it: there
 		// is no event to fold, which is the whole point — a restored session's tail and its pending
@@ -215,6 +220,13 @@ export const aiAgentHandlers = <RIn = never>(
 		// layer event, so the Sub's projection would publish a tail with the operator's half
 		// missing (#7979). Re-seeding is sound here rather than a race: this Cmd is applied after
 		// every event Msg the projection has folded, so the committed state is never behind it.
+		//
+		// It is also the one handler whose answer names the send it is about. `sent` carries the
+		// Cmd's own key, so the window that minted it learns what became of *its* text rather than
+		// what became of the last thing the session did — which is the correlation two windows
+		// racing to send need (#8005). What it can say is bounded: both rows return from `prompt`
+		// at the send (#8018), so a `sent` with no failure reports a handoff nobody refused and
+		// says nothing about the backend, whose own refusal arrives later on the event stream.
 		"aiAgent.prompt": (cmd) =>
 			Effect.gen(function* () {
 				const state = yield* readSession;
@@ -222,10 +234,18 @@ export const aiAgentHandlers = <RIn = never>(
 					yield* projection.seed(state);
 					yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
 				}
-				return yield* withAgent(
-					(agent) => agent.prompt(cmd.text, cmd.key),
-					() => nothing,
-				);
+				const agent = yield* slot.current;
+				if (agent === null) {
+					return [{type: "sent", key: cmd.key, failure: noSession}] satisfies Follow;
+				}
+				const answered = yield* Effect.result(agent.prompt(cmd.text, cmd.key));
+				return [
+					{
+						type: "sent",
+						key: cmd.key,
+						failure: Result.isFailure(answered) ? failureOf(answered.failure) : null,
+					},
+				] satisfies Follow;
 			}),
 
 		"aiAgent.interrupt": () =>
@@ -254,6 +274,12 @@ export const aiAgentHandlers = <RIn = never>(
 		"aiAgent.setModel": (cmd) =>
 			withAgent(
 				(agent) => agent.setModel(cmd.model),
+				() => nothing,
+			),
+
+		"aiAgent.setThinkingLevel": (cmd) =>
+			withAgent(
+				(agent) => agent.setThinkingLevel(cmd.level),
 				() => nothing,
 			),
 
