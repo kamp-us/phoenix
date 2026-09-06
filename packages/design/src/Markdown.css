@@ -6,6 +6,10 @@
 	color: var(--text-primary);
 	overflow-wrap: anywhere;
 	min-inline-size: 0;
+	/* Fill the host, never shrink-wrap: the two scrollable blocks below are inline-size-contained,
+	   so they contribute nothing to an intrinsic width and a shrink-to-fit host would size the
+	   whole document to its longest paragraph, scrolling code that had room to sit flat. */
+	inline-size: 100%;
 }
 
 .kp-markdown > :first-child {
@@ -79,12 +83,15 @@
 	padding: 0 var(--s-1);
 }
 
+/* `pre code` is `white-space: pre`, so a long code line is one unbreakable box — the same
+   min-content leak the table scroller below carries, and the reason for the same containment. */
 .kp-markdown pre {
 	background: var(--surface-sunken);
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-md);
 	padding: var(--s-2) var(--s-3);
 	overflow-x: auto;
+	contain: inline-size;
 }
 
 .kp-markdown pre code {
@@ -109,10 +116,17 @@
 /* A wide table scrolls inside its wrapper rather than stretching the row it sits in — the
    transcript row is measured at its rendered height, and a row wider than the viewport would push
    the whole transcript sideways. The scroll lives on the wrapper so the table keeps its own
-   display, and with it the implicit role `display: block` would drop (see `Markdown.tsx`). */
+   display, and with it the implicit role `display: block` would drop (see `Markdown.tsx`).
+
+   `contain: inline-size`, not `max-inline-size: 100%`: a scroll container still reports its
+   content's width as its min-content size, and that travels up to the nearest grid or flex item
+   with an auto minimum, which then grows past the viewport. A percentage max resolves to none
+   during intrinsic sizing, so it cannot stop that — measured at 390px, a long `th` took the page
+   to 624px with the percentage max in place. Inline-size containment makes the box size as if
+   empty in that axis, which is what caps it. */
 .kp-markdown__scroller {
 	overflow-x: auto;
-	max-inline-size: 100%;
+	contain: inline-size;
 }
 
 .kp-markdown__scroller:focus-visible {
