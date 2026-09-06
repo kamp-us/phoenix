@@ -47,7 +47,7 @@ fabrika build claim $epic_number --purpose gate
 
 The token `claim` prints is `<claim-token>` below — this LANE's name, which every later verb takes as
 `--token`. A session runs several lanes, so a verb handed only the session id cannot tell a sibling
-lane's claim from yours (#6037).
+lane's claim from yours.
 
 `--purpose gate` is not optional here. The audience axis (`ready-for:agent`) asks whether an agent
 should pick the issue up to **build**, and an epic earns that label only *after* it has been planned
@@ -60,7 +60,7 @@ the purpose exists to remove.
 Done when it answers `won`. Exit `15` is a proven loss with the winner named on stderr: end at
 `BACKED-OFF`. Exit `7` is a proven-absent or closed target: end at `PLAN-UNGATEABLE`. The verb takes
 the session identity from the environment (`FABRIKA_SESSION_ID`, else `CLAUDE_CODE_SESSION_ID`, else
-`PI_SUBAGENT_PARENT_SESSION` — #6960), and an unset chain is exit `1` — a claim without
+`PI_SUBAGENT_PARENT_SESSION`), and an unset chain is exit `1` — a claim without
 an identity is not a claim. **Any other non-zero here (`1`, `8`, `9`, `10`, `11`, `20`) ends
 `STOPPED` with no note**: you hold no claim, and `build note` requires one, so there is nothing
 postable — report the code in the terminal line instead. `10` is an off-enum `--purpose`, and `20`
@@ -76,8 +76,7 @@ document a caller could hand it. Done when it prints the child set with each chi
 assignee slot, criteria token, stories and containment.
 
 **Then the approval precondition, ahead of the floor.** No plan reaches the gate without a founder
-approval bound to the scope it now derives (ADR
-[0289](../../../../.decisions/0289-founder-approves-every-epic-plan.md)):
+approval bound to the scope it now derives:
 
 ```bash
 fabrika plan approval $epic_number
@@ -220,7 +219,7 @@ An unreleased claim is a lock nobody can reclaim, which a human then clears by h
   reading of this plan to relay. Say which of the two it was. Then release the claim with
   `fabrika build release $epic_number --token <claim-token>` before you end: this refusal lands ahead
   of everything, and an epic waiting on a founder must not also be waiting on a lock nobody can
-  reclaim (ADR [0059](../../../../.decisions/0059-epic-plan-lock.md)). The epic goes back to the
+  reclaim. The epic goes back to the
   founder — a re-plan is `plan-epic`'s, and a fresh approval is his.
 - `PLAN-MOVED` — `21`: the plan changed between the check and a writing verb. Nothing was written
   and no verdict is posted; re-check from step 2.

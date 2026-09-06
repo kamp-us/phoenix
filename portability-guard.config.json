@@ -93,8 +93,8 @@
 			]
 		},
 		"plugin-planning": {
-			"ceiling": 269,
-			"why": "The epic planning and plan-gate skills' text, cleared by #8297, the planning sweep child.",
+			"ceiling": 21,
+			"why": "The prose is swept; every remaining hit is a value rather than a sentence. All 21 are stderr lines the shipped `ledger` and `plan` verbs print, quoted verbatim in the Errors tables and worked examples — each a copy of a string that lives in packages/fabrika-cli/src/ledger/ and packages/fabrika-cli/src/plan/, so it moves only when that string does. Rewriting the pin first would make the contract quote a line no verb prints. #8310, the CLI tail sweep, owns those two directories and pays this floor down with them.",
 			"paths": [
 				"claude-plugins/fabrika/skills/plan-epic",
 				"claude-plugins/fabrika/skills/check-epic-plan"
