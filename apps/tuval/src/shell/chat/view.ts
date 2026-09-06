@@ -19,6 +19,7 @@
  */
 
 import type {ViewState} from "../window/index.ts";
+import {asOutgoing, type OutgoingSend} from "./outgoing.ts";
 
 export type ChatView = {
 	/**
@@ -31,6 +32,12 @@ export type ChatView = {
 	readonly scroll: number;
 	/** The composer's text, so a window switched away from and back to still holds it. */
 	readonly draft: string;
+	/**
+	 * The text of sends this window has dispatched and not yet heard the outcome of (`./outgoing.ts`).
+	 * The draft clears at dispatch and the copy lives here, so a prompt the process or the backend
+	 * refuses is still the operator's to take back (#8005).
+	 */
+	readonly outgoing: ReadonlyArray<OutgoingSend>;
 	/** The oldest item id this window has walked back to, or `null` while it holds only the live tail. */
 	readonly cursor: string | null;
 	/** The backend answered that there is nothing older; the transcript is at the beginning of history. */
@@ -45,6 +52,7 @@ export const initialChatView: ChatView = {
 	pinned: true,
 	scroll: 0,
 	draft: "",
+	outgoing: [],
 	cursor: null,
 	atOldest: false,
 	expanded: [],
@@ -67,6 +75,7 @@ export const asChatView = (value: ViewState | undefined): ChatView => {
 		pinned: value.pinned !== false,
 		scroll: typeof value.scroll === "number" && Number.isFinite(value.scroll) ? value.scroll : 0,
 		draft: typeof value.draft === "string" ? value.draft : "",
+		outgoing: asOutgoing(value.outgoing),
 		cursor: typeof value.cursor === "string" ? value.cursor : null,
 		atOldest: value.atOldest === true,
 		expanded: Array.isArray(value.expanded)

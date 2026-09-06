@@ -26,6 +26,15 @@ export type AiAgentSessionMsg =
 			readonly key: string;
 			readonly timestamp: number;
 	  }
+	/**
+	 * What the layer did with one deliberate send, under that send's own key — the only Msg that
+	 * answers a *particular* prompt rather than the session as a whole.
+	 *
+	 * `failure: null` means the layer took the text. Anything else is the refusal, and `sends.ts`
+	 * decides from its `reason` whether the text provably never crossed or merely might not have; a
+	 * window keeps a copy of what it sent until this arrives, so neither arm loses it.
+	 */
+	| {readonly type: "sent"; readonly key: string; readonly failure: AgentFailure | null}
 	| {readonly type: "event"; readonly sessionId: string; readonly event: AgentEvent}
 	/** `message` is the operator's optional note; the window offers one on every decision. */
 	| {

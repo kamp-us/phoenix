@@ -15,7 +15,11 @@ import {act, fireEvent, render, screen, waitFor, within} from "@testing-library/
 import {Effect, Stream} from "effect";
 import {type ReactElement, StrictMode} from "react";
 import {afterEach, describe, expect, it} from "vitest";
-import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
+import {
+	type AiAgentSessionMsg,
+	type AiAgentSessionState,
+	foldEvent,
+} from "../../ai-agent/core/index.ts";
 import {phases} from "../../ai-agent/core/state.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
 import {ProcessId} from "../../process/process.ts";
@@ -406,6 +410,212 @@ describe("the composer", () => {
 	});
 });
 
+/**
+ * Dispatch is not delivery, so the draft this window cleared is still this window's until the
+ * session names an outcome for that send's key (#8005).
+ *
+ * Every case below drives the outcome in as committed state rather than as a phase or a timing, so
+ * nothing here depends on where in a turn a backend answers. The two cases that do care which
+ * channel carried the outcome fold the real event through `foldEvent` rather than writing the row
+ * by hand, because "the layer took the handoff" and "the backend ran the turn" are two different
+ * facts and only the second releases the copy (#8018, #8005).
+ */
+describe("a send whose outcome is not yet known", () => {
+	const sent = async (text: string): Promise<void> => {
+		const input = composer();
+		await act(async () => {
+			fireEvent.change(input, {target: {value: text}});
+		});
+		await act(async () => {
+			fireEvent.keyDown(input, {key: "Enter"});
+		});
+	};
+
+	const refusal = {
+		tag: "tuval/ai-agent/PromptError",
+		reason: "refused",
+		detail: "the backend said no",
+	};
+
+	const withSends = (
+		sends: AiAgentSessionState["sends"],
+		over: Partial<AiAgentSessionState> = {},
+	): AiAgentSessionState => withTranscript(transcriptOf(2), {sends, ...over});
+
+	it("holds the text it cleared out of the composer, under the send's own key", async () => {
+		const {keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("ship it");
+		await waitFor(() => expect(view().draft).toBe(""));
+		expect(view().outgoing).toEqual([{key: keys[0], text: "ship it"}]);
+		// Nothing settled, so nothing is offered back — the send may still be running.
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
+	it("lets go of the copy the session says the layer took, and only that one", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("first");
+		await sent("second");
+		await waitFor(() => expect(view().outgoing.length).toBe(2));
+
+		await act(async () => {
+			await Effect.runPromise(process.commit(withSends([{key: keys[0] ?? "", state: "accepted"}])));
+		});
+		await waitFor(() => expect(view().outgoing).toEqual([{key: keys[1], text: "second"}]));
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
+	/**
+	 * The path #8005's seventh criterion pins. The layer took the handoff without refusing — both
+	 * rows return there (#8018) — and the pin refused a round trip later, with no caller left to
+	 * raise to, so the refusal arrives as a `failure` event. The send is still the one in flight,
+	 * so the window that minted the key gets its words back.
+	 */
+	it("offers back a send the backend refused on the event stream after the handoff", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		const key = keys[0] ?? "";
+		await waitFor(() => expect(view().outgoing).toEqual([{key, text: "the long prompt"}]));
+
+		// A `sent` carrying no failure leaves the row `pending` (`core/machine.unit.test.ts`), so
+		// this is the state the refusal folds over.
+		const handed = withSends([{key, state: "pending"}]);
+		await act(async () => {
+			await Effect.runPromise(process.commit(handed));
+		});
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(foldEvent(handed, {kind: "failure", failure: refusal}, {})),
+			);
+		});
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+	});
+
+	/**
+	 * #8005's eighth criterion, at the window. The core reaches `prompting` on admission, so an
+	 * Escape can land while `aiAgent.prompt` is still in flight. The interrupt leaves the send
+	 * `pending` (`../../ai-agent/core/machine.unit.test.ts` proves the core does that), the window
+	 * therefore keeps holding the copy, and the refusal that arrives afterwards still has words to
+	 * offer back.
+	 */
+	it("keeps the copy when a send is interrupted before the layer answers, and offers it on the refusal", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		const key = keys[0] ?? "";
+		await waitFor(() => expect(view().outgoing).toEqual([{key, text: "the long prompt"}]));
+
+		// What the core leaves behind: the abort is out but unconfirmed, so the turn is still
+		// `prompting` (#8007) and the send is still `pending`.
+		const cut = withSends([{key, state: "pending"}], {
+			phase: "prompting",
+			interrupted: ItemId.make("a1"),
+			interruption: {requestedAt: 1_700_000_000_000},
+		});
+		await act(async () => {
+			await Effect.runPromise(process.commit(cut));
+		});
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit({...cut, sends: [{key, state: "refused", failure: refusal}]}),
+			);
+		});
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(view().outgoing).toEqual([{key, text: "the long prompt"}]);
+	});
+
+	/** The other side of that line: the turn ended, so the text crossed and the copy goes. */
+	it("lets go of the copy once the turn the backend ran comes to an end", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("ship it");
+		const key = keys[0] ?? "";
+		const handed = withSends([{key, state: "pending"}], {phase: "prompting"});
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(foldEvent(handed, {kind: "phase", phase: "ready"}, {})),
+			);
+		});
+		await waitFor(() => expect(view().outgoing).toEqual([]));
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+
+	it("offers a refused send back, and puts it in the composer on the operator's word", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key: keys[0] ?? "", state: "refused", failure: refusal}])),
+			);
+		});
+
+		expect(await screen.findByText("This message was not sent.")).toBeDefined();
+		expect(screen.getByText("the long prompt")).toBeDefined();
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", {name: "Restore"}));
+		});
+		await waitFor(() => expect(view().draft).toBe("the long prompt"));
+		expect(composer().value).toBe("the long prompt");
+		expect(view().outgoing).toEqual([]);
+		// Recovery is the composer and nothing else: the prompt Msg count has not moved.
+		expect(process.inbox().length).toBe(1);
+	});
+
+	it("says an uncertain send is uncertain, and resends nothing on its own", async () => {
+		const {process, keys} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("maybe it went");
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key: keys[0] ?? "", state: "uncertain", failure: null}])),
+			);
+		});
+
+		expect(await screen.findByText("This message may not have been sent.")).toBeDefined();
+		expect(process.inbox()).toEqual([
+			{type: "prompt", text: "maybe it went", key: keys[0], timestamp: SENT_AT},
+		]);
+	});
+
+	it("recovers above text typed after the send rather than over it", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("the long prompt");
+		await act(async () => {
+			fireEvent.change(composer(), {target: {value: "something newer"}});
+		});
+		await waitFor(() => expect(view().draft).toBe("something newer"));
+
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key: keys[0] ?? "", state: "refused", failure: refusal}])),
+			);
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole("button", {name: "Restore"}));
+		});
+		await waitFor(() => expect(view().draft).toBe("the long prompt\n\nsomething newer"));
+	});
+
+	it("drops a held send the operator discards, without touching the draft", async () => {
+		const {process, keys, view} = await openWindow(withTranscript(transcriptOf(2)));
+		await sent("never mind");
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(withSends([{key: keys[0] ?? "", state: "refused", failure: refusal}])),
+			);
+		});
+		await act(async () => {
+			fireEvent.click(await screen.findByRole("button", {name: "Discard"}));
+		});
+		await waitFor(() => expect(view().outgoing).toEqual([]));
+		expect(view().draft).toBe("");
+		expect(screen.queryByRole("list", {name: "Unsent messages"})).toBeNull();
+	});
+});
+
 describe("keys typed on the transcript", () => {
 	const seen: string[] = [];
 	const listener = (event: Event): void => void seen.push((event as KeyboardEvent).key);
@@ -650,6 +860,67 @@ describe("two windows over one process", () => {
 		expect(within(windowBox("right")).getByText("Loading earlier messages…")).toBeDefined();
 		expect(within(windowBox("right")).queryByText("older prompt")).toBeNull();
 		expect(right.view().cursor).toBeNull();
+	});
+
+	/**
+	 * The race #8005 is about: both windows send, the session admits one and refuses the other, and
+	 * the refusal must land on the window that earned it. The correlation is the idempotency key —
+	 * neither window reads a phase, so the arrival order of the two outcomes changes nothing.
+	 */
+	it("offers a refused send back in the window that sent it, and clears the other's", async () => {
+		const keys: Array<string> = [];
+		const {process, left, right} = await openPair(withTranscript(transcriptOf(2)), {
+			newKey: () => {
+				const key = `k${keys.length}`;
+				keys.push(key);
+				return key;
+			},
+		});
+
+		const [leftInput, rightInput] = screen.getAllByRole("combobox", {
+			name: "Write a message to the agent",
+		}) as [HTMLTextAreaElement, HTMLTextAreaElement];
+		for (const [input, text] of [
+			[leftInput, "left prompt"],
+			[rightInput, "right prompt"],
+		] as const) {
+			await act(async () => {
+				fireEvent.change(input, {target: {value: text}});
+			});
+			await act(async () => {
+				fireEvent.keyDown(input, {key: "Enter"});
+			});
+		}
+		await waitFor(() => expect(right.view().outgoing.length).toBe(1));
+
+		const failure = {
+			tag: "tuval/ai-agent/PromptError",
+			reason: "no-session",
+			detail: "the session is prompting, not ready",
+		};
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit(
+					withTranscript(transcriptOf(2), {
+						sends: [
+							{key: "k0", state: "accepted"},
+							{key: "k1", state: "refused", failure},
+						],
+					}),
+				),
+			);
+		});
+
+		await waitFor(() => expect(left.view().outgoing).toEqual([]));
+		expect(within(windowBox("left")).queryByText("right prompt")).toBeNull();
+		expect(within(windowBox("right")).getByText("right prompt")).toBeDefined();
+		expect(right.view().outgoing).toEqual([{key: "k1", text: "right prompt"}]);
+
+		await act(async () => {
+			fireEvent.click(within(windowBox("right")).getByRole("button", {name: "Restore"}));
+		});
+		await waitFor(() => expect(right.view().draft).toBe("right prompt"));
+		expect(left.view().draft).toBe("");
 	});
 });
 

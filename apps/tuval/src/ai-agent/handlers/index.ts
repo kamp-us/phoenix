@@ -202,6 +202,13 @@ export const aiAgentHandlers = <RIn = never>(
 		// layer event, so the Sub's projection would publish a tail with the operator's half
 		// missing (#7979). Re-seeding is sound here rather than a race: this Cmd is applied after
 		// every event Msg the projection has folded, so the committed state is never behind it.
+		//
+		// It is also the one handler whose answer names the send it is about. `sent` carries the
+		// Cmd's own key, so the window that minted it learns what became of *its* text rather than
+		// what became of the last thing the session did — which is the correlation two windows
+		// racing to send need (#8005). What it can say is bounded: both rows return from `prompt`
+		// at the send (#8018), so a `sent` with no failure reports a handoff nobody refused and
+		// says nothing about the backend, whose own refusal arrives later on the event stream.
 		"aiAgent.prompt": (cmd) =>
 			Effect.gen(function* () {
 				const state = yield* readSession;
@@ -209,10 +216,18 @@ export const aiAgentHandlers = <RIn = never>(
 					yield* projection.seed(state);
 					yield* emit(aiAgentPortNames.transcript, transcriptOf(state));
 				}
-				return yield* withAgent(
-					(agent) => agent.prompt(cmd.text, cmd.key),
-					() => nothing,
-				);
+				const agent = yield* slot.current;
+				if (agent === null) {
+					return [{type: "sent", key: cmd.key, failure: noSession}] satisfies Follow;
+				}
+				const answered = yield* Effect.result(agent.prompt(cmd.text, cmd.key));
+				return [
+					{
+						type: "sent",
+						key: cmd.key,
+						failure: Result.isFailure(answered) ? failureOf(answered.failure) : null,
+					},
+				] satisfies Follow;
 			}),
 
 		"aiAgent.interrupt": () =>

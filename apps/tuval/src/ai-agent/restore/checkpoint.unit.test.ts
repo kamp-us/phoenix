@@ -59,6 +59,10 @@ const saved: AiAgentSessionState = {
 	},
 	thinking: {current: "xhigh", available: ["low", "medium", "high", "xhigh", "max"]},
 	lastPrompt: "make the README",
+	sends: [
+		{key: "send-0", state: "accepted"},
+		{key: "send-1", state: "pending"},
+	],
 	lastPage: {items: [userItem("older-0")], hasMore: true},
 	failure: {tag: "tuval/ai-agent/PromptError", reason: "disconnected", detail: "socket closed"},
 };
@@ -111,6 +115,15 @@ describe("restoring a saved session", () => {
 		expect(restored.modes).toEqual(saved.modes);
 		expect(restored.models).toEqual(saved.models);
 		expect(restored.lastPrompt).toBe("make the README");
+	});
+
+	// The process went away between handing the text to the layer and hearing back, so nobody can
+	// say whether it landed — and the window that minted the key offers it rather than resending it.
+	it("brings a send that was still in flight back uncertain, and leaves a settled one alone", () => {
+		expect(restore(saved).sends).toEqual([
+			{key: "send-0", state: "accepted"},
+			{key: "send-1", state: "uncertain", failure: null},
+		]);
 	});
 
 	// The call carrying that answer went with the process, so whether it landed is unknown: the
