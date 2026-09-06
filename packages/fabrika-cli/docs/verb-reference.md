@@ -98,7 +98,7 @@ Contract: [`skills/build/contract.md`](../../../claude-plugins/fabrika/skills/bu
 | `build branch` / `scratch` | the lane's branch off a fresh base, and its scratch directory |
 | `build resume-child` | an epic child's standing-`FAIL` repair lane, opened as one operation: claim, confirm, clean tree, resumed branch, armed proof |
 | `build commit` / `push` | the commit whose message is proven this lane's, and the push whose ref is proven moved |
-| `build check` | this surface's validators, run here with the build cache bypassed |
+| `build check` | this surface's validators, run in this tree |
 | `build pr` / `pr-body` / `note` | the guarded, read-back PR write surfaces |
 | `build verdicts` | the latest gate verdict per namespace at a PR's live head |
 | `build clear` | the founder's clearance of one extra repair round |

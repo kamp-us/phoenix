@@ -17,6 +17,11 @@
 
 	"capClearAuthors": ["@usirin", "@notusirin", "@cansirin"],
 
+	// How many issue lanes may stand open at once — the number the founder drove this weekend, now
+	// enforced at the boot instead of remembered (#8264). `lane open` and `lane emit` refuse past it
+	// with nothing written; there is no override flag, so raising this line is the only way past.
+	"laneConcurrencyCap": 2,
+
 	// Who may declare a campaign or flip its lifecycle state (`fabrika campaign open` / `campaign
 	// state`). It narrows the repo's collaborator ACL and never replaces it: an entry here still
 	// needs `write` or above on the repo (ADR 0294). Founder-declared 2026-08-20 on #6811 — the
@@ -47,12 +52,29 @@
 	"unreadableCodeowners": "refuse",
 
 	// The repo's own commands that compile and lint its code. `fabrika build check --surface code`
-	// runs each one in the lane's tree, and both flags here are phoenix's: `--force` is turbo's
-	// cache-bypass (a bare `tsc` rejects it), and `lint:worktree` is a phoenix script name. Nothing
-	// is compiled into the CLI, so a repo declaring nothing gets a named refusal rather than these
-	// two commands (#6015).
+	// runs each one in the lane's tree, and both script names here are phoenix's own —
+	// `typecheck:affected` and `lint:worktree`. Nothing is compiled into the CLI, so a repo
+	// declaring nothing gets a named refusal rather than these two commands (#6015).
+	//
+	// `typecheck:affected` is `TURBO_SCM_BASE=origin/main turbo run typecheck --affected`: the
+	// packages this branch changed plus their dependents, measured from the MERGE-BASE of
+	// `origin/main` and HEAD. The cache carries the rest, and turbo shares one `.turbo/cache` across
+	// every linked worktree of this clone, so a lane that touched one package pays for one package.
+	// The base lives in the script rather than here because a validator is argv with no environment,
+	// and `--affected` takes its base from `TURBO_SCM_BASE` (defaulting to a LOCAL `main`, which in a
+	// lane worktree lags the remote) — the same script backs the pre-push hook, so one base serves
+	// both.
+	//
+	// Two things this deliberately does not do. There is no cache-bypass flag: turbo 2.10.3's `run`
+	// reference defines it as ignoring cached artifacts and re-executing all tasks, so it recompiled
+	// every package on every check, every `lane integrate` and every repair round — for a
+	// cache-poisoning risk nothing here ever recorded, and which `ci.yml`'s own bare `pnpm typecheck`
+	// never took (#8275). And it does not use `--filter=...[origin/main]`, which diffs against the
+	// ref itself rather than the merge-base and so selects every package on any branch behind main
+	// (#8273 review round 1). A checkout too shallow to hold a merge base degrades to every package,
+	// the fail-safe direction.
 	"codeValidators": [
-		{ "command": ["pnpm", "typecheck", "--force"] },
+		{ "command": ["pnpm", "typecheck:affected"] },
 		{ "command": ["pnpm", "lint:worktree"] }
 	],
 
