@@ -18,7 +18,7 @@ import {normalize} from "../keys/syntax.ts";
 import type {WindowId} from "../window/host.ts";
 import {flatten, type PickerEntries, type PickerEntry} from "./entries.ts";
 import {attachProcess, intentOf, type PickerIntent} from "./intent.ts";
-import type {PickerRefusal} from "./refusal.ts";
+import {isPickerRefusal, type PickerRefusal} from "./refusal.ts";
 
 /**
  * The window's view slot while it shows the picker. A type alias rather than an interface because
@@ -51,6 +51,27 @@ export const withRefusal = (view: PickerView, refusal: PickerRefusal): PickerVie
 	...view,
 	refusal,
 });
+
+/**
+ * Read one window's view slot as the picker's. The slot is `Schema.Json` and any program may have
+ * written it, so a fresh view is rebuilt field by field from what is actually there — never
+ * narrowed by assertion, which would hand a foreign record to `pickerKey` typed as if it were
+ * sound. A slot the picker did not write reads as `mountPicker()`, which is also what a first mount
+ * starts from, and that is what an absent slot reads as too.
+ */
+export const asPickerView = (slot: unknown): PickerView => {
+	if (typeof slot !== "object" || slot === null || Array.isArray(slot)) return mountPicker();
+	const record: Record<string, unknown> = {...slot};
+	const cursor = record.cursor;
+	if (cursor !== null && typeof cursor !== "number") return mountPicker();
+	const refusal = record.refusal;
+	const previous = record.previous;
+	return {
+		cursor,
+		refusal: isPickerRefusal(refusal) ? refusal : null,
+		previous: typeof previous === "string" ? previous : null,
+	};
+};
 
 const clamp = (cursor: number, length: number): number => {
 	if (length === 0) return 0;

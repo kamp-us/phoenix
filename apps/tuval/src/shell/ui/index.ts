@@ -40,6 +40,6 @@ export {
 	type ReactWindowRenderer,
 	type WindowMount,
 } from "./mount.ts";
-export {asPickerView, PickerView, type PickerViewProps} from "./PickerView.tsx";
+export {PickerView, type PickerViewProps} from "./PickerView.tsx";
 export {StatusLine, type StatusLineProps} from "./StatusLine.tsx";
 export {WindowView, type WindowViewProps} from "./WindowView.tsx";

@@ -16,8 +16,6 @@ import type {ReactElement} from "react";
 import {useCallback, useEffect, useRef} from "react";
 import type {ShellMsg} from "../core/index.ts";
 import {
-	isPickerRefusal,
-	mountPicker,
 	type PickerEntries,
 	type PickerView as PickerViewState,
 	pickerFrame,
@@ -37,26 +35,6 @@ export interface PickerViewProps {
 	/** Whether this window is the desk's focused one — the picker holds DOM focus only then. */
 	readonly focused: boolean;
 }
-
-/**
- * Is this view slot the picker's? The slot is `Schema.Json` and any program may have written it, so
- * a fresh view is rebuilt field by field from what is actually there — never narrowed by assertion,
- * which would hand a foreign record to `pickerKey` typed as if it were sound. A slot the picker did
- * not write reads as `mountPicker()`, which is also what a first mount starts from.
- */
-export const asPickerView = (slot: unknown): PickerViewState => {
-	if (typeof slot !== "object" || slot === null || Array.isArray(slot)) return mountPicker();
-	const record: Record<string, unknown> = {...slot};
-	const cursor = record.cursor;
-	if (cursor !== null && typeof cursor !== "number") return mountPicker();
-	const refusal = record.refusal;
-	const previous = record.previous;
-	return {
-		cursor,
-		refusal: isPickerRefusal(refusal) ? refusal : null,
-		previous: typeof previous === "string" ? previous : null,
-	};
-};
 
 export function PickerView({
 	windowId,

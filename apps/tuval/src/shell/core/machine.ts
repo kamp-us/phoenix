@@ -65,7 +65,10 @@ import {
  * The arms the kernel's own `HostHandlers` answer (`../host/effects.ts`). `openProgram` and
  * `attachProcess` are the picker's (`../picker/open.ts` runs both): spawning needs the registry and
  * the process table, which a pure reducer cannot reach, so the core names the window and the thing
- * to show in it and stops there. `forwardKey` is here too — a key belongs to the focused window's
+ * to show in it and stops there. Each carries the window's view slot as well, because a refusal
+ * leaves that handler as a `window.setView` written back over it, and the slot is state only the
+ * core can read — a refusal handed no slot is the one that throws away the picker's `previous`
+ * (#8265). `forwardKey` is here too — a key belongs to the focused window's
  * *process*, and delivering it is a dispatch into that process. `runCommand` and `reloadConfig`
  * have no runner yet and are still the kernel's: resolving a name the command table does not hold
  * needs the spell registry, and `Booted.reload` sits above the kernel (#7743).
@@ -83,8 +86,14 @@ export type KernelCmd =
 			readonly windowId: WindowId;
 			readonly programId: string;
 			readonly session?: OpenSession;
+			readonly view?: ViewState;
 	  }
-	| {readonly type: "attachProcess"; readonly windowId: WindowId; readonly processId: string}
+	| {
+			readonly type: "attachProcess";
+			readonly windowId: WindowId;
+			readonly processId: string;
+			readonly view?: ViewState;
+	  }
 	| {readonly type: "reloadConfig"};
 
 /**
@@ -453,6 +462,16 @@ const targetWindow = (state: ShellState, windowId: WindowId | undefined): Window
 };
 
 /**
+ * One window's view slot as a Cmd field, spread rather than assigned so a window holding no slot
+ * sends no `view` key at all — the field is optional and `exactOptionalPropertyTypes` reads an
+ * explicit `undefined` as a different thing from an absent one.
+ */
+const viewOf = (state: ShellState, windowId: WindowId): {readonly view?: ViewState} => {
+	const view = state.views[windowId];
+	return view === undefined ? {} : {view};
+};
+
+/**
  * The cells, closed over the table the key router reads. A table is configuration, not state: it
  * holds `Duration.Duration` values, and the shell's state is checkpointed JSON.
  */
@@ -526,6 +545,7 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 								windowId: target,
 								programId: msg.programId,
 								...(msg.session === undefined ? {} : {session: msg.session}),
+								...viewOf(state, target),
 							},
 						],
 					];
@@ -534,7 +554,17 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 			const target = targetWindow(state, msg.windowId);
 			return target === null
 				? [state, NO_CMDS]
-				: [state, [{type: "attachProcess", windowId: target, processId: msg.processId}]];
+				: [
+						state,
+						[
+							{
+								type: "attachProcess",
+								windowId: target,
+								processId: msg.processId,
+								...viewOf(state, target),
+							},
+						],
+					];
 		},
 		// Neither touches the desk, and neither leaves as `runCommand`: a host answering that Cmd
 		// resolves the name through the command table, so routing a row's own Msg back through it

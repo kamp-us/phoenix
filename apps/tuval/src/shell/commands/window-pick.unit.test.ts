@@ -10,23 +10,50 @@ import {Effect} from "effect";
 import {ProcessId} from "../../process/process.ts";
 import {applyMsg, initialState, type ShellMsg} from "../core/machine.ts";
 import {activeWorkspace, keyTargetOf, type ShellState} from "../core/state.ts";
+import {wiredShellEffects} from "../host/effects.ts";
 import {defaultPrefixTable} from "../keys/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
-import {readEntries} from "../picker/entries.ts";
+import {type PickerEntries, readEntries} from "../picker/entries.ts";
 import {pickerHarness, programRow, shellProcessId} from "../picker/fixtures.ts";
 import type {PickerIntent} from "../picker/intent.ts";
 import {attachProcess, openProgram} from "../picker/intent.ts";
 import {runPickerIntent} from "../picker/open.ts";
-import {highlighted, mountPicker, type PickerKeyAnswer, pickerKey} from "../picker/view.ts";
-import {asPickerView} from "../ui/PickerView.tsx";
+import {
+	asPickerView,
+	highlighted,
+	mountPicker,
+	type PickerKeyAnswer,
+	type PickerView,
+	pickerKey,
+} from "../picker/view.ts";
 import {WindowId} from "../window/index.ts";
 import {commandFor} from "./table.ts";
 
 const counter = programRow("counter", {label: "Counter"});
 const keyed = programRow("keyed", {label: "Keyed", takesKeys: true});
+const faulty = programRow("faulty", {label: "Faulty"});
 
 const apply = (state: ShellState, msg: ShellMsg): ShellState =>
 	applyMsg(defaultPrefixTable, state, msg)[0];
+
+/**
+ * One Msg down the path the desk actually runs: the core answers it with Cmds, the shell's own
+ * wired handlers answer those, and their Msgs go back through the core. A test that calls
+ * `runPickerIntent` itself skips the seam where a Cmd carries the window's view slot, which is the
+ * seam a refusal's `previous` survives on (#8265).
+ */
+const dispatch = (state: ShellState, msg: ShellMsg) =>
+	Effect.gen(function* () {
+		const effects = wiredShellEffects({shellProcessId});
+		const [next, cmds] = applyMsg(defaultPrefixTable, state, msg);
+		let out = next;
+		for (const cmd of cmds) {
+			if (cmd.type === "openProgram") out = (yield* effects.openProgram(cmd)).reduce(apply, out);
+			if (cmd.type === "attachProcess")
+				out = (yield* effects.attachProcess(cmd)).reduce(apply, out);
+		}
+		return out;
+	});
 
 const workspaceOf = (state: ShellState) => {
 	const workspace = activeWorkspace(state);
@@ -45,6 +72,29 @@ const boundProcess = (state: ShellState, windowId: WindowId): string => {
 	if (id === null) throw new Error("test setup: nothing is bound to the window");
 	return id;
 };
+
+const viewIn = (state: ShellState, windowId: WindowId): PickerView =>
+	asPickerView(state.views[windowId]);
+
+/** One key, answered the way `PickerView.tsx` answers it: store the view, or dispatch the choice. */
+const press = (state: ShellState, entries: PickerEntries, windowId: WindowId, key: string) =>
+	Effect.gen(function* () {
+		const answer = pickerKey(windowId, entries, viewIn(state, windowId), key);
+		switch (answer._tag) {
+			case "Moved":
+			case "Cleared":
+				return apply(state, {type: "window.setView", windowId, view: answer.view});
+			case "Chose":
+				return yield* dispatch(
+					state,
+					answer.intent._tag === "OpenProgram"
+						? {type: "window.open", windowId, programId: answer.intent.programId}
+						: {type: "window.attach", windowId, processId: answer.intent.processId},
+				);
+			case "Ignored":
+				return yield* Effect.die(new Error(`test setup: the picker ignored "${key}"`));
+		}
+	});
 
 const chosen = (answer: PickerKeyAnswer): PickerIntent => {
 	if (answer._tag !== "Chose") throw new Error(`test setup: the key answered ${answer._tag}`);
@@ -148,6 +198,58 @@ describe("window:pick returns a filled window to the picker", () => {
 					returned.map((msg) => msg.type),
 					["window.bind"],
 				);
+			}),
+		),
+	);
+
+	it.effect("a refusal the host raised leaves the way back intact (#8265)", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const harness = yield* pickerHarness([keyed, faulty], {spawnFails: faulty.id});
+				const empty = initialState();
+				const window = WindowId.make(workspaceOf(empty).focused);
+
+				const bound = yield* dispatch(empty, {
+					type: "window.open",
+					windowId: window,
+					programId: keyed.id,
+				}).pipe(Effect.provide(harness.layer));
+				const spawned = boundProcess(bound, window);
+
+				const unbound = apply(bound, pickMsg());
+				const entries = yield* readEntries.pipe(Effect.provide(harness.layer));
+
+				// One row up from the mounted highlight is the program whose spawn fails — the refusal a
+				// `<c-b> w` picker can actually raise, and the one that used to eat `previous`.
+				const onFaulty = yield* press(unbound, entries, window, "<arrowup>").pipe(
+					Effect.provide(harness.layer),
+				);
+				assert.deepStrictEqual(highlighted(entries, viewIn(onFaulty, window)), {
+					_tag: "Program",
+					programId: faulty.id,
+					label: "Faulty",
+				});
+
+				const refused = yield* press(onFaulty, entries, window, "<enter>").pipe(
+					Effect.provide(harness.layer),
+				);
+				assert.isNotNull(viewIn(refused, window).refusal);
+				assert.strictEqual(viewIn(refused, window).previous, spawned);
+				assert.isNull(processIn(refused, window));
+
+				const cleared = yield* press(refused, entries, window, "<escape>").pipe(
+					Effect.provide(harness.layer),
+				);
+				assert.isNull(viewIn(cleared, window).refusal);
+				assert.strictEqual(viewIn(cleared, window).previous, spawned);
+
+				const returned = yield* press(cleared, entries, window, "<escape>").pipe(
+					Effect.provide(harness.layer),
+				);
+				assert.strictEqual(processIn(returned, window), spawned);
+				assert.strictEqual(keyTargetOf(workspaceOf(returned), window), spawned);
+				// The refused spawn minted nothing, and Escape attached rather than opening a second one.
+				assert.strictEqual(harness.spawns().length, 1);
 			}),
 		),
 	);
