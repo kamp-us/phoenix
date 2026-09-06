@@ -1,5 +1,5 @@
 /**
- * The terminal-token map — one shell terminal in, one operator event out, in code (#5736).
+ * The terminal-token map — one shell terminal in, one operator event out, in code.
  *
  * Each fabrika shell ends on a fixed token from a closed vocabulary its own skill owns; this table
  * is the one place those vocabularies meet the machine's six events, replacing the prose
@@ -21,9 +21,9 @@ export const SHELL_VOCABULARIES = {
 	builder: {
 		"SHIPPED-PR": "DONE",
 		"SUCCESS-NO-PR": "DONE",
-		// An epic child builds, commits and deliberately opens no PR (ADR 0285), so neither of the
+		// An epic child builds, commits and deliberately opens no PR, so neither of the
 		// two terminals above fits and the token used to fall to the refusal — recording a clean
-		// build as BLOCKED (#6019). Its proof is already the child arm of `lane prove`: a DONE out
+		// build as BLOCKED. Its proof is already the child arm of `lane prove`: a DONE out
 		// of `build` in a child role stands on the range's commits, not on a PR.
 		"BUILT-NO-PR": "DONE",
 		"BACKED-OFF": "BLOCKED",
@@ -38,7 +38,7 @@ export const SHELL_VOCABULARIES = {
 		UNBINDABLE: "BLOCKED",
 		ROUTED: "BLOCKED",
 	},
-	// The rendered gate's six terminals (#7403). Three of them named no event at all until this
+	// The rendered gate's six terminals. Three of them named no event at all until this
 	// group existed, so an unrenderable `review:ui` lane hit the refusal and stayed `active` with no
 	// live shell — the park it actually was reached nobody. Each of the three is the reviewer
 	// group's own BLOCKED shape: no verdict landed and a human is owed the render, the manifest or
@@ -54,12 +54,12 @@ export const SHELL_VOCABULARIES = {
 	},
 	shipper: {
 		"ALREADY-MERGED": "DONE",
-		// The two queue terminals are waits, not landings (ADR 0313). Only a merge this pipeline read
+		// The two queue terminals are waits, not landings. Only a merge this pipeline read
 		// back is `DONE`, and neither of these is one: `QUEUED` means the arm took and the shipper did
 		// not watch it to an outcome, `UNRESOLVED` means it watched to its horizon and the PR is still
 		// in the queue. Both used to fold the lane out of the loop — `QUEUED` to `shipped` over a merge
 		// nobody observed, `UNRESOLVED` to a human park over a merge that was always going to land
-		// (#6178, #6462) — and both now route to the machine's wait cell, which a driver re-folds.
+		// — and both now route to the machine's wait cell, which a driver re-folds.
 		QUEUED: "WIP",
 		UNRESOLVED: "WIP",
 		LANDED: "DONE",
@@ -67,13 +67,13 @@ export const SHELL_VOCABULARIES = {
 		"AWAITING-CP-APPROVAL": "BLOCKED",
 		// A routing terminal names its arm, because the three arms are three different answers to
 		// the machine: repair is work this lane can retry, heal-ci and review are waits it cannot
-		// (#6002). A shipper that routed to repair and reported one flat `ROUTED` parked the lane
+		//. A shipper that routed to repair and reported one flat `ROUTED` parked the lane
 		// on a control-plane approval nobody was waiting on.
 		"ROUTED-REPAIR": "FAIL",
 		"ROUTED-HEAL-CI": "BLOCKED",
 		"ROUTED-REVIEW": "BLOCKED",
 		// An ejection is always "routed to repair", so it feeds the machine's `ship` FAIL edge and
-		// spends a retry rather than parking the lane (#5807).
+		// spends a retry rather than parking the lane.
 		EJECTED: "FAIL",
 		UNKNOWN: "BLOCKED",
 	},
@@ -148,7 +148,7 @@ export const eventForToken = (raw: string): TokenResolution => {
 };
 
 /**
- * Why a lane parked, as a closed set of tokens — the field that makes a `BLOCKED` clearable (#6480).
+ * Why a lane parked, as a closed set of tokens — the field that makes a `BLOCKED` clearable.
  *
  * The token map above folds thirteen distinct shell terminals into one flat `BLOCKED`, so the event
  * that lands records that a park happened and never why. `recipe unpark` keys its recipe table on a
@@ -159,22 +159,22 @@ export const eventForToken = (raw: string): TokenResolution => {
  * recipe would have to interpret, and interpreting a report is the failure class this module
  * deletes. Each entry's value is what the cause means, in the clause a refusal can quote.
  *
- * A cause is seated on its own account, and a `KNOWN_PARKS` row is never its precondition (ADR 0339).
+ * A cause is seated on its own account, and a `KNOWN_PARKS` row is never its precondition.
  * Where no row covers it, `classifyPark` answers `Novel` **naming this cause** instead of the bare
  * "recorded the event and not why", which is the difference between a gap somebody can write a row
  * for and a structural dead end (`recipe/parks.ts`). The row is what buys an autonomous clear, and
- * that still costs ADR 0302's proving read.
+ * that still costs the recipe's own proving read.
  */
 export const PARK_CAUSES = {
 	/**
-	 * The #6395 shape: a finished lane's worktree still holds the branch this lane must build on, so
+	 * A finished lane's worktree still holds the branch this lane must build on, so
 	 * `build branch --resume-lane` refuses at exit 11 rather than re-key a branch out from under
 	 * another tree. The whole remedy is removing that worktree, which is why it owes no decision.
 	 */
 	"worktree-holds-branch": "a working tree still holds the lane branch this build must stand on",
 	/**
-	 * See ADR 0327. `ship cp-approval` stops on a head behind its base, and the head must move before
-	 * an approval is solicited (#4477). The park spends neither budget, and reporting it as
+	 * `ship cp-approval` stops on a head behind its base, and the head must move before
+	 * an approval is solicited. The park spends neither budget, and reporting it as
 	 * `ROUTED-REPAIR` charged a repair retry for a trip through a stage that owns no verb that can
 	 * move a branch.
 	 *
@@ -184,40 +184,40 @@ export const PARK_CAUSES = {
 	"head-behind-base":
 		"the PR's head is behind its base and must move before an approval is solicited",
 	/**
-	 * The #7217 shape: the lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
-	 * under ADR 0304 that cell is the whole dispatch permission — so no stage may open against it.
+	 * The lane is homed on a milestone whose `## Campaigns` row reads `paused`, and
+	 * that cell is the whole dispatch permission — so no stage may open against it.
 	 *
-	 * A pause is open-ended, which is why this is a park and not a bounded wait (ADR 0313's merge-queue
+	 * A pause is open-ended, which is why this is a park and not a bounded wait (the merge-queue
 	 * dwell is the other side of that line). Its `KNOWN_PARKS` row clears by re-reading the same cell:
 	 * resuming the campaign stays a human's act on `ROADMAP.md`, so the row names no remedy verb.
 	 */
 	"campaign-paused":
 		"the campaign homing this lane's milestone reads paused, so no stage may dispatch against it",
 	/**
-	 * The #6770 shape: the shell driving this lane's stage was killed by its provider before it
+	 * The shell driving this lane's stage was killed by its provider before it
 	 * recorded a terminal — a session limit, a transport drop, a `network_error` on every completion.
 	 * Nothing about the ticket or the artifact is wrong, and the remedy is to dispatch the same brief
 	 * again.
 	 *
 	 * Its `KNOWN_PARKS` row reads the residue the dead shell left rather than the provider's health,
 	 * because no verb can spawn an agent to test the latter: the operator's next dispatch is that
-	 * test (ADR 0339).
+	 * test.
 	 */
 	"spawn-dead":
 		"the shell driving this lane's stage was killed by its provider before it recorded a terminal",
 	/**
-	 * The rendered gate's `CANT-SEE` (#7423): no preview deployment stands at the PR's head, or the
+	 * The rendered gate's `CANT-SEE`: no preview deployment stands at the PR's head, or the
 	 * one that does is stale beyond repair, so there is no rendered surface to judge. It is the
 	 * routine outcome of the three, not the exceptional one — a PR whose preview has not finished
 	 * building hits it.
 	 *
-	 * Naming-only: a `KNOWN_PARKS` row would have to re-test the deployment and ADR 0302's proving
+	 * Naming-only: a `KNOWN_PARKS` row would have to re-test the deployment, and that proving
 	 * read is separate work, so the sweep routes this to a human by naming the cause.
 	 */
 	"no-preview-render":
 		"no preview deployment stands at the PR's head, so no rendered surface can be judged",
 	/**
-	 * The rendered gate's `BLOCKED-NO-MANIFEST` (#7423): the repo's design law covers no surface in
+	 * The rendered gate's `BLOCKED-NO-MANIFEST`: the repo's design law covers no surface in
 	 * this diff, so the gate has nothing to judge against and routed to the front door.
 	 *
 	 * Naming-only: writing the manifest coverage is a human's act on the design law, and no verb
@@ -226,7 +226,7 @@ export const PARK_CAUSES = {
 	"no-design-manifest":
 		"the repo's design law covers no surface in this diff, so the rendered gate has nothing to judge against",
 	/**
-	 * The rendered gate's `ROUTED-ELSEWHERE` (#7423): the diff raises no rendered delta, so the
+	 * The rendered gate's `ROUTED-ELSEWHERE`: the diff raises no rendered delta, so the
 	 * verdict is `review`'s to give and never this gate's. The park is the route itself, which the
 	 * group's own mapping keeps as `BLOCKED` rather than a routing arm.
 	 *
@@ -251,7 +251,7 @@ export type ClassResolution =
  *
  * A silent miss is the failure mode this closes: an unknown spelling matched no `class:<name>` arm,
  * the guarded array fell through to its unclassed target, and the lane built as a plain lane with
- * the rendered-visual verdict it owed never asked for (ADR 0317). Spelling is normalised the way a
+ * the rendered-visual verdict it owed never asked for. Spelling is normalised the way a
  * cause's is, so `--class UI` is the `ui` class rather than a refusal.
  */
 export const classesForEvent = (raw: ReadonlyArray<string>): ClassResolution => {
@@ -315,7 +315,7 @@ export type GrantResolution =
  * a non-`UNBLOCKED` event is a caller that misunderstood the field — only a resume can be short the
  * budget it lands on — and would silently inflate `maxWaits` on a line no reader is looking at. A
  * grant of zero or less raises the budget by nothing while the resume reads as granted, which is the
- * silent no-op ADR 0313's wait axis exists to make loud.
+ * silent no-op the wait axis exists to make loud.
  */
 export const grantForEvent = (raw: number | null, event: OperatorEvent): GrantResolution => {
 	if (raw === null) return {_tag: "Granted", grant: null};

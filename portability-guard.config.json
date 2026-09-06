@@ -20,6 +20,10 @@
 		"packages/fabrika-cli/src/config/keys/doc-leak-exempt.ts": {
 			"ceiling": 2,
 			"why": "The key's own docblock names the repo whose docs the shipped default was drawn from, as the value's provenance rather than a pointer."
+		},
+		"packages/fabrika-cli/src/lane/prove-verb.unit.test.ts": {
+			"ceiling": 3,
+			"why": "Three fixture paths that must start with the rendered-surface prefix `isUiSurface` hardcodes in `../review/classes.ts`; the prefix is behaviour these tests exercise, not prose, so it clears when that literal moves onto config with the review group's own sweep."
 		}
 	},
 	"unmigrated": {
@@ -94,11 +98,6 @@
 			"ceiling": 288,
 			"why": "Everything else the plugin ships — the guide, the README, the agents, the hook manifest and the remaining skills — cleared by #8301, the plugin tail sweep child.",
 			"paths": ["claude-plugins/fabrika"]
-		},
-		"cli-lane": {
-			"ceiling": 586,
-			"why": "The lane group's source, cleared by #8302, the lane sweep child.",
-			"paths": ["packages/fabrika-cli/src/lane"]
 		},
 		"cli-guard": {
 			"ceiling": 649,

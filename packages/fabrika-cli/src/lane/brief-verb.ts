@@ -11,14 +11,14 @@
  * shape names, and the two local paths a spawned shell cannot derive: this driver's lanes root,
  * resolved absolute here because the shell would resolve a relative one against its own worktree,
  * and the fabrika entrypoint the shell runs its verbs through, resolved off this running copy so a
- * repo that installs fabrika is not handed phoenix's in-tree path (#6012).
+ * repo that installs fabrika is not handed the developing repo's in-tree path.
  *
  * An epic lane's children are the one place where no PR is resolved at all: one run is one branch and
  * one PR, so a child builds in a worktree and its review judges a commit range, while the tail task
- * briefs that single PR under the same refusals a single-issue lane has always used (ADR 0285). That
+ * briefs that single PR under the same refusals a single-issue lane has always used. That
  * range is resolved here, off this tree, through the same read `lane prove` stands its proof on
  * (`./range.ts`) — the two verbs cannot name different ranges for one child, and a range the tree
- * cannot pin refuses the dispatch instead of printing one that resolves to nothing (#6023).
+ * cannot pin refuses the dispatch instead of printing one that resolves to nothing.
  */
 import {Effect, type FileSystem, Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -67,7 +67,7 @@ export interface BriefOptions extends LaneRef {
 	/**
 	 * This run's own entrypoint, read at the command boundary off the real filesystem — the value the
 	 * brief's `fabrika:` field carries, so the shell runs the copy of fabrika its repo actually has
-	 * rather than phoenix's in-tree path (#6012).
+	 * rather than the developing repo's in-tree path.
 	 */
 	readonly entrypoint: EntrypointRead;
 }
@@ -123,8 +123,8 @@ const issueUrl = (
  * exactly these facts (`./codes.ts`) — nothing there, several candidates, unreadable, truncated.
  *
  * Refusing is the whole point: a brief whose range resolves to nothing sends the reviewer an empty
- * diff it can still land a `range-verdict-marker` over (#6023), and one whose base sits on a shallow
- * graft boundary sends it a count that swallowed everyone else's landed commits (#6343).
+ * diff it can still land a `range-verdict-marker` over, and one whose base sits on a shallow
+ * graft boundary sends it a count that swallowed everyone else's landed commits.
  */
 const rangeRefusal = (
 	located: Exclude<RangeLocation, {readonly _tag: "Located"}>,
@@ -160,7 +160,7 @@ type GroundRead =
  *
  * The range is read here so the reviewer judges two commits the *driver* pinned. The far end used to
  * be `HEAD`, which the spawned shell re-resolved in a worktree standing on the assembly branch, so
- * the range read as empty (#6023). `build` reads nothing off the tree at all: no child branch exists
+ * the range read as empty. `build` reads nothing off the tree at all: no child branch exists
  * yet there, and its ground carries no range field to half-fill.
  */
 const childGround = (
@@ -208,7 +208,7 @@ export const runBrief = (
 	Effect.gen(function* () {
 		const path = yield* Path.Path;
 		// The brief carries the driver's root resolved against the driver's cwd, because the shell
-		// resolves what it is handed against its own worktree (#5736).
+		// resolves what it is handed against its own worktree.
 		const root = lanesRoot(path.resolve(options.root));
 		if (root === null) {
 			return refuse(
@@ -218,7 +218,7 @@ export const runBrief = (
 		}
 		// The entrypoint rides as a `## Task` field and never as text inside the rules: the format's
 		// reader recomputes those bytes from the ground alone, so an interpolated path would make
-		// every brief malformed on the next machine that read it (#6012).
+		// every brief malformed on the next machine that read it.
 		const entry = options.entrypoint;
 		const fabrika = entry._tag === "Entrypoint" ? fabrikaEntry(entry.entrypoint) : null;
 		if (fabrika === null) {
@@ -338,7 +338,7 @@ export const runBrief = (
 
 		// The epic run's tail (task `epic_<n>`, and a PR is resolved — the tail states require one
 		// above): the ground carries the epic too, so the tail review's brief names where each
-		// child's `build-deviations` disclosure lives (#5903).
+		// child's `build-deviations` disclosure lives.
 		const ground: LaneGround =
 			epic !== null && prUrl !== null && !isBuildState(state)
 				? {_tag: "Tail", pr: prUrl, epic: read.url}

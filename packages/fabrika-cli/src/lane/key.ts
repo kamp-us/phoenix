@@ -3,7 +3,7 @@
  *
  * Two kinds. An **issue lane** is keyed by the issue number it drives, under `.fabrika/lanes/`. A
  * **chore lane** is keyed by a name, because a recurring chore has no issue number to be keyed by,
- * and lives under `.fabrika/chores/` (#5840). Both fold through the same fresh-process fold; the key
+ * and lives under `.fabrika/chores/`. Both fold through the same fresh-process fold; the key
  * decides the directory and the boot template, nothing else.
  *
  * The kind travels **in the argument** (`5673` vs `chore:park-sweep`) rather than in a flag beside
@@ -65,7 +65,7 @@ export const defaultRoot = (key: LaneKey): string =>
  * Where an archived lane goes, for the one kind that can be archived.
  *
  * Only an issue lane: archiving turns on the lane's issue reading closed, and a chore lane drives no
- * issue, so the gate can never hold for one (ADR 0352). There is deliberately no chore counterpart
+ * issue, so the gate can never hold for one. There is deliberately no chore counterpart
  * to reach for.
  */
 export const archivedRoot = (): string => DEFAULT_ARCHIVED_LANES_ROOT;

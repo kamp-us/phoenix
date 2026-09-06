@@ -5,7 +5,7 @@
  * It is the only sanctioned way to reach `epic/<n>`'s working tree, because it is the only one that
  * cannot conscript the driver's checkout: `git worktree add` places the branch in a tree of its own
  * and leaves the invoking tree exactly where it was, where `git switch --create` moved it and kept
- * it there for the run (#6163). The branch name and the path are both derived from the epic number,
+ * it there for the run. The branch name and the path are both derived from the epic number,
  * never taken from the caller, so "this is the run's assembly tree" is a fact rather than a claim
  * the argument asserts.
  *
@@ -152,7 +152,7 @@ export const runAssembly = (
 				: ["worktree", "add", "--no-track", "-b", branch, seat.expected, "origin/HEAD"],
 		);
 		// A branch cut off `origin/HEAD` without `--no-track` records `refs/heads/main` as its
-		// upstream, which aimed the run's pushes at the default branch (#6435). `--no-track` covers a
+		// upstream, which aimed the run's pushes at the default branch. `--no-track` covers a
 		// fresh cut; a branch cut by an older fabrika carries the config into every resume, so it is
 		// cleared here. There is nothing to unset on a branch that tracks nothing, hence the ignored
 		// result.

@@ -33,7 +33,7 @@ const defined = <T>(value: T | undefined): T => {
 
 /**
  * One driven event: a bare name, or one carrying a payload its own line records — the waits it
- * grants (ADR 0313), or whether the merge it reports left the issue open (ADR 0343).
+ * grants, or whether the merge it reports left the issue open.
  */
 type Step =
 	| string
@@ -87,7 +87,7 @@ const budgets = (lane: CompiledLane, task: string, events: ReadonlyArray<string>
  * Drive one task's events and answer with both its folded state and the cause standing over it.
  *
  * The cause rides the final entry because it is a field `lane report` writes onto the parking event
- * rather than machine state (#6480) — the fold derives it back from there.
+ * rather than machine state — the fold derives it back from there.
  */
 const driven = (
 	lane: CompiledLane,
@@ -126,7 +126,7 @@ const cellTable = (lane: CompiledLane, taskId: string): string => {
 			for (const classes of [[] as ReadonlyArray<string>, ["ui"]]) {
 				for (const retries of [0, 2]) {
 					// One "spent" axis drives both counters, so the 2/2 rows pin the fallthrough of a
-					// FAIL arm and of a wait arm alike without doubling the table again (ADR 0313).
+					// FAIL arm and of a wait arm alike without doubling the table again.
 					const from: TaskState = {
 						type: state,
 						retries,
@@ -190,7 +190,7 @@ describe("the compiler — structural recognition", () => {
 	it("counts a state as guarded only for the retry budget, never for the wait budget", () => {
 		const workflow = twoPhaseWorkflow();
 		// A WIP-guarded array spends `waits`, and its spent fallthrough is a park that names the stall
-		// — not a fall back into the error final a resume just left, so it is no resume hazard (#6570).
+		// — not a fall back into the error final a resume just left, so it is no resume hazard.
 		stateNode(workflow, "task_a", "doing").on["TASK_A.WIP"] = [
 			{target: "doing"},
 			{target: "tripped"},
@@ -205,7 +205,7 @@ describe("the compiler — structural recognition", () => {
 		const summary = topology(compiled(coderWorkflow()));
 
 		// The injected cell is on `shipped` too, and it must not make `shipped` a park: an open final
-		// is one the DOCUMENT left a door in, and a clearance is a door out of nothing (ADR 0312).
+		// is one the DOCUMENT left a door in, and a clearance is a door out of nothing.
 		expect(defined(summary.tasks.issue).states.shipped).toEqual([CLEARED_EVENT]);
 		expect([...defined(compiled(coderWorkflow()).tasks.issue).openFinals]).toEqual(["frozen"]);
 	});
@@ -233,7 +233,7 @@ describe("the compiler — structural recognition", () => {
 	it("summarizes each state's legal events in the topology", () => {
 		const summary = topology(compiled(coderWorkflow()));
 
-		// Every state also holds the compiler's own `CLEARED` cell (ADR 0312), which no document declares.
+		// Every state also holds the compiler's own `CLEARED` cell, which no document declares.
 		expect(defined(summary.tasks.issue).states.queued).toEqual(["WIP", "BLOCKED", CLEARED_EVENT]);
 		expect(defined(summary.tasks.issue).states.review).toEqual([
 			"PASS",
@@ -256,17 +256,17 @@ describe("the compiler — structural recognition", () => {
 			CLEARED_EVENT,
 		]);
 		expect(defined(summary.tasks.issue).states.shipped).toEqual([CLEARED_EVENT]);
-		// `frozen` is a final that carries a door: a park the lane trips on, not an end (ADR 0297).
+		// `frozen` is a final that carries a door: a park the lane trips on, not an end.
 		expect(defined(summary.tasks.issue).states.frozen).toEqual(["UNBLOCKED", CLEARED_EVENT]);
 		expect(summary.trigger).toBeUndefined();
 	});
 
-	it("repairs on a FAIL at ship, and freezes once the retries are spent (#5807, #6826)", () => {
+	it("repairs on a FAIL at ship, and freezes once the retries are spent", () => {
 		const lane = compiled(coderWorkflow());
 		// Everything that still reaches ISSUE.FAIL at `ship` names repair — `ROUTED-REPAIR` and
 		// `EJECTED` — because the shipper's other refusals map to BLOCKED. `review` owns no verb that
 		// moves a branch, so routing there re-verdicted an unchanged head and spent a retry per lap
-		// (#6826, reverting ADR 0317's arm for this template only).
+		// — so this template routes a ship FAIL to repair rather than back to review.
 		const roundTrip = ["FAIL", "DONE", "PASS"];
 
 		expect(
@@ -452,7 +452,7 @@ describe("the compiler — refusals", () => {
 	});
 });
 
-describe("`merge:partial` — a merge that closed nothing sends the lane round (ADR 0343)", () => {
+describe("`merge:partial` — a merge that closed nothing sends the lane round", () => {
 	const toShip = ["WIP", "DONE", "PASS"] as const;
 	const reached = ["build", "review", "ship"] as const;
 	const lane = () => compiled(coderWorkflow());
@@ -506,7 +506,7 @@ describe("`merge:partial` — a merge that closed nothing sends the lane round (
 	});
 });
 
-describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 0313)", () => {
+describe("`ship:queued` — a proven-clean enqueue is a wait, not a park", () => {
 	const toShip = ["WIP", "DONE", "PASS"] as const;
 	const reached = ["build", "review", "ship"] as const;
 
@@ -517,7 +517,7 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 		]);
 	});
 
-	it("absorbs the late landing lane 6462 could not record — WIP then DONE folds to `shipped`", () => {
+	it("absorbs the late landing a frozen lane could not record — WIP then DONE folds to `shipped`", () => {
 		expect(leaves(compiled(coderWorkflow()), "issue", [...toShip, "WIP", "DONE"])).toEqual([
 			...reached,
 			"ship:queued",
@@ -538,7 +538,7 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 	// A spent wait carries no park cause — `report.ts` refuses one on any non-BLOCKED event — so it
 	// keys `parks.ts` on its leaf alone. Landing it in `human:cp-approval` would key the `cause: null`
 	// §CP row and clear it by reading an approval nobody was waiting on; its own leaf is what seats it
-	// on the queue-moved recipe instead (#6717).
+	// on the queue-moved recipe instead.
 	it("escalates to a park the recipe table seats on its own row, never the §CP one", () => {
 		const stalled = [...toShip, ...Array.from({length: WAIT_BUDGET + 2}, () => "WIP")];
 		const leaf = defined(leaves(compiled(coderWorkflow()), "issue", stalled).at(-1));
@@ -589,7 +589,7 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 		]);
 	});
 
-	// Lane 6462's real route out, and the only one ADR 0302 permits: a park is left by a recorded
+	// A real lane's route out, and the only one permitted: a park is left by a recorded
 	// `UNBLOCKED` and never by a second exit cell, so the landing is recorded from the state the lane
 	// resumes into rather than from inside the park.
 	it("leaves a park over a merged PR by UNBLOCKED, then records the landing", () => {
@@ -605,7 +605,7 @@ describe("`ship:queued` — a proven-clean enqueue is a wait, not a park (ADR 03
 	});
 });
 
-describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing (#6826)", () => {
+describe("`ship` FAIL routes to repair, and a base-drift stop spends nothing", () => {
 	const toShip = ["WIP", "DONE", "PASS"] as const;
 	const reached = ["build", "review", "ship"] as const;
 

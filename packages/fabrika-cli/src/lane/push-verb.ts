@@ -3,9 +3,9 @@
  * moved**.
  *
  * `build push` cannot serve this branch: it proves the checked-out branch carries a build claim's
- * nonce, and the assembly branch is owned by no spawned shell (ADR 0285). The alternative was a bare
+ * nonce, and the assembly branch is owned by no spawned shell. The alternative was a bare
  * `git push` in the driver's own hands, which cannot report whether the ref landed — the exact hole
- * #4213 closed everywhere else in the corpus. So the assembly step gets a verb of its own with the
+ * every other publishing verb closed. So the assembly step gets a verb of its own with the
  * same evidence discipline: `git ls-remote` asks the remote directly and the caller compares.
  *
  * The branch name is derived from the epic number through {@link epicBranch}, never taken from the
@@ -17,12 +17,12 @@
  *
  * The push target is derived the same way: `HEAD:refs/heads/epic/<n>`, spelled out rather than read
  * off the branch's recorded upstream. Reading it there aimed every push in an epic run at
- * `refs/heads/main`, which only branch protection refused (#6435).
+ * `refs/heads/main`, which only branch protection refused.
  *
  * It is also the run's fail-closed isolation gate. Every assembly publication passes through here,
  * so this is where "the assembly seat never stands in the main working tree" is proven rather than
  * assumed: a push from the primary checkout is refused on `33` before anything is fetched, read back
- * or sent (#6163).
+ * or sent.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -109,7 +109,7 @@ export const runPush = (
 
 		const upstream = yield* upstreamOf(branch);
 		const remote = upstream?.remote ?? "origin";
-		// An assembly branch tracks nothing, so an upstream naming another ref is the #6435 defect in
+		// An assembly branch tracks nothing, so an upstream naming another ref is a defect in
 		// the seat: this verb no longer reads its target from it, but a bare `git push` here still
 		// would. Clearing it is the reporter's own fix, and a clear that does not take is refused —
 		// publishing from a seat aimed at the default branch is what the run must never leave behind.

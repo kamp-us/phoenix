@@ -45,7 +45,7 @@ describe("claimOf", () => {
 	/**
 	 * The two review cells prove different halves, and only that split makes the machine's
 	 * `review --PASS--> review:ui` arm walkable: proving `review-ui` of the event that *takes* the
-	 * arm asked the lane for a verdict from the cell it had not entered (#6664/#6793).
+	 * arm asked the lane for a verdict from the cell it had not entered.
 	 */
 	it("defers the routed namespace out of `review` and nothing out of `review:ui`", () => {
 		expect(claimOf("PASS", "review:ui", SINGLE, "ship")).toEqual({
@@ -61,7 +61,7 @@ describe("claimOf", () => {
 	/**
 	 * The deferral is the routing, so a `review` `PASS` the machine sends anywhere else defers
 	 * nothing — the chore-shaped machine with no such arm, and the rendered head whose class was
-	 * never relayed, both land here (ADR 0320). Without this the subtraction outlived the round it
+	 * never relayed, both land here. Without this the subtraction outlived the round it
 	 * hands the work to, and `ship gate` was left as the only thing still asking.
 	 */
 	it("defers nothing out of `review` when the event does not route into `review:ui`", () => {
@@ -69,7 +69,7 @@ describe("claimOf", () => {
 		expect(claimOf("PASS", "review", TAIL, null)).toEqual({_tag: "HeadVerdicts", defers: []});
 	});
 
-	it("claims the same two artifacts for an epic tail — the tail is the one PR (ADR 0285)", () => {
+	it("claims the same two artifacts for an epic tail — the tail is the one PR", () => {
 		expect(claimOf("DONE", "build", TAIL)).toEqual({_tag: "OpenPull"});
 		expect(claimOf("PASS", "review", TAIL, "review:ui")).toEqual({
 			_tag: "HeadVerdicts",
@@ -89,8 +89,8 @@ describe("claimOf", () => {
 	/**
 	 * A child's deferral is not routed and `next` cannot switch it off: no cell of a child's region
 	 * and no verb of this CLI can produce a `review-ui` verdict at range scope, so requiring one held
-	 * every ui-bearing child at exit 23 forever (#7041). The creditor is the tail, whose one PR
-	 * carries the child's rendered files by construction (ADR 0285).
+	 * every ui-bearing child at exit 23 forever. The creditor is the tail, whose one PR
+	 * carries the child's rendered files by construction.
 	 */
 	it("defers the routed namespace on a child's PASS whatever the machine's next leaf is", () => {
 		for (const next of ["integrate", "review:ui", null]) {
@@ -118,7 +118,7 @@ describe("claimOf", () => {
 
 	/**
 	 * A park claims a negative — that the run reached no verdict — so it is read rather than waved
-	 * through, and one still-binding FAIL falsifies it (#6112). A child's park has no PR to read.
+	 * through, and one still-binding FAIL falsifies it. A child's park has no PR to read.
 	 */
 	it("claims the park a reviewer records out of either review cell, and none for a child", () => {
 		expect(claimOf("BLOCKED", "review", SINGLE, "blocked")).toEqual({_tag: "ParkUncontradicted"});
@@ -343,7 +343,7 @@ describe("tracePulls", () => {
 	});
 
 	/**
-	 * The #6797 shape: an epic tail body carries one closing reference per landed child plus the
+	 * An epic tail body carries one closing reference per landed child plus the
 	 * epic's own, and the epic's sits last. A scalar `linkedIssue` field reported the first child and
 	 * left the tail unproven against the epic it closes.
 	 */
@@ -370,7 +370,7 @@ describe("tracePulls", () => {
 		expect(tracePulls(4312, [{...linking, open: false}])).toMatchObject({_tag: "None"});
 	});
 
-	/** #6717: the queue-stall recipe's clearing case is a landed PR, which is closed. */
+	/** The queue-stall recipe's clearing case is a landed PR, which is closed. */
 	it("counts a merged PR only at open-or-merged scope, and never a rejected one", () => {
 		const landed = {...linking, open: false, merged: true};
 		expect(tracePulls(4312, [landed], "open-or-merged")).toEqual({_tag: "One", pr: 4318});
@@ -420,7 +420,7 @@ describe("traceClosure", () => {
 		});
 	});
 
-	/** The #7382 shape: PR #7328 merged as `Part of #6980`, and the lane folded to `complete`. */
+	/** A PR merged as `Part of N` used to fold its lane to `complete`. */
 	it("reads a `Part of #N` merge as leaving the issue open", () => {
 		expect(traceClosure(6980, [merged("part-of")])).toEqual({_tag: "Partial", prs: [7328]});
 	});
@@ -550,7 +550,7 @@ describe("foldNamespaces", () => {
 	/**
 	 * The park's bar is the opposite shape: a PASS clears a floor, a park only survives a
 	 * contradiction. The rows a PASS is held on are the rows a run parks in the middle of, so holding
-	 * a park on them would be holding it forever (#6112).
+	 * a park on them would be holding it forever.
 	 */
 	describe("foldPark", () => {
 		it("refuses a park when one namespace holds a FAIL that still binds", () => {

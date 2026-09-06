@@ -1,12 +1,12 @@
 /**
- * `lane integrate` against real git — the #7162 shape, reproduced.
+ * `lane integrate` against real git — the stale-install shape, reproduced.
  *
  * The unit tier pins the order the verb runs its steps in. What it cannot show is that the order is
  * the thing that fixes anything, because a scripted spawner answers whatever the script says
  * regardless of what the tree holds. Here the tree decides: the validator passes only when the
  * install it reads was made from the lockfile the merge brought, so an assembly worktree carrying
  * the pre-merge install reds, and the same tree reconciled first goes green — with no source and no
- * lockfile change between the two runs (#7188).
+ * lockfile change between the two runs.
  */
 import {execFileSync} from "node:child_process";
 import {mkdirSync, mkdtempSync, writeFileSync} from "node:fs";
@@ -20,7 +20,7 @@ import {coderTemplateText} from "./fixtures.test-support.ts";
 
 const BIN = fileURLToPath(new URL("../bin.ts", import.meta.url));
 const EPIC = 7140;
-const CHILD = "build/7162-tuval-bootstrap";
+const CHILD = "build/7162-app-bootstrap";
 
 const git = (cwd: string, ...args: ReadonlyArray<string>) =>
 	execFileSync("git", args, {cwd, encoding: "utf8"}).trim();
@@ -47,7 +47,7 @@ interface Fixture {
 
 /**
  * A repo whose assembly worktree was placed before the child existed, so its `.installed` is the
- * pre-merge one — exactly the state #7162's lane was in when it merged.
+ * pre-merge one — exactly the state that lane was in when it merged.
  */
 const fixture = (reconciler: string | null): Fixture => {
 	const root = join(mkdtempSync(join(tmpdir(), "lane-integrate-")), "checkout");
@@ -68,7 +68,7 @@ const fixture = (reconciler: string | null): Fixture => {
 	git(root, "branch", CHILD);
 	git(root, "checkout", CHILD);
 	mkdirSync(join(root, "pkg"), {recursive: true});
-	writeFileSync(join(root, "pkg", "package.json"), '{"name":"tuval"}\n');
+	writeFileSync(join(root, "pkg", "package.json"), '{"name":"app"}\n');
 	writeFileSync(join(root, "lock.txt"), "v2");
 	git(root, "add", "-A");
 	git(root, "commit", "-m", "child adds a workspace package and moves the lockfile");
@@ -123,7 +123,7 @@ describe("lane integrate over a real assembly worktree", {
 		expect(git(tree.seat, "log", "-1", "--format=%s")).toContain("Merge");
 	});
 
-	it("is the #7162 red without that step: the same tree, the same child, no install between", () => {
+	it("is the red without that step: the same tree, the same child, no install between", () => {
 		const tree = fixture(null);
 
 		const {code} = integrate(tree);
