@@ -1,7 +1,7 @@
 /**
  * `ship cp-approval` — the §CP approval cardinality discharge, transcribed.
  *
- * Identical single-owner PRs merged in one run and were refused in another while this was judgment
+ * Identical single-owner PRs merged in one run and were refused in another while this was judgment.
  * The case table ended that, and this verb **is** that table: roster cardinality in, one of
  * `discharge` / `stop` / `n/a` out, every signal bound to `--sha`.
  *

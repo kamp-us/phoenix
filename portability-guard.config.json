@@ -138,7 +138,7 @@
 		},
 		"cli-ship": {
 			"ceiling": 10,
-			"why": "#8306 swept the ship and heal-ci groups' prose to zero; ten residues are behaviour rather than sentences. One is `FLAG_REGISTRY` in ship/dark-ship.ts, the module path the dark-ship detector matches a diff against — a scan-scope literal of the class #7478 moves onto config. Six are fixture paths that must begin with the shipped rendered-surface prefix `isUiSurface` reads, and two more must begin with a shipped governed root, or the assertion is written against a partition the verb never makes; both prefixes move under #7478, the same edge cli-lane's row already waits on. The last two are the placeholder owner/repo pull-request URLs the note and resolve batteries assert a created comment's html_url against, cleared by #8350, the fixture-URL ticket.",
+			"why": "#8306 swept the ship and heal-ci groups' prose to zero; ten residues are behaviour rather than sentences. One is `FLAG_REGISTRY` in ship/dark-ship.ts, the module path the dark-ship detector matches a diff against — a scan-scope literal of the class #7478 moves onto config. Five are fixture paths that must begin with the shipped rendered-surface prefix `isUiSurface` reads, and two more must begin with a shipped governed root, or the assertion is written against a partition the verb never makes; both prefixes move under #7478, the same edge cli-lane's row already waits on. The last two are the placeholder owner/repo pull-request URLs the note and resolve batteries assert a created comment's html_url against, cleared by #8350, the fixture-URL ticket.",
 			"paths": ["packages/fabrika-cli/src/ship", "packages/fabrika-cli/src/heal-ci"]
 		},
 		"cli-wire": {
