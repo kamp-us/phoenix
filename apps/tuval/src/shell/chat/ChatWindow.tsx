@@ -174,6 +174,8 @@ const who: Readonly<Record<TranscriptItem["kind"], string>> = {
 	assistant: "agent",
 	tool: "tool",
 	system: "session",
+	thinking: "thinking",
+	compaction: "compaction",
 };
 
 function ItemRow({
