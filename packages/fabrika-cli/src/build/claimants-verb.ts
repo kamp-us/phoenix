@@ -4,10 +4,10 @@
  * The protocol's three ownership verbs all ask about the asking lane: `confirm` re-proves this
  * lane's claim and takes a token that must belong to this session, so a driver arriving after a
  * session limit killed its builders cannot use it to inspect the numbers those dead lanes left
- * claimed — and `claim` would answer only by racing a marker of its own, which is a write (#6771).
+ * claimed — and `claim` would answer only by racing a marker of its own, which is a write.
  * This asks the board and reports, and it is the whole of what it does.
  *
- * **It clears nothing.** ADR 0295 bans a TTL, a lease, a steal and eviction inferred from absence: a
+ * **It clears nothing.** No TTL, no lease, no steal, and no eviction inferred from absence: a
  * stranded claim passes to a successor through a written `build adopt` and leaves through
  * `build release`. So this verb's answer is a list a driver acts on, never an act.
  *
@@ -114,7 +114,7 @@ export const runClaimants = (
 			`${CLAIMANTS}: #${number} is held by ${holder.token} (session ${holder.session}, comment ${holder.commentId}, posted ${holder.createdAt}).`,
 			succeeded
 				? `${CLAIMANTS}: session ${holder.session} has already been adopted — the lane that adopt names releases it.`
-				: `${CLAIMANTS}: if that session is gone, the succession is a written one: fabrika build adopt ${number} --session ${holder.session} --reason "<why>", then release under the token adopt prints. Nothing clears a claim on its own (ADR 0295).`,
+				: `${CLAIMANTS}: if that session is gone, the succession is a written one: fabrika build adopt ${number} --session ${holder.session} --reason "<why>", then release under the token adopt prints. Nothing clears a claim on its own.`,
 		]);
 	});
 

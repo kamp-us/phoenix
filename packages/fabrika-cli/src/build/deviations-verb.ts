@@ -2,12 +2,12 @@
  * `build deviations` — post an epic child's disclosure as the ONE `build-deviations` marker on its
  * issue, replaced in place on every later round.
  *
- * An epic child opens no PR (ADR 0285), so its `## Deviations` section lands as a marker comment on
+ * An epic child opens no PR, so its `## Deviations` section lands as a marker comment on
  * the child issue instead of a PR body. The skill used to compose that comment with `wire emit` and
  * post it with a raw `gh issue comment`, which appends — so a repair round left the issue carrying
  * two markers, and `wire read --format build-deviations` refuses two conforming headings as
  * undecidable. The tail review is told to read every child's disclosure through that verb, so one
- * repaired child stranded a whole epic's tail (#6691).
+ * repaired child stranded a whole epic's tail.
  *
  * **One marker per issue is this verb's invariant, and it is enforced in both directions.** The
  * standing marker is PATCHed in place rather than appended, and any older marker of this issue's own
@@ -60,7 +60,7 @@ const SURFACE = {
 export interface DeviationsOptions {
 	/** The epic child the disclosure is for — the issue the comment sits on. */
 	readonly issue: number;
-	/** The token `build claim` handed this lane — the identity it posts under (#6037). */
+	/** The token `build claim` handed this lane — the identity it posts under. */
 	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
@@ -160,7 +160,7 @@ export const runDeviations = (
 		if (kind.value) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: #${issue} is a pull request — a PR discloses in its body, and this marker is the epic child's surface (ADR 0285). Use \`fabrika build pr\` or \`fabrika build pr-body\`.`,
+				`${VERB}: #${issue} is a pull request — a PR discloses in its body, and this marker is the epic child's surface. Use \`fabrika build pr\` or \`fabrika build pr-body\`.`,
 			);
 		}
 
@@ -215,7 +215,7 @@ export const runDeviations = (
 		}
 		const upsert = current === undefined ? "created" : "edited";
 
-		// The write call's own echo is not evidence (#3173): re-fetch, and assert both halves — the
+		// The write call's own echo is not evidence: re-fetch, and assert both halves — the
 		// bytes that were sent, and that the format still reads them as this issue's disclosure.
 		const back = yield* getComment(repo, landed.id);
 		const mismatch = readbackMismatch(back, composed, issue);

@@ -3,19 +3,19 @@
  * re-reads before granting another.
  *
  * A `cap-cleared` marker is bytes, and bytes are not authority. A row is **honoured** only when all
- * four clauses hold, the same conjunctive shape `grill rule` records a ruling under (#4938):
+ * four clauses hold, the same conjunctive shape `grill rule` records a ruling under:
  *
  *   1. the marker parses, and names a round at or past the declared cap;
  *   2. its author is in the repo's `.fabrika.jsonc` grant-author set, read at the PR's **base** ref
- *      so a PR cannot widen the set that clears its own cap (#981);
+ *      so a PR cannot widen the set that clears its own cap;
  *   3. that same author holds `write+` on the repo, read live from GitHub's ACL;
  *   4. a dated authorization comment sits immediately before it, from that same author, and is not
  *      itself a `cap-cleared` marker.
  *
- * Clause 3 is ADR 0055 applied: the committed file says whom the repo *nominates*, and the ACL says
- * who may actually act, so the two are intersected and a login with no collaboration clears nothing.
- * A committed list alone has no author gate, which is the thing 0055 supersedes 0051 to forbid; ADR
- * 0294 records why the file is nevertheless the place the nomination is written down.
+ * Clause 3 intersects the two: the committed file says whom the repo *nominates*, and the ACL says
+ * who may actually act, so a login with no collaboration clears nothing. A committed list alone has
+ * no author gate — the same PR that widens it clears its own cap — which is why authority is the
+ * ACL's; the file is nevertheless the place the nomination is written down.
  *
  * Every miss is a row carrying its reason rather than a dropped marker: an operator who posted a
  * void grant must be able to see it was void, and a silently dropped one reads as a PR nobody ever
@@ -155,7 +155,7 @@ export const permissionsFor = (
  * The adjacency and the marker exclusion are one clause and neither is optional. Taking the last
  * prior comment by that author instead lets a bare second marker rest on the FIRST grant's own
  * marker — the marker body carries an ISO-8601 date, so it passes the dating test — and every grant
- * after the first would need no authorization at all, which is the bare stamp #4938 ruled void.
+ * after the first would need no authorization at all, which is the bare stamp this clause voids.
  */
 const adjacentAuthorization = (
 	comments: ReadonlyArray<CommentRecord>,
@@ -184,13 +184,13 @@ const refusalFor = (
 	}
 	const level = permissions.levelOf(author);
 	if (!clearsWriteFloor(level)) {
-		return `${author} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone (ADR 0055)`;
+		return `${author} resolves to ${level ?? "no collaboration"} on ${repo}, below write — authority is the ACL's, never ${CONFIG_PATH}'s alone`;
 	}
 	if (round < CAP_ROUND) {
 		return `round ${round} is below the declared cap of ${CAP_ROUND} — there was no round to clear`;
 	}
 	return authorization === null
-		? "no dated authorization comment from that author sits immediately before the marker — a bare stamp is void (#4938)"
+		? "no dated authorization comment from that author sits immediately before the marker — a bare stamp is void"
 		: null;
 };
 

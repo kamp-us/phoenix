@@ -2,7 +2,7 @@
  * `build push` — publish the lane's branch, then **independently confirm the remote ref moved**.
  *
  * `git push`'s own report is not evidence: a push that died mid-hook read as sent, and every stage
- * downstream assumed a branch that was not there (#4136). So the verdict comes from `git ls-remote`
+ * downstream assumed a branch that was not there. So the verdict comes from `git ls-remote`
  * asking the remote directly, compared against the local head.
  *
  * **This verb is the group's one deviant on the channel rule: the entire report is stdout,
@@ -13,8 +13,7 @@
  * of stdout on exit 0 unambiguous.
  *
  * `--force-with-lease` is the only force shape. A bare `--force` flag does not exist, and neither does
- * `--no-verify`: the ban is enforced by the flag not existing rather than by prose (#4159, #4468,
- * #4540).
+ * `--no-verify`: the ban is enforced by the flag not existing rather than by prose.
  */
 import {Effect} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -89,7 +88,7 @@ export const runPush = (
 		}
 		const notes = [...lane.notes];
 
-		// The containment test runs on BOTH paths, and that is the whole fix (#5222). It used to be
+		// The containment test runs on BOTH paths, and that is the whole fix. It used to be
 		// guarded by `!forceWithLease`, so the repair path — which mandates the lease — got no
 		// containment evidence at all: `--force-with-lease` defends the ref against ANOTHER writer,
 		// never against this lane's own head having dropped the remote's commits, and a bare lease is

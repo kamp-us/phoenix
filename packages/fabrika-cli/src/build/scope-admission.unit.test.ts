@@ -52,28 +52,33 @@ import {
 	unknownAdmission,
 } from "./scope-admission.ts";
 
-const CAMPAIGNS_44 = `## Campaigns
+const CAMPAIGNS_44 = [
+	"## Campaigns",
+	"",
+	"Prose above the table, including a `Campaign | Milestone | State` mention that is not a " +
+		"table row.",
+	"",
+	"| Campaign | Milestone | State |",
+	"|----------|-----------|-------|",
+	"| fabrika fast follows | #44 | active |",
+	"| Taste-Skill Library | #42 | paused |",
+	"| switching to fabrika | #45 | done |",
+	"",
+	"**The table is a parsed contract.** More prose below.",
+	"",
+	"## Dependencies",
+	"",
+].join("\n");
 
-Prose above the table, including a \`Campaign | Milestone | State\` mention that is not a table row.
-
-| Campaign | Milestone | State |
-|----------|-----------|-------|
-| fabrika fast follows | #44 | active |
-| Taste-Skill Library | #42 | paused |
-| switching to fabrika | #45 | done |
-
-**The table is a parsed contract.** More prose below.
-
-## Dependencies
-`;
-
-const CAMPAIGNS_44_AND_46 = `## Campaigns
-
-| Campaign | Milestone | State |
-|----------|-----------|-------|
-| fabrika fast follows | #44 | active |
-| fabrika everywhere | #46 | active |
-`;
+const CAMPAIGNS_44_AND_46 = [
+	"## Campaigns",
+	"",
+	"| Campaign | Milestone | State |",
+	"|----------|-----------|-------|",
+	"| fabrika fast follows | #44 | active |",
+	"| fabrika everywhere | #46 | active |",
+	"",
+].join("\n");
 
 const active: Dispatch = {
 	_tag: "Active",
@@ -259,7 +264,7 @@ describe("admissionOf", () => {
 		expect(text).toContain("milestones #44, #46");
 	});
 
-	it("still exempts a standing lane under a multi-milestone set (ADR 0208)", () => {
+	it("still exempts a standing lane under a multi-milestone set", () => {
 		const standing = issue({milestone: null, labels: STANDING_LANE_LABELS.slice(0, 1)});
 		expect(scopeAxisOf(activeBoth, standing)).toEqual({
 			_tag: "LaneExempt",
@@ -290,7 +295,7 @@ describe("admissionOf", () => {
 	});
 
 	/**
-	 * The purpose axis (#5175). Every case varies the purpose over one unlabelled, in-scope issue —
+	 * The purpose axis. Every case varies the purpose over one unlabelled, in-scope issue —
 	 * the epic shape the ruling rests on — so what changes is only which question the claim asks.
 	 */
 	describe("purpose", () => {
@@ -298,7 +303,7 @@ describe("admissionOf", () => {
 
 		it("defaults to build, so an omitted purpose keeps the fence", () => {
 			expect(DEFAULT_CLAIM_PURPOSE).toBe("build");
-			// Both fences bind this epic under build; type is reported first (#5490), and the audience
+			// Both fences bind this epic under build; type is reported first, and the audience
 			// verdict it saw rides along, so neither refusal hides the other.
 			for (const out of [
 				admissionOf(active, unlabelled),
@@ -345,13 +350,13 @@ describe("admissionOf", () => {
 				"the audience axis binds",
 			);
 			expect(purposeScopeLine("build claim", "gate", audience)).toContain(
-				"the audience axis does not bind a gate claim (#5175)",
+				"the audience axis does not bind a gate claim;",
 			);
 		});
 	});
 
 	/**
-	 * The repair carve-out (founder ruling on #5866, built as #5914). A decision issue can never carry
+	 * The repair carve-out, ruled deliberately. A decision issue can never carry
 	 * `ready-for:agent` — triage routes it to a human — so the fence it fails is one it could never
 	 * pass. The exemption is therefore conditioned on an open PR already serving it, and on nothing
 	 * else: no PR, no exemption, and no other type gets one.
@@ -373,12 +378,12 @@ describe("admissionOf", () => {
 			expect(out._tag === "Admitted" && out.audience).toEqual(audience);
 			expect(audience).toEqual({_tag: "NotAgent", label: "ready-for:human"});
 			expect(purposeScopeLine("build claim", "build", audience, decisionRepair)).toBe(
-				"build claim: purpose: build — repairing open PR #4703, whose served issue is type:decision: the audience axis does not bind (#5914); this issue carries ready-for:human.",
+				"build claim: purpose: build — repairing open PR #4703, whose served issue is type:decision: the audience axis does not bind; this issue carries ready-for:human.",
 			);
 		});
 
 		it("refuses the same decision issue with no PR serving it — the other arm, now on type", () => {
-			// It refused at 21 until #5490 seated the type axis: the audience axis did bind, and still
+			// It refused at 21 until the type axis was seated: the audience axis did bind, and still
 			// does, but type is read first so the refusal names the objection an operator can act on.
 			// Re-labelling this issue `ready-for:agent` would satisfy 21 and build the wrong artifact.
 			expect(audienceAxisBinds("build", NOT_REPAIR)).toBe(true);
@@ -425,7 +430,7 @@ describe("admissionOf", () => {
 	});
 
 	/**
-	 * The type axis (#5490). It lived in the pool as a private set, so a number handed straight to
+	 * The type axis. It lived in the pool as a private set, so a number handed straight to
 	 * `claim --purpose build` passed through no pool and met no type check at all.
 	 */
 	describe("the type axis", () => {
@@ -438,7 +443,7 @@ describe("admissionOf", () => {
 			_tag: "Cited",
 			issue: 1,
 			commentId: 5335398768,
-			url: "https://github.com/kamp-us/phoenix/issues/1#issuecomment-5335398768",
+			url: "https://github.com/o/r/issues/1#issuecomment-5335398768",
 		};
 
 		it("reads every buildable type as Buildable, and an untyped issue too", () => {
@@ -456,7 +461,7 @@ describe("admissionOf", () => {
 		});
 
 		/**
-		 * #5490's decisive case, read off the live board: a `type:decision` on a standing lane carrying
+		 * The decisive case, read off the live board: a `type:decision` on a standing lane carrying
 		 * `ready-for:agent`. Both older axes admit it — scope by the lane exemption, audience by the
 		 * label — so before the type axis this composed to `Admitted` and a claim marker was written.
 		 */
@@ -526,7 +531,7 @@ describe("admissionOf", () => {
 			expect(seat?.condition).toContain(EPIC_TYPE_LABEL);
 		});
 
-		/** The whole point of the fix: one predicate, so the two seams cannot disagree (ADR 0245). */
+		/** The whole point of the fix: one predicate, so the two seams cannot disagree. */
 		it("is the same predicate the pool filters on", () => {
 			for (const candidate of [decision, epic]) {
 				const listed = {...candidate, title: "", body: "", assigned: false, isPullRequest: false};
@@ -537,28 +542,28 @@ describe("admissionOf", () => {
 	});
 
 	describe("parseCitation", () => {
-		const url = "https://github.com/kamp-us/phoenix/issues/5879#issuecomment-5335398768";
+		const url = "https://github.com/o/r/issues/5879#issuecomment-5335398768";
 
 		it("reads a comment URL that names this repository and this issue", () => {
-			expect(parseCitation(`  ${url}  `, "kamp-us/phoenix", 5879)).toEqual({
+			expect(parseCitation(`  ${url}  `, "o/r", 5879)).toEqual({
 				_tag: "Read",
 				citation: {_tag: "Cited", issue: 5879, commentId: 5335398768, url},
 			});
 		});
 
 		it("refuses a ruling recorded on another issue or in another repository", () => {
-			expect(parseCitation(url, "kamp-us/phoenix", 5490)._tag).toBe("Malformed");
-			expect(parseCitation(url, "kamp-us/other", 5879)._tag).toBe("Malformed");
+			expect(parseCitation(url, "o/r", 5490)._tag).toBe("Malformed");
+			expect(parseCitation(url, "o/other", 5879)._tag).toBe("Malformed");
 		});
 
 		it("refuses anything that is not an issue-comment URL", () => {
 			for (const bad of [
 				"",
 				"yes",
-				"https://github.com/kamp-us/phoenix/issues/5879",
-				"https://github.com/kamp-us/phoenix/pull/5879#issuecomment-1",
+				"https://github.com/o/r/issues/5879",
+				"https://github.com/o/r/pull/5879#issuecomment-1",
 			]) {
-				expect(parseCitation(bad, "kamp-us/phoenix", 5879)._tag).toBe("Malformed");
+				expect(parseCitation(bad, "o/r", 5879)._tag).toBe("Malformed");
 			}
 		});
 	});

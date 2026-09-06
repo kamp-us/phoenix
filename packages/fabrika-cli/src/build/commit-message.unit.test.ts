@@ -29,7 +29,7 @@ describe("issueRefsIn", () => {
 });
 
 describe("foreignRefsIn", () => {
-	// The incident's own commit: the borrowed message named #4789 while the lane served #5437.
+	// The incident's own commit: the borrowed message named an issue the lane had never served.
 	it("names the borrowed message's issue, which the lane never held (#5484)", () => {
 		expect(
 			foreignRefsIn(
