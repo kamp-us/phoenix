@@ -26,7 +26,7 @@ import {type AiAgentProgram, aiAgentProgram} from "../ai-agent/program.ts";
 import type {TuvalAiAgent} from "../ai-agent/service/index.ts";
 import type {SpellBridge} from "../commands/bridge/index.ts";
 import type {Scope as SpellScope} from "../commands/spell.ts";
-import type {CapabilityRequest} from "../registry/program.ts";
+import type {AnyProgram, CapabilityRequest} from "../registry/program.ts";
 import {ClaudeAiAgent} from "./agent/index.ts";
 import {
 	type ClaudeSessionConfigInput,
@@ -89,22 +89,40 @@ export const claudeSessionLayer = (
 ): Layer.Layer<TuvalAiAgent, never, SpellBridge> =>
 	ClaudeAiAgent.layer(settings).pipe(Layer.provide(KernelBridge.live(scope)));
 
-export const claudeSession = (
-	options: ClaudeSessionProgramOptions,
-): AiAgentProgram<SpellBridge> => {
+/**
+ * The row, plus the decoded settings it runs on.
+ *
+ * `configChanged` is read off the row a process is *running under* and handed the reloaded row of
+ * the same id (`../registry/program.ts`), so the two generations' settings have to meet somewhere:
+ * one side is the closure below, and this field is the other. It is the user's own config as the
+ * row decoded it — the same data a config module wrote — and nothing in the kernel reads it.
+ */
+export interface ClaudeSessionProgram extends AiAgentProgram<SpellBridge> {
+	readonly settings: ClaudeSessionSettings;
+}
+
+const isClaudeSessionRow = (row: AnyProgram): row is ClaudeSessionProgram =>
+	row.id === CLAUDE_SESSION_PROGRAM && "settings" in row;
+
+export const claudeSession = (options: ClaudeSessionProgramOptions): ClaudeSessionProgram => {
 	const settings = claudeSessionSettings(options.claude ?? {});
-	return aiAgentProgram<SpellBridge>({
-		id: CLAUDE_SESSION_PROGRAM,
-		layer:
-			options.layer === undefined ? claudeSessionLayer(settings, options.scope) : options.layer,
-		config: {
-			cwd: options.cwd,
-			...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),
-			...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
-		},
-		renderer: CLAUDE_CHAT_WINDOW_REF,
-		capabilities: CLAUDE_SESSION_CAPABILITIES,
-	});
+	return {
+		...aiAgentProgram<SpellBridge>({
+			id: CLAUDE_SESSION_PROGRAM,
+			layer:
+				options.layer === undefined ? claudeSessionLayer(settings, options.scope) : options.layer,
+			config: {
+				cwd: options.cwd,
+				...(options.itemLimit === undefined ? {} : {itemLimit: options.itemLimit}),
+				...(options.byteLimit === undefined ? {} : {byteLimit: options.byteLimit}),
+			},
+			renderer: CLAUDE_CHAT_WINDOW_REF,
+			capabilities: CLAUDE_SESSION_CAPABILITIES,
+		}),
+		settings,
+		configChanged: (next) =>
+			isClaudeSessionRow(next) ? configChanged(settings, next.settings) : [],
+	};
 };
 
 /**
@@ -116,10 +134,10 @@ export const claudeSession = (
  * spawn; `cwd` never changes live at all.
  *
  * `config-changed` is in no Msg list on the generic core (#7601) and `aiAgentProgram` offers no
- * seam for a row-level Msg, so this is the mapping as a pure function the reload path calls: it
- * writes nothing under `src/ai-agent/` and nothing here has to know how the reload is delivered.
- * The kernel does not deliver one yet
- * ([#7952](https://github.com/kamp-us/phoenix/issues/7952)), so this has no caller.
+ * seam for a row-level Msg, so this stays the mapping as a pure function: it writes nothing under
+ * `src/ai-agent/` and nothing here has to know how the reload is delivered. The row's
+ * `configChanged` field is what calls it, and `Booted.reload` is what dispatches its answer
+ * (`../reload.ts`, #7952).
  */
 export const configChanged = (
 	previous: ClaudeSessionSettings,

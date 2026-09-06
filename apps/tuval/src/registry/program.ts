@@ -179,6 +179,18 @@ export interface Program<
 	 */
 	readonly resume?: (state: S) => ReadonlyArray<M>;
 	/**
+	 * What the kernel dispatches into every live process of this program when the config is re-read
+	 * and this row's replacement carries different settings (#7509 ruling 3).
+	 *
+	 * Read off the row a process is *running under*, and handed the reloaded row of the same id —
+	 * so a row that wants to diff its own settings has to publish them on itself, as
+	 * `claudeSession` publishes `settings` (`../claude/program.ts`). Pure and total: a row that
+	 * applies nothing live answers with an empty list, and the kernel never reads what the Msgs
+	 * mean. A row the reloaded config dropped is never asked, so its processes keep running under
+	 * the row they were spawned from.
+	 */
+	readonly configChanged?: (next: AnyProgram) => ReadonlyArray<M>;
+	/**
 	 * Whether this program could restore the raw checkpoint durability loaded for it — the same
 	 * verdict its `init` reaches, asked before `init` runs.
 	 *
