@@ -159,7 +159,15 @@ const runToTheCut = (
 				id: PROCESS,
 				services: Context.make(ProcessPorts, recorder(log)),
 			});
-			yield* eventually(() => sessionOf(handle.getState()).sessionId !== null);
+			// `sessionId` lands with the `started` Msg the handler returns, but the layer's opening
+			// announcements ride the events Sub and fold after it. Waiting on the id alone lets
+			// `before` switch the mode into a state the opening `mode` event then overwrites, and the
+			// checkpoint keeps that overwrite. `available` is empty until that event folds, so it is
+			// the signal that the layer has finished announcing.
+			yield* eventually(() => {
+				const session = sessionOf(handle.getState());
+				return session.sessionId !== null && session.modes.available.length > 0;
+			});
 			yield* before(handle);
 			yield* handle.dispatch({type: "prompt", text: "delete it", key: "k1", timestamp: Date.now()});
 			yield* eventually(() => Object.keys(sessionOf(handle.getState()).permissions).length === 2);
@@ -399,9 +407,21 @@ describe("the mode list", () => {
 						yield* eventually(() => sessionOf(handle.getState()).modes.current === mode("plan"));
 					}),
 				);
-				yield* resume(stores, script(), starts, (_restored, _log, settled) =>
+				yield* resume(stores, script(), starts, (restored, _log, settled) =>
 					Effect.gen(function* () {
+						// Three assertions rather than one, so a red says which side broke: the
+						// checkpoint, the reconnect that hands the layer its mode, or the fold.
+						assert.strictEqual(
+							restored.modes.current,
+							mode("plan"),
+							"the checkpoint did not carry the switch, so there was nothing to restore",
+						);
 						const after = yield* settled;
+						assert.strictEqual(
+							starts[1]?.mode,
+							mode("plan"),
+							"the reconnect opened the rebuilt layer without the operator's mode",
+						);
 						assert.strictEqual(
 							after.modes.current,
 							mode("plan"),
