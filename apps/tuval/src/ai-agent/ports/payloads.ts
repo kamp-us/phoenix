@@ -81,22 +81,26 @@ export const isTranscriptPagePayload = (value: unknown): value is TranscriptPage
  * key the session already saw is dropped rather than re-sent, so a transport retry is free while
  * a deliberate resend mints a new key.
  *
- * Both `key` and `timestamp` are optional on the wire and refused by the receiver when absent
- * (`program.ts`), because the payload predicate is the port's compatibility contract and a field
- * required there is a sender this end can no longer read at all.
+ * Both fields are required here, and that is a reversal (#7991). They used to be optional so an
+ * older sender stayed readable, but the receiver refused an unstamped prompt anyway (`program.ts`)
+ * — into a `failed` Msg only a rendering window can see. So the optionality bought no sender
+ * anything: their turn never ran either way, and the caller read `delivered: true`. Required, the
+ * kernel's own `accepts` check refuses at the send, which is the error the Claude `send` tool
+ * already promises. The kind stays `@1` because the set of payloads that ever produced a turn is
+ * unchanged; only the moment of refusal moved.
  */
 export interface PromptPayload {
 	readonly text: string;
-	readonly key?: string;
+	readonly key: string;
 	/** Epoch milliseconds, stamped by the sender: the turn's clock, since the core reads none. */
-	readonly timestamp?: number;
+	readonly timestamp: number;
 }
 
 export const isPromptPayload = (value: unknown): value is PromptPayload =>
 	Predicate.isObject(value) &&
 	typeof value.text === "string" &&
-	(value.key === undefined || typeof value.key === "string") &&
-	(value.timestamp === undefined || Number.isFinite(value.timestamp));
+	typeof value.key === "string" &&
+	Number.isFinite(value.timestamp);
 
 /** One card the window renders while the program waits for an answer. */
 export interface PermissionRequest {
