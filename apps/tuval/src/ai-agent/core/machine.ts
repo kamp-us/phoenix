@@ -41,7 +41,8 @@ import {
 	type AiAgentSessionSub,
 	eventsSub,
 } from "./messages.ts";
-import {type AiAgentSessionState, initialState, lastAssistantId, restore} from "./state.ts";
+import {loadCheckpoint} from "./snapshot.ts";
+import {type AiAgentSessionState, initialState, lastAssistantId} from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
 	/** The working directory a fresh session starts in. */
@@ -99,7 +100,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		init: (loaded) =>
 			loaded === null
 				? [initialState(options.cwd), [{type: "aiAgent.boot", cwd: options.cwd}]]
-				: [restore(loaded), noCmds],
+				: [loadCheckpoint(loaded, options.cwd), noCmds],
 		update: {
 			start: (state, msg) =>
 				busy(state)

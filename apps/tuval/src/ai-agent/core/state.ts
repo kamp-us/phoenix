@@ -137,6 +137,42 @@ export const phases = [
 	"gone",
 ] as const satisfies ReadonlyArray<Phase>;
 
+/**
+ * Every field one checkpoint carries. Three things read it: the field-set test, which fails when a
+ * new field lands here without anyone deciding it survives a restart, the defaults fill on the load
+ * path (`snapshot.ts`), and a reader asking what a saved session is made of without walking the
+ * machine.
+ *
+ * Nothing wire-shaped is in it. Each entry is plain JSON by construction — the type-level proof is
+ * `boundary.unit.test.ts`, which reds when a service, a stream, an Effect or a closure reaches any
+ * depth of the state — so the whole checkpoint round-trips through `JSON`.
+ *
+ * It lives in the core, and `../restore/checkpoint.ts` re-exports it under the address callers read
+ * it by, for the reason `restoreSession` does: the core's import closure admits no sibling
+ * directory, and the fill that walks this list is the machine's own `init` branch.
+ */
+export const checkpointFields = [
+	"phase",
+	"sessionId",
+	"connection",
+	"cwd",
+	"transcript",
+	"interrupted",
+	"interruption",
+	"usage",
+	"permissions",
+	"permissionsRaised",
+	"modes",
+	"models",
+	"commands",
+	"thinking",
+	"lastPrompt",
+	"lastPage",
+	"failure",
+] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
+
+export type CheckpointField = (typeof checkpointFields)[number];
+
 export const emptyOmission: WindowOmission = {items: 0, bytes: 0, reason: "none"};
 
 export const emptyUsage: UsageTotals = {model: null, inputTokens: 0, outputTokens: 0, cost: 0};

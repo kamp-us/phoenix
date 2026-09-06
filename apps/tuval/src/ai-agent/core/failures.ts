@@ -38,6 +38,19 @@ export const startRefused = (phase: string): AgentFailure => ({
 	detail: `a session is already ${phase}`,
 });
 
+/**
+ * A checkpoint that is still not a session state once its absent fields are defaulted (#8095).
+ *
+ * It wears `START_ERROR` because the window's status line renders a start failure at the phase the
+ * session came to rest in (`shell/chat/phase.ts`), and a refused checkpoint rests at `gone`: the
+ * operator reads "The session is gone — …" instead of a fresh window that accounts for nothing.
+ */
+export const checkpointUnreadable: AgentFailure = {
+	tag: START_ERROR,
+	reason: "refused",
+	detail: "the saved checkpoint is not a readable session, so nothing was restored from it",
+};
+
 export const noSessionToResume: AgentFailure = {
 	tag: START_ERROR,
 	reason: "session-not-found",

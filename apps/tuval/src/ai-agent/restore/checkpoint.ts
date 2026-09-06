@@ -11,35 +11,11 @@
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../core/index.ts";
 
 /**
- * Every field one checkpoint carries. Two things read it: the field-set test, which fails when a
- * new field lands here without anyone deciding it survives a restart, and a reader asking what a
- * saved session is made of without walking the machine.
- *
- * Nothing wire-shaped is in it. Each entry is plain JSON by construction — the type-level proof is
- * `../core/boundary.unit.test.ts`, which reds when a service, a stream, an Effect or a closure
- * reaches any depth of the state — so the whole checkpoint round-trips through `JSON`.
+ * The checkpoint's field set, at the address this side reads it by. It lives in `../core/state.ts`
+ * because the defaults fill on the load path walks it and the core may import no sibling directory;
+ * re-exporting it here keeps one address, exactly as `../restore/index.ts` does for `restore`.
  */
-export const checkpointFields = [
-	"phase",
-	"sessionId",
-	"connection",
-	"cwd",
-	"transcript",
-	"interrupted",
-	"interruption",
-	"usage",
-	"permissions",
-	"permissionsRaised",
-	"modes",
-	"models",
-	"commands",
-	"thinking",
-	"lastPrompt",
-	"lastPage",
-	"failure",
-] as const satisfies ReadonlyArray<keyof AiAgentSessionState>;
-
-export type CheckpointField = (typeof checkpointFields)[number];
+export {type CheckpointField, checkpointFields} from "../core/index.ts";
 
 /**
  * What a spawner dispatches into a process the kernel just brought back.

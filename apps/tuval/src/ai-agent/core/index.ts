@@ -36,10 +36,17 @@ export {
 	eventsSub,
 	eventsSubId,
 } from "./messages.ts";
-export {isAiAgentSessionState, parseSessionState} from "./snapshot.ts";
+export {
+	isAiAgentSessionState,
+	loadCheckpoint,
+	parseSessionState,
+	withCheckpointDefaults,
+} from "./snapshot.ts";
 export {
 	type AgentFailure,
 	type AiAgentSessionState,
+	type CheckpointField,
+	checkpointFields,
 	emptyUsage,
 	type HistoryPage,
 	type Interruption,
