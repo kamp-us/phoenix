@@ -48,8 +48,7 @@ pre-commit:
     # burning a full CI round-trip (#2147; PR #2144 failed `pnpm lint` twice before a
     # clean 3rd push). biome is a single native binary (no `node_modules` runtime), so
     # this leg CAN fail-closed even in a lean agent worktree — unlike a deps-dependent
-    # check, which is why lint/format lives here on pre-commit and vitest/typecheck on
-    # pre-push. Bypassable with `git commit --no-verify` (humans only); CI stays the
+    # check, which is why lint/format lives here on pre-commit and typecheck on pre-push. Bypassable with `git commit --no-verify` (humans only); CI stays the
     # unbypassable authority (ADR 0068).
     #
     # Fail-CLOSED on a REAL finding, fail-OPEN on an ABSENT toolchain — the load-bearing
@@ -86,26 +85,27 @@ pre-commit:
           exit 1
         fi
 
-# The deps-dependent fast-fail tier (#2147): typecheck + changed-scoped unit tests fire
-# at PUSH time, not commit time, because they need `node_modules` (unlike biome). Scoped so
-# each push stays cheap — vitest `--changed origin/main` runs only the suites related to
-# what this branch changed. Blocks the PUSH on a REAL failure so it never reaches CI; CI
-# stays the unbypassable authority (ADR 0068). Bypassable with `git push --no-verify`
-# (humans only; agents must not).
+# The deps-dependent fast-fail tier (#2147): typecheck fires at PUSH time, not commit time,
+# because it needs `node_modules` (unlike biome). Blocks the PUSH on a REAL type error so it
+# never reaches CI; CI stays the unbypassable authority (ADR 0068). Bypassable with
+# `git push --no-verify` (humans only; agents must not).
+#
+# There is deliberately no unit-test leg here (#8272, founder ruling on #8264): the `test:unit`
+# job in .github/workflows/ci.yml is the one unit gate, and it cannot be bypassed.
 #
 # Fail-CLOSED on a real error, fail-OPEN on an absent toolchain (the #2147 precondition,
-# NOT the leak-guard "any non-zero → allow" fail-open): a type error or a failing unit test
-# MUST block the push (the tool's non-zero → the command exits non-zero → lefthook blocks);
-# but a stripped-PATH / no-toolchain worktree that cannot resolve pnpm MUST NOT abort (skip
-# → exit 0), so a lean worktree is never bricked. The distinction is toolchain-absence
-# (skip) vs toolchain-present-and-found-an-error (block) — the deps-tier does NOT silently
-# exit 0 on a real finding the way the leak-guard fail-open does.
+# NOT the leak-guard "any non-zero → allow" fail-open): a type error MUST block the push
+# (tsc's non-zero → the command exits non-zero → lefthook blocks); but a stripped-PATH /
+# no-toolchain worktree that cannot resolve pnpm MUST NOT abort (skip → exit 0), so a lean
+# worktree is never bricked. The distinction is toolchain-absence (skip) vs
+# toolchain-present-and-found-an-error (block) — the deps-tier does NOT silently exit 0 on a
+# real finding the way the leak-guard fail-open does.
 #
-# Every leg drains stdin first, under `use_stdin: true` (#6172, where `git push` died on
+# The leg drains stdin first, under `use_stdin: true` (#6172, where `git push` died on
 # SIGPIPE/141 after the hook had already reported success). git writes the pushed-ref list into
-# the pre-push hook's stdin; without `use_stdin` lefthook hands each leg a fresh already-closed
+# the pre-push hook's stdin; without `use_stdin` lefthook hands the leg a fresh already-closed
 # pipe and leaves git's own pipe open-but-unread for the hook's whole run, so nothing under this
-# hook ever consumes what git wrote. The drain leads each body — ahead of the toolchain-absent
+# hook ever consumes what git wrote. The drain leads the body — ahead of the toolchain-absent
 # and docs-only skips — so no exit path can leave those bytes unread. It is `[ -t 0 ]`-guarded
 # because `lefthook run pre-push` by hand hands the leg a terminal, and an unguarded `cat` would
 # sit there waiting for a human to type EOF.
@@ -116,10 +116,9 @@ pre-push:
       # tsc across the workspace (the same `pnpm typecheck` CI runs); a type error fails
       # closed and blocks the push. Docs-only fast-path (#3130): a push whose diff vs
       # origin/main touches ONLY non-code paths (markdown/docs) has nothing tsc checks, so
-      # it skips the whole-repo run — mirroring the change-scoping the sibling `unit-changed`
-      # leg gets from `--changed origin/main`. Fail-SAFE: any changed path not recognized as
-      # docs — or a diff that can't be computed (origin/main unfetched) — runs the full
-      # typecheck, so a code change is NEVER skipped. Toolchain-absence still fails open.
+      # it skips the whole-repo run. Fail-SAFE: any changed path not recognized as docs — or
+      # a diff that can't be computed (origin/main unfetched) — runs the full typecheck, so a
+      # code change is NEVER skipped. Toolchain-absence still fails open.
       use_stdin: true
       run: |
         [ -t 0 ] || cat >/dev/null   # git's pushed-ref list — see the pre-push note (#6172)
@@ -139,25 +138,6 @@ pre-push:
           exit 0
         fi
         pnpm typecheck
-    unit-changed:
-      # `vitest run --changed origin/main` (unit project) — only the suites related to files
-      # this branch changed vs origin/main, so a push stays cheap. Exits 0 cleanly when no
-      # changed test is related (a docs-only push isn't spuriously blocked); a real failing
-      # unit test fails closed and blocks the push.
-      #
-      # `--workspace-concurrency=1` because the `./apps/**` filter fans over every app and
-      # pnpm's default is `min(4, cores)` — one hook already started two uncapped vitest pools,
-      # and a third app under `apps/` would have widened it to three (#8119). One package at a
-      # time, whatever the filter matches. Each of those runs is itself capped at 2 forks by the
-      # app's `vitest.config.ts`, so this leg holds at most 2 vitest workers.
-      use_stdin: true
-      run: |
-        [ -t 0 ] || cat >/dev/null   # git's pushed-ref list — see the pre-push note (#6172)
-        command -v pnpm >/dev/null 2>&1 || {
-          echo "unit-changed: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push unit tests — CI is the authority" >&2
-          exit 0
-        }
-        pnpm --workspace-concurrency=1 --filter './apps/**' exec vitest run --config vitest.config.ts --project unit --changed origin/main
 
 # `git worktree add` fires post-checkout, so this provisions a fresh worktree's deps —
 # node_modules is gitignored and per-checkout, so a worktree is otherwise dead-on-arrival
