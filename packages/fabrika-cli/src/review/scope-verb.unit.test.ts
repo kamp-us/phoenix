@@ -10,6 +10,7 @@ import {
 	unconfigured,
 } from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
+import {DECISIONS_ROOT} from "./classes.ts";
 import {
 	INCOMPLETE_SCAN,
 	OFF_VOCABULARY,
@@ -91,7 +92,7 @@ describe("runScope", () => {
 		);
 	});
 
-	// The whole point of #6296: the fence a repo declares is the fence this verb derives over. The
+	// The whole point: the fence a repo declares is the fence this verb derives over. The
 	// same diff answers `not-required` above under the shipped roots.
 	it("derives the namespace over a FOREIGN repo's declared roots", async () => {
 		const declared = fakeFs({
@@ -131,15 +132,15 @@ describe("runScope", () => {
 	});
 
 	/**
-	 * The governance line is the `governedRoots` derivation, not the three-root `harness` flag (#5607): a
-	 * `.decisions/`-only diff owes a governance verdict while touching no harness root, and a reviewer
-	 * keying off `harness` posted a clean PASS on PR #5604 that the ship gate then blocked.
+	 * The governance line is the `governedRoots` derivation, not the three-root `harness` flag: a
+	 * decision-corpus-only diff owes a governance verdict while touching no harness root, and a
+	 * reviewer keying off `harness` posted a clean PASS that the ship gate then blocked.
 	 */
-	it("prints `governance required` on a `.decisions/`-only diff, where `harness` is false", async () => {
+	it("prints `governance required` on a decision-corpus-only diff, where `harness` is false", async () => {
 		const out = await run([
 			[PULL, served(pull())],
 			...binding(),
-			[PATHS_AT(), paths(".decisions/0280-review-shell-carries-the-spawn-tool.md")],
+			[PATHS_AT(), paths(`${DECISIONS_ROOT}review-shell-carries-the-spawn-tool.md`)],
 			[FILES, served(files("docs/moved.md"))],
 		]);
 		expect(out.code).toBe(0);
@@ -165,7 +166,7 @@ describe("runScope", () => {
 });
 
 /**
- * The partial-split fence (#5446).
+ * The partial-split fence.
  *
  * `build --partial` emits `Part of #N` by contract and `ship scope` reads it, so a `NULL` here left
  * the gate's acceptance-criteria step with no issue to grade against and no instruction for the
@@ -191,7 +192,7 @@ describe("runScope reads the partial-split marker its own builder emits", () => 
 
 describe("runScope refusals and diagnostics", () => {
 	// `binding()` puts `origin/main` ahead of the branch point, so the base on this line naming `BASE`
-	// rather than `BASE_TIP` is what says the verb reports the merge base (#5770).
+	// rather than `BASE_TIP` is what says the verb reports the merge base.
 	it("reports the commit it bound to, then what it scanned against what was declared", async () => {
 		const out = await run(happy());
 		expect(out.stderr[0]).toBe(
@@ -249,7 +250,7 @@ describe("runScope refusals and diagnostics", () => {
 		expect(out.code).not.toBe(ZERO_SCOPE);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			`review scope: git reports no changed files for the range ${BASE}...${HEAD}, so ${HEAD} has nothing to partition — refusing to scope an empty read (#3999).`,
+			`review scope: git reports no changed files for the range ${BASE}...${HEAD}, so ${HEAD} has nothing to partition — refusing to scope an empty read.`,
 		);
 	});
 
@@ -266,7 +267,7 @@ describe("runScope refusals and diagnostics", () => {
 });
 
 /**
- * The single-source fence (#5154).
+ * The single-source fence.
  *
  * The file list git returns for the bound range IS the scope; GitHub's `changed_files` has its own
  * merge base and its own rename detection, so it is reported and never refused on. Each case here
@@ -290,7 +291,7 @@ describe("runScope never refuses on GitHub's declared count", () => {
 	it("reports the git-vs-GitHub disagreement on stderr instead of refusing on it", async () => {
 		const out = await run(renamed);
 		expect(out.stderr).toContain(
-			"review scope: git and GitHub disagree on #4321's file count (1 vs 2) — different merge base and different rename detection; reported, never refused on (#5154).",
+			"review scope: git and GitHub disagree on #4321's file count (1 vs 2) — different merge base and different rename detection; reported, never refused on.",
 		);
 	});
 
@@ -310,7 +311,7 @@ describe("runScope never refuses on GitHub's declared count", () => {
 });
 
 /**
- * The provenance fence (#5117).
+ * The provenance fence.
  *
  * The namespace set is documented as both floor and ceiling, so this list is not one input among
  * many — a list drawn from a later commit derives a namespace nobody judged, or drops one. Every

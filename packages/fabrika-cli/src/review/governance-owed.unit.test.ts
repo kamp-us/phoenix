@@ -113,7 +113,7 @@ describe("staleFloorIsTheOnlyRed", () => {
 		expect(staleFloorIsTheOnlyRed([PASSED, RED_SUITE])).toBe(false);
 	});
 
-	/** UNKNOWN never passes and is nobody's to discount, least of all the shell reading it (ADR 0092). */
+	/** UNKNOWN never passes and is nobody's to discount, least of all the shell reading it. */
 	it("is false on an unresolved floor", () => {
 		expect(staleFloorIsTheOnlyRed([PASSED, UNRESOLVED])).toBe(false);
 	});

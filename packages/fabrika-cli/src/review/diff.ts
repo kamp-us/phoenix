@@ -3,10 +3,10 @@
  * removed line sits.
  *
  * **The completeness proof is the file count, and only the file count.** The bytes are local
- * `git diff <base>...<head>` at the bound commit (`diff-verb.ts`, #5117), and the denominator is a
+ * `git diff <base>...<head>` at the bound commit (`diff-verb.ts`), and the denominator is a
  * second read of that same range — `git diff --name-only -z`, which emits one path per `diff --git`
  * entry — so both counts come from git over one range under one set of flags, and rename pairing and
- * merge-base choice cancel instead of being compared across systems (#5139). GitHub's declared
+ * merge-base choice cancel instead of being compared across systems. GitHub's declared
  * `changed_files` is still read and reported beside them, and never refused on: it is a third
  * party's answer over its own merge base and its own rename detection.
  *
@@ -14,12 +14,12 @@
  * least as many** entries as the `--name-only` read lists. It is a cardinality test, never an
  * entry-identity one — it does not establish that the two reads name the same files, and it does not
  * establish that the range is the right range, so a fault that shortens both reads alike stays
- * invisible to it. A short count is refused because serving a prefix as the whole PR is the #3925
+ * invisible to it. A short count is refused because serving a prefix as the whole PR is the
  * blind-PASS class one layer down.
  *
  * No truncation marker is matched, because there is nothing to match. `application/vnd.github.diff`
  * does not truncate — over its limits it refuses with HTTP 406 and `errors[].code = "too_large"`,
- * under them it serves whole (live probe, recorded on #4993) — and these bytes do not come from
+ * under them it serves whole (verified against the live endpoint) — and these bytes do not come from
  * that endpoint anyway. The earlier claim that GitHub truncates at the API tier was asserted from
  * intuition and is false (CLAUDE.md's grounding rule).
  *
@@ -33,7 +33,7 @@
  * default), a backslash, or a double quote is written `"a/…"` with C-style escapes, and the two
  * sides quote independently — a rename to a Turkish name gives `diff --git a/plain.ts "b/ünlü.ts"`.
  * Matching only the bare form made a quoted file invisible: it undercounted the completeness proof
- * AND handed that file's hunk lines to the previous file (#5159).
+ * AND handed that file's hunk lines to the previous file.
  */
 const FILE_HEADER =
 	/^diff --git (?:"a\/((?:[^"\\]|\\.)*)"|a\/(.*)) (?:"b\/((?:[^"\\]|\\.)*)"|b\/(.*))$/;
@@ -179,7 +179,7 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  * What counts as an assertion for class 6: a call on `expect`/`assert` itself (`expect(`, `assert(`)
  * or on any member chain hanging off one (`assert.isTrue(`, `assert.deepStrictEqual(`,
  * `expect.fail(`). Chai-style member calls are the dominant spelling in this repo's tests, and the
- * call-paren-only pattern this replaces saw none of them (#5742). The `\b` guards keep it off an
+ * call-paren-only pattern this replaces saw none of them. The `\b` guards keep it off an
  * identifier that merely contains the word — `assertions.push(` is not a hit.
  */
 const ASSERTION = /\b(?:expect|assert)\b(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\(/;

@@ -96,7 +96,7 @@ describe("runAppendCriterion", () => {
 		expect(out.code).toBe(ACL_DENIED);
 		expect(out.stdout).toBe("");
 		expect(out.stderr.at(-1)).toBe(
-			"review append-criterion: token resolves below write on o/r, or the ACL could not be read — refusing the append (ADR 0055, fail-closed).",
+			"review append-criterion: token resolves below write on o/r, or the ACL could not be read — refusing the append (fail-closed).",
 		);
 		expect(shell.requests.some((request) => PATCH.test(request))).toBe(false);
 	});
@@ -161,8 +161,8 @@ describe("runAppendCriterion", () => {
 	});
 
 	it("appends under a WRAPPED last criterion — the shape triage enrichment produces", async () => {
-		// The live #5585 case: the last criterion's text is joined across three physical lines, so it
-		// matches no single line and the append was refused as a mutation (#5716).
+		// The live case: the last criterion's text is joined across three physical lines, so it
+		// matches no single line and the append was refused as a mutation.
 		const wrapped = `Build the thing.
 
 ### Acceptance criteria

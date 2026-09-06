@@ -323,8 +323,8 @@ describe("runPost", () => {
 		expect(requests.find((request) => PATCH.test(request))).toContain("issues/comments/42");
 	});
 
-	// The #7247 instance itself: a PASS landing over a standing FAIL at one head, which is the write
-	// that erased PR #7081's blocking verdict with nothing on the record.
+	// The erasure itself: a PASS landing over a standing FAIL at one head is the write that
+	// erased a blocking verdict with nothing on the record.
 	it("refuses on 18 a post that would retire the opposite polarity at this head", async () => {
 		const {outcome, requests} = await run([
 			[PULL, pull()],

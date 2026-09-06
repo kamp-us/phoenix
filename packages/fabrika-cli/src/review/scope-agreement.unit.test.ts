@@ -5,7 +5,7 @@
  * review, the pulls API for ship) and print different surrounding fields, so nothing but a test that
  * runs *both* catches them drifting. While only the ship side derived `ui`, a reviewer on a rendered
  * diff was told `review-code` was the whole bar, PASSed, and `ship gate` then refused a `review-ui`
- * namespace nobody had routed — one wasted ship dispatch and a park per PR (#6664).
+ * namespace nobody had routed — one wasted ship dispatch and a park per PR.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
