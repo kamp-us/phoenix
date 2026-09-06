@@ -576,6 +576,22 @@ handshake and the server, `src/shell/picker/browser.ts` leaves out `open.ts` and
 it. A new Node-only module goes in `index.ts`, never `browser.ts`. The shape and the reasons are
 [`.patterns/tuval-shell-assembly.md`](../../.patterns/tuval-shell-assembly.md).
 
+## The static root
+
+`public/` is Vite's default `publicDir`, resolved against the `root` that `servePage` in
+`src/page/dev-server.ts` already hands `createServer`. It is served at `/` with no config change:
+the dev server runs `configFile: false` and `publicDir` needs none, so nothing on
+`PageServerOptions` mentions it and nothing should. It holds the tab icon and only the tab icon —
+`favicon-16.png`, `favicon-32.png`, `favicon-192.png` and `apple-touch-icon.png`, each rendered at
+its own size and linked from `index.html` with a `sizes` attribute.
+
+None of those four is editable. `brand/tree-mark.svg` is the source they are cut from — the kamp.us
+tree mark, drawn for this repo in [#8144](https://github.com/kamp-us/phoenix/issues/8144) and the
+reference form from here on. Its geometry is fixed on a 32-unit grid and its three stroke weights
+are CSS variables, because a size is re-cut by re-rendering that file with the weights the file's
+own comment names for it, not by resampling a PNG. A further size is one more render; a shape change
+is an edit to the SVG and a re-cut of all four.
+
 ## The AI agent slice
 
 `src/ai-agent/` is the backend-blind half of running an AI agent as a Tuval program. Nothing under

@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+	<title>kamp.us tree mark</title>
+	<!--
+		The viewBox is 32 units so one unit is one pixel in the 32px cut and half a pixel in the 16px
+		one, which is what lets a stroke be aimed at the tab's pixel grid rather than at an abstract
+		canvas. The three stroke weights are variables because that is the whole difference between the
+		cuts: the geometry is shared and the weight is re-tuned per size. The 16px cut re-renders this
+		file with `--w-canopy: 2.6; --w-trunk: 3.0; --w-limb: 2.4`, so a halved stroke still lands near
+		a whole device pixel instead of dissolving into it.
+
+		The canopy is left open at the bottom on purpose — the limbs reach into that mouth without
+		touching the outline, and that ring of unpainted plate is the gap the mark lives or dies by at
+		16px.
+	-->
+	<style>
+		svg {
+			--w-canopy: 2.2;
+			--w-trunk: 2.6;
+			--w-limb: 1.9;
+		}
+		.plate { fill: #16181a; }
+		.mark {
+			fill: none;
+			stroke: #f04438;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+		}
+		.canopy { stroke-width: var(--w-canopy); }
+		.trunk { stroke-width: var(--w-trunk); }
+		.limb { stroke-width: var(--w-limb); }
+	</style>
+	<rect class="plate" width="32" height="32" />
+	<g class="mark">
+		<path
+			class="canopy"
+			d="M8.72 18.14
+			   A2.8 2.8 0 0 1 6.58 14.04
+			   A2.8 2.8 0 0 1 7.39 9.62
+			   A2.8 2.8 0 0 1 10.90 6.25
+			   A2.8 2.8 0 0 1 16.00 5.00
+			   A2.8 2.8 0 0 1 21.10 6.25
+			   A2.8 2.8 0 0 1 24.61 9.62
+			   A2.8 2.8 0 0 1 25.42 14.04
+			   A2.8 2.8 0 0 1 23.28 18.14"
+		/>
+		<path class="trunk" d="M16 27V20.5" />
+		<path class="limb" d="M16 20.8V13.5M16 20.8L12.4 16.3M16 20.8L19.6 16.3M16 26.4L12.7 28.1M16 26.4L19.3 28.1" />
+	</g>
+</svg>
