@@ -759,7 +759,7 @@ $ fabrika triage provenance 7 --json
 ```
 
 ```
-$ FABRIKA_OPERATOR_ACCOUNTS=<operator-login> fabrika triage provenance 5111
+$ FABRIKA_OPERATOR_ACCOUNTS=<operator-login> fabrika triage provenance 1
 agent
 ```
 
@@ -1178,19 +1178,19 @@ close. `report dedup` may use the index because it is advisory; a create-once gu
 
 ```
 $ fabrika triage split 7 --title "Editor loses focus after save" < child.md
-created	4321	https://github.com/<owner>/<repo>/issues/4321
+created	9	https://github.com/<owner>/<repo>/issues/9
 ```
 
 ```
 $ fabrika triage split 7 --title "Editor loses focus after save" < child.md
-reused	4321	https://github.com/<owner>/<repo>/issues/4321
+reused	9	https://github.com/<owner>/<repo>/issues/9
 $ echo $?
 0
 ```
 
 ```
 $ fabrika triage split 7 --title "Editor loses focus after save" --json < child.md
-{"outcome":"created","number":4321,"url":"https://github.com/<owner>/<repo>/issues/4321","matchedOn":null,"crossLinked":true}
+{"outcome":"created","number":9,"url":"https://github.com/<owner>/<repo>/issues/9","matchedOn":null,"crossLinked":true}
 ```
 
 **Grounding**
@@ -1495,7 +1495,8 @@ carry the weight:
 
 - **The read runs over the composed body, not over stdin.** The authored region includes what the
   envelope adds, so a heading the template itself demoted is caught. Reading stdin alone would miss
-  exactly the case 0288 §1 names.
+  exactly the case the producer-runs-its-consumer's-reader rule names: the defect the consumer would
+  reject is one the producer's own composition introduced, so only the composed bytes carry it.
 - **It stops above the marker**, on the same asymmetry redaction uses: the preserved original is
   foreign content, and a legacy `##` heading buried in it would otherwise refuse every
   re-enrichment of that issue forever.
@@ -1599,8 +1600,8 @@ enriched	8	1
 ```
 
 ```
-$ fabrika triage enrich 4318 --epic < pitch.md
-enriched	4318	0
+$ fabrika triage enrich 6 --epic < pitch.md
+enriched	6	0
 ```
 
 ```
