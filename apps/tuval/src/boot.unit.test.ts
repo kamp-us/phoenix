@@ -46,6 +46,13 @@ const SPAWN_GUARD_MS = 15_000;
  */
 const spawnBudget = (spawns: number) => spawns * SPAWN_GUARD_MS + 5_000;
 
+/**
+ * A case that spawns nothing but still does real work — a `bootDirect`, which reads and dynamically
+ * imports a TypeScript config and makes a temp project dir. `spawnBudget(0)` would hand it back
+ * vitest's own 5000 ms, so it states the sibling file's budget instead (#8119).
+ */
+const DIRECT_BOOT_MS = 20_000;
+
 /** A boot with live processes stays up until a signal: send SIGINT once it says it is running. */
 const runUntilRunning = (
 	args: ReadonlyArray<string>,
@@ -130,21 +137,24 @@ afterEach(() => {
 });
 
 describe("boot", () => {
-	it.effect("registers the rows the config module exports and reports their count", () =>
-		Effect.gen(function* () {
-			const project = freshProject();
-			const {report} = yield* bootDirect(fixture("two-rows"), project);
-			assert.deepStrictEqual(report, {
-				sources: [fixture("two-rows")],
-				programCount: 2,
-				spellCount: CORE_SPELLS,
-				bindingCount: 0,
-				bindingErrors: [],
-				stateDir: projectDir(project),
-				processCount: 0,
-				restoredCount: 0,
-			});
-		}),
+	it.effect(
+		"registers the rows the config module exports and reports their count",
+		() =>
+			Effect.gen(function* () {
+				const project = freshProject();
+				const {report} = yield* bootDirect(fixture("two-rows"), project);
+				assert.deepStrictEqual(report, {
+					sources: [fixture("two-rows")],
+					programCount: 2,
+					spellCount: CORE_SPELLS,
+					bindingCount: 0,
+					bindingErrors: [],
+					stateDir: projectDir(project),
+					processCount: 0,
+					restoredCount: 0,
+				});
+			}),
+		DIRECT_BOOT_MS,
 	);
 
 	it(
