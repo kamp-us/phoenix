@@ -10,7 +10,11 @@ export {
 	PAGE_ERROR,
 	PROMPT_ERROR,
 	portRefused,
+	promptQueueFull,
+	promptUnqueued,
 	START_ERROR,
+	THINKING_UNSUPPORTED,
+	TRANSPORT_ERROR,
 	UNKNOWN_REQUEST,
 } from "./failures.ts";
 export {
@@ -36,9 +40,28 @@ export {
 	eventsSubId,
 } from "./messages.ts";
 export {
+	enqueue,
+	isQueueFull,
+	type QueuedPrompt,
+	queueLimit,
+	releaseQueued,
+} from "./queue.ts";
+export {
+	noteSend,
+	pendingSend,
+	type SendOutcome,
+	sendAfterFailure,
+	sendLimit,
+	sendOutcome,
+	settleAccepted,
+	settledBy,
+	settlePending,
+} from "./sends.ts";
+export {
 	isAiAgentSessionState,
 	loadCheckpoint,
 	parseSessionState,
+	readCheckpoint,
 	withCheckpointDefaults,
 } from "./snapshot.ts";
 export {
@@ -55,5 +78,6 @@ export {
 	type ModeState,
 	phases,
 	restore,
+	type ThinkingState,
 	type UsageTotals,
 } from "./state.ts";

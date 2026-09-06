@@ -51,6 +51,7 @@ import {
 	keyTargetOf,
 	mint,
 	type PrefixSnapshot,
+	processOf,
 	type ShellState,
 	type Workspace,
 	type WorkspaceId,
@@ -243,6 +244,26 @@ const bindWindow = (
 		}),
 		NO_CMDS,
 	];
+};
+
+/**
+ * Put a window back on the picker: detach its process, which stops nothing, and drop the view slot
+ * so the picker mounts fresh rather than on the cursor and refusal the last mount left behind
+ * (`../ui/PickerView.tsx` rebuilds the picker's view from that slot).
+ *
+ * A window holding no process is left untouched rather than cleared. It is already showing the
+ * picker, and dropping the slot there would move the user's highlight back to the first row under
+ * their hands — a key that should have done nothing at all.
+ */
+const unbindWindow = (state: ShellState, windowId: WindowId | undefined): Step => {
+	const workspace = activeWorkspace(state);
+	if (workspace === undefined) return [state, NO_CMDS];
+	const target = windowId ?? workspace.focused;
+	if (!hasWindow(workspace, target) || processOf(workspace, target) === null) {
+		return [state, NO_CMDS];
+	}
+	const [detached] = bindWindow(state, target, null);
+	return [{...detached, views: withoutViews(detached.views, [target])}, NO_CMDS];
 };
 
 /**
@@ -473,7 +494,7 @@ export const cellsFor = (table: PrefixTable): ShellCells => {
 		"window.focus": (state, msg) => focusWindow(state, msg.windowId),
 		"window.focusDirection": (state, msg) => focusDirection(state, msg.direction),
 		"window.bind": (state, msg) => bindWindow(state, msg.windowId, msg.processId, msg.takesKeys),
-		"window.unbind": (state, msg) => bindWindow(state, msg.windowId, null),
+		"window.unbind": (state, msg) => unbindWindow(state, msg.windowId),
 		"window.setView": setView,
 		"layout.resize": resizeStack,
 		"layout.zoom": zoomWindow,

@@ -14,6 +14,7 @@
  */
 
 import type {
+	EffortLevel,
 	ListSessionsOptions,
 	ModelInfo,
 	Options,
@@ -42,6 +43,8 @@ export interface QueryRecord {
 	readonly modes: Array<string>;
 	/** Every model the layer switched to, in order, so a test asserts the live call was made. */
 	readonly models: Array<string | undefined>;
+	/** Every effort level the layer applied, in order, for the same reason (#8062). */
+	readonly efforts: Array<EffortLevel | null>;
 	closes: number;
 	interrupts: number;
 	readonly child: SpawnedProcess | null;
@@ -64,6 +67,8 @@ export interface ScriptedBehaviour {
 	readonly models?: ReadonlyArray<ModelInfo>;
 	/** A `setModel` the CLI refuses. The call is still recorded, so a test sees it was attempted. */
 	readonly modelSwitchFails?: Error;
+	/** An `applyFlagSettings` the CLI refuses, recorded the same way. */
+	readonly effortSwitchFails?: Error;
 	/** A `supportedModels()` that throws, which is a session with no picker rather than no session. */
 	readonly catalogFails?: Error;
 	/** What `supportedCommands()` answers. Absent is a CLI that offers none. */
@@ -96,6 +101,7 @@ export const scriptedQuery = (
 		prompts: [],
 		modes: [],
 		models: [],
+		efforts: [],
 		closes: 0,
 		interrupts: 0,
 		child,
@@ -167,6 +173,10 @@ export const scriptedQuery = (
 		setModel: async (model?: string) => {
 			record.models.push(model);
 			if (behaviour.modelSwitchFails !== undefined) throw behaviour.modelSwitchFails;
+		},
+		applyFlagSettings: async (settings: {effortLevel: EffortLevel | null}) => {
+			record.efforts.push(settings.effortLevel);
+			if (behaviour.effortSwitchFails !== undefined) throw behaviour.effortSwitchFails;
 		},
 		supportedModels: async () => {
 			if (behaviour.catalogFails !== undefined) throw behaviour.catalogFails;

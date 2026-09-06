@@ -42,7 +42,12 @@ const PROGRAM = "pi-ai-agent-publishes-the-send-test";
 const CWD = "/tuval/send";
 const PROMPT_ERROR = "tuval/ai-agent/PromptError";
 const PI_MODEL = {provider: "faux", id: "faux-1"} as const;
-const SESSION: PiSessionRef = {id: "session-8018", cwd: CWD, model: PI_MODEL};
+const SESSION: PiSessionRef = {
+	id: "session-8018",
+	cwd: CWD,
+	model: PI_MODEL,
+	thinkingLevel: "off",
+};
 
 const wired: ReadonlySet<string> = new Set(Object.values(aiAgentPortNames));
 
@@ -129,6 +134,7 @@ const pin = (options: {readonly refusals?: number} = {}): Effect.Effect<Pin> =>
 				}),
 			abort: () => Effect.never,
 			setModel: () => Effect.succeed(snapshotOf([], "idle", 0)),
+			setThinkingLevel: () => Effect.succeed(snapshotOf([], "idle", 0)),
 			models: Effect.succeed([]),
 			snapshots: () => Stream.fromQueue(pushed),
 			disconnections: Stream.never,

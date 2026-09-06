@@ -559,6 +559,7 @@ const runServiceAgent = Effect.gen(function* () {
 		history: [],
 		modes: {current: null, available: []},
 		models: {current: null, available: []},
+		thinking: {current: null, available: []},
 		interrupt: [],
 		spells: {bridge: reach, scope: serviceScope},
 		turns: [

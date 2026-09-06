@@ -21,7 +21,7 @@ import {type AnyProgram, ProgramId} from "../registry/program.ts";
 import {Registry} from "../registry/Registry.ts";
 import {ItemId, type TranscriptItem} from "./ports/index.ts";
 import {aiAgentProgram} from "./program.ts";
-import {models, modes} from "./service/fixtures/scripts.ts";
+import {models, modes, thinking} from "./service/fixtures/scripts.ts";
 import {type AgentScript, ScriptedAiAgent} from "./service/index.ts";
 import {readAiAgentTranscript} from "./transcripts.ts";
 
@@ -45,6 +45,7 @@ const backendRow = (
 		history,
 		modes,
 		models,
+		thinking,
 		turns: [],
 		interrupt: [],
 	};

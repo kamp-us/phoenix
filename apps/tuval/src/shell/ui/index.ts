@@ -11,6 +11,8 @@ export {
 } from "./attach.ts";
 export {CommandLine, type CommandLineProps} from "./CommandLine.tsx";
 export {Desk, type DeskProps} from "./Desk.tsx";
+export {DeskInspector, type DeskInspectorProps} from "./DeskInspector.tsx";
+export {type DeskTables, deskSnapshotOf, noDeskTables} from "./desk-snapshot.ts";
 export {ErrorBoundary, type ErrorBoundaryProps} from "./ErrorBoundary.tsx";
 export {
 	type ForwardedKey,

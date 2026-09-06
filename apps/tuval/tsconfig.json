@@ -45,6 +45,7 @@
 		"src/page/AttachedDesk.tsx",
 		"src/page/renderers.tsx",
 		"src/page/proof/no-recovery.tsx",
-		"src/page/attached-desk.unit.test.tsx"
+		"src/page/attached-desk.unit.test.tsx",
+		"src/page/readable-state.unit.test.tsx"
 	]
 }

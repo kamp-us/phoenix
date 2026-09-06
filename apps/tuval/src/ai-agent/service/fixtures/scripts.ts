@@ -12,7 +12,7 @@
 import type {AgentEvent} from "../../events.ts";
 import type {ItemId, Mode, PermissionRequest, ToolItem, TranscriptItem} from "../../ports/index.ts";
 import {ListError, TransportError} from "../errors.ts";
-import type {AgentScript, ScriptedModels} from "../script.ts";
+import type {AgentScript, ScriptedModels, ScriptedThinking} from "../script.ts";
 import {type SessionSummary, sessionSummary} from "../sessions.ts";
 
 export const SESSION_ID = "session-7599";
@@ -36,6 +36,15 @@ export const models = {
 	],
 } as const satisfies ScriptedModels;
 
+/**
+ * The Claude window's offered set (#8062): five levels, no `off` and no `minimal`, which is the
+ * founder's per-backend ruling as a fixture.
+ */
+export const thinking = {
+	current: "medium",
+	available: ["low", "medium", "high", "xhigh", "max"],
+} as const satisfies ScriptedThinking;
+
 const item = (value: TranscriptItem): TranscriptItem => value;
 
 const at = (offset: number): number => 1_760_000_000_000 + offset;
@@ -50,7 +59,15 @@ export const history: ReadonlyArray<TranscriptItem> = Array.from({length: 9}, (_
 	}),
 );
 
-const empty = {sessionId: SESSION_ID, history, modes, models, turns: [], interrupt: []} as const;
+const empty = {
+	sessionId: SESSION_ID,
+	history,
+	modes,
+	models,
+	thinking,
+	turns: [],
+	interrupt: [],
+} as const;
 
 export const plainReplyTurn: ReadonlyArray<AgentEvent> = [
 	{kind: "phase", phase: "prompting"},

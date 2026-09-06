@@ -121,11 +121,13 @@
 	font: var(--t-body-sm);
 	color: var(--text-muted);
 }
+/* The brackets are punctuation around the domain, not part of it: the `/ ""` keeps them out of the
+   link's accessible name, which would otherwise be read as "(example.com)" (ADR 0166 §8). */
 .kp-pano-post__site::before {
-	content: "(";
+	content: "(" / "";
 }
 .kp-pano-post__site::after {
-	content: ")";
+	content: ")" / "";
 }
 /* The domain label is the outbound source link on a link post (#2437); the ↗ cue
    carries the affordance, this hover confirms it's clickable (a plain span for a

@@ -61,6 +61,15 @@ describe("CommandPalette", () => {
 		expect(css).not.toContain('data-size="');
 	});
 
+	// jsdom leaves `computedStyleSupportsPseudoElements` off, so no rendered assertion can see the
+	// caret at all — the stylesheet is the only surface a test can read it from (#8079).
+	it("keeps the active-row caret out of the option's accessible name", () => {
+		const stylesheet = "./CommandPalette.css";
+		const css = readFileSync(fileURLToPath(new URL(stylesheet, import.meta.url)), "utf8");
+		expect(css).toContain('content: "\\203A" / "";');
+		expect(css).not.toContain('content: "\\203A";');
+	});
+
 	it("renders a labelled modal combobox and grouped results", () => {
 		renderPalette();
 		const dialog = screen.getByRole("dialog", {name: "kamp.us'ta ara"});

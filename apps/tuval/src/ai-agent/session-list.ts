@@ -31,7 +31,11 @@ import type {AnyProgram, Program} from "../registry/program.ts";
 import {ProgramId} from "../registry/program.ts";
 import type {Registry} from "../registry/Registry.ts";
 import {type AiAgentSessions, type BackendListFailure, listAiAgentSessions} from "./backends.ts";
-import {SESSION_LIST_WINDOW_REF} from "./renderer-ref.ts";
+import {
+	SESSION_LIST_STATE,
+	SESSION_LIST_WINDOW_REF,
+	type SessionListState,
+} from "./renderer-ref.ts";
 import {type SessionTranscriptSpellOptions, sessionTranscriptSpell} from "./session-transcript.ts";
 
 /**
@@ -130,8 +134,6 @@ export interface SessionListProgramOptions
 		SessionTranscriptSpellOptions {}
 
 const SESSION_LIST_VERSION = "1.0.0";
-
-type SessionListState = Record<never, never>;
 type SessionListMsg = {readonly type: "opened"};
 
 /**
@@ -153,7 +155,7 @@ export const sessionListProgram = (options: SessionListProgramOptions = {}): Any
 		id: sessionListId,
 		label: "AI agent sessions",
 		core: defineMachine<SessionListState, SessionListMsg, Cmd<never>, never, unknown>({
-			init: (loaded) => [loaded ?? {}, []],
+			init: () => [SESSION_LIST_STATE, []],
 			update: {opened: (state) => [state, []]},
 		}),
 		ports: {},

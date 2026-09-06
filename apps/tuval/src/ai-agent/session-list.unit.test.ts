@@ -24,7 +24,7 @@ import {programEntries} from "../shell/picker/entries.ts";
 import {type AiAgentSessions, listAiAgentSessions} from "./backends.ts";
 import {aiAgentProgram} from "./program.ts";
 import {SESSION_LIST_WINDOW_REF} from "./renderer-ref.ts";
-import {models, modes} from "./service/fixtures/scripts.ts";
+import {models, modes, thinking} from "./service/fixtures/scripts.ts";
 import {
 	type AgentScript,
 	ListError,
@@ -46,6 +46,7 @@ const backendRow = (id: string, store: ReadonlyArray<SessionSummary> | ListError
 		history: [],
 		modes,
 		models,
+		thinking,
 		turns: [],
 		interrupt: [],
 		sessions: store,

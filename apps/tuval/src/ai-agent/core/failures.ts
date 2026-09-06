@@ -15,7 +15,9 @@ export const PROMPT_ERROR = "tuval/ai-agent/PromptError";
 export const UNKNOWN_REQUEST = "tuval/ai-agent/UnknownRequest";
 export const MODE_UNSUPPORTED = "tuval/ai-agent/ModeUnsupported";
 export const MODEL_UNSUPPORTED = "tuval/ai-agent/ModelUnsupported";
+export const THINKING_UNSUPPORTED = "tuval/ai-agent/ThinkingUnsupported";
 export const PAGE_ERROR = "tuval/ai-agent/PageError";
+export const TRANSPORT_ERROR = "tuval/ai-agent/TransportError";
 
 /**
  * An inbound payload this end of a port cannot act on, written against that port's own tag.
@@ -62,6 +64,25 @@ export const promptRefused = (phase: string): AgentFailure => ({
 	detail: `the session is ${phase}, not ready`,
 });
 
+/**
+ * The queue behind a running turn is full, so this prompt waits nowhere (`./queue.ts`).
+ *
+ * `refused` rather than `no-session`, because the session is perfectly alive and the text provably
+ * never crossed — which is also what routes it to the recoverable arm in `./sends.ts`.
+ */
+export const promptQueueFull = (limit: number): AgentFailure => ({
+	tag: PROMPT_ERROR,
+	reason: "refused",
+	detail: `${limit} messages are already waiting behind the running turn`,
+});
+
+/** A queued prompt released back to its window because the turn it was waiting for will not end. */
+export const promptUnqueued = (why: string): AgentFailure => ({
+	tag: PROMPT_ERROR,
+	reason: "refused",
+	detail: `the queued message was not sent: ${why}`,
+});
+
 export const unknownRequest = (request: string): AgentFailure => ({
 	tag: UNKNOWN_REQUEST,
 	reason: null,
@@ -99,4 +120,13 @@ export const modelUnsupported = (
 	tag: MODEL_UNSUPPORTED,
 	reason: null,
 	detail: `model "${model}" is not offered; available: ${available.join(", ") || "none"}`,
+});
+
+export const thinkingUnsupported = (
+	level: string,
+	available: ReadonlyArray<string>,
+): AgentFailure => ({
+	tag: THINKING_UNSUPPORTED,
+	reason: null,
+	detail: `thinking level "${level}" is not offered; available: ${available.join(", ") || "none"}`,
 });

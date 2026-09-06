@@ -39,6 +39,7 @@ const idle: PiClientApi = {
 	prompt: () => Effect.die("listing must not prompt"),
 	abort: () => Effect.never,
 	setModel: () => Effect.die("listing must not switch models"),
+	setThinkingLevel: () => Effect.die("listing must not switch thinking levels"),
 	models: Effect.succeed([]),
 	snapshots: () => Stream.never,
 	disconnections: Stream.never,

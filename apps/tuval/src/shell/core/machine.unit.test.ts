@@ -203,6 +203,28 @@ describe("shell core: windows", () => {
 		expect(cmds).toEqual([]);
 	});
 
+	it("window.unbind drops the view slot, so the picker it returns to mounts fresh (#8083)", () => {
+		const state = initialState();
+		const window = active(state).focused;
+		const filled = fold(
+			state,
+			{type: "window.setView", view: {cursor: 3, refusal: null}},
+			{type: "window.bind", processId: "process-pi"},
+		);
+		expect(filled.views[window]).toEqual({cursor: 3, refusal: null});
+
+		const [unbound] = apply(filled, {type: "window.unbind"});
+		expect(focusedProcess(unbound)).toBeNull();
+		expect(unbound.views[window]).toBeUndefined();
+		expect(windowIds(active(unbound))).toEqual(windowIds(active(filled)));
+	});
+
+	it("window.unbind on a window holding no process changes nothing at all (#8083)", () => {
+		const empty = fold(initialState(), {type: "window.setView", view: {cursor: 2, refusal: null}});
+		expect(apply(empty, {type: "window.unbind"})[0]).toBe(empty);
+		expect(apply(empty, {type: "window.unbind", windowId: "window-nope"})[0]).toBe(empty);
+	});
+
 	it("window.setView writes the focused window's slot and refuses an unknown window", () => {
 		const state = initialState();
 		const [viewed] = apply(state, {type: "window.setView", view: {scroll: 3, wrap: true}});

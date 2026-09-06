@@ -10,7 +10,11 @@
  * composer, silently.
  *
  * So this scope re-declares the roles the package's sheets read, in the package's own shape, off
- * Tuval's own scale. It is the only place the two layers meet; nothing under `.tuval-chat` may use
+ * Tuval's own scale. A role this block *omits* fails the other way and quieter: it resolves from
+ * the package's `:root`, where the family is already substituted to IBM Plex, so the element renders
+ * in a second typeface beside Tuval's `system-ui` (#8012 shipped that with `--t-h-feed`). Every
+ * `--t-*` a package sheet reads under this scope belongs here.
+ * It is the only place the two layers meet; nothing under `.tuval-chat` may use
  * Tuval's two-part `font: var(--t-body) system-ui, sans-serif` form, because inside this scope
  * `--t-body` already carries a family.
  */
@@ -27,6 +31,7 @@
 	--t-meta: 12px / 1.4 var(--font-body);
 	--t-micro: 11px / 1.4 var(--font-body);
 	--t-mono: 13px / 1.5 var(--font-mono);
+	--t-h-feed: 16px / 1.35 var(--font-body);
 
 	--r-lg: 6px;
 	--s-8: 40px;
@@ -143,6 +148,13 @@
 	margin: 0;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+}
+
+/* The agent reply is a rendered markdown block (`@kampus/design`). It carries its own type and
+   spacing; what it needs from the row is a width to wrap and scroll inside. */
+.tuval-chat-markdown {
+	min-inline-size: 0;
+	max-inline-size: 100%;
 }
 
 .tuval-chat-row[data-kind="user"] .tuval-chat-text {
@@ -341,6 +353,83 @@
 	padding-block-start: var(--s-2);
 }
 
+/* Where a message waits for the running turn to end. It is not a transcript row and must not read
+ * as one: no bubble, no author, and the accent that says "not yet" rather than "went wrong". */
+.tuval-chat-queued {
+	max-block-size: 20vh;
+	overflow-y: auto;
+}
+
+.tuval-chat-queued-lead {
+	margin: 0 0 var(--s-1);
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+.tuval-chat-queued-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tuval-chat-queued-item {
+	padding: var(--s-2);
+	border: 1px dashed var(--border-faint);
+	border-radius: var(--r-lg);
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tuval-chat-unsent {
+	max-block-size: 30vh;
+	overflow-y: auto;
+}
+
+.tuval-chat-unsent-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tuval-chat-unsent-item {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	padding: var(--s-2);
+	border: 1px solid var(--border-faint);
+	border-inline-start: 2px solid var(--danger);
+	border-radius: var(--r-lg);
+}
+
+.tuval-chat-unsent-reason {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--danger);
+}
+
+.tuval-chat-unsent-text {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.tuval-chat-unsent-actions {
+	display: flex;
+	gap: var(--s-2);
+	flex-wrap: wrap;
+	padding-block-start: var(--s-1);
+}
+
 /* Where an answer that has left but not landed says so. Colour is the second signal: the line's
  * own words carry the state, so a card reads the same without it. */
 .tuval-chat-permission-progress {
@@ -394,8 +483,35 @@
 }
 
 .tuval-chat-phase[data-phase="ready"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="starting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="reconnecting"] .tuval-chat-phase-dot,
 .tuval-chat-phase[data-phase="prompting"] .tuval-chat-phase-dot {
 	background: var(--accent);
+}
+
+/* The three in-flight phases — starting, reconnecting, prompting — carry a halo the settled ones do
+   not; the transcript strip below is prompting-only, because that is the phase whose wait the eye
+   sits through. The halo is the static half and it is what makes the distinction survive
+   `prefers-reduced-motion`, which cancels the pulse and nothing else: the dot stays a ring where
+   "Ready." is a bare disc, so the state is never on motion alone (Pillar 4). The word on the phase
+   line is still the signal either way. */
+.tuval-chat-phase[data-phase="starting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="reconnecting"] .tuval-chat-phase-dot,
+.tuval-chat-phase[data-phase="prompting"] .tuval-chat-phase-dot {
+	box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent);
+	animation: tuval-chat-phase-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes tuval-chat-phase-pulse {
+	0%,
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.3;
+		transform: scale(0.6);
+	}
 }
 
 .tuval-chat-phase[data-phase="gone"] .tuval-chat-phase-dot {
@@ -407,4 +523,62 @@
 	padding: var(--s-4);
 	color: var(--text-muted);
 	font: var(--t-body-sm);
+}
+
+/* The running-turn tell at the foot of the transcript. Decoration by construction — `aria-hidden`,
+   because the phase line is the announced one — so the animation carries nothing the word does not
+   already say, and collapsing it under reduced motion loses nothing. */
+.tuval-chat-working {
+	display: flex;
+	gap: var(--s-2);
+	align-items: center;
+	margin: 0;
+	padding: var(--s-1) var(--s-4);
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.tuval-chat-working-dots {
+	display: inline-flex;
+	gap: 3px;
+	align-items: center;
+}
+
+.tuval-chat-working-dots span {
+	inline-size: 4px;
+	block-size: 4px;
+	border-radius: 50%;
+	background: var(--accent);
+	animation: tuval-chat-working-bounce 1.2s ease-in-out infinite;
+}
+
+.tuval-chat-working-dots span:nth-child(2) {
+	animation-delay: 0.16s;
+}
+
+.tuval-chat-working-dots span:nth-child(3) {
+	animation-delay: 0.32s;
+}
+
+@keyframes tuval-chat-working-bounce {
+	0%,
+	60%,
+	100% {
+		opacity: 0.25;
+	}
+	30% {
+		opacity: 1;
+	}
+}
+
+/* The override must tie or beat the rule it cancels: `@media` is a conditional group rule and
+   contributes nothing to specificity, so a bare `.tuval-chat-phase-dot` (0,1,0) would silently lose
+   to the pulse rule's (0,3,0) and keep animating for someone who asked for no motion. `[data-phase]`
+   is carried here to tie, and the tie goes to this rule because it comes later. */
+@media (prefers-reduced-motion: reduce) {
+	.tuval-chat-phase[data-phase] .tuval-chat-phase-dot,
+	.tuval-chat-working-dots span {
+		animation: none;
+		opacity: 1;
+	}
 }

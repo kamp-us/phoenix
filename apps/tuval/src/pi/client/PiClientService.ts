@@ -32,6 +32,7 @@ import type {
 	ThinkingLevel,
 } from "@earendil-works/pi-protocol";
 import {Context, Effect, Layer, Queue, Schedule, type Scope, Stream} from "effect";
+import {boundedTeardown} from "../teardown.ts";
 import {
 	type ConnectionRefusal,
 	Disconnected,
@@ -53,6 +54,8 @@ export interface PiSessionRef {
 	 * this one (#7981).
 	 */
 	readonly model: ModelRef;
+	/** The level the session is thinking at now, off that same snapshot (#8062). */
+	readonly thinkingLevel: ThinkingLevel;
 }
 
 export interface OpenSessionOptions {
@@ -82,6 +85,14 @@ export interface PiClientApi {
 	readonly setModel: (
 		sessionId: string,
 		model: ModelRef,
+	) => Effect.Effect<SessionSnapshot, SessionRefusal>;
+	/**
+	 * Switches how hard the session thinks, over the pin's `set_thinking` verb. Needs the same lease
+	 * `prompt` does, and applies to the running session rather than to the next one.
+	 */
+	readonly setThinkingLevel: (
+		sessionId: string,
+		level: ThinkingLevel,
 	) => Effect.Effect<SessionSnapshot, SessionRefusal>;
 	/**
 	 * The catalog the server put in its `hello` frame, already cut to the authenticated,
@@ -162,13 +173,16 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 						},
 					}),
 			),
-			// A release has no error channel to model into, and the pin's `dispose` resolves an
-			// already-settled promise, so the fold exists to keep the ban's shape rather than to
-			// carry a failure that can happen.
+			// A release has no error channel to model into, so the settle is one arm either way: a
+			// rejection is nothing this scope can act on. The wait is the one thing that matters
+			// here and it runs under `../teardown.ts`'s ceiling, because a `dispose` that never
+			// resolves would hang the close for good. `dispose()` is not `async` at the 0.84.3 pin,
+			// so it can throw before returning its promise; the ceiling folds that throw rather
+			// than letting it escape this uninterruptible finalizer.
 			(open) =>
-				Effect.tryPromise({try: () => open.dispose(), catch: connectionRefusalOf}).pipe(
-					Effect.ignore,
-				),
+				boundedTeardown("the Pi client's dispose", (settled) => {
+					open.dispose().then(settled, settled);
+				}),
 		);
 
 		yield* Effect.forkScoped(
@@ -200,6 +214,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 						id: lease.id,
 						cwd: lease.snapshot.cwd,
 						model: lease.snapshot.model,
+						thinkingLevel: lease.snapshot.thinkingLevel,
 					});
 
 		const dial = (open: () => Promise<unknown>): Effect.Effect<void, ConnectionRefusal> =>
@@ -275,6 +290,17 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			});
 		});
 
+		const setThinkingLevel = Effect.fn("PiClientService.setThinkingLevel")(function* (
+			sessionId: string,
+			level: ThinkingLevel,
+		) {
+			const lease = yield* leased(sessionId);
+			return yield* Effect.tryPromise({
+				try: () => lease.setThinking(level),
+				catch: (cause) => sessionRefusalOf(sessionId, cause),
+			});
+		});
+
 		const snapshots = (sessionId: string): Stream.Stream<SessionSnapshot> =>
 			Stream.callback<SessionSnapshot>((queue) =>
 				Effect.acquireRelease(
@@ -313,6 +339,7 @@ const make = (config: PiClientConfig): Effect.Effect<PiClientApi, never, Scope.S
 			prompt,
 			abort,
 			setModel,
+			setThinkingLevel,
 			models: Effect.sync(() => client.snapshot?.models ?? []),
 			snapshots,
 			disconnections,

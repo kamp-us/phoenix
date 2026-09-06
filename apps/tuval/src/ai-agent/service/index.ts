@@ -12,6 +12,7 @@ export type {
 	PermissionResolvedEvent,
 	Phase,
 	PhaseEvent,
+	ThinkingEvent,
 	UsageEvent,
 } from "../events.ts";
 export {
@@ -25,6 +26,7 @@ export {
 	type PromptReason,
 	StartError,
 	type StartReason,
+	ThinkingUnsupported,
 	TransportError,
 	type TransportReason,
 	UnknownRequest,
@@ -38,6 +40,7 @@ export type {
 	ScriptedPlan,
 	ScriptedRequest,
 	ScriptedSpells,
+	ScriptedThinking,
 	ScriptedTurn,
 } from "./script.ts";
 export {

@@ -7,7 +7,13 @@
 
 import type {AiAgentSessionState} from "../../ai-agent/core/state.ts";
 import {initialState} from "../../ai-agent/core/state.ts";
-import type {JsonValue, ToolItem, ToolStatus, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {
+	JsonValue,
+	ThinkingLevel,
+	ToolItem,
+	ToolStatus,
+	TranscriptItem,
+} from "../../ai-agent/ports/index.ts";
 import {boundToolResult, ItemId, Mode} from "../../ai-agent/ports/index.ts";
 import {pendingPermission, permissionCard} from "../../ai-agent-fixtures/permissions.ts";
 import {
@@ -88,6 +94,15 @@ export const models = (
 
 export const commands = (names: ReadonlyArray<string>): AiAgentSessionState["commands"] =>
 	names.map((name) => ({name, description: `what /${name} does`}));
+
+/**
+ * The offered thinking set, per backend (#8062). The default is Claude's five — no `off` and no
+ * `minimal` — since that is the founder's ruling in its narrowest form.
+ */
+export const thinking = (
+	available: ReadonlyArray<ThinkingLevel> = ["low", "medium", "high", "xhigh", "max"],
+	current: ThinkingLevel | null = available[0] ?? null,
+): AiAgentSessionState["thinking"] => ({current, available});
 
 export const withTranscript = (
 	items: ReadonlyArray<TranscriptItem>,

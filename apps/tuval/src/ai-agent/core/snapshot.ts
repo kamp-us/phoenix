@@ -13,6 +13,7 @@ import {
 	isCommandRef,
 	isModelRef,
 	isPendingPermission,
+	isThinkingLevel,
 	isTranscriptItems,
 	isWindowOmission,
 	type PendingPermission,
@@ -58,6 +59,11 @@ const isModels = (value: unknown): boolean =>
 	value.available.every(isModelRef);
 
 const isCommands = (value: unknown): boolean => Array.isArray(value) && value.every(isCommandRef);
+const isThinking = (value: unknown): boolean =>
+	Predicate.isObject(value) &&
+	(value.current === null || isThinkingLevel(value.current)) &&
+	Array.isArray(value.available) &&
+	value.available.every(isThinkingLevel);
 
 const isTranscript = (value: unknown): boolean =>
 	Predicate.isObject(value) && isTranscriptItems(value.items) && isWindowOmission(value.omitted);
@@ -78,6 +84,36 @@ const isFailure = (value: unknown): boolean =>
 		isNullOrString(value.reason) &&
 		typeof value.detail === "string");
 
+const sendStates: ReadonlyArray<string> = ["pending", "accepted", "refused", "uncertain"];
+
+/**
+ * A settled send's failure is the one field the state's arms disagree on, so each arm is checked
+ * for what its own type declares: `refused` carries a failure, `uncertain` carries one or `null`,
+ * and `pending` and `accepted` carry no such field at all.
+ */
+const sendFailure = (state: string, value: unknown): boolean => {
+	if (state === "refused") return value !== null && isFailure(value);
+	if (state === "uncertain") return isFailure(value);
+	return true;
+};
+
+const isSend = (value: unknown): boolean =>
+	Predicate.isObject(value) &&
+	typeof value.key === "string" &&
+	typeof value.state === "string" &&
+	sendStates.includes(value.state) &&
+	sendFailure(value.state, value.failure);
+
+const isSends = (value: unknown): boolean => Array.isArray(value) && value.every(isSend);
+
+const isQueuedPrompt = (value: unknown): boolean =>
+	Predicate.isObject(value) &&
+	typeof value.key === "string" &&
+	typeof value.text === "string" &&
+	isFiniteNumber(value.timestamp);
+
+const isQueued = (value: unknown): boolean => Array.isArray(value) && value.every(isQueuedPrompt);
+
 export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionState =>
 	Predicate.isObject(value) &&
 	typeof value.phase === "string" &&
@@ -94,7 +130,10 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isModes(value.modes) &&
 	isModels(value.models) &&
 	isCommands(value.commands) &&
+	isThinking(value.thinking) &&
 	isNullOrString(value.lastPrompt) &&
+	isSends(value.sends) &&
+	isQueued(value.queued) &&
 	isPage(value.lastPage) &&
 	isFailure(value.failure);
 
@@ -126,6 +165,16 @@ export const withCheckpointDefaults = (raw: unknown, cwd: string): unknown => {
 };
 
 /**
+ * The checkpoint read, as the defaulting and the predicate composed once: the session, or `null`.
+ *
+ * One function rather than two call sites of the same pair, because `loadCheckpoint` wants the
+ * session and the row's `restorable` (`../program.ts`) wants only the bit. A store that sealed on a
+ * different verdict than the one the window renders would hold the wrong bytes (#8112).
+ */
+export const readCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionState | null =>
+	parseSessionState(withCheckpointDefaults(loaded, cwd));
+
+/**
  * What the store loaded, read as a session — or the refusal, when it is not one. The machine's
  * `init` rehydrate branch is this and nothing else.
  *
@@ -137,9 +186,12 @@ export const withCheckpointDefaults = (raw: unknown, cwd: string): unknown => {
  * one phase `resumeMessages` dispatches nothing into (`../restore/checkpoint.ts`), so the failure
  * survives to the window's status line — an `idle` refusal would trigger the fresh `start` that
  * clears `failure`, which is the silent fresh session over an unreadable checkpoint #7514 refuses.
+ *
+ * The refused bytes are not destroyed by the save that follows `init`: the row answers `restorable`
+ * off the same read, and durability seals the store on a `false` (#8112).
  */
 export const loadCheckpoint = (loaded: unknown, cwd: string): AiAgentSessionState => {
-	const checkpoint = parseSessionState(withCheckpointDefaults(loaded, cwd));
+	const checkpoint = readCheckpoint(loaded, cwd);
 	return checkpoint === null
 		? {...initialState(cwd), phase: "gone", failure: checkpointUnreadable}
 		: restore(checkpoint);
