@@ -77,7 +77,8 @@ the page's origin as it starts, so the browser's attach goes through (#7560).
 
 Open that URL and the desk is yours by keyboard: `<c-b> |` and `<c-b> -` split, `<c-b> h/j/k/l`
 walk focus, `<c-b> N` makes a workspace and `<c-b> <c-h>` / `<c-b> <c-l>` walk them, `<c-b> z`
-zooms, and `<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
+zooms, `<c-b> w` puts the focused window back on the picker with its process still running, and
+`<c-b> :` opens the command line — `window:open log` fills the focused window with a demo
 program. With the prefix unarmed every key belongs to the focused window's process.
 
 Beside the shell (below), the box holds the demo counter and log (`src/demo/`, #7517): the counter
