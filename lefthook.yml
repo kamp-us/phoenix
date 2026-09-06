@@ -144,6 +144,12 @@ pre-push:
       # this branch changed vs origin/main, so a push stays cheap. Exits 0 cleanly when no
       # changed test is related (a docs-only push isn't spuriously blocked); a real failing
       # unit test fails closed and blocks the push.
+      #
+      # `--workspace-concurrency=1` because the `./apps/**` filter fans over every app and
+      # pnpm's default is `min(4, cores)` — one hook already started two uncapped vitest pools,
+      # and a third app under `apps/` would have widened it to three (#8119). One package at a
+      # time, whatever the filter matches. Each of those runs is itself capped at 2 forks by the
+      # app's `vitest.config.ts`, so this leg holds at most 2 vitest workers.
       use_stdin: true
       run: |
         [ -t 0 ] || cat >/dev/null   # git's pushed-ref list — see the pre-push note (#6172)
@@ -151,7 +157,7 @@ pre-push:
           echo "unit-changed: no pnpm on PATH (stripped-PATH/lean worktree); skipping local pre-push unit tests — CI is the authority" >&2
           exit 0
         }
-        pnpm --filter './apps/**' exec vitest run --config vitest.config.ts --project unit --changed origin/main
+        pnpm --workspace-concurrency=1 --filter './apps/**' exec vitest run --config vitest.config.ts --project unit --changed origin/main
 
 # `git worktree add` fires post-checkout, so this provisions a fresh worktree's deps —
 # node_modules is gitignored and per-checkout, so a worktree is otherwise dead-on-arrival

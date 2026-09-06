@@ -48,8 +48,20 @@ const SPAWN_GUARD_MS = 15_000;
  * A spawning test's vitest budget must outlast every spawn's guard, or vitest kills the test first
  * and the reader gets a bare `Test timed out` instead of the child's stdout/stderr (#7742). Slack
  * covers the unspawned work — a `bootDirect`, the temp dirs, the assertions.
+ *
+ * A `spawnSync` case has no guard of its own, and the same arithmetic bounds it: one real `node`
+ * child starting the bin off TypeScript source. Vitest's 5000 ms default did not cover that even on
+ * an idle machine (#8209), let alone under the parallel lanes of #8119, so every case here that
+ * spawns states its budget through this function.
  */
 const spawnBudget = (spawns: number) => spawns * SPAWN_GUARD_MS + 5_000;
+
+/**
+ * A case that spawns nothing but still does real work — a `bootDirect`, which reads and dynamically
+ * imports a TypeScript config and makes a temp project dir. `spawnBudget(0)` would hand it back
+ * vitest's own 5000 ms, so it states the sibling file's budget instead (#8119).
+ */
+const DIRECT_BOOT_MS = 20_000;
 
 /** A boot with live processes stays up until a signal: send SIGINT once it says it is running. */
 const runUntilRunning = (
@@ -135,61 +147,76 @@ afterEach(() => {
 });
 
 describe("boot", () => {
-	it.effect("registers the rows the config module exports and reports their count", () =>
-		Effect.gen(function* () {
-			const project = freshProject();
-			const {report} = yield* bootDirect(fixture("two-rows"), project);
-			assert.deepStrictEqual(report, {
-				sources: [fixture("two-rows")],
-				programCount: 2,
-				spellCount: CORE_SPELLS,
-				bindingCount: 0,
-				bindingErrors: [],
-				stateDir: projectDir(project),
-				processCount: 0,
-				restoredCount: 0,
-			});
-		}),
+	it.effect(
+		"registers the rows the config module exports and reports their count",
+		() =>
+			Effect.gen(function* () {
+				const project = freshProject();
+				const {report} = yield* bootDirect(fixture("two-rows"), project);
+				assert.deepStrictEqual(report, {
+					sources: [fixture("two-rows")],
+					programCount: 2,
+					spellCount: CORE_SPELLS,
+					bindingCount: 0,
+					bindingErrors: [],
+					stateDir: projectDir(project),
+					processCount: 0,
+					restoredCount: 0,
+				});
+			}),
+		DIRECT_BOOT_MS,
 	);
 
-	it("exits on its own when the config plans no process", () => {
-		const project = freshProject();
-		const result = run(["--config", fixture("two-rows"), "--project", project]);
-		expect(result.status).toBe(0);
-		expect(result.stdout).toBe(
-			`tuval: booted — 2 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("two-rows")}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
-		);
-	});
+	it(
+		"exits on its own when the config plans no process",
+		() => {
+			const project = freshProject();
+			const result = run(["--config", fixture("two-rows"), "--project", project]);
+			expect(result.status).toBe(0);
+			expect(result.stdout).toBe(
+				`tuval: booted — 2 program(s), ${CORE_SPELLS} spell(s) registered from ${fixture("two-rows")}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			);
+		},
+		spawnBudget(1),
+	);
 
-	it("reads ~/.tuval/tuval.config.ts and the cwd's .tuval/tuval.config.ts by default, both merged", () => {
-		const home = freshDir("tuval-home-");
-		mkdirSync(join(home, ".tuval"));
-		writeFileSync(
-			defaultGlobalConfig(home),
-			`export {default} from ${JSON.stringify(fixture("two-rows"))};\n`,
-		);
-		const project = projectWithConfig("one-counter");
-		const result = spawnSync(process.execPath, [bin], {
-			encoding: "utf8",
-			cwd: project,
-			env: {...process.env, HOME: home},
-		});
-		expect(result.stderr).toBe("");
-		expect(result.status).toBe(0);
-		expect(result.stdout).toBe(
-			`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
-		);
-	});
+	it(
+		"reads ~/.tuval/tuval.config.ts and the cwd's .tuval/tuval.config.ts by default, both merged",
+		() => {
+			const home = freshDir("tuval-home-");
+			mkdirSync(join(home, ".tuval"));
+			writeFileSync(
+				defaultGlobalConfig(home),
+				`export {default} from ${JSON.stringify(fixture("two-rows"))};\n`,
+			);
+			const project = projectWithConfig("one-counter");
+			const result = spawnSync(process.execPath, [bin], {
+				encoding: "utf8",
+				cwd: project,
+				env: {...process.env, HOME: home},
+			});
+			expect(result.stderr).toBe("");
+			expect(result.status).toBe(0);
+			expect(result.stdout).toBe(
+				`tuval: booted — 3 program(s), ${CORE_SPELLS} spell(s) registered from ${defaultGlobalConfig(home)} + ${projectConfig(project)}; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			);
+		},
+		spawnBudget(1),
+	);
 
-	it("boots with no config module at all: nothing registered, nothing to run", () => {
-		const home = freshDir("tuval-home-");
-		const project = freshProject();
-		const result = run(["--project", project], {...process.env, HOME: home});
-		expect(result.status).toBe(0);
-		expect(result.stdout).toBe(
-			`tuval: booted — 0 program(s), ${CORE_SPELLS} spell(s) registered from no config module; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
-		);
-	});
+	it(
+		"boots with no config module at all: nothing registered, nothing to run",
+		() => {
+			const home = freshDir("tuval-home-");
+			const project = freshProject();
+			const result = run(["--project", project], {...process.env, HOME: home});
+			expect(result.status).toBe(0);
+			expect(result.stdout).toBe(
+				`tuval: booted — 0 program(s), ${CORE_SPELLS} spell(s) registered from no config module; 0 process(es) live, 0 restored from ${projectDir(project)}\n`,
+			);
+		},
+		spawnBudget(1),
+	);
 
 	it(
 		"boots the box config: the shell and the two demo processes, the table on the terminal, and all three back after a restart",
@@ -248,45 +275,65 @@ describe("boot", () => {
 		spawnBudget(1),
 	);
 
-	it("refuses to boot on a snapshot under another program version, naming the process and both versions", () => {
-		const project = seededProject("0.9.0");
-		const result = run(["--config", fixture("one-counter"), "--project", project]);
-		expect(result.status).toBe(1);
-		expect(result.stdout).toBe("");
-		expect(result.stderr).toBe(
-			`tuval: refusing to boot — snapshot for process "p-1" refused: written by counter@0.9.0, the program is now counter@1.0.0\n`,
-		);
-	});
+	it(
+		"refuses to boot on a snapshot under another program version, naming the process and both versions",
+		() => {
+			const project = seededProject("0.9.0");
+			const result = run(["--config", fixture("one-counter"), "--project", project]);
+			expect(result.status).toBe(1);
+			expect(result.stdout).toBe("");
+			expect(result.stderr).toBe(
+				`tuval: refusing to boot — snapshot for process "p-1" refused: written by counter@0.9.0, the program is now counter@1.0.0\n`,
+			);
+		},
+		spawnBudget(1),
+	);
 
-	it("refuses to boot on a throwing config module, naming the module and the reason", () => {
-		const result = run(["--config", fixture("throws"), "--project", freshProject()]);
-		expect(result.status).toBe(1);
-		expect(result.stdout).toBe("");
-		expect(result.stderr).toBe(
-			`tuval: refusing to boot — config module ${fixture("throws")}: module threw while loading: boom at import time\n`,
-		);
-	});
+	it(
+		"refuses to boot on a throwing config module, naming the module and the reason",
+		() => {
+			const result = run(["--config", fixture("throws"), "--project", freshProject()]);
+			expect(result.status).toBe(1);
+			expect(result.stdout).toBe("");
+			expect(result.stderr).toBe(
+				`tuval: refusing to boot — config module ${fixture("throws")}: module threw while loading: boom at import time\n`,
+			);
+		},
+		spawnBudget(1),
+	);
 
-	it("refuses to boot on a wrong-shaped project config the same way", () => {
-		const project = projectWithConfig("wrong-shape");
-		const result = run(["--project", project], {...process.env, HOME: freshDir("tuval-home-")});
-		expect(result.status).toBe(1);
-		expect(result.stderr).toBe(
-			`tuval: refusing to boot — config module ${projectConfig(project)}: not a v1 config at version: Missing key\n`,
-		);
-	});
+	it(
+		"refuses to boot on a wrong-shaped project config the same way",
+		() => {
+			const project = projectWithConfig("wrong-shape");
+			const result = run(["--project", project], {...process.env, HOME: freshDir("tuval-home-")});
+			expect(result.status).toBe(1);
+			expect(result.stderr).toBe(
+				`tuval: refusing to boot — config module ${projectConfig(project)}: not a v1 config at version: Missing key\n`,
+			);
+		},
+		spawnBudget(1),
+	);
 
-	it("refuses an explicitly named config module that is not there, before boot", () => {
-		const missing = join(freshProject(), "nope.ts");
-		const result = run(["--config", missing]);
-		expect(result.status).toBe(1);
-		expect(result.stderr).toContain(`Path does not exist: ${missing}`);
-	});
+	it(
+		"refuses an explicitly named config module that is not there, before boot",
+		() => {
+			const missing = join(freshProject(), "nope.ts");
+			const result = run(["--config", missing]);
+			expect(result.status).toBe(1);
+			expect(result.stderr).toContain(`Path does not exist: ${missing}`);
+		},
+		spawnBudget(1),
+	);
 
-	it("answers --help with the two flags", () => {
-		const result = run(["--help"]);
-		expect(result.status).toBe(0);
-		expect(result.stdout).toContain("--config");
-		expect(result.stdout).toContain("--project");
-	});
+	it(
+		"answers --help with the two flags",
+		() => {
+			const result = run(["--help"]);
+			expect(result.status).toBe(0);
+			expect(result.stdout).toContain("--config");
+			expect(result.stdout).toContain("--project");
+		},
+		spawnBudget(1),
+	);
 });

@@ -24,6 +24,12 @@ import {defineConfig} from "vitest/config";
 // the one that judges this.
 const execArgv = ["--max-old-space-size=512", "--no-experimental-webstorage"];
 
+// Local runs share one developer machine with each other and with the pre-push hook; CI gives a run
+// the whole runner, so only the local side is capped (#8119). Vitest's own default is
+// `availableParallelism() - 1`, which on a 12-core box is 11 forks *per run* — three build lanes
+// reached 74-87 workers and load average 218. `undefined` on CI falls through to that default.
+const maxWorkers = process.env.CI ? undefined : 2;
+
 export default defineConfig({
 	test: {
 		projects: [
@@ -33,6 +39,7 @@ export default defineConfig({
 					include: ["src/**/*.unit.test.ts", "src/**/*.unit.test.tsx"],
 					pool: "forks",
 					execArgv,
+					maxWorkers,
 					sequence: {groupOrder: 0},
 				},
 			},
@@ -42,6 +49,7 @@ export default defineConfig({
 					include: ["src/**/*.integration.test.ts"],
 					pool: "forks",
 					execArgv,
+					maxWorkers,
 					sequence: {groupOrder: 1},
 					testTimeout: 60_000,
 				},
