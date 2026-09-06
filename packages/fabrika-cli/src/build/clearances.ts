@@ -14,8 +14,9 @@
  *
  * Clause 3 intersects the two: the committed file says whom the repo *nominates*, and the ACL says
  * who may actually act, so a login with no collaboration clears nothing. A committed list alone has
- * no author gate — the same PR that widens it clears its own cap — which is why authority is the
- * ACL's; the file is nevertheless the place the nomination is written down.
+ * no author gate — the base-ref read of clause 2 fences only who may widen the list, never who may
+ * act on it — which is why authority is the ACL's; the file is nevertheless the place the nomination
+ * is written down.
  *
  * Every miss is a row carrying its reason rather than a dropped marker: an operator who posted a
  * void grant must be able to see it was void, and a silently dropped one reads as a PR nobody ever

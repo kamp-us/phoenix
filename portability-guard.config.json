@@ -23,11 +23,11 @@
 		},
 		"packages/fabrika-cli/src/build/scope-admission.unit.test.ts": {
 			"ceiling": 4,
-			"why": "The citation grammar `parseCitation` reads pins the `https://github.com/` host in its own regex, so a citation URL on any other host exercises nothing — these four are the inputs under test, not prose."
+			"why": "The citation grammar `parseCitation` reads pins the `https://github.com/` host in its own regex, so a citation URL on any other host exercises nothing — these four are the inputs under test, not prose. The pin itself is the portability defect, parked behind #8359."
 		},
 		"packages/fabrika-cli/src/build/claim-verb.unit.test.ts": {
 			"ceiling": 3,
-			"why": "The three `--cites` values a claim is admitted on, bound to the same hosted citation grammar `parseCitation` pins; every other fixture URL in the file names a placeholder host."
+			"why": "The three `--cites` values a claim is admitted on, bound to the same hosted citation grammar `parseCitation` pins; every other fixture URL in the file is either a placeholder host or an API endpoint the matcher does not reach. The pin itself is the portability defect, parked behind #8359."
 		}
 	},
 	"unmigrated": {

@@ -25,8 +25,8 @@
  * claim, and it never enters any axis's own reading.
  *
  * The core is pure and total, and this module is **imported** by the pool and claim seams rather than
- * invoked through a relaying verb, which would add a wrapper around a decision this module already
- * derives. Only {@link readDispatch} touches IO.
+ * invoked through a relaying verb — the wrapper shape is banned; this module derives the verdict, it
+ * does not relay one. Only {@link readDispatch} touches IO.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {CONFIG_PATH} from "../config/document.ts";

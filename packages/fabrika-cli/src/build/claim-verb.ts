@@ -810,7 +810,7 @@ export const runRelease = (
 
 /**
  * Detach this tree's HEAD when it is standing on the branch of the lane just released — the cheap
- * the cheap complement to `build retire`.
+ * complement to `build retire`.
  *
  * A lane that ends normally leaks no pin this way, so `build retire` is left for the trees a killed
  * session leaves behind rather than being the ordinary route. Detaching is enough and is all that is
