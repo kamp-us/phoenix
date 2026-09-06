@@ -10,6 +10,7 @@ export {
 	toHistoryItems,
 } from "./items.ts";
 export {
+	commandsOf,
 	emptyMapping,
 	type Mapping,
 	type MappingOptions,

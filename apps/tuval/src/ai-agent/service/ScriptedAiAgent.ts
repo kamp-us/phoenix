@@ -23,6 +23,7 @@ import {renderPath} from "../../commands/spell.ts";
 import type {AgentEvent} from "../events.ts";
 import {
 	boundToolResult,
+	type CommandRef,
 	ItemId,
 	isJsonValue,
 	type JsonValue,
@@ -54,6 +55,8 @@ interface ScriptState {
 	readonly pending: ReadonlyMap<string, PermissionRequest>;
 	readonly mode: Mode | null;
 	readonly model: ModelRef | null;
+	/** What the last `commands` event carried, which is what the `commands` read answers. */
+	readonly commands: ReadonlyArray<CommandRef>;
 	/** False once a scripted disconnect landed. Nothing sets it back — that is the point. */
 	readonly live: boolean;
 }
@@ -65,6 +68,7 @@ const initial = (script: AgentScript): ScriptState => ({
 	pending: new Map(),
 	mode: script.modes.current,
 	model: script.models.current,
+	commands: [],
 	live: true,
 });
 
@@ -107,12 +111,22 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 		);
 		const state = yield* Ref.make(initial(script));
 
+		// The `commands` read answers whatever the last `commands` event carried, so the one funnel
+		// every event passes through is where it is remembered: a turn pushing a second catalog
+		// replaces the first here, with no second place for a script to say so.
+		const remember = (events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
+			Effect.forEach(
+				events.filter((event) => event.kind === "commands"),
+				(event) => Ref.update(state, (previous) => ({...previous, commands: event.available})),
+				{concurrency: 1, discard: true},
+			);
+
 		const emit = (events: ReadonlyArray<AgentEvent>): Effect.Effect<void> =>
 			// Serial on purpose: one subscription, one ordering — a parallel offer would shuffle a turn.
 			Effect.forEach(events, (event) => Queue.offer(queue, event), {
 				concurrency: 1,
 				discard: true,
-			});
+			}).pipe(Effect.andThen(remember(events)));
 
 		const runPlan = Effect.fn("TuvalAiAgent.plan")(function* (plan: ScriptedPlan, turn: number) {
 			const spells = script.spells;
@@ -171,6 +185,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			yield* emit([
 				{kind: "mode", current: current.mode, available: script.modes.available},
 				{kind: "model", current: current.model, available: script.models.available},
+				{kind: "commands", available: script.commands ?? []},
 				{kind: "phase", phase: "ready"},
 			]);
 			yield* Ref.update(state, (previous) => ({
@@ -291,6 +306,7 @@ const make = (script: AgentScript): Effect.Effect<TuvalAiAgentApi, never, Scope.
 			answer,
 			setMode,
 			setModel,
+			commands: Effect.map(Ref.get(state), (current) => current.commands),
 			page,
 			events: Stream.fromQueue(queue),
 		};

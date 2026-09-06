@@ -12,7 +12,7 @@ import {join} from "node:path";
 import type {Effect, Stream} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {AgentEvent} from "../events.ts";
-import type {Mode, ModelRef, PermissionDecision} from "../ports/index.ts";
+import type {CommandRef, Mode, ModelRef, PermissionDecision} from "../ports/index.ts";
 import type {
 	ModelUnsupported,
 	ModeUnsupported,
@@ -30,13 +30,14 @@ import type {
 } from "./TuvalAiAgent.ts";
 
 /**
- * The founder's seven grew to eight on #7981: he wants the agent's model picked from the chat
- * composer, and a picker over a generic window has to read and write the model through the generic
- * interface. `setModel` is that eighth member, and both pins below count eight so the growth reads
- * as the deliberate act it was rather than as drift.
+ * The founder's seven grew to eight on #7981 and to nine on #8060: he wants the agent's model
+ * picked from the chat composer and its slash commands offered there, and a picker over a generic
+ * window has to reach both through the generic interface. `setModel` is the eighth member and
+ * `commands` the ninth, and both pins below count nine so each growth reads as the deliberate act
+ * it was rather than as drift.
  */
 describe("the TuvalAiAgent surface", () => {
-	it("carries the founder's seven members plus #7981's eighth, each at its declared type", () => {
+	it("carries the seven, #7981's eighth and #8060's ninth, each at its declared type", () => {
 		expectTypeOf<TuvalAiAgentApi["start"]>().toEqualTypeOf<
 			(options: StartOptions) => Effect.Effect<StartedSession, StartError>
 		>();
@@ -53,6 +54,9 @@ describe("the TuvalAiAgent surface", () => {
 		expectTypeOf<TuvalAiAgentApi["setModel"]>().toEqualTypeOf<
 			(model: ModelRef) => Effect.Effect<void, ModelUnsupported>
 		>();
+		expectTypeOf<TuvalAiAgentApi["commands"]>().toEqualTypeOf<
+			Effect.Effect<ReadonlyArray<CommandRef>>
+		>();
 		expectTypeOf<TuvalAiAgentApi["page"]>().toEqualTypeOf<
 			(before: string | null, limit: number) => Effect.Effect<TranscriptPage, PageError>
 		>();
@@ -61,9 +65,17 @@ describe("the TuvalAiAgent surface", () => {
 		>();
 	});
 
-	it("has exactly those eight members and no ninth", () => {
+	it("has exactly those nine members and no tenth", () => {
 		expectTypeOf<keyof TuvalAiAgentApi>().toEqualTypeOf<
-			"start" | "prompt" | "interrupt" | "answer" | "setMode" | "setModel" | "page" | "events"
+			| "start"
+			| "prompt"
+			| "interrupt"
+			| "answer"
+			| "setMode"
+			| "setModel"
+			| "commands"
+			| "page"
+			| "events"
 		>();
 	});
 });

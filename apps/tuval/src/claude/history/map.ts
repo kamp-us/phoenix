@@ -15,7 +15,7 @@
 
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {boundToolOutput} from "../../ai-agent/history/index.ts";
-import type {ItemId, JsonValue, TranscriptItem} from "../../ai-agent/ports/index.ts";
+import type {CommandRef, ItemId, JsonValue, TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {
 	isRecord,
 	outputOf,
@@ -273,6 +273,39 @@ export const initEvents = (message: unknown, mapping: Mapping): MappingStep => {
 		events: [{kind: "usage", model, inputTokens: 0, outputTokens: 0, cost: 0}],
 	};
 };
+
+/**
+ * `SlashCommand` rows as the interface's backend-blind `CommandRef`. A row with no usable `name` is
+ * dropped rather than taking the whole push down: the composer would render a bare `/` for it.
+ */
+export const commandsOf = (value: unknown): ReadonlyArray<CommandRef> => {
+	if (!Array.isArray(value)) return [];
+	const rows: Array<CommandRef> = [];
+	for (const row of value) {
+		if (!isRecord(row)) continue;
+		const name = typeof row.name === "string" ? row.name : "";
+		if (name.length === 0) continue;
+		rows.push({
+			name,
+			...(typeof row.description === "string" && row.description.length > 0
+				? {description: row.description}
+				: {}),
+			...(typeof row.argumentHint === "string" && row.argumentHint.length > 0
+				? {argumentHint: row.argumentHint}
+				: {}),
+		});
+	}
+	return rows;
+};
+
+/**
+ * The SDK's mid-session command push, which carries the whole list — its own docstring tells clients
+ * to replace their cached one — so this emits the catalog and the fold replaces on it (#8060).
+ */
+export const commandsChangedEvents = (message: unknown, mapping: Mapping): MappingStep =>
+	isRecord(message)
+		? {mapping, events: [{kind: "commands", available: commandsOf(message.commands)}]}
+		: skipMessage(mapping);
 
 /** A denial the operator never got to answer. The line names the tool, which is the whole point. */
 export const permissionDeniedEvents = (

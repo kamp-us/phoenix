@@ -32,6 +32,7 @@ const openWindow = async (state: AiAgentSessionState): Promise<void> => {
 	);
 	const host: ChatWindowHost = await Effect.runPromise(
 		process.window<ChatView>(WindowId.make("w1"), {
+			pinned: true,
 			scroll: 0,
 			draft: "",
 			cursor: null,
