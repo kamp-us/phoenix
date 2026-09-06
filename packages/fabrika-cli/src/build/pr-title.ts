@@ -1,14 +1,14 @@
 /**
  * The pure read `build pr` makes over the served issue's title before it becomes the PR title.
  *
- * The incident this module answers is #5771: the repo squash-merges with
+ * The incident this module answers: a repo that squash-merges with
  * `squash_merge_commit_title: COMMIT_OR_PR_TITLE`, so on a multi-commit PR the PR title becomes the
  * commit subject on `main` — and release-please cannot route a subject with no conventional prefix,
  * so the change lands with no version bump and no changelog line. Issue titles are descriptive
  * sentences; the prefix is derived here, from the served issue's `type:` label, so every builder PR
  * squashes to a subject release-please can parse.
  *
- * The second incident is #5946: a subject carrying a literal `<details>` lands in the Release PR
+ * The second incident: a subject carrying a literal `<details>` lands in the Release PR
  * body's changelog, and release-please parses that body as HTML — a stray tag with no `<summary>`
  * crashes every later run. Angle brackets are stripped here for the same reason the prefix is added
  * here: this is the one place an issue title becomes a commit subject.
@@ -23,7 +23,7 @@
  * (`conventional-changelog-conventionalcommits/writer-opts.js`, `config.types`). So `type:epic` maps
  * to `feat` rather than falling through: an epic spans children and carries feature work by
  * construction, and a minor bump on an all-fixes epic is cheaper than a whole epic vanishing from
- * the notes (#6754).
+ * the notes.
  */
 const PREFIX_BY_LABEL: ReadonlyMap<string, string> = new Map([
 	["type:bug", "fix"],

@@ -3,16 +3,15 @@
  *
  * [`./blockedness.ts`](./blockedness.ts) reads the board's answer and [`./landed.ts`](./landed.ts)
  * reads the epic run's own commits; this module is the one place the second is allowed to move the
- * first. Under ADR 0285 a child's issue stays open until the single tail PR merges, so inside a run
+ * first. In an epic run a child's issue stays open until the single tail PR merges, so inside a run
  * in flight "the blocker is closed" answers a different question from "the blocker's work landed",
- * and only the second is the one a dependency gate means (#6063). ADR 0301's 2026-08-29 amendment is
- * what authorizes that narrowing at both seams.
+ * and only the second is the one a dependency gate means.
  *
  * It exists because `build eligible` and the claim seam once each carried their own answer: eligible
  * discharged a landed edge and claim refused it on 16, so every sequential epic tracer after the
- * first parked at a human until someone deleted the graph edge by hand (#7035). `build pick` was the
- * third answer to the same edge — it counted the child `blocked` in its excluded histogram, so a
- * buildable child read as unavailable to anyone reading the pool (#7223).
+ * first parked at a human until someone deleted the graph edge by hand. `build pick` was the third
+ * answer to the same edge — it counted the child `blocked` in its excluded histogram, so a buildable
+ * child read as unavailable to anyone reading the pool.
  *
  * **Discharge moves an answer only toward admitting.** An unreadable branch, an unnameable trunk and
  * a standalone issue all leave every edge exactly as the board read it, so a gate can never admit on
@@ -85,7 +84,7 @@ export const assemblyNotes = (verb: string, discharge: Discharge): ReadonlyArray
 	return discharged.length === 0
 		? [`${verb}: ${range} adds ${assembly.commits} commit(s), none naming an undischarged blocker.`]
 		: [
-				`${verb}: ${range} adds a commit naming ${discharged.map((blocker) => `#${blocker}`).join(", ")} — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue (ADR 0285).`,
+				`${verb}: ${range} adds a commit naming ${discharged.map((blocker) => `#${blocker}`).join(", ")} — that work landed on the epic run's assembly branch, so the edge is discharged whatever the board says about the issue.`,
 			];
 };
 

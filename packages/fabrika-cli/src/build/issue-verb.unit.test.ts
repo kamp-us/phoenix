@@ -46,7 +46,7 @@ describe("runIssue", () => {
 	/**
 	 * The whole reason the wire read has three arms: a heading that reaches for the block and misses is
 	 * a DEFECT the skill must surface, and flattening it into `absent` is how a gate grades over
-	 * nothing (#4735's class).
+	 * nothing.
 	 */
 	it("reports a drifted heading as `malformed`, never as `absent`", async () => {
 		const out = await run([

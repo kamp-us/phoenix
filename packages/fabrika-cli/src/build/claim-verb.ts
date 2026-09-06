@@ -14,45 +14,45 @@
  * A loser retracts its **own** marker and nothing else — never another lane's, which is the one write
  * this protocol must never make. Which marker is its own is decided by the whole token: `claim` races
  * under the one it just minted, and `confirm`/`release` under the `--token` that `claim` handed back,
- * so a sibling lane of the same session is a co-racer here rather than the same claimant (#6037).
+ * so a sibling lane of the same session is a co-racer here rather than the same claimant.
  *
- * **One LANE leaves at most one marker on a thread** — #5782's fixed point, keyed on the lane rather
+ * **One LANE leaves at most one marker on a thread** — the fixed point, keyed on the lane rather
  * than the session. `claim` takes an optional `--token`: handed the token it already holds, it reads
  * ownership before writing and answers `won` with that same marker, posting nothing; handed none, it
  * is a fresh lane and races. `release` sweeps every marker carrying THIS lane's token, not merely the
  * winning one, and `claim` answers with `ownership.marker.token` — the token `requireClaim` will read.
  * Without that, N claims left N markers, `claim` printed its own fresh nonce while every other verb
- * read the earliest, and each `release` peeled one off a stack (#5782) — which is how
+ * read the earliest, and each `release` peeled one off a stack — which is how
  * `build branch --resume` cut a branch off a nonce the caller was never shown. Session-scoped, those
- * same rules told a sibling lane it held its neighbour's claim (#6037), so the scope is the lane.
+ * same rules told a sibling lane it held its neighbour's claim, so the scope is the lane.
  *
  * The single exception to "a lane retracts only its own marker" is a succession the board attests:
  * `adopt` records that a named session is gone and this lane inherits its claim, and `release` then
- * retracts the claim and the adopt together (ADR 0295). No TTL, no lease, no steal — the successor
+ * retracts the claim and the adopt together. No TTL, no lease, no steal — the successor
  * writes a comment an ACL check reads, exactly like every other authority in this protocol, and the
  * adopt names the inheriting lane by its whole token so succession does not re-widen ownership back
  * to a session.
  *
  * **`claim` runs the admission test before it writes anything; `confirm` and `release` never run it.**
- * The fence decides what may *start* (ADR 0245), so a campaign paused mid-lane must not strand a
+ * The fence decides what may *start*, so a campaign paused mid-lane must not strand a
  * running lane or block its release. Claiming is the one moment every path goes through — a number
  * handed straight to `claim` passes through no pool — which is why the refusal has teeth here and is
  * advice at the pool.
  *
- * Blockedness rides the same moment but not the same module: ADR 0301 makes the native `blocked_by`
- * graph the one carrier of "do not start this yet", and the gate reading it is composed AFTER the
+ * Blockedness rides the same moment but not the same module: the native `blocked_by`
+ * graph is the one carrier of "do not start this yet", and the gate reading it is composed AFTER the
  * pure axes, since those answer without IO and an out-of-scope number should refuse on the cheaper
  * fact. That gate carries the assembly-branch discharge of [`./discharge.ts`](./discharge.ts), the
  * same derivation `build eligible` answers from: without it the two seams disagreed on one edge, and
- * every sequential epic tracer after the first parked at a human (#7035).
+ * every sequential epic tracer after the first parked at a human.
  *
  * In repair the number is a **PR**, which carries no home and no audience of its own, so the test
- * runs over the issue that PR serves (#5562). The repair route passes that issue explicitly and the
+ * runs over the issue that PR serves. The repair route passes that issue explicitly and the
  * plural linkage reader selects it without reference-order dependence — and when that issue is
  * `type:decision` the audience axis does not bind, because triage routes a decision to
  * `ready-for:human` by default and a repair lane would otherwise fail a fence it had no way to
- * satisfy (#5914). The default is not an exclusion — a decision issue carrying a founder ruling
- * comment is buildable as transcription (ADR 0300) — so the exemption is read off the target being
+ * satisfy. The default is not an exclusion — a decision issue carrying a founder ruling
+ * comment is buildable as transcription — so the exemption is read off the target being
  * a PR, never off the pairing being impossible.
  */
 import {Effect, type FileSystem, type Path} from "effect";
@@ -127,7 +127,7 @@ export interface ClaimOptions {
 	readonly uuid: string;
 	/** The marker's human-readable ISO-8601 timestamp. The tiebreak uses GitHub's `created_at`. */
 	readonly at: string;
-	/** Why this lane claims — `plan` | `gate` | `build`, as typed. Off-enum refuses (#5175). */
+	/** Why this lane claims — `plan` | `gate` | `build`, as typed. Off-enum refuses. */
 	readonly purpose: string;
 	/** Why this run claims an issue the admission test refused, or `null` for the ordinary path. */
 	readonly override: string | null;
@@ -138,14 +138,15 @@ export interface ClaimOptions {
 	 *
 	 * It is not an override and never seats one: an override admits a refusal, while a citation says
 	 * the refusal does not apply, because the choosing this issue asked for already happened on the
-	 * board (founder ruling on #5879, comment 5335398768).
+	 * board, in the founder ruling comment the citation names.
 	 */
 	readonly cites: string | null;
 	/**
 	 * The token this lane ALREADY holds, when it is re-claiming — `null` on a fresh claim.
 	 *
 	 * It is what makes the idempotent answer expressible per lane: without it, "already mine" could
-	 * only be asked of the session, which is exactly the question #6037 proved a lane must not ask.
+	 * only be asked of the session — and a sibling lane of that session then reads its neighbour's
+	 * claim as its own, which is exactly the question a lane must not ask.
 	 */
 	readonly token: string | null;
 	/**
@@ -153,7 +154,7 @@ export interface ClaimOptions {
 	 * {@link readPriorBuild}.
 	 *
 	 * It is a word rather than a derivation because there is nothing to derive it *from*: repair is
-	 * read off an open PR (founder ruling on #5866, #5914) and an epic child opens none. The ruling's
+	 * read off an open PR, by founder ruling, and an epic child opens none. The ruling's
 	 * objection to a typed mode was that a flag is passable in a state where it means nothing, and
 	 * that objection is answered here rather than dodged — `--resume` is checked against the very
 	 * fact it asserts, so it refuses on a child carrying no standing `FAIL` exactly as its absence
@@ -177,7 +178,7 @@ export type ProtocolOptions = Omit<
 	| "resume"
 	| "issue"
 > & {
-	/** The token `build claim` handed this lane — the identity it is asking under (#6037). */
+	/** The token `build claim` handed this lane — the identity it is asking under. */
 	readonly token: string;
 };
 
@@ -192,7 +193,7 @@ type OverrideRead =
  *
  * An override is the fence's escape hatch, and an escape hatch that records nothing is how the fence
  * rots fail-open by convention — so a reason without a lane, a lane without a reason, and a blank
- * either is a usage refusal rather than a claim with a thin trace (#5175).
+ * either is a usage refusal rather than a claim with a thin trace.
  */
 const readOverride = (reason: string | null, lane: string | null): OverrideRead => {
 	const refusal = (message: string): OverrideRead => ({
@@ -227,9 +228,9 @@ type PriorBuildRead =
  *
  * "No lane holds this number" and "this number has no reviewed build" are different facts, and the
  * claim protocol only ever asked the first — so a child released after a `FAIL` was handed to the
- * next lane as ordinary work and re-implemented from scratch, twice on epic #5631 (#6386). The
+ * next lane as ordinary work and re-implemented from scratch, twice on one epic. The
  * second fact lives in the child's range-scoped verdict comments (`./range-verdicts.ts`), which is
- * the only place it *can* live: a child opens no PR (ADR 0285).
+ * the only place it *can* live: a child opens no PR.
  *
  * Both directions refuse, because both are a lane about to do the wrong work — one would rebuild
  * over a graded artifact, the other would try to resume a branch no reviewer has ruled on. Neither
@@ -238,7 +239,7 @@ type PriorBuildRead =
  *
  * A fresh claim refuses on **any** standing verdict, not only a `FAIL`: a `PASS` says the child was
  * built and graded just as loudly, and it is the more finished of the two, so admitting it was the
- * same re-implementation hazard with the opposite sign (#6715). Only the route out differs — a
+ * same re-implementation hazard with the opposite sign. Only the route out differs — a
  * `FAIL` has a repair lane behind `--resume`, a `PASS` has no repair to take and waits on the epic
  * driver's fold.
  *
@@ -299,7 +300,7 @@ const readPriorBuild = (
 				outcome: refuse(
 					PRIOR_BUILD_MISMATCH,
 					failed.length > 0
-						? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build resume-child ${number}" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in (#7187). Nothing was written.`
+						? `${CLAIM}: #${number} already carries a build a reviewer failed — ${graded}. A fresh build would re-implement it; run "fabrika build resume-child ${number}" instead, which takes the repair lane and stands this tree on the branch that build left, in the one order those steps work in. Nothing was written.`
 						: `${CLAIM}: #${number} is already built and graded — ${graded}. A fresh build would re-implement work a reviewer passed, and there is nothing to repair, so --resume does not apply either. The next step is the epic driver's: fold the branch that build left, then close the child. Nothing was written.`,
 					[...lines, ...notes],
 				),
@@ -414,9 +415,9 @@ export const runClaim = (
 
 		// Already THIS LANE's: answer with the marker that owns it and write nothing. A second marker
 		// would leave `claim` printing one nonce while `confirm`/`requireClaim` read the earliest
-		// (#5782), and each `release` would then peel one marker off a stack instead of clearing it.
+		// while each `release` peeled one marker off a stack instead of clearing it.
 		// Only a caller that named its own token can be answered this way — a same-session marker under
-		// another nonce belongs to a sibling lane, and races below like any other (#6037). The fence is
+		// another nonce belongs to a sibling lane, and races below like any other. The fence is
 		// not re-run for the same reason `confirm` and `release` never run it — it decides what may
 		// START, and this lane already started.
 		if (options.token !== null) {
@@ -506,7 +507,7 @@ export const runClaim = (
 		}
 
 		// The blockedness gate, ordered AFTER the pure axes because they answer without IO: a number
-		// out of scope should be refused on the fact that cost no call (ADR 0301). It runs over the
+		// out of scope should be refused on the fact that cost no call. It runs over the
 		// named target only when that target is an issue — a repair claim names a pull request, which
 		// carries no edges of its own, and a lane repairing an open PR has already started.
 		const gateNotes: string[] = [];
@@ -597,14 +598,14 @@ export const runClaim = (
 		if (ownership._tag === "Mine" && ownership.adopt === null) {
 			// The winner is the marker this run just posted: `Mine` turns on the whole token, so an older
 			// marker of this session under another nonce is a SIBLING lane and lands on the lose path
-			// below, where this run retracts its OWN marker. That is what keeps #5782's fixed point —
+			// below, where this run retracts its OWN marker. That is what keeps the fixed point —
 			// one marker per lane on the thread — without the session-scoped retraction it shipped with.
 			return answer(
 				JSON.stringify({
 					answer: "won",
 					number,
 					// The marker's token, not the minted one: they are equal here by construction, and the
-					// one that holds the lane is the one a caller may derive a nonce from (#6037).
+					// one that holds the lane is the one a caller may derive a nonce from.
 					token: ownership.marker.token,
 					purpose,
 					...(override === null ? {} : {override}),
@@ -636,7 +637,7 @@ export const runClaim = (
 				)
 			: refuse(
 					CLAIM_NOT_MINE,
-					`${CLAIM}: this run's own marker is not authorized — its author holds no write permission, so it can never win (ADR 0055).`,
+					`${CLAIM}: this run's own marker is not authorized — its author holds no write permission, so it can never win.`,
 					[...notes, ...trailer],
 				);
 	});
@@ -748,9 +749,9 @@ export const runRelease = (
 		}
 		// Every marker carrying THIS LANE's token, not only the winner. A thread carrying duplicates —
 		// a write that landed after it reported UNKNOWN, then re-posted — would otherwise hand the next
-		// `confirm` the next-oldest one, so release/confirm would have no fixed point (#5782). The
+		// `confirm` the next-oldest one, so release/confirm would have no fixed point. The
 		// filter is the lane's token, never its session: a sibling lane's marker is another lane's
-		// claim, and sweeping it is the one write this protocol must never make (#6037).
+		// claim, and sweeping it is the one write this protocol must never make.
 		const lane = asking.caller;
 		const listed = yield* listComments(repo, number);
 		if (listed._tag === "Failure") {
@@ -809,7 +810,7 @@ export const runRelease = (
 
 /**
  * Detach this tree's HEAD when it is standing on the branch of the lane just released — the cheap
- * complement half of the #6610 ruling (ADR 0323).
+ * complement to `build retire`.
  *
  * A lane that ends normally leaks no pin this way, so `build retire` is left for the trees a killed
  * session leaves behind rather than being the ordinary route. Detaching is enough and is all that is
@@ -854,7 +855,7 @@ const freeLaneBranch = (
 			: {
 					branch: name,
 					notes: [
-						`${RELEASE}: detached this tree's HEAD, freeing ${name} — a later repair lane can resume it (ADR 0323).`,
+						`${RELEASE}: detached this tree's HEAD, freeing ${name} — a later repair lane can resume it.`,
 					],
 				};
 	});
@@ -878,7 +879,7 @@ export interface AdoptOptions extends Omit<ProtocolOptions, "token"> {
 
 /**
  * `build adopt` — the successor driver names a dead session on the board, so its stranded claim
- * becomes releasable (ADR 0295).
+ * becomes releasable.
  *
  * It writes one comment and nothing else. It takes no claim, evicts nobody, and confers ownership
  * only on the session it names as successor: the release that follows still runs the ordinary

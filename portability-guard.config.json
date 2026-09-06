@@ -48,6 +48,14 @@
 		"packages/fabrika-cli/src/config/keys/doc-leak-exempt.ts": {
 			"ceiling": 2,
 			"why": "The key's own docblock names the repo whose docs the shipped default was drawn from, as the value's provenance rather than a pointer."
+		},
+		"packages/fabrika-cli/src/build/scope-admission.unit.test.ts": {
+			"ceiling": 4,
+			"why": "The citation grammar `parseCitation` reads pins the `https://github.com/` host in its own regex, so a citation URL on any other host exercises nothing — these four are the inputs under test, not prose. The pin itself is the portability defect, parked behind #8359."
+		},
+		"packages/fabrika-cli/src/build/claim-verb.unit.test.ts": {
+			"ceiling": 3,
+			"why": "The three `--cites` values a claim is admitted on, bound to the same hosted citation grammar `parseCitation` pins; every other fixture URL in the file is either a placeholder host or an API endpoint the matcher does not reach. The pin itself is the portability defect, parked behind #8359."
 		}
 	},
 	"unmigrated": {
@@ -127,11 +135,6 @@
 			"ceiling": 288,
 			"why": "Everything else the plugin ships — the guide, the README, the agents, the hook manifest and the remaining skills — cleared by #8301, the plugin tail sweep child.",
 			"paths": ["claude-plugins/fabrika"]
-		},
-		"cli-build": {
-			"ceiling": 622,
-			"why": "The build group's source, cleared by #8304, the CLI build sweep child.",
-			"paths": ["packages/fabrika-cli/src/build"]
 		},
 		"cli-review": {
 			"ceiling": 369,

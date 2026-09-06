@@ -75,7 +75,7 @@ describe("runEligible", () => {
 	});
 
 	/**
-	 * The migration's own case (#5913): the prose block is no longer an input, so an edge that exists
+	 * The migration's own case: the prose block is no longer an input, so an edge that exists
 	 * only in the graph is the whole gate. A reader still parsing `## Dependencies` would see no row
 	 * for this child and answer `eligible`.
 	 */
@@ -138,7 +138,7 @@ describe("runEligible", () => {
 	});
 
 	/**
-	 * One case per unreadable input the derivation has (#4920). Each pins `11`: the whole point is that
+	 * One case per unreadable input the derivation has. Each pins `11`: the whole point is that
 	 * no read failure anywhere on the path can resolve to "eligible", and a suite that leaves one path
 	 * unpinned cannot tell a guard that was removed from one that was never exercised.
 	 */
@@ -201,7 +201,7 @@ describe("runEligible", () => {
 	});
 
 	/**
-	 * The epic-run arm (#6063): inside a one-PR run every blocker issue is open by design, so the
+	 * The epic-run arm: inside a one-PR run every blocker issue is open by design, so the
 	 * closed-state proxy alone makes every later-phase child permanently blocked. Each case pins one
 	 * half of the two-source rule — and the negatives pin that the second source only ever discharges
 	 * on evidence it actually read.

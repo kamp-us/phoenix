@@ -1,13 +1,13 @@
 /**
  * What an epic run's assembly branch says has already landed.
  *
- * Under ADR 0285 an epic run is one branch and one PR: a child's work is merged onto `epic/<N>` and
- * its issue stays open until the single tail PR merges (ADR 0131). So inside a run in flight, "the
- * predecessor's issue is closed" answers a different question from "the predecessor's work landed",
- * and only the second is the one a dependency gate means (#6063).
+ * An epic run is one branch and one PR: a child's work is merged onto `epic/<N>` and its issue stays
+ * open until the single tail PR merges. So inside a run in flight, "the predecessor's issue is
+ * closed" answers a different question from "the predecessor's work landed", and only the second is
+ * the one a dependency gate means.
  *
- * The evidence is the git graph, never the lane's own fold — a machine's self-report is not evidence
- * (ADR 0283), which is why `lane prove` reads commits too. The ref-matching rule is
+ * The evidence is the git graph, never the lane's own fold — a machine's self-report is not
+ * evidence, which is why `lane prove` reads commits too. The ref-matching rule is
  * {@link issueRefsIn}, the same one `build commit` and `lane prove` read messages with, so a
  * predecessor cannot be discharged here by a spelling nothing else recognises.
  *

@@ -23,7 +23,7 @@ import {
 } from "./fixtures.test-support.ts";
 import {runTree} from "./tree-verb.ts";
 
-/** The write permission the marker's author holds — what authorizes a claim (ADR 0055). */
+/** The write permission the marker's author holds — what authorizes a claim. */
 const WRITE = served({permission: "write"});
 
 const REV_PARSE = /^git rev-parse --path-format=absolute/;
@@ -71,7 +71,7 @@ describe("runTree", () => {
 	it("refuses a dirty tree at a --require-clean open on 13, and never cleans it", async () => {
 		const seams = fakeSeams([
 			[REV_PARSE, GIT_DIRS],
-			[STATUS, okOut(" M apps/web/src/App.tsx\n?? scratch.md\n")],
+			[STATUS, okOut(" M src/app/App.tsx\n?? scratch.md\n")],
 		]);
 		const out = await Effect.runPromise(
 			Effect.provide(runTree({...options, requireClean: true}), seams.layer),
@@ -191,13 +191,13 @@ describe("runTree", () => {
 	const repairClaim = issue({
 		number: 7182,
 		title: "repair PR",
-		html_url: "https://github.com/o/r/pull/7182",
+		html_url: "https://example.test/o/r/pull/7182",
 		body: "Fixes #7181\n\n## Deviations\nNone.\n",
 		pull_request: {url: "https://api.github.com/repos/o/r/pulls/7182"},
 	});
 	const repairMine = comments({id: 7182, body: marker("s-9f2e", LANE_UUID)});
 	const repairPull = (body = "Fixes #7181\n\n## Deviations\nNone.\n") => pull({number: 7182, body});
-	const servedIssue = issue({number: 7181, html_url: "https://github.com/o/r/issues/7181"});
+	const servedIssue = issue({number: 7181, html_url: "https://example.test/o/r/issues/7181"});
 	const repairProof = (body?: string): ReadonlyArray<Scripted> => [
 		[REV_PARSE, GIT_DIRS],
 		[BRANCH, repairBranch],
@@ -230,7 +230,7 @@ describe("runTree", () => {
 					issue({
 						number: 7180,
 						title: "existing repair PR",
-						html_url: "https://github.com/o/r/pull/7180",
+						html_url: "https://example.test/o/r/pull/7180",
 						body: "Fixes #7162\n\n## Deviations\nNone.\n",
 						pull_request: {url: "https://api.github.com/repos/o/r/pulls/7180"},
 					}),
@@ -251,7 +251,7 @@ describe("runTree", () => {
 					/GET .*\/repos\/o\/r\/issues\/7162$/,
 					issue({
 						number: 7162,
-						html_url: "https://github.com/o/r/issues/7162",
+						html_url: "https://example.test/o/r/issues/7162",
 					}),
 				],
 			],

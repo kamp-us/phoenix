@@ -4,11 +4,10 @@
  * `<temp root>/fabrika-build/<session-id>/<issue>-<claim-nonce>/<slug>`. The fixed `fabrika-build`
  * segment namespaces the allocator against everything else in the temp root; **the claim nonce is what
  * v1's allocator lacked**. v1 keyed on the session id alone, so two lanes — or two roles — of one
- * session shared a namespace and clobbered each other's fixed-name files (#4516, #4544, #4875, #4692),
- * and its own stamp could not separate two pid-less runs (`scratchpad.ts:26-29`). Keying on the
- * confirmed claim makes the namespace per-lane by construction rather than by convention — on the
- * nonce of the token the CALLER holds, never the winning marker's, which is the same string for two
- * lanes of one session (#6037).
+ * session shared a namespace and clobbered each other's fixed-name files, and its own stamp could not
+ * separate two pid-less runs (`scratchpad.ts:26-29`). Keying on the confirmed claim makes the
+ * namespace per-lane by construction rather than by convention — on the nonce of the token the CALLER
+ * holds, never the winning marker's, which is the same string for two lanes of one session.
  *
  * The printed path is machine-local by definition and must never reach a posted artifact — which is
  * why `build pr` and `build note` red on it (`5`).
@@ -37,7 +36,7 @@ export const laneScratchDir = (
 export interface ScratchOptions {
 	readonly number: number;
 	readonly slug: string;
-	/** The token `build claim` handed this lane — what keys the namespace per lane (#6037). */
+	/** The token `build claim` handed this lane — what keys the namespace per lane. */
 	readonly token: string;
 	readonly repo: string | null;
 	readonly env: Readonly<Record<string, string | undefined>>;
