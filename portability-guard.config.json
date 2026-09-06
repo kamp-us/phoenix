@@ -64,11 +64,6 @@
 			"why": "Three fixture paths in `packages/fabrika-cli/src/lane/prove-verb.unit.test.ts` that must start with the rendered-surface prefix `isUiSurface` reads; the prefix has since moved onto config, so these clear on the sweep that follows this unit onto that reader.",
 			"paths": ["packages/fabrika-cli/src/lane"]
 		},
-		"plugin-build": {
-			"ceiling": 457,
-			"why": "The build skill's text, cleared by #8291, the build sweep child.",
-			"paths": ["claude-plugins/fabrika/skills/build"]
-		},
 		"plugin-ship": {
 			"ceiling": 32,
 			"why": "Every remaining hit is a value rather than a sentence: 24 are the ship verbs' stderr lines quoted verbatim in the Errors tables and worked examples, each a literal of a string that lives in packages/fabrika-cli/src/ship and moves only when that string does, and 8 are the synthetic PR numbers and placeholder owner/repo the worked examples echo back. The prose around them carries no reference at all. The quoted half shrinks to zero when the CLI ship group's own strings are swept, and this floor shrinks with it — #8306, the CLI ship sweep, pays it down.",
