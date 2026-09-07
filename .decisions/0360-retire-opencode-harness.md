@@ -28,7 +28,11 @@ one, which is why the opencode twin is named throughout it as the shape to copy.
 Nobody runs the fleet on opencode. What the wiring still produces is cost: release-please cuts bot
 PRs for a package with no consumer, the publish workflow carries a tag arm nobody triggers, and
 `.opencode/agent/` holds a second copy of every shell that drifts from `.claude/agents/` the moment
-one is edited. PR 7266 — a *fix* to that harness — was open when the founder killed it instead.
+one is edited. The first of those costs is not hypothetical: release-please has cut
+`chore(main): release fabrika-opencode 0.2.0` twice — [#7266](https://github.com/kamp-us/phoenix/pull/7266),
+then [#8458](https://github.com/kamp-us/phoenix/pull/8458) once #7266 was closed — and it re-mints
+that Release PR on every qualifying push for as long as the package root stays in the release
+config.
 
 Half-removed is the state worth avoiding: a stale shell or a dangling release-please path keeps
 generating work for a harness nobody uses, and a reader cannot tell an unfinished migration from a
@@ -71,7 +75,8 @@ entries in `release-please-config.json` and `.release-please-manifest.json`, the
   [0332](0332-fabrika-pi-ships-as-npm-package.md) are amended in part by this record. Both rulings
   stand whole — 0331 still deletes the spawn hook, 0332 still ships `@kampus/fabrika-pi` on npm —
   but each rests part of its reasoning on opencode being a harness the fleet runs, and that half is
-  no longer true. Their text is not edited; this record is where the correction lives.
+  no longer true. Only their `status:` lines change — the bodies are byte-identical, and this
+  record is where the correction lives.
 - [#8049](https://github.com/kamp-us/phoenix/issues/8049),
   [#7329](https://github.com/kamp-us/phoenix/issues/7329),
   [#6991](https://github.com/kamp-us/phoenix/issues/6991) and
