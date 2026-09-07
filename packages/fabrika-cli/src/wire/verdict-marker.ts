@@ -216,9 +216,11 @@ export const bindToHead = (marker: VerdictMarker, head: string): Binding => {
  *
  * 1. An unresolvable head is `Unbindable` — nothing below can be asked.
  * 2. The head the marker names is still the head ⇒ `Current` via `head`, and no digest is needed.
- *    This is the pre-ruling answer, untouched, and it is why the common path costs no git read.
- * 3. A marker carrying **no** content field is `Stale`, exactly as before the ruling. Absence of a
- *    binding is never a binding; a legacy marker earns nothing by predating the field.
+ *    This is the answer that predates the content field, untouched, and it is why the common path
+ *    costs no git read.
+ * 3. A marker carrying **no** content field is `Stale`, exactly as it was before the content field
+ *    existed. Absence of a binding is never a binding; a legacy marker earns nothing by predating
+ *    the field.
  * 4. `digest === null` — the caller holds a content-bound marker but could not compute the head's
  *    own digest — is `Unbindable`. Reading it as `Current` would let an unverifiable claim ship;
  *    reading it as `Stale` would be safe but would lie about *why*, and the reason is what tells an

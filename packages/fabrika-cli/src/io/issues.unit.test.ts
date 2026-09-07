@@ -322,7 +322,7 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 				{
 					status: 200,
 					body: [
-						{number: 24, title: "Geçit"},
+						{number: 24, title: "first release"},
 						{number: 44, title: "fabrika campaign"},
 					],
 				},
@@ -332,7 +332,7 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 		expect(result).toEqual({
 			_tag: "Ok",
 			value: [
-				{number: 24, title: "Geçit"},
+				{number: 24, title: "first release"},
 				{number: 44, title: "fabrika campaign"},
 			],
 		});
@@ -351,7 +351,7 @@ describe("the list reads page, and refuse a shape that is not what they asked fo
 	it("listOpenMilestones refuses a 200 whose entries are not milestones", async () => {
 		const result = await against(
 			listOpenMilestones("o/r"),
-			scripted([[/milestones/, {status: 200, body: [{number: "24", title: "Geçit"}]}]]),
+			scripted([[/milestones/, {status: 200, body: [{number: "24", title: "first release"}]}]]),
 		);
 		expect(result._tag).toBe("Failure");
 	});
@@ -422,7 +422,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 					headers: linkNext("https://api.github.com/next"),
 				},
 			],
-			[/&page=2$/, {status: 200, body: [comment(2, "cansirin", "second")]}],
+			[/&page=2$/, {status: 200, body: [comment(2, "noor", "second")]}],
 		]);
 		const result = await against(listComments("o/r", 4831), http);
 		expect(result).toEqual({
@@ -437,7 +437,7 @@ describe("a list whose completeness is load-bearing refuses a walk it could not 
 				},
 				{
 					id: 2,
-					author: "cansirin",
+					author: "noor",
 					createdAt: "2026-08-03T09:28:41Z",
 					updatedAt: "2026-08-03T10:00:00Z",
 					body: "second",

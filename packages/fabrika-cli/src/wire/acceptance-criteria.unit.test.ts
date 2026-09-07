@@ -288,9 +288,9 @@ describe("read — Malformed: the drifts a naive reader answers `empty` for", ()
 });
 
 /**
- * One case per rule, in the ADR's own order. The pair that carries the design is rules 4 and 5: the
- * same near-miss heading refuses below the served block and is dropped above it, because only the
- * one below can be an amendment nobody is grading.
+ * One case per selection rule, in the order a reader applies them. The pair that carries the
+ * design is rules 4 and 5: the same near-miss heading refuses below the served block and is dropped
+ * above it, because only the one below can be an amendment nobody is grading.
  */
 describe("read — block selection in an amended body", () => {
 	it("rule 1: no candidate heading at all is Absent", () => {

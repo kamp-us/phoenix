@@ -105,7 +105,7 @@ export const SURFACE_REGISTRY: ReadonlyArray<SurfaceSpec> = [
 	{
 		id: "settings-patch",
 		disposition: "degrade",
-		note: "`.claude/settings.json` carrying the kampus marketplace registration and the `fabrika@kampus` flip; `status wiring` answers `unwired` over its absence, every CLI verb still runs, and only the skills do not load — buildable through `status bootstrap settings-patch`, which is the other axis",
+		note: "`.claude/settings.json` carrying the marketplace registration and the `fabrika@kampus` flip; `status wiring` answers `unwired` over its absence, every CLI verb still runs, and only the skills do not load — buildable through `status bootstrap settings-patch`, which is the other axis",
 	},
 	{
 		id: "dep-pin",

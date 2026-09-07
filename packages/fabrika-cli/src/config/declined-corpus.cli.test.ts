@@ -1,6 +1,6 @@
 /**
- * A repo that declines `decisionsDir`, end to end: what `adr`, `governance`, the ADR number guard
- * and `glossary check` do about it.
+ * A repo that declines `decisionsDir`, end to end: what `adr`, `governance`, the decision-number
+ * guard and `glossary check` do about it.
  *
  * The behaviour only exists at the process boundary — each verb resolves the key from the **cwd**
  * it is run in, so an in-process test would have to fake the one thing under test. Four spawns:
