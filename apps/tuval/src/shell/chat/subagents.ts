@@ -1,0 +1,91 @@
+/**
+ * What the running-subagent list is a list *of*, and the two labels its rows read in.
+ *
+ * Pure and model-blind: everything here is a function of the port's `SubagentSlot`
+ * (`../../ai-agent/ports/subagent.ts`), so the list a window draws is the same list for every agent
+ * program the moment that program's mapper fills the slot (founder ruling Q11 on #8384).
+ *
+ * A row carries the four fields Q1 names and nothing else — no count of the rows the slot holds,
+ * which was a verbatim "no". `startedAt` rather than an elapsed number: elapsed is what a clock the
+ * component reads makes of it, and computing it here would freeze it at the render that built the
+ * model.
+ */
+
+import type {ItemId, SubagentSlot} from "../../ai-agent/ports/index.ts";
+
+/** How many rows the list shows before the tail collapses into one "more" row (Q3). */
+export const SUBAGENT_ROW_CAP = 5;
+
+export interface SubagentRow {
+	readonly id: ItemId;
+	readonly type: string;
+	readonly lastLine: string;
+	/** Epoch milliseconds, so the row's elapsed is the reader's own clock minus this. */
+	readonly startedAt: number;
+	readonly tokens: number;
+}
+
+export interface SubagentListModel {
+	readonly rows: ReadonlyArray<SubagentRow>;
+	/** How many running workers the cap left off. Zero means the list shows all of them. */
+	readonly more: number;
+}
+
+/**
+ * The running workers, oldest-first and capped.
+ *
+ * Oldest-first, tie-broken on the id, because the order has to hold still: a list sorted by
+ * anything that moves — the last line, the token count — would re-order itself under a reader's
+ * eyes on every frame the workers write. A finished slot is not here at all: it left the list the
+ * moment its worker stopped (Q2), and its spawning call is a plain tool row again.
+ */
+export const runningSubagents = (
+	slots: Readonly<Record<string, SubagentSlot>>,
+): SubagentListModel => {
+	const running = Object.values(slots)
+		.filter((slot) => slot.status === "running")
+		.sort((left, right) =>
+			left.startedAt === right.startedAt
+				? left.id.localeCompare(right.id)
+				: left.startedAt - right.startedAt,
+		);
+	return {
+		rows: running.slice(0, SUBAGENT_ROW_CAP).map((slot) => ({
+			id: slot.id,
+			type: slot.type,
+			lastLine: slot.lastLine,
+			startedAt: slot.startedAt,
+			tokens: slot.tokens,
+		})),
+		more: Math.max(0, running.length - SUBAGENT_ROW_CAP),
+	};
+};
+
+const pad = (value: number): string => String(value).padStart(2, "0");
+
+/**
+ * How long a worker has been running, in the coarsest unit that still moves: seconds under a
+ * minute, then minutes and seconds, then hours and minutes. A duration below zero reads as zero —
+ * a checkpoint restored on a machine whose clock moved back is not a worker that started in the
+ * future.
+ */
+export const elapsedLabel = (millis: number): string => {
+	const seconds = Math.max(0, Math.floor(millis / 1_000));
+	if (seconds < 60) return `${seconds}s`;
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) return `${minutes}m ${pad(seconds % 60)}s`;
+	return `${Math.floor(minutes / 60)}h ${pad(minutes % 60)}m`;
+};
+
+/** One tier of the compact count: the value in that unit, its zero decimal dropped. */
+const compact = (value: number, unit: string): string => `${Number(value.toFixed(1))}${unit}`;
+
+/**
+ * A token count at the width a row can spare. Exact under a thousand, because that is where a
+ * reader still reads the digits; compact above it, because the row is a glance and not a ledger.
+ */
+export const tokenLabel = (tokens: number): string => {
+	if (tokens < 1_000) return String(tokens);
+	if (tokens < 1_000_000) return compact(tokens / 1_000, "k");
+	return compact(tokens / 1_000_000, "M");
+};

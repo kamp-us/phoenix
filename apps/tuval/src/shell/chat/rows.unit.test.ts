@@ -427,3 +427,99 @@ describe("a live tail carrying an exchange the bounds cannot hold", () => {
 		expect(new Set(ids).size).toBe(ids.length);
 	});
 });
+
+/**
+ * The removal (#8405). A subagent's work is read in the running list and in the view Q7 switches
+ * to, never as rows in the agent's own transcript — so an item whose parent chain reaches a
+ * spawning call the session holds a slot for is not emitted at all.
+ *
+ * `subagents` is the whole of what turns this on, which is what keeps the distinction above from
+ * being an assertion: every case in the fold describe passes none, and every one of them still
+ * folds exactly as it did.
+ */
+describe("chatRows leaves a subagent's rows out of the agent window", () => {
+	const spawned = [
+		call("agent", {name: "Agent"}),
+		call("child-1", {parentId: "agent"}),
+		{...assistantItem("reply"), parentId: ItemId.make("agent")},
+		{...thinkingItem("weighing"), parentId: ItemId.make("agent")},
+		call("own", {name: "Bash"}),
+	];
+
+	it("emits the spawning call as a plain row heading nothing, and none of its rows", () => {
+		const rows = chatRows({
+			...base,
+			tail: spawned,
+			atOldest: true,
+			subagents: new Set(["agent"]),
+		});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+		expect(rows[0]?.kind === "item" && rows[0].nestedIds).toEqual([]);
+	});
+
+	it("keeps them out even with the head's fold open, since there is nothing left to disclose", () => {
+		const rows = chatRows({
+			...base,
+			tail: spawned,
+			atOldest: true,
+			subagents: new Set(["agent"]),
+			unfolded: new Set(["agent"]),
+		});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+	});
+
+	it("reaches every depth, on a transcript where a subagent spawns a subagent (Q5)", () => {
+		const deep = [
+			call("agent", {name: "Agent"}),
+			call("inner", {name: "Agent", parentId: "agent"}),
+			call("leaf", {parentId: "inner"}),
+			{...assistantItem("inner-reply"), parentId: ItemId.make("inner")},
+			call("own", {name: "Bash"}),
+		];
+		const rows = chatRows({
+			...base,
+			tail: deep,
+			atOldest: true,
+			// Only the outer call is a slot the session holds: the inner one is a row of the outer
+			// worker, so the walk has to reach it through its parent rather than through the set.
+			subagents: new Set(["agent"]),
+			unfolded: new Set(["agent", "inner"]),
+		});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+	});
+
+	it("leaves an ordinary tool call's own fold exactly as it is, subagents or not", () => {
+		const mixed = [
+			call("agent", {name: "Agent"}),
+			call("child-1", {parentId: "agent"}),
+			call("plain", {name: "Bash"}),
+			call("plain-child", {parentId: "plain"}),
+		];
+		const rows = chatRows({
+			...base,
+			tail: mixed,
+			atOldest: true,
+			subagents: new Set(["agent"]),
+			unfolded: new Set(["plain"]),
+		});
+		expect(itemIds(rows)).toEqual(["agent", "plain", "plain-child"]);
+		expect(rows[1]?.kind === "item" && rows[1].nestedIds).toEqual(["plain-child"]);
+	});
+
+	it("keeps a finished worker's rows out too, so a stopped slot does not flood the window back", () => {
+		const rows = chatRows({...base, tail: spawned, atOldest: true, subagents: new Set(["agent"])});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+	});
+
+	it("emits every row when the session holds no slots at all, which is the flag-off window", () => {
+		const rows = chatRows({...base, tail: spawned, atOldest: true, subagents: new Set()});
+		expect(itemIds(rows)).toEqual(["agent", "own"]);
+		expect(rows[0]?.kind === "item" && rows[0].nestedIds).toEqual(["child-1", "reply", "weighing"]);
+	});
+
+	it("drops a row of a subagent whose own spawning call is older than the loaded pages", () => {
+		const orphan = call("child", {parentId: "agent"});
+		const rows = chatRows({...base, tail: [orphan], atOldest: true, subagents: new Set(["agent"])});
+		expect(rows).toEqual([]);
+	});
+});

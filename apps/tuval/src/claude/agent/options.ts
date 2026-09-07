@@ -137,6 +137,11 @@ export const queryOptionsOf = (
 		canUseTool: input.canUseTool,
 		env: input.env,
 		includePartialMessages: options.streamPartialReplies === true,
+		// Without it the SDK forwards a worker's tool frames alone (`sdk.d.ts`, `Options
+		// .forwardSubagentText`: "only tool_use/tool_result blocks from subagents are emitted") — enough
+		// for a heartbeat, and not enough for a slot's last line, which is the whole of what a running
+		// row says a worker is doing (#8427, folded into #8405).
+		forwardSubagentText: true,
 		...(input.session.kind === "fresh"
 			? {sessionId: input.session.sessionId}
 			: {resume: input.session.sessionId}),

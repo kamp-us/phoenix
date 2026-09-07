@@ -67,6 +67,15 @@ export interface ChatRowsInput {
 	readonly atOldest: boolean;
 	/** The ids of the group heads whose folded rows are showing, off this window's own view slot. */
 	readonly unfolded?: ReadonlySet<string>;
+	/**
+	 * The spawning calls the session holds a subagent slot for. Every row whose parent chain reaches
+	 * one leaves the agent window entirely (#8405, founder ruling Q5) — its work is read in the
+	 * running list and in the view Q7 switches to.
+	 *
+	 * Empty is today's window: the fold of #8027 is untouched, which is what lets the flag gating
+	 * this be one boolean and no second code path.
+	 */
+	readonly subagents?: ReadonlySet<string>;
 }
 
 /**
@@ -155,6 +164,37 @@ const headOf = (item: TranscriptItem, heads: ReadonlySet<string>): ItemId | unde
 	item.parentId !== undefined && heads.has(item.parentId) ? item.parentId : undefined;
 
 /**
+ * The rows that belong to a subagent rather than to the agent: every item whose parent chain
+ * reaches a call in `subagents`. The spawning call itself is not one of them — it is the agent's
+ * own row, and it stays as the plain tool row it was before it grew a fold (#8405).
+ *
+ * The walk climbs `parentId` over *every* loaded item and not over the rows that survived, because
+ * a worker that spawns a worker puts a dropped call between a leaf and the slot it belongs to. A
+ * chain that reaches no slot and no loaded parent simply ends; `seen` is what stops one that loops
+ * back on itself, the same cycle `chatRows` already tolerates.
+ */
+const insideSubagent = (
+	items: ReadonlyArray<TranscriptItem>,
+	subagents: ReadonlySet<string>,
+): ReadonlySet<string> => {
+	const byId = new Map(items.map((item) => [String(item.id), item]));
+	const hidden = new Set<string>();
+	for (const item of items) {
+		const seen = new Set<string>([String(item.id)]);
+		let parent = item.parentId;
+		while (parent !== undefined && !seen.has(parent)) {
+			if (subagents.has(parent)) {
+				hidden.add(String(item.id));
+				break;
+			}
+			seen.add(parent);
+			parent = byId.get(parent)?.parentId;
+		}
+	}
+	return hidden;
+};
+
+/**
  * Append a session notice, joining the run already at the end of the list when there is one.
  *
  * A notice heads no fold — `foldHeads` refuses it one — and its own depth is never drawn, which is
@@ -187,13 +227,19 @@ const pushSession = (rows: Array<ChatRow>, item: SystemItem): void => {
  * can mark rather than only of a one-level fold: a subagent that spawns a subagent gives a folded
  * row children of its own, counted and rendered like any other head.
  *
+ * A row belonging to a **subagent** is not folded but dropped, and `subagents` is the whole of what
+ * says which (#8405): the fold above is what an ordinary tool call's nested rows still get.
+ *
  * `reachable` is walked separately from the render because the two ask different questions. A row
  * behind a folded head is hidden on purpose and must stay hidden; a row whose parent chain loops
  * back on itself belongs to no head at all and would otherwise vanish. Only the second is swept in
  * at the end, so no marked row is dropped and none is un-hidden.
  */
 export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
-	const items = [...unheld(input.tail, input.older), ...input.tail];
+	const loaded = [...unheld(input.tail, input.older), ...input.tail];
+	const subagents = input.subagents ?? new Set<string>();
+	const hidden = subagents.size === 0 ? null : insideSubagent(loaded, subagents);
+	const items = hidden === null ? loaded : loaded.filter((item) => !hidden.has(String(item.id)));
 	const unfolded = input.unfolded ?? new Set<string>();
 	const heads = foldHeads(items);
 	const folded = new Map<string, Array<TranscriptItem>>();
