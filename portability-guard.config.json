@@ -75,11 +75,6 @@
 			"why": "Same class as the `review` contract's row: verbatim pins of stderr lines the shipped `review-ui` verbs print, whose source strings live in packages/fabrika-cli/src/review-ui/ and move with #8305.",
 			"paths": ["claude-plugins/fabrika/skills/review-ui/contract.md"]
 		},
-		"plugin-triage": {
-			"ceiling": 14,
-			"why": "All 14 are verbatim pins of strings the shipped triage verbs print — the exit-code meanings in packages/fabrika-cli/src/triage/codes.ts and the stderr lines in queue-verb.ts, homes-verb.ts, split-verb.ts, enrich-verb.ts, apply-verb.ts, park-verb.ts, provenance-verb.ts, blocked-by.ts and kill-verb.ts, quoted in the Errors tables and echoed in the worked examples. The reference sits inside the quoted string, so it is a copy of behaviour that lives in packages/fabrika-cli/src/triage/ — the source #8308 owns. It shrinks when that child rewrites the strings; changing the pin first would make the contract quote a line no verb prints. Every one sits inside a quoted string or a fenced transcript; the skill's prose carries none, including the bare decision-record number this guard's pattern cannot see.",
-			"paths": ["claude-plugins/fabrika/skills/triage"]
-		},
 		"plugin-governance": {
 			"ceiling": 25,
 			"why": "#8296 swept the prose; every one of the 25 left is a value rather than a sentence. 20 are stderr lines the shipped verbs print, pinned in the Errors tables — rewriting a pin first would make the contract quote a line no verb prints, so 16 shrink when packages/fabrika-cli/src/governance and packages/fabrika-cli/src/status are swept by #8309, and 4 when packages/fabrika-cli/src/review is swept by #8305. 3 are the `governance-digest` round-trip fixture rows copied from the wire registry, which move with packages/fabrika-cli/src/wire under #8307. 2 are the `settings-patch` marketplace source the bootstrap registry writes, a constant in packages/fabrika-cli/src/status that #8309 owns. So #8309 retires 18, #8305 4 and #8307 3.",
@@ -97,7 +92,7 @@
 			]
 		},
 		"plugin-discovery": {
-			"ceiling": 300,
+			"ceiling": 296,
 			"why": "The grilling, wayfinding, graduate and prototyping skills' text, cleared by #8298, the discovery sweep child.",
 			"paths": [
 				"claude-plugins/fabrika/skills/grilling",
@@ -112,7 +107,7 @@
 			"paths": ["claude-plugins/fabrika/skills/operate", "claude-plugins/fabrika/skills/heal-ci"]
 		},
 		"plugin-authoring": {
-			"ceiling": 302,
+			"ceiling": 297,
 			"why": "The build-ui, campaign, adr, glossary and taste-color skills' text, cleared by #8300, the authoring sweep child.",
 			"paths": [
 				"claude-plugins/fabrika/skills/build-ui",
@@ -145,17 +140,6 @@
 				"packages/fabrika-cli/src/io",
 				"packages/fabrika-cli/src/ci",
 				"packages/fabrika-cli/src/config"
-			]
-		},
-		"cli-triage": {
-			"ceiling": 367,
-			"why": "The triage, report, graduate, grill and campaign groups' source, cleared by #8308, the CLI triage sweep child.",
-			"paths": [
-				"packages/fabrika-cli/src/triage",
-				"packages/fabrika-cli/src/report",
-				"packages/fabrika-cli/src/graduate",
-				"packages/fabrika-cli/src/grill",
-				"packages/fabrika-cli/src/campaign"
 			]
 		},
 		"cli-capture": {

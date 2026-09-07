@@ -21,27 +21,30 @@ const milestones = (
 ): HttpReply => ({status: 200, body: JSON.stringify(rows)});
 
 /** The shipped default lane set — what a repo declaring no `boardVocabulary` resolves to. */
-const PHOENIX_LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
+const DEFAULT_LANES = ["wayfinder:backlog", "axis:pipeline-hardening"];
 
-/** A board carrying both lane labels, so the presence filter offers both — phoenix's own state. */
-const bothLabels = [LABELS, labels("type:bug", ...PHOENIX_LANES)] as const;
+/** A board carrying both lane labels, so the presence filter offers both. */
+const bothLabels = [LABELS, labels("type:bug", ...DEFAULT_LANES)] as const;
+
+const ARC_MILESTONE = 24;
+const CAMPAIGN_MILESTONE = 44;
 
 const ROADMAP = `## Arcs
 
 | Arc | Milestone | State |
 |-----|-----------|-------|
-| Geçit | #24 | active |
+| Geçit | #${ARC_MILESTONE} | active |
 
 ## Campaigns
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
-| fabrika campaign | #44 | paused |
+| fabrika campaign | #${CAMPAIGN_MILESTONE} | paused |
 `;
 
 const options = {
 	roadmap: "ROADMAP.md",
-	standingLanes: PHOENIX_LANES as ReadonlyArray<string>,
+	standingLanes: DEFAULT_LANES as ReadonlyArray<string>,
 	repo: null,
 	json: false,
 	env: {CLAUDE_PIPELINE_REPO: "o/r"} as Record<string, string | undefined>,
@@ -67,7 +70,7 @@ const run = (
 
 const twoMilestones = [
 	MILESTONES,
-	milestones({number: 24, title: "Sözlük — search and discovery"}, {number: 44, title: "fabrika"}),
+	milestones({number: 24, title: "Search and discovery"}, {number: 44, title: "fabrika"}),
 ] as const;
 
 describe("runHomes", () => {
@@ -76,7 +79,7 @@ describe("runHomes", () => {
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout.trimEnd().split("\n")).toEqual([
 			"homes",
-			"milestone\t24\tSözlük — search and discovery",
+			"milestone\t24\tSearch and discovery",
 			"milestone\t44\tfabrika",
 			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
 			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
@@ -87,7 +90,7 @@ describe("runHomes", () => {
 		const out = await run([twoMilestones], {"ROADMAP.md": ROADMAP}, {json: true});
 		const payload = JSON.parse(out.stdout);
 		expect(payload.milestones).toEqual([
-			{number: 24, title: "Sözlük — search and discovery", roadmapRow: "Geçit"},
+			{number: 24, title: "Search and discovery", roadmapRow: "Geçit"},
 			{number: 44, title: "fabrika", roadmapRow: "fabrika campaign"},
 		]);
 	});
@@ -154,7 +157,7 @@ describe("runHomes", () => {
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout.trimEnd().split("\n")).toEqual([
 			"homes",
-			"milestone\t24\tSözlük — search and discovery",
+			"milestone\t24\tSearch and discovery",
 			"milestone\t44\tfabrika",
 			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
 			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
@@ -175,7 +178,7 @@ describe("runHomes", () => {
 		const out = await run([twoMilestones], {}, {json: true});
 		expect(out.code).toBe(ANSWER);
 		expect(JSON.parse(out.stdout).milestones).toEqual([
-			{number: 24, title: "Sözlük — search and discovery", roadmapRow: null},
+			{number: 24, title: "Search and discovery", roadmapRow: null},
 			{number: 44, title: "fabrika", roadmapRow: null},
 		]);
 	});
@@ -249,7 +252,7 @@ describe("runHomes and the running-campaign marker", () => {
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout.trimEnd().split("\n")).toEqual([
 			"homes",
-			"milestone\t24\tSözlük — search and discovery",
+			"milestone\t24\tSearch and discovery",
 			`milestone\t44\tfabrika\t${RUNNING_MARKER}`,
 			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
 			"lane\taxis:pipeline-hardening\tthe standing pipeline and reliability lane",
@@ -259,7 +262,7 @@ describe("runHomes and the running-campaign marker", () => {
 	it("carries the same fact as a per-milestone --json field, absent on an unmarked row", async () => {
 		const out = await run([twoMilestones], {"ROADMAP.md": withActive("#44")}, {json: true});
 		expect(JSON.parse(out.stdout).milestones).toEqual([
-			{number: 24, title: "Sözlük — search and discovery", roadmapRow: "Geçit"},
+			{number: 24, title: "Search and discovery", roadmapRow: "Geçit"},
 			{number: 44, title: "fabrika", roadmapRow: "fabrika campaign", running: RUNNING_MARKER},
 		]);
 	});
@@ -300,12 +303,12 @@ describe("runHomes and the standing lanes the host repo carries", () => {
 		expect(out.code).toBe(ANSWER);
 		expect(out.stdout.trimEnd().split("\n")).toEqual([
 			"homes",
-			"milestone\t24\tSözlük — search and discovery",
+			"milestone\t24\tSearch and discovery",
 			"milestone\t44\tfabrika",
 		]);
 	});
 
-	it("still offers both in a repo carrying both — the shipped default reproduces phoenix", async () => {
+	it("still offers both in a repo carrying both", async () => {
 		const out = await run([twoMilestones]);
 		expect(out.stdout.trimEnd().split("\n").slice(-2)).toEqual([
 			"lane\twayfinder:backlog\tfog — uncharted work upstream of any arc",
@@ -329,7 +332,7 @@ describe("runHomes and the standing lanes the host repo carries", () => {
 	it("carries the offered lanes, not the declared set, into the --json payload", async () => {
 		const out = await run([twoMilestones, [LABELS, labels("wayfinder:backlog")]], {}, {json: true});
 		expect(JSON.parse(out.stdout).lanes).toEqual(
-			offeredLanes(PHOENIX_LANES, new Set(["wayfinder:backlog"])),
+			offeredLanes(DEFAULT_LANES, new Set(["wayfinder:backlog"])),
 		);
 	});
 
@@ -343,7 +346,7 @@ describe("runHomes and the standing lanes the host repo carries", () => {
 	/*
 	 * The empty declared set an operator produces with `"standingLanes": []` — the config half is
 	 * `standing-lanes.unit.test.ts`'s "reads an explicitly empty declaration as zero lanes", and
-	 * `command.ts` passes what it read straight through (#6440).
+	 * `command.ts` passes what it read straight through.
 	 */
 	it("reads no labels at all when the repo declares no lanes — there is nothing to filter", async () => {
 		const shell = fakeSeams([twoMilestones]);

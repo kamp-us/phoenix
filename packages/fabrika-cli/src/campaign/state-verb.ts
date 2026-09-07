@@ -9,7 +9,7 @@
  * somebody else made first.
  *
  * Whether the milestone should be closed alongside a flip to `done` is `roadmap-guard`'s I5 and is
- * not repeated here (ADR 0238).
+ * not repeated here: a second answer to a merge-gating question is worse than no answer at all.
  */
 
 import {Effect} from "effect";

@@ -360,7 +360,7 @@ with `rows: []` for the `none` case.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `campaign list: cannot read <file>: <reason> — UNKNOWN, nothing was parsed.` | 11 | refusal |
-| `campaign list: <file>: <reason> — the whole ## Campaigns table is unreadable (ADR 0304).` | 12 | refusal |
+| `campaign list: <file>: <reason> — the whole ## Campaigns table is unreadable.` | 12 | refusal |
 | `campaign list: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 | `campaign list: --state "<value>" is not one of active, paused, done.` | 1 | usage error |
 
@@ -498,7 +498,7 @@ answer: a run that wrote nothing exits non-zero. Under `--json`:
 | `campaign open: <name> is required.` — positional spelling; `<name>` is declared positional, so no `--` prefix ever appears | 1 | usage error |
 | `campaign open: cannot read <file>: <reason> — UNKNOWN, nothing was written.` | 11 | refusal |
 | `campaign open: cannot write <file>: <reason> — UNKNOWN, the table may be half-written; re-read it.` | 8 | refusal |
-| `campaign open: <file>: <reason> — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
+| `campaign open: <file>: <reason> — the whole ## Campaigns table is unreadable. NOTHING was written.` | 12 | refusal |
 | `campaign open: cannot fetch <url>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign open: cannot resolve membership of <login> in @<org>/<team>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign open: cannot resolve @<login>'s permission on <repo>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
@@ -513,7 +513,7 @@ answer: a run that wrote nothing exits non-zero. Under `--json`:
 | `campaign open: <file> already holds "<name>" at #<m> — NOTHING was written.` | 19 | refusal |
 | `campaign open: <file> already pins #<n> to "<other>" — NOTHING was written.` | 19 | refusal |
 | `campaign open: wrote <file> but the read-back holds no row for #<n> — the write landed and the file does not say so; re-read it before retrying.` | 9 | refusal |
-| `campaign open: <url> was authored by @<login>, who resolves to <level-or-no-collaboration> on <repo>, below write — authority is the ACL's, never .fabrika.jsonc's alone (ADR 0055). NOTHING was written.` | 21 | refusal |
+| `campaign open: <url> was authored by @<login>, who resolves to <level-or-no-collaboration> on <repo>, below write — authority is the ACL's, never .fabrika.jsonc's alone. NOTHING was written.` | 21 | refusal |
 | `campaign open: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 
 Every refusal past the read states what did **not** happen. That is v1's discipline and it is kept:
@@ -632,7 +632,7 @@ not ask for, and on a table whose columns are already ragged it would rewrite ro
 | `campaign state: --<flag> is required.` | 1 | usage error |
 | `campaign state: cannot read <file>: <reason> — UNKNOWN, nothing was written.` | 11 | refusal |
 | `campaign state: cannot write <file>: <reason> — UNKNOWN, the row may be half-written; re-read it.` | 8 | refusal |
-| `campaign state: <file>: <reason> — the whole ## Campaigns table is unreadable (ADR 0304). NOTHING was written.` | 12 | refusal |
+| `campaign state: <file>: <reason> — the whole ## Campaigns table is unreadable. NOTHING was written.` | 12 | refusal |
 | `campaign state: cannot fetch <url>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign state: cannot resolve membership of <login> in @<org>/<team>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
 | `campaign state: cannot resolve @<login>'s permission on <repo>: <reason> — authority is UNKNOWN, NOTHING was written.` | 13 | refusal |
@@ -647,7 +647,7 @@ not ask for, and on a table whose columns are already ragged it would rewrite ro
 | `campaign state: "<selector>" matches <k> rows (<names>) — NOTHING was written.` | 18 | refusal |
 | `campaign state: "<name>" #<n> already holds <to> — NOTHING was written.` | 20 | refusal |
 | `campaign state: wrote <file> but the read-back holds <cell> for #<n>, not <to> — the write landed and the file does not say so; re-read it before retrying.` | 9 | refusal |
-| `campaign state: <url> was authored by @<login>, who resolves to <level-or-no-collaboration> on <repo>, below write — authority is the ACL's, never .fabrika.jsonc's alone (ADR 0055). NOTHING was written.` | 21 | refusal |
+| `campaign state: <url> was authored by @<login>, who resolves to <level-or-no-collaboration> on <repo>, below write — authority is the ACL's, never .fabrika.jsonc's alone. NOTHING was written.` | 21 | refusal |
 | `campaign state: cannot resolve roadmapFile from .fabrika.jsonc: <reason> — UNKNOWN, no roadmap file was opened.` | 22 | refusal |
 
 `20` is a refusal and not a quiet `0`. A flip to `active` is the grant of dispatch permission, so a

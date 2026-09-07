@@ -1,12 +1,11 @@
 /**
  * The filing-provenance predicate: was this issue reported by an agent, or typed by a human?
  *
- * **Two agent signals, not one.** ADR 0159 made the report footer the signal because every filing
- * showed the same shared account, so authorship carried no information. The founder's 2026-08-09
- * ruling on #4619 narrows that: a filing authored by an account in the **configured operator set** is
- * agent-reported whether or not the footer is present, because footer-absence there is the emitter
- * gap #4619 tracks rather than evidence of a human author. Footer-absence from any *other* author is
- * still human-owned, exactly as ADR 0159 says.
+ * **Two agent signals, not one.** The report footer is the signal because every filing showed the
+ * same shared account, so authorship carried no information. A later ruling, on 2026-08-09, narrows
+ * that: a filing authored by an account in the **configured operator set** is agent-reported
+ * whether or not the footer is present, because footer-absence there is a gap in the emitter rather
+ * than evidence of a human author. Footer-absence from any *other* author is still human-owned.
  *
  * **This file is the group's single definition of that predicate.** `triage kill` re-runs the test
  * itself rather than trusting a caller to have run `triage provenance` first, which makes the guard
@@ -41,7 +40,7 @@ export const hasAgentFooter = (body: string): boolean =>
  * The environment key naming the operator accounts, comma- or whitespace-separated.
  *
  * The set is an **input resolved from configuration**, never a login list in committed source: a
- * hardcoded handle is an operator identity leaking into a shared artifact (#2393), and a set that
+ * hardcoded handle is an operator identity leaking into a shared artifact, and a set that
  * grows by editing a released package is a set nobody can widen. A leading `@` is tolerated so a
  * value pasted from a GitHub mention still resolves.
  */
@@ -49,7 +48,7 @@ export const OPERATOR_ACCOUNTS_ENV = "FABRIKA_OPERATOR_ACCOUNTS";
 
 /**
  * The configured operator accounts, lowercased for the case-insensitive comparison GitHub logins
- * take. Unset or blank yields the **empty** set, which reduces the predicate to ADR 0159's
+ * take. Unset or blank yields the **empty** set, which reduces the predicate to the
  * footer-only rule — no filing becomes newly close-eligible because the config was missing.
  */
 export const resolveOperatorAccounts = (

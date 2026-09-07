@@ -29,6 +29,10 @@ export const env = {CLAUDE_PIPELINE_REPO: REPO, GITHUB_TOKEN: "ghp_scripted"} as
 	string | undefined
 >;
 
+/** The milestone each row of {@link TWO_ROWS} pins, named so no row carries a bare number. */
+export const PAUSED_MILESTONE = 42;
+export const ACTIVE_MILESTONE = 47;
+
 /** The two-row table every example in the contract runs against. */
 export const TWO_ROWS = `# Roadmap
 
@@ -36,8 +40,8 @@ export const TWO_ROWS = `# Roadmap
 
 | Campaign | Milestone | State |
 |----------|-----------|-------|
-| Taste-Skill Library | #42 | paused |
-| fabrika everywhere | #47 | active |
+| Taste-Skill Library | #${PAUSED_MILESTONE} | paused |
+| fabrika everywhere | #${ACTIVE_MILESTONE} | active |
 
 ## Dependency graph
 
@@ -55,9 +59,9 @@ export const PERMISSION = new RegExp(
 	`^GET ${API}\\/repos\\/${REPO}\\/collaborators\\/${AUTHOR}\\/permission$`,
 );
 export const MEMBERSHIP = new RegExp(
-	`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/founders\\/memberships\\/${AUTHOR}$`,
+	`^GET ${API}\\/orgs\\/acme\\/teams\\/founders\\/memberships\\/${AUTHOR}$`,
 );
-export const TEAM = new RegExp(`^GET ${API}\\/orgs\\/kamp-us\\/teams\\/founders$`);
+export const TEAM = new RegExp(`^GET ${API}\\/orgs\\/acme\\/teams\\/founders$`);
 
 const served = (body: unknown): HttpReply => ({status: 200, body: JSON.stringify(body)});
 

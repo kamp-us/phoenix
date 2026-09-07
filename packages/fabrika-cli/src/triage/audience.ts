@@ -1,7 +1,7 @@
 /**
  * The audience facet's two labels, and the writes that move an issue from one to the other.
  *
- * Who picks an issue up is a two-valued facet (#4780), and three seams act on it: `triage apply`
+ * Who picks an issue up is a two-valued facet, and three seams act on it: `triage apply`
  * stamps it, `plan flip` moves a gated epic onto the agent side, and `decision rule` moves a ruled
  * decision there. The label strings are derived from `../config/board.ts`'s vocabulary rather than
  * typed, so a board that renames an audience renames it everywhere at once.

@@ -107,7 +107,7 @@ export const runPark = (
 		if (!vocabulary.value.includes(needsInfo)) {
 			return refuse(
 				ZERO_SCOPE,
-				`triage park: label ${needsInfo} does not exist in ${repo} — refusing to write, because the API would create it (#4285).`,
+				`triage park: label ${needsInfo} does not exist in ${repo} — refusing to write, because the API would create it.`,
 				diagnostics,
 			);
 		}
