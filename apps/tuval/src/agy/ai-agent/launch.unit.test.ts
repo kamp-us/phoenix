@@ -4,7 +4,7 @@
  *
  * The flags are load-bearing in ways nothing observable catches later: a launch missing
  * `--add-dir` silently relocates the workspace, and a launch carrying
- * `--dangerously-skip-permissions` would be the posture ADR 0360 rejects. So they are pinned as a
+ * `--dangerously-skip-permissions` would be the posture ADR 0362 rejects. So they are pinned as a
  * whole array rather than probed one containment at a time.
  */
 

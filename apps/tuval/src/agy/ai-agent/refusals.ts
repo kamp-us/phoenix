@@ -44,7 +44,7 @@ export const malformedPrompt = (detail: string): PromptError =>
  * **An interrupt is indistinguishable from a timeout at this wire, and this is the mapping site
  * that says so.** `SIGINT` makes agy exit 1 after emitting a well-formed terminal `result` carrying
  * `status: "ERROR"` and `error: "timeout waiting for response"`; the `INTERRUPTED` status exists in
- * the binary as a string and never fires (ADR 0360). So nothing downstream can tell a stop the
+ * the binary as a string and never fires (ADR 0362). So nothing downstream can tell a stop the
  * operator asked for from a stall the model fell into — *except* this layer, which knows it sent
  * the signal, and that knowledge lives here and nowhere else. The `interrupted` flag is not
  * evidence about the wire; it is this process's own memory of what it did.

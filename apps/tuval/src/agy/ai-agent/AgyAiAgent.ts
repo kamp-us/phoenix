@@ -18,7 +18,7 @@
  *
  * **`interrupt` ends the session and cannot say so at the wire.** SIGINT makes agy exit 1 after a
  * well-formed terminal `result` reading `status: "ERROR"` / `"timeout waiting for response"`, and
- * no `INTERRUPTED` status is ever emitted (ADR 0360). The layer's own memory of having sent the
+ * no `INTERRUPTED` status is ever emitted (ADR 0362). The layer's own memory of having sent the
  * signal is the only thing that separates the two, and it spends it in `refusals.ts`'s
  * `processGone`. The way back is another `start({cwd, resume})`.
  *
@@ -96,7 +96,7 @@ import {decodeLine} from "./wire.ts";
 /**
  * The one thing this layer tells the model that agy does not: a denied first write is not a
  * refusal. It opens every session as a system row, because the alternative is a model that reads
- * the Seatbelt profile's first denial as settled and abandons the edit (ADR 0360).
+ * the Seatbelt profile's first denial as settled and abandons the edit (ADR 0362).
  */
 export const AGY_RETRY_HINT =
 	"agy note: the sandbox profile widens as it runs, so the first write to a path it has not seen is denied and the same write succeeds on a retry. One denial is not a settled refusal — retry once before changing approach.";
@@ -561,7 +561,7 @@ const make = (options: AgyAiAgentOptions): Effect.Effect<TuvalAiAgentApi, never,
 			prompt,
 			interrupt,
 			/**
-			 * Refused as data, by ruling rather than by omission (ADR 0360). Headless agy prompts on
+			 * Refused as data, by ruling rather than by omission (ADR 0362). Headless agy prompts on
 			 * `/dev/tty` only, so it cannot ask and auto-denies instead: there is no permission card
 			 * on this backend and therefore no request that could be answered. A silent success here
 			 * would be a lie about a decision nobody was ever offered.

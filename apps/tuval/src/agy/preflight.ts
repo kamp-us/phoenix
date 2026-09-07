@@ -2,7 +2,7 @@
  * The launch precondition the `agy-session` row checks before it lets a session open.
  *
  * `agy` prompts for tool permissions on `/dev/tty` only, so a headless launch cannot ask and
- * auto-denies instead (ADR 0360). A machine with `agy` installed but unconfigured therefore starts
+ * auto-denies instead (ADR 0362). A machine with `agy` installed but unconfigured therefore starts
  * a session that answers, refuses every tool, and never says why — the desk reads as hung. The
  * posture that makes the sandbox work is one key in one file, so the row reads that file first and
  * refuses `start` with the fix in the message rather than opening a session that cannot act.

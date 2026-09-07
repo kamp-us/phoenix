@@ -3,7 +3,7 @@
  *
  * Pure and total. Everything here is a function of `config.ts`'s constants, so a test can assert
  * the composed argv without spawning anything — which is the whole point, because the flags are
- * load-bearing in ways that are invisible at runtime until much later (ADR 0360):
+ * load-bearing in ways that are invisible at runtime until much later (ADR 0362):
  *
  * - `--add-dir=<cwd>` is **not optional**. Without it the sandbox hands the agent a cwd of
  *   `$HOME/.gemini/antigravity-cli/scratch`, relative paths land there silently, and

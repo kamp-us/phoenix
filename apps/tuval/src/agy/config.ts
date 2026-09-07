@@ -9,7 +9,7 @@
  * is `ai-agent/launch.ts`'s, which reads these.
  *
  * Every vendor path here is *relative*: `$HOME` is resolved at runtime by the layer and never
- * written down, so nothing machine-local lands in the repo (ADR 0360).
+ * written down, so nothing machine-local lands in the repo (ADR 0362).
  */
 
 import type {ModelRef, ThinkingLevel} from "../ai-agent/ports/index.ts";
@@ -26,7 +26,7 @@ export const AGY_BINARY = "agy";
 /** agy's own directory under the invoking user's home. The layer joins it onto a runtime `$HOME`. */
 export const AGY_CONFIG_DIR = ".gemini/antigravity-cli";
 
-/** Where `{"toolPermission": "proceed-in-sandbox"}` lives, relative to `$HOME` (ADR 0360). */
+/** Where `{"toolPermission": "proceed-in-sandbox"}` lives, relative to `$HOME` (ADR 0362). */
 export const AGY_SETTINGS_FILE = `${AGY_CONFIG_DIR}/settings.json`;
 
 /**

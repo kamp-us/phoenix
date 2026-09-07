@@ -1,12 +1,12 @@
 ---
-id: 0360
+id: 0362
 title: Tuval's agy backend runs sandboxed with sandbox-scoped auto-approval, never blanket bypass
 status: accepted
 date: 2026-09-06
 tags: [tuval, ai-agent, agy, permissions, sandbox]
 ---
 
-# 0360 — Tuval's agy backend runs sandboxed with sandbox-scoped auto-approval, never blanket bypass
+# 0362 — Tuval's agy backend runs sandboxed with sandbox-scoped auto-approval, never blanket bypass
 
 **What this decides:** the `agy-session` row launches `agy` under its own sandbox with tool calls auto-approved inside that sandbox and no blanket permission bypass, it renders no permission card, and this record states the two things `agy`'s documentation promises about that sandbox which were measured false.
 

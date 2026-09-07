@@ -17,7 +17,7 @@
  * - `--conversation=<id>` returns that same id, which is what makes resume a resume.
  * - SIGINT emits a well-formed terminal `result` with `status: "ERROR"` and
  *   `error: "timeout waiting for response"`, then exits 1. There is no `INTERRUPTED` status,
- *   because the real binary never emits one either (ADR 0360).
+ *   because the real binary never emits one either (ADR 0362).
  *
  * Every invocation appends its argv to `$AGY_FAKE_LOG` as one JSON line, which is how a test
  * asserts a composed argv against the thing that actually received it.
