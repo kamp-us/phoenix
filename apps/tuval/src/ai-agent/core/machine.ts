@@ -49,12 +49,7 @@ import {
 import {enqueue, isQueueFull, type QueuedPrompt, queueLimit, releaseQueued} from "./queue.ts";
 import {noteSend, settledBy, settlePending} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
-import {
-	type AiAgentSessionState,
-	initialState,
-	lastAssistantId,
-	settlePartialItems,
-} from "./state.ts";
+import {type AiAgentSessionState, initialState, lastAssistantId, settleTurn} from "./state.ts";
 
 export interface AiAgentSessionOptions extends WindowLimits {
 	/** The working directory a fresh session starts in. */
@@ -443,8 +438,9 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 			failed: (state, msg) => {
 				const phase = phaseAfterFailure(state, msg.failure);
 				// The turn is over however the failure reached the machine, so a partial the stream
-				// left in the tail settles here too (`./state.ts`, `settlePartialItems`).
-				const turn = settlePartialItems(state);
+				// left in the tail — and any subagent under that turn — settles here too
+				// (`./state.ts`, `settleTurn`).
+				const turn = settleTurn(state);
 				return settleQueue([
 					{
 						...turn,
