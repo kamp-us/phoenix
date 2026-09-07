@@ -417,6 +417,66 @@ describe("setModel", () => {
 		}),
 	);
 
+	it.effect("holds a pick made before any session instead of refusing it", () =>
+		on({models: CATALOG}, (agent) =>
+			Effect.gen(function* () {
+				// No session means no catalog, and "no session yet" is not "not offered" (#7981): the
+				// pick is announced as current against the empty list rather than refused against it.
+				yield* agent.setModel({id: "sonnet", name: "Sonnet 5"});
+				const events = yield* Stream.runCollect(Stream.take(agent.events, 1));
+				assert.deepStrictEqual(events[0], {
+					kind: "model",
+					current: {id: "sonnet", name: "Sonnet 5"},
+					available: [],
+				});
+			}),
+		),
+	);
+
+	it.effect("opens the first session on a pick made before it", () =>
+		on({models: CATALOG}, (agent, scripted) =>
+			Effect.gen(function* () {
+				yield* agent.setModel({id: "sonnet", name: "Sonnet 5"});
+				yield* agent.start({cwd: CWD});
+				assert.deepStrictEqual(scripted.opened[0]?.record.models, ["sonnet"]);
+				const events = yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS));
+				assert.deepStrictEqual(
+					events.find((event) => event.kind === "model"),
+					{
+						kind: "model",
+						current: {id: "sonnet", name: "Sonnet 5"},
+						available: [
+							{id: "opus", name: "Opus 5"},
+							{id: "sonnet", name: "Sonnet 5"},
+						],
+					},
+				);
+			}),
+		),
+	);
+
+	it.effect("judges no pick against the catalog of a session that is gone", () =>
+		on(
+			{models: CATALOG, openFails: new Error("the CLI would not spawn"), openFailsAt: 2},
+			(agent) =>
+				Effect.gen(function* () {
+					yield* agent.start({cwd: CWD});
+					const exit = yield* Effect.exit(agent.start({cwd: CWD}));
+					assert.isTrue(Exit.isFailure(exit));
+					// The first session's rows died with it, so a model none of them named is held for
+					// the next open rather than refused against a list nothing offers any more.
+					yield* agent.setModel({id: "gpt", name: "GPT"});
+					// The failed open's own `starting` and `gone` come first on the fresh queue.
+					const events = yield* Stream.runCollect(Stream.take(agent.events, 3));
+					assert.deepStrictEqual(events[2], {
+						kind: "model",
+						current: {id: "gpt", name: "GPT"},
+						available: [],
+					});
+				}),
+		),
+	);
+
 	it.effect("opens a later session on the model it announced", () =>
 		on({models: CATALOG}, (agent, scripted) =>
 			Effect.gen(function* () {

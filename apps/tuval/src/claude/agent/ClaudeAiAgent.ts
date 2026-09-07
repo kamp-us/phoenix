@@ -217,8 +217,12 @@ const make = (
 		const keys = yield* Ref.make<ReadonlySet<string>>(new Set());
 		const mode = yield* Ref.make<Mode | null>(null);
 		const model = yield* Ref.make<ModelRef | null>(null);
-		// Only an operator pick survives as an override; a discovered default is read afresh.
+		// Only an operator pick survives as an override; a discovered default is read afresh. The
+		// pick is recorded whether or not a session exists, and `start` re-applies it against the
+		// catalog it reads (#8061).
 		const pickedModel = yield* Ref.make<ModelRef | null>(null);
+		// The session's catalog, and it dies with the session: `closeCurrent` empties it, so a pick
+		// made between sessions is never judged against rows the dead session offered (#8061).
 		const models = yield* Ref.make<ReadonlyArray<ModelRef>>([]);
 		const commands = yield* Ref.make<ReadonlyArray<CommandRef>>([]);
 		// The effort axis is per model — `ModelInfo` carries `supportedEffortLevels` per row — so the
@@ -364,6 +368,9 @@ const make = (
 			// Only now: the generator has ended, so the pump's next pull resolves and the fiber this
 			// closes is finishing rather than blocked.
 			yield* Scope.close(held.scope, Exit.void);
+			// The catalog was read off this session, so it goes with it: kept, it would still be the
+			// set `setModel` judges a pick against after the session offering it is gone (#8061).
+			yield* Ref.set(models, []);
 			yield* denyEveryParked;
 		});
 
@@ -756,16 +763,22 @@ const make = (
 
 		const setModel = Effect.fn("TuvalAiAgent.setModel")(function* (next: ModelRef) {
 			const offered = yield* Ref.get(models);
-			const picked = offered.find((candidate) => sameModel(candidate, next));
+			const current = yield* Ref.get(session);
+			// With no session there is no catalog to judge against — the rows belong to a live query
+			// and `closeCurrent` drops them — so the pick is taken unvalidated rather than refused
+			// with the model listed against an empty `available`, the self-contradicting refusal
+			// #7981 ruled out. Validation is not skipped, only deferred: `start` re-checks the held
+			// pick against the catalog it reads and opens on the spawned model instead when that
+			// catalog does not carry it, so `ModelUnsupported` still means "the session refuses it"
+			// wherever a session exists to refuse (#8061).
+			const picked =
+				current === null ? next : offered.find((candidate) => sameModel(candidate, next));
 			if (picked === undefined) {
 				return yield* new ModelUnsupported({
 					model: next.id,
 					available: offered.map((candidate) => candidate.id),
 				});
 			}
-			const current = yield* Ref.get(session);
-			// No session yet is not a refusal: the pick is held and applied by the next open, exactly
-			// as a mode set before the first session is.
 			const changed = current === null ? true : yield* applyModel(current, picked);
 			if (changed) {
 				yield* Ref.set(model, picked);
