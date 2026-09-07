@@ -66,9 +66,21 @@ its view (founder ruling Q9 on #8384).
 
 The run was driven exactly as the first table's rows were — `query()` from a throwaway cwd holding
 two one-line files, every message the iterator yielded written in order — and sanitized the same
-way. Two shapes of the operator's machine needed substituting beyond the usual list, because this
-capture carries them where the others do not: the CLI's slug-encoded project key (a temp path with
-the separators rewritten) and a path cut mid-token inside a streamed `input_json_delta`.
+way, plus two shapes the other captures do not carry: the CLI's slug-encoded project key (a temp
+path with the separators rewritten), and a path split across four `input_json_delta` frames.
+
+**The split path is the one that went wrong, and it is worth reading before taking another
+capture.** The first pass substituted the delta holding the absolute prefix and left the neighbour
+holding the rest of it, so the fixture kept a bare tail of the operator's temp namespace — matching
+no root name, invisible to a scan for absolute prefixes, and outside `leak-guard`'s surface, which
+does not read `.json`. It was caught in review of #8474 and the frames were rewritten so the run
+reassembles to the same path the settled block carries. The split itself is kept, cut mid-token
+where the capture cut it: it is the shape a sanitizer has to survive, and the corpus should hold one.
+
+The check that now stands behind that is in `../boundary.unit.test.ts`: it reassembles every
+`input_json_delta` run in every fixture and compares it to the `tool_use` block that settles it, so
+a capture whose two halves disagree reds. That is a narrow guarantee and the section below says how
+narrow.
 
 ## The three excerpted from a CLI session transcript
 
@@ -153,15 +165,29 @@ groups:
 
 - every uuid, `toolu_*`, `msg_*` and `req_*` id, consistently, so a cross-reference that was real
   in the capture is still real in the fixture (a `tool_result` still names its `tool_use`);
-- absolute paths, to `/tmp/tuval-capture` and `/home/user` — no operator path lands in the repo;
+- absolute paths, to `/tmp/tuval-capture` and `/home/user`, in every form the path appears in —
+  including the CLI's slug-encoded project keys and a path split across streamed deltas;
 - `thinking` block signatures, to a short placeholder;
 - the open-ended discovery lists on `init` (`tools`, `slash_commands`, `skills`, `plugins`,
   `agents`, `mcp_servers`, `capabilities`) trimmed to their first three entries. They are a
   machine's local configuration, not part of any shape this mapping reads.
 
 Everything else — `stop_reason`, the `usage` and `modelUsage` blocks, `total_cost_usd`,
-`is_error`, `subtype`, `aborted`, `tool_use_result` — is verbatim. `boundary.unit.test.ts` reds if
-any operator path returns and if the fixture set loses a member.
+`is_error`, `subtype`, `aborted`, `tool_use_result` — is verbatim.
+
+`subagent-turn.json` was re-sanitized in the same round: its `init` frame's `memory_paths.auto`
+still carried the operator's temp namespace slug-encoded, which is the second of the two shapes the
+widened scan below now names. Nothing else about that capture changed.
+
+**What `../boundary.unit.test.ts` actually checks, which is less than "no operator path returns".**
+Three things: that the fixture set has not lost a member; that no file carries either operator root
+— `Users/` or `var/folders/` — absolute, with the leading slash gone, or slug-encoded; and that
+every streamed tool call reassembles to the input its settled block carries. A path fragment cut
+past both root names matches the second check and never will, which is exactly what the
+`two-subagent-turn.json` split delta was; the third check is what catches that shape, and only
+where the fragment sits in a delta run with a settled block to disagree with. So the scan is a net
+with a known mesh, not a proof — **read a new capture yourself before committing it**, and treat
+these checks as what stops a shape that has already happened from happening twice.
 
 ## What is not captured
 

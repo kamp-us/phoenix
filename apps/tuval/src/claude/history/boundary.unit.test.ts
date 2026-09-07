@@ -16,6 +16,26 @@ const sources = () =>
 
 const shipped = () => sources().filter(({name}) => !name.endsWith(".unit.test.ts"));
 
+/**
+ * Just enough of a captured frame to walk one. Structural rather than `SDKMessage`, because this
+ * file's subject is the bytes on disk: a fixture that stopped matching the SDK's union is exactly
+ * what a check written against that union could no longer read.
+ */
+interface AnyFrame {
+	readonly event?: {
+		readonly type?: string;
+		readonly content_block?: {readonly type?: string; readonly id?: unknown};
+		readonly delta?: {readonly type?: string; readonly partial_json?: unknown};
+	};
+	readonly message?: {
+		readonly content?: ReadonlyArray<{
+			readonly type?: string;
+			readonly id?: unknown;
+			readonly input?: unknown;
+		}>;
+	};
+}
+
 const importsOf = (text: string) =>
 	[...text.matchAll(/(^|\n)import\s+(type\s+)?[^;]*?from\s+"([^"]+)"/g)].map((match) => ({
 		specifier: match[3] ?? "",
@@ -82,11 +102,82 @@ describe("the Claude history mapping is pure", () => {
 		]);
 	});
 
-	it("carries no operator path in a fixture", () => {
+	/**
+	 * The two operator roots in every form a sanitizer can leave one in: absolute, with the leading
+	 * slash gone, and slug-encoded the way the CLI keys a project directory. The bare-prefix form is
+	 * what `two-subagent-turn.json` needed — its `input_json_delta` run splits a path across frames,
+	 * so the substitution reached the delta holding the absolute prefix and not the one holding what
+	 * followed it (#8474 review round 1).
+	 *
+	 * **This is a scan for two known roots, not a proof that no operator path is left.** A tail cut
+	 * past both root names matches nothing here and never will; the reassembly check below is what
+	 * caught that one, and it catches it only where a delta run has a settled block to disagree with.
+	 */
+	const operatorRoots = /\/?Users\/|\/?(private\/)?var\/folders\/|-Users-|-private-var-folders-/;
+
+	it("carries no operator path in a fixture, in any of the forms a root is left in", () => {
 		const dir = join(import.meta.dirname, "fixtures");
 		const offenders = readdirSync(dir)
 			.filter((name) => name.endsWith(".json") || name.endsWith(".jsonl"))
-			.filter((name) => /\/Users\/|\/var\/folders\//.test(readFileSync(join(dir, name), "utf8")));
+			.filter((name) => operatorRoots.test(readFileSync(join(dir, name), "utf8")));
 		expect(offenders).toEqual([]);
+	});
+
+	/**
+	 * A streamed tool call is written twice — delta by delta, and again whole on the frame that
+	 * settles it — so the two copies are each other's check. A sanitizer that rewrites one delta of a
+	 * split path and leaves its neighbour leaves a fixture whose halves disagree, which is a leak in
+	 * the half nothing reads today and a lie in the golden property the corpus rests on.
+	 */
+	const deltaRuns = (frames: ReadonlyArray<AnyFrame>) => {
+		const runs: Array<{id: string; parts: Array<string>}> = [];
+		let open: {id: string; parts: Array<string>} | null = null;
+		for (const frame of frames) {
+			const event = frame.event;
+			if (event === undefined) continue;
+			if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+				open = {id: String(event.content_block.id), parts: []};
+				runs.push(open);
+			} else if (event.delta?.type === "input_json_delta") {
+				open?.parts.push(String(event.delta.partial_json ?? ""));
+			} else if (event.type === "content_block_stop") {
+				open = null;
+			}
+		}
+		return runs;
+	};
+
+	const settledInputs = (frames: ReadonlyArray<AnyFrame>) => {
+		const inputs = new Map<string, unknown>();
+		for (const frame of frames) {
+			for (const block of frame.message?.content ?? []) {
+				if (block.type === "tool_use") inputs.set(String(block.id), block.input);
+			}
+		}
+		return inputs;
+	};
+
+	it("reassembles every streamed tool call to the input its settled block carries", () => {
+		const dir = join(import.meta.dirname, "fixtures");
+		let checked = 0;
+		const offenders: Array<string> = [];
+		for (const name of readdirSync(dir).filter((one) => one.endsWith(".json"))) {
+			const parsed: unknown = JSON.parse(readFileSync(join(dir, name), "utf8"));
+			if (!Array.isArray(parsed)) continue;
+			const frames = parsed as ReadonlyArray<AnyFrame>;
+			const settled = settledInputs(frames);
+			for (const run of deltaRuns(frames)) {
+				const whole = settled.get(run.id);
+				if (whole === undefined || run.parts.length === 0) continue;
+				checked += 1;
+				if (JSON.stringify(JSON.parse(run.parts.join(""))) !== JSON.stringify(whole)) {
+					offenders.push(`${name}: ${run.id}`);
+				}
+			}
+		}
+		expect(offenders).toEqual([]);
+		// Fail closed: a corpus whose streamed captures stopped carrying tool calls would otherwise
+		// pass this by checking nothing.
+		expect(checked).toBeGreaterThan(0);
 	});
 });

@@ -206,7 +206,7 @@
 			"index": 0,
 			"delta": {
 				"type": "input_json_delta",
-				"partial_json": "/tmp/tuval-capture"
+				"partial_json": "tmp/"
 			}
 		},
 		"session_id": "00000000-0000-4000-8000-000000000001",
@@ -220,7 +220,7 @@
 			"index": 0,
 			"delta": {
 				"type": "input_json_delta",
-				"partial_json": "xvxk83q4c0000gn/T/tu"
+				"partial_json": "tu"
 			}
 		},
 		"session_id": "00000000-0000-4000-8000-000000000001",
