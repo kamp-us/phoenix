@@ -21,6 +21,7 @@ import {refuse, type VerbOutcome} from "../verb.ts";
 import {closedReader, runArchive} from "./archive-verb.ts";
 import {runAssembly} from "./assembly-verb.ts";
 import {runBrief} from "./brief-verb.ts";
+import {boardReaders, runCancel} from "./cancel-verb.ts";
 import {runLaneAdopt, runLaneClaim, runLaneRelease} from "./claim-verb.ts";
 import {closureReader} from "./closure.ts";
 import {CLASS_UNRECOGNISED} from "./codes.ts";
@@ -844,6 +845,50 @@ const archive = leafCommand(
 	),
 );
 
+const cancel = leafCommand(
+	"cancel",
+	{
+		lane: laneArgument,
+		root: rootFlag,
+		task: Flag.string("task").pipe(
+			Flag.optional,
+			Flag.withDescription("the task the cancellation addresses; omittable on a single-task lane"),
+		),
+		token: Flag.string("token").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the lane-claim token, when the driver holding this lane is the one cancelling it",
+			),
+		),
+		repo: Flag.string("repo").pipe(
+			Flag.optional,
+			Flag.withDescription(
+				"the owner/name the closure and claim reads read (default: $CLAUDE_PIPELINE_REPO, else $GITHUB_REPOSITORY, else the origin remote)",
+			),
+		),
+	},
+	Effect.fn(function* ({lane, root, task, token, repo}) {
+		const readers = boardReaders(Option.getOrNull(repo), process.env);
+		yield* emit(
+			yield* onKey("cancel", lane, root, (key, ref) =>
+				runCancel({
+					...ref,
+					issue: key._tag === "Issue" ? Number(key.lane) : null,
+					task: Option.getOrNull(task),
+					token: Option.getOrNull(token),
+					closure: readers.closure,
+					claims: readers.claims,
+				}),
+			),
+		);
+	}),
+).pipe(
+	Command.withShortDescription("End a lane whose issue the board dropped, as a recorded event."),
+	Command.withDescription(
+		'Append the cancellation terminal to a lane whose driving issue the board closed without the work landing. The route for the stranded ledger: an issue closed not planned or duplicate while its lane sat nonterminal owes no artifact, and none of the operator\'s six can say so — DONE claims a PR that never existed, BLOCKED only parks, UNBLOCKED resumes the work the board just dropped — so the only remedy was deleting the lane directory, which erases an append-only history instead of recording an outcome. This appends ONE line and moves nothing on disk; `fabrika lane history <lane>` still reads the whole log. The board read is the whole entitlement, and it is the issue\'s own `state_reason`: not_planned or duplicate is a cancellation, completed is the shipped path\'s and refuses, and a read that failed or a closure carrying no reason is UNKNOWN with the log unappended. A live authorized lane-claim marker refuses unless --token names that very token, so a lane another session is driving is not ended underneath it; an unreadable claim thread is UNKNOWN, never "unclaimed". The lane then folds to the terminal stateValue "cancelled" — its own terminal, neither "complete" (which would claim the work landed) nor "tripped" (which would claim it failed) — so `lane status`, `lane stale` and `lane view` read it as done and it holds no seat against `laneConcurrencyCap`. The offline gates run first, so a lane already carrying a terminal costs no board read. stdout is {answer:"cancelled", lane, issue, previous, event, current, taskAffected, outcome}. Exits 4 (the lane record was read in full and is not the shape), 7 (no lane there), 8 (the append did not land — the cancellation is NOT recorded), 11 (the lane, the board closure or the claim thread could not be read, or the close carries a reason nobody can classify — UNKNOWN, never an append), 12 (this lane already carries a terminal, or the task is in a final — there is nothing here to cancel), 13 (the task is not in the machine, or --task omitted on a multi-task lane), 19 (the key names no issue, so the closed-issue gate can never be satisfied; a chore lane is not cancellable), 21 (the key is not a lane key), 31 (the issue carries a live lane claim this caller did not name), 39 (no .git entry exists at or above the cwd, so there is no owning repository from which to derive the default lanes root), 40 (another writer holds the ledger lock — retry), 49 (the issue is open, so this is live work nobody dropped — drive the lane, or close it as not planned first), 52 (the issue closed as completed — the work landed, so `fabrika lane reconcile` then `fabrika lane archive`, never a cancellation). Example: fabrika lane cancel 5983',
+	),
+);
+
 const reconcile = leafCommand(
 	"reconcile",
 	{
@@ -958,6 +1003,7 @@ export const laneCommand = Command.make("lane").pipe(
 		migrate,
 		reconcile,
 		archive,
+		cancel,
 		claim,
 		release,
 		adopt,

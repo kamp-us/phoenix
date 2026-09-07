@@ -13,6 +13,8 @@
 import {applyCell, foldMsgs, NoCellError} from "@demlik/tea";
 import {
 	bareEvent,
+	CANCELLED_EVENT,
+	CANCELLED_STATE,
 	CLEARED_EVENT,
 	CORRECTED_EVENT,
 	type CompiledLane,
@@ -66,6 +68,17 @@ export interface LogEntry {
 	readonly partial?: boolean;
 	readonly landed?: ReadonlyArray<number>;
 	readonly corrects?: string;
+	/**
+	 * The board outcome a {@link CANCELLED_EVENT} line stands on — the sixth kind, and evidence
+	 * rather than a payload the fold reads.
+	 *
+	 * A cancellation is the one terminal proven from nothing on disk, so the line has to carry what
+	 * the board said: `not_planned` or `duplicate`, the closed set `../lane/cancel.ts` names. Without
+	 * it the record says a lane ended and not why anyone was entitled to end it, which is the whole
+	 * audit the terminal exists to keep — so a `CANCELLED` carrying none is a parse defect, not an
+	 * event.
+	 */
+	readonly outcome?: string;
 }
 
 export type ParseLogResult =
@@ -100,6 +113,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			partial?: unknown;
 			landed?: unknown;
 			corrects?: unknown;
+			outcome?: unknown;
 		};
 		if (
 			typeof record !== "object" ||
@@ -193,6 +207,28 @@ export const parseLog = (text: string): ParseLogResult => {
 			);
 			continue;
 		}
+		// The board outcome is the cancellation's whole evidence, so a line missing it records a
+		// terminal nobody can audit — the same silent-no-op class a roundless `CLEARED` is.
+		const cancelled = bareEvent(record.event) === CANCELLED_EVENT;
+		if (
+			record.outcome !== undefined &&
+			!(typeof record.outcome === "string" && record.outcome !== "")
+		) {
+			defects.push(`line ${index + 1} carries an \`outcome\` field that is not a board outcome`);
+			continue;
+		}
+		if (cancelled && record.outcome === undefined) {
+			defects.push(
+				`line ${index + 1} is a ${CANCELLED_EVENT} event carrying no \`outcome\` — the board outcome it stands on`,
+			);
+			continue;
+		}
+		if (!cancelled && record.outcome !== undefined) {
+			defects.push(
+				`line ${index + 1} carries \`outcome\` on a "${bareEvent(record.event)}" event — only a ${CANCELLED_EVENT} stands on a board outcome`,
+			);
+			continue;
+		}
 		if (!corrected && record.corrects !== undefined) {
 			defects.push(
 				`line ${index + 1} carries \`corrects\` on a "${bareEvent(record.event)}" event — only a ${CORRECTED_EVENT} supersedes another line`,
@@ -215,6 +251,7 @@ export const parseLog = (text: string): ParseLogResult => {
 			...(record.partial === undefined ? {} : {partial: record.partial as boolean}),
 			...(record.landed === undefined ? {} : {landed: record.landed as ReadonlyArray<number>}),
 			...(record.corrects === undefined ? {} : {corrects: record.corrects as string}),
+			...(record.outcome === undefined ? {} : {outcome: record.outcome as string}),
 		});
 	}
 	return defects.length > 0 ? {_tag: "Malformed", defects} : {_tag: "Parsed", entries};
@@ -403,6 +440,13 @@ export const deriveStatus = (
 			active = phase;
 			break;
 		}
+		// Read before the trip, and never folded into either declared terminal: `complete` would
+		// claim the work landed and `tripped` would claim it failed, and the board said neither — it
+		// said nobody wants this work. A phase holding a cancelled task beside an unfinished sibling
+		// is not done and never reaches here, so cancelling one epic child does not end its epic.
+		if (phase.tasks.some((taskId) => stateIn(states, taskId).type === CANCELLED_STATE)) {
+			return {stateValue: CANCELLED_STATE, status: "done", context};
+		}
 		if (phase.tasks.some((taskId) => errors.includes(taskId))) {
 			return {stateValue: lane.terminals.tripped, status: "done", context};
 		}
@@ -532,6 +576,11 @@ export const applyEvent = (
 				`"${event}" is not an operator event — a cleared repair round is appended by \`build clear\`, never recorded here`,
 			);
 		}
+		if (event === CANCELLED_EVENT) {
+			return refuseEvent(
+				`"${event}" is not an operator event — a cancellation is proven from the board's closed issue and is appended by \`lane cancel\`, never transitioned`,
+			);
+		}
 		return refuseEvent(
 			event === CORRECTED_EVENT
 				? `"${event}" is not an operator event — a correction supersedes an already-recorded line's routing payload and is appended by \`lane reconcile\`, never transitioned`
@@ -616,6 +665,73 @@ export const applyEvent = (
 	};
 	const current = deriveStatus(lane, {...states, [taskId]: next});
 	return {_tag: "Applied", entry, previous, current};
+};
+
+export type CancellationResult =
+	| {
+			readonly _tag: "Appendable";
+			readonly entry: LogEntry;
+			readonly previous: LaneStatus;
+			readonly current: LaneStatus;
+	  }
+	| {readonly _tag: "Refused"; readonly reason: string};
+
+/**
+ * The entry a board-proven cancellation appends — `lane cancel`'s offline half, kept beside
+ * {@link applyEvent} because both decide appendability from the same fold.
+ *
+ * It reaches every state a lane can sit in, including a park, because that is what the incident was:
+ * lane 5983 sat in `blocked` and no door led anywhere. What it does NOT reach is a task whose
+ * outcome is already recorded — a task in a final, or a lane already folded done — since ending an
+ * ended lane records a second terminal over the first.
+ *
+ * Whether the board entitles this at all is the verb's read, not this function's: nothing here can
+ * see an issue, and a cancellation appended over an unread board is exactly the fabrication the
+ * terminal exists to make impossible.
+ */
+export const applyCancellation = (
+	lane: CompiledLane,
+	states: Readonly<Record<string, TaskState>>,
+	taskId: string,
+	outcome: string,
+	at: string,
+): CancellationResult => {
+	const task = lane.tasks[taskId];
+	const from = states[taskId];
+	if (task === undefined || from === undefined) {
+		return {
+			_tag: "Refused",
+			reason: `task "${taskId}" is not in this lane's machine (tasks: ${Object.keys(lane.tasks).join(", ")})`,
+		};
+	}
+	const previous = deriveStatus(lane, states);
+	if (previous.status === "done") {
+		return {
+			_tag: "Refused",
+			reason: `workflow is "${String(previous.stateValue)}" — this lane already carries a terminal, and a cancellation over it would record a second outcome for one lane`,
+		};
+	}
+	if (task.finals.has(from.type)) {
+		return {
+			_tag: "Refused",
+			reason: `task "${taskId}" is in "${from.type}", a final — its outcome is already recorded, so there is nothing here to cancel`,
+		};
+	}
+	let next: TaskState;
+	try {
+		[next] = applyCell<TaskState, LaneMsg, never>(task.machine, from, {type: CANCELLED_EVENT});
+	} catch (error) {
+		if (error instanceof NoCellError) {
+			return {_tag: "Refused", reason: `${error.name}: ${error.message}`};
+		}
+		throw error;
+	}
+	return {
+		_tag: "Appendable",
+		entry: {task: taskId, event: `${taskId.toUpperCase()}.${CANCELLED_EVENT}`, at, outcome},
+		previous,
+		current: deriveStatus(lane, {...states, [taskId]: next}),
+	};
 };
 
 export type ClearanceResult =

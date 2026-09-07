@@ -69,6 +69,27 @@ export const CLEARED_EVENT = "CLEARED";
 export const CORRECTED_EVENT = "CORRECTED";
 
 /**
+ * The ninth event: the board cancelled this lane's work. Appended by `lane cancel` once the driving
+ * issue reads closed with a not-planned or duplicate outcome, and by nothing else.
+ *
+ * Injected as a cell on every state, the way {@link CLEARED_EVENT} is, and for the same reason: a
+ * lane booted before this event existed carries its own copy of `workflow.json` under
+ * `.fabrika/lanes/<n>/`, and a document-declared transition would reach none of them. Unlike a
+ * clearance it moves the task — into {@link CANCELLED_STATE}.
+ */
+export const CANCELLED_EVENT = "CANCELLED";
+
+/**
+ * The final a cancellation lands in — the compiler's own state, never a document's.
+ *
+ * It is in `finals` so its phase folds, and in neither `errorFinals` nor `openFinals`: a cancelled
+ * lane did not trip and has no door out. `deriveStatus` reads it as its own workflow terminal rather
+ * than folding it into `complete` (which would claim the work landed) or `tripped` (which would
+ * claim it failed).
+ */
+export const CANCELLED_STATE = "cancelled";
+
+/**
  * One task's folded state: the leaf, its two budgets, the state it left (`was`), and the grants
  * applied so far — `cleared` is the fold's own tally of {@link CLEARED_EVENT} rounds, which is what
  * makes `maxRetries` a function of the log's prefix rather than of a document anyone can edit.
@@ -265,6 +286,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	const waitParks = new Map<string, Set<string>>();
 	const partialStates = new Map<string, Set<string>>();
 	for (const [name, node] of Object.entries(states)) {
+		if (name === CANCELLED_STATE) {
+			defects.push(
+				`task "${taskId}": state "${CANCELLED_STATE}" is the compiler's own cancellation final on every task, never a document's state`,
+			);
+			continue;
+		}
 		if (nodeType(node) === "final") finals.add(name);
 	}
 
@@ -287,6 +314,12 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 			if (msg === CLEARED_EVENT) {
 				defects.push(
 					`task "${taskId}": state "${stateName}" declares "${eventName}" — a clearance is the compiler's own cell on every state, never a document's transition`,
+				);
+				continue;
+			}
+			if (msg === CANCELLED_EVENT) {
+				defects.push(
+					`task "${taskId}": state "${stateName}" declares "${eventName}" — a cancellation is the compiler's own cell on every state, never a document's transition`,
 				);
 				continue;
 			}
@@ -379,8 +412,14 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 	}
 	if (defects.length > 0) return {defects};
 
-	// Read BEFORE the clearance cell is injected: an open final is one the DOCUMENT left a door in.
-	// The injected cell targets nothing, so counting it would read every final as a park.
+	// The cancellation final is the compiler's, so it holds a row of its own: a `CLEARED` landing on
+	// an already-cancelled task must fold, not throw the log unreplayable.
+	finals.add(CANCELLED_STATE);
+	table[CANCELLED_STATE] = {};
+
+	// Read BEFORE the injected cells: an open final is one the DOCUMENT left a door in. The clearance
+	// cell targets nothing and the cancellation cell is not a door out, so counting either would read
+	// every final as a park.
 	const openFinals = new Set(
 		Object.entries(table)
 			.filter(([name, cells]) => finals.has(name) && Object.keys(cells).length > 0)
@@ -397,6 +436,14 @@ const compileRegion = (taskId: string, region: unknown, context: unknown): Regio
 		return [{...s, cleared, maxRetries: budgetWith(declared, cleared)}, []];
 	};
 	for (const cells of Object.values(table)) cells[CLEARED_EVENT] = clearedCell;
+
+	// One cell per state, targeting the compiler's own final — so the terminal reaches every lane
+	// already on disk, whose `workflow.json` was copied from a template that never declared it.
+	// `cancelled` itself gets none: a second cancellation would fold as movement that did not happen.
+	const cancelledCell: Cell = (s) => [{...s, type: CANCELLED_STATE, was: s.type}, []];
+	for (const [name, cells] of Object.entries(table)) {
+		if (name !== CANCELLED_STATE) cells[CANCELLED_EVENT] = cancelledCell;
+	}
 
 	const staleGrants = Array.isArray(ctx.clearedRounds)
 		? ctx.clearedRounds.filter((round): round is number => typeof round === "number")

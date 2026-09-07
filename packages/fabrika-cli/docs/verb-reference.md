@@ -576,6 +576,7 @@ snapshot. Lane state is local and never committed.
 | `lane stale` | which lanes have gone quiet with something owed on them — offline, or `--claims` to pair each non-terminal lane with the claim standing on its issue |
 | `lane reconcile` | which lanes recorded a merge closure the board never confirmed, and the `<TASK>.CORRECTED` line that records what the board says — `partial: true` sends the lane round again (`corrected`), `partial: false` confirms the closure and moves no task (`confirmed`); either way the lane stops nominating, so a sweep costs one PR read per never-confirmed lane rather than hundreds every time (ADR 0351). Two kinds of line nominate: one carrying no `partial`, and one whose `partial: false` names no `landed` evidence, which is the mark of the nominator blind to a merged `Part of #N` that wrote every `false` before the ship stage began reading closures off the named PR. The evidence is what tells the two apart, never the line's timestamp: a cutoff date would hold only while that fix's own merge beat it (#7457). `--check` reports and appends nothing, so it buys nothing for the next sweep and pays the same reads twice; a read that proves no closure is `unknown`, never `closes`; ordered after `lane migrate`, which is what an `unmigrated` row names (ADR 0350) |
 | `lane archive` | one lane whose log will never replay, moved out of the swept root — refused unless BOTH the lane's issue reads closed AND the log fails the same `Unreplayable` judgement `lane migrate` makes, so a genuinely broken lane still shows up on every sweep. The archived root is a sibling of the lanes root, so `reconcile` and `migrate` are never handed it and need no skip rule; the record stays readable through `lane history --root <archived-root>` (ADR 0352) |
+| `lane cancel` | one lane whose issue the board dropped, ended as a recorded `<TASK>.CANCELLED` line — the terminal for a nonterminal lane whose issue closed `not_planned` or `duplicate` with no artifact owed, which none of the operator's six could say (`DONE` claims a PR that never existed, `BLOCKED` only parks, `UNBLOCKED` resumes work the board dropped) and whose only remedy was deleting the ledger. The issue's own `state_reason` is the whole entitlement: `completed` refuses at `52` and goes to `lane reconcile` then `lane archive`, an open issue refuses at `49`, and an unreadable board or a close carrying no reason is UNKNOWN at `11` with the log unappended. A live authorized lane claim refuses at `31` unless `--token` names it. The lane then folds to the terminal `stateValue` `"cancelled"` — its own, neither `complete` nor `tripped` — so `lane status`, `lane stale` and `lane view` read it terminal and it holds no seat against `laneConcurrencyCap`; the directory stays where it is and `lane history` still reads the whole log. stdout is `{answer:"cancelled", lane, issue, previous, event, current, taskAffected, outcome}` |
 | `lane claim` / `release` | who is driving this lane |
 
 **Exit codes.** `4` the lane read in full and is not the shape · `7` the lane is absent · `8` the
@@ -594,7 +595,7 @@ outside the closed park-cause set · `36` the `UNBLOCKED` would restore a state 
 — read the refusal for which budget: retries want a recorded `CLEARED` (`build clear`), waits want
 the grant on this same resume (`--grant-wait`, else `recipe unpark`) · `47` the `--grant-wait` is
 not a whole grant of at least one wait, or rides on an event that is not `UNBLOCKED`
-· `37` a booted lane's machine cannot be replaced by the template without moving the lane · `49` an archive was aimed at a lane whose issue is still open · `50` an archive was aimed at a lane whose log replays, so every sweep can judge it · `38`
+· `37` a booted lane's machine cannot be replaced by the template without moving the lane · `49` an archive or a cancellation was aimed at a lane whose issue is still open · `50` an archive was aimed at a lane whose log replays, so every sweep can judge it · `52` a cancellation was aimed at a lane whose issue closed as completed, so the work landed and the shipped path owns it · `38`
 the `--class` is outside the review classes · `39` the cwd is not in a repository · `40` another
 writer held the lane's lock for the whole wait · `41` no working tree holds the run's assembly
 branch · `42` the child conflicts and the merge was aborted · `43` the merged lockfile does not
@@ -611,8 +612,14 @@ fabrika lane transition 5673 WIP     # queued → build (--task is implied on a 
 fabrika lane status 5673
 ```
 
-Three behaviours are worth knowing:
+Four behaviours are worth knowing:
 
+- **Two cells are the compiler's, on every state of every lane.** `CLEARED` raises the repair
+  budget and moves nothing; `CANCELLED` moves the task to the compiler's own `cancelled` final. Both
+  are injected rather than declared, which is what lets them reach a lane already on disk — `lane
+  open` copies the template in at boot and never overwrites it, so a document-declared transition
+  would reach no booted lane. A document that declares either is a compile defect, and neither is an
+  operator event: `build clear` appends the first, `lane cancel` the second.
 - **An invalid event refuses loudly and appends nothing.** An event the current state holds no cell
   for surfaces tea's own `NoCellError` verbatim at exit `12`, and `events.jsonl` is left
   byte-identical — where XState silently swallows an unhandled event, this machine names it.

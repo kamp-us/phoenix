@@ -6,6 +6,7 @@ import {CAP_ROUND, RETRY_BUDGET} from "../retry-budget.ts";
 import {WAIT_BUDGET} from "../wait-budget.ts";
 import {coderWorkflow, twoPhaseWorkflow} from "./fixtures.test-support.ts";
 import {
+	applyCancellation,
 	applyClearance,
 	applyEvent,
 	deriveStatus,
@@ -16,7 +17,7 @@ import {
 	resolveTask,
 	standingCauses,
 } from "./fold.ts";
-import {CLEARED_EVENT, type CompiledLane, compile} from "./machine.ts";
+import {CANCELLED_EVENT, CLEARED_EVENT, type CompiledLane, compile} from "./machine.ts";
 
 const lane = (workflow: unknown): CompiledLane => {
 	const result = compile(workflow);
@@ -904,5 +905,134 @@ describe("the queue stall — a resume out of it needs the waits granted on the 
 			waits: WAIT_BUDGET,
 			maxWaits: WAIT_BUDGET + 1,
 		});
+	});
+});
+
+describe("the cancellation terminal", () => {
+	const AT = "2026-08-29T12:00:00.000Z";
+
+	it("ends a task parked in `blocked` — lane 5983's own shape", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(compiled, [
+			["issue", "WIP"],
+			["issue", "BLOCKED"],
+		]);
+		const applied = applyCancellation(
+			compiled,
+			statesOf(compiled, log),
+			"issue",
+			"not_planned",
+			AT,
+		);
+
+		expect(applied).toMatchObject({
+			_tag: "Appendable",
+			entry: {task: "issue", event: "ISSUE.CANCELLED", outcome: "not_planned"},
+			previous: {stateValue: {pipeline: {issue: "blocked"}}},
+			current: {stateValue: "cancelled", status: "done"},
+		});
+	});
+
+	it("reaches every state a lane can sit in, `queued` included", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = applyCancellation(compiled, statesOf(compiled, []), "issue", "duplicate", AT);
+
+		expect(applied).toMatchObject({_tag: "Appendable", current: {stateValue: "cancelled"}});
+	});
+
+	it("refuses a lane already folded to its own terminal", () => {
+		const compiled = lane(coderWorkflow());
+		const log = drive(compiled, [
+			["issue", "WIP"],
+			["issue", "DONE"],
+			["issue", "PASS"],
+			["issue", "DONE"],
+		]);
+		const applied = applyCancellation(
+			compiled,
+			statesOf(compiled, log),
+			"issue",
+			"not_planned",
+			AT,
+		);
+
+		expect(applied).toMatchObject({_tag: "Refused"});
+		expect(applied._tag === "Refused" && applied.reason).toContain("already carries a terminal");
+	});
+
+	it("refuses a task sitting in a final whose outcome is already recorded", () => {
+		const compiled = lane(twoPhaseWorkflow());
+		const log = drive(compiled, [
+			["task_a", "DONE"],
+			["task_a", "PASS"],
+		]);
+		const applied = applyCancellation(compiled, statesOf(compiled, log), "task_a", "duplicate", AT);
+
+		expect(applied).toMatchObject({_tag: "Refused"});
+		expect(applied._tag === "Refused" && applied.reason).toContain("nothing here to cancel");
+	});
+
+	it("leaves an epic's sibling tasks running: one cancelled child does not end the lane", () => {
+		const compiled = lane(twoPhaseWorkflow());
+		const applied = applyCancellation(
+			compiled,
+			statesOf(compiled, []),
+			"task_a",
+			"not_planned",
+			AT,
+		);
+
+		expect(applied).toMatchObject({_tag: "Appendable", current: {status: "active"}});
+	});
+
+	it("cannot be hand-typed through `lane transition` — it is not an operator event", () => {
+		const compiled = lane(coderWorkflow());
+		const applied = applyEvent(compiled, statesOf(compiled, []), "issue", CANCELLED_EVENT, AT);
+
+		expect(applied).toMatchObject({_tag: "Refused"});
+		expect(applied._tag === "Refused" && applied.reason).toContain("`lane cancel`");
+	});
+
+	it("refuses a recorded line that names no board outcome", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({task: "issue", event: "ISSUE.CANCELLED", at: AT})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+		expect(parsed._tag === "Malformed" && parsed.defects[0]).toContain("carrying no `outcome`");
+	});
+
+	it("refuses an `outcome` riding an event that stands on no closure", () => {
+		const parsed = parseLog(
+			`${JSON.stringify({task: "issue", event: "ISSUE.DONE", at: AT, outcome: "not_planned"})}\n`,
+		);
+
+		expect(parsed).toMatchObject({_tag: "Malformed"});
+	});
+
+	it("folds a recorded cancellation straight to the terminal, from the log alone", () => {
+		const compiled = lane(coderWorkflow());
+		const parsed = parseLog(
+			[
+				JSON.stringify({task: "issue", event: "ISSUE.WIP", at: AT}),
+				JSON.stringify({task: "issue", event: "ISSUE.BLOCKED", at: AT}),
+				JSON.stringify({task: "issue", event: "ISSUE.CANCELLED", at: AT, outcome: "duplicate"}),
+			].join("\n"),
+		);
+		if (parsed._tag !== "Parsed") throw new Error("fixture log does not parse");
+
+		expect(deriveStatus(compiled, statesOf(compiled, parsed.entries))).toMatchObject({
+			stateValue: "cancelled",
+			status: "done",
+		});
+	});
+
+	it("clears the park's standing cause, because the lane is no longer waiting on anyone", () => {
+		const entries: ReadonlyArray<LogEntry> = [
+			{task: "issue", event: "ISSUE.BLOCKED", at: AT, cause: "spawn-dead"},
+			{task: "issue", event: "ISSUE.CANCELLED", at: AT, outcome: "not_planned"},
+		];
+
+		expect(standingCauses(entries)).toEqual({});
 	});
 });
