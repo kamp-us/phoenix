@@ -11,8 +11,10 @@
  * The two demo renderers below are the demo programs' (#7517). Each reads its process through the
  * window contract's `readProcess` and nothing else: no store, no fetch, no socket.
  *
- * The Pi entry is `PiChatWindow` (#7611), the Claude entry is `ClaudeChatWindow` (#7624) and the
- * session-list entry is `SessionListWindow` (#8102). They are why this module is out of the
+ * The Pi entry is `piChatWindow` (#7611), the Claude entry is `claudeChatWindow` (#7624) and the
+ * session-list entry is `SessionListWindow` (#8102). Both chat entries are *built* here rather than
+ * imported as their modules' default constants, because each is built at the operator's feature
+ * flags (`chatOptions` below, #8439). They are why this module is out of the
  * kernel's strict lens and inside `tsconfig.design.json`'s: each is built on `@kampus/design`,
  * which is source-consumed and authored with
  * `exactOptionalPropertyTypes: false`. Each key is the reference that program's own row declares,
@@ -23,6 +25,7 @@
  * it renders came over the socket the desk is attached to and dies with it (#8161).
  */
 
+import features from "virtual:tuval/features";
 import {Effect, Fiber, Stream} from "effect";
 import type {ReactElement} from "react";
 import {useEffect, useState} from "react";
@@ -35,10 +38,11 @@ import {
 	type SessionListSource,
 	sessionListWindow,
 } from "../ai-agent/window/index.ts";
-import {CLAUDE_CHAT_WINDOW_REF, ClaudeChatWindow} from "../claude/window/index.ts";
+import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.ts";
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
-import {PI_CHAT_WINDOW_REF, PiChatWindow} from "../pi/window/index.ts";
+import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
+import type {ChatWindowOptions} from "../shell/chat/index.ts";
 import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 import type {WindowHost} from "../shell/window/index.ts";
@@ -139,6 +143,20 @@ const sessionListSource = (call: SpellCaller): SessionListSource => {
 };
 
 /**
+ * What the two chat renderers are built at: the operator's own flags, read straight out of the
+ * module the page server generated from the booted config (`./dev-server.ts`, #8439). It is a plain
+ * import rather than a fetch or a prop, which is the whole point — the table below is built
+ * synchronously, so a flagged window is the first thing painted rather than the second.
+ *
+ * Nothing here reaches `../config.ts` at runtime: the flags arrive as generated source and the
+ * shape arrives as a type (`./assets.d.ts`), so the page's Node-free walk is unaffected.
+ */
+const chatOptions: ChatWindowOptions = {subagentList: features.subagentList};
+
+const claudeWindow = claudeChatWindow(chatOptions);
+const piWindow = piChatWindow(chatOptions);
+
+/**
  * Every renderer the page knows, by the reference a program row names it with — each bound to the
  * predicate over the state it reads, which is what the `ReadableRenderer` type asks for. A renderer
  * put here unguarded does not typecheck, so the rule holds at the table and not by review (#8157).
@@ -154,8 +172,8 @@ export const pageRenderers = (call: SpellCaller): Readonly<Record<string, Readab
 		isLogState,
 		windowRenderer("host-native", (host: WindowHost<LogState>) => <LogRenderer host={host} />),
 	),
-	[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, PiChatWindow),
-	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, ClaudeChatWindow),
+	[PI_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, piWindow),
+	[CLAUDE_CHAT_WINDOW_REF.ref]: readsState(isAiAgentSessionState, claudeWindow),
 	[SESSION_LIST_WINDOW_REF.ref]: readsState(
 		isSessionListState,
 		sessionListWindow({useAnswer: sessionListSource(call)}),

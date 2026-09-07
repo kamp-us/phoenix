@@ -1,14 +1,24 @@
 /**
- * The generated loader module (ADR 0359), as text: the page server writes it from the rows'
- * `kind: "module"` references, and this is the one place its shape is pinned. The served module and
- * the boot-time refusal of a specifier that does not resolve are `module-renderers.integration.test.ts`.
+ * The two generated modules, as text: the page server writes the loader module from the rows'
+ * `kind: "module"` references (ADR 0359) and the feature-flag module from the booted config (#8439),
+ * and this is the one place either shape is pinned. The served loader module and the boot-time
+ * refusal of a specifier that does not resolve are `module-renderers.integration.test.ts`.
  */
 
+import {fileURLToPath} from "node:url";
+import {NodeFileSystem} from "@effect/platform-node";
+import {Effect} from "effect";
 import {describe, expect, it} from "vitest";
+import {loadLayeredConfig} from "../config.ts";
 import type {AnyProgram} from "../registry/program.ts";
 import {counterRow, noRendererRow} from "../shell/window/fixtures.ts";
 import {type DeclaredProgram, moduleRendererRefs} from "../shell/window/index.ts";
-import {moduleRenderersSource, optimizedDepEntries, servedDirectories} from "./dev-server.ts";
+import {
+	featuresSource,
+	moduleRenderersSource,
+	optimizedDepEntries,
+	servedDirectories,
+} from "./dev-server.ts";
 
 const GLOBAL_CONFIG = "/home/founder/.tuval/tuval.config.ts";
 const PROJECT_CONFIG = "/work/app/.tuval/tuval.config.ts";
@@ -36,6 +46,51 @@ describe("the module renderers loader module", () => {
 		const source = moduleRenderersSource(["a\u2028b\u2029c"]);
 		expect(source).not.toMatch(/[\u2028\u2029]/);
 		expect(source).toContain('import("a\\u2028b\\u2029c")');
+	});
+});
+
+/**
+ * Driven from real merged configs rather than a hand-written flag record, because the wire this
+ * pins is the whole one: what a founder writes in a layer is what the browser reads. A merge that
+ * resolved a flag differently would show up here as generated source, which is the failure #8439
+ * was — the flag merged correctly and reached nobody.
+ */
+describe("the feature-flag module", () => {
+	const fixture = (name: string) =>
+		fileURLToPath(new URL(`../config-fixtures/${name}.ts`, import.meta.url));
+
+	const generated = (global: string, project: string) =>
+		Effect.runPromise(
+			loadLayeredConfig({global: fixture(global), project: fixture(project)}).pipe(
+				Effect.map((config) => featuresSource(config.features)),
+				Effect.provide(NodeFileSystem.layer),
+			),
+		);
+
+	it("carries a flag a layer turned on", async () => {
+		expect(await generated("features-on", "two-rows")).toBe(
+			'export default {\n\t"subagentList": true,\n};\n',
+		);
+	});
+
+	it("carries a flag a layer turned off", async () => {
+		expect(await generated("features-off", "two-rows")).toBe(
+			'export default {\n\t"subagentList": false,\n};\n',
+		);
+	});
+
+	// The page reads `features.subagentList` and gets a boolean either way: an absent key would read
+	// `undefined`, which is falsy and so passes by luck until a flag defaults on.
+	it("carries every flag as false when no layer declares a features block", async () => {
+		expect(await generated("two-rows", "one-counter")).toBe(
+			'export default {\n\t"subagentList": false,\n};\n',
+		);
+	});
+
+	it("names no flag itself, so a flag added to TuvalFeatures crosses with no edit here", () => {
+		expect(featuresSource({subagentList: true, somethingLater: false} as never)).toBe(
+			'export default {\n\t"subagentList": true,\n\t"somethingLater": false,\n};\n',
+		);
 	});
 });
 

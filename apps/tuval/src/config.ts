@@ -24,6 +24,9 @@ import {
 	describeFile,
 	KeyBindings,
 } from "./commands/bindings/index.ts";
+// Re-exported below rather than declared here: both ends of the node/browser wire need the resolved
+// flag record, and this module reaches `node:*` (#8439).
+import {featuresOff, type TuvalFeatures} from "./features.ts";
 import {type Graph, NodeId} from "./ports/graph.ts";
 import {type AnyProgram, ProgramId} from "./registry/program.ts";
 import {
@@ -63,16 +66,7 @@ const DeclaredFeatures = Schema.Struct({
 	subagentList: Schema.optionalKey(Schema.Boolean),
 });
 
-/** The flags as everything downstream reads them: every one resolved to a boolean. */
-export interface TuvalFeatures {
-	readonly subagentList: boolean;
-}
-
-/**
- * Every flag off. A user-facing change ships dark behind a default-off flag
- * (`product-development-cycle.md`), so this is what a config that declares no `features` means.
- */
-export const featuresOff: TuvalFeatures = {subagentList: false};
+export {featuresOff, type TuvalFeatures} from "./features.ts";
 
 /** Version 1 of the config shape. A config module default-exports its `Encoded` form. */
 export const TuvalConfig = Schema.Struct({

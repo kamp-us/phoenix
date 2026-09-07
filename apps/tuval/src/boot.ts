@@ -13,7 +13,7 @@ import type {SpellRegistry} from "./commands/registry.ts";
 import type {WindowIndex} from "./commands/scope.ts";
 import type {AnySpell} from "./commands/spell.ts";
 import {SpellSet} from "./commands/spell-set.ts";
-import {type ConfigLoadError, loadLayeredConfig} from "./config.ts";
+import {type ConfigLoadError, loadLayeredConfig, type TuvalFeatures} from "./config.ts";
 import {Checkpoints} from "./durability/Checkpoints.ts";
 import {restore} from "./durability/restore.ts";
 import {fileStores} from "./durability/stores.ts";
@@ -192,6 +192,12 @@ export interface Booted {
 	 */
 	readonly moduleRenderers: ReadonlyArray<ModuleRendererRef>;
 	/**
+	 * The merged feature flags, every one resolved to a boolean. Carried out of the boot because the
+	 * page server generates them into a module the browser imports — without that they stay on this
+	 * side and an operator who turns one on sees nothing (#8439).
+	 */
+	readonly features: TuvalFeatures;
+	/**
 	 * The config read again, its spells registered and its bindings compiled against them in one
 	 * write, and then every live process handed what its own row says the new config means for it
 	 * (`reload.ts`). Nothing restarts and nothing respawns: a process keeps running under the row
@@ -253,6 +259,7 @@ export const boot = Effect.fn("Tuval.boot")(function* (options: BootOptions) {
 		report,
 		kernel: started.kernel,
 		moduleRenderers: config.moduleRenderers,
+		features: config.features,
 		reload: reload().pipe(Effect.provideContext(started.kernel)),
 	} satisfies Booted;
 });

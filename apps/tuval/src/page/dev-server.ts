@@ -18,6 +18,7 @@
 
 import {dirname} from "node:path";
 import {Effect, Schema} from "effect";
+import {featuresOff, type TuvalFeatures} from "../features.ts";
 import type {TransportServer} from "../shell/transport/server.ts";
 import type {ModuleRendererRef} from "../shell/window/index.ts";
 
@@ -60,6 +61,12 @@ export interface PageServerOptions {
 	 * and the page loads nothing.
 	 */
 	readonly moduleRenderers?: ReadonlyArray<ModuleRendererRef>;
+	/**
+	 * The booted config's feature flags (`../config.ts`), merged and every one resolved to a boolean.
+	 * Absent means `featuresOff` — what a caller serving the page over its own rows rather than a
+	 * founder's config wants.
+	 */
+	readonly features?: TuvalFeatures;
 }
 
 export interface PageServer {
@@ -103,6 +110,49 @@ export const moduleRenderersSource = (refs: ReadonlyArray<string>): string => {
 		return `\t${literal}: () => import(${literal}),`;
 	});
 	return `export default {\n${entries.join("\n")}\n};\n`;
+};
+
+/**
+ * The page's feature-flag module, generated here from the booted config and imported by
+ * `./renderers.tsx` under this one id; `./assets.d.ts` declares its shape. It exists for the reason
+ * `MODULE_RENDERERS_ID` does: the flags are merged on the node side, the renderer table is built on
+ * the browser side, and a generated module is the wire between them that costs the table no async
+ * step — so a chat renderer is built at the operator's flags before the first paint rather than
+ * rebuilt after a fetch (#8439).
+ */
+export const FEATURES_ID = "virtual:tuval/features";
+const RESOLVED_FEATURES_ID = `\0${FEATURES_ID}`;
+
+/**
+ * The source of the feature-flag module: one boolean per flag, keyed by the flag's name. It walks
+ * the resolved flags rather than naming any one of them, so a flag added to `TuvalFeatures` reaches
+ * the page with no edit here. Every value is written through `=== true` because this is the
+ * *resolved* record: a `false` has to reach the page as `false`, never as an absent key.
+ */
+export const featuresSource = (features: TuvalFeatures): string => {
+	const entries = Object.entries(features).map(
+		([flag, on]) => `\t${sourceLiteral(flag)}: ${on === true},`,
+	);
+	return `export default {\n${entries.join("\n")}\n};\n`;
+};
+
+/**
+ * The plugin serving that module. Exported because the renderer table imports the specifier
+ * unconditionally, so every environment loading the table has to answer it: the dev server below
+ * with the founder's flags, and `vitest.config.ts` with `featuresOff` — the flags-off desk a unit
+ * test means to render.
+ */
+export const featuresPlugin = (features: TuvalFeatures = featuresOff) => {
+	const source = featuresSource(features);
+	return {
+		name: "tuval-features",
+		resolveId(id: string) {
+			return id === FEATURES_ID ? RESOLVED_FEATURES_ID : null;
+		},
+		load(id: string) {
+			return id === RESOLVED_FEATURES_ID ? source : null;
+		},
+	};
 };
 
 /**
@@ -277,7 +327,12 @@ export const servePage = Effect.fn("Tuval.page.serve")(function* (options: PageS
 				root: options.root,
 				configFile: false,
 				appType: "spa",
-				plugins: [launchEndpoint, moduleRenderersPlugin(moduleRenderers), react.default()],
+				plugins: [
+					launchEndpoint,
+					moduleRenderersPlugin(moduleRenderers),
+					featuresPlugin(options.features),
+					react.default(),
+				],
 				server: {
 					port: options.port,
 					strictPort: options.strictPort ?? false,
