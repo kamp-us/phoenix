@@ -110,8 +110,8 @@
 			]
 		},
 		"plugin-tail": {
-			"ceiling": 288,
-			"why": "Everything else the plugin ships — the guide, the README, the agents, the hook manifest and the remaining skills — cleared by #8301, the plugin tail sweep child.",
+			"ceiling": 6,
+			"why": "#8301 swept the guide, the README, the agents, the hook manifest and the remaining skills; the 6 left are values rather than sentences. 4 are worked-example lines in guide/getting-started.md whose `#<n>` is rendered from the example's own operand — `status open`'s readout row prints the same issue number twice in the shipped format's two columns, and `triage homes`'s campaigns line prints one milestone number per active campaign. 2 are verbatim pins of the `handoff capture` and `report note` not-found refusals, whose `#99999` is the operand the transcript above each one passes. The numbers are deliberately high, well above any live issue range; lowering them to a form this guard cannot see would make the example read as a live ticket. They leave when the sample-number convention is settled, tracked on #8402 and #8351.",
 			"paths": ["claude-plugins/fabrika"]
 		},
 		"cli-review": {
