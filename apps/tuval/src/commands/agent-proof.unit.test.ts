@@ -368,11 +368,11 @@ const runAgent = Effect.gen(function* () {
 	const rows = [agentProgram(done), echoProgram()];
 	return yield* Effect.gen(function* () {
 		const processes = yield* Processes;
-		const executor = yield* SpellExecutor;
-		const agent = yield* processes.spawn(agentId, {
-			id: agentProcess,
-			services: Context.make(SpellExecutor, executor),
-		});
+		// The whole app context is the spawn set, because that is what the agent's handlers reach for
+		// and a handler resolves its spawn set alone (#7972). `SpellExecutor` alone used to be enough
+		// here only because the rest — `SpellRegistry`, `SpawnedProcesses` — rode in off this fiber.
+		const kernel = yield* Effect.context<never>();
+		const agent = yield* processes.spawn(agentId, {id: agentProcess, services: kernel});
 		yield* agent.dispatch({type: "begin"});
 		const {transcript, unsettled} = yield* Deferred.await(done);
 		const rowsInRegistry = yield* SpellRegistry.use((registry) => registry.list);
@@ -587,9 +587,12 @@ const runServiceAgent = Effect.gen(function* () {
 		const rowsInRegistry = yield* SpellRegistry.use((registry) => registry.list);
 		const bridge = yield* Effect.provide(SpellBridge, SpellBridge.layer({allow: everyRegistered}));
 		yield* Deferred.succeed(latch, bridge);
+		// Same as above: everything the bridge's `call` reaches through — the executor and the
+		// registry it reads at call time — is named on the spawn rather than left to the fiber (#7972).
+		const kernel = yield* Effect.context<never>();
 		const agent = yield* processes.spawn(serviceAgentId, {
 			id: serviceProcess,
-			services: Context.make(ProcessPorts, {
+			services: Context.add(kernel, ProcessPorts, {
 				emit: (port: string, payload: unknown) =>
 					Effect.sync(() => {
 						emitted.push({port, payload});

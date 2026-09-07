@@ -211,11 +211,17 @@ const make = Effect.fn("Tuval.SpawnedProcesses.make")(function* (options: Spawne
 		}
 		const ports = ProcessPorts.of({emit: emitter(id, row, outboxes)});
 
+		// The spawn set is stated here in full, because it is all the child's handlers will resolve
+		// (#7972). `Effect.context()` is this caller's own — the spell fiber's, which is the kernel
+		// one an executor runs a spell under — so a spawned row's `R` is satisfied the same way the
+		// picker satisfies a window's (`../../shell/picker/open.ts`), and the ports below are the
+		// one thing minted for the child rather than passed on.
+		const inherited = yield* Effect.context<never>();
 		const handle = yield* processes
 			.spawn(program, {
 				id,
 				...(Option.isSome(parent) ? {parent: parent.value} : {}),
-				services: Context.make(ProcessPorts, ports),
+				services: Context.add(inherited, ProcessPorts, ports),
 			})
 			.pipe(
 				Effect.catchTag("tuval/ProgramNotFound", () => Effect.fail(new UnknownProgram({program}))),

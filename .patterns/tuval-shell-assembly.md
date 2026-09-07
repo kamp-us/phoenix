@@ -35,35 +35,58 @@ close over them; it declares them as its `R` instead, and the spawner provides t
 ```ts
 // src/boot.ts
 const launched = yield* launch(compiled, wiring, {services: kernel}).pipe(
-  Effect.provideContext(kernel),
+  Effect.provideContext(spawnerNeeds),
 );
 ```
 
 `launch` merges that context into each spawn's `SpawnOptions.services` beside the node's own
 `ProcessPorts`. `SpawnOptions.services` is the only seam a program row's requirements can arrive
 through, and handing them over is a wiring decision rather than a capability grant — local program
-code is fully trusted, there is no sandbox (#7484 R1.1).
+code is fully trusted, there is no sandbox (#7484 R1.1). The `provideContext` above is `launch`'s
+own `R` and not a second route to a handler: what a spawner is *called* under reaches nothing it
+spawns.
 
-**Two of the three spawners hand that same kernel context over, so a program a picker may open may
-require kernel services** (#7951). `start` passes it to `restore` for the checkpointed processes the
-graph did not plan (`src/boot.ts`); the picker passes on the context its own shell process was
-launched with (`src/shell/picker/open.ts`). The third does not: the `process spawn` spell hands its
-child `Context.make(ProcessPorts, ports)` and nothing else (`src/commands/core/process.ts`), so under
-the spawner an agent program itself reaches for, a row needing a kernel service still dies at its
-handler.
+**The spawn set is exactly what a handler resolves, and that is enforced** (#7972). `toDefinition`
+runs every command and sub handler under `Effect.updateContext(() => handlerServices)`, which sets
+the fiber's context outright, rather than under `Effect.provideContext(handlerServices)`, which
+merges over whatever the fiber that dispatched happened to carry (rc.112,
+`src/internal/effect.ts:2197`). Two things follow, and both used to be false:
 
-`ProcessPorts` is the one service those first two refuse to pass down — a port binding emits from one
-node, so a child holding its spawner's would emit out of the wrong one — and they refuse it
-differently. `restore` merges an `unwired` `ProcessPorts` in second, so a restored process has one
-and an emit fails `PortNotWired` where the graph owns no route (#7789). The picker only removes the
-service (`Context.omit(ProcessPorts)`), and `Processes.spawn` puts back only `ProcessSelf`, so a
-picker-opened process is spawned with no `ProcessPorts` at all. `src/demo/counter.ts` is the example
-under both: its `announce` handler wants `ProcessPorts`, which comes back un-wired under `restore`
-and is absent from the spawn context under the picker.
+- **A removal is a removal.** The picker's `Context.omit(ProcessPorts)` really does keep the shell's
+  ports out of the child, including when the shell forwards a key into it from its own handler fiber
+  — the path that made the guard a no-op.
+- **The two dispatch paths agree.** `handle.dispatch` runs on the caller's fiber and a follow-up Msg
+  runs on a forked one with no ambient (`src/host/actor.ts`), so before the seal a handler could
+  resolve a service on one and not the other, and a proof written over the wrong fiber passed for
+  the wrong reason.
+
+Effect's own runtime rides through the seal — the clock, the scheduler, the loggers and log level,
+the tracer and its parent span, and the `Scope` a sub handler is given, every one of them keyed
+`effect/…` and re-derived by `FiberImpl.setContext` on each replace (rc.112,
+`src/internal/effect.ts:709`). Everything else is the spawn set's alone.
+
+**So every spawner names what it passes.** `start` hands `restore` the kernel as its `services`
+argument, and that argument is now the single route (`src/boot.ts`); the picker passes on the
+context its own shell process was launched with (`src/shell/picker/open.ts`); and the `process spawn`
+spell reads its own caller's context and passes that on beside the child's ports
+(`src/commands/core/process.ts`) — it used to hand over `Context.make(ProcessPorts, ports)` and let
+the merge cover the rest, which under the seal would have left an agent-spawned row dead at its
+first kernel call.
+
+`ProcessPorts` is the one service no spawner passes down — a port binding emits from one node, so a
+child holding its spawner's would emit out of the wrong one — and all three replace it the same way:
+an `unwired` pair keyed to the child's own id, so the process has ports and an emit fails
+`PortNotWired` where the graph owns no route to bind (#7789). `restore` merges one in second; the
+picker removes the spawner's (`Context.omit(ProcessPorts)`) and adds the child's, minting the process
+id a call early so the ports know which node they are. Under the seal it has to: a row declaring
+`ProcessPorts` has nothing to fall back on, and before the seal it silently fell back on the shell's
+(#7972). `src/demo/counter.ts` is the example under both — its `announce` handler wants
+`ProcessPorts` and gets an un-wired pair either way.
 
 **Nothing checks the pairing, so the failure is at the handler.** `SpawnOptions.services` is typed
 `Context.Context<never>`, which every context satisfies, so a row asking for a service its spawner
-does not hold spawns fine and dies on the first handler that reaches for it. Where the requirement is
+does not hold spawns fine and dies on the first handler that reaches for it — deterministically now,
+whichever fiber dispatched. Where the requirement is
 visible is the row's own type: `aiAgentProgram` is generic over the leftover requirement of the layer
 it is handed (`src/ai-agent/program.ts`), so an agent row over a layer that still needs `SpellBridge`
 says `SpellBridge` on its services rather than closing it.
