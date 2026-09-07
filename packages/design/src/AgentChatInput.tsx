@@ -1332,6 +1332,11 @@ export interface SettingMenuProps {
 export function SettingMenu({label, items, value, onValueChange, disabled}: SettingMenuProps) {
 	const t = useDesignT();
 	const [open, setOpen] = useState(false);
+	// The highlight is ours to drive, not the machine's: Zag clears it on close and re-seeds it to
+	// row 1 on the next open, so a catalogue taller than the popover always opens away from the
+	// checked row. Seeding it to `value` at the open makes the machine's own scroll-into-view land
+	// there and the first arrow key move from there. See ADR 0361.
+	const [highlighted, setHighlighted] = useState<string | null>(null);
 	const selected = items.find((item) => item.value === value);
 	// Two different unselected states, and only one of them is loading: an empty `items` is a host
 	// that has not resolved what it can offer, while a populated `items` with no `value` is a
@@ -1347,7 +1352,12 @@ export function SettingMenu({label, items, value, onValueChange, disabled}: Sett
 	return (
 		<Menu
 			open={open}
-			onOpenChange={setOpen}
+			onOpenChange={(next) => {
+				if (next) setHighlighted(value ?? null);
+				setOpen(next);
+			}}
+			highlightedValue={highlighted}
+			onHighlightChange={setHighlighted}
 			placement="top-start"
 			ariaLabel={label}
 			className="kp-agent-chat__picker-menu"

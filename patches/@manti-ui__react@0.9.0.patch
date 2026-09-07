@@ -1,0 +1,49 @@
+diff --git a/dist/components/Menu/Menu.d.ts b/dist/components/Menu/Menu.d.ts
+index 0dc3d5bac2ad789ac28f6059296977f0fa73ba8f..fc31ea63e5b0dc61ad2c4fd2b24bfc39eb4cfa50 100644
+--- a/dist/components/Menu/Menu.d.ts
++++ b/dist/components/Menu/Menu.d.ts
+@@ -22,6 +22,12 @@ export interface MenuProps {
+     defaultOpen?: boolean;
+     /** Called whenever the open state changes. */
+     onOpenChange?: (open: boolean) => void;
++    /** Controlled value of the highlighted command. Drives the machine's scroll-into-view on open. */
++    highlightedValue?: string | null;
++    /** Initial highlighted command for uncontrolled usage. */
++    defaultHighlightedValue?: string | null;
++    /** Called with the value of the newly highlighted command, or null when nothing is highlighted. */
++    onHighlightChange?: (value: string | null) => void;
+     /** Accessible name for the menu panel. */
+     ariaLabel?: string;
+     id?: string;
+@@ -47,5 +53,5 @@ export interface MenuProps {
+  * />
+  * ```
+  */
+-export declare function Menu({ trigger, items, placement, size, onSelect, open, defaultOpen, onOpenChange, ariaLabel, id, className, contentProps, getItemProps, }: MenuProps): import("react").JSX.Element;
++export declare function Menu({ trigger, items, placement, size, onSelect, open, defaultOpen, onOpenChange, ariaLabel, id, className, contentProps, getItemProps, highlightedValue, defaultHighlightedValue, onHighlightChange, }: MenuProps): import("react").JSX.Element;
+ //# sourceMappingURL=Menu.d.ts.map
+\ No newline at end of file
+diff --git a/dist/index.js b/dist/index.js
+index e769e146e2a2fb30d9ab32843d8bf1f640ee246d..16be03af85c01ba512f8c2d42a24657df6736b86 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -2617,14 +2617,17 @@ function Sn({ children: e, direction: t = "left", speed: n = 20, pauseOnHover: r
+ }
+ //#endregion
+ //#region src/components/Menu/Menu.tsx
+-function Cn({ trigger: e, items: t, placement: n = "bottom-start", size: r = "md", onSelect: i, open: a, defaultOpen: o, onOpenChange: s, ariaLabel: c, id: l, className: d, contentProps: f, getItemProps: p }) {
++function Cn({ trigger: e, items: t, placement: n = "bottom-start", size: r = "md", onSelect: i, open: a, defaultOpen: o, onOpenChange: s, ariaLabel: c, id: l, className: d, contentProps: f, getItemProps: p, highlightedValue: $hv, defaultHighlightedValue: $dhv, onHighlightChange: $ohc }) {
+ 	let m = u(), h = l ?? m, g = n === "bottom-center" ? "bottom" : n, _ = Ot(), v = U(M.machine, {
+ 		id: h,
+ 		positioning: { placement: g },
+ 		"aria-label": c,
+ 		open: a,
+ 		defaultOpen: o,
+-		onOpenChange: s ? (e) => s(e.open) : void 0
++		onOpenChange: s ? (e) => s(e.open) : void 0,
++		highlightedValue: $hv,
++		defaultHighlightedValue: $dhv,
++		onHighlightChange: $ohc ? (e) => $ohc(e.highlightedValue) : void 0
+ 	}), y = M.connect(v, H);
+ 	return /* @__PURE__ */ K(Dt, {
+ 		value: {

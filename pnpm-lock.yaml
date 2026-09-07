@@ -240,6 +240,9 @@ overrides:
 pnpmfileChecksum: sha256-ENBbpnCM6iEJZwql5y+XIdMMnEPnYSp47O6FmPjp4UI=
 
 patchedDependencies:
+  '@manti-ui/react@0.9.0':
+    hash: 72865e8a70f6bf95ae32fbb5907bfc7c7d59d738856f188e91801d2e45bd7484
+    path: patches/@manti-ui__react@0.9.0.patch
   '@nkzw/fate@1.3.1':
     hash: e0af930dd67d32efc5463f43c35824fc35d9b9558716831f9cec3764017cf40c
     path: patches/@nkzw__fate@1.3.1.patch
@@ -425,7 +428,7 @@ importers:
         version: link:../../packages/fate-effect
       '@manti-ui/react':
         specifier: 'catalog:'
-        version: 0.9.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 0.9.0(patch_hash=72865e8a70f6bf95ae32fbb5907bfc7c7d59d738856f188e91801d2e45bd7484)(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@manti-ui/styles':
         specifier: 'catalog:'
         version: 0.9.0
@@ -868,7 +871,7 @@ importers:
         version: 5.2.8
       '@manti-ui/react':
         specifier: 'catalog:'
-        version: 0.9.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 0.9.0(patch_hash=72865e8a70f6bf95ae32fbb5907bfc7c7d59d738856f188e91801d2e45bd7484)(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       lucide-react:
         specifier: 'catalog:'
         version: 1.23.0(react@19.2.6)
@@ -7322,7 +7325,7 @@ snapshots:
     transitivePeerDependencies:
       - '@internationalized/date'
 
-  '@manti-ui/react@0.9.0(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@manti-ui/react@0.9.0(patch_hash=72865e8a70f6bf95ae32fbb5907bfc7c7d59d738856f188e91801d2e45bd7484)(@internationalized/date@3.12.3)(@manti-ui/styles@0.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@manti-ui/folds': 0.9.0(@internationalized/date@3.12.3)
       '@manti-ui/styles': 0.9.0
