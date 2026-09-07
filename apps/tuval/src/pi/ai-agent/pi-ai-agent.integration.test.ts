@@ -256,6 +256,16 @@ describe("the Pi AI agent layer over a real AgentSession", () => {
 					"the next page walks older, still oldest-first",
 				);
 
+				const reply = newest.items.find((item) => item.kind === "assistant");
+				assert.isDefined(reply);
+				if (reply === undefined) return;
+				const fromReply = yield* agent.page(reply.id, 2);
+				assert.deepStrictEqual(
+					fromReply,
+					older,
+					"a local prompt's stored reply selects the same exchange boundary",
+				);
+
 				const oldest = yield* agent.page(older.items[0]?.id ?? null, 2);
 				assert.deepStrictEqual(
 					oldest.items.map((item) => (item.kind === "user" ? item.text : item.kind)),

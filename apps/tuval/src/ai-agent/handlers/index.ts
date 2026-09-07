@@ -35,7 +35,7 @@ import {
 	START_ERROR,
 	type WindowLimits,
 } from "../core/index.ts";
-import {isRefusal, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
+import {isRefusal, pageCursor, planTranscriptPage, withoutLocalEchoes} from "../history/index.ts";
 import {SessionOpening} from "../opening.ts";
 import type {Mode, TranscriptPagePayload} from "../ports/index.ts";
 import {
@@ -315,15 +315,18 @@ export const aiAgentHandlers = <RIn = never>(
 			Effect.gen(function* () {
 				const agent = yield* slot.current;
 				if (agent === null) return refusal(noSession);
-				const answered = yield* Effect.result(agent.page(cmd.before, cmd.limit));
+				const held = yield* readSession;
+				const cursor = pageCursor(held?.transcript.items ?? [], cmd.before);
+				if (cursor.kind === "unavailable") return nothing;
+				const answered = yield* Effect.result(agent.page(cursor.before, cmd.limit));
 				if (Result.isFailure(answered)) return refusal(failureOf(answered.failure));
 				// A backend that stores the conversation keeps its own copy of the turn the core
 				// recorded at the send, under its own id, and no id joins the two (#7979). Dropped
 				// here rather than at the window, so both routes one page takes — the `pageReply`
 				// port and the `paged` Msg — carry a single copy of it.
-				const held = yield* readSession;
+				const current = yield* readSession;
 				const page = {
-					items: withoutLocalEchoes(answered.success.items, held?.transcript.items ?? []),
+					items: withoutLocalEchoes(answered.success.items, current?.transcript.items ?? []),
 					hasMore: answered.success.hasMore,
 				};
 				const payload = pagePayload(page, cmd.limit);

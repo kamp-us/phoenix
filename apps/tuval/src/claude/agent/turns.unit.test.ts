@@ -135,6 +135,24 @@ describe("page", () => {
 		),
 	);
 
+	it.effect("accepts a stored reply cursor when its prompt is held as a local echo", () =>
+		on({rows: rows()}, (agent) =>
+			Effect.gen(function* () {
+				yield* agent.start({
+					cwd: CWD,
+					resume: {sessionId: TOOL_SESSION_ID, holdsTranscript: false},
+				});
+				const newest = yield* agent.page(null, 10);
+				const reply = newest.items.find((item) => item.kind === "assistant");
+				assert.isDefined(reply);
+				if (reply === undefined) return;
+				const older = yield* agent.page(reply.id, 10);
+				assert.deepStrictEqual(older.items, []);
+				assert.isFalse(older.hasMore);
+			}),
+		),
+	);
+
 	it.effect("reads through the id it resumed, which is the id the CLI hands back", () =>
 		on({rows: rows(), opening: [message("resumed-init")]}, (agent, scripted) =>
 			Effect.gen(function* () {

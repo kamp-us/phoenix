@@ -18,6 +18,7 @@
  * is in flight, and both disappear at the beginning of history (founder ruling, 2026-09-02).
  */
 
+import {pageCursor} from "../../ai-agent/history/cursor.ts";
 import type {ItemId, SystemItem, TranscriptItem} from "../../ai-agent/ports/index.ts";
 
 /**
@@ -240,13 +241,28 @@ export const chatRows = (input: ChatRowsInput): ReadonlyArray<ChatRow> => {
 	return rows;
 };
 
-/** The `before` cursor for the next page: the oldest item the window currently holds. */
+/** The prepend anchor: the visually oldest item, including a local echo. */
 export const oldestLoadedId = (rows: ReadonlyArray<ChatRow>): string | null => {
 	for (const row of rows) {
 		if (row.kind === "item") return row.item.id;
 		if (row.kind === "session") return row.items[0].id;
 	}
 	return null;
+};
+
+/** The stored cursor and visual anchor are different id spaces when the oldest row is local. */
+export const olderPageRequest = (
+	rows: ReadonlyArray<ChatRow>,
+): {readonly before: string; readonly anchor: string} | null => {
+	const anchor = oldestLoadedId(rows);
+	if (anchor === null) return null;
+	const items = rows.flatMap((row): ReadonlyArray<TranscriptItem> => {
+		if (row.kind === "item") return [row.item];
+		if (row.kind === "session") return row.items;
+		return [];
+	});
+	const cursor = pageCursor(items, anchor);
+	return cursor.kind === "page" && cursor.before !== null ? {before: cursor.before, anchor} : null;
 };
 
 /** Membership rather than the row's key: an anchor may name a notice buried mid-run. */

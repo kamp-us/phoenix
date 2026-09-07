@@ -561,7 +561,11 @@ const make = (
 				});
 			}
 			const entries = yield* readBranch(sessionDir(current.cwd), current.id, current.cwd);
-			const planned = planTranscriptPage(pageItems(entries), {before, limit});
+			const planned = planTranscriptPage(pageItems(entries), {
+				before,
+				limit,
+				cursorBoundary: "containing-group",
+			});
 			if (isRefusal(planned)) {
 				if (planned.reason === "limit-not-positive") {
 					// The port declares `limit > 0`; a caller that broke it has a bug this

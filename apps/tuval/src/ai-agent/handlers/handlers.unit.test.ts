@@ -9,6 +9,7 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {Context, Effect, Layer, type Scope} from "effect";
+import {assistantItem, userItem} from "../../ai-agent-fixtures/transcripts.ts";
 import {Checkpoints} from "../../durability/Checkpoints.ts";
 import {memoryStores} from "../../durability/stores.ts";
 import {NodeId} from "../../ports/graph.ts";
@@ -31,6 +32,7 @@ import {
 	mode as modeBrand,
 	models,
 	modes,
+	noEchoReply,
 	PERMISSION_REQUEST,
 	permissionTurn,
 	plainReply,
@@ -54,9 +56,10 @@ interface Probe {
 	prompts: number;
 	/** The text of each, so a test reads what the backend was sent rather than that it was sent. */
 	sent: Array<string>;
+	pages: Array<string | null>;
 }
 
-const probeOf = (): Probe => ({acquired: 0, released: 0, prompts: 0, sent: []});
+const probeOf = (): Probe => ({acquired: 0, released: 0, prompts: 0, sent: [], pages: []});
 
 /** A backend that holds no session at all, whatever it is asked to open. */
 const refusesEveryStart = (options: StartOptions) =>
@@ -95,6 +98,11 @@ const countingLayer = (
 				...agent,
 				start: (options: StartOptions) =>
 					refuseStart ? Effect.fail(refusesEveryStart(options)) : agent.start(options),
+				page: (before: string | null, limit: number) =>
+					Effect.suspend(() => {
+						probe.pages.push(before);
+						return agent.page(before, limit);
+					}),
 				prompt: (text: string, key?: string) =>
 					Effect.suspend(() => {
 						probe.prompts += 1;
@@ -228,6 +236,47 @@ describe("the AI agent handlers under a process", () => {
 				);
 				const published = lastOn(log, aiAgentPortNames.transcript);
 				assert.deepStrictEqual(published, sessionOf(handle).transcript);
+			}),
+		);
+	});
+
+	it.live("resolves a local cursor once before the backend and returns older history", () => {
+		const probe = probeOf();
+		const older = [userItem("old-user", "older"), assistantItem("old-assistant")];
+		const script = {
+			...noEchoReply,
+			history: [...older, userItem("stored-user", "hello"), assistantItem("a4")],
+		};
+		return withKernel(script, probe, (spawn) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "cursor", timestamp: 1});
+				yield* eventually(() =>
+					sessionOf(handle).transcript.items.some((item) => item.id === "a4"),
+				);
+				yield* handle.dispatch({type: "page", before: "local:cursor", limit: 10});
+				assert.deepStrictEqual(probe.pages, ["a4"]);
+				assert.deepStrictEqual(sessionOf(handle).lastPage?.items, older);
+				assert.isNull(sessionOf(handle).failure);
+			}),
+		);
+	});
+
+	it.live("never calls the backend for an all-local or evicted local cursor", () => {
+		const probe = probeOf();
+		const script = {...plainReply, turns: [{events: []}]};
+		return withKernel(script, probe, (spawn, log) =>
+			Effect.gen(function* () {
+				const handle = yield* spawn;
+				yield* eventually(() => sessionOf(handle).phase === "ready");
+				yield* handle.dispatch({type: "prompt", text: "hello", key: "alone", timestamp: 1});
+				yield* handle.dispatch({type: "page", before: "local:alone", limit: 10});
+				yield* handle.dispatch({type: "page", before: "local:evicted", limit: 10});
+				assert.deepStrictEqual(probe.pages, []);
+				assert.isNull(sessionOf(handle).lastPage);
+				assert.isNull(sessionOf(handle).failure);
+				assert.isUndefined(lastOn(log, aiAgentPortNames.pageReply));
 			}),
 		);
 	});

@@ -7,6 +7,7 @@ import {
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 import {isTranscriptPagePayload, type TranscriptItem} from "../ports/index.ts";
+import {pageCursor} from "./cursor.ts";
 import {groupTranscript, itemBytes} from "./groups.ts";
 import {planTranscriptPage} from "./page.ts";
 
@@ -108,6 +109,55 @@ describe("the page bound", () => {
 			reason: "limit-not-positive",
 			limit: 0,
 		});
+	});
+});
+
+describe("a local echo is not a stored page cursor", () => {
+	const local = {...userItem("local:send", "latest prompt"), local: true};
+	const stored = userItem("stored-user", local.text);
+	const reply = assistantItem("stored-assistant");
+	const older = [userItem("old-user"), assistantItem("old-assistant")];
+
+	it("skips the local prompt and loads older whole exchanges from its stored reply", () => {
+		const cursor = pageCursor([local, reply], local.id);
+		expect(cursor).toEqual({kind: "page", before: reply.id});
+		if (cursor.kind !== "page") return;
+		const page = planTranscriptPage([...older, stored, reply], {
+			before: cursor.before,
+			limit: 10,
+			cursorBoundary: "containing-group",
+		});
+		expect(page.kind).toBe("page");
+		if (page.kind !== "page") return;
+		expect(page.items).toEqual(older);
+		expect(page.next).toBeNull();
+	});
+
+	it("has no request for an all-local tail or an evicted local cursor", () => {
+		expect(pageCursor([local], local.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([], local.id)).toEqual({kind: "unavailable"});
+		expect(pageCursor([reply, local], local.id)).toEqual({kind: "unavailable"});
+	});
+
+	it("uses the domain marker even when the local id has no prefix", () => {
+		const marked = {...local, id: stored.id};
+		expect(pageCursor([marked, reply], marked.id)).toEqual({kind: "page", before: reply.id});
+	});
+
+	it("preserves an explicit newest read and stored cursors from window-owned older pages", () => {
+		expect(pageCursor([local], null)).toEqual({kind: "page", before: null});
+		expect(pageCursor([local, reply], "old-user")).toEqual({kind: "page", before: "old-user"});
+		expect(pageCursor([local, reply], reply.id)).toEqual({kind: "page", before: reply.id});
+	});
+
+	it("still refuses an absent stored cursor in containing-group mode", () => {
+		expect(
+			planTranscriptPage(older, {
+				before: "absent",
+				limit: 10,
+				cursorBoundary: "containing-group",
+			}),
+		).toEqual({kind: "refused", reason: "cursor-not-found", cursor: "absent"});
 	});
 });
 

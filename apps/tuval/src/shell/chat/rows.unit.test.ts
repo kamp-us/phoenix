@@ -18,7 +18,14 @@ import {
 	userItem,
 } from "./chat.testing.ts";
 import type {ChatRow} from "./rows.ts";
-import {chatRows, mergeOlder, oldestLoadedId, rowIndexOfItem, rowKey} from "./rows.ts";
+import {
+	chatRows,
+	mergeOlder,
+	olderPageRequest,
+	oldestLoadedId,
+	rowIndexOfItem,
+	rowKey,
+} from "./rows.ts";
 
 const base = {older: [], tail: [], omitted: 0, loading: false, atOldest: false};
 
@@ -279,6 +286,27 @@ describe("mergeOlder", () => {
 });
 
 describe("the page cursor and the prepend anchor", () => {
+	it("skips local echoes for the cursor but keeps one as the visual prepend anchor", () => {
+		const local = {...userItem("local:send"), local: true};
+		const tail = [local, assistantItem("stored-reply")];
+		const rows = chatRows({...base, tail});
+		expect(olderPageRequest(rows)).toEqual({before: "stored-reply", anchor: local.id});
+		expect(oldestLoadedId(rows)).toBe(local.id);
+		const prepended = chatRows({...base, tail, older: [userItem("older", "earlier prompt")]});
+		expect(rowIndexOfItem(prepended, local.id)).toBe(2);
+	});
+
+	it("makes no older request from only local rows, even with an omitted-history head", () => {
+		const tail = [
+			{...userItem("local:first"), local: true},
+			{...userItem("local:second"), local: true},
+		];
+		const rows = chatRows({...base, tail, omitted: 40});
+		expect(rows[0]?.kind).toBe("older");
+		expect(olderPageRequest(rows)).toBeNull();
+		expect(olderPageRequest([])).toBeNull();
+	});
+
 	it("names the oldest item the window holds, never the head row", () => {
 		const rows = chatRows({...base, tail: transcriptOf(3), omitted: 1});
 		expect(rows[0]?.kind).toBe("older");

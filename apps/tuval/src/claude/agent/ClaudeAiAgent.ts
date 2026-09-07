@@ -764,7 +764,11 @@ const make = (
 				catch: storeUnreadable,
 			});
 			const {items} = toHistoryItems(rows, {at: Date.now()});
-			const planned = planTranscriptPage(items, {before, limit});
+			const planned = planTranscriptPage(items, {
+				before,
+				limit,
+				cursorBoundary: "containing-group",
+			});
 			if (isRefusal(planned)) {
 				if (planned.reason === "limit-not-positive") {
 					// The port declares `limit > 0`; a caller that broke it has a bug this interface

@@ -31,6 +31,8 @@ export type TranscriptPageResult = TranscriptPage | PlanRefusal;
 export interface PageOptions {
 	/** The oldest item the caller already holds, or `null` to start at the newest end. */
 	readonly before?: string | null;
+	/** Stored live items may sit inside an exchange whose prompt is held as a local echo. */
+	readonly cursorBoundary?: "group-start" | "containing-group";
 	readonly limit: number;
 	readonly byteLimit?: number;
 }
@@ -51,7 +53,12 @@ export const planTranscriptPage = (
 	if (badLimit !== null) return badLimit;
 
 	const groups = groupTranscript(history);
-	const boundary = boundaryOf(history, groups, options.before ?? null);
+	const cursor = options.before ?? null;
+	const containing =
+		options.cursorBoundary === "containing-group" && cursor !== null
+			? groups.find((group) => group.items.some((item) => item.id === cursor))
+			: undefined;
+	const boundary = boundaryOf(history, groups, containing?.items[0].id ?? cursor);
 	if (typeof boundary !== "number") return boundary;
 
 	const taken: Array<TranscriptGroup> = [];

@@ -163,10 +163,11 @@ describe("chat window boundary", () => {
 		expect(written.filter(([, tag]) => tag === undefined || !declared.has(tag))).toEqual([]);
 	});
 
-	it("every agent import is type-only, so no agent code reaches the browser bundle", () => {
+	it("agent imports are type-only except the pure shared cursor decision", () => {
 		const offenders = sourceFiles().flatMap(([name, source]) =>
 			importLines(source)
 				.filter((line) => line.includes("ai-agent/"))
+				.filter((line) => !line.includes('"../../ai-agent/history/cursor.ts"'))
 				.filter((line) => !/^import type\b/.test(line))
 				.map((line) => `${name}: ${line.trim()}`),
 		);

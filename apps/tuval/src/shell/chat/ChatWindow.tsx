@@ -58,7 +58,7 @@ import {
 	type ChatRow,
 	chatRows,
 	mergeOlder,
-	oldestLoadedId,
+	olderPageRequest,
 	type RowItem,
 	rowIndexOfItem,
 	rowKey,
@@ -507,9 +507,10 @@ function ChatWindow({
 
 	const requestOlder = useCallback(() => {
 		if (loading || view.atOldest || rows.length === 0) return;
-		const before = oldestLoadedId(rows);
-		if (before === null) return;
-		anchorRef.current = before;
+		const request = olderPageRequest(rows);
+		if (request === null) return;
+		const {before, anchor} = request;
+		anchorRef.current = anchor;
 		setLoading(true);
 		// Asking for history is leaving the newest turn, and the pin has to say so or the re-anchor
 		// below loses. On a transcript barely taller than its viewport every offset is within *both*
