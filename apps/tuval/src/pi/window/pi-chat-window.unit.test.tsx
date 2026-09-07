@@ -104,3 +104,14 @@ describe("the window's scheme", () => {
 		);
 	});
 });
+
+describe("the options this binding admits", () => {
+	// A type claim, held by the typechecker rather than by this run: `@ts-expect-error` itself reds if
+	// the parameter ever widens back to the full `ChatWindowOptions`, which is the shape that dropped
+	// a caller's `extras` in silence (#7957).
+	it("refuses the `extras` the binding owns, and takes every other option", () => {
+		// @ts-expect-error `extras` is the binding's slot, not the caller's.
+		expect(piChatWindow({extras: () => null})).toBeDefined();
+		expect(piChatWindow({subagentList: false, pageLimit: 10, scrollCommitMs: 0})).toBeDefined();
+	});
+});
