@@ -17,11 +17,8 @@
 /**
  * The consulted variables, in precedence order — the unset refusal names all three.
  *
- * opencode exposes no session id a driver shell could read (verified against upstream `sst/opencode`
- * at v1.18.21: the bash tool spawns with inherited environment only, and no `OPENCODE_SESSION_ID`
- * exists anywhere in the shipped binary), so an opencode driver must export `FABRIKA_SESSION_ID` by
- * hand before any attribution-bearing verb — otherwise every verb refuses with
- * {@link sessionIdUnset}.
+ * `FABRIKA_SESSION_ID` leads as the harness-neutral override a driver exports by hand when the
+ * harness it runs under stamps neither of the other two.
  */
 export const SESSION_ID_VARS = [
 	"FABRIKA_SESSION_ID",
