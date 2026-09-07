@@ -147,6 +147,7 @@ export const isAiAgentSessionState = (value: unknown): value is AiAgentSessionSt
 	isNullOrString(value.interrupted) &&
 	isInterruption(value.interruption) &&
 	isUsage(value.usage) &&
+	isNullOrString(value.agentVersion) &&
 	isPermissions(value.permissions) &&
 	isFiniteNumber(value.permissionsRaised) &&
 	isModes(value.modes) &&

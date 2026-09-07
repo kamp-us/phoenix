@@ -186,6 +186,19 @@ export interface SessionResetEvent {
 	readonly sessionId: string;
 }
 
+/**
+ * What the layer is driving, as a version string — the Claude Code CLI on PATH for one row, Pi's
+ * adapter for the other.
+ *
+ * Its own kind rather than a field on `usage`: usage is a turn's spend, keyed on that turn, and a
+ * version is a fact about the session that arrives whether or not anything was spent. It replaces
+ * whatever the slot held, so a layer that re-announces on a resume is a no-op.
+ */
+export interface VersionEvent {
+	readonly kind: "version";
+	readonly version: string;
+}
+
 /** Plain numbers and a plain model name: no backend's usage type reaches the core. */
 export interface UsageEvent {
 	readonly kind: "usage";
@@ -215,5 +228,6 @@ export type AgentEvent =
 	| ThinkingEvent
 	| SessionResetEvent
 	| UsageEvent
+	| VersionEvent
 	| SubagentEvent
 	| FailureEvent;

@@ -54,11 +54,11 @@ const openingOf = (opening: ReadonlyArray<SDKMessage>) =>
 	);
 
 /**
- * `assistant-turn.json` is init, one assistant frame and one `success` result — five events out:
- * the `prompting` the send itself narrates, the model init names, the reply, the turn's spend, and
- * the `ready` that ends it.
+ * `assistant-turn.json` is init, one assistant frame and one `success` result — six events out: the
+ * `prompting` the send itself narrates, the model and the CLI version init names, the reply, the
+ * turn's spend, and the `ready` that ends it.
  */
-const ASSISTANT_TURN_EVENTS = 5;
+const ASSISTANT_TURN_EVENTS = 6;
 
 const machine = aiAgentSessionMachine({cwd: CWD});
 
@@ -89,7 +89,7 @@ describe("a turn ends on its result", () => {
 			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
 			assert.deepStrictEqual(
 				events.map((event) => event.kind),
-				["phase", "usage", "item", "usage", "phase"],
+				["phase", "usage", "version", "item", "usage", "phase"],
 			);
 			assert.deepStrictEqual(
 				events.filter((event) => event.kind === "phase"),

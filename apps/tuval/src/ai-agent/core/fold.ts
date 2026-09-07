@@ -373,6 +373,10 @@ export const foldEvent = (
 			};
 		case "usage":
 			return {...state, usage: addUsage(state.usage, event)};
+		// Replaced, never accumulated: one layer drives one backend, and the newest announcement is
+		// what that backend is running.
+		case "version":
+			return {...state, agentVersion: event.version};
 		// Replaced under its own id, never merged: the mapper computes the whole slot from the
 		// worker's frames, so a merge would keep a line the newer read has already superseded. A
 		// finished slot is kept rather than dropped — its rows are a view an operator may be

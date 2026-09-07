@@ -10,7 +10,8 @@
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
 import {describe, expect, it} from "vitest";
-import {upsertItem} from "../../ai-agent/core/fold.ts";
+import {foldEvent, upsertItem} from "../../ai-agent/core/fold.ts";
+import {initialState} from "../../ai-agent/core/state.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
 import {
 	byteLength,
@@ -65,8 +66,28 @@ describe("toAgentEvents over a captured init", () => {
 				outputTokens: 0,
 				cost: 0,
 			},
+			{kind: "version", version: "2.1.259"},
 		]);
 		expect(mapping.model).toBe("claude-fable-5-1");
+	});
+
+	it("reports the CLI on PATH, which is not the SDK this repo pins", () => {
+		const {events} = run([message("init")]);
+		expect(events.filter((one) => one.kind === "version")).toEqual([
+			{kind: "version", version: "2.1.259"},
+		]);
+	});
+
+	// The field is stamped off the captured frame rather than captured absent: every CLI that can be
+	// run reports one, so a frame without it is only reachable by taking it away.
+	it("emits no version at all when the frame carries none, leaving the slot empty", () => {
+		const {claude_code_version: _absent, ...withoutVersion} = message("init") as SDKMessage &
+			Record<string, unknown>;
+		const {events} = run([withoutVersion as SDKMessage]);
+		expect(events.filter((one) => one.kind === "version")).toEqual([]);
+		expect(
+			events.reduce((state, one) => foldEvent(state, one, {}), initialState("/repo")),
+		).toMatchObject({agentVersion: null});
 	});
 
 	it("reads a resumed session's init the same way", () => {
@@ -80,6 +101,7 @@ describe("toAgentEvents over a captured init", () => {
 				outputTokens: 0,
 				cost: 0,
 			},
+			{kind: "version", version: "2.1.259"},
 		]);
 	});
 });
