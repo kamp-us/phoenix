@@ -186,7 +186,7 @@ describe("runNote refuses before it writes", () => {
 	it("refuses a body carrying a machine-local path on 5", async () => {
 		const out = await run([[PULL, reply(pull())]], {
 			_tag: "Text",
-			text: "see ~/code/github.com/kamp-us/phoenix/x.ts\n",
+			text: "see ~/code/github.com/acme/repo/x.ts\n",
 		});
 		expect(out.code).toBe(LEAKED_PATH);
 	});

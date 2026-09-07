@@ -3,19 +3,19 @@
  *
  * The rollup itself is **the shipped `review ci` module, extended rather than forked**
  * (`../review/rollup.ts`): same bucket rules, same fail-closed direction on the ambiguous rows. This
- * group adds two things on top — the wedge diagnosis and the ADR 0061 informational carve-out — and
+ * group adds two things on top — the wedge diagnosis and the informational-check carve-out — and
  * both live in that same module so a second copy cannot drift the way v1's two `jq` copies did.
  *
  * `no-runs` is a **positively evidenced** state, not an empty read: workflows ≥ 1 and zero runs at
  * this head means Actions exist and none fired, which is the dropped-trigger state `ship nudge`
- * re-derives for itself. Zero workflows is `no-producer` — a different fact from `pending`, and no
- * longer collapsed into it (#6298): a repo with no CI is not a repo whose CI is still running, and
+ * re-derives for itself. Zero workflows is `no-producer` — a different fact from `pending`, never
+ * collapsed into it: a repo with no CI is not a repo whose CI is still running, and
  * printing the second over the first tells an operator to wait for a run nothing will ever start.
  *
  * A `green` is served only over bytes a gate of this repo's own inspected: the coverage read is
  * `../review/gate-coverage.ts`, the same module `review ci` refuses on, and a head where every
  * repo-authored workflow was silent refuses on {@link NO_GATE_COVERAGE} rather than printing the
- * word this group merges on (#6915).
+ * word this group merges on.
  */
 import {Clock, Effect, type FileSystem, type Path} from "effect";
 import type {ChildProcessSpawner} from "effect/unstable/process";
@@ -65,12 +65,12 @@ export interface ChecksOptions {
 /**
  * The histogram key one check run tallies under: its status composed with whether it gates.
  *
- * `checks` is an evidence-array under ADR 0308 — the skill routes off the rollup, never off a row —
+ * `checks` is an evidence array — the skill routes off the rollup, never off a row —
  * so it collapses to counts. The two names the skill's own terminals do read, the wedged run and the
  * failing gating run, ride the notes channel instead, so `red` still routes to `heal-ci` by name.
  * The gating axis rides inside the key because status
  * alone would leave the rollup underivable from the payload: a `red` head and a head whose only
- * `failure` is an ADR 0061 informational run would tally identically, and the carve-out is exactly
+ * `failure` is an informational run would tally identically, and the carve-out is exactly
  * what separates them. A superseded cancel says so in the key for the same reason — it pends where a
  * plain `cancelled` reds.
  */
@@ -187,7 +187,7 @@ export const runChecks = (
 				);
 			}
 			// Enumerated rather than counted: `total_count` is still the `no-runs` discriminator, and
-			// the rows beside it are the only place supersession can be read from (#6834).
+			// the rows beside it are the only place supersession can be read from.
 			const atHead = yield* listRunsAtHead(repo, bound);
 			if (atHead._tag === "Failure") {
 				return refuse(
@@ -233,7 +233,7 @@ export const runChecks = (
 				...(wedged.length === 0
 					? []
 					: [
-							`${VERB}: stranded past the dwell: ${wedged.join(", ")} — the cancel-and-rerun lever is an operator's (#3999).`,
+							`${VERB}: stranded past the dwell: ${wedged.join(", ")} — the cancel-and-rerun lever is an operator's.`,
 						]),
 				...(replaced.length === 0
 					? []
@@ -275,7 +275,7 @@ export const runChecks = (
 		const ci = yield* resolveCi(options.cwd);
 
 		/**
-		 * A `green` that no gate of this repo's own produced — the merge-authority fail-open of #6915.
+		 * A `green` that no gate of this repo's own produced — the merge-authority fail-open.
 		 *
 		 * The same read `review ci` refuses on, through the same module (`../review/gate-coverage.ts`),
 		 * asked at the one word that reads as "merge this": a `red` already routes to `heal-ci`, and a
@@ -294,7 +294,7 @@ export const runChecks = (
 					_tag: "Ungated",
 					outcome: refuse(
 						NO_GATE_COVERAGE,
-						`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${bound} — the ${read.runs.length} check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).`,
+						`${VERB}: none of the ${coverage.declared} workflow(s) ${repo} authors produced a run at ${bound} — the ${read.runs.length} check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.`,
 						diagnostics,
 					),
 				};
@@ -366,7 +366,7 @@ export const runChecks = (
 			});
 			if (moved._tag === "Refused") return moved.outcome;
 			if (!prefixMatch(moved.pull.headSha, bound)) {
-				// The answer is about a tree the PR no longer is (#1928's secondary).
+				// The answer is about a tree the PR no longer is.
 				return settled(read, rollupFor(read, wedged), wedged, "head-moved");
 			}
 			const next = yield* sample;

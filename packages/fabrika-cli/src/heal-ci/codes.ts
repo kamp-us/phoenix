@@ -48,7 +48,7 @@ export const LEAKED_PATH = SHARED_LEAKED_PATH;
 export const BARE_AT_PATH = SHARED_BARE_AT_PATH;
 /**
  * Zero scope: the target is **proven absent (404)**, or a required input is proven empty where
- * emptiness is not a fact (ADR 0092).
+ * emptiness is not a fact — a gate with nothing to judge refuses, never passes.
  *
  * *Proven* is the operative word, and this group leans on it hard: a 404 is a fact about the
  * repository, an unreachable GitHub is not a fact about anything and lands on

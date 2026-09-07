@@ -390,8 +390,8 @@ downstream verb consumes, and that verb guards itself.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ship scope: PR #<n> not found in <repo>.` | 7 | refusal |
-| `ship scope: PR #<n> has zero changed files — nothing to ship (ADR 0092).` | 7 | refusal |
-| `ship scope: #<n>'s diff derives zero review namespaces — a merge gated on nothing is vacuously green (#2765); the class map has a hole, file it.` | 7 | refusal |
+| `ship scope: PR #<n> has zero changed files — nothing to ship.` | 7 | refusal |
+| `ship scope: #<n>'s diff derives zero review namespaces — a merge gated on nothing is vacuously green; the class map has a hole, file it.` | 7 | refusal |
 | `ship scope: cannot read <what> for #<n>: <reason> — the scope is UNKNOWN.` | 11 | refusal |
 | `ship scope: cannot read <base>'s landing path: <reason> — reporting it unknown; `ship merge` refuses on the same read rather than landing.` | 0 | notice |
 | `ship scope: file list shows <k> of <m> declared files — refusing to partition a truncated read.` | 13 | refusal |
@@ -517,7 +517,7 @@ approval scan.
 |---|---|---|
 | `ship cp-approval: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship cp-approval: PR #<n> is closed — nothing to discharge.` | 7 | refusal |
-| `ship cp-approval: cannot read <what>: <reason> — the discharge is UNRESOLVED, not "awaiting approval" (#4223).` | 11 | refusal |
+| `ship cp-approval: cannot read <what>: <reason> — the discharge is UNRESOLVED, not "awaiting approval".` | 11 | refusal |
 | `ship cp-approval: received <k> of <m> changed files — refusing the partial sweep.` | 13 | refusal |
 | `ship cp-approval: received <k> of <m> comments — refusing the partial sweep.` | 13 | refusal |
 | `ship cp-approval: the review read never reached a terminal page — pagination is unexhausted, so an approval could sit on a page nobody read; refusing the partial sweep.` | 13 | refusal |
@@ -659,14 +659,14 @@ answer this contract bans.
 |---|---|---|
 | `ship gate: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship gate: PR #<n> is closed — nothing to gate.` | 7 | refusal |
-| `ship gate: PR #<n> has zero changed files — a conjunction over an empty diff proves nothing (ADR 0092).` | 7 | refusal |
+| `ship gate: PR #<n> has zero changed files — a conjunction over an empty diff proves nothing.` | 7 | refusal |
 | `ship gate: --require <v> is not a gateable namespace (known: review-code, review-doc, review-skill, review-ui, governance).` | 10 | refusal |
 | `ship gate: cannot read <what> for #<n>: <reason> — the conjunction is UNKNOWN.` | 11 | refusal |
 | `ship gate: received <k> of <m> changed files — refusing to derive the required floor from a truncated read.` | 13 | refusal |
 | `ship gate: received <k> of <m> comments — refusing the partial resolution.` | 13 | refusal |
 | `ship gate: the review read never reached a terminal page — pagination is unexhausted, so the native-review fold would rest on a truncated set; refusing the partial resolution.` | 13 | refusal |
-| `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option (#5036).` | 0 | notice |
-| `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission (ADR 0226); treated as fail, report it.` | 0 | notice |
+| `ship gate: #<n>'s diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.` | 0 | notice |
+| `ship gate: #<n> carries a §CP advisory with a [FAIL] row — an invalid emission; treated as fail, report it.` | 0 | notice |
 
 **Scope** — one PR's changed-file list (paginated, count-checked — the floor may not rest on a
 truncated read), its verdict comments (paginated, count-checked) and native reviews (paginated to
@@ -693,7 +693,7 @@ $ echo $?
 
 ```
 $ fabrika ship gate 4323 --sha 7c31a0de --require review-skill
-ship gate: #4323's diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option (#5036).
+ship gate: #4323's diff touches a governance root, so governance is required whether or not it was passed — the diff's floor, not the caller's option.
 gate	blocked	7c31a0de
 ns	review-skill	pass	marker
 ns	governance	absent	-
@@ -860,18 +860,18 @@ it is *present and wrong*. All four of these red on `18`, and each has a unit te
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ship floor: PR #<n> not found in <repo>.` | 7 | refusal |
-| `ship floor: PR #<n> has zero changed files — whether it touches a governance root is unanswerable (ADR 0092).` | 7 | refusal |
+| `ship floor: PR #<n> has zero changed files — whether it touches a governance root is unanswerable.` | 7 | refusal |
 | `ship floor: cannot read PR #<n> in <repo>: <reason> — whether the floor binds is UNKNOWN, never "n/a".` | 11 | refusal |
 | `ship floor: cannot read the changed-file list for #<n>: <reason> — whether the floor binds is UNKNOWN, never "n/a".` | 11 | refusal |
 | ``ship floor: `ship gate` answered without a resolvable governance row — the floor is UNKNOWN, never discharged.`` | 11 | refusal |
 | `ship floor: received <k> of <m> changed files — a governance root could sit in the part nobody read.` | 13 | refusal |
-| `ship floor: #<n> touches a governance root and its governance verdict at <sha> is <state> — <remedy> (#5408).` | 18 | refusal |
+| `ship floor: #<n> touches a governance root and its governance verdict at <sha> is <state> — <remedy>.` | 18 | refusal |
 | `ship floor: #<n>'s diff touches no governance root, so the floor does not bind — this is an answer about the diff, not a discharged verdict.` | 0 | notice |
 | `ship floor --publish-check: cannot enumerate the check runs at <sha>: <reason> — nothing was published, so the floor stays UNKNOWN rather than posting a duplicate row.` | 11 | refusal |
 | `ship floor --publish-check: the check-run could not be written: <reason> — the floor is resolved and nothing published it.` | 8 | refusal |
 | `ship floor --publish-check: wrote <status>/<conclusion> to check-run <id> and GitHub echoed <status>/<conclusion> — what the PR shows is not what this run decided.` | 9 | refusal |
-| `ship floor --publish-check: posted check-run <id> — the job's own exit code no longer carries the floor (#6161).` | 0 | notice |
-| `ship floor --publish-check: rewrote check-run <id> — the job's own exit code no longer carries the floor (#6161).` | 0 | notice |
+| `ship floor --publish-check: posted check-run <id> — the job's own exit code no longer carries the floor.` | 0 | notice |
+| `ship floor --publish-check: rewrote check-run <id> — the job's own exit code no longer carries the floor.` | 0 | notice |
 
 **Scope** — one PR's changed-file list, count-checked against the declared total, plus whatever
 `ship gate` scans for the one required namespace (its own file list, the comments, the reviews and
@@ -904,7 +904,7 @@ ship floor: scanned 1 changed file; 1 declared.
 ship gate: scanned 1 changed file; 1 declared.
 ship gate: scanned 2 comments; 2 declared.
 ship gate: scanned 0 reviews; pagination exhausted.
-ship floor: #5481 touches a governance root and its governance verdict at c9deb6047acc69da85b033a46b1fe05d2e0f5b91 is absent — no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post` (#5408).
+ship floor: #5481 touches a governance root and its governance verdict at c9deb6047acc69da85b033a46b1fe05d2e0f5b91 is absent — no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post`.
 $ echo $?
 18
 ```
@@ -915,8 +915,8 @@ exits 0 on having published it:
 ```
 $ fabrika ship floor 5481 --sha c9deb6047acc69da85b033a46b1fe05d2e0f5b91 --publish-check
 ship floor: scanned 1 changed file; 1 declared.
-ship floor: #5481 touches a governance root and its governance verdict at c9deb6047acc69da85b033a46b1fe05d2e0f5b91 is absent — no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post` (#5408).
-ship floor --publish-check: posted check-run 48812301 — the job's own exit code no longer carries the floor (#6161).
+ship floor: #5481 touches a governance root and its governance verdict at c9deb6047acc69da85b033a46b1fe05d2e0f5b91 is absent — no authorized governance verdict at this head — run the `governance` skill and emit one with `fabrika governance post`.
+ship floor --publish-check: posted check-run 48812301 — the job's own exit code no longer carries the floor.
 check	in_progress	-	48812301
 floor	blocked	c9deb6047acc69da85b033a46b1fe05d2e0f5b91
 ns	governance	absent
@@ -1171,7 +1171,7 @@ exhaustion is the `budget-exhausted` settle token with the last rollup — an an
 | `ship checks: cannot enumerate <what> at <sha>: <reason> — CI state is UNKNOWN, never green.` | 11 | refusal |
 | `ship checks: received <k> of <m> declared check runs at <sha> — refusing the partial enumeration.` | 13 | refusal |
 | `ship checks: the live head is <live>, you are enumerating <sha> — the head moved.` | 0 | notice |
-| `ship checks: none of the <m> workflow(s) <repo> authors produced a run at <sha> — the <k> check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).` | 20 | refusal |
+| `ship checks: none of the <m> workflow(s) <repo> authors produced a run at <sha> — the <k> check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.` | 20 | refusal |
 | `ship checks: <k> of <m> workflow(s) <repo> authors produced a run at <sha>.` | 0 | notice |
 | `ship checks: <repo> authors no workflow of its own — every run at <sha> is platform-provided, so there is no gate coverage to judge.` | 0 | notice |
 
@@ -1210,7 +1210,7 @@ facts	workflows:0	runs:0
 
 ```
 $ fabrika ship checks 4324 --sha 5b1c0d72   # every check passed; only CodeQL's own workflow ran
-ship checks: none of the 12 workflow(s) acme/repo authors produced a run at 5b1c0d72 — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged (#6915).
+ship checks: none of the 12 workflow(s) acme/repo authors produced a run at 5b1c0d72 — the 2 check run(s) here came from elsewhere, so no gate inspected the bytes this merge would land: green is UNKNOWN, never merged.
 $ echo $?
 20
 ```
@@ -1333,7 +1333,7 @@ survives the retries is `11`, never `absent`.
 |---|---|---|
 | `ship evidence: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship evidence: no commit <sha> on PR #<n>.` | 7 | refusal |
-| `ship evidence: cannot read <what> for <sha>: <reason> — whether a bundle exists is UNKNOWN, never "absent" (#3716).` | 11 | refusal |
+| `ship evidence: cannot read <what> for <sha>: <reason> — whether a bundle exists is UNKNOWN, never "absent".` | 11 | refusal |
 | `ship evidence: received <k> of <m> declared <runs|artifacts> — refusing the partial enumeration.` | 13 | refusal |
 
 **Scope** — the producer workflow inventory, the head-SHA-bound run list (exact `head_sha`
@@ -1534,7 +1534,7 @@ moved head re-enters at the skill's step 1 by the skill's own law.
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `ship resolve: no rationale on stdin — a silent resolve discards an objection unauditably; write why.` | 3 | refusal |
-| `ship resolve: the rationale carries a machine-local path at line <k> (<class>) — cite it repo-relative (#4994's class routes to a human, see the shared section).` | 5 | refusal |
+| `ship resolve: the rationale carries a machine-local path at line <k> (<class>) — cite it repo-relative.` | 5 | refusal |
 | `ship resolve: the rationale is a bare "@" path reference — the text never arrived. Send its bytes on stdin.` | 6 | refusal |
 | `ship resolve: thread <id> not found on PR #<n>.` | 7 | refusal |
 | `ship resolve: thread <id> is not positively bot-classed (author <login> is <typename>) — only a bot thread is resolvable here; a human objection is theirs to resolve.` | 16 | refusal |
@@ -2032,7 +2032,7 @@ verified, CI re-trigger now the platform's. With `--json`: `{"outcome":"nudged",
 | `ship nudge: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship nudge: cannot read <what>: <reason> — the dropped-trigger state is UNKNOWN; nothing was touched.` | 11 | refusal |
 | `ship nudge: the live head is <live>, not <sha> — the state you diagnosed is another tree's.` | 12 | refusal |
-| `ship nudge: #<n> is not in the dropped-trigger state (<why>) — refusing to touch it (#4816).` | 16 | refusal |
+| `ship nudge: #<n> is not in the dropped-trigger state (<why>) — refusing to touch it.` | 16 | refusal |
 | `ship nudge: head <sha> was already nudged (<k> reopened events since push) — a second nudge is escalation, not retry.` | 16 | refusal |
 | `ship nudge: the timeline read never reached a terminal page — pagination is unexhausted; refusing to count reopens over a truncated history.` | 13 | refusal |
 | `ship nudge: the close failed: <reason> — nothing changed state.` | 8 | refusal |
@@ -2050,7 +2050,7 @@ nudged	9fe12ab0
 
 ```
 $ fabrika ship nudge 4321 --sha 03135b91
-ship nudge: #4321 is not in the dropped-trigger state (14 check runs exist at 03135b91) — refusing to touch it (#4816).
+ship nudge: #4321 is not in the dropped-trigger state (14 check runs exist at 03135b91) — refusing to touch it.
 $ echo $?
 16
 ```
@@ -2108,8 +2108,8 @@ lifecycle stage, and the durable record is the point: a shipper that dies silent
 
 | Message (stderr) | Code | Kind |
 |---|---|---|
-| `ship note: no body on stdin — a silent stop is the #1928 defect; write the reason.` | 3 | refusal |
-| `ship note: the body carries a machine-local path at line <k> (<class>) — cite repo-relative (#4994's class routes to a human).` | 5 | refusal |
+| `ship note: no body on stdin — a silent stop is the defect; write the reason.` | 3 | refusal |
+| `ship note: the body carries a machine-local path at line <k> (<class>) — cite repo-relative.` | 5 | refusal |
 | `ship note: the body is a bare "@" path reference — the bytes never arrived; pipe them.` | 6 | refusal |
 | `ship note: PR #<n> not found in <repo>.` | 7 | refusal |
 | `ship note: create failed: <reason> — UNKNOWN whether the note landed; re-read before retrying.` | 8 | refusal |
@@ -2196,7 +2196,7 @@ only on the path that would post — `n/a` and `no-issue` read none.
 | `ship release: label write failed: <reason> — a real dark ship may be missing from the release queue; escalate.` | 8 | refusal |
 | `ship release: label read-back does not show status:awaiting-release on #<issue> — inspect it.` | 9 | refusal |
 | `ship release: received <k> of <m> declared files — refusing to scan a truncated diff for flag signals.` | 13 | refusal |
-| `ship release: label "status:awaiting-release" is absent from <repo>'s taxonomy — refusing to create it (#4285). A real dark ship is not queued; run `fabrika status bootstrap label-taxonomy` and re-run.` | 23 | refusal |
+| `ship release: label "status:awaiting-release" is absent from <repo>'s taxonomy — refusing to create it. A real dark ship is not queued; run `fabrika status bootstrap label-taxonomy` and re-run.` | 23 | refusal |
 | `ship release: cannot read <repo>'s label taxonomy: <reason> — nothing was written, and a real dark ship is not queued; escalate.` | 11 | refusal |
 
 **Scope** — one PR's diff and body, the flag registry file at the PR's base ref, the repository's

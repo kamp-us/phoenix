@@ -65,8 +65,8 @@
 			"paths": ["packages/fabrika-cli/src/lane"]
 		},
 		"plugin-ship": {
-			"ceiling": 32,
-			"why": "Every remaining hit is a value rather than a sentence: 24 are the ship verbs' stderr lines quoted verbatim in the Errors tables and worked examples, each a literal of a string that lives in packages/fabrika-cli/src/ship and moves only when that string does, and 8 are the synthetic PR numbers and placeholder owner/repo the worked examples echo back. The prose around them carries no reference at all. The quoted half shrinks to zero when the CLI ship group's own strings are swept, and this floor shrinks with it — #8306, the CLI ship sweep, pays it down.",
+			"ceiling": 9,
+			"why": "The quoted stderr half is paid down: #8306 swept the ship verbs' own strings and mirrored every rewritten literal into this contract's Errors tables and worked examples, so 23 of the 32 are gone. What is left is a value rather than a sentence: 6 are the synthetic PR numbers a worked example echoes back and 2 are the placeholder owner/repo pull-request URLs those examples print, both cleared by #8350, the fixture-URL ticket; the ninth quotes `ship checks: <repo> has zero workflows … (ADR 0092)`, a literal of a string that lives in packages/fabrika-cli/src/config/ci-producer.ts and moves only when #8307, the wire sweep, moves it.",
 			"paths": ["claude-plugins/fabrika/skills/ship"]
 		},
 		"plugin-review": {
@@ -137,8 +137,8 @@
 			"paths": ["packages/fabrika-cli/src/review", "packages/fabrika-cli/src/review-ui"]
 		},
 		"cli-ship": {
-			"ceiling": 310,
-			"why": "The ship and heal-ci groups' source, cleared by #8306, the CLI ship sweep child.",
+			"ceiling": 10,
+			"why": "#8306 swept the ship and heal-ci groups' prose to zero; ten residues are behaviour rather than sentences. One is `FLAG_REGISTRY` in ship/dark-ship.ts, the module path the dark-ship detector matches a diff against — a scan-scope literal of the class #7478 moves onto config. Five are fixture paths that must begin with the shipped rendered-surface prefix `isUiSurface` reads, and two more must begin with a shipped governed root, or the assertion is written against a partition the verb never makes; both prefixes move under #7478, the same edge cli-lane's row already waits on. The last two are the placeholder owner/repo pull-request URLs the note and resolve batteries assert a created comment's html_url against, cleared by #8350, the fixture-URL ticket.",
 			"paths": ["packages/fabrika-cli/src/ship", "packages/fabrika-cli/src/heal-ci"]
 		},
 		"cli-wire": {
@@ -163,7 +163,7 @@
 			]
 		},
 		"cli-capture": {
-			"ceiling": 647,
+			"ceiling": 646,
 			"why": "The capture, governance, recipe, status and hook groups' source, cleared by #8309, the capture sweep child.",
 			"paths": [
 				"packages/fabrika-cli/src/capture",

@@ -5,16 +5,15 @@
  * the floor was seated on the job's exit code, "no verdict posted at this head yet" — the ordinary
  * mid-lane state every governance-root PR passes through — showed a human the same red as a verdict
  * that is FAIL or bound to another head. Five of six red open PRs were red on exactly that on
- * 2026-08-18, and a red that means "not yet" trains people to stop reading reds (#6161).
+ * one audit, and a red that means "not yet" trains people to stop reading reds.
  *
  * A check-run has the state a job conclusion does not: it can stay `in_progress`. So the absent
  * verdict leaves the check pending, which reads as "waiting" to a human and still withholds a merge
  * — a pending required check is not a passing one, and `ship checks` rolls it up as `pending` rather
- * than green. The founder ruled the mechanism on
- * [2026-08-20](https://github.com/kamp-us/phoenix/issues/6161#issuecomment-5364681459); ADR 0318
- * carries the why.
+ * than green.
  *
- * **The verb writes the check-run; the job only relays what it did** (ADR 0228). Nothing in
+ * **The verb writes the check-run; the job only relays what it did** — a workflow's shell relays a
+ * verb's answer and never derives the decision itself. Nothing in
  * `governance-floor.yml` decides a conclusion, and nothing here re-derives the floor: the answer is
  * `./floor-verb.ts`'s `resolveFloor`, which is the same derivation the exit-code mode seats.
  */
@@ -81,11 +80,11 @@ export type CheckPlan =
 	  };
 
 /**
- * The check-run titles, one per row of ADR 0318's table, named because they are also read back.
+ * The check-run titles, one per row of the conclusion map below, named because they are read back.
  *
  * A title is the only place the published check-run says *which* state it concluded on: `stale` and
  * UNKNOWN both land on `completed`/`failure` under the one name a branch protection binds, and
- * `review ci` has to tell them apart to know whether a red is its own caller's to clear (#7441).
+ * `review ci` has to tell them apart to know whether a red is its own caller's to clear.
  */
 const UNBOUND_TITLE = "The floor does not bind";
 const UNRESOLVED_TITLE = "The floor could not be resolved";
@@ -104,7 +103,7 @@ const BLOCKED_TITLE_PREFIX = "The governance verdict at this head is ";
 export type PublishedFloor =
 	/** `n/a` — the diff touches no governance root. */
 	| {readonly _tag: "Unbound"}
-	/** The floor could not be read. UNKNOWN, and so nobody's to clear (ADR 0092). */
+	/** The floor could not be read. UNKNOWN, and so nobody's to clear. */
 	| {readonly _tag: "Unresolved"}
 	/** A head-bound, authorized PASS. */
 	| {readonly _tag: "Satisfied"}
@@ -126,13 +125,13 @@ export const publishedFloorOf = (title: string | null): PublishedFloor => {
 };
 
 /**
- * The conclusion map, whole, in one pure function — the acceptance criteria of #6161 read as a
- * table, so a reader checks it against them without tracing control flow.
+ * The conclusion map, whole, in one pure function, so a reader checks it row by row without
+ * tracing control flow.
  *
  * `absent` is the one row that stays pending. Every other blocking state has a verdict behind it,
  * and a verdict that is FAIL or bound to another head is a thing that went wrong rather than a thing
  * that has not happened. UNKNOWN concludes `failure` and never pending: a floor nobody could read is
- * not a floor still being read, and ADR 0092 gives it the same polarity as a refusal.
+ * not a floor still being read, and it takes the same polarity as a refusal.
  */
 export const planFor = (pr: number, resolution: FloorResolution): CheckPlan => {
 	if (resolution._tag === "Unbound") {
@@ -151,7 +150,7 @@ export const planFor = (pr: number, resolution: FloorResolution): CheckPlan => {
 			conclusion: "failure",
 			floor: "unresolved",
 			title: UNRESOLVED_TITLE,
-			summary: `${reason}\n\nUNKNOWN never passes (ADR 0092), so this concludes failure rather than waiting.`,
+			summary: `${reason}\n\nUNKNOWN never passes, so this concludes failure rather than waiting.`,
 		};
 	}
 	if (resolution.state === "pass") {
@@ -208,7 +207,7 @@ export type Publication =
  *
  * Shared by the PR mode and `./floor-batch.ts` so the name, the one-row-per-head invariant and the
  * read-back have one implementation. A branch protection matches a required context by name, so two
- * copies of this drifting apart is a frozen merge queue rather than a cosmetic difference (#6968).
+ * copies of this drifting apart is a frozen merge queue rather than a cosmetic difference.
  */
 export const publishFloorCheck = (
 	verb: string,
@@ -227,7 +226,7 @@ export const publishFloorCheck = (
 			// An unreadable list is not a head carrying no row: collapsing the two would post a second
 			// check-run and quietly break the one-row-per-head invariant above. Every sibling reader of
 			// this seam refuses here too (`ship checks`, `heal-ci surface`, `governance post`), so the
-			// group holds one disposition for one read (#6161).
+			// group holds one disposition for one read.
 			return {
 				_tag: "Refused" as const,
 				outcome: refuse(
@@ -308,7 +307,7 @@ export const runFloorCheck = (
 		if (published._tag === "Refused") return published.outcome;
 		const {written, rewritten} = published;
 
-		const posted = `${VERB}: ${rewritten ? "rewrote" : "posted"} check-run ${written.id} — the job's own exit code no longer carries the floor (#6161).`;
+		const posted = `${VERB}: ${rewritten ? "rewrote" : "posted"} check-run ${written.id} — the job's own exit code no longer carries the floor.`;
 		return answer(
 			options.json
 				? JSON.stringify({
@@ -331,7 +330,7 @@ export const runFloorCheck = (
 /**
  * Which of the two modes `--publish-check` selects, as a value rather than a branch inside the
  * command handler — the handler is the one surface no test in this package reaches, so a flag wired
- * to the wrong arm would ship green (#6161).
+ * to the wrong arm would ship green.
  */
 export const floorRunner = (
 	publishCheck: boolean,

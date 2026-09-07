@@ -84,7 +84,7 @@ const green = (name = "ci-required") => ({name, status: "completed", conclusion:
 const script = (overrides: ReadonlyArray<Scripted> = []): ReadonlyArray<Scripted> => [
 	...overrides,
 	[PULL, reply(pull({updatedAt: PUSHED}))],
-	[FILES, reply(files("apps/web/worker/a.ts", "apps/web/worker/b.ts"))],
+	[FILES, reply(files("apps/site/worker/a.ts", "apps/site/worker/b.ts"))],
 	[CHECK_RUNS, reply(checkRuns(1, [green()]))],
 	[WORKFLOWS, reply(workflows("active"))],
 	[RUN_COUNT, reply(runsTotal(3))],
@@ -137,7 +137,7 @@ describe("runDiagnose answers", () => {
 		);
 	});
 
-	// #6376: this verb is the second resolver of the same question `ship gate` answers. A PR the
+	// This verb is the second resolver of the same question `ship gate` answers. A PR the
 	// gate calls satisfied must not classify `ungated` here, or the healer dispatches it back to a
 	// review whose namespace no sanctioned path can fill — the loop the route exists to close.
 	it("counts a head-bound routed-elsewhere record as a filled review-ui namespace", async () => {
