@@ -14,11 +14,14 @@
  * binding adds is nothing today, which is the ruling's point.
  */
 
-import type {ChatWindowOptions, ChatWindowRenderer} from "../../shell/chat/index.ts";
+import type {ChatWindowRenderer, ThinChatWindowOptions} from "../../shell/chat/index.ts";
 import {chatWindow} from "../../shell/chat/index.ts";
 
-/** The Claude renderer at whatever window options a caller needs. */
-export const claudeChatWindow = (options: ChatWindowOptions = {}): ChatWindowRenderer =>
+/**
+ * The Claude renderer at whatever window options a caller needs — every option but `extras`, which
+ * `ThinChatWindowOptions` withholds because the binding owns that slot.
+ */
+export const claudeChatWindow = (options: ThinChatWindowOptions = {}): ChatWindowRenderer =>
 	chatWindow(options);
 
 /**

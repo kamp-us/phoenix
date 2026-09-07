@@ -43,7 +43,7 @@ import {CLAUDE_CHAT_WINDOW_REF, claudeChatWindow} from "../claude/window/index.t
 import {type CounterState, isCounterState} from "../demo/counter.ts";
 import {isLogState, type LogState} from "../demo/log.ts";
 import {PI_CHAT_WINDOW_REF, piChatWindow} from "../pi/window/index.ts";
-import type {ChatWindowOptions} from "../shell/chat/index.ts";
+import type {ThinChatWindowOptions} from "../shell/chat/index.ts";
 import type {AnyInspectorRenderer} from "../shell/desk/index.ts";
 import type {PageAttachment} from "../shell/transport/browser.ts";
 import type {WindowHost} from "../shell/window/index.ts";
@@ -250,7 +250,7 @@ const sessionTranscriptSource = (call: SpellCaller): TranscriptSource => {
  * Nothing here reaches `../config.ts` at runtime: the flags arrive as generated source and the
  * shape arrives as a type (`./assets.d.ts`), so the page's Node-free walk is unaffected.
  */
-const chatOptions: ChatWindowOptions = {subagentList: features.subagentList};
+const chatOptions: ThinChatWindowOptions = {subagentList: features.subagentList};
 
 const claudeWindow = claudeChatWindow(chatOptions);
 const piWindow = piChatWindow(chatOptions);

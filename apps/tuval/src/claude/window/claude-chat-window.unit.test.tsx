@@ -27,7 +27,7 @@ import {pageRenderers} from "../../page/renderers.tsx";
 const renderers = pageRenderers(() => Effect.never);
 
 import {ProcessId} from "../../process/process.ts";
-import type {ChatWindowOptions, ChatWindowRenderer} from "../../shell/chat/index.ts";
+import type {ChatWindowRenderer, ThinChatWindowOptions} from "../../shell/chat/index.ts";
 import {type ChatView, chatWindow, initialChatView} from "../../shell/chat/index.ts";
 import {installDomShims} from "../../shell/ui/dom.testing.ts";
 import {type TestProcess, testProcess} from "../../shell/window/fixtures.ts";
@@ -163,7 +163,7 @@ describe("what this binding adds to the shared window", () => {
 
 	/** One window of the given renderer, in its own container, over its own process. */
 	const mount = async (
-		make: (options: ChatWindowOptions) => ChatWindowRenderer,
+		make: (options: ThinChatWindowOptions) => ChatWindowRenderer,
 		state: AiAgentSessionState,
 	) => {
 		const process = await Effect.runPromise(
@@ -238,5 +238,16 @@ describe("what this binding adds to the shared window", () => {
 		// renders rather than about the order the two were mounted in.
 		const withoutIds = (root: HTMLElement) => root.innerHTML.replace(/_r_[0-9a-z]+_/g, "_id_");
 		expect(withoutIds(claude.rendered.container)).toEqual(withoutIds(shared.rendered.container));
+	});
+});
+
+describe("the options this binding admits", () => {
+	// The same claim the Pi binding's test holds: the parameter is `ThinChatWindowOptions`, so a
+	// caller's `extras` is a compile error rather than an argument the binding drops in silence
+	// (#7957).
+	it("refuses the `extras` the binding owns, and takes every other option", () => {
+		// @ts-expect-error `extras` is the binding's slot, not the caller's.
+		expect(claudeChatWindow({extras: () => null})).toBeDefined();
+		expect(claudeChatWindow({subagentList: false, pageLimit: 10, scrollCommitMs: 0})).toBeDefined();
 	});
 });
