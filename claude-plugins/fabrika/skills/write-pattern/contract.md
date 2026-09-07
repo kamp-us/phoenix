@@ -24,12 +24,11 @@ Each is already answered by something with more authority. Computing a second an
 merge-gating question is strictly worse than computing none, which is the test that dropped the
 pilot's `adr classify`.
 
-**Markdown link resolution — the `doc-links` job owns it.** It walks every git-tracked `*.md`
-repo-wide through `lychee --offline`, fails closed on zero scope — a gate that scanned nothing has
-judged nothing — and runs on both `pull_request` and `push: main` so a break is charged to the
-commit that caused it
-([`.github/workflows/doc-links.yml`](../../../../.github/workflows/doc-links.yml)). A pattern doc is
-inside that scope already.
+**Markdown link resolution — the repo's own link gate owns it.** A gate of that class walks every
+tracked `*.md` repo-wide through an offline link checker, fails closed on zero scope — a gate that
+scanned nothing has judged nothing — and runs on both `pull_request` and `push` to the default
+branch so a break is charged to the commit that caused it. A pattern doc is inside that scope
+already.
 
 **Machine-local path leakage — the leak gate owns it.** `.patterns/` is a shared-artifact doc
 surface to it (`DOC_DIRS` in

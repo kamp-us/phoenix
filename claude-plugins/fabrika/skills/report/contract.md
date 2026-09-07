@@ -293,7 +293,7 @@ candidates
 ```
 
 ```
-$ fabrika report dedup --query "sozluk definition editor loses focus after an entry is saved"
+$ fabrika report dedup --query "checkout address form loses focus after a field is saved"
 none
 ```
 
@@ -425,7 +425,7 @@ is indistinguishable from a triaged one downstream:
 - **The title may not lead with a classification prefix.** The refusal needs *both* conditions: the
   leading token has a `WORD:` or `[WORD]` shape, **and** that word resolves to the repo's type or
   priority vocabulary. Both together, so `BUG: fix aborts` refuses while `Bug reports from the
-  sozluk form are lost` files cleanly — the shape alone would reject a legitimate title whose first
+  checkout form are lost` files cleanly — the shape alone would reject a legitimate title whose first
   word happens to be a vocabulary term.
 
 The vocabulary is **derived from the target repo's label set**, which this verb already reads for
