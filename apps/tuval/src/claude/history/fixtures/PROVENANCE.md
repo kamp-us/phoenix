@@ -16,7 +16,7 @@ The rows below describe the `query()` captures; the last three fixtures have the
 
 | | |
 |---|---|
-| Captured | 2026-09-04; `streaming-turn.json` on 2026-09-06; `subagent-turn.json` on 2026-09-07 |
+| Captured | 2026-09-04; `streaming-turn.json` on 2026-09-06; `subagent-turn.json` and `two-subagent-turn.json` on 2026-09-07 |
 | SDK | `@anthropic-ai/claude-agent-sdk` **0.3.259** (the `pnpm-workspace.yaml` catalog pin) |
 | CLI | `claude_code_version` **2.1.259**, as reported by the `init` frame itself |
 | Models | `claude-fable-5-1` on every capture but `interrupted-assistant.json` and `subagent-turn.json`, which are `claude-opus-5` |
@@ -46,9 +46,41 @@ in order.
 | `unknown-message.json` | a `rate_limit_event` frame from the plain run — a real member of `SDKMessage` |
 | `streaming-turn.json` | one prompt with `includePartialMessages: true`, captured 2026-09-06 — the whole `stream_event` run of one turn, `message_start` through `message_stop` (#8172) |
 | `subagent-turn.json` | one prompt asking for a single `Task` spawn, run with `forwardSubagentText: true` and `includePartialMessages: true` on `claude-opus-5` with `thinking: {type: "enabled", budgetTokens: 8000}`, captured 2026-09-07 — the whole 74-frame run of a turn that spawns one worker (#8403) |
+| `two-subagent-turn.json` | the same options on `claude-fable-5-1`, with a prompt asking for **two** `Explore` workers in parallel over two files in the throwaway cwd, captured 2026-09-07 — the whole 59-frame run, and the one capture where two workers overlap (#8408) |
 | `thinking-turn.json` | excerpted from an operator's own CLI session transcript, not from a `query()` run — see below |
 | `compact-boundary.json` | the same, from a session that compacted |
 | `informational-notice.json` | the same, from a session that hit a usage limit |
+
+### The two-worker capture
+
+`two-subagent-turn.json` is the capture `subagent-turn.json` could not be: **two workers running at
+once**, which is the whole subject of the running list. The frames say so on their own — both
+`Agent` calls are made and both raise `system`/`task_started` before either worker's
+`tool_result` arrives, and the two results land four frames apart, so there is a stretch where one
+worker finishes while the other is still writing. The run's own `result` frame agrees:
+`subagent_stats` reads `{"spawned": 2, "completed": 2, "by_type": {"Explore": 2}}`.
+
+That gap between the two endings is what `../../proof/subagent-vertical.integration.test.ts` replays
+a frame at a time: it is the only moment at which a worker can finish while an operator is inside
+its view (founder ruling Q9 on #8384).
+
+The run was driven exactly as the first table's rows were — `query()` from a throwaway cwd holding
+two one-line files, every message the iterator yielded written in order — and sanitized the same
+way, plus two shapes the other captures do not carry: the CLI's slug-encoded project key (a temp
+path with the separators rewritten), and a path split across four `input_json_delta` frames.
+
+**The split path is the one that went wrong, and it is worth reading before taking another
+capture.** The first pass substituted the delta holding the absolute prefix and left the neighbour
+holding the rest of it, so the fixture kept a bare tail of the operator's temp namespace — matching
+no root name, invisible to a scan for absolute prefixes, and outside `leak-guard`'s surface, which
+does not read `.json`. It was caught in review of #8474 and the frames were rewritten so the run
+reassembles to the same path the settled block carries. The split itself is kept, cut mid-token
+where the capture cut it: it is the shape a sanitizer has to survive, and the corpus should hold one.
+
+The check that now stands behind that is in `../boundary.unit.test.ts`: it reassembles every
+`input_json_delta` run in every fixture and compares it to the `tool_use` block that settles it, so
+a capture whose two halves disagree reds. That is a narrow guarantee and the section below says how
+narrow.
 
 ## The three excerpted from a CLI session transcript
 
@@ -133,15 +165,35 @@ groups:
 
 - every uuid, `toolu_*`, `msg_*` and `req_*` id, consistently, so a cross-reference that was real
   in the capture is still real in the fixture (a `tool_result` still names its `tool_use`);
-- absolute paths, to `/tmp/tuval-capture` and `/home/user` — no operator path lands in the repo;
+- absolute paths, to `/tmp/tuval-capture` and `/home/user`, in every form the path appears in —
+  including the CLI's slug-encoded project keys and a path split across streamed deltas;
 - `thinking` block signatures, to a short placeholder;
 - the open-ended discovery lists on `init` (`tools`, `slash_commands`, `skills`, `plugins`,
   `agents`, `mcp_servers`, `capabilities`) trimmed to their first three entries. They are a
   machine's local configuration, not part of any shape this mapping reads.
 
 Everything else — `stop_reason`, the `usage` and `modelUsage` blocks, `total_cost_usd`,
-`is_error`, `subtype`, `aborted`, `tool_use_result` — is verbatim. `boundary.unit.test.ts` reds if
-any operator path returns and if the fixture set loses a member.
+`is_error`, `subtype`, `aborted`, `tool_use_result` — is verbatim.
+
+`subagent-turn.json` was re-sanitized in the same round: its `init` frame's `memory_paths.auto`
+still carried the operator's temp namespace slug-encoded, which is the second of the two shapes the
+widened scan below now names. Nothing else about that capture changed.
+
+**What `../boundary.unit.test.ts` actually checks, which is less than "no operator path returns".**
+Three things: that the fixture set has not lost a member; that no file carries either operator root
+— `Users` or `var/folders` — in any of eight forms, being each root with its leading separator or
+without it, spelled with slashes or slug-encoded the way the CLI keys a project directory, and with
+`private` present or absent on the second; and that every streamed tool call reassembles to the
+input its settled block carries. The eight forms are enumerated as their own case in that file, so
+this list and the pattern cannot drift apart.
+
+**A path fragment cut past both root names matches neither root check.** It carries no root name, so
+there is nothing for that scan to match and no widening of it would help. That is exactly what the
+`two-subagent-turn.json` split delta was, and the reassembly check is the only one that catches the
+shape — and only where the fragment sits in a delta run with a settled block to disagree with. So
+these checks are a net with a known mesh, not a proof: **read a new capture yourself before
+committing it**, and treat them as what stops a shape that has already happened from happening
+twice.
 
 ## What is not captured
 
@@ -160,6 +212,10 @@ an empty `thinking` string — the provider ships a worker's reasoning encrypted
 at this pin (two models, two thinking budgets) produced no plaintext one, so `thinking-turn.json`'s
 shape is not what a live worker yields today. `blocks.ts` reads the empty-with-signature shape as
 withheld, which is what the captures forced.
+
+**Two workers under one *parent* tool call.** Both captures spawn workers as siblings of each other.
+A `Task` call made *by* a worker — `spawn_depth` above 1 — is uncaptured, and nothing a prompt
+controls decides whether a worker delegates further.
 
 **A run with `forwardSubagentText` off.** `subagent-turn.json` sets it, because the SDK forwards only
 a worker's `tool_use`/`tool_result` blocks by default — "enough for a heartbeat counter"

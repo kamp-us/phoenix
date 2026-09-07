@@ -31,6 +31,10 @@
 	// `src/page/` is split rather than excluded whole: the three React modules reach the chat window
 	// through the page's renderer table (#7573) and go to the other lens, while `dev-server.ts` is
 	// Node-side, is imported by `src/bin.ts`, and stays here.
+	// `src/claude/proof/subagent-vertical.integration.test.ts` is split the same way and for the same
+	// reason: it mounts the shipped chat window over a live process, so it reaches `@kampus/design`
+	// through it. Its two neighbours — the config module and the capture handle — reach no React and
+	// stay here.
 	// `src/pi/renderer-ref.ts`, `src/claude/renderer-ref.ts` and `src/ai-agent/renderer-ref.ts` still
 	// enter this project by import from their rows, which is the point of those leaves: a row names
 	// its renderer without reaching any of it.
@@ -46,6 +50,7 @@
 		"src/page/renderers.tsx",
 		"src/page/proof/no-recovery.tsx",
 		"src/page/attached-desk.unit.test.tsx",
-		"src/page/readable-state.unit.test.tsx"
+		"src/page/readable-state.unit.test.tsx",
+		"src/claude/proof/subagent-vertical.integration.test.ts"
 	]
 }
