@@ -29,7 +29,6 @@ import {
 	type AiAgentEventsSub,
 	type AiAgentSessionCmd,
 	type AiAgentSessionMsg,
-	type AiAgentSessionState,
 	type AiAgentSessionSub,
 	foldEvent,
 	initialState,
@@ -105,22 +104,6 @@ const noSession: AgentFailure = {
 	tag: START_ERROR,
 	reason: "session-not-found",
 	detail: "no agent has been started in this process",
-};
-
-/**
- * The newest item in a restored tail that a backend minted, or `null`.
- *
- * The operator's own turn is recorded locally on send under an id no layer has ever seen
- * (`../core/fold.ts`'s `promptItem`), so it cannot be the boundary a layer suppresses at — it walks
- * back past every still-unechoed local turn to the last item the session itself produced.
- */
-const newestBackendItemId = (state: AiAgentSessionState | null): string | null => {
-	const items = state?.transcript.items ?? [];
-	for (let index = items.length - 1; index >= 0; index -= 1) {
-		const item = items[index];
-		if (item !== undefined && !(item.kind === "user" && item.local === true)) return item.id;
-	}
-	return null;
 };
 
 export const aiAgentHandlers = <RIn = never>(
@@ -227,9 +210,9 @@ export const aiAgentHandlers = <RIn = never>(
 		// which holds nothing and needs one.
 		//
 		// What it does owe is everything the session finished while the socket was down, so the
-		// boundary rides with the flag: the newest item the *backend* minted in the restored tail.
-		// A locally-recorded turn is skipped because no layer knows its id — a boundary the layer
-		// cannot find in its snapshot suppresses nothing, which would replay the session (#8374).
+		// restored tail itself rides with the flag. The layer reads both facts off it: where
+		// "already on screen" stops, and what each of those rows looked like when this process last
+		// saw it — a row that moved while the transport was gone is not one the operator has read.
 		"aiAgent.reconnect": (cmd) =>
 			Effect.flatMap(readSession, (state) =>
 				open(
@@ -237,7 +220,7 @@ export const aiAgentHandlers = <RIn = never>(
 					{
 						sessionId: cmd.sessionId,
 						holdsTranscript: true,
-						newestItemId: newestBackendItemId(state),
+						held: state?.transcript.items ?? [],
 					},
 					cmd.mode,
 				),

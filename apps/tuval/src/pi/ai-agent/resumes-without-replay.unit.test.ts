@@ -12,7 +12,8 @@
  * What the restored process holds stops at the tail it was checkpointed with, so a turn the session
  * finished while the socket was down sits in the lease snapshot and on nobody's screen. Suppressing
  * the whole snapshot would bury it for the life of the session, which is why the seed cuts at that
- * boundary rather than at the snapshot (#8374).
+ * tail rather than at the snapshot — and why it suppresses against the caller's own copy of each
+ * row, so one that settled under the cut while the transport was gone still emits (#8374).
  */
 
 import type {
@@ -24,6 +25,7 @@ import {type Cause, Effect, Layer, Option, Queue, Stream} from "effect";
 import type {AgentEvent, TransportError} from "../../ai-agent/service/index.ts";
 import {TuvalAiAgent} from "../../ai-agent/service/index.ts";
 import {type PiClientApi, PiClientService, type PiSessionRef} from "../client/index.ts";
+import {itemsOf} from "./items.ts";
 import {aiAgentOverClient} from "./PiAiAgent.ts";
 
 const CWD = "/tuval/resume";
@@ -89,6 +91,9 @@ const snapshot = (
 /** The transcript the session already had when this client attached to it. */
 const HELD = snapshot([user, reply], "idle", 7);
 
+/** The tail a restored process comes back with: the rows the fold emitted it for these turns. */
+const held = (...sources: ReadonlyArray<PiTranscriptItem>) => sources.flatMap(itemsOf);
+
 const stub = Effect.gen(function* () {
 	const pushes = yield* Queue.unbounded<SessionSnapshot>();
 	const api: PiClientApi = {
@@ -142,7 +147,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 					const agent = yield* TuvalAiAgent;
 					yield* agent.start({
 						cwd: CWD,
-						resume: {sessionId: SESSION.id, holdsTranscript: true, newestItemId: reply.id},
+						resume: {sessionId: SESSION.id, holdsTranscript: true, held: held(user, reply)},
 					});
 					const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 					yield* drain(events);
@@ -166,7 +171,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 				const agent = yield* TuvalAiAgent;
 				yield* agent.start({
 					cwd: CWD,
-					resume: {sessionId: SESSION.id, holdsTranscript: true, newestItemId: reply.id},
+					resume: {sessionId: SESSION.id, holdsTranscript: true, held: held(user, reply)},
 				});
 				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 				yield* drain(events);
@@ -243,7 +248,7 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 				// socket dropped, so this process has never seen it and nothing else will show it.
 				yield* agent.start({
 					cwd: CWD,
-					resume: {sessionId: SESSION.id, holdsTranscript: true, newestItemId: user.id},
+					resume: {sessionId: SESSION.id, holdsTranscript: true, held: held(user)},
 				});
 				const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
 				yield* drain(events);
@@ -258,6 +263,52 @@ describe("a Pi session resumed by a caller that already holds its transcript", (
 				assert.strictEqual(usages(folded), 1, "the reply arrived without its own cost");
 			}).pipe(Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))), Effect.scoped);
 		}),
+	);
+
+	/**
+	 * The drop can catch the agent mid-sentence. Pi's assistant item carries a `status: "streaming"`
+	 * variant whose `usage` is optional (`@earendil-works/pi-protocol` 0.84.3 `dist/schemas.d.ts`),
+	 * so the tail this process comes back with holds a half-written reply under the same id the
+	 * finished one now has. That id being the newest thing it holds does not make the finished reply
+	 * read: suppressing it leaves the operator on the half-written text for the life of the session
+	 * and drops the turn's cost out of the totals, with nothing to show either happened.
+	 */
+	it.live(
+		"emits a reply that settled under the caller's own boundary while the socket was down",
+		() =>
+			Effect.gen(function* () {
+				const client = yield* stub;
+
+				yield* Effect.gen(function* () {
+					const agent = yield* TuvalAiAgent;
+					const streaming: PiTranscriptItem = {
+						id: reply.id,
+						role: "assistant",
+						content: [{type: "text", text: "hel"}],
+						model: SESSION.model,
+						timestamp: 11,
+						status: "streaming",
+					};
+					yield* agent.start({
+						cwd: CWD,
+						resume: {sessionId: SESSION.id, holdsTranscript: true, held: held(user, streaming)},
+					});
+					const events = yield* Stream.toQueue(agent.events, {capacity: "unbounded"});
+					yield* drain(events);
+
+					yield* client.push(HELD);
+					const folded = yield* drain(events);
+					assert.deepStrictEqual(
+						itemIds(folded),
+						[reply.id],
+						"the operator is still looking at the half-written reply",
+					);
+					assert.strictEqual(usages(folded), 1, "the settled turn's cost never joined the totals");
+				}).pipe(
+					Effect.provide(aiAgentOverClient().pipe(Layer.provide(client.layer))),
+					Effect.scoped,
+				);
+			}),
 	);
 
 	it.live("opens a fresh session on an empty projection, so its first snapshot paints", () =>

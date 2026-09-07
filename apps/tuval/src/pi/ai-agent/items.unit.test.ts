@@ -19,8 +19,32 @@ import {
 	initialState,
 } from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
-import {TOOL_RESULT_BYTE_LIMIT} from "../../ai-agent/ports/index.ts";
-import {emptyProjection, eventsOf, itemOf, itemsOf, phaseOf, projectionOf} from "./items.ts";
+import {TOOL_RESULT_BYTE_LIMIT, type TranscriptItem} from "../../ai-agent/ports/index.ts";
+import {
+	emptyProjection,
+	eventsOf,
+	itemId,
+	itemOf,
+	itemsOf,
+	phaseOf,
+	projectionOf,
+} from "./items.ts";
+
+/**
+ * The tail an operator holds who read this snapshot as far as `through`: the rows the fold would
+ * have emitted, in that order. `projectionOf` takes the tail rather than a boundary id, because
+ * "already read" is measured against the copies in it.
+ */
+const heldThrough = (source: SessionSnapshot, through: string): ReadonlyArray<TranscriptItem> => {
+	const rows: Array<TranscriptItem> = [];
+	for (const item of source.transcript) {
+		for (const row of itemsOf(item)) {
+			rows.push(row);
+			if (row.id === through) return rows;
+		}
+	}
+	return rows;
+};
 
 const usage = (total: number) => ({
 	input: 11,
@@ -260,7 +284,7 @@ describe("one revision folded into events", () => {
 	 */
 	it("emits no item and no usage when a resume's seed already holds the whole transcript", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
-		const folded = eventsOf(projectionOf(restored, "item-1"), restored);
+		const folded = eventsOf(projectionOf(restored, heldThrough(restored, "item-1")), restored);
 		expect(folded.events).toEqual([{kind: "phase", phase: "ready"}]);
 	});
 
@@ -273,7 +297,7 @@ describe("one revision folded into events", () => {
 			timestamp: 13,
 		};
 		const folded = eventsOf(
-			projectionOf(restored, "item-1"),
+			projectionOf(restored, heldThrough(restored, "item-1")),
 			snapshot([user, assistant("hi back", 0.42), sent], "turn", 8),
 		);
 		expect(folded.events).toEqual([
@@ -289,7 +313,7 @@ describe("one revision folded into events", () => {
 	 */
 	it("emits what the session finished past the boundary the caller holds", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
-		const folded = eventsOf(projectionOf(restored, user.id), restored);
+		const folded = eventsOf(projectionOf(restored, heldThrough(restored, user.id)), restored);
 		expect(folded.events).toEqual([
 			{
 				kind: "item",
@@ -315,7 +339,48 @@ describe("one revision folded into events", () => {
 	 */
 	it("emits the cost of a turn the boundary fell inside, not just its reply", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
-		const folded = eventsOf(projectionOf(restored, "item-1:thinking"), restored);
+		const folded = eventsOf(
+			projectionOf(restored, heldThrough(restored, "item-1:thinking")),
+			restored,
+		);
+		expect(folded.events).toEqual([
+			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
+			{
+				kind: "usage",
+				model: "faux/faux-1",
+				inputTokens: 11,
+				outputTokens: 22,
+				cost: 0.42,
+			},
+			{kind: "phase", phase: "ready"},
+		]);
+	});
+
+	/**
+	 * The boundary can land *on* a row whose content moved while the socket was down. Pi's
+	 * assistant item has a `status: "streaming"` variant with `usage` optional
+	 * (`@earendil-works/pi-protocol` 0.84.3 `dist/schemas.d.ts`), so a reply the drop caught
+	 * mid-write settles server-side while this process is away. Being at the boundary does not
+	 * make it read: the operator holds the half-written copy, so the settled one has to emit, and
+	 * the turn's cost with it.
+	 */
+	it("emits a row that settled under the boundary while the caller was away", () => {
+		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
+		const streaming: PiTranscriptItem = {
+			id: "item-1",
+			role: "assistant",
+			content: [
+				{type: "thinking", thinking: "not for the window"},
+				{type: "text", text: "hi b"},
+			],
+			model: {provider: "faux", id: "faux-1"},
+			timestamp: 11,
+			status: "streaming",
+		};
+		const folded = eventsOf(
+			projectionOf(restored, [itemOf(user), ...itemsOf(streaming)]),
+			restored,
+		);
 		expect(folded.events).toEqual([
 			{kind: "item", item: itemOf(assistant("hi back", 0.42))},
 			{
@@ -336,7 +401,12 @@ describe("one revision folded into events", () => {
 	 */
 	it("replays rather than guesses when the boundary is not in the snapshot", () => {
 		const restored = snapshot([user, assistant("hi back", 0.42)], "idle", 7);
-		const folded = eventsOf(projectionOf(restored, "item-gone"), restored);
+		const folded = eventsOf(
+			projectionOf(restored, [
+				{kind: "assistant", id: itemId("item-gone"), timestamp: 9, text: "gone"},
+			]),
+			restored,
+		);
 		expect(folded.events.filter((event) => event.kind === "item")).toHaveLength(3);
 	});
 
@@ -346,9 +416,9 @@ describe("one revision folded into events", () => {
 	 */
 	it("restates the phase of a session that was still working when it was reattached", () => {
 		const working = snapshot([user], "turn", 7);
-		expect(eventsOf(projectionOf(working, "item-0"), working).events).toEqual([
-			{kind: "phase", phase: "prompting"},
-		]);
+		expect(eventsOf(projectionOf(working, heldThrough(working, "item-0")), working).events).toEqual(
+			[{kind: "phase", phase: "prompting"}],
+		);
 	});
 
 	/**

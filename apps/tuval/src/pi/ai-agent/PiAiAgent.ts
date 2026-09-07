@@ -363,16 +363,16 @@ const make = (
 				// opened on `emptyProjection` replays the session as live items on the first push
 				// after the attach (#8369). What differs is what the caller can already see.
 				const resumed = yield* pi.attachSession(resume.sessionId);
-				const held = yield* pi.heldSnapshot(resumed.id);
+				const lease = yield* pi.heldSnapshot(resumed.id);
 				// A restored process is looking at its own committed tail, so the seed suppresses
-				// everything through the boundary it holds and emits whatever the session finished
-				// past it (#8374).
+				// everything through the boundary that tail reaches and emits whatever the session
+				// finished past it — or changed under it — while the socket was down (#8374).
 				if (resume.holdsTranscript) {
-					return {ref: resumed, seed: projectionOf(held, resume.newestItemId), paint: []};
+					return {ref: resumed, seed: projectionOf(lease, resume.held), paint: []};
 				}
 				// A window opened out of the picker holds nothing, so the history is painted here,
 				// at the attach, while its tail is still empty.
-				const painted = paintOf(held);
+				const painted = paintOf(lease);
 				return {ref: resumed, seed: painted.projection, paint: painted.events};
 			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
 

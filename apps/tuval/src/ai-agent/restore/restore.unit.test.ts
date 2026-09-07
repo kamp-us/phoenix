@@ -242,19 +242,25 @@ describe("a restored agent session", () => {
 			yield* runToTheCut(stores, starts);
 			assert.deepStrictEqual(starts, [{cwd: CWD}], "the first run did not open a fresh session");
 
-			yield* resume(stores, script(), starts, (_restored, _log, settled) =>
+			yield* resume(stores, script(), starts, (restored, _log, settled) =>
 				Effect.gen(function* () {
 					const after = yield* settled;
 					assert.deepStrictEqual(
 						starts[1],
 						// `holdsTranscript` is the reconnect's own half of #8369: this process came back
-						// with its committed tail, so the layer owes it no replay of the history.
-						// `newestItemId` is where that tail stops — the boundary the layer suppresses
-						// at, so a turn the session finished while the socket was down still emits
-						// (#8374). `a1` is the last item the checkpoint carried.
+						// with its committed tail, so the layer owes it no replay of the history. The
+						// tail itself rides with it — where it stops is the boundary the layer
+						// suppresses at, so a turn the session finished while the socket was down still
+						// emits, and each row is the copy this process holds, so one that moved under
+						// the boundary emits too (#8374). Here `a1` is the reply the cut caught
+						// mid-write, carried back marked `interrupted`.
 						{
 							cwd: CWD,
-							resume: {sessionId: SESSION_ID, holdsTranscript: true, newestItemId: "a1"},
+							resume: {
+								sessionId: SESSION_ID,
+								holdsTranscript: true,
+								held: restored.transcript.items,
+							},
 							mode: modes.current,
 						},
 						"the reconnect did not resume the checkpointed session id on its saved mode",

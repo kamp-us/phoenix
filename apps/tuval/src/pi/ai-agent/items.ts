@@ -27,6 +27,7 @@ import {
 	boundToolResult,
 	type ItemId,
 	type JsonValue,
+	newestBackendItemId,
 	type ThinkingItem,
 	type ToolStatus,
 	type TranscriptItem,
@@ -210,22 +211,42 @@ export const eventsOf = (
  * own newly typed turn and pushing it out of the window's 40-item cut (#8369). The attach lease
  * already carries the session's snapshot, and this is that snapshot read as "already rendered".
  *
- * `through` is where "already read" stops: the newest item the caller's window holds. Everything
- * at or older than it is seeded, and anything after it is left unseeded so it emits — a turn the
- * session finished while the socket was down is work the operator has never seen, and seeding the
- * whole snapshot would bury it for the life of the session with no gap marker and no way to page
- * to it (#8374). `null` seeds nothing. An id this snapshot does not carry — a compaction
- * renumbered the transcript out from under the caller — also seeds nothing, which replays: a
- * visibly wrong transcript is recoverable and a silently missing reply is not.
+ * `held` is the caller's own tail, oldest first, and it answers both halves. Its newest
+ * backend-minted row is where "already read" stops: everything at or older than that is seeded,
+ * and anything after it is left unseeded so it emits — a turn the session finished while the
+ * socket was down is work the operator has never seen, and seeding the whole snapshot would bury
+ * it for the life of the session with no gap marker and no way to page to it (#8374). An empty
+ * tail seeds nothing. A boundary this snapshot does not carry — a compaction renumbered the
+ * transcript out from under the caller — also seeds nothing, which replays: a visibly wrong
+ * transcript is recoverable and a silently missing reply is not.
+ *
+ * A seeded row is fingerprinted off the **caller's** copy, never off the snapshot's. Being at or
+ * older than the boundary means "already read" only if an item's content cannot move, and on this
+ * wire it can: `@earendil-works/pi-protocol` 0.84.3 `dist/schemas.d.ts` gives the assistant item a
+ * `status: "streaming"` variant with `usage` optional, so a reply the socket died in the middle of
+ * settles server-side while this process is away. Seeded off the snapshot, that row would be
+ * compared against itself, match, and never emit again — the operator keeps the half-written reply
+ * for the life of the session and its cost never joins the totals. Seeded off what the caller
+ * holds, it differs and emits. A seeded row the caller holds no copy of is one the window's own
+ * bound already dropped, so the snapshot's copy stands and it stays suppressed: re-emitting it is
+ * the replay #8369 closed.
+ *
+ * A turn's cost is seeded only when the whole turn is behind the boundary — a count within that
+ * turn's own rows, since `items` spans every turn walked so far and would always be larger — and
+ * only when every seeded row of it still matches what the caller holds. A boundary falling between
+ * a turn's reasoning row and its reply leaves the reply to emit, and a turn that moved leaves its
+ * reply to emit; either way the `usage` is that reply's annotation and travels with it.
  *
  * The phase is deliberately left unseeded: a session still working when it was reattached has to
  * restate `prompting` on its first push, or the window sits on the `ready` that `start` emitted.
  */
 export const projectionOf = (
 	snapshot: SessionSnapshot,
-	through: string | null,
+	held: ReadonlyArray<TranscriptItem>,
 ): SnapshotProjection => {
+	const through = newestBackendItemId(held);
 	if (through === null) return emptyProjection;
+	const carried = new Map(held.map((item) => [item.id as string, fingerprint(item)]));
 	const items = new Map<string, string>();
 	const usage = new Map<string, string>();
 	let reached = false;
@@ -235,12 +256,14 @@ export const projectionOf = (
 		const cut = rows.findIndex((item) => item.id === through);
 		reached = cut !== -1;
 		const seeded = reached ? rows.slice(0, cut + 1) : rows;
-		for (const item of seeded) items.set(item.id, fingerprint(item));
-		// A turn's cost is seeded only when the whole turn is behind the boundary, which is a count
-		// within this turn's own rows — `items` spans every turn walked so far and would always be
-		// the larger number. A boundary falling between a turn's reasoning row and its reply — the
-		// window cut there — leaves the reply to emit, and its `usage` is that reply's annotation.
-		const event = seeded.length === rows.length ? usageEventOf(source) : null;
+		let moved = false;
+		for (const item of seeded) {
+			const mark = fingerprint(item);
+			const mine = carried.get(item.id);
+			items.set(item.id, mine ?? mark);
+			if (mine !== undefined && mine !== mark) moved = true;
+		}
+		const event = !moved && seeded.length === rows.length ? usageEventOf(source) : null;
 		if (event !== null) usage.set(source.id, fingerprint(event));
 	}
 	return reached ? {items, usage, phase: null} : emptyProjection;
