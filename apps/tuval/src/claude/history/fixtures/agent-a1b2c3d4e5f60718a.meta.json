@@ -1,0 +1,6 @@
+{
+	"agentType": "probe-plugin:probe-grep",
+	"description": "Run probe-grep subagent",
+	"toolUseId": "toolu_00000000000000000000001",
+	"spawnDepth": 1
+}

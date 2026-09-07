@@ -66,6 +66,24 @@ export const unknownCursor = (reason: string): PageError =>
 	new PageError({reason: "unknown-cursor", detail: reason});
 
 /**
+ * The three ways a subagent's own transcript does not come back (#8404). None of them is an empty
+ * transcript: a sidechain file nobody wrote, a store that would not open and a line that will not
+ * parse are three different things to have to tell an operator, and "this subagent said nothing"
+ * is none of them.
+ */
+export const subagentNotFound = (agentId: string, detail: string): PageError =>
+	new PageError({reason: "subagent-not-found", detail: `${detail} (${agentId})`});
+
+export const subagentStoreUnreadable = (cause: unknown): PageError =>
+	new PageError({reason: "store-unreadable", detail: detailOf(cause)});
+
+export const subagentMalformed = (agentId: string, line: number, detail: string): PageError =>
+	new PageError({
+		reason: "subagent-malformed",
+		detail: `subagent "${agentId}" line ${line}: ${detail}`,
+	});
+
+/**
  * The session store could not be enumerated. Never `unsupported`: this backend does list, so a
  * throw here is a store that would not open, not a backend that cannot look.
  */

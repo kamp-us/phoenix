@@ -93,6 +93,7 @@ import {
 } from "./refusals.ts";
 import {type AgentSession, realAgentSdk} from "./sdk.ts";
 import {claudeSessions} from "./sessions.ts";
+import {readSubagentTranscript} from "./sidechain-store.ts";
 import {exitDetail, type SubprocessWatch, watchSubprocess} from "./subprocess.ts";
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -780,6 +781,25 @@ const make = (
 		});
 
 		/**
+		 * One subagent this session spawned, as its own transcript and its type (#8404).
+		 *
+		 * `page`'s shape, on a different file: the live session names it, the store reads it, and
+		 * what comes back is the port's item union plus a plain type string. Nothing Claude-shaped
+		 * crosses out of here, which is what lets the subagent view render off it (#8406).
+		 *
+		 * Not `getSessionMessages`: at 0.3.259 the session reader "returns undefined if the session
+		 * file is not found, is a sidechain session, or cannot be read" (`sdk.d.ts`), so it answers
+		 * nothing for every subagent id there is.
+		 */
+		const subagentTranscript = Effect.fn("TuvalAiAgent.subagentTranscript")(function* (
+			agentId: string,
+		) {
+			const current = yield* Ref.get(session);
+			if (current === null) return yield* noSessionToPage();
+			return yield* readSubagentTranscript({cwd: current.cwd, id: current.id}, agentId, Date.now());
+		});
+
+		/**
 		 * Every Claude session on this machine, not this layer's own: the CLI's store is read off
 		 * disk, so this answers before `start` and on a layer that never opens a session.
 		 *
@@ -802,6 +822,7 @@ const make = (
 			commands: Ref.get(commands),
 			setThinkingLevel,
 			page,
+			subagentTranscript,
 			listSessions,
 			events: Stream.unwrap(Effect.map(Ref.get(queue), (held) => Stream.fromQueue(held))),
 		};

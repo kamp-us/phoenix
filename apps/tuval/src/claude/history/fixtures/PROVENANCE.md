@@ -88,6 +88,39 @@ Sanitization is the same as everywhere else here: uuids, `msg_*` and `req_*` ids
 consistently, the thinking block's signature replaced with a short placeholder, and every CLI-only
 field naming a machine or a checkout dropped rather than rewritten.
 
+## The sidechain capture
+
+`agent-a1b2c3d4e5f60718a.jsonl` and `agent-a1b2c3d4e5f60718a.meta.json` are one subagent's own
+transcript, the pair `readSidechain` reads. They came off an operator's own CLI store — the same
+source and the same founder ruling as the three excerpted fixtures above
+([#8151](https://github.com/kamp-us/phoenix/issues/8151#issuecomment-5556626806)) — because no
+`query()` run writes a sidechain file: the Agent tool has to spawn, and the file is the CLI's, not
+the SDK's.
+
+| | |
+|---|---|
+| Captured | 2026-09-07, from a session written by CLI **2.1.217** |
+| Layout | `<projects>/<slug>/<sessionId>/subagents/agent-<id>.jsonl` beside `agent-<id>.meta.json` |
+| Subagent | `agentType: "probe-plugin:probe-grep"`, `spawnDepth: 1` |
+| Rows | 7: the operator's prompt, two thinking frames, two text frames, a `tool_use` and its `tool_result` |
+
+Unlike the three above, **this pair is not re-keyed** — it is the CLI's own on-disk form, verbatim,
+because that form is exactly what the reader under test takes. The re-key to the SDK's
+`SessionMessage` is `sidechain.ts`'s job and is what the test exercises, so re-keying the fixture
+would test nothing.
+
+The whole meta file is golden: `{"agentType","description","toolUseId","spawnDepth"}`, which is
+where a subagent's type is authoritative and where the spawning call's id lives. Sanitization is
+the same as everywhere else here — every uuid, `msg_*`, `req_*` and `toolu_*` id substituted
+consistently, the two thinking blocks' signatures replaced with a short placeholder, and the `cwd`
+on every row rewritten to `/tmp/tuval-capture`. Nothing else was touched: `isSidechain`, `agentId`,
+`parentUuid`, `attributionAgent`, the `usage` blocks and the tool error text are verbatim.
+
+The capture's two thinking blocks carry an empty `thinking` string, so the mapping emits no
+thinking item for them. That is the real payload, not a trim — a `thinking` item over a sidechain
+file is still uncovered here and rides
+[#8038](https://github.com/kamp-us/phoenix/issues/8038)'s live capture with the rest.
+
 ## What was sanitized, and what is golden
 
 For the `query()` captures, the **key set and the field shapes are the golden part** and are
@@ -109,10 +142,12 @@ any operator path returns and if the fixture set loses a member.
 
 ## What is not captured
 
-**A subagent's frames.** Every capture here is a top-level run, so `parent_tool_use_id` is `null` on
-all of them. `events.unit.test.ts` covers the non-null case by stamping that one field over the
-golden `tool-turn` stream, which is a derived shape and says so at the case. Forcing a real one needs
-a run that spawns the Agent tool, so it is an operator act like every other capture below —
+**A subagent's frames off the live stream.** Every `query()` capture here is a top-level run, so
+`parent_tool_use_id` is `null` on all of them. `events.unit.test.ts` covers the non-null case by
+stamping that one field over the golden `tool-turn` stream, which is a derived shape and says so at
+the case. The sidechain pair above is the on-disk half of the same thing and is real, but it is the
+CLI's file rather than the SDK's stream; forcing a streamed one needs a run that spawns the Agent
+tool, so it is an operator act like every other capture below —
 [#8038](https://github.com/kamp-us/phoenix/issues/8038) tracks taking it.
 
 **A `redacted_thinking` block.** No local session log carries one, and nothing a run controls decides
