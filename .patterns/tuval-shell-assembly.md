@@ -47,10 +47,11 @@ own `R` and not a second route to a handler: what a spawner is *called* under re
 spawns.
 
 **The spawn set is exactly what a handler resolves, and that is enforced** (#7972). `toDefinition`
-runs every command and sub handler under `Effect.updateContext(() => handlerServices)`, which sets
-the fiber's context outright, rather than under `Effect.provideContext(handlerServices)`, which
-merges over whatever the fiber that dispatched happened to carry (rc.112,
-`src/internal/effect.ts:2197`). Two things follow, and both used to be false:
+runs every command and sub handler under an `Effect.updateContext`, which sets the fiber's context
+outright, rather than under `Effect.provideContext(handlerServices)`, which merges over whatever the
+fiber that dispatched happened to carry (rc.112, `src/internal/effect.ts:2197`). What it sets is the
+spawn set over the ambient's `effect/…` keys and nothing else — the paragraph below says why those
+ride through. Two things follow, and both used to be false:
 
 - **A removal is a removal.** The picker's `Context.omit(ProcessPorts)` really does keep the shell's
   ports out of the child, including when the shell forwards a key into it from its own handler fiber
@@ -74,14 +75,18 @@ the merge cover the rest, which under the seal would have left an agent-spawned 
 first kernel call.
 
 `ProcessPorts` is the one service no spawner passes down — a port binding emits from one node, so a
-child holding its spawner's would emit out of the wrong one — and all three replace it the same way:
-an `unwired` pair keyed to the child's own id, so the process has ports and an emit fails
-`PortNotWired` where the graph owns no route to bind (#7789). `restore` merges one in second; the
-picker removes the spawner's (`Context.omit(ProcessPorts)`) and adds the child's, minting the process
-id a call early so the ports know which node they are. Under the seal it has to: a row declaring
-`ProcessPorts` has nothing to fall back on, and before the seal it silently fell back on the shell's
-(#7972). `src/demo/counter.ts` is the example under both — its `announce` handler wants
-`ProcessPorts` and gets an un-wired pair either way.
+child holding its spawner's would emit out of the wrong one. Every spawner replaces it with a pair
+keyed to the child's own id, and **what that pair can do differs by who owns a route to the child**.
+`launch` binds the node's to the graph's wiring, and the `process spawn` spell mints outbox-latch
+ports (`ProcessPorts.of({emit: emitter(id, row, outboxes)})`), because the spell itself is the
+route — that is what a later `read` on the spawned process takes from. `restore` and the picker have
+no route to bind, so both mint an `unwired` pair: the process has ports, and an emit fails
+`PortNotWired` naming the port rather than dropping the payload (#7789). `restore` merges one in
+second; the picker removes the spawner's (`Context.omit(ProcessPorts)`) and adds the child's,
+minting the process id a call early so the ports know which node they are. Under the seal it has to:
+a row declaring `ProcessPorts` has nothing to fall back on, and before the seal it silently fell back
+on the shell's (#7972). `src/demo/counter.ts` is the example under those two — its `announce` handler
+wants `ProcessPorts` and gets an un-wired pair either way.
 
 **Nothing checks the pairing, so the failure is at the handler.** `SpawnOptions.services` is typed
 `Context.Context<never>`, which every context satisfies, so a row asking for a service its spawner
