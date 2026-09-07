@@ -107,8 +107,8 @@
 			"paths": ["claude-plugins/fabrika/skills/operate", "claude-plugins/fabrika/skills/heal-ci"]
 		},
 		"plugin-authoring": {
-			"ceiling": 297,
-			"why": "The build-ui, campaign, adr, glossary and taste-color skills' text, cleared by #8300, the authoring sweep child.",
+			"ceiling": 14,
+			"why": "#8300 swept the prose of the build-ui, campaign, adr, glossary and taste-color skills; build-ui and taste-color reached zero and the 14 left are values rather than sentences. 3 quote stderr lines the shipped `glossary drift` and `glossary check` verbs print with `(ADR 0092)` inside the string, whose source literals live in packages/fabrika-cli/src/glossary/ and move with #8310, the small-CLI-groups sweep; rewriting the pin first would make the contract quote a line no verb prints. The other 11 are the placeholder milestone and pull-request numbers a worked example echoes back out of a line the shipped verbs format with a literal `#` — `rowLine` and the table writer in packages/fabrika-cli/src/campaign/table.ts, the two `already holds` refusals in campaign/open-verb.ts and state-verb.ts, and `adr resolve`'s `PR #<n>` detail in packages/fabrika-cli/src/adr/resolve.ts. Each is 9xxx, above any live range, and drops only when the guard stops reading a printed `#<n>` example as a ticket — the matcher gap #8418 tracks.",
 			"paths": [
 				"claude-plugins/fabrika/skills/build-ui",
 				"claude-plugins/fabrika/skills/campaign",
