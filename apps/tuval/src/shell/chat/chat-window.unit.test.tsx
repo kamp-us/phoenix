@@ -19,6 +19,8 @@ import {
 	type AiAgentSessionMsg,
 	type AiAgentSessionState,
 	foldEvent,
+	PAGE_ERROR,
+	PROMPT_ERROR,
 } from "../../ai-agent/core/index.ts";
 import {phases} from "../../ai-agent/core/state.ts";
 import {ItemId} from "../../ai-agent/ports/index.ts";
@@ -508,6 +510,106 @@ describe("paging", () => {
 		await waitFor(() => expect(process.inbox().length).toBe(1));
 		expect(process.inbox()[0]).toEqual({type: "page", before: "i0", limit: 25});
 		expect(await screen.findByText("Loading earlier messages…")).toBeDefined();
+	});
+
+	it("shows a page refusal, retries without consuming the retained failure, and settles on a page", async () => {
+		const state = withTranscript(transcriptOf(4));
+		const {process, scrolls, view} = await openWindow(state, {pageLimit: 25});
+		await readerScrollsToTop(scrolls);
+		expect(await screen.findByText("Loading earlier messages…")).toBeDefined();
+		const failure = {
+			tag: PAGE_ERROR,
+			reason: "unknown-cursor",
+			detail: "The history cursor is unknown.",
+		};
+		await act(async () => {
+			await Effect.runPromise(process.commit({...state, failure}));
+		});
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+		expect(
+			within(transcript()).getByText(`Could not load earlier messages: ${failure.detail}`),
+		).toBeDefined();
+		expect(view().atOldest).toBe(false);
+		expect(view().cursor).toBeNull();
+
+		await act(async () => {
+			fireEvent.click(screen.getByRole("button", {name: "Retry loading earlier messages"}));
+		});
+		await waitFor(() =>
+			expect(process.inbox()).toEqual([
+				{type: "page", before: "i0", limit: 25},
+				{type: "page", before: "i0", limit: 25},
+			]),
+		);
+		expect(await screen.findByText("Loading earlier messages…")).toBeDefined();
+		expect(screen.queryByText(`Could not load earlier messages: ${failure.detail}`)).toBeNull();
+		await act(async () => {
+			await Effect.runPromise(process.commit({...state, failure, phase: "prompting"}));
+		});
+		expect(screen.getByText("Loading earlier messages…")).toBeDefined();
+
+		const repeatedFailure = {...failure};
+		await act(async () => {
+			await Effect.runPromise(process.commit({...state, failure: repeatedFailure}));
+		});
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+		expect(screen.getByRole("button", {name: "Retry loading earlier messages"})).toBeDefined();
+		expect(view().atOldest).toBe(false);
+		await scrollTo(0);
+		await waitFor(() => expect(process.inbox()).toHaveLength(3));
+		expect(process.inbox()[2]).toEqual({type: "page", before: "i0", limit: 25});
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit({
+					...state,
+					failure: repeatedFailure,
+					lastPage: {
+						items: page.items,
+						hasMore: false,
+					},
+				}),
+			);
+		});
+		await waitFor(() => expect(view().atOldest).toBe(true));
+		expect(view().cursor).toBe("p0");
+		expect(screen.queryByText("Loading earlier messages…")).toBeNull();
+		expect(screen.queryByRole("button", {name: "Retry loading earlier messages"})).toBeNull();
+	});
+
+	it("does not consume a page refusal observed before this window asks for history", async () => {
+		const state = withTranscript(transcriptOf(4), {
+			failure: {
+				tag: PAGE_ERROR,
+				reason: "unknown-cursor",
+				detail: "Another window's cursor is unknown.",
+			},
+		});
+		const {process, scrolls, view} = await openWindow(state);
+		await readerScrollsToTop(scrolls);
+		await waitFor(() => expect(process.inbox()).toHaveLength(1));
+		expect(screen.getByText("Loading earlier messages…")).toBeDefined();
+		expect(screen.queryByRole("button", {name: "Retry loading earlier messages"})).toBeNull();
+		expect(view().atOldest).toBe(false);
+	});
+
+	it("does not settle paging on an unrelated failure", async () => {
+		const state = withTranscript(transcriptOf(4));
+		const {process, scrolls} = await openWindow(state);
+		await readerScrollsToTop(scrolls);
+		await act(async () => {
+			await Effect.runPromise(
+				process.commit({
+					...state,
+					failure: {
+						tag: PROMPT_ERROR,
+						reason: "refused",
+						detail: "The prompt was refused.",
+					},
+				}),
+			);
+		});
+		expect(screen.getByText("Loading earlier messages…")).toBeDefined();
+		expect(screen.queryByRole("button", {name: "Retry loading earlier messages"})).toBeNull();
 	});
 
 	it("asks once, not once per scroll event, while the reply is out", async () => {

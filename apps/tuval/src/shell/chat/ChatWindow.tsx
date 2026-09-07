@@ -70,6 +70,9 @@ import {UnsentMessages} from "./UnsentMessages.tsx";
 import {asChatView, type ChatView} from "./view.ts";
 import "./chat.css";
 
+// Agent imports stay type-only; boundary.unit.test.ts pins this literal to the core's tags.
+const PAGE_ERROR = "tuval/ai-agent/PageError";
+
 export type ChatWindowHost = WindowHost<AiAgentSessionState, AiAgentSessionMsg, ChatView>;
 export type ChatWindowRenderer = WindowRenderer<
 	ReactNode,
@@ -302,6 +305,16 @@ function RowView({
 			</span>
 		);
 	}
+	if (row.kind === "page-error") {
+		return (
+			<span className="tuval-chat-head">
+				<span role="status">Could not load earlier messages: {row.detail}</span>
+				<Button type="button" variant="tertiary" size="sm" onClick={onOlder}>
+					Retry loading earlier messages
+				</Button>
+			</span>
+		);
+	}
 	if (row.kind === "older") {
 		return (
 			<span className="tuval-chat-head">
@@ -367,6 +380,7 @@ function ChatWindow({
 	const [view, setViewLocal] = useState<ChatView>(() => asChatView(host.view()));
 	const [older, setOlder] = useState<ReadonlyArray<TranscriptItem>>([]);
 	const [loading, setLoading] = useState(false);
+	const [pageError, setPageError] = useState<string | null>(null);
 
 	// The last committed view, so `commit` can apply `next` and fork the host write out here rather
 	// than inside the `setViewLocal` updater. React documents an updater as pure and re-invokes it —
@@ -453,10 +467,11 @@ function ChatWindow({
 				tail: state?.transcript.items ?? [],
 				omitted: state?.transcript.omitted.items ?? 0,
 				loading,
+				pageError,
 				atOldest: view.atOldest,
 				unfolded,
 			}),
-		[older, state, loading, view.atOldest, unfolded],
+		[older, state, loading, pageError, view.atOldest, unfolded],
 	);
 
 	/** The row the viewport was resting on when the current page was asked for. */
@@ -464,6 +479,7 @@ function ChatWindow({
 	/** Set when a page lands, cleared by the layout effect that re-anchors the viewport onto it. */
 	const reanchorRef = useRef(false);
 	const seenPageRef = useRef<AiAgentSessionState["lastPage"]>(null);
+	const seenFailureRef = useRef<AiAgentSessionState["failure"]>(null);
 
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -510,6 +526,8 @@ function ChatWindow({
 		const before = oldestLoadedId(rows);
 		if (before === null) return;
 		anchorRef.current = before;
+		seenFailureRef.current = state?.failure ?? null;
+		setPageError(null);
 		setLoading(true);
 		// Asking for history is leaving the newest turn, and the pin has to say so or the re-anchor
 		// below loses. On a transcript barely taller than its viewport every offset is within *both*
@@ -518,7 +536,7 @@ function ChatWindow({
 		// throws the reader to the bottom of the history they just asked for.
 		commit((current) => (current.pinned ? {...current, pinned: false} : current));
 		dispatch({type: "page", before, limit: options.pageLimit});
-	}, [loading, view.atOldest, rows, commit, dispatch, options.pageLimit]);
+	}, [loading, view.atOldest, rows, state?.failure, commit, dispatch, options.pageLimit]);
 
 	// `lastPage` is shared session state, so every mounted window sees a page any one of them asked
 	// for (#7860). A window consumes one only while its own request is out: without the `loading`
@@ -538,6 +556,7 @@ function ChatWindow({
 		if (!loading) return;
 		setOlder((held) => mergeOlder(held, page.items));
 		setLoading(false);
+		setPageError(null);
 		reanchorRef.current = true;
 		commit((current) => ({
 			...current,
@@ -545,6 +564,17 @@ function ChatWindow({
 			atOldest: !page.hasMore,
 		}));
 	}, [state?.lastPage, loading, commit]);
+
+	// Like pages, refusals are shared: consume each once, and only while this window is waiting.
+	// The seen marker also prevents a retained refusal from settling the next retry (#7860).
+	useEffect(() => {
+		const failure = state?.failure ?? null;
+		if (failure === seenFailureRef.current) return;
+		seenFailureRef.current = failure;
+		if (!loading || failure?.tag !== PAGE_ERROR) return;
+		setLoading(false);
+		setPageError(failure.detail);
+	}, [state?.failure, loading]);
 
 	useLayoutEffect(() => {
 		if (!reanchorRef.current) return;
