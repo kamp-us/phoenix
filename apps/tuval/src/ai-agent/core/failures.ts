@@ -18,6 +18,8 @@ export const MODEL_UNSUPPORTED = "tuval/ai-agent/ModelUnsupported";
 export const THINKING_UNSUPPORTED = "tuval/ai-agent/ThinkingUnsupported";
 export const PAGE_ERROR = "tuval/ai-agent/PageError";
 export const TRANSPORT_ERROR = "tuval/ai-agent/TransportError";
+/** The refused interrupt (ADR 0356). No core cell raises it — only an adapter that was refused. */
+export const INTERRUPT_ERROR = "tuval/ai-agent/InterruptError";
 
 export const startRefused = (phase: string): AgentFailure => ({
 	tag: START_ERROR,

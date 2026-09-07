@@ -80,6 +80,7 @@ import {
 } from "./options.ts";
 import {
 	controlRefused,
+	interruptFailureOf,
 	logRefused,
 	noSession,
 	noSessionToPage,
@@ -706,10 +707,17 @@ const make = (
 				catch: controlRefused,
 			}).pipe(
 				Effect.asVoid,
-				// `interrupt` declares no error channel, so a refused interrupt is a log line: the
-				// turn the operator wanted stopped either already ended or the subprocess is gone,
-				// and both are states the next event settles.
-				Effect.catch((refusal) => logRefused("interrupt was refused", refusal)),
+				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
+				// fold routes on its own (ADR 0356). `settled` is read here rather than above because
+				// the turn can end while the control request is in flight.
+				Effect.catch((refusal) =>
+					publish([
+						{
+							kind: "failure",
+							failure: interruptFailureOf(refusal, !current.state.settled),
+						},
+					]),
+				),
 			);
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
 

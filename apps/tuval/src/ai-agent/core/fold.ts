@@ -23,9 +23,15 @@ import {
 	type UserItem,
 	type WindowOmission,
 } from "../ports/index.ts";
-import {START_ERROR} from "./failures.ts";
+import {INTERRUPT_ERROR, START_ERROR} from "./failures.ts";
 import {markTurnRunning, settleAccepted, settleEndedSession, settleFailedTurn} from "./sends.ts";
-import {type AiAgentSessionState, emptyOmission, settleTurn, type UsageLedger} from "./state.ts";
+import {
+	type AiAgentSessionState,
+	emptyOmission,
+	lastAssistantId,
+	settleTurn,
+	type UsageLedger,
+} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
 export interface WindowLimits {
@@ -215,6 +221,46 @@ export const phaseAfterFailure = (
 	return state.phase;
 };
 
+/**
+ * Where a refused interrupt leaves the session — the one failure `phaseAfterFailure` does not
+ * decide (ADR 0356).
+ *
+ * `interrupt` declares no error channel, so a backend that will not stop reaches the core only as
+ * this tag on the event stream, and routing it through the walk-to-`ready` above would say the turn
+ * had stopped on the very event that says it has not. The `reason` the refusing adapter stamped is
+ * the whole input, because it is the only party that knows which half it is on.
+ *
+ * `turn-running` changes nothing but the failure the window renders: the reply is still streaming,
+ * so `settleTurn` is exactly wrong here — it would take the partial marker off a paragraph the
+ * backend is still writing — and the outstanding `interruption` stays, since the operator's request
+ * is answered rather than withdrawn.
+ *
+ * `no-live-turn` is the case that froze the founder's desk on 2026-09-05: there was nothing left to
+ * stop, so the turn ends `interrupted` and the session goes to `ready` rather than sitting at
+ * `prompting` until a restart. It reaches `ready` on the same terms the `phase` arm does and settles
+ * the send the same way — the backend saying there is no turn to stop *is* that turn's end reported
+ * late, and the send it belonged to has no other event coming to accept it. `settleFailedTurn` is
+ * the wrong settle here and stays unused on both halves: this failure names the interrupt call
+ * rather than a send, which is why `sendAfterFailure` (`./sends.ts`) answers `null` for the tag.
+ */
+export const foldInterruptRefusal = (
+	state: AiAgentSessionState,
+	failure: AgentFailure,
+): AiAgentSessionState => {
+	if (state.phase !== "prompting" || failure.reason === "turn-running") {
+		return {...state, failure};
+	}
+	const turn = settleTurn(state);
+	return {
+		...turn,
+		phase: "ready",
+		interrupted: turn.interrupted ?? lastAssistantId(turn.transcript.items),
+		interruption: null,
+		failure,
+		sends: settleAccepted(turn.sends),
+	};
+};
+
 export const foldEvent = (
 	state: AiAgentSessionState,
 	event: AgentEvent,
@@ -342,6 +388,9 @@ export const foldEvent = (
 		// back to `ready`, so `settleFailedTurn` settles the send this failure is about and leaves
 		// every other in flight `pending` for its own turn's end (#8236).
 		case "failure": {
+			if (event.failure.tag === INTERRUPT_ERROR) {
+				return foldInterruptRefusal(state, event.failure);
+			}
 			const phase = phaseAfterFailure(state, event.failure);
 			const turn = settleTurn(state);
 			return {

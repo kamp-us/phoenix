@@ -17,7 +17,7 @@ import {
 	userItem,
 } from "../../ai-agent-fixtures/transcripts.ts";
 import type {TranscriptItem, TranscriptPayload} from "../ports/index.ts";
-import {PROMPT_ERROR} from "./failures.ts";
+import {INTERRUPT_ERROR, PROMPT_ERROR} from "./failures.ts";
 import {foldEvent, foldItem, upsertItem, type WindowLimits} from "./fold.ts";
 import type {SendOutcome} from "./sends.ts";
 import {type AiAgentSessionState, initialState} from "./state.ts";
@@ -227,5 +227,68 @@ describe("folding a failure and a `gone` under two sends in flight", () => {
 			{key: "first", state: "uncertain", failure: null},
 			{key: "second", state: "uncertain", failure: null},
 		]);
+	});
+});
+
+/**
+ * ADR 0356's two halves. The tag is routed before `phaseAfterFailure`, so neither of these is the
+ * walk-to-`ready` every other failure gets — one of them stays put, and the other lands there for a
+ * different reason and marks the turn on the way.
+ */
+describe("folding a refused interrupt", () => {
+	const limits: WindowLimits = {};
+	const refusal = (reason: string, detail: string) => ({tag: INTERRUPT_ERROR, reason, detail});
+	const reply = assistantItem("a1");
+	const prompting: AiAgentSessionState = {
+		...initialState("/repo"),
+		phase: "prompting",
+		transcript: {items: [reply], omitted: {items: 0, bytes: 0, reason: "none"}},
+		interruption: {requestedAt: 1_700_000_000_000},
+		sends: [{key: "first", state: "pending", turn: "running"}],
+	};
+
+	it("leaves the phase at prompting when the turn is still running", () => {
+		const failure = refusal("turn-running", "the CLI would not take the control request");
+		const refused = foldEvent(prompting, {kind: "failure", failure}, limits);
+		expect(refused.phase).toBe("prompting");
+		expect(refused.failure).toEqual(failure);
+		expect(refused.interruption).toEqual(prompting.interruption);
+		expect(refused.interrupted).toBeNull();
+	});
+
+	// The turn goes on, so the send it is about goes on too: this failure names the interrupt call
+	// and nothing the operator sent.
+	it("leaves the send in flight alone while the turn runs", () => {
+		const failure = refusal("turn-running", "the CLI would not take the control request");
+		const refused = foldEvent(prompting, {kind: "failure", failure}, limits);
+		expect(refused.sends).toEqual(prompting.sends);
+	});
+
+	// The 2026-09-05 19:09 PT freeze: "interrupt was refused: Operation aborted" left the desk at
+	// `prompting` until a restart, because every failure walked one phase and this one walked none.
+	it("ends the turn and readies the session when there was no live turn", () => {
+		const failure = refusal("no-live-turn", "Operation aborted");
+		const refused = foldEvent(prompting, {kind: "failure", failure}, limits);
+		expect(refused.phase).toBe("ready");
+		expect(refused.interrupted).toBe(reply.id);
+		expect(refused.interruption).toBeNull();
+		expect(refused.failure).toEqual(failure);
+	});
+
+	// The half that walks to `ready` is the half whose turn already ended, so it owes that turn's
+	// send the acceptance the `phase` arm's own walk to `ready` performs. Nothing else will: the
+	// end was never narrated, so no later event reaches this send.
+	it("accepts the send whose turn had already ended when there was no live turn", () => {
+		const failure = refusal("no-live-turn", "Operation aborted");
+		const refused = foldEvent(prompting, {kind: "failure", failure}, limits);
+		expect(refused.sends).toEqual([{key: "first", state: "accepted"}]);
+	});
+
+	it("changes no phase when the session was not on a turn at all", () => {
+		const idle: AiAgentSessionState = {...initialState("/repo"), phase: "ready"};
+		const failure = refusal("no-live-turn", "Operation aborted");
+		const refused = foldEvent(idle, {kind: "failure", failure}, limits);
+		expect(refused.phase).toBe("ready");
+		expect(refused.failure).toEqual(failure);
 	});
 });

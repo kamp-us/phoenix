@@ -1,5 +1,6 @@
 /**
- * One tagged error per `TuvalAiAgent` method, plus the one the event stream can fail with.
+ * One tagged error per `TuvalAiAgent` method, plus the one the event stream can fail with and the
+ * one that only ever rides it (`InterruptError`, ADR 0356).
  *
  * The shape is the founder's API-walk ruling 3 (#7570): six classes keyed by the method that
  * raises them, each enumerating its own cases in a `reason` field, rather than one class per
@@ -175,5 +176,29 @@ export class TransportError extends Schema.TaggedError<TransportError>()(
 ) {
 	override get message(): string {
 		return `the agent transport failed (${this.reason}): ${this.detail}`;
+	}
+}
+
+/**
+ * Why a backend would not stop the running turn. The one class here no call ever raises: `interrupt`
+ * declares `Effect.Effect<void>` and keeps it, so a refusal travels as an `AgentFailure` on the
+ * event stream instead — the route ADR 0356 rules, taken because a tag on the stream reaches the
+ * fold, the checkpoint and the restore, where an error channel reaches only the caller.
+ *
+ * The two cases are the fold's whole input. `turn-running` means the backend said no with the turn
+ * still going, and the phase must stay `prompting`; `no-live-turn` means there was nothing left to
+ * stop, and the turn ends `interrupted` with the session back at `ready`. `AgentFailure` carries
+ * `tag` / `reason` / `detail` and nothing else, so `reason` is where that distinction has to live —
+ * and only the adapter that was refused knows which half it is on.
+ */
+export const InterruptReason = Schema.Literals(["turn-running", "no-live-turn"]);
+export type InterruptReason = typeof InterruptReason.Type;
+
+export class InterruptError extends Schema.TaggedError<InterruptError>()(
+	"tuval/ai-agent/InterruptError",
+	{reason: InterruptReason, detail: Schema.String},
+) {
+	override get message(): string {
+		return `the agent would not stop the turn (${this.reason}): ${this.detail}`;
 	}
 }

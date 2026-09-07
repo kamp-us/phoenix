@@ -102,6 +102,36 @@ describe("the status line", () => {
 		expect(lineOf("ready", null)).toBe(phaseLines.ready);
 	});
 
+	// ADR 0356: the backend answered the abort by refusing, which "has not confirmed" reports as
+	// silence. The operator whose desk froze on 2026-09-05 read exactly that sentence.
+	it("says the agent refused to stop rather than that it has not confirmed", () => {
+		const refused: AgentFailure = {
+			tag: "tuval/ai-agent/InterruptError",
+			reason: "turn-running",
+			detail: "the agent transport failed (refused): Operation aborted",
+		};
+		const line = statusLine({
+			phase: "prompting",
+			failure: refused,
+			interruption: {requestedAt: NOW},
+			now: NOW + interruptionGraceMillis,
+		});
+		expect(line).toContain("refused to stop");
+		expect(line).toContain("Operation aborted");
+		expect(line).not.toContain("has not confirmed");
+	});
+
+	// The refusal is about the turn that was running; once the session is off it, the phase is the
+	// true thing to say and a stale refusal must not outlive it.
+	it("stops reading the refusal once the session is off the turn", () => {
+		const refused: AgentFailure = {
+			tag: "tuval/ai-agent/InterruptError",
+			reason: "no-live-turn",
+			detail: "Operation aborted",
+		};
+		expect(lineOf("ready", refused)).toBe(phaseLines.ready);
+	});
+
 	it("says a turn is running for prompting and for nothing else", () => {
 		const phases: ReadonlyArray<Phase> = [
 			"idle",

@@ -13,7 +13,9 @@
  */
 
 import {Effect} from "effect";
+import type {AgentFailure} from "../../ai-agent/events.ts";
 import {
+	InterruptError,
 	ListError,
 	PageError,
 	PromptError,
@@ -207,7 +209,7 @@ export const streamFailed = (cause: unknown): TransportError =>
 
 /**
  * A control request the CLI would not take. It never reaches the caller — `interrupt` and `setMode`
- * declare no channel for it — so it exists to keep the log line's cause typed rather than `unknown`.
+ * declare no channel for it — so it exists to keep the refusal's cause typed rather than `unknown`.
  */
 export const controlRefused = (cause: unknown): TransportError =>
 	retaining(
@@ -217,3 +219,19 @@ export const controlRefused = (cause: unknown): TransportError =>
 			detail: translated("the Claude Code CLI did not answer the control request", cause),
 		}),
 	);
+
+/**
+ * A refused `Query.interrupt()`, as the plain failure the event stream carries (ADR 0356).
+ *
+ * The SDK's `interrupt()` resolves to a receipt or rejects, and the rejection carries no account of
+ * *why* the CLI would not stop (`sdk.d.ts`, `Query.interrupt`) — so `turnRunning` is the layer's own
+ * reading off `TurnState.settled`, and it is the half the fold routes on. A log line in its place
+ * left the window unable to tell a backend that said no from an abort still in flight.
+ */
+export const interruptFailureOf = (refusal: TransportError, turnRunning: boolean): AgentFailure => {
+	const error = new InterruptError({
+		reason: turnRunning ? "turn-running" : "no-live-turn",
+		detail: refusal.detail,
+	});
+	return {tag: error._tag, reason: error.reason, detail: error.message};
+};

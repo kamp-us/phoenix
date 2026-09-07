@@ -79,6 +79,7 @@ import {
 	type SnapshotProjection,
 } from "./items.ts";
 import {
+	interruptFailureOf,
 	promptDropOf,
 	promptErrorOf,
 	promptFailureOf,
@@ -232,6 +233,10 @@ const make = (
 		const dialled = yield* Ref.make(false);
 		const pump = yield* Ref.make<Fiber.Fiber<void, never> | null>(null);
 		const inbox = yield* Ref.make<Queue.Queue<FoldInput> | null>(null);
+		// Held out here rather than inside `follow` because `interrupt` reads it too: whether the
+		// session is still on a turn is the half a refused abort's tag has to carry (ADR 0356), and
+		// Pi's own refusal says nothing about it.
+		const projection = yield* Ref.make<SnapshotProjection>(emptyProjection);
 
 		const queue = yield* Effect.acquireRelease(
 			Ref.make<EventQueue>(yield* Queue.unbounded<AgentEvent, TransportError | Cause.Done>()),
@@ -258,7 +263,7 @@ const make = (
 			seed: SnapshotProjection,
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
-				const projection = yield* Ref.make(seed);
+				yield* Ref.set(projection, seed);
 				const pushes = pi
 					.snapshots(sessionId)
 					.pipe(Stream.runForEach((snapshot) => Queue.offer(feed, {_tag: "snapshot", snapshot})));
@@ -506,10 +511,16 @@ const make = (
 			if (current === null) return;
 			yield* pi.abort(current.id).pipe(
 				Effect.asVoid,
-				// `interrupt` declares no error channel, so a refused abort is a log line: the turn
-				// the operator wanted stopped either already ended or the transport is gone, and
-				// both are states the next event settles.
-				Effect.catch((refusal) => Effect.logWarning(`interrupt was refused: ${refusal.message}`)),
+				// `interrupt` declares no error channel, so the refusal rides the stream as a tag the
+				// fold routes on its own (ADR 0356) — a log line left the window unable to tell a
+				// backend that said no from an abort still in flight.
+				Effect.catch((refusal) =>
+					Effect.gen(function* () {
+						const running = (yield* Ref.get(projection)).phase === "prompting";
+						const open = yield* Ref.get(queue);
+						yield* emit(open, [{kind: "failure", failure: interruptFailureOf(refusal, running)}]);
+					}),
+				),
 			);
 		}).pipe(Effect.withSpan("TuvalAiAgent.interrupt"));
 
