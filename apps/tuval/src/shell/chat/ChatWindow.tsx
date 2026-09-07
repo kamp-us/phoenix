@@ -63,8 +63,10 @@ import {
 	type RowItem,
 	rowIndexOfItem,
 	rowKey,
+	subagentHeads,
 } from "./rows.ts";
 import {SessionRow} from "./SessionRow.tsx";
+import {SubagentList} from "./SubagentList.tsx";
 import {ThinkingRow} from "./ThinkingRow.tsx";
 import {type ToolFold, ToolRow} from "./ToolRow.tsx";
 import {UnsentMessages} from "./UnsentMessages.tsx";
@@ -95,6 +97,12 @@ export interface ChatWindowOptions {
 	readonly newKey?: () => string;
 	/** The clock a send stamps its turn with, so no update cell has to read one (#7978). */
 	readonly now?: () => number;
+	/**
+	 * The window's half of the config's `features.subagentList` flag (`../../config.ts`), off by
+	 * default. It gates the running list and the removal of a subagent's rows from the transcript
+	 * together, so an operator with it off sees exactly today's window (#8405).
+	 */
+	readonly subagentList?: boolean;
 	readonly pageLimit?: number;
 	readonly overscan?: number;
 	/** First guess per row, before the row is rendered and measured. */
@@ -116,6 +124,7 @@ interface ResolvedOptions {
 	readonly extras: ((state: AiAgentSessionState) => ReactNode) | null;
 	readonly newKey: () => string;
 	readonly now: () => number;
+	readonly subagentList: boolean;
 	readonly pageLimit: number;
 	readonly overscan: number;
 	readonly estimateRowHeight: number;
@@ -129,6 +138,7 @@ const resolve = (options: ChatWindowOptions): ResolvedOptions => ({
 	extras: options.extras ?? null,
 	newKey: options.newKey ?? (() => crypto.randomUUID()),
 	now: options.now ?? (() => Date.now()),
+	subagentList: options.subagentList === true,
 	pageLimit: options.pageLimit ?? 50,
 	overscan: options.overscan ?? 6,
 	estimateRowHeight: options.estimateRowHeight ?? 72,
@@ -468,6 +478,15 @@ function ChatWindow({
 
 	const setMode = useCallback((mode: Mode) => dispatch({type: "setMode", mode}), [dispatch]);
 
+	// The slots the flag makes rows disappear behind. Off, it is the shared empty set and `chatRows`
+	// folds exactly as it did; on, every row whose parent chain reaches one of these leaves the
+	// transcript (#8405).
+	const subagentSlots = state?.subagents ?? null;
+	const subagents = useMemo(
+		() => subagentHeads(subagentSlots, options.subagentList),
+		[options.subagentList, subagentSlots],
+	);
+
 	const rows = useMemo(
 		() =>
 			chatRows({
@@ -478,8 +497,9 @@ function ChatWindow({
 				pageError,
 				atOldest: view.atOldest,
 				unfolded,
+				subagents,
 			}),
-		[older, state, loading, pageError, view.atOldest, unfolded],
+		[older, state, loading, pageError, view.atOldest, unfolded, subagents],
 	);
 
 	/** The row the viewport was resting on when the current page was asked for. */
@@ -858,6 +878,9 @@ function ChatWindow({
 						{options.extras === null ? null : options.extras(process.state)}
 					</div>
 				</div>
+				{options.subagentList ? (
+					<SubagentList slots={process.state.subagents} now={options.now} />
+				) : null}
 				<div
 					ref={scrollRef}
 					className="tuval-chat-transcript"

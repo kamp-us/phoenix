@@ -25,6 +25,7 @@ import type {ReactElement} from "react";
 import {describe, expect, it} from "vitest";
 import type {AiAgentSessionMsg, AiAgentSessionState} from "../../ai-agent/core/index.ts";
 import type {JsonValue, PermissionRequest, ToolStatus} from "../../ai-agent/ports/index.ts";
+import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {ProcessId} from "../../process/process.ts";
 import {installDomShims} from "../ui/dom.testing.ts";
 import {testProcess} from "../window/fixtures.ts";
@@ -110,7 +111,12 @@ const THINKING = "Weighing the two lanes.\nThe second one is stalled on a review
  * window can neither cause nor fix. Scanning it here would red this gate on somebody else's bug and
  * teach the next builder to widen the scope instead of fixing the primitive.
  */
-const REGIONS = [".tuval-chat-transcript", ".tuval-chat-permissions", ".tuval-chat-mode"] as const;
+const REGIONS = [
+	".tuval-chat-transcript",
+	".tuval-chat-subagents",
+	".tuval-chat-permissions",
+	".tuval-chat-mode",
+] as const;
 
 /**
  * The focus probe takes a root and a selector, and `querySelector` searches descendants — so a
@@ -402,4 +408,58 @@ describe("the thinking row's disclosure", () => {
 
 		rendered.unmount();
 	});
+});
+
+/**
+ * The running list (#8405), at the semantics the property above cannot decide. Its whole job is to
+ * be read at a glance, and a screen reader gets that from list structure: a named list, one item
+ * per worker, each item's own name carrying the four fields — never a stack of divs.
+ */
+describe("the running-subagent list", () => {
+	const mountList = async () => {
+		const state = withTranscript([userItem("u1", "go"), call("agent", {name: "Agent"})], {
+			subagents: {
+				agent: subagentSlot("agent", {type: "reviewer", lastLine: "reading rows.ts"}),
+				other: subagentSlot("other", {type: "builder", lastLine: "writing the test"}),
+			},
+		});
+		const process = await Effect.runPromise(
+			testProcess<AiAgentSessionState, AiAgentSessionMsg>(ProcessId.make("p1"), state),
+		);
+		const host = await Effect.runPromise(process.window(WindowId.make("w1"), initialChatView));
+		const rendered = render(
+			chatWindow({scrollCommitMs: 0, scrollToFn: () => undefined, subagentList: true}).render(
+				host,
+			) as ReactElement,
+		);
+		await screen.findByRole("log", {name: "Transcript"});
+		return rendered;
+	};
+
+	it("is a named list whose rows are list items naming their worker", async () => {
+		const rendered = await mountList();
+
+		const region = screen.getByRole("list", {name: "Running subagents"});
+		const rows = screen.getAllByRole("listitem");
+		expect(rows).toHaveLength(2);
+		expect(region.contains(rows[0] as HTMLElement)).toBe(true);
+		expect(rows[0]?.textContent).toContain("reviewer");
+		expect(rows[0]?.textContent).toContain("reading rows.ts");
+		// The units ride the row rather than the layout, so the numbers mean something read aloud.
+		expect(rows[0]?.textContent).toContain("elapsed");
+		expect(rows[0]?.textContent).toContain("tokens");
+
+		rendered.unmount();
+	});
+
+	it(
+		"holds the enforced pillar-4 invariants with workers running",
+		async () => {
+			const rendered = await mountList();
+			const root = rendered.container.firstElementChild as HTMLElement;
+			expect(await scanRegions(root)).toEqual([]);
+			rendered.unmount();
+		},
+		SLOW,
+	);
 });

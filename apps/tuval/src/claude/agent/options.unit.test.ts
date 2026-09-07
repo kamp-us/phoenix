@@ -93,6 +93,12 @@ describe("the Options one query opens on", () => {
 	it("asks for them when the row did", () => {
 		expect(opened({streamPartialReplies: true}).includePartialMessages).toBe(true);
 	});
+
+	// Not a row option: with it off the SDK forwards a worker's tool frames alone, and the running
+	// list would carry a type and a clock with no line under them (#8427).
+	it("always asks the SDK to forward a subagent's own text and reasoning", () => {
+		expect(opened().forwardSubagentText).toBe(true);
+	});
 });
 
 describe("the spawned CLI's environment", () => {
