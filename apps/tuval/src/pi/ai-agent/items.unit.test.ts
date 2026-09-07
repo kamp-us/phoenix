@@ -15,6 +15,7 @@ import {
 	type AiAgentSessionMsg,
 	type AiAgentSessionState,
 	aiAgentSessionMachine,
+	holdsPartialItem,
 	initialState,
 } from "../../ai-agent/core/index.ts";
 import type {AgentEvent} from "../../ai-agent/events.ts";
@@ -66,6 +67,30 @@ const assistant = (text: string, total = 0): PiTranscriptItem => ({
 	],
 	model: {provider: "faux", id: "faux-1"},
 	usage: usage(total),
+	timestamp: 11,
+	status: "complete",
+	stopReason: "stop",
+});
+
+/**
+ * The same turn twice: mid-flight, then settled. Pi ids items positionally over
+ * `[...messages, streaming]` (`../server/transcript.ts`), and the in-flight message lands on
+ * `messages` under the index it already occupied — so the pair shares one id by construction.
+ */
+const streamingAssistant = (text: string): PiTranscriptItem => ({
+	id: "item-1",
+	role: "assistant",
+	content: [{type: "text", text}],
+	model: {provider: "faux", id: "faux-1"},
+	timestamp: 11,
+	status: "streaming",
+});
+
+const settledAssistant = (text: string): PiTranscriptItem => ({
+	id: "item-1",
+	role: "assistant",
+	content: [{type: "text", text}],
+	model: {provider: "faux", id: "faux-1"},
 	timestamp: 11,
 	status: "complete",
 	stopReason: "stop",
@@ -138,6 +163,28 @@ describe("one wire item as a port item", () => {
 			text: "half a th",
 			interrupted: true,
 		});
+	});
+
+	it("marks a reply still being written, and drops the marker when it settles", () => {
+		const inFlight = itemOf(streamingAssistant("hi"));
+		const settled = itemOf(settledAssistant("hi back"));
+		expect(inFlight).toEqual({
+			kind: "assistant",
+			id: "item-1",
+			timestamp: 11,
+			text: "hi",
+			partial: true,
+		});
+		expect(settled).toEqual({kind: "assistant", id: "item-1", timestamp: 11, text: "hi back"});
+		expect(settled.id, "the settled turn lands under a second id and the window keeps both").toBe(
+			inFlight.id,
+		);
+		expect("partial" in settled).toBe(false);
+	});
+
+	it("leaves no partial on a transcript nothing is in flight in", () => {
+		const items = [user, settledAssistant("hi back"), settledTool].flatMap(itemsOf);
+		expect(items.some((item) => "partial" in item)).toBe(false);
 	});
 
 	it("keys a tool row by its call id and folds the three wire statuses", () => {
@@ -241,6 +288,58 @@ describe("one revision folded into events", () => {
 			{kind: "item", item: itemOf(settledTool)},
 			{kind: "phase", phase: "ready"},
 		]);
+	});
+});
+
+/**
+ * What the streaming marker buys once it reaches the core: the in-flight row supersedes itself
+ * under one id, and the tail holding it is a state `checkpointWorthy` refuses to write (#8170).
+ * `holdsPartialItem` is the generic rule and needs no Pi arm — this pins that Pi now trips it.
+ */
+describe("a Pi reply arriving as it is written", () => {
+	const machine = aiAgentSessionMachine({cwd: "/workspace"});
+
+	const fold = (
+		state: AiAgentSessionState,
+		events: ReadonlyArray<AgentEvent>,
+	): AiAgentSessionState =>
+		events.reduce(
+			(carried, event) =>
+				applyCellChecked<AiAgentSessionState, AiAgentSessionMsg, AiAgentSessionCmd>(
+					machine,
+					carried,
+					{type: "event", sessionId: "session-7602", event},
+				)[0],
+			state,
+		);
+
+	const opened: AiAgentSessionState = {
+		...initialState("/workspace"),
+		phase: "ready",
+		sessionId: "session-7602",
+	};
+
+	const rows = (folded: ReturnType<typeof eventsOf>) =>
+		folded.events.flatMap((event) => (event.kind === "item" ? [event.item] : []));
+
+	it("supersedes the partial row rather than appending the settled one beside it", () => {
+		const first = eventsOf(emptyProjection, snapshot([user, streamingAssistant("hi")], "turn"));
+		const second = eventsOf(first.next, snapshot([user, settledAssistant("hi back")], "idle", 2));
+		expect(rows(first).map((item) => item.id)).toEqual(["item-0", "item-1"]);
+		expect(rows(first).at(-1)).toMatchObject({partial: true});
+		expect(rows(second).map((item) => item.id)).toEqual(["item-1"]);
+		expect(rows(second).some((item) => "partial" in item)).toBe(false);
+		expect(
+			fold(fold(opened, first.events), second.events).transcript.items.map((i) => i.id),
+		).toEqual(["item-0", "item-1"]);
+	});
+
+	it("keeps the tail out of the store while the reply grows, and lets it in once it settles", () => {
+		const first = eventsOf(emptyProjection, snapshot([user, streamingAssistant("hi")], "turn"));
+		const second = eventsOf(first.next, snapshot([user, settledAssistant("hi back")], "idle", 2));
+		const growing = fold(opened, first.events);
+		expect(holdsPartialItem(growing)).toBe(true);
+		expect(holdsPartialItem(fold(growing, second.events))).toBe(false);
 	});
 });
 
