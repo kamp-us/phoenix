@@ -94,6 +94,33 @@ Two related patterns thread the same needle (resolve once, hand the plain value 
 
 Both follow the same idiom: pay the discharge cost once, at a known seam, and downstream consumers see a plain value (or a Layer with `R = never`).
 
+## Decorating a layer — one member wrapped, same tag
+
+To put a guard in front of *one* member of an existing service without touching the layer that
+implements it, build a `Layer.effect` on the **same tag** and provide the implementing layer to it:
+
+```ts
+Layer.effect(
+	TuvalAiAgent,
+	Effect.gen(function* () {
+		const inner = yield* TuvalAiAgent; // the provided implementation, not a cycle
+		const fs = yield* FileSystem.FileSystem;
+		return {...inner, start: (options) => guard(fs).pipe(Effect.andThen(inner.start(options)))};
+	}),
+).pipe(Layer.provide(AgyAiAgent.layer(options)), Layer.provide(NodeFileSystem.layer));
+```
+
+`Layer.provide` supplies the inner layer's output *to the build effect*, so `yield* Tag` inside
+resolves to the implementation and the composed layer's own output replaces it. Two rules make it
+work: every service the wrapper needs is yielded **at build time**, never inside the wrapped method
+(a method that yields a tag grows that tag in its `R` and no longer fits the interface), and the
+wrapper spreads `...inner` so an eleventh member added later is carried without an edit.
+
+Reach for this when the guard belongs to *this composition* rather than to the implementation — the
+`agy-session` row checks a launch precondition of the founder's desk, which is not a property of the
+`agy` transport ([`apps/tuval/src/agy/preflight.ts`](../apps/tuval/src/agy/preflight.ts)). When the
+check is a property of the implementation, put it in the implementation.
+
 ## One worker-level `ManagedRuntime`, built from the worker layer set — init-only
 
 Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request; a brief correction (ADR 0029) removed it entirely, capturing a `Context` and running each resolver on the *default* runtime. Both are gone. Now there is exactly ONE worker-level `ManagedRuntime` (ADR 0041, supersedes 0029) and since the v2 cutover (ADR 0043) it is **init-only wiring**: the worker's init phase builds `Drizzle` + the feature services once as the worker layer set, folds them into that one runtime as the layer-build/memoization vehicle, and the built context reaches the routes as a dependency-free context layer. Nothing runs through the runtime per request — the `/fate` route yields the native interpreter on the request fiber, and `CurrentUser` + `LivePublisher` are provided onto each operation per request as values off the request context, not baked into the runtime. See [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) for the full picture.
