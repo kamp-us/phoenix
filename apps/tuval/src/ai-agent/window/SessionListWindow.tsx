@@ -14,7 +14,8 @@
  * source that calls `session.list` over its socket (`../../page/renderers.tsx`, #8161). It is handed
  * this window's id, because the call carries the window it came from and the kernel resolves the
  * rest. At its default it hands a read nobody sent, which is what a fixture or a surface with no
- * socket behind it renders.
+ * socket behind it renders. `useTranscript` is the same seam for the session a row opens onto, bound
+ * to the `session.transcript` spell by the same table (#8238).
  *
  * **Five states, none of them a blank window.** Reading, a fired deadline, a refused call, an empty
  * store, and a store whose backends could not be read are five different sentences — the last two
@@ -33,6 +34,7 @@ import type {ReactElement, KeyboardEvent as ReactKeyboardEvent, ReactNode} from 
 import {useCallback, useEffect, useMemo, useState} from "react";
 import type {ReadingSessions, SessionListStatus} from "../../page/session-list.ts";
 import {atClock, elapsedMillis, reading} from "../../page/session-list.ts";
+import type {TranscriptAnswer} from "../../page/session-transcript.ts";
 import {failureLine} from "../../palette/call.ts";
 import type {WindowId} from "../../protocol/ids.ts";
 import type {SessionRow, UnreadableBackend} from "../../protocol/session-list.ts";
@@ -41,16 +43,16 @@ import {windowRenderer} from "../../shell/window/index.ts";
 import {
 	listView,
 	type OpenPhase,
+	type OpenRequest,
 	type OpenTarget,
 	openRead,
 	type SendPlan,
 	type SessionListView,
 	send,
 	sessionView,
-	type TranscriptRead,
 } from "./opening.ts";
 import {matchesQuery, rowValue, sessionItems} from "./rows.ts";
-import {SessionTranscriptView, type TranscriptAnswer} from "./SessionTranscript.tsx";
+import {SessionTranscriptView} from "./SessionTranscript.tsx";
 import "./session-list-window.css";
 
 const TITLE = "AI agent sessions";
@@ -308,10 +310,26 @@ const nothingRead: SessionListSource = () => {
 	return {status: reading(startedAt)};
 };
 
-/** How the renderer gets one session's transcript. The default reads none, so a window says so. */
-export type TranscriptSource = (read: TranscriptRead) => TranscriptAnswer | null;
+/** One session's transcript as the surface renders it, and the way to ask for the page before it. */
+export interface TranscriptPaged {
+	/** The history so far, waiting state included. `null` while the first read is out. */
+	readonly answer: TranscriptAnswer | null;
+	/** Absent when the caller cannot page — then the older affordance is not offered at all. */
+	readonly onOlder?: () => void;
+}
 
-const nothingPaged: TranscriptSource = () => null;
+/**
+ * How the renderer gets one session's transcript. Like `SessionListSource` it is a hook the window
+ * calls, so a source holding the landed pages re-renders the window when the next one arrives; it
+ * is handed `openRead`'s own answer and the window the call comes from. It takes the request rather
+ * than the read inside it because a row the store filed under no folder has no read to hand over,
+ * and a hook cannot be skipped for it — so the refusal is a case the source is given rather than a
+ * placeholder read invented to keep the call shape. The default reads none, so a surface with no
+ * socket behind it says the read is out rather than claiming an empty session.
+ */
+export type TranscriptSource = (request: OpenRequest, window: WindowId) => TranscriptPaged;
+
+const nothingPaged: TranscriptSource = () => ({answer: null});
 
 export interface SessionListWindowOptions {
 	readonly useAnswer?: SessionListSource;
@@ -379,13 +397,16 @@ function SessionListHost({
 		);
 	}
 
-	const request = openRead(view.session);
-	const page = request._tag === "Read" ? (useTranscript ?? nothingPaged)(request.read) : null;
+	// The transcript is a child rather than an arm of this render, because the source is a hook:
+	// called from here it would run on the session branch and not on the list branch, which is the
+	// conditional-hook fault React refuses. The key is the session, so picking a second row unmounts
+	// the first read's state instead of folding its pages into the new session's history.
 	return (
-		<SessionTranscriptView
+		<SessionTranscriptHost
+			key={`${view.session.programId}:${view.session.sessionId}`}
 			session={view.session}
-			answer={page}
-			unopenable={request._tag === "OpenRefused"}
+			window={window}
+			useTranscript={useTranscript ?? nothingPaged}
 			onBack={back}
 			onSend={(text) => {
 				// The phase is what makes the transition happen once: the first send hands back a spawn
@@ -394,6 +415,41 @@ function SessionListHost({
 				setPhase(plan.phase);
 				onSend?.(view.session, text, plan);
 			}}
+		/>
+	);
+}
+
+/**
+ * One session's transcript over whatever source the page bound. It exists so the source is called
+ * unconditionally from a component whose whole life is this one session: the read it sends is
+ * memoised on the row, so a re-render is not a second call, and unmounting is what discards a read
+ * whose session is no longer on screen.
+ */
+function SessionTranscriptHost({
+	session,
+	window,
+	useTranscript,
+	onBack,
+	onSend,
+}: {
+	readonly session: SessionRow;
+	readonly window: WindowId;
+	readonly useTranscript: TranscriptSource;
+	readonly onBack: () => void;
+	readonly onSend: (text: string) => void;
+}): ReactElement {
+	// Memoised on the row, so the source's own effect sees one request for the life of this mount: a
+	// fresh object every render would re-send the first page on every render.
+	const request = useMemo(() => openRead(session), [session]);
+	const paged = useTranscript(request, window);
+	return (
+		<SessionTranscriptView
+			session={session}
+			answer={paged.answer}
+			unopenable={request._tag === "OpenRefused"}
+			onBack={onBack}
+			onSend={onSend}
+			{...(paged.onOlder === undefined ? {} : {onOlder: paged.onOlder})}
 		/>
 	);
 }

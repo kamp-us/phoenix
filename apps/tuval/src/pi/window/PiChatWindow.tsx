@@ -13,11 +13,14 @@
  * the name the row declares, and a page's table binds a renderer by that name.
  */
 
-import type {ChatWindowOptions, ChatWindowRenderer} from "../../shell/chat/index.ts";
+import type {ChatWindowRenderer, ThinChatWindowOptions} from "../../shell/chat/index.ts";
 import {chatWindow} from "../../shell/chat/index.ts";
 
-/** The Pi renderer at whatever window options a caller needs. */
-export const piChatWindow = (options: ChatWindowOptions = {}): ChatWindowRenderer =>
+/**
+ * The Pi renderer at whatever window options a caller needs — every option but `extras`, which
+ * `ThinChatWindowOptions` withholds because the binding owns that slot.
+ */
+export const piChatWindow = (options: ThinChatWindowOptions = {}): ChatWindowRenderer =>
 	chatWindow(options);
 
 /**

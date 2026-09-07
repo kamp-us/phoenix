@@ -150,17 +150,16 @@ describe("listSessions on the Claude backend", () => {
 		),
 	);
 
-	it.effect("turns a throwing listing into a ListError naming what the store said", () =>
+	it.effect("turns a throwing listing into a ListError naming the enumeration", () =>
 		Effect.gen(function* () {
-			const exit = yield* Effect.exit(
-				on(
-					{listFails: new Error("the projects directory is unreadable")},
-					(agent) => agent.listSessions,
-				),
-			);
+			const thrown = new Error("the projects directory is unreadable");
+			const exit = yield* Effect.exit(on({listFails: thrown}, (agent) => agent.listSessions));
 			assert.strictEqual(failure(exit)._tag, "tuval/ai-agent/ListError");
 			assert.strictEqual(failure(exit).reason, "store-unreadable");
-			assert.include(failure(exit).detail ?? "", "the projects directory is unreadable");
+			assert.include(failure(exit).detail ?? "", "could not be enumerated");
+			// The thrown value is retained rather than repeated (#8010); `refusals.unit.test.ts`
+			// is where that split is judged.
+			assert.notInclude(failure(exit).detail ?? "", "projects directory");
 		}),
 	);
 });

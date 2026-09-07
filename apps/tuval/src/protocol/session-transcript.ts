@@ -23,9 +23,22 @@ import {
 	type JsonValue,
 	TOOL_RESULT_BYTE_LIMIT,
 } from "../ai-agent/ports/transcript-item.ts";
+import {SESSION_LIST_PROGRAM} from "./session-list.ts";
 
 /** The spell's address on the session-list program row: `session.transcript`. */
 export const SESSION_TRANSCRIPT_PATH = ["session", "transcript"] as const;
+
+/**
+ * The whole address a caller sends. The registry keys a row's spell under `[programId, ...path]`
+ * (`../commands/registry.ts`), so a call carrying the bare `session.transcript` reaches no spell and
+ * the kernel answers `UnknownSpell` — which is what a page sending the bare path did (#8238). The
+ * row is the session list's own, because that row declares both spells
+ * (`../ai-agent/session-list.ts`), so the program id is imported rather than respelled.
+ */
+export const SESSION_TRANSCRIPT_CALL_PATH = [
+	SESSION_LIST_PROGRAM,
+	...SESSION_TRANSCRIPT_PATH,
+] as const;
 
 /**
  * A tool's input, as `TranscriptItem` declares it: plain JSON and never a backend's own type.

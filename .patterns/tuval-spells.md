@@ -694,3 +694,54 @@ the row's own schema refusing the argument and a run is the kernel's dispatch. T
 the host makes is the address: a shell row's spells are registered under `[shell, ...path]`, and a
 path the shell table does not hold is refused on the page because the kernel does not hold it
 either.
+
+## A window that calls a spell
+
+A spell answered on demand — the session list, one page of a session's transcript — reaches the
+surface through the page's socket rather than through a state frame, and the two live instances are
+[`page/session-list.ts`](../apps/tuval/src/page/session-list.ts) and
+[`page/session-transcript.ts`](../apps/tuval/src/page/session-transcript.ts). Both are the same three
+pieces, and the split is what keeps the surface provable.
+
+**A pure call/read pair per spell, under `page/`.** One function builds the `SpellCall` and mints its
+`CallId`; one takes that call and a reply and answers `null` when the reply's id is another call's,
+a refusal when the result does not decode, and the value otherwise. The `null` is the load-bearing
+arm: a page holds several calls open on one socket, so "not my reply" has to stay distinguishable
+from "mine, and it is empty" — collapsing them shows one window another's answer.
+
+**The address is the program-prefixed one, and `protocol/` spells both.** The registry keys a row's
+spell under `[programId, ...path]` ([`commands/registry.ts`](../apps/tuval/src/commands/registry.ts)),
+so a call carrying the spell's bare path reaches nothing and the kernel answers `UnknownSpell`. Each
+protocol module therefore exports the row's own path *and* the whole call path
+(`SESSION_LIST_PATH` / `SESSION_LIST_CALL_PATH`,
+`SESSION_TRANSCRIPT_PATH` / `SESSION_TRANSCRIPT_CALL_PATH`), and the page sends the second. **A
+scripted socket in a test is a registry, not a router with a default arm**: it answers the addresses
+the kernel really registers and refuses everything else the way the kernel does. A fixture that parks
+any unrecognised path passes a mis-addressed call, which is how #8238's bare `session.transcript`
+cleared a whole rendered suite and failed on a real desk.
+
+**A hook the renderer calls, bound at the table.** The window declares a source type
+(`SessionListSource`, `TranscriptSource`) and takes it as an option; the default asks nobody, so a
+fixture or a socket-less surface renders the same waiting path a real one does.
+[`page/renderers.tsx`](../apps/tuval/src/page/renderers.tsx) binds the real one, closed over that
+page's `call`. **The binding is the step that gets forgotten**: a source left unbound is a window
+that reads forever while every unit around it passes, which is what #8238 repaired — so the test that
+covers a source mounts the renderer out of `pageRenderers` rather than passing a stub, and asserts on
+the calls the scripted socket received.
+
+**The hook is mounted per subject, never called conditionally.** A window showing one of several
+things calls the source from a child component whose whole life is that subject, keyed on it. That is
+two rules in one: hooks stay unconditional, which React requires, and picking a second subject
+unmounts the first read rather than folding its landed pages into the new one's history.
+
+**Retry and paging are attempts, not new inputs.** A read that can be asked for again — a retry, the
+next page — carries a counter beside its arguments, because two consecutive requests can legitimately
+carry the same ones: a retry asks for exactly the cursor that failed. Without the counter the effect's
+dependencies do not move and no call leaves. The landed answer is checked against the attempt it was
+sent for, so a superseded call's reply is dropped rather than folded (#8280, #8238).
+
+**The fold is pure and lives beside the codec.** Where an answer accumulates —
+`session-transcript.ts`'s `landedPage` — the state machine is a total function from the held state
+and one landing to the next, so every rule the surface owes (older items before held ones, an id
+already on screen never repeated, a failed page leaving the history and the cursor alone) is a unit
+test with no DOM in it. The hook holds that value and renders it; it decides nothing.

@@ -48,6 +48,18 @@ interface ItemBase {
 	 * reasoning from the agent's own.
 	 */
 	readonly parentId?: ItemId;
+	/**
+	 * The other id this same row is known by, when a backend keys its live tail and its history
+	 * reads in two id spaces. Absent means the row has one identity, which is every row a backend
+	 * with a single id space emits.
+	 *
+	 * It exists because the page/tail stitch (`shell/chat/rows.ts`) has to decide whether a page
+	 * copy and a tail row are one turn, and on Pi they never share an `id`: the live tail is keyed
+	 * positionally over the context messages, the history page by the stored session entry
+	 * (`pi/ai-agent/entries.ts`). The backend that holds both spaces states the join here rather
+	 * than the window guessing at one from text (#8032).
+	 */
+	readonly alias?: ItemId;
 }
 
 /**
@@ -205,15 +217,16 @@ const isToolResult = (value: unknown): value is ToolResult =>
 const statuses: ReadonlySet<string> = new Set<ToolStatus>(["running", "ok", "error"]);
 
 /**
- * The port predicate for one item: identity, clock, parent tag, kind, and the tool result's own
- * bound. The parent tag is read once ahead of the switch, because every kind may carry one.
+ * The port predicate for one item: identity, clock, parent tag, second identity, kind, and the tool
+ * result's own bound. The tags are read once ahead of the switch, because every kind may carry them.
  */
 export const isTranscriptItem = (value: unknown): value is TranscriptItem => {
 	if (
 		!Predicate.isObject(value) ||
 		!isId(value.id) ||
 		!Number.isFinite(value.timestamp) ||
-		!isOptionalId(value.parentId)
+		!isOptionalId(value.parentId) ||
+		!isOptionalId(value.alias)
 	)
 		return false;
 	switch (value.kind) {

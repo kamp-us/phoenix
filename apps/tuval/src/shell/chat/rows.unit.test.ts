@@ -7,7 +7,7 @@
 import {describe, expect, it} from "vitest";
 import {promptItem} from "../../ai-agent/core/fold.ts";
 import {planTranscriptPage, planTranscriptWindow} from "../../ai-agent/history/index.ts";
-import {ItemId} from "../../ai-agent/ports/index.ts";
+import {ItemId, type TranscriptItem} from "../../ai-agent/ports/index.ts";
 import {subagentSlot} from "../../ai-agent-fixtures/transcripts.ts";
 import {
 	assistantItem,
@@ -35,6 +35,15 @@ const base = {older: [], tail: [], omitted: 0, loading: false, atOldest: false};
 
 /** The operator's turn exactly as the core records it on send: `local: true` under a `local:` id. */
 const sent = (key: string, text: string) => promptItem({text, key, timestamp: 1_756_000_000_000});
+
+/**
+ * A history row from a backend that keys its live tail in another id space: the row's own stored id,
+ * plus the `item-<index>` the same turn carries in the tail (Pi, `pi/ai-agent/entries.ts`).
+ */
+const stored = <Item extends TranscriptItem>(item: Item, position: number): Item => ({
+	...item,
+	alias: ItemId.make(`item-${position}`),
+});
 
 const itemIds = (rows: ReadonlyArray<ChatRow>): ReadonlyArray<string> =>
 	rows.flatMap((row) => (row.kind === "item" ? [row.item.id] : []));
@@ -311,6 +320,52 @@ describe("mergeOlder", () => {
 		const held = [sent("k1", "merhaba")];
 		const merged = mergeOlder(held, [userItem("a", "merhaba"), userItem("b", "merhaba")]);
 		expect(merged.map((item) => item.id)).toEqual(["a", "local:k1"]);
+	});
+
+	it("drops a page copy the tail holds under the other id, and keeps dropping it", () => {
+		const held = [userItem("item-0", "merhaba"), assistantItem("item-1", "hoş")];
+		const first = mergeOlder(held, [userItem("e0", "önce"), stored(userItem("e1", "merhaba"), 0)]);
+		expect(first.map((item) => item.id)).toEqual(["e0", "item-0", "item-1"]);
+		expect(mergeOlder(first, [stored(userItem("e1", "merhaba"), 0)])).toBe(first);
+	});
+});
+
+/**
+ * The Pi shape #8032 reported: the live tail keys a turn `item-<index>` and the history page keys
+ * the same turn by its session entry, so a single-id join renders it twice. The page row carries
+ * the live id in `alias`, which is what the stitch matches on. The tail rows here are ordinary
+ * confirmed rows — Pi echoes every turn, so the `local` mark is long gone by the time an operator
+ * can page at all, and the text join has nothing to work with.
+ */
+describe("a page and a tail that key one turn in two id spaces", () => {
+	it("emits one row for a user turn the page and the tail both carry", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [userItem("item-0", "merhaba")],
+			older: [stored(userItem("e1", "merhaba"), 0)],
+		});
+		expect(itemIds(rows)).toEqual(["item-0"]);
+	});
+
+	it("emits one row for an assistant turn too, since the re-key is not the user turn's alone", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [assistantItem("item-1", "buyurun")],
+			older: [stored(assistantItem("e2", "buyurun"), 1)],
+		});
+		expect(itemIds(rows)).toEqual(["item-1"]);
+	});
+
+	it("keeps two genuinely different turns of identical text as two rows", () => {
+		const rows = chatRows({
+			...base,
+			atOldest: true,
+			tail: [userItem("item-4", "merhaba")],
+			older: [stored(userItem("e1", "merhaba"), 0), stored(userItem("e5", "merhaba"), 4)],
+		});
+		expect(itemIds(rows)).toEqual(["e1", "item-4"]);
 	});
 });
 

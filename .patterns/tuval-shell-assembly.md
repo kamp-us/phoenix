@@ -253,10 +253,13 @@ Three files, and the split between them is forced rather than stylistic.
 - **The renderer is a thin binding, and its extras go through one slot.** Both AI-agent programs
   render the one shared `ChatWindow` (founder ruling 2026-09-02, amended on #7572 / #7584):
   `chatWindow({extras})` takes a `(state) => ReactNode` that lands in the window's status bar beside
-  the phase line and the mode switch, and that is the whole of what a program adds. Pi's is its
-  usage line — model, cumulative cost, token counts, off `state.usage`
-  (`src/pi/window/PiChatWindow.tsx`); Claude's is that line plus a session line — session id and
-  cwd, off `state.sessionId` and `state.cwd` (`src/claude/window/ClaudeChatWindow.tsx`). Each
+  the phase line and the mode switch, and that is the whole of what a program adds. Neither program
+  passes one today: the founder's 2026-09-05 ruling (#8190) sent Pi's usage line and Claude's
+  session line to the desk inspector, so both bars carry the phase line alone. **The slot is the
+  binding's, and its type says so.** A binding takes `ThinChatWindowOptions` — every window option
+  but `extras` — so a caller reaching the slot through `piChatWindow` or `claudeChatWindow` is a
+  compile error rather than an argument the binding overwrites without a signal (#7957); a caller
+  that wants its own extras wants the shared `chatWindow`, under its own name. Each
   renderer directory is named in `tsconfig.json`'s `exclude` and `tsconfig.design.json`'s `include`,
   for the lens reason above. It is a function of the live state because a renderer *is*
   `f(state, view)`; a renderer that accumulated its own totals would disagree with the checkpoint
