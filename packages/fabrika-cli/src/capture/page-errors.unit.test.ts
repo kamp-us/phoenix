@@ -1,9 +1,9 @@
 /**
- * The render-crash gate decision (#2594): an uncaught runtime exception thrown
+ * The render-crash gate decision: an uncaught runtime exception thrown
  * during the capture render hard-fails review-design regardless of how the frame
  * looks, and the failure names the error + the surface it crashed on. The
- * load-bearing case is the concrete #2593 escape — the `@kampus/composer`
- * read-only null-editor `TypeError` — which a single good-tick screenshot missed.
+ * load-bearing case is a read-only rich-text editor's null-editor `TypeError`,
+ * which a single good-tick screenshot missed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -40,34 +40,34 @@ describe("isRenderCrash — only uncaught exceptions hard-fail", () => {
 describe("renderCrashFailure — the deterministic gate FAIL", () => {
 	it("returns null when no surface threw", () => {
 		const surfaces: SurfacePageErrors[] = [
-			{surface: "/sozluk", pageErrors: []},
-			{surface: "/pano", pageErrors: []},
+			{surface: "/catalog", pageErrors: []},
+			{surface: "/feed", pageErrors: []},
 		];
 		assert.strictEqual(renderCrashFailure(surfaces), null);
 	});
 
-	it("catches the #2593 composer null-editor TypeError on a bad tick, naming error + surface", () => {
-		// The concrete escape: the read-only composer calls setContent before the
-		// tiptap editor exists — a good-tick screenshot rendered fine, so the six
+	it("catches a null-editor TypeError on a bad tick, naming error + surface", () => {
+		// The concrete escape: a read-only editor calls setContent before the
+		// editor instance exists — a good-tick screenshot rendered fine, so the six
 		// visual prohibitions passed while THIS uncaught exception was thrown.
 		const nullEditor: PageError = {
 			kind: "pageerror",
 			text: "TypeError: Cannot read properties of null (reading 'commands')",
 		};
 		const surfaces: SurfacePageErrors[] = [
-			{surface: "/mecmua/read-only", pageErrors: [nullEditor]},
+			{surface: "/editor/read-only", pageErrors: [nullEditor]},
 		];
 		const failure = renderCrashFailure(surfaces);
 		assert.isNotNull(failure);
 		assert.match(failure as string, /1 uncaught runtime exception thrown during capture render/);
-		assert.include(failure as string, "/mecmua/read-only");
+		assert.include(failure as string, "/editor/read-only");
 		assert.include(failure as string, "reading 'commands'");
 	});
 
 	it("ignores console.error entries — they never flip the verdict", () => {
 		const surfaces: SurfacePageErrors[] = [
 			{
-				surface: "/sozluk",
+				surface: "/catalog",
 				pageErrors: [{kind: "console.error", text: "Warning: missing key prop"}],
 			},
 		];

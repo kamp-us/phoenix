@@ -2,8 +2,8 @@
  * `governance base` — this skill's own text at the merge base of the diff that edits it.
  *
  * **The verb exists so the self fence is a pasteable literal.** The rule it serves — judge a
- * self-editing diff by the merge-base revision of its own text (ADR 0052) — otherwise needs a merge-base
- * SHA the model would have to compute and interpolate, which the harness's isolation verifier refuses.
+ * self-editing diff by the merge-base revision of its own text — otherwise needs a merge-base SHA the
+ * model would have to compute and interpolate, which the harness's isolation verifier refuses.
  * Resolving a merge base and reading named paths at it is mechanical; judging by them is not.
  *
  * **`--path` is fenced to this skill's own directory, and that directory is resolved, not hardcoded.**
@@ -14,8 +14,8 @@
  * The `11` refusal never falls back to the head. A self fence that degrades to the head's rules on a
  * failed read is a fence that opens exactly when it is being tested.
  *
- * **`--base`/`--tip` gives an epic child the same fence (#6064).** A child has no PR mid-run
- * (ADR 0285), so before this form a child range editing this skill was judged by its own new rules —
+ * **`--base`/`--tip` gives an epic child the same fence.** A child has no PR mid-run, so before this
+ * form a child range editing this skill was judged by its own new rules —
  * the guard opening exactly on the diff that edits the guard. The merge base of a range is
  * `merge-base(base, tip)`, the same commit the range's own three-dot diff is taken from; see
  * `../review/range-flags.ts`, which owns that grounding.
@@ -121,7 +121,7 @@ const pullBase = (
 			};
 		}
 		// The binding already resolved this, and resolving it twice is how two answers to one question
-		// come to disagree (#5770).
+		// come to disagree.
 		return {_tag: "Resolved" as const, resolution: {base: head.mergeBase, subject: `#${pr}`}};
 	});
 

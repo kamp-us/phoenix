@@ -5,13 +5,14 @@
  * below keep apart the three ways a harness envelope fails to arrive, which is the whole reason a
  * hook verb needs its own table: "stdin held nothing", "stdin held bytes that are not an envelope"
  * and "fd 0 could not be read" are three different claims, and collapsing any two of them lets a
- * hook report a proven negative over evidence it never saw (ADR 0092).
+ * hook report a proven negative over evidence it never saw — a verdict nothing was scanned for.
  *
  * **`2` is allocated by nothing, here or in any other group, and this is the group that makes it a
  * hard rule.** On `PreToolUse` exit `2` is the harness's one blocking code (`./harness-exit.ts`), so
  * a fabrika verb that seats any meaning on it denies a tool call as a side effect of its exit
  * status. `NO_IMPLEMENTATION` used to sit there, which made a fabrika that could not bootstrap block
- * every `Task`/`Workflow` spawn — the inverse of ADR 0250's ruled fail-open polarity (#5423).
+ * every `Task`/`Workflow` spawn — the inverse of the ruled polarity, where a hook whose verb never
+ * ran fails open and lets the harness event proceed.
  *
  * {@link EMPTY_STDIN} is *imported* from `report`, not restated as `3`: it is the same fact the
  * writing verbs already seat there, so the alignment is by identity rather than by assertion
@@ -46,7 +47,7 @@ export const MALFORMED_ENVELOPE = 12;
  *
  * Deliberately not {@link MALFORMED_ENVELOPE} and deliberately not `1`: "I could not see it" is not
  * "I saw it and it was wrong", and `1` is also what a bad flag returns, so a proven outcome seated
- * there is unreadable as proof (#4208).
+ * there is unreadable as proof.
  */
 export const ENVELOPE_UNKNOWN = 13;
 
@@ -74,11 +75,11 @@ export const UNPLANNABLE_WORKTREE = 15;
  *
  * Its own seat because it is the one refusal that protects a *correctness* property rather than the
  * provisioning: branching a lane off a cached tip silently bases it on state missing a sibling's
- * just-merged commit, and the two collide only at ship time (#3620/#3678).
+ * just-merged commit, and the two collide only at ship time.
  */
 export const BASE_FETCH_FAILED = 16;
 
-/** `git worktree add` failed. The tree does not exist, so no path may be emitted (ADR 0092). */
+/** `git worktree add` failed. The tree does not exist, so no path is emitted — the verb refuses. */
 export const WORKTREE_ADD_FAILED = 17;
 
 /**
@@ -86,9 +87,9 @@ export const WORKTREE_ADD_FAILED = 17;
  * `git worktree add` returned.
  *
  * The whole point of the hook is that this state never reaches an agent, so it is a refusal and not
- * a warning: `bootstrap-deps` clean-SKIPs at exit 0 when it finds no toolchain (ADR 0109 §3), which
- * makes a successful `git worktree add` byte-identical to a provisioned one. Checking the artifact
- * is the only way to tell them apart.
+ * a warning: the `post-checkout` install clean-SKIPs at exit 0 when the PATH-stripped hook env has
+ * no toolchain, which makes a successful `git worktree add` byte-identical to a provisioned one.
+ * Checking the artifact is the only way to tell them apart.
  */
 export const DEPS_NOT_PROVISIONED = 18;
 

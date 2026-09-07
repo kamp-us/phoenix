@@ -25,11 +25,11 @@ describe("loadGoldenPointer", () => {
 		const path = tmpFile(
 			"golden-pointer.json",
 			JSON.stringify({
-				surfaces: {"/sozluk": {sha256: "a".repeat(64), blessedDate: "2026-07-14", intent: "home"}},
+				surfaces: {"/catalog": {sha256: "a".repeat(64), blessedDate: "2026-07-14", intent: "home"}},
 			}),
 		);
 		assert.deepStrictEqual(loadGoldenPointer(path), {
-			"/sozluk": {sha256: "a".repeat(64), blessedDate: "2026-07-14", intent: "home"},
+			"/catalog": {sha256: "a".repeat(64), blessedDate: "2026-07-14", intent: "home"},
 		});
 	});
 
@@ -42,12 +42,12 @@ describe("loadGoldenPointer", () => {
 describe("serializeGoldenPointer", () => {
 	it("sorts surface-ids and round-trips through load", () => {
 		const pointer: GoldenPointer = {
-			"/sozluk:empty": {sha256: "b".repeat(64), blessedDate: "2026-07-14", intent: "empty"},
-			"/sozluk": {sha256: "a".repeat(64), blessedDate: "2026-07-14", intent: "home"},
+			"/catalog:empty": {sha256: "b".repeat(64), blessedDate: "2026-07-14", intent: "empty"},
+			"/catalog": {sha256: "a".repeat(64), blessedDate: "2026-07-14", intent: "home"},
 		};
 		const serialized = serializeGoldenPointer(pointer);
-		// sorted: "/sozluk" appears before "/sozluk:empty"
-		assert.isBelow(serialized.indexOf('"/sozluk"'), serialized.indexOf('"/sozluk:empty"'));
+		// sorted: "/catalog" appears before "/catalog:empty"
+		assert.isBelow(serialized.indexOf('"/catalog"'), serialized.indexOf('"/catalog:empty"'));
 		assert.isTrue(serialized.endsWith("\n"));
 		const path = tmpFile("golden-pointer.json", serialized);
 		assert.deepStrictEqual(loadGoldenPointer(path), pointer);

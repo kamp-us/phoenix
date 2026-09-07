@@ -21,11 +21,11 @@
  * code stops the tool call, and every other non-zero code shows stderr and lets it proceed. On
  * `SessionStart` the same `2` is user-visible only and blocks nothing. Triage confirmed both legs
  * live on 2.1.227 — a probe hook on matcher `Task|Workflow` exiting `2` stopped an agent spawn, the
- * identical probe exiting `3` did not (#5423).
+ * identical probe exiting `3` did not.
  *
  * The consequence fabrika cares about is a *polarity*, not a style rule: a bootstrap or dispatch
- * failure is a state in which no verb ran and no evidence exists, which ADR 0250 rules must fail
- * **open**. Seating any such state on this code makes it deny instead.
+ * failure is a state in which no verb ran and no evidence exists, and such a state must fail
+ * **open** — the harness event proceeds. Seating any such state on this code makes it deny instead.
  */
 
 /** The one `PreToolUse` exit code that blocks the tool call. No fabrika exit code may be this. */

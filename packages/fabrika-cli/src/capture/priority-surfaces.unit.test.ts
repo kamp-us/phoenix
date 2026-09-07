@@ -1,7 +1,7 @@
 /**
- * The priority-surface selection core (issue #2961 AC 3): the founder-decided set
- * resolves to concrete capture surfaces in order, route params are substituted, and
- * an ill-formed set (unfilled param, bad order, duplicate) fails closed.
+ * The priority-surface selection core: the priority set resolves to concrete capture
+ * surfaces in order, route params are substituted, and an ill-formed set (unfilled
+ * param, bad order, duplicate) fails closed.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -10,8 +10,8 @@ import {
 	substituteRouteParams,
 } from "./priority-surfaces.ts";
 
-describe("PRIORITY_SURFACES — the founder-decided set (#2944)", () => {
-	it("is the three surfaces in the founder order: shell+subnav, sözlük term, pano feed", () => {
+describe("PRIORITY_SURFACES — the priority set", () => {
+	it("is the three surfaces in rank order: shell+subnav, term page, feed", () => {
 		assert.deepStrictEqual(
 			PRIORITY_SURFACES.map((s) => [s.order, s.key]),
 			[
@@ -38,7 +38,7 @@ describe("substituteRouteParams", () => {
 	});
 
 	it("leaves a param-free route untouched", () => {
-		assert.strictEqual(substituteRouteParams("/pano", {}), "/pano");
+		assert.strictEqual(substituteRouteParams("/plain", {}), "/plain");
 	});
 
 	it("url-encodes the substituted value", () => {
@@ -51,7 +51,7 @@ describe("substituteRouteParams", () => {
 });
 
 describe("resolvePrioritySurfaces", () => {
-	it("resolves the founder set to concrete surfaces in order, term slug filled", () => {
+	it("resolves the priority set to concrete surfaces in order, term slug filled", () => {
 		const resolved = resolvePrioritySurfaces({termSlug: "amortisman"});
 		assert.deepStrictEqual(
 			resolved.map((r) => [r.order, r.surface.surface]),
@@ -88,8 +88,8 @@ describe("resolvePrioritySurfaces", () => {
 
 	it("sorts by order before validating (input order-independent)", () => {
 		const resolved = resolvePrioritySurfaces({termSlug: "x"}, [
-			{order: 2, key: "pano-feed", title: "B", route: "/pano", intent: "b"},
-			{order: 1, key: "global-shell-subnav", title: "A", route: "/sozluk", intent: "a"},
+			{order: 2, key: "pano-feed", title: "B", route: "/b", intent: "b"},
+			{order: 1, key: "global-shell-subnav", title: "A", route: "/a", intent: "a"},
 		]);
 		assert.deepStrictEqual(
 			resolved.map((r) => r.order),
@@ -101,8 +101,8 @@ describe("resolvePrioritySurfaces", () => {
 		assert.throws(
 			() =>
 				resolvePrioritySurfaces({termSlug: "x"}, [
-					{order: 1, key: "global-shell-subnav", title: "A", route: "/sozluk", intent: "a"},
-					{order: 3, key: "pano-feed", title: "C", route: "/pano", intent: "c"},
+					{order: 1, key: "global-shell-subnav", title: "A", route: "/a", intent: "a"},
+					{order: 3, key: "pano-feed", title: "C", route: "/c", intent: "c"},
 				]),
 			/contiguous/,
 		);
@@ -112,8 +112,8 @@ describe("resolvePrioritySurfaces", () => {
 		assert.throws(
 			() =>
 				resolvePrioritySurfaces({termSlug: "x"}, [
-					{order: 1, key: "global-shell-subnav", title: "A", route: "/pano", intent: "a"},
-					{order: 2, key: "pano-feed", title: "B", route: "/pano", intent: "b"},
+					{order: 1, key: "global-shell-subnav", title: "A", route: "/dup", intent: "a"},
+					{order: 2, key: "pano-feed", title: "B", route: "/dup", intent: "b"},
 				]),
 			/duplicate surface-id/,
 		);
