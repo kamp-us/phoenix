@@ -89,9 +89,8 @@ the body there is yours. Then post it, typing that path out literally —
 **Never capture the allocation into a shell variable and never redirect through one.** Command
 substitution and a variable the verifier cannot resolve are each on their own enough for a
 worktree-isolated shell to refuse the line, so a fence built that way does not run for the agent it
-is written for (ADR
-[0235](../../../../.decisions/0235-fences-carry-zero-expansions.md)). A redirect whose target is the
-literal path carries no expansion and runs.
+is written for — a fence carries zero expansions. A redirect whose target is the literal path
+carries no expansion and runs.
 
 **Naming a lane is not dispatching it.** The note's arrow names *whose work this is* so a puller
 can recognise it; it summons nobody. The arrow is a **lookup with no judgment in it**, so two runs
@@ -110,8 +109,8 @@ over one strand write the same word. The lookup is total over every class that g
 
 The scheduled sweep relays this rather than repeating it: `sweep` emits the lane as its row's sixth
 column, off [`lane.ts`](../../../../packages/fabrika-cli/src/heal-ci/lane.ts)'s lookup over the same
-table. The workflow printed a hardcoded `nobody` on every row until #7209 — on `ungated` and
-`gated-unshipped` that told every reader the board's own detector had found nothing for anyone to do.
+table. A workflow that hardcodes `nobody` on every row instead tells every reader, on `ungated` and
+`gated-unshipped` alike, that the board's own detector found nothing for anyone to do.
 
 **The arrow is a lane, never a person, and the login always goes in the body.** The six words are a
 closed set with no seat for a login, so a named individual reaches the reader through the note's
@@ -152,8 +151,8 @@ and treating one as healable is how a non-failure stalled a mergeable PR.
 `pull_request` workflow builds the prospective merge of head into base and labels the runs with the
 head SHA, so a `logic` red naming a symbol or a line nobody can find at the head is still a real
 failure of the tree that must merge — the head being clean disproves nothing, and reclassifying on
-that basis is how a correct FAIL gets filed as a gate misreading its own SHA
-([#6794](https://github.com/kamp-us/phoenix/issues/6794)). Route it to repair as the `logic` it is;
+that basis is how a correct FAIL gets filed as a gate misreading its own SHA. Route it to repair as
+the `logic` it is;
 reproducing it against that ref is the repair lane's step, stated with its citation and worked
 example in [`build`'s Repair section](../build/SKILL.md#repair).
 
@@ -217,8 +216,8 @@ recipe-clearable: `fabrika recipe unpark <lane-key> --task <task>` proves whethe
 moved — it relays `ship reconcile`, so only `landed` or `ejected` clears — and on a clear it records
 the `UNBLOCKED` and the fresh conclusive read in one event. Exit `13` is the queue genuinely not
 having moved, and the park stands. Run it when you work the row rather than routing a human, and a
-stall self-heals on the next scheduled pass (ADR
-[0313](../../../../.decisions/0313-a-queue-dwell-is-a-wait-not-a-park.md)). `sweep` itself still
+stall self-heals on the next scheduled pass — a queue dwell is a wait, not a park. `sweep` itself
+still
 writes nothing on its own authority — the verb is yours to run on the row you are working, never the
 sweep's to run over the board.
 
@@ -292,8 +291,8 @@ comment history before it creates: exit `14` means this strand is already record
 head, nothing was posted, and the run ends on whichever terminal it was already headed for. That is
 how "a NEW comment every time" and "one note per strand" are both true — a new comment per
 *classification*, not per caller. The clause is not optional politeness: two sweeps three minutes
-apart left up to six identical notes on one pull request because the routed path posted bare
-(#7209). Four do not, each for a stated reason: `ATTENDED` and `NOT-OPEN` (no strand to record),
+apart left up to six identical notes on one pull request because the routed path posted bare. Four
+do not, each for a stated reason: `ATTENDED` and `NOT-OPEN` (no strand to record),
 `SWEPT` (board-level — `note` takes a PR number, and the sweep writes nothing), and `UNKNOWN` (you
 hold no answer, and a note asserting one would be the confident-wrong record this skill prevents).
 

@@ -107,8 +107,8 @@
 			]
 		},
 		"plugin-operate": {
-			"ceiling": 288,
-			"why": "The operate and heal-ci skills' text, cleared by #8299, the operate sweep child.",
+			"ceiling": 6,
+			"why": "#8299 swept the prose of both skills: `operate/SKILL.md` is at zero and `heal-ci/SKILL.md` is too. All 6 left sit in `heal-ci/contract.md`'s worked-example transcripts and are values rather than sentences — 4 are the synthetic PR numbers the `diagnose` and `note` examples echo back inside lines the shipped verbs print verbatim (`heal-ci diagnose: PR #<n> not found in <repo>.`, `heal-ci: ROUTED — PR #<n> @ <sha> → <lane>`, `heal-ci note: #<n> already carries a note at key …`), and 2 are the placeholder `acme/repo` pull-request URLs those same examples print. Rewriting the pin first would make the contract quote a line no verb prints, and the numbers are already lifted above every live range. Both classes clear on #8350, the fixture-URL ticket that widens the guard's test-data carve-out past the `issue` matcher — the same child the `plugin-ship` row names for its identical six-plus-two.",
 			"paths": ["claude-plugins/fabrika/skills/operate", "claude-plugins/fabrika/skills/heal-ci"]
 		},
 		"plugin-authoring": {
