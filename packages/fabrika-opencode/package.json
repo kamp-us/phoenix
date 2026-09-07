@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/fabrika-opencode",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "@kampus/fabrika-opencode — the opencode plugin that installs fabrika's eight agent shells and bundled skills with one config line (issue #6965)",
 	"license": "MIT",
 	"repository": {
