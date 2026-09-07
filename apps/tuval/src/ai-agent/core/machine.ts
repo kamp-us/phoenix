@@ -47,7 +47,7 @@ import {
 	eventsSub,
 } from "./messages.ts";
 import {enqueue, isQueueFull, type QueuedPrompt, queueLimit, releaseQueued} from "./queue.ts";
-import {noteSend, settledBy, settlePending} from "./sends.ts";
+import {noteSend, settledBy, settleFailedTurn} from "./sends.ts";
 import {loadCheckpoint} from "./snapshot.ts";
 import {
 	type AgentFailure,
@@ -142,7 +142,9 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 		const phase = phaseAfterFailure(state, failure);
 		// The turn is over however the failure reached the machine, so a partial the stream
 		// left in the tail — and any subagent under that turn — settles here too
-		// (`./state.ts`, `settleTurn`).
+		// (`./state.ts`, `settleTurn`). The *session* need not be: `phaseAfterFailure` can return
+		// it to `ready`, so this is the per-turn arm and only the failure's own send settles
+		// (#8236). The terminal arm is the `gone` phase in `./fold.ts`.
 		const turn = settleTurn(state);
 		return settleQueue([
 			{
@@ -150,7 +152,7 @@ export const aiAgentSessionMachine = (options: AiAgentSessionOptions): AiAgentSe
 				phase,
 				interruption: interruptionAfter(turn, phase),
 				failure,
-				sends: settlePending(turn.sends, failure),
+				sends: settleFailedTurn(turn.sends, failure),
 			},
 			noCmds,
 		]);

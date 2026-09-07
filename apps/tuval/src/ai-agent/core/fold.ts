@@ -24,7 +24,7 @@ import {
 	type WindowOmission,
 } from "../ports/index.ts";
 import {START_ERROR} from "./failures.ts";
-import {markTurnRunning, settleAccepted, settlePending} from "./sends.ts";
+import {markTurnRunning, settleAccepted, settleEndedSession, settleFailedTurn} from "./sends.ts";
 import {type AiAgentSessionState, settleTurn, type UsageLedger} from "./state.ts";
 
 /** How much tail one session keeps. Absent, the window module's own defaults apply. */
@@ -244,10 +244,10 @@ export const foldEvent = (
 		// `settleAccepted` reaches that running send and no other. Neither reads "whichever send is
 		// pending", which is how a later turn accepted an older, never-started one (#8107).
 		//
-		// `gone` is the other half: a session that ended under a send in flight can never answer
-		// for it, so every send in flight becomes recoverable instead. Refusals reach the send by
-		// their own arms below, and they arrive before this line does — both rows push the turn's
-		// failure ahead of the phase that closes it.
+		// `gone` is the other half, and it is the terminal arm: a session that ended under a send in
+		// flight can never answer for it, so `settleEndedSession` makes every one of them
+		// recoverable. Refusals reach the send by their own arms below, and they arrive before this
+		// line does — both rows push the turn's failure ahead of the phase that closes it.
 		case "phase": {
 			if (coreOwned(event.phase)) return state;
 			// Any phase but `prompting` is the turn over, and nothing will supersede a partial the
@@ -259,7 +259,7 @@ export const foldEvent = (
 					...turn,
 					phase: event.phase,
 					interruption: interruptionAfter(turn, event.phase),
-					sends: settlePending(turn.sends, null),
+					sends: settleEndedSession(turn.sends, null),
 				};
 			}
 			return {
@@ -308,6 +308,10 @@ export const foldEvent = (
 		// same to the window whichever channel carried it. Routing it through `event` is what keeps
 		// the machine's identity filter over it: a late refusal from a session this process has
 		// already replaced is dropped rather than failing its successor (#8018).
+		//
+		// This is the per-turn arm, not the terminal one: `phaseAfterFailure` can walk the session
+		// back to `ready`, so `settleFailedTurn` settles the send this failure is about and leaves
+		// every other in flight `pending` for its own turn's end (#8236).
 		case "failure": {
 			const phase = phaseAfterFailure(state, event.failure);
 			const turn = settleTurn(state);
@@ -316,7 +320,7 @@ export const foldEvent = (
 				phase,
 				interruption: interruptionAfter(turn, phase),
 				failure: event.failure,
-				sends: settlePending(turn.sends, event.failure),
+				sends: settleFailedTurn(turn.sends, event.failure),
 			};
 		}
 	}

@@ -399,10 +399,11 @@ const markInterrupted = (
  * there is nothing left to flush it, and it is released to its window as an unsent send the same way
  * an interrupted queue is — recoverable, never resent on the operator's behalf.
  *
- * A send still in flight comes back `uncertain` rather than dropped. The process went away between
- * handing the text to the layer and hearing what became of it, so nobody can say whether it landed
- * — and a window that reopens on this session offers its operator that text rather than resending
- * it.
+ * A send still in flight comes back `uncertain` rather than dropped — every one of them, because
+ * this is a terminal settle like `gone`'s and not a per-turn failure (#8236). The process went away
+ * between handing the text to the layer and hearing what became of it, so nobody can say whether it
+ * landed — and a window that reopens on this session offers its operator that text rather than
+ * resending it.
  *
  * No subagent comes back running. Nothing is pumping one any more — the layer that was reading its
  * frames went with the process — so a row still claiming to be live is a lie the operator cannot

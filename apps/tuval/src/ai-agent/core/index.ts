@@ -57,7 +57,8 @@ export {
 	sendOutcome,
 	settleAccepted,
 	settledBy,
-	settlePending,
+	settleEndedSession,
+	settleFailedTurn,
 	type TurnProgress,
 } from "./sends.ts";
 export {

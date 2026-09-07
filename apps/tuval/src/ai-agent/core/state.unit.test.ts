@@ -132,6 +132,23 @@ describe("a restored session and its subagents", () => {
 	it("keeps the rows a worker collected, so a view open on it is not blanked", () => {
 		expect(restore(loaded).subagents["call-1"]?.items).toEqual(items);
 	});
+
+	// A restore is terminal like `gone` and not a per-turn failure: the process that was running
+	// these turns is gone, so a row left `pending` waits for a turn nobody will narrate (#8236).
+	it("brings every send that was in flight back uncertain, however far its turn had got", () => {
+		const back = restore({
+			...loaded,
+			phase: "prompting",
+			sends: [
+				{key: "first", state: "pending", turn: "running"},
+				{key: "second", state: "pending", turn: "unstarted"},
+			],
+		});
+		expect(back.sends).toEqual([
+			{key: "first", state: "uncertain", failure: null},
+			{key: "second", state: "uncertain", failure: null},
+		]);
+	});
 });
 
 // #8160's coalescing, extended rather than joined by a second throttle: the two fields that move
