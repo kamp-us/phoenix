@@ -5,8 +5,8 @@
  * hands the bytes back for the caller to hash against the pointer, the store tier PUTs then GETs the
  * same content-addressed URL and hash-compares, and the attachment tier probes every returned URL
  * with a HEAD. That is the whole difference from the upstream capture-side upload, whose failures are
- * projected away by an error channel typed `never` (#3925): here a failed verification is a value the
- * verb refuses on.
+ * projected away by an error channel typed `never`: here a failed verification is a value the verb
+ * refuses on.
  */
 import {Effect} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -86,8 +86,8 @@ export const storeUpload = (store: string, target: UploadTarget): Effect.Effect<
 /**
  * Attachment tier: GitHub's user-attachment endpoint, then a HEAD probe of the returned URL.
  *
- * Two facts stated rather than hidden. The endpoint is **undocumented** (ADR 0165's durability
- * caveat rides along — hosted copies are display-grade, the set manifest in the lane scratch is the
+ * Two facts stated rather than hidden. The endpoint is **undocumented** (so the durability caveat
+ * rides along — hosted copies are display-grade, and the set manifest in the lane scratch is the
  * durable record), and it is an upload API rather than an issues read/write, so it sits outside skill
  * conventions §11's REST-porcelain scope while every issue/PR read and write in `ui evidence` stays
  * inside it.
@@ -157,7 +157,7 @@ type Credentialed<A> = Effect.Effect<
 
 /**
  * The attachment tier's two credentials, both off `../io/gh-api.ts` — the package's one token
- * resolution (ADR 0315) and one REST read, never a second auth path and never a `gh` subprocess on
+ * resolution and one REST read, never a second auth path and never a `gh` subprocess on
  * the request path.
  *
  * Resolved lazily, at the first upload, so a run that never reaches the attachment tier never asks

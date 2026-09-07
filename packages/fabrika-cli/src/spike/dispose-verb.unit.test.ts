@@ -113,7 +113,7 @@ describe("runDispose removes a captured spike's workspace and proves it is gone"
 
 describe("the tree comparison runs first, so a 17 never destroys the leak it found", () => {
 	const dirty = [
-		[STATUS, okOut("?? apps/web/src/probe.ts\n!! node_modules/\n")],
+		[STATUS, okOut("?? src/probe.ts\n!! node_modules/\n")],
 		[ISSUE, {status: 200, body: issuePayload({state: "closed"})}],
 		[COMMENTS, {status: 200, body: CAPTURED}],
 	] as ReadonlyArray<Scripted>;
@@ -128,7 +128,7 @@ describe("the tree comparison runs first, so a 17 never destroys the leak it fou
 
 	it("enumerates every differing line, not only the first", async () => {
 		const {outcome} = await run(dirty);
-		expect(outcome.stderr.join("\n")).toContain("apps/web/src/probe.ts");
+		expect(outcome.stderr.join("\n")).toContain("src/probe.ts");
 		expect(outcome.stderr.join("\n")).toContain("node_modules/");
 	});
 

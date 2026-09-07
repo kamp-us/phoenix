@@ -6,12 +6,12 @@
  * changed" and lies by omission, so a single failed upload or upload-verification is `17` with
  * nothing posted. That is the one behavior this verb most exists to pin: the upstream capture-side
  * upload channel is typed `never` and silently projects failures away (`../capture/upload.ts`), which
- * ADR 0165 accepted for the *review* side's verdict — here, on the construction side, a failed upload
- * is a refusal.
+ * the *review* side tolerates because its verdict survives a missing image — here, on the
+ * construction side, a failed upload is a refusal.
  *
  * The comment carries the PR's current head SHA in its text and a re-attach posts a **new** comment
  * at the new head: comments are append-only evidence, never edited in place, because evidence at a
- * stale head misleads (#4808's class).
+ * stale head misleads.
  */
 import {Effect, type FileSystem, type Path} from "effect";
 import type * as HttpClient from "effect/unstable/http/HttpClient";
@@ -229,7 +229,7 @@ export const runEvidence = (
 		}
 		// The lane publishes to its branch's tracked upstream, so that is what the PR's head is
 		// compared against; the checked-out name is a repair round's `build/pr-<pr>-<nonce>`, which
-		// never equals the head ref (#7402).
+		// never equals the head ref.
 		if (headBranch.ref !== target.ref) {
 			return refuse(
 				LANE_NOT_MINE,
@@ -334,7 +334,7 @@ export const runEvidence = (
 		if (firstFailure !== undefined) {
 			return refuse(
 				UPLOAD_FAILED,
-				`${VERB}: upload failed for ${failures.length} of ${targets.length} captures (${firstFailure}) — refusing to post partial evidence; a gallery missing its failures is #3925.`,
+				`${VERB}: upload failed for ${failures.length} of ${targets.length} captures (${firstFailure}) — refusing to post partial evidence; a gallery missing its failures lies by omission.`,
 				[...lane.notes, ...failures],
 			);
 		}

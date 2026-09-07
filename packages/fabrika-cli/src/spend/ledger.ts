@@ -1,17 +1,17 @@
 /**
- * The durable spend ledger — where a measured run's cost survives the shell that measured it (#5009).
+ * The durable spend ledger — where a measured run's cost survives the shell that measured it.
  *
- * Before this, a spend row existed only for as long as the operator kept the `--out` file they named,
- * so every measurement was ephemeral — the persistence gap epic #4779 names. The ledger is **JSON
- * Lines**: one self-describing JSON object per line, appended, never rewritten. The format is chosen
- * for what a partial write does to it — a crash mid-line damages exactly that line, and the reader
- * below skips it — and for what evolution does to it: every line carries its own `v`, so a later
- * shape is a new version rather than a migration of the file.
+ * Before this, a spend row existed only for as long as the operator kept the `--out` file they
+ * named, so every measurement was ephemeral. The ledger is **JSON Lines**: one self-describing JSON
+ * object per line, appended, never rewritten. The format is chosen for what a partial write does to
+ * it — a crash mid-line damages exactly that line, and the reader below skips it — and for what
+ * evolution does to it: every line carries its own `v`, so a later shape is a new version rather
+ * than a migration of the file.
  *
- * The one-way import edge is deliberate: this module reaches `spend/` and `io/` only, never `eval/`
- * (#5050). `LedgerRow` is therefore declared **structurally** rather than imported from the runner —
- * `eval`'s `SpendRow` satisfies it, and so does a synthetic row in a test — which is what lets the
- * roll-up read this ledger without depending on the eval harness that writes it.
+ * The one-way import edge is deliberate: this module reaches `spend/` and `io/` only, never
+ * `eval/`. `LedgerRow` is therefore declared **structurally** rather than imported from the
+ * runner — `eval`'s `SpendRow` satisfies it, and so does a synthetic row in a test — which is
+ * what lets the roll-up read this ledger without depending on the eval harness that writes it.
  */
 import {Effect, type FileSystem, type Path, Result} from "effect";
 import {appendFile, type WriteFailed} from "../io/fs.ts";
@@ -30,7 +30,7 @@ export const DEFAULT_SPEND_LEDGER_PATH = ".fabrika/spend-ledger.jsonl";
  * any `v` that is not the current one is damage. That reading is right only while the current version
  * is the first one ever written, because then no ledger can hold an older line. At `2`, every intact
  * `v: 1` row starts counting as `malformed` and drops out of the roll-up — the operator is told their
- * measurements are corrupt while the totals quietly shrink (#5116). So a bump has to decide, in the
+ * measurements are corrupt while the totals quietly shrink. So a bump has to decide, in the
  * same change, what an older intact row becomes: decode it into a {@link LedgerRow}, or count it under
  * a skip of its own that every {@link LedgerSkips} reader renders. Until one of those lands the bump
  * reds the below-current guard in `ledger.unit.test.ts`, which is what keeps the decision from being
@@ -45,7 +45,7 @@ export const LEDGER_ROW_VERSION = 1;
  */
 export interface LedgerRow {
 	readonly skillName: string;
-	/** Provenance — the key the run was recorded under, never a pointer into the live stage table (#4977). */
+	/** Provenance — the key the run was recorded under, never a pointer into the live stage table. */
 	readonly stage: string;
 	readonly caseId: number;
 	readonly arm: string;
@@ -58,7 +58,7 @@ export interface LedgerRow {
 }
 
 /**
- * Why an unreadable line splits in two rather than staying one number (#5010): the two halves ask
+ * Why an unreadable line splits in two rather than staying one number: the two halves ask
  * the operator for opposite things. A `malformed` line is damage — bytes that will never decode, so
  * that measurement is gone. A `newerVersion` line is intact data this build is too old to read, so
  * the rows are still there and the action is to upgrade the CLI. One counter reported both as "40
@@ -246,10 +246,10 @@ export const appendSpendLedger = (
  * Persist a suite's rows and return what the caller should say about it — no notes on success, one
  * note naming the path and the reason on failure.
  *
- * The error channel is `never` on purpose, and it is the whole contract: recording a measurement is a
- * by-product of a run that already finished, so a ledger that cannot be written must not become a way
- * for that run to fail (epic #4779's no-gate ruling). Returning the note rather than printing it is
- * what lets that promise be asserted without a process.
+ * The error channel is `never` on purpose, and it is the whole contract: recording a measurement is
+ * a by-product of a run that already finished, so a ledger that cannot be written must not become a
+ * way for that run to fail. Returning the note rather than printing it is what lets that promise be
+ * asserted without a process.
  */
 export const persistSpendRows = (
 	path: string,

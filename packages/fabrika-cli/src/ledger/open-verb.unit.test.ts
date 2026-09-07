@@ -179,7 +179,7 @@ describe("runOpen", () => {
 		]);
 		expect(outcome.code).toBe(STALE_GROUND);
 		expect(outcome.stderr.at(-1)).toBe(
-			"ledger open: base is 47 commit(s) behind origin/main — a plan derived here is derived on stale ground (#3330).",
+			"ledger open: base is 47 commit(s) behind origin/main — a plan derived here is derived on stale ground.",
 		);
 	});
 
@@ -260,7 +260,7 @@ describe("runOpen", () => {
 	});
 
 	/**
-	 * The two lists pull opposite ways (#7213): GitHub ANDs the search terms, so every extra one
+	 * The two lists pull opposite ways: GitHub ANDs the search terms, so every extra one
 	 * narrows toward zero, while `scoreTitle` gets sharper with more. `report dedup` split them and
 	 * this verb was the second call site still sending one list to both — the guard is here so a
 	 * third does not drift back.

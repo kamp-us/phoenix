@@ -83,17 +83,9 @@
 				"claude-plugins/fabrika/skills/front-door"
 			]
 		},
-		"plugin-planning": {
-			"ceiling": 21,
-			"why": "The prose is swept; every remaining hit is a value rather than a sentence. All 21 are stderr lines the shipped `ledger` and `plan` verbs print, quoted verbatim in the Errors tables and worked examples — each a copy of a string that lives in packages/fabrika-cli/src/ledger/ and packages/fabrika-cli/src/plan/, so it moves only when that string does. Rewriting the pin first would make the contract quote a line no verb prints. #8310, the CLI tail sweep, owns those two directories and pays this floor down with them.",
-			"paths": [
-				"claude-plugins/fabrika/skills/plan-epic",
-				"claude-plugins/fabrika/skills/check-epic-plan"
-			]
-		},
 		"plugin-discovery": {
-			"ceiling": 28,
-			"why": "The prose is swept: no hit left is a sentence, and each of the 28 sits inside a string the shipped source owns, so rewriting the copy first would make the contract quote a line no verb prints. Two kinds. (1) 4 are verbatim stderr pins with a literal reference in the string itself, all in prototyping/contract.md: `spike open`'s artifact-kind refusal plus `spike capture`'s zero-recorded-runs (twice) and below-write refusals; packages/fabrika-cli/src/spike retires them under #8310. (The four grill/graduate stderr pins this row carried before #8308 landed on the epic are gone with it.) (2) 24 are worked-example lines whose `#<n>` is rendered from the example's own operand, either a refusal transcript (`grill open`, `grill read`, `map read`, `map ticket`, `graduate trail`/`read`/`emit`) or an artifact format sample copied from the module that defines it with that module's own synthetic numbers (the `map-ticket:` and `graduate-emitted:` markers, the spec footer, the map body's decision entries, `## Frontier` rows and ref-shape table). Their source is a `#${n}` template, not a reference, so no source sweep moves them; they leave only when the sample-number convention is settled, tracked on #8402 and #8351, which the epic tail must rule before this row can shrink further. The example numbers are deliberately high, well above any live issue range, which is the rule each contract's own self-check item 3 states; lowering them to a form this guard cannot see would falsify that sentence and the shipped strings both. The skills' own prose carries none, including the wrapped two-line citation this guard's line-at-a-time matcher cannot see.",
+			"ceiling": 24,
+			"why": "The prose is swept: no hit left is a sentence, and each of the 24 sits inside a string the shipped source owns, so rewriting the copy first would make the contract quote a line no verb prints. The 4 verbatim stderr pins this row carried in prototyping/contract.md — `spike open`'s artifact-kind refusal plus `spike capture`'s zero-recorded-runs (twice) and below-write refusals — are gone: #8310 rewrote those strings in packages/fabrika-cli/src/spike and mirrored each pin in the same commit. (The four grill/graduate stderr pins this row carried before #8308 landed on the epic went with it.) What is left is 24 worked-example lines whose `#<n>` is rendered from the example's own operand, either a refusal transcript (`grill open`, `grill read`, `map read`, `map ticket`, `graduate trail`/`read`/`emit`) or an artifact format sample copied from the module that defines it with that module's own synthetic numbers (the `map-ticket:` and `graduate-emitted:` markers, the spec footer, the map body's decision entries, `## Frontier` rows and ref-shape table). Their source is a `#${n}` template, not a reference, so no source sweep moves them; they leave only when the sample-number convention is settled, tracked on #8402 and #8351, which the epic tail must rule before this row can shrink further. The example numbers are deliberately high, well above any live issue range, which is the rule each contract's own self-check item 3 states; lowering them to a form this guard cannot see would falsify that sentence and the shipped strings both. The skills' own prose carries none, including the wrapped two-line citation this guard's line-at-a-time matcher cannot see.",
 			"paths": [
 				"claude-plugins/fabrika/skills/grilling",
 				"claude-plugins/fabrika/skills/wayfinding",
@@ -107,8 +99,8 @@
 			"paths": ["claude-plugins/fabrika/skills/operate", "claude-plugins/fabrika/skills/heal-ci"]
 		},
 		"plugin-authoring": {
-			"ceiling": 297,
-			"why": "The build-ui, campaign, adr, glossary and taste-color skills' text, cleared by #8300, the authoring sweep child.",
+			"ceiling": 286,
+			"why": "The build-ui, campaign, adr, glossary and taste-color skills' text, cleared by #8300, the authoring sweep child. Eleven of the 297 this row carried were copies of shipped strings #8310 rewrote at their source and mirrored here in the same commit: six `ui manifest` / `ui law` / `ui render` / `ui evidence` stderr pins in the build-ui contract, three `glossary check` / `glossary drift` stderr pins in the glossary contract, and the glossary contract's two references to the bare-hash fixture line, which now carries a one-digit hash. So 286 is what #8300 still owns.",
 			"paths": [
 				"claude-plugins/fabrika/skills/build-ui",
 				"claude-plugins/fabrika/skills/campaign",
@@ -154,8 +146,8 @@
 			]
 		},
 		"cli-tail": {
-			"ceiling": 664,
-			"why": "The remaining small groups and the top-level modules under src/, cleared by #8310, the CLI tail sweep child.",
+			"ceiling": 4,
+			"why": "#8310 swept the remaining small groups and the top-level modules under src/ to four residues, none of them prose. All four are citation URLs under test in packages/fabrika-cli/src/decision — three in rule-verb.unit.test.ts and one in ruling-verb.unit.test.ts. `parseCitation` and `RULING_URL_RE` pin the github.com host in their own regexes, so a citation on any other host exercises nothing and the assertion stops testing what it names. Same class as the two build/ rows already carved out for it; the host pin itself is the portability defect, parked behind #8359.",
 			"paths": ["packages/fabrika-cli/src"]
 		}
 	}

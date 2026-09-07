@@ -9,7 +9,7 @@
  * the wrapper alone and the port stays held for the next lane.
  *
  * Ports are allocated here rather than declared, so two worktrees can render at once and neither can
- * reach the other's server (#7992). The allocation binds `:0`, reads the port the OS chose and lets
+ * reach the other's server. The allocation binds `:0`, reads the port the OS chose and lets
  * go, and the origin every capture is taken from is built from that number — so a declared command
  * **must** pass the port with its own strict-port flag. Losing the race then fails the start loudly;
  * a server that falls back to the next free port instead leaves the origin pointing at whatever else

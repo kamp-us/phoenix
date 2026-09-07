@@ -4,7 +4,7 @@
  * **A reporting surface, never an enforcement.** It exits `0` on `absent` exactly as it does on
  * `current`, because a missing ruling is this verb's *answer*. What keeps an unruled decision out of
  * a build lane is `build claim`'s own type axis, which admits a decision only on a `--cites` naming a
- * ruling comment (ADR 0300) — that fence re-reads the board rather than trusting this report.
+ * ruling comment — that fence re-reads the board rather than trusting this report.
  *
  * **What `current` is safe to be read as.** A marker whose author the control-plane roster resolves
  * *at this read* — the author gate lives here, in the read, not only in `decision rule`'s write,

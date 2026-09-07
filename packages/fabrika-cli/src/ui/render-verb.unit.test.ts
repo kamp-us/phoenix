@@ -54,7 +54,7 @@ const ready: HarnessLeg = (apps) =>
 
 const options = {
 	out: "after",
-	surfaces: ["/pano"],
+	surfaces: ["/board"],
 	firstRender: [] as ReadonlyArray<string>,
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", CLAUDE_CODE_SESSION_ID: "s-9f2e"} as Record<
@@ -88,20 +88,20 @@ const run = (
 	);
 
 const WEB = {name: "web", mount: "/", command: "pnpm dev --port {{port}}"};
-const TUVAL = {
-	name: "tuval-chat",
-	mount: "/tuval/chat",
+const DESK = {
+	name: "desk-chat",
+	mount: "/desk/chat",
 	basePath: "/",
 	command: "pnpm proof:chat --port {{port}}",
 };
 const harnessFile = JSON.stringify({apps: [WEB]});
-const twoApps = JSON.stringify({apps: [WEB, TUVAL]});
+const twoApps = JSON.stringify({apps: [WEB, DESK]});
 const SESSION = `${ROOT}/.fabrika/design-session.json`;
 const withSession = JSON.stringify({
 	apps: [WEB],
 	storageState: ".fabrika/design-session.json",
 });
-const captured = {files: {[HARNESS]: harnessFile, [`${SET_DIR}/pano.png`]: PNG}};
+const captured = {files: {[HARNESS]: harnessFile, [`${SET_DIR}/board.png`]: PNG}};
 
 describe("runRender operands", () => {
 	it("refuses zero surfaces on 1 — no tool guesses surfaces from a diff", async () => {
@@ -111,7 +111,7 @@ describe("runRender operands", () => {
 
 	it.each([
 		["a non-kebab --out", {out: "After"}, '--out "After" is not a kebab-case set name'],
-		["a reserved :state suffix", {surfaces: ["/pano:empty"]}, "carries a :state suffix"],
+		["a reserved :state suffix", {surfaces: ["/board:empty"]}, "carries a :state suffix"],
 	])("refuses %s on 10", async (_label, overrides, fragment) => {
 		const outcome = await run([], {}, overrides);
 		expect(outcome.code).toBe(OFF_VOCABULARY);
@@ -119,7 +119,7 @@ describe("runRender operands", () => {
 	});
 
 	it("refuses a --first-render naming a surface it is not rendering", async () => {
-		const outcome = await run([], {}, {firstRender: ["/sozluk"]});
+		const outcome = await run([], {}, {firstRender: ["/terms"]});
 		expect(outcome.code).toBe(FAILED);
 	});
 });
@@ -138,8 +138,8 @@ describe("runRender", () => {
 			set: "after",
 			captures: [
 				{
-					surface: "/pano",
-					path: `${SET_DIR}/pano.png`,
+					surface: "/board",
+					path: `${SET_DIR}/board.png`,
 					width: 4,
 					height: 4,
 					sha256: expect.any(String),
@@ -152,7 +152,7 @@ describe("runRender", () => {
 	});
 
 	it("records a --first-render surface as such", async () => {
-		const outcome = await run(LANE_OK, captured, {firstRender: ["/pano"]});
+		const outcome = await run(LANE_OK, captured, {firstRender: ["/board"]});
 		expect(JSON.parse(outcome.stdout).captures[0].firstRender).toBe(true);
 	});
 
@@ -178,7 +178,7 @@ describe("runRender", () => {
 
 	it("refuses an invalid capture on 16 — evidence nobody can open is not evidence", async () => {
 		const outcome = await run(LANE_OK, {
-			files: {[HARNESS]: harnessFile, [`${SET_DIR}/pano.png`]: new Uint8Array(0)},
+			files: {[HARNESS]: harnessFile, [`${SET_DIR}/board.png`]: new Uint8Array(0)},
 		});
 		expect(outcome.code).toBe(CAPTURE_INVALID);
 		expect(outcome.stderr.join("\n")).toContain("captured invalid bytes (zero bytes)");
@@ -187,13 +187,13 @@ describe("runRender", () => {
 	it("reports the SMALLEST applicable code when outcomes mix, and enumerates every surface", async () => {
 		const outcome = await run(
 			LANE_OK,
-			{files: {[HARNESS]: harnessFile, [`${SET_DIR}/pano.png`]: PNG}},
+			{files: {[HARNESS]: harnessFile, [`${SET_DIR}/board.png`]: PNG}},
 			{
-				surfaces: ["/pano", "/sozluk", "/yeni"],
+				surfaces: ["/board", "/terms", "/new"],
 				browse: browsing((url) =>
-					url.endsWith("/sozluk")
+					url.endsWith("/terms")
 						? {_tag: "Crashed", error: "TypeError: x"}
-						: url.endsWith("/yeni")
+						: url.endsWith("/new")
 							? {_tag: "Unreachable", reason: "HTTP 404"}
 							: {_tag: "Captured"},
 				),
@@ -238,7 +238,7 @@ describe("runRender", () => {
 		expect(outcome.stderr.at(-1)).toContain(
 			'the render leg reported ready without an origin for app "web"',
 		);
-		expect(outcome.stderr.at(-1)).toContain('surface "/pano" is UNKNOWN');
+		expect(outcome.stderr.at(-1)).toContain('surface "/board" is UNKNOWN');
 	});
 
 	it("refuses a missing harness declaration on 19", async () => {
@@ -311,48 +311,48 @@ describe("runRender across apps", () => {
 	const bothCaptured = {
 		files: {
 			[HARNESS]: twoApps,
-			[`${SET_DIR}/pano.png`]: PNG,
-			[`${SET_DIR}/tuval-chat.png`]: PNG,
+			[`${SET_DIR}/board.png`]: PNG,
+			[`${SET_DIR}/desk-chat.png`]: PNG,
 		},
 	};
 
 	it("sends each surface to its own app's origin, at that app's own path", async () => {
 		const seen: Array<string> = [];
 		const outcome = await run(LANE_OK, bothCaptured, {
-			surfaces: ["/pano", "/tuval/chat"],
+			surfaces: ["/board", "/desk/chat"],
 			browse: (request) => {
 				seen.push(request.url);
 				return Effect.succeed({_tag: "Captured"});
 			},
 		});
 		expect(outcome.code).toBe(0);
-		expect(seen).toEqual(["http://127.0.0.1:5173/pano", "http://127.0.0.1:5174/"]);
+		expect(seen).toEqual(["http://127.0.0.1:5173/board", "http://127.0.0.1:5174/"]);
 	});
 
 	it("starts only the apps some requested surface resolves to", async () => {
 		const started: Array<ReadonlyArray<string>> = [];
 		const outcome = await run(LANE_OK, bothCaptured, {
-			surfaces: ["/tuval/chat"],
+			surfaces: ["/desk/chat"],
 			startHarness: (apps, root) => {
 				started.push(apps.map((app) => app.name));
 				return ready(apps, root);
 			},
 		});
 		expect(outcome.code).toBe(0);
-		expect(started).toEqual([["tuval-chat"]]);
+		expect(started).toEqual([["desk-chat"]]);
 	});
 
 	it("refuses on 10 a surface no declared mount claims, naming the mounts", async () => {
 		const outcome = await run(
 			LANE_OK,
-			{files: {[HARNESS]: JSON.stringify({apps: [TUVAL]})}},
+			{files: {[HARNESS]: JSON.stringify({apps: [DESK]})}},
 			{
-				surfaces: ["/pano"],
+				surfaces: ["/board"],
 			},
 		);
 		expect(outcome.code).toBe(OFF_VOCABULARY);
 		expect(outcome.stderr.at(-1)).toContain(
-			'--surface "/pano" falls outside every mount design-harness.json declares (/tuval/chat)',
+			'--surface "/board" falls outside every mount design-harness.json declares (/desk/chat)',
 		);
 	});
 });

@@ -4,7 +4,7 @@
  * values `--register` admits.
  *
  * **Absent and unreadable are separated at every read**, because that split is what the whole group
- * rests on: an absent register is `bootstrap` — a fact about an adopting repo (#4776) — and a
+ * rests on: an absent register is `bootstrap` — a fact about an adopting repo — and a
  * register that exists and could not be read is `11`, UNKNOWN, with nothing answered.
  */
 

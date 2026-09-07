@@ -57,7 +57,7 @@ describe("every registered leaf verb declares the excess-operand catch-all", () 
 	const groups: ReadonlyArray<ConfiguredCommand> = registeredGroups;
 	const verbs = groups.flatMap((group) => leaves(group, ["fabrika"]));
 
-	it("finds leaf verbs at all — fail closed on zero scope (ADR 0092)", () => {
+	it("finds leaf verbs at all — fail closed on zero scope", () => {
 		expect(verbs.length).toBeGreaterThan(0);
 	});
 

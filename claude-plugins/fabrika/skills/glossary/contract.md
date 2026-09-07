@@ -339,7 +339,7 @@ The same sentence reaches stderr as `glossary drift: <reason>.`
 | Message (stderr) | Code | Kind |
 |---|---|---|
 | `glossary drift: cannot read <dir>: <reason> — the declared set is UNKNOWN, never "0 declared".` | 11 | refusal |
-| `glossary drift: --paths <value> matched 0 tracked files — refusing to report a clean sweep of nothing (ADR 0092).` | 7 | refusal |
+| `glossary drift: --paths <value> matched 0 tracked files — refusing to report a clean sweep of nothing.` | 7 | refusal |
 | `glossary drift: cannot resolve the commit that last changed <path>: <reason> — the range is UNKNOWN, never "never committed".` | 11 | refusal |
 | `glossary drift: <path> has no parseable term table — the declared set is UNKNOWN.` | 4 | refusal |
 | `glossary drift: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
@@ -370,7 +370,7 @@ removing it from the default:
 
 ```
 $ fabrika glossary drift --paths no/such/dir
-glossary drift: --paths no/such/dir matched 0 tracked files — refusing to report a clean sweep of nothing (ADR 0092).
+glossary drift: --paths no/such/dir matched 0 tracked files — refusing to report a clean sweep of nothing.
 $ echo $?
 7
 ```
@@ -564,7 +564,7 @@ fabrika glossary sections [--register <terms|language|both>] [--dir <path>] [--j
 `<section>`, `<rows>`. With `--json`, an array of `{register, section, rows}`.
 
 **A heading is a line matching `^##[ \t]+\S`** — the space after the hashes is required by the
-markdown spec and is load-bearing here. `TERMS.md` contains a line beginning `#3227).` inside a
+markdown spec and is load-bearing here. `TERMS.md` contains a line beginning `#7).` inside a
 prose paragraph; a scan for `^#` reports it as a phantom section. A section's rows are the table rows
 between its heading and the next heading of level 1 or 2, excluding the header row and the
 `---` separator row, and prose paragraphs between the heading and the table are skipped rather than
@@ -615,7 +615,7 @@ $ echo $?
 **Grounding**
 
 - The phantom-heading case is real in this repo's own register, not hypothetical: `.glossary/TERMS.md`
-  carries a paragraph line starting `#3227).` and a `^#` scan counts it as a section.
+  carries a paragraph line starting `#7).` and a `^#` scan counts it as a section.
 - A register's sections are data that grows with the repo, so the skill reads them rather than
   carrying a list that rots — the same reason the verb index is derived from the registry rather than
   hand-maintained (interface convention rule 1).
@@ -874,7 +874,7 @@ expectation that those gates hold; it does not recompute their verdicts.
 |---|---|---|
 | `glossary check: cannot read <path>: <reason> — the outcome is UNKNOWN, never "clean".` | 11 | refusal |
 | `glossary check: <path> has no parseable term table — the outcome is UNKNOWN.` | 4 | refusal |
-| `glossary check: <path> holds 0 rows — refusing to report a clean scan of an empty register (ADR 0092).` | 7 | refusal |
+| `glossary check: <path> holds 0 rows — refusing to report a clean scan of an empty register.` | 7 | refusal |
 | `glossary check: --register "<value>" is not one of terms, language, both.` | 10 | usage error |
 
 **Examples**

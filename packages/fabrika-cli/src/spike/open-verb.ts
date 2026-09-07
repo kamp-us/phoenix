@@ -88,7 +88,7 @@ export const runOpen = (options: OpenOptions): SpikeEffect<VerbOutcome> =>
 		if (!isKind(options.kind)) {
 			return refuse(
 				OFF_VOCABULARY,
-				`${VERB}: --kind "${options.kind}" is not ${KINDS.join(" or ")} — those are the two ruled artifact shapes (#5017).`,
+				`${VERB}: --kind "${options.kind}" is not ${KINDS.join(" or ")} — those are the two ruled artifact shapes.`,
 			);
 		}
 		const kind: Kind = options.kind;

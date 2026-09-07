@@ -1,5 +1,5 @@
 /**
- * The one read that turns `.decisions/` into a free id — shared by `adr next` and `adr mint`.
+ * The one read that turns the decision corpus into a free id — shared by `adr next` and `adr mint`.
  *
  * It lives apart from either verb because both must fail on exactly the same reads for exactly the
  * same reasons: a second copy of this ladder is a second place for one of the four UNKNOWN branches

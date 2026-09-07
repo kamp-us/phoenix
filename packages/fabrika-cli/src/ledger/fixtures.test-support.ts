@@ -42,7 +42,7 @@ export const epic = (overrides: Record<string, unknown> = {}): HttpReply =>
 		body: "An epic brief about the moderation queue.\n",
 		state: "open",
 		labels: [{name: "type:epic"}, {name: "status:triaged"}],
-		html_url: "https://github.com/o/r/issues/4300",
+		html_url: "https://forge.example/o/r/issues/4300",
 		milestone: null,
 		state_reason: null,
 		...overrides,
@@ -87,7 +87,7 @@ export const childIssue = (options: {
 		labels: (options.labels ?? []).map((name) => ({name})),
 		assignees: (options.assignees ?? []).map((login) => ({login})),
 		milestone: options.milestone == null ? null : {number: 44, title: options.milestone},
-		html_url: `https://github.com/o/r/issues/${options.number}`,
+		html_url: `https://forge.example/o/r/issues/${options.number}`,
 	});
 
 /** A plan block that clears the section set and the story grammar. */

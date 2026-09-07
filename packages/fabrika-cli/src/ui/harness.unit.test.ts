@@ -14,9 +14,9 @@ import {
 } from "./harness.ts";
 
 const WEB = {name: "web", mount: "/", command: "pnpm dev --port {{port}}"};
-const TUVAL = {
-	name: "tuval-chat",
-	mount: "/tuval/chat",
+const DESK = {
+	name: "desk-chat",
+	mount: "/desk/chat",
 	basePath: "/",
 	command: "pnpm proof:chat --port {{port}}",
 };
@@ -48,12 +48,12 @@ describe("parseHarness", () => {
 		const answer = parsed(
 			config({}, [
 				{...WEB, readyPath: "/api/health"},
-				{...TUVAL, readyPath: "/index.html"},
+				{...DESK, readyPath: "/index.html"},
 			]),
 		);
 		expect(answer.apps.map((app) => [app.name, app.mount, app.readyPath])).toEqual([
 			["web", "/", "/api/health"],
-			["tuval-chat", "/tuval/chat", "/index.html"],
+			["desk-chat", "/desk/chat", "/index.html"],
 		]);
 	});
 
@@ -165,12 +165,12 @@ describe("parseHarness", () => {
 		],
 		[
 			"two apps under one name",
-			config({}, [WEB, {...TUVAL, name: "web"}]),
+			config({}, [WEB, {...DESK, name: "web"}]),
 			LIST_VIOLATION.duplicateName("web"),
 		],
 		[
 			"two apps under one mount",
-			config({}, [WEB, {...TUVAL, mount: "/"}]),
+			config({}, [WEB, {...DESK, mount: "/"}]),
 			LIST_VIOLATION.duplicateMount("/"),
 		],
 	])("refuses %s — the whole-list rule no field check can state", (_label, text, violation) => {
@@ -218,26 +218,26 @@ describe("port tokens", () => {
 
 describe("appForSurface", () => {
 	const multi = parsed(
-		config({}, [WEB, TUVAL, {name: "web-lab", mount: "/lab", command: "vite --port {{port}}"}]),
+		config({}, [WEB, DESK, {name: "web-lab", mount: "/lab", command: "vite --port {{port}}"}]),
 	);
 	const named = (surface: string) => appForSurface(multi, surface)?.name ?? null;
 
 	it.each([
 		["/", "web"],
-		["/pano", "web"],
+		["/board", "web"],
 		["/labs/x", "web"],
 		["/lab", "web-lab"],
 		["/lab/atolye/agent-chat-input", "web-lab"],
-		["/tuval/chat", "tuval-chat"],
-		["/tuval/chat/deep", "tuval-chat"],
-		["/tuval", "web"],
+		["/desk/chat", "desk-chat"],
+		["/desk/chat/deep", "desk-chat"],
+		["/desk", "web"],
 	])("resolves %s to the app with the longest claiming mount (%s)", (surface, name) => {
 		expect(named(surface)).toBe(name);
 	});
 
 	it("answers null when no mount claims the surface", () => {
-		const mounted = parsed(config({}, [TUVAL]));
-		expect(appForSurface(mounted, "/pano")).toBeNull();
+		const mounted = parsed(config({}, [DESK]));
+		expect(appForSurface(mounted, "/board")).toBeNull();
 	});
 });
 
@@ -254,11 +254,11 @@ describe("surfacePath and surfaceUrl", () => {
 	it.each([
 		["a catch-all mount is the identity", {mount: "/"}, "/lab/atolye/x", "/lab/atolye/x"],
 		["a mount with no basePath is the identity", {mount: "/lab"}, "/lab/atolye/x", "/lab/atolye/x"],
-		["a basePath rewrites the mount", {mount: "/tuval/chat", basePath: "/"}, "/tuval/chat", "/"],
+		["a basePath rewrites the mount", {mount: "/desk/chat", basePath: "/"}, "/desk/chat", "/"],
 		[
 			"a basePath rewrites the mount and keeps the remainder",
-			{mount: "/tuval/chat", basePath: "/"},
-			"/tuval/chat/deep",
+			{mount: "/desk/chat", basePath: "/"},
+			"/desk/chat/deep",
 			"/deep",
 		],
 		[
@@ -272,8 +272,8 @@ describe("surfacePath and surfaceUrl", () => {
 	});
 
 	it("builds the URL on the origin its app actually bound, trailing slash trimmed", () => {
-		expect(surfaceUrl("http://127.0.0.1:51234/", app({mount: "/"}), "/pano")).toBe(
-			"http://127.0.0.1:51234/pano",
+		expect(surfaceUrl("http://127.0.0.1:51234/", app({mount: "/"}), "/board")).toBe(
+			"http://127.0.0.1:51234/board",
 		);
 	});
 });
@@ -281,9 +281,9 @@ describe("surfacePath and surfaceUrl", () => {
 describe("surfaceSlug", () => {
 	it.each([
 		["/", "root"],
-		["/pano", "pano"],
-		["/pano/yeni", "pano-yeni"],
-		["/tuval/chat", "tuval-chat"],
+		["/board", "board"],
+		["/board/new", "board-new"],
+		["/desk/chat", "desk-chat"],
 	])("slugs %s as %s", (route, slug) => {
 		expect(surfaceSlug(route)).toBe(slug);
 	});

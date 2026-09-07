@@ -65,7 +65,7 @@ const render = leafCommand(
 		surface: Flag.string("surface").pipe(
 			Flag.atLeast(1),
 			Flag.withDescription(
-				"a surface id: a bare route (/pano), repeatable; at least one is required — no tool guesses surfaces from a diff",
+				"a surface id: a bare route (/board), repeatable; at least one is required — no tool guesses surfaces from a diff",
 			),
 		),
 		firstRender: Flag.string("first-render").pipe(
@@ -93,7 +93,7 @@ const render = leafCommand(
 ).pipe(
 	Command.withShortDescription("Render the named surfaces here and capture one PNG each."),
 	Command.withDescription(
-		'Render the named surfaces in this tree and capture one VALIDATED PNG per surface, into <set>/ under the lane scratch dir, plus a <set>/manifest.json byte-identical to the stdout JSON. Prints {"set","captures":[{"surface","path","width","height","sha256","firstRender"}]} and exits 0 only when EVERY requested surface captured and validated. Emits no verdict, no score and no layout opinion. Each surface resolves to the harness app whose declared mount is its longest match, and only those apps are started, each on a port allocated at start. Exits 4 (design-harness.json violates its schema), 10 (--out is not kebab-case, a --surface carries the reserved :state suffix, or a --surface falls outside every declared mount), 11 (an app never became ready, or a capture\'s validity could not be determined — UNKNOWN), 14 (proven: a surface threw during render), 15 (proven: a surface is unreachable), 16 (proven: a capture is invalid), 18 (proven: the lane precondition failed), 19 (proven: no design-harness.json). Example: fabrika ui render --out after --surface /pano',
+		'Render the named surfaces in this tree and capture one VALIDATED PNG per surface, into <set>/ under the lane scratch dir, plus a <set>/manifest.json byte-identical to the stdout JSON. Prints {"set","captures":[{"surface","path","width","height","sha256","firstRender"}]} and exits 0 only when EVERY requested surface captured and validated. Emits no verdict, no score and no layout opinion. Each surface resolves to the harness app whose declared mount is its longest match, and only those apps are started, each on a port allocated at start. Exits 4 (design-harness.json violates its schema), 10 (--out is not kebab-case, a --surface carries the reserved :state suffix, or a --surface falls outside every declared mount), 11 (an app never became ready, or a capture\'s validity could not be determined — UNKNOWN), 14 (proven: a surface threw during render), 15 (proven: a surface is unreachable), 16 (proven: a capture is invalid), 18 (proven: the lane precondition failed), 19 (proven: no design-harness.json). Example: fabrika ui render --out after --surface /board',
 	),
 );
 
@@ -124,7 +124,7 @@ const golden = leafCommand(
 ).pipe(
 	Command.withShortDescription("Diff a candidate surface against its blessed golden."),
 	Command.withDescription(
-		'Resolve a surface\'s blessed golden and diff a candidate against it — signal, never verdict. Prints {"surface","blessed","golden","diff"}; an unblessed surface is a FACT on exit 0, but only after a pointer read that succeeded. The diff is the contract\'s number: a pixel differs above a per-channel delta of 10, magnitude is differing/total rounded to 3 decimals, regions are 8-connected boxes merged under 16px, largest first, capped at 20; a dimension mismatch is {"magnitude":1,"regions":[],"dimensionMismatch":true}. Exits 4 (the pointer exists but does not parse — never read as an empty blessed set), 11 (the pointer read, the bytes fetch or their hash check failed — blessing is UNKNOWN), 16 (proven: the candidate is invalid). Example: fabrika ui golden --surface /pano --candidate /…/after/pano.png',
+		'Resolve a surface\'s blessed golden and diff a candidate against it — signal, never verdict. Prints {"surface","blessed","golden","diff"}; an unblessed surface is a FACT on exit 0, but only after a pointer read that succeeded. The diff is the contract\'s number: a pixel differs above a per-channel delta of 10, magnitude is differing/total rounded to 3 decimals, regions are 8-connected boxes merged under 16px, largest first, capped at 20; a dimension mismatch is {"magnitude":1,"regions":[],"dimensionMismatch":true}. Exits 4 (the pointer exists but does not parse — never read as an empty blessed set), 11 (the pointer read, the bytes fetch or their hash check failed — blessing is UNKNOWN), 16 (proven: the candidate is invalid). Example: fabrika ui golden --surface /board --candidate /…/after/board.png',
 	),
 );
 

@@ -66,13 +66,13 @@ describe("parseBody", () => {
 		const body = parsed(
 			MAP_BODY.replace(
 				"- #9142 · research — which table carries the per-account weight column?",
-				"- #9144 · decision — does an invited çaylak start at 0 karma? — forked to #9301",
+				"- #9144 · decision — does an invited newcomer start at 0 karma? — forked to #9301",
 			),
 		);
 		expect(body.frontier[0]).toEqual({
 			ticket: 9144,
 			kind: "decision",
-			question: "does an invited çaylak start at 0 karma?",
+			question: "does an invited newcomer start at 0 karma?",
 			forkedTo: 9301,
 		});
 	});
