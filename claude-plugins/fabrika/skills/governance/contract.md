@@ -434,14 +434,14 @@ directory is always a subset of
 | `governance scope: <base>..<tip> changes no path — refusing to derive over an empty diff.` | 7 | refusal |
 | `governance scope: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `governance scope: --base and --tip come together — a range has two ends.` | 10 | refusal |
-| `governance scope: --sha does not combine with --base/--tip — a range verdict binds content, not a head (ADR 0276).` | 10 | refusal |
+| `governance scope: --sha does not combine with --base/--tip — a range verdict binds content, not a head.` | 10 | refusal |
 | `governance scope: --<base\|tip> "<v>" is not a revision — expected 7–40 lowercase hex characters.` | 10 | refusal |
 | `governance scope: a range is its own subject — drop the pull-request number, or drop --base/--tip.` | 10 | refusal |
 | `governance scope: name a pull request, or scope a range with --base and --tip — there is no subject here.` | 10 | refusal |
 | `governance scope: cannot read PR #<n> in <repo>: <reason> — whether the namespace is required is UNKNOWN, never "not-required".` | 11 | refusal |
 | `governance scope: <what> — the file list cannot be bound to a commit, so the derivation is UNKNOWN.` | 11 | refusal |
 | `governance scope: cannot resolve the merge base of <base>..<tip>: <reason> — the file list cannot be bound to a commit, so the derivation is UNKNOWN.` | 11 | refusal |
-| `governance scope: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `governance scope: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
 | `governance scope: <sha> carries <k> of the <m> files #<n> declares — refusing to derive from a short read.` | 13 | refusal |
 | `governance scope: <base>..<tip> carries <k> of the <m> files its ends change — refusing to derive from a short read.` | 13 | refusal |
 | `governance scope: root <name> is absent in this repository — the derivation covered <k> of 4 roots.` | 0 | notice |
@@ -560,7 +560,7 @@ implementer reproduces scores from the imported module, never from this document
 | `governance sweep: #<n> at <sha> carries no decision record <id> — nothing to sweep.` | 11 | refusal |
 | `governance sweep: cannot read <dir>/<file>: <reason> — an incomplete corpus is UNKNOWN, never "no-overlap".` | 11 | refusal |
 | `governance sweep: <what> — the subject cannot be bound to a commit, so what it says is UNKNOWN.` | 11 | refusal |
-| `governance sweep: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `governance sweep: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
 | `governance sweep: <sha> carries <k> of the <m> files #<n> declares — refusing to prove <id> is in this PR from a short read.` | 13 | refusal |
 | `governance sweep: ranked <k> uncited live-accepted records of <m> in scope.` | 0 | notice |
 | `governance sweep: only <k> live-accepted records in <dir> (rarity needs at least 10) — the run carries no information.` | 0 | notice |
@@ -719,7 +719,7 @@ anchors rather than invariants.
 | `governance guards: --sha "<v>" is not a head SHA — expected 7–40 hex characters.` | 10 | refusal |
 | `governance guards: <what> — the diff cannot be bound to a commit, so what it shows is UNKNOWN.` | 11 | refusal |
 | `governance guards: cannot read the diff for #<n> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
-| `governance guards: PR #<n>'s head is <live>, not <asked> — re-scope at <live> (ADR 0058).` | 12 | refusal |
+| `governance guards: PR #<n>'s head is <live>, not <asked> — the tree you scoped is not the one under review; re-scope at <live>.` | 12 | refusal |
 | `governance guards: the diff at <sha> carries <k> of #<n>'s <m> declared files — refusing a partial anchor scan.` | 13 | refusal |
 | `governance guards: cannot read <path> at <sha>: <reason> — UNKNOWN, never "nothing moved".` | 11 | refusal |
 | `governance guards: scanned <k> files, <m> anchored invariants in reach, <j> compared block-by-block against <base>.` | 0 | notice |
