@@ -21,7 +21,7 @@ import {contentOf, gate} from "../build/content-gate.ts";
 import {publishTarget} from "../build/git.ts";
 import {laneScratchDir} from "../build/scratch-verb.ts";
 import {resolveTargetRepo} from "../build/target.ts";
-import {designHarnessOr} from "../config/paths.ts";
+import {noUiSurfaces, uiCaptureOr, uiSurfacesOr} from "../config/paths.ts";
 import {createComment, getComment} from "../io/issues.ts";
 import {getPullRequest} from "../io/pulls.ts";
 import {normalizeForReadback} from "../report/compose.ts";
@@ -34,16 +34,14 @@ import {
 	CAPTURE_INVALID,
 	LANE_NOT_MINE,
 	LEAKED_PATH,
+	NO_UI_SURFACE,
 	PRECONDITION_UNKNOWN,
 	READBACK_MISMATCH,
 	UPLOAD_FAILED,
 	WRITE_UNKNOWN,
 	ZERO_SCOPE,
 } from "./codes.ts";
-import {atRoot} from "./conventions.ts";
-import {parseHarness} from "./harness.ts";
 import {requireUiLane} from "./lane.ts";
-import {probe} from "./manifest-verb.ts";
 import {decodePng, sha256Of} from "./png.ts";
 import {pullHeadRef} from "./pull-head.ts";
 import {pairSets, parseSetManifest, type SetCapture} from "./set-manifest.ts";
@@ -256,7 +254,7 @@ export const runEvidence = (
 			);
 		}
 
-		const declared = yield* designHarnessOr(
+		const declared = yield* uiSurfacesOr(
 			VERB,
 			lane.root,
 			"where this repo declares its render path is unread — nothing was uploaded or posted.",
@@ -264,36 +262,18 @@ export const runEvidence = (
 		if (declared._tag === "Refused") {
 			return refuse(PRECONDITION_UNKNOWN, declared.message, lane.notes);
 		}
-		const harnessPath = declared.path;
-
-		const harnessProbe = yield* probe(lane.root, harnessPath);
-		if (harnessProbe._tag === "Unknown") {
-			return refuse(
-				PRECONDITION_UNKNOWN,
-				`${VERB}: cannot probe ${harnessPath}: ${harnessProbe.reason} — nothing was uploaded or posted.`,
-				lane.notes,
-			);
+		if (declared.surfaces.length === 0) {
+			return refuse(NO_UI_SURFACE, noUiSurfaces(VERB), lane.notes);
 		}
-		let store: string | null = null;
-		if (harnessProbe._tag === "Present") {
-			const raw = yield* readBytes(atRoot(lane.root, harnessPath));
-			if (raw._tag === "Failed") {
-				return refuse(
-					PRECONDITION_UNKNOWN,
-					`${VERB}: cannot read ${harnessPath}: ${raw.reason} — nothing was uploaded or posted.`,
-					lane.notes,
-				);
-			}
-			const harness = parseHarness(new TextDecoder().decode(raw.bytes));
-			if (harness._tag === "Violation") {
-				return refuse(
-					BAD_SECTIONS,
-					`${VERB}: ${harnessPath} exists but does not satisfy its schema: ${harness.violation}.`,
-					lane.notes,
-				);
-			}
-			store = harness.config.evidenceStore;
+		const capture = yield* uiCaptureOr(
+			VERB,
+			lane.root,
+			"which evidence tier this repo declares is unread — nothing was uploaded or posted.",
+		);
+		if (capture._tag === "Refused") {
+			return refuse(PRECONDITION_UNKNOWN, capture.message, lane.notes);
 		}
+		const store = capture.capture.evidenceStore;
 
 		const targets: UploadTarget[] = [];
 		for (const pair of pairing.pairs) {

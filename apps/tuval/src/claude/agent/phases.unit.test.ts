@@ -42,11 +42,23 @@ const promptedTurn = (opening: ReadonlyArray<SDKMessage>, count: number) =>
 		}),
 	);
 
+/** What the open alone puts on the queue, before any prompt — the `ready` #8107 is about. */
+const openingOf = (opening: ReadonlyArray<SDKMessage>) =>
+	on({opening, deferOpening: true}, (agent) =>
+		Effect.gen(function* () {
+			yield* agent.start({cwd: CWD});
+			return [...(yield* Stream.runCollect(Stream.take(agent.events, START_EVENTS)))].filter(
+				(event) => event.kind === "phase" && event.phase === "ready",
+			);
+		}),
+	);
+
 /**
- * `assistant-turn.json` is init, one assistant frame and one `success` result — four events out:
- * the model init names, the reply, the turn's spend, and the `ready` that ends it.
+ * `assistant-turn.json` is init, one assistant frame and one `success` result — five events out:
+ * the `prompting` the send itself narrates, the model init names, the reply, the turn's spend, and
+ * the `ready` that ends it.
  */
-const ASSISTANT_TURN_EVENTS = 4;
+const ASSISTANT_TURN_EVENTS = 5;
 
 const machine = aiAgentSessionMachine({cwd: CWD});
 
@@ -67,30 +79,39 @@ const fold = (state: AiAgentSessionState, events: ReadonlyArray<AgentEvent>): Ai
 	);
 
 describe("a turn ends on its result", () => {
-	it.effect("emits exactly one ready, after the result and nowhere before it", () =>
+	/**
+	 * The pair is what the core reads, not either half (#8107): a send is accepted on the end of a
+	 * turn the layer said had begun, so `prompting` leads the turn and exactly one `ready` closes
+	 * it. `prompting` is published before the write, so nothing the pump pushes can precede it.
+	 */
+	it.effect("brackets the turn: prompting at the send, one ready at the result", () =>
 		Effect.gen(function* () {
 			const events = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
 			assert.deepStrictEqual(
 				events.map((event) => event.kind),
-				["usage", "item", "usage", "phase"],
+				["phase", "usage", "item", "usage", "phase"],
 			);
 			assert.deepStrictEqual(
 				events.filter((event) => event.kind === "phase"),
-				[{kind: "phase", phase: "ready"}],
+				[
+					{kind: "phase", phase: "prompting"},
+					{kind: "phase", phase: "ready"},
+				],
 			);
 		}),
 	);
 
 	it.effect("ends a failing turn the same way, so no error subtype wedges the session", () =>
 		Effect.gen(function* () {
-			// `error_max_turns`, one of `SDKResultError`'s four subtypes: a system line for the
-			// failure, then the same `ready` a success carries.
-			const events = yield* promptedTurn([message("error-result")], 2);
+			// `error_max_turns`, one of `SDKResultError`'s four subtypes: the send's own
+			// `prompting`, a system line for the failure, then the same `ready` a success carries.
+			const events = yield* promptedTurn([message("error-result")], 3);
 			assert.deepStrictEqual(
 				events.map((event) => event.kind),
-				["item", "phase"],
+				["phase", "item", "phase"],
 			);
-			assert.deepStrictEqual(events[1], {kind: "phase", phase: "ready"});
+			assert.deepStrictEqual(events[0], {kind: "phase", phase: "prompting"});
+			assert.deepStrictEqual(events[2], {kind: "phase", phase: "ready"});
 		}),
 	);
 });
@@ -139,7 +160,7 @@ describe("an interruption over the Claude event path", () => {
 	// The shape an aborted turn actually ends on: an error subtype rather than a success.
 	it.effect("settles on an error-subtype result exactly as it settles on a success", () =>
 		Effect.gen(function* () {
-			const events = yield* promptedTurn([message("error-result")], 2);
+			const events = yield* promptedTurn([message("error-result")], 3);
 			const {state, turn} = asked(events);
 			assert.strictEqual(state.phase, "prompting");
 			const settled = fold(state, turn.slice(-1));
@@ -166,6 +187,28 @@ describe("the core over what the layer emitted", () => {
 			// Every event but the last, which is the turn's own end.
 			const running = fold(prompting, events.slice(0, -1));
 			assert.strictEqual(running.phase, "prompting");
+		}),
+	);
+
+	/**
+	 * #8107 from the layer's side. A turn this layer really ran accepts its send, and the `ready`
+	 * this session emitted at its own open — replayed out of the queue under a live send — does
+	 * not, so the window keeps the copy it is holding.
+	 */
+	it.effect("accepts the send on a turn it ran, and not on the open's own ready", () =>
+		Effect.gen(function* () {
+			const turn = yield* promptedTurn(messages("assistant-turn"), ASSISTANT_TURN_EVENTS);
+			const opening = yield* openingOf(messages("assistant-turn"));
+			const [sent] = apply(opened, {
+				type: "prompt",
+				text: "hello",
+				key: "k1",
+				timestamp: SENT_AT,
+			});
+			assert.deepStrictEqual(fold(sent, turn).sends, [{key: "k1", state: "accepted"}]);
+			assert.deepStrictEqual(fold(sent, opening).sends, [
+				{key: "k1", state: "pending", turn: "unstarted"},
+			]);
 		}),
 	);
 

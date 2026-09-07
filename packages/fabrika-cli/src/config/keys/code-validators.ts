@@ -1,10 +1,11 @@
 /**
  * `codeValidators` — the repo's own commands that compile and lint its code.
  *
- * Declared rather than compiled in, because the script names and their cache-bypass flags are the
- * repo's own: `lint:worktree` is one repo's script name, and `--force` is turbo's flag, which a bare
- * `tsc` rejects outright. An argv array rather than a command line, and the `command` key
- * `workflowValidators` already uses, so the file has one grammar for "a command fabrika spawns".
+ * Declared rather than compiled in, because the script names and the flags they take are the repo's
+ * own: `typecheck:affected` and `lint:worktree` are one repo's script names, and the turbo flags
+ * they wrap — a cache-bypass, a changed-package selection — are ones a bare `tsc` rejects outright.
+ * An argv array rather than a command line, and the `command` key `workflowValidators` already
+ * uses, so the file has one grammar for "a command fabrika spawns".
  *
  * No `reads`. On the workflow surface that field is what makes a green checkable per file, because
  * a declared guard opens a fixed set it names; a code validator is handed no paths and compiles the
@@ -16,7 +17,9 @@
  * which stays reserved for a validator that ran and failed. Defaulting to any repo's pair instead
  * leaves an adopting repo running script names it never defined: a repo that declared nothing got
  * `pnpm typecheck --force`, and `tsc` rejected the turbo flag outright — a red saying its code was
- * broken when the truth was that no validator was present.
+ * broken when the truth was that no validator was present. The repo that shipped that pair has
+ * since dropped the flag and scoped its typecheck to the changed packages; the incident stands as
+ * why the shipped default is empty, not as what any one repo runs.
  */
 
 import {isRecord} from "../../io/json.ts";

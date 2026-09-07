@@ -9,7 +9,7 @@
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
-import {fakeSeams, type HttpReply, type Scripted, unconfigured} from "../fakes.test-support.ts";
+import {fakeSeams, type HttpReply, type Scripted, uiConfigured} from "../fakes.test-support.ts";
 import type {ExecResult} from "../io/exec.ts";
 import {
 	branchRules,
@@ -25,10 +25,10 @@ import {runScope as runReviewScope} from "./scope-verb.ts";
 
 /** One mixed diff: a worker source file, a doc, and a rendered surface beside its own test. */
 const CHANGED = [
-	"apps/web/worker/cart.ts",
+	"apps/site/worker/cart.ts",
 	"README.md",
-	"apps/web/src/components/layout/Topbar.tsx",
-	"apps/web/src/components/layout/Topbar.test.tsx",
+	"apps/site/src/components/layout/Topbar.tsx",
+	"apps/site/src/components/layout/Topbar.test.tsx",
 ] as const;
 
 const served = (result: ExecResult): HttpReply => ({status: 200, body: result.stdout});
@@ -62,7 +62,7 @@ const reviewScope = (...changed: ReadonlyArray<string>) =>
 					...binding(),
 					[PATHS_AT(), paths(...changed)],
 				]).layer,
-				unconfigured,
+				uiConfigured,
 			),
 		),
 	);
@@ -79,7 +79,7 @@ const shipScope = (...changed: ReadonlyArray<string>) =>
 					[RULES, served(branchRules("pull_request"))],
 					[REPO, repositoryServed()],
 				] as ReadonlyArray<Scripted>).layer,
-				unconfigured,
+				uiConfigured,
 			),
 		),
 	);
@@ -103,7 +103,7 @@ describe("review scope and ship scope over one file list", () => {
 	});
 
 	it("routes nothing when the diff raises no ui class", async () => {
-		const review = await reviewScope("apps/web/worker/cart.ts");
+		const review = await reviewScope("apps/site/worker/cart.ts");
 
 		expect(review.stdout).not.toContain("routed\t");
 		expect(namespaceRows(review.stdout)).toEqual(["review-code"]);

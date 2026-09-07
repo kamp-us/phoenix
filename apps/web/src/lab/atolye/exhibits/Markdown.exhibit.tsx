@@ -6,6 +6,11 @@ import {defineExhibit} from "../exhibit";
  * The source covers every block the renderer emits that a reviewer has to be able to see at a
  * glance — bold, a link, inline code, a table, a list, a fenced block — because the stage is the
  * only place this component is judged rendered rather than through jsdom.
+ *
+ * The two mermaid fences are both of that block's outcomes (#8128): the first draws, so the stage
+ * shows the diagram, its token-themed palette and the `<details>` source disclosure; the second is
+ * an author's typo, so it shows the fence still readable under mermaid's own parse reason. jsdom
+ * lays out no text and has no 2D canvas, so neither outcome exists anywhere but here.
  */
 const SAMPLE = `# Ajanın yanıtı
 
@@ -26,6 +31,18 @@ paragrafta.
 export const greet = (name: string): string => {
 	return \`merhaba, \${name}\`;
 };
+\`\`\`
+
+\`\`\`mermaid
+graph TD
+	A[İstek] --> B{Oturum var mı?}
+	B -->|evet| C[Yanıt]
+	B -->|hayır| D[Giriş]
+\`\`\`
+
+\`\`\`mermaid
+graph TD
+	A[Kapı] --< B[Kuyruk]
 \`\`\`
 `;
 

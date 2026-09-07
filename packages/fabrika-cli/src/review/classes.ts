@@ -107,9 +107,17 @@ export const namespacesOf = (result: Partition): ReadonlyArray<string> =>
 export const SHIP_CLASS_NAMES = [...CLASS_NAMES, "ui"] as const;
 export type ShipClassName = (typeof SHIP_CLASS_NAMES)[number];
 
-/** A rendered frontend surface. Its own tests are code, not UI — they render nothing. */
-export const isUiSurface = (path: string): boolean =>
-	path.startsWith("apps/web/src/") && !/\.(?:test|spec)\.tsx?$/.test(path);
+/**
+ * A rendered frontend surface. Its own tests are code, not UI — they render nothing.
+ *
+ * `prefixes` is a parameter with no default, exactly as {@link touchesGovernanceRoot}'s `roots` is:
+ * the set is `uiSurfaces` in `.fabrika.jsonc` (`../config/keys/ui-surfaces.ts`), and a compiled-in
+ * source root was one consumer's layout standing in for every repo's — so a second
+ * runnable app raised no `ui` class and its pixels passed every gate unrendered. An empty
+ * list is a repo declaring no rendered surface, and its readers say so out loud.
+ */
+export const isUiSurface = (path: string, prefixes: ReadonlyArray<string>): boolean =>
+	prefixes.some((prefix) => path.startsWith(prefix)) && !/\.(?:test|spec)\.tsx?$/.test(path);
 
 /**
  * The decision corpus's root as this package ships it, trailing slash included so it matches as a
@@ -146,9 +154,10 @@ export interface ShipPartition {
 export const partitionWithUi = (
 	files: ReadonlyArray<string>,
 	roots: ReadonlyArray<string>,
+	uiPrefixes: ReadonlyArray<string>,
 ): ShipPartition => {
 	const base = partition(files);
-	const ui = files.filter(isUiSurface).length;
+	const ui = files.filter((file) => isUiSurface(file, uiPrefixes)).length;
 	return {
 		classes: ui === 0 ? base.classes : [...base.classes, {name: "ui" as const, files: ui}],
 		governance: touchesGovernanceRoot(files, roots),

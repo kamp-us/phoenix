@@ -688,6 +688,9 @@ mint. An `ok: false` keeps the palette open with the kernel's own words under th
 
 **Who supplies the registry and runs the call** is
 [`shell/ui/PaletteHost.tsx`](../apps/tuval/src/shell/ui/PaletteHost.tsx): it describes the shell's
-own rows as `SpellDescription`s, builds the `Snapshot` the completion engine reads, and — until the
-page-to-kernel spell transport lands — decodes a call against the row's real `params` and dispatches
-its Msg, exactly as `readCommandLine` does with a typed line.
+own rows as `SpellDescription`s, builds the `Snapshot` the completion engine reads, and sends the
+call down the page's socket. The reply is the kernel executor's, so the refusal a founder reads is
+the row's own schema refusing the argument and a run is the kernel's dispatch. The one translation
+the host makes is the address: a shell row's spells are registered under `[shell, ...path]`, and a
+path the shell table does not hold is refused on the page because the kernel does not hold it
+either.

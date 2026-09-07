@@ -11,6 +11,7 @@
 		"build": "turbo run build",
 		"deploy": "turbo run deploy",
 		"typecheck": "turbo run typecheck",
+		"typecheck:affected": "TURBO_SCM_BASE=origin/main turbo run typecheck --affected",
 		"test": "turbo run test",
 		"lint": "case \"$PWD\" in */.claude/worktrees/*) pnpm run lint:worktree ;; *) biome check . ;; esac",
 		"lint:worktree": "node scripts/biome-worktree.mjs check",
@@ -20,7 +21,6 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",
-		"@kampus/fabrika-cli": "workspace:*",
 		"@effect/language-service": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"lefthook": "catalog:",

@@ -245,8 +245,8 @@ Scratch files go only where this prints:
 fabrika build scratch $issue_or_pr_number --slug notes --token <claim-token>
 ```
 
-Then validate **in this tree, cache bypassed** — a green borrowed from another checkout's cache is
-the false green this verb exists to refuse. Hand it the surface you named in step 3; it
+Then validate **in this tree** — a green borrowed from another checkout is the false green this verb
+exists to refuse. Hand it the surface you named in step 3; it
 refuses a surface the diff contradicts.
 
 ```bash

@@ -1,6 +1,24 @@
-import {render, screen, within} from "@testing-library/react";
-import {describe, expect, it} from "vitest";
+import {render, screen, waitFor, within} from "@testing-library/react";
+import {beforeEach, describe, expect, it, vi} from "vitest";
 import {Markdown} from "./Markdown";
+
+/**
+ * Mermaid lays out by measuring real text, and jsdom implements neither `getBBox` nor a 2D canvas
+ * context — so no diagram can be drawn here and no palette can be resolved. What these tests hold
+ * is therefore the wiring and both fallbacks: that a `mermaid` fence reaches mermaid at all, that
+ * what it hands back lands in the block with the source still reachable, and that a fence it
+ * refuses stays the code block it was with the reason on screen. The drawing itself is the
+ * library's, and the rendered result is `review-ui`'s to judge.
+ */
+const mermaid = vi.hoisted(() => ({
+	initialize: vi.fn(),
+	parse: vi.fn(),
+	render: vi.fn(),
+}));
+
+vi.mock("mermaid", () => ({default: mermaid}));
+
+const MERMAID_FENCE = "```mermaid\ngraph TD;\n  a-->b;\n```";
 
 describe("Markdown", () => {
 	it("renders blocks as elements, not as source", () => {
@@ -143,14 +161,6 @@ describe("Markdown", () => {
 		expect(pre?.getAttribute("aria-label")).toBeTruthy();
 	});
 
-	// The fence's language reaches the renderer intact, which is the whole seam a diagram fence
-	// needs: #8128 branches on it and leaves every other fence on this path.
-	it("keeps a fence's language on the rendered block, mermaid included", () => {
-		render(<Markdown>{"```mermaid\ngraph TD;\n```"}</Markdown>);
-
-		expect(screen.getByText("graph TD;").className).toBe("language-mermaid");
-	});
-
 	it("steps headings down from headingBase and clamps them at h6", () => {
 		render(<Markdown headingBase={3}>{"# one\n\n## two\n\n##### five"}</Markdown>);
 
@@ -187,5 +197,75 @@ describe("Markdown", () => {
 		const {container} = render(<Markdown>{""}</Markdown>);
 
 		expect(container.querySelector(".kp-markdown")?.textContent).toBe("");
+	});
+});
+
+describe("Markdown, a mermaid fence", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mermaid.parse.mockResolvedValue({diagramType: "flowchart-v2"});
+		mermaid.render.mockResolvedValue({
+			diagramType: "flowchart-v2",
+			svg: '<svg><g id="drawn" /></svg>',
+		});
+	});
+
+	// The first paint is the fence, not an empty box: a transcript row is measured after it paints,
+	// so the height the virtualizer records has to be a real one (#8128, ChatWindow's row contract).
+	it("paints the fence source before the diagram is drawn", () => {
+		const {container} = render(<Markdown>{MERMAID_FENCE}</Markdown>);
+
+		expect(container.querySelector("svg")).toBeNull();
+		expect(screen.getByText(/graph TD;/).className).toBe("language-mermaid");
+	});
+
+	it("hands the fence's source to mermaid and shows what it draws", async () => {
+		const {container} = render(<Markdown>{MERMAID_FENCE}</Markdown>);
+
+		await waitFor(() => expect(container.querySelector("svg")).not.toBeNull());
+		expect(mermaid.render).toHaveBeenCalledWith(expect.any(String), "graph TD;\n  a-->b;");
+		expect(container.querySelector("#drawn")).not.toBeNull();
+	});
+
+	// `role="img"` makes the SVG's own text presentational, so a named graphic plus a disclosure
+	// holding the source is the whole assistive-tech reading of the diagram.
+	it("names the diagram and keeps its source reachable in a disclosure", async () => {
+		render(<Markdown>{MERMAID_FENCE}</Markdown>);
+
+		const diagram = await screen.findByRole("img");
+		expect(diagram.getAttribute("aria-label")).toBeTruthy();
+		const disclosure = diagram.parentElement?.querySelector("details");
+		expect(disclosure?.querySelector("summary")?.textContent).toBeTruthy();
+		expect(within(disclosure as HTMLElement).getByText(/graph TD;/).tagName).toBe("CODE");
+	});
+
+	it("initializes mermaid at a security level that sanitizes what it returns", async () => {
+		render(<Markdown>{MERMAID_FENCE}</Markdown>);
+
+		await waitFor(() => expect(mermaid.initialize).toHaveBeenCalled());
+		expect(mermaid.initialize.mock.calls[0]?.[0]).toMatchObject({
+			securityLevel: "strict",
+			startOnLoad: false,
+		});
+	});
+
+	// A bad fence never renders an empty box and never throws out of the row it sits in.
+	it("falls back to the code block with the reason visible when mermaid refuses the source", async () => {
+		mermaid.parse.mockRejectedValue(new Error("Parse error on line 2"));
+
+		const {container} = render(<Markdown>{"```mermaid\nnot a diagram\n```"}</Markdown>);
+
+		expect(await screen.findByText(/Parse error on line 2/)).toBeDefined();
+		expect(container.querySelector("svg")).toBeNull();
+		expect(screen.getByText("not a diagram").className).toBe("language-mermaid");
+		expect(mermaid.render).not.toHaveBeenCalled();
+	});
+
+	it("leaves a fence in any other language on the code path, untouched", () => {
+		render(<Markdown>{"```ts\nconst x = 1;\n```"}</Markdown>);
+
+		expect(mermaid.initialize).not.toHaveBeenCalled();
+		expect(screen.getByText("const x = 1;").className).toBe("language-ts");
+		expect(screen.queryByRole("img")).toBeNull();
 	});
 });

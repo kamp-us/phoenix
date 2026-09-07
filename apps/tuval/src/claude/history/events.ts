@@ -9,9 +9,6 @@
  * frames this transcript has a row of its own for, sends every other `system` subtype to the
  * collapsed notice, and counts the rest rather than refusing it. A new message kind must never take
  * a session down.
- *
- * Partial assistant frames are among the counted: streaming granularity here is one whole
- * assistant message, so a run with `includePartialMessages` costs nothing and shows nothing extra.
  */
 
 import type {SDKMessage} from "@anthropic-ai/claude-agent-sdk";
@@ -23,6 +20,7 @@ import {
 	type Mapping,
 	type MappingOptions,
 	type MappingStep,
+	partialReplyEvents,
 	permissionDeniedEvents,
 	resultEvents,
 	skipMessage,
@@ -42,6 +40,8 @@ export const toAgentEvents = (
 			return userEvents(message, mapping, options);
 		case "result":
 			return resultEvents(message, mapping, options);
+		case "stream_event":
+			return partialReplyEvents(message, mapping, options);
 		case "rate_limit_event":
 			return systemNoticeEvents(message, mapping, options);
 		case "system":

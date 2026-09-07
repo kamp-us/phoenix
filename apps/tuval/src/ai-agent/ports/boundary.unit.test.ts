@@ -22,6 +22,7 @@ import type {
 	WindowOmission,
 } from "./payloads.ts";
 import type {AgentPortPayload} from "./ports.ts";
+import type {SubagentSlot} from "./subagent.ts";
 import type {ResultOmission, ToolResult, TranscriptItem} from "./transcript-item.ts";
 
 /** Everything a backend knows about a turn that the interface deliberately refuses to carry. */
@@ -57,6 +58,13 @@ describe("the AI agent interface is model-blind", () => {
 		expectTypeOf<ModelSpecificKeysOf<AgentPortPayload>>().toEqualTypeOf<never>();
 	});
 
+	// The subagent slot's one exemption, spelled out rather than left off the list above: a token
+	// count is a plain number every backend that spawns workers reports, and the running row Q1
+	// rules shows it (#8384). Everything else model-specific is still refused on this type.
+	it("names nothing model-specific on the subagent slot but its token count", () => {
+		expectTypeOf<Exclude<ModelSpecificKeysOf<SubagentSlot>, "tokens">>().toEqualTypeOf<never>();
+	});
+
 	it("names no model-specific field in the sources either, comments aside", () => {
 		const offenders = sources().flatMap(({name, text}) => {
 			const banned = banFor(name);
@@ -74,6 +82,15 @@ describe("the AI agent interface is model-blind", () => {
 		for (const word of ["cost", "usage", "tokens", "session", "sessionId", "sdk", "modelName"]) {
 			expect(banned.test(`readonly ${word}: string;`), word).toBe(true);
 		}
+	});
+
+	it("still guards the eight other words in the file the token exemption covers", () => {
+		const banned = banFor("subagent.ts");
+		expect(banned.test("readonly tokens: number;")).toBe(false);
+		for (const word of ["model", "modelName", "provider", "cost", "usage", "session", "sdk"]) {
+			expect(banned.test(`readonly ${word}: string;`), word).toBe(true);
+		}
+		expect(banned.test("readonly sessionId: string;")).toBe(true);
 	});
 });
 
@@ -155,7 +172,13 @@ const BANNED = [
  * `usage`, `tokens`, `session`, `sessionId` and `sdk` in the one source most likely to reach for
  * them.
  */
-const EXEMPT: Readonly<Record<string, ReadonlyArray<string>>> = {"model.ts": ["model", "provider"]};
+const EXEMPT: Readonly<Record<string, ReadonlyArray<string>>> = {
+	"model.ts": ["model", "provider"],
+	// `subagent.ts` carries the running worker's token count, which Q11 puts on the port (#8384).
+	// Narrowed the same way `model.ts` is: the other eight words stay banned in the one source most
+	// likely to reach for them, because a count is model-blind and a model name is not.
+	"subagent.ts": ["tokens"],
+};
 
 const banFor = (name: string) => {
 	const exempt = new Set(EXEMPT[name] ?? []);

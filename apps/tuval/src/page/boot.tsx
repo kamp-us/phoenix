@@ -18,13 +18,13 @@
 
 import moduleLoaders from "virtual:tuval/module-renderers";
 import {Effect} from "effect";
-import {StrictMode, useEffect, useState} from "react";
+import {StrictMode, useEffect, useMemo, useState} from "react";
 import {createRoot} from "react-dom/client";
 import {ErrorBoundary} from "../shell/ui/index.ts";
 import type {RendererTable} from "../shell/window/index.ts";
 import {AttachedDesk} from "./AttachedDesk.tsx";
 import {defaultRecovery, type Recovery, usePageConnection} from "./connection.ts";
-import {loadModuleRenderers} from "./module-renderers.ts";
+import {type LoadedModuleRenderers, loadModuleRenderers} from "./module-renderers.ts";
 import {pageInspectors, pageRenderers} from "./renderers.tsx";
 
 /** Shown while the first socket is opening, and replaced by the desk or by the reason it never opened. */
@@ -47,32 +47,41 @@ const AttachFailed = ({reason}: {readonly reason: string}) => (
 );
 
 /**
- * The compiled table plus every module the rows asked the page to load, once loaded; `null` until
- * then. The desk waits for it exactly as it waits for the socket, so a module-referenced window is
- * never resolved against a table its entry has not reached yet — that would render the placeholder
- * for one frame and the window the next, which reads as a flicker and lies about the row.
- * A module that did not load is in the table too, as the failure the resolver reports (ADR 0359).
+ * Every module the rows asked the page to load, once loaded; `null` until then. The desk waits for
+ * it exactly as it waits for the socket, so a module-referenced window is never resolved against a
+ * table its entry has not reached yet — that would render the placeholder for one frame and the
+ * window the next, which reads as a flicker and lies about the row. A module that did not load is
+ * in the table too, as the failure the resolver reports (ADR 0359).
  */
-const useRendererTable = (): RendererTable | null => {
-	const [table, setTable] = useState<RendererTable | null>(null);
+const useLoadedModules = (): LoadedModuleRenderers | null => {
+	const [loaded, setLoaded] = useState<LoadedModuleRenderers | null>(null);
 	useEffect(() => {
 		let current = true;
-		Effect.runPromise(loadModuleRenderers(moduleLoaders)).then((loaded) => {
-			if (current) setTable({...pageRenderers, ...loaded});
+		Effect.runPromise(loadModuleRenderers(moduleLoaders)).then((table) => {
+			if (current) setLoaded(table);
 		});
 		return () => {
 			current = false;
 		};
 	}, []);
-	return table;
+	return loaded;
 };
 
 const PageDesk = ({recovery}: {readonly recovery: Recovery}) => {
 	const connection = usePageConnection(recovery);
-	const renderers = useRendererTable();
+	const loaded = useLoadedModules();
+	const link = connection.link;
 	const reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? true;
 
-	if (connection.link === null || renderers === null) {
+	// Rebuilt when the link is replaced, because the compiled half is bound to that socket's `call`
+	// (`./renderers.tsx`): a table held across a re-attach would send this desk's next read down a
+	// socket the page has already thrown away.
+	const renderers = useMemo<RendererTable | null>(
+		() => (link === null || loaded === null ? null : {...pageRenderers(link.page.call), ...loaded}),
+		[link, loaded],
+	);
+
+	if (link === null || renderers === null) {
 		return connection.refusal === null ? (
 			<Attaching />
 		) : (
@@ -81,8 +90,8 @@ const PageDesk = ({recovery}: {readonly recovery: Recovery}) => {
 	}
 	return (
 		<AttachedDesk
-			page={connection.link.page}
-			shell={connection.link.shell}
+			page={link.page}
+			shell={link.shell}
 			refusal={connection.refusal}
 			renderers={renderers}
 			inspectors={pageInspectors}

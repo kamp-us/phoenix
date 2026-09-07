@@ -7,6 +7,13 @@
 import {Duration, Option} from "effect";
 import {describe, expect, it} from "vitest";
 import type {ProcessId} from "../../process/process.ts";
+import {CallId} from "../../protocol/ids.ts";
+import {
+	PROTOCOL_VERSION,
+	SpellCall,
+	SpellReplyError,
+	SpellReplyOk,
+} from "../../protocol/messages.ts";
 import type {ProgramId} from "../../registry/program.ts";
 import type {TableRow} from "../../table/row.ts";
 import {defaultPrefixTable} from "../keys/table.ts";
@@ -26,6 +33,8 @@ import {
 	PROCESS_STATE_KIND,
 	REGISTRY_KIND,
 	type ServerFrame,
+	SPELL_CALL_KIND,
+	SPELL_REPLY_KIND,
 	TABLE_KIND,
 	tableFrame,
 	toWirePrefixTable,
@@ -42,10 +51,21 @@ const row: TableRow = {
 	stateSummary: {lifecycle: "running", revision: 3},
 };
 
+const callId = CallId.make("call-1");
+
+const call = new SpellCall({
+	type: "spell.call",
+	version: PROTOCOL_VERSION,
+	id: callId,
+	path: ["session", "list"],
+	args: {},
+});
+
 const clientFrames: ReadonlyArray<ClientFrame> = [
 	{kind: ATTACH_KIND, processId: processId("counter")},
 	{kind: DETACH_KIND, processId: processId("counter")},
 	{kind: DISPATCH_KIND, seq: 0, processId: processId("counter"), msg: {type: "tick"}},
+	{kind: SPELL_CALL_KIND, call},
 ];
 
 const serverFrames: ReadonlyArray<ServerFrame> = [
@@ -80,6 +100,26 @@ const serverFrames: ReadonlyArray<ServerFrame> = [
 	},
 	{kind: REGISTRY_KIND, programs: []},
 	{kind: KEYS_KIND, table: toWirePrefixTable(defaultPrefixTable)},
+	{
+		kind: SPELL_REPLY_KIND,
+		reply: new SpellReplyOk({
+			type: "spell.reply",
+			version: PROTOCOL_VERSION,
+			id: callId,
+			ok: true,
+			result: {sessions: [], unreadable: []},
+		}),
+	},
+	{
+		kind: SPELL_REPLY_KIND,
+		reply: new SpellReplyError({
+			type: "spell.reply",
+			version: PROTOCOL_VERSION,
+			id: callId,
+			ok: false,
+			error: {tag: "tuval/commands/UnknownSpell", message: "no spell there", path: ["nope"]},
+		}),
+	},
 ];
 
 describe("the transport wire", () => {
@@ -135,12 +175,31 @@ describe("the transport wire", () => {
 			decodeServerFrame(
 				JSON.stringify({kind: KEYS_KIND, table: {...defaultPrefixTable, bindings: []}}),
 			),
+			// The two spell frames are admitted by the protocol's own schemas, so a call with no path
+			// and a reply carrying both a result and an error are refused there rather than here.
+			decodeClientFrame(JSON.stringify({kind: SPELL_CALL_KIND, call: {...call, path: []}})),
+			decodeClientFrame(JSON.stringify({kind: SPELL_CALL_KIND})),
+			decodeServerFrame(
+				JSON.stringify({
+					kind: SPELL_REPLY_KIND,
+					reply: {
+						type: "spell.reply",
+						version: PROTOCOL_VERSION,
+						id: callId,
+						ok: true,
+						error: {tag: "t", message: "m"},
+					},
+				}),
+			),
 		]).toEqual([
 			{_tag: "Undecodable", reason: "not-json"},
 			{_tag: "Undecodable", reason: "unknown-kind"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "unknown-kind"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
+			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},
 			{_tag: "Undecodable", reason: "malformed-payload"},

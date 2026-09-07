@@ -26,6 +26,7 @@ import {
 	type AiAgentSessionState,
 	type AiAgentSessionSub,
 	aiAgentSessionMachine,
+	checkpointWorthy,
 	MODE_UNSUPPORTED,
 	PAGE_ERROR,
 	portRefused,
@@ -188,6 +189,10 @@ export const aiAgentProgram = <RIn = never>(
 		subs,
 		resume: resumeMessages,
 		restorable: (raw) => readCheckpoint(raw, options.config.cwd) !== null,
+		// One gate over both things that move per frame: a partial item, and a running subagent's
+		// slot (`core/state.ts`). Without it every delta rewrites the transcript, and a stop mid-turn
+		// saves the half-written reply as the reply (#8160).
+		checkpointWorthy,
 		capabilities: options.capabilities ?? [],
 		...(options.renderer === undefined ? {} : {renderer: options.renderer}),
 		...(options.inspector === undefined ? {} : {inspector: options.inspector}),

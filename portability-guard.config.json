@@ -56,8 +56,8 @@
 	},
 	"unmigrated": {
 		"cli-lane": {
-			"ceiling": 3,
-			"why": "Three fixture paths in `packages/fabrika-cli/src/lane/prove-verb.unit.test.ts` that must start with the rendered-surface prefix `isUiSurface` reads; the prefix has since moved onto config, so these clear on the sweep that follows this unit onto that reader.",
+			"ceiling": 0,
+			"why": "Paid off. The three fixture paths in `packages/fabrika-cli/src/lane/prove-verb.unit.test.ts` had to start with the rendered-surface prefix `isUiSurface` compiled in; that prefix now comes from `uiSurfaces` in `.fabrika.jsonc`, so the fixtures declare a placeholder root of their own and none of them names this repository. The row stays at zero rather than being deleted so the unit keeps its own floor instead of falling to the `cli-tail` catch-all.",
 			"paths": ["packages/fabrika-cli/src/lane"]
 		},
 		"plugin-ship": {
@@ -115,13 +115,13 @@
 			"paths": ["claude-plugins/fabrika"]
 		},
 		"cli-review": {
-			"ceiling": 12,
-			"why": "The two review groups' source. The sweep left 12 references, all behaviour rather than prose: the compiled-in `apps/web/src/` prefix inside `isUiSurface` plus the eleven fixtures that must match it to keep testing anything, and the shipped governance-root list a test asserts literally so the assertion is not vacuous.",
+			"ceiling": 1,
+			"why": "The two review groups' source. The compiled-in rendered-surface prefix inside `isUiSurface` is gone — the prefixes come from `uiSurfaces` in `.fabrika.jsonc` — and the ten fixtures that had to match that literal to keep testing anything now declare a placeholder root of their own, so none of them names this repository. What is left is the shipped governance-root list a test asserts literally so the assertion is not vacuous.",
 			"paths": ["packages/fabrika-cli/src/review", "packages/fabrika-cli/src/review-ui"]
 		},
 		"cli-ship": {
-			"ceiling": 10,
-			"why": "#8306 swept the ship and heal-ci groups' prose to zero; ten residues are behaviour rather than sentences. One is `FLAG_REGISTRY` in ship/dark-ship.ts, the module path the dark-ship detector matches a diff against — a scan-scope literal of the class #7478 moves onto config. Five are fixture paths that must begin with the shipped rendered-surface prefix `isUiSurface` reads, and two more must begin with a shipped governed root, or the assertion is written against a partition the verb never makes; both prefixes move under #7478, the same edge cli-lane's row already waits on. The last two are the placeholder owner/repo pull-request URLs the note and resolve batteries assert a created comment's html_url against, cleared by #8350, the fixture-URL ticket.",
+			"ceiling": 5,
+			"why": "#8306 swept the ship and heal-ci groups' prose to zero; five residues are behaviour rather than sentences. One is `FLAG_REGISTRY` in ship/dark-ship.ts, the module path the dark-ship detector matches a diff against — a scan-scope literal of the class #7478 moves onto config. Two must begin with a shipped governed root, or the assertion is written against a partition the verb never makes; that prefix moves under #7478 too. The rendered-surface fixtures this row used to carry are gone: `isUiSurface` reads its prefixes from `uiSurfaces` now, so they declare a placeholder root of their own. The last two are the placeholder owner/repo pull-request URLs the note and resolve batteries assert a created comment's html_url against, cleared by #8350, the fixture-URL ticket.",
 			"paths": ["packages/fabrika-cli/src/ship", "packages/fabrika-cli/src/heal-ci"]
 		},
 		"cli-wire": {

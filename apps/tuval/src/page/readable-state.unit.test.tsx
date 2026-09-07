@@ -21,10 +21,14 @@ import {Desk} from "../shell/ui/Desk.tsx";
 import {installDomShims} from "../shell/ui/dom.testing.ts";
 import {deskWith} from "../shell/ui/fixtures.ts";
 import {boundMount, type MountResolver} from "../shell/ui/mount.ts";
+import {refused} from "../shell/ui/press.ts";
 import {testProcess} from "../shell/window/fixtures.ts";
 import {empty, processGone, WindowId} from "../shell/window/index.ts";
 import type {ReadableRenderer} from "./readable-state.tsx";
 import {pageRenderers} from "./renderers.tsx";
+
+/** The table over a socket that answers nothing: this file judges the entries, never their answers. */
+const renderers = pageRenderers(() => Effect.never);
 
 installDomShims();
 
@@ -57,7 +61,7 @@ const COUNTER_PROCESS = ProcessId.make("counter-1");
 
 /** The table entry under test, or a failure that names the missing key rather than a `?.` further down. */
 const entryFor = (ref: string): ReadableRenderer => {
-	const entry = pageRenderers[ref];
+	const entry = renderers[ref];
 	if (entry === undefined) throw new Error(`the page's table answers to no renderer named ${ref}`);
 	return entry;
 };
@@ -102,6 +106,7 @@ const mountDesk = async (sessionState: unknown): Promise<void> => {
 			<Desk
 				state={twoWindowDesk()}
 				dispatch={() => {}}
+				press={() => Promise.resolve(refused)}
 				resolveMount={resolveMount}
 				table={defaultPrefixTable}
 			/>,
@@ -158,7 +163,7 @@ describe("the page's renderer table", () => {
 	});
 
 	it("carries an admission test on every entry, and each one refuses an empty object", () => {
-		const entries = Object.values(pageRenderers);
+		const entries = Object.values(renderers);
 		expect(entries.length).toBeGreaterThan(0);
 		for (const entry of entries) {
 			expect(typeof entry.admits).toBe("function");

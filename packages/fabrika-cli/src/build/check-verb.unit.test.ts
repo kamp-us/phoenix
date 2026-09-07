@@ -220,7 +220,7 @@ describe("notCoveredBy — a green discloses what THIS surface did not read", ()
 });
 
 describe("runCheck", () => {
-	it("runs the exact CI commands with the cache bypassed, and reports what ran", async () => {
+	it("runs exactly the commands the repo declared, and reports what ran", async () => {
 		const shell = fakeSeams([
 			...LANE_OK,
 			[DIFF, okOut("src/app/App.tsx\n")],

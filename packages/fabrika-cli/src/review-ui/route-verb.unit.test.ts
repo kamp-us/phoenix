@@ -49,12 +49,16 @@ const pull = (shape: {state?: string; head?: string; changed?: number} = {}): Ht
 const files = (...names: ReadonlyArray<string>): HttpReply =>
 	served(names.map((filename) => ({filename})));
 
-const PROSE_UI = files("apps/web/src/flags/shell-keys.ts", "apps/web/src/styles/lint.config.json");
+const PROSE_UI = files(
+	"apps/site/src/flags/shell-keys.ts",
+	"apps/site/src/styles/lint.config.json",
+);
 
 const options = {
 	pr: 6326,
 	sha: HEAD,
 	clause: CLAUSE,
+	uiPrefixes: ["apps/site/src/", "apps/desk/src/"],
 	repo: null,
 	env: {CLAUDE_PIPELINE_REPO: "o/r", GITHUB_TOKEN: "ghp_scripted"} as Record<
 		string,

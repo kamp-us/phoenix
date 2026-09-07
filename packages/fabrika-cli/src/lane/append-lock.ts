@@ -35,7 +35,7 @@ const DEFAULT_LOCK_BUDGET_MS = 5_000;
  * (a test, an interactive shell) sets `FABRIKA_LANE_LOCK_BUDGET_MS` and every verb honors it.
  */
 const lockBudgetMs = (): number => {
-	const raw = process.env["FABRIKA_LANE_LOCK_BUDGET_MS"];
+	const raw = process.env.FABRIKA_LANE_LOCK_BUDGET_MS;
 	const parsed = raw === undefined ? Number.NaN : Number(raw);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LOCK_BUDGET_MS;
 };

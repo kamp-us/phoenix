@@ -3,7 +3,7 @@
  * wait for each to answer its own `readyPath`, and hand back the killer `ui render` runs on every
  * exit path.
  *
- * The commands are the repo's declaration (`design-harness.json`), never this package's knowledge of
+ * The commands are the repo's declaration (`uiSurfaces` in `.fabrika.jsonc`), never this package's knowledge of
  * any stack — that is what makes the group portable. Each process is started in its own group and
  * killed by group, because a dev server is habitually a wrapper that spawns the real listener: kill
  * the wrapper alone and the port stays held for the next lane.
@@ -19,9 +19,10 @@
 import {spawn} from "node:child_process";
 import {createServer} from "node:net";
 import {Effect} from "effect";
-import {fillPorts, type HarnessApp, portTokens, READY_TIMEOUT_MS} from "./harness.ts";
+import {fillPorts, portTokens, type UiSurface} from "../config/keys/ui-surfaces.ts";
 import {legFailed} from "./leg-failed.ts";
 import type {HarnessLeg, HarnessStart} from "./render-verb.ts";
+import {READY_TIMEOUT_MS} from "./surfaces.ts";
 
 const POLL_INTERVAL_MS = 500;
 /** How much of a server's own stderr rides along in the not-ready refusal. */
@@ -51,7 +52,7 @@ const freePort = (): Promise<number> =>
 	});
 
 interface Started {
-	readonly app: HarnessApp;
+	readonly app: UiSurface;
 	readonly origin: string;
 	readonly readyUrl: string;
 	readonly stop: Effect.Effect<void>;
@@ -60,7 +61,7 @@ interface Started {
 	readonly tail: () => string;
 }
 
-const start = async (app: HarnessApp, root: string): Promise<Started> => {
+const start = async (app: UiSurface, root: string): Promise<Started> => {
 	const ports = new Map<string, number>();
 	for (const token of portTokens(app.command)) ports.set(token, await freePort());
 	// `localhost`, not `127.0.0.1`: a dev server that binds only `::1` is unreachable by the literal
@@ -93,7 +94,7 @@ const start = async (app: HarnessApp, root: string): Promise<Started> => {
 	};
 };
 
-export const spawnHarness: HarnessLeg = (apps: ReadonlyArray<HarnessApp>, root: string) =>
+export const spawnHarness: HarnessLeg = (apps: ReadonlyArray<UiSurface>, root: string) =>
 	Effect.tryPromise({
 		try: async (): Promise<HarnessStart> => {
 			const started: Array<Started> = [];

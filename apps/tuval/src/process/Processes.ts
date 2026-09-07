@@ -9,7 +9,7 @@
 
 import {randomUUID} from "node:crypto";
 import type {Cmd, Store, Sub, Subscribe} from "@demlik/tea";
-import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Stream} from "effect";
+import {Context, Effect, Exit, Layer, Option, PubSub, Scope, Semaphore, Stream} from "effect";
 import {Checkpoints, type OpenError} from "../durability/Checkpoints.ts";
 import {type ActorHandle, make as makeActor} from "../host/actor.ts";
 import type {ActorDefinition, CoreMachine, Dispatch} from "../host/definition.ts";
@@ -26,6 +26,7 @@ import {
 	type ProcessHandle,
 	ProcessId,
 	type ProcessRow,
+	type StateSummary,
 } from "./process.ts";
 import {ProcessSelf} from "./self.ts";
 
@@ -168,6 +169,7 @@ const toDefinition = (
 		name: program.id,
 		machine: core,
 		store,
+		...(program.checkpointWorthy === undefined ? {} : {checkpointWorthy: program.checkpointWorthy}),
 		ctx: {},
 		interpret: handlers,
 		subscribe,
@@ -250,19 +252,26 @@ function makeServices() {
 				}),
 			);
 
-			row = {
-				id,
-				programId,
-				parentId,
-				ports: program.ports,
-				stateSummary: () => ({lifecycle, revision, state: actor.getState()}),
-			};
+			const stateSummary = (): StateSummary => ({lifecycle, revision, state: actor.getState()});
+			row = {id, programId, parentId, ports: program.ports, stateSummary};
+			// Every fold this process is asked for from outside runs alone, so a summary read beside
+			// one is that fold's and not a later one's. The actor's own tail serialises the transition
+			// but releases before `dispatch` waits out the follow-ups, which is the window a caller
+			// reading state after its dispatch used to lose its Msg's answer in (#8274).
+			const folds = yield* Semaphore.make(1);
 			const handle: ProcessHandle = {
 				id,
 				programId,
 				parentId: row.parentId,
 				scope,
-				dispatch: actor.dispatch,
+				dispatch: (msg) => folds.withPermits(1)(actor.dispatch(msg)),
+				dispatchFolded: (msg) =>
+					folds.withPermits(1)(
+						Effect.map(Effect.exit(actor.dispatch(msg)), (settled) => ({
+							settled,
+							summary: stateSummary(),
+						})),
+					),
 				getState: actor.getState,
 				stop: Scope.close(scope, Exit.void),
 			};

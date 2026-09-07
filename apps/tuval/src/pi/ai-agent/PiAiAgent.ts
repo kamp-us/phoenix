@@ -52,6 +52,7 @@ import {
 	ModeUnsupported,
 	PageError,
 	PromptError,
+	type StartOptions,
 	ThinkingUnsupported,
 	type TransportError,
 	TuvalAiAgent,
@@ -69,7 +70,13 @@ import {
 	type ServerBindFailed,
 } from "../server/index.ts";
 import {pageItems} from "./entries.ts";
-import {emptyProjection, eventsOf} from "./items.ts";
+import {
+	emptyProjection,
+	eventsOf,
+	paintOf,
+	projectionOf,
+	type SnapshotProjection,
+} from "./items.ts";
 import {
 	promptDropOf,
 	promptErrorOf,
@@ -106,6 +113,11 @@ export interface PiAiAgentOptions {
 	 * Pi's own (`$PI_AGENT_DIR`, else `~/.pi/agent`).
 	 */
 	readonly agentDir?: string;
+	/**
+	 * Project the reply still being written, so the window shows text as the model writes it rather
+	 * than when the turn ends. Absent is off, which is the shape every caller had before this key.
+	 */
+	readonly streamPartialText?: boolean;
 }
 
 type EventQueue = Queue.Queue<AgentEvent, TransportError | Cause.Done>;
@@ -222,9 +234,10 @@ const make = (
 			sessionId: string,
 			open: EventQueue,
 			feed: Queue.Queue<FoldInput>,
+			seed: SnapshotProjection,
 		): Effect.Effect<void> =>
 			Effect.gen(function* () {
-				const projection = yield* Ref.make(emptyProjection);
+				const projection = yield* Ref.make(seed);
 				const pushes = pi
 					.snapshots(sessionId)
 					.pipe(Stream.runForEach((snapshot) => Queue.offer(feed, {_tag: "snapshot", snapshot})));
@@ -321,10 +334,7 @@ const make = (
 			yield* Ref.set(dialled, true);
 		});
 
-		const start = Effect.fn("TuvalAiAgent.start")(function* (options_: {
-			readonly cwd: string;
-			readonly resume?: string;
-		}) {
+		const start = Effect.fn("TuvalAiAgent.start")(function* (options_: StartOptions) {
 			const previous = yield* Ref.get(pump);
 			if (previous !== null) yield* Fiber.interrupt(previous);
 			yield* Effect.flatMap(Ref.get(queue), Queue.shutdown);
@@ -340,16 +350,38 @@ const make = (
 				// A held pick outranks the layer's static option: it is the later choice, and this
 				// open is the one it was made for.
 				const opening = (yield* Ref.get(pendingModel)) ?? options.model;
-				return options_.resume === undefined
-					? yield* pi.createSession(options_.cwd, opening === undefined ? {} : {model: opening})
-					: yield* pi.attachSession(options_.resume);
+				const resume = options_.resume;
+				if (resume === undefined) {
+					const opened = yield* pi.createSession(
+						options_.cwd,
+						opening === undefined ? {} : {model: opening},
+					);
+					return {ref: opened, seed: emptyProjection, paint: []};
+				}
+				// Either way the lease's own snapshot is the seed, and neither reading of it costs a
+				// round trip: Pi re-sends the whole transcript on every revision, so a fold that
+				// opened on `emptyProjection` replays the session as live items on the first push
+				// after the attach (#8369). What differs is what the caller can already see.
+				const resumed = yield* pi.attachSession(resume.sessionId);
+				const lease = yield* pi.heldSnapshot(resumed.id);
+				// A restored process is looking at its own committed tail, so the seed suppresses
+				// everything through the boundary that tail reaches and emits whatever the session
+				// finished past it — or changed under it — while the socket was down (#8374).
+				if (resume.holdsTranscript) {
+					return {ref: resumed, seed: projectionOf(lease, resume.held), paint: []};
+				}
+				// A window opened out of the picker holds nothing, so the history is painted here,
+				// at the attach, while its tail is still empty.
+				const painted = paintOf(lease);
+				return {ref: resumed, seed: painted.projection, paint: painted.events};
 			}).pipe(Effect.mapError((refusal) => startErrorOf(options_.cwd, refusal)));
 
 			// One stream carries everything (ruling 1, #7570), so a failed start owes it a terminal
 			// phase: without this every subscriber sits on `starting` for the life of the layer.
-			const ref = yield* acquire.pipe(
+			const {ref, seed, paint} = yield* acquire.pipe(
 				Effect.tapError(() => emit(open, [{kind: "phase", phase: "gone"}])),
 			);
+			yield* emit(open, paint);
 
 			// A `start({resume})` reattaches to a session already on its own stored model, and a
 			// create can answer on another, so a held pick is applied here rather than assumed to
@@ -378,7 +410,7 @@ const make = (
 			yield* Ref.set(inbox, feed);
 			// Forked into the layer's own scope, not the caller's, so the fan lives exactly as long
 			// as the transport it reads and dies with it.
-			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open, feed), scope));
+			yield* Ref.set(pump, yield* Effect.forkIn(follow(ref.id, open, feed, seed), scope));
 			const offered = catalog.map(refOf);
 			yield* emit(open, [
 				// `StartOptions.mode` is ignored here, and this is the one layer where that is right:
@@ -663,6 +695,9 @@ const host = (options: PiAiAgentOptions): Layer.Layer<PiSessionHost> =>
 				agentDir,
 				...(options.sessionDir === undefined ? {} : {sessionDir: options.sessionDir}),
 				...(options.projectRoot === undefined ? {} : {projectRoot: options.projectRoot}),
+				...(options.streamPartialText === undefined
+					? {}
+					: {streamPartialText: options.streamPartialText}),
 			});
 		}),
 	);
