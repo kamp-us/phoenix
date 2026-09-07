@@ -4,7 +4,13 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {CommandName, defaultPrefixTable, type Key, type PrefixTable} from "../keys/index.ts";
+import {
+	CommandName,
+	defaultPrefixTable,
+	FOCUS_LIST_KEY,
+	type Key,
+	type PrefixTable,
+} from "../keys/index.ts";
 import {findWindow, windows} from "../layout/index.ts";
 import {mountPicker} from "../picker/view.ts";
 import {applyMsg, cellsFor, initialState, type ShellCmd, type ShellMsg} from "./machine.ts";
@@ -52,6 +58,7 @@ describe("shell core: the reducer's cells", () => {
 			"window.close",
 			"window.focus",
 			"window.focusDirection",
+			"window.forwardKey",
 			"window.open",
 			"window.setView",
 			"window.split",
@@ -319,6 +326,61 @@ describe("shell core: keys", () => {
 			},
 		]);
 		expect(after.prefix).toEqual({armed: false});
+	});
+
+	/**
+	 * The whole route the chord takes (#8407): the router resolves `<c-b> a` to a command name, the
+	 * command table turns that name into `window.forwardKey`, and its cell hands the focused window a
+	 * key no keyboard can produce. Read here rather than at the window, because the claim is that the
+	 * three tables agree — a component test could pass with the binding missing entirely.
+	 */
+	it("<c-b> a mints the focus-list key and hands it to the focused window", () => {
+		const bound = fold(initialState(), {
+			type: "window.bind",
+			processId: "process-agent",
+			takesKeys: true,
+		});
+		const [after, cmds] = apply(fold(bound, prefix), press("a"));
+
+		expect(cmds).toEqual([
+			{
+				type: "forwardKey",
+				processId: "process-agent",
+				windowId: active(bound).focused,
+				key: FOCUS_LIST_KEY,
+			},
+		]);
+		// The answer the page reads, and the half that reaches the *renderer* — where a list's focus
+		// lives. Without it the chord would end at the process and never move anything on screen.
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: FOCUS_LIST_KEY});
+		expect(after.prefix).toEqual({armed: false});
+	});
+
+	it("answers the page the same key even where there is no process to forward it to", () => {
+		const bound = fold(initialState(), {type: "window.bind", processId: "process-agent"});
+		const [after, cmds] = apply(fold(bound, prefix), press("a"));
+
+		expect(cmds).toEqual([]);
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: FOCUS_LIST_KEY});
+	});
+
+	it("a bare `a` is the window's own key and mints nothing", () => {
+		const bound = fold(initialState(), {
+			type: "window.bind",
+			processId: "process-agent",
+			takesKeys: true,
+		});
+		const [after, cmds] = apply(bound, press("a"));
+
+		expect(cmds).toEqual([
+			{
+				type: "forwardKey",
+				processId: "process-agent",
+				windowId: active(bound).focused,
+				key: "a",
+			},
+		]);
+		expect(after.lastPress?.outcome).toEqual({_tag: "ToWindow", key: "a"});
 	});
 
 	it("a window whose program never declared keys is forwarded none (#7973)", () => {

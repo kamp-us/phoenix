@@ -5,6 +5,7 @@
 
 import {describe, expect, it} from "vitest";
 import type {ShellMsg} from "../core/machine.ts";
+import {CommandName, FOCUS_LIST_KEY} from "../keys/index.ts";
 import {pickerCommands} from "../picker/intent.ts";
 import {commandName, isOptionalParameter, parameterNames} from "./row.ts";
 import {commandFor, commandNames, msgForCommandName, resolveVerb, shellCommands} from "./table.ts";
@@ -29,6 +30,7 @@ describe("the command table", () => {
 			"window:focus-down",
 			"window:focus",
 			"window:pick",
+			"window:focus-list",
 			"window:open",
 			"window:attach",
 			"workspace:create",
@@ -41,6 +43,18 @@ describe("the command table", () => {
 			"config:reload",
 		]);
 		expect(new Set(commandNames.map(String)).size).toBe(commandNames.length);
+	});
+
+	it("gives the focus-list row a key to mint, since no command name can address a renderer", () => {
+		expect(msgOf("window:focus-list")).toEqual({
+			type: "window.forwardKey",
+			key: FOCUS_LIST_KEY,
+		});
+		// A bound key sequence has nowhere to carry an argument, so the chord's row must take none.
+		expect(msgForCommandName(CommandName.make("window:focus-list"))).toEqual({
+			type: "window.forwardKey",
+			key: FOCUS_LIST_KEY,
+		});
 	});
 
 	it("names every row from its own path, and every row carries a sentence", () => {

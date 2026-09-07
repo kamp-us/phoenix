@@ -24,7 +24,13 @@ import {Result} from "effect";
 import {describe, expect, it} from "vitest";
 import {applyMsg, type ShellCmd, type ShellState} from "../core/index.ts";
 import type {Binding, Key, PrefixTable} from "../keys/index.ts";
-import {applyKeysConfig, defaultPrefixTable, normalizeSequence, parse} from "../keys/index.ts";
+import {
+	applyKeysConfig,
+	defaultPrefixTable,
+	normalizeSequence,
+	parse,
+	stringify,
+} from "../keys/index.ts";
 import {threeWindowDesk} from "./fixtures.ts";
 import {COMMAND_LINE_COMMAND, routerPrefix, shellOwnsKey} from "./frame.ts";
 import {replyIn} from "./press.ts";
@@ -69,8 +75,14 @@ const disagreements = (core: PrefixTable, page: PrefixTable): ReadonlyArray<stri
 	for (const binding of core.bindings) {
 		// The prefix first, then the sequence — the whole gesture a user types for this entry.
 		const gesture = [...keysOf(core.prefix), ...keysOf(binding.sequence)];
-		// The focused window holds a process, so `forwardKey` is emitted where the surface forwards.
-		let state = threeWindowDesk();
+		// The focused window holds a process *and declares it takes keys*, which is what the first
+		// claim above rests on: a window whose program declared none is answered on `lastPress` and
+		// sent no Cmd (#7973), so the two statements part company for a reason that is not drift.
+		let state = applyMsg(core, threeWindowDesk(), {
+			type: "window.bind",
+			processId: "process-1",
+			takesKeys: true,
+		})[0];
 		let press = 0;
 		for (const key of gesture) {
 			press += 1;
@@ -80,8 +92,11 @@ const disagreements = (core: PrefixTable, page: PrefixTable): ReadonlyArray<stri
 			const [next, cmds] = applyMsg(core, state, {type: "keys.press", key, pressId});
 			const [asked, repeatTimer] = asCmds(cmds);
 			const derived = asAnswer(next, pressId);
-			// The kernel took the key whenever it did not hand it to the window.
-			const coreOwns = !asked.some((one) => one._tag === "ToWindow");
+			// The kernel took the key whenever it did not hand *this* key to the window. Not "forwarded
+			// nothing": a bound row may mint a key of its own and forward that (`window:focus-list`,
+			// #8407), and the press it ran on is still the shell's — which is the question the page
+			// answers at the press when it decides whether to swallow the default action.
+			const coreOwns = !asked.some((one) => one._tag === "ToWindow" && one.key === stringify(key));
 			if (pageOwns !== coreOwns) {
 				found.push(
 					`${binding.sequence}: core owns ${String(coreOwns)} vs page owns ${String(pageOwns)}`,

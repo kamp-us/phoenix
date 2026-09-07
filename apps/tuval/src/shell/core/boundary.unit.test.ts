@@ -100,6 +100,7 @@ describe("shell core boundary", () => {
 			| "window.focusDirection"
 			| "window.bind"
 			| "window.unbind"
+			| "window.forwardKey"
 			| "window.setView"
 			| "layout.resize"
 			| "layout.zoom"

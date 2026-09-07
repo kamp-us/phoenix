@@ -16,6 +16,7 @@ export {
 export {
 	type DisallowedModifierError,
 	type DuplicateModifierError,
+	FOCUS_LIST_KEY,
 	type InvalidKeyError,
 	type Key,
 	type KeyParseError,

@@ -64,6 +64,8 @@ const rowOf = (slot: SubagentSlot, current: boolean): SubagentRow => ({
 export const runningSubagents = (
 	slots: Readonly<Record<string, SubagentSlot>>,
 	viewing: string | null = null,
+	/** How many running workers the list shows. The "more" row raises it to all of them (#8407). */
+	cap: number = SUBAGENT_ROW_CAP,
 ): SubagentListModel => {
 	const running = Object.values(slots)
 		.filter((slot) => slot.status === "running")
@@ -72,7 +74,7 @@ export const runningSubagents = (
 				? left.id.localeCompare(right.id)
 				: left.startedAt - right.startedAt,
 		);
-	const shown = running.slice(0, SUBAGENT_ROW_CAP);
+	const shown = running.slice(0, cap);
 	const held = new Set<string>(shown.map((slot) => slot.id));
 	const viewed = viewing === null || held.has(viewing) ? undefined : slots[viewing];
 	return {

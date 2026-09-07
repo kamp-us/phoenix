@@ -62,6 +62,9 @@ export const defaultPrefixTable: PrefixTable = {
 		{sequence: "x", command: command("window:close"), repeatable: false},
 		// tmux binds `w` to `choose-window`, and the founder's config leaves it free (#8083).
 		{sequence: "w", command: command("window:pick"), repeatable: false},
+		// `a` is tmux's `last-pane` and the founder's config leaves it free, so it is the chord that
+		// puts focus on the focused window's own list (#8407).
+		{sequence: "a", command: command("window:focus-list"), repeatable: false},
 		{sequence: "N", command: command("workspace:create"), repeatable: false},
 		{sequence: "<c-h>", command: command("workspace:previous"), repeatable: true},
 		{sequence: "<c-l>", command: command("workspace:next"), repeatable: true},
